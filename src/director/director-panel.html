@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>IRO · Director Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/obs-websocket-js@5.0.6/dist/obs-ws.global.js" integrity="sha384-cFeq2Xcu17x+Az+nlYMZAaV1gxGNNfUT48om81Bp23aa9pTsmi+YXAe5XQ7Cx1s+" crossorigin="anonymous"></script>
+<style>
+  /* =========================================================
+     IRO DIRECTOR CONSOLE — industrial broadcast-switcher look
+     Dark, high-contrast, glanceable. Built for tablet + desktop.
+     ========================================================= */
+  :root{
+    --bg:#0a0c0f; --panel:#13171c; --panel-2:#171c22; --edge:#272f38;
+    --ink:#e8edf2; --muted:#7b8794; --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --head:'Saira Condensed',system-ui,sans-serif;
+    --air:#ff2d2d; --air-glow:rgba(255,45,45,.55);
+    --live:#2bd66a; --live-glow:rgba(43,214,106,.45);
+    --amber:#ffb000; --amber-glow:rgba(255,176,0,.4);
+    --blue:#3aa0ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(1200px 600px at 80% -10%, #11161c 0%, transparent 60%),
+      repeating-linear-gradient(0deg, transparent 0 27px, rgba(255,255,255,.012) 27px 28px),
+      var(--bg);
+    color:var(--ink); font-family:var(--mono); padding:18px; min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto}
+
+  /* ---------- top status bar ---------- */
+  header{
+    display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    border:1px solid var(--edge);background:linear-gradient(180deg,var(--panel-2),var(--panel));
+    border-radius:14px;padding:14px 18px;margin-bottom:16px;
+    box-shadow:0 12px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.03);
+  }
+  .brand{font-family:var(--head);font-weight:700;letter-spacing:.16em;font-size:26px;text-transform:uppercase}
+  .brand small{color:var(--amber);display:block;font-size:11px;letter-spacing:.32em;margin-top:-2px}
+  .led{display:flex;align-items:center;gap:9px;margin-left:auto;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+  .dot{width:13px;height:13px;border-radius:50%;background:#3a434d;box-shadow:0 0 0 3px rgba(255,255,255,.03)}
+  .dot.on{background:var(--live);box-shadow:0 0 14px var(--live-glow),0 0 0 3px rgba(43,214,106,.12)}
+  .dot.err{background:var(--air);box-shadow:0 0 14px var(--air-glow),0 0 0 3px rgba(255,45,45,.12)}
+
+  /* ---------- connection row ---------- */
+  .conn{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
+    border:1px solid var(--edge);background:var(--panel);border-radius:14px;padding:14px;margin-bottom:16px}
+  .fld{display:flex;flex-direction:column;gap:5px}
+  .fld label{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .fld input{background:#0c0f13;border:1px solid var(--edge);color:var(--ink);font-family:var(--mono);
+    font-size:14px;padding:10px 12px;border-radius:9px;min-width:120px;outline:none}
+  .fld input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(58,160,255,.18)}
+  .fld.ip input{min-width:170px}.fld.pw input{min-width:160px}
+
+  /* ---------- panels & grids ---------- */
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+  .panel{border:1px solid var(--edge);background:linear-gradient(180deg,var(--panel-2),var(--panel));
+    border-radius:14px;padding:15px;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  .panel h2{font-family:var(--head);font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    font-size:15px;margin:0 0 12px;color:var(--ink);display:flex;align-items:center;gap:9px}
+  .panel h2::before{content:"";width:7px;height:18px;background:var(--amber);border-radius:2px;box-shadow:0 0 10px var(--amber-glow)}
+  .span2{grid-column:1/-1}
+  .btns{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+
+  /* ---------- the buttons ---------- */
+  button.b{
+    appearance:none;cursor:pointer;color:var(--ink);font-family:var(--mono);font-weight:500;
+    font-size:14px;letter-spacing:.04em;padding:16px 12px;border-radius:11px;
+    border:1px solid var(--edge);background:linear-gradient(180deg,#1b2129,#141921);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 4px 12px rgba(0,0,0,.4);
+    transition:transform .05s ease,border-color .15s,box-shadow .15s,background .15s;
+    text-align:left;line-height:1.2;position:relative;overflow:hidden;min-height:58px;
+  }
+  button.b:active{transform:translateY(1px) scale(.99)}
+  button.b .tag{display:block;font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+  button.b.on{border-color:var(--live);background:linear-gradient(180deg,#15301f,#10261a);
+    box-shadow:0 0 0 1px var(--live),0 0 18px var(--live-glow),inset 0 1px 0 rgba(255,255,255,.06)}
+  button.b.on .tag{color:var(--live)}
+  button.b.air{border-color:var(--air);background:linear-gradient(180deg,#331414,#26100f);
+    box-shadow:0 0 0 1px var(--air),0 0 20px var(--air-glow),inset 0 1px 0 rgba(255,255,255,.06)}
+  button.b.air .tag{color:var(--air)}
+  button.b:disabled{opacity:.4;cursor:not-allowed}
+  button.act{background:linear-gradient(180deg,#244b7a,#1a3a61);border-color:#356196}
+  button.act.live{background:linear-gradient(180deg,#1f6b3c,#155730);border-color:var(--live)}
+
+  /* ---------- audio rows ---------- */
+  .arow{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px dashed var(--edge)}
+  .arow:first-child{border-top:0}
+  .arow .nm{flex:0 0 110px;font-size:13px}
+  .arow input[type=range]{flex:1;accent-color:var(--amber)}
+  .mute{flex:0 0 78px;padding:9px 8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+    border-radius:8px;border:1px solid var(--edge);background:#141921;color:var(--muted);cursor:pointer}
+  .mute.muted{border-color:var(--air);color:var(--air);background:#26100f;box-shadow:0 0 12px var(--air-glow)}
+
+  /* ---------- URL loader ---------- */
+  .loader{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .loader .fld{flex:1;min-width:200px}
+  .loader select,.loader input{background:#0c0f13;border:1px solid var(--edge);color:var(--ink);
+    font-family:var(--mono);font-size:14px;padding:10px 12px;border-radius:9px;outline:none;width:100%}
+  .hint{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hint code{color:var(--amber);background:#0c0f13;padding:1px 6px;border-radius:5px;border:1px solid var(--edge)}
+
+  /* ---------- log ---------- */
+  #log{font-size:11px;color:var(--muted);margin-top:14px;max-height:90px;overflow:auto;
+    border:1px solid var(--edge);background:#0c0f13;border-radius:10px;padding:10px;white-space:pre-wrap}
+  .pill{display:inline-block;padding:7px 14px;border-radius:9px;border:1px solid var(--edge);
+    font-size:13px;letter-spacing:.06em;cursor:pointer;background:linear-gradient(180deg,#1b2129,#141921);color:var(--ink)}
+  .pill.go{border-color:var(--live);color:var(--live)}
+  .pill.stop{border-color:var(--air);color:var(--air)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">Director Console<small>IRO · ENDURANCE BROADCAST</small></div>
+    <div class="led"><span class="dot" id="led"></span><span id="ledtxt">Disconnected</span></div>
+  </header>
+
+  <div class="conn">
+    <div class="fld ip"><label>OBS IP (Producer Tailscale)</label><input id="ip" placeholder="100.x.y.z"></div>
+    <div class="fld"><label>Port</label><input id="port" value="4455"></div>
+    <div class="fld pw"><label>Password</label><input id="pw" type="password" placeholder="from OBS WebSocket"></div>
+    <span class="pill go" id="connectBtn">Connect</span>
+    <span class="pill stop" id="disconnectBtn" style="display:none">Disconnect</span>
+  </div>
+
+  <div class="grid">
+
+    <div class="panel span2">
+      <h2>Scenes</h2>
+      <div class="btns" id="scenes"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Feeds (show / hide)</h2>
+      <div class="btns" id="feeds"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Graphics (show / hide)</h2>
+      <div class="btns" id="graphics"></div>
+    </div>
+
+    <div class="panel span2">
+      <h2>Audio</h2>
+      <div id="audio"></div>
+    </div>
+
+    <div class="panel span2">
+      <h2>Ad-hoc Guest Feed — load a URL</h2>
+      <div class="loader">
+        <div class="fld"><label>Target media source</label>
+          <select id="mediaSel"></select></div>
+        <div class="fld"><label>Direct media URL (.m3u8)</label>
+          <input id="mediaUrl" placeholder="https://…manifest…m3u8"></div>
+        <span class="pill go" id="loadBtn">Load</span>
+      </div>
+      <div class="hint">
+        For a guest's YouTube/Twitch channel, first resolve a direct link on the Producer PC:
+        <code>yt-dlp -g "https://www.youtube.com/channel/&lt;ID&gt;/live"</code> — paste the result above.
+        This writes the URL straight into the chosen OBS Media Source.
+      </div>
+    </div>
+
+  </div>
+
+  <div id="log">Ready. Enter the Producer's Tailscale IP + OBS WebSocket password, then Connect.</div>
+</div>
+
+<script>
+/* =======================================================================
+   CONFIG — edit these names ONCE to match your OBS exactly.
+   - scenes:   scene names (Set Program Scene)
+   - feeds:    {label, scene, source}  source toggled inside that scene
+   - graphics: {label, scene, source}  overlay toggled inside that scene
+   - audio:    {label, input}          OBS audio input name
+   - media:    media-source names available in the guest URL loader
+   ======================================================================= */
+const CONFIG = {
+  scenes: ["Stint", "Splitscreen", "Interview", "Standby"],
+  feeds: [
+    {label:"Feed A", scene:"Stint", source:"Feed A"},
+    {label:"Feed B", scene:"Stint", source:"Feed B"},
+    {label:"Split L", scene:"Splitscreen", source:"Feed A"},
+    {label:"Split R", scene:"Splitscreen", source:"Feed B"},
+  ],
+  graphics: [
+    {label:"HUD (Stint)", scene:"Stint",       source:"HUD"},
+    {label:"HUD (Split)", scene:"Splitscreen", source:"HUD"},
+    {label:"Standings",   scene:"Stint",       source:"Standings"},
+    {label:"Schedule",    scene:"Stint",       source:"Season Schedule"},
+    {label:"Race Result", scene:"Stint",       source:"Race Results"},
+    {label:"Quali Result",scene:"Stint",       source:"Quali Results"},
+  ],
+  audio: [
+    {label:"Feed A",  input:"Feed A"},
+    {label:"Feed B",  input:"Feed B"},
+    {label:"Discord", input:"Discord Audio Capture"},
+  ],
+  media: ["Feed A", "Feed B"]
+};
+
+/* ---------- plumbing ---------- */
+const obs = new OBSWebSocket();
+let connected = false, poll = null;
+const $ = s => document.querySelector(s);
+const led = $("#led"), ledtxt = $("#ledtxt");
+function log(m, kind){
+  const t = new Date().toLocaleTimeString();
+  $("#log").textContent = `[${t}] ${m}\n` + $("#log").textContent;
+  if(kind==="err") console.warn(m);
+}
+function setLed(state){
+  led.className = "dot" + (state==="ok"?" on":state==="err"?" err":"");
+  ledtxt.textContent = state==="ok"?"Connected":state==="err"?"Error":"Disconnected";
+}
+
+/* remember connection details locally for convenience */
+try{
+  $("#ip").value   = localStorage.getItem("iro_ip")   || "";
+  $("#port").value = localStorage.getItem("iro_port") || "4455";
+  $("#pw").value   = localStorage.getItem("iro_pw")   || "";
+}catch(e){}
+
+/* ---------- build UI ---------- */
+function mkBtn(label, tag, onClick){
+  const b = document.createElement("button");
+  b.className = "b"; b.disabled = true;
+  b.innerHTML = `<span class="tag">${tag}</span>${label}`;
+  b.addEventListener("click", onClick);
+  return b;
+}
+const sceneBtns = {}, toggleBtns = [];
+
+CONFIG.scenes.forEach(name=>{
+  const b = mkBtn(name, "scene", ()=>safe(()=>obs.call("SetCurrentProgramScene",{sceneName:name})));
+  sceneBtns[name] = b; $("#scenes").appendChild(b);
+});
+function buildToggles(list, mount){
+  list.forEach(item=>{
+    const b = mkBtn(item.label, item.scene, ()=>toggleSource(item, b));
+    b._item = item; toggleBtns.push(b); $(mount).appendChild(b);
+  });
+}
+buildToggles(CONFIG.feeds, "#feeds");
+buildToggles(CONFIG.graphics, "#graphics");
+
+CONFIG.audio.forEach(a=>{
+  const row = document.createElement("div"); row.className = "arow";
+  row.innerHTML =
+    `<span class="nm">${a.label}</span>
+     <input type="range" min="0" max="100" value="80" disabled data-input="${a.input}">
+     <button class="mute" disabled data-input="${a.input}">Mute</button>`;
+  $("#audio").appendChild(row);
+  row.querySelector("input").addEventListener("input", e=>{
+    safe(()=>obs.call("SetInputVolume",{inputName:a.input, inputVolumeMul:Number(e.target.value)/100}));
+  });
+  row.querySelector(".mute").addEventListener("click", ()=>{
+    safe(()=>obs.call("ToggleInputMute",{inputName:a.input}));
+  });
+});
+
+CONFIG.media.forEach(m=>{
+  const o = document.createElement("option"); o.value=m; o.textContent=m; $("#mediaSel").appendChild(o);
+});
+
+/* ---------- actions ---------- */
+async function safe(fn){ try{ await fn(); }catch(e){ log("Action failed: "+(e.message||e), "err"); } }
+
+async function toggleSource(item, btn){
+  try{
+    const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:item.scene, sourceName:item.source});
+    const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:item.scene, sceneItemId});
+    await obs.call("SetSceneItemEnabled",{sceneName:item.scene, sceneItemId, sceneItemEnabled:!sceneItemEnabled});
+    btn.classList.toggle("on", !sceneItemEnabled);
+  }catch(e){ log(`Toggle "${item.source}" in "${item.scene}" failed: ${e.message||e}`, "err"); }
+}
+
+$("#loadBtn").addEventListener("click", ()=>{
+  if(!connected) return;
+  const inputName = $("#mediaSel").value, url = $("#mediaUrl").value.trim();
+  if(!url){ log("Enter a media URL first.", "err"); return; }
+  safe(async ()=>{
+    await obs.call("SetInputSettings",{inputName, inputSettings:{input:url, is_local_file:false}, overlay:true});
+    log(`Loaded URL into "${inputName}".`);
+  });
+});
+
+/* ---------- state refresh ---------- */
+async function refresh(){
+  if(!connected) return;
+  try{
+    const {currentProgramSceneName} = await obs.call("GetCurrentProgramScene");
+    Object.entries(sceneBtns).forEach(([n,b])=>b.classList.toggle("air", n===currentProgramSceneName));
+  }catch(e){}
+  for(const b of toggleBtns){
+    try{
+      const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:b._item.scene, sourceName:b._item.source});
+      const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:b._item.scene, sceneItemId});
+      b.classList.toggle("on", sceneItemEnabled);
+    }catch(e){}
+  }
+  for(const el of document.querySelectorAll(".mute")){
+    try{
+      const {inputMuted} = await obs.call("GetInputMute",{inputName:el.dataset.input});
+      el.classList.toggle("muted", inputMuted);
+      el.textContent = inputMuted ? "Muted" : "Mute";
+    }catch(e){}
+  }
+}
+
+function setEnabled(on){
+  document.querySelectorAll("button.b, .mute, #audio input[type=range]").forEach(el=>el.disabled=!on);
+}
+
+/* ---------- connect / disconnect ---------- */
+$("#connectBtn").addEventListener("click", async ()=>{
+  const ip=$("#ip").value.trim(), port=$("#port").value.trim()||"4455", pw=$("#pw").value;
+  if(!ip){ log("Enter the Producer's Tailscale IP.", "err"); return; }
+  try{ localStorage.setItem("iro_ip",ip); localStorage.setItem("iro_port",port); localStorage.setItem("iro_pw",pw); }catch(e){}
+  try{
+    await obs.connect(`ws://${ip}:${port}`, pw);
+    connected = true; setLed("ok"); setEnabled(true);
+    $("#connectBtn").style.display="none"; $("#disconnectBtn").style.display="inline-block";
+    log("Connected to OBS.");
+    await refresh();
+    poll = setInterval(refresh, 2000);
+  }catch(e){
+    setLed("err");
+    log("Connect failed: "+(e.message||e), "err");
+    log("Check: OBS open, WebSocket enabled, right password, Tailscale connected, page opened over file:// or http:// (not https).", "err");
+  }
+});
+$("#disconnectBtn").addEventListener("click", async ()=>{
+  clearInterval(poll); try{ await obs.disconnect(); }catch(e){}
+  connected=false; setLed(""); setEnabled(false);
+  $("#disconnectBtn").style.display="none"; $("#connectBtn").style.display="inline-block";
+  log("Disconnected.");
+});
+obs.on("ConnectionClosed", ()=>{
+  if(connected){ connected=false; clearInterval(poll); setLed("err"); setEnabled(false);
+    $("#disconnectBtn").style.display="none"; $("#connectBtn").style.display="inline-block";
+    log("Connection lost — press Connect to retry.", "err"); }
+});
+obs.on("CurrentProgramSceneChanged", d=>{
+  Object.entries(sceneBtns).forEach(([n,b])=>b.classList.toggle("air", n===d.sceneName));
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+runtime/
+dist/
+incoming/
+__pycache__/
+*.pyc
+.DS_Store
+*.bak
+# safety: never commit secrets/caches even if misplaced
+.env
+cookies.txt
+*.cache.txt
+*.import.json

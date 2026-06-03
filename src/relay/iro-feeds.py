@@ -1,0 +1,652 @@
+#!/usr/bin/env python3
+"""
+iro-feeds.py — Relay mode for the IRO broadcast (2-feed ping-pong)
+with a remotely-maintainable stint schedule from a Google Sheet.
+
+Concept: exactly one commentator stream per stint. Two fixed OBS feeds
+(Feed A = port 53001, Feed B = port 53002) "walk" along a stint schedule.
+Feed A serves the odd stints (1,3,5…), Feed B the even ones (2,4,6…). At
+each handover the feed that is currently NOT on air advances to its next
+commentator.
+
+OBS stays untouched: the media sources keep pointing at
+http://127.0.0.1:53001 / :53002 — only the channel behind them changes.
+
+SCHEDULE SOURCE (Google Sheet, editable remotely by anyone):
+  The "Schedule" tab of the shared HUD sheet is read via CSV export
+  (no API key). Any column holds the channel IDs (UC…) OR full URLs in
+  stint order — the channel column is auto-detected (other columns such
+  as stint number / commentator name are ignored).
+  Requirement: the sheet is shared "Anyone with the link: Viewer"
+  (same as the HUD sheet).
+
+  Safe live behavior: a RUNNING feed is NOT torn off mid-stint by sheet
+  edits. Changed entries take effect on the next /next (handover), where
+  fresh data is fetched. To swap the CURRENT stream immediately, use /reload.
+
+  If the sheet is unreachable, the last working list is kept (last-good +
+  local cache); without a sheet the local schedule.txt is used.
+
+COOKIES (against YouTube's "Sign in to confirm you're not a bot"):
+  Put a cookies.txt (Netscape format, exported from a logged-in YouTube
+  browser, e.g. via the "Get cookies.txt LOCALLY" extension) NEXT TO this
+  script — it is auto-detected and passed to Streamlink (--http-cookies-file).
+  Or pass it explicitly:  --cookies /path/to/cookies.txt
+  Always enter UNLISTED streams as a watch URL (https://www.youtube.com/watch?v=…)
+  in the schedule — the channel /live URL only works for PUBLIC streams.
+
+Controls (HTTP, for Companion Generic-HTTP / browser / curl):
+  GET /status          -> state of both feeds + source/sheet health (JSON)
+  GET /next            -> fetch fresh & advance the off-air feed by 1 stint
+  GET /next/A | /B      -> advance Feed A or B specifically
+  GET /prev/A | /B      -> step back one (correction)
+  GET /set/A/<n> | /B   -> pin Feed A/B to schedule index <n>
+  GET /reload          -> reconnect both feeds (applies a sheet change to the
+                           CURRENT channel immediately)
+  GET /reload/A | /B    -> reconnect only Feed A or B
+  GET /pov/reload      -> re-read the POV sheet cell & (re)connect the POV PiP feed
+  GET /pov/stop        -> stop the POV PiP pull (close port 53003, free bandwidth)
+  Stop: Ctrl+C
+"""
+
+import argparse, csv, io, json, os, re, shutil, signal, subprocess, sys, threading, time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, quote
+from urllib.request import Request, urlopen
+
+# ---------- Configuration ----------
+# Pipeline: yt-dlp resolves the live HLS URL (passes YouTube's bot-check via
+# cookies + JS-challenge solving) -> streamlink serves that direct URL to OBS
+# (no YouTube plugin involved, so no bot-check on the serving side).
+YTDLP_FORMAT = "b[height<=1080]/b"   # prefer <=1080p, auto-fall back to lower
+YTDLP_FORMAT_POV = "b[height<=720]/b"  # driver-POV is shown small (PiP) -> cap at 720p
+STREAMLINK_SERVE = ["--ringbuffer-size", "64M", "--hls-live-edge", "4"]
+RESOLVE_RETRY = 15  # seconds between yt-dlp resolve attempts while a stint isn't live
+RETRY_SLEEP = 10    # seconds after a stream ends / manifest expires before re-resolving
+# Sheet ID is NOT hardcoded — it comes from IRO_SHEET_ID (env or a gitignored
+# .env at the repo/package root). See .env.example. Override per-run with --sheet-id.
+DEFAULT_SHEET_TAB = "Schedule"
+DEFAULT_POV_TAB = "POV"
+
+SCHEDULE_TEMPLATE = (
+    "# IRO relay offline fallback schedule — used ONLY if the Google Sheet AND the\n"
+    "# last-good cache are both unavailable. One entry per stint, in order:\n"
+    "#   a YouTube channel ID (UC...) OR a full watch URL (https://www.youtube.com/watch?v=...).\n"
+    "# Lines starting with # are ignored. The real schedule lives in the Sheet tab 'Schedule'.\n"
+    "# Example:\n"
+    "#   https://www.youtube.com/watch?v=VIDEOID_STINT_1\n"
+    "#   UCxxxxxxxxxxxxxxxxxxxxxx\n"
+)
+
+CHANNEL_RE = re.compile(r"^UC[A-Za-z0-9_\-]{20,}$")
+
+def default_runtime_dir(here):
+    """Where runtime data lives when --runtime-dir is not given.
+    Repo layout (src/relay/) -> <repo>/runtime ; distributed package (relay/) -> next to the script.
+    Keeps get-cookies.py and the relay consistent without an explicit flag."""
+    if os.path.basename(here) == "relay" and os.path.basename(os.path.dirname(here)) == "src":
+        return os.path.join(os.path.dirname(os.path.dirname(here)), "runtime")
+    return here
+
+
+def load_dotenv(start):
+    """Load KEY=VALUE pairs from a .env at the script dir or the project root
+    into os.environ. Real environment variables win (setdefault). Returns the
+    path loaded, or None. Tiny on purpose — no python-dotenv dependency.
+
+    SECURITY: bounded to the project. The project root is the nearest ancestor
+    holding a .git/.env.example marker; we only ever read a .env from `start`
+    or from that root, never from an unrelated parent (e.g. a stray
+    ~/Downloads/.env that could inject HTTPS_PROXY/DYLD_* into the
+    cookie-bearing yt-dlp/streamlink subprocesses)."""
+    candidates, d = [start], start
+    for _ in range(4):
+        if any(os.path.exists(os.path.join(d, m)) for m in (".git", ".env.example")):
+            candidates.append(d)
+            break
+        nd = os.path.dirname(d)
+        if nd == d:
+            break
+        d = nd
+    for c in candidates:
+        p = os.path.join(c, ".env")
+        if os.path.isfile(p):
+            for line in open(p, encoding="utf-8"):
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+            return p
+    return None
+
+
+def is_channel(v: str) -> bool:
+    v = v.strip()
+    return bool(CHANNEL_RE.match(v)) or v.startswith("http://") or v.startswith("https://")
+
+def channel_url(entry: str) -> str:
+    entry = entry.strip()
+    if entry.startswith("http://") or entry.startswith("https://"):
+        return entry
+    return f"https://www.youtube.com/channel/{entry}/live"
+
+
+def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
+    """Resolve a YouTube live URL to a direct HLS manifest URL via yt-dlp
+    (handles cookies + the bot-check). Returns the URL or None (not live / failed)."""
+    cmd = ["yt-dlp", "-g", "-f", fmt, "--no-warnings", "--no-playlist", url]
+    if cookies:
+        cmd += ["--cookies", cookies]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+    except FileNotFoundError:
+        # Startup checks for yt-dlp; reaching here means it vanished mid-run.
+        try:
+            with open(logfile, "a", encoding="utf-8") as log:
+                log.write("   yt-dlp not found on PATH\n")
+        except Exception:
+            pass
+        return None
+    except subprocess.TimeoutExpired:
+        return None
+    out = [l for l in (r.stdout or "").splitlines() if l.startswith("http")]
+    if out:
+        return out[0]
+    try:
+        with open(logfile, "a", encoding="utf-8") as log:
+            err = (r.stderr or "").strip().splitlines()
+            log.write(f"   yt-dlp could not resolve {url} ({err[-1] if err else 'not live?'})\n")
+    except Exception:
+        pass
+    return None
+
+
+class ScheduleSource:
+    """Reads the schedule from the Google Sheet (CSV) with last-good + fallback."""
+    def __init__(self, csv_url, cache_path, local_fallback):
+        self.csv_url = csv_url
+        self.cache_path = cache_path
+        self.local_fallback = local_fallback
+        self.lock = threading.Lock()
+        self.items = []
+        self.last_ok = None
+        self.last_error = None
+
+    @staticmethod
+    def _parse_csv(text):
+        rows = list(csv.reader(io.StringIO(text)))
+        if not rows:
+            return None
+        ncols = max((len(r) for r in rows), default=0)
+        best_col, best_cnt = None, 0
+        for c in range(ncols):
+            cnt = sum(1 for r in rows if len(r) > c and is_channel(r[c]))
+            if cnt > best_cnt:
+                best_cnt, best_col = cnt, c
+        if best_col is None or best_cnt == 0:
+            return None
+        items = [r[best_col].strip() for r in rows
+                 if len(r) > best_col and is_channel(r[best_col])]
+        return items or None
+
+    def fetch(self, timeout=15):
+        if not self.csv_url:
+            return None
+        try:
+            req = Request(self.csv_url, headers={"User-Agent": "iro-feeds/1.0"})
+            with urlopen(req, timeout=timeout) as resp:
+                text = resp.read().decode("utf-8", "replace")
+            items = self._parse_csv(text)
+            if not items:
+                self.last_error = ("Sheet reachable, but no channel IDs found "
+                                   "(correct tab name? a column with UC… IDs / watch URLs? sharing?)")
+                return None
+            return items
+        except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
+            return None
+
+    def refresh(self, timeout=15):
+        items = self.fetch(timeout)
+        if items:
+            with self.lock:
+                self.items = items
+                self.last_ok = time.time()
+                self.last_error = None
+            try:
+                with open(self.cache_path, "w", encoding="utf-8") as fh:
+                    fh.write("\n".join(items) + "\n")
+            except Exception:
+                pass
+            return True
+        return False
+
+    def load_initial(self, template=None):
+        if self.refresh():
+            print(f"Schedule loaded from Google Sheet: {len(self.items)} stints.")
+            return
+        # Sheet unreachable -> cache, then a user-filled local fallback
+        for path, label in ((self.cache_path, "cache"), (self.local_fallback, "local schedule.txt")):
+            if path and os.path.exists(path):
+                items = [l.split("#", 1)[0].strip() for l in open(path, encoding="utf-8")]
+                items = [i for i in items if i]
+                if items:
+                    with self.lock:
+                        self.items = items
+                    print(f"WARN: sheet unreachable ({self.last_error}). "
+                          f"Using {label}: {len(items)} stints.")
+                    return
+        # Nothing available: drop a commented template (if missing) and explain.
+        if template and self.local_fallback and not os.path.exists(self.local_fallback):
+            try:
+                os.makedirs(os.path.dirname(self.local_fallback), exist_ok=True)
+                with open(self.local_fallback, "w", encoding="utf-8") as fh:
+                    fh.write(template)
+                print(f"Wrote a fallback template to {self.local_fallback}")
+            except OSError:
+                pass
+        sys.exit(f"ERROR: no schedule available. Sheet error: {self.last_error}\n"
+                 f"Check tab '{DEFAULT_SHEET_TAB}', sharing (Anyone with the link: Viewer), "
+                 f"or fill {self.local_fallback}.")
+
+    def get(self):
+        with self.lock:
+            return list(self.items)
+
+    def health(self):
+        with self.lock:
+            n = len(self.items)
+        return {"count": n,
+                "last_ok_age_s": (round(time.time() - self.last_ok, 1) if self.last_ok else None),
+                "last_error": self.last_error}
+
+
+class Feed:
+    def __init__(self, name, port, idx, provider, logdir, cookies=None, fmt=YTDLP_FORMAT):
+        self.name = name
+        self.port = port
+        self.idx = idx
+        self.provider = provider          # callable -> current schedule list
+        self.cookies = cookies            # path to cookies.txt (bot-check protection) or None
+        self.fmt = fmt                    # yt-dlp format string (POV uses a lower cap)
+        self.paused = False               # when True the feed idles (POV off / stopped)
+        self.lock = threading.Lock()
+        self.proc = None
+        self.stop = False
+        self.advance = threading.Event()
+        self.logfile = os.path.join(logdir, f"feed_{name}.log")
+
+    def current_channel(self):
+        if self.paused:
+            return None, self.idx
+        sched = self.provider()
+        with self.lock:
+            if not sched:
+                return None, self.idx
+            i = min(self.idx, len(sched) - 1)
+            return sched[i], i
+
+    def is_serving(self):
+        p = self.proc
+        return bool(p and p.poll() is None)
+
+    def _kill_proc(self):
+        p = self.proc
+        if p and p.poll() is None:
+            try:
+                p.terminate()
+                try: p.wait(timeout=5)
+                except subprocess.TimeoutExpired: p.kill()
+            except Exception:
+                pass
+
+    def set_index(self, new_idx):
+        sched = self.provider()
+        hi = max(0, len(sched) - 1)
+        new_idx = max(0, min(new_idx, hi))
+        with self.lock:
+            if new_idx == self.idx:
+                return False
+            self.idx = new_idx
+        self.advance.set(); self._kill_proc()
+        return True
+
+    def reload(self):
+        """Reconnect to the (possibly changed) channel at the CURRENT index."""
+        self.advance.set(); self._kill_proc()
+        return True
+
+    def run(self):
+        while not self.stop:
+            ch, i = self.current_channel()
+            if not ch:
+                time.sleep(3); continue
+            url = channel_url(ch)
+            with open(self.logfile, "a", encoding="utf-8") as log:
+                log.write(f"\n>> [{self.name}:{self.port}] stint {i+1} -> resolving {url}\n"); log.flush()
+            # 1) resolve the live HLS URL via yt-dlp (cookies + bot-check handling)
+            hls = resolve_hls(url, self.cookies, self.logfile, self.fmt)
+            if self.stop: break
+            if self.advance.is_set():
+                self.advance.clear(); continue
+            if not hls:
+                time.sleep(RESOLVE_RETRY)   # not live yet / could not resolve -> poll again
+                continue
+            # 2) serve the direct HLS URL via streamlink (no YouTube plugin -> no bot-check)
+            with open(self.logfile, "a", encoding="utf-8") as log:
+                log.write(f">> [{self.name}:{self.port}] serving stint {i+1}\n"); log.flush()
+                cmd = ["streamlink", hls, "best", "--player-external-http",
+                       "--player-external-http-port", str(self.port)] + STREAMLINK_SERVE
+                try:
+                    self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
+                    self.proc.wait()
+                except FileNotFoundError:
+                    # Startup checks for streamlink; reaching here means it vanished mid-run.
+                    log.write(f">> [{self.name}] streamlink not found on PATH — retrying\n"); log.flush()
+                    self.proc = None
+                    time.sleep(RETRY_SLEEP); continue
+            if self.stop:
+                break
+            if self.advance.is_set():
+                self.advance.clear(); continue
+            time.sleep(RETRY_SLEEP)   # stream ended / manifest expired -> re-resolve
+
+    def shutdown(self):
+        self.stop = True; self._kill_proc()
+
+
+class Relay:
+    def __init__(self, source, ports, logdir, cookies=None, pov_source=None, pov_port=None):
+        self.source = source
+        self.cookies = cookies
+        n = len(source.get())
+        self.A = Feed("A", ports[0], 0, source.get, logdir, cookies)
+        self.B = Feed("B", ports[1], 1 if n > 1 else 0, source.get, logdir, cookies)
+        self.feeds = {"A": self.A, "B": self.B}
+        # POV is a THIRD, independent feed — not part of the A/B index. Starts
+        # paused (off) until the Director calls /pov/reload.
+        self.pov_source = pov_source
+        self.pov = None
+        if pov_source is not None and pov_port is not None:
+            self.pov = Feed("POV", pov_port, 0, pov_source.get, logdir, cookies,
+                            fmt=YTDLP_FORMAT_POV)
+            self.pov.paused = True
+
+    def start(self):
+        for f in self.feeds.values():
+            threading.Thread(target=f.run, daemon=True).start()
+        if self.pov:
+            threading.Thread(target=self.pov.run, daemon=True).start()
+
+    def status(self):
+        sched = self.source.get()
+        out = {"schedule_len": len(sched), "cookies": bool(self.cookies),
+               "source": self.source.health(), "feeds": {}}
+        for k, f in self.feeds.items():
+            ch, i = f.current_channel()
+            out["feeds"][k] = {"port": f.port, "index": i, "stint": i + 1, "channel": ch}
+        if self.pov:
+            raw = (self.pov_source.get()[:1] or [None])[0] if self.pov_source else None
+            if self.pov.paused:         state = "stopped"
+            elif self.pov.is_serving(): state = "serving"
+            elif raw:                   state = "connecting"
+            else:                       state = "idle"
+            out["pov"] = {"port": self.pov.port, "url": raw, "state": state,
+                          "source": self.pov_source.health() if self.pov_source else None}
+        return out
+
+    def next_auto(self):
+        self.source.refresh(timeout=6)              # fresh sheet data at handover (bounded wait)
+        target = "A" if self.A.idx <= self.B.idx else "B"
+        return self.advance(target, +2)
+
+    def advance(self, which, delta):
+        f = self.feeds.get(which.upper())
+        if not f: return None
+        changed = f.set_index(f.idx + delta)
+        return {"changed": changed, "feed": which.upper(), **self.status()}
+
+    def set_index(self, which, idx):
+        f = self.feeds.get(which.upper())
+        if not f: return None
+        f.set_index(idx); return self.status()
+
+    def reload(self, which=None):
+        self.source.refresh(timeout=6)
+        targets = [which.upper()] if which else list(self.feeds)
+        for t in targets:
+            if t in self.feeds: self.feeds[t].reload()
+        return {"reloaded": targets, **self.status()}
+
+    def pov_reload(self):
+        if not self.pov:
+            return {"error": "pov disabled"}
+        if self.pov_source:
+            self.pov_source.refresh()   # re-read the POV cell on demand
+        self.pov.paused = False
+        self.pov.reload()
+        return self.status()
+
+    def pov_stop(self):
+        if not self.pov:
+            return {"error": "pov disabled"}
+        self.pov.paused = True
+        self.pov.reload()               # advance.set() + kill the serving proc -> port closes
+        return self.status()
+
+    def shutdown(self):
+        for f in self.feeds.values(): f.shutdown()
+        if self.pov: self.pov.shutdown()
+
+
+def make_handler(relay, panel_path=None):
+    class H(BaseHTTPRequestHandler):
+        def _send(self, obj, code=200):
+            body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers(); self.wfile.write(body)
+        def _send_file(self, path, ctype):
+            try:
+                with open(path, "rb") as fh: body = fh.read()
+            except OSError:
+                return self._send({"error": "panel not found", "looked_for": path}, 404)
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers(); self.wfile.write(body)
+        def log_message(self, *a): pass
+        def do_GET(self):
+            p = [x for x in urlparse(self.path).path.split("/") if x]
+            try:
+                if not p or p == ["status"]:          return self._send(relay.status())
+                if p == ["panel"]:
+                    if not panel_path: return self._send({"error":"panel disabled"}, 404)
+                    return self._send_file(panel_path, "text/html; charset=utf-8")
+                if p == ["next"]:                       return self._send(relay.next_auto())
+                if p == ["reload"]:                     return self._send(relay.reload())
+                if p == ["pov", "reload"]:              return self._send(relay.pov_reload())
+                if p == ["pov", "stop"]:                return self._send(relay.pov_stop())
+                if len(p)==2 and p[0]=="next":          return self._ok(relay.advance(p[1], +2))
+                if len(p)==2 and p[0]=="prev":          return self._ok(relay.advance(p[1], -2))
+                if len(p)==2 and p[0]=="reload":        return self._ok(relay.reload(p[1]))
+                if len(p)==3 and p[0]=="set":           return self._ok(relay.set_index(p[1], int(p[2])))
+                self._send({"error":"unknown","path":self.path}, 404)
+            except Exception as e:
+                self._send({"error": str(e)}, 500)
+        def _ok(self, r):
+            self._send(r) if r else self._send({"error":"feed? (A/B)"}, 404)
+    return H
+
+
+def poller(source, interval, stop_evt):
+    while not stop_evt.wait(interval):
+        source.refresh()
+
+
+def export_cookies(browser, out):
+    """Export YouTube cookies from a logged-in browser to a Netscape cookies.txt
+    using yt-dlp. Best-effort: returns True on success."""
+    url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+    try:
+        subprocess.run(["yt-dlp", "--cookies-from-browser", browser, "--cookies", out,
+                        "--skip-download", "--no-warnings", url],
+                       timeout=90, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except FileNotFoundError:
+        print("WARN: yt-dlp not found — cannot auto-export cookies."); return False
+    except subprocess.TimeoutExpired:
+        print("WARN: cookie export timed out (Keychain prompt not approved?)."); return False
+    ok = os.path.exists(out)
+    if ok:
+        try: os.chmod(out, 0o600)   # live YouTube session — owner-only
+        except OSError: pass
+    print(f"Cookie export from '{browser}': {'OK -> ' + out if ok else 'FAILED (logged into YouTube there?)'}")
+    return ok
+
+
+def main():
+    load_dotenv(os.path.dirname(os.path.abspath(__file__)))  # before defaults are read
+    ap = argparse.ArgumentParser(description="IRO 2-feed relay with Google-Sheet schedule")
+    ap.add_argument("--sheet-id", default=os.environ.get("IRO_SHEET_ID"),
+                    help="Google Sheet ID for the schedule/POV tabs. Default: env "
+                         "IRO_SHEET_ID (or a .env at the repo/package root). See .env.example.")
+    ap.add_argument("--sheet-tab", default=DEFAULT_SHEET_TAB)
+    ap.add_argument("--sheet-csv-url", default=None,
+                    help="Full CSV URL (overrides sheet-id/tab; e.g. publish-to-web)")
+    ap.add_argument("--pov-tab", default=DEFAULT_POV_TAB,
+                    help="Google-Sheet tab holding the ad-hoc driver-POV URL (cell A2).")
+    ap.add_argument("--pov-port", type=int, default=53003,
+                    help="Local port for the driver-POV PiP feed (OBS 'Feed POV').")
+    ap.add_argument("--no-pov", action="store_true",
+                    help="Disable the driver-POV PiP feed entirely.")
+    ap.add_argument("--poll", type=int, default=30, help="Sheet poll interval (seconds)")
+    ap.add_argument("--schedule", default="schedule.txt", help="Local offline fallback")
+    ap.add_argument("--http-port", type=int, default=8088)
+    ap.add_argument("--runtime-dir", default=None,
+                    help="Directory for runtime data (cookies.txt, logs/, *.cache.txt). "
+                         "Default: next to this script (keeps the distributed package "
+                         "self-locating). The repo passes its runtime/ folder.")
+    ap.add_argument("--bind", default="127.0.0.1",
+                    help="Address the control/panel HTTP server binds to. Default "
+                         "127.0.0.1 (local only — fine when Companion runs on this "
+                         "machine). Use 0.0.0.0 to let remote directors open "
+                         "http://<tailscale-ip>:<http-port>/panel.")
+    ap.add_argument("--no-panel", action="store_true",
+                    help="Do not serve the director panel at /panel.")
+    ap.add_argument("--ports", default="53001,53002")
+    ap.add_argument("--logdir", default="logs")
+    ap.add_argument("--cookies", default=None,
+                    help="Path to cookies.txt (Netscape format) for YouTube login — "
+                         "bypasses the 'Sign in to confirm you're not a bot' check. "
+                         "Default: cookies.txt next to this script, if present.")
+    ap.add_argument("--cookies-from-browser", default=None,
+                    help="Auto-export YouTube cookies from this browser on startup via "
+                         "yt-dlp (e.g. firefox, chrome, safari, edge, brave) and use them. "
+                         "Writes cookies.txt next to this script.")
+    args = ap.parse_args()
+    try: sys.stdout.reconfigure(line_buffering=True)   # show logs immediately
+    except Exception: pass
+
+    if not args.sheet_csv_url and not args.sheet_id:
+        sys.exit("ERROR: no Google Sheet configured. Set IRO_SHEET_ID in a .env file "
+                 "at the repo/package root (see .env.example) or the environment, "
+                 "or pass --sheet-id / --sheet-csv-url.")
+
+    for _tool in ("yt-dlp", "streamlink"):
+        if not shutil.which(_tool):
+            sys.exit(f"ERROR: '{_tool}' not found on PATH "
+                     f"(brew install {_tool} / pip install -U {_tool}).")
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    runtime = os.path.abspath(args.runtime_dir) if args.runtime_dir else default_runtime_dir(here)
+    os.makedirs(runtime, exist_ok=True)
+    try: os.chmod(runtime, 0o700)   # holds the cookie jar / caches — keep it private
+    except OSError: pass
+    logdir = args.logdir if os.path.isabs(args.logdir) else os.path.join(runtime, args.logdir)
+    os.makedirs(logdir, exist_ok=True)
+    local = args.schedule if os.path.isabs(args.schedule) else os.path.join(runtime, args.schedule)
+    cache = os.path.join(runtime, "schedule.cache.txt")
+    ports = [int(x) for x in args.ports.split(",")]
+
+    csv_url = args.sheet_csv_url or (
+        f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
+        f"/gviz/tq?tqx=out:csv&sheet={quote(args.sheet_tab)}")
+
+    # POV source: own sheet tab (cell A2). Derivable only from sheet-id/tab,
+    # so a custom --sheet-csv-url disables POV (no tab to point at).
+    pov_source = None
+    if not args.no_pov and not args.sheet_csv_url:
+        pov_csv_url = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
+                       f"/gviz/tq?tqx=out:csv&sheet={quote(args.pov_tab)}")
+        pov_cache = os.path.join(runtime, "pov.cache.txt")
+        pov_source = ScheduleSource(pov_csv_url, pov_cache, None)
+        pov_source.refresh()   # non-fatal: empty cell / unreachable = POV simply off
+
+    # Optionally auto-export cookies from a logged-in browser first (yt-dlp)
+    if args.cookies_from_browser:
+        export_cookies(args.cookies_from_browser, os.path.join(runtime, "cookies.txt"))
+
+    # Cookies: explicit via --cookies, otherwise auto-detect cookies.txt in the runtime dir
+    cookies = args.cookies
+    if cookies is None:
+        auto = os.path.join(runtime, "cookies.txt")
+        cookies = auto if os.path.exists(auto) else None
+    elif not os.path.isabs(cookies):
+        cookies = os.path.join(runtime, cookies)
+    if cookies and not os.path.exists(cookies):
+        sys.exit(f"ERROR: cookies file not found: {cookies}")
+    if cookies:
+        try: os.chmod(cookies, 0o600)   # contains a live YouTube session — owner-only
+        except OSError: pass
+
+    # Locate the director panel (shipped in the package root, one level up from relay/)
+    panel_path = None
+    if not args.no_panel:
+        for cand in (os.path.join(here, "director-panel.html"),
+                     os.path.join(here, "..", "director-panel.html"),
+                     os.path.join(here, "..", "director", "director-panel.html")):
+            if os.path.exists(cand):
+                panel_path = os.path.abspath(cand); break
+
+    source = ScheduleSource(csv_url, cache, local)
+    source.load_initial(SCHEDULE_TEMPLATE)
+    if len(source.get()) < 2:
+        print("WARN: schedule has fewer than 2 stints — Feed A and Feed B will serve the "
+              "SAME stream (no off-air feed to hand over to).")
+
+    relay = Relay(source, ports, logdir, cookies,
+                  pov_source=pov_source, pov_port=args.pov_port)
+    relay.start()
+
+    stop_evt = threading.Event()
+    threading.Thread(target=poller, args=(source, args.poll, stop_evt), daemon=True).start()
+
+    httpd = ThreadingHTTPServer((args.bind, args.http_port), make_handler(relay, panel_path))
+
+    def shutdown(*_):
+        # IMPORTANT: do NOT call httpd.shutdown() from the thread running
+        # serve_forever() (deadlock). Stop the feeds and exit hard — the OS
+        # frees the socket; the streamlink subprocesses are cleanly terminated.
+        print("\nStopping feeds…")
+        stop_evt.set(); relay.shutdown(); os._exit(0)
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
+
+    print(f"IRO relay running.  Schedule source: {'CSV URL' if args.sheet_csv_url else f'sheet tab “{args.sheet_tab}”'}")
+    print(f"  Feed A -> http://127.0.0.1:{ports[0]}   Feed B -> http://127.0.0.1:{ports[1]}")
+    print(f"  Controls: http://127.0.0.1:{args.http_port}/status | /next | /reload")
+    if relay.pov:
+        print(f"  Driver-POV PiP -> http://127.0.0.1:{args.pov_port}  "
+              f"(sheet tab '{args.pov_tab}' A2; control /pov/reload | /pov/stop)")
+    if panel_path:
+        host = "127.0.0.1" if args.bind in ("127.0.0.1", "localhost") else "<this-machine-ip>"
+        print(f"  Director panel: http://{host}:{args.http_port}/panel"
+              + ("" if args.bind != "127.0.0.1" else "  (local only — use --bind 0.0.0.0 for remote directors)"))
+    print(f"  Cookies (bot-check protection): {'ON — ' + cookies if cookies else 'off (no cookies.txt)'}")
+    print(f"  Sheet poll every {args.poll}s.  Ctrl+C to stop.")
+    httpd.serve_forever()
+
+if __name__ == "__main__":
+    main()
