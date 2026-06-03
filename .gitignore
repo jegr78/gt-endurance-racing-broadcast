@@ -10,3 +10,4 @@ __pycache__/
 cookies.txt
 *.cache.txt
 *.import.json
+.playwright-mcp/

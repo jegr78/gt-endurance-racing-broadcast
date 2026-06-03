@@ -34,6 +34,8 @@ connection turns green.
 | 2 — feeds &amp; POV | `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Split Left`, `Split Right`, `POV Reload`, `POV Stop` |
 | 3 — graphics | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `HUD Stint Toggle`, `HUD Split Toggle` |
 
+![Companion page 1 — show control: combos, scene switches + relay control, feeds &amp; POV, graphics](images/companion-page1-show-control.png)
+
 **Page 2 — audio**
 
 | Row | Buttons |
@@ -41,6 +43,11 @@ connection turns green.
 | 1 — mute | `MUTE A`, `MUTE B`, `MUTE POV`, `MUTE DISC` |
 | 2 — volume A/B | `A DOWN`/`A UP`, `B DOWN`/`B UP` |
 | 3 — volume POV/Discord | `POV DOWN`/`POV UP`, `DISC DOWN`/`DISC UP` |
+
+![Companion page 2 — audio: mute A/B/POV/Discord and per-source volume up/down; the left column (UP / PAGE 2 / DOWN) navigates between the two pages](images/companion-page2-audio.png)
+
+> The left column on each page (`UP` / `DOWN`) flips between **Page 1** (show control)
+> and **Page 2** (audio).
 
 The relay buttons (`Feeds Next`, `Feeds Reload`, `Feeds Status`, `POV Reload`,
 `POV Stop`) use the **Generic HTTP Requests** connection — see

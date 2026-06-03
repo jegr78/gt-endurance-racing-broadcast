@@ -20,7 +20,8 @@ GitHub web UI would be overwritten on the next sync.
 
 - derives the wiki remote (`<origin>.wiki.git`) from the repo's `origin`,
 - clones it into `runtime/wiki/` (gitignored) or pulls if already there,
-- mirrors `src/docs/wiki/*.md` into the clone (adds/updates/deletes),
+- mirrors `src/docs/wiki/*.md` **and `src/docs/wiki/images/`** (screenshots and other
+  binary assets) into the clone (adds/updates/deletes),
 - commits and pushes.
 
 ## First-time bootstrap (once per repo)
@@ -39,3 +40,5 @@ web UI**. Until then `sync-wiki.py` can't clone or push. One-time step:
 - Link between pages by title with no extension: `[Relay Mode](Relay-Mode)`. A space in a
   page title maps to a `-` in the file name and link (`OBS Setup` → `OBS-Setup.md`).
 - Diagrams are **Mermaid** in ```` ```mermaid ```` fences — GitHub renders them natively.
+- Screenshots / binary assets live in `src/docs/wiki/images/` and are referenced
+  relatively: `![alt](images/your-file.png)`.

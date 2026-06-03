@@ -72,28 +72,45 @@ def ensure_clone(remote):
         raise
 
 
+def _rel_files(base):
+    """Files to mirror, as paths relative to `base`: top-level *.md plus everything
+    under images/ (the wiki's binary assets, e.g. screenshots)."""
+    files = []
+    if os.path.isdir(base):
+        for f in os.listdir(base):
+            if f.endswith(".md") and os.path.isfile(os.path.join(base, f)):
+                files.append(f)
+        img = os.path.join(base, "images")
+        if os.path.isdir(img):
+            for f in os.listdir(img):
+                if os.path.isfile(os.path.join(img, f)):
+                    files.append(os.path.join("images", f))
+    return files
+
+
 def mirror_pages():
-    """Make the clone's top-level *.md match src/docs/wiki exactly. Returns (added,
-    updated, removed) basename lists."""
-    src = {f for f in os.listdir(WIKI_SRC) if f.endswith(".md")}
-    dst = {f for f in os.listdir(CLONE)
-           if f.endswith(".md") and os.path.isfile(os.path.join(CLONE, f))}
+    """Make the clone's pages + images/ match src/docs/wiki exactly. Returns (added,
+    updated, removed) relative-path lists. Bytes are compared, so binary assets
+    (PNG/JPG/SVG) sync correctly alongside the Markdown."""
+    src = _rel_files(WIKI_SRC)
+    dst = set(_rel_files(CLONE))
     added, updated, removed = [], [], []
-    for f in sorted(src):
-        s, d = os.path.join(WIKI_SRC, f), os.path.join(CLONE, f)
-        new = open(s, encoding="utf-8").read()
-        if f not in dst:
-            added.append(f)
-        elif open(d, encoding="utf-8").read() != new:
-            updated.append(f)
+    for rel in src:
+        s, d = os.path.join(WIKI_SRC, rel), os.path.join(CLONE, rel)
+        new = open(s, "rb").read()
+        if rel not in dst:
+            added.append(rel)
+        elif open(d, "rb").read() != new:
+            updated.append(rel)
         else:
             continue
-        with open(d, "w", encoding="utf-8") as fh:
+        os.makedirs(os.path.dirname(d), exist_ok=True)
+        with open(d, "wb") as fh:
             fh.write(new)
-    for f in sorted(dst - src):
-        os.remove(os.path.join(CLONE, f))
-        removed.append(f)
-    return added, updated, removed
+    for rel in sorted(set(dst) - set(src)):
+        os.remove(os.path.join(CLONE, rel))
+        removed.append(rel)
+    return sorted(added), sorted(updated), sorted(removed)
 
 
 def main():
