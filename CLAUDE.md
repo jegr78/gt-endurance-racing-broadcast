@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A self-contained broadcast-production toolkit for the "IRO Endurance" sim-racing
-championship, run on a producer's Mac. The core is a **relay** that pulls one
+championship, run on a producer's machine (Windows or macOS). The core is a **relay** that pulls one
 commentator YouTube stream per race stint and serves it to OBS; around it sit an
 OBS scene collection, a Stream Deck (Companion) button config, and operator docs.
 Pure Python + stdlib (no framework, no package manager); external runtime deps are
@@ -46,7 +46,8 @@ python3 src/relay/get-cookies.py chrome --runtime-dir runtime
 # Pre-flight hardware/tool check
 python3 src/scripts/preflight.py
 
-# Pre-event system check from the package layout
+# Publish the GitHub wiki from src/docs/wiki/ (maintainer; --dry-run to preview)
+python3 tools/sync-wiki.py
 ```
 
 After changing the relay, run `python3 tests/test_pov.py`; after any change that
@@ -115,6 +116,12 @@ fallback for public streams; the real unlisted-stream flow is the relay.
 - `README.md` — operator quickstart (the commands above).
 - `src/docs/` — shipped operator material (`README_SETUP.md`,
   `IRO_Broadcast_Setup_Guide.md`, printable `IRO_cheat_sheets.html`).
+- `src/docs/wiki/` — canonical source for the **GitHub wiki** (split-up onboarding
+  pages + Mermaid architecture diagrams). The wiki is generated, never hand-edited on
+  GitHub: edit these pages, then `python3 tools/sync-wiki.py` mirrors them to the
+  `<origin>.wiki.git` repo (clones into `runtime/wiki/`, commits, pushes). First push
+  per repo needs a one-time bootstrap — create+save any page via the GitHub Wiki UI so
+  GitHub creates the wiki repo. See `src/docs/wiki/Maintaining-this-Wiki.md`.
 - `docs/superpowers/{specs,plans}/` — design specs and implementation plans for
   features (POV PiP, repo structure, preflight). Read the matching spec before
   extending one of those features.

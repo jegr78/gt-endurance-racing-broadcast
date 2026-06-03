@@ -3,6 +3,10 @@
 Single-source repo for the IRO Endurance broadcast producer station.
 **Edit only under `src/`.** `dist/` and `runtime/` are generated and gitignored.
 
+📖 **Operator docs & onboarding:** see the [project wiki](https://github.com/jegr78/IRO_Broadcast_Setup/wiki)
+(architecture diagrams, setup, runbook, troubleshooting). Its source lives in
+`src/docs/wiki/` and is published with `python3 tools/sync-wiki.py`.
+
 ## Layout
 - `src/` — source of truth: `relay/`, `obs/`, `companion/`, `director/`, `assets/`, `scripts/`, `docs/`, `setup-assets.py`
 - `.env` — machine-local secrets/config (gitignored; copy from `.env.example`)

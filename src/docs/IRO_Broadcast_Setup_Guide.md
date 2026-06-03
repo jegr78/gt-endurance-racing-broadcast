@@ -295,7 +295,15 @@ This prints a direct HLS URL. Put it in that feed's OBS Media Source instead of 
 
 **Driver/lobby change (every 2 h):** The incoming streamer goes live on their channel; their Streamlink server connects automatically. Director switches to **Splitscreen** for the ~10-minute handover, then to **Stint** on the new feed. Nothing to type.
 
-**Interviews (post-race):** Guests join the Discord voice channel; Director switches to **Interview**, shows the lower-third, manages mutes.
+**Interviews (post-race):** Interviews run at the **end** over Discord voice. The
+**producer of the last/only part must join the Discord "Interviews" voice channel
+themselves, before race end** — the OBS capture taps the producer's *local* Discord app,
+so the Director cannot join remotely. (8 h event = 1 part = always the last part → that
+producer always joins; on 12 h / 24 h only the final-part producer joins, earlier
+producers skip Discord entirely.) The producer stays muted in OBS until the cut, so
+joining early is harmless; keep Discord **windowed, not fullscreen**. Guests join the same
+voice channel; the Director confirms the producer is joined, switches to **Interview**,
+shows the lower-third, and manages mutes.
 
 **End:** Producer clicks **Stop Streaming**; close the Streamlink windows.
 
