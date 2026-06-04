@@ -1,0 +1,14 @@
+version: 2
+# Only the GitHub Actions ecosystem applies here: the project is pure Python
+# stdlib with no requirements.txt / pyproject / package.json to track. This keeps
+# the action versions pinned in .github/workflows/ patched against known issues.
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]  # one grouped PR per week instead of one per action
