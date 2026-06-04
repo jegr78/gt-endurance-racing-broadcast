@@ -870,6 +870,252 @@
        }
       },
       "localVariables": []
+     },
+     "5": {
+      "type": "button",
+      "style": {
+       "text": "INTRO",
+       "textExpression": false,
+       "size": "18",
+       "png64": null,
+       "alignment": "center:center",
+       "pngalignment": "center:center",
+       "color": 16777215,
+       "bgcolor": 0,
+       "show_topbar": "default"
+      },
+      "options": {
+       "stepProgression": "auto",
+       "stepExpression": "",
+       "rotaryActions": false
+      },
+      "feedbacks": [
+       {
+        "id": "iro-intro-fb",
+        "definitionId": "sceneProgram",
+        "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+        "options": {
+         "scene": {
+          "value": "Intro",
+          "isExpression": false
+         }
+        },
+        "type": "feedback",
+        "style": {
+         "color": 16777215,
+         "bgcolor": 13107200
+        },
+        "isInverted": {
+         "value": false,
+         "isExpression": false
+        },
+        "upgradeIndex": 8
+       }
+      ],
+      "steps": {
+       "0": {
+        "action_sets": {
+         "down": [
+          {
+           "id": "iro-intro-set",
+           "definitionId": "set_scene",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "scene": {
+             "value": "Intro",
+             "isExpression": false
+            },
+            "customSceneName": {
+             "value": "",
+             "isExpression": false
+            }
+           },
+           "type": "action",
+           "upgradeIndex": 8
+          },
+          {
+           "id": "iro-intro-a0",
+           "definitionId": "set_source_mute",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "source": {
+             "value": "Discord Audio Capture",
+             "isExpression": false
+            },
+            "mute": {
+             "value": "true",
+             "isExpression": false
+            }
+           },
+           "type": "action",
+           "upgradeIndex": 8
+          },
+          {
+           "id": "iro-intro-a1",
+           "definitionId": "set_source_mute",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "source": {
+             "value": "Feed A",
+             "isExpression": false
+            },
+            "mute": {
+             "value": "true",
+             "isExpression": false
+            }
+           },
+           "type": "action",
+           "upgradeIndex": 8
+          },
+          {
+           "id": "iro-intro-a2",
+           "definitionId": "set_source_mute",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "source": {
+             "value": "Feed B",
+             "isExpression": false
+            },
+            "mute": {
+             "value": "true",
+             "isExpression": false
+            }
+           },
+           "type": "action",
+           "upgradeIndex": 8
+          }
+         ],
+         "up": []
+        },
+        "options": {
+         "runWhileHeld": []
+        }
+       }
+      },
+      "localVariables": []
+     },
+     "6": {
+      "type": "button",
+      "style": {
+       "text": "OUTRO",
+       "textExpression": false,
+       "size": "18",
+       "png64": null,
+       "alignment": "center:center",
+       "pngalignment": "center:center",
+       "color": 16777215,
+       "bgcolor": 0,
+       "show_topbar": "default"
+      },
+      "options": {
+       "stepProgression": "auto",
+       "stepExpression": "",
+       "rotaryActions": false
+      },
+      "feedbacks": [
+       {
+        "id": "iro-outro-fb",
+        "definitionId": "sceneProgram",
+        "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+        "options": {
+         "scene": {
+          "value": "Outro",
+          "isExpression": false
+         }
+        },
+        "type": "feedback",
+        "style": {
+         "color": 16777215,
+         "bgcolor": 13107200
+        },
+        "isInverted": {
+         "value": false,
+         "isExpression": false
+        },
+        "upgradeIndex": 8
+       }
+      ],
+      "steps": {
+       "0": {
+        "action_sets": {
+         "down": [
+          {
+           "id": "iro-outro-set",
+           "definitionId": "set_scene",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "scene": {
+             "value": "Outro",
+             "isExpression": false
+            },
+            "customSceneName": {
+             "value": "",
+             "isExpression": false
+            }
+           },
+           "type": "action",
+           "upgradeIndex": 8
+          },
+          {
+           "id": "iro-outro-a0",
+           "definitionId": "set_source_mute",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "source": {
+             "value": "Discord Audio Capture",
+             "isExpression": false
+            },
+            "mute": {
+             "value": "true",
+             "isExpression": false
+            }
+           },
+           "type": "action",
+           "upgradeIndex": 8
+          },
+          {
+           "id": "iro-outro-a1",
+           "definitionId": "set_source_mute",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "source": {
+             "value": "Feed A",
+             "isExpression": false
+            },
+            "mute": {
+             "value": "true",
+             "isExpression": false
+            }
+           },
+           "type": "action",
+           "upgradeIndex": 8
+          },
+          {
+           "id": "iro-outro-a2",
+           "definitionId": "set_source_mute",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "source": {
+             "value": "Feed B",
+             "isExpression": false
+            },
+            "mute": {
+             "value": "true",
+             "isExpression": false
+            }
+           },
+           "type": "action",
+           "upgradeIndex": 8
+          }
+         ],
+         "up": []
+        },
+        "options": {
+         "runWhileHeld": []
+        }
+       }
+      },
+      "localVariables": []
      }
     },
     "1": {

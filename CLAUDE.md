@@ -72,19 +72,24 @@ see `default_runtime_dir()` (relay/get-cookies) and `state_dir()` (scripts).
 ### Secrets via `.env` (gitignored, repo root)
 `IRO_SHEET_ID` (Google Sheet driving schedule + HUD) and `IRO_TIMER_URL` (signed
 stagetimer output URL). A small bounded `load_dotenv()` — duplicated in
-`src/relay/iro-feeds.py` and `src/setup-assets.py` — reads a `.env` only from the
-script dir or the project root (marker: `.git`/`.env.example`), never an unrelated
-parent; real environment variables take precedence. `.env.example` is the template.
-Keep the two `load_dotenv` copies in sync if you touch one.
+`src/relay/iro-feeds.py`, `src/setup-assets.py`, and `src/relay/get-media.py` —
+reads a `.env` only from the script dir or the project root (marker:
+`.git`/`.env.example`), never an unrelated parent; real environment variables take
+precedence. `.env.example` is the template.
+Keep the three `load_dotenv` copies in sync if you touch one.
 
 ### Two token round-trips (keep paths/secrets out of git)
 - **OBS.** `src/obs/IRO_Endurance.json` stores tokens: `__IRO_ASSETS__` (image
-  paths), `__IRO_SHEET__` (HUD sheet), `__IRO_TIMER__` (stagetimer URL). When you
-  edit scenes inside OBS, re-export and fold it back with
-  `tools/tokenize-obs.py exported.json src/obs/IRO_Endurance.json` (regex-tokenizes
-  sheet/timer URLs + asset basenames). `src/setup-assets.py` does the reverse,
-  injecting real values from `.env` into an importable collection. OBS stores
-  **absolute** asset paths, so the localized collection must not be moved after import.
+  paths), `__IRO_SHEET__` (HUD sheet), `__IRO_TIMER__` (stagetimer URL),
+  `__IRO_MEDIA__` (Intro/Outro clip dir). When you edit scenes inside OBS, re-export
+  and fold it back with `tools/tokenize-obs.py exported.json src/obs/IRO_Endurance.json`
+  (regex-tokenizes sheet/timer URLs + asset basenames). `src/setup-assets.py` does
+  the reverse, injecting real values from `.env` into an importable collection. OBS
+  stores **absolute** asset paths, so the localized collection must not be moved after
+  import. `src/relay/get-media.py` downloads the Intro/Outro clips (sheet-driven via
+  the Assets tab `Intro Video`/`Outro Video` labels, or `IRO_INTRO_URL`/
+  `IRO_OUTRO_URL` env overrides) into `runtime/media/`; the `Intro`/`Outro` OBS
+  scenes play them looping with audio.
 - **Companion.** Export the config into the gitignored `incoming/` folder, then
   `tools/strip_companion_pass.py` blanks the WebSocket password and writes
   `src/companion/iro-buttons.companionconfig`. `build.py` re-strips defensively.

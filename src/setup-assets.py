@@ -10,6 +10,15 @@ import argparse, json, os, sys
 ASSETS_TOKEN = "__IRO_ASSETS__"
 SHEET_TOKEN = "__IRO_SHEET__"
 TIMER_TOKEN = "__IRO_TIMER__"
+MEDIA_TOKEN = "__IRO_MEDIA__"
+
+
+def media_dir(base):
+    """Default clip dir. setup-assets.py sits at src/ (repo) or <pkg>/ (package):
+    repo (base basename 'src') -> <repo>/runtime/media ; package -> <base>/media."""
+    if os.path.basename(base) == "src":
+        return os.path.join(os.path.dirname(base), "runtime", "media")
+    return os.path.join(base, "media")
 
 
 def load_dotenv(start):
@@ -62,6 +71,9 @@ def main():
     ap.add_argument("--assets", default=os.path.join(base, "assets"))
     ap.add_argument("--template", default=None)
     ap.add_argument("--out", default=os.path.join(base, "obs", "IRO_Endurance.import.json"))
+    ap.add_argument("--media", default=media_dir(base),
+                    help="Folder with intro.mp4/outro.mp4 for the Intro/Outro "
+                         "scenes (replaces __IRO_MEDIA__). Default: media_dir().")
     ap.add_argument("--sheet-id", default=os.environ.get("IRO_SHEET_ID"),
                     help="Google Sheet ID injected into the HUD browser source. "
                          "Default: env IRO_SHEET_ID (or .env). See .env.example.")
@@ -101,6 +113,14 @@ def main():
                      "timer URL is set. Add IRO_TIMER_URL to .env at the repo/package root "
                      "(see .env.example) or pass --timer-url.")
         mapping[TIMER_TOKEN] = a.timer_url
+    if MEDIA_TOKEN in raw:
+        mapping[MEDIA_TOKEN] = a.media
+        missing = [f for f in ("intro.mp4", "outro.mp4")
+                   if not os.path.isfile(os.path.join(a.media, f))]
+        if missing:
+            print(f"  WARNING: Intro/Outro clip(s) missing in {a.media}: "
+                  f"{', '.join(missing)} — run get-media.py (OBS will show black "
+                  "until then).")
 
     localized = replace_tokens(collection, mapping)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
@@ -112,6 +132,8 @@ def main():
         print(f"  HUD sheet ID injected: {a.sheet_id}")
     if TIMER_TOKEN in mapping:
         print("  Race-timer URL injected.")
+    if MEDIA_TOKEN in mapping:
+        print(f"  Intro/Outro clip dir: {a.media}")
     print(f"OBS: Scene Collection -> Import -> {a.out}")
     print("IMPORTANT: do NOT move this folder afterwards (OBS stores absolute paths).")
 

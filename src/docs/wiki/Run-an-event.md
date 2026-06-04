@@ -7,10 +7,11 @@ if not, do [Set up the broadcast PC](Set-up-the-broadcast-PC) first.
 
 ```mermaid
 flowchart LR
-  A["Prepare<br/>reboot, update, cookies"] --> B["Go live<br/>start relay + stream key"]
+  A["Prepare<br/>reboot, update, cookies"] --> B["Go live<br/>start on Standby, cut to Intro"]
   B --> C["Race<br/>stints and driver changes"]
   C --> D["Interviews<br/>at the end"]
-  D --> E["Wrap up<br/>stop stream and relay"]
+  D --> E["Outro<br/>cut to the Outro clip"]
+  E --> F["Wrap up<br/>stop stream and relay"]
 ```
 
 ## Before you go live
@@ -20,17 +21,22 @@ flowchart LR
    `pip install -U streamlink yt-dlp`. Outdated tools are the #1 cause of a feed not
    starting.
 3. **Refresh cookies:** `python3 src/relay/get-cookies.py chrome` (any logged-in browser).
-4. **Pre-flight check:** `python3 src/scripts/preflight.py` — fix anything it flags.
-5. **Start the feeds:** `python3 tools/run-relay.py`. Confirm each live feed shows up in
+4. **Refresh the intro/outro clips** (only if their URLs changed):
+   `python3 src/relay/get-media.py` — pulls the URLs from the Sheet **Assets** tab and
+   downloads `runtime/media/intro.mp4` / `outro.mp4`.
+5. **Pre-flight check:** `python3 src/scripts/preflight.py` — fix anything it flags.
+6. **Start the feeds:** `python3 tools/run-relay.py`. Confirm each live feed shows up in
    OBS.
-6. Make sure **Companion** is connected (green) and a director can reach
+7. Make sure **Companion** is connected (green) and a director can reach
    `http://<producer-tailscale-ip>:8000/tablet`.
-7. **Enter the IRO stream key** in OBS (**Settings → Stream**).
+8. **Enter the IRO stream key** in OBS (**Settings → Stream**).
 
 ## Go live
 
-Click **Start Streaming** in OBS. From here the **director runs the show** — you just keep
-an eye on the machine.
+Start OBS on the **Standby** scene, then click **Start Streaming**. From here the
+**director runs the show** — you just keep an eye on the machine. The director opens with
+the **Intro**: pressing **INTRO** (Companion) plays the looping intro clip with its own
+audio. When the field is ready they cut into the race look (**STINT A** / **Splitscreen**).
 
 ## During the race: driver changes
 
@@ -63,9 +69,11 @@ OBS audio is captured from your local Discord, so the director can't join for yo
 muted until the director cuts to the Interview scene, so joining early is harmless. (On
 12 h / 24 h events only the final-part producer does this.)
 
-## Wrap up
+## Outro &amp; wrap up
 
-Click **Stop Streaming** in OBS, then stop the feeds (Ctrl+C the relay).
+When the interviews and the on-air wrap-up are done, the director presses **OUTRO** — the
+looping outro clip plays (with its own audio) and stays on air. After that you can **Stop
+Streaming** in OBS at any time, then stop the feeds (Ctrl+C the relay).
 
 ---
 

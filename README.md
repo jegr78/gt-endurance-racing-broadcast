@@ -29,6 +29,8 @@ Used by the relay (schedule/POV tabs) and by `setup-assets.py` (HUD browser sour
 python3 src/setup-assets.py --out runtime/IRO_Endurance.import.json   # once: localize OBS assets + inject Sheet ID
 # OBS -> Scene Collection -> Import -> runtime/IRO_Endurance.import.json
 python3 src/relay/get-cookies.py chrome --runtime-dir runtime         # before each event
+# Download the stream Intro/Outro clips (URLs from the Sheet's Configuration tab)
+python3 src/relay/get-media.py            # -> runtime/media/intro.mp4, outro.mp4
 python3 tools/run-relay.py                                            # start the relay
 ```
 

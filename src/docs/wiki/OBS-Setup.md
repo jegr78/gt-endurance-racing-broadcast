@@ -29,6 +29,12 @@ collection.
 - **Splitscreen** — two feeds side by side, for the ~10-minute handover.
 - **Interview** — interview graphic + Discord audio.
 - **Standby / BRB** — for breaks.
+- **Intro** / **Outro** — full-screen stream-open and stream-close clips that **loop with
+  audio**, played from local files (`runtime/media/intro.mp4` / `outro.mp4`). The director
+  switches to them with the Companion **INTRO** / **OUTRO** buttons. The file paths are
+  tokenised as `__IRO_MEDIA__` in the collection and resolved by `setup-assets.py`; download
+  or refresh the clips from the Sheet **Assets** tab with `python3 src/relay/get-media.py`
+  (see [Configuration](Configuration)). If the clips are missing the scene shows black.
 
 ## 3. Media Sources (the feeds)
 

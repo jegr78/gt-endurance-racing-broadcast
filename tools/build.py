@@ -3,7 +3,7 @@
 Produces dist/IRO_Broadcast_Package/ + dist/IRO_Broadcast_Package.zip.
 Usage: python3 tools/build.py
 """
-import json, os, re, shutil, sys, zipfile
+import json, os, re, shutil, subprocess, sys, zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src")
@@ -46,6 +46,17 @@ def main():
     cp("assets", "assets")
     cp("scripts", "scripts")
     cp("relay", "relay")  # iro-feeds.py + get-cookies.py
+
+    # intro/outro clips: download into the package so the artifact is self-contained.
+    # Best-effort — offline / code-only builds must still succeed (the shipped
+    # get-media.py lets a producer re-fetch on site if the sheet URLs change).
+    media_dst = os.path.join(PKG, "media")
+    os.makedirs(media_dst, exist_ok=True)
+    try:
+        subprocess.run([sys.executable, os.path.join(SRC, "relay", "get-media.py"),
+                        "--out", media_dst], check=True, timeout=600)
+    except Exception as e:
+        print(f"  [WARN] intro/outro clip fetch skipped: {e}")
 
     # .env template (repo root, not src/) so producers can set their own IRO_SHEET_ID
     shutil.copy2(os.path.join(ROOT, ".env.example"), os.path.join(PKG, ".env.example"))
@@ -100,6 +111,7 @@ def main():
         # sheet URL ever leaks in.
         "obs no raw sheet url": not re.search(r"/spreadsheets/d/[A-Za-z0-9_-]{20,}/", tpl),
         "obs timer tokenized": "__IRO_TIMER__" in tpl and "stagetimer.io/output/" not in tpl,
+        "obs media tokenized": "__IRO_MEDIA__/" in tpl,
         "relay pov endpoint": "pov/reload" in relay,
         "no .sh/.bat shipped": not any(fn.endswith((".sh", ".bat")) for _, _, fs in os.walk(PKG) for fn in fs),
         "preflight shipped": os.path.isfile(os.path.join(PKG, "scripts", "preflight.py")),
@@ -111,6 +123,10 @@ def main():
     print(f"ZIP   {zip_path}  ({os.path.getsize(zip_path)//1024} KB)")
     for k, v in checks.items():
         print(f"  [{'OK' if v else 'FAIL'}] {k}")
+    for clip in ("intro.mp4", "outro.mp4"):
+        ok = os.path.isfile(os.path.join(PKG, "media", clip))
+        print(f"  [{'OK' if ok else 'warn'}] media {clip} "
+              f"{'present' if ok else 'MISSING (run get-media.py before release)'}")
     if bad:
         sys.exit("BUILD VERIFY FAILED: " + ", ".join(bad))
 

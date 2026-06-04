@@ -22,7 +22,7 @@ flips between them. Everything below is a single tap.
 
 | Row | Buttons |
 |-----|---------|
-| **Combos** | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY` — one press sets a whole look (the scene **and** the right feeds and audio) |
+| **Combos** | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO` — one press sets a whole look (the scene **and** the right feeds and audio). `INTRO` / `OUTRO` cut to the looping intro/outro clip (with its own audio) and mute the live feeds; they light while on air |
 | **Scenes + feeds** | `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Reload`, `Feeds Next` (the handover), `Feeds Status` |
 | **Feeds & POV** | `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Split Left`, `Split Right`, `POV Reload`, `POV Stop` |
 | **Graphics** | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle` (incident cover — see [The race](#through-the-broadcast-scene--sheet-cues)), `HUD Stint Toggle`, `HUD Split Toggle` |
@@ -49,6 +49,12 @@ How the board is imported and built: [Companion](Companion).
 As director you drive two things: the **scenes** (Companion) and three **HUD fields in the
 shared sheet** — **Stint**, **Session**, and **Race Control**. Each is a dropdown: pick the
 listed value, or clear the cell to show nothing. The whole run, in order:
+
+**At go-live (intro)**
+- The producer starts streaming on **Standby**. Press **INTRO** to play the looping intro
+  clip full-screen (with its own audio). Leave it running until the field is ready, then cut
+  into the show (**STINT A** / **Splitscreen** for the formation lap). This is the **Intro
+  video scene** — separate from the **Stint → Intro** HUD label below.
 
 **Before the start**
 - Sheet: **Stint → Intro**, **Session → Warmup**.
@@ -77,6 +83,9 @@ listed value, or clear the cell to show nothing. The whole run, in order:
 **Wrap up**
 - When the interviews end, cut back to **Stint** and set **Stint → Outro**,
   **Session → Wrapup**.
+- For the close, press **OUTRO** — the looping outro clip plays full-screen (with its own
+  audio) and stays on air. The producer can then stop streaming at any time. (**OUTRO** is
+  the **video scene**; **Stint → Outro** above is the HUD label.)
 
 ## At a driver change
 
