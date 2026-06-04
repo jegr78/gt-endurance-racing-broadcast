@@ -35,13 +35,13 @@ flowchart LR
     direction TB
     RELAY["Relay (iro-feeds.py)<br/>yt-dlp resolves live HLS<br/>→ streamlink serves to OBS"]
     OBS["OBS Studio<br/>Media Sources :53001/2/3"]
-    HUD["HUD + graphics<br/>OBS Browser Sources"]
+    HUD["HUD overlay (relay /hud)<br/>+ timer + graphics"]
     DISC["Discord audio<br/>App Audio Capture"]
     WS["OBS WebSocket :4455"]
     COMP["Bitfocus Companion :8000"]
   end
 
-  SHEET["Google Sheet<br/>Schedule + POV tabs + HUD data"]
+  SHEET["Google Sheet<br/>Schedule, POV, Overlay, Configuration tabs"]
   TIMER["stagetimer.io<br/>race timer"]
   YT["YouTube — IRO channel"]
   DIR["Remote Director(s)<br/>browser over Tailscale"]
@@ -51,7 +51,7 @@ flowchart LR
   Sn --> RELAY
   RELAY -->|"http://127.0.0.1:5300x"| OBS
   SHEET --> RELAY
-  SHEET --> HUD
+  RELAY -->|"/hud overlay"| HUD
   TIMER --> HUD
   HUD --> OBS
   DISC --> OBS
@@ -97,6 +97,23 @@ flowchart TB
 
 A running feed is **never** torn off mid-stint. Sheet edits apply on the next `/next`
 (handover) or `/reload`. See [Relay Mode](Relay-Mode) for the operating procedure.
+
+### The HUD overlay
+
+The lower-third HUD is **one** relay-served page, not a pile of OBS browser sources.
+The relay reads the **Overlay** tab (live values: streamer, session, round, top-3
+teams, race control) and the **Configuration** tab (team → manufacturer via a
+`Brand Name` column) as gviz CSV, and serves:
+
+- `GET /hud` — a single transparent overlay page (one OBS Browser Source at
+  `http://127.0.0.1:8088/hud`),
+- `GET /hud/data` — the live values as JSON (the page polls it every ~2.5 s, so sheet
+  edits appear with no manual reload),
+- `GET /hud/assets/{flags,brands}/<key>` — bundled flag/brand logos, resolved from text.
+
+This replaced ~13 per-cell browser sources that each loaded the full Google Sheets
+editor (cropped with a chroma key) — the old producer-machine RAM/CPU hog. The
+stagetimer countdown stays its own browser source.
 
 ---
 

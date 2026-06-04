@@ -56,7 +56,7 @@ also take this role locally. See [Director (Remote)](Director) and the
 
 ## Shared production resources
 
-The HUD and graphics pull live data from the **shared Google Sheet** and
+The HUD (via the relay) and graphics pull live data from the **shared Google Sheet** and
 **stagetimer.io**. These are shared — changes affect everyone, and the sheet must stay
 shared. IDs/URLs are configured per machine via `.env` (see
 [Configuration](Configuration)), never hardcoded.

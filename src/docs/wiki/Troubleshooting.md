@@ -39,4 +39,13 @@ problems (tool chain, ports, cookies) before they bite you live.
 | One machine overloaded (producer = director) | Hardware-encode the broadcast; current GPU driver; hardware-decode every Media Source; lower a streamer to 720p30 if upload is tight. |
 | General lag / slowdowns | RAM is the usual bottleneck (16 GB) — **reboot before the event** to clear swap, close other apps, and run preflight. |
 
+## HUD overlay
+
+| Symptom | Fix |
+|---------|-----|
+| HUD is blank in OBS | The relay serves the HUD — make sure it's running. Check `http://127.0.0.1:8088/hud/data` returns JSON; the `HUD Overlay` browser source must point at `http://127.0.0.1:8088/hud`. |
+| HUD text not updating | The page polls every ~2.5 s and the relay refreshes the sheet every `--hud-poll` s (default 5). Confirm you're editing the **Overlay** tab and the sheet is shared. |
+| A flag or brand logo is missing | The asset filename must match the text, normalized (lowercase, spaces → `-`): Country → `src/assets/flags/<country>.svg`, `Brand Name` → `src/assets/brands/<key>.png`. Run `python3 tools/fetch-flags.py` for missing flags; for brands add the file and align the `Brand Name` cell. |
+| HUD elements slightly mispositioned | Nudge the CSS coordinates in `src/obs/hud.html` (no OBS transforms needed) and refresh the browser source. |
+
 See also: [Relay Mode](Relay-Mode), [Runbook](Runbook).

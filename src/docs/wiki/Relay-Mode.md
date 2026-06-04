@@ -68,6 +68,25 @@ station.
 
 ---
 
+## The HUD overlay (served by the relay)
+
+The relay also serves the lower-third HUD, so it must be running for the HUD to render.
+It reads the **Overlay** tab (live values) and the **Configuration** tab (team →
+manufacturer via a `Brand Name` column) and exposes:
+
+- `GET /hud` — the overlay page; point one OBS Browser Source at
+  `http://127.0.0.1:8088/hud` (1920×1080, transparent).
+- `GET /hud/data` — the live values as JSON; the page polls it every ~2.5 s, so editing
+  the sheet updates the overlay with **no manual reload**.
+
+Flags and brand logos are bundled assets resolved from text: the Country text →
+`flags/<country>.svg`, a team's `Brand Name` → `brands/<key>.png`. Add a new round's
+flag with `python3 tools/fetch-flags.py` (fetches only what is missing). Flags:
+`--no-hud` (disable), `--overlay-tab` / `--config-tab` (tab names), `--hud-poll`
+(refresh seconds, default 5). See [OBS Setup](OBS-Setup) for the source itself.
+
+---
+
 ## Driver-POV PiP (optional)
 
 Show an ad-hoc driver POV as a small picture-in-picture (bottom-right) over the active

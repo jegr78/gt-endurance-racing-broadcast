@@ -28,13 +28,13 @@ flowchart LR
     direction TB
     RELAY["Relay (iro-feeds.py)<br/>yt-dlp resolves HLS → streamlink serves"]
     OBS["OBS Studio<br/>Media Sources :53001/2/3"]
-    HUD["HUD + graphics<br/>Browser Sources"]
+    HUD["HUD overlay (relay /hud)<br/>+ timer + graphics"]
     DISC["Discord audio<br/>App Audio Capture"]
     WS["OBS WebSocket :4455"]
     COMP["Bitfocus Companion :8000"]
   end
 
-  SHEET["Google Sheet<br/>Schedule + POV + HUD data"]
+  SHEET["Google Sheet<br/>Schedule, POV, Overlay, Config"]
   TIMER["stagetimer.io"]
   YT["YouTube — IRO channel"]
   DIR["Remote Director(s)<br/>browser over Tailscale"]
@@ -44,7 +44,7 @@ flowchart LR
   Sn --> RELAY
   RELAY -->|"http://127.0.0.1:5300x"| OBS
   SHEET --> RELAY
-  SHEET --> HUD
+  RELAY -->|"/hud"| HUD
   TIMER --> HUD
   HUD --> OBS
   DISC --> OBS

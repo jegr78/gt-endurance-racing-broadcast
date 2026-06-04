@@ -19,8 +19,9 @@ Everything below is installed **once** on the producer station (Windows or macOS
 | Network | wired; stable upload headroom for the YouTube push + up to 3 feed pulls | wired gigabit |
 
 **Before each event:** reboot the machine (clears swap and frees RAM), then run the
-pre-flight check and resolve any FAIL/WARN before going live. OBS runs many HUD browser
-sources plus the live feeds, so **RAM is the most common bottleneck**.
+pre-flight check and resolve any FAIL/WARN before going live. OBS runs the live feeds
+plus the relay-served HUD and a few graphics, so **RAM is worth a check** — though the
+old ~13 sheet-editor HUD sources (the main hog) are gone.
 
 ## Tools to install (all free)
 

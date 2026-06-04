@@ -21,8 +21,9 @@ IRO_TIMER_URL=https://stagetimer.io/output/XXXXXXXX/?v=2&signature=...
 ```
 
 - **`IRO_SHEET_ID`** — the long ID from your HUD/schedule sheet URL:
-  `https://docs.google.com/spreadsheets/d/`**`<THIS>`**`/edit`. Drives the relay
-  schedule, the POV tab, and the HUD browser source.
+  `https://docs.google.com/spreadsheets/d/`**`<THIS>`**`/edit`. Drives the relay:
+  the schedule, the POV tab, and the HUD overlay (Overlay + Configuration tabs, served
+  at `/hud`).
 - **`IRO_TIMER_URL`** — the full signed stagetimer.io output URL injected into the timer
   browser source.
 
@@ -37,9 +38,10 @@ never an unrelated parent directory.
 ## Localize the OBS collection (`setup-assets.py`)
 
 The OBS scene collection in git is deliberately **path- and secret-free**: it stores
-tokens (`__IRO_ASSETS__`, `__IRO_SHEET__`, `__IRO_TIMER__`) instead of real paths and
-URLs. `setup-assets.py` injects the real values from `.env` and writes an importable
-collection:
+tokens (`__IRO_ASSETS__`, `__IRO_TIMER__`) instead of real paths and URLs. (The HUD
+overlay is served by the relay, so the collection no longer embeds the sheet — there is
+no `__IRO_SHEET__` token in it.) `setup-assets.py` injects the real values from `.env`
+and writes an importable collection:
 
 ```bash
 python3 src/setup-assets.py --out runtime/IRO_Endurance.import.json
@@ -48,9 +50,10 @@ python3 src/setup-assets.py --out runtime/IRO_Endurance.import.json
 
 This:
 - rewrites the image paths to **this** machine's `assets/` folder (Overlay + graphics +
-  thumbnail), and
-- injects your `IRO_SHEET_ID` into the HUD browser source and `IRO_TIMER_URL` into the
-  timer source.
+  thumbnail + the flag/brand HUD logos), and
+- injects `IRO_TIMER_URL` into the timer browser source. (The HUD overlay needs no
+  injection — it is served by the relay; `IRO_SHEET_ID` is read by the relay, not the
+  collection.)
 
 You can override per-run without `.env`: `--sheet-id <ID>` / `--timer-url <URL>`.
 
