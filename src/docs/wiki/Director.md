@@ -25,7 +25,7 @@ flips between them. Everything below is a single tap.
 | **Combos** | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY` — one press sets a whole look (the scene **and** the right feeds and audio) |
 | **Scenes + feeds** | `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Reload`, `Feeds Next` (the handover), `Feeds Status` |
 | **Feeds & POV** | `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Split Left`, `Split Right`, `POV Reload`, `POV Stop` |
-| **Graphics** | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `HUD Stint Toggle`, `HUD Split Toggle` |
+| **Graphics** | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle` (incident cover — see [The race](#through-the-broadcast-scene--sheet-cues)), `HUD Stint Toggle`, `HUD Split Toggle` |
 
 ![Companion page 1 — show control: combos, scene switches, feeds & POV, graphics](images/companion-page1-show-control.png)
 
@@ -61,8 +61,10 @@ listed value, or clear the cell to show nothing. The whole run, in order:
 **The race**
 - Keep the **Stint** scene on the active feed.
 - At each commentator change, run the [driver-change steps](#at-a-driver-change) below.
-- Incident? Set **Race Control → Red Flag** or **Technical Difficulties** while it lasts,
-  then clear it.
+- Incident? Set **Race Control → Red Flag** or **Technical Difficulties** and press
+  **Standby Toggle** to hold the picture — it hides the feeds and the POV but keeps the
+  Race Control banner and timer visible (the button lights while it's active). When it's
+  resolved, press **Standby Toggle** again and **clear Race Control**.
 
 **Final lap** — once you're in the last stint and the leader starts the final lap:
 - Sheet: **Race Control → Final Lap**. **Clear it** as soon as the race finishes.

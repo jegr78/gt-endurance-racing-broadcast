@@ -9,7 +9,7 @@ Drop your Companion 'Export -> Full Configuration' into the incoming/ folder, th
   python3 tools/strip_companion_pass.py
 Explicit paths still work:  python3 tools/strip_companion_pass.py IN OUT
 """
-import json, os, sys
+import gzip, json, os, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_IN = os.path.join(ROOT, "incoming", "iro-buttons.companionconfig")
@@ -33,7 +33,10 @@ def main(src, dst):
         os.makedirs(os.path.dirname(src), exist_ok=True)
         sys.exit(f"ERROR: no Companion export found at:\n  {src}\n"
                  f"Drop your Companion 'Export -> Full Configuration' there, then re-run.")
-    cfg = json.load(open(src, encoding="utf-8"))
+    raw = open(src, "rb").read()
+    if raw[:2] == b"\x1f\x8b":          # gzip magic — newer Companion compresses its exports
+        raw = gzip.decompress(raw)
+    cfg = json.loads(raw.decode("utf-8"))
     blank(cfg)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     json.dump(cfg, open(dst, "w", encoding="utf-8"), indent=1)

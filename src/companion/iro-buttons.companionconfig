@@ -2221,6 +2221,90 @@
       },
       "localVariables": []
      },
+     "4": {
+      "type": "button",
+      "style": {
+       "text": "Standby Toggle",
+       "textExpression": false,
+       "size": "auto",
+       "png64": null,
+       "alignment": "center:center",
+       "pngalignment": "center:center",
+       "color": 16777215,
+       "bgcolor": 0,
+       "show_topbar": "default"
+      },
+      "options": {
+       "stepProgression": "auto",
+       "stepExpression": "",
+       "rotaryActions": false
+      },
+      "feedbacks": [
+       {
+        "id": "Ec0PFNA_NGwHOgX6qIp7L",
+        "definitionId": "scene_item_active",
+        "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+        "options": {
+         "scene": {
+          "value": "Stint",
+          "isExpression": false
+         },
+         "source": {
+          "value": "Standby Cover",
+          "isExpression": false
+         }
+        },
+        "upgradeIndex": 8,
+        "type": "feedback",
+        "style": {
+         "color": 16777215,
+         "bgcolor": 13421568
+        },
+        "isInverted": {
+         "value": false,
+         "isExpression": false
+        }
+       }
+      ],
+      "steps": {
+       "0": {
+        "action_sets": {
+         "down": [
+          {
+           "id": "DTDFqas2-VYXuJTSD7uPg",
+           "definitionId": "toggle_scene_item",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "scene": {
+             "value": "Stint",
+             "isExpression": false
+            },
+            "all": {
+             "value": false,
+             "isExpression": false
+            },
+            "source": {
+             "value": "Standby Cover",
+             "isExpression": false
+            },
+            "visible": {
+             "value": "toggle",
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 8,
+           "type": "action"
+          }
+         ],
+         "up": []
+        },
+        "options": {
+         "runWhileHeld": []
+        }
+       }
+      },
+      "localVariables": []
+     },
      "5": {
       "type": "button",
       "style": {

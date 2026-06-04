@@ -67,7 +67,9 @@ def main(path):
     new_src["name"] = NEW_NAME
     new_src["uuid"] = NEW_UUID
     new_src["filters"] = []                       # no chroma key — our page is transparent
-    new_src["settings"] = {"url": NEW_URL, "width": 1920, "height": 1080}
+    new_src["settings"] = {"url": NEW_URL, "width": 1920, "height": 1080,
+                           "restart_when_active": True}   # reload on scene-activate: heals
+                                                          # a cold start (relay not yet up)
     sources[:] = [s for s in sources if s.get("name") not in OLD_NAMES]
     sources.append(new_src)
 

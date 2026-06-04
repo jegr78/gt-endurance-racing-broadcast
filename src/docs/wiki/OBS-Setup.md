@@ -19,7 +19,13 @@ collection.
 
 ## 2. The scenes
 
-- **Stint** — the active feed full-screen + HUD overlay (POV PiP lives only here).
+- **Stint** — the active feed full-screen + HUD overlay (POV PiP lives only here). It also
+  holds a hidden **Standby Cover** (the `YT-IRO-Race.png` graphic) **below the HUD group**,
+  so showing it hides the feeds and the POV PiP while the Race Control banner and timer stay
+  on top. The director toggles it with the Companion **Standby Toggle** button (a
+  *Set Source Visibility* toggle on `Stint / Standby Cover`, with a *Source Visible*
+  feedback so it lights while active). Re-add the source after a rebuild with
+  `python3 tools/add_standby_cover.py src/obs/IRO_Endurance.json`.
 - **Splitscreen** — two feeds side by side, for the ~10-minute handover.
 - **Interview** — interview graphic + Discord audio.
 - **Standby / BRB** — for breaks.
