@@ -66,6 +66,8 @@ Companion connection **"Generic HTTP Requests"**, action **GET**:
 | **Feeds Next** | `http://127.0.0.1:8088/next` | once per handover, right after cutting to the new feed |
 | **Feeds Reload** | `http://127.0.0.1:8088/reload` | edited a cell in the sheet → reload the current feed now |
 | **Feeds Status** | `http://127.0.0.1:8088/status` | inspect feed state, cookies, URLs |
+| **Feed A Reload** | `http://127.0.0.1:8088/reload/A` | reconnect only Feed A (one feed glitched mid-stint) |
+| **Feed B Reload** | `http://127.0.0.1:8088/reload/B` | reconnect only Feed B |
 
 Works for remote directors too — Companion makes the request locally on the producer
 station.
@@ -102,7 +104,7 @@ feed in the **Stint** scene. Pulled by a third relay feed on port **53003** (cap
 2. **Pull it:** press **POV Reload** → the relay resolves + serves it on 53003 (still
    hidden). `/status` shows the `pov` block (`state: serving`).
 3. **Show it:** press **POV Toggle** → the PiP appears bottom-right in Stint.
-4. **Audio:** muted by default; **MUTE POV** toggles mute, **POV UP / POV DOWN** adjust
+4. **Audio:** muted by default; **MUTE POV** toggles mute, **VOL POV UP / VOL POV DOWN** adjust
    volume (use briefly).
 5. **Done:** **POV Toggle** to hide, then **POV Stop** (frees the pull / bandwidth).
 

@@ -103,7 +103,7 @@ feed in the **Stint** scene. Pulled by a third relay feed on port **53003** (cap
 2. **Pull it:** press **POV Reload** in Companion → the relay resolves + serves it on
    53003 (still hidden). `/status` shows the `pov` block (`state: serving`).
 3. **Show it:** press **POV Toggle** → the PiP appears bottom-right in Stint.
-4. **Audio:** muted by default; **MUTE POV** toggles the mute, **POV UP / POV DOWN**
+4. **Audio:** muted by default; **MUTE POV** toggles the mute, **VOL POV UP / VOL POV DOWN**
    adjust its volume (use briefly).
 5. **Done:** **POV Toggle** to hide, then **POV Stop** (frees the pull / bandwidth).
 
@@ -153,15 +153,15 @@ graphic is missing it prints a warning and OBS shows that source black until you
 3. The **OBS connection** (`127.0.0.1:4455`) comes with it — **but without the password** (removed for security). → `Connections` → open the OBS entry → **enter your OBS WebSocket password (step 3.2)** → the connection turns green.
 4. Buttons (two pages):
    - **Page 1 — show control:**
-     - *row 0 — combos:* `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY` (one-press scene+source presets)
-     - *row 1 — scene switches + relay control:* `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Reload` (→ `/reload`), `Feeds Next` (→ `/next`, the handover), `Feeds Status` (→ `/status`)
-     - *row 2 — feeds & POV:* `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Split Left`, `Split Right`, `POV Reload`, `POV Stop`
-     - *row 3 — graphics:* `Standings`, `Schedule`, `Race Results`, `Quali Results`, `HUD Stint Toggle`, `HUD Split Toggle`
-     - *right-edge column (col 7, rows 1–3) — weather:* `Race Wx 1`, `Race Wx 2`, `Quali Wx` (full-screen Stint overlays, independent toggles)
+     - *row 0 — combos:* `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO` (one-press scene+source presets)
+     - *row 1 — scene switches + relay control:* `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Next` (→ `/next`, the handover), `Feeds Reload` (→ `/reload`), `Feeds Status` (→ `/status`)
+     - *row 2 — feeds & reloads:* `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Feed A Reload` (→ `/reload/A`), `Feed B Reload` (→ `/reload/B`), `POV Reload`, `POV Stop`
+     - *row 3 — graphics & weather:* `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle`, `Weather Race (1) Toggle`, `Weather Race (2) Toggle`, `Weather Quali Toggle` (the three weather buttons are full-screen Stint overlays, independent toggles)
    - **Page 2 — audio:**
      - *row 1 — mute:* `MUTE A`, `MUTE B`, `MUTE POV`, `MUTE DISC`
-     - *row 2 — volume A/B:* `A DOWN`/`A UP`, `B DOWN`/`B UP`
-     - *row 3 — volume POV/Discord:* `POV DOWN`/`POV UP`, `DISC DOWN`/`DISC UP`
+     - *row 2 — volume A/B:* `VOL A DOWN`/`VOL A UP`/`VOL A RESET`, `VOL B DOWN`/`VOL B UP`/`VOL B RESET`
+     - *row 3 — volume POV/Discord:* `VOL POV DOWN`/`VOL POV UP`/`VOL POV RESET`, `VOL DISC DOWN`/`VOL DISC UP`/`VOL DISC RESET`
+     - *(`… UP`/`DOWN` adjust by ±3 dB relative; `… RESET` sets the source back to 0 dB — its original level — without changing mute)*
 5. Test: open `http://localhost:8000/tablet`, press a button → OBS reacts.
 
 ## 6. Remote directors (Tailscale)
