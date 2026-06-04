@@ -23,20 +23,23 @@ flips between them. Everything below is a single tap.
 | Row | Buttons |
 |-----|---------|
 | **Combos** | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO` — one press sets a whole look (the scene **and** the right feeds and audio). `INTRO` / `OUTRO` cut to the looping intro/outro clip (with its own audio) and mute the live feeds; they light while on air |
-| **Scenes + feeds** | `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Reload`, `Feeds Next` (the handover), `Feeds Status` |
-| **Feeds & POV** | `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Split Left`, `Split Right`, `POV Reload`, `POV Stop` |
-| **Graphics** | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle` (incident cover — see [The race](#through-the-broadcast-scene--sheet-cues)), `HUD Stint Toggle`, `HUD Split Toggle` |
-| **Weather** *(right-edge column)* | `Race Wx 1`, `Race Wx 2`, `Quali Wx` — full-screen weather graphics, each an independent toggle like Standings/Results |
+| **Scenes + relay** | `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Next` (the handover), `Feeds Reload`, `Feeds Status` |
+| **Feeds & reloads** | `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Feed A Reload` (reconnect only Feed A → `/reload/A`), `Feed B Reload` (→ `/reload/B`), `POV Reload`, `POV Stop` |
+| **Graphics & weather** | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle` (incident cover — see [The race](#through-the-broadcast-scene--sheet-cues)), `Weather Race (1) Toggle`, `Weather Race (2) Toggle`, `Weather Quali Toggle` — the three weather buttons are full-screen Stint overlays, each an independent toggle like Standings/Results |
 
-![Companion page 1 — show control: combos, scene switches, feeds & POV, graphics](images/companion-page1-show-control.png)
+![Companion page 1 — show control: combos, scene switches, feeds & reloads, graphics & weather](images/companion-page1-show-control.png)
 
 ### Page 2 — audio
 
 | Row | Buttons |
 |-----|---------|
 | **Mute** | `MUTE A`, `MUTE B`, `MUTE POV`, `MUTE DISC` |
-| **Volume A / B** | `A DOWN` / `A UP`, `B DOWN` / `B UP` |
-| **Volume POV / Discord** | `POV DOWN` / `POV UP`, `DISC DOWN` / `DISC UP` |
+| **Volume A / B** | `VOL A DOWN` / `VOL A UP` / `VOL A RESET`, `VOL B DOWN` / `VOL B UP` / `VOL B RESET` |
+| **Volume POV / Discord** | `VOL POV DOWN` / `VOL POV UP` / `VOL POV RESET`, `VOL DISC DOWN` / `VOL DISC UP` / `VOL DISC RESET` |
+
+> `VOL … UP` / `DOWN` nudge a source by ±3 dB (relative — they drift over a session);
+> `VOL … RESET` snaps that source back to **0 dB** (its original level). Reset only
+> touches the level, not the mute state — use the `MUTE …` buttons for that.
 
 ![Companion page 2 — audio: mute and per-source volume for the feeds, POV and Discord](images/companion-page2-audio.png)
 
@@ -67,7 +70,7 @@ listed value, or clear the cell to show nothing. The whole run, in order:
 
 **The race**
 - Keep the **Stint** scene on the active feed.
-- Need to show a weather graphic? Press **Race Wx 1**, **Race Wx 2** or **Quali Wx** — each
+- Need to show a weather graphic? Press **Weather Race (1) Toggle**, **Weather Race (2) Toggle** or **Weather Quali Toggle** — each
   drops a full-screen weather overlay onto the Stint scene and is an independent toggle
   (press again to hide), exactly like the Standings/Results graphics.
 - At each commentator change, run the [driver-change steps](#at-a-driver-change) below.

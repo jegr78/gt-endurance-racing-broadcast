@@ -44,7 +44,7 @@ collection.
 > `python3 src/relay/get-graphics.py` (one PNG per Assets row, the Sheet label is the
 > filename); a source whose file is missing shows black until you fetch it. The three
 > weather graphics are **hidden full-screen overlays in the Stint scene**, each switchable
-> by its own Companion toggle (`Race Wx 1` / `Race Wx 2` / `Quali Wx` — see
+> by its own Companion toggle (`Weather Race (1) Toggle` / `Weather Race (2) Toggle` / `Weather Quali Toggle` — see
 > [Director guide](Director)), exactly like the Standings/Results toggles.
 
 ## 3. Media Sources (the feeds)

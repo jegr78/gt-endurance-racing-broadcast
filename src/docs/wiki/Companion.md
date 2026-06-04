@@ -32,7 +32,8 @@ button does, and the screenshots live in the [Director guide](Director#the-butto
 that's the operator's reference for actually using the board.
 
 This page covers only how the board is wired up. The relay buttons (`Feeds Next`,
-`Feeds Reload`, `Feeds Status`, `POV Reload`, `POV Stop`) use the **Generic HTTP Requests**
+`Feeds Reload`, `Feeds Status`, `Feed A Reload`, `Feed B Reload`, `POV Reload`, `POV Stop`)
+use the **Generic HTTP Requests**
 connection — see [Relay Mode §4](Relay-Mode#4-control-it-companion--relay). Everything else
 uses the OBS connection.
 
