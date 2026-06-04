@@ -43,6 +43,9 @@ python3 src/setup-assets.py --out runtime/IRO_Endurance.import.json
 # Refresh YouTube cookies before an event (bot-check bypass)
 python3 src/relay/get-cookies.py chrome --runtime-dir runtime
 
+# Fetch the broadcast graphics (Assets tab -> runtime/graphics)
+python3 src/relay/get-graphics.py   # downloads <Label>.png from the Sheet Assets tab
+
 # Pre-flight hardware/tool check
 python3 src/scripts/preflight.py
 
@@ -72,24 +75,33 @@ see `default_runtime_dir()` (relay/get-cookies) and `state_dir()` (scripts).
 ### Secrets via `.env` (gitignored, repo root)
 `IRO_SHEET_ID` (Google Sheet driving schedule + HUD) and `IRO_TIMER_URL` (signed
 stagetimer output URL). A small bounded `load_dotenv()` — duplicated in
-`src/relay/iro-feeds.py`, `src/setup-assets.py`, and `src/relay/get-media.py` —
-reads a `.env` only from the script dir or the project root (marker:
-`.git`/`.env.example`), never an unrelated parent; real environment variables take
-precedence. `.env.example` is the template.
-Keep the three `load_dotenv` copies in sync if you touch one.
+`src/relay/iro-feeds.py`, `src/setup-assets.py`, `src/relay/get-media.py`, and
+`src/relay/get-graphics.py` — reads a `.env` only from the script dir or the project
+root (marker: `.git`/`.env.example`), never an unrelated parent; real environment
+variables take precedence. `.env.example` is the template.
+Keep the four `load_dotenv` copies in sync if you touch one.
 
 ### Two token round-trips (keep paths/secrets out of git)
-- **OBS.** `src/obs/IRO_Endurance.json` stores tokens: `__IRO_ASSETS__` (image
-  paths), `__IRO_SHEET__` (HUD sheet), `__IRO_TIMER__` (stagetimer URL),
+- **OBS.** `src/obs/IRO_Endurance.json` stores tokens: `__IRO_GRAPHICS__` (broadcast
+  still-graphics dir), `__IRO_SHEET__` (HUD sheet), `__IRO_TIMER__` (stagetimer URL),
   `__IRO_MEDIA__` (Intro/Outro clip dir). When you edit scenes inside OBS, re-export
   and fold it back with `tools/tokenize-obs.py exported.json src/obs/IRO_Endurance.json`
-  (regex-tokenizes sheet/timer URLs + asset basenames). `src/setup-assets.py` does
+  (regex-tokenizes sheet/timer URLs + image-source basenames). `src/setup-assets.py` does
   the reverse, injecting real values from `.env` into an importable collection. OBS
-  stores **absolute** asset paths, so the localized collection must not be moved after
+  stores **absolute** paths, so the localized collection must not be moved after
   import. `src/relay/get-media.py` downloads the Intro/Outro clips (sheet-driven via
   the Assets tab `Intro Video`/`Outro Video` labels, or `IRO_INTRO_URL`/
   `IRO_OUTRO_URL` env overrides) into `runtime/media/`; the `Intro`/`Outro` OBS
   scenes play them looping with audio.
+- **Broadcast graphics are pure-runtime** (same model as the Intro/Outro clips): the
+  still-graphics (Overlay, Standings, Schedule, Race/Quali Results, the three weather
+  overlays, Standby, …) are **never committed**. `python3 src/relay/get-graphics.py`
+  downloads each one from the Sheet **Assets** tab into `runtime/graphics/<Label>.png`
+  (the Sheet label *is* the filename — no mapping table; YouTube Intro/Outro rows are
+  skipped). They are tokenised `__IRO_GRAPHICS__/<Label>.png` in the collection and
+  resolved by `setup-assets.py` (which warns, never fails, on a missing file → OBS shows
+  black until you run `get-graphics.py`). `src/assets/` therefore now holds **only** the
+  HUD `flags/` + `brands/` logos (still committed, relay-served).
 - **Companion.** Export the config into the gitignored `incoming/` folder, then
   `tools/strip_companion_pass.py` blanks the WebSocket password and writes
   `src/companion/iro-buttons.companionconfig`. `build.py` re-strips defensively.

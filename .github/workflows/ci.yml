@@ -33,7 +33,7 @@ jobs:
 
       - name: Run unit tests (stdlib, each file is a runnable script)
         run: |
-          for t in tests/test_pov.py tests/test_hud.py tests/test_preflight.py tests/test_standby.py; do
+          for t in tests/test_pov.py tests/test_hud.py tests/test_preflight.py tests/test_standby.py tests/test_media.py tests/test_graphics.py; do
             echo "::group::$t"
             python3 "$t"
             echo "::endgroup::"

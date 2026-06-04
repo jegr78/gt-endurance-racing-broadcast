@@ -40,22 +40,37 @@ never an unrelated parent directory.
 ## Localize the OBS collection (`setup-assets.py`)
 
 The OBS scene collection in git is deliberately **path- and secret-free**: it stores
-tokens (`__IRO_ASSETS__`, `__IRO_TIMER__`) instead of real paths and URLs. (The HUD
-overlay is served by the relay, so the collection no longer embeds the sheet — there is
-no `__IRO_SHEET__` token in it.) `setup-assets.py` injects the real values from `.env`
-and writes an importable collection:
+tokens instead of real paths and URLs. `setup-assets.py` injects the real values from
+`.env` and writes an importable collection:
 
 ```bash
 python3 src/setup-assets.py --out runtime/IRO_Endurance.import.json
 # in the distributed package:  python3 setup-assets.py
 ```
 
-This:
-- rewrites the image paths to **this** machine's `assets/` folder (Overlay + graphics +
-  thumbnail + the flag/brand HUD logos), and
+The tokens in the collection:
+
+| Token | Resolves to |
+|-------|-------------|
+| `__IRO_GRAPHICS__` | `runtime/graphics/` (package: `graphics/`) — the Sheet-driven broadcast graphics, `__IRO_GRAPHICS__/<Label>.png` |
+| `__IRO_MEDIA__` | `runtime/media/` — the Intro/Outro clips |
+| `__IRO_TIMER__` | the signed `IRO_TIMER_URL` (stagetimer output) |
+
+(The HUD overlay is served by the relay, so the collection no longer embeds the sheet —
+there is no `__IRO_SHEET__` token in it.)
+
+So `setup-assets.py`:
+- rewrites the broadcast-graphic image paths (`__IRO_GRAPHICS__`) to **this** machine's
+  `runtime/graphics/` folder. Those PNGs are **not** committed — download them first with
+  `python3 src/relay/get-graphics.py` (see [Sheet-driven graphics](#sheet-driven-graphics)
+  below); a graphic still missing prints a warning and OBS shows that source black, and
 - injects `IRO_TIMER_URL` into the timer browser source. (The HUD overlay needs no
   injection — it is served by the relay; `IRO_SHEET_ID` is read by the relay, not the
   collection.)
+
+> `__IRO_ASSETS__` is retired from the OBS collection. `src/assets/` now holds **only**
+> the bundled HUD `flags/` + `brands/` logos — these stay committed and are served by the
+> relay HUD, not by the OBS collection.
 
 You can override per-run without `.env`: `--sheet-id <ID>` / `--timer-url <URL>`.
 
@@ -63,15 +78,22 @@ You can override per-run without `.env`: `--sheet-id <ID>` / `--timer-url <URL>`
 > after importing into OBS** — OBS stores absolute image paths. If you move it, re-run
 > `setup-assets.py` and re-import.
 
-## Refresh graphics from the production source (optional)
+## Sheet-driven graphics
 
-If your overlay graphics live in a shared folder (Google Drive / Dropbox / network
-share), set it once and sync:
+The broadcast still-graphics (Overlay, Standings, Schedule, Race/Quali Results, the three
+weather overlays, Standby, …) are **pure-runtime**: they are driven from the Google Sheet
+**Assets** tab and **never committed**, the same model as the Intro/Outro clips. Each
+Assets row that points at a graphic is downloaded as `runtime/graphics/<Label>.png` — the
+Sheet label *is* the filename (no mapping table; the Intro/Outro YouTube rows are skipped):
 
 ```bash
-echo /path/to/your/graphics/folder > runtime/assets-source.txt   # one-off (gitignored)
-python3 tools/sync-assets.py
-# or per-run:  python3 tools/sync-assets.py --source /path/to/folder
+python3 src/relay/get-graphics.py            # -> runtime/graphics/<Label>.png
+# in the distributed package the graphics ship under  graphics/  and can be refreshed on site
 ```
+
+Run it before `setup-assets.py` (and again before an event when the sheet graphics
+changed). `setup-assets.py` then resolves `__IRO_GRAPHICS__` to this folder; a graphic
+that is still missing only prints a warning (it never fails) and OBS shows that source
+black until you fetch it.
 
 Next: [OBS Setup](OBS-Setup).

@@ -14,10 +14,10 @@ def _collection():
     return {"sources": [
         {"id": "image_source", "name": "Thumbnail",
          "uuid": "aecf782b-9f16-4c9d-ad0d-0a78a78cbcc3",
-         "settings": {"file": "__IRO_ASSETS__/YT-IRO-Race.png"}},
+         "settings": {"file": "__IRO_GRAPHICS__/Standby.png"}},
         {"id": "image_source", "name": "Standings",
          "uuid": "dddddd01-0000-4000-8000-000000000001",
-         "settings": {"file": "__IRO_ASSETS__/Standings.png"}},
+         "settings": {"file": "__IRO_GRAPHICS__/Standings.png"}},
         {"id": "scene", "name": "Stint", "uuid": "11111111-1111-4111-8111-111111111111",
          "settings": {"items": [
             {"name": "Discord", "source_uuid": "disc", "id": 23,
@@ -58,7 +58,7 @@ def t_adds_source():
     src = next(s for s in d["sources"] if s.get("name") == "Standby Cover")
     assert src["id"] == "image_source"
     assert src["uuid"] == m.COVER_UUID
-    assert src["settings"]["file"] == "__IRO_ASSETS__/YT-IRO-Race.png"
+    assert src["settings"]["file"] == m.COVER_FILE
 
 
 def t_cover_item_hidden_fullscreen():

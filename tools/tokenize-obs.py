@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""Replace absolute asset paths in an OBS collection with the __IRO_ASSETS__ token.
+"""Replace absolute asset paths in an OBS collection with the __IRO_GRAPHICS__ token.
 
-Recognized assets = the PNG filenames actually present in the assets dir (default
-<repo>/src/assets), so adding or renaming a graphic is picked up automatically — no
-hardcoded list to keep in sync. Path matching is separator-agnostic (handles a
-Windows-authored collection tokenized on macOS and vice-versa). Idempotent.
+Recognized assets = every image_source 'file' path (the broadcast graphics live in
+runtime/graphics and are tokenized to __IRO_GRAPHICS__/<basename>). Path matching is
+separator-agnostic. Idempotent (already-tokenized paths are left alone).
 
-Usage: tokenize-obs.py IN [OUT] [--assets-dir DIR]
+Usage: tokenize-obs.py IN [OUT]
 """
 import argparse, json, os, re, sys
 
-TOKEN = "__IRO_ASSETS__"
+TOKEN = "__IRO_GRAPHICS__"
 SHEET_TOKEN = "__IRO_SHEET__"
 TIMER_TOKEN = "__IRO_TIMER__"
 # Any /spreadsheets/d/<id>/ — the {20,} length guard skips the short token itself.
@@ -42,23 +41,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src")
     ap.add_argument("out", nargs="?", default=None)
-    ap.add_argument("--assets-dir", default=None)
     a = ap.parse_args()
     out = a.out or a.src
-    assets_dir = a.assets_dir or os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "assets")
-    known = ({f for f in os.listdir(assets_dir) if f.lower().endswith(".png")}
-             if os.path.isdir(assets_dir) else set())
-    if not known:
-        sys.exit(f"ERROR: no asset PNGs found in {assets_dir} "
-                 f"(need them to know which paths to tokenize; run sync-assets first).")
 
     d = json.load(open(a.src, encoding="utf-8"))
     n = 0
     for s in d.get("sources", []):
+        if s.get("id") != "image_source":
+            continue
         st = s.get("settings") or {}
         f = st.get("file")
-        if isinstance(f, str) and base(f) in known:
+        if isinstance(f, str) and f and not f.startswith("__IRO_"):
             st["file"] = f"{TOKEN}/{base(f)}"
             n += 1
     sheet_count = [0]

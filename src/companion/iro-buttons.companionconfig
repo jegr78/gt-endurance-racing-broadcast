@@ -1586,6 +1586,90 @@
        }
       },
       "localVariables": []
+     },
+     "7": {
+      "type": "button",
+      "style": {
+       "text": "Race Wx 1",
+       "textExpression": false,
+       "size": "14",
+       "png64": null,
+       "alignment": "center:center",
+       "pngalignment": "center:center",
+       "color": 16777215,
+       "bgcolor": 0,
+       "show_topbar": "default"
+      },
+      "options": {
+       "stepProgression": "auto",
+       "stepExpression": "",
+       "rotaryActions": false
+      },
+      "feedbacks": [
+       {
+        "id": "wx-fb-rw1",
+        "definitionId": "scene_item_active",
+        "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+        "options": {
+         "scene": {
+          "value": "Stint",
+          "isExpression": false
+         },
+         "source": {
+          "value": "Race Weather 1",
+          "isExpression": false
+         }
+        },
+        "upgradeIndex": 8,
+        "type": "feedback",
+        "style": {
+         "color": 16777215,
+         "bgcolor": 13421568
+        },
+        "isInverted": {
+         "value": false,
+         "isExpression": false
+        }
+       }
+      ],
+      "steps": {
+       "0": {
+        "action_sets": {
+         "down": [
+          {
+           "id": "wx-act-rw1",
+           "definitionId": "toggle_scene_item",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "scene": {
+             "value": "Stint",
+             "isExpression": false
+            },
+            "all": {
+             "value": false,
+             "isExpression": false
+            },
+            "source": {
+             "value": "Race Weather 1",
+             "isExpression": false
+            },
+            "visible": {
+             "value": "toggle",
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 8,
+           "type": "action"
+          }
+         ],
+         "up": []
+        },
+        "options": {
+         "runWhileHeld": []
+        }
+       }
+      },
+      "localVariables": []
      }
     },
     "2": {
@@ -2128,6 +2212,90 @@
        }
       },
       "localVariables": []
+     },
+     "7": {
+      "type": "button",
+      "style": {
+       "text": "Race Wx 2",
+       "textExpression": false,
+       "size": "14",
+       "png64": null,
+       "alignment": "center:center",
+       "pngalignment": "center:center",
+       "color": 16777215,
+       "bgcolor": 0,
+       "show_topbar": "default"
+      },
+      "options": {
+       "stepProgression": "auto",
+       "stepExpression": "",
+       "rotaryActions": false
+      },
+      "feedbacks": [
+       {
+        "id": "wx-fb-rw2",
+        "definitionId": "scene_item_active",
+        "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+        "options": {
+         "scene": {
+          "value": "Stint",
+          "isExpression": false
+         },
+         "source": {
+          "value": "Race Weather 2",
+          "isExpression": false
+         }
+        },
+        "upgradeIndex": 8,
+        "type": "feedback",
+        "style": {
+         "color": 16777215,
+         "bgcolor": 13421568
+        },
+        "isInverted": {
+         "value": false,
+         "isExpression": false
+        }
+       }
+      ],
+      "steps": {
+       "0": {
+        "action_sets": {
+         "down": [
+          {
+           "id": "wx-act-rw2",
+           "definitionId": "toggle_scene_item",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "scene": {
+             "value": "Stint",
+             "isExpression": false
+            },
+            "all": {
+             "value": false,
+             "isExpression": false
+            },
+            "source": {
+             "value": "Race Weather 2",
+             "isExpression": false
+            },
+            "visible": {
+             "value": "toggle",
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 8,
+           "type": "action"
+          }
+         ],
+         "up": []
+        },
+        "options": {
+         "runWhileHeld": []
+        }
+       }
+      },
+      "localVariables": []
      }
     },
     "3": {
@@ -2244,7 +2412,7 @@
           "isExpression": false
          },
          "source": {
-          "value": "Season Schedule",
+          "value": "Schedule",
           "isExpression": false
          }
         },
@@ -2278,7 +2446,7 @@
              "isExpression": false
             },
             "source": {
-             "value": "Season Schedule",
+             "value": "Schedule",
              "isExpression": false
             },
             "visible": {
@@ -2699,6 +2867,90 @@
             },
             "source": {
              "value": "HUD",
+             "isExpression": false
+            },
+            "visible": {
+             "value": "toggle",
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 8,
+           "type": "action"
+          }
+         ],
+         "up": []
+        },
+        "options": {
+         "runWhileHeld": []
+        }
+       }
+      },
+      "localVariables": []
+     },
+     "7": {
+      "type": "button",
+      "style": {
+       "text": "Quali Wx",
+       "textExpression": false,
+       "size": "14",
+       "png64": null,
+       "alignment": "center:center",
+       "pngalignment": "center:center",
+       "color": 16777215,
+       "bgcolor": 0,
+       "show_topbar": "default"
+      },
+      "options": {
+       "stepProgression": "auto",
+       "stepExpression": "",
+       "rotaryActions": false
+      },
+      "feedbacks": [
+       {
+        "id": "wx-fb-qw",
+        "definitionId": "scene_item_active",
+        "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+        "options": {
+         "scene": {
+          "value": "Stint",
+          "isExpression": false
+         },
+         "source": {
+          "value": "Quali Weather",
+          "isExpression": false
+         }
+        },
+        "upgradeIndex": 8,
+        "type": "feedback",
+        "style": {
+         "color": 16777215,
+         "bgcolor": 13421568
+        },
+        "isInverted": {
+         "value": false,
+         "isExpression": false
+        }
+       }
+      ],
+      "steps": {
+       "0": {
+        "action_sets": {
+         "down": [
+          {
+           "id": "wx-act-qw",
+           "definitionId": "toggle_scene_item",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "scene": {
+             "value": "Stint",
+             "isExpression": false
+            },
+            "all": {
+             "value": false,
+             "isExpression": false
+            },
+            "source": {
+             "value": "Quali Weather",
              "isExpression": false
             },
             "visible": {

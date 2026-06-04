@@ -58,6 +58,17 @@ def main():
     except Exception as e:
         print(f"  [WARN] intro/outro clip fetch skipped: {e}")
 
+    # broadcast graphics: download into the package so the artifact is self-contained.
+    # Best-effort (same policy as the clips) — get-graphics.py lets a producer re-fetch
+    # on site when the sheet graphics change.
+    graphics_dst = os.path.join(PKG, "graphics")
+    os.makedirs(graphics_dst, exist_ok=True)
+    try:
+        subprocess.run([sys.executable, os.path.join(SRC, "relay", "get-graphics.py"),
+                        "--out", graphics_dst], check=True, timeout=600)
+    except Exception as e:
+        print(f"  [WARN] graphics fetch skipped: {e}")
+
     # .env template (repo root, not src/) so producers can set their own IRO_SHEET_ID
     shutil.copy2(os.path.join(ROOT, ".env.example"), os.path.join(PKG, ".env.example"))
 
@@ -105,7 +116,8 @@ def main():
     checks = {
         "companion pov buttons": "pov/reload" in blob,
         "companion password empty": not has_pw(written),
-        "obs tokenized": "__IRO_ASSETS__/" in tpl and "GoogleDrive" not in tpl,
+        "obs graphics tokenized": "__IRO_GRAPHICS__/" in tpl
+            and "GoogleDrive" not in tpl and "drive.google.com" not in tpl,
         # The HUD no longer embeds the sheet (the relay serves /hud), so the
         # collection legitimately has no __IRO_SHEET__ token — just assert no raw
         # sheet URL ever leaks in.
@@ -127,6 +139,10 @@ def main():
         ok = os.path.isfile(os.path.join(PKG, "media", clip))
         print(f"  [{'OK' if ok else 'warn'}] media {clip} "
               f"{'present' if ok else 'MISSING (run get-media.py before release)'}")
+    for fn in sorted(set(re.findall(r"__IRO_GRAPHICS__/([^\"\\]+\.png)", tpl))):
+        ok = os.path.isfile(os.path.join(PKG, "graphics", fn))
+        print(f"  [{'OK' if ok else 'warn'}] graphic {fn} "
+              f"{'present' if ok else 'MISSING (run get-graphics.py before release)'}")
     if bad:
         sys.exit("BUILD VERIFY FAILED: " + ", ".join(bad))
 

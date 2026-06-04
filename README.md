@@ -29,8 +29,10 @@ Used by the relay (schedule/POV tabs) and by `setup-assets.py` (HUD browser sour
 python3 src/setup-assets.py --out runtime/IRO_Endurance.import.json   # once: localize OBS assets + inject Sheet ID
 # OBS -> Scene Collection -> Import -> runtime/IRO_Endurance.import.json
 python3 src/relay/get-cookies.py chrome --runtime-dir runtime         # before each event
-# Download the stream Intro/Outro clips (URLs from the Sheet's Configuration tab)
+# Download the stream Intro/Outro clips (URLs from the Sheet's Assets tab)
 python3 src/relay/get-media.py            # -> runtime/media/intro.mp4, outro.mp4
+# Download the broadcast graphics (Standings/Schedule/Results/Weather/… from the Assets tab)
+python3 src/relay/get-graphics.py            # -> runtime/graphics/<Label>.png
 python3 tools/run-relay.py                                            # start the relay
 ```
 
@@ -43,12 +45,4 @@ python3 tools/build.py     # -> dist/IRO_Broadcast_Package/ + dist/IRO_Broadcast
 Re-export from OBS, then fold the change back into the tokenized source:
 ```bash
 python3 tools/tokenize-obs.py /path/to/exported.json src/obs/IRO_Endurance.json
-```
-
-## Refresh graphics from the production source
-Set your graphics folder once (Google-Drive / Dropbox / network share), then sync:
-```bash
-echo /path/to/your/graphics/folder > runtime/assets-source.txt   # one-off (gitignored)
-python3 tools/sync-assets.py
-# or per-run:  python3 tools/sync-assets.py --source /path/to/folder
 ```

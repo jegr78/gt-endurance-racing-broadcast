@@ -20,7 +20,7 @@ collection.
 ## 2. The scenes
 
 - **Stint** — the active feed full-screen + HUD overlay (POV PiP lives only here). It also
-  holds a hidden **Standby Cover** (the `YT-IRO-Race.png` graphic) **below the HUD group**,
+  holds a hidden **Standby Cover** (the `Standby.png` graphic) **below the HUD group**,
   so showing it hides the feeds and the POV PiP while the Race Control banner and timer stay
   on top. The director toggles it with the Companion **Standby Toggle** button (a
   *Set Source Visibility* toggle on `Stint / Standby Cover`, with a *Source Visible*
@@ -35,6 +35,17 @@ collection.
   tokenised as `__IRO_MEDIA__` in the collection and resolved by `setup-assets.py`; download
   or refresh the clips from the Sheet **Assets** tab with `python3 src/relay/get-media.py`
   (see [Configuration](Configuration)). If the clips are missing the scene shows black.
+
+> **Broadcast graphics are local files.** The still-graphics image sources — Overlay,
+> Standings, Schedule, Race Results, Quali Results, Standby, and the three **weather**
+> overlays (**Race Weather 1**, **Race Weather 2**, **Quali Weather**) — read from
+> `runtime/graphics/<Label>.png`. They are tokenised `__IRO_GRAPHICS__` in the collection
+> and resolved by `setup-assets.py`. Download them from the Sheet **Assets** tab with
+> `python3 src/relay/get-graphics.py` (one PNG per Assets row, the Sheet label is the
+> filename); a source whose file is missing shows black until you fetch it. The three
+> weather graphics are **hidden full-screen overlays in the Stint scene**, each switchable
+> by its own Companion toggle (`Race Wx 1` / `Race Wx 2` / `Quali Wx` — see
+> [Director guide](Director)), exactly like the Standings/Results toggles.
 
 ## 3. Media Sources (the feeds)
 

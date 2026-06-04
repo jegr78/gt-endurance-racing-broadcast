@@ -24,12 +24,17 @@ flowchart LR
 4. **Refresh the intro/outro clips** (only if their URLs changed):
    `python3 src/relay/get-media.py` — pulls the URLs from the Sheet **Assets** tab and
    downloads `runtime/media/intro.mp4` / `outro.mp4`.
-5. **Pre-flight check:** `python3 src/scripts/preflight.py` — fix anything it flags.
-6. **Start the feeds:** `python3 tools/run-relay.py`. Confirm each live feed shows up in
+5. **Refresh the graphics:** `python3 src/relay/get-graphics.py` — pulls every graphic from
+   the Sheet **Assets** tab into `runtime/graphics/` (Standings, Schedule, Race/Quali
+   Results, the three weather overlays, Standby, …). Run it whenever the sheet graphics
+   changed. The **weather** graphics are then available as full-screen toggles during the
+   race (see [Director guide](Director)).
+6. **Pre-flight check:** `python3 src/scripts/preflight.py` — fix anything it flags.
+7. **Start the feeds:** `python3 tools/run-relay.py`. Confirm each live feed shows up in
    OBS.
-7. Make sure **Companion** is connected (green) and a director can reach
+8. Make sure **Companion** is connected (green) and a director can reach
    `http://<producer-tailscale-ip>:8000/tablet`.
-8. **Enter the IRO stream key** in OBS (**Settings → Stream**).
+9. **Enter the IRO stream key** in OBS (**Settings → Stream**).
 
 ## Go live
 
