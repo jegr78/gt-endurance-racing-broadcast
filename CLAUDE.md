@@ -27,27 +27,43 @@ Pure Python + stdlib (no framework, no package manager); external runtime deps a
 ```bash
 # Tests (stdlib only — each file is a runnable script, no pytest)
 python3 tests/test_pov.py            # relay POV/schedule unit checks
+python3 tests/test_bind.py           # relay auto dual-bind (localhost + Tailscale IP)
+python3 tests/test_companion.py      # Companion start/stop bind helpers
 python3 tests/test_preflight.py      # preflight classifier unit checks
+python3 tests/test_services.py       # daemon helper (PID/spawn/stop)
+python3 tests/test_iro.py            # iro CLI routing
+python3 tests/test_streams.py       # static-streams helpers (frozen feed spawn)
+python3 tests/test_installer_common.py  # shared installer helpers (brew bootstrap)
+python3 tests/test_install_tools.py     # install-tools decision helpers
+python3 tests/test_install_apps.py      # install-apps decision helpers
+python3 tools/run-tests.py           # the whole suite (exactly what CI runs)
 # Run ONE test function:
 python3 -c "import sys; sys.path.insert(0,'tests'); import test_pov as t; t.t_pov_format_constant()"
 
 # Build the distributable (assembles + self-verifies dist/)
 python3 tools/build.py               # -> dist/IRO_Broadcast_Package/ + .zip
+# Standalone binary (maintainer; CI builds all three OSes on tags v*)
+python3 tools/build-binary.py        # -> dist/bin/iro (+ smoke test)
 
-# Run the relay (the producer's main tool)
-python3 tools/run-relay.py [extra relay args]   # wraps src/relay/iro-feeds.py --runtime-dir runtime
-
-# Localize the OBS collection for this machine (tokens -> real paths/secrets)
-python3 src/setup-assets.py --out runtime/IRO_Endurance.import.json
-
-# Refresh YouTube cookies before an event (bot-check bypass)
-python3 src/relay/get-cookies.py chrome --runtime-dir runtime
-
-# Fetch the broadcast graphics (Assets tab -> runtime/graphics)
-python3 src/relay/get-graphics.py   # downloads <Label>.png from the Sheet Assets tab
-
-# Pre-flight hardware/tool check
-python3 src/scripts/preflight.py
+# Unified operator CLI (the producer's main entrypoint)
+python3 src/iro.py relay start       # start the relay in the background
+python3 src/iro.py relay stop        # stop it
+python3 src/iro.py relay logs -f     # tail the relay log
+python3 src/iro.py relay run         # foreground/debug mode
+python3 src/iro.py companion start   # bind Companion to Tailscale IP and start it
+python3 src/iro.py companion stop
+python3 src/iro.py streams start     # static/public-stream mode
+python3 src/iro.py streams stop
+python3 src/iro.py status            # aggregate health of all services
+python3 src/iro.py preflight         # hardware/tool check
+python3 src/iro.py cookies chrome    # refresh YouTube cookies before an event
+python3 src/iro.py graphics          # download broadcast graphics -> runtime/graphics/
+python3 src/iro.py media             # download Intro/Outro clips -> runtime/media/
+python3 src/iro.py setup --out runtime/IRO_Endurance.import.json   # localize OBS collection
+python3 src/iro.py install-tools     # install yt-dlp/streamlink/ffmpeg/deno (winget/brew/apt; bootstraps brew on macOS)
+python3 src/iro.py install-apps      # install OBS/Companion/Tailscale (winget/brew/apt+official installers)
+python3 src/iro.py export companion  # write the Companion button config for import
+python3 src/iro.py --version
 
 # Fetch any missing HUD country flags from the sheet's Configuration tab
 python3 tools/fetch-flags.py            # adds missing -> src/assets/flags/ (keeps old)
@@ -119,11 +135,18 @@ bot-check via `cookies.txt` + deno JS challenge) → `streamlink --player-extern
 serves that URL to one OBS client. (`curl`-ing the port returns nothing — it serves a
 single consumer; that is not a failure.)
 
-Control is an **unauthenticated** `ThreadingHTTPServer` (default `127.0.0.1:8088`)
-exposing GET endpoints (`/next`, `/reload`, `/set/A/<n>`, `/pov/reload`, `/status`,
-`/panel`, …) driven by Companion's Generic-HTTP module. `--bind 0.0.0.0` exposes it
-for remote directors — prefer binding to the Tailscale IP, not all interfaces (the
-endpoints have no auth and `/status` reveals stream URLs).
+Control is an **unauthenticated** `ThreadingHTTPServer` on port `8088` exposing GET
+endpoints (`/next`, `/reload`, `/set/A/<n>`, `/pov/reload`, `/status`, `/panel`, …)
+driven by Companion's Generic-HTTP module. `--bind` defaults to **`auto`** (plug &
+play): it binds `127.0.0.1` (OBS always reaches the HUD/feeds on the fixed loopback
+address — the OBS collection never needs editing) **and** this machine's Tailscale IP
+(auto-detected via `detect_tailscale_ip()`, the `100.64.0.0/10` CGNAT range) when
+present, so remote directors/tablets reach `/panel` + `/hud` over the tailnet — *without*
+exposing the unauthenticated server on the local LAN the way `0.0.0.0` would. If
+Tailscale is down, `auto` falls back to localhost-only (OBS keeps working). Pass an
+explicit value (`127.0.0.1` for local-only, or `0.0.0.0`) to override. The endpoints
+have no auth and `/status` reveals stream URLs, so the tailnet is the trust boundary —
+keep it to invited members. Bind logic is pure + unit-tested: `tests/test_bind.py`.
 
 The same server also hosts the **lower-third HUD** as one relay-served page,
 replacing ~13 cropped Google-Sheets-editor browser sources (the old producer-lag
@@ -135,11 +158,63 @@ serves bundled logos from `src/assets/`. The page polls `/hud/data` (no manual
 reloads); flags/brands resolve from text via `asset_key()`. Flags: `--no-hud`,
 `--overlay-tab`, `--config-tab`, `--hud-poll`. Tests: `tests/test_hud.py`.
 
+### Unified `iro` CLI (`src/iro.py`)
+`src/iro.py` is the single shipped entrypoint for operators. It dispatches to:
+- **`src/scripts/services.py`** — daemon helper for the relay and static-streams: spawns
+  subprocesses, writes PID + log files under `runtime/`, and provides start/stop/restart/
+  status/logs for both. `iro relay run` is the foreground/debug mode (no daemon).
+- **Companion adapter** (over `src/scripts/companion_common.py`) — `iro companion
+  start/stop/restart/status/logs` wraps the Companion bind logic (Windows + macOS
+  automated; Linux manual by design).
+- **One-shot wrappers** — `iro preflight`, `iro cookies`, `iro graphics`, `iro media`,
+  `iro setup` delegate to the corresponding `src/` modules without needing to remember
+  individual script paths.
+- **`iro status`** — aggregate health of relay + companion + streams at a glance.
+
+`tools/` is maintainer-only (build, tokenize, sync) and is not shipped to producers.
+
+### Standalone binary (PyInstaller)
+`tools/build-binary.py` freezes `src/iro.py` into one executable per OS; the whole
+`src/` tree ships as bundled data under `sys._MEIPASS/src/`, so here-relative path
+resolution keeps working. In frozen mode (`sys.frozen`), `iro` runs bundled scripts
+**in-process** (importlib + patched argv, string `sys.exit` payloads go to stderr)
+and daemons re-invoke the binary itself (`iro relay run`, hidden `iro streams
+run-feed`) with `PYINSTALLER_RESET_ENVIRONMENT=1` so each child extracts its own
+bundle and outlives the parent. `runtime/` and `.env` live next to the binary —
+keep it in its own folder. `services.py`/`companion_common.py` carry the per-OS
+process control (Windows: ctypes PID probe — `os.kill(pid, 0)` would TERMINATE the
+target there — taskkill/tasklist, Companion.exe discovery + `IRO_COMPANION_EXE`
+override in `.env`; Linux Companion control is manual by design — in WSL/Docker
+setups Companion runs on the host). Releases: push a `v*` tag —
+`.github/workflows/release.yml` tests, builds, smoke-tests and uploads
+`iro-windows.exe` / `iro-macos` / `iro-linux`. `ci.yml` runs the suite on all
+three OSes for every PR. Unsigned binaries: SmartScreen/Gatekeeper show a
+one-time "run anyway" warning.
+
 ### Static mode (`src/scripts/`) — the simpler alternative
-`start-streams.py` / `stop-streams.py` / `loopstream.py` launch one streamlink server
-per **public** channel with PID/log files under `runtime/static/`. This is the
-fallback for public streams; the real unlisted-stream flow is the relay.
-`stop-streams.py` validates a PID actually belongs to a feed process before killing.
+`loopstream.py` keeps one streamlink server alive for one public channel; `start-streams.py`
+/ `stop-streams.py` manage a set of them with PID/log files under `runtime/static/`. This
+is the fallback for public streams; the real unlisted-stream flow is the relay. Invoke via
+`iro streams start/stop` — `start-streams.py`/`stop-streams.py` are logic modules, not
+the operator entrypoint. `stop-streams.py` validates a PID actually belongs to a feed
+process before killing.
+
+### Companion remote-access helpers (`src/scripts/`)
+`companion_common.py` (tests `tests/test_companion.py`) contains the pure logic that binds
+**Bitfocus Companion**'s admin/web-buttons server to this machine's Tailscale IP so a tablet
+can open `http://<tailscale-ip>:<port>/tablet` over the tailnet — same plug-&-play model as
+the relay's `--bind auto`, and likewise **not** the LAN. It auto-detects the Tailscale IP
+(duplicated `detect_tailscale_ip`, keep in sync with the relay), and — only while Companion
+is stopped, with a `.iro-bak` backup — sets `bind_ip` in Companion's `config.json`
+(`~/Library/Application Support/companion/config.json` on macOS; the GUI launcher reads
+it as `--admin-address`). Windows + macOS automated (Windows: Companion.exe discovery +
+`IRO_COMPANION_EXE` override in `.env`); Linux manual by design — in WSL/Docker setups
+Companion runs on the host. Invoke via `iro companion start/stop`. **Important:**
+binding only controls *where* Companion listens — Companion serves `/tablet` and the admin
+GUI on one port + one shared socket API (its admin password is a casual deterrent, not a
+boundary), so isolating the admin from directors is a **Tailscale-ACL** job (restrict who
+reaches the port), not something these scripts can do. Editing `config.json` is
+unsupported-but-stable; re-check after Companion upgrades.
 
 ## Docs
 

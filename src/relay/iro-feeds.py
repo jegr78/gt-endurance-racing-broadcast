@@ -49,7 +49,7 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   Stop: Ctrl+C
 """
 
-import argparse, csv, io, json, os, re, shutil, signal, subprocess, sys, threading, time
+import argparse, csv, io, ipaddress, json, os, re, shutil, signal, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, quote
 from urllib.request import Request, urlopen
@@ -67,6 +67,69 @@ RETRY_SLEEP = 10    # seconds after a stream ends / manifest expires before re-r
 # .env at the repo/package root). See .env.example. Override per-run with --sheet-id.
 DEFAULT_SHEET_TAB = "Schedule"
 DEFAULT_POV_TAB = "POV"
+
+# ---------- Network bind resolution (auto dual-bind: localhost + Tailscale) ----
+# OBS always reaches the control/HUD server on 127.0.0.1 (a fixed, machine-
+# independent address — never edit the OBS collection). With --bind auto
+# (the default) the server ALSO binds the machine's Tailscale IP so remote
+# directors/tablets reach /panel + /hud over the tailnet — without exposing the
+# unauthenticated server on the local LAN the way 0.0.0.0 would.
+_CGNAT_NET = ipaddress.ip_network("100.64.0.0/10")  # Tailscale's IPv4 range
+# Candidate Tailscale CLI locations (PATH first, then the platform installers).
+_TAILSCALE_BINS = [
+    "tailscale",
+    "/Applications/Tailscale.app/Contents/MacOS/Tailscale",  # macOS GUI app
+    "/usr/bin/tailscale", "/usr/local/bin/tailscale", "/opt/homebrew/bin/tailscale",
+    r"C:\Program Files\Tailscale\tailscale.exe",
+]
+
+
+def _in_cgnat(ip):
+    """True iff ip is a valid IPv4 address inside Tailscale's 100.64.0.0/10 range."""
+    try:
+        return ipaddress.ip_address(ip) in _CGNAT_NET
+    except ValueError:
+        return False
+
+
+def parse_tailscale_ip(output):
+    """First CGNAT IPv4 line of `tailscale ip -4` output, or None."""
+    for line in output.splitlines():
+        ip = line.strip()
+        if ip and _in_cgnat(ip):
+            return ip
+    return None
+
+
+def detect_tailscale_ip():
+    """This machine's Tailscale IPv4 via the Tailscale CLI, or None if unavailable."""
+    for binary in _TAILSCALE_BINS:
+        try:
+            out = subprocess.run([binary, "ip", "-4"], capture_output=True,
+                                 text=True, timeout=3)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        ip = parse_tailscale_ip(out.stdout)
+        if ip:
+            return ip
+    return None
+
+
+def resolve_bind_addresses(bind_arg, tailscale_ip):
+    """Map the --bind value (+ a detected Tailscale IP) to bind addresses.
+
+    'auto'  -> 127.0.0.1 plus the Tailscale IP when present (localhost only if not).
+    localhost/127.0.0.1 -> [127.0.0.1].
+    anything else (e.g. 0.0.0.0 or a specific IP) -> taken literally.
+    """
+    if bind_arg == "auto":
+        addrs = ["127.0.0.1"]
+        if tailscale_ip and tailscale_ip not in addrs:
+            addrs.append(tailscale_ip)
+        return addrs
+    if bind_arg in ("127.0.0.1", "localhost"):
+        return ["127.0.0.1"]
+    return [bind_arg]
 
 SCHEDULE_TEMPLATE = (
     "# IRO relay offline fallback schedule — used ONLY if the Google Sheet AND the\n"
@@ -705,11 +768,14 @@ def main():
                     help="Directory for runtime data (cookies.txt, logs/, *.cache.txt). "
                          "Default: next to this script (keeps the distributed package "
                          "self-locating). The repo passes its runtime/ folder.")
-    ap.add_argument("--bind", default="127.0.0.1",
-                    help="Address the control/panel HTTP server binds to. Default "
-                         "127.0.0.1 (local only — fine when Companion runs on this "
-                         "machine). Use 0.0.0.0 to let remote directors open "
-                         "http://<tailscale-ip>:<http-port>/panel.")
+    ap.add_argument("--bind", default="auto",
+                    help="Address(es) the control/panel/HUD HTTP server binds to. "
+                         "Default 'auto': binds 127.0.0.1 (for OBS, always) AND this "
+                         "machine's Tailscale IP when present, so remote directors/"
+                         "tablets reach /panel + /hud over the tailnet without "
+                         "exposing the server on the local LAN. Pass '127.0.0.1' to "
+                         "force local-only, or an explicit address (e.g. 0.0.0.0) to "
+                         "override.")
     ap.add_argument("--no-panel", action="store_true",
                     help="Do not serve the director panel at /panel.")
     ap.add_argument("--overlay-tab", default="Overlay",
@@ -831,17 +897,29 @@ def main():
         threading.Thread(target=poller, args=(hud_source, args.hud_poll, stop_evt),
                          daemon=True).start()
 
-    httpd = ThreadingHTTPServer((args.bind, args.http_port),
-                                make_handler(relay, panel_path, hud_source, hud_path, assets_dir))
+    handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir)
+    bind_addrs = resolve_bind_addresses(
+        args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
+    servers = []
+    for addr in bind_addrs:
+        try:
+            servers.append(ThreadingHTTPServer((addr, args.http_port), handler))
+        except OSError as e:
+            print(f"  (warn) could not bind {addr}:{args.http_port} — {e}")
+    if not servers:
+        sys.exit(f"Could not bind the control server on {bind_addrs} port {args.http_port}.")
 
     def shutdown(*_):
-        # IMPORTANT: do NOT call httpd.shutdown() from the thread running
-        # serve_forever() (deadlock). Stop the feeds and exit hard — the OS
-        # frees the socket; the streamlink subprocesses are cleanly terminated.
+        # IMPORTANT: do NOT call shutdown() from the thread running serve_forever()
+        # (deadlock). Stop the feeds and exit hard — the OS frees the sockets; the
+        # streamlink subprocesses are cleanly terminated.
         print("\nStopping feeds…")
         stop_evt.set(); relay.shutdown(); os._exit(0)
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
+
+    # The non-loopback bind (if any) is the address remote directors/tablets use.
+    remote_host = next((a for a in bind_addrs if a not in ("127.0.0.1", "localhost")), None)
 
     print(f"IRO relay running.  Schedule source: {'CSV URL' if args.sheet_csv_url else f'sheet tab “{args.sheet_tab}”'}")
     print(f"  Feed A -> http://127.0.0.1:{ports[0]}   Feed B -> http://127.0.0.1:{ports[1]}")
@@ -850,16 +928,20 @@ def main():
         print(f"  Driver-POV PiP -> http://127.0.0.1:{args.pov_port}  "
               f"(sheet tab '{args.pov_tab}' A2; control /pov/reload | /pov/stop)")
     if panel_path:
-        host = "127.0.0.1" if args.bind in ("127.0.0.1", "localhost") else "<this-machine-ip>"
-        print(f"  Director panel: http://{host}:{args.http_port}/panel"
-              + ("" if args.bind != "127.0.0.1" else "  (local only — use --bind 0.0.0.0 for remote directors)"))
+        print(f"  Director panel (local): http://127.0.0.1:{args.http_port}/panel")
+        if remote_host:
+            print(f"    remote (tailnet):      http://{remote_host}:{args.http_port}/panel")
+        elif args.bind == "auto":
+            print("    (no Tailscale IP found — local only; start Tailscale for remote access)")
     if hud_source and hud_path:
-        host = "127.0.0.1" if args.bind in ("127.0.0.1", "localhost") else "<this-machine-ip>"
-        print(f"  HUD overlay: http://{host}:{args.http_port}/hud  "
+        print(f"  HUD overlay (OBS source): http://127.0.0.1:{args.http_port}/hud  "
               f"(tabs '{args.overlay_tab}'/'{args.config_tab}', refresh {args.hud_poll}s)")
     print(f"  Cookies (bot-check protection): {'ON — ' + cookies if cookies else 'off (no cookies.txt)'}")
     print(f"  Sheet poll every {args.poll}s.  Ctrl+C to stop.")
-    httpd.serve_forever()
+    # Serve every bound address; keep the last on the main thread for signals.
+    for httpd in servers[:-1]:
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    servers[-1].serve_forever()
 
 if __name__ == "__main__":
     main()

@@ -3,7 +3,7 @@
 Do this **once** per machine — about 30 minutes. When you're done, go to
 [Run an event](Run-an-event).
 
-> Tip: `python3 src/scripts/preflight.py` checks your machine and tells you what's still
+> Tip: `python3 src/iro.py preflight` checks your machine and tells you what's still
 > missing. Run it whenever you're unsure.
 
 ## What you need
@@ -67,7 +67,7 @@ Keep `.env` private; never share it. Full detail: [Configuration & secrets](Conf
 ## 5 — Import the OBS scenes
 
 ```bash
-python3 src/setup-assets.py --out runtime/IRO_Endurance.import.json
+python3 src/iro.py setup --out runtime/IRO_Endurance.import.json
 ```
 
 Then in OBS: **Scene Collection → Import →** pick that file, and switch to it. Don't move
@@ -95,7 +95,7 @@ the show. More: [Director guide](Director).
 ## 9 — Get YouTube cookies
 
 ```bash
-python3 src/relay/get-cookies.py chrome   # or firefox / safari / edge — any logged-in browser
+python3 src/iro.py cookies chrome   # or firefox / safari / edge — any logged-in browser
 ```
 
 This lets the feeds bypass YouTube's bot check. OS notes: on **macOS**, Chrome/Edge show a
@@ -118,7 +118,7 @@ Don't also capture Discord via desktop audio, or you'll hear it twice.
 ## 11 — Pre-flight check
 
 ```bash
-python3 src/scripts/preflight.py
+python3 src/iro.py preflight
 ```
 
 Fix anything it flags. Then you're ready → [Run an event](Run-an-event).

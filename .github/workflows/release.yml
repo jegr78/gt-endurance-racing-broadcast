@@ -1,0 +1,51 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+defaults:
+  run:
+    shell: bash
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Create the GitHub release (idempotent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" --generate-notes || true
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: iro-windows.exe
+            built: dist/bin/iro.exe
+          - os: macos-latest
+            asset: iro-macos
+            built: dist/bin/iro
+          - os: ubuntu-latest
+            asset: iro-linux
+            built: dist/bin/iro
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Run test suite
+        run: python tools/run-tests.py
+      - name: Install PyInstaller
+        run: python -m pip install pyinstaller
+      - name: Build + smoke-test the binary
+        run: python tools/build-binary.py --version "${{ github.ref_name }}"
+      - name: Upload release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp "${{ matrix.built }}" "${{ matrix.asset }}"
+          gh release upload "${{ github.ref_name }}" "${{ matrix.asset }}" --clobber

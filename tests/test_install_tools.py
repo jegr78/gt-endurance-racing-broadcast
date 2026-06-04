@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Stdlib checks for install_tools decision helpers. Run: python3 tests/test_install_tools.py"""
+import importlib.util, os
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+spec = importlib.util.spec_from_file_location(
+    "install_tools", os.path.join(ROOT, "src", "scripts", "install_tools.py"))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+
+def t_pick_manager_per_platform():
+    have_all = lambda name: "/usr/bin/" + name
+    assert m.pick_manager("win32", which=have_all) == "winget"
+    assert m.pick_manager("darwin", which=have_all) == "brew"
+    assert m.pick_manager("linux", which=have_all) == "apt"
+    assert m.pick_manager("win32", which=lambda n: None) is None
+
+
+def t_missing_tools():
+    assert m.missing_tools(which=lambda n: None) == list(m.TOOLS)
+    assert m.missing_tools(which=lambda n: "/bin/" + n) == []
+    only_ffmpeg = lambda n: "/bin/ffmpeg" if n == "ffmpeg" else None
+    assert m.missing_tools(which=only_ffmpeg) == ["yt-dlp", "streamlink", "deno"]
+
+
+def t_install_commands_winget_one_per_tool():
+    cmds = m.install_commands("winget", ["yt-dlp", "deno"])
+    assert len(cmds) == 2
+    assert cmds[0][:3] == ["winget", "install", "--id"]
+    assert cmds[0][3] == "yt-dlp.yt-dlp" and cmds[1][3] == "DenoLand.Deno"
+
+
+def t_install_commands_brew_single_batch():
+    assert m.install_commands("brew", ["ffmpeg", "deno"]) == \
+        [["brew", "install", "ffmpeg", "deno"]]
+    assert m.install_commands("brew", []) == []
+
+
+def t_install_commands_apt_skips_deno():
+    cmds = m.install_commands("apt", ["yt-dlp", "deno"])
+    assert cmds == [["apt-get", "install", "-y", "yt-dlp"]]
+    assert m.install_commands("apt", ["deno"]) == []
+
+
+def t_manual_guide_mentions_deno_on_linux():
+    assert "deno" in m.manual_guide("linux")
+    assert "brew install" in m.manual_guide("darwin")
+    assert "winget" in m.manual_guide("win32")
+
+
+def t_install_commands_brew_absolute_path():
+    assert m.install_commands("brew", ["ffmpeg", "deno"],
+                              brew_path="/opt/homebrew/bin/brew") == \
+        [["/opt/homebrew/bin/brew", "install", "ffmpeg", "deno"]]
+
+
+if __name__ == "__main__":
+    for name, fn in sorted(globals().items()):
+        if name.startswith("t_") and callable(fn):
+            fn(); print("ok", name)
+    print("ALL PASS")

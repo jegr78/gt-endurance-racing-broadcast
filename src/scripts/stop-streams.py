@@ -1,6 +1,24 @@
 #!/usr/bin/env python3
 """Stop every streamlink server started by start-streams.py (Mac/Linux + Windows)."""
-import glob, os, signal, subprocess, sys
+import argparse, glob, os, signal, subprocess, sys
+
+
+def looks_like_feed(probe_output, windows=False):
+    """True iff a ps/tasklist probe line describes one of our feed processes:
+    loopstream/streamlink children (or their python.exe image on Windows), or
+    the frozen iro binary running the hidden `streams run-feed` verb. Guards
+    against stale/recycled PID files naming an unrelated process.
+
+    On POSIX the full command line is available, so we require either "run-feed"
+    (frozen iro child) or a loopstream/streamlink token — bare "python" alone is
+    intentionally NOT accepted (too broad; any python process would match).
+    On Windows the probe returns only the image name (no argv), so we accept
+    "python", "streamlink", and "iro.exe"."""
+    text = probe_output.lower()
+    if "run-feed" in text or "iro.exe" in text:   # frozen children (both platforms)
+        return True
+    tokens = ("python", "streamlink") if windows else ("loopstream", "streamlink")
+    return any(tok in text for tok in tokens)
 
 
 def pid_is_feed(pid):
@@ -13,13 +31,13 @@ def pid_is_feed(pid):
                                           stderr=subprocess.DEVNULL, text=True)
         except (subprocess.SubprocessError, OSError):
             return False
-        return "python" in out.lower() or "streamlink" in out.lower()
+        return looks_like_feed(out, windows=True)
     try:
         cmd = subprocess.check_output(["ps", "-p", str(pid), "-o", "command="],
                                       stderr=subprocess.DEVNULL, text=True)
     except (subprocess.SubprocessError, OSError):
         return False
-    return "loopstream" in cmd or "streamlink" in cmd
+    return looks_like_feed(cmd)
 
 
 def kill_tree(pid):
@@ -43,7 +61,10 @@ def state_dir(here):
 
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
-    pidfiles = glob.glob(os.path.join(state_dir(here), "feed_*.pid"))
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--state-dir", default=state_dir(here))
+    a = ap.parse_args()
+    pidfiles = glob.glob(os.path.join(a.state_dir, "feed_*.pid"))
     for pf in pidfiles:
         try:
             pid = int(open(pf).read().strip())

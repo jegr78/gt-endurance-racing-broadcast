@@ -33,7 +33,7 @@ collection.
   audio**, played from local files (`runtime/media/intro.mp4` / `outro.mp4`). The director
   switches to them with the Companion **INTRO** / **OUTRO** buttons. The file paths are
   tokenised as `__IRO_MEDIA__` in the collection and resolved by `setup-assets.py`; download
-  or refresh the clips from the Sheet **Assets** tab with `python3 src/relay/get-media.py`
+  or refresh the clips from the Sheet **Assets** tab with `python3 src/iro.py media`
   (see [Configuration](Configuration)). If the clips are missing the scene shows black.
 
 > **Broadcast graphics are local files.** The still-graphics image sources — Overlay,
@@ -41,7 +41,7 @@ collection.
 > overlays (**Race Weather 1**, **Race Weather 2**, **Quali Weather**) — read from
 > `runtime/graphics/<Label>.png`. They are tokenised `__IRO_GRAPHICS__` in the collection
 > and resolved by `setup-assets.py`. Download them from the Sheet **Assets** tab with
-> `python3 src/relay/get-graphics.py` (one PNG per Assets row, the Sheet label is the
+> `python3 src/iro.py graphics` (one PNG per Assets row, the Sheet label is the
 > filename); a source whose file is missing shows black until you fetch it. The three
 > weather graphics are **hidden full-screen overlays in the Stint scene**, each switchable
 > by its own Companion toggle (`Weather Race (1) Toggle` / `Weather Race (2) Toggle` / `Weather Quali Toggle` — see

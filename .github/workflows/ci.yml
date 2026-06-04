@@ -1,8 +1,9 @@
 name: CI
 
-# Build/test gate. Runs the stdlib unit tests and the build self-verify on
-# every push to main and every pull request. Pure Python, no external runtime
-# deps (yt-dlp/streamlink/ffmpeg/deno are not needed for tests or the build).
+# Test gate. Runs the stdlib test suite on all three target OSes (the iro
+# binary ships for Windows/macOS/Linux) across supported Python versions, plus
+# the build self-verify (tokenization, blanked password, no secrets shipped).
+# Public repo: Actions minutes are free, macOS runners included.
 on:
   push:
     branches: [main]
@@ -16,13 +17,18 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   test:
-    runs-on: ubuntu-latest  # Linux = 1x minutes; never use macOS (10x) for this
     strategy:
       fail-fast: false
       matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
         python-version: ["3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
 
@@ -31,13 +37,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Run unit tests (stdlib, each file is a runnable script)
-        run: |
-          for t in tests/test_pov.py tests/test_hud.py tests/test_preflight.py tests/test_standby.py tests/test_media.py tests/test_graphics.py; do
-            echo "::group::$t"
-            python3 "$t"
-            echo "::endgroup::"
-          done
+      - name: Run test suite (stdlib, each file is a runnable script)
+        run: python tools/run-tests.py
 
       - name: Build distributable + self-verify (tokenization, blanked password, no secrets)
-        run: python3 tools/build.py
+        run: python tools/build.py
