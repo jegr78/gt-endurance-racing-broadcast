@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IRO HUD</title>
+<style>
+  /* Positions match the old per-cell OBS browser sources 1:1 (align = top-left,
+     canvas 1920x1080). The Overlay.png frame + the stagetimer stay their own OBS
+     sources; this page only renders the text/flag/brand that used to be the 13
+     chroma-keyed sheet sources. Tweak coordinates here to fine-tune live. */
+  html, body { margin: 0; width: 1920px; height: 1080px;
+    background: transparent; overflow: hidden;
+    font-family: "Arial Narrow", "Arial", sans-serif; }
+  .el { position: absolute; display: flex; align-items: center;
+    overflow: hidden; white-space: nowrap; box-sizing: border-box;
+    font-weight: 700; line-height: 1; }
+  .el.empty { display: none; }
+  .white { color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,.55); }
+  .black { color: #111111; }
+
+  /* Top red banner */
+  #stint { left: 774px; top: 26px; width: 375px; height: 65px;
+    justify-content: center; font-size: 40px; letter-spacing: 1px; }
+
+  /* Lower-third left block: session above streamer */
+  #session  { left: 733px; top: 921px; width: 265px; height: 40px;
+    font-size: 26px; font-style: italic; }
+  #streamer { left: 738px; top: 957px; width: 265px; height: 50px;
+    font-size: 32px; }
+
+  /* Lower-third round block: title, flag, country */
+  #round-top     { left: 1043px; top: 919px; width: 557px; height: 37px;
+    font-size: 24px; font-style: italic; }
+  #round-flag    { left: 1049px; top: 957px; width: 99px;  height: 40px; }
+  #round-flag img { height: 38px; width: auto; max-width: 99px; object-fit: contain;
+    box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+  #round-country { left: 1144px; top: 958px; width: 548px; height: 39px;
+    font-size: 26px; }
+
+  /* Team podium row: brand box + name bar (x of name follows the logo) */
+  .team { height: 56px; }
+  .team img { width: 54px; height: 50px; object-fit: contain; flex-shrink: 0; }
+  .team .name { margin-left: 12px; font-size: 30px; overflow: hidden;
+    text-overflow: ellipsis; }
+  #team0 { left: 323px; top: 1005px; width: 382px; }
+  #team1 { left: 766px; top: 1005px; width: 379px; }
+  #team2 { left: 1210px; top: 1005px; width: 380px; }
+
+  /* Race control banner (status line, hidden when empty) */
+  #race-control { left: 320px; top: 864px; width: 1215px; height: 55px;
+    font-size: 34px; }
+</style>
+</head>
+<body>
+  <div id="stint" class="el white"></div>
+  <div id="session" class="el black"></div>
+  <div id="streamer" class="el black"></div>
+  <div id="round-top" class="el white"></div>
+  <div id="round-flag" class="el"><img alt=""></div>
+  <div id="round-country" class="el white"></div>
+  <div id="team0" class="el team white"><img alt=""><span class="name"></span></div>
+  <div id="team1" class="el team white"><img alt=""><span class="name"></span></div>
+  <div id="team2" class="el team white"><img alt=""><span class="name"></span></div>
+  <div id="race-control" class="el white"></div>
+
+<script>
+  const POLL_MS = 2500;
+
+  function setText(id, value) {
+    const el = document.getElementById(id);
+    el.textContent = value || "";
+    el.classList.toggle("empty", !value);
+  }
+  function setImg(containerId, key, sub) {
+    const el = document.getElementById(containerId);
+    const img = el.querySelector("img");
+    if (key) { img.src = `/hud/assets/${sub}/${key}`; el.classList.remove("empty"); }
+    else { img.removeAttribute("src"); el.classList.add("empty"); }
+  }
+  function setTeam(i, team) {
+    const el = document.getElementById("team" + i);
+    const name = (team && team.name) || "";
+    el.querySelector(".name").textContent = name;
+    const img = el.querySelector("img");
+    if (team && team.brandKey) { img.src = `/hud/assets/brands/${team.brandKey}`; img.style.visibility = "visible"; }
+    else img.style.visibility = "hidden";
+    el.classList.toggle("empty", !name);
+  }
+
+  async function tick() {
+    try {
+      const r = await fetch("/hud/data", { cache: "no-store" });
+      const d = await r.json();
+      setText("stint", d.stint);
+      setText("session", d.session);
+      setText("streamer", d.streamer);
+      setText("round-top", d.round && d.round.top);
+      setText("round-country", d.round && d.round.country);
+      setImg("round-flag", d.round && d.round.flagKey, "flags");
+      (d.teams || []).forEach((t, i) => { if (i < 3) setTeam(i, t); });
+      setText("race-control", d.raceControl);
+    } catch (e) { /* keep last good frame on transient errors */ }
+  }
+  tick();
+  setInterval(tick, POLL_MS);
+</script>
+</body>
+</html>

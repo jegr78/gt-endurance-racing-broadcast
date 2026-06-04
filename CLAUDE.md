@@ -46,6 +46,9 @@ python3 src/relay/get-cookies.py chrome --runtime-dir runtime
 # Pre-flight hardware/tool check
 python3 src/scripts/preflight.py
 
+# Fetch any missing HUD country flags from the sheet's Configuration tab
+python3 tools/fetch-flags.py            # adds missing -> src/assets/flags/ (keeps old)
+
 # Publish the GitHub wiki from src/docs/wiki/ (maintainer; --dry-run to preview)
 python3 tools/sync-wiki.py
 ```
@@ -104,6 +107,16 @@ exposing GET endpoints (`/next`, `/reload`, `/set/A/<n>`, `/pov/reload`, `/statu
 `/panel`, …) driven by Companion's Generic-HTTP module. `--bind 0.0.0.0` exposes it
 for remote directors — prefer binding to the Tailscale IP, not all interfaces (the
 endpoints have no auth and `/status` reveals stream URLs).
+
+The same server also hosts the **lower-third HUD** as one relay-served page,
+replacing ~13 cropped Google-Sheets-editor browser sources (the old producer-lag
+culprit): `/hud` serves `src/obs/hud.html`, `/hud/data` returns the overlay JSON
+(`HudSource` reads the **Overlay** tab for live values + the **Configuration** tab's
+brand-text column — header `Brand Name`/`Brand Key`/`Brand`, see `BRAND_TEXT_HEADERS` —
+for team→manufacturer), and `/hud/assets/{flags,brands}/<name>`
+serves bundled logos from `src/assets/`. The page polls `/hud/data` (no manual
+reloads); flags/brands resolve from text via `asset_key()`. Flags: `--no-hud`,
+`--overlay-tab`, `--config-tab`, `--hud-poll`. Tests: `tests/test_hud.py`.
 
 ### Static mode (`src/scripts/`) — the simpler alternative
 `start-streams.py` / `stop-streams.py` / `loopstream.py` launch one streamlink server

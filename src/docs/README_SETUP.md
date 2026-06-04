@@ -24,8 +24,13 @@ it checks all of the below plus your tool chain, ports, and YouTube cookies.
 | Network   | wired; stable upload headroom for the YouTube push + up to 3 feed pulls | wired gigabit |
 
 **Before each event:** reboot the machine (clears swap and frees RAM), then run
-the pre-flight check and resolve any FAIL/WARN before going live. OBS runs 14 HUD
-browser sources plus the live feeds, so RAM is the most common bottleneck.
+the pre-flight check and resolve any FAIL/WARN before going live. The lower-third
+HUD is now a **single** relay-served Browser Source (`http://127.0.0.1:8088/hud`)
+instead of ~13 Google-Sheets-editor sources, which removes the biggest RAM/CPU
+draw — but the relay must be running for the HUD to show. Live HUD values are
+edited in the sheet's **Overlay** tab; team→manufacturer logos come from a
+**`Brand Name`** text column in the **Configuration** tab, resolved against bundled
+assets in `src/assets/flags/` and `src/assets/brands/`.
 
 ---
 

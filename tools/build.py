@@ -41,6 +41,7 @@ def main():
     for f in ("IRO_Broadcast_Setup_Guide.md", "IRO_cheat_sheets.html", "README_SETUP.md"):
         cp(f"docs/{f}", f)
     cp("director/director-panel.html", "director-panel.html")
+    cp("obs/hud.html", "hud.html")
     cp("setup-assets.py", "setup-assets.py")
     cp("assets", "assets")
     cp("scripts", "scripts")
@@ -94,8 +95,10 @@ def main():
         "companion pov buttons": "pov/reload" in blob,
         "companion password empty": not has_pw(written),
         "obs tokenized": "__IRO_ASSETS__/" in tpl and "GoogleDrive" not in tpl,
-        "obs sheet tokenized": "__IRO_SHEET__" in tpl
-                               and not re.search(r"/spreadsheets/d/[A-Za-z0-9_-]{20,}/", tpl),
+        # The HUD no longer embeds the sheet (the relay serves /hud), so the
+        # collection legitimately has no __IRO_SHEET__ token — just assert no raw
+        # sheet URL ever leaks in.
+        "obs no raw sheet url": not re.search(r"/spreadsheets/d/[A-Za-z0-9_-]{20,}/", tpl),
         "obs timer tokenized": "__IRO_TIMER__" in tpl and "stagetimer.io/output/" not in tpl,
         "relay pov endpoint": "pov/reload" in relay,
         "no .sh/.bat shipped": not any(fn.endswith((".sh", ".bat")) for _, _, fs in os.walk(PKG) for fn in fs),

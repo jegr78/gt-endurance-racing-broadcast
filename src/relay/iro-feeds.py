@@ -79,6 +79,23 @@ SCHEDULE_TEMPLATE = (
 )
 
 CHANNEL_RE = re.compile(r"^UC[A-Za-z0-9_\-]{20,}$")
+ASSET_KEY_RE = re.compile(r"^[a-z0-9-]+$")
+# Resolution order when a HUD asset is requested by key (no extension).
+ASSET_EXTS = (("png", "image/png"), ("svg", "image/svg+xml"),
+              ("jpg", "image/jpeg"), ("jpeg", "image/jpeg"), ("webp", "image/webp"))
+
+
+def resolve_asset(assets_dir, sub, key):
+    """Resolve a HUD asset by key (no extension) to (path, content_type).
+    Tries known image extensions in order; returns None if nothing matches or
+    inputs are unsafe (subdir whitelist + strict key = no path traversal)."""
+    if not assets_dir or sub not in ("flags", "brands") or not ASSET_KEY_RE.match(key):
+        return None
+    for ext, ctype in ASSET_EXTS:
+        path = os.path.join(assets_dir, sub, f"{key}.{ext}")
+        if os.path.exists(path):
+            return path, ctype
+    return None
 
 def default_runtime_dir(here):
     """Where runtime data lives when --runtime-dir is not given.
@@ -124,6 +141,90 @@ def load_dotenv(start):
 def is_channel(v: str) -> bool:
     v = v.strip()
     return bool(CHANNEL_RE.match(v)) or v.startswith("http://") or v.startswith("https://")
+
+def asset_key(s):
+    """Normalize free text (country/brand) to an asset filename stem."""
+    s = (s or "").strip().lower()
+    s = re.sub(r"\s+", "-", s)
+    return re.sub(r"[^a-z0-9-]", "", s)
+
+OVERLAY_LABELS = {
+    "stint": "stint", "streamer": "streamer", "session": "session",
+    "round top": "round_top", "round bottom": "country",
+    "race control": "race_control",
+}
+
+
+def _first_value(row, start=2):
+    for c in range(start, len(row)):
+        v = (row[c] or "").strip()
+        if v:
+            return v
+    return ""
+
+
+def parse_overlay(text):
+    """Overlay tab CSV -> {streamer, session, round_top, country,
+    race_control, teams:[p1,p2,p3]}. Label is column B; value is the first
+    non-empty cell from column C on."""
+    out = {v: "" for v in OVERLAY_LABELS.values()}
+    teams = {"teams p1": 0, "teams p2": 1, "teams p3": 2}
+    out["teams"] = ["", "", ""]
+    for row in csv.reader(io.StringIO(text)):
+        if len(row) < 2:
+            continue
+        label = (row[1] or "").strip().lower()
+        if label in OVERLAY_LABELS:
+            out[OVERLAY_LABELS[label]] = _first_value(row)
+        elif label in teams:
+            out["teams"][teams[label]] = _first_value(row)
+    return out
+
+
+# Accepted headers for the team's brand TEXT column (priority order). The sheet's
+# image columns ("Brand Logo", "Brands") are deliberately NOT in this set.
+BRAND_TEXT_HEADERS = ("brand key", "brand name", "brand")
+
+
+def parse_config_brands(text):
+    """Configuration tab CSV -> {team_name: brand_key}. Columns are located by
+    header name ('Teams' + one of BRAND_TEXT_HEADERS) so positions can change."""
+    rows = list(csv.reader(io.StringIO(text)))
+    if not rows:
+        return {}
+    header = [(h or "").strip().lower() for h in rows[0]]
+    if "teams" not in header:
+        return {}
+    ti = header.index("teams")
+    bi = next((header.index(h) for h in BRAND_TEXT_HEADERS if h in header), None)
+    if bi is None:
+        return {}
+    out = {}
+    for row in rows[1:]:
+        if len(row) <= max(ti, bi):
+            continue
+        name = (row[ti] or "").strip()
+        brand = asset_key(row[bi])
+        if name and brand:
+            out[name] = brand
+    return out
+
+
+def build_hud_data(overlay, brands):
+    """Combine an Overlay map + {team: brand_key} into the /hud/data contract."""
+    return {
+        "stint": overlay.get("stint", ""),
+        "streamer": overlay.get("streamer", ""),
+        "session": overlay.get("session", ""),
+        "round": {
+            "top": overlay.get("round_top", ""),
+            "country": overlay.get("country", ""),
+            "flagKey": asset_key(overlay.get("country", "")),
+        },
+        "teams": [{"name": n, "brandKey": brands.get(n, "")}
+                  for n in overlay.get("teams", ["", "", ""])],
+        "raceControl": overlay.get("race_control", ""),
+    }
 
 def channel_url(entry: str) -> str:
     entry = entry.strip()
@@ -260,6 +361,66 @@ class ScheduleSource:
         return {"count": n,
                 "last_ok_age_s": (round(time.time() - self.last_ok, 1) if self.last_ok else None),
                 "last_error": self.last_error}
+
+
+class HudSource:
+    """Reads the Overlay + Configuration tabs and serves the /hud/data dict
+    with last-good caching (mirrors ScheduleSource robustness)."""
+    EMPTY = {"stint": "", "streamer": "", "session": "",
+             "round": {"top": "", "country": "", "flagKey": ""},
+             "teams": [{"name": "", "brandKey": ""}] * 3, "raceControl": ""}
+
+    def __init__(self, overlay_url, config_url, cache_path):
+        self.overlay_url = overlay_url
+        self.config_url = config_url
+        self.cache_path = cache_path
+        self.lock = threading.Lock()
+        self._data = None
+        self.last_ok = None
+        self.last_error = None
+        self._load_cache()
+
+    @staticmethod
+    def _fetch(url, timeout=10):
+        req = Request(url, headers={"User-Agent": "iro-feeds/1.0"})
+        with urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode("utf-8", "replace")
+
+    def _load_cache(self):
+        try:
+            with open(self.cache_path, encoding="utf-8") as fh:
+                self._data = json.load(fh)
+        except (OSError, ValueError):
+            self._data = None
+
+    def refresh(self, timeout=10):
+        try:
+            overlay = parse_overlay(self._fetch(self.overlay_url, timeout))
+            brands = parse_config_brands(self._fetch(self.config_url, timeout))
+            data = build_hud_data(overlay, brands)
+        except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
+            return False
+        with self.lock:
+            self._data = data
+            self.last_ok = time.time()
+            self.last_error = None
+        try:
+            with open(self.cache_path, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, ensure_ascii=False)
+        except OSError:
+            pass
+        return True
+
+    def data(self):
+        with self.lock:
+            return self._data if self._data is not None else dict(self.EMPTY)
+
+    def health(self):
+        with self.lock:
+            return {"last_ok_age_s": (round(time.time() - self.last_ok, 1)
+                                      if self.last_ok else None),
+                    "last_error": self.last_error}
 
 
 class Feed:
@@ -440,7 +601,7 @@ class Relay:
         if self.pov: self.pov.shutdown()
 
 
-def make_handler(relay, panel_path=None):
+def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None):
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
             body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
@@ -457,6 +618,12 @@ def make_handler(relay, panel_path=None):
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers(); self.wfile.write(body)
+        def _send_asset(self, assets_dir, sub, key):
+            hit = resolve_asset(assets_dir, sub, key)
+            if not hit:
+                return self._send({"error": "asset not found", "key": key}, 404)
+            path, ctype = hit
+            self._send_file(path, ctype)
         def log_message(self, *a): pass
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
@@ -465,6 +632,16 @@ def make_handler(relay, panel_path=None):
                 if p == ["panel"]:
                     if not panel_path: return self._send({"error":"panel disabled"}, 404)
                     return self._send_file(panel_path, "text/html; charset=utf-8")
+                if p == ["hud"]:
+                    if not (hud_source and hud_path):
+                        return self._send({"error": "hud disabled"}, 404)
+                    return self._send_file(hud_path, "text/html; charset=utf-8")
+                if p == ["hud", "data"]:
+                    if not hud_source:
+                        return self._send({"error": "hud disabled"}, 404)
+                    return self._send(hud_source.data())
+                if len(p) == 4 and p[:2] == ["hud", "assets"]:
+                    return self._send_asset(assets_dir, p[2], p[3])
                 if p == ["next"]:                       return self._send(relay.next_auto())
                 if p == ["reload"]:                     return self._send(relay.reload())
                 if p == ["pov", "reload"]:              return self._send(relay.pov_reload())
@@ -535,6 +712,14 @@ def main():
                          "http://<tailscale-ip>:<http-port>/panel.")
     ap.add_argument("--no-panel", action="store_true",
                     help="Do not serve the director panel at /panel.")
+    ap.add_argument("--overlay-tab", default="Overlay",
+                    help="Google-Sheet tab with the live HUD values (default 'Overlay').")
+    ap.add_argument("--config-tab", default="Configuration",
+                    help="Google-Sheet tab with the team→brand map (default 'Configuration').")
+    ap.add_argument("--hud-poll", type=int, default=5,
+                    help="HUD sheet refresh interval in seconds (default 5).")
+    ap.add_argument("--no-hud", action="store_true",
+                    help="Do not serve the HUD overlay at /hud.")
     ap.add_argument("--ports", default="53001,53002")
     ap.add_argument("--logdir", default="logs")
     ap.add_argument("--cookies", default=None,
@@ -610,6 +795,26 @@ def main():
             if os.path.exists(cand):
                 panel_path = os.path.abspath(cand); break
 
+    # HUD overlay: derived from sheet-id/tab (disabled with a custom CSV URL).
+    hud_source = None
+    hud_path = None
+    assets_dir = os.path.abspath(os.path.join(here, "..", "assets"))
+    if not args.no_hud and not args.sheet_csv_url:
+        base = f"https://docs.google.com/spreadsheets/d/{args.sheet_id}/gviz/tq?tqx=out:csv&sheet="
+        overlay_url = base + quote(args.overlay_tab)
+        config_url = base + quote(args.config_tab)
+        hud_cache = os.path.join(runtime, "hud.cache.json")
+        hud_source = HudSource(overlay_url, config_url, hud_cache)
+        hud_source.refresh()   # non-fatal: keeps last-good / empty if unreachable
+        for cand in (os.path.join(here, "hud.html"),
+                     os.path.join(here, "..", "hud.html"),
+                     os.path.join(here, "..", "obs", "hud.html")):
+            if os.path.exists(cand):
+                hud_path = os.path.abspath(cand); break
+        if not hud_path:
+            print("WARN: hud.html not found — /hud will 404 (assets dir: "
+                  f"{assets_dir}).")
+
     source = ScheduleSource(csv_url, cache, local)
     source.load_initial(SCHEDULE_TEMPLATE)
     if len(source.get()) < 2:
@@ -622,8 +827,12 @@ def main():
 
     stop_evt = threading.Event()
     threading.Thread(target=poller, args=(source, args.poll, stop_evt), daemon=True).start()
+    if hud_source:
+        threading.Thread(target=poller, args=(hud_source, args.hud_poll, stop_evt),
+                         daemon=True).start()
 
-    httpd = ThreadingHTTPServer((args.bind, args.http_port), make_handler(relay, panel_path))
+    httpd = ThreadingHTTPServer((args.bind, args.http_port),
+                                make_handler(relay, panel_path, hud_source, hud_path, assets_dir))
 
     def shutdown(*_):
         # IMPORTANT: do NOT call httpd.shutdown() from the thread running
@@ -644,6 +853,10 @@ def main():
         host = "127.0.0.1" if args.bind in ("127.0.0.1", "localhost") else "<this-machine-ip>"
         print(f"  Director panel: http://{host}:{args.http_port}/panel"
               + ("" if args.bind != "127.0.0.1" else "  (local only — use --bind 0.0.0.0 for remote directors)"))
+    if hud_source and hud_path:
+        host = "127.0.0.1" if args.bind in ("127.0.0.1", "localhost") else "<this-machine-ip>"
+        print(f"  HUD overlay: http://{host}:{args.http_port}/hud  "
+              f"(tabs '{args.overlay_tab}'/'{args.config_tab}', refresh {args.hud_poll}s)")
     print(f"  Cookies (bot-check protection): {'ON — ' + cookies if cookies else 'off (no cookies.txt)'}")
     print(f"  Sheet poll every {args.poll}s.  Ctrl+C to stop.")
     httpd.serve_forever()

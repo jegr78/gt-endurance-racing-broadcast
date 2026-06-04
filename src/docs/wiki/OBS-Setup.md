@@ -50,6 +50,31 @@ no screen-share, no extra latency. Their URLs were injected from `.env` by
 > The HUD and graphics pull from **shared** production resources (the sheet and
 > stagetimer) — changes affect everyone. The sheet must stay shared.
 
+### The lower-third HUD: one relay-served overlay
+
+The lower-third HUD (streamer, session, round, flag, top-3 teams, race control) is a
+**single** Browser Source named **HUD Overlay** pointing at the relay:
+`http://127.0.0.1:8088/hud`. It replaces the old set of ~13 per-cell Browser Sources
+(each of which loaded the full Google Sheets editor and was cropped with a chroma key) —
+that approach was the main cause of producer-machine lag.
+
+- **The relay must be running** for the HUD to render (it serves `/hud`). See
+  [Relay Mode](Relay-Mode).
+- **Content is still edited centrally in the sheet** — no manual reloads: the page polls
+  the relay every ~2.5 s, and the relay refreshes the sheet every `--hud-poll` seconds
+  (default 5). Live values come from the **Overlay** tab; the **Configuration** tab maps
+  each team to its manufacturer via a **`Brand Name`** text column (header may also be
+  `Brand Key` or `Brand`; the image columns `Brand Logo`/`Brands` are ignored).
+- **Flags and brand logos** are bundled assets in `src/assets/flags/` and
+  `src/assets/brands/`, resolved by text: the Country text → `flags/<country>.svg`, and a
+  team's `Brand Name` → `brands/<key>.png|svg` (lowercase, spaces → `-`). Add a flag/logo by
+  dropping a matching `.svg` in those folders.
+- Relay flags: `--no-hud` disables it; `--overlay-tab` / `--config-tab` override tab names;
+  `--hud-poll` sets the refresh interval.
+
+The stagetimer countdown stays its own Browser Source (it is a real-time page, not sheet
+data).
+
 ## 5. Discord audio (interviews)
 
 The source **Discord Audio Capture** comes with the collection.
