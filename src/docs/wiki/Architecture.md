@@ -158,7 +158,7 @@ sequenceDiagram
   participant B as Feed B :53002
   participant O as OBS
 
-  Note over A,B: Stint n on air via Feed A; Feed B idle
+  Note over A,B: Stint n on air via Feed A — Feed B idle
   D->>O: cut to Splitscreen (≈10-min handover window)
   Note over B: incoming streamer goes live on their channel
   D->>R: GET /next
