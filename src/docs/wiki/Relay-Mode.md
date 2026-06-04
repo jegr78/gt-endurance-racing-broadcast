@@ -1,5 +1,7 @@
 # Relay Mode
 
+> Technical reference. The operator version is [Run an event](Run-an-event).
+
 The recommended flow for endurance racing: **one commentator per stint**, streams
 **unlisted**, two fixed feeds that "walk" along the schedule. See
 [Architecture §2](Architecture#2-relay-ping-pong-the-endurance-flow) for the diagram.
@@ -38,6 +40,8 @@ python3 src/relay/get-cookies.py chrome --runtime-dir runtime
 - You must be **logged into YouTube** in that browser.
 - macOS **Chrome/Edge**: approve the Keychain prompt. **Safari**: grant your terminal
   **Full Disk Access**. (Firefox needs neither.)
+- Windows / Linux: the browser export usually runs without a prompt (Firefox needs none
+  on any OS).
 - Writes `runtime/cookies.txt` (chmod 600), auto-detected and passed to Streamlink.
   `/status` then shows `"cookies": true`. **Re-run before each event** — cookies rotate.
 - Alternative: let the relay export on start with `--cookies-from-browser chrome`, or
@@ -124,4 +128,4 @@ python3 tools/run-relay.py                                       # 3. start
 # 4. Companion buttons:  Feeds Next -> /next   ·   Feeds Reload -> /reload
 ```
 
-See also: [Static Mode](Static-Mode) (the simpler fallback), [Runbook](Runbook).
+See also: [Static Mode](Static-Mode) (the simpler fallback), [Run an event](Run-an-event).

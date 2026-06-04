@@ -1,5 +1,7 @@
 # OBS Setup
 
+> Technical reference. The quick version is in [Set up the broadcast PC](Set-up-the-broadcast-PC).
+
 Import the scene collection, confirm the graphics, and wire up Discord audio. Do
 [Configuration](Configuration) first so `setup-assets.py` has produced the importable
 collection.
@@ -85,6 +87,8 @@ The source **Discord Audio Capture** comes with the collection.
   captured.
 - **Windows:** re-create the source as **Application Audio Capture (BETA)** → pick
   **Discord**. Don't *also* capture Discord via desktop audio, or you'll double it.
+- **Linux:** re-create the source as **Application Audio Capture** (PipeWire), or use an
+  **Audio Output Capture** monitor source — *should work, not yet tested on Linux.*
 
 ## 6. Stream key
 

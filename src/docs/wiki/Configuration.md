@@ -1,5 +1,7 @@
 # Configuration
 
+> Technical reference. The setup steps are in [Set up the broadcast PC](Set-up-the-broadcast-PC).
+
 Two things are machine- and event-specific and are **never** hardcoded or committed:
 the **Google Sheet ID** (schedule + HUD data) and the **stagetimer output URL**. Both
 come from a gitignored `.env` file. Then `setup-assets.py` localizes the OBS collection

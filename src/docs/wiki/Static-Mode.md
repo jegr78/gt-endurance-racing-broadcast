@@ -1,5 +1,7 @@
 # Static Mode
 
+> Technical reference — the public-stream fallback.
+
 The simpler fallback: one Streamlink server per **public** / fixed channel, each on its
 own fixed port. Use this only when every feed is a public channel with a permanent live
 URL. For the typical endurance flow (one commentator per stint, unlisted streams), use
@@ -71,4 +73,4 @@ This prints a direct HLS URL — put it in that feed's OBS Media Source instead 
 local port. The link expires after a few hours, so re-resolve it at the stint change.
 Use this only for the rare channel where Streamlink won't deliver 1080p.
 
-See also: [Relay Mode](Relay-Mode), [Troubleshooting](Troubleshooting).
+See also: [Relay Mode](Relay-Mode), [If something goes wrong](If-something-goes-wrong).

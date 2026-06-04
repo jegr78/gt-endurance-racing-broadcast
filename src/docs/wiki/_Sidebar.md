@@ -1,26 +1,20 @@
 ### IRO Broadcast
 
-**Overview**
+**Start here**
 - [Home](Home)
+
+**For operators**
+- [Set up the broadcast PC](Set-up-the-broadcast-PC)
+- [Run an event](Run-an-event)
+- [Director guide](Director)
+- [Who does what](Who-does-what)
+- [If something goes wrong](If-something-goes-wrong)
+
+**Technical reference**
 - [Architecture](Architecture)
-
-**Set up a station**
-- [Installation](Installation)
-- [Configuration](Configuration)
-- [OBS Setup](OBS-Setup)
-- [Companion](Companion)
-
-**Feeds**
-- [Relay Mode](Relay-Mode)
-- [Static Mode](Static-Mode)
-
-**Operate**
-- [Director (Remote)](Director)
-- [Runbook](Runbook)
-- [Troubleshooting](Troubleshooting)
-
-**People**
-- [Roles &amp; Requirements](Roles)
-
-**Meta**
-- [Maintaining this Wiki](Maintaining-this-Wiki)
+- [Relay — how the feeds work](Relay-Mode)
+- [OBS &amp; scenes](OBS-Setup)
+- [Companion (button config)](Companion)
+- [Configuration &amp; secrets](Configuration)
+- [Static mode](Static-Mode)
+- [Build &amp; maintenance](Build-and-maintenance)

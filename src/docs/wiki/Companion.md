@@ -1,9 +1,11 @@
 # Companion
 
+> Technical reference. What the buttons do for a director: [Director guide](Director).
+
 Bitfocus Companion is the director's button board: a grid of buttons served as a web
 page that directors open in a browser. It is the **primary** control surface and is
 strictly more capable than the [backup director panel](Director). Install it first per
-[Installation](Installation).
+[Set up the broadcast PC](Set-up-the-broadcast-PC).
 
 ## Import the button board
 
@@ -20,39 +22,19 @@ strictly more capable than the [backup director panel](Director). Install it fir
 
 The **OBS connection** (`127.0.0.1:4455`) comes with the config — **but without the
 password** (removed for security). → **Connections** → open the OBS entry → **enter your
-OBS WebSocket password** (the one you set in [Installation](Installation)) → the
+OBS WebSocket password** (the one you set in [Set up the broadcast PC](Set-up-the-broadcast-PC)) → the
 connection turns green.
 
-## The buttons (two pages)
+## The button board
 
-**Page 1 — show control**
+The board has two pages — **show control** and **audio**. The full layout, what each
+button does, and the screenshots live in the [Director guide](Director#the-button-board) —
+that's the operator's reference for actually using the board.
 
-| Row | Buttons |
-|-----|---------|
-| 0 — combos | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY` (one-press scene+source presets) |
-| 1 — scenes + relay | `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Reload` (→ `/reload`), `Feeds Next` (→ `/next`, the handover), `Feeds Status` (→ `/status`) |
-| 2 — feeds &amp; POV | `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Split Left`, `Split Right`, `POV Reload`, `POV Stop` |
-| 3 — graphics | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `HUD Stint Toggle`, `HUD Split Toggle` |
-
-![Companion page 1 — show control: combos, scene switches + relay control, feeds &amp; POV, graphics](images/companion-page1-show-control.png)
-
-**Page 2 — audio**
-
-| Row | Buttons |
-|-----|---------|
-| 1 — mute | `MUTE A`, `MUTE B`, `MUTE POV`, `MUTE DISC` |
-| 2 — volume A/B | `A DOWN`/`A UP`, `B DOWN`/`B UP` |
-| 3 — volume POV/Discord | `POV DOWN`/`POV UP`, `DISC DOWN`/`DISC UP` |
-
-![Companion page 2 — audio: mute A/B/POV/Discord and per-source volume up/down; the left column (UP / PAGE 2 / DOWN) navigates between the two pages](images/companion-page2-audio.png)
-
-> The left column on each page (`UP` / `DOWN`) flips between **Page 1** (show control)
-> and **Page 2** (audio).
-
-The relay buttons (`Feeds Next`, `Feeds Reload`, `Feeds Status`, `POV Reload`,
-`POV Stop`) use the **Generic HTTP Requests** connection — see
-[Relay Mode §4](Relay-Mode#4-control-it-companion--relay). Everything else uses the OBS
-connection.
+This page covers only how the board is wired up. The relay buttons (`Feeds Next`,
+`Feeds Reload`, `Feeds Status`, `POV Reload`, `POV Stop`) use the **Generic HTTP Requests**
+connection — see [Relay Mode §4](Relay-Mode#4-control-it-companion--relay). Everything else
+uses the OBS connection.
 
 ## Test
 

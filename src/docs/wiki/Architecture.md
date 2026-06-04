@@ -1,5 +1,7 @@
 # Architecture
 
+> Technical reference. Just running a show? See [Run an event](Run-an-event).
+
 How the broadcast station fits together, in four views: the **system topology**, the
 **relay ping-pong**, the **control flow**, and a **stint handover** over time.
 
@@ -181,4 +183,4 @@ sequenceDiagram
 | `4455`  | OBS WebSocket server |
 | `8000`  | Companion admin + web buttons (`/tablet`) |
 
-See [Installation](Installation) to put all of this on a machine.
+See [Set up the broadcast PC](Set-up-the-broadcast-PC) to put all of this on a machine.

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A self-contained broadcast-production toolkit for the "IRO Endurance" sim-racing
-championship, run on a producer's machine (Windows or macOS). The core is a **relay** that pulls one
+championship, run on a producer's machine (Windows, macOS, or Linux). The core is a **relay** that pulls one
 commentator YouTube stream per race stint and serves it to OBS; around it sit an
 OBS scene collection, a Stream Deck (Companion) button config, and operator docs.
 Pure Python + stdlib (no framework, no package manager); external runtime deps are
