@@ -30,6 +30,53 @@ def graphics_dir(base):
     return os.path.join(base, "graphics")
 
 
+# ---- Discord interview audio: one logical source, per-platform realization.
+# The committed collection carries the macOS form (a real Mac export). At
+# localize time the platform is known, so the source is swapped in place;
+# tools/tokenize-obs.py folds any variant back (keep the two ends in sync).
+# Windows "priority" 2 = WINDOW_PRIORITY_EXE (obs window-helpers.h) — match
+# any Discord.exe window, never the volatile channel-name window title.
+# Linux needs the obs-pipewire-audio-capture plugin (untested, see docs);
+# "MatchPriorty" (sic) is the plugin's actual settings key, 0 = binary name.
+DISCORD_AUDIO_UUID = "0085d4f3-bf43-4aef-9fe4-28cfd3270c7d"
+DISCORD_AUDIO_VARIANTS = {
+    "darwin": ("sck_audio_capture",
+               {"type": 1, "application": "com.hnc.Discord"}),
+    "win": ("wasapi_process_output_capture",
+            {"window": "Discord:Chrome_WidgetWin_1:Discord.exe", "priority": 2}),
+    "linux": ("pipewire_audio_application_capture",
+              {"TargetName": "Discord", "MatchPriorty": 0}),
+}
+
+
+def discord_variant(platform):
+    """(source id, settings) for this platform, or None when unknown."""
+    if platform.startswith("win"):
+        return DISCORD_AUDIO_VARIANTS["win"]
+    if platform == "darwin":
+        return DISCORD_AUDIO_VARIANTS["darwin"]
+    if platform.startswith("linux"):
+        return DISCORD_AUDIO_VARIANTS["linux"]
+    return None
+
+
+def localize_discord_audio(collection, platform):
+    """Swap the Discord audio source to this platform's variant, in place.
+    Returns the new source id, or None (source absent / unknown platform —
+    never fails, same contract as the missing-graphics warnings)."""
+    variant = discord_variant(platform)
+    if variant is None:
+        return None
+    src_id, settings = variant
+    for s in collection.get("sources", []):
+        if s.get("uuid") == DISCORD_AUDIO_UUID:
+            s["id"] = src_id
+            s["versioned_id"] = src_id
+            s["settings"] = dict(settings)
+            return src_id
+    return None
+
+
 def load_dotenv(start):
     """Load KEY=VALUE pairs from a .env at the script dir or the project root
     into os.environ. Real environment variables win (setdefault). No dependency.

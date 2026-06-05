@@ -17,6 +17,25 @@ SHEET_RE = re.compile(r"(/spreadsheets/d/)[A-Za-z0-9_-]{20,}(/)")
 # Full stagetimer.io output URL incl. the signed query string (a live secret).
 TIMER_RE = re.compile(r"https://stagetimer\.io/output/[^\"\s]+")
 
+# Discord audio source: fold any platform variant (created by setup-assets'
+# localize_discord_audio — keep the two ends in sync) back to the committed
+# macOS form, so round-trips from Mac and Windows yield the same template.
+DISCORD_AUDIO_UUID = "0085d4f3-bf43-4aef-9fe4-28cfd3270c7d"
+DISCORD_AUDIO_CANONICAL = ("sck_audio_capture",
+                           {"type": 1, "application": "com.hnc.Discord"})
+
+
+def canonicalize_discord_audio(d):
+    """True iff a non-canonical Discord audio source was rewritten."""
+    src_id, settings = DISCORD_AUDIO_CANONICAL
+    for s in d.get("sources", []):
+        if s.get("uuid") == DISCORD_AUDIO_UUID and s.get("id") != src_id:
+            s["id"] = src_id
+            s["versioned_id"] = src_id
+            s["settings"] = dict(settings)
+            return True
+    return False
+
 
 def base(path):
     """basename that splits on both / and \\, regardless of host OS."""
