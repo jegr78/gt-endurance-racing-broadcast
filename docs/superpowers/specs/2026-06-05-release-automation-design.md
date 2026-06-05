@@ -38,7 +38,8 @@ PR-gated mode:
   `gh workflow run` fails with 403).
 - **Dispatch chain** (the critical part): tags created with the default
   `GITHUB_TOKEN` do **not** trigger `on: push: tags` workflows. Therefore,
-  when the action reports `releases_created == 'true'`, a follow-up step runs
+  when the action reports `release_created` (the root-package output, which
+  pairs with `tag_name`), a follow-up step runs
   `gh workflow run release.yml --ref <tag>` (`workflow_dispatch` is exempt
   from the GITHUB_TOKEN trigger restriction). Without this, merging the
   Release PR would produce a tag + release **with no binaries**.
