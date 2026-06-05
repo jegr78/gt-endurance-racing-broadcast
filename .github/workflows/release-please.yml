@@ -5,21 +5,32 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  actions: write          # gh workflow run (the dispatch step) needs this
+  actions: write          # gh workflow run (the dispatch fallback) needs this
+env:
+  RP_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      # With the RELEASE_PLEASE_TOKEN PAT, the bot's branch pushes and tags are
+      # user events: CI runs on the Release PR (required checks turn green) and
+      # the tag push triggers release.yml natively. Falls back to GITHUB_TOKEN
+      # when the secret is missing/expired -- then CI on the Release PR needs a
+      # manual close/reopen and the dispatch step below builds the binaries.
       - uses: googleapis/release-please-action@v4
         id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
       # Tags created with the default GITHUB_TOKEN do NOT trigger on-tag
-      # workflows -- without this dispatch, merging the Release PR would
-      # produce a tag + release with no binaries.
-      - name: Build the binaries for the new tag
-        if: ${{ steps.release.outputs.release_created }}
+      # workflows -- in fallback mode, without this dispatch, merging the
+      # Release PR would produce a tag + release with no binaries. Skipped when
+      # the PAT is in use (the tag push already triggered release.yml).
+      - name: Build the binaries for the new tag (GITHUB_TOKEN fallback)
+        if: ${{ steps.release.outputs.release_created && env.RP_TOKEN == '' }}
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag_name }}
         run: >
           gh workflow run release.yml
-          --ref "${{ steps.release.outputs.tag_name }}"
+          --ref "$TAG"
           --repo "${{ github.repository }}"
