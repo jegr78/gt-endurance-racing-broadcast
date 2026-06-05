@@ -73,10 +73,12 @@ def ensure_env_file(exe_dir, frozen=None):
         return False
     try:
         shutil.copyfile(example, env_path)
-    except OSError:
+    except OSError as exc:
+        print(f"warning: could not create .env next to the binary ({exc}) — "
+              "copy .env.example to .env manually.", file=sys.stderr)
         return False
     print("created .env next to the binary — fill in IRO_SHEET_ID and "
-          "IRO_TIMER_URL (see the comments inside).")
+          "IRO_TIMER_URL (see the comments inside).", file=sys.stderr)
     return True
 
 
