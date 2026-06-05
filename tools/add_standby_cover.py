@@ -2,7 +2,8 @@
 """Add the 'Standby Cover' incident hold graphic to an OBS scene collection (idempotent).
 
 Mirrors tools/add_pov_source.py. It deep-copies the existing 'Thumbnail' image source
-(same Standby.png file) and the 'Standings' full-screen scene item as templates, so
+(but pointing at the dedicated 'Standby Cover.png' graphic, distinct from the Standby
+scene's 'Standby.png' thumbnail) and the 'Standings' full-screen scene item as templates, so
 the result always matches OBS's schema. The cover sits BELOW the HUD group (Race Control
 banner + timer stay visible); the existing 'Feed POV' item is moved below the HUD too
 (directly after Feed B) so the cover hides the POV PiP as well. Re-running is a no-op
@@ -14,7 +15,7 @@ import copy, json, sys
 
 COVER_NAME = "Standby Cover"
 COVER_UUID = "bbbbbbb1-0000-4000-8000-000000000001"   # A/B/POV use aaaaaaaN-; cover bbbbbbb1-
-COVER_FILE = "__IRO_GRAPHICS__/Standby.png"            # reuse the standby graphic (tokenized)
+COVER_FILE = "__IRO_GRAPHICS__/Standby Cover.png"      # dedicated neutral cover (tokenized)
 POV_NAME   = "Feed POV"
 
 
