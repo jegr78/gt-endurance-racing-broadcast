@@ -321,7 +321,13 @@ def companion_start(rest):
     bind_arg = rest[0] if rest else "auto"
     cfg_path = cc.companion_config_path(sys.platform)
     if not os.path.exists(cfg_path):
-        sys.exit(f"companion: config not found at {cfg_path}. Launch Companion once, then retry.")
+        # First launch: Companion creates its config on startup — start it
+        # plainly now, bind on the next run (the bind edit needs the file).
+        print(f"companion: first launch (no config at {cfg_path} yet) — starting Companion as-is.")
+        print("  When it is up, run `iro companion restart` to bind it to the Tailscale IP.")
+        subprocess.Popen(cmds["start"], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, **sv.spawn_kwargs(os.name))
+        return
     with open(cfg_path, encoding="utf-8") as fh:
         text = fh.read()
     cfg = json.loads(text)
