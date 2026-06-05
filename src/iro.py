@@ -326,7 +326,8 @@ def relay_start(rest):
         if stint:
             print(f"  --stint ignored (relay keeps its position) — to reposition the "
                   f"running relay open http://127.0.0.1:{RELAY_PORT}/set/stint/{stint[1]}")
-        return relay_status([])
+        relay_status([])
+        return None
     argv = _relay_daemon_argv(rest, IS_FROZEN)
     newpid = sv.start_detached(argv, _relay_log_path(), _relay_pid_path(),
                                env=_frozen_child_env())

@@ -149,6 +149,9 @@ ASSET_KEY_RE = re.compile(r"^[a-z0-9-]+$")
 # Resolution order when a HUD asset is requested by key (no extension).
 ASSET_EXTS = (("png", "image/png"), ("svg", "image/svg+xml"),
               ("jpg", "image/jpeg"), ("jpeg", "image/jpeg"), ("webp", "image/webp"))
+# Identity whitelist: the handler re-derives the Content-Type header value from
+# this constant map, so a request-derived string can never reach send_header().
+ASSET_CTYPES = {ctype: ctype for _, ctype in ASSET_EXTS}
 
 
 def resolve_asset(assets_dir, sub, key):
@@ -720,6 +723,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             if not hit:
                 return self._send({"error": "asset not found", "key": key}, 404)
             path, ctype = hit
+            # Header value comes from the ASSET_CTYPES constant, never from the
+            # request-derived tuple (defense vs. header injection).
+            ctype = ASSET_CTYPES.get(ctype)
+            if not ctype:
+                return self._send({"error": "asset not found", "key": key}, 404)
             return self._send_file(path, ctype)
         def log_message(self, *a): pass
         def do_GET(self):
