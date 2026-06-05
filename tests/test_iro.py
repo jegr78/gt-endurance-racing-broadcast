@@ -106,6 +106,22 @@ def t_ensure_env_file_creates_once():
             assert fh.read() == "IRO_SHEET_ID=real\n"
 
 
+def t_cleanup_old_binary():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        old = os.path.join(d, "iro-old.exe")
+        with open(old, "wb") as fh:
+            fh.write(b"x")
+        # only frozen windows cleans up
+        assert m.cleanup_old_binary(d, frozen=False, platform="win32") is False
+        assert m.cleanup_old_binary(d, frozen=True, platform="darwin") is False
+        assert os.path.exists(old)
+        assert m.cleanup_old_binary(d, frozen=True, platform="win32") is True
+        assert not os.path.exists(old)
+        # absent file -> quiet False
+        assert m.cleanup_old_binary(d, frozen=True, platform="win32") is False
+
+
 def t_ensure_env_file_without_template():
     import tempfile
     with tempfile.TemporaryDirectory() as d:
@@ -261,6 +277,17 @@ def t_export_companion_default_into_runtime():
 def t_install_apps_oneshot():
     assert m.route(["install-apps"]) == \
         {"kind": "oneshot", "command": "install-apps", "rest": []}
+
+
+def t_update_routes_as_oneshot():
+    a = m.route(["update", "--check"])
+    assert a == {"kind": "oneshot", "command": "update", "rest": ["--check"]}, a
+
+
+def t_update_oneshot_extra_injects_nothing():
+    # update needs no runtime-dir/--out injection; --current is added in oneshot()
+    assert m._oneshot_extra("update", [], True, "/rt") == []
+    assert m._oneshot_extra("update", [], False, "/rt") == []
 
 
 def _raises(fn):
