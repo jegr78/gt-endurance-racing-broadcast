@@ -28,6 +28,13 @@ IRO_TIMER_URL=https://stagetimer.io/output/XXXXXXXX/?v=2&signature=...
   at `/hud`).
 - **`IRO_TIMER_URL`** — the full signed stagetimer.io output URL injected into the timer
   browser source.
+- **`IRO_INTRO_URL` / `IRO_OUTRO_URL`** *(optional)* — override the Intro/Outro clip
+  URLs that normally come from the Sheet **Assets** tab (used by `iro media`).
+- **`IRO_COMPANION_EXE`** *(optional, Windows)* — full path to `Companion.exe` for
+  `iro companion start/stop`. Only needed when Companion sits in a non-standard
+  location; the standard install paths are found automatically, e.g. the
+  winget / `iro install-apps` default:
+  `IRO_COMPANION_EXE=C:\Program Files\Companion\Companion.exe`
 
 Real environment variables take precedence over `.env`. The loader only reads a `.env`
 from the script directory or the project root (marked by `.git` / `.env.example`),

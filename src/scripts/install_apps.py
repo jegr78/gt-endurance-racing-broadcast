@@ -37,7 +37,10 @@ BREW_CASKS = {"obs": "obs", "companion": "companion",
 # Default install locations per app — heuristics like companion_common's
 # WINDOWS_COMPANION_CANDIDATES (keep the Companion entries in sync with it).
 _WINDOWS_APP_PATHS = {
-    "obs": (r"%ProgramFiles%\obs-studio\bin\64bit\obs64.exe",),
+    # OBS lands in Program Files (x86) when a 32-bit installer registered it —
+    # seen on a real producer machine.
+    "obs": (r"%ProgramFiles%\obs-studio\bin\64bit\obs64.exe",
+            r"%ProgramFiles(x86)%\obs-studio\bin\64bit\obs64.exe"),
     "companion": (r"%LOCALAPPDATA%\Programs\companion\Companion.exe",
                   r"C:\Program Files\Companion\Companion.exe",
                   r"C:\Program Files (x86)\Companion\Companion.exe"),
@@ -72,6 +75,7 @@ DISCORD_DEB = "https://discord.com/api/download?platform=linux&format=deb"
 
 
 def _expand_windows(path, env):
+    path = path.replace("%ProgramFiles(x86)%", env.get("ProgramFiles(x86)", ""))
     path = path.replace("%ProgramFiles%", env.get("ProgramFiles", ""))
     path = path.replace("%LOCALAPPDATA%", env.get("LOCALAPPDATA", ""))
     return path
@@ -125,6 +129,9 @@ def apps_manual_guide(platform):
         lines.append("  Companion  : https://bitfocus.io/companion")
         lines.append("  Tailscale  : https://tailscale.com/download")
         lines.append("  Discord    : https://discord.com/download")
+    if platform.startswith("win"):
+        lines.append("NOTE: approve the UAC (admin) prompts — Companion's installer "
+                     "writes nothing without admin yet still reports success.")
     return "\n".join(lines)
 
 

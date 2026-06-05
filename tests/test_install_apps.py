@@ -46,6 +46,12 @@ def t_app_present_windows_paths():
     env = {"ProgramFiles": r"C:\Program Files", "LOCALAPPDATA": r"C:\Users\x\AppData\Local"}
     assert m.app_present("obs", "win32", env=env, exists=lambda p: p == hit,
                          which=lambda n: None)
+    # 32-bit-installer registrations land OBS in Program Files (x86) — seen on a
+    # real producer machine; without this candidate install-apps re-"installs" it.
+    x86 = r"C:\Program Files (x86)\obs-studio\bin\64bit\obs64.exe"
+    env_x86 = dict(env, **{"ProgramFiles(x86)": r"C:\Program Files (x86)"})
+    assert m.app_present("obs", "win32", env=env_x86, exists=lambda p: p == x86,
+                         which=lambda n: None)
     assert not m.app_present("tailscale", "win32", env=env, exists=lambda p: False,
                              which=lambda n: None)
 
