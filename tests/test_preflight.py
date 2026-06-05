@@ -10,10 +10,16 @@ m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
 
 def t_classify_ram_boundaries():
-    assert m.classify_ram(15.9).level == "FAIL"
-    assert m.classify_ram(16).level == "WARN"
-    assert m.classify_ram(31.9).level == "WARN"
-    assert m.classify_ram(32).level == "PASS"
+    # Nominal 16/32 GB modules report ~0.1-1.5 GB lower (firmware/iGPU
+    # reservations) — the boundaries carry RAM_SLACK_GB so real machines
+    # land in the intended bucket.
+    assert m.classify_ram(14.4).level == "FAIL"
+    assert m.classify_ram(14.5).level == "WARN"
+    assert m.classify_ram(15.9).level == "WARN"   # physical 16 GB machine
+    assert m.classify_ram(30.4).level == "WARN"
+    assert m.classify_ram(30.5).level == "PASS"
+    assert m.classify_ram(31.9).level == "PASS"   # physical 32 GB machine
+    assert "browser sources" not in m.classify_ram(20).detail  # stale HUD hint
 
 
 def t_classify_cpu_boundaries():

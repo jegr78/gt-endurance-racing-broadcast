@@ -33,13 +33,18 @@ class Result:
 # Classifiers (pure — raw number -> Result). Single source of truth for the
 # system-requirement thresholds.
 # --------------------------------------------------------------------------
+# Nominal 16/32 GB modules report ~0.1-1.5 GB lower (firmware/iGPU
+# reservations) — without slack a physical 32 GB machine could never PASS.
+RAM_SLACK_GB = 1.5
+
+
 def classify_ram(gb):
-    if gb < 16:
+    if gb < 16 - RAM_SLACK_GB:
         return Result(FAIL, "RAM", f"{gb:.1f} GB — below the 16 GB minimum")
-    if gb < 32:
+    if gb < 32 - RAM_SLACK_GB:
         return Result(WARN, "RAM",
-                      f"{gb:.1f} GB — works; 32 GB recommended (OBS + 14 HUD "
-                      f"browser sources + relay are memory-heavy)")
+                      f"{gb:.1f} GB — works; 32 GB recommended "
+                      f"(OBS + the relay feeds are memory-heavy)")
     return Result(PASS, "RAM", f"{gb:.1f} GB")
 
 
