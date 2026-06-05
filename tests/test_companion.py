@@ -63,7 +63,8 @@ def t_plan_already_correct_but_stopped_starts():
 
 # --- companion_config_path: per-OS location of config.json -------------------
 def t_config_path_macos():
-    p = cc.companion_config_path("darwin", env={})
+    # normalize separators: expanduser+join mix / and \ when run on Windows
+    p = cc.companion_config_path("darwin", env={}).replace(os.sep, "/")
     assert p.endswith("Library/Application Support/companion/config.json"), p
 
 
