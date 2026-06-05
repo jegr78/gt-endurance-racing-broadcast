@@ -112,6 +112,14 @@ feed in the **Stint** scene. Pulled by a third relay feed on port **53003** (cap
    volume (use briefly).
 5. **Done:** **POV Toggle** to hide, then **POV Stop** (frees the pull / bandwidth).
 
+> **Lead time:** the PiP is not instant. After **POV Reload** the relay needs ~10–30 s
+> to resolve and start serving a live stream — and while the driver is **not live yet**
+> it just retries every 15 s (`/status` shows `state: connecting`). Only press
+> **POV Toggle** once `/status` reports `state: serving`; OBS then takes a few more
+> seconds to connect on first show. Plan roughly **5 minutes** from "driver starts
+> streaming" to "PiP on air". Operator walkthrough:
+> [Director guide](Director#showing-a-driver-pov-plan-ahead).
+
 Two rules: **Reload before Toggle (show)**, and **hide + POV Stop when done**. The PiP
 lives only in the Stint scene, so switching to Splitscreen/Interview/Standby auto-hides
 and auto-silences it.

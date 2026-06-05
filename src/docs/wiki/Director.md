@@ -74,6 +74,8 @@ listed value, or clear the cell to show nothing. The whole run, in order:
   drops a full-screen weather overlay onto the Stint scene and is an independent toggle
   (press again to hide), exactly like the Standings/Results graphics.
 - At each commentator change, run the [driver-change steps](#at-a-driver-change) below.
+- Want a driver's onboard as a small PiP? It needs a **few minutes of lead time** — see
+  [Showing a driver POV](#showing-a-driver-pov-plan-ahead) below.
 - Incident? Set **Race Control → Red Flag** or **Technical Difficulties** and press
   **Standby Toggle** to hold the picture — it hides the feeds and the POV but keeps the
   Race Control banner and timer visible (the button lights while it's active). When it's
@@ -109,6 +111,33 @@ buttons **and** the shared Google Sheet. Each time:
    **Stint** scene in one press. (Cutting manually? Toggle the incoming **Feed A** / **Feed B**
    on first.)
 6. Back in **Stint**, **clear the Race Control entry** in the sheet (leave it empty).
+
+## Showing a driver POV (plan ahead)
+
+You can show a driver's own stream as a small picture-in-picture (bottom-right) over the
+active feed in the **Stint** scene ([how it works](Relay-Mode#driver-pov-pip-optional)).
+The one thing to know: **it is not instant.** Between "driver goes live" and "PiP ready
+on the producer's machine" the relay still has to resolve and pull the stream — so start
+the chain **a few minutes before** you want it on air:
+
+1. **Order it early:** ask the driver to start their (unlisted) live stream and send you
+   the watch URL — roughly **5 minutes ahead** is comfortable.
+2. **Schedule it:** paste the watch URL into the shared sheet, tab **POV**, cell **A2**.
+3. **Pull it:** press **POV Reload**. The relay re-reads the cell and starts pulling.
+   Resolving a live stream takes ~10–30 seconds; if the driver is **not live yet**, the
+   relay simply keeps retrying every 15 seconds until they are — no harm, but nothing to
+   show either.
+4. **Verify it's ready:** open `http://<producer-tailscale-ip>:8088/status` in a browser
+   tab — the `pov` block must say `"state": "serving"`. (`connecting` means it's still
+   resolving or the driver isn't live yet — don't show it; the PiP would be black.)
+5. **Show it:** press **POV Toggle** — allow a couple of seconds for OBS to connect the
+   first time. Audio is muted by default; **MUTE POV** / **VOL POV …** (page 2) if you
+   want it audible.
+6. **Done:** **POV Toggle** to hide, then **POV Stop** (frees the pull / bandwidth).
+
+Two rules: **Reload before Toggle**, and **hide + POV Stop when done**. The PiP lives only
+in the Stint scene — switching to Splitscreen/Interview/Standby auto-hides and
+auto-silences it.
 
 ## Interviews
 

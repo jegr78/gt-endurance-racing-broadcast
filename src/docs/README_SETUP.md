@@ -212,6 +212,13 @@ active feed in the **Stint** scene. Pulled by a third relay feed on port **53003
 
 Two rules: **Reload before Toggle (show)**, and **hide + POV Stop when done**.
 
+> **Lead time:** not instant — after **POV Reload** the relay needs ~10–30 s to
+> resolve a live stream, and while the driver is not live yet it keeps retrying
+> every 15 s (`/status` shows `state: connecting`). Only press **POV Toggle** once
+> `/status` reports `state: serving`; OBS takes a few more seconds to connect on
+> first show. Plan roughly **5 minutes** from "driver starts streaming" to
+> "PiP on air".
+
 ## 4d. Intro/Outro clips
 
 ```bash

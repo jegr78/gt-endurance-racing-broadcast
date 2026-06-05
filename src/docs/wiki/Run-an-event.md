@@ -67,6 +67,15 @@ cuts back with **STINT A** / **STINT B** (the incoming feed), then clears **Race
 Full step-by-step: [Director guide](Director#at-a-driver-change). (Why two feeds:
 [Relay — how the feeds work](Relay-Mode).)
 
+## During the race: driver POV (optional)
+
+The director can show a driver's stream as a small PiP in the Stint scene. It needs a
+**few minutes of lead time** — the driver goes live, the URL goes into the sheet, the
+director presses **POV Reload**, and only once the relay reports the pull as `serving`
+is there a picture to show. The director drives all of it; on the producer side nothing
+is needed beyond the relay already running. Steps and timing:
+[Director guide](Director#showing-a-driver-pov-plan-ahead).
+
 ## Interviews (at the end)
 
 Interviews run at the very end over Discord voice. The producer who is on air for the last
