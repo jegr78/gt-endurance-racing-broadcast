@@ -20,7 +20,8 @@ collection.
 ## 2. The scenes
 
 - **Stint** — the active feed full-screen + HUD overlay (POV PiP lives only here). It also
-  holds a hidden **Standby Cover** (the `Standby.png` graphic) **below the HUD group**,
+  holds a hidden **Standby Cover** (the dedicated `Standby Cover.png` graphic — a neutral
+  cover, distinct from the Standby scene's `Standby.png` thumbnail) **below the HUD group**,
   so showing it hides the feeds and the POV PiP while the Race Control banner and timer stay
   on top. The director toggles it with the Companion **Standby Toggle** button (a
   *Set Source Visibility* toggle on `Stint / Standby Cover`, with a *Source Visible*
@@ -37,8 +38,8 @@ collection.
   (see [Configuration](Configuration)). If the clips are missing the scene shows black.
 
 > **Broadcast graphics are local files.** The still-graphics image sources — Overlay,
-> Standings, Schedule, Race Results, Quali Results, Standby, and the three **weather**
-> overlays (**Race Weather 1**, **Race Weather 2**, **Quali Weather**) — read from
+> Standings, Schedule, Race Results, Quali Results, Standby, Standby Cover, and the three
+> **weather** overlays (**Race Weather 1**, **Race Weather 2**, **Quali Weather**) — read from
 > `runtime/graphics/<Label>.png`. They are tokenised `__IRO_GRAPHICS__` in the collection
 > and resolved by `setup-assets.py`. Download them from the Sheet **Assets** tab with
 > `python3 src/iro.py graphics` (one PNG per Assets row, the Sheet label is the
