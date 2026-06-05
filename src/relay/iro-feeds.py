@@ -726,14 +726,26 @@ def poller(source, interval, stop_evt):
         source.refresh()
 
 
+def _cookie_hint(stderr_text, browser):
+    """failure_hint() from the sibling get-cookies.py — one source of truth
+    for the actionable export-failure hints (locked DB, no profile, DPAPI)."""
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    spec = importlib.util.spec_from_file_location(
+        "get_cookies", os.path.join(here, "get-cookies.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.failure_hint(stderr_text, browser)
+
+
 def export_cookies(browser, out):
     """Export YouTube cookies from a logged-in browser to a Netscape cookies.txt
     using yt-dlp. Best-effort: returns True on success."""
     url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
     try:
-        subprocess.run(["yt-dlp", "--cookies-from-browser", browser, "--cookies", out,
-                        "--skip-download", "--no-warnings", url],
-                       timeout=90, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc = subprocess.run(["yt-dlp", "--cookies-from-browser", browser, "--cookies", out,
+                               "--skip-download", "--no-warnings", url],
+                              timeout=90, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     except FileNotFoundError:
         print("WARN: yt-dlp not found — cannot auto-export cookies."); return False
     except subprocess.TimeoutExpired:
@@ -742,7 +754,12 @@ def export_cookies(browser, out):
     if ok:
         try: os.chmod(out, 0o600)   # live YouTube session — owner-only
         except OSError: pass
-    print(f"Cookie export from '{browser}': {'OK -> ' + out if ok else 'FAILED (logged into YouTube there?)'}")
+        print(f"Cookie export from '{browser}': OK -> {out}")
+    else:
+        err = (proc.stderr or b"").decode("utf-8", errors="replace")
+        for line in [l for l in err.splitlines() if l.strip()][-1:]:
+            print("WARN:", line)   # the real yt-dlp reason, not a guess
+        print(f"Cookie export from '{browser}': FAILED — " + _cookie_hint(err, browser))
     return ok
 
 
