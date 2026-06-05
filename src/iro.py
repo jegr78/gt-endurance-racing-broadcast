@@ -116,6 +116,38 @@ def _load_env_frozen():
     for key, val in pairs.items():
         os.environ.setdefault(key, val)
 
+# Known system CA bundle locations (macOS ships /etc/ssl/cert.pem; the Linux
+# paths cover Debian/Ubuntu and RHEL/Fedora).
+CA_BUNDLES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt",
+              "/etc/pki/tls/certs/ca-bundle.crt")
+
+
+def pick_ca_bundle(cafile, capath, candidates, exists=os.path.exists):
+    """The CA bundle SSL_CERT_FILE should point at, or None when the build's
+    own OpenSSL default paths work (or no candidate exists). Pure for tests."""
+    if (cafile and exists(cafile)) or (capath and exists(capath)):
+        return None
+    for path in candidates:
+        if exists(path):
+            return path
+    return None
+
+
+def _ensure_ssl_certs():
+    """Frozen on macOS/Linux: the bundled OpenSSL looks for CA certs at the
+    BUILD machine's compile-time paths, which usually don't exist on the
+    producer's machine -> every in-process HTTPS call dies with
+    CERTIFICATE_VERIFY_FAILED. Point SSL_CERT_FILE at the system bundle
+    instead (Windows uses the OS cert store natively). Must run before any
+    ssl context is created; children inherit the variable."""
+    if not IS_FROZEN or sys.platform.startswith("win") or os.environ.get("SSL_CERT_FILE"):
+        return
+    import ssl
+    paths = ssl.get_default_verify_paths()
+    bundle = pick_ca_bundle(paths.openssl_cafile, paths.openssl_capath, CA_BUNDLES)
+    if bundle:
+        os.environ["SSL_CERT_FILE"] = bundle
+
 def _script_invocation(rel, args, frozen, base=None):
     """How to run a src/ script: subprocess in repo/package mode; in-process when
     frozen (the .py files ship as bundled data, there is no python3 to exec)."""
@@ -582,6 +614,7 @@ def main(argv=None):
     ensure_env_file(os.path.dirname(sys.executable))
     cleanup_old_binary(os.path.dirname(sys.executable))
     _load_env_frozen()
+    _ensure_ssl_certs()
     argv = sys.argv[1:] if argv is None else argv
     try:
         action = route(argv)
