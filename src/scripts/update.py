@@ -29,21 +29,24 @@ def asset_name(platform):
     return "iro-linux.tar.gz"
 
 
-def classify(release, platform, current):
+def classify(release, platform, current, frozen=False):
     """The whole update decision, pure. Always a (kind, detail, url) 3-tuple:
     ('dev',        None, None)   running from source -> refuse
     ('error',      message, None)  malformed release data
     ('up-to-date', tag, None)
     ('building',   tag, None)    newer release exists, platform asset not uploaded yet
-    ('update',     tag, url)"""
+    ('update',     tag, url)
+    An unparseable `current` (e.g. 'dev') refuses in repo mode, but a frozen
+    binary built without --version gets the latest release offered instead
+    (incomparable -> never 'up-to-date')."""
     cur = parse_version(current)
-    if cur is None:
+    if cur is None and not frozen:
         return ("dev", None, None)
     tag = release.get("tag_name", "")
     new = parse_version(tag)
     if new is None:
         return ("error", f"unexpected tag on the latest release: {tag!r}", None)
-    if new <= cur:
+    if cur is not None and new <= cur:
         return ("up-to-date", tag, None)
     want = asset_name(platform)
     for asset in release.get("assets", []):
@@ -142,14 +145,18 @@ def main():
     ap.add_argument("--current", default="dev", help=argparse.SUPPRESS)  # injected by iro
     a = ap.parse_args()
 
-    if parse_version(a.current) is None:
+    # Frozen one-shots run in-process in the binary, so sys.frozen is visible
+    # here; repo mode runs under a plain python3. A frozen 'dev' binary (local
+    # build without --version) gets the latest release offered instead.
+    frozen = bool(getattr(sys, "frozen", False))
+    if parse_version(a.current) is None and not frozen:
         sys.exit("update: running from source — update with `git pull` instead.")
     try:
         release = fetch_latest()
     except Exception as exc:
         sys.exit(f"update: cannot reach GitHub releases ({exc}). Check your connection.")
 
-    action = classify(release, sys.platform, a.current)
+    action = classify(release, sys.platform, a.current, frozen)
     if action[0] == "error":
         sys.exit(f"update: {action[1]}")
     if action[0] == "up-to-date":
