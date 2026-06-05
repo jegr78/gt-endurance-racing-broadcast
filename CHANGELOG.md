@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v0.2.1...v0.3.0) (2026-06-05)
+
+
+### Features
+
+* **event:** iro event status/start/stop — event-day readiness check and bring-up ([62fa86d](https://github.com/jegr78/IRO_Broadcast_Setup/commit/62fa86d80904f4f5b2807a945dde5f5d4ec5ee9f))
+* **relay:** producer handover — start at the stint on air ([1bd071b](https://github.com/jegr78/IRO_Broadcast_Setup/commit/1bd071bac4a2692972284724c0ec9f5bdfb1f76f))
+
+
+### Bug Fixes
+
+* **event:** wait for launched services before the closing readiness report ([41d9353](https://github.com/jegr78/IRO_Broadcast_Setup/commit/41d93535f2747eba805afbe9d2634a6fd0cfc3d5))
+* **stop:** release OBS feed connections so the feed ports tear down cleanly ([9b843b7](https://github.com/jegr78/IRO_Broadcast_Setup/commit/9b843b71d1394f5575582265ff2532b329d37d0f))
+
 ## [0.2.1](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v0.2.0...v0.2.1) (2026-06-05)
 
 
