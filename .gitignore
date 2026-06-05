@@ -11,3 +11,4 @@ cookies.txt
 *.cache.txt
 *.import.json
 .playwright-mcp/
+.claude/scheduled_tasks.lock
