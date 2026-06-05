@@ -145,6 +145,19 @@ def t_ensure_env_file_copy_failure():
         assert not os.path.exists(os.path.join(d, ".env"))
 
 
+def t_pick_ca_bundle():
+    ex = lambda paths: (lambda p: p in paths)
+    # build's own cafile exists -> trust it, no override
+    assert m.pick_ca_bundle("/build/cert.pem", None, ("/etc/a",), exists=ex({"/build/cert.pem"})) is None
+    # build's capath exists -> trust it
+    assert m.pick_ca_bundle(None, "/build/certs", ("/etc/a",), exists=ex({"/build/certs"})) is None
+    # neither exists -> first existing candidate
+    assert m.pick_ca_bundle("/build/cert.pem", "/build/certs", ("/etc/a", "/etc/b"),
+                            exists=ex({"/etc/b"})) == "/etc/b"
+    # nothing exists anywhere -> None (leave things alone)
+    assert m.pick_ca_bundle(None, None, ("/etc/a",), exists=ex(set())) is None
+
+
 def t_script_invocation_repo():
     import sys as _sys
     kind, argv, _ = m._script_invocation("scripts/preflight.py", ["--quick"], False)
