@@ -162,8 +162,17 @@ def t_oneshot_extra():
     assert m._oneshot_extra("graphics", [], True, R) == \
         ["--out", os.path.join(R, "graphics")]
     assert m._oneshot_extra("media", [], True, R) == ["--out", os.path.join(R, "media")]
+    # setup INJECTS media/graphics dirs into the collection — frozen defaults
+    # would point into the throwaway _MEIPASS dir, so they get redirected too.
     assert m._oneshot_extra("setup", [], True, R) == \
-        ["--out", os.path.join(R, "IRO_Endurance.import.json")]
+        ["--out", os.path.join(R, "IRO_Endurance.import.json"),
+         "--media", os.path.join(R, "media"),
+         "--graphics", os.path.join(R, "graphics")]
+    assert m._oneshot_extra("setup", ["--media", "m"], True, R) == \
+        ["--out", os.path.join(R, "IRO_Endurance.import.json"),
+         "--graphics", os.path.join(R, "graphics")]
+    assert m._oneshot_extra(
+        "setup", ["--out", "z", "--media", "m", "--graphics", "g"], True, R) == []
     assert m._oneshot_extra("graphics", ["--out", "z"], True, R) == []
 
 

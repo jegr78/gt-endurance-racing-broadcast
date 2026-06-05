@@ -66,7 +66,13 @@ def main():
     for mod in HIDDEN_STDLIB:
         cmd += ["--hidden-import", mod]
     for rel in DATA:
-        cmd += ["--add-data", f"{os.path.join(SRC, rel)}{sep}src/{rel}"]
+        path = os.path.join(SRC, rel)
+        # --add-data's DEST is always a target *directory*. A directory source
+        # mirrors into src/<rel>, but a FILE must target "src" — "src/<file>"
+        # would create a directory named like the file, and the frozen
+        # in-process import then dies with EACCES trying to open() it.
+        dest = f"src/{rel}" if os.path.isdir(path) else "src"
+        cmd += ["--add-data", f"{path}{sep}{dest}"]
     cmd.append(os.path.join(SRC, "iro.py"))
     print("Running:", " ".join(cmd), flush=True)
     if subprocess.call(cmd) != 0:
@@ -96,7 +102,18 @@ def smoke(binary, version):
         ex = run(["export", "companion", "--out", dst])
         if ex.returncode != 0 or not os.path.isfile(dst):
             sys.exit(f"smoke export FAILED: rc={ex.returncode} err={ex.stderr!r}")
-    print("Smoke test OK (--version, status, export companion).")
+        # `setup` loads the bundled setup-assets.py in-process — catches bundle
+        # layout regressions (e.g. --add-data turning the file into a directory).
+        imp = os.path.join(td, "import.json")
+        su = run(["setup", "--out", imp, "--sheet-id", "smoke",
+                  "--timer-url", "https://example.com/timer"])
+        if su.returncode != 0 or not os.path.isfile(imp):
+            sys.exit(f"smoke setup FAILED: rc={su.returncode} out={su.stdout!r} err={su.stderr!r}")
+        with open(imp, encoding="utf-8") as fh:
+            if "_MEI" in fh.read():
+                sys.exit("smoke setup FAILED: the localized collection references "
+                         "the throwaway _MEIPASS unpack dir (paths die with the process)")
+    print("Smoke test OK (--version, status, export companion, setup).")
 
 
 if __name__ == "__main__":

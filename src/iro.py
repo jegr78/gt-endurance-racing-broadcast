@@ -148,8 +148,10 @@ def _relay_daemon_argv(rest, frozen):
 
 def _oneshot_extra(command, rest, frozen, runtime_dir):
     """Extra argv for a one-shot. --runtime-dir where the script supports it (see
-    RUNTIME_DIR_ONESHOTS); when frozen, also redirect default output locations
-    away from the throwaway _MEIPASS unpack dir (unless the user passed --out)."""
+    RUNTIME_DIR_ONESHOTS); when frozen, also redirect default locations away from
+    the throwaway _MEIPASS unpack dir (unless the user passed the flag himself):
+    --out for the writers, and setup's --media/--graphics — those are INJECTED
+    into the OBS collection as absolute paths and must outlive the process."""
     extra = []
     if command in RUNTIME_DIR_ONESHOTS:
         extra += ["--runtime-dir", runtime_dir]
@@ -159,6 +161,10 @@ def _oneshot_extra(command, rest, frozen, runtime_dir):
                "setup": os.path.join(runtime_dir, "IRO_Endurance.import.json")}.get(command)
         if out:
             extra += ["--out", out]
+    if frozen and command == "setup":
+        for flag, sub in (("--media", "media"), ("--graphics", "graphics")):
+            if flag not in rest:
+                extra += [flag, os.path.join(runtime_dir, sub)]
     return extra
 
 def _relay_script():
