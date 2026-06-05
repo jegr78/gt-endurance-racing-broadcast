@@ -63,10 +63,19 @@ Changes in `.github/workflows/release.yml`:
 | Linux | `iro-linux.tar.gz` | `iro` + `.env.example` (executable bit preserved by tar) |
 
 Every archive ships `.env.example`: the frozen binary auto-loads
-`<exe-dir>/.env` but does **not** create it, and its error messages reference
-`.env.example` — which a binary-only user would otherwise not have. Extracting
-the archive also naturally creates the binary's "own folder" (`.env` and
-`runtime/` live next to it).
+`<exe-dir>/.env`, and its error messages reference `.env.example` — which a
+binary-only user would otherwise not have. Extracting the archive also
+naturally creates the binary's "own folder" (`.env` and `runtime/` live next
+to it).
+
+**The CLI creates `.env` itself**: in frozen mode, when `<exe-dir>/.env` is
+missing and `<exe-dir>/.env.example` exists, `iro` copies the template to
+`.env` on startup and prints a one-line hint ("created .env — fill in
+IRO_SHEET_ID and IRO_TIMER_URL"). No copy/rename step for the operator, and
+no overwrite risk on upgrades (archives never contain a real `.env`; the
+empty-valued keys stay falsy so the existing "not configured" errors still
+fire). Implemented next to `_load_env_frozen` in `src/iro.py` + unit test in
+`tests/test_iro.py`.
 
 No rename and no chmod for operators. The one-time Gatekeeper/SmartScreen
 "run anyway" confirmation remains (unsigned binaries — accepted, documented).
