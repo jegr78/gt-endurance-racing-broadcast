@@ -71,7 +71,8 @@ the director's, done remotely.
 ## 2. Relay ping-pong (the endurance flow)
 
 Two fixed feeds "walk" along a **stint schedule**. Feed A serves the odd stints
-(1, 3, 5…), Feed B the even ones (2, 4, 6…). At each handover the **off-air** feed
+(1, 3, 5…), Feed B the even ones (2, 4, 6…) (when starting from stint 1; a
+`--stint N` takeover starts the same ping-pong at stint N on Feed A). At each handover the **off-air** feed
 advances to the next commentator's stream, so the on-air OBS media source never changes
 URL. A third **POV** feed is an optional driver picture-in-picture.
 

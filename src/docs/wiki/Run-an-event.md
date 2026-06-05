@@ -97,6 +97,36 @@ is there a picture to show. The director drives all of it; on the producer side 
 is needed beyond the relay already running. Steps and timing:
 [Director guide](Director#showing-a-driver-pov-plan-ahead).
 
+## Producer handover (12h/24h multi-part events)
+
+Long events are split into broadcast parts run by different producers, each on
+their own machine with their own stream key. Viewers follow via the channel's
+end-of-stream redirect; plan a few minutes of deliberate overlap.
+
+The relay does **not** need the previous producer's Feed A/B order — the
+ping-pong works from any starting point. Rule of thumb: **after every takeover
+you go on air with Feed A.**
+
+1. Incoming producer: `iro event start --stint <N>` — N is the stint **on air
+   right now** (1-based, from the schedule sheet / Discord). Feed A serves
+   stint N, Feed B preloads stint N+1.
+2. Verify Feed A shows the same commentator as the live broadcast (`/status`
+   or the OBS preview).
+3. Start your OBS stream with this part's stream key — the overlap begins.
+4. Share your panel/tablet URLs with the directors (`iro event start` prints
+   them — just forward).
+5. Outgoing producer: stop the stream (the YouTube redirect takes over), then
+   `iro event stop`.
+
+Typo, or forgot `--stint`? Fix it **before going live**:
+`http://127.0.0.1:8088/set/stint/<N>` repositions both feeds. Like the other
+`/set` endpoints it tears a running feed off its stream — not for mid-program
+use.
+
+**Same producer runs the next part:** just stop the OBS stream and start it
+again with the next part's stream key — the relay keeps running, no `--stint`
+needed.
+
 ## Interviews (at the end)
 
 Interviews run at the very end over Discord voice. The producer who is on air for the last

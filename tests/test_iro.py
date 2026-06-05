@@ -319,6 +319,42 @@ def t_event_dispatch_wired():
         assert ("event", verb) in m.DISPATCH
 
 
+def t_stint_args_extraction():
+    # event_start forwards only the --stint flag to the relay launch
+    assert m._stint_args([]) == []
+    assert m._stint_args(["--no-color"]) == []
+    assert m._stint_args(["--stint", "4"]) == ["--stint", "4"]
+    assert m._stint_args(["--no-color", "--stint=7"]) == ["--stint", "7"]
+    assert m._stint_args(["--stint"]) == []          # missing value: let relay default
+
+
+def t_stint_args_rejects_garbage():
+    # fail fast BEFORE a daemon is spawned (its error would only hit the log)
+    for bad in (["--stint", "abc"], ["--stint=0"], ["--stint", "-3"]):
+        try:
+            m._stint_args(bad)
+            assert False, f"accepted {bad}"
+        except SystemExit:
+            pass
+
+
+def t_relay_start_warns_when_running_and_stint_ignored():
+    # already-running + --stint: must tell the operator the flag was ignored
+    import io, contextlib
+    old_read, old_alive = m.sv.read_pid, m.sv.pid_alive
+    m.sv.read_pid = lambda path: 4242
+    m.sv.pid_alive = lambda pid: True
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            m.relay_start(["--stint", "5"])
+        out = buf.getvalue()
+        assert "already running" in out
+        assert "--stint ignored" in out and "/set/stint/5" in out
+    finally:
+        m.sv.read_pid, m.sv.pid_alive = old_read, old_alive
+
+
 def _raises(fn):
     try:
         fn()

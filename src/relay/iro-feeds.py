@@ -5,9 +5,10 @@ with a remotely-maintainable stint schedule from a Google Sheet.
 
 Concept: exactly one commentator stream per stint. Two fixed OBS feeds
 (Feed A = port 53001, Feed B = port 53002) "walk" along a stint schedule.
-Feed A serves the odd stints (1,3,5…), Feed B the even ones (2,4,6…). At
-each handover the feed that is currently NOT on air advances to its next
-commentator.
+Feed A serves the odd stints (1,3,5…), Feed B the even ones (2,4,6…) when
+starting from stint 1 — with `--stint N` (producer takeover) the same
+ping-pong simply starts at stint N on Feed A. At each handover the feed
+that is currently NOT on air advances to its next commentator.
 
 OBS stays untouched: the media sources keep pointing at
 http://127.0.0.1:53001 / :53002 — only the channel behind them changes.
@@ -41,6 +42,8 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   GET /next/A | /B      -> advance Feed A or B specifically
   GET /prev/A | /B      -> step back one (correction)
   GET /set/A/<n> | /B   -> pin Feed A/B to schedule index <n>
+  GET /set/stint/<n>   -> producer takeover: stint <n> (1-based!) is on air now —
+                           Feed A serves it, Feed B preloads <n+1> (tears running feeds)
   GET /reload          -> reconnect both feeds (applies a sheet change to the
                            CURRENT channel immediately)
   GET /reload/A | /B    -> reconnect only Feed A or B
@@ -327,6 +330,15 @@ def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
     return None
 
 
+def stint_start_indices(stint, schedule_len):
+    """0-based (A, B) start indices for a producer takeover: 1-based stint
+    <stint> is on air NOW -> Feed A serves it, Feed B preloads the next one.
+    Both clamped to the schedule (last stint / empty schedule -> A == B)."""
+    stint = max(1, int(stint))
+    hi = max(0, schedule_len - 1)
+    return min(stint - 1, hi), min(stint, hi)
+
+
 class ScheduleSource:
     """Reads the schedule from the Google Sheet (CSV) with last-good + fallback."""
     def __init__(self, csv_url, cache_path, local_fallback):
@@ -582,12 +594,13 @@ class Feed:
 
 
 class Relay:
-    def __init__(self, source, ports, logdir, cookies=None, pov_source=None, pov_port=None):
+    def __init__(self, source, ports, logdir, cookies=None, pov_source=None,
+                 pov_port=None, start_stint=1):
         self.source = source
         self.cookies = cookies
-        n = len(source.get())
-        self.A = Feed("A", ports[0], 0, source.get, logdir, cookies)
-        self.B = Feed("B", ports[1], 1 if n > 1 else 0, source.get, logdir, cookies)
+        a_idx, b_idx = stint_start_indices(start_stint, len(source.get()))
+        self.A = Feed("A", ports[0], a_idx, source.get, logdir, cookies)
+        self.B = Feed("B", ports[1], b_idx, source.get, logdir, cookies)
         self.feeds = {"A": self.A, "B": self.B}
         # POV is a THIRD, independent feed — not part of the A/B index. Starts
         # paused (off) until the Director calls /pov/reload.
@@ -636,6 +649,16 @@ class Relay:
         f = self.feeds.get(which.upper())
         if not f: return None
         f.set_index(idx); return self.status()
+
+    def set_stint(self, stint):
+        """Producer-takeover correction: 1-based stint <stint> is on air NOW ->
+        Feed A serves it, Feed B preloads the next one. Tears a running feed off
+        its stream (like /set) — use BEFORE going live, not mid-program."""
+        self.source.refresh(timeout=6)      # clamp against fresh sheet data
+        a_idx, b_idx = stint_start_indices(stint, len(self.source.get()))
+        self.A.set_index(a_idx)
+        self.B.set_index(b_idx)
+        return self.status()
 
     def reload(self, which=None):
         self.source.refresh(timeout=6)
@@ -713,6 +736,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if len(p)==2 and p[0]=="next":          return self._ok(relay.advance(p[1], +2))
                 if len(p)==2 and p[0]=="prev":          return self._ok(relay.advance(p[1], -2))
                 if len(p)==2 and p[0]=="reload":        return self._ok(relay.reload(p[1]))
+                if len(p)==3 and p[:2]==["set","stint"]: return self._send(relay.set_stint(int(p[2])))
                 if len(p)==3 and p[0]=="set":           return self._ok(relay.set_index(p[1], int(p[2])))
                 self._send({"error":"unknown","path":self.path}, 404)
             except Exception as e:
@@ -805,6 +829,9 @@ def main():
     ap.add_argument("--no-hud", action="store_true",
                     help="Do not serve the HUD overlay at /hud.")
     ap.add_argument("--ports", default="53001,53002")
+    ap.add_argument("--stint", type=int, default=1,
+                    help="1-based stint that is ON AIR right now (producer takeover): "
+                         "Feed A serves it, Feed B preloads the next one. Default 1.")
     ap.add_argument("--logdir", default="logs")
     ap.add_argument("--cookies", default=None,
                     help="Path to cookies.txt (Netscape format) for YouTube login — "
@@ -822,6 +849,9 @@ def main():
         sys.exit("ERROR: no Google Sheet configured. Set IRO_SHEET_ID in a .env file "
                  "at the repo/package root (see .env.example) or the environment, "
                  "or pass --sheet-id / --sheet-csv-url.")
+
+    if args.stint < 1:
+        sys.exit("ERROR: --stint must be >= 1 (1-based stint number, as in the sheet).")
 
     for _tool in ("yt-dlp", "streamlink"):
         if not shutil.which(_tool):
@@ -906,7 +936,8 @@ def main():
               "SAME stream (no off-air feed to hand over to).")
 
     relay = Relay(source, ports, logdir, cookies,
-                  pov_source=pov_source, pov_port=args.pov_port)
+                  pov_source=pov_source, pov_port=args.pov_port,
+                  start_stint=args.stint)
     relay.start()
 
     stop_evt = threading.Event()
@@ -941,6 +972,12 @@ def main():
 
     print(f"IRO relay running.  Schedule source: {'CSV URL' if args.sheet_csv_url else f'sheet tab “{args.sheet_tab}”'}")
     print(f"  Feed A -> http://127.0.0.1:{ports[0]}   Feed B -> http://127.0.0.1:{ports[1]}")
+    if args.stint != 1:
+        if relay.A.idx != args.stint - 1:
+            print(f"  WARN: --stint {args.stint} clamped to stint {relay.A.idx + 1} "
+                  f"(schedule has {len(source.get())} stints).")
+        print(f"  Takeover start: stint {relay.A.idx + 1} on Feed A; "
+              f"Feed B preloads stint {relay.B.idx + 1}.")
     print(f"  Controls: http://127.0.0.1:{args.http_port}/status | /next | /reload")
     if relay.pov:
         print(f"  Driver-POV PiP -> http://127.0.0.1:{args.pov_port}  "

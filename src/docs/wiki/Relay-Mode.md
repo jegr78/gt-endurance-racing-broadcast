@@ -61,6 +61,17 @@ directors, bind the control server to the producer's **Tailscale IP** (not `0.0.
 see [Director](Director) and the security note below.
 (Developers running from the repo: python3 src/iro.py works the same everywhere.)
 
+**Taking over mid-event (multi-part broadcasts):** start the relay at the stint
+that is on air right now —
+
+```bash
+iro relay start --stint 4   # stint 4 is live: Feed A serves it, Feed B preloads stint 5
+```
+
+After every takeover the new producer goes on air with **Feed A** — there is no
+need to continue the previous producer's A/B order. Full checklist:
+[Run an event → Producer handover](Run-an-event#producer-handover-12h24h-multi-part-events).
+
 ## 4. Control it (Companion → relay)
 
 Companion connection **"Generic HTTP Requests"**, action **GET**:
@@ -75,6 +86,11 @@ Companion connection **"Generic HTTP Requests"**, action **GET**:
 
 Works for remote directors too — Companion makes the request locally on the producer
 station.
+
+One more endpoint for the browser (not a Companion button — it needs a number):
+`http://127.0.0.1:8088/set/stint/<n>` positions BOTH feeds for a producer
+takeover (1-based: stint n on Feed A, n+1 preloaded on Feed B). It tears
+running feeds — use it before going live, never mid-program.
 
 ---
 

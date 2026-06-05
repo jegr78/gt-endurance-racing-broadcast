@@ -8,6 +8,7 @@
   iro companion start|stop|restart|status|logs|open-tablet|open-admin
   iro streams   start|stop|restart|status|logs
   iro event     status|start|stop      # event-day readiness: check / bring-up / wind-down
+  iro event start --stint N             # takeover: stint N is on air now — the relay starts there
   iro status                            # aggregate health of all services
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] | install-apps [--yes]
   iro export companion [--out PATH]     # write the Companion button config
@@ -318,9 +319,13 @@ def _frozen_child_env():
     return env
 
 def relay_start(rest):
+    stint = _stint_args(rest)   # validate early: fail fast BEFORE spawning the daemon
     pid = sv.read_pid(_relay_pid_path())
     if sv.pid_alive(pid):
         print(f"relay already running (pid {pid}).")
+        if stint:
+            print(f"  --stint ignored (relay keeps its position) — to reposition the "
+                  f"running relay open http://127.0.0.1:{RELAY_PORT}/set/stint/{stint[1]}")
         return relay_status([])
     argv = _relay_daemon_argv(rest, IS_FROZEN)
     newpid = sv.start_detached(argv, _relay_log_path(), _relay_pid_path(),
@@ -553,6 +558,24 @@ def companion_open_admin(rest):
     _companion_open("/")
 
 
+def _stint_args(rest):
+    """Extract + validate a --stint flag ("--stint 4" or "--stint=4") from an
+    argv. Returns the fragment to forward to the relay launch; exits on an
+    invalid value (fail fast BEFORE a detached daemon is spawned — its own
+    error would only land in the log file)."""
+    for i, tok in enumerate(rest):
+        val = None
+        if tok == "--stint" and i + 1 < len(rest):
+            val = rest[i + 1]
+        elif tok.startswith("--stint="):
+            val = tok.split("=", 1)[1]
+        if val is not None:
+            if not val.isdigit() or int(val) < 1:
+                sys.exit(f"--stint must be a 1-based stint number (got {val!r}).")
+            return ["--stint", val]
+    return []
+
+
 def _event_modules():
     """event/preflight are plain sibling modules of services (scripts/ is on
     sys.path; frozen: hidden-imports in tools/build-binary.py)."""
@@ -679,8 +702,9 @@ def event_start(rest):
         print("discord: already running.")
     else:
         _event_launch(ev, "discord")
-    # 3. Relay (before OBS — see docstring)
-    relay_start([])
+    # 3. Relay (before OBS — see docstring). A takeover bring-up forwards
+    # --stint so the feeds start at the stint that is on air right now.
+    relay_start(_stint_args(rest))
     # 4. OBS
     if ev.app_running("obs"):
         print("obs: already running.")

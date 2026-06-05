@@ -58,6 +58,7 @@ iro setup --out runtime/IRO_Endurance.import.json   # localize OBS assets + inje
 
 ```
 iro event start          # bring everything up: Tailscale, Discord, relay, OBS, Companion
+iro event start --stint 4 # take over mid-event (12h/24h): stint 4 is on air now
 iro event status         # event-day readiness report (apps, services, cookies, graphics, media, config)
 iro event stop           # stop relay/Companion/streams — OBS & friends keep running
 iro preflight            # check tools/hardware

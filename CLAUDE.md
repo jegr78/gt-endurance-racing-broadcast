@@ -57,7 +57,7 @@ python3 src/iro.py streams start     # static/public-stream mode
 python3 src/iro.py streams stop
 python3 src/iro.py status            # aggregate health of all services
 python3 src/iro.py event status      # event-day readiness report (apps + services + assets)
-python3 src/iro.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion)
+python3 src/iro.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later)
 python3 src/iro.py event stop        # stop iro services; GUI apps keep running
 python3 src/iro.py preflight         # hardware/tool check
 python3 src/iro.py cookies firefox   # refresh YouTube cookies before an event (Firefox recommended; Windows Chrome/Edge exports are blocked by app-bound encryption)
