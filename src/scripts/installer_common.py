@@ -16,6 +16,20 @@ def confirmed(answer):
     return answer.strip().lower().startswith("y")
 
 
+# winget result codes that mean "the package is already there" — not failures:
+# 0x8A15002B UPDATE_NOT_APPLICABLE (installed, no newer version in the source),
+# 0x8A150061 PACKAGE_ALREADY_INSTALLED. subprocess reports them as unsigned
+# DWORDs; PowerShell shows them signed — normalize via the 32-bit mask.
+WINGET_ALREADY_INSTALLED = (0x8A15002B, 0x8A150061)
+
+
+def install_exit_ok(manager, code):
+    """True iff this install exit code means the package is (already) installed."""
+    if code == 0:
+        return True
+    return manager == "winget" and (code & 0xFFFFFFFF) in WINGET_ALREADY_INSTALLED
+
+
 def find_brew(which=shutil.which, exists=os.path.exists):
     """Absolute brew invocation path, or None. PATH first, then the standard
     install locations (covers both a fresh bootstrap and an unconfigured PATH)."""

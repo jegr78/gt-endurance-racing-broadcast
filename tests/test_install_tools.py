@@ -49,6 +49,13 @@ def t_manual_guide_mentions_deno_on_linux():
     assert "winget" in m.manual_guide("win32")
 
 
+def t_windows_fresh_path_joins_registry_values():
+    vals = ["C:\\sys\\bin", "C:\\user\\bin"]
+    assert m.windows_fresh_path(read_values=lambda: vals) == os.pathsep.join(vals)
+    assert m.windows_fresh_path(read_values=lambda: []) is None
+    assert m.windows_fresh_path(read_values=lambda: ["", ""]) is None
+
+
 def t_install_commands_brew_absolute_path():
     assert m.install_commands("brew", ["ffmpeg", "deno"],
                               brew_path="/opt/homebrew/bin/brew") == \

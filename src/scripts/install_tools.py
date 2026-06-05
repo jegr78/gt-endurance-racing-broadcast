@@ -42,6 +42,33 @@ def missing_tools(which=shutil.which):
     return [t for t in TOOLS if not which(t)]
 
 
+def windows_fresh_path(read_values=None):
+    """The PATH a NEW shell would get (system + user, from the registry).
+    Installers (winget, Streamlink) update the registry, not running processes —
+    this process's PATH predates anything installed during or shortly before
+    this run. Returns None when there is nothing to read (non-Windows)."""
+    if read_values is None:
+        if not sys.platform.startswith("win"):
+            return None
+        read_values = _registry_path_values
+    parts = [os.path.expandvars(v) for v in read_values() if v]
+    return os.pathsep.join(parts) or None
+
+
+def _registry_path_values():
+    import winreg
+    values = []
+    for root, key in ((winreg.HKEY_LOCAL_MACHINE,
+                       r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+                      (winreg.HKEY_CURRENT_USER, "Environment")):
+        try:
+            with winreg.OpenKey(root, key) as k:
+                values.append(winreg.QueryValueEx(k, "Path")[0])
+        except OSError:
+            pass
+    return values
+
+
 def install_commands(manager, tools, brew_path="brew"):
     """The argv list(s) to install `tools` with `manager`."""
     if manager == "winget":
@@ -84,6 +111,27 @@ def _which_with_brew_prefix(brew):
     return probe
 
 
+def _which_with_fresh_path(fresh_path):
+    """which() that falls back to the registry PATH (Windows) — same idea as
+    _which_with_brew_prefix: a just-installed tool is not on THIS process's
+    PATH yet, but a new shell will see it."""
+    def probe(name):
+        hit = shutil.which(name)
+        if hit:
+            return hit
+        return shutil.which(name, path=fresh_path) if fresh_path else None
+    return probe
+
+
+def _note_new_terminal():
+    """Tools installed/found may not be on this shell's PATH yet — installers
+    update the registry / shell profile, not running shells."""
+    not_on_path = [t for t in TOOLS if not shutil.which(t)]
+    if not_on_path:
+        print("NOTE: open a NEW terminal before `iro preflight` / `iro relay start` —")
+        print("      not on this shell's PATH yet:", ", ".join(not_on_path))
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser(prog="install-tools", add_help=True)
@@ -91,9 +139,10 @@ def main():
                     help="skip the Homebrew bootstrap confirmation (macOS)")
     a = ap.parse_args()
 
-    missing = missing_tools()
+    missing = missing_tools(which=_which_with_fresh_path(windows_fresh_path()))
     if not missing:
         print("All external tools already installed:", ", ".join(TOOLS))
+        _note_new_terminal()
         return
     print("Missing tools:", ", ".join(missing))
 
@@ -113,12 +162,16 @@ def main():
     failed = []
     for cmd in install_commands(manager, missing, brew_path=brew or "brew"):
         print("Running:", " ".join(cmd))
-        if subprocess.call(cmd) != 0:
+        if not _common().install_exit_ok(manager, subprocess.call(cmd)):
             failed.append(" ".join(cmd))
     if manager == "apt" and "deno" in missing:
         print("NOTE: deno is not packaged for apt — install it manually:")
         print("  https://docs.deno.com/runtime/getting_started/installation/")
-    still = missing_tools(which=_which_with_brew_prefix(brew))
+    if manager == "winget":
+        # The installs just changed the registry PATH — re-read it for the check.
+        still = missing_tools(which=_which_with_fresh_path(windows_fresh_path()))
+    else:
+        still = missing_tools(which=_which_with_brew_prefix(brew))
     if failed or still:
         parts = ["Some installs did not complete."]
         if failed:
@@ -126,11 +179,8 @@ def main():
         if still:
             parts.append("Still missing: " + ", ".join(still))
         sys.exit("\n".join(parts) + "\n" + manual_guide(sys.platform))
-    # Warn if tools landed in brew's prefix but aren't on the current PATH yet.
-    if brew and sys.platform == "darwin":
-        path_still_missing = [t for t in TOOLS if not shutil.which(t)]
-        if path_still_missing:
-            print("NOTE: open a NEW terminal (or run brew shellenv) so the tools appear on PATH.")
+    # Tools may sit in brew's prefix / the registry PATH but not THIS shell's.
+    _note_new_terminal()
     print("All tools installed. Run `iro preflight` to verify.")
 
 

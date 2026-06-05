@@ -27,6 +27,17 @@ def t_find_brew_standard_locations():
     assert m.find_brew(which=lambda n: None, exists=lambda p: False) is None
 
 
+def t_install_exit_ok_winget_already_installed():
+    assert m.install_exit_ok("winget", 0)
+    assert m.install_exit_ok("winget", 0x8A15002B)    # UPDATE_NOT_APPLICABLE (unsigned)
+    assert m.install_exit_ok("winget", -1978335189)   # same code, signed 32-bit view
+    assert m.install_exit_ok("winget", 0x8A150061)    # PACKAGE_ALREADY_INSTALLED
+    assert not m.install_exit_ok("winget", 0x8A150011)  # a real installer failure
+    assert not m.install_exit_ok("winget", 1)
+    assert m.install_exit_ok("brew", 0)
+    assert not m.install_exit_ok("brew", 1)           # only winget has "already" codes
+
+
 def t_bootstrap_declined_runs_nothing():
     calls = []
     out = m.bootstrap_brew(False, input_fn=lambda prompt: "n",

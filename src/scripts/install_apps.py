@@ -228,7 +228,9 @@ def main():
     failed = []
     for cmd in app_install_commands(manager, missing, brew_path=brew_path):
         print("Running:", " ".join(cmd))
-        if subprocess.call(cmd) != 0:
+        # winget "already installed / no upgrade" exit codes are not failures
+        # (an app the path heuristics in app_present() missed lands here).
+        if not _common().install_exit_ok(manager, subprocess.call(cmd)):
             failed.append(" ".join(cmd))
     still = [a for a in APPS if not app_present(a, sys.platform)]
     if failed or still:
