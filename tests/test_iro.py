@@ -113,6 +113,22 @@ def t_ensure_env_file_without_template():
         assert not os.path.exists(os.path.join(d, ".env"))
 
 
+def t_ensure_env_file_copy_failure():
+    import tempfile
+    def boom(src, dst):
+        raise OSError("boom")
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, ".env.example"), "w", encoding="utf-8") as fh:
+            fh.write("IRO_SHEET_ID=\n")
+        orig = m.shutil.copyfile
+        m.shutil.copyfile = boom
+        try:
+            assert m.ensure_env_file(d, frozen=True) is False
+        finally:
+            m.shutil.copyfile = orig
+        assert not os.path.exists(os.path.join(d, ".env"))
+
+
 def t_script_invocation_repo():
     import sys as _sys
     kind, argv, _ = m._script_invocation("scripts/preflight.py", ["--quick"], False)
