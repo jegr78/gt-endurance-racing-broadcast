@@ -9,10 +9,14 @@ strictly more capable than the [backup director panel](Director). Install it fir
 
 ## Import the button board
 
-1. Start Companion → launcher → **GUI Interface = All Interfaces (0.0.0.0)** (important
-   for Tailscale), admin port `8000` → **Launch GUI**.
-2. In the admin: **Import/Export → Import** → `companion/iro-buttons.companionconfig`.
-   This is a **full config** → confirm **"Replace current configuration"**.
+1. Start Companion: `iro companion start` (Windows/macOS — the first run just
+   launches Companion; Linux: start it manually). In the launcher press **Launch GUI**.
+2. In the admin: **Import/Export → Import** → the file `iro export companion` writes
+   (`runtime/iro-buttons.companionconfig`). This is a **full config** → confirm
+   **"Replace current configuration"**.
+3. Bind the board to the tailnet: `iro companion restart` — sets Companion's bind
+   address to this machine's Tailscale IP. (Linux: set the launcher's **GUI
+   Interface** to the Tailscale IP manually.)
 
 > ⚠️ This **replaces the entire Companion configuration** on this station. Fine for a
 > fresh/dedicated producer station; **back up first** if this Companion holds other
@@ -39,8 +43,8 @@ uses the OBS connection.
 
 ## Test
 
-Open `http://localhost:8000/tablet`, press a button → OBS reacts. For remote directors,
-see [Director (Remote)](Director).
+Run `iro companion open-tablet` (opens the board on Companion's bound address), press
+a button → OBS reacts. For remote directors, see [Director (Remote)](Director).
 
 ## State feedback (optional)
 

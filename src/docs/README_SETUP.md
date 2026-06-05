@@ -93,7 +93,7 @@ for the relay (otherwise pulls fail with "Sign in to confirm you're not a bot").
 | **Discord** | Interview audio | [discord.com/download](https://discord.com/download) |
 
 - **macOS (tools):** `brew install streamlink yt-dlp ffmpeg deno` (Homebrew first if needed: [brew.sh](https://brew.sh))
-- **Windows (tools):** `pip install -U streamlink yt-dlp` then `winget install Gyan.FFmpeg DenoLand.Deno`
+- **Windows (tools):** `winget install yt-dlp.yt-dlp Streamlink.Streamlink Gyan.FFmpeg DenoLand.Deno`
 - **Linux (tools):** `brew install streamlink yt-dlp ffmpeg deno`, or distro packages
   (`apt`/`dnf`) plus `pip install -U streamlink yt-dlp`
 
@@ -272,7 +272,8 @@ the graphics changed. Missing files: OBS shows that source black until you fetch
      - *row 3 — volume POV/Discord:* `VOL POV DOWN`/`VOL POV UP`/`VOL POV RESET`,
        `VOL DISC DOWN`/`VOL DISC UP`/`VOL DISC RESET`
 
-5. Test: open `http://localhost:8000/tablet`, press a button → OBS reacts.
+5. Test: `iro companion open-tablet` (opens the board on Companion's bound
+   address), press a button → OBS reacts.
 
 ## 6. Remote directors (Tailscale)
 
@@ -312,8 +313,8 @@ Companion is preferred for directors.
 - **HUD & graphics** pull live data from the shared Google Sheet and
   stagetimer.io — these are shared production resources. The sheet must stay shared.
 - **Discord** must run in **windowed mode** (macOS audio capture).
-- Before every event update the tools: `iro install-tools` (or `brew upgrade
-  streamlink yt-dlp` on macOS / `pip install -U streamlink yt-dlp` on Windows).
+- Before every event update the tools: `brew upgrade streamlink yt-dlp` on macOS /
+  `winget upgrade yt-dlp.yt-dlp Streamlink.Streamlink` on Windows.
 
 ## Relay-mode quickstart (short version)
 

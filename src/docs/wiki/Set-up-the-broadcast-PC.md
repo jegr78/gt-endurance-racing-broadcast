@@ -64,6 +64,10 @@ network so remote directors can connect), **Discord** (interview audio) — via
 winget on Windows, Homebrew on macOS, apt + the official vendor installers on
 Linux (it lists the steps and asks before running them).
 
+> **Windows:** Companion installs through its interactive wizard — approve the
+> **UAC prompt** and click through it (its silent install reports success without
+> installing anything). The other apps install silently.
+
 <details>
 <summary>Alternative: install them manually</summary>
 
@@ -82,7 +86,9 @@ iro install-tools
 ```
 
 Installs `streamlink`, `yt-dlp`, `ffmpeg` and `deno` — they pull each
-commentator's stream into OBS and pass YouTube's bot check.
+commentator's stream into OBS and pass YouTube's bot check. Afterwards **open a
+new terminal** — installers update the PATH for new shells only (`iro preflight`
+confirms everything is found).
 
 > `deno` is required — without it feeds fail with *"Sign in to confirm you're not a bot."*
 > Details: [Relay — how the feeds work](Relay-Mode).
@@ -91,7 +97,7 @@ commentator's stream into OBS and pass YouTube's bot check.
 <summary>Alternative: install them manually</summary>
 
 - **macOS:** `brew install streamlink yt-dlp ffmpeg deno` (Homebrew first if needed: [brew.sh](https://brew.sh))
-- **Windows:** `pip install -U streamlink yt-dlp` then `winget install Gyan.FFmpeg DenoLand.Deno`
+- **Windows:** `winget install yt-dlp.yt-dlp Streamlink.Streamlink Gyan.FFmpeg DenoLand.Deno`
 - **Linux:** `brew install streamlink yt-dlp ffmpeg deno`, or your distro's packages
   (`apt`/`dnf`) plus `pip install -U streamlink yt-dlp`
 
@@ -126,9 +132,21 @@ warns and OBS shows those sources black until the files exist.) Step-by-step:
 
 ## 6 — Import the Companion buttons
 
-Open Companion (launcher → **GUI Interface = All Interfaces**, port `8000` → **Launch
-GUI**), then import the provided button config (`iro export companion` writes it to
-`runtime/iro-buttons.companionconfig`). Details: [Companion](Companion).
+```bash
+iro companion start
+```
+
+The first run just launches Companion (it creates its config on startup). In the
+launcher press **Launch GUI**, then import the provided button config in the admin
+(**Import/Export → Import** — `iro export companion` writes it to
+`runtime/iro-buttons.companionconfig`). Finally bind the board to the tailnet:
+
+```bash
+iro companion restart    # binds Companion to this machine's Tailscale IP
+```
+
+(Linux: start and bind Companion manually — automated control is Windows/macOS
+only.) Details: [Companion](Companion).
 
 ## 7 — Let Companion control OBS
 

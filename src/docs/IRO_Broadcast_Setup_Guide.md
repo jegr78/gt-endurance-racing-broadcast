@@ -206,8 +206,7 @@ without it feeds fail with "Sign in to confirm you're not a bot."
 
 **Windows (tools):**
 ```
-pip install -U streamlink yt-dlp
-winget install Gyan.FFmpeg DenoLand.Deno
+winget install yt-dlp.yt-dlp Streamlink.Streamlink Gyan.FFmpeg DenoLand.Deno
 ```
 
 **Linux (tools):** `brew install streamlink yt-dlp ffmpeg deno`, or distro packages
@@ -358,9 +357,9 @@ iro streams stop
 ## 11. Runbook
 
 **Before the event (Producer):**
-1. Update tools: `iro install-tools` (or `brew upgrade streamlink yt-dlp` on macOS
-   / `pip install -U streamlink yt-dlp` on Windows). YouTube changes often —
-   outdated tools are the #1 cause of feeds failing to start.
+1. Update tools: `brew upgrade streamlink yt-dlp` on macOS /
+   `winget upgrade yt-dlp.yt-dlp Streamlink.Streamlink` on Windows. YouTube changes
+   often — outdated tools are the #1 cause of feeds failing to start.
 2. Update GPU driver (hardware-encoding the broadcast and decoding the feeds leans on the GPU).
 3. Tailscale running; a Director confirms they can open
    `http://<producer-tailscale-ip>:8000/tablet`.

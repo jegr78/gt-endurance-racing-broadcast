@@ -100,11 +100,11 @@
 
         <h3>Before the event</h3>
         <ol>
-          <li>Update tools: <code>pip install -U streamlink yt-dlp</code>; check <code>ffmpeg</code>.</li>
+          <li>Update tools: <code>brew upgrade streamlink yt-dlp</code> (macOS) / <code>winget upgrade yt-dlp.yt-dlp Streamlink.Streamlink</code> (Windows).</li>
           <li>Update GPU driver.</li>
           <li>Tailscale running; a Director confirms access.</li>
           <li>OBS → Tools → <span class="k">WebSocket on</span>; Companion green.</li>
-          <li>Run <span class="k">start-streams</span> (.bat / .sh); confirm each feed appears.</li>
+          <li>Run <span class="k">iro relay start</span>; confirm the feeds appear in OBS.</li>
           <li>Test the Discord audio source.</li>
           <li>Enter the <span class="k">IRO stream key</span> in OBS.</li>
         </ol>
@@ -127,7 +127,7 @@
         <h3>End</h3>
         <ul>
           <li>■ Stop Streaming.</li>
-          <li>Close feeds: <code>stop-streams</code> (or close the windows).</li>
+          <li>Close feeds: <code>iro relay stop</code>.</li>
         </ul>
       </div>
     </section>

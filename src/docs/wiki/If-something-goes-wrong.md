@@ -9,7 +9,7 @@ most setup problems (tools, ports, cookies) before they bite you live.
 |---------|-----|
 | Feed says *"Sign in to confirm you're not a bot"* | Refresh cookies (`iro cookies firefox`) and make sure **deno** is installed — the feeds need both. |
 | Cookie export from Chrome/Edge/Brave says FAILED | On **Windows** these browsers cannot be exported at all — their cookies are app-bound encrypted (Chrome 127+). Log into YouTube in **Firefox** and run `iro cookies firefox` (works even while Firefox is running). On macOS/Linux: close the browser completely first — it locks its cookie database while running — then re-run. |
-| A feed just won't appear | Is the commentator actually live right now? Update the tools (macOS/Linux `brew upgrade streamlink yt-dlp` · Windows `pip install -U streamlink yt-dlp`) and try again. |
+| A feed just won't appear | Is the commentator actually live right now? Update the tools (macOS/Linux `brew upgrade streamlink yt-dlp` · Windows `winget upgrade yt-dlp.yt-dlp Streamlink.Streamlink`) and try again. |
 | Nothing happens when you open a feed's address in a browser | That's normal — each feed serves only OBS, not browsers. Not a fault. |
 | The handover didn't switch feeds | Press **Feeds Next** once **after** cutting to the new feed; the off-air feed only advances on Feeds Next, never mid-stint. |
 

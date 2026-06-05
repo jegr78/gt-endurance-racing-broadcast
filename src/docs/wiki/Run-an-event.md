@@ -18,8 +18,8 @@ flowchart LR
 
 1. **Reboot** the PC (frees memory) and close heavy apps.
 2. **Update the tools:** macOS/Linux `brew upgrade streamlink yt-dlp` · Windows
-   `pip install -U streamlink yt-dlp`. Outdated tools are the #1 cause of a feed not
-   starting.
+   `winget upgrade yt-dlp.yt-dlp Streamlink.Streamlink`. Outdated tools are the #1
+   cause of a feed not starting.
 3. **Refresh cookies:** `iro cookies firefox` (log into YouTube in Firefox first).
 4. **Refresh the intro/outro clips** (only if their URLs changed):
    `iro media` — pulls the URLs from the Sheet **Assets** tab and
