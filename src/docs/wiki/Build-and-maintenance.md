@@ -21,6 +21,23 @@ The verify step checks: tokens are in place (no raw sheet/timer URLs or machine 
 the Companion password is blanked, the relay POV endpoint is present, no shell scripts are
 shipped, and preflight + `.env.example` are included.
 
+## Releases (standalone binaries)
+
+Operators download `iro` from GitHub Releases and never need Python. Cutting a
+release: make sure CI is green on `main`, then push a semver tag:
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+`.github/workflows/release.yml` then tests on all three OSes, builds the
+binaries with PyInstaller, stamps the tag into `iro --version`, creates the
+GitHub release with generated notes, and uploads `iro-windows.zip` /
+`iro-macos.tar.gz` / `iro-linux.tar.gz`. Each archive contains the `iro`
+binary plus `.env.example`; on first run the binary copies it to `.env` next
+to itself. The binaries are unsigned — operators see a one-time
+SmartScreen/Gatekeeper warning (documented on the setup page).
+
 ## Round-trips that keep secrets/paths out of git
 
 - **OBS collection.** Edit scenes in OBS, export, then fold back with
