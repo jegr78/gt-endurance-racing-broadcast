@@ -185,11 +185,14 @@ keep it in its own folder. `services.py`/`companion_common.py` carry the per-OS
 process control (Windows: ctypes PID probe — `os.kill(pid, 0)` would TERMINATE the
 target there — taskkill/tasklist, Companion.exe discovery + `IRO_COMPANION_EXE`
 override in `.env`; Linux Companion control is manual by design — in WSL/Docker
-setups Companion runs on the host). Releases: push a `v*` tag —
+setups Companion runs on the host). Releases: merge the standing
+**release-please** Release PR (or push a `v*` tag manually — both work) —
 `.github/workflows/release.yml` tests, builds, smoke-tests and uploads
 `iro-windows.zip` / `iro-macos.tar.gz` / `iro-linux.tar.gz` (each contains the
 `iro` binary + `.env.example`; on first run the frozen binary copies it to `.env` —
-see `ensure_env_file`). `ci.yml` runs the suite on all
+see `ensure_env_file`). release-please tags via GITHUB_TOKEN, which cannot
+trigger on-tag workflows, so `release-please.yml` dispatches `release.yml`
+explicitly. `ci.yml` runs the suite on all
 three OSes for every PR. Unsigned binaries: SmartScreen/Gatekeeper show a
 one-time "run anyway" warning.
 
