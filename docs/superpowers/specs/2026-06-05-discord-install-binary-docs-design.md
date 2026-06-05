@@ -58,9 +58,15 @@ Changes in `.github/workflows/release.yml`:
 
 | OS | Asset | Content |
 |---|---|---|
-| Windows | `iro.exe` | raw binary (unique name, download-and-run) |
-| macOS | `iro-macos.tar.gz` | contains `iro`, executable bit preserved by tar |
-| Linux | `iro-linux.tar.gz` | contains `iro`, executable bit preserved by tar |
+| Windows | `iro-windows.zip` | `iro.exe` + `.env.example` |
+| macOS | `iro-macos.tar.gz` | `iro` + `.env.example` (executable bit preserved by tar) |
+| Linux | `iro-linux.tar.gz` | `iro` + `.env.example` (executable bit preserved by tar) |
+
+Every archive ships `.env.example`: the frozen binary auto-loads
+`<exe-dir>/.env` but does **not** create it, and its error messages reference
+`.env.example` — which a binary-only user would otherwise not have. Extracting
+the archive also naturally creates the binary's "own folder" (`.env` and
+`runtime/` live next to it).
 
 No rename and no chmod for operators. The one-time Gatekeeper/SmartScreen
 "run anyway" confirmation remains (unsigned binaries — accepted, documented).
