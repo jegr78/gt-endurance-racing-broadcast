@@ -21,10 +21,10 @@ Each Streamer (game + commentary)
         │   permanent URL:  youtube.com/channel/<CHANNEL_ID>/live
         ▼
 Producer PC
-   ├─ Streamlink server per channel  → fixed local ports (53001, 53002, …)
-   │      • memory ring buffer • prefers 1080p, floor 720p • auto-reconnect
+   ├─ Relay (iro relay start) → fixed local ports (53001, 53002, 53003)
+   │      • resolves HLS URLs via yt-dlp • serves via streamlink • auto-reconnect
    ├─ OBS Media Source per channel   → http://127.0.0.1:<port>  (never changes)
-   ├─ Overlays / HUD                 → OBS Browser Sources (your Google-Sheet HUD)
+   ├─ Overlays / HUD                 → relay-served Browser Source (http://127.0.0.1:8088/hud)
    ├─ Interviews                     → Discord Voice → OBS audio source
    ├─ OBS WebSocket server (on)      → lets Companion control OBS
    ├─ Bitfocus Companion             → button board, served as web buttons
@@ -39,22 +39,61 @@ The Producer's only live job: start and stop the IRO broadcast. Everything else 
 
 ---
 
-## 2. Tools to install (all free)
+## 2. Tools needed (all free)
 
 | Tool | Installed on | Purpose |
 |------|--------------|---------|
 | OBS Studio (v30+) | Producer PC | Main broadcast + built-in WebSocket server |
 | Streamlink | Producer PC | Pulls each channel's live stream with a buffer |
-| yt-dlp + FFmpeg | Producer PC | 1080p fallback / link resolution |
+| yt-dlp + FFmpeg | Producer PC | HLS URL resolution / remux |
+| deno | Producer PC | JS runtime for YouTube bot-check bypass (**required**) |
 | Bitfocus Companion | Producer PC | The Director's remote button board |
 | Tailscale | Producer PC + every Director PC | Private network, no port forwarding |
 | Discord | Producer PC + guests | Interview audio |
 
-Downloads: OBS `obsproject.com` · Streamlink `streamlink.github.io` · yt-dlp `github.com/yt-dlp/yt-dlp` · Companion `bitfocus.io/download` · Tailscale `tailscale.com/download`.
+---
+
+## 3. PART A — Get the `iro` tool
+
+Download the archive for your OS from the
+[latest release](https://github.com/jegr78/IRO_Broadcast_Setup/releases/latest):
+
+| OS | File |
+|---|---|
+| Windows | `iro-windows.zip` |
+| macOS | `iro-macos.tar.gz` |
+| Linux | `iro-linux.tar.gz` |
+
+Extract into a folder of its own (e.g. `~/IRO_Broadcast` or `C:\IRO_Broadcast`) —
+the tool keeps its working files (`.env`, `runtime/`) next to the binary. Open a
+terminal **in that folder** and check it runs:
+
+```bash
+./iro --version          # Windows: iro --version  (PowerShell: .\iro)
+```
+
+The first run creates a `.env` file next to the binary (you fill it in at Part E).
+
+> **One-time OS warning** (the binary is unsigned): **Windows** SmartScreen →
+> "More info" → "Run anyway". **macOS**: if blocked, System Settings →
+> Privacy & Security → "Open Anyway" (or right-click → Open).
+
+All commands in this guide are written as `iro …` — type them in a terminal in
+this folder (macOS/Linux: `./iro …` unless you add the folder to your PATH).
+
+<details>
+<summary>Alternative: run from source (needs Python 3)</summary>
+
+Clone or download this repository and install Python 3 (macOS: usually
+preinstalled, else `brew install python`; Windows: [python.org](https://www.python.org/downloads/)
+installer with **"Add python.exe to PATH"** ticked; Linux: `sudo apt install python3`).
+Then use `python3 src/iro.py …` wherever the docs say `iro …`, and copy
+`.env.example` to `.env` in the repo root yourself.
+</details>
 
 ---
 
-## 3. PART A — Tailscale (idiot-proof)
+## 4. PART B — Tailscale (idiot-proof)
 
 This puts the Producer and all Directors on one private network so the Directors can reach Companion. No router settings, no port forwarding.
 
@@ -77,7 +116,48 @@ This puts the Producer and all Directors on one private network so the Directors
 
 ---
 
-## 4. PART B — OBS WebSocket (idiot-proof)
+## 5. PART C — Bitfocus Companion (idiot-proof)
+
+Companion runs on the Producer PC and turns into a web page of buttons the Directors open in a browser.
+
+**Start Companion and open its admin page:**
+1. Install and launch Companion. A small **launcher window** appears.
+2. In the launcher, under **Network Interface / GUI Interface**, select **All Interfaces**, admin port `8000`.
+3. Click **Launch GUI**. Your browser opens `http://localhost:8000` — this is the Companion admin.
+
+**Connect Companion to OBS:**
+4. In the admin, go to the **Connections** tab → **Add connection**.
+5. Search for **OBS Studio**, select it.
+6. Fill in: **Target IP** = `127.0.0.1`, **Port** = `4455`, **Password** = the one from Part D step 5.
+7. Save. The connection should turn green/"OK". If not, re-check the password and that OBS is open with the WebSocket server enabled.
+
+**Import the button config:**
+
+```bash
+iro export companion    # writes the .companionconfig file
+```
+
+In the admin: `Import/Export` → **Import** → pick that file. Confirm "**Replace**
+current configuration". ⚠️ This replaces the entire Companion config on this
+station — back up first if it has other content.
+
+> The OBS connection (`127.0.0.1:4455`) comes with the import — without the
+> password (removed for security). Open `Connections` → OBS entry → enter your
+> WebSocket password (Part D) → the connection turns green.
+
+**Give the Directors access (web buttons over Tailscale):**
+
+```bash
+iro companion start    # binds Companion to this machine's Tailscale IP
+```
+
+Directors open `http://<PRODUCER-TAILSCALE-IP>:8000/tablet` in their browser.
+Multiple Directors can open it at once. They need nothing else — no OBS, no
+Companion, no password.
+
+---
+
+## 6. PART D — OBS WebSocket
 
 This lets Companion send commands to OBS.
 
@@ -93,179 +173,173 @@ That's the entire WebSocket setup.
 
 ---
 
-## 5. PART C — Bitfocus Companion (idiot-proof)
+## 7. PART E — Install apps and tools, add secrets
 
-Companion runs on the Producer PC and turns into a web page of buttons the Directors open in a browser.
+### 7.1 Install apps and tools
 
-**Start Companion and open its admin page:**
-1. Install and launch Companion. A small **launcher window** appears.
-2. In the launcher, under **Network Interface / GUI Interface**, select your normal network (wired or Wi-Fi). Leave the admin port at `8000`.
-3. Click **Launch GUI**. Your browser opens `http://localhost:8000` — this is the Companion admin.
-
-**Connect Companion to OBS:**
-4. In the admin, go to the **Connections** tab → **Add connection**.
-5. Search for **OBS Studio**, select it.
-6. Fill in: **Target IP** = `127.0.0.1` (Companion and OBS are on the same PC), **Port** = `4455`, **Password** = the one from Part B step 5.
-7. Save. The connection should turn green/"OK". If not, re-check the password and that OBS is open with the WebSocket server enabled.
-
-**Build the Director's buttons (Buttons tab):**
-You're laying out a grid. Click any empty button cell to edit it. For each button: set **Button text**, then under **Add action** choose an OBS action.
-
-Suggested layout for page 1:
-- **Row 1 — Scenes:** one button each → action **Set Program Scene** → "Stint", "Splitscreen", "Interview", "Standby".
-- **Row 2 — Camera/source select** (which Streamlink feed is shown): one button per channel → action **Set Source Visibility** (or a scene-per-feed if you prefer) for "Feed A", "Feed B", etc.
-- **Row 3 — Graphics:** one button per overlay → action **Set Source Visibility** → toggle "HUD", "Standings", "Race Info", "Interview Lower-third".
-- **Row 4 — Audio:** per feed → actions **Set Input Mute** (toggle) and **Set Input Volume** (+/- buttons).
-
-Make buttons show their state with **feedback**:
-- In a button's editor → **Add feedback** → e.g. **Source Visible** or **Scene Active** → pick a highlight color. Now the button lights up when that scene/source is live, so the Director always sees what's on air.
-
-Tip: one button can hold **multiple stacked actions** — e.g. a single "Go to Interview" button that switches to the Interview scene *and* shows the lower-third *and* unmutes Discord.
-
-**Give the Directors access (web buttons over Tailscale):**
-8. In Companion admin, find the **web buttons / tablet** page link (served on port `8000`). The Directors open it in their browser using the **Producer's Tailscale IP**, e.g. `http://100.x.y.z:8000/tablet`.
-9. Multiple Directors can open it at once. They need nothing else — no OBS, no Companion, no password.
-
-> Same-machine case: if the Producer is also the Director on this PC, they can simply use OBS directly or the local Companion page (`http://localhost:8000/tablet`). Companion only matters for *remote* Directors.
-
----
-
-## 6. PART D — Python, pip & FFmpeg (install before Streamlink)
-
-Streamlink and yt-dlp are Python programs, and they need FFmpeg. Don't assume the Producer PC already has these. Do this **once** per machine. If `python --version`, `pip --version` and `ffmpeg -version` all already print a version, skip to Part E.
-
-### Windows
-1. Go to `python.org/downloads`, click the big **Download Python** button (3.11 or newer).
-2. Run the installer. **CRITICAL:** on the first screen tick **“Add python.exe to PATH”** at the bottom, *then* click **Install Now**. (If you forget this, nothing below will work.)
-3. When it finishes, close and re-open any open terminal windows.
-4. Open **Command Prompt** (Start → type `cmd` → Enter) and check:
-   ```
-   python --version
-   pip --version
-   ```
-   Both should print a version number.
-5. Install the tools:
-   ```
-   pip install -U streamlink yt-dlp
-   ```
-6. Install **FFmpeg** (Streamlink/yt-dlp need it to remux):
-   - Easiest: open **PowerShell** and run `winget install Gyan.FFmpeg`, then re-open the terminal.
-   - Manual alternative: download a build from `gyan.dev/ffmpeg/builds` (the “release essentials” zip), unzip it, and add its `bin` folder to your PATH.
-7. Confirm:
-   ```
-   streamlink --version
-   ffmpeg -version
-   ```
-
-### macOS
-1. Install **Homebrew** (a one-line package manager). Open **Terminal** (Cmd+Space → type `Terminal`) and paste:
-   ```
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-   ```
-   Follow the prompts (it may ask for your password). When it finishes, it prints two `echo … >> ~/.zprofile` lines — run them so `brew` is on your PATH, then close and re-open Terminal.
-2. Install everything in one go (this also pulls in Python):
-   ```
-   brew install streamlink yt-dlp ffmpeg
-   ```
-3. Confirm:
-   ```
-   streamlink --version
-   yt-dlp --version
-   ffmpeg -version
-   ```
-
-> **`pip` not found / “externally managed environment” error?** On some systems use `pip3` instead of `pip`, or `python -m pip install -U streamlink yt-dlp`. On macOS, prefer the `brew install` route above — it avoids this entirely.
-
-> **Update before every event:** Windows `pip install -U streamlink yt-dlp` · macOS `brew upgrade streamlink yt-dlp`. YouTube changes often; outdated tools are the #1 cause of a feed failing to start.
-
----
-
-## 7. PART E — Streamlink feeds (the buffering + 1080p engine)
-
-### 7.1 Get each streamer's permanent channel URL
-Every regular streamer/commentator uses **one fixed YouTube channel**. The permanent live URL is:
-
-```
-https://www.youtube.com/channel/<CHANNEL_ID>/live
-```
-
-This URL always points to whatever that channel is currently streaming, so it never changes between events. To find a channel's ID: open the channel → it's the `UC…` string in `youtube.com/channel/UC…`, or the channel owner can read it in YouTube Studio → Settings → Channel → Advanced. Collect all channel IDs once into your shared Google Sheet.
-
-### 7.2 Update before every event
-Tools must be current (see Part D for first-time install):
-- Windows: `pip install -U streamlink yt-dlp`
-- macOS: `brew upgrade streamlink yt-dlp`
-
-### 7.3 Launch one Streamlink server per channel (primary method)
-Each channel gets its own fixed local port and a loop so it auto-recovers and waits for the channel to go live. Put this in a single `.bat` file (Windows) and run it at the start of the broadcast:
-
-```bat
-@echo off
-REM ---- Feed A : Channel 1 on port 53001 ----
-start "FeedA" cmd /k loopstream.bat UCxxxxxxxxxxxxxxxxxxxxxx 53001
-REM ---- Feed B : Channel 2 on port 53002 ----
-start "FeedB" cmd /k loopstream.bat UCyyyyyyyyyyyyyyyyyyyyyy 53002
-REM add one line per channel, incrementing the port
-```
-
-`loopstream.bat`:
-```bat
-@echo off
-:loop
-streamlink "https://www.youtube.com/channel/%1/live" 1080p60,1080p,720p60,720p ^
-  --player-external-http --player-external-http-port %2 ^
-  --ringbuffer-size 64M --hls-live-edge 6 ^
-  --retry-streams 15 --retry-open 5
-echo Stream ended or not live, retrying in 10s...
-timeout /t 10 >nul
-goto loop
-```
-
-What the flags do:
-- `1080p60,1080p,720p60,720p` — prefer 1080p, fall back no lower than 720p.
-- `--player-external-http --player-external-http-port` — serves the feed at `http://127.0.0.1:<port>` for OBS.
-- `--ringbuffer-size 64M` — the **memory buffer** that absorbs network hiccups.
-- `--hls-live-edge 6` — stay several segments behind live = more buffer, fewer stalls. With streamers on Low latency the segments are small, so 6 keeps a healthy cushion.
-- `--retry-streams 15 --retry-open 5` — if the channel isn't live yet (driver hasn't started), keep polling cheaply until they go live, then connect automatically.
-
-Idle channels (streamer not live yet) use almost no bandwidth — they just poll. Only channels that are actually broadcasting consume their full bitrate, so running several servers at once is fine.
-
-For **Twitch** channels add `--twitch-disable-ads` and use the Twitch URL; everything else is identical.
-
-### 7.4 yt-dlp fallback (only if Streamlink can't deliver 1080p for a channel)
 ```bash
-yt-dlp -g "https://www.youtube.com/channel/<CHANNEL_ID>/live"
+iro install-apps
 ```
-This prints a direct HLS URL. Put it in that feed's OBS Media Source instead of the local port. Downside: the link expires after a few hours, so re-resolve it at the 2-hour stint change. Use this only for the rare channel where Streamlink caps below 1080p.
+
+Installs whichever of these are missing — **OBS Studio**, **Bitfocus Companion**,
+**Tailscale**, **Discord** — via winget (Windows), Homebrew (macOS), or apt +
+official vendor installers (Linux).
+
+```bash
+iro install-tools
+```
+
+Installs `streamlink`, `yt-dlp`, `ffmpeg`, and `deno`. **`deno` is required** —
+without it feeds fail with "Sign in to confirm you're not a bot."
+
+<details>
+<summary>Alternative: install apps and tools manually</summary>
+
+| App | Download |
+|---|---|
+| **OBS Studio** (v30+) | [obsproject.com/download](https://obsproject.com/download) |
+| **Bitfocus Companion** | [bitfocus.io/companion](https://bitfocus.io/companion) |
+| **Tailscale** | [tailscale.com/download](https://tailscale.com/download) |
+| **Discord** | [discord.com/download](https://discord.com/download) |
+
+**macOS (tools):** `brew install streamlink yt-dlp ffmpeg deno` (Homebrew first if needed: [brew.sh](https://brew.sh))
+
+**Windows (tools):**
+```
+pip install -U streamlink yt-dlp
+winget install Gyan.FFmpeg DenoLand.Deno
+```
+
+**Linux (tools):** `brew install streamlink yt-dlp ffmpeg deno`, or distro packages
+plus `pip install -U streamlink yt-dlp`.
+
+Check them: `streamlink --version`, `yt-dlp --version`, `ffmpeg -version`, `deno --version`.
+</details>
+
+### 7.2 Add your secrets (`.env`)
+
+The first `iro` run created a `.env` file next to the binary. Open it in any text
+editor and fill in two values from the team:
+
+- `IRO_SHEET_ID` — the ID in the shared Google Sheet link.
+- `IRO_TIMER_URL` — the stagetimer output link.
+
+Keep `.env` private; never share it.
 
 ---
 
 ## 8. PART F — OBS scenes & sources
 
-**Create one Media Source per channel:**
-1. In OBS, add a **Media Source** (uncheck "Local File").
-2. **Input:** `http://127.0.0.1:53001` (the port for that channel).
-3. Tick **Use hardware decoding**.
-4. Set **Network Buffering** high — `8`–`16` MB (this is OBS's buffer, stacked on top of Streamlink's).
-5. Set **Reconnect Delay** to `10` s.
-6. Repeat for each channel (53002, 53003, …).
+### 8.1 Import the scene collection
+
+Download the broadcast graphics first (OBS shows a source black until they are present):
+
+```bash
+iro graphics    # -> runtime/graphics/<Label>.png
+```
+
+Then generate the localized OBS collection:
+
+```bash
+iro setup --out runtime/IRO_Endurance.import.json
+```
+
+In OBS: **Scene Collection → Import** → pick that file, and switch to it. **Do
+not move the folder afterwards** (absolute image paths). Moved it? Redo `iro setup`
++ re-import.
+
+### 8.2 Scene layout
 
 **Create your scenes:**
 - **Stint** — the active feed full-screen + HUD overlay.
 - **Splitscreen** — two feeds side by side (for the ~10-minute handover).
 - **Interview** — interview graphic + Discord audio.
 - **Standby / BRB** — for breaks.
+- **Intro** / **Outro** — local clip (looping, with audio); download clips with
+  `iro media`.
 
-**Overlays / HUD as Browser Sources:**
-- Add your Google-Sheet-driven HUD as a Browser Source (your spreadsheet keeps updating it live — unchanged).
-- Add each info-graphic (standings, schedule, race info, lower-third) as its own Browser Source, left in the scene and toggled by the Director via Companion. No screen-share, no extra latency.
+**Overlays / HUD:**
+- The lower-third HUD is a relay-served Browser Source at
+  `http://127.0.0.1:8088/hud` — it polls the sheet's **Overlay** tab live.
+- Each info-graphic (standings, schedule, race info) is toggled by the Director
+  via Companion.
 
-**Discord audio for interviews (Windows):**
-- Add source → **Application Audio Capture (BETA)** → select **Discord**. This isolates Discord audio only. (macOS: route Discord through BlackHole and capture that as an audio input.) Don't also capture Discord via desktop audio, or you'll double it.
+**Discord audio:**
+- **macOS:** the `Discord Audio Capture` source (type `sck_audio_capture`, app =
+  Discord) comes with the collection. Grant OBS **screen & system audio recording**
+  once (System Settings → Privacy). Keep Discord in **windowed mode, NOT
+  fullscreen**.
+- **Windows:** add source → **Application Audio Capture (BETA)** → select Discord.
+- Don't also capture Discord via desktop audio — you'll hear it twice.
+
+### 8.3 Media sources (feeds)
+
+Each feed port (53001, 53002, 53003) is already configured in the imported
+collection as an OBS Media Source pointing at `http://127.0.0.1:<port>`:
+
+- Tick **Use hardware decoding**.
+- Set **Network Buffering** to `8`–`16` MB.
+- Set **Reconnect Delay** to `10` s.
 
 ---
 
-## 9. Streamer requirements (hand this to every streamer)
+## 9. PART G — Relay mode (recommended for endurance)
+
+Two fixed feeds (A/B) "walk" along a stint schedule — Feed A serves stints 1,3,5…,
+Feed B 2,4,6…. At each handover the off-air feed advances to the next commentator.
+OBS stays unchanged (53001/53002).
+
+*How it pulls:* the relay uses **yt-dlp** to resolve each live HLS URL (passing
+YouTube's bot-check via cookies + deno JS-challenge solving) and **streamlink** to
+serve that direct URL to OBS. Both `cookies.txt` and `deno` are required for
+reliable pulls.
+
+### 9.1 Fill the schedule
+
+Sheet tab `Schedule`: one column of entries per stint in order. Use the unlisted
+watch URL (`https://www.youtube.com/watch?v=VIDEOID`) — the `/live` URL only works
+for public channels. The streamer/director enters their URL shortly before their
+stint.
+
+### 9.2 Start / stop
+
+```bash
+iro relay start       # start in background
+iro relay stop        # stop it
+iro relay logs -f     # tail the log
+iro relay run         # foreground / debug mode
+```
+
+### 9.3 YouTube cookies (refresh before each event)
+
+```bash
+iro cookies chrome    # or firefox / safari / edge — any logged-in browser
+```
+
+You must be **logged into YouTube** in that browser. macOS Chrome/Edge: approve the
+Keychain prompt; Safari: grant your terminal **Full Disk Access**. Firefox needs
+neither. Cookies rotate — re-run before each event. `/status` shows `"cookies": true`.
+
+### 9.4 Companion control
+
+Companion's **Generic HTTP Requests** connections drive the relay:
+
+- `Feeds Next` → `http://127.0.0.1:8088/next` *(handover)*
+- `Feeds Reload` → `http://127.0.0.1:8088/reload` *(sheet edit → reload current feed)*
+- `Feeds Status` → `http://127.0.0.1:8088/status`
+
+### 9.5 Static mode (fallback — public channels only)
+
+For public channels / fixed feeds without a stint schedule:
+
+```bash
+iro streams start
+iro streams stop
+```
+
+---
+
+## 10. Streamer requirements (hand this to every streamer)
 
 - **Platform:** your own YouTube channel (or Twitch), stream set to **Unlisted**, always the **same channel** each event.
 - **Latency setting:** **Low** — *not* "Ultra-low" unless your connection is rock-solid. Buffering protection lives on the Producer side, so Low gives a responsive feed while staying stable.
@@ -278,46 +352,57 @@ This prints a direct HLS URL. Put it in that feed's OBS Media Source instead of 
 
 ---
 
-## 10. Runbook
+## 11. Runbook
 
 **Before the event (Producer):**
-1. Update tools: Windows `pip install -U streamlink yt-dlp` · macOS `brew upgrade streamlink yt-dlp`; confirm FFmpeg (see Part D).
+1. Update tools: `iro install-tools` (or `brew upgrade streamlink yt-dlp` on macOS
+   / `pip install -U streamlink yt-dlp` on Windows). YouTube changes often —
+   outdated tools are the #1 cause of feeds failing to start.
 2. Update GPU driver (hardware-encoding the broadcast and decoding the feeds leans on the GPU).
-3. Tailscale running; a Director confirms they can open `http://<producer-tailscale-ip>:8000/tablet`.
-4. OBS WebSocket on; Companion connected (green); scenes/sources loaded.
-5. Run the Streamlink launcher; confirm each live feed appears in its Media Source.
-6. Test the Discord audio source.
-7. Enter the IRO stream key in OBS.
+3. Tailscale running; a Director confirms they can open
+   `http://<producer-tailscale-ip>:8000/tablet`.
+4. Get cookies: `iro cookies chrome`.
+5. Download graphics + media: `iro graphics` and `iro media`.
+6. Run `iro setup --out runtime/IRO_Endurance.import.json` and (re-)import into OBS
+   if the collection has not been imported yet on this machine.
+7. OBS WebSocket on; Companion connected (green); scenes/sources loaded.
+8. Start the relay: `iro relay start`.
+9. Run the preflight check: `iro preflight`. Fix anything flagged.
+10. Enter the IRO stream key in OBS.
 
 **Start:** Producer clicks **Start Streaming** in OBS. From here the Director runs the show.
 
 **During a stint:** Director keeps the **Stint** scene on the active feed, toggles HUD/graphics via Companion, adjusts volumes.
 
-**Driver/lobby change (every 2 h):** The incoming streamer goes live on their channel; their Streamlink server connects automatically. Director switches to **Splitscreen** for the ~10-minute handover, then to **Stint** on the new feed. Nothing to type.
+**Handover (every stint change):** The incoming streamer goes live on their channel;
+their relay feed connects automatically. Director presses **Feeds Next** in Companion
+(right after cutting to the new feed), switches to **Splitscreen** for the ~10-minute
+handover, then to **Stint** on the new feed. Nothing to type.
 
 **Interviews (post-race):** Interviews run at the **end** over Discord voice. The
 **producer of the last/only part must join the Discord "Interviews" voice channel
-themselves, before race end** — the OBS capture taps the producer's *local* Discord app,
-so the Director cannot join remotely. (8 h event = 1 part = always the last part → that
-producer always joins; on 12 h / 24 h only the final-part producer joins, earlier
-producers skip Discord entirely.) The producer stays muted in OBS until the cut, so
-joining early is harmless; keep Discord **windowed, not fullscreen**. Guests join the same
-voice channel; the Director confirms the producer is joined, switches to **Interview**,
-shows the lower-third, and manages mutes.
+themselves, before race end** — the OBS capture taps the producer's *local* Discord
+app, so the Director cannot join remotely. (8 h event = 1 part = always the last part
+→ that producer always joins; on 12 h / 24 h only the final-part producer joins,
+earlier producers skip Discord entirely.) The producer stays muted in OBS until the
+cut, so joining early is harmless; keep Discord **windowed, not fullscreen**. Guests
+join the same voice channel; the Director confirms the producer is joined, switches to
+**Interview**, shows the lower-third, and manages mutes.
 
-**End:** Producer clicks **Stop Streaming**; close the Streamlink windows.
+**End:** Producer clicks **Stop Streaming**; run `iro relay stop`.
 
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
-| Buffering / stalls | Raise OBS Network Buffering and/or `--ringbuffer-size`; raise `--hls-live-edge`; confirm the streamer is on **Low** latency (not Ultra-low); check total upload stays under ~70–80 % of real capacity. |
-| A feed won't appear | Confirm the streamer is actually live; check that channel's Streamlink window for errors; update streamlink/yt-dlp. |
-| Feed stuck at 720p but should be 1080p | Streamlink's YouTube plugin capped it — use the yt-dlp fallback (Section 7.4) for that feed; confirm the streamer is ingesting 1080p. |
-| Quality dropped below 720p | Streamer's upload can't sustain it — they should lower fps (720p30) but hold 720p; check their encoder settings. |
-| Director can't reach Companion | Tailscale "Connected" on both PCs? Companion running? Using the **Tailscale** IP (100.x.y.z), not a local IP? |
+| Feeds fail with "Sign in to confirm you're not a bot" | Re-run `iro cookies chrome`; confirm `deno` is installed (`deno --version`). |
+| Buffering / stalls | Raise OBS Network Buffering to 16 MB; confirm the streamer is on **Low** latency (not Ultra-low); check total upload stays under ~70–80 % of real capacity. |
+| A feed won't appear | Confirm the streamer is actually live; check `iro relay logs -f` for errors; update streamlink/yt-dlp (`iro install-tools`). |
+| Feed stuck at 720p | Streamlink's YouTube plugin capped it — confirm the streamer is ingesting 1080p. |
+| Quality dropped below 720p | Streamer's upload can't sustain it — they should lower fps (720p30) but hold 720p. |
+| Director can't reach Companion | Tailscale "Connected" on both PCs? `iro companion start` run? Using the Tailscale IP (100.x.y.z), not a local IP? |
 | Companion shows OBS disconnected | OBS open with WebSocket enabled? Port 4455 + correct password in the OBS connection? |
 | Picture artifacts | Enable hardware decoding on the Media Source; check the streamer's source bitrate. |
 | Interview audio doubled/echo | Capture Discord only via Application Audio Capture, not also via desktop audio. |
@@ -325,8 +410,8 @@ shows the lower-third, and manages mutes.
 
 ---
 
-## 12. Roles at a glance
+## 13. Roles at a glance
 
-- **Streamer:** streams their stint to their fixed channel per Section 9. Provides channel ID once.
-- **Producer:** runs OBS + Streamlink + Companion + Discord + Tailscale on one PC; only starts/stops the IRO broadcast live.
+- **Streamer:** streams their stint to their fixed channel per Section 10. Provides channel ID once.
+- **Producer:** runs OBS + relay + Companion + Discord + Tailscale on one PC; starts/stops the IRO broadcast live; runs `iro relay start/stop` and `iro status` to monitor.
 - **Director (remote):** controls scenes, feeds, volume, mute and graphics from a browser via Companion over Tailscale — no software beyond a browser. Multiple Directors supported; the Producer can also take this role locally.

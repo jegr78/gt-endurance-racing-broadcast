@@ -11,7 +11,7 @@ Follow the steps **in this order**.
 
 ## System Requirements
 
-Run `python3 scripts/preflight.py` on the producer machine before every event —
+Run `iro preflight` on the producer machine before every event —
 it checks all of the below plus your tool chain, ports, and YouTube cookies.
 
 | Component | Minimum | Recommended |
@@ -34,187 +34,283 @@ assets in `src/assets/flags/` and `src/assets/brands/`.
 
 ---
 
-## 0. Extract the package to a permanent location
-Put the extracted folder where it will **stay** (e.g. `~/IRO_Broadcast` or
-`C:\IRO_Broadcast`). **Do not move it after the OBS import** — OBS stores
-absolute image paths. (Moved it? Just redo step 2 + the OBS import.)
+## 0. Get the `iro` tool
 
-## 1. Install the tools (once)
-- **OBS Studio 30+** · **Streamlink + yt-dlp + FFmpeg** · **deno** · **Bitfocus Companion** ·
-  **Tailscale** · **Discord**
-- Per-OS install commands: see guide **Part A–D**.
-  - macOS short: `brew install streamlink yt-dlp ffmpeg deno`, OBS/Companion/Tailscale/Discord as apps.
-- **`deno`** is the JS runtime yt-dlp uses to solve YouTube's anti-bot JS challenges — **required for the relay** (otherwise pulls fail with "Sign in to confirm you're not a bot"). Windows: `winget install DenoLand.Deno` (or see deno.land).
+Download the archive for your OS from the
+[latest release](https://github.com/jegr78/IRO_Broadcast_Setup/releases/latest):
 
-## 2. Rewrite the image paths to this folder
-This points the OBS image sources at the broadcast graphics in this folder so they
-show up right after the OBS import, and injects your Google-Sheet ID into the HUD
-browser source. (Fetch the graphics first — see step **4e**: `python3 relay/get-graphics.py`.)
-- **Set your Sheet ID first:** `cp .env.example .env`, then put the long ID from your
-  HUD sheet URL (`.../spreadsheets/d/<THIS>/edit`) into `IRO_SHEET_ID`.
-  (Or pass it inline: `python3 setup-assets.py --sheet-id <ID>`.)
-- Open a terminal in this folder → `python3 setup-assets.py`
-- Result: **`obs/IRO_Endurance.import.json`** (import this file — not the `.template.` one).
+| OS | File |
+|---|---|
+| Windows | `iro-windows.zip` |
+| macOS | `iro-macos.tar.gz` |
+| Linux | `iro-linux.tar.gz` |
+
+Extract into a folder of its own (e.g. `~/IRO_Broadcast` or `C:\IRO_Broadcast`) —
+the tool keeps its working files (`.env`, `runtime/`) next to the binary. Open a
+terminal **in that folder** and check it runs:
+
+```bash
+./iro --version          # Windows: iro --version  (PowerShell: .\iro)
+```
+
+The first run also creates a `.env` file next to the binary (you fill it in at
+step 2). **Do not move the folder after the OBS import** — OBS stores absolute
+image paths. Moved it? Redo step 2 + the OBS import.
+
+> **One-time OS warning** (the binary is unsigned): **Windows** SmartScreen →
+> "More info" → "Run anyway". **macOS**: if blocked, System Settings →
+> Privacy & Security → "Open Anyway" (or right-click → Open).
+
+All commands below are written as `iro …` — type them in a terminal in this
+folder (macOS/Linux: `./iro …` unless you add the folder to your PATH).
+
+## 1. Install the apps and tools (once)
+
+```bash
+iro install-apps
+```
+
+Installs whichever of these are missing — **OBS Studio**, **Bitfocus Companion**,
+**Tailscale**, **Discord** — via winget (Windows), Homebrew (macOS), or apt +
+official vendor installers (Linux). It lists the steps and asks before running.
+
+```bash
+iro install-tools
+```
+
+Installs `streamlink`, `yt-dlp`, `ffmpeg`, and `deno` — they pull each
+commentator's stream into OBS and pass YouTube's bot check. **`deno` is required**
+for the relay (otherwise pulls fail with "Sign in to confirm you're not a bot").
+
+<details>
+<summary>Alternative: install apps and tools manually</summary>
+
+| App | What it's for | Download |
+|---|---|---|
+| **OBS Studio** (v30+) | The broadcast itself | [obsproject.com/download](https://obsproject.com/download) |
+| **Bitfocus Companion** | The director's button board | [bitfocus.io/companion](https://bitfocus.io/companion) |
+| **Tailscale** | Private network so remote directors can connect | [tailscale.com/download](https://tailscale.com/download) |
+| **Discord** | Interview audio | [discord.com/download](https://discord.com/download) |
+
+- **macOS (tools):** `brew install streamlink yt-dlp ffmpeg deno` (Homebrew first if needed: [brew.sh](https://brew.sh))
+- **Windows (tools):** `pip install -U streamlink yt-dlp` then `winget install Gyan.FFmpeg DenoLand.Deno`
+- **Linux (tools):** `brew install streamlink yt-dlp ffmpeg deno`, or distro packages
+  (`apt`/`dnf`) plus `pip install -U streamlink yt-dlp`
+
+Check them: `streamlink --version`, `yt-dlp --version`, `ffmpeg -version`, `deno --version`.
+</details>
+
+## 2. Add your secrets (`.env`)
+
+The first `iro` run created a `.env` file next to the binary. Open it in any text
+editor and fill in two values from the team:
+
+- `IRO_SHEET_ID` — the ID in the shared Google Sheet link.
+- `IRO_TIMER_URL` — the stagetimer output link.
+
+Keep `.env` private; never share it.
 
 ## 3. Set up OBS
-1. **Import the scene collection:** OBS → `Scene Collection` → `Import` → `obs/IRO_Endurance.import.json` → then switch to `IRO Endurance`.
-2. **Enable WebSocket:** `Tools` → `WebSocket Server Settings` → enable, **port 4455**, **authentication on**, **password = your team password** (the same one used in Companion — see step 5).
-3. **Images there?** Overlay/Standings/… should be visible. If not: step 2 didn't run — run it again and re-import.
-4. **Discord audio:**
-   - The source **`Discord Audio Capture`** comes with the collection (macOS: `sck_audio_capture`, app = Discord).
-   - **macOS:** grant OBS **screen & system audio recording** permission once (System Settings → Privacy). **Keep Discord in WINDOWED mode, NOT fullscreen** — otherwise it is not captured.
-   - **Windows:** re-create the source as **Application Audio Capture** → pick Discord.
-5. **Stream key** of the IRO YouTube channel in OBS (only at event time).
 
-## 4. Streamlink feeds — static mode (per event)
-- Put the streamers' channel IDs into the `FEEDS` list in `scripts/start-streams.py`: `(CHANNEL_ID, PORT)` (Feed A→53001, Feed B→53002, …).
-- Ports must match the OBS media sources `Feed A`/`Feed B` (`http://127.0.0.1:<port>`).
-- Start: `python3 scripts/start-streams.py`. Stop: `python3 scripts/stop-streams.py`.
-- *Note:* this static mode is only for **public** channels / fixed feeds. For the typical endurance flow (one commentator per stint, unlisted) → **relay mode 4b**.
+### 3a. Import the scene collection
 
-## 4b. Relay mode (recommended for endurance)
-Two fixed feeds (A/B) "walk" along a **stint schedule** — Feed A serves stints 1,3,5…, Feed B 2,4,6…. At each handover the off-air feed advances to the next commentator. OBS stays unchanged (53001/53002).
+```bash
+iro setup --out runtime/IRO_Endurance.import.json
+```
 
-*How it pulls (important):* the relay uses **yt-dlp to resolve** each live HLS URL (this is what passes YouTube's bot-check, via cookies + deno JS-challenge solving) and **streamlink to serve** that direct URL to OBS. So `cookies.txt` (step 3 below) + `deno` (step 1) are both required for reliable pulls. Streamlink alone — even with cookies — is blocked by the bot-check.
+Then in OBS: **Scene Collection → Import** → pick that file, and switch to it.
 
-1. **Schedule = Google Sheet tab `Schedule`** (editable remotely by anyone). One column = entries in stint order; other columns (stint number / name) are ignored.
-   - **Unlisted streams → watch URL** `https://www.youtube.com/watch?v=VIDEOID` (the channel `/live` URL only works for PUBLIC streams!). The streamer/director enters their watch URL shortly before their stint.
-   - Default sheet = the shared HUD sheet. Other sheet/tab: `--sheet-id …` / `--sheet-tab …`.
-2. **Start:** `python3 relay/iro-feeds.py`  (replaces `start-streams`). **Stop:** Ctrl+C.
-3. **Cookie hardening (important for the event)** against YouTube's "Sign in to confirm you're not a bot". Easiest — auto-export from your **logged-in** browser via yt-dlp:
-   - One-off: `python3 relay/get-cookies.py chrome`  (or `firefox`/`safari`/`edge`/`brave`) → writes `relay/cookies.txt`.
-   - Or let the relay do it on start: `python3 relay/iro-feeds.py --cookies-from-browser chrome`.
-   - You must be **logged into YouTube** in that browser. macOS **Chrome/Edge**: approve the Keychain prompt; **Safari**: grant your terminal **Full Disk Access**. (Firefox needs neither.)
-   - Manual alternative: drop any Netscape `cookies.txt` next to `relay/iro-feeds.py`.
-   - It is auto-detected and passed to Streamlink (`--http-cookies-file`). `/status` shows `"cookies": true`. Re-run before each event (cookies rotate).
-4. **Companion control** (connection **"Generic HTTP Requests"**, action *GET*):
-   - `Feeds Next` → `http://127.0.0.1:8088/next`  *(press once per handover, right after cutting to the new feed)*
-   - `Feeds Reload` → `http://127.0.0.1:8088/reload`  *(edited a cell in the sheet → reload the current feed immediately)*
-   - `Feeds Status` → `http://127.0.0.1:8088/status`
-   - Works for remote directors too (Companion makes the request locally on the producer station).
+Download the broadcast graphics (Overlay, Standings, etc.) from the sheet before
+or after importing — OBS shows a source black until they are present:
 
-## 4c. Driver-POV PiP (optional goodie)
-Show an ad-hoc driver-POV as a small picture-in-picture (bottom-right) over the active
-feed in the **Stint** scene. Pulled by a third relay feed on port **53003** (capped at
-720p), independent of the A/B ping-pong.
+```bash
+iro graphics
+```
 
-1. **Schedule it:** put the driver's live **watch URL** into the Google-Sheet tab
+### 3b. OBS WebSocket
+
+**Tools → WebSocket Server Settings** → enable it (port `4455`), turn on
+authentication, set a password — and enter the **same** password in Companion's
+OBS connection.
+
+### 3c. Discord audio
+
+- The source **`Discord Audio Capture`** comes with the collection (macOS:
+  `sck_audio_capture`, app = Discord).
+- **macOS:** grant OBS **screen & system audio recording** permission once
+  (System Settings → Privacy). **Keep Discord in WINDOWED mode, NOT fullscreen.**
+- **Windows:** re-create the source as **Application Audio Capture** → pick Discord.
+
+## 4. Streamlink feeds — relay mode (recommended for endurance)
+
+Two fixed feeds (A/B) "walk" along a **stint schedule** — Feed A serves stints
+1,3,5…, Feed B 2,4,6…. At each handover the off-air feed advances to the next
+commentator. OBS stays unchanged (53001/53002).
+
+*How it pulls:* the relay uses **yt-dlp** to resolve each live HLS URL (passing
+YouTube's bot-check via cookies + deno JS-challenge solving) and **streamlink** to
+serve that direct URL to OBS. So `cookies.txt` (step 4c below) + `deno` (step 1)
+are both required for reliable pulls.
+
+### 4a. Fill the schedule
+
+Fill the sheet tab `Schedule` with watch URLs (unlisted format:
+`https://www.youtube.com/watch?v=VIDEOID`) per stint. The director or streamer
+enters their watch URL shortly before their stint.
+
+### 4b. Start / stop the relay
+
+```bash
+iro relay start       # start in background
+iro relay stop        # stop it
+iro relay logs -f     # tail the log
+iro relay run         # foreground / debug mode
+```
+
+### 4c. Get YouTube cookies (important — refresh before each event)
+
+```bash
+iro cookies chrome    # or firefox / safari / edge — any logged-in browser
+```
+
+This lets the feeds bypass YouTube's bot check. macOS Chrome/Edge show a Keychain
+prompt; Safari needs Full Disk Access. Windows and Linux usually run without a
+prompt. Cookies rotate — refresh before each event.
+
+### 4d. Companion control
+
+Companion's **Generic HTTP Requests** connections drive the relay:
+
+- `Feeds Next` → `http://127.0.0.1:8088/next` *(handover — press once per stint
+  change, right after cutting to the new feed)*
+- `Feeds Reload` → `http://127.0.0.1:8088/reload` *(edited a cell in the sheet →
+  reload the current feed immediately)*
+- `Feeds Status` → `http://127.0.0.1:8088/status`
+
+## 4c. Driver-POV PiP (optional)
+
+Show an ad-hoc driver-POV as a small picture-in-picture (bottom-right) over the
+active feed in the **Stint** scene. Pulled by a third relay feed on port **53003**
+(capped at 720p), independent of the A/B ping-pong.
+
+1. **Schedule it:** put the driver's live watch URL into the Google-Sheet tab
    **`POV`**, cell **A2** (A1 = header `url`). Empty cell = POV off.
-2. **Pull it:** press **POV Reload** in Companion → the relay resolves + serves it on
+2. **Pull it:** press **POV Reload** in Companion → relay resolves + serves it on
    53003 (still hidden). `/status` shows the `pov` block (`state: serving`).
-3. **Show it:** press **POV Toggle** → the PiP appears bottom-right in Stint.
-4. **Audio:** muted by default; **MUTE POV** toggles the mute, **VOL POV UP / VOL POV DOWN**
-   adjust its volume (use briefly).
-5. **Done:** **POV Toggle** to hide, then **POV Stop** (frees the pull / bandwidth).
+3. **Show it:** press **POV Toggle** → PiP appears bottom-right in Stint.
+4. **Audio:** muted by default; **MUTE POV** toggles the mute, **VOL POV UP /
+   VOL POV DOWN** adjust its volume.
+5. **Done:** **POV Toggle** to hide, then **POV Stop** (frees the pull/bandwidth).
 
-Two rules: **Reload before Toggle (show)**, and **hide + POV Stop when done**. The PiP
-lives only in the Stint scene, so switching to Splitscreen/Interview/Standby auto-hides
-and auto-silences it — no combo changes needed.
+Two rules: **Reload before Toggle (show)**, and **hide + POV Stop when done**.
 
 ## 4d. Intro/Outro clips
-The `Intro` and `Outro` OBS scenes play a local clip (looping, with audio) —
-typically used to open and close the broadcast. Download (or refresh) the clips before each event:
 
-```
-python3 relay/get-media.py      # -> relay/../media/intro.mp4, outro.mp4
+```bash
+iro media    # -> runtime/media/  (downloads from the Sheet Assets tab)
 ```
 
-The clip URLs live in the Google Sheet **Assets** tab as label cells
-`Intro Video` / `Outro Video` (the URL goes in the cell immediately to the right
-of the label). You can also override them per-machine via `IRO_INTRO_URL` /
-`IRO_OUTRO_URL` in your `.env` (see `.env.example`).
-
-The director triggers the scenes with the **`INTRO`** / **`OUTRO`** Companion
-buttons (Page 1, top row). The clip loops until the director presses another scene
-button to leave.
+The clip URLs live in the sheet's **Assets** tab as `Intro Video` / `Outro Video`.
+You can also override them per-machine via `IRO_INTRO_URL` / `IRO_OUTRO_URL` in
+`.env`.
 
 ## 4e. Broadcast graphics
-The still-graphics (Overlay, Standings, Schedule, Race/Quali Results, the three
-**weather** overlays, Standby, …) are **local files** downloaded from the Google Sheet
-**Assets** tab — they are not shipped in git. Download (or refresh) them on this machine
-**before `setup-assets.py`** (step 2), and again before each event if the sheet graphics
-changed:
 
-```
-python3 relay/get-graphics.py      # -> graphics/<Label>.png (one PNG per Assets row)
+```bash
+iro graphics    # -> runtime/graphics/<Label>.png
 ```
 
-The Sheet label *is* the filename (e.g. `Standings.png`, `Schedule.png`,
-`Race Weather 1.png`). In the package the graphics ship under **`graphics/`** so the
-artifact is self-contained; you can refresh them on site at any time by re-running
-`get-graphics.py`. `setup-assets.py` points the OBS image sources at this folder; if a
-graphic is missing it prints a warning and OBS shows that source black until you fetch it.
+Downloads the still-graphics (Overlay, Standings, Schedule, Race/Quali Results,
+the three weather overlays, Standby, …) from the sheet **Assets** tab. The sheet
+label *is* the filename. Run before `iro setup` and again before each event if
+the graphics changed. Missing files: OBS shows that source black until you fetch.
 
 ---
 
 ## 5. Set up Companion (director button board)
-1. Start Companion → launcher → **GUI Interface = All Interfaces (0.0.0.0)** (important for Tailscale access), admin port `8000` → **Launch GUI**.
-2. In the admin: `Import/Export` → **Import** → `companion/iro-buttons.companionconfig`. This is a **full config** → confirm "**Replace** current configuration". ⚠️ This **replaces the entire Companion configuration** on this station (fine for a fresh/dedicated producer station; back up first on a Companion instance with other content!).
-3. The **OBS connection** (`127.0.0.1:4455`) comes with it — **but without the password** (removed for security). → `Connections` → open the OBS entry → **enter your OBS WebSocket password (step 3.2)** → the connection turns green.
+
+1. Start Companion → launcher → **GUI Interface = All Interfaces**, port `8000` →
+   **Launch GUI**.
+2. Import the button config:
+
+   ```bash
+   iro export companion    # writes the .companionconfig file
+   ```
+
+   Then in Companion admin: `Import/Export` → **Import** → pick that file.
+   Confirm "**Replace** current configuration". ⚠️ This replaces the entire
+   Companion config on this station — back up first if it has other content.
+
+3. **OBS connection** (`127.0.0.1:4455`) comes with the import — **without the
+   password** (removed for security). → `Connections` → open the OBS entry →
+   **enter your OBS WebSocket password (step 3b)** → connection turns green.
+
 4. Buttons (two pages):
    - **Page 1 — show control:**
-     - *row 0 — combos:* `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO` (one-press scene+source presets)
-     - *row 1 — scene switches + relay control:* `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Next` (→ `/next`, the handover), `Feeds Reload` (→ `/reload`), `Feeds Status` (→ `/status`)
-     - *row 2 — feeds & reloads:* `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Feed A Reload` (→ `/reload/A`), `Feed B Reload` (→ `/reload/B`), `POV Reload`, `POV Stop`
-     - *row 3 — graphics & weather:* `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle`, `Weather Race (1) Toggle`, `Weather Race (2) Toggle`, `Weather Quali Toggle` (the three weather buttons are full-screen Stint overlays, independent toggles)
+     - *row 0 — combos:* `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`,
+       `INTRO`, `OUTRO` (one-press scene+source presets)
+     - *row 1 — scene switches + relay control:* `Stint Scene`, `Split Scene`,
+       `Interview Scene`, `Standby Scene`, `Feeds Next`, `Feeds Reload`,
+       `Feeds Status`
+     - *row 2 — feeds & reloads:* `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`,
+       `Feed A Reload`, `Feed B Reload`, `POV Reload`, `POV Stop`
+     - *row 3 — graphics & weather:* `Standings`, `Schedule`, `Race Results`,
+       `Quali Results`, `Standby Toggle`, `Weather Race (1) Toggle`,
+       `Weather Race (2) Toggle`, `Weather Quali Toggle`
    - **Page 2 — audio:**
      - *row 1 — mute:* `MUTE A`, `MUTE B`, `MUTE POV`, `MUTE DISC`
-     - *row 2 — volume A/B:* `VOL A DOWN`/`VOL A UP`/`VOL A RESET`, `VOL B DOWN`/`VOL B UP`/`VOL B RESET`
-     - *row 3 — volume POV/Discord:* `VOL POV DOWN`/`VOL POV UP`/`VOL POV RESET`, `VOL DISC DOWN`/`VOL DISC UP`/`VOL DISC RESET`
-     - *(`… UP`/`DOWN` adjust by ±3 dB relative; `… RESET` sets the source back to 0 dB — its original level — without changing mute)*
+     - *row 2 — volume A/B:* `VOL A DOWN`/`VOL A UP`/`VOL A RESET`,
+       `VOL B DOWN`/`VOL B UP`/`VOL B RESET`
+     - *row 3 — volume POV/Discord:* `VOL POV DOWN`/`VOL POV UP`/`VOL POV RESET`,
+       `VOL DISC DOWN`/`VOL DISC UP`/`VOL DISC RESET`
+
 5. Test: open `http://localhost:8000/tablet`, press a button → OBS reacts.
 
 ## 6. Remote directors (Tailscale)
-- Start/sign in to Tailscale; invite the director(s) into the tailnet (`login.tailscale.com/admin/users`).
-- Director URL: **`http://<PRODUCER-TAILSCALE-IP>:8000/tablet`** (producer IP via the Tailscale menu / `tailscale ip -4`).
+
+Start Companion first (step 5), then:
+
+```bash
+iro companion start    # binds Companion to this machine's Tailscale IP
+```
+
+- Start/sign in to Tailscale; invite directors at
+  `login.tailscale.com/admin/users`.
+- Director URL: **`http://<PRODUCER-TAILSCALE-IP>:8000/tablet`** (producer IP via
+  the Tailscale menu / `tailscale ip -4`).
 - Directors only need a browser — no OBS, no password.
 
 ## 7. Director panel (optional backup console)
-Companion (steps 5–6) is the primary control surface and is strictly more capable
-(combo buttons, feedback colors, relay `HANDOVER`/`RELOAD`). The director panel is a
-**backup** that talks to OBS directly — use it only if Companion is unavailable.
 
-Two ways to open it:
-- **Served by the relay (recommended):** the relay (step 4b) serves it at
-  **`http://<producer-ip>:8088/panel`**. For remote directors start the relay with
-  `--bind 0.0.0.0` (otherwise it is local-only). `--no-panel` disables it.
-- **As a file:** open `director-panel.html` directly (via `file://` or `http://`, **not** `https://`).
+Companion (steps 5–6) is the primary control surface. The director panel talks to
+OBS directly — use it only if Companion is unavailable.
 
-Either way it then connects **straight to OBS** — so the director must enter the OBS IP
-(`127.0.0.1` locally / producer Tailscale IP) + port `4455` + **OBS WebSocket password**.
-(That password requirement is exactly why Companion is preferred for directors.)
+- **Served by the relay (recommended):** `http://<producer-ip>:8088/panel`.
+- **As a file:** open `director-panel.html` directly (via `file://` or `http://`,
+  **not** `https://`).
+
+Either way it connects straight to OBS — the director must enter the OBS IP +
+port `4455` + WebSocket password. That password requirement is exactly why
+Companion is preferred for directors.
 
 ---
 
 ## Important notes / pitfalls
-- **Do not move the folder after the OBS import** (absolute image paths). Moved it → redo step 2 + import.
-- **OBS WebSocket password:** NOT included in the Companion export — everyone enters it once after import (`Connections` → OBS). Set the same password in OBS (step 3.2).
-- **HUD & graphics** pull live data from the **shared Google Sheet** and **stagetimer.io** — these are shared production resources (changes affect everyone). The sheet must stay shared.
-- **Discord** must run in **windowed mode** (macOS audio capture).
-- Before every event update the tools: `brew upgrade streamlink yt-dlp` (macOS) / `pip install -U streamlink yt-dlp` (Windows).
 
-## Package contents
-```
-README_SETUP.md              <- this document
-IRO_Broadcast_Setup_Guide.md <- full guide (Parts A–F, runbook, troubleshooting)
-.env.example                 <- copy to .env, set IRO_SHEET_ID (your HUD/schedule Sheet ID)
-setup-assets.py              <- localize OBS asset paths + inject Sheet ID (writes obs/IRO_Endurance.import.json)
-graphics/                    <- broadcast still-graphics (<Label>.png) from the Sheet Assets tab; refresh with relay/get-graphics.py
-obs/IRO_Endurance.template.json <- template (placeholder paths) — do NOT import directly
-obs/IRO_Endurance.import.json <- produced by step 2 — import THIS one
-companion/iro-buttons.companionconfig <- Companion full config (Page 1: combos+scenes+feeds/POV+graphics, Page 2: audio mute/volume, incl. OBS connection, no password)
-director-panel.html          <- backup director console (also served by the relay at /panel)
-IRO_cheat_sheets.html        <- printable role cards (Streamer/Producer/Director)
-scripts/                     <- static-mode launchers (start/stop/loopstream, Python)
-relay/iro-feeds.py           <- relay mode (stint schedule from Google Sheet, 2-feed ping-pong)
-relay/get-cookies.py         <- export YouTube cookies from your logged-in browser (yt-dlp)
-relay/get-media.py           <- download Intro/Outro clips from URLs in the Sheet's Assets tab
-relay/get-graphics.py        <- download the broadcast graphics (<Label>.png) from the Sheet's Assets tab into graphics/
-relay/cookies.txt            <- (generated by get-cookies) YouTube cookies vs. bot-check — auto-detected
-```
+- **Do not move the folder after the OBS import** (absolute image paths). Moved it
+  → redo `iro setup` + re-import.
+- **OBS WebSocket password:** NOT included in the Companion export — enter it once
+  after import (`Connections` → OBS). Set the same password in OBS (step 3b).
+- **HUD & graphics** pull live data from the shared Google Sheet and
+  stagetimer.io — these are shared production resources. The sheet must stay shared.
+- **Discord** must run in **windowed mode** (macOS audio capture).
+- Before every event update the tools: `iro install-tools` (or `brew upgrade
+  streamlink yt-dlp` on macOS / `pip install -U streamlink yt-dlp` on Windows).
 
 ## Relay-mode quickstart (short version)
+
 1. Fill the sheet tab `Schedule` with watch URLs (unlisted) per stint.
-2. Get YouTube cookies: `python3 relay/get-cookies.py chrome` (your logged-in browser).
-3. Start `python3 relay/iro-feeds.py`.
-4. Create Companion buttons `HANDOVER ▶` (`/next`) & `RELOAD ⟳` (`/reload`).
+2. Get YouTube cookies: `iro cookies chrome` (your logged-in browser).
+3. Start the relay: `iro relay start`.
+4. Companion buttons `Feeds Next` (`/next`) & `Feeds Reload` (`/reload`) drive
+   handovers.
