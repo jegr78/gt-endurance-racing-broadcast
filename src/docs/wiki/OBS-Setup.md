@@ -103,16 +103,20 @@ data).
 
 ## 5. Discord audio (interviews)
 
-The source **Discord Audio Capture** comes with the collection.
+The source **Discord Audio Capture** comes with the collection. `iro setup` realizes it
+for the importing OS — no manual source-switching needed.
 
-- **macOS:** it's an `sck_audio_capture` source bound to the Discord app. Grant OBS
+- **macOS:** `App Audio Capture` (ScreenCaptureKit), bound to the Discord app. Grant OBS
   **Screen &amp; System Audio Recording** permission once (System Settings → Privacy &amp;
   Security). **Keep Discord in windowed mode, NOT fullscreen** — otherwise it is not
   captured.
-- **Windows:** re-create the source as **Application Audio Capture (BETA)** → pick
-  **Discord**. Don't *also* capture Discord via desktop audio, or you'll double it.
-- **Linux:** re-create the source as **Application Audio Capture** (PipeWire), or use an
-  **Audio Output Capture** monitor source — *should work, not yet tested on Linux.*
+- **Windows:** `Application Audio Capture`, bound to `Discord.exe`. Any Discord window
+  title works — channel names don't matter. Don't *also* capture Discord via desktop
+  audio, or you'll double it.
+- **Linux:** requires the
+  [PipeWire Audio Capture plugin](https://obsproject.com/forum/resources/pipewire-audio-capture.1458/)
+  (untested). Install the plugin before importing the collection.
+- **Switched production machine or OS?** Re-run `iro setup` and re-import the collection.
 
 ## 6. Stream key
 

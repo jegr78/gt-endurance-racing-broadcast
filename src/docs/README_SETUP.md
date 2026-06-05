@@ -134,11 +134,18 @@ OBS connection.
 
 ### 3c. Discord audio
 
-- The source **`Discord Audio Capture`** comes with the collection (macOS:
-  `sck_audio_capture`, app = Discord).
-- **macOS:** grant OBS **screen & system audio recording** permission once
-  (System Settings → Privacy). **Keep Discord in WINDOWED mode, NOT fullscreen.**
-- **Windows:** re-create the source as **Application Audio Capture** → pick Discord.
+The collection ships one **`Discord Audio Capture`** source; `iro setup` realizes it
+for the importing OS — no manual source-switching needed.
+
+- **macOS:** `App Audio Capture` (ScreenCaptureKit). Grant OBS **screen & system audio
+  recording** permission once (System Settings → Privacy). **Keep Discord in WINDOWED
+  mode, NOT fullscreen.**
+- **Windows:** `Application Audio Capture`, bound to `Discord.exe` (any window — channel
+  titles don't matter). Don't also capture Discord via desktop audio, or you'll double it.
+- **Linux:** requires the
+  [PipeWire Audio Capture plugin](https://obsproject.com/forum/resources/pipewire-audio-capture.1458/)
+  (untested). Install it before importing.
+- **Switched production machine / OS?** Re-run `iro setup` and re-import the collection.
 
 ## 4. Streamlink feeds — relay mode (recommended for endurance)
 
