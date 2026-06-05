@@ -2,6 +2,7 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:        # dispatched by release-please.yml with --ref <tag>
 permissions:
   contents: write
 defaults:
