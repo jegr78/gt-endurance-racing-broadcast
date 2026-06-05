@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stop every streamlink server started by start-streams.py (Mac/Linux + Windows)."""
-import argparse, glob, os, signal, subprocess, sys
+import argparse, glob, os, signal, subprocess
 
 
 def looks_like_feed(probe_output, windows=False):
@@ -54,7 +54,7 @@ def kill_tree(pid):
         try:
             os.kill(pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
-            pass
+            pass  # already gone or not ours — pid_is_feed() vetted it before
 
 
 def state_dir(here):
@@ -72,7 +72,8 @@ def main():
     pidfiles = glob.glob(os.path.join(a.state_dir, "feed_*.pid"))
     for pf in pidfiles:
         try:
-            pid = int(open(pf).read().strip())
+            with open(pf) as fh:
+                pid = int(fh.read().strip())
         except ValueError:
             os.remove(pf); continue
         if not pid_is_feed(pid):

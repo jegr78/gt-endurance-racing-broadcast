@@ -39,6 +39,9 @@ python3 tests/test_installer_common.py  # shared installer helpers (brew bootstr
 python3 tests/test_install_tools.py     # install-tools decision helpers
 python3 tests/test_install_apps.py      # install-apps decision helpers
 python3 tools/run-tests.py           # the whole suite (exactly what CI runs)
+python3 tools/lint.py                # ruff lint (= the CI lint job); --fix auto-corrects.
+                                     # Rules mirror the CodeQL alert classes — see ruff.toml.
+                                     # Run it after changing any Python file.
 # Run ONE test function:
 python3 -c "import sys; sys.path.insert(0,'tests'); import test_pov as t; t.t_pov_format_constant()"
 

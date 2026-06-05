@@ -34,12 +34,12 @@ REL = {"tag_name": "v0.2.0",
 
 
 def t_classify_dev_refused():
-    assert m.classify(REL, "darwin", "dev") == ("dev",)
+    assert m.classify(REL, "darwin", "dev") == ("dev", None, None)
 
 
 def t_classify_up_to_date_equal_and_newer_current():
-    assert m.classify(REL, "darwin", "v0.2.0") == ("up-to-date", "v0.2.0")
-    assert m.classify(REL, "darwin", "v0.3.0") == ("up-to-date", "v0.2.0")
+    assert m.classify(REL, "darwin", "v0.2.0") == ("up-to-date", "v0.2.0", None)
+    assert m.classify(REL, "darwin", "v0.3.0") == ("up-to-date", "v0.2.0", None)
 
 
 def t_classify_update_with_url():
@@ -49,7 +49,7 @@ def t_classify_update_with_url():
 
 def t_classify_building_window():
     # newer release exists but the platform asset is not uploaded yet
-    assert m.classify(REL, "linux", "v0.1.0") == ("building", "v0.2.0")
+    assert m.classify(REL, "linux", "v0.1.0") == ("building", "v0.2.0", None)
 
 
 def t_classify_bad_tag_is_error():

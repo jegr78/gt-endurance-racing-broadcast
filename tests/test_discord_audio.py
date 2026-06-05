@@ -90,7 +90,8 @@ def t_tokenize_folds_any_variant_back():
 def t_committed_template_carries_the_source():
     # Guards against the uuid drifting when scenes are re-exported.
     path = os.path.join(ROOT, "src", "obs", "IRO_Endurance.json")
-    d = json.load(open(path, encoding="utf-8"))
+    with open(path, encoding="utf-8") as fh:
+        d = json.load(fh)
     hits = [s for s in d.get("sources", []) if s.get("uuid") == sa.DISCORD_AUDIO_UUID]
     assert len(hits) == 1 and hits[0]["id"] == "sck_audio_capture"
 

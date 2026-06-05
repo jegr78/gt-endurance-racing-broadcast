@@ -69,12 +69,15 @@ def main():
     loop = os.path.join(here, "loopstream.py")
     frozen = bool(getattr(sys, "frozen", False))
     for i, (ch, port) in enumerate(FEEDS, 1):
-        log = open(os.path.join(logdir, f"feed_{port}.log"), "ab")
-        p = subprocess.Popen(feed_argv(frozen, sys.executable, loop, ch, port),
-                             stdout=log, stderr=subprocess.STDOUT,
-                             env=feed_env(frozen, os.environ),
-                             **_spawn_kwargs())
-        open(os.path.join(sdir, f"feed_{port}.pid"), "w").write(str(p.pid))
+        # Close the parent's log fd after the spawn — the child holds its own
+        # duplicate (same pattern as services.start_detached).
+        with open(os.path.join(logdir, f"feed_{port}.log"), "ab") as log:
+            p = subprocess.Popen(feed_argv(frozen, sys.executable, loop, ch, port),
+                                 stdout=log, stderr=subprocess.STDOUT,
+                                 env=feed_env(frozen, os.environ),
+                                 **_spawn_kwargs())
+        with open(os.path.join(sdir, f"feed_{port}.pid"), "w") as fh:
+            fh.write(str(p.pid))
         print(f"Started Feed {i} -> channel {ch} on http://127.0.0.1:{port} (log: {logdir}/feed_{port}.log)")
     print("\nAll feeds launched. Point each OBS media source at its http://127.0.0.1:PORT.")
     print("Stop everything with:  iro streams stop")

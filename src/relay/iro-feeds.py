@@ -154,11 +154,18 @@ ASSET_EXTS = (("png", "image/png"), ("svg", "image/svg+xml"),
 def resolve_asset(assets_dir, sub, key):
     """Resolve a HUD asset by key (no extension) to (path, content_type).
     Tries known image extensions in order; returns None if nothing matches or
-    inputs are unsafe (subdir whitelist + strict key = no path traversal)."""
+    inputs are unsafe (subdir whitelist + strict key + realpath containment =
+    no path traversal)."""
     if not assets_dir or sub not in ("flags", "brands") or not ASSET_KEY_RE.match(key):
         return None
+    base = os.path.realpath(os.path.join(assets_dir, sub))
     for ext, ctype in ASSET_EXTS:
-        path = os.path.join(assets_dir, sub, f"{key}.{ext}")
+        path = os.path.realpath(os.path.join(base, f"{key}.{ext}"))
+        # Belt-and-braces on top of the strict key regex: the resolved path
+        # must stay inside the whitelisted asset subdir (also cuts the CodeQL
+        # taint path from the request URL into open()).
+        if not path.startswith(base + os.sep):
+            return None
         if os.path.exists(path):
             return path, ctype
     return None
@@ -194,12 +201,13 @@ def load_dotenv(start):
     for c in candidates:
         p = os.path.join(c, ".env")
         if os.path.isfile(p):
-            for line in open(p, encoding="utf-8"):
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+            with open(p, encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
             return p
     return None
 
@@ -314,7 +322,7 @@ def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
             with open(logfile, "a", encoding="utf-8") as log:
                 log.write("   yt-dlp not found on PATH\n")
         except Exception:
-            pass
+            pass  # logging is best-effort; never let it break the resolve loop
         return None
     except subprocess.TimeoutExpired:
         return None
@@ -326,7 +334,7 @@ def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
             err = (r.stderr or "").strip().splitlines()
             log.write(f"   yt-dlp could not resolve {url} ({err[-1] if err else 'not live?'})\n")
     except Exception:
-        pass
+        pass  # logging is best-effort; never let it break the resolve loop
     return None
 
 
@@ -395,7 +403,7 @@ class ScheduleSource:
                 with open(self.cache_path, "w", encoding="utf-8") as fh:
                     fh.write("\n".join(items) + "\n")
             except Exception:
-                pass
+                pass  # cache write is best-effort; the in-memory schedule is current
             return True
         return False
 
@@ -406,7 +414,8 @@ class ScheduleSource:
         # Sheet unreachable -> cache, then a user-filled local fallback
         for path, label in ((self.cache_path, "cache"), (self.local_fallback, "local schedule.txt")):
             if path and os.path.exists(path):
-                items = [l.split("#", 1)[0].strip() for l in open(path, encoding="utf-8")]
+                with open(path, encoding="utf-8") as fh:
+                    items = [l.split("#", 1)[0].strip() for l in fh]
                 items = [i for i in items if i]
                 if items:
                     with self.lock:
@@ -422,7 +431,7 @@ class ScheduleSource:
                     fh.write(template)
                 print(f"Wrote a fallback template to {self.local_fallback}")
             except OSError:
-                pass
+                pass  # template is a convenience; the sys.exit below explains anyway
         sys.exit(f"ERROR: no schedule available. Sheet error: {self.last_error}\n"
                  f"Check tab '{DEFAULT_SHEET_TAB}', sharing (Anyone with the link: Viewer), "
                  f"or fill {self.local_fallback}.")
@@ -485,7 +494,7 @@ class HudSource:
             with open(self.cache_path, "w", encoding="utf-8") as fh:
                 json.dump(data, fh, ensure_ascii=False)
         except OSError:
-            pass
+            pass  # cache write is best-effort; the in-memory HUD data is current
         return True
 
     def data(self):
@@ -536,7 +545,7 @@ class Feed:
                 try: p.wait(timeout=5)
                 except subprocess.TimeoutExpired: p.kill()
             except Exception:
-                pass
+                pass  # the process may already be gone — nothing left to kill
 
     def set_index(self, new_idx):
         sched = self.provider()
@@ -705,12 +714,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers(); self.wfile.write(body)
+            return None
         def _send_asset(self, assets_dir, sub, key):
             hit = resolve_asset(assets_dir, sub, key)
             if not hit:
                 return self._send({"error": "asset not found", "key": key}, 404)
             path, ctype = hit
-            self._send_file(path, ctype)
+            return self._send_file(path, ctype)
         def log_message(self, *a): pass
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
@@ -738,9 +748,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if len(p)==2 and p[0]=="reload":        return self._ok(relay.reload(p[1]))
                 if len(p)==3 and p[:2]==["set","stint"]: return self._send(relay.set_stint(int(p[2])))
                 if len(p)==3 and p[0]=="set":           return self._ok(relay.set_index(p[1], int(p[2])))
-                self._send({"error":"unknown","path":self.path}, 404)
+                return self._send({"error":"unknown","path":self.path}, 404)
             except Exception as e:
-                self._send({"error": str(e)}, 500)
+                return self._send({"error": str(e)}, 500)
         def _ok(self, r):
             self._send(r) if r else self._send({"error":"feed? (A/B)"}, 404)
     return H
@@ -778,7 +788,7 @@ def export_cookies(browser, out):
     ok = os.path.exists(out)
     if ok:
         try: os.chmod(out, 0o600)   # live YouTube session — owner-only
-        except OSError: pass
+        except OSError: pass        # best-effort hardening; never block the export
         print(f"Cookie export from '{browser}': OK -> {out}")
     else:
         err = (proc.stderr or b"").decode("utf-8", errors="replace")
@@ -843,7 +853,7 @@ def main():
                          "Writes cookies.txt next to this script.")
     args = ap.parse_args()
     try: sys.stdout.reconfigure(line_buffering=True)   # show logs immediately
-    except Exception: pass
+    except Exception: pass   # not all stdout objects support reconfigure (e.g. pipes)
 
     if not args.sheet_csv_url and not args.sheet_id:
         sys.exit("ERROR: no Google Sheet configured. Set IRO_SHEET_ID in a .env file "
@@ -862,7 +872,7 @@ def main():
     runtime = os.path.abspath(args.runtime_dir) if args.runtime_dir else default_runtime_dir(here)
     os.makedirs(runtime, exist_ok=True)
     try: os.chmod(runtime, 0o700)   # holds the cookie jar / caches — keep it private
-    except OSError: pass
+    except OSError: pass            # best-effort hardening; never block startup
     logdir = args.logdir if os.path.isabs(args.logdir) else os.path.join(runtime, args.logdir)
     os.makedirs(logdir, exist_ok=True)
     local = args.schedule if os.path.isabs(args.schedule) else os.path.join(runtime, args.schedule)
@@ -898,7 +908,7 @@ def main():
         sys.exit(f"ERROR: cookies file not found: {cookies}")
     if cookies:
         try: os.chmod(cookies, 0o600)   # contains a live YouTube session — owner-only
-        except OSError: pass
+        except OSError: pass            # best-effort hardening; never block startup
 
     # Locate the director panel (shipped in the package root, one level up from relay/)
     panel_path = None

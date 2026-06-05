@@ -33,13 +33,15 @@ def main(src, dst):
         os.makedirs(os.path.dirname(src), exist_ok=True)
         sys.exit(f"ERROR: no Companion export found at:\n  {src}\n"
                  f"Drop your Companion 'Export -> Full Configuration' there, then re-run.")
-    raw = open(src, "rb").read()
+    with open(src, "rb") as fh:
+        raw = fh.read()
     if raw[:2] == b"\x1f\x8b":          # gzip magic — newer Companion compresses its exports
         raw = gzip.decompress(raw)
     cfg = json.loads(raw.decode("utf-8"))
     blank(cfg)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
-    json.dump(cfg, open(dst, "w", encoding="utf-8"), indent=1)
+    with open(dst, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh, indent=1)
     print(f"stripped {src}\n      -> {dst}")
 
 

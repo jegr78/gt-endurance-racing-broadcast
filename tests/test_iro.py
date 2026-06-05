@@ -333,7 +333,7 @@ def t_stint_args_rejects_garbage():
     for bad in (["--stint", "abc"], ["--stint=0"], ["--stint", "-3"]):
         try:
             m._stint_args(bad)
-            assert False, f"accepted {bad}"
+            raise AssertionError(f"accepted {bad}")
         except SystemExit:
             pass
 
@@ -413,7 +413,8 @@ def t_streams_stop_releases_obs_feeds_when_feeds_exist():
     calls = []
     old = (m._release_obs_feeds, m._run_script, m._streams_static_dir)
     with tempfile.TemporaryDirectory() as tmp:
-        open(os.path.join(tmp, "feed_53001.pid"), "w").write("1")
+        with open(os.path.join(tmp, "feed_53001.pid"), "w") as fh:
+            fh.write("1")
         m._streams_static_dir = lambda: tmp
         m._release_obs_feeds = lambda: calls.append("obs")
         m._run_script = lambda rel, args: (calls.append("run_script"), 0)[1]

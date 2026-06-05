@@ -7,7 +7,7 @@ separator-agnostic. Idempotent (already-tokenized paths are left alone).
 
 Usage: tokenize-obs.py IN [OUT]
 """
-import argparse, json, os, re, sys
+import argparse, json, os, re
 
 TOKEN = "__IRO_GRAPHICS__"
 SHEET_TOKEN = "__IRO_SHEET__"
@@ -63,7 +63,8 @@ def main():
     a = ap.parse_args()
     out = a.out or a.src
 
-    d = json.load(open(a.src, encoding="utf-8"))
+    with open(a.src, encoding="utf-8") as fh:
+        d = json.load(fh)
     n = 0
     for s in d.get("sources", []):
         if s.get("id") != "image_source":

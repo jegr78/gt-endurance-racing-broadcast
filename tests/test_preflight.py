@@ -90,7 +90,8 @@ def t_cookies_missing():
 def t_cookies_old():
     with tempfile.TemporaryDirectory() as d:
         p = os.path.join(d, "cookies.txt")
-        open(p, "w").write("SAPISID\tval")
+        with open(p, "w") as fh:
+            fh.write("SAPISID\tval")
         old = time.time() - 20 * 3600
         os.utime(p, (old, old))
         r = m.cookies_status(p)
@@ -100,7 +101,8 @@ def t_cookies_old():
 def t_cookies_fresh_with_marker():
     with tempfile.TemporaryDirectory() as d:
         p = os.path.join(d, "cookies.txt")
-        open(p, "w").write("host\tTRUE\t/\tTRUE\t0\tSAPISID\tval")
+        with open(p, "w") as fh:
+            fh.write("host\tTRUE\t/\tTRUE\t0\tSAPISID\tval")
         r = m.cookies_status(p)
         assert r.level == "PASS"
 

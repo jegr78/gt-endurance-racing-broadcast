@@ -75,9 +75,11 @@ def main():
 
     # companion: copy + strip password (defense in depth)
     os.makedirs(os.path.join(PKG, "companion"))
-    cfg = json.load(open(os.path.join(SRC, "companion", "iro-buttons.companionconfig"), encoding="utf-8"))
+    with open(os.path.join(SRC, "companion", "iro-buttons.companionconfig"), encoding="utf-8") as fh:
+        cfg = json.load(fh)
     blank_pass(cfg)
-    json.dump(cfg, open(os.path.join(PKG, "companion", "iro-buttons.companionconfig"), "w", encoding="utf-8"), indent=1)
+    with open(os.path.join(PKG, "companion", "iro-buttons.companionconfig"), "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh, indent=1)
 
     # obs: ship the tokenized collection as .template.json (setup-assets localizes it)
     os.makedirs(os.path.join(PKG, "obs"))
@@ -108,11 +110,14 @@ def main():
             return any(has_pw(x) for x in o)
         return False
 
-    tpl = open(os.path.join(PKG, "obs", "IRO_Endurance.template.json"), encoding="utf-8").read()
-    relay = open(os.path.join(PKG, "relay", "iro-feeds.py"), encoding="utf-8").read()
+    with open(os.path.join(PKG, "obs", "IRO_Endurance.template.json"), encoding="utf-8") as fh:
+        tpl = fh.read()
+    with open(os.path.join(PKG, "relay", "iro-feeds.py"), encoding="utf-8") as fh:
+        relay = fh.read()
     # Re-read the SHIPPED companion config from disk (not the in-memory cfg) so the
     # password check actually verifies what was written, not what we already blanked.
-    written = json.load(open(os.path.join(PKG, "companion", "iro-buttons.companionconfig"), encoding="utf-8"))
+    with open(os.path.join(PKG, "companion", "iro-buttons.companionconfig"), encoding="utf-8") as fh:
+        written = json.load(fh)
     blob = json.dumps(written)
     checks = {
         "companion pov buttons": "pov/reload" in blob,

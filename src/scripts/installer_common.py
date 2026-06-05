@@ -2,7 +2,7 @@
 """Shared helpers for the iro installer verbs (install-tools, install-apps).
 Loaded by both via importlib from the sibling path — works in repo mode, the
 test loaders, and the frozen binary (scripts ship as data under _MEIPASS)."""
-import os, shutil, subprocess, sys
+import os, shutil, subprocess
 
 # Standard Homebrew locations: Apple Silicon, then Intel. A fresh bootstrap is
 # NOT on the current process PATH (shellenv only runs in new shells), so brew
@@ -49,10 +49,10 @@ def run_remote_script(url, runner):
     print("Downloading:", url)
     with urllib.request.urlopen(url, timeout=30) as resp:
         body = resp.read()
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".sh")
-    try:
+    # delete=False: the file must outlive the handle so the runner can read it.
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".sh") as tmp:
         tmp.write(body)
-        tmp.close()
+    try:
         cmd = runner + [tmp.name]
         print("Running:", " ".join(cmd))
         return subprocess.call(cmd)
@@ -68,10 +68,10 @@ def install_remote_deb(url):
     print("Downloading:", url)
     with urllib.request.urlopen(url, timeout=60) as resp:
         body = resp.read()
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".deb")
-    try:
+    # delete=False: the file must outlive the handle so apt-get can read it.
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".deb") as tmp:
         tmp.write(body)
-        tmp.close()
+    try:
         os.chmod(tmp.name, 0o644)
         cmd = ["sudo", "apt-get", "install", "-y", tmp.name]
         print("Running:", " ".join(cmd))

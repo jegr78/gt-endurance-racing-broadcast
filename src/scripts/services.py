@@ -110,7 +110,7 @@ def _reap_zombie(pid):
     except ChildProcessError:
         pass  # not our child — nothing to reap
     except OSError:
-        pass
+        pass  # already reaped / gone — nothing to do
 
 
 def _signal_stop(pid, force):
@@ -121,7 +121,7 @@ def _signal_stop(pid, force):
     try:
         os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
     except OSError:
-        pass
+        pass  # process already exited between the alive-check and the kill
 
 
 def stop_pid(pid, pid_path=None, timeout=10):

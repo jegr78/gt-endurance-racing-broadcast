@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stdlib checks for the spawned-service daemon helper. Run: python3 tests/test_services.py"""
-import os, sys, tempfile, time
+import os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -9,13 +9,17 @@ import services as sv
 
 
 def t_read_pid_valid(tmp):
-    p = os.path.join(tmp, "x.pid"); open(p, "w").write("4321\n")
+    p = os.path.join(tmp, "x.pid")
+    with open(p, "w") as fh:
+        fh.write("4321\n")
     assert sv.read_pid(p) == 4321
 
 
 def t_read_pid_missing_or_garbage(tmp):
     assert sv.read_pid(os.path.join(tmp, "nope.pid")) is None
-    p = os.path.join(tmp, "g.pid"); open(p, "w").write("not-a-pid")
+    p = os.path.join(tmp, "g.pid")
+    with open(p, "w") as fh:
+        fh.write("not-a-pid")
     assert sv.read_pid(p) is None
 
 

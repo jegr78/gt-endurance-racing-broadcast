@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for tools/add_standby_cover.py. Run: python3 tests/test_standby.py"""
-import copy, importlib.util, os
+import importlib.util, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)

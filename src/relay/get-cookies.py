@@ -40,7 +40,7 @@ def main():
     a = ap.parse_args()
     os.makedirs(a.runtime_dir, exist_ok=True)
     try: os.chmod(a.runtime_dir, 0o700)   # runtime holds the cookie jar — keep it private
-    except OSError: pass
+    except OSError: pass                  # best-effort hardening; never block the export
     out = os.path.join(a.runtime_dir, "cookies.txt")
     url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
     print(f"Exporting YouTube cookies from '{a.browser}' ...")
@@ -54,8 +54,9 @@ def main():
         sys.exit("ERROR: cookie export timed out (approve the Keychain prompt?).")
     if os.path.exists(out):
         try: os.chmod(out, 0o600)   # live YouTube session — owner-only
-        except OSError: pass
-        txt = open(out, encoding="utf-8", errors="replace").read()
+        except OSError: pass        # best-effort hardening; never block the export
+        with open(out, encoding="utf-8", errors="replace") as fh:
+            txt = fh.read()
         if re.search(r"LOGIN_INFO|SAPISID|__Secure-[0-9]?PSID", txt):
             print(f"OK -> {out}  (logged-in session detected)")
         else:

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Stdlib checks for install_apps decision helpers. Run: python3 tests/test_install_apps.py"""
-import importlib.util, os
+import importlib.util, os, re
+from urllib.parse import urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -100,12 +101,14 @@ def t_app_present_discord_paths():
 
 
 def t_manual_guide_has_urls_per_os():
+    # Compare URL HOSTS, not substrings — '"x.com" in guide' would also match
+    # an unrelated URL like https://evil.example/?x.com.
     for plat in ("win32", "darwin", "linux"):
         guide = m.apps_manual_guide(plat)
-        assert "obsproject.com" in guide
-        assert "bitfocus.io" in guide
-        assert "tailscale.com" in guide
-        assert "discord.com" in guide
+        urls = [u.rstrip("'\"),:") for u in re.findall(r"https?://\S+", guide)]
+        hosts = {urlparse(u).hostname for u in urls}
+        for want in ("obsproject.com", "bitfocus.io", "tailscale.com", "discord.com"):
+            assert want in hosts, (plat, want, sorted(h for h in hosts if h))
 
 
 def t_linux_plan_obs_with_ppa():

@@ -214,7 +214,8 @@ def cookies_status(path, max_age_hours=12, now=None):
                       f"not found at {path} — run `iro cookies firefox` before the event")
     age_h = (now - os.path.getmtime(path)) / 3600
     try:
-        text = open(path, encoding="utf-8", errors="ignore").read()
+        with open(path, encoding="utf-8", errors="ignore") as fh:
+            text = fh.read()
     except OSError:
         text = ""
     has_login = any(marker in text for marker in COOKIE_MARKERS)
