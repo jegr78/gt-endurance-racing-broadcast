@@ -32,6 +32,7 @@ Download the latest release for your platform from
 **its own folder**, and run `iro` once — it creates a `.env` file next to itself
 that you fill in with your Sheet ID and other secrets.
 Full step-by-step: [Set up the broadcast PC (wiki)](https://github.com/jegr78/IRO_Broadcast_Setup/wiki/Set-up-the-broadcast-PC).
+Update later with a single command: `iro update`.
 
 > **First start:** Windows SmartScreen / macOS Gatekeeper show a one-time warning for
 > unsigned binaries — choose "Run anyway" / right-click → Open.

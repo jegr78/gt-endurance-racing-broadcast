@@ -54,7 +54,7 @@ Flow:
    up-to-date and never download a wrong asset.
 5. **Confirm.** Print `vCURRENT → vNEW` and prompt (`--yes`/`--check` skip;
    same `confirmed()` semantics as the installers).
-6. **Download + extract** to a tempdir (stdlib `zipfile`/`tarfile`); locate
+6. **Download + extract** to a tempdir created next to the binary (same filesystem — the final rename stays atomic; a system tempdir can sit on another fs → EXDEV) (stdlib `zipfile`/`tarfile`); locate
    `iro`/`iro.exe` inside the archive. Extraction uses a **manual member
    check** (reject absolute paths and `..` components) — works identically on
    every supported Python (3.11–3.13) instead of relying on the 3.12+

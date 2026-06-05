@@ -10,6 +10,7 @@
   iro status                            # aggregate health of all services
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] | install-apps [--yes]
   iro export companion [--out PATH]     # write the Companion button config
+  iro update [--check] [--yes]          # self-update the binary from GitHub Releases
   iro --version
 """
 import glob, json, os, shutil, sys, time, webbrowser
@@ -80,6 +81,24 @@ def ensure_env_file(exe_dir, frozen=None):
     print("created .env next to the binary — fill in IRO_SHEET_ID and "
           "IRO_TIMER_URL (see the comments inside).", file=sys.stderr)
     return True
+
+
+def cleanup_old_binary(exe_dir, frozen=None, platform=None):
+    """Best-effort removal of the iro-old.exe that `iro update` leaves behind on
+    Windows (a running exe can only be renamed, not deleted, during the swap).
+    Returns True iff the leftover existed and was removed."""
+    frozen = IS_FROZEN if frozen is None else frozen
+    platform = sys.platform if platform is None else platform
+    if not frozen or not platform.startswith("win"):
+        return False
+    old = os.path.join(exe_dir, "iro-old.exe")
+    try:
+        if os.path.exists(old):
+            os.remove(old)
+            return True
+    except OSError:
+        pass
+    return False
 
 
 def _load_env_frozen():
@@ -187,7 +206,7 @@ EXTRA_VERBS = {
 }
 # Internal verbs: routed but never advertised (frozen feed children use run-feed).
 HIDDEN_VERBS = {"streams": ("run-feed",)}
-ONESHOTS = ("preflight", "cookies", "graphics", "media", "setup", "install-tools", "install-apps")
+ONESHOTS = ("preflight", "cookies", "graphics", "media", "setup", "install-tools", "install-apps", "update")
 
 USAGE = __doc__
 
@@ -511,6 +530,7 @@ ONESHOT_MAP = {
     "setup":         "setup-assets.py",
     "install-tools": "scripts/install_tools.py",
     "install-apps":  "scripts/install_apps.py",
+    "update":        "scripts/update.py",
 }
 
 # Forward --runtime-dir only to one-shot scripts whose argparse defines it.
@@ -521,6 +541,8 @@ RUNTIME_DIR_ONESHOTS = ("preflight", "cookies")
 
 def oneshot(command, rest):
     extra = _oneshot_extra(command, rest, IS_FROZEN, _runtime_dir())
+    if command == "update" and "--current" not in rest:
+        extra += ["--current", version()]
     raise SystemExit(_run_script(ONESHOT_MAP[command], list(rest) + extra))
 
 
@@ -558,6 +580,7 @@ def aggregate_status(_rest=None):
 
 def main(argv=None):
     ensure_env_file(os.path.dirname(sys.executable))
+    cleanup_old_binary(os.path.dirname(sys.executable))
     _load_env_frozen()
     argv = sys.argv[1:] if argv is None else argv
     try:
