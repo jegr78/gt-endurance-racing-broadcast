@@ -5,6 +5,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write           # PR labels (autorelease: pending/tagged) use the issues API
   actions: write          # gh workflow run (the dispatch fallback) needs this
 env:
   RP_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
