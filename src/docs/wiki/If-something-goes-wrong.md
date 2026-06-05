@@ -32,7 +32,8 @@ most setup problems (tools, ports, cookies) before they bite you live.
 
 | Problem | Fix |
 |---------|-----|
-| No interview audio | Discord must run **windowed** (not fullscreen), and the producer must have **joined the voice channel locally**. `iro setup` localizes the capture source per OS (macOS: *App Audio Capture*; Windows: *Application Audio Capture* bound to `Discord.exe`; Linux: requires the [PipeWire Audio Capture plugin](https://obsproject.com/forum/resources/pipewire-audio-capture.1458/) — untested). Switched OS? Re-run `iro setup` and re-import. |
+| No interview audio | Discord must run **windowed** (not fullscreen), and the producer must have **joined the voice channel locally**. |
+| Discord source dead after switching machine/OS | `iro setup` localizes the capture source per OS (macOS *App Audio Capture* · Windows *Application Audio Capture* on `Discord.exe` · Linux [PipeWire Audio Capture plugin](https://obsproject.com/forum/resources/pipewire-audio-capture.1458/), untested) — re-run `iro setup` and re-import. |
 | Interview audio doubled / echo | Capture Discord only through that audio-capture source — not *also* via desktop audio. |
 
 ## Everything is laggy

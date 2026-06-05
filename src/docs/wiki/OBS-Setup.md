@@ -108,10 +108,9 @@ for the importing OS — no manual source-switching needed.
 
 - **macOS:** `App Audio Capture` (ScreenCaptureKit), bound to the Discord app. Grant OBS
   **Screen &amp; System Audio Recording** permission once (System Settings → Privacy &amp;
-  Security). **Keep Discord in windowed mode, NOT fullscreen** — otherwise it is not
-  captured.
+  Security). Keep Discord **windowed** (not fullscreen) — otherwise it is not captured.
 - **Windows:** `Application Audio Capture`, bound to `Discord.exe`. Any Discord window
-  title works — channel names don't matter. Don't *also* capture Discord via desktop
+  title works — window titles don't matter. Don't *also* capture Discord via desktop
   audio, or you'll double it.
 - **Linux:** requires the
   [PipeWire Audio Capture plugin](https://obsproject.com/forum/resources/pipewire-audio-capture.1458/)
