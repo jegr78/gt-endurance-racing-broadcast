@@ -59,6 +59,27 @@ def parse_env_text(text):
             out[key] = val.strip().strip("'\"")
     return out
 
+def ensure_env_file(exe_dir, frozen=None):
+    """First run of the frozen binary: the release archives ship .env.example
+    next to the binary but never a real .env (an upgrade extract must not
+    clobber filled-in secrets). Copy the template once so the operator only
+    fills in values. Returns True iff .env was created."""
+    frozen = IS_FROZEN if frozen is None else frozen
+    if not frozen:
+        return False
+    env_path = os.path.join(exe_dir, ".env")
+    example = os.path.join(exe_dir, ".env.example")
+    if os.path.exists(env_path) or not os.path.exists(example):
+        return False
+    try:
+        shutil.copyfile(example, env_path)
+    except OSError:
+        return False
+    print("created .env next to the binary — fill in IRO_SHEET_ID and "
+          "IRO_TIMER_URL (see the comments inside).")
+    return True
+
+
 def _load_env_frozen():
     """Frozen binary: load <exe-dir>/.env into os.environ (existing env wins).
     The scripts' own load_dotenv() can't find it — their marker walk starts in
@@ -516,6 +537,7 @@ def aggregate_status(_rest=None):
 
 
 def main(argv=None):
+    ensure_env_file(os.path.dirname(sys.executable))
     _load_env_frozen()
     argv = sys.argv[1:] if argv is None else argv
     try:

@@ -86,6 +86,33 @@ def t_parse_env_text():
     assert m.parse_env_text(text) == {"IRO_SHEET_ID": "abc", "IRO_TIMER_URL": "http://x"}
 
 
+def t_ensure_env_file_creates_once():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, ".env.example"), "w", encoding="utf-8") as fh:
+            fh.write("IRO_SHEET_ID=\n")
+        # not frozen -> no-op
+        assert m.ensure_env_file(d, frozen=False) is False
+        assert not os.path.exists(os.path.join(d, ".env"))
+        # frozen + template + no .env -> created from the template
+        assert m.ensure_env_file(d, frozen=True) is True
+        with open(os.path.join(d, ".env"), encoding="utf-8") as fh:
+            assert fh.read() == "IRO_SHEET_ID=\n"
+        # existing .env is never overwritten
+        with open(os.path.join(d, ".env"), "w", encoding="utf-8") as fh:
+            fh.write("IRO_SHEET_ID=real\n")
+        assert m.ensure_env_file(d, frozen=True) is False
+        with open(os.path.join(d, ".env"), encoding="utf-8") as fh:
+            assert fh.read() == "IRO_SHEET_ID=real\n"
+
+
+def t_ensure_env_file_without_template():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        assert m.ensure_env_file(d, frozen=True) is False
+        assert not os.path.exists(os.path.join(d, ".env"))
+
+
 def t_script_invocation_repo():
     import sys as _sys
     kind, argv, _ = m._script_invocation("scripts/preflight.py", ["--quick"], False)
