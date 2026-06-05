@@ -23,6 +23,14 @@ def t_install_commands_winget_one_per_app():
     assert len(cmds) == 2
     assert cmds[0][:3] == ["winget", "install", "--id"]
     assert cmds[0][3] == "OBSProject.OBSStudio" and cmds[1][3] == "Tailscale.Tailscale"
+    assert all("--interactive" not in c for c in cmds)
+
+
+def t_install_commands_companion_is_interactive():
+    # Companion's NSIS installer writes NOTHING without admin in silent mode
+    # yet exits 0 — only the interactive wizard (with its UAC prompt) works.
+    (cmd,) = m.app_install_commands("winget", ["companion"])
+    assert cmd[3] == "Bitfocus.Companion" and "--interactive" in cmd
 
 
 def t_install_commands_brew_single_cask_batch():

@@ -96,11 +96,19 @@ def app_present(app, platform, env=None, exists=os.path.exists, which=shutil.whi
     return bool(which(app))  # CLI fallback (e.g. tailscale on PATH)
 
 
+# Apps whose winget SILENT install is broken: Companion's NSIS installer
+# writes NOTHING without admin yet exits 0, so winget reports success while
+# nothing was installed (seen live). --interactive runs the UI wizard, whose
+# UAC prompt the operator can actually answer.
+WINGET_INTERACTIVE = ("companion",)
+
+
 def app_install_commands(manager, apps, brew_path="brew"):
     """The argv list(s) to install `apps` with `manager`. apt: none (manual)."""
     if manager == "winget":
         return [["winget", "install", "--id", WINGET_APP_IDS[a], "-e",
                  "--accept-source-agreements", "--accept-package-agreements"]
+                + (["--interactive"] if a in WINGET_INTERACTIVE else [])
                 for a in apps]
     if manager == "brew":
         casks = [BREW_CASKS[a] for a in apps]
