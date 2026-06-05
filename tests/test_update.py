@@ -34,7 +34,23 @@ REL = {"tag_name": "v0.2.0",
 
 
 def t_classify_dev_refused():
+    # repo mode (not frozen): the verb stays git-pull-only
     assert m.classify(REL, "darwin", "dev") == ("dev", None, None)
+    assert m.classify(REL, "darwin", "dev", frozen=False) == ("dev", None, None)
+
+
+def t_classify_frozen_dev_offers_latest():
+    # a locally built frozen binary (version 'dev') jumps to the latest release
+    assert m.classify(REL, "darwin", "dev", frozen=True) == ("update", "v0.2.0", "https://x/m")
+    assert m.classify(REL, "win32", "dev", frozen=True) == ("update", "v0.2.0", "https://x/w")
+
+
+def t_classify_frozen_dev_building_window():
+    assert m.classify(REL, "linux", "dev", frozen=True) == ("building", "v0.2.0", None)
+
+
+def t_classify_frozen_dev_bad_tag_is_error():
+    assert m.classify({"tag_name": "nightly", "assets": []}, "darwin", "dev", frozen=True)[0] == "error"
 
 
 def t_classify_up_to_date_equal_and_newer_current():
