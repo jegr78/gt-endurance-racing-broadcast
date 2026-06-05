@@ -120,7 +120,7 @@ def smoke(binary, version):
             if "_MEI" in fh.read():
                 sys.exit("smoke setup FAILED: the localized collection references "
                          "the throwaway _MEIPASS unpack dir (paths die with the process)")
-    print("Smoke test OK (--version, status, export companion, setup).")
+    print("Smoke test OK (--version, status, event status, export companion, setup).")
 
 
 if __name__ == "__main__":
