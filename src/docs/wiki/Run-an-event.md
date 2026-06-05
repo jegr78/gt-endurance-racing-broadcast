@@ -104,14 +104,17 @@ their own machine with their own stream key. Viewers follow via the channel's
 end-of-stream redirect; plan a few minutes of deliberate overlap.
 
 The relay does **not** need the previous producer's Feed A/B order — the
-ping-pong works from any starting point. Rule of thumb: **after every takeover
-you go on air with Feed A.**
+ping-pong works from any starting point. `--stint <N>` simply puts stint N on
+Feed A and preloads stint N+1 on Feed B; from there `/next` works as usual.
+Which feed carries which stint may therefore differ between the parts — that
+is fine.
 
 1. Incoming producer: `iro event start --stint <N>` — N is the stint **on air
-   right now** (1-based, from the schedule sheet / Discord). Feed A serves
-   stint N, Feed B preloads stint N+1.
-2. Verify Feed A shows the same commentator as the live broadcast (`/status`
-   or the OBS preview).
+   right now** (1-based, from the schedule sheet / Discord). Taking over right
+   at a stint change (e.g. a part boundary like "end of stint 3"): pass the
+   stint that is starting.
+2. Verify Feed A shows the expected commentator (`/status` or the OBS
+   preview).
 3. Start your OBS stream with this part's stream key — the overlap begins.
 4. Share your panel/tablet URLs with the directors (`iro event start` prints
    them — just forward).

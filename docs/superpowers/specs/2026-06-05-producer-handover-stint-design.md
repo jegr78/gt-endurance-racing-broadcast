@@ -24,11 +24,16 @@ The "Feed A = odd stints, Feed B = even stints" parity is **not a rule** — it 
 merely a consequence of starting at stint 1. The ping-pong (`/next` advances the
 lower-index feed by +2) works correctly from *any* starting pair. Since each
 producer runs their own OBS, the new producer does **not** need to continue the
-previous producer's parity. The operating rule becomes:
+previous producer's parity. `--stint N` simply starts the same ping-pong at
+stint N (served on Feed A, next stint preloaded on Feed B) — no parity
+arithmetic, and no operational rule about which feed is on air when going live:
+that depends on the takeover moment (mid-stint vs. at a stint boundary) and on
+`/next` presses between bring-up and go-live.
 
-> **After every takeover, the new producer goes on air with Feed A.**
-
-No parity arithmetic, ever.
+*(Amended after review with the producer: an earlier revision phrased this as a
+crew rule — "after every takeover you go on air with Feed A" — which
+over-promised; real handovers happen near part boundaries, e.g. a 12h event
+with 6 stints switching after stint 3, or 24h events with 3×4 stints.)*
 
 ## 3. Decisions (locked during brainstorming)
 
@@ -97,9 +102,8 @@ New wiki page (or section in the event-day material; English, like all shipped
 docs):
 
 1. Producer 2: `iro event start --stint <N>` — N = the stint currently on air
-   (from the sheet / Discord).
-2. Verify Feed A shows the same commentator as the live broadcast (`/status` or
-   OBS preview).
+   (from the sheet / Discord); at a stint boundary, the stint that is starting.
+2. Verify Feed A shows the expected commentator (`/status` or OBS preview).
 3. Start the OBS stream with the next part's stream key (overlap begins).
 4. Share the new panel/tablet URLs with the directors (the CLI already prints
    them — just forward).

@@ -68,8 +68,9 @@ that is on air right now —
 iro relay start --stint 4   # stint 4 is live: Feed A serves it, Feed B preloads stint 5
 ```
 
-After every takeover the new producer goes on air with **Feed A** — there is no
-need to continue the previous producer's A/B order. Full checklist:
+`--stint` puts that stint on Feed A and preloads the next one on Feed B — there
+is no need to continue the previous producer's A/B order; `/next` works as
+usual from there. Full checklist:
 [Run an event → Producer handover](Run-an-event#producer-handover-12h24h-multi-part-events).
 
 ## 4. Control it (Companion → relay)
