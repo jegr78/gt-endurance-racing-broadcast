@@ -308,7 +308,7 @@ def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
         try:
             sock.sendall(encode_frame(b"", opcode=0x8))   # polite close
         except OSError:
-            pass
+            pass  # OBS may have dropped the socket first — close is courtesy only
         return names, ""
     except Exception as exc:                         # noqa: BLE001 — see docstring
         reason = str(exc) or exc.__class__.__name__

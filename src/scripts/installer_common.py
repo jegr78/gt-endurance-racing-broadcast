@@ -2,7 +2,7 @@
 """Shared helpers for the iro installer verbs (install-tools, install-apps).
 Loaded by both via importlib from the sibling path — works in repo mode, the
 test loaders, and the frozen binary (scripts ship as data under _MEIPASS)."""
-import os, shutil, subprocess, sys
+import os, shutil, subprocess
 
 # Standard Homebrew locations: Apple Silicon, then Intel. A fresh bootstrap is
 # NOT on the current process PATH (shellenv only runs in new shells), so brew

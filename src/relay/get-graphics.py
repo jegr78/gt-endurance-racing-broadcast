@@ -11,7 +11,7 @@ Usage: python3 get-graphics.py [--out DIR] [--sheet-id ID] [--assets-tab NAME]
        [--only "Label[,Label...]"]
 """
 import argparse, csv, io, os, re, sys
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -32,14 +32,25 @@ def load_dotenv(start):
     for c in candidates:
         p = os.path.join(c, ".env")
         if os.path.isfile(p):
-            for line in open(p, encoding="utf-8"):
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+            with open(p, encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
             return p
     return None
+
+
+def is_drive_url(url):
+    """True iff the URL's HOST is drive.google.com (or a subdomain). A plain
+    substring check would also match e.g. https://evil.example/?drive.google.com."""
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+    return host == "drive.google.com" or host.endswith(".drive.google.com")
 
 
 def drive_id(url):
@@ -79,7 +90,7 @@ def graphics_from_csv(rows):
             v = (cell or "").strip()
             if not v:
                 continue
-            if "drive.google.com" in v and drive_id(v):
+            if is_drive_url(v) and drive_id(v):
                 out[label] = v
             break  # only the first non-empty value cell matters
     return out

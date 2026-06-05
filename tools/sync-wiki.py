@@ -97,13 +97,17 @@ def mirror_pages():
     added, updated, removed = [], [], []
     for rel in src:
         s, d = os.path.join(WIKI_SRC, rel), os.path.join(CLONE, rel)
-        new = open(s, "rb").read()
+        with open(s, "rb") as fh:
+            new = fh.read()
         if rel not in dst:
             added.append(rel)
-        elif open(d, "rb").read() != new:
-            updated.append(rel)
         else:
-            continue
+            with open(d, "rb") as fh:
+                old = fh.read()
+            if old != new:
+                updated.append(rel)
+            else:
+                continue
         os.makedirs(os.path.dirname(d), exist_ok=True)
         with open(d, "wb") as fh:
             fh.write(new)

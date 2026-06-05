@@ -99,7 +99,7 @@ def cleanup_old_binary(exe_dir, frozen=None, platform=None):
             os.remove(old)
             return True
     except OSError:
-        pass
+        pass  # still locked by a lingering process — retried on the next run
     return False
 
 
@@ -331,6 +331,7 @@ def relay_start(rest):
     newpid = sv.start_detached(argv, _relay_log_path(), _relay_pid_path(),
                                env=_frozen_child_env())
     print(f"relay started (pid {newpid}). Watch it: iro relay logs -f")
+    return None
 
 def _release_obs_feeds():
     """Make OBS (via obs-websocket) drop its connections to the just-killed
@@ -858,12 +859,13 @@ def main(argv=None):
         sys.exit(f"iro: {e}")
     if action["kind"] == "help":
         print(USAGE)
-        return
+        return None
     if action["kind"] == "version":
         print(f"iro {version()}")
-        return
+        return None
     if action["kind"] == "export":
-        return export_companion(action["rest"])
+        export_companion(action["rest"])
+        return None
     if action["kind"] == "service":
         fn = DISPATCH.get((action["command"], action["verb"]))
         if not fn:
@@ -872,7 +874,8 @@ def main(argv=None):
     if action["kind"] == "oneshot":
         return oneshot(action["command"], action["rest"])
     if action["kind"] == "aggregate":
-        return aggregate_status()
+        aggregate_status()
+        return None
     sys.exit(f"iro: {action['kind']} not implemented")
 
 

@@ -65,7 +65,7 @@ def _registry_path_values():
             with winreg.OpenKey(root, key) as k:
                 values.append(winreg.QueryValueEx(k, "Path")[0])
         except OSError:
-            pass
+            pass  # key/value absent (e.g. no user Path) — skip that hive
     return values
 
 

@@ -30,26 +30,26 @@ def asset_name(platform):
 
 
 def classify(release, platform, current):
-    """The whole update decision, pure. Returns one of:
-    ('dev',)                running from source -> refuse
-    ('error', message)      malformed release data
-    ('up-to-date', tag)
-    ('building', tag)       newer release exists, platform asset not uploaded yet
-    ('update', tag, url)"""
+    """The whole update decision, pure. Always a (kind, detail, url) 3-tuple:
+    ('dev',        None, None)   running from source -> refuse
+    ('error',      message, None)  malformed release data
+    ('up-to-date', tag, None)
+    ('building',   tag, None)    newer release exists, platform asset not uploaded yet
+    ('update',     tag, url)"""
     cur = parse_version(current)
     if cur is None:
-        return ("dev",)
+        return ("dev", None, None)
     tag = release.get("tag_name", "")
     new = parse_version(tag)
     if new is None:
-        return ("error", f"unexpected tag on the latest release: {tag!r}")
+        return ("error", f"unexpected tag on the latest release: {tag!r}", None)
     if new <= cur:
-        return ("up-to-date", tag)
+        return ("up-to-date", tag, None)
     want = asset_name(platform)
     for asset in release.get("assets", []):
         if asset.get("name") == want:
             return ("update", tag, asset.get("browser_download_url"))
-    return ("building", tag)
+    return ("building", tag, None)
 
 
 def swap_plan(platform, exe, new):

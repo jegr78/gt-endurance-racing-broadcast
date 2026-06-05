@@ -139,8 +139,10 @@ def t_resolve_asset_extension_agnostic():
     ad = tempfile.mkdtemp()
     _os.makedirs(_os.path.join(ad, "brands"))
     _os.makedirs(_os.path.join(ad, "flags"))
-    open(_os.path.join(ad, "brands", "porsche.png"), "w").write("x")
-    open(_os.path.join(ad, "flags", "germany.svg"), "w").write("x")
+    with open(_os.path.join(ad, "brands", "porsche.png"), "w") as fh:
+        fh.write("x")
+    with open(_os.path.join(ad, "flags", "germany.svg"), "w") as fh:
+        fh.write("x")
     # png resolves with image/png ctype
     path, ctype = m.resolve_asset(ad, "brands", "porsche")
     assert path.endswith("porsche.png") and ctype == "image/png", (path, ctype)

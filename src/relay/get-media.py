@@ -40,12 +40,13 @@ def load_dotenv(start):
     for c in candidates:
         p = os.path.join(c, ".env")
         if os.path.isfile(p):
-            for line in open(p, encoding="utf-8"):
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+            with open(p, encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
             return p
     return None
 

@@ -190,7 +190,8 @@ def t_read_ws_config_roundtrip_and_missing():
                        "enabled": True}
         assert m.read_ws_config(os.path.join(tmp, "nope.json")) is None
         broken = os.path.join(tmp, "broken.json")
-        open(broken, "w").write("{not json")
+        with open(broken, "w") as fh:
+            fh.write("{not json")
         assert m.read_ws_config(broken) is None
 
 
