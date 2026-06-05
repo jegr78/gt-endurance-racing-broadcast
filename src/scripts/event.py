@@ -6,7 +6,7 @@ Sheet's Assets tab, and classifiers turning raw facts into preflight Result
 lines. Reuses preflight's Result/report model and install_apps' path
 candidates. Spec: docs/superpowers/specs/2026-06-05-event-readiness-design.md.
 Tests: tests/test_event.py."""
-import csv, io, ntpath, os, shutil, subprocess, sys
+import csv, io, ntpath, os, shutil, subprocess, sys, time
 
 # Plain sibling imports: scripts/ is on sys.path in repo+package mode (iro.py
 # injects it; standalone tests insert it), and the frozen binary ships these
@@ -63,6 +63,25 @@ def app_running(app, platform=None):
         if parse_probe(platform, out.returncode, out.stdout, name):
             return True
     return False
+
+
+def wait_until_up(probes, timeout=60, interval=5, clock=time.monotonic,
+                  sleep=time.sleep):
+    """Poll `probes` ({name: callable -> bool}) until all pass or `timeout`
+    seconds elapse; returns {name: bool} with the final state. A probe that
+    turned True stays True (no re-poll). Used by `iro event start` so the
+    closing readiness report does not race the just-launched services —
+    static problems (missing graphics, stale cookies) are deliberately NOT
+    waited on; they never self-heal."""
+    deadline = clock() + timeout
+    status = {name: False for name in probes}
+    while True:
+        for name, probe in probes.items():
+            if not status[name]:
+                status[name] = bool(probe())
+        if all(status.values()) or clock() >= deadline:
+            return status
+        sleep(interval)
 
 
 # macOS app names for `open -a` (callers gate on install_apps.app_present

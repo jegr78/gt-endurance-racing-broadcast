@@ -192,6 +192,37 @@ def t_go_live_reminder():
     assert "HUD" in m.GO_LIVE_REMINDER.detail
 
 
+def t_wait_until_up():
+    elapsed = {"n": 0}
+    clock = lambda: elapsed["n"]            # fake monotonic: sleeps advance it
+    def sleep(secs):
+        elapsed["n"] += secs
+    # all up immediately -> returns without sleeping
+    st = m.wait_until_up({"relay": lambda: True}, timeout=60, interval=5,
+                         clock=clock, sleep=sleep)
+    assert st == {"relay": True} and elapsed["n"] == 0
+    # comes up on the third poll -> exactly two sleeps
+    polls = {"k": 0}
+    def flaky():
+        polls["k"] += 1
+        return polls["k"] >= 3
+    st = m.wait_until_up({"obs": flaky}, timeout=60, interval=5,
+                         clock=clock, sleep=sleep)
+    assert st == {"obs": True} and elapsed["n"] == 10
+    # never up -> stops at the deadline, reports the loser as False
+    elapsed["n"] = 0
+    st = m.wait_until_up({"relay": lambda: False, "obs": lambda: True},
+                         timeout=60, interval=5, clock=clock, sleep=sleep)
+    assert st == {"relay": False, "obs": True}
+    assert elapsed["n"] == 60
+    # a probe that turned True is cached, not re-polled
+    polls["k"] = 0
+    elapsed["n"] = 0
+    m.wait_until_up({"obs": flaky, "relay": lambda: False},
+                    timeout=10, interval=5, clock=clock, sleep=sleep)
+    assert polls["k"] == 3                  # True after 3 polls, then cached
+
+
 def _raises(fn, exc=ValueError):
     try:
         fn()

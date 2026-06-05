@@ -692,6 +692,16 @@ def event_start(rest):
     except SystemExit as exc:
         print(exc.code if isinstance(exc.code, str)
               else f"companion: start failed (exit {exc.code}).")
+    # Give the launches time to settle: OBS and the relay take a few seconds,
+    # and a too-early report shows FAILs that are already resolving. Only the
+    # dynamic probes are waited on — static problems never self-heal.
+    import install_apps
+    probes = {"relay": _relay_http_ok}
+    if install_apps.app_present("obs", sys.platform):
+        probes["obs"] = lambda: ev.app_running("obs")
+    print("\nWaiting for the launched services to come up (max 60 s)…")
+    for name, up in sorted(ev.wait_until_up(probes).items()):
+        print(f"  {name}: {'up' if up else 'still not up — see the report below'}")
     print("\nEvent readiness:")
     event_status(rest)  # exit code: 0 = ready, 1 = FAILs remain
 
