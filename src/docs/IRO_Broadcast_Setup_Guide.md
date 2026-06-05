@@ -150,7 +150,7 @@ Companion runs on the Producer PC and turns into a web page of buttons the Direc
 **Import the button config:**
 
 ```bash
-iro export companion    # writes the .companionconfig file
+iro export companion    # writes runtime/iro-buttons.companionconfig
 ```
 
 In the admin: `Import/Export` → **Import** → pick that file. Confirm "**Replace**

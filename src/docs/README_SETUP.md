@@ -235,7 +235,7 @@ the graphics changed. Missing files: OBS shows that source black until you fetch
 2. Import the button config:
 
    ```bash
-   iro export companion    # writes the .companionconfig file
+   iro export companion    # writes runtime/iro-buttons.companionconfig
    ```
 
    Then in Companion admin: `Import/Export` → **Import** → pick that file.

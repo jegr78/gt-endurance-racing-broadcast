@@ -127,8 +127,8 @@ warns and OBS shows those sources black until the files exist.) Step-by-step:
 ## 6 — Import the Companion buttons
 
 Open Companion (launcher → **GUI Interface = All Interfaces**, port `8000` → **Launch
-GUI**), then import the provided button config (`iro export companion` writes the
-file). Details: [Companion](Companion).
+GUI**), then import the provided button config (`iro export companion` writes it to
+`runtime/iro-buttons.companionconfig`). Details: [Companion](Companion).
 
 ## 7 — Let Companion control OBS
 

@@ -525,15 +525,17 @@ def version():
 
 
 def export_companion(rest):
-    """Write the bundled (password-stripped) Companion config for import."""
+    """Write the bundled (password-stripped) Companion config for import.
+    Default: runtime/ — the same home as the localized OBS collection."""
     out = None
     if rest[:1] == ["--out"] and len(rest) == 2:
         out = rest[1]
     elif rest:
         sys.exit("usage: iro export companion [--out PATH]")
-    dst = out or os.path.join(os.getcwd(), "iro-buttons.companionconfig")
+    dst = out or os.path.join(_runtime_dir(), "iro-buttons.companionconfig")
     if os.path.isdir(dst):
         dst = os.path.join(dst, "iro-buttons.companionconfig")
+    os.makedirs(os.path.dirname(os.path.abspath(dst)), exist_ok=True)
     shutil.copyfile(resource_path("companion/iro-buttons.companionconfig"), dst)
     print(f"Wrote {dst} — import it in Companion (Import / Export -> Import).")
 

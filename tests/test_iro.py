@@ -243,6 +243,21 @@ def t_export_companion_writes_file():
         assert os.path.getsize(dst) > 0
 
 
+def t_export_companion_default_into_runtime():
+    # No --out -> runtime/ (same home as the localized OBS collection), and the
+    # dir is created on demand — NOT the caller's cwd.
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        old = m._runtime_dir
+        m._runtime_dir = lambda: os.path.join(td, "runtime")
+        try:
+            m.export_companion([])
+            out = os.path.join(td, "runtime", "iro-buttons.companionconfig")
+            assert os.path.getsize(out) > 0
+        finally:
+            m._runtime_dir = old
+
+
 def t_install_apps_oneshot():
     assert m.route(["install-apps"]) == \
         {"kind": "oneshot", "command": "install-apps", "rest": []}

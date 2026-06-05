@@ -41,7 +41,7 @@ Full step-by-step: [Set up the broadcast PC (wiki)](https://github.com/jegr78/IR
 iro install-tools     # installs yt-dlp/streamlink/ffmpeg/deno (offers Homebrew setup on a fresh Mac)
 iro install-apps      # optional: installs OBS, Companion, Tailscale
 iro preflight         # verify the machine is ready
-iro export companion  # write the Companion button config for import
+iro export companion  # write the Companion button config -> runtime/iro-buttons.companionconfig
 ```
 
 ### One-time / pre-event setup
