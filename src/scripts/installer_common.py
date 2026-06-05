@@ -49,10 +49,10 @@ def run_remote_script(url, runner):
     print("Downloading:", url)
     with urllib.request.urlopen(url, timeout=30) as resp:
         body = resp.read()
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".sh")
-    try:
+    # delete=False: the file must outlive the handle so the runner can read it.
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".sh") as tmp:
         tmp.write(body)
-        tmp.close()
+    try:
         cmd = runner + [tmp.name]
         print("Running:", " ".join(cmd))
         return subprocess.call(cmd)
@@ -68,10 +68,10 @@ def install_remote_deb(url):
     print("Downloading:", url)
     with urllib.request.urlopen(url, timeout=60) as resp:
         body = resp.read()
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".deb")
-    try:
+    # delete=False: the file must outlive the handle so apt-get can read it.
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".deb") as tmp:
         tmp.write(body)
-        tmp.close()
+    try:
         os.chmod(tmp.name, 0o644)
         cmd = ["sudo", "apt-get", "install", "-y", tmp.name]
         print("Running:", " ".join(cmd))

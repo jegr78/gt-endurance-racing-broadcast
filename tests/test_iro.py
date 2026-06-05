@@ -333,7 +333,7 @@ def t_stint_args_rejects_garbage():
     for bad in (["--stint", "abc"], ["--stint=0"], ["--stint", "-3"]):
         try:
             m._stint_args(bad)
-            assert False, f"accepted {bad}"
+            raise AssertionError(f"accepted {bad}")
         except SystemExit:
             pass
 
