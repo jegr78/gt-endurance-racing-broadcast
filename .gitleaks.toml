@@ -1,0 +1,23 @@
+# Gitleaks config for the Secret scan workflow (.github/workflows/gitleaks.yml).
+# Keeps the full default ruleset and only allowlists known-fake, publicly
+# documented test vectors. Add new entries here ONLY for values that are
+# provably not secrets (spec examples, dummy-password derivations).
+
+[extend]
+useDefault = true
+
+# tests/test_obsws.py uses public protocol test vectors that trip the
+# generic-api-key rule (high-entropy base64):
+#   - "the sample nonce" key/accept pair from RFC 6455 section 1.3
+#   - obs-websocket v5 auth salt/challenge doc examples and the token
+#     derived from them with the dummy password "supersecret"
+[[allowlists]]
+description = "Public WebSocket/obs-websocket test vectors in tests/test_obsws.py"
+condition = "AND"
+paths = ['''tests/test_obsws\.py''']
+regexes = [
+  '''dGhlIHNhbXBsZSBub25jZQ==''',
+  '''lM1GncleQOaCu9lT1yeUZhFYnqhsLLP1G5lAGo3ixaI=''',
+  '''ztTBnnuqrqaKDzRM3xcVdbYm''',
+  '''1CHyRqIyanJT0eSP/mfMQR1AWZ9KgFl5l6/rPs76VDE=''',
+]
