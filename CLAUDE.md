@@ -187,7 +187,9 @@ target there — taskkill/tasklist, Companion.exe discovery + `IRO_COMPANION_EXE
 override in `.env`; Linux Companion control is manual by design — in WSL/Docker
 setups Companion runs on the host). Releases: push a `v*` tag —
 `.github/workflows/release.yml` tests, builds, smoke-tests and uploads
-`iro-windows.exe` / `iro-macos` / `iro-linux`. `ci.yml` runs the suite on all
+`iro-windows.zip` / `iro-macos.tar.gz` / `iro-linux.tar.gz` (each contains the
+`iro` binary + `.env.example`; on first run the frozen binary copies it to `.env` —
+see `ensure_env_file`). `ci.yml` runs the suite on all
 three OSes for every PR. Unsigned binaries: SmartScreen/Gatekeeper show a
 one-time "run anyway" warning.
 

@@ -23,14 +23,17 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            asset: iro-windows.exe
+            asset: iro-windows.zip
             built: dist/bin/iro.exe
+            binary: iro.exe
           - os: macos-latest
-            asset: iro-macos
+            asset: iro-macos.tar.gz
             built: dist/bin/iro
+            binary: iro
           - os: ubuntu-latest
-            asset: iro-linux
+            asset: iro-linux.tar.gz
             built: dist/bin/iro
+            binary: iro
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -43,9 +46,17 @@ jobs:
         run: python -m pip install pyinstaller
       - name: Build + smoke-test the binary
         run: python tools/build-binary.py --version "${{ github.ref_name }}"
+      - name: Package the release asset (binary + .env.example)
+        run: |
+          mkdir staging
+          cp "${{ matrix.built }}" "staging/${{ matrix.binary }}"
+          cp .env.example staging/
+          cd staging
+          case "${{ matrix.asset }}" in
+            *.zip)    python -m zipfile -c "../${{ matrix.asset }}" "${{ matrix.binary }}" .env.example ;;
+            *.tar.gz) tar czf "../${{ matrix.asset }}" "${{ matrix.binary }}" .env.example ;;
+          esac
       - name: Upload release asset
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          cp "${{ matrix.built }}" "${{ matrix.asset }}"
-          gh release upload "${{ github.ref_name }}" "${{ matrix.asset }}" --clobber
+        run: gh release upload "${{ github.ref_name }}" "${{ matrix.asset }}" --clobber
