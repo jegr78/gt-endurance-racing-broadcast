@@ -169,14 +169,22 @@ def main():
         return
 
     exe = sys.executable
-    with tempfile.TemporaryDirectory() as td:
+    # Tempdir NEXT TO the binary: same filesystem, so the final os.replace is an
+    # atomic rename (a system tempdir can be another fs -> EXDEV; copy-overwrite
+    # of a running ELF would be ETXTBSY).
+    with tempfile.TemporaryDirectory(dir=os.path.dirname(exe)) as td:
         archive = os.path.join(td, asset_name(sys.platform))
         print("Downloading:", url)
         download(url, archive)
         new = extract_binary(archive, td)
         if not new:
             sys.exit("update: archive did not contain the iro binary — aborted, nothing changed.")
-        perform(swap_plan(sys.platform, exe, new))
+        try:
+            perform(swap_plan(sys.platform, exe, new))
+        except OSError as exc:
+            hint = (" Restore by renaming iro-old.exe back to iro.exe."
+                    if sys.platform.startswith("win") and not os.path.exists(exe) else "")
+            sys.exit(f"update: swap failed ({exc}).{hint}")
     print(f"updated to {tag} — restart iro to use it.")
     if sys.platform.startswith("win"):
         print("(the old binary was kept as iro-old.exe and is removed on the next start)")
