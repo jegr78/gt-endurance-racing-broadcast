@@ -61,7 +61,7 @@ python3 src/iro.py graphics          # download broadcast graphics -> runtime/gr
 python3 src/iro.py media             # download Intro/Outro clips -> runtime/media/
 python3 src/iro.py setup --out runtime/IRO_Endurance.import.json   # localize OBS collection
 python3 src/iro.py install-tools     # install yt-dlp/streamlink/ffmpeg/deno (winget/brew/apt; bootstraps brew on macOS)
-python3 src/iro.py install-apps      # install OBS/Companion/Tailscale (winget/brew/apt+official installers)
+python3 src/iro.py install-apps      # install OBS/Companion/Tailscale/Discord (winget/brew/apt+official installers)
 python3 src/iro.py export companion  # write the Companion button config for import
 python3 src/iro.py --version
 
