@@ -12,9 +12,10 @@ m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 def t_app_ids():
     assert m.WINGET_APP_IDS == {"obs": "OBSProject.OBSStudio",
                                 "companion": "Bitfocus.Companion",
-                                "tailscale": "Tailscale.Tailscale"}
+                                "tailscale": "Tailscale.Tailscale",
+                                "discord": "Discord.Discord"}
     assert m.BREW_CASKS == {"obs": "obs", "companion": "companion",
-                            "tailscale": "tailscale-app"}
+                            "tailscale": "tailscale-app", "discord": "discord"}
 
 
 def t_install_commands_winget_one_per_app():
@@ -60,6 +61,23 @@ def t_app_present_linux_companion_service():
     assert m.app_present("companion", "linux", exists=lambda p: p == unit,
                          which=lambda n: None)
     assert not m.app_present("companion", "linux", exists=lambda p: False,
+                             which=lambda n: None)
+
+
+def t_app_present_discord_paths():
+    # Windows: Squirrel per-user install — Update.exe is the version-stable path
+    env = {"ProgramFiles": r"C:\Program Files",
+           "LOCALAPPDATA": r"C:\Users\x\AppData\Local"}
+    hit = r"C:\Users\x\AppData\Local\Discord\Update.exe"
+    assert m.app_present("discord", "win32", env=env, exists=lambda p: p == hit,
+                         which=lambda n: None)
+    assert m.app_present("discord", "darwin",
+                         exists=lambda p: p == "/Applications/Discord.app",
+                         which=lambda n: None)
+    assert m.app_present("discord", "linux",
+                         exists=lambda p: p == "/usr/bin/discord",
+                         which=lambda n: None)
+    assert not m.app_present("discord", "linux", exists=lambda p: False,
                              which=lambda n: None)
 
 

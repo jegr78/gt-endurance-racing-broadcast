@@ -23,14 +23,16 @@ def _common():
         spec.loader.exec_module(_COMMON)
     return _COMMON
 
-APPS = ("obs", "companion", "tailscale")
+APPS = ("obs", "companion", "tailscale", "discord")
 
 WINGET_APP_IDS = {"obs": "OBSProject.OBSStudio",
                   "companion": "Bitfocus.Companion",
-                  "tailscale": "Tailscale.Tailscale"}
+                  "tailscale": "Tailscale.Tailscale",
+                  "discord": "Discord.Discord"}
 # The tailscale-app CASK is the GUI app; the plain `tailscale` formula is the
 # bare daemon — producers need the app.
-BREW_CASKS = {"obs": "obs", "companion": "companion", "tailscale": "tailscale-app"}
+BREW_CASKS = {"obs": "obs", "companion": "companion",
+              "tailscale": "tailscale-app", "discord": "discord"}
 
 # Default install locations per app — heuristics like companion_common's
 # WINDOWS_COMPANION_CANDIDATES (keep the Companion entries in sync with it).
@@ -40,17 +42,22 @@ _WINDOWS_APP_PATHS = {
                   r"C:\Program Files\Companion\Companion.exe",
                   r"C:\Program Files (x86)\Companion\Companion.exe"),
     "tailscale": (r"C:\Program Files\Tailscale\tailscale.exe",),
+    # Discord is a Squirrel per-user install — the versioned app-x.y.z\Discord.exe
+    # folder moves on every update; Update.exe is the version-stable path.
+    "discord": (r"%LOCALAPPDATA%\Discord\Update.exe",),
 }
 _DARWIN_APP_PATHS = {
     "obs": ("/Applications/OBS.app",),
     "companion": ("/Applications/Companion.app",),
     "tailscale": ("/Applications/Tailscale.app",),
+    "discord": ("/Applications/Discord.app",),
 }
 # companion-pi installs a systemd service, not a `companion` binary on PATH —
 # without these candidates the post-install re-check would call a successful
 # install "still missing".
 _LINUX_APP_PATHS = {
     "companion": ("/opt/companion", "/etc/systemd/system/companion.service"),
+    "discord": ("/usr/share/discord", "/usr/bin/discord"),
 }
 
 # Official Linux install paths (verified against vendor docs). The two installer
