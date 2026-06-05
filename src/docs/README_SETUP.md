@@ -5,7 +5,7 @@ Companion button board, director panel and the Streamlink feed scripts.
 Follow the steps **in this order**.
 
 > Background on every tool is in **`IRO_Broadcast_Setup_Guide.md`**
-> (Parts A–F + runbook). This README is the short checklist for the package.
+> (Parts A–G + runbook). This README is the short checklist for the package.
 
 ---
 
@@ -314,3 +314,5 @@ Companion is preferred for directors.
 3. Start the relay: `iro relay start`.
 4. Companion buttons `Feeds Next` (`/next`) & `Feeds Reload` (`/reload`) drive
    handovers.
+
+> **Public channels only?** The simpler static mode (`iro streams start`) skips the stint schedule and cookies — it is described in the Setup Guide (§9.5).

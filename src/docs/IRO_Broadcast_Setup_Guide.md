@@ -9,7 +9,7 @@ A complete production setup. Game streams are pulled straight into OBS with a me
 **Quality: 1080p target, never below 720p.**
 - *Streamer side:* ingest at **1080p** so YouTube generates both a 1080p and a 720p rendition.
 - *Pull side:* Streamlink quality selector `1080p60,1080p,720p60,720p` prefers 1080p and will not drop below 720p.
-- *Note:* Streamlink's YouTube plugin occasionally exposes only a subset of qualities. If a channel won't give 1080p via Streamlink, use the per-source yt-dlp fallback (Section 7.4). Keep Streamlink + yt-dlp updated before each event.
+- *Note:* Streamlink's YouTube plugin occasionally exposes only a subset of qualities. If a channel won't give 1080p via Streamlink, see the "Feed stuck at 720p" row in the Troubleshooting section (§12). Keep Streamlink + yt-dlp updated before each event.
 
 ---
 
@@ -110,13 +110,29 @@ This puts the Producer and all Directors on one private network so the Directors
 6. Install Tailscale, sign in with the invited account, leave it running. Done — they are now on the same private network as the Producer.
 
 **Test it:**
-7. On a Director PC, open a browser and go to `http://100.x.y.z:8000` (the Producer IP from step 3). You will see the Companion admin page once Companion is running (Part C). If it loads, Tailscale works.
+7. On a Director PC, open a browser and go to `http://100.x.y.z:8000` (the Producer IP from step 3). You will see the Companion admin page once Companion is running (Part D). If it loads, Tailscale works.
 
 > If it does not load later: make sure Tailscale shows "Connected" on both PCs, and that Companion is running on the Producer.
 
 ---
 
-## 5. PART C — Bitfocus Companion (idiot-proof)
+## 5. PART C — OBS WebSocket
+
+This lets Companion send commands to OBS.
+
+1. Open OBS on the Producer PC.
+2. Top menu → **Tools → WebSocket Server Settings**.
+3. Tick **Enable WebSocket server**.
+4. Leave **Server Port** at `4455`.
+5. Tick **Enable Authentication** and type a password you'll remember (e.g. `iro-broadcast`).
+6. Click **Show Connect Info** and keep that window handy — you need the Port and Password in Part D.
+7. Click **Apply**, then **OK**.
+
+That's the entire WebSocket setup.
+
+---
+
+## 6. PART D — Bitfocus Companion (idiot-proof)
 
 Companion runs on the Producer PC and turns into a web page of buttons the Directors open in a browser.
 
@@ -128,7 +144,7 @@ Companion runs on the Producer PC and turns into a web page of buttons the Direc
 **Connect Companion to OBS:**
 4. In the admin, go to the **Connections** tab → **Add connection**.
 5. Search for **OBS Studio**, select it.
-6. Fill in: **Target IP** = `127.0.0.1`, **Port** = `4455`, **Password** = the one from Part D step 5.
+6. Fill in: **Target IP** = `127.0.0.1`, **Port** = `4455`, **Password** = the one from Part C step 5.
 7. Save. The connection should turn green/"OK". If not, re-check the password and that OBS is open with the WebSocket server enabled.
 
 **Import the button config:**
@@ -143,7 +159,7 @@ station — back up first if it has other content.
 
 > The OBS connection (`127.0.0.1:4455`) comes with the import — without the
 > password (removed for security). Open `Connections` → OBS entry → enter your
-> WebSocket password (Part D) → the connection turns green.
+> WebSocket password (Part C) → the connection turns green.
 
 **Give the Directors access (web buttons over Tailscale):**
 
@@ -154,22 +170,6 @@ iro companion start    # binds Companion to this machine's Tailscale IP
 Directors open `http://<PRODUCER-TAILSCALE-IP>:8000/tablet` in their browser.
 Multiple Directors can open it at once. They need nothing else — no OBS, no
 Companion, no password.
-
----
-
-## 6. PART D — OBS WebSocket
-
-This lets Companion send commands to OBS.
-
-1. Open OBS on the Producer PC.
-2. Top menu → **Tools → WebSocket Server Settings**.
-3. Tick **Enable WebSocket server**.
-4. Leave **Server Port** at `4455`.
-5. Tick **Enable Authentication** and type a password you'll remember (e.g. `iro-broadcast`).
-6. Click **Show Connect Info** and keep that window handy — you need the Port and Password in Part C.
-7. Click **Apply**, then **OK**.
-
-That's the entire WebSocket setup.
 
 ---
 
@@ -400,7 +400,7 @@ join the same voice channel; the Director confirms the producer is joined, switc
 | Feeds fail with "Sign in to confirm you're not a bot" | Re-run `iro cookies chrome`; confirm `deno` is installed (`deno --version`). |
 | Buffering / stalls | Raise OBS Network Buffering to 16 MB; confirm the streamer is on **Low** latency (not Ultra-low); check total upload stays under ~70–80 % of real capacity. |
 | A feed won't appear | Confirm the streamer is actually live; check `iro relay logs -f` for errors; update streamlink/yt-dlp (`iro install-tools`). |
-| Feed stuck at 720p | Streamlink's YouTube plugin capped it — confirm the streamer is ingesting 1080p. |
+| Feed stuck at 720p | Streamlink's YouTube plugin capped it — confirm the streamer is ingesting 1080p. If a source channel genuinely streams below 1080p, resolve its direct URL with `yt-dlp -g <channel-url>` and use that URL in a dedicated OBS media source for that stint. |
 | Quality dropped below 720p | Streamer's upload can't sustain it — they should lower fps (720p30) but hold 720p. |
 | Director can't reach Companion | Tailscale "Connected" on both PCs? `iro companion start` run? Using the Tailscale IP (100.x.y.z), not a local IP? |
 | Companion shows OBS disconnected | OBS open with WebSocket enabled? Port 4455 + correct password in the OBS connection? |
