@@ -140,13 +140,14 @@ the show. More: [Director guide](Director).
 ## 9 — Get YouTube cookies
 
 ```bash
-iro cookies chrome   # or firefox / safari / edge — any logged-in browser
+iro cookies firefox  # recommended on every OS (macOS alternatives: safari, chrome, edge)
 ```
 
-This lets the feeds bypass YouTube's bot check. OS notes: on **macOS**, Chrome/Edge show a
-Keychain prompt and Safari needs Full Disk Access; on **Windows** and **Linux** the browser
-export usually runs without a prompt (Firefox needs none anywhere). Refresh before each
-event — cookies expire.
+This lets the feeds bypass YouTube's bot check. **Firefox is the recommended source on
+every OS** — no prompts anywhere, and it works even while Firefox is running. OS notes: on
+**Windows**, Chrome/Edge/Brave **cannot** be exported (their cookies are app-bound
+encrypted since Chrome 127); on **macOS**, Chrome/Edge show a Keychain prompt and Safari
+needs Full Disk Access. Refresh before each event — cookies expire.
 
 ## 10 — Discord audio (only the producer who runs interviews)
 

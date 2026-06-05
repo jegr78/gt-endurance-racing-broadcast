@@ -170,12 +170,14 @@ iro relay run         # foreground / debug mode
 ### 4c. Get YouTube cookies (important — refresh before each event)
 
 ```bash
-iro cookies chrome    # or firefox / safari / edge — any logged-in browser
+iro cookies firefox   # recommended on every OS (macOS alternatives: safari, chrome, edge)
 ```
 
-This lets the feeds bypass YouTube's bot check. macOS Chrome/Edge show a Keychain
-prompt; Safari needs Full Disk Access. Windows and Linux usually run without a
-prompt. Cookies rotate — refresh before each event.
+This lets the feeds bypass YouTube's bot check. **Firefox is the recommended
+source on every OS** — no prompts, and it works even while Firefox is running.
+On **Windows**, Chrome/Edge/Brave cannot be exported (their cookies are
+app-bound encrypted since Chrome 127). macOS Chrome/Edge show a Keychain
+prompt; Safari needs Full Disk Access. Cookies rotate — refresh before each event.
 
 ### 4d. Companion control
 
@@ -310,7 +312,7 @@ Companion is preferred for directors.
 ## Relay-mode quickstart (short version)
 
 1. Fill the sheet tab `Schedule` with watch URLs (unlisted) per stint.
-2. Get YouTube cookies: `iro cookies chrome` (your logged-in browser).
+2. Get YouTube cookies: `iro cookies firefox` (log into YouTube in Firefox first).
 3. Start the relay: `iro relay start`.
 4. Companion buttons `Feeds Next` (`/next`) & `Feeds Reload` (`/reload`) drive
    handovers.

@@ -33,18 +33,20 @@ Against YouTube's *"Sign in to confirm you're not a bot"*. Easiest — auto-expo
 your **logged-in** browser:
 
 ```bash
-iro cookies chrome
-# browsers: chrome | firefox | safari | edge | brave
+iro cookies firefox
+# browsers: firefox | chrome | safari | edge | brave   (Firefox recommended)
 ```
 
 - You must be **logged into YouTube** in that browser.
+- **Firefox is the recommended source on every OS** — no prompts, and it works even
+  while Firefox is running.
+- **Windows**: Chrome/Edge/Brave **cannot** be exported — their cookies are app-bound
+  encrypted (Chrome 127+); use Firefox.
 - macOS **Chrome/Edge**: approve the Keychain prompt. **Safari**: grant your terminal
   **Full Disk Access**. (Firefox needs neither.)
-- Windows / Linux: the browser export usually runs without a prompt (Firefox needs none
-  on any OS).
 - Writes `runtime/cookies.txt` (chmod 600), auto-detected and passed to Streamlink.
   `/status` then shows `"cookies": true`. **Re-run before each event** — cookies rotate.
-- Alternative: let the relay export on start with `--cookies-from-browser chrome`, or
+- Alternative: let the relay export on start with `--cookies-from-browser firefox`, or
   drop any Netscape `cookies.txt` next to the relay.
 
 ## 3. Start the relay
@@ -127,7 +129,7 @@ stream URLs. `--no-panel` disables the served director panel.
 
 ```bash
 # 1. Fill the sheet tab 'Schedule' with watch URLs (unlisted), in stint order.
-iro cookies chrome   # 2. refresh YouTube cookies
+iro cookies firefox  # 2. refresh YouTube cookies
 iro relay start      # 3. start the relay (background)
 # 4. Companion buttons:  Feeds Next -> /next   ·   Feeds Reload -> /reload
 ```

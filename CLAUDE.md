@@ -56,7 +56,7 @@ python3 src/iro.py streams start     # static/public-stream mode
 python3 src/iro.py streams stop
 python3 src/iro.py status            # aggregate health of all services
 python3 src/iro.py preflight         # hardware/tool check
-python3 src/iro.py cookies chrome    # refresh YouTube cookies before an event
+python3 src/iro.py cookies firefox   # refresh YouTube cookies before an event (Firefox recommended; Windows Chrome/Edge exports are blocked by app-bound encryption)
 python3 src/iro.py graphics          # download broadcast graphics -> runtime/graphics/
 python3 src/iro.py media             # download Intro/Outro clips -> runtime/media/
 python3 src/iro.py setup --out runtime/IRO_Endurance.import.json   # localize OBS collection

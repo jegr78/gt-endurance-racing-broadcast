@@ -313,12 +313,15 @@ iro relay run         # foreground / debug mode
 ### 9.3 YouTube cookies (refresh before each event)
 
 ```bash
-iro cookies chrome    # or firefox / safari / edge — any logged-in browser
+iro cookies firefox   # recommended on every OS (macOS alternatives: safari, chrome, edge)
 ```
 
-You must be **logged into YouTube** in that browser. macOS Chrome/Edge: approve the
-Keychain prompt; Safari: grant your terminal **Full Disk Access**. Firefox needs
-neither. Cookies rotate — re-run before each event. `/status` shows `"cookies": true`.
+You must be **logged into YouTube** in that browser. **Firefox is the recommended
+source on every OS** — no prompts, works even while Firefox is running. On
+**Windows**, Chrome/Edge/Brave cannot be exported (app-bound encryption since
+Chrome 127). macOS Chrome/Edge: approve the Keychain prompt; Safari: grant your
+terminal **Full Disk Access**. Cookies rotate — re-run before each event.
+`/status` shows `"cookies": true`.
 
 ### 9.4 Companion control
 
@@ -361,7 +364,7 @@ iro streams stop
 2. Update GPU driver (hardware-encoding the broadcast and decoding the feeds leans on the GPU).
 3. Tailscale running; a Director confirms they can open
    `http://<producer-tailscale-ip>:8000/tablet`.
-4. Get cookies: `iro cookies chrome`.
+4. Get cookies: `iro cookies firefox`.
 5. Download graphics + media: `iro graphics` and `iro media`.
 6. Run `iro setup --out runtime/IRO_Endurance.import.json` and (re-)import into OBS
    if the collection has not been imported yet on this machine.
@@ -397,7 +400,7 @@ join the same voice channel; the Director confirms the producer is joined, switc
 
 | Symptom | Fix |
 |---------|-----|
-| Feeds fail with "Sign in to confirm you're not a bot" | Re-run `iro cookies chrome`; confirm `deno` is installed (`deno --version`). |
+| Feeds fail with "Sign in to confirm you're not a bot" | Re-run `iro cookies firefox`; confirm `deno` is installed (`deno --version`). |
 | Buffering / stalls | Raise OBS Network Buffering to 16 MB; confirm the streamer is on **Low** latency (not Ultra-low); check total upload stays under ~70–80 % of real capacity. |
 | A feed won't appear | Confirm the streamer is actually live; check `iro relay logs -f` for errors; update streamlink/yt-dlp (`iro install-tools`). |
 | Feed stuck at 720p | Streamlink's YouTube plugin capped it — confirm the streamer is ingesting 1080p. If a source channel genuinely streams below 1080p, resolve its direct URL with `yt-dlp -g <channel-url>` and use that URL in a dedicated OBS media source for that stint. |
