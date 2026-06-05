@@ -23,20 +23,29 @@ shipped, and preflight + `.env.example` are included.
 
 ## Releases (standalone binaries)
 
-Operators download `iro` from GitHub Releases and never need Python. Cutting a
-release: make sure CI is green on `main`, then push a semver tag:
+Operators download `iro` from GitHub Releases and never need Python.
+
+**Primary flow — merge the Release PR:** a release-please bot maintains a
+standing PR that collects every `feat:`/`fix:` commit since the last release,
+with the computed next version and changelog. When an event approaches and
+`main` is in a good state, **merge that PR** — this creates the `vX.Y.Z` tag,
+the GitHub release with notes, and kicks off the binary build that uploads
+`iro-windows.zip` / `iro-macos.tar.gz` / `iro-linux.tar.gz` (each contains the
+`iro` binary plus `.env.example`; on first run the binary copies it to `.env`).
+No Release PR open = nothing release-worthy happened (`docs:`/`ci:` commits
+don't count). The binaries are unsigned — operators see a one-time
+SmartScreen/Gatekeeper warning (documented on the setup page).
+
+**Escape hatch — manual tag:** pushing a semver tag still works exactly as
+before and skips the bot:
 
 ```bash
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-`.github/workflows/release.yml` then tests on all three OSes, builds the
-binaries with PyInstaller, stamps the tag into `iro --version`, creates the
-GitHub release with generated notes, and uploads `iro-windows.zip` /
-`iro-macos.tar.gz` / `iro-linux.tar.gz`. Each archive contains the `iro`
-binary plus `.env.example`; on first run the binary copies it to `.env` next
-to itself. The binaries are unsigned — operators see a one-time
-SmartScreen/Gatekeeper warning (documented on the setup page).
+`CHANGELOG.md` and `version.txt` in the repo root are maintained by the bot;
+the authoritative version is always the git tag (stamped into `iro --version`
+at build time).
 
 ## Round-trips that keep secrets/paths out of git
 
