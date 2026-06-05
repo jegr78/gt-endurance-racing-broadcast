@@ -33,7 +33,7 @@ Against YouTube's *"Sign in to confirm you're not a bot"*. Easiest — auto-expo
 your **logged-in** browser:
 
 ```bash
-python3 src/iro.py cookies chrome
+iro cookies chrome
 # browsers: chrome | firefox | safari | edge | brave
 ```
 
@@ -50,14 +50,14 @@ python3 src/iro.py cookies chrome
 ## 3. Start the relay
 
 ```bash
-python3 src/iro.py relay start        # background (repo)
-python3 iro.py     relay start        # background (shipped package)
-python3 src/iro.py relay run          # foreground/debug mode
+iro relay start        # background
+iro relay run          # foreground/debug mode
 ```
 
-Stop with `python3 src/iro.py relay stop` (or Ctrl+C in foreground mode). For remote
+Stop with `iro relay stop` (or Ctrl+C in foreground mode). For remote
 directors, bind the control server to the producer's **Tailscale IP** (not `0.0.0.0`) —
 see [Director](Director) and the security note below.
+(Developers running from the repo: python3 src/iro.py works the same everywhere.)
 
 ## 4. Control it (Companion → relay)
 
@@ -127,8 +127,8 @@ stream URLs. `--no-panel` disables the served director panel.
 
 ```bash
 # 1. Fill the sheet tab 'Schedule' with watch URLs (unlisted), in stint order.
-python3 src/iro.py cookies chrome   # 2. refresh YouTube cookies
-python3 src/iro.py relay start      # 3. start the relay (background)
+iro cookies chrome   # 2. refresh YouTube cookies
+iro relay start      # 3. start the relay (background)
 # 4. Companion buttons:  Feeds Next -> /next   ·   Feeds Reload -> /reload
 ```
 

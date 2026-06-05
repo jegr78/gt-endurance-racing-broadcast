@@ -19,6 +19,10 @@ flowchart LR
   Dir(["Director<br/>remote, chooses what is shown"]) -.-> PC
 ```
 
+- **Get the tool:** download the `iro` binary for your OS from the
+  [latest release](https://github.com/jegr78/IRO_Broadcast_Setup/releases/latest)
+  — then follow [Set up the broadcast PC](Set-up-the-broadcast-PC).
+
 ## Pick your path
 
 - **Setting up a machine for the first time?** → [Set up the broadcast PC](Set-up-the-broadcast-PC)

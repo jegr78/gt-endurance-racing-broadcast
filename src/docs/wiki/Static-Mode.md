@@ -40,8 +40,8 @@ Advanced.
 ## Start / stop
 
 ```bash
-python3 src/scripts/start-streams.py     # launches one streamlink server per feed
-python3 src/scripts/stop-streams.py      # stops them (validates each PID is really a feed)
+iro streams start     # launches one streamlink server per feed
+iro streams stop      # stops them (validates each PID is really a feed)
 ```
 
 PID and log files live under `runtime/static/`. `stop-streams.py` verifies a PID actually

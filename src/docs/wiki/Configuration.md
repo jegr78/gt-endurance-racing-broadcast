@@ -44,8 +44,7 @@ tokens instead of real paths and URLs. `setup-assets.py` injects the real values
 `.env` and writes an importable collection:
 
 ```bash
-python3 src/iro.py setup --out runtime/IRO_Endurance.import.json
-# in the distributed package:  python3 setup-assets.py
+iro setup --out runtime/IRO_Endurance.import.json
 ```
 
 The tokens in the collection:
@@ -62,7 +61,7 @@ there is no `__IRO_SHEET__` token in it.)
 So `setup-assets.py`:
 - rewrites the broadcast-graphic image paths (`__IRO_GRAPHICS__`) to **this** machine's
   `runtime/graphics/` folder. Those PNGs are **not** committed — download them first with
-  `python3 src/iro.py graphics` (see [Sheet-driven graphics](#sheet-driven-graphics)
+  `iro graphics` (see [Sheet-driven graphics](#sheet-driven-graphics)
   below); a graphic still missing prints a warning and OBS shows that source black, and
 - injects `IRO_TIMER_URL` into the timer browser source. (The HUD overlay needs no
   injection — it is served by the relay; `IRO_SHEET_ID` is read by the relay, not the
@@ -87,8 +86,7 @@ Assets row that points at a graphic is downloaded as `runtime/graphics/<Label>.p
 Sheet label *is* the filename (no mapping table; the Intro/Outro YouTube rows are skipped):
 
 ```bash
-python3 src/iro.py graphics            # -> runtime/graphics/<Label>.png
-# in the distributed package the graphics ship under  graphics/  and can be refreshed on site
+iro graphics            # -> runtime/graphics/<Label>.png
 ```
 
 Run it before `setup-assets.py` (and again before an event when the sheet graphics

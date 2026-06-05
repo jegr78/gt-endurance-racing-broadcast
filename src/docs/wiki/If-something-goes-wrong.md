@@ -1,13 +1,13 @@
 # If something goes wrong
 
-Problem → fix. When in doubt, run `python3 src/iro.py preflight` first — it catches
+Problem → fix. When in doubt, run `iro preflight` first — it catches
 most setup problems (tools, ports, cookies) before they bite you live.
 
 ## A feed won't show
 
 | Problem | Fix |
 |---------|-----|
-| Feed says *"Sign in to confirm you're not a bot"* | Refresh cookies (`python3 src/iro.py cookies chrome`) and make sure **deno** is installed — the feeds need both. |
+| Feed says *"Sign in to confirm you're not a bot"* | Refresh cookies (`iro cookies chrome`) and make sure **deno** is installed — the feeds need both. |
 | A feed just won't appear | Is the commentator actually live right now? Update the tools (macOS/Linux `brew upgrade streamlink yt-dlp` · Windows `pip install -U streamlink yt-dlp`) and try again. |
 | Nothing happens when you open a feed's address in a browser | That's normal — each feed serves only OBS, not browsers. Not a fault. |
 | The handover didn't switch feeds | Press **Feeds Next** once **after** cutting to the new feed; the off-air feed only advances on Feeds Next, never mid-stint. |
@@ -16,7 +16,7 @@ most setup problems (tools, ports, cookies) before they bite you live.
 
 | Problem | Fix |
 |---------|-----|
-| HUD is blank in OBS | The relay draws the HUD — make sure it's running (`python3 src/iro.py relay start`). |
+| HUD is blank in OBS | The relay draws the HUD — make sure it's running (`iro relay start`). |
 | HUD text isn't updating | It updates within a few seconds. Check you're editing the **Overlay** tab of the sheet and that the sheet is still shared. |
 | A flag or team logo is missing | The image file's name must match the text in the sheet (lowercase, spaces become `-`). Run `python3 tools/fetch-flags.py` to fetch any missing flags. Full detail: [OBS & scenes](OBS-Setup). |
 

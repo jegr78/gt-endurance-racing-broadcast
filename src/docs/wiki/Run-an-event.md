@@ -20,17 +20,17 @@ flowchart LR
 2. **Update the tools:** macOS/Linux `brew upgrade streamlink yt-dlp` · Windows
    `pip install -U streamlink yt-dlp`. Outdated tools are the #1 cause of a feed not
    starting.
-3. **Refresh cookies:** `python3 src/iro.py cookies chrome` (any logged-in browser).
+3. **Refresh cookies:** `iro cookies chrome` (any logged-in browser).
 4. **Refresh the intro/outro clips** (only if their URLs changed):
-   `python3 src/iro.py media` — pulls the URLs from the Sheet **Assets** tab and
+   `iro media` — pulls the URLs from the Sheet **Assets** tab and
    downloads `runtime/media/intro.mp4` / `outro.mp4`.
-5. **Refresh the graphics:** `python3 src/iro.py graphics` — pulls every graphic from
+5. **Refresh the graphics:** `iro graphics` — pulls every graphic from
    the Sheet **Assets** tab into `runtime/graphics/` (Standings, Schedule, Race/Quali
    Results, the three weather overlays, Standby, …). Run it whenever the sheet graphics
    changed. The **weather** graphics are then available as full-screen toggles during the
    race (see [Director guide](Director)).
-6. **Pre-flight check:** `python3 src/iro.py preflight` — fix anything it flags.
-7. **Start the feeds:** `python3 src/iro.py relay start`. Confirm each live feed shows up in
+6. **Pre-flight check:** `iro preflight` — fix anything it flags.
+7. **Start the feeds:** `iro relay start`. Confirm each live feed shows up in
    OBS.
 8. Make sure **Companion** is connected (green) and a director can reach
    `http://<producer-tailscale-ip>:8000/tablet`.
