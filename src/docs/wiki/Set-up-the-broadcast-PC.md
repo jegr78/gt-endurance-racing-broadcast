@@ -3,36 +3,69 @@
 Do this **once** per machine — about 30 minutes. When you're done, go to
 [Run an event](Run-an-event).
 
-> Tip: `python3 src/iro.py preflight` checks your machine and tells you what's still
-> missing. Run it whenever you're unsure.
+> Tip: `iro preflight` checks your machine and tells you what's still missing.
+> Run it whenever you're unsure.
 
 ## What you need
 
 - A reasonably modern PC — **macOS, Windows, or Linux**. 16 GB RAM works but is tight, so
   reboot before events; 32 GB is comfortable. A wired internet connection.
-- The **IRO package** (this repo, or the distributed package).
 - A **YouTube login** (for cookies), the **shared Google Sheet** link, and the
   **stagetimer** link from the team.
 
-You install everything below in steps 1–3.
+## 1 — Get the `iro` tool
 
-## 1 — Install Python
+Download the archive for your OS from the
+[latest release](https://github.com/jegr78/IRO_Broadcast_Setup/releases/latest):
 
-The toolkit's scripts run on Python 3.
+| OS | File |
+|---|---|
+| Windows | `iro-windows.zip` |
+| macOS | `iro-macos.tar.gz` |
+| Linux | `iro-linux.tar.gz` |
 
-- **macOS:** usually preinstalled. If not, install from [python.org/downloads](https://www.python.org/downloads/)
-  or `brew install python`.
-- **Windows:** download from [python.org/downloads](https://www.python.org/downloads/) and
-  **tick "Add python.exe to PATH"** in the installer.
-- **Linux:** usually preinstalled. If not: `sudo apt install python3 python3-pip`
-  (Debian/Ubuntu) or `sudo dnf install python3 python3-pip` (Fedora).
+Extract it into a folder of its own (e.g. `Documents/IRO/`) — the tool keeps its
+working files (`.env`, `runtime/`) next to the binary. Open a terminal **in that
+folder** and check it runs:
 
-Check it works: `python3 --version` (on Windows, also try `py --version`).
+```bash
+./iro --version          # Windows: iro --version   (PowerShell: .\iro)
+```
+
+The first run also creates a `.env` file next to the binary (you fill it in at
+step 4).
+
+> **One-time OS warning** (the binary is unsigned): **Windows** SmartScreen →
+> "More info" → "Run anyway". **macOS**: if blocked, System Settings →
+> Privacy & Security → "Open Anyway" (or right-click → Open).
+
+All commands in this wiki are written as `iro …` — type them in a terminal in
+this folder (macOS/Linux: `./iro …` unless you add the folder to your PATH).
+
+<details>
+<summary>Alternative: run from source (needs Python 3)</summary>
+
+Clone or download this repository and install Python 3 (macOS: usually
+preinstalled, else `brew install python`; Windows: [python.org](https://www.python.org/downloads/)
+installer with **"Add python.exe to PATH"** ticked; Linux: `sudo apt install python3`).
+Then use `python3 src/iro.py …` wherever the docs say `iro …`, and copy
+`.env.example` to `.env` in the repo root yourself.
+</details>
 
 ## 2 — Install the apps
 
-All four are free and run on **macOS, Windows, and Linux**. Install each like any normal
-app:
+```bash
+iro install-apps
+```
+
+Installs whichever of these are missing — **OBS Studio** (the broadcast itself),
+**Bitfocus Companion** (the director's button board), **Tailscale** (private
+network so remote directors can connect), **Discord** (interview audio) — via
+winget on Windows, Homebrew on macOS, apt + the official vendor installers on
+Linux (it lists the steps and asks before running them).
+
+<details>
+<summary>Alternative: install them manually</summary>
 
 | App | What it's for | Download |
 |---|---|---|
@@ -40,10 +73,22 @@ app:
 | **Bitfocus Companion** | The director's button board | [bitfocus.io/companion](https://bitfocus.io/companion) |
 | **Tailscale** | Private network so remote directors can connect | [tailscale.com/download](https://tailscale.com/download) |
 | **Discord** | Interview audio | [discord.com/download](https://discord.com/download) |
+</details>
 
 ## 3 — Install the command-line tools
 
-These pull each commentator's stream into OBS and pass YouTube's bot check.
+```bash
+iro install-tools
+```
+
+Installs `streamlink`, `yt-dlp`, `ffmpeg` and `deno` — they pull each
+commentator's stream into OBS and pass YouTube's bot check.
+
+> `deno` is required — without it feeds fail with *"Sign in to confirm you're not a bot."*
+> Details: [Relay — how the feeds work](Relay-Mode).
+
+<details>
+<summary>Alternative: install them manually</summary>
 
 - **macOS:** `brew install streamlink yt-dlp ffmpeg deno` (Homebrew first if needed: [brew.sh](https://brew.sh))
 - **Windows:** `pip install -U streamlink yt-dlp` then `winget install Gyan.FFmpeg DenoLand.Deno`
@@ -51,13 +96,12 @@ These pull each commentator's stream into OBS and pass YouTube's bot check.
   (`apt`/`dnf`) plus `pip install -U streamlink yt-dlp`
 
 Check them: `streamlink --version`, `yt-dlp --version`, `ffmpeg -version`, `deno --version`.
-
-> `deno` is required — without it feeds fail with *"Sign in to confirm you're not a bot."*
-> Details: [Relay — how the feeds work](Relay-Mode).
+</details>
 
 ## 4 — Add your secrets (`.env`)
 
-Copy `.env.example` to `.env` in the project root and fill in two values from the team:
+The first `iro` run created a `.env` file next to the binary. Open it in any
+text editor and fill in two values from the team:
 
 - `IRO_SHEET_ID` — the ID in the shared Google Sheet link.
 - `IRO_TIMER_URL` — the stagetimer output link.
@@ -67,7 +111,7 @@ Keep `.env` private; never share it. Full detail: [Configuration & secrets](Conf
 ## 5 — Import the OBS scenes
 
 ```bash
-python3 src/iro.py setup --out runtime/IRO_Endurance.import.json
+iro setup --out runtime/IRO_Endurance.import.json
 ```
 
 Then in OBS: **Scene Collection → Import →** pick that file, and switch to it. Don't move
@@ -76,7 +120,8 @@ the folder afterwards. Step-by-step: [OBS & scenes](OBS-Setup).
 ## 6 — Import the Companion buttons
 
 Open Companion (launcher → **GUI Interface = All Interfaces**, port `8000` → **Launch
-GUI**), then import the provided button config. Details: [Companion](Companion).
+GUI**), then import the provided button config (`iro export companion` writes the
+file). Details: [Companion](Companion).
 
 ## 7 — Let Companion control OBS
 
@@ -95,7 +140,7 @@ the show. More: [Director guide](Director).
 ## 9 — Get YouTube cookies
 
 ```bash
-python3 src/iro.py cookies chrome   # or firefox / safari / edge — any logged-in browser
+iro cookies chrome   # or firefox / safari / edge — any logged-in browser
 ```
 
 This lets the feeds bypass YouTube's bot check. OS notes: on **macOS**, Chrome/Edge show a
@@ -118,7 +163,7 @@ Don't also capture Discord via desktop audio, or you'll hear it twice.
 ## 11 — Pre-flight check
 
 ```bash
-python3 src/iro.py preflight
+iro preflight
 ```
 
 Fix anything it flags. Then you're ready → [Run an event](Run-an-event).
