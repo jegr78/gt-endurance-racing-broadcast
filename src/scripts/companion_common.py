@@ -49,7 +49,7 @@ def detect_tailscale_ip():
     for binary in _TAILSCALE_BINS:
         try:
             out = subprocess.run([binary, "ip", "-4"], capture_output=True,
-                                 text=True, timeout=3)
+                                 text=True, errors="replace", timeout=3)
         except (OSError, subprocess.SubprocessError):
             continue
         ip = parse_tailscale_ip(out.stdout)

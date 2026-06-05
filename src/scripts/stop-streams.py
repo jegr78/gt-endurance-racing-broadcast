@@ -27,14 +27,19 @@ def pid_is_feed(pid):
     unrelated process. POSIX: match the command line against our launchers."""
     if os.name == "nt":
         try:
+            # errors="replace": tasklist writes OEM-codepage console output
+            # (localized umlauts) that the ANSI codepage cannot decode; the
+            # matched feed tokens are pure ASCII.
             out = subprocess.check_output(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV"],
-                                          stderr=subprocess.DEVNULL, text=True)
+                                          stderr=subprocess.DEVNULL, text=True,
+                                          errors="replace")
         except (subprocess.SubprocessError, OSError):
             return False
         return looks_like_feed(out, windows=True)
     try:
         cmd = subprocess.check_output(["ps", "-p", str(pid), "-o", "command="],
-                                      stderr=subprocess.DEVNULL, text=True)
+                                      stderr=subprocess.DEVNULL, text=True,
+                                      errors="replace")
     except (subprocess.SubprocessError, OSError):
         return False
     return looks_like_feed(cmd)

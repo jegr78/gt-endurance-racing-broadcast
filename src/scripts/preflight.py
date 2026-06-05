@@ -170,7 +170,7 @@ def tool_version(name):
         return None
     try:
         out = subprocess.run([name, "--version"], capture_output=True,
-                             text=True, timeout=10)
+                             text=True, errors="replace", timeout=10)
         lines = (out.stdout or out.stderr).strip().splitlines()
         return lines[0] if lines else path
     except Exception:
