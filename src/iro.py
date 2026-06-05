@@ -332,6 +332,25 @@ def relay_start(rest):
                                env=_frozen_child_env())
     print(f"relay started (pid {newpid}). Watch it: iro relay logs -f")
 
+def _release_obs_feeds():
+    """Make OBS (via obs-websocket) drop its connections to the just-killed
+    feeds. Otherwise OBS keeps the half-dead connections and the kernel pins
+    the feed ports in FIN_WAIT_1 until OBS restarts — the next preflight then
+    warns "port in use". Must run AFTER the kill: the rebuild would reconnect
+    to a still-live relay. Best effort: OBS closed, auth missing, anything —
+    print one notice and keep going."""
+    try:
+        import obs_ws
+        names, note = obs_ws.release_feed_inputs()
+    except Exception as exc:                # a stop must never fail on this
+        print(f"obs: feed release skipped ({exc}).")
+        return
+    if names:
+        print(f"obs: released media inputs {', '.join(names)} "
+              f"(frees the feed ports; they restart on scene activation).")
+    elif note:
+        print(f"obs: feed release skipped — {note}")
+
 def relay_stop(rest):
     pid = sv.read_pid(_relay_pid_path())
     if not sv.pid_alive(pid):
@@ -339,7 +358,11 @@ def relay_stop(rest):
             os.remove(_relay_pid_path())
         print("relay is not running.")
         return
-    print("relay stopped." if sv.stop_pid(pid, _relay_pid_path()) else "relay may still be running.")
+    if sv.stop_pid(pid, _relay_pid_path()):
+        print("relay stopped.")
+        _release_obs_feeds()                # AFTER the kill — see docstring
+    else:
+        print("relay may still be running.")
 
 def relay_restart(rest):
     relay_stop([])
@@ -495,9 +518,14 @@ def streams_start(rest):
                                  ["--state-dir", _streams_static_dir()] + rest))
 
 def streams_stop(rest):
+    # Static feeds serve the same OBS media sources as the relay (same ports),
+    # so OBS must drop them here too — but only if feeds actually ran.
+    had_feeds = bool(glob.glob(os.path.join(_streams_static_dir(), "feed_*.pid")))
     # No SystemExit: streams_restart() must continue into streams_start().
     _run_script("scripts/stop-streams.py",
                 ["--state-dir", _streams_static_dir()] + rest)
+    if had_feeds:
+        _release_obs_feeds()                # AFTER the kill — see the helper
 
 def streams_run_feed(rest):
     raise SystemExit(_run_script("scripts/loopstream.py", rest))

@@ -64,7 +64,7 @@ def main():
            "--paths", os.path.join(SRC, "scripts"),
            "--hidden-import", "services", "--hidden-import", "companion_common",
            "--hidden-import", "event", "--hidden-import", "preflight",
-           "--hidden-import", "install_apps",
+           "--hidden-import", "install_apps", "--hidden-import", "obs_ws",
            "--add-data", f"{version_file}{sep}src"]
     for mod in HIDDEN_STDLIB:
         cmd += ["--hidden-import", mod]

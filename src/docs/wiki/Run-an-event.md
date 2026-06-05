@@ -31,7 +31,11 @@ fix command for anything missing.
 > reliable.
 
 After the broadcast, `iro event stop` stops the relay and Companion; OBS,
-Discord and Tailscale stay running.
+Discord and Tailscale stay running. If OBS is still open, the stop also asks
+it (via the OBS WebSocket, port 4455) to drop its connections to the dead
+feeds — otherwise OBS would pin the feed ports until it restarts and the next
+preflight would warn "port in use". The feed sources reconnect automatically
+the next time their scene goes active.
 
 ## Before you go live
 

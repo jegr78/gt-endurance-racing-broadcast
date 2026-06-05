@@ -355,6 +355,92 @@ def t_relay_start_warns_when_running_and_stint_ignored():
         m.sv.read_pid, m.sv.pid_alive = old_read, old_alive
 
 
+def t_relay_stop_releases_obs_feeds_after_kill():
+    # AFTER the kill: a source rebuild against a live relay would reconnect.
+    # Against the dead relay it just drops the half-dead connection, freeing
+    # the feed ports (otherwise FIN_WAIT_1 -> preflight "port in use").
+    import io, contextlib
+    calls = []
+    old = (m.sv.read_pid, m.sv.pid_alive, m.sv.stop_pid, m._release_obs_feeds)
+    m.sv.read_pid = lambda path: 4242
+    m.sv.pid_alive = lambda pid: True
+    m.sv.stop_pid = lambda pid, path: (calls.append("stop_pid"), True)[1]
+    m._release_obs_feeds = lambda: calls.append("obs")
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            m.relay_stop([])
+        assert calls == ["stop_pid", "obs"]
+    finally:
+        m.sv.read_pid, m.sv.pid_alive, m.sv.stop_pid, m._release_obs_feeds = old
+
+
+def t_relay_stop_skips_obs_release_when_kill_failed():
+    # Relay may still be alive -> a rebuild would reconnect. Don't release.
+    import io, contextlib
+    calls = []
+    old = (m.sv.read_pid, m.sv.pid_alive, m.sv.stop_pid, m._release_obs_feeds)
+    m.sv.read_pid = lambda path: 4242
+    m.sv.pid_alive = lambda pid: True
+    m.sv.stop_pid = lambda pid, path: (calls.append("stop_pid"), False)[1]
+    m._release_obs_feeds = lambda: calls.append("obs")
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            m.relay_stop([])
+        assert calls == ["stop_pid"]
+    finally:
+        m.sv.read_pid, m.sv.pid_alive, m.sv.stop_pid, m._release_obs_feeds = old
+
+
+def t_relay_stop_skips_obs_when_relay_not_running():
+    import io, contextlib, tempfile
+    calls = []
+    old = (m.sv.read_pid, m.sv.pid_alive, m._release_obs_feeds, m._relay_pid_path)
+    with tempfile.TemporaryDirectory() as tmp:
+        m._relay_pid_path = lambda: os.path.join(tmp, "relay.pid")
+        m.sv.read_pid = lambda path: None
+        m.sv.pid_alive = lambda pid: False
+        m._release_obs_feeds = lambda: calls.append("obs")
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                m.relay_stop([])
+            assert calls == []                  # nothing ran -> nothing to release
+        finally:
+            m.sv.read_pid, m.sv.pid_alive, m._release_obs_feeds, m._relay_pid_path = old
+
+
+def t_streams_stop_releases_obs_feeds_when_feeds_exist():
+    import io, contextlib, tempfile
+    calls = []
+    old = (m._release_obs_feeds, m._run_script, m._streams_static_dir)
+    with tempfile.TemporaryDirectory() as tmp:
+        open(os.path.join(tmp, "feed_53001.pid"), "w").write("1")
+        m._streams_static_dir = lambda: tmp
+        m._release_obs_feeds = lambda: calls.append("obs")
+        m._run_script = lambda rel, args: (calls.append("run_script"), 0)[1]
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                m.streams_stop([])
+            assert calls == ["run_script", "obs"]   # release AFTER the feeds die
+        finally:
+            m._release_obs_feeds, m._run_script, m._streams_static_dir = old
+
+
+def t_streams_stop_skips_obs_without_feed_pids():
+    import io, contextlib, tempfile
+    calls = []
+    old = (m._release_obs_feeds, m._run_script, m._streams_static_dir)
+    with tempfile.TemporaryDirectory() as tmp:
+        m._streams_static_dir = lambda: tmp
+        m._release_obs_feeds = lambda: calls.append("obs")
+        m._run_script = lambda rel, args: (calls.append("run_script"), 0)[1]
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                m.streams_stop([])
+            assert calls == ["run_script"]
+        finally:
+            m._release_obs_feeds, m._run_script, m._streams_static_dir = old
+
+
 def _raises(fn):
     try:
         fn()

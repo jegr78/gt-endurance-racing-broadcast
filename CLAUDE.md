@@ -34,6 +34,7 @@ python3 tests/test_services.py       # daemon helper (PID/spawn/stop)
 python3 tests/test_iro.py            # iro CLI routing
 python3 tests/test_streams.py       # static-streams helpers (frozen feed spawn)
 python3 tests/test_event.py          # event readiness helpers (probes/launch/assets)
+python3 tests/test_obsws.py          # minimal obs-websocket client (feed-port release on stop)
 python3 tests/test_installer_common.py  # shared installer helpers (brew bootstrap)
 python3 tests/test_install_tools.py     # install-tools decision helpers
 python3 tests/test_install_apps.py      # install-apps decision helpers
@@ -174,6 +175,15 @@ reloads); flags/brands resolve from text via `asset_key()`. Flags: `--no-hud`,
   `iro setup` delegate to the corresponding `src/` modules without needing to remember
   individual script paths.
 - **`iro status`** — aggregate health of relay + companion + streams at a glance.
+- **`src/scripts/obs_ws.py`** — minimal obs-websocket v5 client (stdlib only). After
+  `relay stop`/`streams stop` kill the feeds, `_release_obs_feeds()` re-applies the
+  feed media inputs' own settings via `SetInputSettings` — the one request that makes
+  OBS rebuild the ffmpeg source and close its socket (media STOP/RESTART actions are
+  ignored for inactive sources). Without it OBS pins the feed ports in FIN_WAIT_1
+  until it restarts and preflight warns "port in use". Must run AFTER the kill (a
+  rebuild against a live relay would just reconnect). Password auto-discovered from
+  OBS's obs-websocket config.json (`IRO_OBS_WS_PASSWORD` in `.env` overrides). Fully
+  best-effort: any failure prints one notice and the stop continues.
 
 `tools/` is maintainer-only (build, tokenize, sync) and is not shipped to producers.
 
