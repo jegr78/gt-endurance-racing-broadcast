@@ -79,6 +79,10 @@ def t_app_present_discord_paths():
                          which=lambda n: None)
     assert not m.app_present("discord", "linux", exists=lambda p: False,
                              which=lambda n: None)
+    # First linux candidate (/usr/share/discord) must also match
+    assert m.app_present("discord", "linux",
+                         exists=lambda p: p == "/usr/share/discord",
+                         which=lambda n: None)
 
 
 def t_manual_guide_has_urls_per_os():
@@ -87,6 +91,7 @@ def t_manual_guide_has_urls_per_os():
         assert "obsproject.com" in guide
         assert "bitfocus.io" in guide
         assert "tailscale.com" in guide
+        assert "discord.com" in guide
 
 
 def t_linux_plan_obs_with_ppa():
@@ -112,6 +117,12 @@ def t_linux_plan_scripts():
          "https://raw.githubusercontent.com/bitfocus/companion-pi/main/install.sh",
          ["sudo", "bash"]),
     ]
+
+
+def t_linux_plan_discord_deb():
+    steps = m.linux_install_steps(["discord"], which=lambda n: "/usr/bin/" + n)
+    assert steps == [("deb", m.DISCORD_DEB)]
+    assert m.DISCORD_DEB.startswith("https://discord.com/")
 
 
 def t_confirmation_parsing():

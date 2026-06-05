@@ -46,6 +46,26 @@ def run_remote_script(url, runner):
         os.unlink(tmp.name)
 
 
+def install_remote_deb(url):
+    """Download a vendor .deb (HTTPS, cert-verified) to a temp file and install
+    it visibly with apt-get — no shell pipes, the operator saw the URL and
+    confirmed beforehand. World-readable so apt's sandboxed fetcher can read it."""
+    import tempfile, urllib.request
+    print("Downloading:", url)
+    with urllib.request.urlopen(url, timeout=60) as resp:
+        body = resp.read()
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".deb")
+    try:
+        tmp.write(body)
+        tmp.close()
+        os.chmod(tmp.name, 0o644)
+        cmd = ["sudo", "apt-get", "install", "-y", tmp.name]
+        print("Running:", " ".join(cmd))
+        return subprocess.call(cmd)
+    finally:
+        os.unlink(tmp.name)
+
+
 def bootstrap_brew(assume_yes, input_fn=input, run=None, find=None):
     """Offer the official brew.sh installer (macOS). Returns the absolute brew
     path on success, None if declined or failed. The installer runs as the

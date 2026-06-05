@@ -67,6 +67,8 @@ OBS_PPA = "ppa:obsproject/obs-studio"
 TAILSCALE_INSTALLER = "https://tailscale.com/install.sh"          # escalates itself
 COMPANION_INSTALLER = \
     "https://raw.githubusercontent.com/bitfocus/companion-pi/main/install.sh"  # needs root
+# Discord's official Linux .deb (the snap is community-maintained, not Discord Inc.)
+DISCORD_DEB = "https://discord.com/api/download?platform=linux&format=deb"
 
 
 def _expand_windows(path, env):
@@ -115,18 +117,23 @@ def apps_manual_guide(platform):
         lines.append("    sudo tailscale up")
         lines.append("  Companion  (https://bitfocus.io/companion) — headless/service, Debian/Ubuntu x64/arm64:")
         lines.append("    curl -fsSL https://raw.githubusercontent.com/bitfocus/companion-pi/main/install.sh | sudo bash")
+        lines.append("  Discord  (https://discord.com/download):")
+        lines.append("    curl -fsSL 'https://discord.com/api/download?platform=linux&format=deb' -o /tmp/discord.deb")
+        lines.append("    sudo apt-get install -y /tmp/discord.deb")
     else:
         lines.append("  OBS Studio : https://obsproject.com/download")
         lines.append("  Companion  : https://bitfocus.io/companion")
         lines.append("  Tailscale  : https://tailscale.com/download")
+        lines.append("  Discord    : https://discord.com/download")
     return "\n".join(lines)
 
 
 def linux_install_steps(apps, which=shutil.which):
     """Ordered (kind, ...) steps to install `apps` on an apt-based distro.
     ('run', argv) executes argv; ('script', url, runner) downloads url and runs
-    it with runner + [path]. OBS uses the official PPA when add-apt-repository
-    exists (Ubuntu), else plain apt (Debian ships obs-studio)."""
+    it with runner + [path]; ('deb', url) downloads url and installs it with
+    apt-get. OBS uses the official PPA when add-apt-repository exists (Ubuntu),
+    else plain apt (Debian ships obs-studio)."""
     steps = []
     if "obs" in apps:
         if which("add-apt-repository"):
@@ -137,6 +144,8 @@ def linux_install_steps(apps, which=shutil.which):
         steps.append(("script", TAILSCALE_INSTALLER, ["sh"]))
     if "companion" in apps:
         steps.append(("script", COMPANION_INSTALLER, ["sudo", "bash"]))
+    if "discord" in apps:
+        steps.append(("deb", DISCORD_DEB))
     return steps
 
 
@@ -159,6 +168,8 @@ def _install_linux(missing, assume_yes):
     for step in steps:
         if step[0] == "run":
             print("  $", " ".join(step[1]))
+        elif step[0] == "deb":
+            print("  $ sudo apt-get install -y <downloaded .deb>   #", step[1])
         else:
             print("  $", " ".join(step[2]), "<", step[1])
     if not assume_yes and not confirmed(input("Proceed? [y/N] ")):
@@ -169,10 +180,12 @@ def _install_linux(missing, assume_yes):
         if step[0] == "run":
             print("Running:", " ".join(step[1]))
             rc = subprocess.call(step[1])
+        elif step[0] == "deb":
+            rc = _common().install_remote_deb(step[1])
         else:
             rc = _run_remote_script(step[1], step[2])
         if rc != 0:
-            failed.append(step[1])  # argv for 'run' steps, URL for 'script' steps
+            failed.append(step[1])  # argv for 'run' steps, URL for 'script'/'deb' steps
     if "tailscale" in missing:
         print("Tailscale installed? Finish with:  sudo tailscale up")
     if "companion" in missing:
@@ -229,6 +242,7 @@ def main():
     print("  Tailscale: sign in and join the IRO tailnet (invited account).")
     print("  Companion: launch once, then `iro export companion` + import the config.")
     print("  OBS: run `iro setup` and import the localized collection.")
+    print("  Discord: sign in — used for the interview audio (OBS app-audio capture).")
 
 
 if __name__ == "__main__":
