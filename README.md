@@ -46,11 +46,11 @@ iro export companion  # write the Companion button config for import
 
 ### One-time / pre-event setup
 ```
-iro setup --out runtime/IRO_Endurance.import.json   # localize OBS assets + inject Sheet ID
-# OBS -> Scene Collection -> Import -> runtime/IRO_Endurance.import.json
 iro cookies firefox      # refresh YouTube cookies before each event (log into YouTube in Firefox first)
 iro media                # download Intro/Outro clips -> runtime/media/
 iro graphics             # download broadcast graphics -> runtime/graphics/
+iro setup --out runtime/IRO_Endurance.import.json   # localize OBS assets + inject Sheet ID
+# OBS -> Scene Collection -> Import -> runtime/IRO_Endurance.import.json
 ```
 
 ## Run it

@@ -114,18 +114,17 @@ Keep `.env` private; never share it.
 
 ### 3a. Import the scene collection
 
+Download the broadcast assets from the sheet first, then localize the collection:
+
 ```bash
+iro media       # Intro/Outro clips   -> runtime/media/
+iro graphics    # broadcast graphics  -> runtime/graphics/
 iro setup --out runtime/IRO_Endurance.import.json
 ```
 
 Then in OBS: **Scene Collection → Import** → pick that file, and switch to it.
-
-Download the broadcast graphics (Overlay, Standings, etc.) from the sheet before
-or after importing — OBS shows a source black until they are present:
-
-```bash
-iro graphics
-```
+(Downloading after the import also works — `iro setup` only warns, and OBS shows
+those sources black until the files exist.)
 
 ### 3b. OBS WebSocket
 

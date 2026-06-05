@@ -110,12 +110,19 @@ Keep `.env` private; never share it. Full detail: [Configuration & secrets](Conf
 
 ## 5 — Import the OBS scenes
 
+Download the broadcast assets first (they come from the shared Sheet), then
+localize and import the collection:
+
 ```bash
+iro media       # Intro/Outro clips   -> runtime/media/
+iro graphics    # broadcast graphics  -> runtime/graphics/
 iro setup --out runtime/IRO_Endurance.import.json
 ```
 
 Then in OBS: **Scene Collection → Import →** pick that file, and switch to it. Don't move
-the folder afterwards. Step-by-step: [OBS & scenes](OBS-Setup).
+the folder afterwards. (Running `iro setup` before the downloads also works — it only
+warns and OBS shows those sources black until the files exist.) Step-by-step:
+[OBS & scenes](OBS-Setup).
 
 ## 6 — Import the Companion buttons
 
