@@ -38,12 +38,14 @@ def t_urls_empty():
 
 
 def t_media_dir_repo():
-    assert m.media_dir("/x/src/relay") == "/x/runtime/media", m.media_dir("/x/src/relay")
+    # expected via os.path.join: separators differ when this test runs on Windows
+    got = m.media_dir(os.path.join("/x", "src", "relay"))
+    assert got == os.path.join("/x", "runtime", "media"), got
 
 
 def t_media_dir_pkg():
-    assert m.media_dir("/x/IRO_Broadcast_Package/relay") == \
-        "/x/IRO_Broadcast_Package/media"
+    got = m.media_dir(os.path.join("/x/IRO_Broadcast_Package", "relay"))
+    assert got == os.path.join("/x/IRO_Broadcast_Package", "media"), got
 
 
 def t_resolve_priority_cli_then_env():

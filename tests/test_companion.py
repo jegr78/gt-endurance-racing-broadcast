@@ -68,8 +68,9 @@ def t_config_path_macos():
 
 
 def t_config_path_linux_xdg():
+    # expected via os.path.join: separators differ when this test runs on Windows
     assert cc.companion_config_path("linux", env={"XDG_CONFIG_HOME": "/x/cfg"}) == \
-        "/x/cfg/companion/config.json"
+        os.path.join("/x/cfg", "companion", "config.json")
 
 
 def t_config_path_windows_appdata():

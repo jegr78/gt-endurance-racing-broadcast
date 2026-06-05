@@ -56,12 +56,14 @@ def t_graphics_from_csv_label_verbatim_and_empty():
 
 
 def t_graphics_dir_repo():
-    assert m.graphics_dir("/x/src/relay") == "/x/runtime/graphics", m.graphics_dir("/x/src/relay")
+    # expected via os.path.join: separators differ when this test runs on Windows
+    got = m.graphics_dir(os.path.join("/x", "src", "relay"))
+    assert got == os.path.join("/x", "runtime", "graphics"), got
 
 
 def t_graphics_dir_pkg():
-    assert m.graphics_dir("/x/IRO_Broadcast_Package/relay") == \
-        "/x/IRO_Broadcast_Package/graphics"
+    got = m.graphics_dir(os.path.join("/x/IRO_Broadcast_Package", "relay"))
+    assert got == os.path.join("/x/IRO_Broadcast_Package", "graphics"), got
 
 
 if __name__ == "__main__":
