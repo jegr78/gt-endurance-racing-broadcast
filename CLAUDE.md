@@ -33,6 +33,7 @@ python3 tests/test_preflight.py      # preflight classifier unit checks
 python3 tests/test_services.py       # daemon helper (PID/spawn/stop)
 python3 tests/test_iro.py            # iro CLI routing
 python3 tests/test_streams.py       # static-streams helpers (frozen feed spawn)
+python3 tests/test_event.py          # event readiness helpers (probes/launch/assets)
 python3 tests/test_installer_common.py  # shared installer helpers (brew bootstrap)
 python3 tests/test_install_tools.py     # install-tools decision helpers
 python3 tests/test_install_apps.py      # install-apps decision helpers
@@ -55,6 +56,9 @@ python3 src/iro.py companion stop
 python3 src/iro.py streams start     # static/public-stream mode
 python3 src/iro.py streams stop
 python3 src/iro.py status            # aggregate health of all services
+python3 src/iro.py event status      # event-day readiness report (apps + services + assets)
+python3 src/iro.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion)
+python3 src/iro.py event stop        # stop iro services; GUI apps keep running
 python3 src/iro.py preflight         # hardware/tool check
 python3 src/iro.py cookies firefox   # refresh YouTube cookies before an event (Firefox recommended; Windows Chrome/Edge exports are blocked by app-bound encryption)
 python3 src/iro.py graphics          # download broadcast graphics -> runtime/graphics/

@@ -14,6 +14,25 @@ flowchart LR
   E --> F["Wrap up<br/>stop stream and relay"]
 ```
 
+## One-command bring-up
+
+On the event day, start everything with:
+
+    iro event start
+
+This launches Tailscale, Discord, the relay, OBS and Companion (in that
+order) and ends with a readiness report. Re-check any time with
+`iro event status` — it verifies the apps and services are running and that
+cookies, graphics and the intro/outro clips are present, and names the exact
+fix command for anything missing.
+
+> **Before going LIVE:** refresh the HUD overlay browser source in OBS once
+> (right-click the source → Refresh) — its auto-refresh is not fully
+> reliable.
+
+After the broadcast, `iro event stop` stops the relay and Companion; OBS,
+Discord and Tailscale stay running.
+
 ## Before you go live
 
 1. **Update the tool:** `iro update` — picks up the latest release (skip if the team froze the version for the event).
@@ -31,7 +50,9 @@ flowchart LR
    changed. The **weather** graphics are then available as full-screen toggles during the
    race (see [Director guide](Director)).
 7. **Pre-flight check:** `iro preflight` — fix anything it flags.
-8. **Start the feeds:** `iro relay start`. Confirm each live feed shows up in
+8. **Start the feeds and apps:** `iro event start` brings up Tailscale, Discord,
+   the relay, OBS and Companion in one go. Alternatively, start them individually:
+   `iro relay start` then `iro companion start`. Confirm each live feed shows up in
    OBS.
 9. Make sure **Companion** is connected (green) and a director can reach
    `http://<producer-tailscale-ip>:8000/tablet`.

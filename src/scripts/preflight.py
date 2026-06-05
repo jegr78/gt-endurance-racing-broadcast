@@ -211,7 +211,7 @@ def cookies_status(path, max_age_hours=12, now=None):
     now = time.time() if now is None else now
     if not os.path.isfile(path):
         return Result(WARN, "cookies.txt",
-                      f"not found at {path} — run get-cookies before the event")
+                      f"not found at {path} — run `iro cookies firefox` before the event")
     age_h = (now - os.path.getmtime(path)) / 3600
     try:
         text = open(path, encoding="utf-8", errors="ignore").read()
@@ -220,12 +220,48 @@ def cookies_status(path, max_age_hours=12, now=None):
     has_login = any(marker in text for marker in COOKIE_MARKERS)
     if age_h > max_age_hours:
         return Result(WARN, "cookies.txt",
-                      f"{age_h:.0f} h old — cookies rotate; re-run get-cookies")
+                      f"{age_h:.0f} h old — cookies rotate; re-run `iro cookies firefox`")
     if not has_login:
         return Result(WARN, "cookies.txt",
                       "present but no logged-in YouTube session markers found")
     return Result(PASS, "cookies.txt",
                   f"present, fresh ({age_h:.0f} h old), logged-in markers found")
+
+
+# --------------------------------------------------------------------------
+# Applications installed? (presence only — `iro event status` covers running)
+# --------------------------------------------------------------------------
+# (app key, display name, level when missing, consequence)
+APP_CHECKS = (
+    ("obs", "OBS Studio", FAIL, "no broadcast without OBS"),
+    ("companion", "Companion", WARN, "Stream Deck buttons unavailable"),
+    ("tailscale", "Tailscale", WARN, "no remote access for director/tablet"),
+    ("discord", "Discord", WARN, "interview audio unavailable"),
+)
+
+
+def _install_apps_module(here):
+    """Load sibling install_apps.py by path — works in repo, package and
+    frozen bundled-data modes alike (same pattern as install_apps' own
+    installer_common loader)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "install_apps", os.path.join(here, "install_apps.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def apps_section(present):
+    """Classify each producer app given `present(app) -> bool`."""
+    results = []
+    for app, pretty, miss_level, consequence in APP_CHECKS:
+        if present(app):
+            results.append(Result(PASS, pretty, "installed"))
+        else:
+            results.append(Result(miss_level, pretty,
+                                  f"not installed — {consequence}; run `iro install-apps`"))
+    return results
 
 
 # --------------------------------------------------------------------------
@@ -273,6 +309,12 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
     py = sys.version.split()[0]
     tools.append(Result(PASS, "python3", py) if sys.version_info >= (3, 8)
                  else Result(FAIL, "python3", f"{py} — need 3.8+"))
+    here = os.path.dirname(os.path.abspath(preflight_file))
+    try:
+        ia = _install_apps_module(here)
+        apps = apps_section(lambda app: ia.app_present(app, sys.platform))
+    except Exception as exc:  # never let a probe break the report
+        apps = [Result(WARN, "applications", f"check failed: {exc}")]
     ports = []
     for port in FEED_PORTS:
         ports.append(Result(PASS, f"port {port}", "free") if port_free(port)
@@ -291,6 +333,7 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
     return [
         ("Hardware", hardware),
         ("Tool chain", tools),
+        ("Applications", apps),
         ("Ports", ports),
         ("YouTube cookies", cookies),
         ("Network", network),

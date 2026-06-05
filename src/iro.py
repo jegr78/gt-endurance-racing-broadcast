@@ -7,6 +7,7 @@
   iro relay     start|stop|restart|status|logs|run|open-panel|open-hud|open-status
   iro companion start|stop|restart|status|logs|open-tablet|open-admin
   iro streams   start|stop|restart|status|logs
+  iro event     status|start|stop      # event-day readiness: check / bring-up / wind-down
   iro status                            # aggregate health of all services
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] | install-apps [--yes]
   iro export companion [--out PATH]     # write the Companion button config
@@ -239,6 +240,7 @@ EXTRA_VERBS = {
 # Internal verbs: routed but never advertised (frozen feed children use run-feed).
 HIDDEN_VERBS = {"streams": ("run-feed",)}
 ONESHOTS = ("preflight", "cookies", "graphics", "media", "setup", "install-tools", "install-apps", "update")
+EVENT_VERBS = ("status", "start", "stop")
 
 USAGE = __doc__
 
@@ -259,6 +261,11 @@ def route(argv):
         if verb not in valid + HIDDEN_VERBS.get(cmd, ()):
             raise ValueError(f"usage: iro {cmd} {{{'|'.join(valid)}}}")
         return {"kind": "service", "command": cmd, "verb": verb, "rest": rest[1:]}
+    if cmd == "event":
+        verb = rest[0] if rest else None
+        if verb not in EVENT_VERBS:
+            raise ValueError(f"usage: iro event {{{'|'.join(EVENT_VERBS)}}}")
+        return {"kind": "service", "command": "event", "verb": verb, "rest": rest[1:]}
     if cmd in ONESHOTS:
         return {"kind": "oneshot", "command": cmd, "rest": rest}
     if cmd == "export":
@@ -275,14 +282,22 @@ def _tailscale_ip():
     except Exception:
         return None
 
-def _relay_extra():
-    parts = []
+def _relay_http_ok():
+    """True iff the relay control server answers on localhost."""
     try:
         import urllib.request
         # .read() drains the socket; we only care whether the request succeeds
         urllib.request.urlopen(f"http://127.0.0.1:{RELAY_PORT}/status", timeout=3).read()
-        parts.append(f"control http://127.0.0.1:{RELAY_PORT}/status OK")
+        return True
     except Exception:
+        return False
+
+
+def _relay_extra():
+    parts = []
+    if _relay_http_ok():
+        parts.append(f"control http://127.0.0.1:{RELAY_PORT}/status OK")
+    else:
         parts.append(f"(port {RELAY_PORT} not responding)")
     ts = _tailscale_ip()
     if ts:
@@ -538,6 +553,163 @@ def companion_open_admin(rest):
     _companion_open("/")
 
 
+def _event_modules():
+    """event/preflight are plain sibling modules of services (scripts/ is on
+    sys.path; frozen: hidden-imports in tools/build-binary.py)."""
+    import event as ev
+    import preflight as pf
+    return ev, pf
+
+
+def _load_relay_module(rel):
+    """Load a relay script (hyphenated filename) as a module, repo + package +
+    frozen alike — module-level code only defines functions, no side effects."""
+    import importlib.util
+    path = resource_path(rel)
+    name = os.path.splitext(os.path.basename(path))[0].replace("-", "_")
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _asset_dirs(gg, gm):
+    """Where `iro graphics`/`iro media` put files in THIS run mode. Frozen:
+    the oneshot injection redirects to runtime/ (see _oneshot_extra); repo and
+    package follow the scripts' own defaults (runtime/ vs. package root)."""
+    if IS_FROZEN:
+        return (os.path.join(_runtime_dir(), "graphics"),
+                os.path.join(_runtime_dir(), "media"))
+    return (gg.graphics_dir(os.path.dirname(os.path.abspath(gg.__file__))),
+            gm.media_dir(os.path.dirname(os.path.abspath(gm.__file__))))
+
+
+def _event_sections(ev, pf):
+    """Gather all event-day facts and classify them into report sections."""
+    # Apps
+    apps = [ev.classify_app("obs", ev.app_running("obs")),
+            ev.classify_app("discord", ev.app_running("discord")),
+            ev.classify_tailscale(_tailscale_ip())]
+    # Services
+    pid = sv.read_pid(_relay_pid_path())
+    alive = sv.pid_alive(pid)
+    services = [ev.classify_relay(alive, _relay_http_ok() if alive else False, RELAY_PORT)]
+    try:
+        cc = _companion()
+        supported = _companion_cmds(cc) is not None
+        services.append(ev.classify_companion(
+            _companion_running(cc) if supported else False, supported,
+            "" if supported else _companion_unsupported_msg()))
+    except Exception as exc:
+        services.append(ev.Result(ev.WARN, "Companion", f"check failed: {exc}"))
+    # Assets — get-graphics' load_dotenv also fills IRO_* for the repo/package
+    # modes (frozen already loaded .env next to the binary at startup). A
+    # broken probe must never traceback the report (spec: error behaviour).
+    assets = [pf.cookies_status(os.path.join(_runtime_dir(), "cookies.txt"))]
+    try:
+        gg = _load_relay_module("relay/get-graphics.py")
+        gm = _load_relay_module("relay/get-media.py")
+        gg.load_dotenv(os.path.dirname(os.path.abspath(gg.__file__)))
+        g_dir, m_dir = _asset_dirs(gg, gm)
+        rows = ev.fetch_assets_rows(gg, os.environ.get("IRO_SHEET_ID"))
+        missing_g = ev.check_assets(ev.required_graphics(gg, rows), g_dir) if rows else None
+        missing_m = ev.check_assets(ev.required_media(gm, rows), m_dir) if rows else None
+        assets += [ev.classify_assets("Graphics", missing_g, ev.local_count(g_dir),
+                                      ev.FAIL, "run `iro graphics`"),
+                   ev.classify_assets("Media", missing_m, ev.local_count(m_dir),
+                                      ev.WARN, "run `iro media`")]
+    except Exception as exc:
+        assets.append(ev.Result(ev.WARN, "Graphics/Media", f"check failed: {exc}"))
+    config = [ev.classify_env(os.environ.get("IRO_SHEET_ID"),
+                              os.environ.get("IRO_TIMER_URL"))]
+    return [("Apps", apps), ("Services", services), ("Assets", assets),
+            ("Config", config), ("Go-live reminders", [ev.GO_LIVE_REMINDER])]
+
+
+def event_status(rest):
+    ev, pf = _event_modules()
+    color = pf.enable_color("--no-color" in rest)
+    raise SystemExit(pf.report(_event_sections(ev, pf), color))
+
+
+def _event_launch(ev, app):
+    """Best-effort GUI-app launch: report and continue on every failure path."""
+    import install_apps
+    if not install_apps.app_present(app, sys.platform):
+        print(f"{app}: not installed — run `iro install-apps`.")
+        return
+    cmd = ev.launch_command(app, sys.platform)
+    if cmd is None:
+        hint = ("run `sudo tailscale up`" if app == "tailscale"
+                else "launch it manually")
+        print(f"{app}: cannot launch automatically — {hint}.")
+        return
+    argv, cwd = cmd
+    print(f"{app}: launching…")
+    try:
+        subprocess.Popen(argv, cwd=cwd, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, **sv.spawn_kwargs(os.name))
+    except OSError as exc:
+        print(f"{app}: launch failed ({exc}).")
+
+
+def event_start(rest):
+    """Bring the event stack up. Order matters: Tailscale first (the Companion
+    bind needs its IP), relay before OBS (the HUD browser source then connects
+    against a live relay on OBS's first load). Every step is best effort."""
+    ev, pf = _event_modules()
+    # 1. Tailscale
+    if _tailscale_ip():
+        print("tailscale: already connected.")
+    else:
+        _event_launch(ev, "tailscale")
+        ip = None
+        for _ in range(20):  # ~10 s for the tailnet to come up
+            ip = _tailscale_ip()
+            if ip:
+                break
+            time.sleep(0.5)
+        if ip:
+            print("tailscale: connected.")
+        else:
+            print("tailscale: no tailnet IP yet — sign in to Tailscale; "
+                  "continuing local-only (OBS keeps working).")
+    # 2. Discord
+    if ev.app_running("discord"):
+        print("discord: already running.")
+    else:
+        _event_launch(ev, "discord")
+    # 3. Relay (before OBS — see docstring)
+    relay_start([])
+    # 4. OBS
+    if ev.app_running("obs"):
+        print("obs: already running.")
+    else:
+        _event_launch(ev, "obs")
+    # 5. Companion (companion_start sys.exits on unsupported setups — keep going)
+    try:
+        companion_start(["auto"])
+    except SystemExit as exc:
+        print(exc.code if isinstance(exc.code, str)
+              else f"companion: start failed (exit {exc.code}).")
+    print("\nEvent readiness:")
+    event_status(rest)  # exit code: 0 = ready, 1 = FAILs remain
+
+
+def event_stop(rest):
+    """Stop iro-managed services only — never the GUI apps (a mistyped command
+    must not be able to kill a live broadcast)."""
+    relay_stop([])
+    try:
+        companion_stop([])
+    except SystemExit as exc:
+        print(exc.code if isinstance(exc.code, str)
+              else f"companion: stop failed (exit {exc.code}).")
+    if glob.glob(os.path.join(_streams_static_dir(), "feed_*.pid")):
+        streams_stop([])
+    print("OBS/Discord/Tailscale keep running — quit them manually if needed.")
+
+
 DISPATCH = {
     ("relay", "start"): relay_start, ("relay", "stop"): relay_stop,
     ("relay", "restart"): relay_restart, ("relay", "status"): relay_status,
@@ -552,6 +724,8 @@ DISPATCH = {
     ("streams", "start"): streams_start, ("streams", "stop"): streams_stop,
     ("streams", "restart"): streams_restart, ("streams", "status"): streams_status,
     ("streams", "logs"): streams_logs, ("streams", "run-feed"): streams_run_feed,
+    ("event", "status"): event_status, ("event", "start"): event_start,
+    ("event", "stop"): event_stop,
 }
 
 ONESHOT_MAP = {

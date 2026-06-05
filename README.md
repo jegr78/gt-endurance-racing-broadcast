@@ -57,6 +57,9 @@ iro setup --out runtime/IRO_Endurance.import.json   # localize OBS assets + inje
 ## Run it
 
 ```
+iro event start          # bring everything up: Tailscale, Discord, relay, OBS, Companion
+iro event status         # event-day readiness report (apps, services, cookies, graphics, media, config)
+iro event stop           # stop relay/Companion/streams — OBS & friends keep running
 iro preflight            # check tools/hardware
 iro relay start          # start the relay (background)
 iro relay logs -f        # watch it live

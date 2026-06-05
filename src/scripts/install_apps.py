@@ -81,16 +81,20 @@ def _expand_windows(path, env):
     return path
 
 
-def app_present(app, platform, env=None, exists=os.path.exists, which=shutil.which):
-    """True iff the app is already installed (well-known paths, then PATH)."""
+def app_path_candidates(app, platform, env=None):
+    """Expanded well-known install paths for `app` on `platform` (may be empty —
+    Linux mostly relies on the PATH fallback in app_present)."""
     env = os.environ if env is None else env
     if platform.startswith("win"):
-        candidates = [_expand_windows(p, env) for p in _WINDOWS_APP_PATHS.get(app, ())]
-    elif platform == "darwin":
-        candidates = list(_DARWIN_APP_PATHS.get(app, ()))
-    else:
-        candidates = list(_LINUX_APP_PATHS.get(app, ()))
-    for path in candidates:
+        return [_expand_windows(p, env) for p in _WINDOWS_APP_PATHS.get(app, ())]
+    if platform == "darwin":
+        return list(_DARWIN_APP_PATHS.get(app, ()))
+    return list(_LINUX_APP_PATHS.get(app, ()))
+
+
+def app_present(app, platform, env=None, exists=os.path.exists, which=shutil.which):
+    """True iff the app is already installed (well-known paths, then PATH)."""
+    for path in app_path_candidates(app, platform, env):
         if not path.startswith("\\") and exists(path):
             return True
     return bool(which(app))  # CLI fallback (e.g. tailscale on PATH)

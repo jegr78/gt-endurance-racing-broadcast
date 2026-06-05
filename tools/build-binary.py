@@ -59,9 +59,12 @@ def main():
            "--distpath", os.path.join(ROOT, "dist", "bin"),
            "--workpath", os.path.join(workdir, "build"),
            "--specpath", workdir,
-           # services/companion_common are real frozen modules (iro.py imports them)
+           # services/companion_common/event (+ its imports preflight,
+           # install_apps) are real frozen modules (iro.py imports them)
            "--paths", os.path.join(SRC, "scripts"),
            "--hidden-import", "services", "--hidden-import", "companion_common",
+           "--hidden-import", "event", "--hidden-import", "preflight",
+           "--hidden-import", "install_apps",
            "--add-data", f"{version_file}{sep}src"]
     for mod in HIDDEN_STDLIB:
         cmd += ["--hidden-import", mod]
@@ -97,6 +100,10 @@ def smoke(binary, version):
     st = run(["status"])
     if st.returncode != 0 or "relay" not in st.stdout:
         sys.exit(f"smoke status FAILED: rc={st.returncode} out={st.stdout!r} err={st.stderr!r}")
+    ev = run(["event", "status"])
+    if ev.returncode not in (0, 1) or "Go-live" not in ev.stdout:
+        sys.exit(f"smoke event status FAILED: rc={ev.returncode} "
+                 f"out={ev.stdout!r} err={ev.stderr!r}")
     with tempfile.TemporaryDirectory() as td:
         dst = os.path.join(td, "iro-buttons.companionconfig")
         ex = run(["export", "companion", "--out", dst])

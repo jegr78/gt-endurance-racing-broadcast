@@ -110,6 +110,23 @@ def t_main_returns_int():
     assert rc in (0, 1)
 
 
+def t_apps_section_levels():
+    rs = m.apps_section(lambda app: True)
+    assert [r.level for r in rs] == ["PASS"] * 4
+    rs = m.apps_section(lambda app: False)
+    by = {r.name: r for r in rs}
+    assert by["OBS Studio"].level == "FAIL"          # no broadcast without OBS
+    assert by["Companion"].level == "WARN"
+    assert by["Tailscale"].level == "WARN"
+    assert by["Discord"].level == "WARN"
+    assert "iro install-apps" in by["Discord"].detail
+
+
+def t_install_apps_module_loads():
+    ia = m._install_apps_module(os.path.join(ROOT, "src", "scripts"))
+    assert callable(ia.app_present)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

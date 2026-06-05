@@ -303,6 +303,22 @@ def t_update_oneshot_extra_injects_nothing():
     assert m._oneshot_extra("update", [], False, "/rt") == []
 
 
+def t_event_routes():
+    assert m.route(["event", "status"]) == \
+        {"kind": "service", "command": "event", "verb": "status", "rest": []}
+    assert m.route(["event", "start"])["verb"] == "start"
+    assert m.route(["event", "stop"])["verb"] == "stop"
+    assert m.route(["event", "status", "--no-color"])["rest"] == ["--no-color"]
+    _raises(lambda: m.route(["event"]))
+    _raises(lambda: m.route(["event", "restart"]))   # no restart/logs for event
+    _raises(lambda: m.route(["event", "logs"]))
+
+
+def t_event_dispatch_wired():
+    for verb in ("status", "start", "stop"):
+        assert ("event", verb) in m.DISPATCH
+
+
 def _raises(fn):
     try:
         fn()

@@ -150,6 +150,18 @@ def t_app_install_commands_brew_absolute_path():
         [["/opt/homebrew/bin/brew", "install", "--cask", "obs"]]
 
 
+def t_app_path_candidates():
+    env = {"ProgramFiles": r"C:\PF", "ProgramFiles(x86)": r"C:\PF86",
+           "LOCALAPPDATA": r"C:\LAD"}
+    cands = m.app_path_candidates("obs", "win32", env)
+    assert r"C:\PF\obs-studio\bin\64bit\obs64.exe" in cands
+    assert r"C:\PF86\obs-studio\bin\64bit\obs64.exe" in cands
+    assert m.app_path_candidates("discord", "win32", env) == [r"C:\LAD\Discord\Update.exe"]
+    assert m.app_path_candidates("obs", "darwin") == ["/Applications/OBS.app"]
+    assert m.app_path_candidates("obs", "linux") == []   # PATH fallback only
+    assert m.app_path_candidates("bogus", "darwin") == []
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
