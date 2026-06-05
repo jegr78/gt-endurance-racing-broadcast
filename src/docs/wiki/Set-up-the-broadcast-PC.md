@@ -41,6 +41,7 @@ step 4).
 
 All commands in this wiki are written as `iro …` — type them in a terminal in
 this folder (macOS/Linux: `./iro …` unless you add the folder to your PATH).
+Updating later is one command: `iro update`.
 
 <details>
 <summary>Alternative: run from source (needs Python 3)</summary>

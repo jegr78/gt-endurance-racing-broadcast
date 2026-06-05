@@ -12,6 +12,7 @@ most setup problems (tools, ports, cookies) before they bite you live.
 | A feed just won't appear | Is the commentator actually live right now? Update the tools (macOS/Linux `brew upgrade streamlink yt-dlp` · Windows `winget upgrade yt-dlp.yt-dlp Streamlink.Streamlink`) and try again. |
 | Nothing happens when you open a feed's address in a browser | That's normal — each feed serves only OBS, not browsers. Not a fault. |
 | The handover didn't switch feeds | Press **Feeds Next** once **after** cutting to the new feed; the off-air feed only advances on Feeds Next, never mid-stint. |
+| `iro update` says binaries are still building | The release was just cut and CI is still uploading — retry in a few minutes. |
 
 ## The HUD / overlay is blank or stale
 
