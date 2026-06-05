@@ -192,6 +192,7 @@ def main():
                   "until then).")
 
     localized = replace_tokens(collection, mapping)
+    swapped = localize_discord_audio(localized, sys.platform)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as fh:
         json.dump(localized, fh, ensure_ascii=False, indent=4)
@@ -206,6 +207,12 @@ def main():
         print(f"  Intro/Outro clip dir: {a.media}")
     if GRAPHICS_TOKEN in mapping:
         print(f"  Graphics dir: {a.graphics}")
+    if swapped:
+        print(f"  Discord audio source: {swapped}")
+    elif discord_variant(sys.platform) is None:
+        print(f"  NOTE: no Discord audio variant for {sys.platform} — macOS form kept.")
+    else:
+        print("  WARNING: Discord audio source not found in the collection.")
     print(f"OBS: Scene Collection -> Import -> {a.out}")
     print("IMPORTANT: do NOT move this folder afterwards (OBS stores absolute paths).")
 

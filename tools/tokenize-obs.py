@@ -75,6 +75,8 @@ def main():
             n += 1
     sheet_count = [0]
     d = tokenize_sheets(d, sheet_count)
+    if canonicalize_discord_audio(d):
+        print("Discord audio source folded back to the canonical macOS form.")
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(d, fh, ensure_ascii=False, indent=4)
