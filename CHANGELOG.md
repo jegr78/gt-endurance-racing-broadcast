@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v0.2.0...v0.2.1) (2026-06-05)
+
+
+### Bug Fixes
+
+* **binary:** point SSL_CERT_FILE at the system CA bundle when the build paths are missing ([3a4eab0](https://github.com/jegr78/IRO_Broadcast_Setup/commit/3a4eab08a92eb0cfa617cd42c0f7a3909c78ed9f))
+
 ## [0.2.0](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v0.1.0...v0.2.0) (2026-06-05)
 
 
