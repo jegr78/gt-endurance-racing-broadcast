@@ -52,6 +52,12 @@ Output format reuses the preflight reporter (`Result`, colored
 Every WARN/FAIL detail names the fixing command (e.g. "run `iro cookies
 firefox`", "run `iro graphics`", "run `iro install-apps`").
 
+The report ends with a fixed **go-live reminder** (INFO, same model as
+preflight's network advisory): *"Before going LIVE: refresh the HUD overlay
+browser source in OBS once (right-click the source → Refresh) — its
+auto-refresh is not fully reliable."* It prints in every `event status`, so
+it also appears in the closing status after `event start`.
+
 ## `iro event start` — orchestration
 
 Each step is **best effort**: a failure is reported and the sequence
@@ -62,13 +68,15 @@ continues (never aborts).
    needs the Tailscale IP. Still no IP after the timeout → print "sign in to
    Tailscale / run `tailscale up`" and continue localhost-only.
 2. **Discord** — launch if not running (sign-in stays manual).
-3. **OBS** — launch if not running. Windows quirk: `obs64.exe` must be
+3. **Relay** — existing `relay_start([])`; skips with a message when already
+   running. Before OBS, so the HUD browser source and the feed media sources
+   connect against a live relay on OBS's first load instead of showing a
+   stale/black page.
+4. **OBS** — launch if not running. Windows quirk: `obs64.exe` must be
    spawned with `cwd` set to its `bin` directory or it cannot find its
    resources — handled by the launch helper.
-4. **Companion** — existing `companion_start(["auto"])` (stop/bind/start
+5. **Companion** — existing `companion_start(["auto"])` (stop/bind/start
    logic unchanged).
-5. **Relay** — existing `relay_start([])`; skips with a message when already
-   running.
 
 Afterwards an automatic **`iro event status`** prints the closing picture, so
 the operator immediately sees what remains (stale cookies, missing graphics,
