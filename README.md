@@ -61,6 +61,8 @@ iro event start          # bring everything up: Tailscale, Discord, relay, OBS, 
 iro event start --stint 4 # take over mid-event (12h/24h): stint 4 is on air now
 iro event status         # event-day readiness report (apps, services, cookies, graphics, media, config)
 iro event stop           # stop relay/Companion/streams — OBS & friends keep running
+iro tailscale up         # connect Tailscale (event start does this automatically)
+iro tailscale down       # disconnect Tailscale after the event
 iro preflight            # check tools/hardware
 iro relay start          # start the relay (background)
 iro relay logs -f        # watch it live

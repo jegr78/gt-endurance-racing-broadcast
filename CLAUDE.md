@@ -34,6 +34,7 @@ python3 tests/test_services.py       # daemon helper (PID/spawn/stop)
 python3 tests/test_iro.py            # iro CLI routing
 python3 tests/test_streams.py       # static-streams helpers (frozen feed spawn)
 python3 tests/test_event.py          # event readiness helpers (probes/launch/assets)
+python3 tests/test_tailscale.py      # Tailscale detection/control helpers
 python3 tests/test_obsws.py          # minimal obs-websocket client (feed-port release on stop)
 python3 tests/test_installer_common.py  # shared installer helpers (brew bootstrap)
 python3 tests/test_install_tools.py     # install-tools decision helpers
@@ -63,6 +64,7 @@ python3 src/iro.py status            # aggregate health of all services
 python3 src/iro.py event status      # event-day readiness report (apps + services + assets)
 python3 src/iro.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later)
 python3 src/iro.py event stop        # stop iro services; GUI apps keep running
+python3 src/iro.py tailscale up|down|status  # connect/disconnect/inspect Tailscale (event start connects automatically)
 python3 src/iro.py preflight         # hardware/tool check
 python3 src/iro.py cookies firefox   # refresh YouTube cookies before an event (Firefox recommended; Windows Chrome/Edge exports are blocked by app-bound encryption)
 python3 src/iro.py graphics          # download broadcast graphics -> runtime/graphics/
@@ -226,7 +228,7 @@ process before killing.
 **Bitfocus Companion**'s admin/web-buttons server to this machine's Tailscale IP so a tablet
 can open `http://<tailscale-ip>:<port>/tablet` over the tailnet — same plug-&-play model as
 the relay's `--bind auto`, and likewise **not** the LAN. It auto-detects the Tailscale IP
-(duplicated `detect_tailscale_ip`, keep in sync with the relay), and — only while Companion
+(Tailscale detection/control lives in `src/scripts/tailscale.py`; its `detect_tailscale_ip` is duplicated in the standalone relay — keep those two in sync), and — only while Companion
 is stopped, with a `.iro-bak` backup — sets `bind_ip` in Companion's `config.json`
 (`~/Library/Application Support/companion/config.json` on macOS; the GUI launcher reads
 it as `--admin-address`). Windows + macOS automated (Windows: Companion.exe discovery +

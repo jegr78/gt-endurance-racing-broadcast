@@ -293,7 +293,8 @@ iro companion start    # binds Companion to this machine's Tailscale IP
 - Start/sign in to Tailscale; invite directors at
   `login.tailscale.com/admin/users`.
 - Director URL: **`http://<PRODUCER-TAILSCALE-IP>:8000/tablet`** (producer IP via
-  the Tailscale menu / `tailscale ip -4`).
+  `iro tailscale status` — it also confirms Tailscale is actually connected;
+  `tailscale ip -4` prints the assigned IP even while disconnected).
 - Directors only need a browser — no OBS, no password.
 
 ## 7. Director panel (optional backup console)

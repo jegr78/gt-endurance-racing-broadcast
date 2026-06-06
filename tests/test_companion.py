@@ -89,12 +89,6 @@ def t_control_commands_unsupported_is_none():
     assert cc.companion_control_commands("sunos5") is None
 
 
-# --- Tailscale detect parsing (duplicated from relay; smoke only) -------------
-def t_parse_tailscale_ip_smoke():
-    assert cc.parse_tailscale_ip("100.64.10.20\n") == "100.64.10.20"
-    assert cc.parse_tailscale_ip("192.168.1.5\n") is None
-
-
 # --- Windows control commands ------------------------------------------------
 def t_control_commands_windows():
     exe = os.path.join("C:" + os.sep, "Apps", "Companion.exe")

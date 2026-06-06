@@ -4,8 +4,8 @@ These helpers bind Bitfocus Companion's admin/web-buttons server to this machine
 Tailscale IP (plug & play) so a tablet can open http://<tailscale-ip>:<port>/tablet
 over the tailnet, without exposing Companion on the local LAN the way 0.0.0.0 would.
 
-The Tailscale-IP detection below is duplicated from src/relay/iro-feeds.py — the
-project's bounded-duplication convention (cf. load_dotenv). Keep the two in sync.
+Tailscale detection lives in scripts/tailscale.py; iro.py passes the detected
+IP into desired_bind_ip() — this module holds Companion logic only.
 
 NOTE: this binds *where* Companion listens; it does NOT separate /tablet from the
 admin GUI (Companion serves both on one port + one shared socket API). Restrict WHO
@@ -16,46 +16,7 @@ in WSL/Docker setups Companion runs on the HOST, so local automation would targe
 the wrong machine. Linux users should set Companion's bind address manually and
 start it themselves.
 """
-import ipaddress, json, os, subprocess
-
-_CGNAT_NET = ipaddress.ip_network("100.64.0.0/10")  # Tailscale's IPv4 range
-_TAILSCALE_BINS = [
-    "tailscale",
-    "/Applications/Tailscale.app/Contents/MacOS/Tailscale",  # macOS GUI app
-    "/usr/bin/tailscale", "/usr/local/bin/tailscale", "/opt/homebrew/bin/tailscale",
-    r"C:\Program Files\Tailscale\tailscale.exe",
-]
-
-
-def _in_cgnat(ip):
-    """True iff ip is a valid IPv4 address inside Tailscale's 100.64.0.0/10 range."""
-    try:
-        return ipaddress.ip_address(ip) in _CGNAT_NET
-    except ValueError:
-        return False
-
-
-def parse_tailscale_ip(output):
-    """First CGNAT IPv4 line of `tailscale ip -4` output, or None."""
-    for line in output.splitlines():
-        ip = line.strip()
-        if ip and _in_cgnat(ip):
-            return ip
-    return None
-
-
-def detect_tailscale_ip():
-    """This machine's Tailscale IPv4 via the Tailscale CLI, or None if unavailable."""
-    for binary in _TAILSCALE_BINS:
-        try:
-            out = subprocess.run([binary, "ip", "-4"], capture_output=True,
-                                 text=True, errors="replace", timeout=3)
-        except (OSError, subprocess.SubprocessError):
-            continue
-        ip = parse_tailscale_ip(out.stdout)
-        if ip:
-            return ip
-    return None
+import json, os
 
 
 def desired_bind_ip(bind_arg, tailscale_ip):

@@ -62,9 +62,20 @@ def t_open_verbs_are_not_cross_service():
     _raises(lambda: m.route(["streams", "open-hud"]))
 
 
+def t_tailscale_verbs():
+    for verb in ("up", "down", "status"):
+        assert m.route(["tailscale", verb]) == \
+            {"kind": "service", "command": "tailscale", "verb": verb, "rest": []}
+
+
+def t_tailscale_bad_verb_raises():
+    _raises(lambda: m.route(["tailscale"]))
+    _raises(lambda: m.route(["tailscale", "restart"]))
+
+
 def t_http_url():
     assert m._http_url("127.0.0.1", 8088, "/panel") == "http://127.0.0.1:8088/panel"
-    assert m._http_url("100.81.234.4", 8000, "/tablet") == "http://100.81.234.4:8000/tablet"
+    assert m._http_url("100.64.10.20", 8000, "/tablet") == "http://100.64.10.20:8000/tablet"
 
 
 def t_src_base_modes():

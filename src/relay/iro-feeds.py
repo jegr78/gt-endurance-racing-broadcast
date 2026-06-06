@@ -95,24 +95,39 @@ def _in_cgnat(ip):
         return False
 
 
-def parse_tailscale_ip(output):
-    """First CGNAT IPv4 line of `tailscale ip -4` output, or None."""
-    for line in output.splitlines():
-        ip = line.strip()
-        if ip and _in_cgnat(ip):
-            return ip
+def parse_tailscale_status(output):
+    """Self's first CGNAT IPv4 from `tailscale status --json`, or None.
+
+    Requires BackendState == "Running": a stopped/disconnected node keeps its
+    assigned tailnet IP, so `tailscale ip -4` alone reports "connected" even
+    after the user toggled Tailscale off."""
+    try:
+        data = json.loads(output)
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or data.get("BackendState") != "Running":
+        return None
+    for ip in (data.get("Self") or {}).get("TailscaleIPs") or []:
+        if _in_cgnat(str(ip)):
+            return str(ip)
     return None
 
 
 def detect_tailscale_ip():
-    """This machine's Tailscale IPv4 via the Tailscale CLI, or None if unavailable."""
+    """This machine's connected Tailscale IPv4 via the CLI, or None if the
+    Tailscale backend is unavailable, stopped, or logged out.
+
+    Deliberate divergence from scripts/tailscale.py's tailscale_backend():
+    this detection-only copy keeps trying further binaries until one reports
+    a Running IP, while the state-aware version stops at the first binary
+    that answers at all (its callers need Stopped/NeedsLogin, not just the IP)."""
     for binary in _TAILSCALE_BINS:
         try:
-            out = subprocess.run([binary, "ip", "-4"], capture_output=True,
+            out = subprocess.run([binary, "status", "--json"], capture_output=True,
                                  text=True, errors="replace", timeout=3)
         except (OSError, subprocess.SubprocessError):
             continue
-        ip = parse_tailscale_ip(out.stdout)
+        ip = parse_tailscale_status(out.stdout)
         if ip:
             return ip
     return None

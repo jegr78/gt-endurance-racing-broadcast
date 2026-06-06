@@ -55,9 +55,10 @@ the next time their scene goes active.
    race (see [Director guide](Director)).
 7. **Pre-flight check:** `iro preflight` — fix anything it flags.
 8. **Start the feeds and apps:** `iro event start` brings up Tailscale, Discord,
-   the relay, OBS and Companion in one go. Alternatively, start them individually:
-   `iro relay start` then `iro companion start`. Confirm each live feed shows up in
-   OBS.
+   the relay, OBS and Companion in one go. If Tailscale's backend is stopped,
+   `event start` connects it automatically — no click in the Tailscale GUI needed.
+   Alternatively, start them individually: `iro relay start` then `iro companion
+   start`. Confirm each live feed shows up in OBS.
 9. Make sure **Companion** is connected (green) and a director can reach
    `http://<producer-tailscale-ip>:8000/tablet`.
 10. **Enter the IRO stream key** in OBS (**Settings → Stream**).

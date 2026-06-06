@@ -9,6 +9,7 @@
   iro streams   start|stop|restart|status|logs
   iro event     status|start|stop      # event-day readiness: check / bring-up / wind-down
   iro event start --stint N             # takeover: stint N is on air now — the relay starts there
+  iro tailscale up|down|status          # connect / disconnect / inspect Tailscale
   iro status                            # aggregate health of all services
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] | install-apps [--yes]
   iro export companion [--out PATH]     # write the Companion button config
@@ -242,6 +243,7 @@ EXTRA_VERBS = {
 HIDDEN_VERBS = {"streams": ("run-feed",)}
 ONESHOTS = ("preflight", "cookies", "graphics", "media", "setup", "install-tools", "install-apps", "update")
 EVENT_VERBS = ("status", "start", "stop")
+TAILSCALE_VERBS = ("up", "down", "status")
 
 USAGE = __doc__
 
@@ -267,6 +269,11 @@ def route(argv):
         if verb not in EVENT_VERBS:
             raise ValueError(f"usage: iro event {{{'|'.join(EVENT_VERBS)}}}")
         return {"kind": "service", "command": "event", "verb": verb, "rest": rest[1:]}
+    if cmd == "tailscale":
+        verb = rest[0] if rest else None
+        if verb not in TAILSCALE_VERBS:
+            raise ValueError(f"usage: iro tailscale {{{'|'.join(TAILSCALE_VERBS)}}}")
+        return {"kind": "service", "command": "tailscale", "verb": verb, "rest": rest[1:]}
     if cmd in ONESHOTS:
         return {"kind": "oneshot", "command": cmd, "rest": rest}
     if cmd == "export":
@@ -278,8 +285,8 @@ def route(argv):
 
 def _tailscale_ip():
     try:
-        import companion_common as cc
-        return cc.detect_tailscale_ip()
+        import tailscale
+        return tailscale.detect_tailscale_ip()
     except Exception:
         return None
 
@@ -428,7 +435,7 @@ def companion_start(rest):
         text = fh.read()
     cfg = json.loads(text)
     current, port = cfg.get("bind_ip", "127.0.0.1"), cfg.get("http_port", 8000)
-    ts = cc.detect_tailscale_ip()
+    ts = _tailscale_ip()
     desired = cc.desired_bind_ip(bind_arg, ts)
     if bind_arg == "auto" and not ts:
         print("  (warn) no Tailscale IP found — binding 127.0.0.1 (local only).")
@@ -686,17 +693,18 @@ def event_status(rest):
 
 
 def _event_launch(ev, app):
-    """Best-effort GUI-app launch: report and continue on every failure path."""
+    """Best-effort GUI-app launch: report and continue on every failure path.
+    Returns True iff a launch was actually attempted."""
     import install_apps
     if not install_apps.app_present(app, sys.platform):
         print(f"{app}: not installed — run `iro install-apps`.")
-        return
+        return False
     cmd = ev.launch_command(app, sys.platform)
     if cmd is None:
         hint = ("run `sudo tailscale up`" if app == "tailscale"
                 else "launch it manually")
         print(f"{app}: cannot launch automatically — {hint}.")
-        return
+        return False
     argv, cwd = cmd
     print(f"{app}: launching…")
     try:
@@ -704,6 +712,80 @@ def _event_launch(ev, app):
                          stderr=subprocess.DEVNULL, **sv.spawn_kwargs(os.name))
     except OSError as exc:
         print(f"{app}: launch failed ({exc}).")
+        return False
+    return True
+
+
+def _tailscale_connect(ev=None):
+    """Best-effort connect: argument-less `tailscale up` keeps all settings
+    ("the opposite of tailscale down"). Launches the app first when no backend
+    answers (macOS: the backend only lives while the app runs); never runs `up`
+    in NeedsLogin — that would trigger the interactive browser login. Shared by
+    `iro tailscale up` and `iro event start`; returns the tailnet IP or None."""
+    import tailscale as ts
+    binary, state, ip = ts.tailscale_backend()
+    if ts.plan_tailscale_up(state) == "launch-app":
+        ev = ev or _event_modules()[0]
+        if not _event_launch(ev, "tailscale"):
+            return None  # _event_launch already printed the actionable hint
+        for _ in range(20):  # ~10 s for the backend to come up
+            time.sleep(0.5)
+            binary, state, ip = ts.tailscale_backend()
+            if state:
+                break
+    action = ts.plan_tailscale_up(state)
+    if action == "connected":
+        print(f"tailscale: already connected ({ip or 'no IPv4 yet'}).")
+        return ip
+    if action == "needs-login":
+        print("tailscale: logged out — open the Tailscale app and sign in.")
+        return None
+    if action == "launch-app":  # the backend never came up
+        print("tailscale: not running — start the Tailscale app manually.")
+        return None
+    ok, detail = ts.tailscale_up(binary)
+    if not ok:
+        hint = " (try `sudo tailscale up`)" if sys.platform.startswith("linux") else ""
+        print(f"tailscale: `up` failed: {detail}{hint}")
+        return None
+    for _ in range(20):  # ~10 s for the tailnet to come up
+        ip = ts.detect_tailscale_ip()
+        if ip:
+            break
+        time.sleep(0.5)
+    print(f"tailscale: connected ({ip})." if ip
+          else "tailscale: `up` succeeded but no tailnet IP yet.")
+    return ip
+
+
+def tailscale_up_cmd(_rest):
+    raise SystemExit(0 if _tailscale_connect() else 1)
+
+
+def tailscale_down_cmd(_rest):
+    import tailscale as ts
+    binary, state, _ip = ts.tailscale_backend()
+    if state != "Running":
+        print("tailscale: not connected.")
+        return
+    ok, detail = ts.tailscale_down(binary)
+    if not ok:
+        hint = " (try `sudo tailscale down`)" if sys.platform.startswith("linux") else ""
+        sys.exit(f"tailscale: `down` failed: {detail}{hint}")
+    print("tailscale: disconnected.")
+
+
+def tailscale_status_cmd(_rest):
+    import tailscale as ts
+    _binary, state, ip = ts.tailscale_backend()
+    if state is None:
+        print("Tailscale: backend not running — `iro tailscale up` starts and connects it.")
+    elif state == "Running":
+        print(f"Tailscale: connected ({ip or 'no IPv4 yet'}).")
+    elif state in ("NeedsLogin", "NeedsMachineAuth"):
+        print(f"Tailscale: {state} — open the Tailscale app and sign in.")
+    else:
+        print(f"Tailscale: {state} — run `iro tailscale up` to connect.")
 
 
 def event_start(rest):
@@ -711,22 +793,9 @@ def event_start(rest):
     bind needs its IP), relay before OBS (the HUD browser source then connects
     against a live relay on OBS's first load). Every step is best effort."""
     ev, pf = _event_modules()
-    # 1. Tailscale
-    if _tailscale_ip():
-        print("tailscale: already connected.")
-    else:
-        _event_launch(ev, "tailscale")
-        ip = None
-        for _ in range(20):  # ~10 s for the tailnet to come up
-            ip = _tailscale_ip()
-            if ip:
-                break
-            time.sleep(0.5)
-        if ip:
-            print("tailscale: connected.")
-        else:
-            print("tailscale: no tailnet IP yet — sign in to Tailscale; "
-                  "continuing local-only (OBS keeps working).")
+    # 1. Tailscale — connect a stopped backend; launch the app when needed.
+    if _tailscale_connect(ev) is None:
+        print("tailscale: continuing local-only (OBS keeps working).")
     # 2. Discord
     if ev.app_running("discord"):
         print("discord: already running.")
@@ -790,6 +859,8 @@ DISPATCH = {
     ("streams", "logs"): streams_logs, ("streams", "run-feed"): streams_run_feed,
     ("event", "status"): event_status, ("event", "start"): event_start,
     ("event", "stop"): event_stop,
+    ("tailscale", "up"): tailscale_up_cmd, ("tailscale", "down"): tailscale_down_cmd,
+    ("tailscale", "status"): tailscale_status_cmd,
 }
 
 ONESHOT_MAP = {

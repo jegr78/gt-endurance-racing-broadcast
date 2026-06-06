@@ -1,0 +1,125 @@
+"""Tailscale detection and connect/disconnect control for the iro CLI.
+
+One home for everything Tailscale: CLI-binary discovery, BackendState-aware
+detection, and the argument-less `up`/`down` control behind `iro tailscale ...`
+and `iro event start`. A stopped/disconnected node keeps its assigned tailnet
+IP, so `tailscale ip -4` alone reports false positives — only BackendState
+"Running" counts as connected.
+
+detect_tailscale_ip() is duplicated in src/relay/iro-feeds.py (the relay is a
+standalone single file by design) — the project's bounded-duplication
+convention (cf. load_dotenv). Keep the two in sync.
+
+Spec: docs/superpowers/specs/2026-06-06-tailscale-connect-design.md.
+Tests: tests/test_tailscale.py."""
+import ipaddress, json, subprocess
+
+_CGNAT_NET = ipaddress.ip_network("100.64.0.0/10")  # Tailscale's IPv4 range
+# Candidate Tailscale CLI locations (PATH first, then the platform installers).
+_TAILSCALE_BINS = [
+    "tailscale",
+    "/Applications/Tailscale.app/Contents/MacOS/Tailscale",  # macOS GUI app
+    "/usr/bin/tailscale", "/usr/local/bin/tailscale", "/opt/homebrew/bin/tailscale",
+    r"C:\Program Files\Tailscale\tailscale.exe",
+]
+
+
+def _in_cgnat(ip):
+    """True iff ip is a valid IPv4 address inside Tailscale's 100.64.0.0/10 range."""
+    try:
+        return ipaddress.ip_address(ip) in _CGNAT_NET
+    except ValueError:
+        return False
+
+
+def parse_tailscale_backend(output):
+    """(BackendState, ip) parsed from `tailscale status --json` output.
+
+    The IP is Self's first CGNAT IPv4 and is only reported while Running.
+    (None, None) on unparseable output or a missing BackendState."""
+    try:
+        data = json.loads(output)
+    except ValueError:
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+    state = data.get("BackendState")
+    if not isinstance(state, str) or not state:
+        return None, None
+    if state != "Running":
+        return state, None
+    for ip in (data.get("Self") or {}).get("TailscaleIPs") or []:
+        if _in_cgnat(str(ip)):
+            return state, str(ip)
+    return state, None
+
+
+def parse_tailscale_status(output):
+    """Self's first CGNAT IPv4 from `tailscale status --json`, or None unless
+    the backend is actually Running."""
+    return parse_tailscale_backend(output)[1]
+
+
+def tailscale_backend(timeout=3):
+    """(binary, BackendState, ip) via the first CLI whose backend answers
+    `status --json`; (None, None, None) when none does (CLI missing, or the
+    backend is not running — on macOS it only lives while the app runs)."""
+    for binary in _TAILSCALE_BINS:
+        try:
+            out = subprocess.run([binary, "status", "--json"], capture_output=True,
+                                 text=True, errors="replace", timeout=timeout)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        state, ip = parse_tailscale_backend(out.stdout)
+        if state is not None:
+            return binary, state, ip
+    return None, None, None
+
+
+def detect_tailscale_ip():
+    """This machine's connected Tailscale IPv4 via the CLI, or None if the
+    Tailscale backend is unavailable, stopped, or logged out."""
+    return tailscale_backend()[2]
+
+
+def plan_tailscale_up(state):
+    """Decision for an `up` request given a BackendState:
+    connected   : Running — nothing to do.
+    needs-login : `up` would trigger the interactive browser login; hint only.
+    launch-app  : no backend answered — start the Tailscale app first.
+    run-up      : any other state (Stopped, Starting, ...) — run `up`."""
+    if state == "Running":
+        return "connected"
+    if state in ("NeedsLogin", "NeedsMachineAuth"):
+        return "needs-login"
+    if state is None:
+        return "launch-app"
+    return "run-up"
+
+
+def _run_verb(binary, verb, timeout):
+    """Run an argument-less `tailscale up|down`; returns (ok, detail). The
+    timeout is a backstop in case `up` unexpectedly enters the interactive
+    login flow — callers never invoke it in the NeedsLogin state."""
+    try:
+        out = subprocess.run([binary, verb], capture_output=True, text=True,
+                             errors="replace", timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return False, f"timed out after {timeout}s"
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, str(exc)
+    if out.returncode:
+        detail = (out.stderr or out.stdout or "").strip()
+        return False, detail or f"exit code {out.returncode}"
+    return True, ""
+
+
+def tailscale_up(binary, timeout=15):
+    """Argument-less `tailscale up`: brings the network online WITHOUT changing
+    any settings (per the CLI's own help — the opposite of `tailscale down`)."""
+    return _run_verb(binary, "up", timeout)
+
+
+def tailscale_down(binary, timeout=15):
+    """Argument-less `tailscale down`: disconnect, keep login + settings."""
+    return _run_verb(binary, "down", timeout)

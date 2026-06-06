@@ -60,11 +60,12 @@ def main():
            "--workpath", os.path.join(workdir, "build"),
            "--specpath", workdir,
            # services/companion_common/event (+ its imports preflight,
-           # install_apps) are real frozen modules (iro.py imports them)
+           # install_apps)/tailscale are real frozen modules (iro.py imports them)
            "--paths", os.path.join(SRC, "scripts"),
            "--hidden-import", "services", "--hidden-import", "companion_common",
            "--hidden-import", "event", "--hidden-import", "preflight",
            "--hidden-import", "install_apps", "--hidden-import", "obs_ws",
+           "--hidden-import", "tailscale",
            "--add-data", f"{version_file}{sep}src"]
     for mod in HIDDEN_STDLIB:
         cmd += ["--hidden-import", mod]
