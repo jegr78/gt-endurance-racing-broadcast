@@ -51,7 +51,9 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   GET /pov/stop        -> stop the POV PiP pull (close port 53003, free bandwidth)
   GET /timer           -> race-timer browser-source page (OBS 'HUD Race Timer')
   GET /timer/data      -> timer state JSON (anchor, mode, sync health)
-  GET /timer/start | /timer/stop | /timer/show | /timer/hide
+  GET /timer/start | /timer/stop | /timer/reset | /timer/show | /timer/hide
+                          (start resumes a paused timer; stop = pause;
+                           reset = back to the full duration)
   GET /timer/set/<H:MM:SS>     -> set the race duration (next start)
   GET /timer/adjust/<±seconds> -> shift a RUNNING timer (correction)
   Stop: Ctrl+C
@@ -327,13 +329,16 @@ def build_hud_data(overlay, brands):
 # State model (spec: docs/superpowers/specs/2026-06-06-race-timer-design.md):
 # one absolute end anchor + duration + visibility + an "updated" stamp that
 # drives the newest-wins merge between the local file and the Sheet tab.
+# Stopwatch semantics: START starts or resumes, STOP pauses (freezes the
+# remainder in "remaining"), RESET clears. "end" and "remaining" are mutually
+# exclusive — an anchor means running/finished, a remainder means paused.
 TIMER_DEFAULT_DURATION = 6 * 3600          # seconds, until the Director sets one
 DURATION_RE = re.compile(r"^(\d{1,2}):([0-5]\d):([0-5]\d)$")  # hours 1-2 digits (24h races OK)
 
 
 def default_timer_state():
     return {"end": None, "duration": TIMER_DEFAULT_DURATION,
-            "visible": True, "updated": 0.0}
+            "remaining": None, "visible": True, "updated": 0.0}
 
 
 def parse_duration(s):
@@ -383,20 +388,25 @@ def parse_timer_tab(text):
     dur = parse_duration(raw.get("duration", ""))
     if dur is not None:
         st["duration"] = dur
+    st["remaining"] = parse_duration(raw.get("remaining", ""))
+    if st["end"] is not None:
+        st["remaining"] = None   # mutually exclusive — a set anchor wins
     st["visible"] = raw.get("visible", "").upper() != "FALSE"
     st["updated"] = parse_utc_ts(raw.get("updated (utc)", "")) or 0.0
     return st
 
 
 def timer_mode(state, now):
-    """hidden | prestart | running | finished (pure; the page renders blank
-    for hidden and finished — spec: no 0:00:00 left standing)."""
+    """hidden | prestart | running | paused | finished (pure; the page renders
+    blank for hidden and finished — spec: no 0:00:00 left standing)."""
     if not state.get("visible", True):
         return "hidden"
     end = state.get("end")
-    if end is None:
-        return "prestart"
-    return "running" if now < end else "finished"
+    if end is not None:
+        return "running" if now < end else "finished"
+    if state.get("remaining") is not None:
+        return "paused"
+    return "prestart"
 
 
 def merge_timer_states(local, sheet):
@@ -445,6 +455,8 @@ class TimerStore:
             st["end"] = float(saved["end"])
         if num(saved.get("duration")):
             st["duration"] = int(saved["duration"])
+        if num(saved.get("remaining")) and st["end"] is None:
+            st["remaining"] = int(saved["remaining"])
         if isinstance(saved.get("visible"), bool):
             st["visible"] = saved["visible"]
         if num(saved.get("updated")):
@@ -519,9 +531,11 @@ class TimerStore:
         """Webhook body: the full state, strings only (Apps Script writes it 1:1)."""
         return {"end": iso_utc(st["end"]) if st["end"] is not None else "",
                 "duration": format_duration(st["duration"]),
-                "visible": "TRUE" if st["visible"] else "FALSE"}
+                "visible": "TRUE" if st["visible"] else "FALSE",
+                "remaining": (format_duration(st["remaining"])
+                              if st["remaining"] is not None else "")}
 
-    # -- director actions ---------------------------------------------------
+    # -- director actions (stopwatch semantics: start/resume, pause, reset) --
     def _apply(self, now=None, **changes):
         """Local-first write: update + stamp + save, then push full state."""
         now = time.time() if now is None else now
@@ -535,13 +549,47 @@ class TimerStore:
         return self.data(now)
 
     def start(self, now=None):
+        """Start from prestart (full duration) or resume a paused remainder.
+        No-op while an anchor is set (running/finished) — RESET clears first."""
         now = time.time() if now is None else now
         with self.lock:
-            duration = self.state["duration"]
-        return self._apply(now=now, end=now + duration)
+            if self.state["end"] is not None:
+                anchored = True
+            else:
+                base = self.state["remaining"]
+                self.state["end"] = now + (base if base is not None
+                                           else self.state["duration"])
+                self.state["remaining"] = None
+                self.state["updated"] = now
+                self._save_file()
+                anchored = False
+            st = dict(self.state)
+        if anchored:
+            return {"note": "already started — /timer/reset to clear", **self.data(now)}
+        if self.push_url:
+            self._spawn_push(self._payload(st))
+        return self.data(now)
 
     def stop(self, now=None):
-        return self._apply(now=now, end=None)
+        """Pause: freeze the remainder (the STOP button). Full reset = reset()."""
+        now = time.time() if now is None else now
+        with self.lock:
+            end = self.state["end"]
+            if end is not None:
+                self.state["remaining"] = max(0, int(end - now))
+                self.state["end"] = None
+                self.state["updated"] = now
+                self._save_file()
+            st = dict(self.state)
+        if end is None:
+            return {"note": "not running — nothing to pause", **self.data(now)}
+        if self.push_url:
+            self._spawn_push(self._payload(st))
+        return self.data(now)
+
+    def reset(self, now=None):
+        """Back to 'not started': clears the anchor and any paused remainder."""
+        return self._apply(now=now, end=None, remaining=None)
 
     def show(self, now=None):
         return self._apply(now=now, visible=True)
@@ -554,18 +602,22 @@ class TimerStore:
         return self._apply(now=now, duration=int(seconds))
 
     def adjust(self, delta_s, now=None):
-        """Shift a RUNNING anchor. Check-and-write under ONE lock so a
-        concurrent /timer/stop can never be overwritten (un-stopped)."""
+        """Shift whichever clock is relevant by ± seconds: a RUNNING anchor,
+        a paused remainder, or — before start — the configured duration.
+        Check-and-write under ONE lock so a concurrent stop/reset can never
+        be overwritten."""
         now = time.time() if now is None else now
+        delta = int(delta_s)
         with self.lock:
-            running = self.state["end"] is not None
-            if running:
-                self.state["end"] += int(delta_s)
-                self.state["updated"] = now
-                self._save_file()
+            if self.state["end"] is not None:
+                self.state["end"] += delta
+            elif self.state["remaining"] is not None:
+                self.state["remaining"] = max(0, self.state["remaining"] + delta)
+            else:
+                self.state["duration"] = max(0, self.state["duration"] + delta)
+            self.state["updated"] = now
+            self._save_file()
             st = dict(self.state)
-        if not running:
-            return {"error": "timer not running — /timer/start first", **self.data(now)}
         if self.push_url:
             self._spawn_push(self._payload(st))
         return self.data(now)
@@ -576,8 +628,8 @@ class TimerStore:
         with self.lock:
             st = dict(self.state)
         return {"visible": st["visible"], "end": st["end"],
-                "duration_s": st["duration"], "server_now": now,
-                "mode": timer_mode(st, now),
+                "duration_s": st["duration"], "remaining_s": st["remaining"],
+                "server_now": now, "mode": timer_mode(st, now),
                 "sync": {"push": self.push_status,
                          "sheet_last_ok_age_s": (round(now - self.last_ok, 1)
                                                  if self.last_ok else None),
@@ -588,7 +640,7 @@ class TimerStore:
         d = self.data()
         return {"mode": d["mode"], "visible": d["visible"],
                 "remaining_s": (max(0, int(d["end"] - d["server_now"]))
-                                if d["end"] is not None else None),
+                                if d["end"] is not None else d["remaining_s"]),
                 "push": d["sync"]["push"]}
 
 
@@ -1049,6 +1101,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if p == ["timer", "data"]:   return self._send(timer_store.data())
                     if p == ["timer", "start"]:  return self._send(timer_store.start())
                     if p == ["timer", "stop"]:   return self._send(timer_store.stop())
+                    if p == ["timer", "reset"]:  return self._send(timer_store.reset())
                     if p == ["timer", "show"]:   return self._send(timer_store.show())
                     if p == ["timer", "hide"]:   return self._send(timer_store.hide())
                     if len(p) == 3 and p[1] == "set":

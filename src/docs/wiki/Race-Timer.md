@@ -6,9 +6,9 @@ there). No external service is involved.
 
 ## How it works
 
-The timer is **one absolute end timestamp** plus a duration and a visibility
-flag. The browser source computes `end − now` locally and ticks smoothly; the
-state lives in three places:
+The timer is **one absolute end timestamp** plus a duration, a visibility
+flag, and — while paused — a frozen remainder. The browser source computes
+`end − now` locally and ticks smoothly; the state lives in three places:
 
 | Layer | Purpose |
 |---|---|
@@ -25,16 +25,20 @@ sync (macOS/Windows default).
 Available on the **director panel** (`http://<producer-tailscale-ip>:8088/panel`,
 Race Timer section) and as **Companion buttons** (page 2, top row):
 
+The buttons follow **stopwatch semantics**:
+
 | Action | Endpoint | Effect |
 |---|---|---|
-| Start | `/timer/start` | end = now + duration |
-| Stop | `/timer/stop` | back to "not started" (shows the full duration) |
+| Start | `/timer/start` | starts (end = now + duration) — or **resumes** a paused timer |
+| Stop (pause) | `/timer/stop` | pauses: freezes the remaining time on screen |
+| Reset | `/timer/reset` | back to "not started" (shows the full duration) |
 | Show / Hide | `/timer/show`, `/timer/hide` | blanks/unblanks the overlay on every producer machine |
 | Set duration | `/timer/set/6:00:00` | race length for the next start |
-| Correct | `/timer/adjust/-60` | shift a running timer by ± seconds |
+| Correct | `/timer/adjust/-60` | ± seconds on whatever is relevant: the running countdown, a paused remainder, or — before start — the duration |
 
 Display behaviour: before start → static full duration; running → countdown;
-at zero → blank (no `0:00:00` left standing); hidden → blank.
+paused → frozen remaining time; at zero → blank (no `0:00:00` left standing);
+hidden → blank.
 
 ## One-time setup: the write webhook (optional but recommended)
 
@@ -48,7 +52,8 @@ countdown. Set it up once per sheet:
    ```javascript
    const KEY = 'change-me';            // must match the key=... in the URL below
    const TAB = 'Timer';
-   const ROWS = {'Race End (UTC)': 1, 'Duration': 2, 'Visible': 3, 'Updated (UTC)': 4};
+   const ROWS = {'Race End (UTC)': 1, 'Duration': 2, 'Visible': 3,
+                 'Updated (UTC)': 4, 'Remaining': 5};
 
    function doPost(e) {
      const out = (o) => ContentService.createTextOutput(JSON.stringify(o))
@@ -64,6 +69,7 @@ countdown. Set it up once per sheet:
      if ('end' in p) write('Race End (UTC)', p.end);
      if ('duration' in p) write('Duration', p.duration);
      if ('visible' in p) write('Visible', p.visible);
+     if ('remaining' in p) write('Remaining', p.remaining);
      write('Updated (UTC)', new Date().toISOString());
      return out({ok: true});
    }

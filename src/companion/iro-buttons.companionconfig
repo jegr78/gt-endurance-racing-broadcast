@@ -2835,7 +2835,7 @@
      "2": {
       "type": "button",
       "style": {
-       "text": "TIMER\nSTOP",
+       "text": "TIMER\nPAUSE",
        "textExpression": false,
        "size": "14",
        "png64": null,
@@ -3102,6 +3102,66 @@
            "options": {
             "url": {
              "value": "http://127.0.0.1:8088/timer/adjust/-60",
+             "isExpression": false
+            },
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
+             "isExpression": false
+            },
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
+            },
+            "statusCodeVariable": {
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 1,
+           "type": "action"
+          }
+         ],
+         "up": []
+        },
+        "options": {
+         "runWhileHeld": []
+        }
+       }
+      },
+      "localVariables": []
+     },
+     "7": {
+      "type": "button",
+      "style": {
+       "text": "TIMER\nRESET",
+       "textExpression": false,
+       "size": "14",
+       "png64": null,
+       "alignment": "center:center",
+       "pngalignment": "center:center",
+       "color": 16777215,
+       "bgcolor": 8347392,
+       "show_topbar": "default"
+      },
+      "options": {
+       "stepProgression": "auto",
+       "stepExpression": "",
+       "rotaryActions": false
+      },
+      "feedbacks": [],
+      "steps": {
+       "0": {
+        "action_sets": {
+         "down": [
+          {
+           "id": "iro-timer-reset",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
+           "options": {
+            "url": {
+             "value": "http://127.0.0.1:8088/timer/reset",
              "isExpression": false
             },
             "header": {

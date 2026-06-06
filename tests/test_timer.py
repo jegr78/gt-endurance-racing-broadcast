@@ -56,6 +56,16 @@ def t_parse_timer_tab():
     assert st["duration"] == 21600
     assert st["visible"] is False
     assert st["updated"] == 1781359198.0
+    assert st["remaining"] is None
+
+
+def t_parse_timer_tab_remaining():
+    st = m.parse_timer_tab("Duration,6:00:00\nRemaining,1:30:00\n")
+    assert st["end"] is None and st["remaining"] == 5400
+    # end and remaining are mutually exclusive — a set anchor wins
+    st = m.parse_timer_tab(
+        "Race End (UTC),2026-06-13T20:00:00Z\nRemaining,1:30:00\n")
+    assert st["end"] == 1781380800.0 and st["remaining"] is None
 
 
 def t_parse_timer_tab_defaults_and_garbage():
@@ -73,14 +83,18 @@ def t_parse_timer_tab_defaults_and_garbage():
 
 
 def t_timer_mode():
-    base = {"end": 1000.0, "duration": 21600, "visible": True, "updated": 0.0}
+    base = {"end": 1000.0, "duration": 21600, "remaining": None,
+            "visible": True, "updated": 0.0}
     assert m.timer_mode(dict(base, visible=False), 500.0) == "hidden"
     assert m.timer_mode(dict(base, end=None), 500.0) == "prestart"
     assert m.timer_mode(base, 500.0) == "running"
     assert m.timer_mode(base, 1000.0) == "finished"
     assert m.timer_mode(base, 2000.0) == "finished"
+    assert m.timer_mode(dict(base, end=None, remaining=300), 500.0) == "paused"
     # hidden wins over everything
     assert m.timer_mode(dict(base, end=None, visible=False), 0.0) == "hidden"
+    assert m.timer_mode(dict(base, end=None, remaining=300, visible=False),
+                        0.0) == "hidden"
 
 
 def t_merge_timer_states_newest_wins():
@@ -107,17 +121,49 @@ def t_timerstore_actions_update_state_and_stamp():
     ts.start(now=1000.0)
     assert ts.state["end"] == 1000.0 + 7200
     assert ts.state["updated"] == 1000.0
-    ts.adjust(-60)
+    ts.adjust(-60, now=1000.0)
     assert ts.state["end"] == 1000.0 + 7200 - 60
     ts.hide(); assert ts.state["visible"] is False
     ts.show(); assert ts.state["visible"] is True
-    ts.stop(); assert ts.state["end"] is None
+    ts.reset(); assert ts.state["end"] is None and ts.state["remaining"] is None
 
 
-def t_timerstore_adjust_requires_running():
+def t_timerstore_stop_pauses_and_start_resumes():
     ts, _ = _store()
-    r = ts.adjust(60)
-    assert "error" in r and ts.state["end"] is None
+    ts.set_duration(7200, now=900.0)
+    ts.start(now=1000.0)                        # end = 8200
+    ts.stop(now=2000.0)                         # pause with 6200 s left
+    assert ts.state["end"] is None
+    assert ts.state["remaining"] == 6200
+    assert m.timer_mode(ts.state, 2000.0) == "paused"
+    ts.start(now=5000.0)                        # resume: end = now + remaining
+    assert ts.state["end"] == 5000.0 + 6200
+    assert ts.state["remaining"] is None
+    # start while already running -> no-op (anchor untouched)
+    r = ts.start(now=6000.0)
+    assert ts.state["end"] == 5000.0 + 6200 and "note" in r
+    # stop while not running -> no-op note, state untouched
+    ts.reset()
+    r = ts.stop(now=7000.0)
+    assert "note" in r and ts.state["remaining"] is None
+
+
+def t_timerstore_adjust_is_context_sensitive():
+    ts, _ = _store()
+    ts.set_duration(3600, now=10.0)
+    ts.adjust(60, now=11.0)                     # prestart -> duration
+    assert ts.state["duration"] == 3660 and ts.state["end"] is None
+    ts.adjust(-7200, now=12.0)                  # clamped at 0
+    assert ts.state["duration"] == 0
+    ts.set_duration(3600, now=13.0)
+    ts.start(now=100.0)
+    ts.adjust(-60, now=100.0)                   # running -> shifts the anchor
+    assert ts.state["end"] == 100.0 + 3600 - 60
+    ts.stop(now=200.0)                          # paused: 3640 - 200 = 3440 left
+    ts.adjust(60, now=201.0)                    # paused -> shifts the remainder
+    assert ts.state["remaining"] == 3500
+    ts.adjust(-9999, now=202.0)                 # clamped at 0
+    assert ts.state["remaining"] == 0
 
 
 def t_timerstore_persists_and_reloads():
@@ -129,6 +175,9 @@ def t_timerstore_persists_and_reloads():
     assert ts2.state["duration"] == 3600
     assert ts2.state["visible"] is False
     assert _os.path.exists(_os.path.join(tmp, "timer.json"))
+    ts2.stop(now=6000.0)                        # paused remainder survives reload too
+    ts3, _ = _store(tmp=tmp)
+    assert ts3.state["remaining"] == 2600 and ts3.state["end"] is None
 
 
 def t_timerstore_refresh_adopts_newer_sheet():
@@ -175,8 +224,12 @@ def t_timerstore_push_payload_and_status():
     import json as _json
     p = _json.loads(body)
     assert url == "http://push?key=k"
-    assert p == {"end": m.iso_utc(8200.0), "duration": "2:00:00", "visible": "TRUE"}
+    assert p == {"end": m.iso_utc(8200.0), "duration": "2:00:00",
+                 "visible": "TRUE", "remaining": ""}
     assert ts.push_status == "ok"
+    ts.stop(now=2000.0)                         # paused -> remaining travels too
+    p = _json.loads(sent[-1][1])
+    assert p["end"] == "" and p["remaining"] == "1:43:20"   # 6200 s
     def fail(url, body):
         raise RuntimeError("403")
     ts._post = fail
@@ -206,9 +259,13 @@ def t_timerstore_data_contract():
     d = ts.data(now=123.0)
     assert d["mode"] == "prestart" and d["visible"] is True
     assert d["end"] is None and d["duration_s"] == m.TIMER_DEFAULT_DURATION
+    assert d["remaining_s"] is None
     assert d["server_now"] == 123.0
     assert d["sync"]["push"] == "disabled"
     assert set(d["sync"]) == {"push", "sheet_last_ok_age_s", "last_error"}
+    ts.set_duration(600, now=10.0); ts.start(now=10.0); ts.stop(now=70.0)
+    d = ts.data(now=80.0)
+    assert d["mode"] == "paused" and d["remaining_s"] == 540
 
 
 def t_timerstore_summary():
@@ -219,6 +276,10 @@ def t_timerstore_summary():
     # anchor is long past against the real clock -> finished, clamped to 0
     s = ts.summary()
     assert s["mode"] == "finished" and s["remaining_s"] == 0
+    ts.start(now=10.0)                          # still running per state -> note
+    ts.stop(now=40.0)                           # but pause math still works
+    assert ts.summary() == {"mode": "paused", "visible": True,
+                            "remaining_s": 30, "push": "disabled"}
 
 
 if __name__ == "__main__":

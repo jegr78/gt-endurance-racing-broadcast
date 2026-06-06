@@ -32,7 +32,11 @@
   function render() {
     const el = document.getElementById("clock");
     if (!state || !state.visible) { el.textContent = ""; return; }
-    if (state.end === null) { el.textContent = fmt(state.duration_s); return; }
+    if (state.end === null) {
+      // paused -> frozen remainder; not started -> full duration (both static)
+      const s = (state.remaining_s ?? null) !== null ? state.remaining_s : state.duration_s;
+      el.textContent = fmt(s); return;
+    }
     const remaining = state.end - (Date.now() / 1000 + clockOffset);
     el.textContent = remaining > 0 ? fmt(remaining) : "";   // blank at zero
   }
