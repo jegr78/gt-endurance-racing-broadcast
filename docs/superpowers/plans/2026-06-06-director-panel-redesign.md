@@ -1,0 +1,787 @@
+# Director Panel Redesign Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Rebuild `/panel` (the director console) with the vision-mixer-bus layout, Companion-synced OBS actions, relay feed control, and dB audio — then document it in the wiki with a screenshot.
+
+**Architecture:** One self-contained HTML file (`src/director/director-panel.html`) served by the relay at `/panel`. OBS actions go over obs-websocket-js (direct WebSocket from the browser to OBS, port 4455); relay actions (feeds, timer, status) are plain `fetch()` against the same origin. No relay code changes, no new endpoints.
+
+**Tech Stack:** Vanilla HTML/CSS/JS, obs-websocket-js 5.0.6 (pinned CDN build, keep the existing integrity hash), Google Fonts (Saira Condensed + IBM Plex Mono). No build step, no framework.
+
+**Spec:** `docs/superpowers/specs/2026-06-06-director-panel-redesign-design.md`
+
+**Testing note:** This repo has no JS test harness (stdlib-Python-only by design); the panel is a static file. Verification = serving smoke test (Task 2), manual checklist with the user (Task 3), and `tools/build.py` verify (Task 4). TDD does not apply to Tasks 1–3; do not invent a JS test framework.
+
+---
+
+### Task 1: Rewrite `src/director/director-panel.html`
+
+**Files:**
+- Modify: `src/director/director-panel.html` (full replacement)
+
+The file keeps the existing look (dark industrial, Saira Condensed + IBM Plex Mono, amber/red/green states) and the existing connection plumbing, and replaces the panel grid with six horizontal busses. Content decisions (all from the spec):
+
+- **PGM** (sticky): 7 macros with exact Companion semantics (scene + visibility + mutes).
+- **FEEDS**: relay HTTP — `/next`, `/reload`, `/reload/A`, `/reload/B`, `/pov/reload`, `/pov/stop`, `/set/stint/<n>` (prompt + confirm).
+- **SCN·VIS**: raw scene switches + Feed A/B/POV visibility toggles (scene `Stint`).
+- **GFX**: HUD (Stint), HUD (Split), Standings, Schedule, Race/Quali Results, Race Wx 1/2, Quali Wx, Standby Cover, Post-Race Interviews (scene `Interview`).
+- **TIMER**: unchanged action set (START/PAUSE/RESET/SHOW/HIDE/±1m/±10s/SET DURATION…).
+- **AUDIO**: dB sliders (−60…0, `inputVolumeDb`), readout, 0 dB reset, mute — for Feed A, Feed B, Feed POV, Discord Audio Capture.
+- **Removed**: guest-URL loader, Split L/R toggles, 0–100 multiplier volume.
+- **Status strip** in the header: ON AIR (OBS), per-feed stint + POV state (relay `/status`), timer, OBS + RELAY LEDs.
+
+- [ ] **Step 1: Replace the file with the complete new version**
+
+Write exactly this content to `src/director/director-panel.html`:
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>IRO · Director Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/obs-websocket-js@5.0.6/dist/obs-ws.global.js" integrity="sha384-cFeq2Xcu17x+Az+nlYMZAaV1gxGNNfUT48om81Bp23aa9pTsmi+YXAe5XQ7Cx1s+" crossorigin="anonymous"></script>
+<style>
+  /* =========================================================
+     IRO DIRECTOR CONSOLE — vision-mixer busses
+     Horizontal action rows mirroring the Companion pages.
+     Dark, high-contrast, glanceable. Built for tablet + desktop.
+     ========================================================= */
+  :root{
+    --bg:#0a0c0f; --panel:#13171c; --panel-2:#171c22; --edge:#272f38;
+    --ink:#e8edf2; --muted:#7b8794; --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --head:'Saira Condensed',system-ui,sans-serif;
+    --air:#ff2d2d; --air-glow:rgba(255,45,45,.55);
+    --live:#2bd66a; --live-glow:rgba(43,214,106,.45);
+    --amber:#ffb000; --amber-glow:rgba(255,176,0,.4);
+    --blue:#3aa0ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(1200px 600px at 80% -10%, #11161c 0%, transparent 60%),
+      repeating-linear-gradient(0deg, transparent 0 27px, rgba(255,255,255,.012) 27px 28px),
+      var(--bg);
+    color:var(--ink); font-family:var(--mono); padding:18px; min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1240px;margin:0 auto}
+
+  /* ---------- header: brand + status strip + LEDs ---------- */
+  header{
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    border:1px solid var(--edge);background:linear-gradient(180deg,var(--panel-2),var(--panel));
+    border-radius:14px;padding:12px 16px;margin-bottom:12px;
+    box-shadow:0 12px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.03);
+  }
+  .brand{font-family:var(--head);font-weight:700;letter-spacing:.16em;font-size:24px;text-transform:uppercase}
+  .brand small{color:var(--amber);display:block;font-size:10px;letter-spacing:.32em;margin-top:-2px}
+  .strip{display:flex;gap:8px;flex-wrap:wrap;align-items:center;flex:1;justify-content:center}
+  .st{display:inline-flex;align-items:center;gap:6px;background:#0c0f13;border:1px solid var(--edge);
+    border-radius:8px;padding:6px 10px;font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;white-space:nowrap}
+  .st b{color:var(--ink);font-weight:600}
+  .st.air{border-color:var(--air);color:#ff8080;box-shadow:0 0 12px var(--air-glow)}
+  .st.air b{color:#ffb3b3}
+  .led{display:flex;align-items:center;gap:7px;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+  .dot{width:12px;height:12px;border-radius:50%;background:#3a434d;box-shadow:0 0 0 3px rgba(255,255,255,.03)}
+  .dot.on{background:var(--live);box-shadow:0 0 14px var(--live-glow),0 0 0 3px rgba(43,214,106,.12)}
+  .dot.err{background:var(--air);box-shadow:0 0 14px var(--air-glow),0 0 0 3px rgba(255,45,45,.12)}
+
+  /* ---------- connection row ---------- */
+  .conn{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
+    border:1px solid var(--edge);background:var(--panel);border-radius:14px;padding:12px 14px;margin-bottom:12px}
+  .fld{display:flex;flex-direction:column;gap:5px}
+  .fld label{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .fld input{background:#0c0f13;border:1px solid var(--edge);color:var(--ink);font-family:var(--mono);
+    font-size:14px;padding:10px 12px;border-radius:9px;min-width:120px;outline:none}
+  .fld input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(58,160,255,.18)}
+  .fld.ip input{min-width:170px}.fld.pw input{min-width:160px}
+  .pill{display:inline-block;padding:9px 14px;border-radius:9px;border:1px solid var(--edge);
+    font-size:13px;letter-spacing:.06em;cursor:pointer;background:linear-gradient(180deg,#1b2129,#141921);color:var(--ink)}
+  .pill.go{border-color:var(--live);color:var(--live)}
+  .pill.stop{border-color:var(--air);color:var(--air)}
+
+  /* ---------- busses ---------- */
+  .bus{display:flex;gap:14px;align-items:flex-start;
+    border:1px solid var(--edge);background:linear-gradient(180deg,var(--panel-2),var(--panel));
+    border-radius:14px;padding:12px 14px;margin-bottom:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.03)}
+  .bus .cap{flex:0 0 76px;font-family:var(--head);font-weight:700;letter-spacing:.12em;font-size:14px;
+    color:var(--ink);text-transform:uppercase;display:flex;align-items:center;gap:8px;padding-top:16px}
+  .bus .cap::before{content:"";width:6px;height:16px;background:var(--amber);border-radius:2px;
+    box-shadow:0 0 10px var(--amber-glow);flex:0 0 auto}
+  .bus .keys{display:flex;flex-wrap:wrap;gap:8px;flex:1;align-items:stretch}
+  .bus .body{flex:1;min-width:0}
+  .sep{flex:0 0 1px;align-self:stretch;background:var(--edge);margin:2px 6px}
+  .pgm{position:sticky;top:8px;z-index:30}
+
+  /* ---------- keys ---------- */
+  button.k{
+    appearance:none;cursor:pointer;color:var(--ink);font-family:var(--mono);font-weight:500;
+    font-size:13px;letter-spacing:.04em;padding:9px 10px;border-radius:10px;flex:0 0 auto;
+    border:1px solid var(--edge);background:linear-gradient(180deg,#1b2129,#141921);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 4px 12px rgba(0,0,0,.4);
+    transition:transform .05s ease,border-color .15s,box-shadow .15s,background .15s;
+    text-align:center;line-height:1.25;min-width:96px;min-height:54px;
+  }
+  button.k:active{transform:translateY(1px) scale(.99)}
+  button.k:disabled{opacity:.35;cursor:not-allowed}
+  button.k .tag{display:block;font-size:8px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+  button.k.on{border-color:var(--live);background:linear-gradient(180deg,#15301f,#10261a);
+    box-shadow:0 0 0 1px var(--live),0 0 18px var(--live-glow),inset 0 1px 0 rgba(255,255,255,.06)}
+  button.k.on .tag{color:var(--live)}
+  button.k.air{border-color:var(--air);background:linear-gradient(180deg,#331414,#26100f);
+    box-shadow:0 0 0 1px var(--air),0 0 20px var(--air-glow),inset 0 1px 0 rgba(255,255,255,.06)}
+  button.k.air .tag{color:var(--air)}
+  .pgm button.k{min-width:110px;min-height:62px;font-weight:600;font-size:14px}
+
+  /* ---------- audio rows ---------- */
+  .arow{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px dashed var(--edge)}
+  .arow:first-child{border-top:0}
+  .arow .nm{flex:0 0 90px;font-size:13px}
+  .arow input[type=range]{flex:1;accent-color:var(--amber);min-width:120px}
+  .arow .db{flex:0 0 84px;font-size:12px;color:var(--muted);text-align:right}
+  .rst,.mute{flex:0 0 auto;padding:9px 10px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+    border-radius:8px;border:1px solid var(--edge);background:#141921;color:var(--muted);cursor:pointer}
+  .rst:disabled,.mute:disabled{opacity:.35;cursor:not-allowed}
+  .mute.muted{border-color:var(--air);color:var(--air);background:#26100f;box-shadow:0 0 12px var(--air-glow)}
+
+  .hint{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5}
+
+  /* ---------- log ---------- */
+  #log{font-size:11px;color:var(--muted);margin-top:2px;max-height:90px;overflow:auto;
+    border:1px solid var(--edge);background:#0c0f13;border-radius:10px;padding:10px;white-space:pre-wrap}
+
+  /* ---------- small screens ---------- */
+  @media(max-width:760px){
+    body{padding:10px}
+    .bus{flex-direction:column;gap:8px}
+    .bus .cap{padding-top:0;flex:0 0 auto}
+    .pgm{top:4px}
+    button.k{flex:1 1 30%;min-width:84px}
+    .strip{justify-content:flex-start}
+    .arow .nm{flex:0 0 64px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">Director Console<small>IRO · ENDURANCE BROADCAST</small></div>
+    <div class="strip">
+      <span class="st air" id="stAir">ON AIR <b>—</b></span>
+      <span class="st" id="stA">A <b>—</b></span>
+      <span class="st" id="stB">B <b>—</b></span>
+      <span class="st" id="stPov">POV <b>—</b></span>
+      <span class="st" id="stTimer">TIMER <b>—</b></span>
+    </div>
+    <div class="led"><span class="dot" id="ledObs"></span>OBS</div>
+    <div class="led"><span class="dot" id="ledRelay"></span>Relay</div>
+  </header>
+
+  <div class="conn">
+    <div class="fld ip"><label>OBS IP (Producer Tailscale)</label><input id="ip" placeholder="100.x.y.z"></div>
+    <div class="fld"><label>Port</label><input id="port" value="4455"></div>
+    <div class="fld pw"><label>Password</label><input id="pw" type="password" placeholder="from OBS WebSocket"></div>
+    <span class="pill go" id="connectBtn">Connect</span>
+    <span class="pill stop" id="disconnectBtn" style="display:none">Disconnect</span>
+  </div>
+
+  <section class="bus pgm"><div class="cap">PGM</div><div class="keys" id="pgmBus"></div></section>
+
+  <section class="bus"><div class="cap">Feeds</div><div class="keys" id="feedsBus"></div></section>
+
+  <section class="bus"><div class="cap">Scn·Vis</div><div class="keys" id="scnBus"></div></section>
+
+  <section class="bus"><div class="cap">Gfx</div><div class="keys" id="gfxBus"></div></section>
+
+  <section class="bus"><div class="cap">Timer</div>
+    <div class="body">
+      <div class="keys" id="timerBus"></div>
+      <div class="hint" id="timerInfo">Timer: connecting to relay…</div>
+    </div>
+  </section>
+
+  <section class="bus"><div class="cap">Audio</div><div class="body" id="audio"></div></section>
+
+  <div id="log">Ready. FEEDS + TIMER work relay-only; enter the Producer's Tailscale IP + OBS WebSocket password and Connect for everything else.</div>
+</div>
+
+<script>
+/* =======================================================================
+   CONFIG — mirrors the Companion button config (src/companion/) and the
+   OBS collection (src/obs/IRO_Endurance.json). Edit here if scenes/sources
+   are renamed in OBS; keep Companion and this file in sync.
+   - macros:   PGM bus, exact Companion page-1 row-0 semantics
+   - scenes:   raw scene switches
+   - vis:      feed visibility toggles (scene items)
+   - graphics: overlay toggles (scene items; "HUD" is an OBS group — valid)
+   - audio:    OBS audio inputs for the dB rows
+   ======================================================================= */
+const CONFIG = {
+  macros: [
+    {label:"STINT A", scene:"Stint",
+     show:[["Stint","Feed A"]], hide:[["Stint","Feed B"]],
+     unmute:["Feed A"], mute:["Feed B","Discord Audio Capture"]},
+    {label:"STINT B", scene:"Stint",
+     show:[["Stint","Feed B"]], hide:[["Stint","Feed A"]],
+     unmute:["Feed B"], mute:["Feed A","Discord Audio Capture"]},
+    {label:"SPLIT", scene:"Splitscreen",
+     show:[["Splitscreen","Feed A"],["Splitscreen","Feed B"]], hide:[],
+     unmute:["Feed A"], mute:["Feed B","Discord Audio Capture"]},
+    {label:"INTERVIEW", scene:"Interview", show:[], hide:[],
+     unmute:["Discord Audio Capture"], mute:["Feed A","Feed B"]},
+    {label:"STANDBY", scene:"Standby", show:[], hide:[],
+     unmute:[], mute:["Feed A","Feed B","Discord Audio Capture"]},
+    {label:"INTRO", scene:"Intro", show:[], hide:[],
+     unmute:[], mute:["Feed A","Feed B","Discord Audio Capture"]},
+    {label:"OUTRO", scene:"Outro", show:[], hide:[],
+     unmute:[], mute:["Feed A","Feed B","Discord Audio Capture"]},
+  ],
+  scenes: ["Stint","Splitscreen","Interview","Standby"],
+  vis: [
+    {label:"FEED A", scene:"Stint", source:"Feed A"},
+    {label:"FEED B", scene:"Stint", source:"Feed B"},
+    {label:"POV",    scene:"Stint", source:"Feed POV"},
+  ],
+  graphics: [
+    {label:"HUD",           scene:"Stint",       source:"HUD"},
+    {label:"HUD",           scene:"Splitscreen", source:"HUD"},
+    {label:"STANDINGS",     scene:"Stint",       source:"Standings"},
+    {label:"SCHEDULE",      scene:"Stint",       source:"Schedule"},
+    {label:"RACE RESULTS",  scene:"Stint",       source:"Race Results"},
+    {label:"QUALI RESULTS", scene:"Stint",       source:"Quali Results"},
+    {label:"RACE WX 1",     scene:"Stint",       source:"Race Weather 1"},
+    {label:"RACE WX 2",     scene:"Stint",       source:"Race Weather 2"},
+    {label:"QUALI WX",      scene:"Stint",       source:"Quali Weather"},
+    {label:"STBY COVER",    scene:"Stint",       source:"Standby Cover"},
+    {label:"POST-RACE",     scene:"Interview",   source:"Post Race Interviews"},
+  ],
+  audio: [
+    {label:"Feed A",  input:"Feed A"},
+    {label:"Feed B",  input:"Feed B"},
+    {label:"POV",     input:"Feed POV"},
+    {label:"Discord", input:"Discord Audio Capture"},
+  ],
+};
+
+/* Relay endpoints (same origin as this page; Companion uses the same set). */
+const FEED_ACTIONS = [
+  ["NEXT",       "next",       "handover"],
+  ["RELOAD ALL", "reload",     "relay"],
+  ["RELOAD A",   "reload/A",   "relay"],
+  ["RELOAD B",   "reload/B",   "relay"],
+  ["POV RELOAD", "pov/reload", "relay"],
+  ["POV STOP",   "pov/stop",   "relay"],
+];
+const TIMER_ACTIONS = [
+  // stopwatch semantics: START starts or resumes, PAUSE pauses, RESET clears.
+  // adjust shifts whatever is relevant: running anchor / paused remainder /
+  // the configured duration before start.
+  ["START","timer/start"], ["PAUSE","timer/stop"], ["RESET","timer/reset"],
+  ["SHOW","timer/show"],   ["HIDE","timer/hide"],
+  ["+1 MIN","timer/adjust/60"],  ["−1 MIN","timer/adjust/-60"],
+  ["+10 S","timer/adjust/10"],   ["−10 S","timer/adjust/-10"],
+];
+
+/* ---------- plumbing ---------- */
+const obs = new OBSWebSocket();
+let connected = false, poll = null, programScene = "";
+const $ = s => document.querySelector(s);
+function log(m, kind){
+  const t = new Date().toLocaleTimeString();
+  $("#log").textContent = `[${t}] ${m}\n` + $("#log").textContent;
+  if(kind==="err") console.warn(m);
+}
+function obsLed(state){ $("#ledObs").className = "dot" + (state==="ok"?" on":state==="err"?" err":""); }
+function relayLed(ok){ $("#ledRelay").className = "dot" + (ok?" on":" err"); }
+
+/* remember connection details locally for convenience */
+try{
+  $("#ip").value   = localStorage.getItem("iro_ip")   || "";
+  $("#port").value = localStorage.getItem("iro_port") || "4455";
+  $("#pw").value   = localStorage.getItem("iro_pw")   || "";
+}catch(e){}
+
+/* ---------- build the busses ---------- */
+function mkKey(label, tag, onClick, obsManaged){
+  const b = document.createElement("button");
+  b.className = "k"; b.disabled = !!obsManaged;
+  b.innerHTML = `<span class="tag">${tag}</span>${label}`;
+  if (obsManaged) b.dataset.obs = "1";
+  b.addEventListener("click", onClick);
+  return b;
+}
+const macroKeys = [], sceneKeys = {}, toggleKeys = [];
+
+CONFIG.macros.forEach(m=>{
+  const b = mkKey(m.label, "program", ()=>runMacro(m), true);
+  b._m = m; macroKeys.push(b); $("#pgmBus").appendChild(b);
+});
+
+FEED_ACTIONS.forEach(([label, path, tag])=>{
+  $("#feedsBus").appendChild(mkKey(label, tag, ()=>relayCall(path), false));
+});
+$("#feedsBus").appendChild(mkKey("SET STINT…", "correct", ()=>{
+  const v = prompt("Stint number now ON AIR (1-based):");
+  if (v === null) return;
+  if (!/^\d+$/.test(v.trim())) { log("Stint must be a number.", "err"); return; }
+  if (!confirm(`Re-target BOTH feeds to stint ${v.trim()}? This interrupts a running pull — not for mid-program use.`)) return;
+  relayCall("set/stint/" + v.trim());
+}, false));
+
+CONFIG.scenes.forEach(name=>{
+  const b = mkKey(name.toUpperCase(), "scene",
+    ()=>safe(()=>obs.call("SetCurrentProgramScene",{sceneName:name})), true);
+  sceneKeys[name] = b; $("#scnBus").appendChild(b);
+});
+{ const s = document.createElement("div"); s.className = "sep"; $("#scnBus").appendChild(s); }
+CONFIG.vis.forEach(item=>{
+  const b = mkKey(item.label, item.scene, ()=>toggleSource(item, b), true);
+  b._item = item; toggleKeys.push(b); $("#scnBus").appendChild(b);
+});
+
+CONFIG.graphics.forEach(item=>{
+  const b = mkKey(item.label, item.scene, ()=>toggleSource(item, b), true);
+  b._item = item; toggleKeys.push(b); $("#gfxBus").appendChild(b);
+});
+
+TIMER_ACTIONS.forEach(([label, path])=>{
+  $("#timerBus").appendChild(mkKey(label, "timer", ()=>timerCall(path), false));
+});
+$("#timerBus").appendChild(mkKey("SET…", "duration", ()=>{
+  const v = prompt("Race duration (H:MM:SS):", "6:00:00");
+  if (v) timerCall("timer/set/" + v.trim());   // ':' is path-safe; encoding it would 400
+}, false));
+
+CONFIG.audio.forEach(a=>{
+  const row = document.createElement("div"); row.className = "arow";
+  row.innerHTML =
+    `<span class="nm">${a.label}</span>
+     <input type="range" min="-60" max="0" step="0.5" value="0" disabled data-obs="1" data-input="${a.input}">
+     <span class="db">— dB</span>
+     <button class="rst" disabled data-obs="1">0 dB</button>
+     <button class="mute" disabled data-obs="1" data-input="${a.input}">Mute</button>`;
+  $("#audio").appendChild(row);
+  const sld = row.querySelector("input"), db = row.querySelector(".db");
+  sld.addEventListener("input", e=>{
+    sld.dataset.touched = Date.now();
+    db.textContent = Number(e.target.value).toFixed(1) + " dB";
+    safe(()=>obs.call("SetInputVolume",{inputName:a.input, inputVolumeDb:Number(e.target.value)}));
+  });
+  row.querySelector(".rst").addEventListener("click", ()=>{
+    safe(async ()=>{ await obs.call("SetInputVolume",{inputName:a.input, inputVolumeDb:0}); refresh(); });
+  });
+  row.querySelector(".mute").addEventListener("click", ()=>{
+    safe(()=>obs.call("ToggleInputMute",{inputName:a.input}));
+  });
+});
+
+/* ---------- OBS actions ---------- */
+async function safe(fn){ try{ await fn(); }catch(e){ log("Action failed: "+(e.message||e), "err"); } }
+
+async function setItemVisible(scene, source, on){
+  const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:scene, sourceName:source});
+  await obs.call("SetSceneItemEnabled",{sceneName:scene, sceneItemId, sceneItemEnabled:on});
+}
+
+/* One press = scene + visibility + mutes, exactly like the Companion macro.
+   Each step is independent: a failing step is logged and the rest still runs
+   (a half high-pressure switch is better than none). */
+async function runMacro(m){
+  if(!connected) return;
+  const steps = [
+    ["set scene", ()=>obs.call("SetCurrentProgramScene",{sceneName:m.scene})],
+    ...m.show.map(([sc,src])=>[`show ${src}`,  ()=>setItemVisible(sc,src,true)]),
+    ...m.hide.map(([sc,src])=>[`hide ${src}`,  ()=>setItemVisible(sc,src,false)]),
+    ...m.unmute.map(i=>[`unmute ${i}`, ()=>obs.call("SetInputMute",{inputName:i, inputMuted:false})]),
+    ...m.mute.map(i=>[`mute ${i}`,     ()=>obs.call("SetInputMute",{inputName:i, inputMuted:true})]),
+  ];
+  for (const [what, fn] of steps){
+    try{ await fn(); }
+    catch(e){ log(`${m.label}: ${what} failed: ${e.message||e}`, "err"); }
+  }
+  refresh();
+}
+
+async function toggleSource(item, btn){
+  try{
+    const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:item.scene, sourceName:item.source});
+    const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:item.scene, sceneItemId});
+    await obs.call("SetSceneItemEnabled",{sceneName:item.scene, sceneItemId, sceneItemEnabled:!sceneItemEnabled});
+    btn.classList.toggle("on", !sceneItemEnabled);
+  }catch(e){ log(`Toggle "${item.source}" in "${item.scene}" failed: ${e.message||e}`, "err"); }
+}
+
+/* ---------- relay actions (no OBS needed) ---------- */
+async function relayCall(path){
+  try{
+    const r = await fetch("/" + path, {cache:"no-store"});
+    const d = await r.json();
+    if (d.error) { log("Relay /" + path + ": " + d.error, "err"); return; }
+    let extra = "";
+    if (d.feeds) extra = ` — A: stint ${d.feeds.A.stint}, B: stint ${d.feeds.B.stint}`;
+    log("Relay /" + path + " ok" + extra);
+    relayPoll();
+  }catch(e){ log("Relay /" + path + " failed (relay reachable?): " + e, "err"); }
+}
+
+/* ---------- OBS state refresh ---------- */
+async function refresh(){
+  if(!connected) return;
+  try{
+    const {currentProgramSceneName} = await obs.call("GetCurrentProgramScene");
+    programScene = currentProgramSceneName;
+  }catch(e){}
+  Object.entries(sceneKeys).forEach(([n,b])=>b.classList.toggle("air", n===programScene));
+
+  const visState = {};
+  for(const b of toggleKeys){
+    try{
+      const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:b._item.scene, sourceName:b._item.source});
+      const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:b._item.scene, sceneItemId});
+      b.classList.toggle("on", sceneItemEnabled);
+      visState[b._item.scene + "/" + b._item.source] = sceneItemEnabled;
+    }catch(e){}
+  }
+
+  for(const b of macroKeys){
+    const m = b._m;
+    let air = programScene === m.scene;
+    if (air && m.show.length){
+      for (const [sc,src] of m.show){
+        const key = sc + "/" + src;
+        if (!(key in visState)){
+          try{
+            const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:sc, sourceName:src});
+            const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:sc, sceneItemId});
+            visState[key] = sceneItemEnabled;
+          }catch(e){ visState[key] = false; }
+        }
+        if (!visState[key]) { air = false; break; }
+      }
+    }
+    b.classList.toggle("air", !!air);
+  }
+
+  for(const row of document.querySelectorAll(".arow")){
+    const input = row.querySelector("input[type=range]").dataset.input;
+    try{
+      const {inputMuted} = await obs.call("GetInputMute",{inputName:input});
+      const mbtn = row.querySelector(".mute");
+      mbtn.classList.toggle("muted", inputMuted);
+      mbtn.textContent = inputMuted ? "Muted" : "Mute";
+    }catch(e){}
+    try{
+      const {inputVolumeDb} = await obs.call("GetInputVolume",{inputName:input});
+      const sld = row.querySelector("input[type=range]");
+      if (Date.now() - Number(sld.dataset.touched||0) > 1500){
+        sld.value = Math.max(-60, Math.min(0, inputVolumeDb));
+        row.querySelector(".db").textContent =
+          (inputVolumeDb <= -60 ? "≤−60.0" : inputVolumeDb.toFixed(1)) + " dB";
+      }
+    }catch(e){}
+  }
+
+  renderAir(visState);
+}
+
+function renderAir(visState){
+  const el = $("#stAir");
+  if(!connected){ el.innerHTML = "ON AIR <b>OBS OFFLINE</b>"; return; }
+  let what = programScene || "?";
+  if (programScene === "Stint"){
+    const feeds = [["Feed A","A"],["Feed B","B"],["Feed POV","POV"]]
+      .filter(([s])=>visState["Stint/"+s]).map(([,t])=>t);
+    if (feeds.length) what += " · " + feeds.join("+");
+  }
+  el.innerHTML = "ON AIR <b>" + what.toUpperCase() + "</b>";
+}
+
+function setEnabled(on){
+  document.querySelectorAll('[data-obs="1"]').forEach(el=>el.disabled = !on);
+}
+
+/* ---------- relay status strip (works without OBS) ---------- */
+async function relayPoll(){
+  try{
+    const r = await fetch("/status", {cache:"no-store"});
+    const d = await r.json();
+    relayLed(true);
+    const n = d.schedule_len;
+    $("#stA").innerHTML = `A <b>S${d.feeds.A.stint}</b>/${n}`;
+    $("#stB").innerHTML = `B <b>S${d.feeds.B.stint}</b>/${n}`;
+    $("#stPov").innerHTML = "POV <b>" + ((d.pov && d.pov.state) || "—").toUpperCase() + "</b>";
+  }catch(e){
+    relayLed(false);
+    $("#stA").innerHTML = "A <b>—</b>"; $("#stB").innerHTML = "B <b>—</b>";
+    $("#stPov").innerHTML = "POV <b>—</b>";
+  }
+}
+
+/* ---------- connect / disconnect ---------- */
+$("#connectBtn").addEventListener("click", async ()=>{
+  const ip=$("#ip").value.trim(), port=$("#port").value.trim()||"4455", pw=$("#pw").value;
+  if(!ip){ log("Enter the Producer's Tailscale IP.", "err"); return; }
+  try{ localStorage.setItem("iro_ip",ip); localStorage.setItem("iro_port",port); localStorage.setItem("iro_pw",pw); }catch(e){}
+  try{
+    await obs.connect(`ws://${ip}:${port}`, pw);
+    connected = true; obsLed("ok"); setEnabled(true);
+    $("#connectBtn").style.display="none"; $("#disconnectBtn").style.display="inline-block";
+    log("Connected to OBS.");
+    await refresh();
+    poll = setInterval(refresh, 2000);
+  }catch(e){
+    obsLed("err");
+    log("Connect failed: "+(e.message||e), "err");
+    log("Check: OBS open, WebSocket enabled, right password, Tailscale connected, page opened over http:// (not https).", "err");
+  }
+});
+$("#disconnectBtn").addEventListener("click", async ()=>{
+  clearInterval(poll); try{ await obs.disconnect(); }catch(e){}
+  connected=false; obsLed(""); setEnabled(false); renderAir({});
+  $("#disconnectBtn").style.display="none"; $("#connectBtn").style.display="inline-block";
+  log("Disconnected.");
+});
+obs.on("ConnectionClosed", ()=>{
+  if(connected){ connected=false; clearInterval(poll); obsLed("err"); setEnabled(false); renderAir({});
+    $("#disconnectBtn").style.display="none"; $("#connectBtn").style.display="inline-block";
+    log("Connection lost — press Connect to retry.", "err"); }
+});
+obs.on("CurrentProgramSceneChanged", d=>{
+  programScene = d.sceneName;
+  Object.entries(sceneKeys).forEach(([n,b])=>b.classList.toggle("air", n===programScene));
+  refresh();
+});
+
+/* ---------- race timer (relay-served; works without the OBS connection) --- */
+async function timerCall(path){
+  try{
+    const r = await fetch("/" + path, {cache:"no-store"});
+    const d = await r.json();
+    if (d.error) { log("Timer: " + d.error, "err"); return; }
+    if (d.note) log("Timer: " + d.note);
+    timerRender(d);
+  }catch(e){ log("Timer action failed (relay reachable?): " + e, "err"); }
+}
+function timerFmt(s){
+  s = Math.max(0, Math.ceil(s));
+  return `${Math.floor(s/3600)}:${String(Math.floor(s%3600/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+}
+function timerRender(d){
+  const rem = d.end !== null ? d.end - d.server_now : null;
+  const head = d.mode === "running" ? `RUNNING · ${timerFmt(rem)} left`
+             : d.mode === "paused" ? `PAUSED · ${timerFmt(d.remaining_s)} left`
+             : d.mode === "prestart" ? `READY · duration ${timerFmt(d.duration_s)}`
+             : d.mode === "finished" ? "FINISHED (display blank)"
+             : "HIDDEN";
+  const sync = d.sync.push === "ok" ? "sheet sync OK"
+             : d.sync.push === "disabled" ? "local only (IRO_TIMER_PUSH_URL unset)"
+             : d.sync.push === "failed" ? "SHEET SYNC FAILED — handover not safe"
+             : "sheet sync not yet attempted";
+  $("#timerInfo").textContent = `Timer: ${head} · ${sync}`;
+  const pill = d.mode === "running" ? "▶ " + timerFmt(rem)
+             : d.mode === "paused" ? "⏸ " + timerFmt(d.remaining_s)
+             : d.mode === "prestart" ? "READY"
+             : d.mode === "finished" ? "FINISHED" : "HIDDEN";
+  $("#stTimer").innerHTML = "TIMER <b>" + pill + "</b>";
+}
+async function timerPoll(){
+  try{
+    const r = await fetch("/timer/data", {cache:"no-store"});
+    const d = await r.json();
+    if (!d.error) timerRender(d);
+    else { $("#timerInfo").textContent = "Timer: disabled on this relay."; $("#stTimer").innerHTML = "TIMER <b>—</b>"; }
+  }catch(e){
+    $("#timerInfo").textContent =
+      "Timer: relay not reachable (panel opened from file://? open it via http://<relay>:8088/panel).";
+    $("#stTimer").innerHTML = "TIMER <b>—</b>";
+  }
+}
+
+/* ---------- boot ---------- */
+renderAir({});
+relayPoll(); timerPoll();
+setInterval(relayPoll, 2000);
+setInterval(timerPoll, 2000);
+</script>
+</body>
+</html>
+```
+
+- [ ] **Step 2: Sanity-check the file**
+
+Run:
+```bash
+python3 - <<'EOF'
+import io, re
+src = io.open("src/director/director-panel.html", encoding="utf-8").read()
+required = ["pgmBus","feedsBus","scnBus","gfxBus","timerBus",
+            "set/stint/","pov/reload","reload/A","inputVolumeDb",
+            "Post Race Interviews","Standby Cover","Feed POV","Intro","Outro"]
+missing = [t for t in required if t not in src]
+forbidden = ["mediaSel","mediaUrl","Split L","Split R","inputVolumeMul"]
+leftover = [t for t in forbidden if t in src]
+assert not missing, f"missing: {missing}"
+assert not leftover, f"stale leftovers: {leftover}"
+assert src.count("<script") == src.count("</script>") == 2
+print("panel content OK")
+EOF
+```
+Expected: `panel content OK`
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/director/director-panel.html
+git commit -m "feat(panel): mixer-bus redesign — Companion-synced actions, relay feed control, dB audio"
+```
+
+---
+
+### Task 2: Serving smoke test (no OBS required)
+
+**Files:** none (verification only)
+
+- [ ] **Step 1: Make sure the relay is running**
+
+Run: `python3 src/iro.py status`
+If the relay is not running: `python3 src/iro.py relay start` (needs `.env` + cookies on this machine — both exist).
+
+- [ ] **Step 2: Verify the panel is served and complete**
+
+Run:
+```bash
+curl -s http://127.0.0.1:8088/panel | grep -c 'class="bus'
+curl -s http://127.0.0.1:8088/status | python3 -m json.tool | head -5
+curl -s http://127.0.0.1:8088/timer/data | python3 -c "import json,sys; d=json.load(sys.stdin); print('timer mode:', d.get('mode'))"
+```
+Expected: first command prints `6` (six busses); `/status` returns JSON with `feeds`; timer prints a mode.
+
+- [ ] **Step 3: Browser check via Playwright MCP (relay-only half)**
+
+Using the Playwright MCP: `browser_navigate` to `http://127.0.0.1:8088/panel`, then `browser_snapshot`. Verify:
+- six busses render (PGM, FEEDS, SCN·VIS, GFX, TIMER, AUDIO),
+- the Relay LED is green, the OBS LED gray, ON AIR pill shows `OBS OFFLINE`,
+- stint pills show `A S<n>`, `B S<n>` values,
+- PGM/SCN·VIS/GFX/AUDIO controls are disabled, FEEDS/TIMER buttons enabled,
+- pressing `TIMER SHOW` then `TIMER HIDE` changes the timer hint line (and leaves the timer hidden again).
+
+No commit (nothing changed).
+
+---
+
+### Task 3: Manual verification with OBS (user-assisted checkpoint)
+
+**Files:** none (verification only)
+
+This needs OBS running with the localized collection imported. **Ask the user** to have OBS open (or run `python3 src/iro.py event start`). Then walk the spec's checklist together — the user can do this from a real browser:
+
+- [ ] **Step 1: Connect** — open `http://127.0.0.1:8088/panel`, IP `127.0.0.1`, password from OBS → Tools → WebSocket Server Settings (or `python3 -c "import sys,os; sys.path.insert(0,'src/scripts'); import obs_ws; print(obs_ws.find_password(os.environ, obs_ws.default_config_path()))"`). OBS LED goes green; ON AIR pill shows the program scene.
+- [ ] **Step 2: PGM macros** — press each of the 7 macros; after each, verify in OBS: program scene, Feed A/B visibility (STINT A/B/SPLIT), and the three input mute states match the table in the spec. The pressed key glows red.
+- [ ] **Step 3: Toggles** — flip a GFX key (e.g. STANDINGS) and a vis key (FEED B); verify in OBS, then flip them back. Toggle something from OBS directly; the panel reflects it within ~2 s.
+- [ ] **Step 4: Audio** — move the Feed A slider; OBS mixer follows in dB. Press `0 dB`; OBS shows 0.0 dB. Mute/unmute Discord from the panel and once from OBS — both stay in sync.
+- [ ] **Step 5: FEEDS** — press `RELOAD A` (off-air feed only!) and watch the log line; `SET STINT…` cancel path (answer the prompt, then Cancel on the confirm) must do nothing.
+
+If anything mismatches, fix `CONFIG` in `src/director/director-panel.html`, commit the fix, and re-run the affected step.
+
+---
+
+### Task 4: Repo gates — tests + build verify
+
+**Files:** none (verification only)
+
+- [ ] **Step 1: Run the suite**
+
+Run: `python3 tools/run-tests.py`
+Expected: all tests pass (panel is not covered by tests; this guards against accidental collateral).
+
+- [ ] **Step 2: Lint**
+
+Run: `python3 tools/lint.py`
+Expected: clean (no Python changed; cheap guard).
+
+- [ ] **Step 3: Build + verify**
+
+Run: `python3 tools/build.py`
+Expected: build completes; verify step passes (panel ships in the package; checks tokenization, no secrets, no shell scripts).
+
+No commit (nothing changed).
+
+---
+
+### Task 5: Wiki — document the panel in Run-an-event (incl. screenshot)
+
+**Files:**
+- Modify: `src/docs/wiki/Run-an-event.md` (new section after "Go live", i.e. after line 71)
+- Create: `src/docs/wiki/images/director-panel.png`
+
+- [ ] **Step 1: Take the screenshot**
+
+Prereq: relay running **and** OBS connected (Task 3 state) so the panel shows live states, not disabled keys. Using the Playwright MCP:
+
+1. `browser_resize` to 1400×1000.
+2. `browser_navigate` to `http://127.0.0.1:8088/panel`.
+3. Connect to OBS inside the page (IP `127.0.0.1`, port `4455`, password as in Task 3 Step 1; the page may have it in localStorage already). Wait until the OBS LED is green.
+4. `browser_take_screenshot` (full page, PNG) and save/copy the result to `src/docs/wiki/images/director-panel.png`.
+
+Check the image: all six busses visible, status strip populated, one PGM key glowing red. (Same model as the Companion screenshots — see the `companion-screenshots` skill for reference, but no ffmpeg cropping needed here.)
+
+- [ ] **Step 2: Add the wiki section**
+
+In `src/docs/wiki/Run-an-event.md`, insert after the "Go live" section (between the paragraph ending `(**STINT A** / **Splitscreen**).` and `## During the race: driver changes`):
+
+```markdown
+## The director panel (remote control)
+
+Directors without a Stream Deck — or anyone on a tablet — can drive the same
+show from the **director panel** the relay serves at
+`http://<producer-tailscale-ip>:8088/panel` (`iro event start` prints the
+URL — just forward it).
+
+![Director panel](images/director-panel.png)
+
+The page is organized as horizontal busses that mirror the Companion pages,
+so the Stream Deck and the panel share one muscle memory:
+
+| Bus | What it does |
+|---|---|
+| **PGM** | one-press program switches (scene + feed visibility + mutes), identical to the Companion macros — STINT A/B, SPLIT, INTERVIEW, STANDBY, INTRO, OUTRO |
+| **FEEDS** | relay control: NEXT (driver change), feed reloads, POV reload/stop, SET STINT… |
+| **SCN·VIS** | raw scene switches and feed visibility toggles |
+| **GFX** | graphics toggles (HUD, Standings, Schedule, results, weather, covers) |
+| **TIMER** | the race timer (see [Race Timer](Race-Timer)) |
+| **AUDIO** | per-input dB sliders, 0 dB reset and mutes |
+
+The status strip at the top shows what is on air, which stint each feed
+carries, the POV state and the race timer. **FEEDS and TIMER work
+relay-only** — no OBS connection needed. Everything else needs the OBS
+WebSocket connection: the producer's Tailscale IP, port `4455`, and the
+password from OBS → Tools → WebSocket Server Settings.
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/docs/wiki/Run-an-event.md src/docs/wiki/images/director-panel.png
+git commit -m "docs(wiki): document the director panel in Run-an-event (with screenshot)"
+```
+
+- [ ] **Step 4: Publish the wiki**
+
+Run: `python3 tools/sync-wiki.py --dry-run` and show the output to the user; on their OK, run `python3 tools/sync-wiki.py`.
+Expected: the wiki repo gets the updated `Run-an-event` page + the new image. Optionally verify the rendered page with the `wiki-visual-test` skill.
+
+---
+
+## Self-review notes
+
+- **Spec coverage:** layout/busses + sticky PGM (Task 1 CSS `.pgm`), status strip (Task 1 header + `relayPoll`/`renderAir`/`timerRender`), macro table (Task 1 `CONFIG.macros` — values transcribed 1:1 from the Companion config), FEEDS endpoints incl. `set/stint` prompt+confirm (Task 1), SCN·VIS + GFX incl. both HUD group toggles, Standby Cover, Post-Race (Task 1 `CONFIG.graphics`), timer unchanged (Task 1 `TIMER_ACTIONS`), audio dB + POV row + sync-back guard (Task 1, `dataset.touched`), removals asserted by the Task 1 Step 2 forbidden-strings check, error handling (per-step macro logging, relay LED, `safe()`), docs + screenshot (Task 5), testing model (Tasks 2–4).
+- **Type consistency:** `mkKey(label, tag, onClick, obsManaged)` used consistently; `relayCall(path)` for FEEDS, `timerCall(path)` for TIMER (timer responses feed `timerRender`); `data-obs="1"` is the single enable/disable marker used by `setEnabled`.
+- **Known intentional choices:** FEEDS/TIMER keys always enabled (relay errors land in the log; LED shows reachability). `GetInputVolume` floor display `≤−60.0 dB`. The `prompt()`/`confirm()` pattern matches the existing SET DURATION approach — dependency-free by design.
