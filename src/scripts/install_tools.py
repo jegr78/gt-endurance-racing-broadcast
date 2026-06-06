@@ -83,6 +83,22 @@ def install_commands(manager, tools, brew_path="brew"):
     return []
 
 
+def update_commands(manager, tools, brew_path="brew"):
+    """The argv list(s) to UPGRADE already-installed `tools` with `manager`.
+    winget's "no applicable update" exit code is whitelisted in
+    installer_common.install_exit_ok; brew exits 0 for up-to-date formulae."""
+    if manager == "winget":
+        return [["winget", "upgrade", "--id", WINGET_IDS[t], "-e",
+                 "--accept-source-agreements", "--accept-package-agreements"]
+                for t in tools]
+    if manager == "brew":
+        return [[brew_path, "upgrade"] + list(tools)] if tools else []
+    if manager == "apt":
+        pkgs = [APT_PACKAGES[t] for t in tools if t in APT_PACKAGES]
+        return [["apt-get", "install", "-y", "--only-upgrade"] + pkgs] if pkgs else []
+    return []
+
+
 def manual_guide(platform):
     if platform.startswith("win"):
         return ("Install manually with winget (one per line):\n"
@@ -137,14 +153,19 @@ def main():
     ap = argparse.ArgumentParser(prog="install-tools", add_help=True)
     ap.add_argument("--yes", action="store_true",
                     help="skip the Homebrew bootstrap confirmation (macOS)")
+    ap.add_argument("--update", action="store_true",
+                    help="also upgrade the already-installed tools to their "
+                         "latest versions (recommended before every event)")
     a = ap.parse_args()
 
     missing = missing_tools(which=_which_with_fresh_path(windows_fresh_path()))
-    if not missing:
+    if not missing and not a.update:
         print("All external tools already installed:", ", ".join(TOOLS))
+        print("  (run `iro install-tools --update` to upgrade them)")
         _note_new_terminal()
         return
-    print("Missing tools:", ", ".join(missing))
+    if missing:
+        print("Missing tools:", ", ".join(missing))
 
     brew = None
     if sys.platform == "darwin":
@@ -159,8 +180,16 @@ def main():
         if manager is None:
             sys.exit("No supported package manager found.\n" + manual_guide(sys.platform))
 
+    cmds = []
+    if a.update:
+        present = [t for t in TOOLS if t not in missing]
+        if present:
+            print("Updating installed tools:", ", ".join(present))
+            cmds += update_commands(manager, present, brew_path=brew or "brew")
+    cmds += install_commands(manager, missing, brew_path=brew or "brew")
+
     failed = []
-    for cmd in install_commands(manager, missing, brew_path=brew or "brew"):
+    for cmd in cmds:
         print("Running:", " ".join(cmd))
         if not _common().install_exit_ok(manager, subprocess.call(cmd)):
             failed.append(" ".join(cmd))
@@ -181,7 +210,8 @@ def main():
         sys.exit("\n".join(parts) + "\n" + manual_guide(sys.platform))
     # Tools may sit in brew's prefix / the registry PATH but not THIS shell's.
     _note_new_terminal()
-    print("All tools installed. Run `iro preflight` to verify.")
+    print("All tools " + ("up to date" if a.update else "installed")
+          + ". Run `iro preflight` to verify.")
 
 
 if __name__ == "__main__":

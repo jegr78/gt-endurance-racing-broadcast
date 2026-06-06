@@ -112,10 +112,8 @@ teams, race control) and the **Configuration** tab (team → manufacturer via a
   edits appear with no manual reload),
 - `GET /hud/assets/{flags,brands}/<key>` — bundled flag/brand logos, resolved from text.
 
-This replaced ~13 per-cell browser sources that each loaded the full Google Sheets
-editor (cropped with a chroma key) — the old producer-machine RAM/CPU hog. The race
-timer is also relay-served (`/timer`, fixed loopback URL); state: Sheet tab `Timer` +
-`runtime/timer.json`, Director-controlled via `/timer/*` endpoints.
+The race timer is also relay-served (`/timer`, fixed loopback URL); state: Sheet
+tab `Timer` + `runtime/timer.json`, Director-controlled via `/timer/*` endpoints.
 
 ---
 

@@ -25,9 +25,8 @@ it checks all of the below plus your tool chain, ports, and YouTube cookies.
 
 **Before each event:** reboot the machine (clears swap and frees RAM), then run
 the pre-flight check and resolve any FAIL/WARN before going live. The lower-third
-HUD is now a **single** relay-served Browser Source (`http://127.0.0.1:8088/hud`)
-instead of ~13 Google-Sheets-editor sources, which removes the biggest RAM/CPU
-draw — but the relay must be running for the HUD to show. Live HUD values are
+HUD is a **single** relay-served Browser Source (`http://127.0.0.1:8088/hud`) —
+the relay must be running for the HUD to show. Live HUD values are
 edited in the sheet's **Overlay** tab; team→manufacturer logos come from a
 **`Brand Name`** text column in the **Configuration** tab, resolved against bundled
 assets in `src/assets/flags/` and `src/assets/brands/`.
@@ -322,8 +321,8 @@ Companion is preferred for directors.
 - **HUD & graphics** pull live data from the shared Google Sheet — a shared production
   resource. The sheet must stay shared.
 - **Discord** must run in **windowed mode** (macOS audio capture).
-- Before every event update the tools: `brew upgrade streamlink yt-dlp` on macOS /
-  `winget upgrade yt-dlp.yt-dlp Streamlink.Streamlink` on Windows.
+- Before every event update the tools: `iro install-tools --update` (manual
+  alternative: `brew upgrade …` on macOS / `winget upgrade …` on Windows).
 
 ## Relay-mode quickstart (short version)
 

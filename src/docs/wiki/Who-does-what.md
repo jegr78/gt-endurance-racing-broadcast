@@ -13,7 +13,7 @@ flowchart LR
   subgraph D["Remote — Director"]
     D1["Choose scenes and graphics"]
     D2["Press Feeds Next at driver changes"]
-    D3["Run the interview segment"]
+    D3["Cut to interviews<br/>+ broadcast audio"]
   end
 ```
 
@@ -29,8 +29,10 @@ flowchart LR
 
 - Drives the whole show from a browser via Companion — no machine access. See
   [Director guide](Director).
-- Chooses scenes and graphics, presses **Feeds Next** at each driver change, and runs the
-  interviews.
+- Chooses scenes and graphics, presses **Feeds Next** at each driver change, and cuts
+  to the interview segment (scene + broadcast audio). The interview conversation itself
+  is moderated from inside the Discord voice channel by one of its participants —
+  usually the final-stint streamer; the director can take that role but doesn't have to.
 - Multiple directors can take turns; the producer can also direct locally.
 
 ## Commentators / streamers
@@ -51,7 +53,7 @@ Each stint's commentator streams the race on **their own channel**. Hand them th
 
 ## Event sizes
 
-- **8 h** = 1 part = 1 producer (always runs the interviews).
+- **8 h** = 1 part = 1 producer (also the one who joins Discord for the interviews).
 - **12 h** = 2 parts (~6 h each) = 2 producers.
 - **24 h** = 3 parts = 3 producers.
 

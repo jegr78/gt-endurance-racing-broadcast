@@ -165,6 +165,27 @@ def t_app_path_candidates():
     assert m.app_path_candidates("bogus", "darwin") == []
 
 
+def t_app_update_commands_winget_keeps_companion_interactive():
+    cmds = m.app_update_commands("winget", ["obs", "companion"])
+    assert len(cmds) == 2
+    assert cmds[0][:3] == ["winget", "upgrade", "--id"]
+    assert "--interactive" not in cmds[0]
+    assert "--interactive" in cmds[1]
+
+
+def t_app_update_commands_brew_cask_batch():
+    assert m.app_update_commands("brew", ["obs", "tailscale"]) == \
+        [["brew", "upgrade", "--cask", "obs", "tailscale-app"]]
+    assert m.app_update_commands("brew", []) == []
+
+
+def t_app_update_commands_apt_is_manual_guide():
+    assert m.app_update_commands("apt", ["obs"]) == []
+    guide = m.apps_update_guide()
+    for word in ("obs-studio", "tailscale", "companion-update", "discord.deb"):
+        assert word in guide, word
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

@@ -145,7 +145,10 @@ auto-silences it.
 Interviews are over Discord voice. **Before** you cut to the Interview scene, confirm the
 **producer has joined the Discord "Interviews" voice channel** — the audio comes from the
 producer's local machine, so you can't join for them. Then switch to **Interview**, show
-the lower-third, and manage mutes as guests speak.
+the lower-third, and manage mutes as guests speak. The conversation itself is moderated
+from inside the voice channel by one of its participants — usually the final-stint
+streamer. You can take that role, but it isn't yours by default: your job is the scene
+and the broadcast audio.
 
 ---
 

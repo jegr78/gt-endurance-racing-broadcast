@@ -41,9 +41,9 @@ the next time their scene goes active.
 
 1. **Update the tool:** `iro update` — picks up the latest release (skip if the team froze the version for the event).
 2. **Reboot** the PC (frees memory) and close heavy apps.
-3. **Update the tools:** macOS/Linux `brew upgrade streamlink yt-dlp` · Windows
-   `winget upgrade yt-dlp.yt-dlp Streamlink.Streamlink`. Outdated tools are the #1
-   cause of a feed not starting.
+3. **Update the tools:** `iro install-tools --update`. Outdated tools are the #1
+   cause of a feed not starting. (Manual alternative: `brew upgrade streamlink yt-dlp`
+   on macOS/Linux · `winget upgrade yt-dlp.yt-dlp Streamlink.Streamlink` on Windows.)
 4. **Refresh cookies:** `iro cookies firefox` (log into YouTube in Firefox first).
 5. **Refresh the intro/outro clips** (only if their URLs changed):
    `iro media` — pulls the URLs from the Sheet **Assets** tab and
@@ -142,6 +142,10 @@ part must **join the Discord "Interviews" voice channel personally, before race 
 OBS audio is captured from your local Discord, so the director can't join for you. You stay
 muted until the director cuts to the Interview scene, so joining early is harmless. (On
 12 h / 24 h events only the final-part producer does this.)
+
+The conversation itself is moderated from **inside the voice channel** by one of its
+participants — usually the streamer of the final stint. The director can take that
+role, but does not have to.
 
 ## Outro &amp; wrap up
 

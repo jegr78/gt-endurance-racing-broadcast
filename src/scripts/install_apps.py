@@ -120,6 +120,33 @@ def app_install_commands(manager, apps, brew_path="brew"):
     return []
 
 
+def app_update_commands(manager, apps, brew_path="brew"):
+    """The argv list(s) to UPGRADE already-installed `apps` with `manager`.
+    brew skips self-updating casks (Discord/Tailscale update themselves) —
+    that is fine, not a failure. Linux: see apps_update_guide()."""
+    if manager == "winget":
+        return [["winget", "upgrade", "--id", WINGET_APP_IDS[a], "-e",
+                 "--accept-source-agreements", "--accept-package-agreements"]
+                + (["--interactive"] if a in WINGET_INTERACTIVE else [])
+                for a in apps]
+    if manager == "brew":
+        casks = [BREW_CASKS[a] for a in apps]
+        return [[brew_path, "upgrade", "--cask"] + casks] if casks else []
+    return []
+
+
+def apps_update_guide():
+    """Per-app Linux update paths (no single manager covers all four)."""
+    return ("Linux app updates (manual):\n"
+            "  OBS:       sudo apt-get update && sudo apt-get install --only-upgrade -y obs-studio\n"
+            "  Tailscale: sudo apt-get install --only-upgrade -y tailscale\n"
+            "             (the installer added Tailscale's apt repo)\n"
+            "  Companion: sudo companion-update   (companion-pi service install)\n"
+            "  Discord:   re-download the official .deb:\n"
+            "             curl -fsSL 'https://discord.com/api/download?platform=linux&format=deb' \\\n"
+            "               -o /tmp/discord.deb && sudo apt-get install -y /tmp/discord.deb")
+
+
 def apps_manual_guide(platform):
     lines = ["Install the apps manually:"]
     if platform not in ("darwin",) and not platform.startswith("win"):
@@ -217,14 +244,23 @@ def main():
     ap = argparse.ArgumentParser(prog="install-apps", add_help=True)
     ap.add_argument("--yes", action="store_true",
                     help="skip confirmation prompts: Linux install steps and macOS Homebrew bootstrap")
+    ap.add_argument("--update", action="store_true",
+                    help="also upgrade the already-installed apps "
+                         "(winget/brew; Linux prints the per-app update guide)")
     a = ap.parse_args()
 
     missing = [app for app in APPS if not app_present(app, sys.platform)]
-    if not missing:
+    if not missing and not a.update:
         print("All apps already installed:", ", ".join(APPS))
+        print("  (run `iro install-apps --update` to upgrade them)")
         return
-    print("Missing apps:", ", ".join(missing))
+    if missing:
+        print("Missing apps:", ", ".join(missing))
     if not (sys.platform.startswith("win") or sys.platform == "darwin"):
+        if a.update:
+            print(apps_update_guide())
+        if not missing:
+            return
         rc = _install_linux(missing, a.yes)
         still = [x for x in APPS if not app_present(x, sys.platform)]
         if rc != 0 or (still and shutil.which("apt-get")):
@@ -244,8 +280,15 @@ def main():
         brew_path = "brew"
         if not shutil.which(manager):
             sys.exit(f"{manager} not found.\n" + apps_manual_guide(sys.platform))
+    cmds = []
+    if a.update:
+        present = [x for x in APPS if x not in missing]
+        if present:
+            print("Updating installed apps:", ", ".join(present))
+            cmds += app_update_commands(manager, present, brew_path=brew_path)
+    cmds += app_install_commands(manager, missing, brew_path=brew_path)
     failed = []
-    for cmd in app_install_commands(manager, missing, brew_path=brew_path):
+    for cmd in cmds:
         print("Running:", " ".join(cmd))
         # winget "already installed / no upgrade" exit codes are not failures
         # (an app the path heuristics in app_present() missed lands here).
@@ -259,6 +302,9 @@ def main():
         if still:
             parts.append("Still missing: " + ", ".join(still))
         sys.exit("\n".join(parts) + "\n" + apps_manual_guide(sys.platform))
+    if not missing:
+        print("All apps up to date.")
+        return
     print("All apps installed. First-run setup still needed:")
     print("  Tailscale: sign in and join the IRO tailnet (invited account).")
     print("  Companion: launch once, then `iro export companion` + import the config.")

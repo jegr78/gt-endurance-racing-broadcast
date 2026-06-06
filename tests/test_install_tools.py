@@ -62,6 +62,29 @@ def t_install_commands_brew_absolute_path():
         [["/opt/homebrew/bin/brew", "install", "ffmpeg", "deno"]]
 
 
+def t_update_commands_winget_one_per_tool():
+    cmds = m.update_commands("winget", ["yt-dlp", "streamlink"])
+    assert len(cmds) == 2
+    assert cmds[0][:3] == ["winget", "upgrade", "--id"]
+    assert cmds[0][3] == "yt-dlp.yt-dlp"
+    assert "--accept-package-agreements" in cmds[0]
+
+
+def t_update_commands_brew_single_batch():
+    assert m.update_commands("brew", ["ffmpeg", "deno"]) == \
+        [["brew", "upgrade", "ffmpeg", "deno"]]
+    assert m.update_commands("brew", [], brew_path="/opt/homebrew/bin/brew") == []
+    assert m.update_commands("brew", ["ffmpeg"],
+                             brew_path="/opt/homebrew/bin/brew")[0][0] == \
+        "/opt/homebrew/bin/brew"
+
+
+def t_update_commands_apt_only_upgrade_skips_deno():
+    cmds = m.update_commands("apt", ["yt-dlp", "deno"])
+    assert cmds == [["apt-get", "install", "-y", "--only-upgrade", "yt-dlp"]]
+    assert m.update_commands("apt", ["deno"]) == []
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

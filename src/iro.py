@@ -11,7 +11,7 @@
   iro event start --stint N             # takeover: stint N is on air now — the relay starts there
   iro tailscale up|down|status          # connect / disconnect / inspect Tailscale
   iro status                            # aggregate health of all services
-  iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] | install-apps [--yes]
+  iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   iro export companion [--out PATH]     # write the Companion button config
   iro init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
   iro update [--check] [--yes]          # self-update the binary from GitHub Releases

@@ -358,9 +358,10 @@ iro streams stop
 ## 11. Runbook
 
 **Before the event (Producer):**
-1. Update tools: `brew upgrade streamlink yt-dlp` on macOS /
-   `winget upgrade yt-dlp.yt-dlp Streamlink.Streamlink` on Windows. YouTube changes
-   often — outdated tools are the #1 cause of feeds failing to start.
+1. Update the tools: `iro install-tools --update` (apps too, if you want:
+   `iro install-apps --update`). YouTube changes often — outdated tools are the
+   #1 cause of feeds failing to start. Manual alternative: `brew upgrade …` /
+   `winget upgrade …`.
 2. Update GPU driver (hardware-encoding the broadcast and decoding the feeds leans on the GPU).
 3. Tailscale running; a Director confirms they can open
    `http://<producer-tailscale-ip>:8000/tablet`.

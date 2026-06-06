@@ -80,9 +80,7 @@ Companion — no screen-share, no extra latency. All relay-served sources (`/hud
 
 The lower-third HUD (streamer, session, round, flag, top-3 teams, race control) is a
 **single** Browser Source named **HUD Overlay** pointing at the relay:
-`http://127.0.0.1:8088/hud`. It replaces the old set of ~13 per-cell Browser Sources
-(each of which loaded the full Google Sheets editor and was cropped with a chroma key) —
-that approach was the main cause of producer-machine lag.
+`http://127.0.0.1:8088/hud`.
 
 - **The relay must be running** for the HUD to render (it serves `/hud`). See
   [Relay Mode](Relay-Mode).
