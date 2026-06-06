@@ -255,7 +255,7 @@ const TIMER_ACTIONS = [
 
 /* ---------- plumbing ---------- */
 const obs = new OBSWebSocket();
-let connected = false, poll = null, programScene = "";
+let connected = false, poll = null, programScene = "", refreshing = false;
 const $ = s => document.querySelector(s);
 function log(m, kind){
   const t = new Date().toLocaleTimeString();
@@ -342,7 +342,7 @@ CONFIG.audio.forEach(a=>{
     safe(async ()=>{ await obs.call("SetInputVolume",{inputName:a.input, inputVolumeDb:0}); refresh(); });
   });
   row.querySelector(".mute").addEventListener("click", ()=>{
-    safe(()=>obs.call("ToggleInputMute",{inputName:a.input}));
+    safe(async ()=>{ await obs.call("ToggleInputMute",{inputName:a.input}); refresh(); });
   });
 });
 
@@ -397,67 +397,71 @@ async function relayCall(path){
 
 /* ---------- OBS state refresh ---------- */
 async function refresh(){
-  if(!connected) return;
+  if(!connected || refreshing) return;   // drop re-entrant passes (event + interval)
+  refreshing = true;
   try{
-    const {currentProgramSceneName} = await obs.call("GetCurrentProgramScene");
-    programScene = currentProgramSceneName;
-  }catch(e){}
-  Object.entries(sceneKeys).forEach(([n,b])=>b.classList.toggle("air", n===programScene));
-
-  const visState = {};
-  for(const b of toggleKeys){
     try{
-      const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:b._item.scene, sourceName:b._item.source});
-      const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:b._item.scene, sceneItemId});
-      b.classList.toggle("on", sceneItemEnabled);
-      visState[b._item.scene + "/" + b._item.source] = sceneItemEnabled;
+      const {currentProgramSceneName} = await obs.call("GetCurrentProgramScene");
+      programScene = currentProgramSceneName;
     }catch(e){}
-  }
+    Object.entries(sceneKeys).forEach(([n,b])=>b.classList.toggle("air", n===programScene));
 
-  for(const b of macroKeys){
-    const m = b._m;
-    let air = programScene === m.scene;
-    if (air && m.show.length){
-      for (const [sc,src] of m.show){
-        const key = sc + "/" + src;
-        if (!(key in visState)){
-          try{
-            const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:sc, sourceName:src});
-            const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:sc, sceneItemId});
-            visState[key] = sceneItemEnabled;
-          }catch(e){ visState[key] = false; }
-        }
-        if (!visState[key]) { air = false; break; }
-      }
+    const visState = {};
+    for(const b of toggleKeys){
+      try{
+        const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:b._item.scene, sourceName:b._item.source});
+        const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:b._item.scene, sceneItemId});
+        b.classList.toggle("on", sceneItemEnabled);
+        visState[b._item.scene + "/" + b._item.source] = sceneItemEnabled;
+      }catch(e){}
     }
-    b.classList.toggle("air", !!air);
-  }
 
-  for(const row of document.querySelectorAll(".arow")){
-    const input = row.querySelector("input[type=range]").dataset.input;
-    try{
-      const {inputMuted} = await obs.call("GetInputMute",{inputName:input});
-      const mbtn = row.querySelector(".mute");
-      mbtn.classList.toggle("muted", inputMuted);
-      mbtn.textContent = inputMuted ? "Muted" : "Mute";
-    }catch(e){}
-    try{
-      const {inputVolumeDb} = await obs.call("GetInputVolume",{inputName:input});
-      const sld = row.querySelector("input[type=range]");
-      if (Date.now() - Number(sld.dataset.touched||0) > 1500){
-        sld.value = Math.max(-60, Math.min(0, inputVolumeDb));
-        row.querySelector(".db").textContent =
-          (inputVolumeDb <= -60 ? "≤−60.0" : inputVolumeDb.toFixed(1)) + " dB";
+    for(const b of macroKeys){
+      const m = b._m;
+      let air = programScene === m.scene;
+      if (air && m.show.length){
+        for (const [sc,src] of m.show){
+          const key = sc + "/" + src;
+          if (!(key in visState)){
+            try{
+              const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:sc, sourceName:src});
+              const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:sc, sceneItemId});
+              visState[key] = sceneItemEnabled;
+            }catch(e){ visState[key] = false; }
+          }
+          if (!visState[key]) { air = false; break; }
+        }
       }
-    }catch(e){}
-  }
+      b.classList.toggle("air", !!air);
+    }
 
-  renderAir(visState);
+    for(const row of document.querySelectorAll(".arow")){
+      const input = row.querySelector("input[type=range]").dataset.input;
+      try{
+        const {inputMuted} = await obs.call("GetInputMute",{inputName:input});
+        const mbtn = row.querySelector(".mute");
+        mbtn.classList.toggle("muted", inputMuted);
+        mbtn.textContent = inputMuted ? "Muted" : "Mute";
+      }catch(e){}
+      try{
+        const {inputVolumeDb} = await obs.call("GetInputVolume",{inputName:input});
+        const sld = row.querySelector("input[type=range]");
+        if (Date.now() - Number(sld.dataset.touched||0) > 1500){
+          sld.value = Math.max(-60, Math.min(0, inputVolumeDb));
+          row.querySelector(".db").textContent =
+            (inputVolumeDb <= -60 ? "≤−60.0" : inputVolumeDb.toFixed(1)) + " dB";
+        }
+      }catch(e){}
+    }
+
+    renderAir(visState);
+  }finally{ refreshing = false; }
 }
 
 function renderAir(visState){
   const el = $("#stAir");
-  if(!connected){ el.innerHTML = "ON AIR <b>OBS OFFLINE</b>"; return; }
+  if(!connected){ el.classList.remove("air"); el.innerHTML = "ON AIR <b>OBS OFFLINE</b>"; return; }
+  el.classList.add("air");
   let what = programScene || "?";
   if (programScene === "Stint"){
     const feeds = [["Feed A","A"],["Feed B","B"],["Feed POV","POV"]]
