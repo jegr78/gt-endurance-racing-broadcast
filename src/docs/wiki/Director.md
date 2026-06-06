@@ -15,8 +15,8 @@ also direct locally.
 
 ## The button board
 
-Two pages — **show control** and **audio**. The left column on each page (`UP` / `DOWN`)
-flips between them. Everything below is a single tap.
+Two pages — **show control** and **race timer & audio**. The left column on each page
+(`UP` / `DOWN`) flips between them. Everything below is a single tap.
 
 ### Page 1 — show control
 
@@ -29,10 +29,11 @@ flips between them. Everything below is a single tap.
 
 ![Companion page 1 — show control: combos, scene switches, feeds & reloads, graphics & weather](images/companion-page1-show-control.png)
 
-### Page 2 — audio
+### Page 2 — race timer & audio
 
 | Row | Buttons |
 |-----|---------|
+| **Race timer** | `TIMER START` (starts — or resumes a paused timer), `TIMER PAUSE` (freezes the remaining time on screen), `TIMER SHOW` / `TIMER HIDE` (overlay visibility), `TIMER +1 MIN` / `TIMER -1 MIN` (correction: shifts the running countdown, a paused remainder, or — before start — the race duration), `TIMER RESET` (back to the full duration). Stopwatch logic; details in [Race-Timer](Race-Timer) |
 | **Mute** | `MUTE A`, `MUTE B`, `MUTE POV`, `MUTE DISC` |
 | **Volume A / B** | `VOL A DOWN` / `VOL A UP` / `VOL A RESET`, `VOL B DOWN` / `VOL B UP` / `VOL B RESET` |
 | **Volume POV / Discord** | `VOL POV DOWN` / `VOL POV UP` / `VOL POV RESET`, `VOL DISC DOWN` / `VOL DISC UP` / `VOL DISC RESET` |
@@ -41,7 +42,7 @@ flips between them. Everything below is a single tap.
 > `VOL … RESET` snaps that source back to **0 dB** (its original level). Reset only
 > touches the level, not the mute state — use the `MUTE …` buttons for that.
 
-![Companion page 2 — audio: mute and per-source volume for the feeds, POV and Discord](images/companion-page2-audio.png)
+![Companion page 2 — race timer (start/pause/show/hide/correct/reset), mute and per-source volume for the feeds, POV and Discord](images/companion-page2-timer-audio.png)
 
 > Tip: for the everyday moves, use the **combo** buttons on page 1 (`STINT A`, `SPLIT`,
 > `INTERVIEW`, …) — they set the scene and the audio in one tap.
