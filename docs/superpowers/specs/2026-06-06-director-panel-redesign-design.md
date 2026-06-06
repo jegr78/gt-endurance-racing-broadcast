@@ -106,7 +106,8 @@ Companion timer page (±10 s and SET DURATION exist only here).
 ### AUDIO — dB semantics
 
 Inputs: Feed A, Feed B, **Feed POV** (new), Discord Audio Capture.
-Per row: slider −60…0 dB (writes `SetInputVolume {inputVolumeDb}`), live dB
+Per row: slider −60…+26 dB (OBS's full input range, so the Companion VOL UP
+headroom above 0 dB is reachable; writes `SetInputVolume {inputVolumeDb}`), live dB
 readout, `0 dB` reset button (Companion's "VOL RESET"), mute toggle with state
 polling (`GetInputMute`/`ToggleInputMute`, as today). Slider position syncs
 from `GetInputVolume` on refresh so deck and panel don't fight.

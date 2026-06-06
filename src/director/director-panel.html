@@ -327,7 +327,7 @@ CONFIG.audio.forEach(a=>{
   const row = document.createElement("div"); row.className = "arow";
   row.innerHTML =
     `<span class="nm">${a.label}</span>
-     <input type="range" min="-60" max="0" step="0.5" value="0" disabled data-obs="1" data-input="${a.input}">
+     <input type="range" min="-60" max="26" step="0.5" value="0" disabled data-obs="1" data-input="${a.input}">
      <span class="db">— dB</span>
      <button class="rst" disabled data-obs="1">0 dB</button>
      <button class="mute" disabled data-obs="1" data-input="${a.input}">Mute</button>`;
@@ -447,7 +447,7 @@ async function refresh(){
         const {inputVolumeDb} = await obs.call("GetInputVolume",{inputName:input});
         const sld = row.querySelector("input[type=range]");
         if (Date.now() - Number(sld.dataset.touched||0) > 1500){
-          sld.value = Math.max(-60, Math.min(0, inputVolumeDb));
+          sld.value = Math.max(-60, Math.min(26, inputVolumeDb));
           row.querySelector(".db").textContent =
             (inputVolumeDb <= -60 ? "≤−60.0" : inputVolumeDb.toFixed(1)) + " dB";
         }
