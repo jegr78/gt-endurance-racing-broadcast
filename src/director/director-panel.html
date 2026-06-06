@@ -10,7 +10,8 @@
 <script src="https://cdn.jsdelivr.net/npm/obs-websocket-js@5.0.6/dist/obs-ws.global.js" integrity="sha384-cFeq2Xcu17x+Az+nlYMZAaV1gxGNNfUT48om81Bp23aa9pTsmi+YXAe5XQ7Cx1s+" crossorigin="anonymous"></script>
 <style>
   /* =========================================================
-     IRO DIRECTOR CONSOLE — industrial broadcast-switcher look
+     IRO DIRECTOR CONSOLE — vision-mixer busses
+     Horizontal action rows mirroring the Companion pages.
      Dark, high-contrast, glanceable. Built for tablet + desktop.
      ========================================================= */
   :root{
@@ -32,88 +33,103 @@
     color:var(--ink); font-family:var(--mono); padding:18px; min-height:100vh;
     -webkit-font-smoothing:antialiased;
   }
-  .wrap{max-width:1180px;margin:0 auto}
+  .wrap{max-width:1240px;margin:0 auto}
 
-  /* ---------- top status bar ---------- */
+  /* ---------- header: brand + status strip + LEDs ---------- */
   header{
-    display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;
     border:1px solid var(--edge);background:linear-gradient(180deg,var(--panel-2),var(--panel));
-    border-radius:14px;padding:14px 18px;margin-bottom:16px;
+    border-radius:14px;padding:12px 16px;margin-bottom:12px;
     box-shadow:0 12px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.03);
   }
-  .brand{font-family:var(--head);font-weight:700;letter-spacing:.16em;font-size:26px;text-transform:uppercase}
-  .brand small{color:var(--amber);display:block;font-size:11px;letter-spacing:.32em;margin-top:-2px}
-  .led{display:flex;align-items:center;gap:9px;margin-left:auto;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
-  .dot{width:13px;height:13px;border-radius:50%;background:#3a434d;box-shadow:0 0 0 3px rgba(255,255,255,.03)}
+  .brand{font-family:var(--head);font-weight:700;letter-spacing:.16em;font-size:24px;text-transform:uppercase}
+  .brand small{color:var(--amber);display:block;font-size:10px;letter-spacing:.32em;margin-top:-2px}
+  .strip{display:flex;gap:8px;flex-wrap:wrap;align-items:center;flex:1;justify-content:center}
+  .st{display:inline-flex;align-items:center;gap:6px;background:#0c0f13;border:1px solid var(--edge);
+    border-radius:8px;padding:6px 10px;font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;white-space:nowrap}
+  .st b{color:var(--ink);font-weight:600}
+  .st.air{border-color:var(--air);color:#ff8080;box-shadow:0 0 12px var(--air-glow)}
+  .st.air b{color:#ffb3b3}
+  .led{display:flex;align-items:center;gap:7px;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+  .dot{width:12px;height:12px;border-radius:50%;background:#3a434d;box-shadow:0 0 0 3px rgba(255,255,255,.03)}
   .dot.on{background:var(--live);box-shadow:0 0 14px var(--live-glow),0 0 0 3px rgba(43,214,106,.12)}
   .dot.err{background:var(--air);box-shadow:0 0 14px var(--air-glow),0 0 0 3px rgba(255,45,45,.12)}
 
   /* ---------- connection row ---------- */
   .conn{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
-    border:1px solid var(--edge);background:var(--panel);border-radius:14px;padding:14px;margin-bottom:16px}
+    border:1px solid var(--edge);background:var(--panel);border-radius:14px;padding:12px 14px;margin-bottom:12px}
   .fld{display:flex;flex-direction:column;gap:5px}
   .fld label{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
   .fld input{background:#0c0f13;border:1px solid var(--edge);color:var(--ink);font-family:var(--mono);
     font-size:14px;padding:10px 12px;border-radius:9px;min-width:120px;outline:none}
   .fld input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(58,160,255,.18)}
   .fld.ip input{min-width:170px}.fld.pw input{min-width:160px}
-
-  /* ---------- panels & grids ---------- */
-  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-  @media(max-width:760px){.grid{grid-template-columns:1fr}}
-  .panel{border:1px solid var(--edge);background:linear-gradient(180deg,var(--panel-2),var(--panel));
-    border-radius:14px;padding:15px;box-shadow:0 10px 30px rgba(0,0,0,.4)}
-  .panel h2{font-family:var(--head);font-weight:700;letter-spacing:.14em;text-transform:uppercase;
-    font-size:15px;margin:0 0 12px;color:var(--ink);display:flex;align-items:center;gap:9px}
-  .panel h2::before{content:"";width:7px;height:18px;background:var(--amber);border-radius:2px;box-shadow:0 0 10px var(--amber-glow)}
-  .span2{grid-column:1/-1}
-  .btns{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
-
-  /* ---------- the buttons ---------- */
-  button.b{
-    appearance:none;cursor:pointer;color:var(--ink);font-family:var(--mono);font-weight:500;
-    font-size:14px;letter-spacing:.04em;padding:16px 12px;border-radius:11px;
-    border:1px solid var(--edge);background:linear-gradient(180deg,#1b2129,#141921);
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 4px 12px rgba(0,0,0,.4);
-    transition:transform .05s ease,border-color .15s,box-shadow .15s,background .15s;
-    text-align:left;line-height:1.2;position:relative;overflow:hidden;min-height:58px;
-  }
-  button.b:active{transform:translateY(1px) scale(.99)}
-  button.b .tag{display:block;font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
-  button.b.on{border-color:var(--live);background:linear-gradient(180deg,#15301f,#10261a);
-    box-shadow:0 0 0 1px var(--live),0 0 18px var(--live-glow),inset 0 1px 0 rgba(255,255,255,.06)}
-  button.b.on .tag{color:var(--live)}
-  button.b.air{border-color:var(--air);background:linear-gradient(180deg,#331414,#26100f);
-    box-shadow:0 0 0 1px var(--air),0 0 20px var(--air-glow),inset 0 1px 0 rgba(255,255,255,.06)}
-  button.b.air .tag{color:var(--air)}
-  button.b:disabled{opacity:.4;cursor:not-allowed}
-  button.act{background:linear-gradient(180deg,#244b7a,#1a3a61);border-color:#356196}
-  button.act.live{background:linear-gradient(180deg,#1f6b3c,#155730);border-color:var(--live)}
-
-  /* ---------- audio rows ---------- */
-  .arow{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px dashed var(--edge)}
-  .arow:first-child{border-top:0}
-  .arow .nm{flex:0 0 110px;font-size:13px}
-  .arow input[type=range]{flex:1;accent-color:var(--amber)}
-  .mute{flex:0 0 78px;padding:9px 8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;
-    border-radius:8px;border:1px solid var(--edge);background:#141921;color:var(--muted);cursor:pointer}
-  .mute.muted{border-color:var(--air);color:var(--air);background:#26100f;box-shadow:0 0 12px var(--air-glow)}
-
-  /* ---------- URL loader ---------- */
-  .loader{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
-  .loader .fld{flex:1;min-width:200px}
-  .loader select,.loader input{background:#0c0f13;border:1px solid var(--edge);color:var(--ink);
-    font-family:var(--mono);font-size:14px;padding:10px 12px;border-radius:9px;outline:none;width:100%}
-  .hint{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5}
-  .hint code{color:var(--amber);background:#0c0f13;padding:1px 6px;border-radius:5px;border:1px solid var(--edge)}
-
-  /* ---------- log ---------- */
-  #log{font-size:11px;color:var(--muted);margin-top:14px;max-height:90px;overflow:auto;
-    border:1px solid var(--edge);background:#0c0f13;border-radius:10px;padding:10px;white-space:pre-wrap}
-  .pill{display:inline-block;padding:7px 14px;border-radius:9px;border:1px solid var(--edge);
+  .pill{display:inline-block;padding:9px 14px;border-radius:9px;border:1px solid var(--edge);
     font-size:13px;letter-spacing:.06em;cursor:pointer;background:linear-gradient(180deg,#1b2129,#141921);color:var(--ink)}
   .pill.go{border-color:var(--live);color:var(--live)}
   .pill.stop{border-color:var(--air);color:var(--air)}
+
+  /* ---------- busses ---------- */
+  .bus{display:flex;gap:14px;align-items:flex-start;
+    border:1px solid var(--edge);background:linear-gradient(180deg,var(--panel-2),var(--panel));
+    border-radius:14px;padding:12px 14px;margin-bottom:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.03)}
+  .bus .cap{flex:0 0 76px;font-family:var(--head);font-weight:700;letter-spacing:.12em;font-size:14px;
+    color:var(--ink);text-transform:uppercase;display:flex;align-items:center;gap:8px;padding-top:16px}
+  .bus .cap::before{content:"";width:6px;height:16px;background:var(--amber);border-radius:2px;
+    box-shadow:0 0 10px var(--amber-glow);flex:0 0 auto}
+  .bus .keys{display:flex;flex-wrap:wrap;gap:8px;flex:1;align-items:stretch}
+  .bus .body{flex:1;min-width:0}
+  .sep{flex:0 0 1px;align-self:stretch;background:var(--edge);margin:2px 6px}
+  .pgm{position:sticky;top:8px;z-index:30}
+
+  /* ---------- keys ---------- */
+  button.k{
+    appearance:none;cursor:pointer;color:var(--ink);font-family:var(--mono);font-weight:500;
+    font-size:13px;letter-spacing:.04em;padding:9px 10px;border-radius:10px;flex:0 0 auto;
+    border:1px solid var(--edge);background:linear-gradient(180deg,#1b2129,#141921);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 4px 12px rgba(0,0,0,.4);
+    transition:transform .05s ease,border-color .15s,box-shadow .15s,background .15s;
+    text-align:center;line-height:1.25;min-width:96px;min-height:54px;
+  }
+  button.k:active{transform:translateY(1px) scale(.99)}
+  button.k:disabled{opacity:.35;cursor:not-allowed}
+  button.k .tag{display:block;font-size:8px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+  button.k.on{border-color:var(--live);background:linear-gradient(180deg,#15301f,#10261a);
+    box-shadow:0 0 0 1px var(--live),0 0 18px var(--live-glow),inset 0 1px 0 rgba(255,255,255,.06)}
+  button.k.on .tag{color:var(--live)}
+  button.k.air{border-color:var(--air);background:linear-gradient(180deg,#331414,#26100f);
+    box-shadow:0 0 0 1px var(--air),0 0 20px var(--air-glow),inset 0 1px 0 rgba(255,255,255,.06)}
+  button.k.air .tag{color:var(--air)}
+  .pgm button.k{min-width:110px;min-height:62px;font-weight:600;font-size:14px}
+
+  /* ---------- audio rows ---------- */
+  .arow{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px dashed var(--edge)}
+  .arow:first-child{border-top:0}
+  .arow .nm{flex:0 0 90px;font-size:13px}
+  .arow input[type=range]{flex:1;accent-color:var(--amber);min-width:120px}
+  .arow .db{flex:0 0 84px;font-size:12px;color:var(--muted);text-align:right}
+  .rst,.mute{flex:0 0 auto;padding:9px 10px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+    border-radius:8px;border:1px solid var(--edge);background:#141921;color:var(--muted);cursor:pointer}
+  .rst:disabled,.mute:disabled{opacity:.35;cursor:not-allowed}
+  .mute.muted{border-color:var(--air);color:var(--air);background:#26100f;box-shadow:0 0 12px var(--air-glow)}
+
+  .hint{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5}
+
+  /* ---------- log ---------- */
+  #log{font-size:11px;color:var(--muted);margin-top:2px;max-height:90px;overflow:auto;
+    border:1px solid var(--edge);background:#0c0f13;border-radius:10px;padding:10px;white-space:pre-wrap}
+
+  /* ---------- small screens ---------- */
+  @media(max-width:760px){
+    body{padding:10px}
+    .bus{flex-direction:column;gap:8px}
+    .bus .cap{padding-top:0;flex:0 0 auto}
+    .pgm{top:4px}
+    button.k{flex:1 1 30%;min-width:84px}
+    .strip{justify-content:flex-start}
+    .arow .nm{flex:0 0 64px}
+  }
 </style>
 </head>
 <body>
@@ -121,7 +137,15 @@
 
   <header>
     <div class="brand">Director Console<small>IRO · ENDURANCE BROADCAST</small></div>
-    <div class="led"><span class="dot" id="led"></span><span id="ledtxt">Disconnected</span></div>
+    <div class="strip">
+      <span class="st air" id="stAir">ON AIR <b>—</b></span>
+      <span class="st" id="stA">A <b>—</b></span>
+      <span class="st" id="stB">B <b>—</b></span>
+      <span class="st" id="stPov">POV <b>—</b></span>
+      <span class="st" id="stTimer">TIMER <b>—</b></span>
+    </div>
+    <div class="led"><span class="dot" id="ledObs"></span>OBS</div>
+    <div class="led"><span class="dot" id="ledRelay"></span>Relay</div>
   </header>
 
   <div class="conn">
@@ -132,105 +156,114 @@
     <span class="pill stop" id="disconnectBtn" style="display:none">Disconnect</span>
   </div>
 
-  <div class="grid">
+  <section class="bus pgm"><div class="cap">PGM</div><div class="keys" id="pgmBus"></div></section>
 
-    <div class="panel span2">
-      <h2>Race Timer</h2>
-      <div class="btns" id="timerBtns"></div>
+  <section class="bus"><div class="cap">Feeds</div><div class="keys" id="feedsBus"></div></section>
+
+  <section class="bus"><div class="cap">Scn·Vis</div><div class="keys" id="scnBus"></div></section>
+
+  <section class="bus"><div class="cap">Gfx</div><div class="keys" id="gfxBus"></div></section>
+
+  <section class="bus"><div class="cap">Timer</div>
+    <div class="body">
+      <div class="keys" id="timerBus"></div>
       <div class="hint" id="timerInfo">Timer: connecting to relay…</div>
     </div>
+  </section>
 
-    <div class="panel span2">
-      <h2>Scenes</h2>
-      <div class="btns" id="scenes"></div>
-    </div>
+  <section class="bus"><div class="cap">Audio</div><div class="body" id="audio"></div></section>
 
-    <div class="panel">
-      <h2>Feeds (show / hide)</h2>
-      <div class="btns" id="feeds"></div>
-    </div>
-
-    <div class="panel">
-      <h2>Graphics (show / hide)</h2>
-      <div class="btns" id="graphics"></div>
-    </div>
-
-    <div class="panel span2">
-      <h2>Audio</h2>
-      <div id="audio"></div>
-    </div>
-
-    <div class="panel span2">
-      <h2>Ad-hoc Guest Feed — load a URL</h2>
-      <div class="loader">
-        <div class="fld"><label>Target media source</label>
-          <select id="mediaSel"></select></div>
-        <div class="fld"><label>Direct media URL (.m3u8)</label>
-          <input id="mediaUrl" placeholder="https://…manifest…m3u8"></div>
-        <span class="pill go" id="loadBtn">Load</span>
-      </div>
-      <div class="hint">
-        For a guest's YouTube/Twitch channel, first resolve a direct link on the Producer PC:
-        <code>yt-dlp -g "https://www.youtube.com/channel/&lt;ID&gt;/live"</code> — paste the result above.
-        This writes the URL straight into the chosen OBS Media Source.
-      </div>
-    </div>
-
-  </div>
-
-  <div id="log">Ready. Enter the Producer's Tailscale IP + OBS WebSocket password, then Connect.</div>
+  <div id="log">Ready. FEEDS + TIMER work relay-only; enter the Producer's Tailscale IP + OBS WebSocket password and Connect for everything else.</div>
 </div>
 
 <script>
 /* =======================================================================
-   CONFIG — edit these names ONCE to match your OBS exactly.
-   - scenes:   scene names (Set Program Scene)
-   - feeds:    {label, scene, source}  source toggled inside that scene
-   - graphics: {label, scene, source}  overlay toggled inside that scene
-   - audio:    {label, input}          OBS audio input name
-   - media:    media-source names available in the guest URL loader
+   CONFIG — mirrors the Companion button config (src/companion/) and the
+   OBS collection (src/obs/IRO_Endurance.json). Edit here if scenes/sources
+   are renamed in OBS; keep Companion and this file in sync.
+   - macros:   PGM bus, exact Companion page-1 row-0 semantics
+   - scenes:   raw scene switches
+   - vis:      feed visibility toggles (scene items)
+   - graphics: overlay toggles (scene items; "HUD" is an OBS group — valid)
+   - audio:    OBS audio inputs for the dB rows
    ======================================================================= */
 const CONFIG = {
-  scenes: ["Stint", "Splitscreen", "Interview", "Standby"],
-  feeds: [
-    {label:"Feed A", scene:"Stint", source:"Feed A"},
-    {label:"Feed B", scene:"Stint", source:"Feed B"},
-    {label:"Split L", scene:"Splitscreen", source:"Feed A"},
-    {label:"Split R", scene:"Splitscreen", source:"Feed B"},
+  macros: [
+    {label:"STINT A", scene:"Stint",
+     show:[["Stint","Feed A"]], hide:[["Stint","Feed B"]],
+     unmute:["Feed A"], mute:["Feed B","Discord Audio Capture"]},
+    {label:"STINT B", scene:"Stint",
+     show:[["Stint","Feed B"]], hide:[["Stint","Feed A"]],
+     unmute:["Feed B"], mute:["Feed A","Discord Audio Capture"]},
+    {label:"SPLIT", scene:"Splitscreen",
+     show:[["Splitscreen","Feed A"],["Splitscreen","Feed B"]], hide:[],
+     unmute:["Feed A"], mute:["Feed B","Discord Audio Capture"]},
+    {label:"INTERVIEW", scene:"Interview", show:[], hide:[],
+     unmute:["Discord Audio Capture"], mute:["Feed A","Feed B"]},
+    {label:"STANDBY", scene:"Standby", show:[], hide:[],
+     unmute:[], mute:["Feed A","Feed B","Discord Audio Capture"]},
+    {label:"INTRO", scene:"Intro", show:[], hide:[],
+     unmute:[], mute:["Feed A","Feed B","Discord Audio Capture"]},
+    {label:"OUTRO", scene:"Outro", show:[], hide:[],
+     unmute:[], mute:["Feed A","Feed B","Discord Audio Capture"]},
+  ],
+  scenes: ["Stint","Splitscreen","Interview","Standby"],
+  vis: [
+    {label:"FEED A", scene:"Stint", source:"Feed A"},
+    {label:"FEED B", scene:"Stint", source:"Feed B"},
+    {label:"POV",    scene:"Stint", source:"Feed POV"},
   ],
   graphics: [
-    {label:"HUD (Stint)", scene:"Stint",       source:"HUD"},
-    {label:"HUD (Split)", scene:"Splitscreen", source:"HUD"},
-    {label:"Standings",   scene:"Stint",       source:"Standings"},
-    {label:"Schedule",    scene:"Stint",       source:"Schedule"},
-    {label:"Race Result", scene:"Stint",       source:"Race Results"},
-    {label:"Quali Result",scene:"Stint",       source:"Quali Results"},
-    {label:"Race Wx 1",   scene:"Stint",       source:"Race Weather 1"},
-    {label:"Race Wx 2",   scene:"Stint",       source:"Race Weather 2"},
-    {label:"Quali Wx",    scene:"Stint",       source:"Quali Weather"},
+    {label:"HUD",           scene:"Stint",       source:"HUD"},
+    {label:"HUD",           scene:"Splitscreen", source:"HUD"},
+    {label:"STANDINGS",     scene:"Stint",       source:"Standings"},
+    {label:"SCHEDULE",      scene:"Stint",       source:"Schedule"},
+    {label:"RACE RESULTS",  scene:"Stint",       source:"Race Results"},
+    {label:"QUALI RESULTS", scene:"Stint",       source:"Quali Results"},
+    {label:"RACE WX 1",     scene:"Stint",       source:"Race Weather 1"},
+    {label:"RACE WX 2",     scene:"Stint",       source:"Race Weather 2"},
+    {label:"QUALI WX",      scene:"Stint",       source:"Quali Weather"},
+    {label:"STBY COVER",    scene:"Stint",       source:"Standby Cover"},
+    {label:"POST-RACE",     scene:"Interview",   source:"Post Race Interviews"},
   ],
   audio: [
     {label:"Feed A",  input:"Feed A"},
     {label:"Feed B",  input:"Feed B"},
+    {label:"POV",     input:"Feed POV"},
     {label:"Discord", input:"Discord Audio Capture"},
   ],
-  media: ["Feed A", "Feed B"]
 };
+
+/* Relay endpoints (same origin as this page; Companion uses the same set). */
+const FEED_ACTIONS = [
+  ["NEXT",       "next",       "handover"],
+  ["RELOAD ALL", "reload",     "relay"],
+  ["RELOAD A",   "reload/A",   "relay"],
+  ["RELOAD B",   "reload/B",   "relay"],
+  ["POV RELOAD", "pov/reload", "relay"],
+  ["POV STOP",   "pov/stop",   "relay"],
+];
+const TIMER_ACTIONS = [
+  // stopwatch semantics: START starts or resumes, PAUSE pauses, RESET clears.
+  // adjust shifts whatever is relevant: running anchor / paused remainder /
+  // the configured duration before start.
+  ["START","timer/start"], ["PAUSE","timer/stop"], ["RESET","timer/reset"],
+  ["SHOW","timer/show"],   ["HIDE","timer/hide"],
+  ["+1 MIN","timer/adjust/60"],  ["−1 MIN","timer/adjust/-60"],
+  ["+10 S","timer/adjust/10"],   ["−10 S","timer/adjust/-10"],
+];
 
 /* ---------- plumbing ---------- */
 const obs = new OBSWebSocket();
-let connected = false, poll = null;
+let connected = false, poll = null, programScene = "";
 const $ = s => document.querySelector(s);
-const led = $("#led"), ledtxt = $("#ledtxt");
 function log(m, kind){
   const t = new Date().toLocaleTimeString();
   $("#log").textContent = `[${t}] ${m}\n` + $("#log").textContent;
   if(kind==="err") console.warn(m);
 }
-function setLed(state){
-  led.className = "dot" + (state==="ok"?" on":state==="err"?" err":"");
-  ledtxt.textContent = state==="ok"?"Connected":state==="err"?"Error":"Disconnected";
-}
+function obsLed(state){ $("#ledObs").className = "dot" + (state==="ok"?" on":state==="err"?" err":""); }
+function relayLed(ok){ $("#ledRelay").className = "dot" + (ok?" on":" err"); }
 
 /* remember connection details locally for convenience */
 try{
@@ -239,50 +272,106 @@ try{
   $("#pw").value   = localStorage.getItem("iro_pw")   || "";
 }catch(e){}
 
-/* ---------- build UI ---------- */
-function mkBtn(label, tag, onClick){
+/* ---------- build the busses ---------- */
+function mkKey(label, tag, onClick, obsManaged){
   const b = document.createElement("button");
-  b.className = "b"; b.disabled = true;
+  b.className = "k"; b.disabled = !!obsManaged;
   b.innerHTML = `<span class="tag">${tag}</span>${label}`;
+  if (obsManaged) b.dataset.obs = "1";
   b.addEventListener("click", onClick);
   return b;
 }
-const sceneBtns = {}, toggleBtns = [];
+const macroKeys = [], sceneKeys = {}, toggleKeys = [];
+
+CONFIG.macros.forEach(m=>{
+  const b = mkKey(m.label, "program", ()=>runMacro(m), true);
+  b._m = m; macroKeys.push(b); $("#pgmBus").appendChild(b);
+});
+
+FEED_ACTIONS.forEach(([label, path, tag])=>{
+  $("#feedsBus").appendChild(mkKey(label, tag, ()=>relayCall(path), false));
+});
+$("#feedsBus").appendChild(mkKey("SET STINT…", "correct", ()=>{
+  const v = prompt("Stint number now ON AIR (1-based):");
+  if (v === null) return;
+  if (!/^\d+$/.test(v.trim())) { log("Stint must be a number.", "err"); return; }
+  if (!confirm(`Re-target BOTH feeds to stint ${v.trim()}? This interrupts a running pull — not for mid-program use.`)) return;
+  relayCall("set/stint/" + v.trim());
+}, false));
 
 CONFIG.scenes.forEach(name=>{
-  const b = mkBtn(name, "scene", ()=>safe(()=>obs.call("SetCurrentProgramScene",{sceneName:name})));
-  sceneBtns[name] = b; $("#scenes").appendChild(b);
+  const b = mkKey(name.toUpperCase(), "scene",
+    ()=>safe(()=>obs.call("SetCurrentProgramScene",{sceneName:name})), true);
+  sceneKeys[name] = b; $("#scnBus").appendChild(b);
 });
-function buildToggles(list, mount){
-  list.forEach(item=>{
-    const b = mkBtn(item.label, item.scene, ()=>toggleSource(item, b));
-    b._item = item; toggleBtns.push(b); $(mount).appendChild(b);
-  });
-}
-buildToggles(CONFIG.feeds, "#feeds");
-buildToggles(CONFIG.graphics, "#graphics");
+{ const s = document.createElement("div"); s.className = "sep"; $("#scnBus").appendChild(s); }
+CONFIG.vis.forEach(item=>{
+  const b = mkKey(item.label, item.scene, ()=>toggleSource(item, b), true);
+  b._item = item; toggleKeys.push(b); $("#scnBus").appendChild(b);
+});
+
+CONFIG.graphics.forEach(item=>{
+  const b = mkKey(item.label, item.scene, ()=>toggleSource(item, b), true);
+  b._item = item; toggleKeys.push(b); $("#gfxBus").appendChild(b);
+});
+
+TIMER_ACTIONS.forEach(([label, path])=>{
+  $("#timerBus").appendChild(mkKey(label, "timer", ()=>timerCall(path), false));
+});
+$("#timerBus").appendChild(mkKey("SET…", "duration", ()=>{
+  const v = prompt("Race duration (H:MM:SS):", "6:00:00");
+  if (v) timerCall("timer/set/" + v.trim());   // ':' is path-safe; encoding it would 400
+}, false));
 
 CONFIG.audio.forEach(a=>{
   const row = document.createElement("div"); row.className = "arow";
   row.innerHTML =
     `<span class="nm">${a.label}</span>
-     <input type="range" min="0" max="100" value="80" disabled data-input="${a.input}">
-     <button class="mute" disabled data-input="${a.input}">Mute</button>`;
+     <input type="range" min="-60" max="0" step="0.5" value="0" disabled data-obs="1" data-input="${a.input}">
+     <span class="db">— dB</span>
+     <button class="rst" disabled data-obs="1">0 dB</button>
+     <button class="mute" disabled data-obs="1" data-input="${a.input}">Mute</button>`;
   $("#audio").appendChild(row);
-  row.querySelector("input").addEventListener("input", e=>{
-    safe(()=>obs.call("SetInputVolume",{inputName:a.input, inputVolumeMul:Number(e.target.value)/100}));
+  const sld = row.querySelector("input"), db = row.querySelector(".db");
+  sld.addEventListener("input", e=>{
+    sld.dataset.touched = Date.now();
+    db.textContent = Number(e.target.value).toFixed(1) + " dB";
+    safe(()=>obs.call("SetInputVolume",{inputName:a.input, inputVolumeDb:Number(e.target.value)}));
+  });
+  row.querySelector(".rst").addEventListener("click", ()=>{
+    safe(async ()=>{ await obs.call("SetInputVolume",{inputName:a.input, inputVolumeDb:0}); refresh(); });
   });
   row.querySelector(".mute").addEventListener("click", ()=>{
     safe(()=>obs.call("ToggleInputMute",{inputName:a.input}));
   });
 });
 
-CONFIG.media.forEach(m=>{
-  const o = document.createElement("option"); o.value=m; o.textContent=m; $("#mediaSel").appendChild(o);
-});
-
-/* ---------- actions ---------- */
+/* ---------- OBS actions ---------- */
 async function safe(fn){ try{ await fn(); }catch(e){ log("Action failed: "+(e.message||e), "err"); } }
+
+async function setItemVisible(scene, source, on){
+  const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:scene, sourceName:source});
+  await obs.call("SetSceneItemEnabled",{sceneName:scene, sceneItemId, sceneItemEnabled:on});
+}
+
+/* One press = scene + visibility + mutes, exactly like the Companion macro.
+   Each step is independent: a failing step is logged and the rest still runs
+   (a half high-pressure switch is better than none). */
+async function runMacro(m){
+  if(!connected) return;
+  const steps = [
+    ["set scene", ()=>obs.call("SetCurrentProgramScene",{sceneName:m.scene})],
+    ...m.show.map(([sc,src])=>[`show ${src}`,  ()=>setItemVisible(sc,src,true)]),
+    ...m.hide.map(([sc,src])=>[`hide ${src}`,  ()=>setItemVisible(sc,src,false)]),
+    ...m.unmute.map(i=>[`unmute ${i}`, ()=>obs.call("SetInputMute",{inputName:i, inputMuted:false})]),
+    ...m.mute.map(i=>[`mute ${i}`,     ()=>obs.call("SetInputMute",{inputName:i, inputMuted:true})]),
+  ];
+  for (const [what, fn] of steps){
+    try{ await fn(); }
+    catch(e){ log(`${m.label}: ${what} failed: ${e.message||e}`, "err"); }
+  }
+  refresh();
+}
 
 async function toggleSource(item, btn){
   try{
@@ -293,41 +382,110 @@ async function toggleSource(item, btn){
   }catch(e){ log(`Toggle "${item.source}" in "${item.scene}" failed: ${e.message||e}`, "err"); }
 }
 
-$("#loadBtn").addEventListener("click", ()=>{
-  if(!connected) return;
-  const inputName = $("#mediaSel").value, url = $("#mediaUrl").value.trim();
-  if(!url){ log("Enter a media URL first.", "err"); return; }
-  safe(async ()=>{
-    await obs.call("SetInputSettings",{inputName, inputSettings:{input:url, is_local_file:false}, overlay:true});
-    log(`Loaded URL into "${inputName}".`);
-  });
-});
+/* ---------- relay actions (no OBS needed) ---------- */
+async function relayCall(path){
+  try{
+    const r = await fetch("/" + path, {cache:"no-store"});
+    const d = await r.json();
+    if (d.error) { log("Relay /" + path + ": " + d.error, "err"); return; }
+    let extra = "";
+    if (d.feeds) extra = ` — A: stint ${d.feeds.A.stint}, B: stint ${d.feeds.B.stint}`;
+    log("Relay /" + path + " ok" + extra);
+    relayPoll();
+  }catch(e){ log("Relay /" + path + " failed (relay reachable?): " + e, "err"); }
+}
 
-/* ---------- state refresh ---------- */
+/* ---------- OBS state refresh ---------- */
 async function refresh(){
   if(!connected) return;
   try{
     const {currentProgramSceneName} = await obs.call("GetCurrentProgramScene");
-    Object.entries(sceneBtns).forEach(([n,b])=>b.classList.toggle("air", n===currentProgramSceneName));
+    programScene = currentProgramSceneName;
   }catch(e){}
-  for(const b of toggleBtns){
+  Object.entries(sceneKeys).forEach(([n,b])=>b.classList.toggle("air", n===programScene));
+
+  const visState = {};
+  for(const b of toggleKeys){
     try{
       const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:b._item.scene, sourceName:b._item.source});
       const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:b._item.scene, sceneItemId});
       b.classList.toggle("on", sceneItemEnabled);
+      visState[b._item.scene + "/" + b._item.source] = sceneItemEnabled;
     }catch(e){}
   }
-  for(const el of document.querySelectorAll(".mute")){
+
+  for(const b of macroKeys){
+    const m = b._m;
+    let air = programScene === m.scene;
+    if (air && m.show.length){
+      for (const [sc,src] of m.show){
+        const key = sc + "/" + src;
+        if (!(key in visState)){
+          try{
+            const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:sc, sourceName:src});
+            const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:sc, sceneItemId});
+            visState[key] = sceneItemEnabled;
+          }catch(e){ visState[key] = false; }
+        }
+        if (!visState[key]) { air = false; break; }
+      }
+    }
+    b.classList.toggle("air", !!air);
+  }
+
+  for(const row of document.querySelectorAll(".arow")){
+    const input = row.querySelector("input[type=range]").dataset.input;
     try{
-      const {inputMuted} = await obs.call("GetInputMute",{inputName:el.dataset.input});
-      el.classList.toggle("muted", inputMuted);
-      el.textContent = inputMuted ? "Muted" : "Mute";
+      const {inputMuted} = await obs.call("GetInputMute",{inputName:input});
+      const mbtn = row.querySelector(".mute");
+      mbtn.classList.toggle("muted", inputMuted);
+      mbtn.textContent = inputMuted ? "Muted" : "Mute";
+    }catch(e){}
+    try{
+      const {inputVolumeDb} = await obs.call("GetInputVolume",{inputName:input});
+      const sld = row.querySelector("input[type=range]");
+      if (Date.now() - Number(sld.dataset.touched||0) > 1500){
+        sld.value = Math.max(-60, Math.min(0, inputVolumeDb));
+        row.querySelector(".db").textContent =
+          (inputVolumeDb <= -60 ? "≤−60.0" : inputVolumeDb.toFixed(1)) + " dB";
+      }
     }catch(e){}
   }
+
+  renderAir(visState);
+}
+
+function renderAir(visState){
+  const el = $("#stAir");
+  if(!connected){ el.innerHTML = "ON AIR <b>OBS OFFLINE</b>"; return; }
+  let what = programScene || "?";
+  if (programScene === "Stint"){
+    const feeds = [["Feed A","A"],["Feed B","B"],["Feed POV","POV"]]
+      .filter(([s])=>visState["Stint/"+s]).map(([,t])=>t);
+    if (feeds.length) what += " · " + feeds.join("+");
+  }
+  el.innerHTML = "ON AIR <b>" + what.toUpperCase() + "</b>";
 }
 
 function setEnabled(on){
-  document.querySelectorAll("button.b:not(.timer), .mute, #audio input[type=range]").forEach(el=>el.disabled=!on);
+  document.querySelectorAll('[data-obs="1"]').forEach(el=>el.disabled = !on);
+}
+
+/* ---------- relay status strip (works without OBS) ---------- */
+async function relayPoll(){
+  try{
+    const r = await fetch("/status", {cache:"no-store"});
+    const d = await r.json();
+    relayLed(true);
+    const n = d.schedule_len;
+    $("#stA").innerHTML = `A <b>S${d.feeds.A.stint}</b>/${n}`;
+    $("#stB").innerHTML = `B <b>S${d.feeds.B.stint}</b>/${n}`;
+    $("#stPov").innerHTML = "POV <b>" + ((d.pov && d.pov.state) || "—").toUpperCase() + "</b>";
+  }catch(e){
+    relayLed(false);
+    $("#stA").innerHTML = "A <b>—</b>"; $("#stB").innerHTML = "B <b>—</b>";
+    $("#stPov").innerHTML = "POV <b>—</b>";
+  }
 }
 
 /* ---------- connect / disconnect ---------- */
@@ -337,42 +495,35 @@ $("#connectBtn").addEventListener("click", async ()=>{
   try{ localStorage.setItem("iro_ip",ip); localStorage.setItem("iro_port",port); localStorage.setItem("iro_pw",pw); }catch(e){}
   try{
     await obs.connect(`ws://${ip}:${port}`, pw);
-    connected = true; setLed("ok"); setEnabled(true);
+    connected = true; obsLed("ok"); setEnabled(true);
     $("#connectBtn").style.display="none"; $("#disconnectBtn").style.display="inline-block";
     log("Connected to OBS.");
     await refresh();
     poll = setInterval(refresh, 2000);
   }catch(e){
-    setLed("err");
+    obsLed("err");
     log("Connect failed: "+(e.message||e), "err");
-    log("Check: OBS open, WebSocket enabled, right password, Tailscale connected, page opened over file:// or http:// (not https).", "err");
+    log("Check: OBS open, WebSocket enabled, right password, Tailscale connected, page opened over http:// (not https).", "err");
   }
 });
 $("#disconnectBtn").addEventListener("click", async ()=>{
   clearInterval(poll); try{ await obs.disconnect(); }catch(e){}
-  connected=false; setLed(""); setEnabled(false);
+  connected=false; obsLed(""); setEnabled(false); renderAir({});
   $("#disconnectBtn").style.display="none"; $("#connectBtn").style.display="inline-block";
   log("Disconnected.");
 });
 obs.on("ConnectionClosed", ()=>{
-  if(connected){ connected=false; clearInterval(poll); setLed("err"); setEnabled(false);
+  if(connected){ connected=false; clearInterval(poll); obsLed("err"); setEnabled(false); renderAir({});
     $("#disconnectBtn").style.display="none"; $("#connectBtn").style.display="inline-block";
     log("Connection lost — press Connect to retry.", "err"); }
 });
 obs.on("CurrentProgramSceneChanged", d=>{
-  Object.entries(sceneBtns).forEach(([n,b])=>b.classList.toggle("air", n===d.sceneName));
+  programScene = d.sceneName;
+  Object.entries(sceneKeys).forEach(([n,b])=>b.classList.toggle("air", n===programScene));
+  refresh();
 });
 
 /* ---------- race timer (relay-served; works without the OBS connection) --- */
-const TIMER_ACTIONS = [
-  // stopwatch semantics: START starts or resumes, STOP pauses, RESET clears.
-  // adjust shifts whatever is relevant: running anchor / paused remainder /
-  // the configured duration before start.
-  ["START",  "timer/start"],  ["STOP (PAUSE)", "timer/stop"], ["RESET", "timer/reset"],
-  ["SHOW",   "timer/show"],   ["HIDE",   "timer/hide"],
-  ["+1 MIN", "timer/adjust/60"], ["−1 MIN", "timer/adjust/-60"],
-  ["+10 S",  "timer/adjust/10"], ["−10 S",  "timer/adjust/-10"],
-];
 async function timerCall(path){
   try{
     const r = await fetch("/" + path, {cache:"no-store"});
@@ -381,19 +532,6 @@ async function timerCall(path){
     if (d.note) log("Timer: " + d.note);
     timerRender(d);
   }catch(e){ log("Timer action failed (relay reachable?): " + e, "err"); }
-}
-TIMER_ACTIONS.forEach(([label, path])=>{
-  const b = mkBtn(label, "timer", ()=>timerCall(path));
-  b.classList.add("timer"); b.disabled = false;
-  document.getElementById("timerBtns").appendChild(b);
-});
-{ // duration setter (prompt keeps the panel dependency-free)
-  const b = mkBtn("SET DURATION", "timer", ()=>{
-    const v = prompt("Race duration (H:MM:SS):", "6:00:00");
-    if (v) timerCall("timer/set/" + v.trim());   // ':' is path-safe; encoding it would 400
-  });
-  b.classList.add("timer"); b.disabled = false;
-  document.getElementById("timerBtns").appendChild(b);
 }
 function timerFmt(s){
   s = Math.max(0, Math.ceil(s));
@@ -410,20 +548,30 @@ function timerRender(d){
              : d.sync.push === "disabled" ? "local only (IRO_TIMER_PUSH_URL unset)"
              : d.sync.push === "failed" ? "SHEET SYNC FAILED — handover not safe"
              : "sheet sync not yet attempted";
-  document.getElementById("timerInfo").textContent = `Timer: ${head} · ${sync}`;
+  $("#timerInfo").textContent = `Timer: ${head} · ${sync}`;
+  const pill = d.mode === "running" ? "▶ " + timerFmt(rem)
+             : d.mode === "paused" ? "⏸ " + timerFmt(d.remaining_s)
+             : d.mode === "prestart" ? "READY"
+             : d.mode === "finished" ? "FINISHED" : "HIDDEN";
+  $("#stTimer").innerHTML = "TIMER <b>" + pill + "</b>";
 }
 async function timerPoll(){
   try{
     const r = await fetch("/timer/data", {cache:"no-store"});
     const d = await r.json();
     if (!d.error) timerRender(d);
-    else document.getElementById("timerInfo").textContent = "Timer: disabled on this relay.";
+    else { $("#timerInfo").textContent = "Timer: disabled on this relay."; $("#stTimer").innerHTML = "TIMER <b>—</b>"; }
   }catch(e){
-    document.getElementById("timerInfo").textContent =
+    $("#timerInfo").textContent =
       "Timer: relay not reachable (panel opened from file://? open it via http://<relay>:8088/panel).";
+    $("#stTimer").innerHTML = "TIMER <b>—</b>";
   }
 }
-timerPoll();
+
+/* ---------- boot ---------- */
+renderAir({});
+relayPoll(); timerPoll();
+setInterval(relayPoll, 2000);
 setInterval(timerPoll, 2000);
 </script>
 </body>
