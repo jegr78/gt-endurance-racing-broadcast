@@ -138,6 +138,17 @@ build and Google Fonts (existing behavior).
 - `/set/stint` and SET DURATION validate via the relay's own 400 responses and
   surface `{"error": …}` in the log box.
 
+## Documentation
+
+`src/docs/wiki/Run-an-event.md` gains a section describing the director panel
+(what it is, the URL `http://<producer-tailscale-ip>:8088/panel`, the six
+busses, what works without OBS) **including a screenshot** of the redesigned
+page, stored as `src/docs/wiki/images/director-panel.png` (taken via the
+Playwright MCP against a running relay, same model as the Companion
+button-board screenshots). Cross-references where the panel is already
+mentioned (`Race-Timer.md`, `Architecture.md`) stay valid; publish with
+`python3 tools/sync-wiki.py`.
+
 ## Testing
 
 No JS test harness exists for the panel (static file, stdlib-only repo) —
