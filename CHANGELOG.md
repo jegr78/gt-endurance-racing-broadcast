@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v0.3.0...v0.4.0) (2026-06-06)
+
+
+### Features
+
+* **init:** guided first-time setup wizard (iro init) ([0601326](https://github.com/jegr78/IRO_Broadcast_Setup/commit/0601326ba78430833416ca72751d8f84adbb6d3c))
+* **tailscale:** connection-aware detection + iro tailscale up/down/status ([d89283e](https://github.com/jegr78/IRO_Broadcast_Setup/commit/d89283e18e06da6c17be9744d93b2b54c3d2962c))
+
+
+### Bug Fixes
+
+* clear the two remaining code-scanning alerts ([#12](https://github.com/jegr78/IRO_Broadcast_Setup/issues/12)) ([0934eb0](https://github.com/jegr78/IRO_Broadcast_Setup/commit/0934eb004e236d0937be534364426ac2dca2ae50))
+* resolve all open CodeQL code-scanning alerts ([#10](https://github.com/jegr78/IRO_Broadcast_Setup/issues/10)) ([b507858](https://github.com/jegr78/IRO_Broadcast_Setup/commit/b507858aed3549afbbd3f931dc8a2732f9805a3c))
+* **update:** offer the latest release on frozen dev binaries ([#13](https://github.com/jegr78/IRO_Broadcast_Setup/issues/13)) ([f785250](https://github.com/jegr78/IRO_Broadcast_Setup/commit/f7852501c72203041ae5d59ce6bb4d2bea268bae))
+
 ## [0.3.0](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v0.2.1...v0.3.0) (2026-06-05)
 
 
