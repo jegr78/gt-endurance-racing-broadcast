@@ -53,3 +53,21 @@ jobs:
 
       - name: Build distributable + self-verify (tokenization, blanked password, no secrets)
         run: python tools/build.py
+
+  binary-smoke:
+    # CI must exercise everything the release pipeline exercises: release.yml
+    # builds the PyInstaller binary and runs the build-binary smoke test, so a
+    # PR that breaks either (e.g. a removed CLI flag still passed by the smoke)
+    # must go red here — not at the v* tag. One OS is enough: the smoke covers
+    # frozen dispatch + bundled data, which drift OS-independently; the release
+    # still builds all three.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install PyInstaller
+        run: python -m pip install pyinstaller
+      - name: Build + smoke-test the binary (same step as release.yml)
+        run: python tools/build-binary.py --version ci-smoke

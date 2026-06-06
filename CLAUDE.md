@@ -21,6 +21,11 @@ Pure Python + stdlib (no framework, no package manager); external runtime deps a
   The OBS collection and scripts are deliberately path/secret-free in git.
 - Tooling is Python-only by design — do not reintroduce `.sh`/`.bat` (the build
   fails if any are shipped).
+- **Removing/renaming a CLI flag? Grep the whole repo — including `tools/` and
+  `.github/`.** Those callers run only in the build/release pipeline, not in the
+  test suite (a stale `--timer-url` in the binary smoke test broke every v1.0.0
+  release build). CI's `binary-smoke` job now exercises the binary path on every
+  PR, but grepping first is cheaper than a red pipeline.
 
 ## Commands
 
