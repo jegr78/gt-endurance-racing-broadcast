@@ -39,6 +39,13 @@ Update later with a single command: `iro update`.
 
 ### One-time machine setup
 ```
+iro init              # guided setup: installs tools+apps, cookies, graphics,
+                      # media, OBS collection, Companion config, preflight —
+                      # skips what is already done; re-run any time
+```
+
+Or run the steps individually:
+```
 iro install-tools     # installs yt-dlp/streamlink/ffmpeg/deno (offers Homebrew setup on a fresh Mac)
 iro install-apps      # optional: installs OBS, Companion, Tailscale
 iro preflight         # verify the machine is ready

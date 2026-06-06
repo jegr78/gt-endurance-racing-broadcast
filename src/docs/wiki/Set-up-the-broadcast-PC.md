@@ -53,6 +53,31 @@ Then use `python3 src/iro.py …` wherever the docs say `iro …`, and copy
 `.env.example` to `.env` in the repo root yourself.
 </details>
 
+### The short way: `iro init`
+
+One command walks through the automatable steps on this page in order — it
+installs the tools and apps, exports YouTube cookies, downloads graphics and
+media, builds the OBS import collection, writes the Companion button config,
+and finishes with the preflight report:
+
+```
+iro init
+```
+
+It skips whatever is already done, so re-running it is always safe. It pauses
+for the things only you can do: filling in `.env` and — when cookies are
+missing or stale — logging into YouTube in Firefox. At the end it prints the
+remaining manual steps (importing the OBS collection and the Companion config,
+signing in to Tailscale) — those are described in detail in the sections
+below, and letting Companion control OBS (section 7) and Discord audio
+(section 10) still need their one-time manual setup too.
+
+Flags: `--browser NAME` (cookie export browser, default `firefox`),
+`--skip-installs` (no admin rights), `--force` (re-run every step).
+
+The sections below remain the full reference — use them when a single step
+needs repeating or debugging.
+
 ## 2 — Install the apps
 
 ```bash

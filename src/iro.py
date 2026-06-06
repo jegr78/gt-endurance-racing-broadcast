@@ -13,6 +13,7 @@
   iro status                            # aggregate health of all services
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] | install-apps [--yes]
   iro export companion [--out PATH]     # write the Companion button config
+  iro init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
   iro update [--check] [--yes]          # self-update the binary from GitHub Releases
   iro --version
 """
@@ -24,6 +25,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "scripts"))
 import subprocess
 import services as sv
+import init_setup as ins
 
 # PyInstaller marks the frozen binary with sys.frozen and unpacks bundled data
 # (the whole src/ tree) to sys._MEIPASS. Repo + package mode stay subprocess-based.
@@ -48,6 +50,18 @@ def _runtime_base(frozen, executable, here):
 
 def _runtime_dir():
     return _runtime_base(IS_FROZEN, sys.executable, HERE)
+
+def _env_base(frozen, executable, here):
+    """Directory whose .env configures this run (mirrors _runtime_base):
+    frozen -> next to the binary; repo (src/) -> repo root; package -> here."""
+    if frozen:
+        return os.path.dirname(executable)
+    if os.path.basename(here) == "src":
+        return os.path.dirname(here)
+    return here
+
+def _env_file():
+    return os.path.join(_env_base(IS_FROZEN, sys.executable, HERE), ".env")
 
 def parse_env_text(text):
     """Minimal .env parser (KEY=VALUE, '#' comments, optional quotes) — matches the
@@ -274,6 +288,8 @@ def route(argv):
         if verb not in TAILSCALE_VERBS:
             raise ValueError(f"usage: iro tailscale {{{'|'.join(TAILSCALE_VERBS)}}}")
         return {"kind": "service", "command": "tailscale", "verb": verb, "rest": rest[1:]}
+    if cmd == "init":
+        return {"kind": "init", "rest": rest}
     if cmd in ONESHOTS:
         return {"kind": "oneshot", "command": cmd, "rest": rest}
     if cmd == "export":
@@ -644,6 +660,25 @@ def _asset_dirs(gg, gm):
             gm.media_dir(os.path.dirname(os.path.abspath(gm.__file__))))
 
 
+def _asset_state(ev):
+    """Sheet-driven asset facts shared by `iro event status` and `iro init`:
+    (g_dir, m_dir, missing_g, missing_m). missing_* follow ev.check_assets()
+    semantics and are None when the sheet could not be read (fetch_assets_rows
+    absorbs fetch errors into None — it never raises). Only module-load /
+    directory-resolution failures raise — callers classify/fall back.
+
+    Note: get-graphics' load_dotenv also fills IRO_* env vars for repo/package
+    modes (frozen already loaded .env next to the binary at startup)."""
+    gg = _load_relay_module("relay/get-graphics.py")
+    gm = _load_relay_module("relay/get-media.py")
+    gg.load_dotenv(os.path.dirname(os.path.abspath(gg.__file__)))
+    g_dir, m_dir = _asset_dirs(gg, gm)
+    rows = ev.fetch_assets_rows(gg, os.environ.get("IRO_SHEET_ID"))
+    missing_g = ev.check_assets(ev.required_graphics(gg, rows), g_dir) if rows else None
+    missing_m = ev.check_assets(ev.required_media(gm, rows), m_dir) if rows else None
+    return g_dir, m_dir, missing_g, missing_m
+
+
 def _event_sections(ev, pf):
     """Gather all event-day facts and classify them into report sections."""
     # Apps
@@ -662,18 +697,10 @@ def _event_sections(ev, pf):
             "" if supported else _companion_unsupported_msg()))
     except Exception as exc:
         services.append(ev.Result(ev.WARN, "Companion", f"check failed: {exc}"))
-    # Assets — get-graphics' load_dotenv also fills IRO_* for the repo/package
-    # modes (frozen already loaded .env next to the binary at startup). A
-    # broken probe must never traceback the report (spec: error behaviour).
+    # Assets — a broken probe must never traceback the report (spec: error behaviour).
     assets = [pf.cookies_status(os.path.join(_runtime_dir(), "cookies.txt"))]
     try:
-        gg = _load_relay_module("relay/get-graphics.py")
-        gm = _load_relay_module("relay/get-media.py")
-        gg.load_dotenv(os.path.dirname(os.path.abspath(gg.__file__)))
-        g_dir, m_dir = _asset_dirs(gg, gm)
-        rows = ev.fetch_assets_rows(gg, os.environ.get("IRO_SHEET_ID"))
-        missing_g = ev.check_assets(ev.required_graphics(gg, rows), g_dir) if rows else None
-        missing_m = ev.check_assets(ev.required_media(gm, rows), m_dir) if rows else None
+        g_dir, m_dir, missing_g, missing_m = _asset_state(ev)
         assets += [ev.classify_assets("Graphics", missing_g, ev.local_count(g_dir),
                                       ev.FAIL, "run `iro graphics`"),
                    ev.classify_assets("Media", missing_m, ev.local_count(m_dir),
@@ -880,11 +907,17 @@ ONESHOT_MAP = {
 RUNTIME_DIR_ONESHOTS = ("preflight", "cookies")
 
 
-def oneshot(command, rest):
+def _oneshot_code(command, rest):
+    """Run a one-shot and return its exit code (the seam `iro init` uses to
+    chain steps — oneshot() below keeps the exit-the-CLI behavior)."""
     extra = _oneshot_extra(command, rest, IS_FROZEN, _runtime_dir())
     if command == "update" and "--current" not in rest:
         extra += ["--current", version()]
-    raise SystemExit(_run_script(ONESHOT_MAP[command], list(rest) + extra))
+    return _run_script(ONESHOT_MAP[command], list(rest) + extra)
+
+
+def oneshot(command, rest):
+    raise SystemExit(_oneshot_code(command, rest))
 
 
 def version():
@@ -919,6 +952,134 @@ def aggregate_status(_rest=None):
     streams_status([])
 
 
+def _read_env_file():
+    try:
+        with open(_env_file(), encoding="utf-8") as fh:
+            return parse_env_text(fh.read())
+    except OSError:
+        return {}
+
+def _init_env_state():
+    """os.environ merged over the .env file (real environment wins) — the
+    mapping env_done() judges."""
+    env = dict(_read_env_file())
+    env.update(os.environ)
+    return env
+
+def _init_pause(message):
+    ins.gate_pause(message, sys.stdin.isatty())
+
+def _init_env_run():
+    """The .env step has no script to run — its work IS the gate: make sure
+    the file exists (copy the template once, any run mode), then pause until
+    the operator filled in the required values."""
+    path = _env_file()
+    example = os.path.join(os.path.dirname(path), ".env.example")
+    if not os.path.exists(path) and os.path.exists(example):
+        shutil.copyfile(example, path)
+        print(f"  created {path} from .env.example")
+    while ins.env_done(_init_env_state()) is None:
+        _init_pause(f"Fill in IRO_SHEET_ID and IRO_TIMER_URL in {path}")
+    for key, val in _read_env_file().items():
+        os.environ.setdefault(key, val)   # downstream probes + children see them
+    return 0
+
+def _init_cookies_run(browser):
+    """Gate (YouTube login) + the cookies one-shot. The gate only fires when
+    the cookies are actually missing/stale — under --force a fresh cookie jar
+    skips the pause but still re-exports."""
+    _pf = _event_modules()[1]
+    res = _pf.cookies_status(os.path.join(_runtime_dir(), "cookies.txt"))
+    if ins.cookies_done(res.level, res.detail) is None:
+        _init_pause(f"Log in to YouTube in {browser} — the cookie export "
+                    "needs that browser session")
+    return _oneshot_code("cookies", [browser])
+
+def _init_assets_done(kind):
+    """Done-probe for the graphics/media steps. Any probe failure counts as
+    not-done: the step runs and its own error message is the actionable one."""
+    try:
+        ev = _event_modules()[0]
+        g_dir, m_dir, missing_g, missing_m = _asset_state(ev)
+    except Exception:
+        return None
+    if kind == "graphics":
+        return ins.assets_done(missing_g, ev.local_count(g_dir))
+    return ins.assets_done(missing_m, ev.local_count(m_dir))
+
+def _mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+def _init_import_json():
+    return os.path.join(_runtime_dir(), "IRO_Endurance.import.json")
+
+def _init_companion_cfg():
+    return os.path.join(_runtime_dir(), "iro-buttons.companionconfig")
+
+def _init_export_run():
+    export_companion([])
+    return 0
+
+def _init_steps(opts):
+    """The full step list — `build_plan()` (honoring --skip-installs) selects
+    and orders the subset that runs."""
+    pf = _event_modules()[1]
+    import install_apps
+    cookies_path = os.path.join(_runtime_dir(), "cookies.txt")
+    def cookies_skip():
+        res = pf.cookies_status(cookies_path)
+        return ins.cookies_done(res.level, res.detail)
+    by_key = {
+        "env": {"done": lambda: ins.env_done(_init_env_state()),
+                "run": _init_env_run},
+        "install-tools": {"done": lambda: ins.tools_done(shutil.which,
+                                                         pf.REQUIRED_TOOLS),
+                          "run": lambda: _oneshot_code("install-tools", ["--yes"])},
+        "install-apps": {"done": lambda: ins.apps_done(
+                             lambda a: install_apps.app_present(a, sys.platform),
+                             install_apps.APPS),
+                         "run": lambda: _oneshot_code("install-apps", ["--yes"])},
+        "cookies": {"done": cookies_skip,
+                    "run": lambda: _init_cookies_run(opts["browser"])},
+        "graphics": {"done": lambda: _init_assets_done("graphics"),
+                     "run": lambda: _oneshot_code("graphics", [])},
+        "media": {"done": lambda: _init_assets_done("media"),
+                  "run": lambda: _oneshot_code("media", [])},
+        "setup": {"done": lambda: ins.setup_done(
+                      _mtime(_init_import_json()),
+                      [_mtime(resource_path("obs/IRO_Endurance.json")),
+                       _mtime(_env_file())]),
+                  "run": lambda: _oneshot_code("setup",
+                                               ["--out", _init_import_json()])},
+        "export-companion": {"done": lambda: ins.export_done(
+                                 os.path.exists(_init_companion_cfg())),
+                             "run": _init_export_run},
+        "preflight": {"done": lambda: None,   # always runs — it IS the verification
+                      "run": lambda: _oneshot_code("preflight", [])},
+    }
+    return [{"key": k, "label": ins.STEP_LABELS[k], **by_key[k]}
+            for k in ins.build_plan(opts["skip_installs"])]
+
+def init_cmd(rest):
+    """Guided first-time setup: every automatable step in dependency order,
+    pausing only at the manual gates. Spec:
+    docs/superpowers/specs/2026-06-06-iro-init-design.md."""
+    try:
+        opts = ins.parse_init_args(rest)
+    except ValueError as e:
+        sys.exit(f"iro: {e}")
+    code, finished = ins.run_wizard(_init_steps(opts), opts["force"], print)
+    if finished:   # incl. a preflight FAIL — the machine is set up either way
+        print("\nManual next steps:")
+        for i, line in enumerate(ins.manual_next_steps(
+                _init_import_json(), _init_companion_cfg()), 1):
+            print(f"  {i}. {line}")
+    raise SystemExit(code)
+
+
 def main(argv=None):
     ensure_env_file(os.path.dirname(sys.executable))
     cleanup_old_binary(os.path.dirname(sys.executable))
@@ -943,6 +1104,8 @@ def main(argv=None):
         if not fn:
             sys.exit(f"iro: {action['command']} {action['verb']} not implemented yet")
         return fn(action["rest"])
+    if action["kind"] == "init":
+        return init_cmd(action["rest"])
     if action["kind"] == "oneshot":
         return oneshot(action["command"], action["rest"])
     if action["kind"] == "aggregate":

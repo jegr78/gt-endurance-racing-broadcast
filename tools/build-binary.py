@@ -65,7 +65,7 @@ def main():
            "--hidden-import", "services", "--hidden-import", "companion_common",
            "--hidden-import", "event", "--hidden-import", "preflight",
            "--hidden-import", "install_apps", "--hidden-import", "obs_ws",
-           "--hidden-import", "tailscale",
+           "--hidden-import", "tailscale", "--hidden-import", "init_setup",
            "--add-data", f"{version_file}{sep}src"]
     for mod in HIDDEN_STDLIB:
         cmd += ["--hidden-import", mod]

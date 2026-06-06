@@ -39,6 +39,7 @@ python3 tests/test_obsws.py          # minimal obs-websocket client (feed-port r
 python3 tests/test_installer_common.py  # shared installer helpers (brew bootstrap)
 python3 tests/test_install_tools.py     # install-tools decision helpers
 python3 tests/test_install_apps.py      # install-apps decision helpers
+python3 tests/test_init.py           # iro init wizard logic (plan/skip/gates)
 python3 tools/run-tests.py           # the whole suite (exactly what CI runs)
 python3 tools/lint.py                # ruff lint (= the CI lint job); --fix auto-corrects.
                                      # Rules mirror the CodeQL alert classes — see ruff.toml.
@@ -65,6 +66,7 @@ python3 src/iro.py event status      # event-day readiness report (apps + servic
 python3 src/iro.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later)
 python3 src/iro.py event stop        # stop iro services; GUI apps keep running
 python3 src/iro.py tailscale up|down|status  # connect/disconnect/inspect Tailscale (event start connects automatically)
+python3 src/iro.py init              # guided first-time setup: .env gate, install-tools/-apps, cookies, graphics, media, setup, export companion, preflight — with skip-detection (--browser NAME, --skip-installs, --force)
 python3 src/iro.py preflight         # hardware/tool check
 python3 src/iro.py cookies firefox   # refresh YouTube cookies before an event (Firefox recommended; Windows Chrome/Edge exports are blocked by app-bound encryption)
 python3 src/iro.py graphics          # download broadcast graphics -> runtime/graphics/

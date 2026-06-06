@@ -453,6 +453,20 @@ def t_streams_stop_skips_obs_without_feed_pids():
             m._release_obs_feeds, m._run_script, m._streams_static_dir = old
 
 
+def t_init_routes_with_rest():
+    assert m.route(["init"]) == {"kind": "init", "rest": []}
+    assert m.route(["init", "--force", "--browser", "chrome"])["rest"] == \
+        ["--force", "--browser", "chrome"]
+
+
+def t_env_base_per_mode():
+    # mirrors _runtime_base: frozen -> next to the binary; repo -> repo root;
+    # package -> the package dir itself
+    assert m._env_base(True, "/opt/iro/iro", "/tmp/_MEIxx/src") == "/opt/iro"
+    assert m._env_base(False, "", "/repo/src") == "/repo"
+    assert m._env_base(False, "", "/pkg") == "/pkg"
+
+
 def _raises(fn):
     try:
         fn()
