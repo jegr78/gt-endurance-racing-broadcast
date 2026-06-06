@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.0.0](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v0.4.0...v1.0.0) (2026-06-06)
+
+
+### Features
+
+* **install:** --update upgrades installed tools/apps; docs consistency pass ([499ec4d](https://github.com/jegr78/IRO_Broadcast_Setup/commit/499ec4d798da2af63bb03cf5ffed8038f3ecf348))
+* **panel:** mixer-bus redesign — Companion-synced actions, relay feed control, dB audio ([a21c2e4](https://github.com/jegr78/IRO_Broadcast_Setup/commit/a21c2e41bfd7c2436e7436dfead9911f6be6d9cf))
+* **timer:** relay-hosted race timer replaces stagetimer (director-controlled, handover-safe) ([7776e15](https://github.com/jegr78/IRO_Broadcast_Setup/commit/7776e1598d62d31de1779258d74dc4033ad1f4db))
+* **timer:** stopwatch semantics — stop pauses, new reset; context-sensitive adjust ([c935a22](https://github.com/jegr78/IRO_Broadcast_Setup/commit/c935a2252f6ae31c9377302e02483861de4d42e7))
+
+
+### Bug Fixes
+
+* **panel:** audio sliders cover OBS's full -60..+26 dB range (parity with Companion VOL UP) ([453d8c4](https://github.com/jegr78/IRO_Broadcast_Setup/commit/453d8c41bc4e8a12dc5e176d4d7954f5c92d3cca))
+* **panel:** refresh reentrancy guard, offline ON-AIR pill styling, instant mute feedback ([3b60fb7](https://github.com/jegr78/IRO_Broadcast_Setup/commit/3b60fb77bba8a27cf76efdced4b754e9b8fe5eac))
+* **relay:** explanatory comment in TimerStore makedirs except clause (CodeQL py/empty-except) ([f5a1f50](https://github.com/jegr78/IRO_Broadcast_Setup/commit/f5a1f50bfce34ce97ee796da84191468a8469031))
+* **relay:** timer push success requires the webhook's {"ok":true} (Apps Script errors are HTTP 200) ([5b2d799](https://github.com/jegr78/IRO_Broadcast_Setup/commit/5b2d799e94a4339f2427de86b8b4f77a4fb7ee69))
+
+
+### Miscellaneous Chores
+
+* release 1.0.0 ([37ef7e8](https://github.com/jegr78/IRO_Broadcast_Setup/commit/37ef7e83290a3e4d2b1856108bb37829a7fd5235))
+
 ## [0.4.0](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v0.3.0...v0.4.0) (2026-06-06)
 
 
