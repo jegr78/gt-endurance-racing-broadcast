@@ -22,10 +22,13 @@ jobs:
           fetch-depth: 0  # full history so the git scan can inspect all commits
 
       - name: Install gitleaks (latest release)
+        # gh api authenticates with the workflow token — an anonymous curl to
+        # api.github.com shares the runner IP's rate limit and flakes with 403.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag=$(curl -sSfL https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
-            | grep -o '"tag_name": *"[^"]*"' | head -1 | cut -d'"' -f4)
+          tag=$(gh api repos/gitleaks/gitleaks/releases/latest --jq .tag_name)
           ver="${tag#v}"
           echo "Installing gitleaks ${ver}"
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/${tag}/gitleaks_${ver}_linux_x64.tar.gz" \
