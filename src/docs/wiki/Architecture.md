@@ -120,9 +120,9 @@ tab `Timer` + `runtime/timer.json`, Director-controlled via `/timer/*` endpoints
 ## 3. Control flow
 
 The director never touches the producer machine directly. Companion talks to OBS over
-its WebSocket and to the relay over plain HTTP GETs. The **director panel** is a backup
-that talks to OBS directly (and is therefore less convenient — it needs the OBS
-password).
+its WebSocket and to the relay over plain HTTP GETs. The **director panel** is an
+alternative control surface with the same action set (organized as mixer-bus rows);
+it talks to OBS directly, so it needs the OBS WebSocket password once per device.
 
 ```mermaid
 flowchart LR

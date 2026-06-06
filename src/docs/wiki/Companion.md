@@ -3,8 +3,9 @@
 > Technical reference. What the buttons do for a director: [Director guide](Director).
 
 Bitfocus Companion is the director's button board: a grid of buttons served as a web
-page that directors open in a browser. It is the **primary** control surface and is
-strictly more capable than the [backup director panel](Director). Install it first per
+page that directors open in a browser. It is the **primary** control surface; the
+[director panel](Run-an-event#the-director-panel-remote-control) offers the same
+actions for directors without a Stream Deck. Install it first per
 [Set up the broadcast PC](Set-up-the-broadcast-PC).
 
 ## Import the button board
