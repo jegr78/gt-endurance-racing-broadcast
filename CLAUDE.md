@@ -26,6 +26,18 @@ Pure Python + stdlib (no framework, no package manager); external runtime deps a
   test suite (a stale `--timer-url` in the binary smoke test broke every v1.0.0
   release build). CI's `binary-smoke` job now exercises the binary path on every
   PR, but grepping first is cheaper than a red pipeline.
+- **Never invent domain rules or crew conventions.** Docs describe the
+  *mechanism* (what a button/endpoint does); broadcast procedure (who goes on
+  air when, with which feed) is defined by the team, not derived. State
+  assumptions explicitly and ask when uncertain instead of asserting.
+- **Tests must run on any machine and in CI** — no real IPs, no machine paths,
+  no environment-specific values; use fixtures/parameters (Tailscale IPs are
+  `100.64.0.0/10` test constants, never this machine's address). Prefer TDD:
+  failing test first, then the fix.
+- **Pipeline/permission problems (release-please, tokens, branch protection,
+  Actions) are research-first:** map the complete lifecycle and requirement set
+  (docs + known issues) before changing anything — one planned fix, not
+  symptom-per-loop trial and error.
 
 ## Commands
 
@@ -121,7 +133,10 @@ Keep the four `load_dotenv` copies in sync if you touch one.
   still-graphics dir), `__IRO_SHEET__` (HUD sheet), `__IRO_MEDIA__` (Intro/Outro clip
   dir). The race timer is relay-served (`/timer`, fixed loopback URL in the collection —
   no token); state = Sheet tab `Timer` + `runtime/timer.json`, Director-controlled via
-  `/timer/*` endpoints. When you edit scenes inside OBS, re-export and fold it back with
+  `/timer/*` endpoints. **OBS browser sources cache JS aggressively:** after changing
+  `hud.html`/`timer.html`, the source needs a manual refresh in OBS (right-click →
+  Refresh) — auto-reload is not reliable. Anything that must survive a reload
+  therefore lives server-side (`runtime/timer.json`, the Sheet), never in page JS. When you edit scenes inside OBS, re-export and fold it back with
   `tools/tokenize-obs.py exported.json src/obs/IRO_Endurance.json`
   (regex-tokenizes sheet URLs + image-source basenames). `src/setup-assets.py` does
   the reverse, injecting real values from `.env` into an importable collection. OBS
