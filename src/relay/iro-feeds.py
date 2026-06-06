@@ -433,9 +433,11 @@ class TimerStore:
         self.last_ok = None               # last successful sheet read
         self.last_error = None
         self.push_status = "disabled" if not push_url else "never"
-        try:  # the runtime dir normally exists; a fresh layout must not break saves
+        try:
             os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         except OSError:
+            # The runtime dir normally exists; a fresh layout must not break
+            # startup — _save_file() degrades per-write if the dir is missing.
             pass
         self._load_file()
 
