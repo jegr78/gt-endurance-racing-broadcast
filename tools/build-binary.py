@@ -113,8 +113,7 @@ def smoke(binary, version):
         # `setup` loads the bundled setup-assets.py in-process — catches bundle
         # layout regressions (e.g. --add-data turning the file into a directory).
         imp = os.path.join(td, "import.json")
-        su = run(["setup", "--out", imp, "--sheet-id", "smoke",
-                  "--timer-url", "https://example.com/timer"])
+        su = run(["setup", "--out", imp, "--sheet-id", "smoke"])
         if su.returncode != 0 or not os.path.isfile(imp):
             sys.exit(f"smoke setup FAILED: rc={su.returncode} out={su.stdout!r} err={su.stderr!r}")
         with open(imp, encoding="utf-8") as fh:
