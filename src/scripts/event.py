@@ -235,5 +235,7 @@ def classify_env(sheet_id, timer_push_url):
 
 GO_LIVE_REMINDER = Result(
     INFO, "HUD overlay",
-    "Before going LIVE: refresh the HUD overlay browser source in OBS once "
-    "(right-click the source -> Refresh) — its auto-refresh is not fully reliable.")
+    "Before going LIVE: refresh the HUD overlay and HUD Race Timer browser "
+    "sources in OBS once (right-click the source -> Refresh) — the HUD's "
+    "auto-refresh is not fully reliable, and the timer page only picks up "
+    "relay updates on a refresh.")
