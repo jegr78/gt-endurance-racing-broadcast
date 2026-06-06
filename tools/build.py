@@ -42,6 +42,7 @@ def main():
         cp(f"docs/{f}", f)
     cp("director/director-panel.html", "director-panel.html")
     cp("obs/hud.html", "hud.html")
+    cp("obs/timer.html", "timer.html")
     cp("setup-assets.py", "setup-assets.py")
     cp("iro.py", "iro.py")
     cp("assets", "assets")
@@ -128,11 +129,14 @@ def main():
         # collection legitimately has no __IRO_SHEET__ token — just assert no raw
         # sheet URL ever leaks in.
         "obs no raw sheet url": not re.search(r"/spreadsheets/d/[A-Za-z0-9_-]{20,}/", tpl),
-        "obs timer tokenized": "__IRO_TIMER__" in tpl and "stagetimer.io/output/" not in tpl,
+        "obs timer is relay-served": "http://127.0.0.1:8088/timer" in tpl
+            and "__IRO_TIMER__" not in tpl and "stagetimer" not in tpl,
+        "relay timer endpoint": "/timer/data" in relay,
         "obs media tokenized": "__IRO_MEDIA__/" in tpl,
         "relay pov endpoint": "pov/reload" in relay,
         "no .sh/.bat shipped": not any(fn.endswith((".sh", ".bat")) for _, _, fs in os.walk(PKG) for fn in fs),
         "preflight shipped": os.path.isfile(os.path.join(PKG, "scripts", "preflight.py")),
+        "timer html shipped": os.path.isfile(os.path.join(PKG, "timer.html")),
         ".env.example shipped": os.path.isfile(os.path.join(PKG, ".env.example")),
         "no sheet url in relay": not re.search(r"/spreadsheets/d/[A-Za-z0-9_-]{20,}/", relay),
         "iro cli shipped": os.path.isfile(os.path.join(PKG, "iro.py")),

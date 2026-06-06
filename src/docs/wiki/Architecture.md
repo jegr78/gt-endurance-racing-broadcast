@@ -44,7 +44,6 @@ flowchart LR
   end
 
   SHEET["Google Sheet<br/>Schedule, POV, Overlay, Configuration tabs"]
-  TIMER["stagetimer.io<br/>race timer"]
   YT["YouTube — IRO channel"]
   DIR["Remote Director(s)<br/>browser over Tailscale"]
 
@@ -53,8 +52,7 @@ flowchart LR
   Sn --> RELAY
   RELAY -->|"http://127.0.0.1:5300x"| OBS
   SHEET --> RELAY
-  RELAY -->|"/hud overlay"| HUD
-  TIMER --> HUD
+  RELAY -->|"/hud + /timer overlays"| HUD
   HUD --> OBS
   DISC --> OBS
   OBS -->|RTMP push| YT
@@ -115,8 +113,9 @@ teams, race control) and the **Configuration** tab (team → manufacturer via a
 - `GET /hud/assets/{flags,brands}/<key>` — bundled flag/brand logos, resolved from text.
 
 This replaced ~13 per-cell browser sources that each loaded the full Google Sheets
-editor (cropped with a chroma key) — the old producer-machine RAM/CPU hog. The
-stagetimer countdown stays its own browser source.
+editor (cropped with a chroma key) — the old producer-machine RAM/CPU hog. The race
+timer is also relay-served (`/timer`, fixed loopback URL); state: Sheet tab `Timer` +
+`runtime/timer.json`, Director-controlled via `/timer/*` endpoints.
 
 ---
 
@@ -134,7 +133,7 @@ flowchart LR
     OM["OBS Studio module"]
   end
 
-  GH -->|"HTTP GET"| EP["Relay control server :8088<br/>/next  /reload  /set/A/n<br/>/pov/reload  /pov/stop  /status  /panel"]
+  GH -->|"HTTP GET"| EP["Relay control server :8088<br/>/next  /reload  /set/A/n<br/>/pov/reload  /pov/stop  /timer/*  /status  /panel"]
   OM -->|"WebSocket"| WS["OBS WebSocket :4455"]
   PANEL["Director panel (backup)<br/>served at /panel"] -->|"WebSocket, direct"| WS
 

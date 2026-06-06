@@ -68,13 +68,13 @@ The ports are served by the [Relay](Relay-Mode) (recommended) or by
 
 ## 4. HUD &amp; graphics (Browser Sources)
 
-The HUD and info-graphics are **Browser Sources** driven live by the shared Google Sheet
-and stagetimer.io. They are left in the scene and toggled by the director via Companion —
-no screen-share, no extra latency. Their URLs were injected from `.env` by
-`setup-assets.py`.
+The HUD, race timer, and info-graphics are **Browser Sources** driven live by the relay
+and the shared Google Sheet. They are left in the scene and toggled by the director via
+Companion — no screen-share, no extra latency. All relay-served sources (`/hud`,
+`/timer`) use fixed loopback URLs — no per-machine editing needed.
 
-> The HUD and graphics pull from **shared** production resources (the sheet and
-> stagetimer) — changes affect everyone. The sheet must stay shared.
+> The HUD and graphics pull from **shared** production resources (the sheet) — changes
+> affect everyone. The sheet must stay shared.
 
 ### The lower-third HUD: one relay-served overlay
 
@@ -98,8 +98,13 @@ that approach was the main cause of producer-machine lag.
 - Relay flags: `--no-hud` disables it; `--overlay-tab` / `--config-tab` override tab names;
   `--hud-poll` sets the refresh interval.
 
-The stagetimer countdown stays its own Browser Source (it is a real-time page, not sheet
-data).
+### The race timer: relay-served countdown
+
+The **HUD Race Timer** Browser Source points at `http://127.0.0.1:8088/timer` — the same
+fixed loopback address as the HUD, no per-machine editing needed. The relay serves the
+countdown page and its state endpoint (`/timer/data`). Director controls are on the panel's
+Race Timer section and Companion page 2. See [Race-Timer](Race-Timer) for how it works and
+the optional Apps Script write-webhook setup.
 
 ## 5. Discord audio (interviews)
 

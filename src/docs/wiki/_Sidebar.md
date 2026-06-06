@@ -13,6 +13,7 @@
 **Technical reference**
 - [Architecture](Architecture)
 - [Relay — how the feeds work](Relay-Mode)
+- [Race Timer](Race-Timer)
 - [OBS &amp; scenes](OBS-Setup)
 - [Companion (button config)](Companion)
 - [Configuration &amp; secrets](Configuration)

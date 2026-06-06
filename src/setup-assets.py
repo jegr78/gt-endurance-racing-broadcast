@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Localize the tokenized OBS collection for THIS machine: replace __IRO_ASSETS__
-with the absolute path to the local assets/ folder and write an importable collection.
+"""Localize the tokenized OBS collection for THIS machine: replace the
+__IRO_ASSETS__/__IRO_SHEET__/__IRO_MEDIA__/__IRO_GRAPHICS__ tokens with this
+machine's real paths/values and write an importable collection.
 Works from the repo (src/) or the distributed package — same ./obs ./assets layout.
 
 Usage: python3 setup-assets.py [--out PATH] [--assets DIR] [--template FILE]
@@ -9,7 +10,6 @@ import argparse, json, os, re, sys
 
 ASSETS_TOKEN = "__IRO_ASSETS__"
 SHEET_TOKEN = "__IRO_SHEET__"
-TIMER_TOKEN = "__IRO_TIMER__"
 MEDIA_TOKEN = "__IRO_MEDIA__"
 GRAPHICS_TOKEN = "__IRO_GRAPHICS__"
 
@@ -137,9 +137,6 @@ def main():
     ap.add_argument("--sheet-id", default=os.environ.get("IRO_SHEET_ID"),
                     help="Google Sheet ID injected into the HUD browser source. "
                          "Default: env IRO_SHEET_ID (or .env). See .env.example.")
-    ap.add_argument("--timer-url", default=os.environ.get("IRO_TIMER_URL"),
-                    help="Full stagetimer.io output URL (incl. signature) injected into "
-                         "the timer browser source. Default: env IRO_TIMER_URL (or .env).")
     a = ap.parse_args()
 
     tpl = a.template
@@ -170,12 +167,6 @@ def main():
                      "Sheet ID is set. Add IRO_SHEET_ID to .env at the repo/package root "
                      "(see .env.example) or pass --sheet-id.")
         mapping[SHEET_TOKEN] = a.sheet_id
-    if TIMER_TOKEN in raw:
-        if not a.timer_url:
-            sys.exit(f"ERROR: the collection references the race timer ({TIMER_TOKEN}) but no "
-                     "timer URL is set. Add IRO_TIMER_URL to .env at the repo/package root "
-                     "(see .env.example) or pass --timer-url.")
-        mapping[TIMER_TOKEN] = a.timer_url
     if MEDIA_TOKEN in raw:
         mapping[MEDIA_TOKEN] = a.media
         missing = [f for f in ("intro.mp4", "outro.mp4")
@@ -203,8 +194,6 @@ def main():
         print(f"  Asset paths now point to: {a.assets}")
     if SHEET_TOKEN in mapping:
         print(f"  HUD sheet ID injected: {a.sheet_id}")
-    if TIMER_TOKEN in mapping:
-        print("  Race-timer URL injected.")
     if MEDIA_TOKEN in mapping:
         print(f"  Intro/Outro clip dir: {a.media}")
     if GRAPHICS_TOKEN in mapping:

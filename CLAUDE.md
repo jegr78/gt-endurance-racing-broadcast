@@ -40,6 +40,7 @@ python3 tests/test_installer_common.py  # shared installer helpers (brew bootstr
 python3 tests/test_install_tools.py     # install-tools decision helpers
 python3 tests/test_install_apps.py      # install-apps decision helpers
 python3 tests/test_init.py           # iro init wizard logic (plan/skip/gates)
+python3 tests/test_timer.py          # relay race-timer unit checks
 python3 tools/run-tests.py           # the whole suite (exactly what CI runs)
 python3 tools/lint.py                # ruff lint (= the CI lint job); --fix auto-corrects.
                                      # Rules mirror the CodeQL alert classes — see ruff.toml.
@@ -101,8 +102,9 @@ from the repo (`src/...`) or the distributed package and pick paths accordingly 
 see `default_runtime_dir()` (relay/get-cookies) and `state_dir()` (scripts).
 
 ### Secrets via `.env` (gitignored, repo root)
-`IRO_SHEET_ID` (Google Sheet driving schedule + HUD) and `IRO_TIMER_URL` (signed
-stagetimer output URL). A small bounded `load_dotenv()` — duplicated in
+`IRO_SHEET_ID` (Google Sheet driving schedule + HUD) and `IRO_TIMER_PUSH_URL` (optional
+Apps Script webhook that lets the relay write race-timer state to the Sheet's Timer tab).
+A small bounded `load_dotenv()` — duplicated in
 `src/relay/iro-feeds.py`, `src/setup-assets.py`, `src/relay/get-media.py`, and
 `src/relay/get-graphics.py` — reads a `.env` only from the script dir or the project
 root (marker: `.git`/`.env.example`), never an unrelated parent; real environment
@@ -111,10 +113,12 @@ Keep the four `load_dotenv` copies in sync if you touch one.
 
 ### Two token round-trips (keep paths/secrets out of git)
 - **OBS.** `src/obs/IRO_Endurance.json` stores tokens: `__IRO_GRAPHICS__` (broadcast
-  still-graphics dir), `__IRO_SHEET__` (HUD sheet), `__IRO_TIMER__` (stagetimer URL),
-  `__IRO_MEDIA__` (Intro/Outro clip dir). When you edit scenes inside OBS, re-export
-  and fold it back with `tools/tokenize-obs.py exported.json src/obs/IRO_Endurance.json`
-  (regex-tokenizes sheet/timer URLs + image-source basenames). `src/setup-assets.py` does
+  still-graphics dir), `__IRO_SHEET__` (HUD sheet), `__IRO_MEDIA__` (Intro/Outro clip
+  dir). The race timer is relay-served (`/timer`, fixed loopback URL in the collection —
+  no token); state = Sheet tab `Timer` + `runtime/timer.json`, Director-controlled via
+  `/timer/*` endpoints. When you edit scenes inside OBS, re-export and fold it back with
+  `tools/tokenize-obs.py exported.json src/obs/IRO_Endurance.json`
+  (regex-tokenizes sheet URLs + image-source basenames). `src/setup-assets.py` does
   the reverse, injecting real values from `.env` into an importable collection. OBS
   stores **absolute** paths, so the localized collection must not be moved after
   import. `src/relay/get-media.py` downloads the Intro/Outro clips (sheet-driven via
@@ -148,7 +152,7 @@ serves that URL to one OBS client. (`curl`-ing the port returns nothing — it s
 single consumer; that is not a failure.)
 
 Control is an **unauthenticated** `ThreadingHTTPServer` on port `8088` exposing GET
-endpoints (`/next`, `/reload`, `/set/A/<n>`, `/pov/reload`, `/status`, `/panel`, …)
+endpoints (`/next`, `/reload`, `/set/A/<n>`, `/pov/reload`, `/timer/*`, `/status`, `/panel`, …)
 driven by Companion's Generic-HTTP module. `--bind` defaults to **`auto`** (plug &
 play): it binds `127.0.0.1` (OBS always reaches the HUD/feeds on the fixed loopback
 address — the OBS collection never needs editing) **and** this machine's Tailscale IP

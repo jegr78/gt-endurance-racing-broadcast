@@ -49,10 +49,15 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   GET /reload/A | /B    -> reconnect only Feed A or B
   GET /pov/reload      -> re-read the POV sheet cell & (re)connect the POV PiP feed
   GET /pov/stop        -> stop the POV PiP pull (close port 53003, free bandwidth)
+  GET /timer           -> race-timer browser-source page (OBS 'HUD Race Timer')
+  GET /timer/data      -> timer state JSON (anchor, mode, sync health)
+  GET /timer/start | /timer/stop | /timer/show | /timer/hide
+  GET /timer/set/<H:MM:SS>     -> set the race duration (next start)
+  GET /timer/adjust/<±seconds> -> shift a RUNNING timer (correction)
   Stop: Ctrl+C
 """
 
-import argparse, csv, io, ipaddress, json, os, re, shutil, signal, subprocess, sys, threading, time
+import argparse, csv, datetime, io, ipaddress, json, os, re, shutil, signal, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, quote
 from urllib.request import Request, urlopen
@@ -317,6 +322,263 @@ def build_hud_data(overlay, brands):
                   for n in overlay.get("teams", ["", "", ""])],
         "raceControl": overlay.get("race_control", ""),
     }
+
+# ---------- Race timer (relay-hosted countdown) ----------
+# State model (spec: docs/superpowers/specs/2026-06-06-race-timer-design.md):
+# one absolute end anchor + duration + visibility + an "updated" stamp that
+# drives the newest-wins merge between the local file and the Sheet tab.
+TIMER_DEFAULT_DURATION = 6 * 3600          # seconds, until the Director sets one
+DURATION_RE = re.compile(r"^(\d{1,2}):([0-5]\d):([0-5]\d)$")  # hours 1-2 digits (24h races OK)
+
+
+def default_timer_state():
+    return {"end": None, "duration": TIMER_DEFAULT_DURATION,
+            "visible": True, "updated": 0.0}
+
+
+def parse_duration(s):
+    """'H:MM:SS' (or HH:MM:SS) -> seconds, else None."""
+    mt = DURATION_RE.match((s or "").strip())
+    if not mt:
+        return None
+    h, mi, sec = (int(g) for g in mt.groups())
+    return h * 3600 + mi * 60 + sec
+
+
+def format_duration(seconds):
+    seconds = max(0, int(seconds))
+    return f"{seconds // 3600}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
+
+
+def parse_utc_ts(s):
+    """Lenient UTC timestamp -> epoch seconds, else None. Accepts the canonical
+    '...T..Z', Apps Script's toISOString ('.000Z'), and the 'YYYY-MM-DD HH:MM:SS'
+    form gviz CSV produces when Sheets re-types the cell as a date."""
+    s = (s or "").strip().replace("T", " ").rstrip("Zz").strip()
+    s = s.split(".", 1)[0]                     # drop fractional seconds
+    try:
+        d = datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return None
+    return d.replace(tzinfo=datetime.timezone.utc).timestamp()
+
+
+def iso_utc(epoch):
+    """Epoch seconds -> canonical ISO UTC string (whole-second precision —
+    a Sheet 'updated' stamp can therefore never out-rank the local stamp of
+    the very write that produced it; the newest-wins merge stays correct)."""
+    return datetime.datetime.fromtimestamp(
+        epoch, tz=datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def parse_timer_tab(text):
+    """Timer tab CSV (label col A, value col B) -> state dict. Unknown labels
+    and unparseable values fall back to the defaults — never throws."""
+    raw = {}
+    for row in csv.reader(io.StringIO(text or "")):
+        if len(row) >= 2 and (row[0] or "").strip():
+            raw[row[0].strip().lower()] = (row[1] or "").strip()
+    st = default_timer_state()
+    st["end"] = parse_utc_ts(raw.get("race end (utc)", ""))
+    dur = parse_duration(raw.get("duration", ""))
+    if dur is not None:
+        st["duration"] = dur
+    st["visible"] = raw.get("visible", "").upper() != "FALSE"
+    st["updated"] = parse_utc_ts(raw.get("updated (utc)", "")) or 0.0
+    return st
+
+
+def timer_mode(state, now):
+    """hidden | prestart | running | finished (pure; the page renders blank
+    for hidden and finished — spec: no 0:00:00 left standing)."""
+    if not state.get("visible", True):
+        return "hidden"
+    end = state.get("end")
+    if end is None:
+        return "prestart"
+    return "running" if now < end else "finished"
+
+
+def merge_timer_states(local, sheet):
+    """Newest write wins; tie (or no sheet state) -> local. Makes a producer
+    takeover adopt the Sheet anchor without letting a stale Sheet revert a
+    fresh local action whose webhook push failed."""
+    if sheet is None:
+        return local
+    return sheet if sheet.get("updated", 0.0) > local.get("updated", 0.0) else local
+
+
+class TimerStore:
+    """Race-timer state with three layers (spec §3): in-memory + local JSON
+    file (restart-safe) + Sheet tab via CSV poll / Apps-Script webhook push
+    (producer-handover-safe). Director actions apply locally first and push in
+    the background — a webhook failure degrades, never breaks."""
+
+    def __init__(self, csv_url, push_url, path):
+        self.csv_url = csv_url            # None -> local-only (no sheet poll)
+        self.push_url = push_url          # None -> push disabled
+        self.path = path
+        self.lock = threading.Lock()
+        self.state = default_timer_state()
+        self.last_ok = None               # last successful sheet read
+        self.last_error = None
+        self.push_status = "disabled" if not push_url else "never"
+        try:  # the runtime dir normally exists; a fresh layout must not break saves
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        except OSError:
+            pass
+        self._load_file()
+
+    # -- persistence ------------------------------------------------------
+    def _load_file(self):
+        """Adopt only known keys with sane types — a hand-edited timer.json
+        must never crash data()/timer_mode() later."""
+        try:
+            with open(self.path, encoding="utf-8") as fh:
+                saved = json.load(fh)
+        except (OSError, ValueError):
+            return  # no/corrupt file -> defaults; the sheet poll may catch us up
+        st = default_timer_state()
+        def num(v):
+            return isinstance(v, (int, float)) and not isinstance(v, bool)
+        if num(saved.get("end")):
+            st["end"] = float(saved["end"])
+        if num(saved.get("duration")):
+            st["duration"] = int(saved["duration"])
+        if isinstance(saved.get("visible"), bool):
+            st["visible"] = saved["visible"]
+        if num(saved.get("updated")):
+            st["updated"] = float(saved["updated"])
+        self.state = st
+
+    def _save_file(self):
+        try:
+            with open(self.path, "w", encoding="utf-8") as fh:
+                json.dump(self.state, fh)
+        except OSError:
+            pass  # best-effort, same contract as the schedule/HUD caches
+
+    # -- sheet read (poller + adopt-if-newer merge) -------------------------
+    @staticmethod
+    def _fetch(url, timeout=10):
+        req = Request(url, headers={"User-Agent": "iro-feeds/1.0"})
+        with urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode("utf-8", "replace")
+
+    def refresh(self, timeout=10):
+        if not self.csv_url:
+            return False
+        try:
+            sheet = parse_timer_tab(self._fetch(self.csv_url, timeout))
+        except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
+            return False
+        with self.lock:
+            merged = merge_timer_states(self.state, sheet)
+            if merged is not self.state:
+                self.state = merged
+                self._save_file()
+        self.last_ok = time.time()       # diagnostics outside the lock (HudSource precedent)
+        self.last_error = None
+        return True
+
+    # -- webhook push (Apps Script writes the Timer tab) --------------------
+    @staticmethod
+    def _post(url, body):
+        req = Request(url, data=body, method="POST",
+                      headers={"User-Agent": "iro-feeds/1.0",
+                               "Content-Type": "application/json"})
+        with urlopen(req, timeout=10) as resp:
+            resp.read()
+
+    def _push(self, payload):
+        try:
+            self._post(self.push_url, json.dumps(payload).encode("utf-8"))
+            self.push_status = "ok"      # diagnostics: single ref assignments, no lock needed
+        except Exception as e:
+            self.push_status = "failed"
+            self.last_error = f"push: {type(e).__name__}: {e}"
+
+    def _spawn_push(self, payload):
+        threading.Thread(target=self._push, args=(payload,), daemon=True).start()
+
+    @staticmethod
+    def _payload(st):
+        """Webhook body: the full state, strings only (Apps Script writes it 1:1)."""
+        return {"end": iso_utc(st["end"]) if st["end"] is not None else "",
+                "duration": format_duration(st["duration"]),
+                "visible": "TRUE" if st["visible"] else "FALSE"}
+
+    # -- director actions ---------------------------------------------------
+    def _apply(self, now=None, **changes):
+        """Local-first write: update + stamp + save, then push full state."""
+        now = time.time() if now is None else now
+        with self.lock:
+            self.state.update(changes)
+            self.state["updated"] = now
+            self._save_file()
+            st = dict(self.state)
+        if self.push_url:
+            self._spawn_push(self._payload(st))
+        return self.data(now)
+
+    def start(self, now=None):
+        now = time.time() if now is None else now
+        with self.lock:
+            duration = self.state["duration"]
+        return self._apply(now=now, end=now + duration)
+
+    def stop(self, now=None):
+        return self._apply(now=now, end=None)
+
+    def show(self, now=None):
+        return self._apply(now=now, visible=True)
+
+    def hide(self, now=None):
+        return self._apply(now=now, visible=False)
+
+    def set_duration(self, seconds, now=None):
+        # Never re-anchors a running timer (spec §5) — corrections use adjust.
+        return self._apply(now=now, duration=int(seconds))
+
+    def adjust(self, delta_s, now=None):
+        """Shift a RUNNING anchor. Check-and-write under ONE lock so a
+        concurrent /timer/stop can never be overwritten (un-stopped)."""
+        now = time.time() if now is None else now
+        with self.lock:
+            running = self.state["end"] is not None
+            if running:
+                self.state["end"] += int(delta_s)
+                self.state["updated"] = now
+                self._save_file()
+            st = dict(self.state)
+        if not running:
+            return {"error": "timer not running — /timer/start first", **self.data(now)}
+        if self.push_url:
+            self._spawn_push(self._payload(st))
+        return self.data(now)
+
+    # -- read side ----------------------------------------------------------
+    def data(self, now=None):
+        now = time.time() if now is None else now
+        with self.lock:
+            st = dict(self.state)
+        return {"visible": st["visible"], "end": st["end"],
+                "duration_s": st["duration"], "server_now": now,
+                "mode": timer_mode(st, now),
+                "sync": {"push": self.push_status,
+                         "sheet_last_ok_age_s": (round(now - self.last_ok, 1)
+                                                 if self.last_ok else None),
+                         "last_error": self.last_error}}
+
+    def summary(self):
+        """Compact line for /status and `iro status`."""
+        d = self.data()
+        return {"mode": d["mode"], "visible": d["visible"],
+                "remaining_s": (max(0, int(d["end"] - d["server_now"]))
+                                if d["end"] is not None else None),
+                "push": d["sync"]["push"]}
+
 
 def channel_url(entry: str) -> str:
     entry = entry.strip()
@@ -715,7 +977,8 @@ class Relay:
         if self.pov: self.pov.shutdown()
 
 
-def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None):
+def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
+                 timer_store=None, timer_path=None):
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
             body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
@@ -748,7 +1011,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
             try:
-                if not p or p == ["status"]:          return self._send(relay.status())
+                if not p or p == ["status"]:
+                    base = relay.status()
+                    if timer_store: base["timer"] = timer_store.summary()
+                    return self._send(base)
                 if p == ["panel"]:
                     if not panel_path: return self._send({"error":"panel disabled"}, 404)
                     return self._send_file(panel_path, "text/html; charset=utf-8")
@@ -762,6 +1028,28 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send(hud_source.data())
                 if len(p) == 4 and p[:2] == ["hud", "assets"]:
                     return self._send_asset(assets_dir, p[2], p[3])
+                if p[:1] == ["timer"]:
+                    if p == ["timer"]:
+                        if not timer_path: return self._send({"error": "timer disabled"}, 404)
+                        return self._send_file(timer_path, "text/html; charset=utf-8")
+                    if not timer_store:
+                        return self._send({"error": "timer disabled"}, 404)
+                    if p == ["timer", "data"]:   return self._send(timer_store.data())
+                    if p == ["timer", "start"]:  return self._send(timer_store.start())
+                    if p == ["timer", "stop"]:   return self._send(timer_store.stop())
+                    if p == ["timer", "show"]:   return self._send(timer_store.show())
+                    if p == ["timer", "hide"]:   return self._send(timer_store.hide())
+                    if len(p) == 3 and p[1] == "set":
+                        dur = parse_duration(p[2])
+                        if dur is None:
+                            return self._send({"error": "duration must be H:MM:SS"}, 400)
+                        return self._send(timer_store.set_duration(dur))
+                    if len(p) == 3 and p[1] == "adjust":
+                        try: delta = int(p[2])
+                        except ValueError:
+                            return self._send({"error": "adjust takes +/- seconds"}, 400)
+                        return self._send(timer_store.adjust(delta))
+                    return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["next"]:                       return self._send(relay.next_auto())
                 if p == ["reload"]:                     return self._send(relay.reload())
                 if p == ["pov", "reload"]:              return self._send(relay.pov_reload())
@@ -861,6 +1149,10 @@ def main():
                     help="HUD sheet refresh interval in seconds (default 5).")
     ap.add_argument("--no-hud", action="store_true",
                     help="Do not serve the HUD overlay at /hud.")
+    ap.add_argument("--timer-tab", default="Timer",
+                    help="Google-Sheet tab holding the race-timer anchor (default 'Timer').")
+    ap.add_argument("--no-timer", action="store_true",
+                    help="Do not serve the race timer at /timer.")
     ap.add_argument("--ports", default="53001,53002")
     ap.add_argument("--stint", type=int, default=1,
                     help="1-based stint that is ON AIR right now (producer takeover): "
@@ -962,6 +1254,26 @@ def main():
             print("WARN: hud.html not found — /hud will 404 (assets dir: "
                   f"{assets_dir}).")
 
+    # Race timer: local file always; sheet sync derived from sheet-id/tab
+    # (custom --sheet-csv-url -> local-only); push via IRO_TIMER_PUSH_URL.
+    timer_store = None
+    timer_path = None
+    if not args.no_timer:
+        timer_csv = None
+        if not args.sheet_csv_url:
+            timer_csv = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
+                         f"/gviz/tq?tqx=out:csv&sheet={quote(args.timer_tab)}")
+        timer_store = TimerStore(timer_csv, os.environ.get("IRO_TIMER_PUSH_URL"),
+                                 os.path.join(runtime, "timer.json"))
+        timer_store.refresh()   # non-fatal: adopt a newer sheet anchor on startup
+        for cand in (os.path.join(here, "timer.html"),
+                     os.path.join(here, "..", "timer.html"),
+                     os.path.join(here, "..", "obs", "timer.html")):
+            if os.path.exists(cand):
+                timer_path = os.path.abspath(cand); break
+        if not timer_path:
+            print("WARN: timer.html not found — /timer will 404.")
+
     source = ScheduleSource(csv_url, cache, local)
     source.load_initial(SCHEDULE_TEMPLATE)
     if len(source.get()) < 2:
@@ -978,8 +1290,12 @@ def main():
     if hud_source:
         threading.Thread(target=poller, args=(hud_source, args.hud_poll, stop_evt),
                          daemon=True).start()
+    if timer_store and timer_store.csv_url:
+        threading.Thread(target=poller, args=(timer_store, args.hud_poll, stop_evt),
+                         daemon=True).start()
 
-    handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir)
+    handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
+                           timer_store, timer_path)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers = []
@@ -1024,6 +1340,12 @@ def main():
     if hud_source and hud_path:
         print(f"  HUD overlay (OBS source): http://127.0.0.1:{args.http_port}/hud  "
               f"(tabs '{args.overlay_tab}'/'{args.config_tab}', refresh {args.hud_poll}s)")
+    if timer_store and timer_path:
+        push = "sheet+push" if timer_store.push_url else (
+            "sheet read-only (set IRO_TIMER_PUSH_URL for handover sync)"
+            if timer_store.csv_url else "local only")
+        print(f"  Race timer (OBS source): http://127.0.0.1:{args.http_port}/timer  "
+              f"(tab '{args.timer_tab}', {push}; controls /timer/start | /timer/stop)")
     print(f"  Cookies (bot-check protection): {'ON — ' + cookies if cookies else 'off (no cookies.txt)'}")
     print(f"  Sheet poll every {args.poll}s.  Ctrl+C to stop.")
     # Serve every bound address; keep the last on the main thread for signals.

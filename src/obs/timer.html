@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IRO Race Timer</title>
+<style>
+  /* The OBS scene items crop this 1920x1080 page to y[217..895] and scale it
+     down, so the digits live inside that window. Tweak font-size/position here
+     to fine-tune live (same model as hud.html). */
+  html, body { margin: 0; width: 1920px; height: 1080px;
+    background: transparent; overflow: hidden; }
+  #clock { position: absolute; left: 0; top: 217px; width: 1920px; height: 678px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "SF Mono", "Cascadia Mono", "Consolas", "Menlo", monospace;
+    font-weight: 700; font-size: 420px; color: #ffffff;
+    text-shadow: 0 4px 12px rgba(0,0,0,.6); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+  <div id="clock"></div>
+<script>
+  // Ticks locally against the absolute end anchor; the poll only re-syncs the
+  // anchor/visibility (sheet edits, director actions, server clock offset).
+  const POLL_MS = 2000, TICK_MS = 250;
+  let state = null, clockOffset = 0;   // serverNow - clientNow at last poll
+
+  function fmt(s) {
+    s = Math.max(0, Math.ceil(s));
+    const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return `${h}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}`;
+  }
+  function render() {
+    const el = document.getElementById("clock");
+    if (!state || !state.visible) { el.textContent = ""; return; }
+    if (state.end === null) { el.textContent = fmt(state.duration_s); return; }
+    const remaining = state.end - (Date.now() / 1000 + clockOffset);
+    el.textContent = remaining > 0 ? fmt(remaining) : "";   // blank at zero
+  }
+  async function poll() {
+    try {
+      const r = await fetch("/timer/data", { cache: "no-store" });
+      const d = await r.json();
+      if (!d.error) { state = d; clockOffset = d.server_now - Date.now() / 1000; }
+    } catch (e) { /* keep last good state on transient errors */ }
+  }
+  poll();
+  setInterval(poll, POLL_MS);
+  setInterval(render, TICK_MS);
+</script>
+</body>
+</html>

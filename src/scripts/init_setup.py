@@ -8,7 +8,7 @@ one-shots; it owns no install/download logic.
 Spec: docs/superpowers/specs/2026-06-06-iro-init-design.md.
 Tests: tests/test_init.py."""
 
-REQUIRED_ENV = ("IRO_SHEET_ID", "IRO_TIMER_URL")
+REQUIRED_ENV = ("IRO_SHEET_ID",)
 
 STEP_ORDER = ("env", "install-tools", "install-apps", "cookies", "graphics",
               "media", "setup", "export-companion", "preflight")
@@ -64,7 +64,7 @@ def build_plan(skip_installs=False):
 def env_done(env):
     """`env` is the merged os.environ + .env mapping."""
     if all(env.get(k) for k in REQUIRED_ENV):
-        return "IRO_SHEET_ID and IRO_TIMER_URL set"
+        return "IRO_SHEET_ID set"
     return None
 
 

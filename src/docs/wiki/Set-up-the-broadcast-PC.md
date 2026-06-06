@@ -10,8 +10,7 @@ Do this **once** per machine — about 30 minutes. When you're done, go to
 
 - A reasonably modern PC — **macOS, Windows, or Linux**. 16 GB RAM works but is tight, so
   reboot before events; 32 GB is comfortable. A wired internet connection.
-- A **YouTube login** (for cookies), the **shared Google Sheet** link, and the
-  **stagetimer** link from the team.
+- A **YouTube login** (for cookies) and the **shared Google Sheet** link from the team.
 
 ## 1 — Get the `iro` tool
 
@@ -133,10 +132,12 @@ Check them: `streamlink --version`, `yt-dlp --version`, `ffmpeg -version`, `deno
 ## 4 — Add your secrets (`.env`)
 
 The first `iro` run created a `.env` file next to the binary. Open it in any
-text editor and fill in two values from the team:
+text editor and fill in the required value from the team:
 
 - `IRO_SHEET_ID` — the ID in the shared Google Sheet link.
-- `IRO_TIMER_URL` — the stagetimer output link.
+- *(optional)* `IRO_TIMER_PUSH_URL` — the Apps Script write webhook for the relay-hosted
+  race timer. Enables Director timer actions to sync to the Sheet so a second producer
+  machine takes over with the same countdown. See [Race-Timer](Race-Timer) to set it up.
 
 Keep `.env` private; never share it. Full detail: [Configuration & secrets](Configuration).
 

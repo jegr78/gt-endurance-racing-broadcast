@@ -135,6 +135,12 @@
   <div class="grid">
 
     <div class="panel span2">
+      <h2>Race Timer</h2>
+      <div class="btns" id="timerBtns"></div>
+      <div class="hint" id="timerInfo">Timer: connecting to relay…</div>
+    </div>
+
+    <div class="panel span2">
       <h2>Scenes</h2>
       <div class="btns" id="scenes"></div>
     </div>
@@ -321,7 +327,7 @@ async function refresh(){
 }
 
 function setEnabled(on){
-  document.querySelectorAll("button.b, .mute, #audio input[type=range]").forEach(el=>el.disabled=!on);
+  document.querySelectorAll("button.b:not(.timer), .mute, #audio input[type=range]").forEach(el=>el.disabled=!on);
 }
 
 /* ---------- connect / disconnect ---------- */
@@ -356,6 +362,63 @@ obs.on("ConnectionClosed", ()=>{
 obs.on("CurrentProgramSceneChanged", d=>{
   Object.entries(sceneBtns).forEach(([n,b])=>b.classList.toggle("air", n===d.sceneName));
 });
+
+/* ---------- race timer (relay-served; works without the OBS connection) --- */
+const TIMER_ACTIONS = [
+  ["START",  "timer/start"],  ["STOP",   "timer/stop"],
+  ["SHOW",   "timer/show"],   ["HIDE",   "timer/hide"],
+  ["+1 MIN", "timer/adjust/60"], ["−1 MIN", "timer/adjust/-60"],
+  ["+10 S",  "timer/adjust/10"], ["−10 S",  "timer/adjust/-10"],
+];
+async function timerCall(path){
+  try{
+    const r = await fetch("/" + path, {cache:"no-store"});
+    const d = await r.json();
+    if (d.error) log("Timer: " + d.error, "err"); else timerRender(d);
+  }catch(e){ log("Timer action failed (relay reachable?): " + e, "err"); }
+}
+TIMER_ACTIONS.forEach(([label, path])=>{
+  const b = mkBtn(label, "timer", ()=>timerCall(path));
+  b.classList.add("timer"); b.disabled = false;
+  document.getElementById("timerBtns").appendChild(b);
+});
+{ // duration setter (prompt keeps the panel dependency-free)
+  const b = mkBtn("SET DURATION", "timer", ()=>{
+    const v = prompt("Race duration (H:MM:SS):", "6:00:00");
+    if (v) timerCall("timer/set/" + v.trim());   // ':' is path-safe; encoding it would 400
+  });
+  b.classList.add("timer"); b.disabled = false;
+  document.getElementById("timerBtns").appendChild(b);
+}
+function timerFmt(s){
+  s = Math.max(0, Math.ceil(s));
+  return `${Math.floor(s/3600)}:${String(Math.floor(s%3600/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+}
+function timerRender(d){
+  const rem = d.end !== null ? d.end - d.server_now : null;
+  const head = d.mode === "running" ? `RUNNING · ${timerFmt(rem)} left`
+             : d.mode === "prestart" ? `READY · duration ${timerFmt(d.duration_s)}`
+             : d.mode === "finished" ? "FINISHED (display blank)"
+             : "HIDDEN";
+  const sync = d.sync.push === "ok" ? "sheet sync OK"
+             : d.sync.push === "disabled" ? "local only (IRO_TIMER_PUSH_URL unset)"
+             : d.sync.push === "failed" ? "SHEET SYNC FAILED — handover not safe"
+             : "sheet sync not yet attempted";
+  document.getElementById("timerInfo").textContent = `Timer: ${head} · ${sync}`;
+}
+async function timerPoll(){
+  try{
+    const r = await fetch("/timer/data", {cache:"no-store"});
+    const d = await r.json();
+    if (!d.error) timerRender(d);
+    else document.getElementById("timerInfo").textContent = "Timer: disabled on this relay.";
+  }catch(e){
+    document.getElementById("timerInfo").textContent =
+      "Timer: relay not reachable (panel opened from file://? open it via http://<relay>:8088/panel).";
+  }
+}
+timerPoll();
+setInterval(timerPoll, 2000);
 </script>
 </body>
 </html>

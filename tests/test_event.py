@@ -179,11 +179,11 @@ def t_classify_assets():
 
 
 def t_classify_env():
-    assert m.classify_env("sheet", "http://t").level == "PASS"
-    r = m.classify_env(None, "http://t")
+    assert m.classify_env("sheet", "http://push").level == "PASS"
+    r = m.classify_env("sheet", "")          # push URL optional -> WARN, not FAIL
+    assert r.level == "WARN" and "IRO_TIMER_PUSH_URL" in r.detail
+    r = m.classify_env("", "http://push")
     assert r.level == "FAIL" and "IRO_SHEET_ID" in r.detail
-    r = m.classify_env("", "")
-    assert "IRO_SHEET_ID" in r.detail and "IRO_TIMER_URL" in r.detail
 
 
 def t_go_live_reminder():

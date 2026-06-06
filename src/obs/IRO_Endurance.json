@@ -436,7 +436,7 @@
             "id": "browser_source",
             "versioned_id": "browser_source",
             "settings": {
-                "url": "__IRO_TIMER__",
+                "url": "http://127.0.0.1:8088/timer",
                 "width": 1920,
                 "height": 1080
             },

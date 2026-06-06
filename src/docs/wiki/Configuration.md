@@ -3,9 +3,9 @@
 > Technical reference. The setup steps are in [Set up the broadcast PC](Set-up-the-broadcast-PC).
 
 Two things are machine- and event-specific and are **never** hardcoded or committed:
-the **Google Sheet ID** (schedule + HUD data) and the **stagetimer output URL**. Both
-come from a gitignored `.env` file. Then `setup-assets.py` localizes the OBS collection
-for this machine.
+the **Google Sheet ID** (schedule + HUD data) and, optionally, the **race-timer webhook
+URL**. Both come from a gitignored `.env` file. Then `setup-assets.py` localizes the OBS
+collection for this machine.
 
 ## The `.env` file
 
@@ -19,15 +19,17 @@ cp .env.example .env
 ```ini
 # .env  (gitignored — never commit this)
 IRO_SHEET_ID=your_google_sheet_id_here
-IRO_TIMER_URL=https://stagetimer.io/output/XXXXXXXX/?v=2&signature=...
+IRO_TIMER_PUSH_URL=https://script.google.com/macros/s/…/exec?key=your_secret
 ```
 
 - **`IRO_SHEET_ID`** — the long ID from your HUD/schedule sheet URL:
   `https://docs.google.com/spreadsheets/d/`**`<THIS>`**`/edit`. Drives the relay:
   the schedule, the POV tab, and the HUD overlay (Overlay + Configuration tabs, served
   at `/hud`).
-- **`IRO_TIMER_URL`** — the full signed stagetimer.io output URL injected into the timer
-  browser source.
+- **`IRO_TIMER_PUSH_URL`** *(optional)* — the Apps Script write webhook for the relay-hosted
+  race timer. Lets Director actions (start/stop/show/hide/correct) sync to the Sheet's
+  `Timer` tab so a second producer machine takes over with the same countdown. Unset =
+  timer works on this machine only. See [Race-Timer](Race-Timer) for setup.
 - **`IRO_INTRO_URL` / `IRO_OUTRO_URL`** *(optional)* — override the Intro/Outro clip
   URLs that normally come from the Sheet **Assets** tab (used by `iro media`).
 - **`IRO_COMPANION_EXE`** *(optional, Windows)* — full path to `Companion.exe` for
@@ -40,9 +42,9 @@ Real environment variables take precedence over `.env`. The loader only reads a 
 from the script directory or the project root (marked by `.git` / `.env.example`),
 never an unrelated parent directory.
 
-> **Security:** `.env` is gitignored and must stay that way. The signed stagetimer URL
-> is a secret — if it ever leaks, regenerate the output link in stagetimer and update
-> `IRO_TIMER_URL`.
+> **Security:** `.env` is gitignored and must stay that way. The `IRO_TIMER_PUSH_URL`
+> contains a shared secret — if it ever leaks, redeploy the Apps Script with a new key
+> and update the URL in `.env` on every producer machine.
 
 ## Localize the OBS collection (`setup-assets.py`)
 
@@ -60,25 +62,25 @@ The tokens in the collection:
 |-------|-------------|
 | `__IRO_GRAPHICS__` | `runtime/graphics/` (package: `graphics/`) — the Sheet-driven broadcast graphics, `__IRO_GRAPHICS__/<Label>.png` |
 | `__IRO_MEDIA__` | `runtime/media/` — the Intro/Outro clips |
-| `__IRO_TIMER__` | the signed `IRO_TIMER_URL` (stagetimer output) |
 
-(The HUD overlay is served by the relay, so the collection no longer embeds the sheet —
-there is no `__IRO_SHEET__` token in it.)
+(The HUD overlay and the race timer are both served by the relay at fixed loopback URLs —
+the collection embeds neither the sheet ID nor any external service URL; no token is
+needed for them.)
 
 So `setup-assets.py`:
 - rewrites the broadcast-graphic image paths (`__IRO_GRAPHICS__`) to **this** machine's
   `runtime/graphics/` folder. Those PNGs are **not** committed — download them first with
   `iro graphics` (see [Sheet-driven graphics](#sheet-driven-graphics)
-  below); a graphic still missing prints a warning and OBS shows that source black, and
-- injects `IRO_TIMER_URL` into the timer browser source. (The HUD overlay needs no
-  injection — it is served by the relay; `IRO_SHEET_ID` is read by the relay, not the
-  collection.)
+  below); a graphic still missing prints a warning and OBS shows that source black.
+
+(The HUD overlay and race timer need no injection — both are served by the relay;
+`IRO_SHEET_ID` is read by the relay, not the collection.)
 
 > `__IRO_ASSETS__` is retired from the OBS collection. `src/assets/` now holds **only**
 > the bundled HUD `flags/` + `brands/` logos — these stay committed and are served by the
 > relay HUD, not by the OBS collection.
 
-You can override per-run without `.env`: `--sheet-id <ID>` / `--timer-url <URL>`.
+You can override the graphics path per-run without `.env`: `--sheet-id <ID>`.
 
 > **Import the `.import.json`, not the `.template.json`.** And **do not move the folder
 > after importing into OBS** — OBS stores absolute image paths. If you move it, re-run

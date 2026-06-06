@@ -11,11 +11,8 @@ import argparse, json, os, re
 
 TOKEN = "__IRO_GRAPHICS__"
 SHEET_TOKEN = "__IRO_SHEET__"
-TIMER_TOKEN = "__IRO_TIMER__"
 # Any /spreadsheets/d/<id>/ — the {20,} length guard skips the short token itself.
 SHEET_RE = re.compile(r"(/spreadsheets/d/)[A-Za-z0-9_-]{20,}(/)")
-# Full stagetimer.io output URL incl. the signed query string (a live secret).
-TIMER_RE = re.compile(r"https://stagetimer\.io/output/[^\"\s]+")
 
 # Discord audio source: fold any platform variant (created by setup-assets'
 # localize_discord_audio — keep the two ends in sync) back to the committed
@@ -50,8 +47,7 @@ def tokenize_sheets(obj, counter):
         return [tokenize_sheets(v, counter) for v in obj]
     if isinstance(obj, str):
         new, c = SHEET_RE.subn(rf"\g<1>{SHEET_TOKEN}\g<2>", obj)
-        new, c2 = TIMER_RE.subn(TIMER_TOKEN, new)
-        counter[0] += c + c2
+        counter[0] += c
         return new
     return obj
 
@@ -81,7 +77,7 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(d, fh, ensure_ascii=False, indent=4)
-    print(f"tokenized {n} asset path(s) + {sheet_count[0]} sheet/timer URL(s) -> {out}")
+    print(f"tokenized {n} asset path(s) + {sheet_count[0]} sheet URL(s) -> {out}")
 
 
 if __name__ == "__main__":

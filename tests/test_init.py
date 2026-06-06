@@ -58,9 +58,8 @@ def t_every_step_has_a_label():
 # ------------------------------------------------------------- done-detection
 
 def t_env_done():
-    assert m.env_done({"IRO_SHEET_ID": "x", "IRO_TIMER_URL": "y"}) is not None
-    assert m.env_done({"IRO_SHEET_ID": "x"}) is None
-    assert m.env_done({"IRO_SHEET_ID": "", "IRO_TIMER_URL": "y"}) is None
+    assert m.env_done({"IRO_SHEET_ID": "x"}) is not None
+    assert m.env_done({"IRO_SHEET_ID": ""}) is None
     assert m.env_done({}) is None
 
 

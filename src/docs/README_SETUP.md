@@ -103,10 +103,11 @@ Check them: `streamlink --version`, `yt-dlp --version`, `ffmpeg -version`, `deno
 ## 2. Add your secrets (`.env`)
 
 The first `iro` run created a `.env` file next to the binary. Open it in any text
-editor and fill in two values from the team:
+editor and fill in the required value from the team:
 
 - `IRO_SHEET_ID` — the ID in the shared Google Sheet link.
-- `IRO_TIMER_URL` — the stagetimer output link.
+- *(optional)* `IRO_TIMER_PUSH_URL` — Apps Script write webhook for the relay-hosted
+  race timer (enables cross-machine countdown sync). See the Race-Timer wiki page.
 
 Keep `.env` private; never share it.
 
@@ -318,8 +319,8 @@ Companion is preferred for directors.
   → redo `iro setup` + re-import.
 - **OBS WebSocket password:** NOT included in the Companion export — enter it once
   after import (`Connections` → OBS). Set the same password in OBS (step 3b).
-- **HUD & graphics** pull live data from the shared Google Sheet and
-  stagetimer.io — these are shared production resources. The sheet must stay shared.
+- **HUD & graphics** pull live data from the shared Google Sheet — a shared production
+  resource. The sheet must stay shared.
 - **Discord** must run in **windowed mode** (macOS audio capture).
 - Before every event update the tools: `brew upgrade streamlink yt-dlp` on macOS /
   `winget upgrade yt-dlp.yt-dlp Streamlink.Streamlink` on Windows.

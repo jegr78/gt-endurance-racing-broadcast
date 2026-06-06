@@ -23,7 +23,7 @@ flowchart LR
 - **Starts and stops** the broadcast; everything in between is the director's job.
 - Joins the Discord "Interviews" voice channel for the interview segment (last-part
   producer only — see below).
-- Keeps the shared Google Sheet and stagetimer links intact.
+- Keeps the shared Google Sheet intact.
 
 ## Director (remote)
 
@@ -57,6 +57,8 @@ Each stint's commentator streams the race on **their own channel**. Hand them th
 
 Only the **last-part** producer joins Discord; earlier producers don't use Discord at all.
 
-> The HUD and graphics pull live data from the **shared Google Sheet** and **stagetimer**.
-> These are shared — changes affect everyone, and the sheet must stay shared. The details
-> are in [Configuration & secrets](Configuration).
+> The HUD and graphics pull live data from the **shared Google Sheet**. The race timer is
+> relay-served; Director controls (start/stop/show/hide/correct) are on the panel's Race
+> Timer section and Companion page 2 — see [Race-Timer](Race-Timer). Changes to shared
+> resources affect everyone, and the sheet must stay shared. The details are in
+> [Configuration & secrets](Configuration).
