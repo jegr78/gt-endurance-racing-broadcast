@@ -489,12 +489,24 @@ class TimerStore:
                       headers={"User-Agent": "iro-feeds/1.0",
                                "Content-Type": "application/json"})
         with urlopen(req, timeout=10) as resp:
-            resp.read()
+            return resp.read()
 
     def _push(self, payload):
+        """Success = the Apps Script's own {"ok": true} — Apps Script answers
+        HTTP 200 even for errors (bad key, exceptions render an HTML page), so
+        the status code alone is a false positive."""
         try:
-            self._post(self.push_url, json.dumps(payload).encode("utf-8"))
-            self.push_status = "ok"      # diagnostics: single ref assignments, no lock needed
+            body = self._post(self.push_url, json.dumps(payload).encode("utf-8"))
+            try:
+                ok = json.loads(body or b"{}").get("ok") is True
+            except (ValueError, AttributeError):
+                ok = False
+            if ok:
+                self.push_status = "ok"  # diagnostics: single ref assignments, no lock needed
+            else:
+                snippet = (body or b"")[:120].decode("utf-8", "replace")
+                self.push_status = "failed"
+                self.last_error = f"push: webhook did not confirm: {snippet!r}"
         except Exception as e:
             self.push_status = "failed"
             self.last_error = f"push: {type(e).__name__}: {e}"

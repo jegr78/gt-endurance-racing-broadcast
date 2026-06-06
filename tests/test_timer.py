@@ -166,7 +166,9 @@ def t_timerstore_refresh_failure_keeps_state():
 def t_timerstore_push_payload_and_status():
     ts, _ = _store(push_url="http://push?key=k")
     sent = []
-    ts._post = lambda url, body: sent.append((url, body))
+    def post_ok(url, body):
+        sent.append((url, body)); return b'{"ok":true}'
+    ts._post = post_ok
     ts._spawn_push = ts._push                   # synchronous for the test
     ts.set_duration(7200); ts.start(now=1000.0)
     url, body = sent[-1]
@@ -180,6 +182,17 @@ def t_timerstore_push_payload_and_status():
     ts._post = fail
     ts.hide()
     assert ts.push_status == "failed"
+
+
+def t_timerstore_push_unconfirmed_is_failed():
+    # Apps Script answers HTTP 200 even for errors — only {"ok": true} counts.
+    ts, _ = _store(push_url="http://push?key=k")
+    ts._spawn_push = ts._push
+    for resp in (b'{"error":"bad key"}', b"<html>exception</html>", b"", None):
+        ts._post = lambda url, body, r=resp: r
+        ts.set_duration(7200)
+        assert ts.push_status == "failed", resp
+        assert "did not confirm" in ts.last_error
 
 
 def t_timerstore_push_disabled_without_url():
