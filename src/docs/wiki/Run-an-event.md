@@ -70,6 +70,33 @@ Start OBS on the **Standby** scene, then click **Start Streaming**. From here th
 the **Intro**: pressing **INTRO** (Companion) plays the looping intro clip with its own
 audio. When the field is ready they cut into the race look (**STINT A** / **Splitscreen**).
 
+## The director panel (remote control)
+
+Directors without a Stream Deck — or anyone on a tablet — can drive the same
+show from the **director panel** the relay serves at
+`http://<producer-tailscale-ip>:8088/panel` (`iro event start` prints the
+URL — just forward it).
+
+![Director panel](images/director-panel.png)
+
+The page is organized as horizontal busses that mirror the Companion pages,
+so the Stream Deck and the panel share one muscle memory:
+
+| Bus | What it does |
+|---|---|
+| **PGM** | one-press program switches (scene + feed visibility + mutes), identical to the Companion macros — STINT A/B, SPLIT, INTERVIEW, STANDBY, INTRO, OUTRO |
+| **FEEDS** | relay control: NEXT (driver change), feed reloads, POV reload/stop, SET STINT… |
+| **SCN·VIS** | raw scene switches and feed visibility toggles |
+| **GFX** | graphics toggles (HUD, Standings, Schedule, results, weather, covers) |
+| **TIMER** | the race timer (see [Race Timer](Race-Timer)) |
+| **AUDIO** | per-input dB sliders, 0 dB reset and mutes |
+
+The status strip at the top shows what is on air, which stint each feed
+carries, the POV state and the race timer. **FEEDS and TIMER work
+relay-only** — no OBS connection needed. Everything else needs the OBS
+WebSocket connection: the producer's Tailscale IP, port `4455`, and the
+password from OBS → Tools → WebSocket Server Settings.
+
 ## During the race: driver changes
 
 About every two hours the driver/commentator changes. Two feeds take turns so the picture
