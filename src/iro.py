@@ -1153,18 +1153,31 @@ def aggregate_status(_rest=None):
     streams_status([])
 
 
+def running_apps_data(probe=None):
+    """OBS/Discord process running-state for the Event overview (cheap
+    pgrep/tasklist per app). Never raises — both False on any failure."""
+    try:
+        if probe is None:
+            probe = _event_modules()[0].app_running
+        return {"obs": bool(probe("obs")), "discord": bool(probe("discord"))}
+    except Exception:
+        return {"obs": False, "discord": False}
+
+
 def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None,
-                      cookies=None):
+                      cookies=None, apps_running=None):
     """Aggregate health for the Control Center dashboard (/api/status).
     Each parameter is an optional zero-arg callable override (None = real
     probe). Cheap, local-only probes — the sheet-fetching asset check lives
-    in assets_status_data() behind the on-demand /api/assets."""
+    in assets_status_data() behind the on-demand /api/assets.
+    apps_running: OBS/Discord running-state used by the Event overview."""
     return {"version": version(),
             "relay": (relay or relay_status_data)(),
             "companion": (companion or companion_status_data)(),
             "streams": (streams or streams_status_data)(),
             "tailscale_ip": (tailscale or _tailscale_ip)(),
-            "cookies": (cookies or cookies_status_data)()}
+            "cookies": (cookies or cookies_status_data)(),
+            "apps_running": (apps_running or running_apps_data)()}
 
 
 def cookies_status_data(status=None):

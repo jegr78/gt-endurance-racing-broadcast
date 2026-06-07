@@ -92,11 +92,25 @@ def t_ui_status_payload_shape():
     payload = iro.ui_status_payload(
         relay=lambda: {"alive": False}, companion=lambda: {"running": False},
         streams=lambda: [], tailscale=lambda: None,
-        cookies=lambda: {"level": "WARN", "detail": "x"})
+        cookies=lambda: {"level": "WARN", "detail": "x"},
+        apps_running=lambda: {"obs": False, "discord": False})
     assert payload == {"version": iro.version(), "relay": {"alive": False},
                        "companion": {"running": False}, "streams": [],
                        "tailscale_ip": None,
-                       "cookies": {"level": "WARN", "detail": "x"}}
+                       "cookies": {"level": "WARN", "detail": "x"},
+                       "apps_running": {"obs": False, "discord": False}}
+
+
+def t_running_apps_data_probe():
+    d = iro.running_apps_data(probe=lambda app: app == "obs")
+    assert d == {"obs": True, "discord": False}
+
+
+def t_running_apps_data_never_raises():
+    def boom(app):
+        raise RuntimeError("pgrep broke")
+    d = iro.running_apps_data(probe=boom)
+    assert d == {"obs": False, "discord": False}
 
 
 # ---------- ui_ops registry ----------
