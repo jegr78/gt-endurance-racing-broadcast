@@ -161,6 +161,18 @@
   #log{font-size:11px;color:var(--muted);margin-top:2px;max-height:90px;overflow:auto;
     border:1px solid var(--edge);background:#0c0f13;border-radius:10px;padding:10px;white-space:pre-wrap}
 
+  /* ---------- state banners (persistent) + toasts (one-off) ---------- */
+  #banners{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+  #banners:empty{display:none}
+  .banner{border-radius:10px;padding:10px 14px;font-size:13px;font-weight:600;
+    letter-spacing:.04em;display:flex;gap:10px;align-items:center}
+  .banner.amber{background:#2e2305;border:1px solid var(--amber);color:#ffd361}
+  .banner.red{background:#330f0f;border:1px solid var(--air);color:#ff9d9d}
+  #toasts{position:fixed;top:14px;right:14px;z-index:100;display:flex;
+    flex-direction:column;gap:8px;max-width:340px}
+  .toast{background:#330f0f;border:1px solid var(--air);color:#ff9d9d;border-radius:10px;
+    padding:10px 14px;font-size:12px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.6)}
+
   /* ---------- small screens ---------- */
   @media(max-width:760px){
     body{padding:10px}
@@ -188,6 +200,8 @@
     <div class="led"><span class="dot" id="ledObs"></span>OBS</div>
     <div class="led"><span class="dot" id="ledRelay"></span>Relay</div>
   </header>
+
+  <div id="banners"></div>
 
   <div class="conn">
     <div class="fld ip"><label>OBS IP (Producer Tailscale)</label><input id="ip" placeholder="100.x.y.z"></div>
@@ -238,6 +252,7 @@
   </details>
 
   <div id="log">Ready. FEEDS + TIMER work relay-only; enter the Producer's Tailscale IP + OBS WebSocket password and Connect for everything else.</div>
+<div id="toasts"></div>
 </div>
 
 <script>
@@ -331,6 +346,29 @@ function log(m, kind){
 }
 function obsLed(state){ $("#ledObs").className = "dot" + (state==="ok"?" on":state==="err"?" err":""); }
 function relayLed(ok){ $("#ledRelay").className = "dot" + (ok?" on":" err"); }
+
+/* ---------- state banners (persistent conditions) + toasts (one-off) ----
+   Banners reflect ONGOING conditions; they appear while the condition holds
+   and clear themselves when it resolves — not dismissible by design. Toasts
+   announce one-off action failures (~6 s); the log keeps the history. */
+const banners = {};   // id -> {level: "red"|"amber", msg}
+function setBanner(id, level, msg){
+  if (banners[id] && banners[id].msg === msg) return;
+  banners[id] = {level, msg}; renderBanners();
+}
+function clearBanner(id){
+  if (banners[id]){ delete banners[id]; renderBanners(); }
+}
+function renderBanners(){
+  $("#banners").innerHTML = Object.values(banners)
+    .map(b=>`<div class="banner ${b.level}">⚠ ${escapeHtml(b.msg)}</div>`).join("");
+}
+function toast(msg){
+  const t = document.createElement("div");
+  t.className = "toast"; t.textContent = "✕ " + msg;
+  $("#toasts").appendChild(t);
+  setTimeout(()=>t.remove(), 6000);
+}
 
 /* remember connection details locally for convenience */
 try{
@@ -476,12 +514,12 @@ async function relayCall(path){
   try{
     const r = await fetch("/" + path, {cache:"no-store"});
     const d = await r.json();
-    if (d.error) { log("Relay /" + path + ": " + d.error, "err"); return; }
+    if (d.error) { log("Relay /" + path + ": " + d.error, "err"); toast("Relay /" + path + ": " + d.error); return; }
     let extra = "";
     if (d.feeds) extra = ` — A: stint ${d.feeds.A.stint}, B: stint ${d.feeds.B.stint}`;
     log("Relay /" + path + " ok" + extra);
     relayPoll();
-  }catch(e){ log("Relay /" + path + " failed (relay reachable?): " + e, "err"); }
+  }catch(e){ log("Relay /" + path + " failed (relay reachable?): " + e, "err"); toast("Relay /" + path + " failed — relay unreachable"); }
 }
 
 /* ---------- OBS state refresh ---------- */
@@ -621,10 +659,10 @@ async function timerCall(path){
   try{
     const r = await fetch("/" + path, {cache:"no-store"});
     const d = await r.json();
-    if (d.error) { log("Timer: " + d.error, "err"); return; }
+    if (d.error) { log("Timer: " + d.error, "err"); toast("Timer: " + d.error); return; }
     if (d.note) log("Timer: " + d.note);
     timerRender(d);
-  }catch(e){ log("Timer action failed (relay reachable?): " + e, "err"); }
+  }catch(e){ log("Timer action failed (relay reachable?): " + e, "err"); toast("Timer action failed — relay unreachable"); }
 }
 function timerFmt(s){
   s = Math.max(0, Math.ceil(s));
@@ -641,6 +679,9 @@ function timerRender(d){
              : d.sync.push === "disabled" ? "local only (IRO_SHEET_PUSH_URL unset)"
              : d.sync.push === "failed" ? "SHEET SYNC FAILED — handover not safe"
              : "sheet sync not yet attempted";
+  if (d.sync.push === "failed")
+    setBanner("timersync", "red", "TIMER SHEET SYNC FAILED — producer handover not safe");
+  else clearBanner("timersync");
   $("#timerInfo").textContent = `Timer: ${head} · ${sync}`;
   const pill = d.mode === "running" ? "▶ " + timerFmt(rem)
              : d.mode === "paused" ? "⏸ " + timerFmt(d.remaining_s)
@@ -688,10 +729,10 @@ async function setupSet(field, value){
   try{
     const r = await fetch("/" + path, {cache:"no-store"});
     const d = await r.json();
-    if (d.error){ log("HUD " + field + ": " + d.error, "err"); setupPoll(); return; }
+    if (d.error){ log("HUD " + field + ": " + d.error, "err"); toast("HUD " + field + ": " + d.error); setupPoll(); return; }
     log("HUD " + field + " → " + (value || "(cleared)"));
     setupPoll();
-  }catch(e){ log("HUD " + field + " failed (relay reachable?): " + e, "err"); }
+  }catch(e){ log("HUD " + field + " failed (relay reachable?): " + e, "err"); toast("HUD " + field + " failed — relay unreachable"); }
 }
 
 async function setupPoll(){
@@ -717,6 +758,9 @@ async function setupPoll(){
     sel.disabled = ro;
   }
   $("#clearRc").disabled = ro;
+  if (d.push === "failed")
+    setBanner("sync", "red", "SHEET SYNC FAILED — panel HUD/URL changes are not reaching the sheet");
+  else clearBanner("sync");
   $("#setupInfo").textContent = "HUD: " +
       (d.push === "ok" ? "sheet sync OK"
      : ro ? "read-only — set IRO_SHEET_PUSH_URL in .env (wiki: Sheet-Webhook)"
@@ -765,13 +809,13 @@ async function schedSave(tr, row){
       body: JSON.stringify({row: sheetRow, url: tr.querySelector(".u").value.trim(),
                             name: tr.querySelector(".nm").value.trim()})});
     const d = await r.json();
-    if (d.error){ log("Schedule row " + row + ": " + d.error, "err"); btn.textContent = "RETRY"; return; }
+    if (d.error){ log("Schedule row " + row + ": " + d.error, "err"); toast("Schedule row " + row + ": " + d.error); btn.textContent = "RETRY"; return; }
     delete tr.dataset.dirty; tr.dataset.saved = Date.now();
     btn.textContent = "SAVED ✓"; btn.classList.add("ok");
     const live = tr.querySelector(".livebadge").textContent;
     log("Schedule row " + row + " saved" +
         (live ? ` — feed ${live} picks it up on RELOAD ${live} / NEXT` : ""));
-  }catch(e){ log("Schedule save failed: " + e, "err"); btn.textContent = "RETRY"; }
+  }catch(e){ log("Schedule save failed: " + e, "err"); toast("Schedule row " + row + " save failed"); btn.textContent = "RETRY"; }
   finally{
     btn.disabled = false;
     setTimeout(()=>{ if (btn.textContent === "SAVED ✓"){ btn.textContent = "SAVE"; btn.classList.remove("ok"); } }, 4000);
@@ -798,11 +842,11 @@ $("#povSave").addEventListener("click", async ()=>{
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({url: $("#povUrl").value.trim()})});
     const d = await r.json();
-    if (d.error){ log("POV URL: " + d.error, "err"); btn.textContent = "RETRY"; return; }
+    if (d.error){ log("POV URL: " + d.error, "err"); toast("POV URL: " + d.error); btn.textContent = "RETRY"; return; }
     delete $("#povUrl").dataset.dirty; $("#povUrl").dataset.saved = Date.now();
     btn.textContent = "SAVED ✓"; btn.classList.add("ok");
     log("POV URL saved — applies on POV RELOAD.");
-  }catch(e){ log("POV save failed: " + e, "err"); btn.textContent = "RETRY"; }
+  }catch(e){ log("POV save failed: " + e, "err"); toast("POV URL save failed"); btn.textContent = "RETRY"; }
   finally{
     btn.disabled = false;
     setTimeout(()=>{ if (btn.textContent === "SAVED ✓"){ btn.textContent = "SAVE"; btn.classList.remove("ok"); } }, 4000);
