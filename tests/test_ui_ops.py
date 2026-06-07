@@ -272,6 +272,32 @@ def t_preflight_data_error():
     assert d["ok"] is False and "no preflight" in d["error"]
 
 
+def t_assets_files_data_lists(tmp):
+    g = os.path.join(tmp, "graphics")
+    m = os.path.join(tmp, "media")
+    os.makedirs(g)
+    os.makedirs(m)
+    open(os.path.join(g, "Overlay.png"), "w").close()
+    open(os.path.join(g, "Standings.png"), "w").close()
+    open(os.path.join(g, "notes.txt"), "w").close()      # non-image: ignored
+    open(os.path.join(m, "intro.mp4"), "w").close()
+    d = iro.assets_files_data(roots={"graphics": g, "media": m})
+    assert d["ok"] is True
+    assert d["graphics"] == ["Overlay.png", "Standings.png"]   # sorted, .txt dropped
+    assert d["media"] == ["intro.mp4"]
+
+
+def t_assets_files_data_missing_dirs(tmp):
+    d = iro.assets_files_data(roots={"graphics": os.path.join(tmp, "nope"),
+                                     "media": os.path.join(tmp, "nope2")})
+    assert d["ok"] is True and d["graphics"] == [] and d["media"] == []
+
+
+def t_assets_files_data_error():
+    d = iro.assets_files_data(roots={})        # missing keys -> KeyError, caught
+    assert d["ok"] is False and "error" in d
+
+
 if __name__ == "__main__":
     import inspect, tempfile
     with tempfile.TemporaryDirectory() as tmp:

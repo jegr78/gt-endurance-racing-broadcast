@@ -1200,6 +1200,33 @@ def assets_status_data(state=None):
             "media": {"level": m.level, "detail": m.detail}}
 
 
+def assets_files_data(roots=None):
+    """Local graphics/media files actually present in runtime/ (cheap listdir —
+    no sheet, no network). Returns {"ok": True, "graphics": [names], "media":
+    [names]} with sorted basenames, or {"ok": False, "error": ...}; never raises.
+    The `roots` override (a {"graphics": dir, "media": dir} dict) is the test
+    seam."""
+    IMG = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+    VID = (".mp4", ".webm", ".mov")
+    try:
+        if roots is None:
+            rt = _runtime_dir()
+            roots = {"graphics": os.path.join(rt, "graphics"),
+                     "media": os.path.join(rt, "media")}
+
+        def listing(d, exts):
+            if not os.path.isdir(d):
+                return []
+            return sorted(f for f in os.listdir(d)
+                          if f.lower().endswith(exts)
+                          and os.path.isfile(os.path.join(d, f)))
+        return {"ok": True,
+                "graphics": listing(roots["graphics"], IMG),
+                "media": listing(roots["media"], VID)}
+    except Exception as exc:
+        return {"ok": False, "error": f"asset listing failed: {exc}"}
+
+
 def tools_status_data(which=None, version=None):
     """Per-tool install presence (+ version when present). On-demand: the
     version probe shells out once per tool. Returns {"ok": True, "tools":[...]}
@@ -1393,6 +1420,9 @@ def ui_cmd(rest):
         "ops": ops_mod.OPS,
         "build_argv": ops_mod.build_argv,
         "assets": assets_status_data,
+        "asset_files": assets_files_data,
+        "asset_roots": {"graphics": os.path.join(_runtime_dir(), "graphics"),
+                        "media": os.path.join(_runtime_dir(), "media")},
         "tools": tools_status_data,
         "apps": apps_status_data,
         "preflight": preflight_data,
