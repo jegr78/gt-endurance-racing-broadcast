@@ -197,6 +197,34 @@ def t_setup_data_shape():
     assert d["pending"] == [] and d["push"] == "disabled"
 
 
+def t_schedule_set_rejects_bool_float_and_noop():
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    try:
+        assert "error" in ctl.schedule_set(True, url="https://youtu.be/a")
+        assert "error" in ctl.schedule_set(2.9, url="https://youtu.be/a")
+        assert "error" in ctl.schedule_set(1)          # nothing to write
+        assert pushes == []                            # no webhook call on any error
+    finally:
+        m.post_webhook = orig
+
+
+def t_push_failure_keeps_override_until_ttl():
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    try:
+        def boom(url, payload, timeout=10):
+            raise OSError("down")
+        m.post_webhook = boom
+        ctl.set_field("streamer", "GT45", now=1000.0)
+        ctl._push_setup("Streamer", "GT45")            # thread body, run sync
+        assert ctl.push_status == "failed"
+        assert hs.data(now=1005.0)["streamer"] == "GT45"   # override retained
+        assert hs.data(now=1000.0 + m.OVERRIDE_TTL + 1)["streamer"] == "JeGr"  # sheet truth after TTL
+    finally:
+        m.post_webhook = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

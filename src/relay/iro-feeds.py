@@ -986,6 +986,7 @@ class SetupControl:
             self.last_error = f"push: {type(e).__name__}: {e}"
             return False, self.last_error
         ok, err = check_webhook_response(body, expected_action)
+        # diagnostics: single ref assignments, no lock needed
         self.push_status = "ok" if ok else "failed"
         self.last_error = None if ok else err
         return ok, err
@@ -1020,12 +1021,16 @@ class SetupControl:
         if not self.push_url:
             return {"error": "webhook not configured — set IRO_SHEET_PUSH_URL "
                              "in .env (wiki: Sheet-Webhook)"}
+        if isinstance(row, bool) or not isinstance(row, (int, str)):
+            return {"error": "row must be a whole number (1-based)"}
         try:
             row = int(row)
         except (TypeError, ValueError):
             return {"error": "row must be a number (1-based)"}
         if row < 1:
             return {"error": "row must be >= 1"}
+        if url is None and name is None:
+            return {"error": "nothing to write (provide url and/or name)"}
         payload = {"action": "schedule", "row": row}
         if url is not None:
             url = url.strip()
