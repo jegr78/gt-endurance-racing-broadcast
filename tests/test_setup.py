@@ -76,6 +76,13 @@ def t_schedule_source_get_rows():
     assert s.get_rows()[1] == ("UCLA_DiR1FfKNvjuUpBHmylQ", "NASA")
 
 
+def t_parse_rows_url_not_first_column():
+    text = "Commentator,Channel\nMatt,UCaaaaaaaaaaaaaaaaaaaaaa\nNASA,UCbbbbbbbbbbbbbbbbbbbbbb\n"
+    rows = m.ScheduleSource._parse_rows(text)
+    assert rows == [("UCaaaaaaaaaaaaaaaaaaaaaa", ""),
+                    ("UCbbbbbbbbbbbbbbbbbbbbbb", "")], rows
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

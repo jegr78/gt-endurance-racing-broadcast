@@ -772,6 +772,7 @@ class ScheduleSource:
 
     @staticmethod
     def _parse_csv(text):
+        """URL-only wrapper around _parse_rows; kept for the URL-list callers/tests."""
         rows = ScheduleSource._parse_rows(text)
         return [u for u, _n in rows] if rows else None
 
@@ -802,7 +803,7 @@ class ScheduleSource:
                 self.last_error = None
             try:
                 with open(self.cache_path, "w", encoding="utf-8") as fh:
-                    fh.write("\n".join(self.get()) + "\n")
+                    fh.write("\n".join(u for u, _n in rows) + "\n")
             except Exception:
                 pass  # cache write is best-effort; the in-memory schedule is current
             return True
