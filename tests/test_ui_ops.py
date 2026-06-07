@@ -149,7 +149,7 @@ def t_build_argv_event_stint():
     assert ui_ops.build_argv("event-start", {"stint": "4"}) == \
         ["event", "start", "--stint", "4"]
     assert ui_ops.build_argv("event-start", {"stint": ""}) == ["event", "start"]
-    for bad in ("0", "-1", "abc", "1.5"):
+    for bad in ("0", "-1", "abc", "1.5", "٤", "²"):
         try:
             ui_ops.build_argv("event-start", {"stint": bad})
             raise AssertionError(f"invalid stint accepted: {bad}")
@@ -164,6 +164,8 @@ def t_build_argv_update_flag():
         ["install-tools", "--yes"]
     assert ui_ops.build_argv("install-apps", {"update": True}) == \
         ["install-apps", "--yes", "--update"]
+    assert ui_ops.build_argv("install-apps", {"update": False}) == \
+        ["install-apps", "--yes"]
 
 
 def t_build_argv_rejects_unknown_params():

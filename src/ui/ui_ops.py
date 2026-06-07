@@ -41,7 +41,7 @@ def _browser_arg(value):
 
 def _stint_arg(value):
     s = str(value)
-    if not s.isdigit() or int(s) < 1:
+    if not s.isascii() or not s.isdigit() or int(s) < 1:
         raise ValueError("stint must be a 1-based stint number")
     return ["--stint", s]
 
@@ -68,7 +68,8 @@ def build_argv(name, params=None):
         raise ValueError(f"unknown operation: {name}")
     argv = list(OPS[name])
     spec = PARAMS.get(name, {})
-    params = params or {}
+    if params is None:
+        params = {}
     unknown = set(params) - set(spec)
     if unknown:
         raise ValueError(f"unexpected parameter(s): {', '.join(sorted(unknown))}")
