@@ -312,6 +312,63 @@ def t_assets_files_data_error():
     assert d["ok"] is False and "error" in d
 
 
+# ---------- .env settings editor ----------
+
+def t_env_entries_data_reads(tmp):
+    p = os.path.join(tmp, ".env")
+    with open(p, "w", encoding="utf-8") as f:
+        f.write("# comment\nIRO_SHEET_ID=abc\nIRO_UI_PORT=8090\n")
+    d = iro.env_entries_data(path=p)
+    assert d["ok"] is True and d["path"] == p
+    assert d["entries"] == [{"key": "IRO_SHEET_ID", "value": "abc"},
+                            {"key": "IRO_UI_PORT", "value": "8090"}]
+
+
+def t_env_entries_data_missing_file(tmp):
+    d = iro.env_entries_data(path=os.path.join(tmp, "nope.env"))
+    assert d["ok"] is True and d["entries"] == []
+
+
+def t_env_write_preserves_comments_and_round_trips(tmp):
+    p = os.path.join(tmp, ".env")
+    with open(p, "w", encoding="utf-8") as f:
+        f.write("# header\nIRO_SHEET_ID=old\n\n# port note\nIRO_UI_PORT=8089\n")
+    res = iro.env_write_data([{"key": "IRO_SHEET_ID", "value": "new"},
+                              {"key": "IRO_NEW", "value": "x"}], path=p)
+    assert res["ok"] is True
+    with open(p, encoding="utf-8") as fh:
+        text = fh.read()
+    assert "# header" in text and "# port note" in text     # comments kept
+    assert "IRO_SHEET_ID=new" in text                       # updated in place
+    assert "IRO_UI_PORT" not in text                        # removed
+    assert "IRO_NEW=x" in text                              # appended
+    back = iro.env_entries_data(path=p)["entries"]
+    assert {"key": "IRO_SHEET_ID", "value": "new"} in back
+    assert {"key": "IRO_NEW", "value": "x"} in back
+
+
+def t_env_write_rejects_bad_key(tmp):
+    res = iro.env_write_data([{"key": "bad key", "value": "x"}],
+                             path=os.path.join(tmp, ".env"))
+    assert res["ok"] is False and "invalid key" in res["error"]
+
+
+def t_env_write_rejects_duplicate_and_newline(tmp):
+    p = os.path.join(tmp, ".env")
+    r1 = iro.env_write_data([{"key": "A", "value": "1"}, {"key": "A", "value": "2"}], path=p)
+    assert r1["ok"] is False and "duplicate" in r1["error"]
+    r2 = iro.env_write_data([{"key": "A", "value": "a\nb"}], path=p)
+    assert r2["ok"] is False and "line break" in r2["error"]
+
+
+def t_env_write_drops_blank_rows(tmp):
+    p = os.path.join(tmp, ".env")
+    res = iro.env_write_data([{"key": "", "value": ""},
+                              {"key": "A", "value": "1"}], path=p)
+    assert res["ok"] is True
+    assert iro.env_entries_data(path=p)["entries"] == [{"key": "A", "value": "1"}]
+
+
 if __name__ == "__main__":
     import inspect, tempfile
     with tempfile.TemporaryDirectory() as tmp:

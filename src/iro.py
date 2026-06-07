@@ -19,7 +19,7 @@
   iro update [--check] [--yes]          # self-update the binary from GitHub Releases
   iro --version
 """
-import glob, hashlib, json, os, shutil, sys, time, webbrowser
+import glob, hashlib, json, os, re, shutil, sys, time, webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Adapters (added in later tasks) import sibling modules from scripts/ at module
@@ -1246,6 +1246,98 @@ def assets_files_data(roots=None):
         return {"ok": False, "error": f"asset listing failed: {exc}"}
 
 
+_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def env_entries_data(path=None):
+    """The active .env as ordered {key, value} entries for the Settings editor.
+    Missing file -> empty list (not an error). Never raises. Writes nothing —
+    `path` is a test seam; production resolves _env_file()."""
+    try:
+        p = path or _env_file()
+        text = ""
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as fh:
+                text = fh.read()
+        entries = [{"key": k, "value": v} for k, v in parse_env_text(text).items()]
+        return {"ok": True, "path": p, "entries": entries}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not read .env: {exc}"}
+
+
+def _validate_env_entries(entries):
+    """(cleaned [(key,value)], None) on success, (None, error_str) on failure.
+    Blank rows (no key) are dropped; keys must be valid env identifiers, unique;
+    values must not contain line breaks."""
+    seen, pairs = set(), []
+    for e in entries or []:
+        key = str(e.get("key", "")).strip()
+        val = str(e.get("value", ""))
+        if not key:
+            continue
+        if not _ENV_KEY_RE.match(key):
+            return None, (f"invalid key: {key!r} — use letters, digits and "
+                          "underscore, not starting with a digit")
+        if "\n" in val or "\r" in val:
+            return None, f"value for {key} must not contain line breaks"
+        if key in seen:
+            return None, f"duplicate key: {key}"
+        seen.add(key)
+        pairs.append((key, val.strip()))
+    return pairs, None
+
+
+def merge_env_text(original, pairs):
+    """Rewrite .env `original` text with `pairs` (ordered [(key,value)]):
+    update each existing key line in place (keeping its position and the
+    comments/blank lines around it), drop keys the user removed, append brand
+    new keys at the end. Comment and blank lines are always preserved."""
+    wanted = dict(pairs)
+    written = set()
+    out = []
+    for line in original.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in wanted:
+                out.append(f"{key}={wanted[key]}")
+                written.add(key)
+                continue
+            if _ENV_KEY_RE.match(key):          # a real key the user removed
+                continue
+        out.append(line)                        # comment / blank / non-key kept
+    extra = [f"{k}={v}" for k, v in pairs if k not in written]
+    if extra:
+        if out and out[-1].strip():
+            out.append("")
+        out.extend(extra)
+    return "\n".join(out) + "\n"
+
+
+def env_write_data(entries, path=None):
+    """Validate the Settings editor's entries and persist them to .env,
+    preserving comments. Atomic (tmp + os.replace). Writes ONLY the
+    server-resolved path (or the test-supplied `path`), never a client value.
+    Returns {ok:true, path} or {ok:false, error}; never raises."""
+    try:
+        pairs, err = _validate_env_entries(entries)
+        if err:
+            return {"ok": False, "error": err}
+        p = path or _env_file()
+        original = ""
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as fh:
+                original = fh.read()
+        text = merge_env_text(original, pairs)
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp, p)
+        return {"ok": True, "path": p}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not write .env: {exc}"}
+
+
 def tools_status_data(which=None, version=None):
     """Per-tool install presence (+ version when present). On-demand: the
     version probe shells out once per tool. Returns {"ok": True, "tools":[...]}
@@ -1445,6 +1537,8 @@ def ui_cmd(rest):
         "tools": tools_status_data,
         "apps": apps_status_data,
         "preflight": preflight_data,
+        "env_read": env_entries_data,
+        "env_write": env_write_data,
         "jobs": jobs_mod.JobManager(
             lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN, sys.executable,
                                              os.path.join(HERE, "iro.py")),
