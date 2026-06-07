@@ -839,6 +839,9 @@ class ScheduleSource:
                 "last_error": self.last_error}
 
 
+OVERRIDE_TTL = 30  # s: unconfirmed panel write -> HUD falls back to sheet truth
+
+
 class HudSource:
     """Reads the Overlay + Configuration tabs and serves the /hud/data dict
     with last-good caching (mirrors ScheduleSource robustness)."""
@@ -853,6 +856,7 @@ class HudSource:
         self.lock = threading.Lock()
         self._data = None
         self._vocab = {k: [] for k in VOCAB_COLUMNS}
+        self.overrides = {}   # hud-data key -> (value, expires_ts)
         self.last_ok = None
         self.last_error = None
         self._load_cache()
@@ -883,6 +887,9 @@ class HudSource:
         with self.lock:
             self._data = data
             self._vocab = vocab
+            # a sheet poll that already shows the pushed value = confirmation
+            self.overrides = {k: (v, exp) for k, (v, exp) in self.overrides.items()
+                              if data.get(k) != v}
             self.last_ok = time.time()
             self.last_error = None
         try:
@@ -892,9 +899,28 @@ class HudSource:
             pass  # cache write is best-effort; the in-memory HUD data is current
         return True
 
-    def data(self):
+    def set_override(self, key, value, now=None):
+        """Optimistic echo for a panel write: /hud/data shows the value NOW;
+        the sheet poll confirms (clears) it, or it expires after OVERRIDE_TTL."""
+        now = time.time() if now is None else now
         with self.lock:
-            return self._data if self._data is not None else dict(self.EMPTY)
+            self.overrides[key] = (value, now + OVERRIDE_TTL)
+
+    def pending(self):
+        with self.lock:
+            return set(self.overrides)
+
+    def data(self, now=None):
+        now = time.time() if now is None else now
+        with self.lock:
+            self.overrides = {k: (v, exp) for k, (v, exp) in self.overrides.items()
+                              if exp > now}
+            base = self._data if self._data is not None else dict(self.EMPTY)
+            if not self.overrides:
+                return base
+            out = dict(base)
+            out.update({k: v for k, (v, _exp) in self.overrides.items()})
+            return out
 
     def vocab(self):
         with self.lock:

@@ -216,6 +216,49 @@ def t_hudsource_vocab_preserved_on_failure():
     assert hs.vocab()["streamer"] == ["JeGr", "GT45"]   # last-good preserved
 
 
+def _hs():
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    hs = m.HudSource("http://overlay", "http://config",
+                     _os.path.join(d, "hud.cache.json"))
+    hs._fetch = lambda url, timeout=10: OVERLAY_CSV if url == "http://overlay" else CONFIG_CSV
+    hs.refresh()
+    return hs
+
+
+def t_override_applies_immediately():
+    hs = _hs()
+    hs.set_override("raceControl", "Formation Lap", now=1000.0)
+    assert hs.data(now=1001.0)["raceControl"] == "Formation Lap"
+    assert hs.data(now=1001.0)["streamer"] == "JeGr"   # others untouched
+    assert hs.pending() == {"raceControl"}
+
+
+def t_override_expires_back_to_sheet_truth():
+    hs = _hs()
+    hs.set_override("raceControl", "Formation Lap", now=1000.0)
+    assert hs.data(now=1000.0 + m.OVERRIDE_TTL + 1)["raceControl"] == ""
+    assert hs.pending() == set()
+
+
+def t_override_cleared_when_sheet_confirms():
+    hs = _hs()
+    hs.set_override("streamer", "GT45", now=1000.0)
+    confirmed = OVERLAY_CSV.replace(",Streamer,JeGr,", ",Streamer,GT45,")
+    hs._fetch = lambda url, timeout=10: confirmed if url == "http://overlay" else CONFIG_CSV
+    hs.refresh()
+    assert hs.pending() == set()
+    assert hs.data(now=1001.0)["streamer"] == "GT45"
+
+
+def t_override_survives_unconfirmed_refresh():
+    hs = _hs()   # sheet still says JeGr
+    hs.set_override("streamer", "GT45", now=1000.0)
+    hs.refresh()                                       # poll without the new value yet
+    assert hs.data(now=1001.0)["streamer"] == "GT45"   # echo still pending
+    assert hs.pending() == {"streamer"}
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
