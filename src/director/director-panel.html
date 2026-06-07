@@ -424,10 +424,21 @@ CONFIG.macros.forEach(m=>{
 }
 
 FEED_ACTIONS.forEach(([label, path, tag])=>{
-  $("#feedsBus").appendChild(mkKey(label, tag, ()=>relayCall(path), false));
+  const b = mkKey(label, tag, ()=>{
+    // RELOAD tears the running pull -> brief dead air if that feed is on air.
+    if (label.startsWith("RELOAD") &&
+        !confirm(label + ": reconnect the feed — brief interruption if it is on air. Continue?"))
+      return;
+    if (label === "NEXT"){            // double-press guard: two presses = two handovers
+      b.disabled = true;
+      setTimeout(()=>{ b.disabled = false; }, 3000);
+    }
+    relayCall(path);
+  }, false);
+  $("#feedsBus").appendChild(b);
 });
-$("#feedsBus").appendChild(mkKey("SET STINT…", "correct", ()=>{
-  const v = prompt("Stint number now ON AIR (1-based):");
+$("#feedsBus").appendChild(mkKey("FEEDS → STINT…", "correction", ()=>{
+  const v = prompt("Which stint is ON AIR right now? (e.g. 3)");
   if (v === null) return;
   if (!/^\d+$/.test(v.trim())) { log("Stint must be a number.", "err"); return; }
   if (!confirm(`Re-target BOTH feeds to stint ${v.trim()}? This interrupts a running pull — not for mid-program use.`)) return;
@@ -762,9 +773,9 @@ async function timerPoll(){
 
 /* ---------- HUD row (sheet-backed dropdowns; relay-only) ----------
    The "STINT" here is the HUD display LABEL (Setup tab) — unrelated to the
-   feed stint index handled by NEXT / SET STINT in the FEEDS row. */
+   feed stint index handled by NEXT / FEEDS → STINT in the FEEDS row. */
 const SETUP_FIELDS = [
-  ["stint","STINT (HUD LABEL)"], ["streamer","STREAMER"],
+  ["stint","STINT LABEL"], ["streamer","STREAMER"],
   ["session","SESSION"], ["racecontrol","RACE CONTROL"],
 ];
 function escapeHtml(s){
