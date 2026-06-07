@@ -85,6 +85,7 @@ python3 src/iro.py event status      # event-day readiness report (apps + servic
 python3 src/iro.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later)
 python3 src/iro.py event stop        # stop iro services; GUI apps keep running
 python3 src/iro.py tailscale up|down|status  # connect/disconnect/inspect Tailscale (event start connects automatically)
+python3 src/iro.py obs refresh       # force-reload the relay-served OBS browser sources (HUD/timer)
 python3 src/iro.py init              # guided first-time setup: .env gate, install-tools/-apps, cookies, graphics, media, setup, export companion, preflight — with skip-detection (--browser NAME, --skip-installs, --force)
 python3 src/iro.py preflight         # hardware/tool check
 python3 src/iro.py cookies firefox   # refresh YouTube cookies before an event (Firefox recommended; Windows Chrome/Edge exports are blocked by app-bound encryption)
@@ -134,10 +135,14 @@ Keep the four `load_dotenv` copies in sync if you touch one.
   still-graphics dir), `__IRO_SHEET__` (HUD sheet), `__IRO_MEDIA__` (Intro/Outro clip
   dir). The race timer is relay-served (`/timer`, fixed loopback URL in the collection —
   no token); state = Sheet tab `Timer` + `runtime/timer.json`, Director-controlled via
-  `/timer/*` endpoints. **OBS browser sources cache JS aggressively:** after changing
-  `hud.html`/`timer.html`, the source needs a manual refresh in OBS (right-click →
-  Refresh) — auto-reload is not reliable. Anything that must survive a reload
-  therefore lives server-side (`runtime/timer.json`, the Sheet), never in page JS. When you edit scenes inside OBS, re-export and fold it back with
+  `/timer/*` endpoints. **OBS browser sources cache JS aggressively:** after `hud.html`/`timer.html`
+  change, OBS keeps the old page until refreshed. `iro relay start` and
+  `iro event start` do that automatically — a hash gate over the *served* page
+  bytes (`runtime/obs-pages.hash`) triggers obs-websocket `refreshnocache` on
+  every browser source pointing at the relay; `iro obs refresh` forces it. The
+  manual right-click → Refresh remains the fallback when obs-websocket is
+  unreachable. Anything that must survive a reload therefore lives server-side
+  (`runtime/timer.json`, the Sheet), never in page JS. When you edit scenes inside OBS, re-export and fold it back with
   `tools/tokenize-obs.py exported.json src/obs/IRO_Endurance.json`
   (regex-tokenizes sheet URLs + image-source basenames). `src/setup-assets.py` does
   the reverse, injecting real values from `.env` into an importable collection. OBS
