@@ -50,7 +50,7 @@ line per feed, e.g. `A · serving stint 3 (since 1:32:08)`. When a feed has
 been connecting for more than ~30 seconds the line turns amber and warns
 `stream may not be live yet` — usually the streamer simply hasn't started;
 the exact error from the producer's machine is appended when there is one.
-The POV feed joins the line whenever it isn't stopped.
+The POV feed joins the line while it is connecting or serving.
 
 ### Warning banners
 
@@ -61,6 +61,7 @@ while the condition holds and disappear on their own when it is resolved:
 |---|---|---|
 | **RELAY UNREACHABLE** (red) | the panel cannot reach the producer's relay — buttons in FEEDS/TIMER will not work | tell the producer (`iro status` on their side names the problem) |
 | **SHEET SYNC FAILED** (red) | a write to the shared sheet did not go through | tell the producer; re-try the change once the banner clears |
+| **TIMER SHEET SYNC FAILED** (red) | the race timer's state is not reaching the sheet — a producer handover would not pick up the correct remaining time | tell the producer; details in [Race Timer](Race-Timer) |
 | **COOKIES N H OLD** (amber) | the producer's YouTube cookies are stale — the **next handover may fail** | tell the producer: `iro cookies firefox` on the producer machine |
 
 One-off action failures (a button press that didn't take) show as short
@@ -248,10 +249,11 @@ the chain **a few minutes before** you want it on air:
    relay simply keeps retrying every 15 seconds until they are — no harm, but nothing to
    show either.
 4. **Verify it's ready:** the panel's FEEDS health line shows the POV state —
-   wait until it says **serving**. (`CONN` means it's still resolving or the
-   driver isn't live yet — don't show it; the PiP would be black.) No panel
-   open? `http://<producer-tailscale-ip>:8088/status` shows the same: the
-   `pov` block must say `"state": "serving"`.
+   wait until it says **serving**. (Still *connecting* — `CONN` on the strip
+   pill — means it's resolving or the driver isn't live yet: don't show it;
+   the PiP would be black.) No panel open?
+   `http://<producer-tailscale-ip>:8088/status` shows the same: the `pov`
+   block must say `"state": "serving"`.
 5. **Show it:** press **POV Toggle** — allow a couple of seconds for OBS to connect the
    first time. Audio is muted by default; **MUTE POV** / **VOL POV …** (page 2) if you
    want it audible.
