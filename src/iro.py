@@ -420,7 +420,45 @@ def relay_start(rest):
     newpid = sv.start_detached(argv, _relay_log_path(), _relay_pid_path(),
                                env=_frozen_child_env())
     print(f"relay started (pid {newpid}). Watch it: iro relay logs -f")
+    _refresh_obs_pages(wait=10)   # pages may have changed since the last run
     return None
+
+def _obs_pages_hash_path():
+    return os.path.join(_runtime_dir(), "obs-pages.hash")
+
+
+def _refresh_obs_pages(force=False, wait=0):
+    """Refresh the relay-served OBS browser sources (HUD + race timer) when
+    the pages changed since the last successful refresh — replaces the manual
+    right-click → 'Refresh cache of current page' (OBS's CEF caches the page
+    JS until then; a producer updating the package must never go on air with
+    a stale page). Best effort like _release_obs_feeds: one notice, never an
+    exception. wait: seconds to allow a just-spawned relay to open its control
+    port — never refresh against a closed port (the source would load a CEF
+    error page that does not self-recover)."""
+    if not wait_for(_relay_http_ok, wait):
+        print(f"obs: page refresh skipped — relay not responding on port {RELAY_PORT}.")
+        return
+    served = served_pages_hash()
+    decision = refresh_decision(served, read_pages_hash(_obs_pages_hash_path()), force)
+    if decision == "skip-no-pages":
+        print("obs: page refresh skipped — could not read /hud + /timer from the relay.")
+        return
+    if decision == "skip-unchanged":
+        return                              # unchanged pages -> no on-air flicker
+    try:
+        import obs_ws
+        names, note = obs_ws.refresh_browser_inputs(needle=f"127.0.0.1:{RELAY_PORT}")
+    except Exception as exc:                # a start must never fail on this
+        print(f"obs: page refresh skipped ({exc}).")
+        return
+    if note:
+        print(f"obs: page refresh skipped — {note}")
+        return                              # hash kept -> retried on the next start
+    write_pages_hash(_obs_pages_hash_path(), served)   # only confirmed refreshes advance the gate
+    print(f"obs: refreshed browser sources {', '.join(names)}." if names
+          else "obs: no relay browser sources in OBS — nothing to refresh.")
+
 
 def _release_obs_feeds():
     """Make OBS (via obs-websocket) drop its connections to the just-killed
