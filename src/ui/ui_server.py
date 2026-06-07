@@ -6,7 +6,7 @@ v2 Tailscale+password feature are this module's serve() and _allowed().
 Spec: docs/superpowers/specs/2026-06-07-control-center-design.md."""
 import json, os, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 APP_ID = "iro-control-center"
 DEFAULT_PORT = 8089
@@ -65,11 +65,17 @@ def _allowed(_handler):
 def make_handler(ctx):
     """ctx: version, page_path, status() -> dict, ops {name: argv},
     build_argv(name, params) -> argv (raises ValueError), assets() -> dict,
+    asset_files() -> dict, asset_roots {kind: dir},
     tools() -> dict, apps() -> dict, preflight() -> dict,
     jobs (ui_jobs.JobManager), log_paths {name: () -> path|None},
     shutdown() (installed by serve())."""
 
     class Handler(BaseHTTPRequestHandler):
+        _CTYPES = {".png": "image/png", ".jpg": "image/jpeg",
+                   ".jpeg": "image/jpeg", ".webp": "image/webp",
+                   ".gif": "image/gif", ".mp4": "video/mp4",
+                   ".webm": "video/webm", ".mov": "video/quicktime"}
+
         def log_message(self, *args):
             pass                                  # quiet — one consumer, localhost
 
@@ -104,6 +110,22 @@ def make_handler(ctx):
             except Exception:
                 return None
 
+        def _serve_file(self, full):
+            ctype = self._CTYPES.get(os.path.splitext(full)[1].lower(),
+                                     "application/octet-stream")
+            try:
+                with open(full, "rb") as f:
+                    data = f.read()
+            except OSError:
+                return self._not_found("asset not found")
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+            return None
+
         def do_GET(self):
             if not _allowed(self):
                 return self._json({"ok": False, "error": "unauthorized"}, code=401)
@@ -124,6 +146,30 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"assets check failed: {exc}"},
                                       code=500)
+            if path == "/api/assets/files":
+                try:
+                    return self._json(ctx["asset_files"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"asset listing failed: {exc}"},
+                                      code=500)
+            if path.startswith("/api/assets/file/"):
+                rest = path[len("/api/assets/file/"):]
+                kind, _, raw = rest.partition("/")
+                name = unquote(raw)
+                roots = ctx["asset_roots"]
+                # Reject traversal: name must be a bare basename within the root.
+                if (kind not in roots or not name
+                        or name != os.path.basename(name)
+                        or name in (".", "..")):
+                    return self._not_found("asset not found")
+                root = roots[kind]
+                full = os.path.join(root, name)
+                # Defence in depth: the resolved path must stay inside the root.
+                if os.path.realpath(full) != os.path.join(
+                        os.path.realpath(root), name) or not os.path.isfile(full):
+                    return self._not_found("asset not found")
+                return self._serve_file(full)
             if path == "/api/setup":
                 try:
                     return self._json({"tools": ctx["tools"](),

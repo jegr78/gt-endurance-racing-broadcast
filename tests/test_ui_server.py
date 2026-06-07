@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stdlib checks for the Control Center HTTP server (real server on an
 ephemeral port — no fixed ports, CI-safe). Run: python3 tests/test_ui_server.py"""
-import json, os, sys, threading, time, urllib.error, urllib.request
+import json, os, sys, tempfile, threading, time, urllib.error, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -43,6 +43,10 @@ def _ctx(jobs=None):
             "assets": lambda: {"ok": True,
                                "graphics": {"level": "PASS", "detail": "g"},
                                "media": {"level": "PASS", "detail": "m"}},
+            "asset_files": lambda: {"ok": True,
+                                    "graphics": ["Overlay.png"],
+                                    "media": ["intro.mp4"]},
+            "asset_roots": {"graphics": ROOT, "media": ROOT},
             "tools": lambda: {"ok": True, "tools": [
                 {"name": "yt-dlp", "installed": True, "version": "1.2.3"},
                 {"name": "ffmpeg", "installed": False, "version": None}]},
@@ -342,6 +346,61 @@ def t_preflight_route_provider_error_is_500():
     try:
         code, body = _get(port, "/api/preflight")
         assert code == 500 and "gather down" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_asset_files_route():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/assets/files")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["graphics"] == ["Overlay.png"]
+    finally:
+        httpd.shutdown()
+
+
+def t_asset_file_serves_bytes_with_ctype():
+    d = tempfile.mkdtemp()
+    with open(os.path.join(d, "Overlay.png"), "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\nFAKE")
+    ctx = _ctx()
+    ctx["asset_roots"] = {"graphics": d, "media": d}
+    httpd, port = _serve(ctx)
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/assets/file/graphics/Overlay.png")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            assert r.status == 200
+            assert r.headers.get("Content-Type") == "image/png"
+            assert r.read().startswith(b"\x89PNG")
+    finally:
+        httpd.shutdown()
+
+
+def t_asset_file_rejects_traversal():
+    ctx = _ctx()
+    ctx["asset_roots"] = {"graphics": ROOT, "media": ROOT}
+    httpd, port = _serve(ctx)
+    try:
+        for bad in ("/api/assets/file/graphics/..%2F..%2Fsecret",
+                    "/api/assets/file/graphics/%2Fetc%2Fpasswd",
+                    "/api/assets/file/nope/Overlay.png"):
+            code, _b = _get(port, bad)
+            assert code == 404, bad
+    finally:
+        httpd.shutdown()
+
+
+def t_asset_file_missing_is_404():
+    ctx = _ctx()
+    ctx["asset_roots"] = {"graphics": tempfile.mkdtemp(),
+                          "media": tempfile.mkdtemp()}
+    httpd, port = _serve(ctx)
+    try:
+        code, _b = _get(port, "/api/assets/file/graphics/nothere.png")
+        assert code == 404
     finally:
         httpd.shutdown()
 
