@@ -434,7 +434,7 @@ def check_webhook_response(body, expected_action=None):
     still-deployed v1 (timer-only) script -> report it, never a false success."""
     try:
         d = json.loads((body or b"{}").decode("utf-8", "replace"))
-    except ValueError:
+    except (ValueError, AttributeError):
         d = None
     if not isinstance(d, dict) or d.get("ok") is not True:
         snippet = (body or b"")[:120].decode("utf-8", "replace")
