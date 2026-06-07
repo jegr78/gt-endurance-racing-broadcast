@@ -29,7 +29,7 @@ exists.
 |---|---|
 | Refresh mechanism | obs-websocket `PressInputPropertiesButton` with `propertyName: "refreshnocache"` — the exact programmatic equivalent of the manual right-click → Refresh, including cache bypass. Uses the existing minimal client (`src/scripts/obs_ws.py`). |
 | Target selection | All `browser_source` inputs whose `url` points at `127.0.0.1:8088` (HUD + Timer today; any future relay-served page automatically). No hardcoded source names. |
-| When to refresh | Hash-gated (option 1+3 from brainstorming): only when the page content actually changed since the last successful refresh. A mid-event relay restart (`event start --stint N` takeover) must not flicker the on-air HUD. |
+| When to refresh | Hash-gated (option 1+3 from brainstorming): only when the page content actually changed since the last successful refresh. The hash is computed over the bytes the relay actually **serves** (`GET /hud` + `/timer`), not the files on disk — a still-running old relay can then never advance the gate past pages OBS has not seen, and the fetch doubles as the "relay is up" probe. A mid-event relay restart (`event start --stint N` takeover) must not flicker the on-air HUD. |
 | Hooks | `iro relay start`/`restart` (dev scenario) **and** `iro event start` after OBS is up (producer scenario), plus a manual `iro obs refresh` (always refreshes, no gate). |
 | `Cache-Control: no-store` on relay pages | **Rejected.** The cached page is a resilience feature: if OBS starts while the relay is down, the cached page loads, polls, and recovers by itself once the relay is up. With `no-store` the source would show a CEF error page that never recovers. Staleness is busted surgically via `refreshnocache` instead of disabling caching. |
 | Error handling | Fully best-effort, same model as `_release_obs_feeds()`: any failure prints one notice and the start continues. The hash is persisted **only on a successful refresh**, so a missed refresh (OBS not running) is retried on the next hook. |
@@ -40,7 +40,7 @@ exists.
 iro relay start ──spawn──> relay daemon
       └─ wait until http://127.0.0.1:8088/status responds (poll, ~10 s cap)
            └─ refresh_if_stale()
-                ├─ hash(hud.html + timer.html) == runtime/obs-pages.hash? → done (no flicker)
+                ├─ hash(GET /hud + GET /timer) == runtime/obs-pages.hash? → done (no flicker)
                 └─ differs →
                      ├─ obs-websocket: GetInputList(browser_source)
                      ├─ filter inputs: settings.url contains "127.0.0.1:8088"
@@ -69,10 +69,13 @@ following the `release_feed_inputs()` pattern:
 
 ### 2. Staleness gate
 
-- Hash: SHA-256 over the bytes of `hud.html` + `timer.html` (the two
-  OBS-source pages; `/panel` is a tablet page, not an OBS source). Page paths
-  resolve the same way the relay resolves them (repo `src/obs/` or frozen
-  `sys._MEIPASS/src/obs/`).
+- Hash: SHA-256 over the concatenated response bytes of `GET /hud` and
+  `GET /timer` from the running relay (the two OBS-source pages; `/panel` is a
+  tablet page, not an OBS source). Hashing what the relay *serves* (instead of
+  the files on disk) closes an update race: after a binary update with the old
+  relay still running, a file hash would refresh OBS against old served pages
+  and wrongly persist the new hash. If any page cannot be fetched (relay down,
+  `--no-hud`/`--no-timer`), the hook skips with a notice and keeps the hash.
 - State file: `runtime/obs-pages.hash` (plain hex digest, one line).
 - `refresh_if_stale()`: compare → skip on match; on mismatch attempt the
   refresh and persist the new hash **only if the refresh succeeded**. OBS
