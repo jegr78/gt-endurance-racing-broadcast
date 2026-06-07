@@ -274,26 +274,19 @@ class _Session:
                                      f"{msg['d'].get('requestStatus')}")
                 return msg["d"].get("responseData", {})
 
+    def close(self):
+        try:
+            self.sock.sendall(encode_frame(b"", opcode=0x8))   # polite close
+        except OSError:
+            pass  # OBS may have dropped the socket first — close is courtesy only
+        self.sock.close()
 
-def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
-                        password=None, timeout=2.0):
-    """Make OBS drop its connections to the (just killed) relay feed ports by
-    re-applying each feed input's own settings — a forced source rebuild that
-    closes the socket without changing anything (see module docstring).
 
-    Returns (released_input_names, note). Best effort by design: any failure —
-    OBS not running, wrong password, protocol surprise — yields ([], reason)
-    and NEVER an exception; stopping the relay must always go through.
-    """
-    cfg = read_ws_config(default_config_path())
-    if port is None:
-        port = (cfg or {}).get("port") or DEFAULT_PORT
-    if password is None:
-        password = find_password(os.environ, default_config_path())
-    try:
-        sock = socket.create_connection((host, port), timeout=timeout)
-    except OSError:
-        return [], f"OBS WebSocket not reachable on {host}:{port} (OBS not running?)"
+def _open_session(host, port, password, timeout):
+    """Connect + WebSocket upgrade + obs-websocket identify. Returns an
+    identified _Session; raises on any failure (callers translate that into
+    their best-effort (names, note) contract)."""
+    sock = socket.create_connection((host, port), timeout=timeout)
     try:
         sock.settimeout(timeout)
         key = base64.b64encode(os.urandom(16)).decode()
@@ -310,6 +303,42 @@ def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
         identified = session.next_json()
         if identified.get("op") != 2:
             raise ValueError("OBS WebSocket identify failed")
+        return session
+    except Exception:
+        sock.close()
+        raise
+
+
+def _connect(host, port, password, timeout):
+    """(session, "") or (None, reason). Port + password fall back to OBS's own
+    obs-websocket config / IRO_OBS_WS_PASSWORD; never raises."""
+    cfg = read_ws_config(default_config_path())
+    if port is None:
+        port = (cfg or {}).get("port") or DEFAULT_PORT
+    if password is None:
+        password = find_password(os.environ, default_config_path())
+    try:
+        return _open_session(host, port, password, timeout), ""
+    except OSError:
+        return None, f"OBS WebSocket not reachable on {host}:{port} (OBS not running?)"
+    except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        return None, str(exc) or exc.__class__.__name__
+
+
+def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
+                        password=None, timeout=2.0):
+    """Make OBS drop its connections to the (just killed) relay feed ports by
+    re-applying each feed input's own settings — a forced source rebuild that
+    closes the socket without changing anything (see module docstring).
+
+    Returns (released_input_names, note). Best effort by design: any failure —
+    OBS not running, wrong password, protocol surprise — yields ([], reason)
+    and NEVER an exception; stopping the relay must always go through.
+    """
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return [], note
+    try:
         inputs = session.request("GetInputList",
                                  {"inputKind": "ffmpeg_source"}).get("inputs", [])
         settings = {}                                # filled by the name filter
@@ -324,13 +353,8 @@ def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
             session.request("SetInputSettings",      # unchanged -> rebuild only
                             {"inputName": name, "inputSettings": settings[name],
                              "overlay": True})
-        try:
-            sock.sendall(encode_frame(b"", opcode=0x8))   # polite close
-        except OSError:
-            pass  # OBS may have dropped the socket first — close is courtesy only
         return names, ""
     except Exception as exc:                         # noqa: BLE001 — see docstring
-        reason = str(exc) or exc.__class__.__name__
-        return [], f"could not release OBS feed inputs: {reason}"
+        return [], str(exc) or exc.__class__.__name__
     finally:
-        sock.close()
+        session.close()
