@@ -65,11 +65,13 @@ iro init
 
 It skips whatever is already done, so re-running it is always safe. It pauses
 for the things only you can do: filling in `.env` and — when cookies are
-missing or stale — logging into YouTube in Firefox. At the end it prints the
-remaining manual steps (importing the OBS collection and the Companion config,
-signing in to Tailscale) — those are described in detail in the sections
-below, and letting Companion control OBS (section 7) and Discord audio
-(section 10) still need their one-time manual setup too.
+missing or stale — logging into YouTube in Firefox (cookie details and the
+before-each-event refresh:
+[Relay — how the feeds work](Relay-Mode#2-get-youtube-cookies-before-each-event)).
+At the end it prints the remaining manual steps (importing the OBS collection
+and the Companion config, signing in to Tailscale) — those are described in
+detail in the sections below, and letting Companion control OBS (section 7)
+still needs its one-time manual setup too.
 
 Flags: `--browser NAME` (cookie export browser, default `firefox`),
 `--skip-installs` (no admin rights), `--force` (re-run every step).
@@ -154,8 +156,11 @@ iro setup --out runtime/IRO_Endurance.import.json
 
 Then in OBS: **Scene Collection → Import →** pick that file, and switch to it. Don't move
 the folder afterwards. (Running `iro setup` before the downloads also works — it only
-warns and OBS shows those sources black until the files exist.) Step-by-step:
-[OBS & scenes](OBS-Setup).
+warns and OBS shows those sources black until the files exist.) The collection already
+includes the **Discord Audio Capture** source for the interviews, set up for your OS —
+on macOS just grant OBS the *Screen & System Audio Recording* permission and keep
+Discord windowed. Step-by-step (incl. Discord audio):
+[OBS & scenes](OBS-Setup#5-discord-audio-interviews).
 
 ## 6 — Import the Companion buttons
 
@@ -189,31 +194,7 @@ people) at [login.tailscale.com](https://login.tailscale.com/admin/users); they 
 Tailscale and sign in too. A director can then open `http://100.x.y.z:8000/tablet` to drive
 the show. More: [Director guide](Director).
 
-## 9 — Get YouTube cookies
-
-```bash
-iro cookies firefox  # recommended on every OS (macOS alternatives: safari, chrome, edge)
-```
-
-This lets the feeds bypass YouTube's bot check. **Firefox is the recommended source on
-every OS** — no prompts anywhere, and it works even while Firefox is running. OS notes: on
-**Windows**, Chrome/Edge/Brave **cannot** be exported (their cookies are app-bound
-encrypted since Chrome 127); on **macOS**, Chrome/Edge show a Keychain prompt and Safari
-needs Full Disk Access. Refresh before each event — cookies expire.
-
-## 10 — Discord audio (only the producer who runs interviews)
-
-Interviews happen at the end over Discord voice. Add the Discord audio source in OBS:
-
-- **macOS:** *App Audio Capture* bound to Discord — keep Discord **windowed** (not
-  fullscreen) and grant OBS *Screen & System Audio Recording* permission.
-- **Windows:** *Application Audio Capture (BETA)* → pick Discord.
-- **Linux:** *Application Audio Capture* (PipeWire) or an *Audio Output Capture* monitor
-  source — *should work, not yet tested on Linux.*
-
-Don't also capture Discord via desktop audio, or you'll hear it twice.
-
-## 11 — Pre-flight check
+## 9 — Pre-flight check
 
 ```bash
 iro preflight
