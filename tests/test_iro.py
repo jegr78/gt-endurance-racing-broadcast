@@ -73,6 +73,29 @@ def t_tailscale_bad_verb_raises():
     _raises(lambda: m.route(["tailscale", "restart"]))
 
 
+def t_obs_refresh_route():
+    assert m.route(["obs", "refresh"]) == \
+        {"kind": "service", "command": "obs", "verb": "refresh", "rest": []}
+
+
+def t_obs_bad_verb_raises():
+    _raises(lambda: m.route(["obs"]))
+    _raises(lambda: m.route(["obs", "bogus"]))
+
+
+def t_obs_refresh_cmd_exits_when_relay_down():
+    old = m._relay_http_ok
+    m._relay_http_ok = lambda: False
+    try:
+        try:
+            m.obs_refresh_cmd([])
+            raise AssertionError("expected SystemExit")
+        except SystemExit as e:
+            assert "relay not responding" in str(e.code)
+    finally:
+        m._relay_http_ok = old
+
+
 def t_http_url():
     assert m._http_url("127.0.0.1", 8088, "/panel") == "http://127.0.0.1:8088/panel"
     assert m._http_url("100.64.10.20", 8000, "/tablet") == "http://100.64.10.20:8000/tablet"

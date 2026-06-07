@@ -10,6 +10,7 @@
   iro event     status|start|stop      # event-day readiness: check / bring-up / wind-down
   iro event start --stint N             # takeover: stint N is on air now — the relay starts there
   iro tailscale up|down|status          # connect / disconnect / inspect Tailscale
+  iro obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
   iro status                            # aggregate health of all services
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   iro export companion [--out PATH]     # write the Companion button config
@@ -323,6 +324,7 @@ HIDDEN_VERBS = {"streams": ("run-feed",)}
 ONESHOTS = ("preflight", "cookies", "graphics", "media", "setup", "install-tools", "install-apps", "update")
 EVENT_VERBS = ("status", "start", "stop")
 TAILSCALE_VERBS = ("up", "down", "status")
+OBS_VERBS = ("refresh",)
 
 USAGE = __doc__
 
@@ -353,6 +355,11 @@ def route(argv):
         if verb not in TAILSCALE_VERBS:
             raise ValueError(f"usage: iro tailscale {{{'|'.join(TAILSCALE_VERBS)}}}")
         return {"kind": "service", "command": "tailscale", "verb": verb, "rest": rest[1:]}
+    if cmd == "obs":
+        verb = rest[0] if rest else None
+        if verb not in OBS_VERBS:
+            raise ValueError(f"usage: iro obs {{{'|'.join(OBS_VERBS)}}}")
+        return {"kind": "service", "command": "obs", "verb": verb, "rest": rest[1:]}
     if cmd == "init":
         return {"kind": "init", "rest": rest}
     if cmd in ONESHOTS:
@@ -458,6 +465,17 @@ def _refresh_obs_pages(force=False, wait=0):
     write_pages_hash(_obs_pages_hash_path(), served)   # only confirmed refreshes advance the gate
     print(f"obs: refreshed browser sources {', '.join(names)}." if names
           else "obs: no relay browser sources in OBS — nothing to refresh.")
+
+
+def obs_refresh_cmd(_rest):
+    """Force-refresh every relay-served browser source — the scriptable
+    right-click → Refresh (no staleness gate)."""
+    # Upfront probe for a real exit code + directive message; _refresh_obs_pages
+    # re-probes internally (best-effort, exit 0) — accepted localhost double GET.
+    if not _relay_http_ok():
+        sys.exit(f"obs: relay not responding on port {RELAY_PORT} — start it first "
+                 "(refreshing against a dead relay loads an error page in OBS).")
+    _refresh_obs_pages(force=True)
 
 
 def _release_obs_feeds():
@@ -991,6 +1009,7 @@ DISPATCH = {
     ("event", "stop"): event_stop,
     ("tailscale", "up"): tailscale_up_cmd, ("tailscale", "down"): tailscale_down_cmd,
     ("tailscale", "status"): tailscale_status_cmd,
+    ("obs", "refresh"): obs_refresh_cmd,
 }
 
 ONESHOT_MAP = {
