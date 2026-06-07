@@ -10,7 +10,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src")
 # Bundled data, laid out under _MEIPASS/src/ so every script's here-relative
 # path resolution (hud.html, assets/, OBS template) keeps working unchanged.
-DATA = ["relay", "scripts", "obs", "assets", "companion", "director", "setup-assets.py"]
+DATA = ["relay", "scripts", "obs", "assets", "companion", "director", "ui", "setup-assets.py"]
 
 # The bundled scripts (relay, oneshots) are loaded at runtime via importlib, so
 # PyInstaller's static analyser cannot see their imports.  List every stdlib
@@ -24,6 +24,8 @@ HIDDEN_STDLIB = [
     "ctypes", "dataclasses", "socket",
     # hud.html data endpoint (iro-feeds.py uses csv, io at module level)
     "csv", "io",
+    # ui_jobs.py (loaded via importlib through ui_server.py)
+    "uuid",
 ]
 
 
@@ -120,7 +122,37 @@ def smoke(binary, version):
             if "_MEI" in fh.read():
                 sys.exit("smoke setup FAILED: the localized collection references "
                          "the throwaway _MEIPASS unpack dir (paths die with the process)")
-    print("Smoke test OK (--version, status, event status, export companion, setup).")
+    # `ui` starts the Control Center server in-process from the bundled
+    # src/ui/ modules — catches a missing ui/ in DATA (ModuleNotFoundError).
+    import time
+    import urllib.request
+    env = os.environ.copy()
+    env["IRO_UI_PORT"] = "8389"
+    ui = subprocess.Popen([binary, "ui", "--no-browser"], env=env,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    try:
+        body = b""
+        for _ in range(20):                 # up to ~10 s for the server to bind
+            time.sleep(0.5)
+            try:
+                with urllib.request.urlopen("http://127.0.0.1:8389/api/ping",
+                                            timeout=2) as r:
+                    body = r.read()
+                break
+            except OSError:
+                if ui.poll() is not None:   # crashed before binding
+                    break
+        if b"iro-control-center" not in body:
+            out = ui.stdout.read().decode("utf-8", "replace") if ui.poll() is not None else ""
+            sys.exit(f"smoke ui FAILED: no Control Center ping on :8389 "
+                     f"(rc={ui.poll()}) out={out!r}")
+        urllib.request.urlopen(urllib.request.Request(
+            "http://127.0.0.1:8389/api/quit", method="POST", data=b""), timeout=5).read()
+        ui.wait(timeout=10)
+    finally:
+        if ui.poll() is None:
+            ui.kill()
+    print("Smoke test OK (--version, status, event status, export companion, setup, ui).")
 
 
 if __name__ == "__main__":
