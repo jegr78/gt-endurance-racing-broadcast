@@ -1601,6 +1601,11 @@ def main():
     if cookies:
         try: os.chmod(cookies, 0o600)   # contains a live YouTube session — owner-only
         except OSError: pass            # best-effort hardening; never block startup
+    if cookies:
+        _ch = cookie_health(cookies)
+        if _ch["stale"]:
+            print(f"WARN: cookies.txt is {_ch['age_h']:.0f} h old — cookies rotate; "
+                  "run 'iro cookies firefox' before the event.")
 
     # Locate the director panel (shipped in the package root, one level up from relay/)
     panel_path = None
@@ -1688,7 +1693,9 @@ def main():
         except OSError as e:
             print(f"  (warn) could not bind {addr}:{args.http_port} — {e}")
     if not servers:
-        sys.exit(f"Could not bind the control server on {bind_addrs} port {args.http_port}.")
+        sys.exit(f"Could not bind the control server on {bind_addrs} port {args.http_port} "
+                 f"— port may already be in use: run 'iro preflight' or 'iro status' "
+                 f"to see what holds it.")
 
     def shutdown(*_):
         # IMPORTANT: do NOT call shutdown() from the thread running serve_forever()
