@@ -597,7 +597,7 @@ def companion_start(rest):
     ts = _tailscale_ip()
     desired = cc.desired_bind_ip(bind_arg, ts)
     if bind_arg == "auto" and not ts:
-        print("  (warn) no Tailscale IP found — binding 127.0.0.1 (local only).")
+        print("companion: no Tailscale IP — the tablet will be reachable on this machine only.")
     plan = cc.plan_companion_action(current, desired, _companion_running(cc))
     if plan["stop_first"]:
         print("Stopping Companion to change its bind address…")

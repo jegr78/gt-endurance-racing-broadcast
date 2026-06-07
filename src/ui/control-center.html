@@ -124,6 +124,12 @@
            border-color:var(--accent); background:#283352; }
   button:active { transform:scale(.97); }
   button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  a.linkbtn { display:inline-flex; align-items:center; gap:6px; min-height:34px;
+           background:#232C42; color:var(--accent); border:1px solid var(--line);
+           border-radius:8px; padding:6px 13px; font-size:13px; font-weight:500;
+           text-decoration:none; transition:border-color .2s, background .2s; }
+  a.linkbtn:hover { border-color:var(--accent); background:#283352; }
+  a.linkbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
   .navitem:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
   button.danger { color:#FCA5A5; }
   button.danger svg { stroke:#F87171; }
@@ -322,15 +328,19 @@
             <span class="dim grow" id="evd-obs"></span></div>
           <div class="row"><span class="name">Relay</span>
             <span class="badge" id="ev-relay"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="evd-relay"></span></div>
+            <span class="dim grow" id="evd-relay"></span>
+            <a class="linkbtn" id="ev-relay-open" target="_blank" rel="noopener" hidden>Open panel ↗</a>
+            <button id="ev-relay-copy" hidden onclick="copyLink(this)">Copy link</button></div>
           <div class="row"><span class="name">Companion</span>
             <span class="badge" id="ev-companion"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="evd-companion"></span></div>
+            <span class="dim grow" id="evd-companion"></span>
+            <a class="linkbtn" id="ev-companion-open" target="_blank" rel="noopener" hidden>Open tablet ↗</a>
+            <button id="ev-companion-copy" hidden onclick="copyLink(this)">Copy link</button></div>
           <div class="row"><span class="name">Streams</span>
             <span class="badge" id="ev-streams"><span class="dot"></span><span>…</span></span>
             <span class="dim grow" id="evd-streams"></span></div>
         </section>
-        <p class="evnote">Start brings up Tailscale, Discord, OBS, relay and Companion (optional stint = mid-event takeover). Stop only stops the iro services — OBS, Discord and Tailscale keep running; quit them manually if needed.</p>
+        <p class="evnote">Start brings up Tailscale, Discord, OBS, relay and Companion (optional stint = mid-event takeover). Stop only stops the iro services — OBS, Discord and Tailscale keep running; quit them manually if needed. Use <b>Copy link</b> to share the Companion tablet and Director panel URLs with your directors (they reach them over Tailscale).</p>
       </div>
 
       <!-- ===== Apps ===== -->
@@ -506,6 +516,37 @@ function updateEventView(s) {
   const core = [tsUp, !!ar.discord, !!ar.obs, relayUp, compUp];
   $('ev-summary').textContent =
     core.filter(Boolean).length + ' of ' + core.length + ' core services up';
+  // Shareable links for the directors. Companion's url is already its bound
+  // address; the panel link prefers the Tailscale IP so a remote director can
+  // reach it over the tailnet (falls back to localhost when Tailscale is down).
+  setShareLink('ev-companion-open', 'ev-companion-copy', s.companion.url || '');
+  const panelUrl = (relayUp && s.relay.http_ok)
+    ? 'http://' + (s.tailscale_ip || '127.0.0.1') + ':' + s.relay.port + '/panel'
+    : '';
+  setShareLink('ev-relay-open', 'ev-relay-copy', panelUrl);
+}
+
+function setShareLink(openId, copyId, url) {
+  const a = $(openId), b = $(copyId);
+  a.hidden = b.hidden = !url;
+  if (url) { a.href = url; b.dataset.url = url; }
+}
+
+async function copyLink(btn) {
+  const url = btn.dataset.url;
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch (e) {                          // clipboard API blocked — textarea fallback
+    const ta = document.createElement('textarea');
+    ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try { document.execCommand('copy'); } catch (e2) { /* give up silently */ }
+    ta.remove();
+  }
+  const orig = btn.textContent;
+  btn.textContent = 'Copied ✓';
+  setTimeout(() => { btn.textContent = orig; }, 1200);
 }
 
 async function refresh() {
@@ -520,7 +561,8 @@ async function refresh() {
     relayUp ? (s.relay.http_ok ? 'control OK on port ' + s.relay.port
                                : 'port ' + s.relay.port + ' not responding') : '');
   $('panel-link').hidden = !(relayUp && s.relay.http_ok);
-  $('panel-link').href = 'http://127.0.0.1:' + s.relay.port + '/panel';
+  $('panel-link').href = 'http://' + (s.tailscale_ip || '127.0.0.1') +
+                         ':' + s.relay.port + '/panel';
   setBadge('companion', s.companion.running, 'RUNNING', 'stopped',
            s.companion.url || s.companion.why);
   const up = s.streams.filter(f => f.alive).length;
