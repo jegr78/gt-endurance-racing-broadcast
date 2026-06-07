@@ -59,6 +59,12 @@
   .badge.on { background:rgba(34,197,94,.12); color:#4ADE80;
               border-color:rgba(34,197,94,.35); }
   .badge.on .dot { background:var(--ok); animation:pulse 2s ease-out infinite; }
+  .badge.warn { background:rgba(245,158,11,.12); color:#FCD34D;
+                border-color:rgba(245,158,11,.35); }
+  .badge.warn .dot { background:var(--warn); }
+  .badge.fail { background:rgba(239,68,68,.12); color:#FCA5A5;
+                border-color:rgba(239,68,68,.35); }
+  .badge.fail .dot { background:var(--bad); }
   @keyframes pulse {
     0%   { box-shadow:0 0 0 0 rgba(34,197,94,.45); }
     70%  { box-shadow:0 0 0 6px rgba(34,197,94,0); }
@@ -100,6 +106,11 @@
            border-radius:8px; padding:7px 10px; font-size:13px; min-height:34px;
            cursor:pointer; }
   select:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  input[type=number] { background:#232C42; color:var(--txt); width:78px;
+           border:1px solid var(--line); border-radius:8px; padding:7px 10px;
+           font:13px var(--mono); min-height:34px; }
+  input[type=number]:focus-visible { outline:2px solid var(--accent);
+           outline-offset:2px; }
 </style>
 </head>
 <body>
@@ -147,6 +158,13 @@
         <svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>Up</button>
       <button class="danger" onclick="op('tailscale-down', true)">
         <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Down</button></div>
+    <div class="row"><span class="name">Event</span>
+      <span class="dim grow">Bring the stack up (Tailscale, Discord, relay, OBS, Companion) / stop iro services</span>
+      <input id="stint" type="number" min="1" placeholder="stint" aria-label="Stint number for mid-event takeover">
+      <button onclick="opEventStart()">
+        <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button>
+      <button class="danger" onclick="op('event-stop', true)">
+        <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button></div>
     <div class="row"><span class="name">OBS pages</span>
       <span class="dim grow">Reload the relay-served HUD/timer browser sources</span>
       <button onclick="op('obs-refresh')">
@@ -155,8 +173,57 @@
   <section id="job" hidden>
     <h2>Job: <span id="jobtitle" style="color:var(--txt)"></span>
         <span class="spin" id="jobspin"></span>
-        <span id="jobchip" hidden></span></h2>
+        <span id="jobchip" hidden></span>
+        <span class="spacer"></span>
+        <button class="danger" id="jobcancel" hidden onclick="cancelJob()">
+          <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Cancel</button></h2>
     <pre id="joblog"></pre>
+  </section>
+  <section>
+    <h2>Setup &amp; Assets</h2>
+    <div class="row"><span class="name">Cookies</span>
+      <span class="badge" id="b-cookies"><span class="dot"></span><span>…</span></span>
+      <span class="dim grow" id="d-cookies"></span>
+      <select id="browser" aria-label="Browser to export YouTube cookies from">
+        <option value="firefox" selected>firefox</option>
+        <option value="chrome">chrome</option>
+        <option value="edge">edge</option>
+        <option value="brave">brave</option>
+        <option value="safari">safari</option>
+      </select>
+      <button onclick="op('cookies', false, {browser: $('browser').value})">
+        <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button></div>
+    <div class="row"><span class="name">Graphics</span>
+      <span class="badge" id="b-graphics"><span class="dot"></span><span>unchecked</span></span>
+      <span class="dim grow" id="d-graphics"></span>
+      <button onclick="op('graphics')">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
+    <div class="row"><span class="name">Media</span>
+      <span class="badge" id="b-media"><span class="dot"></span><span>unchecked</span></span>
+      <span class="dim grow" id="d-media"></span>
+      <button onclick="op('media')">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
+    <div class="row"><span class="name">Assets</span>
+      <span class="dim grow">Verify graphics/media against the sheet's Assets tab (fetches the sheet)</span>
+      <button onclick="checkAssets()">
+        <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Check</button></div>
+    <div class="row"><span class="name">OBS setup</span>
+      <span class="dim grow">Write the localized OBS collection into runtime/ (import it in OBS afterwards)</span>
+      <button onclick="op('setup')">Export</button></div>
+    <div class="row"><span class="name">Companion</span>
+      <span class="dim grow">Write the button config into runtime/ (import it in Companion afterwards)</span>
+      <button onclick="op('export-companion')">Export</button></div>
+    <div class="row"><span class="name">Tools</span>
+      <span class="dim grow">yt-dlp / streamlink / ffmpeg / deno</span>
+      <button onclick="op('install-tools', true)">Install</button>
+      <button onclick="op('install-tools', true, {update: true})">Update</button></div>
+    <div class="row"><span class="name">Apps</span>
+      <span class="dim grow">OBS / Companion / Tailscale / Discord</span>
+      <button onclick="op('install-apps', true)">Install</button>
+      <button onclick="op('install-apps', true, {update: true})">Update</button></div>
+    <div class="row"><span class="name">Preflight</span>
+      <span class="dim grow">Hardware / tools / config check</span>
+      <button onclick="op('preflight')">Run</button></div>
   </section>
   <section>
     <h2>Service logs</h2>
@@ -201,24 +268,38 @@ async function refresh() {
                             : 'no feeds started');
   setBadge('ts', !!s.tailscale_ip, 'CONNECTED', 'down',
            s.tailscale_ip || 'not connected');
+  if (s.cookies) setLevelBadge('cookies', s.cookies.level,
+      s.cookies.level === 'PASS' ? 'FRESH' : s.cookies.level, s.cookies.detail);
 }
 
-async function op(name, confirmFirst) {
+async function op(name, confirmFirst, params) {
   if (confirmFirst && !confirm('Run ' + name + '?')) return;
   let r;
   try {
-    r = await (await fetch('/api/op/' + name, {method: 'POST'})).json();
+    r = await (await fetch('/api/op/' + name, {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({params: params || {}})})).json();
   } catch (e) { alert('Control Center not reachable.'); return; }
   if (!r.ok) { alert(r.error); return; }
   watchJob(name, r.job_id);
 }
 
+function opEventStart() {
+  const v = $('stint').value.trim();
+  op('event-start', true, v ? {stint: v} : {});
+}
+
+let jobId = null, jobCancelled = false;
+
 function watchJob(name, id) {
   if (jobES) jobES.close();
+  jobId = id;
+  jobCancelled = false;
   $('job').hidden = false;
   $('jobtitle').textContent = name;
   $('jobspin').hidden = false;
   $('jobchip').hidden = true;
+  $('jobcancel').hidden = false;
   $('joblog').textContent = '';
   jobES = new EventSource('/api/jobs/' + id + '/stream');
   jobES.onmessage = e => {
@@ -228,13 +309,54 @@ function watchJob(name, id) {
   jobES.addEventListener('done', e => {
     const ok = e.data === '0';
     $('jobspin').hidden = true;
+    $('jobcancel').hidden = true;
     const chip = $('jobchip');
     chip.hidden = false;
     chip.className = 'chip ' + (ok ? 'ok' : 'fail');
-    chip.textContent = ok ? 'done' : 'failed (exit ' + e.data + ')';
+    chip.textContent = ok ? 'done'
+                          : (jobCancelled ? 'cancelled'
+                                          : 'failed (exit ' + e.data + ')');
     jobES.close();
     refresh();
+    if (name === 'graphics' || name === 'media') checkAssets();
   });
+}
+
+async function cancelJob() {
+  if (!jobId) return;
+  jobCancelled = true;
+  try { await fetch('/api/jobs/' + jobId + '/cancel', {method: 'POST'}); }
+  catch (e) {}
+}
+
+function setLevelBadge(key, level, text, detail) {
+  const b = $('b-' + key);
+  b.classList.remove('on', 'warn', 'fail');
+  if (level === 'PASS') b.classList.add('on');
+  else if (level === 'WARN') b.classList.add('warn');
+  else if (level === 'FAIL') b.classList.add('fail');
+  b.lastElementChild.textContent = text;
+  $('d-' + key).textContent = detail || '';
+}
+
+async function checkAssets() {
+  setLevelBadge('graphics', '', 'checking…', '');
+  setLevelBadge('media', '', 'checking…', '');
+  let a;
+  try {
+    a = await (await fetch('/api/assets', {cache: 'no-store'})).json();
+  } catch (e) { a = {ok: false, error: 'Control Center not reachable'}; }
+  if (!a.ok) {
+    setLevelBadge('graphics', 'WARN', 'ERROR', a.error || 'check failed');
+    setLevelBadge('media', 'WARN', 'ERROR', '');
+    return;
+  }
+  setLevelBadge('graphics', a.graphics.level,
+                a.graphics.level === 'PASS' ? 'COMPLETE' : a.graphics.level,
+                a.graphics.detail);
+  setLevelBadge('media', a.media.level,
+                a.media.level === 'PASS' ? 'COMPLETE' : a.media.level,
+                a.media.detail);
 }
 
 function watchLog(name) {
