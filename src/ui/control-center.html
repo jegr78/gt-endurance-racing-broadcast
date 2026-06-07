@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<!-- IRO Control Center — producer web UI served by `iro ui` (ui_server.py).
+     Single static file, inline CSS/JS, no framework, no build step (same
+     model as director-panel.html). All state lives server-side; this page
+     only polls /api/status and renders SSE streams. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IRO Control Center</title>
+<style>
+  :root { --bg:#14161a; --card:#1d2127; --line:#2c323b; --txt:#e8eaed;
+          --dim:#9aa3ad; --ok:#2e9e5b; --bad:#5a6472; --accent:#3b82f6;
+          --danger:#c94f4f; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui, sans-serif; background:var(--bg);
+         color:var(--txt); }
+  header { display:flex; align-items:center; gap:12px; padding:14px 20px;
+           border-bottom:1px solid var(--line); }
+  header h1 { font-size:17px; margin:0; }
+  header .ver { color:var(--dim); font-size:12px; }
+  header .spacer { flex:1; }
+  main { max-width:1100px; margin:0 auto; padding:20px; display:grid; gap:16px; }
+  section { background:var(--card); border:1px solid var(--line);
+            border-radius:10px; padding:16px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em;
+       color:var(--dim); margin:0 0 12px; }
+  .row { display:flex; align-items:center; gap:10px; padding:8px 0;
+         border-top:1px solid var(--line); flex-wrap:wrap; }
+  .row:first-of-type { border-top:0; }
+  .name { width:110px; font-weight:600; }
+  .badge { padding:2px 10px; border-radius:99px; font-size:12px;
+           background:var(--bad); }
+  .badge.on { background:var(--ok); }
+  .dim { color:var(--dim); font-size:12px; }
+  .grow { flex:1; min-width:120px; }
+  button { background:#262c35; color:var(--txt); border:1px solid var(--line);
+           border-radius:7px; padding:6px 12px; cursor:pointer; font-size:13px; }
+  button:hover { border-color:var(--accent); }
+  button.danger:hover { border-color:var(--danger); }
+  a { color:var(--accent); }
+  pre { background:#0d0f12; border:1px solid var(--line); border-radius:8px;
+        padding:10px; height:280px; overflow:auto; white-space:pre-wrap;
+        margin:8px 0 0; font-size:12px; }
+  select { background:#262c35; color:var(--txt); border:1px solid var(--line);
+           border-radius:7px; padding:6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>IRO Control Center</h1><span class="ver" id="ver"></span>
+  <span class="spacer"></span>
+  <a id="panel-link" href="#" target="_blank" hidden>Director panel</a>
+  <button class="danger" onclick="quitUi()">Quit</button>
+</header>
+<main>
+  <section>
+    <h2>Dashboard</h2>
+    <div class="row"><span class="name">Relay</span>
+      <span class="badge" id="b-relay">…</span>
+      <span class="dim grow" id="d-relay"></span>
+      <button onclick="op('relay-start')">Start</button>
+      <button class="danger" onclick="op('relay-stop', true)">Stop</button>
+      <button onclick="op('relay-restart', true)">Restart</button></div>
+    <div class="row"><span class="name">Companion</span>
+      <span class="badge" id="b-companion">…</span>
+      <span class="dim grow" id="d-companion"></span>
+      <button onclick="op('companion-start')">Start</button>
+      <button class="danger" onclick="op('companion-stop', true)">Stop</button>
+      <button onclick="op('companion-restart', true)">Restart</button></div>
+    <div class="row"><span class="name">Streams</span>
+      <span class="badge" id="b-streams">…</span>
+      <span class="dim grow" id="d-streams"></span>
+      <button onclick="op('streams-start')">Start</button>
+      <button class="danger" onclick="op('streams-stop', true)">Stop</button></div>
+    <div class="row"><span class="name">Tailscale</span>
+      <span class="badge" id="b-ts">…</span>
+      <span class="dim grow" id="d-ts"></span></div>
+    <div class="row"><span class="name">OBS pages</span>
+      <span class="dim grow">Reload the relay-served HUD/timer browser sources</span>
+      <button onclick="op('obs-refresh')">Refresh</button></div>
+  </section>
+  <section id="job" hidden>
+    <h2>Job: <span id="jobtitle"></span></h2>
+    <pre id="joblog"></pre>
+  </section>
+  <section>
+    <h2>Service logs</h2>
+    <select id="logsel" onchange="watchLog(this.value)">
+      <option value="">— select a log —</option>
+      <option value="relay">relay</option>
+      <option value="companion">companion</option>
+      <option value="streams">streams</option>
+    </select>
+    <pre id="svclog"></pre>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let jobES = null, logES = null;
+
+function setBadge(key, on, onText, offText, detail) {
+  const b = $('b-' + key);
+  b.textContent = on ? onText : offText;
+  b.classList.toggle('on', on);
+  $('d-' + key).textContent = detail || '';
+}
+
+async function refresh() {
+  let s;
+  try {
+    s = await (await fetch('/api/status', {cache: 'no-store'})).json();
+  } catch (e) { return; }            // server gone (quit) — keep the last state
+  if (!s.ok) return;                 // status provider error — keep the last state
+  $('ver').textContent = s.version;
+  const relayUp = s.relay.alive;
+  setBadge('relay', relayUp, 'RUNNING', 'stopped',
+    relayUp ? (s.relay.http_ok ? 'control OK on port ' + s.relay.port
+                               : 'port ' + s.relay.port + ' not responding') : '');
+  $('panel-link').hidden = !(relayUp && s.relay.http_ok);
+  $('panel-link').href = 'http://127.0.0.1:' + s.relay.port + '/panel';
+  setBadge('companion', s.companion.running, 'RUNNING', 'stopped',
+           s.companion.url || s.companion.why);
+  const up = s.streams.filter(f => f.alive).length;
+  setBadge('streams', up > 0, 'RUNNING', 'stopped',
+           s.streams.length ? up + '/' + s.streams.length + ' feeds up'
+                            : 'no feeds started');
+  setBadge('ts', !!s.tailscale_ip, 'connected', 'down',
+           s.tailscale_ip || 'not connected');
+}
+
+async function op(name, confirmFirst) {
+  if (confirmFirst && !confirm('Run ' + name + '?')) return;
+  let r;
+  try {
+    r = await (await fetch('/api/op/' + name, {method: 'POST'})).json();
+  } catch (e) { alert('Control Center not reachable.'); return; }
+  if (!r.ok) { alert(r.error); return; }
+  watchJob(name, r.job_id);
+}
+
+function watchJob(name, id) {
+  if (jobES) jobES.close();
+  $('job').hidden = false;
+  $('jobtitle').textContent = name;
+  $('joblog').textContent = '';
+  jobES = new EventSource('/api/jobs/' + id + '/stream');
+  jobES.onmessage = e => {
+    $('joblog').textContent += e.data + '\n';
+    $('joblog').scrollTop = 1e9;
+  };
+  jobES.addEventListener('done', e => {
+    $('joblog').textContent += '— finished (exit ' + e.data + ') —\n';
+    $('jobtitle').textContent = name + ' (done)';
+    jobES.close();
+    refresh();
+  });
+}
+
+function watchLog(name) {
+  if (logES) { logES.close(); logES = null; }
+  $('svclog').textContent = '';
+  if (!name) return;
+  logES = new EventSource('/api/logs/' + name + '/stream');
+  logES.onmessage = e => {
+    $('svclog').textContent += e.data + '\n';
+    $('svclog').scrollTop = 1e9;
+  };
+}
+
+async function quitUi() {
+  if (!confirm('Quit the Control Center? Relay/Companion/streams keep running.')) return;
+  try { await fetch('/api/quit', {method: 'POST'}); } catch (e) {}
+  document.body.innerHTML =
+    '<p style="padding:30px;font:14px system-ui">Control Center stopped — you can close this tab.</p>';
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

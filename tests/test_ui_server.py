@@ -173,6 +173,17 @@ def t_job_stream_unknown_id_is_404():
         httpd.shutdown()
 
 
+def t_root_serves_the_page():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/")
+        assert code == 200
+        assert b"IRO Control Center" in body
+        assert b"/api/status" in body          # the page talks to our API
+    finally:
+        httpd.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
