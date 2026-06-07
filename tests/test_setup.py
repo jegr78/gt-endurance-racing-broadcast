@@ -41,6 +41,41 @@ def t_webhook_garbage_body():
     assert not ok
 
 
+# ---------- schedule rows (url + name) ----------
+
+SCHED_CSV = ('"https://www.youtube.com/watch?v=abc",Matt\n'
+             '"UCLA_DiR1FfKNvjuUpBHmylQ",NASA\n'
+             '"UCoMdktPbSTixAyNGwb-UYkQ"\n')
+
+
+def t_parse_rows_url_and_name():
+    rows = m.ScheduleSource._parse_rows(SCHED_CSV)
+    assert rows == [("https://www.youtube.com/watch?v=abc", "Matt"),
+                    ("UCLA_DiR1FfKNvjuUpBHmylQ", "NASA"),
+                    ("UCoMdktPbSTixAyNGwb-UYkQ", "")], rows
+
+
+def t_parse_rows_empty_is_none():
+    assert m.ScheduleSource._parse_rows("url\n\n") is None
+
+
+def t_parse_csv_still_returns_urls():
+    items = m.ScheduleSource._parse_csv(SCHED_CSV)
+    assert items[0] == "https://www.youtube.com/watch?v=abc"
+    assert len(items) == 3
+
+
+def t_schedule_source_get_rows():
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    s = m.ScheduleSource("http://sched", _os.path.join(d, "cache.txt"), None)
+    s.fetch = lambda timeout=15: m.ScheduleSource._parse_rows(SCHED_CSV)
+    assert s.refresh() is True
+    assert s.get() == ["https://www.youtube.com/watch?v=abc",
+                       "UCLA_DiR1FfKNvjuUpBHmylQ", "UCoMdktPbSTixAyNGwb-UYkQ"]
+    assert s.get_rows()[1] == ("UCLA_DiR1FfKNvjuUpBHmylQ", "NASA")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

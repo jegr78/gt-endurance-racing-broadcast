@@ -746,11 +746,14 @@ class ScheduleSource:
         self.local_fallback = local_fallback
         self.lock = threading.Lock()
         self.items = []
+        self.rows = []
         self.last_ok = None
         self.last_error = None
 
     @staticmethod
-    def _parse_csv(text):
+    def _parse_rows(text):
+        """CSV -> [(url, name)] rows. The URL column is auto-detected (most
+        cells matching is_channel); the name is the cell right of it."""
         rows = list(csv.reader(io.StringIO(text)))
         if not rows:
             return None
@@ -762,9 +765,15 @@ class ScheduleSource:
                 best_cnt, best_col = cnt, c
         if best_col is None or best_cnt == 0:
             return None
-        items = [r[best_col].strip() for r in rows
-                 if len(r) > best_col and is_channel(r[best_col])]
-        return items or None
+        out = [(r[best_col].strip(),
+                (r[best_col + 1].strip() if len(r) > best_col + 1 else ""))
+               for r in rows if len(r) > best_col and is_channel(r[best_col])]
+        return out or None
+
+    @staticmethod
+    def _parse_csv(text):
+        rows = ScheduleSource._parse_rows(text)
+        return [u for u, _n in rows] if rows else None
 
     def fetch(self, timeout=15):
         if not self.csv_url:
@@ -773,26 +782,27 @@ class ScheduleSource:
             req = Request(self.csv_url, headers={"User-Agent": "iro-feeds/1.0"})
             with urlopen(req, timeout=timeout) as resp:
                 text = resp.read().decode("utf-8", "replace")
-            items = self._parse_csv(text)
-            if not items:
+            rows = self._parse_rows(text)
+            if not rows:
                 self.last_error = ("Sheet reachable, but no channel IDs found "
                                    "(correct tab name? a column with UC… IDs / watch URLs? sharing?)")
                 return None
-            return items
+            return rows
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e}"
             return None
 
     def refresh(self, timeout=15):
-        items = self.fetch(timeout)
-        if items:
+        rows = self.fetch(timeout)
+        if rows:
             with self.lock:
-                self.items = items
+                self.rows = rows
+                self.items = [u for u, _n in rows]
                 self.last_ok = time.time()
                 self.last_error = None
             try:
                 with open(self.cache_path, "w", encoding="utf-8") as fh:
-                    fh.write("\n".join(items) + "\n")
+                    fh.write("\n".join(self.get()) + "\n")
             except Exception:
                 pass  # cache write is best-effort; the in-memory schedule is current
             return True
@@ -811,6 +821,7 @@ class ScheduleSource:
                 if items:
                     with self.lock:
                         self.items = items
+                        self.rows = [(u, "") for u in items]
                     print(f"WARN: sheet unreachable ({self.last_error}). "
                           f"Using {label}: {len(items)} stints.")
                     return
@@ -830,6 +841,10 @@ class ScheduleSource:
     def get(self):
         with self.lock:
             return list(self.items)
+
+    def get_rows(self):
+        with self.lock:
+            return list(self.rows)
 
     def health(self):
         with self.lock:
