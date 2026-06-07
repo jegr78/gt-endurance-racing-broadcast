@@ -58,7 +58,10 @@ def _ctx(jobs=None):
                     {"level": "PASS", "name": "RAM", "detail": "32 GB"}]}]},
             "jobs": jobs or ui_jobs.JobManager(
                 lambda a: [sys.executable, "-c", "print('hi from job')"]),
-            "log_paths": {}}
+            "log_paths": {},
+            "env_read": lambda: {"ok": True, "path": "/x/.env",
+                                 "entries": [{"key": "IRO_SHEET_ID", "value": "abc"}]},
+            "env_write": lambda entries: {"ok": True, "path": "/x/.env", "_got": entries}}
 
 
 def _serve(ctx):
@@ -401,6 +404,71 @@ def t_asset_file_missing_is_404():
     try:
         code, _b = _get(port, "/api/assets/file/graphics/nothere.png")
         assert code == 404
+    finally:
+        httpd.shutdown()
+
+
+def t_env_get_route():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/env")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["entries"][0]["key"] == "IRO_SHEET_ID"
+    finally:
+        httpd.shutdown()
+
+
+def t_env_get_route_error_is_500():
+    ctx = _ctx()
+    def boom():
+        raise RuntimeError("disk gone")
+    ctx["env_read"] = boom
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/env")
+        assert code == 500 and "disk gone" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_env_post_saves_entries():
+    seen = []
+    ctx = _ctx()
+    ctx["env_write"] = lambda entries: seen.append(entries) or {"ok": True, "path": "/x/.env"}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/env",
+                                {"entries": [{"key": "A", "value": "1"}]})
+        assert code == 200 and json.loads(body)["ok"] is True
+        assert seen == [[{"key": "A", "value": "1"}]]
+    finally:
+        httpd.shutdown()
+
+
+def t_env_post_validation_error_is_400():
+    ctx = _ctx()
+    ctx["env_write"] = lambda entries: {"ok": False, "error": "invalid key: 'bad key'"}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/env", {"entries": [{"key": "bad key", "value": "x"}]})
+        assert code == 400 and "invalid key" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_env_post_malformed_body_is_400():
+    httpd, port = _serve(_ctx())
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/env", method="POST",
+            data=b"{not json", headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                code = r.status
+        except urllib.error.HTTPError as e:
+            code = e.code
+        assert code == 400
     finally:
         httpd.shutdown()
 

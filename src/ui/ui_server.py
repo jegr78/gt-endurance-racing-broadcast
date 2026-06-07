@@ -67,6 +67,7 @@ def make_handler(ctx):
     build_argv(name, params) -> argv (raises ValueError), assets() -> dict,
     asset_files() -> dict, asset_roots {kind: dir},
     tools() -> dict, apps() -> dict, preflight() -> dict,
+    env_read() -> dict, env_write(entries) -> dict,
     jobs (ui_jobs.JobManager), log_paths {name: () -> path|None},
     shutdown() (installed by serve())."""
 
@@ -185,6 +186,13 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"preflight check failed: {exc}"},
                                       code=500)
+            if path == "/api/env":
+                try:
+                    return self._json(ctx["env_read"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not read .env: {exc}"},
+                                      code=500)
             if path.startswith("/api/jobs/") and path.endswith("/stream"):
                 job_id = path.split("/")[3]
                 return self._stream_job(job_id) if job_id else self._not_found("unknown job")
@@ -207,6 +215,18 @@ def make_handler(ctx):
                 if result is None:
                     return self._not_found("unknown job")
                 return self._json({"ok": True, "cancelled": result})
+            if path == "/api/env":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["env_write"](body.get("entries") or [])
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not write .env: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
             if path.startswith("/api/op/"):
                 name = path[len("/api/op/"):]
                 if name not in ctx["ops"]:
