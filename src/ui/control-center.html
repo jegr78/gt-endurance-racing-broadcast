@@ -213,6 +213,7 @@
   .thumb .cap { font:11px var(--mono); color:var(--dim); padding:6px 8px;
            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .gallery-empty { color:var(--faint); font:12px var(--mono); padding:10px 8px; }
+  .evnote { color:var(--dim); font:12px/1.6 var(--mono); margin:14px 2px 0; }
   .lightbox { position:fixed; inset:0; z-index:100; padding:40px;
            background:rgba(2,6,23,.86); display:flex; align-items:center;
            justify-content:center; cursor:zoom-out; }
@@ -302,19 +303,34 @@
       <!-- ===== Event ===== -->
       <div class="view" data-view="event" hidden>
         <div class="viewhead"><h2>Event</h2>
+          <span class="sub" id="ev-summary"></span>
           <span class="spacer"></span>
-          <span class="sub">bring the whole stack up / down</span></div>
+          <input id="stint" type="number" min="1" placeholder="stint" aria-label="Stint number for mid-event takeover">
+          <button onclick="opEventStart()">
+            <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start event</button>
+          <button class="danger" onclick="op('event-stop', true)">
+            <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop event</button></div>
         <section>
-          <div class="row"><span class="name">Start</span>
-            <span class="dim grow">Bring everything up — Tailscale, Discord, relay, OBS, Companion. Optional stint = mid-event takeover (the given stint is treated as on air).</span>
-            <input id="stint" type="number" min="1" placeholder="stint" aria-label="Stint number for mid-event takeover">
-            <button onclick="opEventStart()">
-              <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button></div>
-          <div class="row"><span class="name">Stop</span>
-            <span class="dim grow">Stop the iro services (relay, …). The GUI apps (OBS, Companion, Discord) keep running.</span>
-            <button class="danger" onclick="op('event-stop', true)">
-              <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button></div>
+          <div class="row"><span class="name">Tailscale</span>
+            <span class="badge" id="ev-tailscale"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="evd-tailscale"></span></div>
+          <div class="row"><span class="name">Discord</span>
+            <span class="badge" id="ev-discord"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="evd-discord"></span></div>
+          <div class="row"><span class="name">OBS</span>
+            <span class="badge" id="ev-obs"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="evd-obs"></span></div>
+          <div class="row"><span class="name">Relay</span>
+            <span class="badge" id="ev-relay"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="evd-relay"></span></div>
+          <div class="row"><span class="name">Companion</span>
+            <span class="badge" id="ev-companion"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="evd-companion"></span></div>
+          <div class="row"><span class="name">Streams</span>
+            <span class="badge" id="ev-streams"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="evd-streams"></span></div>
         </section>
+        <p class="evnote">Start brings up Tailscale, Discord, OBS, relay and Companion (optional stint = mid-event takeover). Stop only stops the iro services — OBS, Discord and Tailscale keep running; quit them manually if needed.</p>
       </div>
 
       <!-- ===== Apps ===== -->
@@ -456,11 +472,40 @@ function toggleConsole(force) {
   else c.classList.toggle('collapsed');
 }
 
-function setBadge(key, on, onText, offText, detail) {
-  const b = $('b-' + key);
+function setBadgeEl(badgeId, detailId, on, onText, offText, detail) {
+  const b = $(badgeId);
   b.lastElementChild.textContent = on ? onText : offText;
   b.classList.toggle('on', on);
-  $('d-' + key).textContent = detail || '';
+  if (detailId) $(detailId).textContent = detail || '';
+}
+
+function setBadge(key, on, onText, offText, detail) {
+  setBadgeEl('b-' + key, 'd-' + key, on, onText, offText, detail);
+}
+
+function updateEventView(s) {
+  const ar = s.apps_running || {};
+  const tsUp = !!s.tailscale_ip, relayUp = s.relay.alive,
+        compUp = s.companion.running,
+        strAlive = s.streams.filter(f => f.alive).length;
+  setBadgeEl('ev-tailscale', 'evd-tailscale', tsUp, 'CONNECTED', 'down',
+             s.tailscale_ip || 'not connected');
+  setBadgeEl('ev-discord', 'evd-discord', !!ar.discord, 'RUNNING', 'not running',
+             ar.discord ? 'process running' : 'launched by Start');
+  setBadgeEl('ev-obs', 'evd-obs', !!ar.obs, 'RUNNING', 'not running',
+             ar.obs ? 'process running' : 'launched by Start');
+  setBadgeEl('ev-relay', 'evd-relay', relayUp, 'RUNNING', 'stopped',
+             relayUp ? (s.relay.http_ok ? 'control OK on port ' + s.relay.port
+                                        : 'port ' + s.relay.port + ' not responding')
+                     : 'iro service');
+  setBadgeEl('ev-companion', 'evd-companion', compUp, 'RUNNING', 'stopped',
+             s.companion.url || s.companion.why || '');
+  setBadgeEl('ev-streams', 'evd-streams', strAlive > 0, 'RUNNING', 'stopped',
+             s.streams.length ? strAlive + '/' + s.streams.length + ' feeds up'
+                              : 'no feeds');
+  const core = [tsUp, !!ar.discord, !!ar.obs, relayUp, compUp];
+  $('ev-summary').textContent =
+    core.filter(Boolean).length + ' of ' + core.length + ' core services up';
 }
 
 async function refresh() {
@@ -486,6 +531,7 @@ async function refresh() {
            s.tailscale_ip || 'not connected');
   if (s.cookies) setLevelBadge('cookies', s.cookies.level,
       s.cookies.level === 'PASS' ? 'FRESH' : s.cookies.level, s.cookies.detail);
+  updateEventView(s);
 }
 
 async function op(name, confirmFirst, params) {
