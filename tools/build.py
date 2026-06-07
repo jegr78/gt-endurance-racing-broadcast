@@ -48,6 +48,7 @@ def main():
     cp("assets", "assets")
     cp("scripts", "scripts")
     cp("relay", "relay")  # iro-feeds.py + get-cookies.py
+    cp("ui", "ui")        # Control Center server + page
 
     # intro/outro clips: download into the package so the artifact is self-contained.
     # Best-effort — offline / code-only builds must still succeed (the shipped
@@ -146,6 +147,8 @@ def main():
         "installer-common shipped": os.path.isfile(os.path.join(PKG, "scripts", "installer_common.py")),
         "old entrypoint removed: scripts/start-companion.py": not os.path.isfile(os.path.join(PKG, "scripts", "start-companion.py")),
         "old entrypoint removed: scripts/stop-companion.py": not os.path.isfile(os.path.join(PKG, "scripts", "stop-companion.py")),
+        "ui server shipped": os.path.isfile(os.path.join(PKG, "ui", "ui_server.py")),
+        "ui page shipped": os.path.isfile(os.path.join(PKG, "ui", "control-center.html")),
     }
     bad = [k for k, v in checks.items() if not v]
     print(f"Built {PKG}")

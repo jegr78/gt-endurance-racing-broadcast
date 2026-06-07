@@ -184,6 +184,15 @@ def t_root_serves_the_page():
         httpd.shutdown()
 
 
+def t_probe_instance_classifies():
+    ours = json.dumps({"app": us.APP_ID}).encode()
+    assert us.probe_instance("h", 1, fetch=lambda h, p: ours) == "ours"
+    assert us.probe_instance("h", 1, fetch=lambda h, p: b"nope") == "foreign"
+    def boom(h, p):
+        raise OSError("connection refused")
+    assert us.probe_instance("h", 1, fetch=boom) == "free"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

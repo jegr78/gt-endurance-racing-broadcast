@@ -540,6 +540,11 @@ def t_wait_for_polls_until_deadline():
                       sleep=lambda s: None) is True               # checks at least once
 
 
+def t_route_ui():
+    assert m.route(["ui"]) == {"kind": "ui", "rest": []}
+    assert m.route(["ui", "--no-browser"]) == {"kind": "ui", "rest": ["--no-browser"]}
+
+
 def _raises(fn):
     try:
         fn()

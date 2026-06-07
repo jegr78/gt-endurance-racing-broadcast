@@ -12,6 +12,7 @@
   iro tailscale up|down|status          # connect / disconnect / inspect Tailscale
   iro obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
   iro status                            # aggregate health of all services
+  iro ui [--no-browser]                 # local Control Center web app (port 8089 / IRO_UI_PORT)
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   iro export companion [--out PATH]     # write the Companion button config
   iro init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
@@ -360,6 +361,8 @@ def route(argv):
         if verb not in OBS_VERBS:
             raise ValueError(f"usage: iro obs {{{'|'.join(OBS_VERBS)}}}")
         return {"kind": "service", "command": "obs", "verb": verb, "rest": rest[1:]}
+    if cmd == "ui":
+        return {"kind": "ui", "rest": rest}
     if cmd == "init":
         return {"kind": "init", "rest": rest}
     if cmd in ONESHOTS:
@@ -1272,6 +1275,64 @@ def _init_steps(opts):
     return [{"key": k, "label": ins.STEP_LABELS[k], **by_key[k]}
             for k in ins.build_plan(opts["skip_installs"])]
 
+def _ui_modules():
+    """src/ui modules — path-inserted like scripts/ (kept out of the module-level
+    insert: only `iro ui` needs them)."""
+    ui_dir = os.path.join(HERE, "ui") if not IS_FROZEN else os.path.join(
+        _src_base(True, getattr(sys, "_MEIPASS", ""), HERE), "ui")
+    if ui_dir not in sys.path:
+        sys.path.insert(0, ui_dir)
+    import ui_jobs, ui_ops, ui_server
+    return ui_server, ui_jobs, ui_ops
+
+
+def ui_cmd(rest):
+    """Run the Control Center web server in the foreground (Ctrl+C stops it).
+    Spec: docs/superpowers/specs/2026-06-07-control-center-design.md."""
+    srv, jobs_mod, ops_mod = _ui_modules()
+    for key, val in _read_env_file().items():
+        os.environ.setdefault(key, val)        # IRO_UI_PORT from .env (env wins)
+    port = srv.ui_port(os.environ)
+    instance = srv.probe_instance("127.0.0.1", port)
+    if instance == "ours":
+        print(f"Control Center already running on port {port} — opening the browser.")
+        _open_url(_http_url("127.0.0.1", port, "/"))
+        return None
+    if instance == "foreign":
+        sys.exit(f"iro: port {port} is in use by another application — set "
+                 "IRO_UI_PORT in .env to a free port and retry.")
+    ctx = {
+        "version": version(),
+        "page_path": resource_path("ui/control-center.html"),
+        "status": ui_status_payload,
+        "ops": ops_mod.OPS,
+        "jobs": jobs_mod.JobManager(
+            lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN, sys.executable,
+                                             os.path.join(HERE, "iro.py")),
+            env=_frozen_child_env()),
+        "log_paths": {"relay": _relay_log_path,
+                      "companion": _companion_log_path,
+                      "streams": _latest_stream_log},
+    }
+    try:
+        httpd = srv.serve(ctx, "127.0.0.1", port)
+    except OSError as exc:
+        sys.exit(f"iro: could not bind port {port} ({exc}) — set IRO_UI_PORT "
+                 "in .env to a free port and retry.")
+    url = _http_url("127.0.0.1", port, "/")
+    print(f"Control Center: {url}  (Ctrl+C or the Quit button stops it)")
+    if "--no-browser" not in rest:
+        _open_url(url)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        httpd.server_close()
+    print("Control Center stopped — relay/companion/streams keep running.")
+    return None
+
+
 def init_cmd(rest):
     """Guided first-time setup: every automatable step in dependency order,
     pausing only at the manual gates. Spec:
@@ -1313,6 +1374,8 @@ def main(argv=None):
         if not fn:
             sys.exit(f"iro: {action['command']} {action['verb']} not implemented yet")
         return fn(action["rest"])
+    if action["kind"] == "ui":
+        return ui_cmd(action["rest"])
     if action["kind"] == "init":
         return init_cmd(action["rest"])
     if action["kind"] == "oneshot":
