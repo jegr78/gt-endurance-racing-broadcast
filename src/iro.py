@@ -389,15 +389,24 @@ def _relay_http_ok():
         return False
 
 
-def _relay_extra():
-    parts = []
-    if _relay_http_ok():
-        parts.append(f"control http://127.0.0.1:{RELAY_PORT}/status OK")
-    else:
-        parts.append(f"(port {RELAY_PORT} not responding)")
-    ts = _tailscale_ip()
-    if ts:
-        parts.append(f"tablet/panel http://{ts}:{RELAY_PORT}/panel")
+def relay_status_data(read_pid=None, alive=None, http_ok=None):
+    """Structured relay state — one source for `iro status` (text) and the
+    Control Center's /api/status (JSON). Injection points are for tests."""
+    read_pid = read_pid or sv.read_pid
+    alive = alive or sv.pid_alive
+    http_ok = http_ok or _relay_http_ok
+    pid = read_pid(_relay_pid_path())
+    is_alive = alive(pid)
+    return {"pid": pid, "alive": is_alive, "port": RELAY_PORT,
+            "http_ok": http_ok() if is_alive else False}
+
+
+def _relay_extra_text(data, tailscale_ip):
+    """The CLI's extra column for a live relay, from relay_status_data()."""
+    parts = [f"control http://127.0.0.1:{data['port']}/status OK" if data["http_ok"]
+             else f"(port {data['port']} not responding)"]
+    if tailscale_ip:
+        parts.append(f"tablet/panel http://{tailscale_ip}:{data['port']}/panel")
     return "  ".join(parts)
 
 def _companion_tablet_port():
@@ -525,9 +534,9 @@ def relay_restart(rest):
     relay_start(rest)
 
 def relay_status(rest):
-    pid = sv.read_pid(_relay_pid_path())
-    alive = sv.pid_alive(pid)
-    print(sv.status_line("relay", pid, alive, _relay_extra() if alive else ""))
+    d = relay_status_data()
+    extra = _relay_extra_text(d, _tailscale_ip()) if d["alive"] else ""
+    print(sv.status_line("relay", d["pid"], d["alive"], extra))
 
 def relay_logs(rest):
     sv.tail(_relay_log_path(), follow=("-f" in rest or "--follow" in rest))
