@@ -174,7 +174,11 @@ Too large for one milestone — three phases, each independently shippable:
    dashboard, service start/stop, log tails (SSE), quit, `iro ui`
    subcommand. Usable from `python3 src/iro.py ui` / the dev tree.
 2. **Jobs** — job manager + every one-shot action (installs, graphics,
-   media, cookies, setup, preflight, export companion, event start/stop).
+   media, cookies, setup, preflight, export companion, event start/stop),
+   plus a "Setup & Assets" dashboard section surfacing readiness state:
+   cookies freshness and graphics/media completeness vs the sheet's Assets
+   tab (the `event status` facts, refactored print → dict like Phase 1 did
+   for the service statuses).
 3. **Init wizard + packaging** — init step decomposition, wizard UI, the
    `iro-ui` binary (per-OS targets), release/CI integration.
 
