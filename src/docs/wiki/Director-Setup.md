@@ -35,8 +35,8 @@ start` prints both URLs ready to forward, see
 
 | Bookmark | What it is |
 |---|---|
-| `http://<producer-ip>:8088/panel` | the **director panel** — the whole show in one browser tab |
-| `http://<producer-ip>:8000/tablet` | the **Companion buttons** — the big-button board |
+| `http://<producer-tailscale-ip>:8088/panel` | the **director panel** — the whole show in one browser tab |
+| `http://<producer-tailscale-ip>:8000/tablet` | the **Companion buttons** — the big-button board |
 
 Add both as bookmarks (or **Add to Home Screen** on a tablet).
 
