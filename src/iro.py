@@ -1168,21 +1168,26 @@ def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None,
 
 
 def cookies_status_data(status=None):
-    """Local cookie-jar freshness (no network — safe for the 3 s poll)."""
-    if status is None:
-        pf = _event_modules()[1]
-        path = os.path.join(_runtime_dir(), "cookies.txt")
-        def status():
-            return pf.cookies_status(path)
-    res = status()
-    return {"level": res.level, "detail": res.detail}
+    """Local cookie-jar freshness (no network — safe for the 3 s poll;
+    never raises — a broken probe must not 500 the status poll)."""
+    try:
+        if status is None:
+            pf = _event_modules()[1]
+            path = os.path.join(_runtime_dir(), "cookies.txt")
+
+            def status():
+                return pf.cookies_status(path)
+        res = status()
+        return {"level": res.level, "detail": res.detail}
+    except Exception as exc:
+        return {"level": "WARN", "detail": f"check failed: {exc}"}
 
 
 def assets_status_data(state=None):
     """Sheet-driven graphics/media readiness (network: sheet fetch, takes
     seconds — served on demand via /api/assets, never from the status poll)."""
-    ev = _event_modules()[0]
     try:
+        ev = _event_modules()[0]
         g_dir, m_dir, missing_g, missing_m = (state or _asset_state)(ev)
     except Exception as exc:
         return {"ok": False, "error": f"asset check failed: {exc}"}

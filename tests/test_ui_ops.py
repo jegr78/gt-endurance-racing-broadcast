@@ -183,8 +183,15 @@ def t_build_argv_rejects_unknown_params():
 def t_cookies_status_data_shape():
     class R:
         level, detail = "PASS", "fresh (1 h old)"
-    d = iro.cookies_status_data(status=lambda: R)
+    d = iro.cookies_status_data(status=lambda: R())
     assert d == {"level": "PASS", "detail": "fresh (1 h old)"}
+
+
+def t_cookies_status_data_never_raises():
+    def boom():
+        raise RuntimeError("probe broke")
+    d = iro.cookies_status_data(status=boom)
+    assert d["level"] == "WARN" and "probe broke" in d["detail"]
 
 
 def t_assets_status_data_complete(tmp):
