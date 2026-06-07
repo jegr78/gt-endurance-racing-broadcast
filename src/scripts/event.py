@@ -235,6 +235,24 @@ def classify_env(sheet_id, push_url):
     return Result(PASS, ".env", "IRO_SHEET_ID and IRO_SHEET_PUSH_URL set")
 
 
+def director_urls(ts_ip, companion_port=8000, relay_port=8088):
+    """Printable 'Share with your directors' block for `iro event start`.
+    Pure: the caller supplies the detected Tailscale IP (or None) and
+    Companion's web port (config.json `http_port`, default 8000)."""
+    lines = ["Share with your directors:"]
+    if not ts_ip:
+        lines.append("  Tailscale not connected — directors cannot connect "
+                     "remotely (iro tailscale up).")
+        return lines
+    lines += [
+        f"  Director panel:     http://{ts_ip}:{relay_port}/panel",
+        f"  Companion buttons:  http://{ts_ip}:{companion_port}/tablet",
+        "  (panel scene/audio control also needs the OBS WebSocket password "
+        "— OBS → Tools → WebSocket Server Settings)",
+    ]
+    return lines
+
+
 GO_LIVE_REMINDER = Result(
     INFO, "HUD overlay",
     "Before going LIVE: refresh the HUD overlay and HUD Race Timer browser "

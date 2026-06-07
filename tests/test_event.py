@@ -225,6 +225,27 @@ def t_wait_until_up():
     assert polls["k"] == 3                  # True after 3 polls, then cached
 
 
+def t_director_urls():
+    lines = m.director_urls("100.64.1.2", companion_port=8000)
+    assert lines[0] == "Share with your directors:"
+    assert "http://100.64.1.2:8088/panel" in lines[1]
+    assert "http://100.64.1.2:8000/tablet" in lines[2]
+    assert "OBS WebSocket password" in lines[3]
+    # custom companion port flows through to the tablet URL
+    assert "8123/tablet" in m.director_urls("100.64.1.2", companion_port=8123)[2]
+    # custom relay port flows through to the panel URL
+    assert "9001/panel" in m.director_urls("100.64.1.2", relay_port=9001)[1]
+
+
+def t_director_urls_no_tailscale():
+    # No tailnet IP -> a notice instead of URLs (directors cannot connect)
+    lines = m.director_urls(None)
+    assert len(lines) == 2
+    assert lines[0] == "Share with your directors:"
+    assert "Tailscale not connected" in lines[1]
+    assert "iro tailscale up" in lines[1]
+
+
 def _raises(fn, exc=ValueError):
     try:
         fn()
