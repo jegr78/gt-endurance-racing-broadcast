@@ -50,6 +50,10 @@
   .st b{color:var(--ink);font-weight:600}
   .st.air{border-color:var(--air);color:#ff8080;box-shadow:0 0 12px var(--air-glow)}
   .st.air b{color:#ffb3b3}
+  .st.ok{border-color:var(--live);color:#8fe6b0}
+  .st.ok b{color:#baf5d0}
+  .st.warn{border-color:var(--amber);color:#ffd361}
+  .st.warn b{color:#ffe49a}
   .led{display:flex;align-items:center;gap:7px;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
   .dot{width:12px;height:12px;border-radius:50%;background:#3a434d;box-shadow:0 0 0 3px rgba(255,255,255,.03)}
   .dot.on{background:var(--live);box-shadow:0 0 14px var(--live-glow),0 0 0 3px rgba(43,214,106,.12)}
@@ -121,6 +125,8 @@
   .mute.muted{border-color:var(--air);color:var(--air);background:#26100f;box-shadow:0 0 12px var(--air-glow)}
 
   .hint{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5}
+  #feedHealth{min-height:0}
+  #feedHealth .warnline{color:#ffd361}
 
   /* ---------- setup dropdowns (sheet-backed) ---------- */
   .setrow{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
@@ -213,7 +219,12 @@
 
   <section class="bus pgm"><div class="cap">PGM</div><div class="keys" id="pgmBus"></div></section>
 
-  <section class="bus"><div class="cap">Feeds</div><div class="keys" id="feedsBus"></div></section>
+  <section class="bus"><div class="cap">Feeds</div>
+    <div class="body">
+      <div class="keys" id="feedsBus"></div>
+      <div class="hint" id="feedHealth"></div>
+    </div>
+  </section>
 
   <section class="bus"><div class="cap">HUD</div>
     <div class="body">
@@ -353,7 +364,7 @@ function relayLed(ok){ $("#ledRelay").className = "dot" + (ok?" on":" err"); }
    announce one-off action failures (~6 s); the log keeps the history. */
 const banners = {};   // id -> {level: "red"|"amber", msg}
 function setBanner(id, level, msg){
-  if (banners[id] && banners[id].msg === msg) return;
+  if (banners[id] && banners[id].msg === msg && banners[id].level === level) return;
   banners[id] = {level, msg}; renderBanners();
 }
 function clearBanner(id){
@@ -603,19 +614,65 @@ function setEnabled(on){
 }
 
 /* ---------- relay status strip (works without OBS) ---------- */
+/* state -> [pill suffix, pill css class]; durations/staleness come from the
+   relay (state_age_s, cookies_health) — this file only renders. */
+const FEED_STATE = {serving:["LIVE","ok"], connecting:["CONN","warn"],
+                    idle:["IDLE",""], stopped:["STOPPED",""]};
+function fmtDur(s){
+  s = Math.max(0, Math.floor(s));
+  const h = Math.floor(s/3600), mi = Math.floor(s%3600/60), sec = s%60;
+  return (h ? h + ":" + String(mi).padStart(2,"0") : String(mi)) + ":" + String(sec).padStart(2,"0");
+}
+function healthLine(name, f){
+  const what = f.stint ? "stint " + f.stint : "the POV stream";
+  if (f.state === "serving")
+    return `${name} · serving ${what} (since ${fmtDur(f.state_age_s)})`;
+  if (f.state === "connecting"){
+    let s = `${name} · connecting to ${what} for ${fmtDur(f.state_age_s)}`;
+    if (f.state_age_s > 30){
+      s += " — stream may not be live yet";
+      if (f.last_error) s += " (" + escapeHtml(f.last_error) + ")";
+      return `<span class="warnline">${s}</span>`;
+    }
+    return s;
+  }
+  return "";
+}
+function statePill(el, label, stint, n, state){
+  const [txt, cls] = FEED_STATE[state] || ["", ""];
+  el.className = "st" + (cls ? " " + cls : "");
+  el.innerHTML = label + " <b>" + stint + "</b>" + (n ? "/" + n : "") + (txt ? " · " + txt : "");
+}
 async function relayPoll(){
   try{
     const r = await fetch("/status", {cache:"no-store"});
     const d = await r.json();
-    relayLed(true);
+    relayLed(true); clearBanner("relay");
     const n = d.schedule_len;
-    $("#stA").innerHTML = `A <b>S${d.feeds.A.stint}</b>/${n}`;
-    $("#stB").innerHTML = `B <b>S${d.feeds.B.stint}</b>/${n}`;
-    $("#stPov").innerHTML = "POV <b>" + ((d.pov && d.pov.state) || "—").toUpperCase() + "</b>";
+    statePill($("#stA"), "A", "S" + d.feeds.A.stint, n, d.feeds.A.state);
+    statePill($("#stB"), "B", "S" + d.feeds.B.stint, n, d.feeds.B.state);
+    if (d.pov){
+      const [txt] = FEED_STATE[d.pov.state] || [d.pov.state.toUpperCase()];
+      const cls = (FEED_STATE[d.pov.state] || [])[1] || "";
+      $("#stPov").className = "st" + (cls ? " " + cls : "");
+      $("#stPov").innerHTML = "POV <b>" + (txt || "—") + "</b>";
+    } else $("#stPov").innerHTML = "POV <b>—</b>";
+    const lines = [healthLine("A", d.feeds.A), healthLine("B", d.feeds.B)];
+    if (d.pov && d.pov.state !== "stopped") lines.push(healthLine("POV", d.pov));
+    $("#feedHealth").innerHTML = lines.filter(Boolean).join("<br>");
+    const ck = d.cookies_health;
+    if (ck && ck.stale)
+      setBanner("cookies", "amber",
+        `COOKIES ${Math.round(ck.age_h)} H OLD — next handover may fail · ` +
+        `run 'iro cookies firefox' on the producer machine`);
+    else clearBanner("cookies");
   }catch(e){
     relayLed(false);
-    $("#stA").innerHTML = "A <b>—</b>"; $("#stB").innerHTML = "B <b>—</b>";
-    $("#stPov").innerHTML = "POV <b>—</b>";
+    setBanner("relay", "red", "RELAY UNREACHABLE — feed & timer buttons will not work");
+    for (const [sel, label] of [["#stA","A"],["#stB","B"],["#stPov","POV"]]){
+      $(sel).className = "st"; $(sel).innerHTML = label + " <b>—</b>";
+    }
+    $("#feedHealth").innerHTML = "";
   }
 }
 
