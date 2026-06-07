@@ -1577,6 +1577,10 @@ def main():
             print("WARN: hud.html not found — /hud will 404 (assets dir: "
                   f"{assets_dir}).")
 
+    # One sheet-write webhook powers the race timer AND the panel's
+    # Setup/Schedule/POV controls (wiki: Sheet-Webhook).
+    push_url = os.environ.get("IRO_SHEET_PUSH_URL")
+
     # Race timer: local file always; sheet sync derived from sheet-id/tab
     # (custom --sheet-csv-url -> local-only); push via IRO_SHEET_PUSH_URL.
     timer_store = None
@@ -1586,7 +1590,7 @@ def main():
         if not args.sheet_csv_url:
             timer_csv = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
                          f"/gviz/tq?tqx=out:csv&sheet={quote(args.timer_tab)}")
-        timer_store = TimerStore(timer_csv, os.environ.get("IRO_SHEET_PUSH_URL"),
+        timer_store = TimerStore(timer_csv, push_url,
                                  os.path.join(runtime, "timer.json"))
         timer_store.refresh()   # non-fatal: adopt a newer sheet anchor on startup
         for cand in (os.path.join(here, "timer.html"),
@@ -1596,6 +1600,8 @@ def main():
                 timer_path = os.path.abspath(cand); break
         if not timer_path:
             print("WARN: timer.html not found — /timer will 404.")
+
+    setup_ctl = SetupControl(push_url, hud_source) if hud_source else None
 
     source = ScheduleSource(csv_url, cache, local)
     source.load_initial(SCHEDULE_TEMPLATE)
@@ -1618,7 +1624,7 @@ def main():
                          daemon=True).start()
 
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
-                           timer_store, timer_path)
+                           timer_store, timer_path, setup_ctl)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers = []
@@ -1663,6 +1669,9 @@ def main():
     if hud_source and hud_path:
         print(f"  HUD overlay (OBS source): http://127.0.0.1:{args.http_port}/hud  "
               f"(tabs '{args.overlay_tab}'/'{args.config_tab}', refresh {args.hud_poll}s)")
+    if setup_ctl:
+        mode = "writes ON" if push_url else "read-only (set IRO_SHEET_PUSH_URL)"
+        print(f"  Panel sheet controls (/setup /schedule /pov/set): {mode}")
     if timer_store and timer_path:
         push = "sheet+push" if timer_store.push_url else (
             "sheet read-only (set IRO_SHEET_PUSH_URL for handover sync)"
