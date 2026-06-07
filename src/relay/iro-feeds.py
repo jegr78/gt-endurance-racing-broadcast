@@ -906,16 +906,20 @@ class HudSource:
         with self.lock:
             self.overrides[key] = (value, now + OVERRIDE_TTL)
 
-    def pending(self):
+    def pending(self, now=None):
+        """Keys with an unconfirmed (and unexpired) optimistic override."""
+        now = time.time() if now is None else now
         with self.lock:
-            return set(self.overrides)
+            return {k for k, (_v, exp) in self.overrides.items() if exp > now}
 
     def data(self, now=None):
         now = time.time() if now is None else now
         with self.lock:
             self.overrides = {k: (v, exp) for k, (v, exp) in self.overrides.items()
                               if exp > now}
-            base = self._data if self._data is not None else dict(self.EMPTY)
+            # Always shallow-copy: callers (and /setup/data decoration) must never
+            # be able to mutate the canonical dict.
+            base = dict(self._data) if self._data is not None else dict(self.EMPTY)
             if not self.overrides:
                 return base
             out = dict(base)

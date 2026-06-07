@@ -231,13 +231,15 @@ def t_override_applies_immediately():
     hs.set_override("raceControl", "Formation Lap", now=1000.0)
     assert hs.data(now=1001.0)["raceControl"] == "Formation Lap"
     assert hs.data(now=1001.0)["streamer"] == "JeGr"   # others untouched
-    assert hs.pending() == {"raceControl"}
+    assert hs.pending(now=1001.0) == {"raceControl"}
 
 
 def t_override_expires_back_to_sheet_truth():
     hs = _hs()
     hs.set_override("raceControl", "Formation Lap", now=1000.0)
-    assert hs.data(now=1000.0 + m.OVERRIDE_TTL + 1)["raceControl"] == ""
+    late = 1000.0 + m.OVERRIDE_TTL + 1
+    assert hs.pending(now=late) == set()          # expiry visible without a data() call
+    assert hs.data(now=late)["raceControl"] == ""
     assert hs.pending() == set()
 
 
@@ -256,7 +258,7 @@ def t_override_survives_unconfirmed_refresh():
     hs.set_override("streamer", "GT45", now=1000.0)
     hs.refresh()                                       # poll without the new value yet
     assert hs.data(now=1001.0)["streamer"] == "GT45"   # echo still pending
-    assert hs.pending() == {"streamer"}
+    assert hs.pending(now=1001.0) == {"streamer"}
 
 
 if __name__ == "__main__":
