@@ -703,7 +703,7 @@ def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
     """Resolve a YouTube live URL to a direct HLS manifest URL via yt-dlp
     (handles cookies + the bot-check). Returns (url, None) on success or
     (None, error_line) — the error line feeds /status so the panel can show
-    WHY a feed is stuck connecting (today it only lands in feed_X.log)."""
+    WHY a feed is stuck connecting (previously it only landed in feed_X.log)."""
     cmd = ["yt-dlp", "-g", "-f", fmt, "--no-warnings", "--no-playlist", url]
     if cookies:
         cmd += ["--cookies", cookies]
@@ -1097,8 +1097,9 @@ class Feed:
         self.logfile = os.path.join(logdir, f"feed_{name}.log")
         # Health for /status: phase ("idle" | "connecting" | "serving"),
         # since-when, and the last yt-dlp error line. Written by the run()
-        # thread, read by Relay.status() — attribute reads/writes are atomic
-        # enough (same convention as self.proc).
+        # thread, read by Relay.status() — a reader may briefly pair a new
+        # phase with a stale timestamp; tolerable for a 2 s-polled display
+        # (same convention as self.proc).
         self.phase = "idle"
         self.phase_since = time.time()
         self.last_error = None
@@ -1220,19 +1221,23 @@ class Relay:
             threading.Thread(target=self.pov.run, daemon=True).start()
 
     def status(self):
+        now = time.time()
         sched = self.source.get()
         out = {"schedule_len": len(sched), "cookies": bool(self.cookies),
+               "cookies_health": cookie_health(self.cookies, now=now),
                "source": self.source.health(), "feeds": {}}
         for k, f in self.feeds.items():
             ch, i = f.current_channel()
-            out["feeds"][k] = {"port": f.port, "index": i, "stint": i + 1, "channel": ch}
+            out["feeds"][k] = {"port": f.port, "index": i, "stint": i + 1,
+                               "channel": ch,
+                               "state": "stopped" if f.paused else f.phase,
+                               "state_age_s": round(now - f.phase_since, 1),
+                               "last_error": f.last_error}
         if self.pov:
             raw = (self.pov_source.get()[:1] or [None])[0] if self.pov_source else None
-            if self.pov.paused:         state = "stopped"
-            elif self.pov.is_serving(): state = "serving"
-            elif raw:                   state = "connecting"
-            else:                       state = "idle"
-            out["pov"] = {"port": self.pov.port, "url": raw, "state": state,
+            out["pov"] = {"port": self.pov.port, "url": raw,
+                          "state": "stopped" if self.pov.paused else self.pov.phase,
+                          "state_age_s": round(now - self.pov.phase_since, 1),
                           "source": self.pov_source.health() if self.pov_source else None}
         return out
 
