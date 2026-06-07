@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v1.0.0...v1.1.0) (2026-06-07)
+
+
+### Features
+
+* panel sheet control — HUD/Schedule/POV writes, Race-Control combos, RED FLAG ([#16](https://github.com/jegr78/IRO_Broadcast_Setup/issues/16)) ([d420bdc](https://github.com/jegr78/IRO_Broadcast_Setup/commit/d420bdc265d02c04c363125a3070eaab8c2851af))
+
 ## [1.0.0](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v0.4.0...v1.0.0) (2026-06-06)
 
 
