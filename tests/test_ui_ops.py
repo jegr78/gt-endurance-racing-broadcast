@@ -118,6 +118,11 @@ def t_job_argv_frozen_reinvokes_binary():
     assert argv == ["/opt/iro/iro", "relay", "stop"]
 
 
+def t_ops_registry_resolves_to_dispatch():
+    for name, argv in ui_ops.OPS.items():
+        assert tuple(argv) in iro.DISPATCH, f"{name} maps to unknown iro verb {argv}"
+
+
 if __name__ == "__main__":
     import inspect, tempfile
     with tempfile.TemporaryDirectory() as tmp:
