@@ -358,3 +358,35 @@ def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
         return [], str(exc) or exc.__class__.__name__
     finally:
         session.close()
+
+
+def refresh_browser_inputs(needle="127.0.0.1:8088", host="127.0.0.1", port=None,
+                           password=None, timeout=2.0):
+    """Press 'Refresh cache of current page' (refreshnocache) on every browser
+    source whose URL points at the relay — the programmatic right-click →
+    Refresh, used after the shipped HUD/timer pages changed (OBS's CEF caches
+    the page JS until then).
+
+    Returns (refreshed_input_names, note). Best effort like
+    release_feed_inputs(): any failure yields ([], reason), never an exception.
+    """
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return [], note
+    try:
+        inputs = session.request("GetInputList",
+                                 {"inputKind": "browser_source"}).get("inputs", [])
+
+        def get_settings(name):
+            return session.request("GetInputSettings",
+                                   {"inputName": name}).get("inputSettings", {})
+
+        names = browser_input_names(inputs, get_settings, needle)
+        for name in names:
+            session.request("PressInputPropertiesButton",
+                            {"inputName": name, "propertyName": "refreshnocache"})
+        return names, ""
+    except Exception as exc:                         # noqa: BLE001 — see docstring
+        return [], str(exc) or exc.__class__.__name__
+    finally:
+        session.close()

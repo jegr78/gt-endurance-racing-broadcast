@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Stdlib unit checks for the minimal obs-websocket v5 client (src/scripts/obs_ws.py)
-that makes OBS release the relay feed ports on `iro relay|streams|event stop`.
-Run: python3 tests/test_obsws.py"""
+"""Stdlib unit checks for the minimal obs-websocket v5 client (src/scripts/obs_ws.py):
+feed-port release on `iro relay|streams|event stop` and browser-source refresh on
+`iro relay|event start`. Run: python3 tests/test_obsws.py"""
 import base64
 import hashlib
 import importlib.util
@@ -312,10 +312,16 @@ def _fake_obs_server(server_sock, password, state):
     # Serve requests until the client goes away
     inputs = [{"inputName": "Feed A", "inputKind": "ffmpeg_source"},
               {"inputName": "Feed B", "inputKind": "ffmpeg_source"},
-              {"inputName": "Intro Video", "inputKind": "ffmpeg_source"}]
+              {"inputName": "Intro Video", "inputKind": "ffmpeg_source"},
+              {"inputName": "HUD Lower Third", "inputKind": "browser_source"},
+              {"inputName": "HUD Race Timer", "inputKind": "browser_source"},
+              {"inputName": "Docs Panel", "inputKind": "browser_source"}]
     settings = {"Feed A": {"input": "http://127.0.0.1:53001"},
                 "Feed B": {"input": "http://127.0.0.1:53002"},
-                "Intro Video": {"local_file": "/x/i.mp4", "is_local_file": True}}
+                "Intro Video": {"local_file": "/x/i.mp4", "is_local_file": True},
+                "HUD Lower Third": {"url": "http://127.0.0.1:8088/hud"},
+                "HUD Race Timer": {"url": "http://127.0.0.1:8088/timer"},
+                "Docs Panel": {"url": "https://example.com/docs"}}
     while True:
         try:
             op, payload = _srv_recv_frame(conn)
@@ -328,7 +334,22 @@ def _fake_obs_server(server_sock, password, state):
         rtype, rid = req["d"]["requestType"], req["d"]["requestId"]
         rdata = req["d"].get("requestData", {})
         if rtype == "GetInputList":
-            resp = {"inputs": inputs}
+            kind = rdata.get("inputKind")
+            resp = {"inputs": [i for i in inputs
+                               if not kind or i["inputKind"] == kind]}
+        elif rtype == "PressInputPropertiesButton":
+            # The refresh presses OBS's own 'Refresh cache of current page'
+            # button — never anything else. Answer a wrong button with a
+            # failed requestStatus (an assert would die silently in this
+            # daemon thread and hang the client into its timeout).
+            if rdata["propertyName"] != "refreshnocache":
+                _srv_send_json(conn, {"op": 7, "d": {
+                    "requestType": rtype, "requestId": rid,
+                    "requestStatus": {"result": False, "code": 400},
+                    "responseData": {}}})
+                continue
+            state.setdefault("refreshed", []).append(rdata["inputName"])
+            resp = {}
         elif rtype == "GetInputSettings":
             resp = {"inputSettings": settings[rdata["inputName"]]}
         elif rtype == "SetInputSettings":
@@ -375,6 +396,38 @@ def t_release_feed_inputs_wrong_password_is_note_not_crash():
     assert names == []
     assert note
     server_sock.close()
+
+
+# --------------------------------------------------------------------------
+# refresh_browser_inputs — the auto-refresh used by `iro relay|event start`
+# --------------------------------------------------------------------------
+def t_refresh_browser_inputs_end_to_end_against_fake_server():
+    server_sock = socket.socket()
+    server_sock.bind(("127.0.0.1", 0))
+    server_sock.listen(1)
+    port = server_sock.getsockname()[1]
+    state = {"released": [], "refreshed": []}
+    thread = threading.Thread(target=_fake_obs_server,
+                              args=(server_sock, "supersecret", state), daemon=True)
+    thread.start()
+    names, note = m.refresh_browser_inputs(port=port, password="supersecret",
+                                           timeout=5)
+    assert note == "", note
+    assert names == ["HUD Lower Third", "HUD Race Timer"]
+    assert state["refreshed"] == ["HUD Lower Third", "HUD Race Timer"]
+    assert state["released"] == []                 # refresh must not touch feeds
+    server_sock.close()
+
+
+def t_refresh_browser_inputs_unreachable_is_quiet():
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    free_port = sock.getsockname()[1]
+    sock.close()
+    names, note = m.refresh_browser_inputs(port=free_port, password="x",
+                                           timeout=0.5)
+    assert names == []
+    assert note                                    # human-readable reason
 
 
 def _raises(fn, exc=ValueError):
