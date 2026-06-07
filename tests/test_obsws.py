@@ -167,6 +167,37 @@ def t_feed_input_names_tolerates_settings_failure():
 
 
 # --------------------------------------------------------------------------
+# Which OBS browser sources show relay-served pages?
+# --------------------------------------------------------------------------
+def t_browser_input_names_picks_relay_pages():
+    inputs = [{"inputName": "HUD Lower Third", "inputKind": "browser_source"},
+              {"inputName": "HUD Race Timer", "inputKind": "browser_source"},
+              {"inputName": "Docs Panel", "inputKind": "browser_source"},
+              {"inputName": "Feed A", "inputKind": "ffmpeg_source"}]
+    settings = {"HUD Lower Third": {"url": "http://127.0.0.1:8088/hud"},
+                "HUD Race Timer": {"url": "http://127.0.0.1:8088/timer"},
+                "Docs Panel": {"url": "https://example.com/docs"},
+                "Feed A": {"input": "http://127.0.0.1:53001"}}
+    names = m.browser_input_names(inputs, lambda n: settings.get(n, {}),
+                                  needle="127.0.0.1:8088")
+    assert names == ["HUD Lower Third", "HUD Race Timer"]
+
+
+def t_browser_input_names_tolerates_settings_failure():
+    inputs = [{"inputName": "A", "inputKind": "browser_source"}]
+    def boom(name):
+        raise RuntimeError("no settings")
+    assert m.browser_input_names(inputs, boom) == []
+
+
+def t_browser_input_names_ignores_local_file_pages():
+    # A browser source rendering a local HTML file has no "url" setting.
+    inputs = [{"inputName": "Local HTML", "inputKind": "browser_source"}]
+    assert m.browser_input_names(
+        inputs, lambda n: {"local_file": "/x/p.html"}) == []
+
+
+# --------------------------------------------------------------------------
 # Password discovery (env override, else OBS's own websocket config)
 # --------------------------------------------------------------------------
 def t_obs_config_path_per_platform():

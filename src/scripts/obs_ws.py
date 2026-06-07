@@ -169,6 +169,25 @@ def feed_input_names(inputs, get_settings, ports=RELAY_PORTS):
     return names
 
 
+def browser_input_names(inputs, get_settings, needle="127.0.0.1:8088"):
+    """Which browser sources show relay-served pages (HUD, race timer)?
+    Matches by URL substring so any future relay page is covered without a
+    name list; local-file pages and other URLs are left alone."""
+    names = []
+    for inp in inputs:
+        if inp.get("inputKind") != "browser_source":
+            continue
+        name = inp.get("inputName")
+        try:
+            settings = get_settings(name) or {}
+        except Exception:                            # one bad input must not stop the rest
+            continue
+        url = settings.get("url")
+        if isinstance(url, str) and needle in url:
+            names.append(name)
+    return names
+
+
 # --------------------------------------------------------------------------
 # Password / port discovery from OBS's own obs-websocket config
 # --------------------------------------------------------------------------
