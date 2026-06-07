@@ -64,6 +64,7 @@ def _allowed(_handler):
 
 def make_handler(ctx):
     """ctx: version, page_path, status() -> dict, ops {name: argv},
+    build_argv(name, params) -> argv (raises ValueError), assets() -> dict,
     jobs (ui_jobs.JobManager), log_paths {name: () -> path|None},
     shutdown() (installed by serve())."""
 
@@ -89,6 +90,19 @@ def make_handler(ctx):
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
 
+        def _body_json(self):
+            """Parsed JSON POST body; {} when absent/empty, None when malformed."""
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = 0
+            if not length:
+                return {}
+            try:
+                return json.loads(self.rfile.read(length).decode("utf-8")) or {}
+            except Exception:
+                return None
+
         def do_GET(self):
             if not _allowed(self):
                 return self._json({"ok": False, "error": "unauthorized"}, code=401)
@@ -102,6 +116,13 @@ def make_handler(ctx):
                     return self._json({"ok": True, **ctx["status"]()})
                 except Exception as exc:        # a broken probe must not 500-hang the poll
                     return self._json({"ok": False, "error": f"status failed: {exc}"}, code=500)
+            if path == "/api/assets":
+                try:
+                    return self._json(ctx["assets"]())
+                except Exception as exc:    # sheet/probe failure must stay JSON
+                    return self._json({"ok": False,
+                                       "error": f"assets check failed: {exc}"},
+                                      code=500)
             if path.startswith("/api/jobs/") and path.endswith("/stream"):
                 job_id = path.split("/")[3]
                 return self._stream_job(job_id) if job_id else self._not_found("unknown job")
@@ -118,11 +139,25 @@ def make_handler(ctx):
             if not _allowed(self):
                 return self._json({"ok": False, "error": "unauthorized"}, code=401)
             path = urlparse(self.path).path
+            if path.startswith("/api/jobs/") and path.endswith("/cancel"):
+                job_id = path.split("/")[3]
+                result = ctx["jobs"].cancel(job_id) if job_id else None
+                if result is None:
+                    return self._not_found("unknown job")
+                return self._json({"ok": True, "cancelled": result})
             if path.startswith("/api/op/"):
                 name = path[len("/api/op/"):]
                 if name not in ctx["ops"]:
                     return self._not_found(f"unknown operation: {name}")
-                job_id, err = ctx["jobs"].start(name, ctx["ops"][name])
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    argv = ctx["build_argv"](name, body.get("params"))
+                except ValueError as exc:
+                    return self._json({"ok": False, "error": str(exc)}, code=400)
+                job_id, err = ctx["jobs"].start(name, argv)
                 if err:
                     return self._json({"ok": False, "error": err}, code=409)
                 return self._json({"ok": True, "job_id": job_id})

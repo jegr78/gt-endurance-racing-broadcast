@@ -1342,6 +1342,8 @@ def ui_cmd(rest):
         "page_path": resource_path("ui/control-center.html"),
         "status": ui_status_payload,
         "ops": ops_mod.OPS,
+        "build_argv": ops_mod.build_argv,
+        "assets": assets_status_data,
         "jobs": jobs_mod.JobManager(
             lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN, sys.executable,
                                              os.path.join(HERE, "iro.py")),

@@ -39,6 +39,10 @@ def _ctx(jobs=None):
             "page_path": page,
             "status": lambda: {"relay": {"alive": False}},
             "ops": {"echo": ["echo-args"]},
+            "build_argv": lambda name, params=None: ["echo-args"],
+            "assets": lambda: {"ok": True,
+                               "graphics": {"level": "PASS", "detail": "g"},
+                               "media": {"level": "PASS", "detail": "m"}},
             "jobs": jobs or ui_jobs.JobManager(
                 lambda a: [sys.executable, "-c", "print('hi from job')"]),
             "log_paths": {}}
@@ -191,6 +195,97 @@ def t_probe_instance_classifies():
     def boom(h, p):
         raise OSError("connection refused")
     assert us.probe_instance("h", 1, fetch=boom) == "free"
+
+
+def _post_json(port, path, obj):
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}{path}", method="POST",
+        data=json.dumps(obj).encode("utf-8"),
+        headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
+
+def t_op_param_validation_is_400():
+    ctx = _ctx()
+    def boom(name, params=None):
+        raise ValueError("browser must be one of: firefox")
+    ctx["build_argv"] = boom
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/op/echo", {"params": {"browser": "x"}})
+        assert code == 400 and "browser" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_op_malformed_body_is_400():
+    httpd, port = _serve(_ctx())
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/op/echo", method="POST",
+            data=b"{not json", headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                code = r.status
+        except urllib.error.HTTPError as e:
+            code = e.code
+        assert code == 400
+    finally:
+        httpd.shutdown()
+
+
+def t_op_with_params_passes_them_to_build_argv():
+    seen = []
+    ctx = _ctx()
+    ctx["build_argv"] = lambda name, params=None: seen.append((name, params)) or ["echo-args"]
+    httpd, port = _serve(ctx)
+    try:
+        code, _b = _post_json(port, "/api/op/echo", {"params": {"browser": "firefox"}})
+        assert code == 200
+        assert seen == [("echo", {"browser": "firefox"})]
+    finally:
+        httpd.shutdown()
+
+
+def t_assets_route():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/assets")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["graphics"]["level"] == "PASS"
+    finally:
+        httpd.shutdown()
+
+
+def t_assets_route_provider_error_is_500():
+    ctx = _ctx()
+    def boom():
+        raise RuntimeError("sheet down")
+    ctx["assets"] = boom
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/assets")
+        assert code == 500 and "sheet down" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_cancel_route():
+    httpd, port = _serve(_ctx())
+    try:
+        _c, body = _post(port, "/api/op/echo")
+        job_id = json.loads(body)["job_id"]
+        code, body = _post(port, f"/api/jobs/{job_id}/cancel")
+        assert code == 200 and json.loads(body)["ok"] is True
+        code, _b = _post(port, "/api/jobs/nope/cancel")
+        assert code == 404
+    finally:
+        httpd.shutdown()
 
 
 if __name__ == "__main__":
