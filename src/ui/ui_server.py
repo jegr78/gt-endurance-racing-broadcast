@@ -65,6 +65,7 @@ def _allowed(_handler):
 def make_handler(ctx):
     """ctx: version, page_path, status() -> dict, ops {name: argv},
     build_argv(name, params) -> argv (raises ValueError), assets() -> dict,
+    tools() -> dict, apps() -> dict, preflight() -> dict,
     jobs (ui_jobs.JobManager), log_paths {name: () -> path|None},
     shutdown() (installed by serve())."""
 
@@ -122,6 +123,21 @@ def make_handler(ctx):
                 except Exception as exc:    # sheet/probe failure must stay JSON
                     return self._json({"ok": False,
                                        "error": f"assets check failed: {exc}"},
+                                      code=500)
+            if path == "/api/setup":
+                try:
+                    return self._json({"tools": ctx["tools"](),
+                                       "apps": ctx["apps"]()})
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"setup check failed: {exc}"},
+                                      code=500)
+            if path == "/api/preflight":
+                try:
+                    return self._json(ctx["preflight"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"preflight check failed: {exc}"},
                                       code=500)
             if path.startswith("/api/jobs/") and path.endswith("/stream"):
                 job_id = path.split("/")[3]

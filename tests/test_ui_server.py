@@ -43,6 +43,15 @@ def _ctx(jobs=None):
             "assets": lambda: {"ok": True,
                                "graphics": {"level": "PASS", "detail": "g"},
                                "media": {"level": "PASS", "detail": "m"}},
+            "tools": lambda: {"ok": True, "tools": [
+                {"name": "yt-dlp", "installed": True, "version": "1.2.3"},
+                {"name": "ffmpeg", "installed": False, "version": None}]},
+            "apps": lambda: {"ok": True, "apps": [
+                {"name": "obs", "installed": True},
+                {"name": "discord", "installed": False}]},
+            "preflight": lambda: {"ok": True, "sections": [
+                {"title": "Hardware", "results": [
+                    {"level": "PASS", "name": "RAM", "detail": "32 GB"}]}]},
             "jobs": jobs or ui_jobs.JobManager(
                 lambda a: [sys.executable, "-c", "print('hi from job')"]),
             "log_paths": {}}
@@ -284,6 +293,55 @@ def t_cancel_route():
         assert code == 200 and json.loads(body)["ok"] is True
         code, _b = _post(port, "/api/jobs/nope/cancel")
         assert code == 404
+    finally:
+        httpd.shutdown()
+
+
+def t_setup_route():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/setup")
+        data = json.loads(body)
+        assert code == 200
+        assert data["tools"]["ok"] is True and data["apps"]["ok"] is True
+        assert data["tools"]["tools"][0]["name"] == "yt-dlp"
+    finally:
+        httpd.shutdown()
+
+
+def t_setup_route_provider_error_is_500():
+    ctx = _ctx()
+    def boom():
+        raise RuntimeError("which down")
+    ctx["tools"] = boom
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/setup")
+        assert code == 500 and "which down" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_preflight_route():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/preflight")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["sections"][0]["title"] == "Hardware"
+    finally:
+        httpd.shutdown()
+
+
+def t_preflight_route_provider_error_is_500():
+    ctx = _ctx()
+    def boom():
+        raise RuntimeError("gather down")
+    ctx["preflight"] = boom
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/preflight")
+        assert code == 500 and "gather down" in json.loads(body)["error"]
     finally:
         httpd.shutdown()
 
