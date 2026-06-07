@@ -701,7 +701,9 @@ def channel_url(entry: str) -> str:
 
 def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
     """Resolve a YouTube live URL to a direct HLS manifest URL via yt-dlp
-    (handles cookies + the bot-check). Returns the URL or None (not live / failed)."""
+    (handles cookies + the bot-check). Returns (url, None) on success or
+    (None, error_line) — the error line feeds /status so the panel can show
+    WHY a feed is stuck connecting (today it only lands in feed_X.log)."""
     cmd = ["yt-dlp", "-g", "-f", fmt, "--no-warnings", "--no-playlist", url]
     if cookies:
         cmd += ["--cookies", cookies]
@@ -715,19 +717,20 @@ def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
                 log.write("   yt-dlp not found on PATH\n")
         except Exception:
             pass  # logging is best-effort; never let it break the resolve loop
-        return None
+        return None, "yt-dlp not found on PATH"
     except subprocess.TimeoutExpired:
-        return None
+        return None, "yt-dlp timed out (90 s)"
     out = [l for l in (r.stdout or "").splitlines() if l.startswith("http")]
     if out:
-        return out[0]
+        return out[0], None
+    err = (r.stderr or "").strip().splitlines()
+    last = err[-1] if err else "not live?"
     try:
         with open(logfile, "a", encoding="utf-8") as log:
-            err = (r.stderr or "").strip().splitlines()
-            log.write(f"   yt-dlp could not resolve {url} ({err[-1] if err else 'not live?'})\n")
+            log.write(f"   yt-dlp could not resolve {url} ({last})\n")
     except Exception:
         pass  # logging is best-effort; never let it break the resolve loop
-    return None
+    return None, last
 
 
 def stint_start_indices(stint, schedule_len):
@@ -1092,6 +1095,13 @@ class Feed:
         self.stop = False
         self.advance = threading.Event()
         self.logfile = os.path.join(logdir, f"feed_{name}.log")
+        # Health for /status: phase ("idle" | "connecting" | "serving"),
+        # since-when, and the last yt-dlp error line. Written by the run()
+        # thread, read by Relay.status() — attribute reads/writes are atomic
+        # enough (same convention as self.proc).
+        self.phase = "idle"
+        self.phase_since = time.time()
+        self.last_error = None
 
     def current_channel(self):
         if self.paused:
@@ -1106,6 +1116,13 @@ class Feed:
     def is_serving(self):
         p = self.proc
         return bool(p and p.poll() is None)
+
+    def _set_phase(self, phase):
+        """Phase + timestamp, updated only on change — so state_age_s keeps
+        accumulating across resolve retries within one 'connecting' stretch."""
+        if phase != self.phase:
+            self.phase = phase
+            self.phase_since = time.time()
 
     def _kill_proc(self):
         p = self.proc
@@ -1137,16 +1154,19 @@ class Feed:
         while not self.stop:
             ch, i = self.current_channel()
             if not ch:
+                self._set_phase("idle")
                 time.sleep(3); continue
+            self._set_phase("connecting")
             url = channel_url(ch)
             with open(self.logfile, "a", encoding="utf-8") as log:
                 log.write(f"\n>> [{self.name}:{self.port}] stint {i+1} -> resolving {url}\n"); log.flush()
             # 1) resolve the live HLS URL via yt-dlp (cookies + bot-check handling)
-            hls = resolve_hls(url, self.cookies, self.logfile, self.fmt)
+            hls, err = resolve_hls(url, self.cookies, self.logfile, self.fmt)
             if self.stop: break
             if self.advance.is_set():
                 self.advance.clear(); continue
             if not hls:
+                self.last_error = err       # surfaced via /status (panel health line)
                 time.sleep(RESOLVE_RETRY)   # not live yet / could not resolve -> poll again
                 continue
             # 2) serve the direct HLS URL via streamlink (no YouTube plugin -> no bot-check)
@@ -1156,12 +1176,15 @@ class Feed:
                        "--player-external-http-port", str(self.port)] + STREAMLINK_SERVE
                 try:
                     self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
+                    self.last_error = None
+                    self._set_phase("serving")
                     self.proc.wait()
                 except FileNotFoundError:
                     # Startup checks for streamlink; reaching here means it vanished mid-run.
                     log.write(f">> [{self.name}] streamlink not found on PATH — retrying\n"); log.flush()
                     self.proc = None
                     time.sleep(RETRY_SLEEP); continue
+            self._set_phase("connecting")   # child gone -> we are reconnecting
             if self.stop:
                 break
             if self.advance.is_set():

@@ -39,6 +39,61 @@ def t_cookie_max_age_matches_preflight():
     assert m.COOKIE_MAX_AGE_H == 12
 
 
+class _FakeRun:
+    def __init__(self, stdout="", stderr=""):
+        self.stdout, self.stderr = stdout, stderr
+
+
+def t_resolve_hls_success_returns_url_and_no_error():
+    orig = m.subprocess.run
+    m.subprocess.run = lambda *a, **k: _FakeRun(stdout="https://hls.example/x.m3u8\n")
+    try:
+        url, err = m.resolve_hls("https://yt.example/x", None, os.devnull)
+    finally:
+        m.subprocess.run = orig
+    assert url == "https://hls.example/x.m3u8" and err is None
+
+
+def t_resolve_hls_failure_returns_last_stderr_line():
+    orig = m.subprocess.run
+    m.subprocess.run = lambda *a, **k: _FakeRun(
+        stderr="WARNING: noise\nERROR: This live event will begin in 2 hours\n")
+    try:
+        url, err = m.resolve_hls("https://yt.example/x", None, os.devnull)
+    finally:
+        m.subprocess.run = orig
+    assert url is None
+    assert "live event will begin" in err
+
+
+def t_resolve_hls_failure_without_stderr_says_not_live():
+    orig = m.subprocess.run
+    m.subprocess.run = lambda *a, **k: _FakeRun()
+    try:
+        url, err = m.resolve_hls("https://yt.example/x", None, os.devnull)
+    finally:
+        m.subprocess.run = orig
+    assert url is None and err == "not live?"
+
+
+def t_feed_initial_phase_is_idle():
+    f = m.Feed("A", 53001, 0, lambda: [], HERE)
+    assert f.phase == "idle"
+    assert f.last_error is None
+    assert isinstance(f.phase_since, float)
+
+
+def t_set_phase_updates_since_only_on_change():
+    f = m.Feed("A", 53001, 0, lambda: [], HERE)
+    f._set_phase("connecting")
+    assert f.phase == "connecting"
+    since = f.phase_since
+    f._set_phase("connecting")          # same phase -> timestamp untouched
+    assert f.phase_since == since       # duration accumulates across retries
+    f._set_phase("serving")
+    assert f.phase == "serving" and f.phase_since >= since
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
