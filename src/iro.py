@@ -1200,6 +1200,55 @@ def assets_status_data(state=None):
             "media": {"level": m.level, "detail": m.detail}}
 
 
+def tools_status_data(which=None, version=None):
+    """Per-tool install presence (+ version when present). On-demand: the
+    version probe shells out once per tool. Returns {"ok": True, "tools":[...]}
+    or {"ok": False, "error": ...}; never raises."""
+    try:
+        import install_tools as it
+        pf = _event_modules()[1]
+        which = which or shutil.which
+        version = version or pf.tool_version
+        tools = []
+        for name in it.TOOLS:
+            present = bool(which(name))
+            tools.append({"name": name, "installed": present,
+                          "version": version(name) if present else None})
+        return {"ok": True, "tools": tools}
+    except Exception as exc:
+        return {"ok": False, "error": f"tool check failed: {exc}"}
+
+
+def apps_status_data(present=None):
+    """Per-app install presence (filesystem/PATH probe — instant, no subprocess).
+    Returns {"ok": True, "apps":[...]} or {"ok": False, "error": ...}; never raises."""
+    try:
+        import install_apps as ia
+        present = present or (lambda app: ia.app_present(app, sys.platform))
+        apps = [{"name": a, "installed": bool(present(a))} for a in ia.APPS]
+        return {"ok": True, "apps": apps}
+    except Exception as exc:
+        return {"ok": False, "error": f"app check failed: {exc}"}
+
+
+def preflight_data(gather=None):
+    """Full preflight checklist as structured sections (on-demand: runs hardware
+    probes, per-tool version calls, and a Google-Sheet fetch when configured —
+    can take several seconds). Returns {"ok": True, "sections":[{"title","results":
+    [{"level","name","detail"}]}]} or {"ok": False, "error": ...}; never raises."""
+    try:
+        pf = _event_modules()[1]
+        run = gather or (lambda: pf.gather(resource_path("scripts/preflight.py"),
+                                           _runtime_dir()))
+        sections = [{"title": title,
+                     "results": [{"level": r.level, "name": r.name,
+                                  "detail": r.detail} for r in results]}
+                    for title, results in run()]
+        return {"ok": True, "sections": sections}
+    except Exception as exc:
+        return {"ok": False, "error": f"preflight failed: {exc}"}
+
+
 def _read_env_file():
     try:
         with open(_env_file(), encoding="utf-8") as fh:

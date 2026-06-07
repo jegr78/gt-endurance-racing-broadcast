@@ -216,6 +216,62 @@ def t_assets_status_data_error():
     assert d["ok"] is False and "no sheet" in d["error"]
 
 
+# ---------- tools / apps / preflight readiness ----------
+
+def t_tools_status_data_mixed():
+    d = iro.tools_status_data(
+        which=lambda n: "/usr/bin/" + n if n in ("yt-dlp", "ffmpeg") else None,
+        version=lambda n: n + " 1.2.3")
+    assert d["ok"] is True
+    by = {t["name"]: t for t in d["tools"]}
+    assert by["yt-dlp"]["installed"] is True and by["yt-dlp"]["version"] == "yt-dlp 1.2.3"
+    assert by["streamlink"]["installed"] is False and by["streamlink"]["version"] is None
+    # every canonical tool is represented
+    assert {t["name"] for t in d["tools"]} >= {"yt-dlp", "streamlink", "ffmpeg", "deno"}
+
+
+def t_tools_status_data_error():
+    def boom(n):
+        raise RuntimeError("which broke")
+    d = iro.tools_status_data(which=boom)
+    assert d["ok"] is False and "which broke" in d["error"]
+
+
+def t_apps_status_data_shape():
+    d = iro.apps_status_data(present=lambda app: app == "obs")
+    assert d["ok"] is True
+    by = {a["name"]: a["installed"] for a in d["apps"]}
+    assert by["obs"] is True and by["companion"] is False
+    assert {a["name"] for a in d["apps"]} >= {"obs", "companion", "tailscale", "discord"}
+
+
+def t_apps_status_data_error():
+    def boom(app):
+        raise RuntimeError("probe broke")
+    d = iro.apps_status_data(present=boom)
+    assert d["ok"] is False and "probe broke" in d["error"]
+
+
+def t_preflight_data_sections():
+    class R:
+        def __init__(self, level, name, detail):
+            self.level, self.name, self.detail = level, name, detail
+    fake = [("Hardware", [R("PASS", "RAM", "32 GB"), R("WARN", "Swap", "in use")]),
+            ("Tool chain", [R("FAIL", "ffmpeg", "missing")])]
+    d = iro.preflight_data(gather=lambda: fake)
+    assert d["ok"] is True
+    assert d["sections"][0]["title"] == "Hardware"
+    assert d["sections"][0]["results"][0] == {"level": "PASS", "name": "RAM", "detail": "32 GB"}
+    assert d["sections"][1]["results"][0]["level"] == "FAIL"
+
+
+def t_preflight_data_error():
+    def boom():
+        raise RuntimeError("no preflight")
+    d = iro.preflight_data(gather=boom)
+    assert d["ok"] is False and "no preflight" in d["error"]
+
+
 if __name__ == "__main__":
     import inspect, tempfile
     with tempfile.TemporaryDirectory() as tmp:
