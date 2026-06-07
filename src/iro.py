@@ -1034,6 +1034,12 @@ def event_start(rest):
     probes = {"relay": _relay_http_ok}
     if install_apps.app_present("obs", sys.platform):
         probes["obs"] = lambda: ev.app_running("obs")
+    # Companion is an Electron app — its HTTP server takes a few seconds to
+    # come up. Wait for it too, or the readiness report below races the launch
+    # and prints a spurious "Companion: not running" right after starting it.
+    cc = _companion()
+    if _companion_cmds(cc) is not None:   # controllable on this OS (not Linux)
+        probes["companion"] = lambda: _companion_running(cc)
     print("\nWaiting for the launched services to come up (max 60 s)…")
     for name, up in sorted(ev.wait_until_up(probes).items()):
         print(f"  {name}: {'up' if up else 'still not up — see the report below'}")
