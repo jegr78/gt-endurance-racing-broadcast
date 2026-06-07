@@ -202,6 +202,20 @@ def t_hudsource_vocab_from_refresh():
     assert hs.vocab()["streamer"] == ["JeGr", "GT45"]
 
 
+def t_hudsource_vocab_preserved_on_failure():
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    hs = m.HudSource("http://overlay", "http://config",
+                     _os.path.join(d, "hud.cache.json"))
+    hs._fetch = lambda url, timeout=10: OVERLAY_CSV if url == "http://overlay" else CONFIG_CSV
+    hs.refresh()
+    def boom(url, timeout=10):
+        raise RuntimeError("sheet down")
+    hs._fetch = boom
+    assert hs.refresh() is False
+    assert hs.vocab()["streamer"] == ["JeGr", "GT45"]   # last-good preserved
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

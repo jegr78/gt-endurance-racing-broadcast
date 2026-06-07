@@ -311,6 +311,7 @@ def parse_config_brands(text):
 
 # Configuration-tab vocabulary columns feeding the panel's Setup dropdowns
 # (strict: the panel offers ONLY these values — spec: panel-sheet-control).
+# Dict KEYS are the API field names used by panel endpoints; VALUES are sheet headers (matched case-insensitively).
 VOCAB_COLUMNS = {"stint": "stints", "streamer": "streamers",
                  "session": "session", "racecontrol": "race control"}
 
