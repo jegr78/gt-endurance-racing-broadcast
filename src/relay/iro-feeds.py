@@ -1438,10 +1438,14 @@ def cookie_health(path, now=None, max_age_hours=COOKIE_MAX_AGE_H):
     live, not a startup snapshot. Running cookie-less (path None / file gone)
     is a legitimate configuration (public streams): present=False, stale=False
     — the panel raises its cookie banner only on stale=True."""
-    if not path or not os.path.isfile(path):
+    try:
+        mtime = os.path.getmtime(path) if path and os.path.isfile(path) else None
+    except OSError:
+        mtime = None   # swapped/deleted between isfile and getmtime (cookie refresh)
+    if mtime is None:
         return {"present": False, "age_h": None, "stale": False}
     now = time.time() if now is None else now
-    age_h = round((now - os.path.getmtime(path)) / 3600, 1)
+    age_h = round((now - mtime) / 3600, 1)
     return {"present": True, "age_h": age_h, "stale": age_h > max_age_hours}
 
 

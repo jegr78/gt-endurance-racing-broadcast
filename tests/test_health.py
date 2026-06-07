@@ -153,6 +153,17 @@ def t_status_pov_stopped_when_paused_with_age():
         assert st["pov"]["url"] == "https://youtu.be/p"   # existing key kept
 
 
+def t_cookie_health_vanished_file_treated_as_absent():
+    # The cookies file can be swapped/deleted mid-poll (iro cookies refresh
+    # while the relay runs) — must degrade to absent, never raise.
+    with tempfile.TemporaryDirectory() as td:
+        gone = os.path.join(td, "soon-gone.txt")
+        with open(gone, "w", encoding="utf-8") as fh:
+            fh.write("x\n")
+        os.remove(gone)
+        assert m.cookie_health(gone) == {"present": False, "age_h": None, "stale": False}
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
