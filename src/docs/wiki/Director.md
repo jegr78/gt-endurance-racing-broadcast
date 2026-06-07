@@ -1,22 +1,127 @@
 # Director guide
 
-You direct the show **from a browser** — no OBS, no software, just the Companion buttons.
-You never touch the producer's PC. Several directors can take turns, and the producer can
-also direct locally.
+You direct the show **from a browser** — no OBS, no software on your machine.
+You never touch the producer's PC. Several directors can take turns, and the
+producer can also direct locally.
 
-## Getting connected
+First time? [Director setup](Director-Setup) gets your device connected in
+about 5 minutes. From there you have two ways to drive the show:
 
-1. Make sure Tailscale is running and you've accepted the producer's invite (they set this
-   up — see [Set up the broadcast PC](Set-up-the-broadcast-PC)).
-2. Open **`http://<producer-tailscale-ip>:8000/tablet`** in your browser. The producer
-   gives you that address.
-3. The buttons now drive the show. (When a button sends a relay command, Companion runs it
-   on the producer's PC for you — so it works from anywhere.)
+## Panel or Companion buttons?
 
-## The button board
+Both control the same broadcast — which one your crew uses is a team call,
+not a rule. The practical differences:
 
-Two pages — **show control** and **race timer & audio**. The left column on each page
-(`UP` / `DOWN`) flips between them. Everything below is a single tap.
+| | Director panel (`…:8088/panel`) | Companion buttons (`…:8000/tablet`) |
+|---|---|---|
+| What it is | one page with everything — program switches, feeds, HUD, graphics, timer, audio — plus live status and health warnings | the big-button board (same layout as a Stream Deck) |
+| Needs | the **OBS WebSocket password** from the producer for scene/audio control: enter the producer's IP, port `4455` and the password once at the top of the panel — the browser remembers them. **FEEDS, TIMER, HUD and URLs work without it** | nothing — the OBS connection lives on the producer's machine |
+| Strengths | one-tab overview; shows problems early (banners, feed health) | muscle memory; very large touch targets |
+
+## The director panel
+
+Open `http://<producer-tailscale-ip>:8088/panel`. The page is organized as
+horizontal busses; the Stream Deck pages and the panel share one muscle
+memory:
+
+| Bus | What's on it |
+|---|---|
+| **PGM** | one-press program looks — `STINT A/B`, `SPLIT`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO`, `RED FLAG` (same behavior as the Companion combos below) |
+| **FEEDS** | `NEXT` (the handover), per-feed reloads, POV reload/stop, `FEEDS → STINT…` |
+| **HUD** | the sheet's Setup-tab dropdowns — Stint label, Streamer, Session, Race Control |
+| **SCN·VIS** | raw scene switches and feed visibility toggles |
+| **GFX** | graphics toggles (HUD, standings, schedule, results, weather, covers) |
+| **TIMER** | the race timer ([Race Timer](Race-Timer)) |
+| **AUDIO** | per-source dB sliders, 0 dB reset and mutes |
+| **URLs** | collapsible editor for the schedule and POV URLs |
+
+**FEEDS, TIMER, HUD and URLs work relay-only** — no OBS connection needed
+(HUD and URLs additionally need the sheet-write webhook, see
+[Sheet-Webhook](Sheet-Webhook); without it they are display-only). Everything
+else needs the OBS WebSocket connection from the panel header (see the table
+above).
+
+### Status strip and feed health
+
+The strip at the top shows what is on air, the race timer, and one pill per
+feed with its stint and state: `A S3 · LIVE` (green — serving), `B S4 · CONN`
+(amber — still connecting), `IDLE`, or `STOPPED`. The FEEDS bus adds a health
+line per feed, e.g. `A · serving stint 3 (since 1:32:08)`. When a feed has
+been connecting for more than ~30 seconds the line turns amber and warns
+`stream may not be live yet` — usually the streamer simply hasn't started;
+the exact error from the producer's machine is appended when there is one.
+The POV feed joins the line whenever it isn't stopped.
+
+### Warning banners
+
+Ongoing problems show as banners directly under the header — they appear
+while the condition holds and disappear on their own when it is resolved:
+
+| Banner | Meaning | Who acts |
+|---|---|---|
+| **RELAY UNREACHABLE** (red) | the panel cannot reach the producer's relay — buttons in FEEDS/TIMER will not work | tell the producer (`iro status` on their side names the problem) |
+| **SHEET SYNC FAILED** (red) | a write to the shared sheet did not go through | tell the producer; re-try the change once the banner clears |
+| **COOKIES N H OLD** (amber) | the producer's YouTube cookies are stale — the **next handover may fail** | tell the producer: `iro cookies firefox` on the producer machine |
+
+One-off action failures (a button press that didn't take) show as short
+toasts in the top-right corner and are also logged in the log box at the
+bottom.
+
+### Guarded buttons
+
+- `RELOAD A` / `RELOAD B` / `RELOAD ALL` ask for confirmation — a reload
+  tears the feed's pull and means a brief interruption if that feed is on
+  air.
+- `NEXT` locks for 3 seconds after a press, so a double-tap cannot advance
+  two stints.
+
+> **Two things are called "stint".** `FEEDS → STINT…` (FEEDS bus) re-targets
+> the actual feeds to a stint number — it interrupts running pulls and is for
+> corrections/takeovers. **STINT LABEL** (HUD bus) only changes the text
+> viewers see on the overlay — harmless. Advancing to the next commentator
+> stream is `NEXT`.
+
+## Director panel — HUD row
+
+The **HUD bus** has four dropdowns: **Stint label**, **Streamer**,
+**Session**, and **Race Control** (plus a **CLEAR RC** button). The options
+come from the Configuration tab of the sheet — any new streamers or messages
+added there are picked up automatically without changing the panel.
+
+Each change takes effect on the HUD immediately and is written to the sheet's
+Setup tab in the background. An amber outline on the dropdown means the write
+is pending; the HUD status line shows the sync state. Editing the sheet
+dropdowns directly works exactly as before — the two methods are equivalent.
+
+The panel HUD row needs the sheet-write webhook (`IRO_SHEET_PUSH_URL`);
+without it the panel dropdowns are read-only. (The sheet's own dropdowns work
+either way — they never need the webhook.) See [Sheet-Webhook](Sheet-Webhook).
+
+## Director panel — URLs section
+
+Below the main rows the panel has a collapsible **URLs** section. It shows the
+Schedule tab entries (one per stint: name + stream URL; rows currently
+assigned to a live feed are marked A or B) and the POV URL field.
+
+Saving a change writes it to the sheet only — **no feed reconnects
+automatically**. A new stream URL takes effect at the next **RELOAD A/B** /
+**NEXT** for that feed (POV: **POV RELOAD**), exactly as if the sheet had been
+edited directly.
+
+Each row also has a **CLEAR** button: it empties the row's name + URL in the
+sheet (after a confirmation). The row itself stays and can be refilled later —
+rows are never deleted, because removing a row would shift the stint numbering
+of everything after it.
+
+The URLs section also needs `IRO_SHEET_PUSH_URL` — without it the fields are
+read-only.
+
+## The Companion button board
+
+The same show as big buttons: open
+`http://<producer-tailscale-ip>:8000/tablet`. Two pages — **show control**
+and **race timer & audio**. The left column on each page (`UP` / `DOWN`)
+flips between them. Everything below is a single tap.
 
 ### Page 1 — show control
 
@@ -38,58 +143,28 @@ Two pages — **show control** and **race timer & audio**. The left column on ea
 | **Volume A / B** | `VOL A DOWN` / `VOL A UP` / `VOL A RESET`, `VOL B DOWN` / `VOL B UP` / `VOL B RESET` |
 | **Volume POV / Discord** | `VOL POV DOWN` / `VOL POV UP` / `VOL POV RESET`, `VOL DISC DOWN` / `VOL DISC UP` / `VOL DISC RESET` |
 
-> `VOL … UP` / `DOWN` nudge a source by ±3 dB (relative — they drift over a session);
-> `VOL … RESET` snaps that source back to **0 dB** (its original level). Reset only
-> touches the level, not the mute state — use the `MUTE …` buttons for that.
+> `VOL … UP` / `DOWN` nudge a source by ±3 dB (relative — they drift over a
+> session); `VOL … RESET` snaps that source back to **0 dB** (its original
+> level). Reset only touches the level, not the mute state — use the `MUTE …`
+> buttons for that.
 
 ![Companion page 2 — race timer (start/pause/show/hide/correct/reset), mute and per-source volume for the feeds, POV and Discord](images/companion-page2-timer-audio.png)
 
-> Tip: for the everyday moves, use the **combo** buttons on page 1 (`STINT A`, `SPLIT`,
-> `INTERVIEW`, …) — they set the scene and the audio in one tap.
+> Tip: for the everyday moves, use the **combo** buttons on page 1 (`STINT A`,
+> `SPLIT`, `INTERVIEW`, …) — they set the scene and the audio in one tap.
 
 How the board is imported and built: [Companion](Companion).
 
-## Director panel — HUD row
-
-The **director panel** (`http://<producer-tailscale-ip>:8088/panel`) has a **HUD row** with
-four dropdowns: **Stint (HUD label)**, **Streamer**, **Session**, and **Race Control** (plus a
-**CLEAR RC** button). The options come from the Configuration tab of the sheet — any new
-streamers or messages added there are picked up automatically without changing the panel.
-
-Each change takes effect on the HUD immediately and is written to the sheet's Setup tab in
-the background. An amber outline on the dropdown means the write is pending; the HUD status
-line shows the sync state. Editing the sheet dropdowns directly works exactly as before — the
-two methods are equivalent.
-
-> **Stint (HUD label) ≠ feed stint index.** The HUD row's Stint dropdown sets the *HUD display
-> label* (what viewers see on the overlay). Advancing the actual feeds to the next commentator
-> stream is **NEXT** / **SET STINT** in the FEEDS row — those are separate operations.
-
-The panel HUD row needs the sheet-write webhook (`IRO_SHEET_PUSH_URL`); without it the panel
-dropdowns are read-only. (The sheet's own dropdowns work either way — they never need the
-webhook.) See [Sheet-Webhook](Sheet-Webhook).
-
-## Director panel — URLs section
-
-Below the main rows the panel has a collapsible **URLs** section. It shows the Schedule tab
-entries (one per stint: name + stream URL; rows currently assigned to a live feed are marked
-A or B) and the POV URL field.
-
-Saving a change writes it to the sheet only — **no feed reconnects automatically**. A new
-stream URL takes effect at the next **RELOAD A/B** / **NEXT** for that feed (POV: **POV
-RELOAD**), exactly as if the sheet had been edited directly.
-
-Each row also has a **CLEAR** button: it empties the row's name + URL in the sheet (after a
-confirmation). The row itself stays and can be refilled later — rows are never deleted,
-because removing a row would shift the stint numbering of everything after it.
-
-The URLs section also needs `IRO_SHEET_PUSH_URL` — without it the fields are read-only.
-
 ## Through the broadcast (scene + sheet cues)
 
-As director you drive two things: the **scenes** (Companion) and three **HUD fields in the
-shared sheet** — **Stint**, **Session**, and **Race Control**. Each is a dropdown: pick the
-listed value, or clear the cell to show nothing. The whole run, in order:
+The steps below name the Companion buttons; the panel has the same controls —
+the combos sit on the **PGM** bus and **Feeds Next** is **NEXT** in the FEEDS
+bus.
+
+As director you drive two things: the **scenes** (Companion or panel) and
+three **HUD fields in the shared sheet** — **Stint**, **Session**, and **Race
+Control**. Each is a dropdown: pick the listed value, or clear the cell to
+show nothing. The whole run, in order:
 
 **At go-live (intro)**
 - The producer starts streaming on **Standby**. Press **INTRO** to play the looping intro
@@ -141,18 +216,20 @@ listed value, or clear the cell to show nothing. The whole run, in order:
 
 ## At a driver change
 
-Every ~2 hours the commentator changes. You do this from your browser — both the Companion
-buttons **and** the shared Google Sheet. Each time:
+Every ~2 hours the commentator changes. You do this from your browser — the
+buttons (Companion or panel) **and** the shared Google Sheet. Each time:
 
 1. Cut to **Splitscreen** with the **SPLIT** combo (covers the handover window) — it also
    sets **Race Control → Driver Swaps** for you, so viewers see it on the overlay.
-2. Press **Feeds Next** — the off-air feed advances to the next commentator.
+2. Press **Feeds Next** (panel: **NEXT**) — the off-air feed advances to the next
+   commentator.
 3. **Just before cutting back, update the sheet** for the new commentator: set the **Stint**
-   and **Streamer** entries.
+   and **Streamer** entries (panel: the HUD bus dropdowns do the same).
 4. **Make sure the incoming feed is active.** Cut back with the matching combo — **STINT A**
    or **STINT B** — which selects the right feed (A or B alternate each stint), shows the
    **Stint** scene and **clears Race Control**, all in one press. (Cutting manually? Toggle
    the incoming **Feed A** / **Feed B** on first — and clear Race Control yourself.)
+   On the panel, the feed pill shows when the incoming feed is `LIVE`.
 
 ## Showing a driver POV (plan ahead)
 
@@ -164,14 +241,17 @@ the chain **a few minutes before** you want it on air:
 
 1. **Order it early:** ask the driver to start their (unlisted) live stream and send you
    the watch URL — roughly **5 minutes ahead** is comfortable.
-2. **Schedule it:** paste the watch URL into the shared sheet, tab **POV**, cell **A2**.
+2. **Schedule it:** paste the watch URL into the shared sheet, tab **POV**, cell **A2**
+   (panel: the POV field in the **URLs** section does the same).
 3. **Pull it:** press **POV Reload**. The relay re-reads the cell and starts pulling.
    Resolving a live stream takes ~10–30 seconds; if the driver is **not live yet**, the
    relay simply keeps retrying every 15 seconds until they are — no harm, but nothing to
    show either.
-4. **Verify it's ready:** open `http://<producer-tailscale-ip>:8088/status` in a browser
-   tab — the `pov` block must say `"state": "serving"`. (`connecting` means it's still
-   resolving or the driver isn't live yet — don't show it; the PiP would be black.)
+4. **Verify it's ready:** the panel's FEEDS health line shows the POV state —
+   wait until it says **serving**. (`CONN` means it's still resolving or the
+   driver isn't live yet — don't show it; the PiP would be black.) No panel
+   open? `http://<producer-tailscale-ip>:8088/status` shows the same: the
+   `pov` block must say `"state": "serving"`.
 5. **Show it:** press **POV Toggle** — allow a couple of seconds for OBS to connect the
    first time. Audio is muted by default; **MUTE POV** / **VOL POV …** (page 2) if you
    want it audible.
