@@ -22,7 +22,7 @@ Two pages — **show control** and **race timer & audio**. The left column on ea
 
 | Row | Buttons |
 |-----|---------|
-| **Combos** | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO` — one press sets a whole look (the scene **and** the right feeds and audio). `INTRO` / `OUTRO` cut to the looping intro/outro clip (with its own audio) and mute the live feeds; they light while on air. `RED FLAG` is a toggle: first press shows the Standby Cover in the Stint scene **and** sets Race Control to *Red Flag - Race Suspended*; second press hides the cover and clears Race Control. It lights red while the cover is up |
+| **Combos** | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO` — one press sets a whole look (the scene **and** the right feeds and audio). `SPLIT` also sets **Race Control → *Driver Swaps***; `STINT A` / `STINT B` **clear Race Control** on the way back — unconditionally, whatever it currently shows. `INTRO` / `OUTRO` cut to the looping intro/outro clip (with its own audio) and mute the live feeds; they light while on air. `RED FLAG` is a toggle: first press shows the Standby Cover in the Stint scene **and** sets Race Control to *Red Flag - Race Suspended*; second press hides the cover and clears Race Control. It lights red while the cover is up |
 | **Scenes + relay** | `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Next` (the handover), `Feeds Reload`, `Feeds Status` |
 | **Feeds & reloads** | `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Feed A Reload` (reconnect only Feed A → `/reload/A`), `Feed B Reload` (→ `/reload/B`), `POV Reload`, `POV Stop` |
 | **Graphics & weather** | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle` (incident cover — see [The race](#through-the-broadcast-scene--sheet-cues)), `Weather Race (1) Toggle`, `Weather Race (2) Toggle`, `Weather Quali Toggle` — the three weather buttons are full-screen Stint overlays, each an independent toggle like Standings/Results |
@@ -101,7 +101,9 @@ listed value, or clear the cell to show nothing. The whole run, in order:
 - Sheet: **Stint → Intro**, **Session → Warmup**.
 
 **Formation lap** — the race always begins with a manual formation lap.
-- Sheet: **Race Control → Formation Lap**.
+- Sheet: **Race Control → Formation Lap**. Set it **after** the cut: the combos write
+  Race Control too (**SPLIT** stamps *Driver Swaps*, **STINT A/B** clear it), so a combo
+  pressed afterwards would wipe the *Formation Lap* message.
 - As the formation lap starts: **Stint → Stint 1**, **Session → Race**.
 - Just before the green flag: **clear Race Control**.
 
@@ -142,16 +144,15 @@ listed value, or clear the cell to show nothing. The whole run, in order:
 Every ~2 hours the commentator changes. You do this from your browser — both the Companion
 buttons **and** the shared Google Sheet. Each time:
 
-1. Cut to **Splitscreen** (covers the handover window).
-2. In the sheet, set **Race Control** to **Driver Swaps** — viewers see it on the overlay.
-3. Press **Feeds Next** — the off-air feed advances to the next commentator.
-4. **Just before cutting back, update the sheet** for the new commentator: set the **Stint**
+1. Cut to **Splitscreen** with the **SPLIT** combo (covers the handover window) — it also
+   sets **Race Control → Driver Swaps** for you, so viewers see it on the overlay.
+2. Press **Feeds Next** — the off-air feed advances to the next commentator.
+3. **Just before cutting back, update the sheet** for the new commentator: set the **Stint**
    and **Streamer** entries.
-5. **Make sure the incoming feed is active.** Cut back with the matching combo — **STINT A**
-   or **STINT B** — which selects the right feed (A or B alternate each stint) and shows the
-   **Stint** scene in one press. (Cutting manually? Toggle the incoming **Feed A** / **Feed B**
-   on first.)
-6. Back in **Stint**, **clear the Race Control entry** in the sheet (leave it empty).
+4. **Make sure the incoming feed is active.** Cut back with the matching combo — **STINT A**
+   or **STINT B** — which selects the right feed (A or B alternate each stint), shows the
+   **Stint** scene and **clears Race Control**, all in one press. (Cutting manually? Toggle
+   the incoming **Feed A** / **Feed B** on first — and clear Race Control yourself.)
 
 ## Showing a driver POV (plan ahead)
 

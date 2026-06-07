@@ -102,6 +102,11 @@
   button.k.air{border-color:var(--air);background:linear-gradient(180deg,#331414,#26100f);
     box-shadow:0 0 0 1px var(--air),0 0 20px var(--air-glow),inset 0 1px 0 rgba(255,255,255,.06)}
   button.k.air .tag{color:var(--air)}
+  /* RED FLAG: red label while idle; .on (cover visible) lights red, not green */
+  button.k.redflag{color:#ff8080}
+  button.k.redflag.on{border-color:var(--air);background:linear-gradient(180deg,#331414,#26100f);
+    box-shadow:0 0 0 1px var(--air),0 0 20px var(--air-glow),inset 0 1px 0 rgba(255,255,255,.06)}
+  button.k.redflag.on .tag{color:var(--air)}
   .pgm button.k{min-width:110px;min-height:62px;font-weight:600;font-size:14px}
 
   /* ---------- audio rows ---------- */
@@ -248,15 +253,18 @@
    ======================================================================= */
 const CONFIG = {
   macros: [
+    // rc: Race Control value written via the relay after the OBS steps
+    // ("" clears). Unconditional, mirrors the Companion combos: SPLIT stamps
+    // "Driver Swaps", cutting back to a stint clears whatever is shown.
     {label:"STINT A", scene:"Stint",
      show:[["Stint","Feed A"]], hide:[["Stint","Feed B"]],
-     unmute:["Feed A"], mute:["Feed B","Discord Audio Capture"]},
+     unmute:["Feed A"], mute:["Feed B","Discord Audio Capture"], rc:""},
     {label:"STINT B", scene:"Stint",
      show:[["Stint","Feed B"]], hide:[["Stint","Feed A"]],
-     unmute:["Feed B"], mute:["Feed A","Discord Audio Capture"]},
+     unmute:["Feed B"], mute:["Feed A","Discord Audio Capture"], rc:""},
     {label:"SPLIT", scene:"Splitscreen",
      show:[["Splitscreen","Feed A"],["Splitscreen","Feed B"]], hide:[],
-     unmute:["Feed A"], mute:["Feed B","Discord Audio Capture"]},
+     unmute:["Feed A"], mute:["Feed B","Discord Audio Capture"], rc:"Driver Swaps"},
     {label:"INTERVIEW", scene:"Interview", show:[], hide:[],
      unmute:["Discord Audio Capture"], mute:["Feed A","Feed B"]},
     {label:"STANDBY", scene:"Standby", show:[], hide:[],
@@ -347,6 +355,25 @@ CONFIG.macros.forEach(m=>{
   b._m = m; macroKeys.push(b); $("#pgmBus").appendChild(b);
 });
 
+/* RED FLAG — same combo as the Companion button: toggles the Standby Cover in
+   the Stint scene and sets/clears Race Control with it. Reads the real cover
+   state from OBS, so it always converges no matter how the cover was switched.
+   Lights red (via toggleKeys polling + .redflag.on) while the cover is up. */
+{
+  const item = {scene:"Stint", source:"Standby Cover"};
+  const b = mkKey("RED FLAG", "alarm", ()=>safe(async ()=>{
+    const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:item.scene, sourceName:item.source});
+    const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:item.scene, sceneItemId});
+    const on = !sceneItemEnabled;
+    await obs.call("SetSceneItemEnabled",{sceneName:item.scene, sceneItemId, sceneItemEnabled:on});
+    log("RED FLAG " + (on ? "— cover up" : "over — cover down"));
+    setupSet("racecontrol", on ? "Red Flag - Race Suspended" : "");
+    refresh();
+  }), true);
+  b.classList.add("redflag");
+  b._item = item; toggleKeys.push(b); $("#pgmBus").appendChild(b);
+}
+
 FEED_ACTIONS.forEach(([label, path, tag])=>{
   $("#feedsBus").appendChild(mkKey(label, tag, ()=>relayCall(path), false));
 });
@@ -429,6 +456,9 @@ async function runMacro(m){
     try{ await fn(); }
     catch(e){ log(`${m.label}: ${what} failed: ${e.message||e}`, "err"); }
   }
+  // Race Control side effect (relay, needs the sheet-write webhook) — after
+  // the cut, so the banner change never precedes the picture change.
+  if (m.rc !== undefined) setupSet("racecontrol", m.rc);
   refresh();
 }
 

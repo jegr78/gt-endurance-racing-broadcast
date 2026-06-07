@@ -219,6 +219,33 @@
            },
            "upgradeIndex": 8,
            "type": "action"
+          },
+          {
+           "id": "WI3bVZE8mgITIEdIfdcw4",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
+           "options": {
+            "url": {
+             "value": "http://127.0.0.1:8088/setup/clear/racecontrol",
+             "isExpression": false
+            },
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
+             "isExpression": false
+            },
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
+            },
+            "statusCodeVariable": {
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 1,
+           "type": "action"
           }
          ],
          "up": []
@@ -441,6 +468,33 @@
            },
            "upgradeIndex": 8,
            "type": "action"
+          },
+          {
+           "id": "mexVwG61R5oIDUVzxLX1-",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
+           "options": {
+            "url": {
+             "value": "http://127.0.0.1:8088/setup/clear/racecontrol",
+             "isExpression": false
+            },
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
+             "isExpression": false
+            },
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
+            },
+            "statusCodeVariable": {
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 1,
+           "type": "action"
           }
          ],
          "up": []
@@ -613,6 +667,33 @@
             }
            },
            "upgradeIndex": 8,
+           "type": "action"
+          },
+          {
+           "id": "McW7zYKcqIwW0lRg2qDbM",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
+           "options": {
+            "url": {
+             "value": "http://127.0.0.1:8088/setup/set/racecontrol/Driver%20Swaps",
+             "isExpression": false
+            },
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
+             "isExpression": false
+            },
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
+            },
+            "statusCodeVariable": {
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 1,
            "type": "action"
           }
          ],
