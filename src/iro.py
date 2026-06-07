@@ -973,6 +973,10 @@ def event_start(rest):
     print("\nWaiting for the launched services to come up (max 60 s)…")
     for name, up in sorted(ev.wait_until_up(probes).items()):
         print(f"  {name}: {'up' if up else 'still not up — see the report below'}")
+    # OBS may not have been running when relay_start's refresh hook fired
+    # (event start launches OBS AFTER the relay) — retry now that both sides
+    # are up. Hash-gated: a no-op when the first hook already delivered.
+    _refresh_obs_pages()
     print("\nEvent readiness:")
     event_status(rest)  # exit code: 0 = ready, 1 = FAILs remain
 
