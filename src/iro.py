@@ -645,34 +645,59 @@ def companion_restart(rest):
     companion_stop([])
     companion_start(rest)
 
-def companion_status(rest):
-    cc = _companion()
-    cmds = _companion_cmds(cc)
+def companion_status_payload(supported, running, cfg, why=""):
+    """Pure: shape the companion status dict from probed facts."""
+    url = None
+    if running and cfg:
+        url = f"http://{cfg.get('bind_ip', '127.0.0.1')}:{cfg.get('http_port', 8000)}/tablet"
+    return {"supported": supported, "running": running, "url": url, "why": why}
+
+
+def companion_status_data():
+    """Probe Companion and shape the result (best effort — a broken probe
+    reports as unsupported, never raises)."""
+    try:
+        cc = _companion()
+        cmds = _companion_cmds(cc)
+    except Exception as exc:
+        return companion_status_payload(False, False, None, f"check failed: {exc}")
     if cmds is None:
         why = ("(Companion.exe not found — set IRO_COMPANION_EXE in .env)"
                if sys.platform.startswith("win") else f"(manual on {sys.platform})")
-        print(sv.status_line("companion", None, False, why))
-        return
+        return companion_status_payload(False, False, None, why)
     running = _companion_running(cc)
-    extra = ""
+    cfg = None
     if running:
-        cfg_path = cc.companion_config_path(sys.platform)
         try:
-            with open(cfg_path, encoding="utf-8") as fh:
+            with open(cc.companion_config_path(sys.platform), encoding="utf-8") as fh:
                 cfg = json.load(fh)
-            extra = f"http://{cfg.get('bind_ip')}:{cfg.get('http_port', 8000)}/tablet"
         except Exception:
-            extra = ""
-    print(sv.status_line("companion", "?" if running else None, running, extra))
+            cfg = None
+    return companion_status_payload(True, running, cfg)
+
+
+def companion_status(rest):
+    d = companion_status_data()
+    print(sv.status_line("companion", "?" if d["running"] else None,
+                         d["running"], d["url"] or d["why"]))
+
+def _companion_log_path():
+    """Newest Companion log file, or None (no logs / unsupported platform)."""
+    try:
+        cc = _companion()
+        logdir = os.path.join(os.path.dirname(cc.companion_config_path(sys.platform)), "logs")
+        logs = sorted(glob.glob(os.path.join(logdir, "*")), key=os.path.getmtime)
+        return logs[-1] if logs else None
+    except Exception:
+        return None
+
 
 def companion_logs(rest):
-    cc = _companion()
-    logdir = os.path.join(os.path.dirname(cc.companion_config_path(sys.platform)), "logs")
-    logs = sorted(glob.glob(os.path.join(logdir, "*")), key=os.path.getmtime)
-    if not logs:
-        print(f"(no Companion logs at {logdir})")
+    path = _companion_log_path()
+    if not path:
+        print("(no Companion logs found)")
         return
-    sv.tail(logs[-1], follow=("-f" in rest or "--follow" in rest))
+    sv.tail(path, follow=("-f" in rest or "--follow" in rest))
 
 
 def _streams_static_dir():
@@ -699,23 +724,40 @@ def streams_restart(rest):
     streams_stop([])
     streams_start(rest)
 
-def streams_status(rest):
-    pidfiles = sorted(glob.glob(os.path.join(_streams_static_dir(), "feed_*.pid")))
-    if not pidfiles:
-        print(sv.status_line("streams", None, False, "(no feeds started)"))
-        return
+def streams_status_data(pidfiles=None):
+    """Structured per-feed state of the static-streams mode."""
+    if pidfiles is None:
+        pidfiles = sorted(glob.glob(os.path.join(_streams_static_dir(), "feed_*.pid")))
+    feeds = []
     for pf in pidfiles:
         pid = sv.read_pid(pf)
-        label = "streams:" + os.path.basename(pf)[len("feed_"):-len(".pid")]
-        print(sv.status_line(label, pid, sv.pid_alive(pid)))
+        feeds.append({"label": os.path.basename(pf)[len("feed_"):-len(".pid")],
+                      "pid": pid, "alive": sv.pid_alive(pid)})
+    return feeds
 
-def streams_logs(rest):
+
+def streams_status(rest):
+    feeds = streams_status_data()
+    if not feeds:
+        print(sv.status_line("streams", None, False, "(no feeds started)"))
+        return
+    for f in feeds:
+        print(sv.status_line("streams:" + f["label"], f["pid"], f["alive"]))
+
+
+def _latest_stream_log():
+    """Newest static-feed log file, or None."""
     logs = sorted(glob.glob(os.path.join(_streams_static_dir(), "logs", "feed_*.log")),
                   key=os.path.getmtime)
-    if not logs:
+    return logs[-1] if logs else None
+
+
+def streams_logs(rest):
+    path = _latest_stream_log()
+    if not path:
         print(f"(no stream logs under {os.path.join(_streams_static_dir(), 'logs')})")
         return
-    sv.tail(logs[-1], follow=("-f" in rest or "--follow" in rest))
+    sv.tail(path, follow=("-f" in rest or "--follow" in rest))
 
 
 def _http_url(host, port, path):
@@ -1106,6 +1148,15 @@ def aggregate_status(_rest=None):
     relay_status([])
     companion_status([])
     streams_status([])
+
+
+def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None):
+    """Aggregate health for the Control Center dashboard (/api/status)."""
+    return {"version": version(),
+            "relay": (relay or relay_status_data)(),
+            "companion": (companion or companion_status_data)(),
+            "streams": (streams or streams_status_data)(),
+            "tailscale_ip": (tailscale or _tailscale_ip)()}
 
 
 def _read_env_file():
