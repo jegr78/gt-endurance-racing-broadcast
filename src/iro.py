@@ -17,7 +17,7 @@
   iro update [--check] [--yes]          # self-update the binary from GitHub Releases
   iro --version
 """
-import glob, json, os, shutil, sys, time, webbrowser
+import glob, hashlib, json, os, shutil, sys, time, webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Adapters (added in later tasks) import sibling modules from scripts/ at module
@@ -245,6 +245,71 @@ def _relay_log_path():
     return os.path.join(_runtime_dir(), "logs", "relay.console.log")
 
 RELAY_PORT = 8088
+
+# The relay-served pages OBS renders as browser sources (panel is tablet-only).
+OBS_PAGE_PATHS = ("/hud", "/timer")
+
+
+def _fetch_relay_page(path):
+    import urllib.request
+    return urllib.request.urlopen(
+        f"http://127.0.0.1:{RELAY_PORT}{path}", timeout=3).read()
+
+
+def served_pages_hash(fetch=None, paths=OBS_PAGE_PATHS):
+    """SHA-256 over the page bytes the relay actually serves to OBS. Hashing
+    what OBS would load (not the files on disk) means a still-running OLD
+    relay can never advance the staleness gate past pages OBS has not seen.
+    None when any page cannot be fetched (relay down, --no-hud/--no-timer)."""
+    fetch = fetch or _fetch_relay_page
+    h = hashlib.sha256()
+    for path in paths:
+        try:
+            h.update(fetch(path))
+        except Exception:
+            return None
+    return h.hexdigest()
+
+
+def refresh_decision(served, stored, force=False):
+    """Should the OBS page-refresh hook act? Pure for tests: 'skip-no-pages'
+    (relay down / pages disabled), 'skip-unchanged' (no on-air flicker), or
+    'refresh'."""
+    if served is None:
+        return "skip-no-pages"
+    if not force and served == stored:
+        return "skip-unchanged"
+    return "refresh"
+
+
+def read_pages_hash(path):
+    """Hash of the pages OBS last confirmed loading, or None (never refreshed)."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read().strip() or None
+    except OSError:
+        return None
+
+
+def write_pages_hash(path, value):
+    parent = os.path.dirname(path)
+    if parent:                       # a bare filename needs no directory
+        os.makedirs(parent, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(value + "\n")
+
+
+def wait_for(probe, wait, clock=time.monotonic, sleep=time.sleep):
+    """Poll probe() until truthy or `wait` seconds elapsed; checks at least
+    once, so wait=0 means 'probe now, no retries'."""
+    deadline = clock() + wait
+    while True:
+        if probe():
+            return True
+        if clock() >= deadline:
+            return False
+        sleep(0.5)
+
 
 SERVICES = ("relay", "companion", "streams")
 SERVICE_VERBS = ("start", "stop", "restart", "status", "logs")

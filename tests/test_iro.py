@@ -467,6 +467,56 @@ def t_env_base_per_mode():
     assert m._env_base(False, "", "/pkg") == "/pkg"
 
 
+def t_refresh_decision():
+    assert m.refresh_decision(None, None) == "skip-no-pages"
+    assert m.refresh_decision(None, "abc") == "skip-no-pages"
+    assert m.refresh_decision("abc", "abc") == "skip-unchanged"
+    assert m.refresh_decision("abc", "old") == "refresh"
+    assert m.refresh_decision("abc", None) == "refresh"          # first run
+    assert m.refresh_decision("abc", "abc", force=True) == "refresh"
+
+
+def t_served_pages_hash_concatenates_in_order():
+    import hashlib
+    pages = {"/hud": b"HUD", "/timer": b"TIMER"}
+    expected = hashlib.sha256(b"HUDTIMER").hexdigest()
+    assert m.served_pages_hash(fetch=lambda p: pages[p]) == expected
+
+
+def t_served_pages_hash_none_when_any_fetch_fails():
+    def fetch(path):
+        if path == "/timer":
+            raise OSError("connection refused")
+        return b"HUD"
+    assert m.served_pages_hash(fetch=fetch) is None
+
+
+def t_served_pages_hash_none_when_first_fetch_fails():
+    def fetch(path):
+        raise OSError("connection refused")
+    assert m.served_pages_hash(fetch=fetch) is None
+
+
+def t_pages_hash_roundtrip_and_missing():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "state", "obs-pages.hash")
+        assert m.read_pages_hash(path) is None                   # missing file
+        m.write_pages_hash(path, "abc123")                       # creates the dir
+        assert m.read_pages_hash(path) == "abc123"
+
+
+def t_wait_for_polls_until_deadline():
+    ticks = iter([0, 1, 2, 3, 4, 5])
+    slept = []
+    ok = m.wait_for(lambda: False, 2, clock=lambda: next(ticks),
+                    sleep=slept.append)
+    assert ok is False
+    assert slept                                                 # polled, not busy-spun
+    assert m.wait_for(lambda: True, 0, clock=lambda: 0,
+                      sleep=lambda s: None) is True               # checks at least once
+
+
 def _raises(fn):
     try:
         fn()
