@@ -220,6 +220,39 @@
            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .gallery-empty { color:var(--faint); font:12px var(--mono); padding:10px 8px; }
   .evnote { color:var(--dim); font:12px/1.6 var(--mono); margin:14px 2px 0; }
+
+  /* Settings (.env) editor */
+  .envhead { display:flex; gap:8px; padding:2px 8px 10px;
+             font:600 11px var(--mono); letter-spacing:.06em;
+             text-transform:uppercase; color:var(--dim); }
+  .envrow { display:flex; align-items:center; gap:8px; padding:7px 8px;
+            border-top:1px solid var(--line); }
+  .envrow:first-child { border-top:0; }
+  .envrow input, .envhead .k, .envhead .v { box-sizing:border-box; }
+  .envrow input { background:#232C42; color:var(--txt);
+                  border:1px solid var(--line); border-radius:8px;
+                  padding:7px 10px; font:13px var(--mono); min-height:34px; }
+  .envrow input:focus-visible { outline:2px solid var(--accent);
+                  outline-offset:2px; }
+  .k { width:230px; flex:0 0 auto; }
+  .v { flex:1; min-width:120px; }
+  .iconbtn { display:inline-flex; align-items:center; justify-content:center;
+             min-height:34px; min-width:34px; padding:6px; background:#232C42;
+             border:1px solid var(--line); border-radius:8px; cursor:pointer;
+             color:var(--dim); flex:0 0 auto; transition:border-color .2s,
+             color .2s; }
+  .iconbtn:hover { border-color:var(--accent); color:var(--txt); }
+  .iconbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .iconbtn svg { width:15px; height:15px; stroke:currentColor; fill:none;
+                 stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .iconbtn.danger:hover { border-color:var(--bad); color:#FCA5A5; }
+  .envpath { color:var(--faint); font:12px var(--mono); margin:0 0 12px;
+             word-break:break-all; }
+  .enverr { color:#FCA5A5; background:rgba(239,68,68,.1);
+            border:1px solid rgba(239,68,68,.35); border-radius:8px;
+            padding:8px 12px; margin:0 0 12px; font:12px var(--mono); }
+  .envhint { color:var(--dim); font:12px/1.6 var(--mono); margin:14px 2px 0; }
+  .addrow { padding:12px 8px 4px; }
   .lightbox { position:fixed; inset:0; z-index:100; padding:40px;
            background:rgba(2,6,23,.86); display:flex; align-items:center;
            justify-content:center; cursor:zoom-out; }
@@ -248,6 +281,8 @@
         <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Tools</button>
       <button class="navitem" data-nav="assets" onclick="showView('assets')">
         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></svg>Assets</button>
+      <button class="navitem" data-nav="settings" onclick="showView('settings')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</button>
       <button class="navitem" data-nav="logs" onclick="showView('logs')">
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>Logs</button>
     </div>
@@ -417,6 +452,26 @@
         </div>
       </div>
 
+      <!-- ===== Settings (.env) ===== -->
+      <div class="view" data-view="settings" hidden>
+        <div class="viewhead"><h2>Settings</h2>
+          <span class="sub">.env</span>
+          <span class="spacer"></span>
+          <button onclick="loadSettings(true)">
+            <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button>
+          <button id="env-save" onclick="saveSettings()">
+            <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button></div>
+        <div class="enverr" id="env-err" hidden></div>
+        <div class="envpath" id="env-path"></div>
+        <section>
+          <div class="envhead"><span class="k">Key</span><span class="v">Value</span></div>
+          <div id="envrows"></div>
+          <div class="addrow"><button onclick="addSettingsRow()">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add entry</button></div>
+        </section>
+        <p class="envhint">Edits the local <b>.env</b> on this machine only. Values are masked — click the eye to reveal one. Comments in the file are preserved. Changes apply when you next (re)start the affected service (relay, …).</p>
+      </div>
+
       <!-- ===== Logs ===== -->
       <div class="view" data-view="logs" hidden>
         <div class="viewhead"><h2>Logs</h2>
@@ -457,7 +512,8 @@
 const $ = id => document.getElementById(id);
 let jobES = null, logES = null;
 
-let setupLoaded = false, preflightRun = false, assetsLoaded = false;
+let setupLoaded = false, preflightRun = false, assetsLoaded = false,
+    settingsLoaded = false;
 
 function showView(name) {
   document.querySelectorAll('[data-view]').forEach(v => {
@@ -473,6 +529,7 @@ function showView(name) {
   }
   if (name === 'assets' && !assetsLoaded) { assetsLoaded = true; fetchAssetFiles(); }
   if (name === 'preflight' && !preflightRun) { preflightRun = true; runPreflight(); }
+  if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
 }
 
 function toggleConsole(force) {
@@ -843,6 +900,89 @@ function renderPreflight(sections) {
   });
   $('pf-summary').textContent =
     f + ' FAIL · ' + w + ' WARN · ' + p + ' PASS' + (i ? ' · ' + i + ' info' : '');
+}
+
+// ----- Settings (.env) editor -----
+const EYE_SVG = '<svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF_SVG = '<svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+const X_SVG = '<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+
+function showEnvErr(msg) {
+  const e = $('env-err');
+  e.textContent = msg;
+  e.hidden = false;
+}
+
+function settingsRow(key, value) {
+  const r = document.createElement('div');
+  r.className = 'envrow';
+  const k = document.createElement('input');
+  k.className = 'k'; k.value = key; k.placeholder = 'KEY';
+  k.setAttribute('aria-label', 'Setting key');
+  k.autocomplete = 'off'; k.autocapitalize = 'off'; k.spellcheck = false;
+  const v = document.createElement('input');
+  v.className = 'v'; v.type = 'password'; v.value = value; v.placeholder = 'value';
+  v.setAttribute('aria-label', 'Setting value');
+  v.autocomplete = 'off'; v.spellcheck = false;
+  const eye = document.createElement('button');
+  eye.className = 'iconbtn'; eye.type = 'button';
+  eye.setAttribute('aria-label', 'Reveal value');
+  eye.innerHTML = EYE_SVG;
+  eye.onclick = () => {
+    const masked = v.type === 'password';
+    v.type = masked ? 'text' : 'password';
+    eye.innerHTML = masked ? EYE_OFF_SVG : EYE_SVG;
+    eye.setAttribute('aria-label', masked ? 'Hide value' : 'Reveal value');
+  };
+  const del = document.createElement('button');
+  del.className = 'iconbtn danger'; del.type = 'button';
+  del.setAttribute('aria-label', 'Delete entry');
+  del.innerHTML = X_SVG;
+  del.onclick = () => r.remove();
+  r.append(k, v, eye, del);
+  return r;
+}
+
+function addSettingsRow() {
+  const r = settingsRow('', '');
+  $('envrows').appendChild(r);
+  r.querySelector('.k').focus();
+}
+
+function collectSettings() {
+  return [...$('envrows').querySelectorAll('.envrow')].map(r => ({
+    key: r.querySelector('.k').value,
+    value: r.querySelector('.v').value
+  }));
+}
+
+async function loadSettings(force) {
+  if (force && !confirm('Reload from disk and discard any unsaved edits?')) return;
+  $('env-err').hidden = true;
+  let d;
+  try { d = await (await fetch('/api/env', {cache: 'no-store'})).json(); }
+  catch (e) { showEnvErr('Control Center not reachable.'); return; }
+  if (!d.ok) { showEnvErr(d.error || 'could not read .env'); return; }
+  $('env-path').textContent = d.path;
+  const c = $('envrows');
+  c.textContent = '';
+  d.entries.forEach(e => c.appendChild(settingsRow(e.key, e.value)));
+}
+
+async function saveSettings() {
+  if (!confirm('Save these settings to .env?')) return;
+  $('env-err').hidden = true;
+  let d;
+  try {
+    d = await (await fetch('/api/env', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({entries: collectSettings()})})).json();
+  } catch (e) { showEnvErr('Control Center not reachable.'); return; }
+  if (!d.ok) { showEnvErr(d.error || 'could not save .env'); return; }
+  const b = $('env-save'), orig = b.innerHTML;   // innerHTML: keep the icon
+  b.textContent = 'Saved ✓';
+  setTimeout(() => { b.innerHTML = orig; }, 1400);
+  loadSettings();                        // reflect the canonical file (masked again)
 }
 
 function watchLog(name) {
