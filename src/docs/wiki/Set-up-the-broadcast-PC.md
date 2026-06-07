@@ -137,7 +137,7 @@ text editor and fill in the required value from the team:
 - `IRO_SHEET_ID` — the ID in the shared Google Sheet link.
 - *(optional)* `IRO_SHEET_PUSH_URL` — the Apps Script write webhook for the relay-hosted
   race timer. Enables Director timer actions to sync to the Sheet so a second producer
-  machine takes over with the same countdown. See [Race-Timer](Race-Timer) to set it up.
+  machine takes over with the same countdown. See [Sheet-Webhook](Sheet-Webhook) to set it up.
 
 Keep `.env` private; never share it. Full detail: [Configuration & secrets](Configuration).
 
