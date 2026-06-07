@@ -13,22 +13,30 @@ actions for directors without a Stream Deck. Install it first per
 1. Start Companion: `iro companion start` (Windows/macOS — the first run just
    launches Companion; Linux: start it manually). In the launcher press **Launch GUI**.
 2. In the admin: **Import/Export → Import** → the file `iro export companion` writes
-   (`runtime/iro-buttons.companionconfig`). This is a **full config** → confirm
-   **"Replace current configuration"**.
+   (`runtime/iro-buttons.companionconfig`). The import dialog offers two paths:
+   - **First import on a fresh machine:** confirm **"Replace current
+     configuration"**. Afterwards enter the OBS WebSocket password once (next
+     section) — the shipped config is password-stripped.
+   - **Re-import (button update):** choose **"Import, Resetting only Selected
+     Components"** and keep the **default checkboxes** — this preserves
+     Companion's settings, **including the stored OBS WebSocket password**;
+     nothing needs re-typing.
 3. Bind the board to the tailnet: `iro companion restart` — sets Companion's bind
    address to this machine's Tailscale IP. (Linux: set the launcher's **GUI
    Interface** to the Tailscale IP manually.)
 
-> ⚠️ This **replaces the entire Companion configuration** on this station. Fine for a
-> fresh/dedicated producer station; **back up first** if this Companion holds other
-> content.
+> ⚠️ **"Replace current configuration"** replaces the **entire** Companion
+> configuration on this station. Fine for a fresh/dedicated producer station;
+> **back up first** if this Companion holds other content.
 
 ## Connect to OBS
 
 The **OBS connection** (`127.0.0.1:4455`) comes with the config — **but without the
-password** (removed for security). → **Connections** → open the OBS entry → **enter your
-OBS WebSocket password** (the one you set in [Set up the broadcast PC](Set-up-the-broadcast-PC)) → the
-connection turns green.
+password** (removed for security). After a **first import**: → **Connections** → open
+the OBS entry → **enter your OBS WebSocket password** (the one you set in
+[Set up the broadcast PC](Set-up-the-broadcast-PC)) → the connection turns green.
+(A re-import via **"Resetting only Selected Components"** keeps the stored
+password — nothing to do.)
 
 ## The button board
 

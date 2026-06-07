@@ -39,6 +39,8 @@ the next time their scene goes active.
 
 ## Before you go live
 
+Plan **about 30 minutes** for these steps before the broadcast slot.
+
 1. **Update the tool:** `iro update` — picks up the latest release (skip if the team froze the version for the event).
 2. **Reboot** the PC (frees memory) and close heavy apps.
 3. **Update the tools:** `iro install-tools --update`. Outdated tools are the #1
@@ -70,6 +72,10 @@ Start OBS on the **Standby** scene, then click **Start Streaming**. From here th
 **director runs the show** — you just keep an eye on the machine. The director opens with
 the **Intro**: pressing **INTRO** (Companion) plays the looping intro clip with its own
 audio. When the field is ready they cut into the race look (**STINT A** / **Splitscreen**).
+
+**You should now see:** OBS sitting on **Standby** with the stream running —
+the **Start Streaming** button now reads **Stop Streaming**.
+<!-- screenshot: OBS on Standby with the stream running (button reads Stop Streaming) -->
 
 ## The director panel (remote control)
 
@@ -151,9 +157,11 @@ Which feed carries which stint may therefore differ between the parts — that
 is fine.
 
 1. Incoming producer: `iro event start --stint <N>` — N is the stint **on air
-   right now** (1-based, from the schedule sheet / Discord). Taking over right
-   at a stint change (e.g. a part boundary like "end of stint 3"): pass the
-   stint that is starting.
+   right now** (1-based, from the schedule sheet / Discord). The **outgoing
+   producer's** panel status strip (or their `/status`) shows the stint each
+   feed carries and which is on air — anyone with that panel open can read
+   N off it. Taking over right at a stint change (e.g. a part boundary like
+   "end of stint 3"): pass the stint that is starting.
 2. Verify Feed A shows the expected commentator (`/status` or the OBS
    preview).
 3. Start your OBS stream with this part's stream key — the overlap begins.
