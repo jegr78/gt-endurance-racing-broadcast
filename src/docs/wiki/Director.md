@@ -22,7 +22,7 @@ Two pages — **show control** and **race timer & audio**. The left column on ea
 
 | Row | Buttons |
 |-----|---------|
-| **Combos** | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO` — one press sets a whole look (the scene **and** the right feeds and audio). `INTRO` / `OUTRO` cut to the looping intro/outro clip (with its own audio) and mute the live feeds; they light while on air |
+| **Combos** | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO` — one press sets a whole look (the scene **and** the right feeds and audio). `INTRO` / `OUTRO` cut to the looping intro/outro clip (with its own audio) and mute the live feeds; they light while on air. `RED FLAG` is a toggle: first press shows the Standby Cover in the Stint scene **and** sets Race Control to *Red Flag - Race Suspended*; second press hides the cover and clears Race Control. It lights red while the cover is up |
 | **Scenes + relay** | `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Next` (the handover), `Feeds Reload`, `Feeds Status` |
 | **Feeds & reloads** | `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Feed A Reload` (reconnect only Feed A → `/reload/A`), `Feed B Reload` (→ `/reload/B`), `POV Reload`, `POV Stop` |
 | **Graphics & weather** | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle` (incident cover — see [The race](#through-the-broadcast-scene--sheet-cues)), `Weather Race (1) Toggle`, `Weather Race (2) Toggle`, `Weather Quali Toggle` — the three weather buttons are full-screen Stint overlays, each an independent toggle like Standings/Results |
@@ -117,6 +117,10 @@ listed value, or clear the cell to show nothing. The whole run, in order:
   **Standby Toggle** to hold the picture — it hides the feeds and the POV but keeps the
   Race Control banner and timer visible (the button lights while it's active). When it's
   resolved, press **Standby Toggle** again and **clear Race Control**.
+  For a red flag specifically, **RED FLAG** does both in one press (cover + Race
+  Control *Red Flag - Race Suspended*); pressing it again ends the phase (cover
+  hidden, Race Control cleared). The Race Control write needs the sheet-write
+  webhook ([Sheet-Webhook](Sheet-Webhook)) — without it only the cover toggles.
 
 **Final lap** — once you're in the last stint and the leader starts the final lap:
 - Sheet: **Race Control → Final Lap**. **Clear it** as soon as the race finishes.
