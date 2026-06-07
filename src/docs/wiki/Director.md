@@ -49,6 +49,37 @@ Two pages — **show control** and **race timer & audio**. The left column on ea
 
 How the board is imported and built: [Companion](Companion).
 
+## Director panel — SETUP row
+
+The **director panel** (`http://<producer-tailscale-ip>:8088/panel`) has a **SETUP row** with
+four dropdowns: **Stint (HUD label)**, **Streamer**, **Session**, and **Race Control** (plus a
+**CLEAR RC** button). The options come from the Configuration tab of the sheet — any new
+streamers or messages added there are picked up automatically without changing the panel.
+
+Each change takes effect on the HUD immediately and is written to the sheet in the background.
+An amber outline on the dropdown means the write is pending; the Setup status line shows the
+sync state. Editing the sheet dropdowns directly works exactly as before — the two methods are
+equivalent.
+
+> **Stint (HUD label) ≠ feed stint index.** The SETUP Stint dropdown sets the *HUD display
+> label* (what viewers see on the overlay). Advancing the actual feeds to the next commentator
+> stream is **NEXT** / **SET STINT** in the FEEDS row — those are separate operations.
+
+Both the panel SETUP row and the sheet dropdowns need the sheet-write webhook
+(`IRO_SHEET_PUSH_URL`). Without it the dropdowns are read-only. See [Sheet-Webhook](Sheet-Webhook).
+
+## Director panel — URLs section
+
+Below the main rows the panel has a collapsible **URLs** section. It shows the Schedule tab
+entries (one per stint: name + stream URL; rows currently assigned to a live feed are marked
+A or B) and the POV URL field.
+
+Saving a change writes it to the sheet only — **no feed reconnects automatically**. A new
+stream URL takes effect at the next **RELOAD A/B** / **NEXT** for that feed (POV: **POV
+RELOAD**), exactly as if the sheet had been edited directly.
+
+The URLs section also needs `IRO_SHEET_PUSH_URL` — without it the fields are read-only.
+
 ## Through the broadcast (scene + sheet cues)
 
 As director you drive two things: the **scenes** (Companion) and three **HUD fields in the

@@ -117,6 +117,8 @@ flowchart LR
 At each change the director: cuts to **Splitscreen**, sets **Race Control** to *Driver
 Swaps* in the sheet, presses **Feeds Next**, updates the **Stint** and **Streamer** cells,
 cuts back with **STINT A** / **STINT B** (the incoming feed), then clears **Race Control**.
+The panel's **SETUP row** provides the same Stint / Streamer / Race Control dropdowns
+directly — editing the sheet and using the panel are equivalent.
 Full step-by-step: [Director guide](Director#at-a-driver-change). (Why two feeds:
 [Relay — how the feeds work](Relay-Mode).)
 
