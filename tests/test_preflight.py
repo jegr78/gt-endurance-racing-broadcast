@@ -159,6 +159,12 @@ def t_classify_sheet_empty_csv_fails():
     assert "empty" in r.detail
 
 
+def t_classify_sheet_bom_prefixed_html_still_detected():
+    r = m.classify_sheet("SHEET_ID", "ok", "﻿<!DOCTYPE html><title>Sign in</title>")
+    assert r.level == "FAIL"
+    assert "sign-in" in r.detail
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

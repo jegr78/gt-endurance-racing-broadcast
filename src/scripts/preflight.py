@@ -262,7 +262,7 @@ def classify_sheet(sheet_id, outcome=None, payload=""):
         return Result(FAIL, "Google Sheet",
                       f"not readable ({payload}) — check sharing: Share -> "
                       f"'Anyone with the link: Viewer' (or no network)")
-    head = (payload or "").lstrip()[:200].lower()
+    head = (payload or "").lstrip("﻿ \t\r\n")[:200].lower()
     if head.startswith("<!doctype") or head.startswith("<html"):
         return Result(FAIL, "Google Sheet",
                       "not readable (got a sign-in page) — check sharing: "
