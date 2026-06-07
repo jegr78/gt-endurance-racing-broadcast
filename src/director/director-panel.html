@@ -116,6 +116,38 @@
 
   .hint{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5}
 
+  /* ---------- setup dropdowns (sheet-backed) ---------- */
+  .setrow{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .fld select{background:#0c0f13;border:1px solid var(--edge);color:var(--ink);
+    font-family:var(--mono);font-size:13px;padding:10px 12px;border-radius:9px;
+    min-width:150px;outline:none}
+  .fld select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(58,160,255,.18)}
+  .fld select.pending{border-color:var(--amber);box-shadow:0 0 0 3px var(--amber-glow)}
+  .fld select:disabled{opacity:.45}
+
+  /* ---------- URLs section ---------- */
+  details.urls{display:block}
+  details.urls summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;
+    font-family:var(--head);font-weight:700;letter-spacing:.12em;font-size:14px;text-transform:uppercase}
+  details.urls summary::before{content:"";width:6px;height:16px;background:var(--amber);
+    border-radius:2px;box-shadow:0 0 10px var(--amber-glow)}
+  details.urls summary::after{content:"▸";color:var(--muted);margin-left:4px}
+  details.urls[open] summary::after{content:"▾"}
+  .urls table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
+  .urls td{padding:4px 6px;vertical-align:middle}
+  .urls td.rn{width:54px;color:var(--muted);white-space:nowrap}
+  .urls .livebadge{display:inline-block;margin-left:5px;padding:1px 6px;border-radius:6px;
+    font-size:10px;font-weight:600;color:var(--air);border:1px solid var(--air)}
+  .urls .livebadge:empty{display:none}
+  .urls input{width:100%;background:#0c0f13;border:1px solid var(--edge);color:var(--ink);
+    font-family:var(--mono);font-size:12px;padding:7px 9px;border-radius:8px;outline:none}
+  .urls input:focus{border-color:var(--blue)}
+  .urls td.act{width:84px}
+  .urls .save,.urls .add{padding:7px 10px;font-size:11px;letter-spacing:.1em;border-radius:8px;
+    border:1px solid var(--edge);background:#141921;color:var(--muted);cursor:pointer;width:100%}
+  .urls .save.ok{border-color:var(--live);color:var(--live)}
+  .urls .add{width:auto;margin-top:8px}
+
   /* ---------- log ---------- */
   #log{font-size:11px;color:var(--muted);margin-top:2px;max-height:90px;overflow:auto;
     border:1px solid var(--edge);background:#0c0f13;border-radius:10px;padding:10px;white-space:pre-wrap}
@@ -160,6 +192,13 @@
 
   <section class="bus"><div class="cap">Feeds</div><div class="keys" id="feedsBus"></div></section>
 
+  <section class="bus"><div class="cap">Setup</div>
+    <div class="body">
+      <div class="setrow" id="setupRow"></div>
+      <div class="hint" id="setupInfo">Setup: connecting to relay…</div>
+    </div>
+  </section>
+
   <section class="bus"><div class="cap">Scn·Vis</div><div class="keys" id="scnBus"></div></section>
 
   <section class="bus"><div class="cap">Gfx</div><div class="keys" id="gfxBus"></div></section>
@@ -172,6 +211,22 @@
   </section>
 
   <section class="bus"><div class="cap">Audio</div><div class="body" id="audio"></div></section>
+
+  <details class="bus urls" id="urlsBox">
+    <summary>URLs · Schedule + POV</summary>
+    <div class="body">
+      <table><tbody id="schedBody"></tbody></table>
+      <button class="add" id="schedAdd">+ ADD ROW</button>
+      <table><tbody>
+        <tr><td class="rn">POV</td>
+            <td><input id="povUrl" placeholder="https://www.youtube.com/watch?v=… or UC…"></td>
+            <td class="act"><button class="save" id="povSave">SAVE</button></td></tr>
+      </tbody></table>
+      <div class="hint">Saves write the Google Sheet only — a feed picks the new URL up
+        on RELOAD A/B / NEXT (rows marked <b>A</b>/<b>B</b> are live now); the POV URL
+        applies on POV RELOAD. Names/URLs can still be edited in the Sheet directly.</div>
+    </div>
+  </details>
 
   <div id="log">Ready. FEEDS + TIMER work relay-only; enter the Producer's Tailscale IP + OBS WebSocket password and Connect for everything else.</div>
 </div>
@@ -572,11 +627,166 @@ async function timerPoll(){
   }
 }
 
+/* ---------- SETUP row (sheet-backed dropdowns; relay-only) ----------
+   The "STINT" here is the HUD display LABEL (Setup tab) — unrelated to the
+   feed stint index handled by NEXT / SET STINT in the FEEDS row. */
+const SETUP_FIELDS = [
+  ["stint","STINT (HUD LABEL)"], ["streamer","STREAMER"],
+  ["session","SESSION"], ["racecontrol","RACE CONTROL"],
+];
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+SETUP_FIELDS.forEach(([key,label])=>{
+  const w = document.createElement("div"); w.className = "fld";
+  w.innerHTML = `<label>${label}</label><select data-setup="${key}" disabled></select>`;
+  w.querySelector("select").addEventListener("change", e=>setupSet(key, e.target.value));
+  $("#setupRow").appendChild(w);
+});
+{ const b = document.createElement("button");
+  b.className = "pill stop"; b.textContent = "CLEAR RC";
+  b.addEventListener("click", ()=>setupSet("racecontrol",""));
+  $("#setupRow").appendChild(b); }
+
+async function setupSet(field, value){
+  const path = value === "" ? "setup/clear/" + field
+                            : "setup/set/" + field + "/" + encodeURIComponent(value);
+  try{
+    const r = await fetch("/" + path, {cache:"no-store"});
+    const d = await r.json();
+    if (d.error){ log("Setup " + field + ": " + d.error, "err"); setupPoll(); return; }
+    log("Setup " + field + " → " + (value || "(cleared)"));
+    setupPoll();
+  }catch(e){ log("Setup " + field + " failed (relay reachable?): " + e, "err"); }
+}
+
+async function setupPoll(){
+  let d;
+  try{
+    const r = await fetch("/setup/data", {cache:"no-store"});
+    d = await r.json();
+  }catch(e){ $("#setupInfo").textContent = "Setup: relay not reachable."; return; }
+  if (d.error){ $("#setupInfo").textContent = "Setup: " + d.error; return; }
+  const ro = d.push === "disabled";
+  for (const [key] of SETUP_FIELDS){
+    const sel = document.querySelector(`select[data-setup="${key}"]`);
+    if (!sel || sel === document.activeElement) continue;   // never yank an open menu
+    const opts = (key === "racecontrol" ? [""] : []).concat(d.options[key] || []);
+    const sig = JSON.stringify(opts);
+    if (sel.dataset.sig !== sig){
+      sel.innerHTML = opts.map(o=>`<option value="${escapeHtml(o)}">${o===""?"— none —":escapeHtml(o)}</option>`).join("");
+      sel.dataset.sig = sig;
+    }
+    const cur = d.fields[key] || "";
+    if ([...sel.options].some(o=>o.value===cur)) sel.value = cur;
+    sel.classList.toggle("pending", d.pending.includes(key));
+    sel.disabled = ro;
+  }
+  $("#setupInfo").textContent = "Setup: " +
+      (d.push === "ok" ? "sheet sync OK"
+     : ro ? "read-only — set IRO_SHEET_PUSH_URL in .env (wiki: Sheet-Webhook)"
+     : d.push === "failed" ? "SHEET SYNC FAILED — " + (d.last_error || "see relay log")
+     : "sheet sync not yet attempted");
+}
+
+/* ---------- URLs section (Schedule rows + POV; sheet writes, no reloads) -- */
+const SAVE_GUARD_MS = 30000;   // a just-saved value wins over a stale CSV poll
+function rowBusy(tr){
+  return tr.dataset.dirty ||
+         tr.contains(document.activeElement) ||
+         Date.now() - Number(tr.dataset.saved||0) < SAVE_GUARD_MS;
+}
+function schedRow(i){
+  let tr = document.querySelector(`#schedBody tr[data-row="${i}"]`);
+  if (tr) return tr;
+  tr = document.createElement("tr"); tr.dataset.row = i;
+  tr.innerHTML = `<td class="rn">${i}<span class="livebadge"></span></td>
+    <td style="width:24%"><input class="nm" placeholder="name"></td>
+    <td><input class="u" placeholder="https://www.youtube.com/watch?v=… or UC…"></td>
+    <td class="act"><button class="save">SAVE</button></td>`;
+  tr.querySelectorAll("input").forEach(inp=>inp.addEventListener("input", ()=>tr.dataset.dirty = 1));
+  tr.querySelector(".save").addEventListener("click", ()=>schedSave(tr, i));
+  $("#schedBody").appendChild(tr);
+  return tr;
+}
+async function schedSave(tr, row){
+  const btn = tr.querySelector(".save");
+  btn.disabled = true; btn.textContent = "…"; btn.classList.remove("ok");
+  try{
+    const r = await fetch("/schedule/set", {method:"POST", cache:"no-store",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({row, url: tr.querySelector(".u").value.trim(),
+                            name: tr.querySelector(".nm").value.trim()})});
+    const d = await r.json();
+    if (d.error){ log("Schedule row " + row + ": " + d.error, "err"); btn.textContent = "RETRY"; return; }
+    delete tr.dataset.dirty; tr.dataset.saved = Date.now();
+    btn.textContent = "SAVED ✓"; btn.classList.add("ok");
+    const live = tr.querySelector(".livebadge").textContent;
+    log("Schedule row " + row + " saved" +
+        (live ? ` — feed ${live} picks it up on RELOAD ${live} / NEXT` : ""));
+  }catch(e){ log("Schedule save failed: " + e, "err"); btn.textContent = "RETRY"; }
+  finally{
+    btn.disabled = false;
+    setTimeout(()=>{ if (btn.textContent === "SAVED ✓"){ btn.textContent = "SAVE"; btn.classList.remove("ok"); } }, 4000);
+  }
+}
+$("#schedAdd").addEventListener("click", ()=>{
+  const next = document.querySelectorAll("#schedBody tr").length + 1;
+  const tr = schedRow(next); tr.dataset.dirty = 1;
+  tr.querySelector(".nm").focus();
+});
+$("#povSave").addEventListener("click", async ()=>{
+  const btn = $("#povSave");
+  btn.disabled = true; btn.textContent = "…"; btn.classList.remove("ok");
+  try{
+    const r = await fetch("/pov/set", {method:"POST", cache:"no-store",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({url: $("#povUrl").value.trim()})});
+    const d = await r.json();
+    if (d.error){ log("POV URL: " + d.error, "err"); btn.textContent = "RETRY"; return; }
+    delete $("#povUrl").dataset.dirty; $("#povUrl").dataset.saved = Date.now();
+    btn.textContent = "SAVED ✓"; btn.classList.add("ok");
+    log("POV URL saved — applies on POV RELOAD.");
+  }catch(e){ log("POV save failed: " + e, "err"); btn.textContent = "RETRY"; }
+  finally{
+    btn.disabled = false;
+    setTimeout(()=>{ if (btn.textContent === "SAVED ✓"){ btn.textContent = "SAVE"; btn.classList.remove("ok"); } }, 4000);
+  }
+});
+$("#povUrl").addEventListener("input", ()=>$("#povUrl").dataset.dirty = 1);
+
+async function schedPoll(){
+  if (!$("#urlsBox").open) return;   // closed section -> no traffic
+  try{
+    const r = await fetch("/schedule/data", {cache:"no-store"});
+    const d = await r.json();
+    if (d.error) return;
+    d.rows.forEach(row=>{
+      const tr = schedRow(row.row);
+      tr.querySelector(".livebadge").textContent = row.live || "";
+      if (rowBusy(tr)) return;
+      tr.querySelector(".nm").value = row.name;
+      tr.querySelector(".u").value = row.url;
+    });
+  }catch(e){}
+  try{
+    const r = await fetch("/status", {cache:"no-store"});
+    const d = await r.json();
+    const inp = $("#povUrl");
+    if (d.pov && !inp.dataset.dirty && inp !== document.activeElement &&
+        Date.now() - Number(inp.dataset.saved||0) > SAVE_GUARD_MS)
+      inp.value = d.pov.url || "";
+  }catch(e){}
+}
+$("#urlsBox").addEventListener("toggle", ()=>schedPoll());
+
 /* ---------- boot ---------- */
 renderAir({});
 relayPoll(); timerPoll();
 setInterval(relayPoll, 2000);
 setInterval(timerPoll, 2000);
+setupPoll(); setInterval(setupPoll, 2000);
+setInterval(schedPoll, 2000);
 </script>
 </body>
 </html>
