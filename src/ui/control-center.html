@@ -123,6 +123,7 @@
   .row button:hover, .console-head button:hover, .item button:hover {
            border-color:var(--accent); background:#283352; }
   button:active { transform:scale(.97); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
   button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
   a.linkbtn { display:inline-flex; align-items:center; gap:6px; min-height:34px;
            background:#232C42; color:var(--accent); border:1px solid var(--line);
@@ -972,16 +973,18 @@ async function loadSettings(force) {
 async function saveSettings() {
   if (!confirm('Save these settings to .env?')) return;
   $('env-err').hidden = true;
+  const b = $('env-save');
+  b.disabled = true;                     // block re-entry through the feedback window
   let d;
   try {
     d = await (await fetch('/api/env', {method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({entries: collectSettings()})})).json();
-  } catch (e) { showEnvErr('Control Center not reachable.'); return; }
-  if (!d.ok) { showEnvErr(d.error || 'could not save .env'); return; }
-  const b = $('env-save'), orig = b.innerHTML;   // innerHTML: keep the icon
+  } catch (e) { showEnvErr('Control Center not reachable.'); b.disabled = false; return; }
+  if (!d.ok) { showEnvErr(d.error || 'could not save .env'); b.disabled = false; return; }
+  const orig = b.innerHTML;              // innerHTML: keep the icon (button is intact here)
   b.textContent = 'Saved ✓';
-  setTimeout(() => { b.innerHTML = orig; }, 1400);
+  setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
   loadSettings();                        // reflect the canonical file (masked again)
 }
 
