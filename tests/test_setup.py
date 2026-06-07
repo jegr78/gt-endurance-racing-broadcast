@@ -50,9 +50,9 @@ SCHED_CSV = ('"https://www.youtube.com/watch?v=abc",Matt\n'
 
 def t_parse_rows_url_and_name():
     rows = m.ScheduleSource._parse_rows(SCHED_CSV)
-    assert rows == [("https://www.youtube.com/watch?v=abc", "Matt"),
-                    ("UCLA_DiR1FfKNvjuUpBHmylQ", "NASA"),
-                    ("UCoMdktPbSTixAyNGwb-UYkQ", "")], rows
+    assert rows == [("https://www.youtube.com/watch?v=abc", "Matt", 1),
+                    ("UCLA_DiR1FfKNvjuUpBHmylQ", "NASA", 2),
+                    ("UCoMdktPbSTixAyNGwb-UYkQ", "", 3)], rows
 
 
 def t_parse_rows_empty_is_none():
@@ -73,14 +73,22 @@ def t_schedule_source_get_rows():
     assert s.refresh() is True
     assert s.get() == ["https://www.youtube.com/watch?v=abc",
                        "UCLA_DiR1FfKNvjuUpBHmylQ", "UCoMdktPbSTixAyNGwb-UYkQ"]
-    assert s.get_rows()[1] == ("UCLA_DiR1FfKNvjuUpBHmylQ", "NASA")
+    assert s.get_rows()[1] == ("UCLA_DiR1FfKNvjuUpBHmylQ", "NASA", 2)
 
 
 def t_parse_rows_url_not_first_column():
     text = "Commentator,Channel\nMatt,UCaaaaaaaaaaaaaaaaaaaaaa\nNASA,UCbbbbbbbbbbbbbbbbbbbbbb\n"
     rows = m.ScheduleSource._parse_rows(text)
-    assert rows == [("UCaaaaaaaaaaaaaaaaaaaaaa", ""),
-                    ("UCbbbbbbbbbbbbbbbbbbbbbb", "")], rows
+    assert rows == [("UCaaaaaaaaaaaaaaaaaaaaaa", "", 2),
+                    ("UCbbbbbbbbbbbbbbbbbbbbbb", "", 3)], rows
+
+
+def t_parse_rows_with_header_line():
+    # Header row fails is_channel -> skipped; physical line numbers preserved.
+    text = "Channel,Name\nUCaaaaaaaaaaaaaaaaaaaaa1,Alpha\nUCbbbbbbbbbbbbbbbbbbbbb2,Beta\n"
+    rows = m.ScheduleSource._parse_rows(text)
+    assert rows == [("UCaaaaaaaaaaaaaaaaaaaaa1", "Alpha", 2),
+                    ("UCbbbbbbbbbbbbbbbbbbbbb2", "Beta", 3)], rows
 
 
 # ---------- SetupControl ----------
@@ -245,8 +253,9 @@ def _client(setup_ctl):
 
     class _StubRelay:
         def __init__(self):
-            self.source = _StubSource([("https://www.youtube.com/watch?v=a", "Alpha"),
-                                       ("UCLA_DiR1FfKNvjuUpBHmylQ", "Beta")])
+            # Simulate a header at line 1: physical sheet rows are 2 and 3.
+            self.source = _StubSource([("https://www.youtube.com/watch?v=a", "Alpha", 2),
+                                       ("UCLA_DiR1FfKNvjuUpBHmylQ", "Beta", 3)])
             self.feeds = {"A": _StubFeed(0), "B": _StubFeed(1)}
         def status(self): return {"schedule_len": 2, "feeds": {}}
 
@@ -305,9 +314,11 @@ def t_endpoints_schedule_data_marks_live():
     srv, get, post = _client(ctl)
     try:
         d = get("/schedule/data")
-        assert d["rows"][0] == {"row": 1, "url": "https://www.youtube.com/watch?v=a",
+        assert d["rows"][0] == {"row": 1, "sheetRow": 2,
+                                "url": "https://www.youtube.com/watch?v=a",
                                 "name": "Alpha", "live": "A"}
         assert d["rows"][1]["live"] == "B"
+        assert d["rows"][1]["sheetRow"] == 3
     finally:
         srv.shutdown()
 

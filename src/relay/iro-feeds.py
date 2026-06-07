@@ -752,8 +752,13 @@ class ScheduleSource:
 
     @staticmethod
     def _parse_rows(text):
-        """CSV -> [(url, name)] rows. The URL column is auto-detected (most
-        cells matching is_channel); the name is the cell right of it."""
+        """CSV -> [(url, name, line)] rows where *line* is the 1-based CSV line
+        index of each accepted row (== physical sheet row when the Schedule tab
+        starts at sheet row 1 with no leading blank rows — gviz export maps
+        1:1).  Header rows or any row whose URL cell fails is_channel() are
+        silently skipped; their line numbers are NOT remapped.  The URL column
+        is auto-detected (most cells matching is_channel); the name is the
+        cell right of it."""
         rows = list(csv.reader(io.StringIO(text)))
         if not rows:
             return None
@@ -766,15 +771,17 @@ class ScheduleSource:
         if best_col is None or best_cnt == 0:
             return None
         out = [(r[best_col].strip(),
-                (r[best_col + 1].strip() if len(r) > best_col + 1 else ""))
-               for r in rows if len(r) > best_col and is_channel(r[best_col])]
+                (r[best_col + 1].strip() if len(r) > best_col + 1 else ""),
+                line)
+               for line, r in enumerate(rows, 1)
+               if len(r) > best_col and is_channel(r[best_col])]
         return out or None
 
     @staticmethod
     def _parse_csv(text):
         """URL-only wrapper around _parse_rows; kept for the URL-list callers/tests."""
         rows = ScheduleSource._parse_rows(text)
-        return [u for u, _n in rows] if rows else None
+        return [u for u, _n, _l in rows] if rows else None
 
     def fetch(self, timeout=15):
         if not self.csv_url:
@@ -798,12 +805,12 @@ class ScheduleSource:
         if rows:
             with self.lock:
                 self.rows = rows
-                self.items = [u for u, _n in rows]
+                self.items = [u for u, _n, _l in rows]
                 self.last_ok = time.time()
                 self.last_error = None
             try:
                 with open(self.cache_path, "w", encoding="utf-8") as fh:
-                    fh.write("\n".join(u for u, _n in rows) + "\n")
+                    fh.write("\n".join(u for u, _n, _l in rows) + "\n")
             except Exception:
                 pass  # cache write is best-effort; the in-memory schedule is current
             return True
@@ -822,7 +829,7 @@ class ScheduleSource:
                 if items:
                     with self.lock:
                         self.items = items
-                        self.rows = [(u, "") for u in items]
+                        self.rows = [(u, "", i + 1) for i, u in enumerate(items)]
                     print(f"WARN: sheet unreachable ({self.last_error}). "
                           f"Using {label}: {len(items)} stints.")
                     return
@@ -1347,9 +1354,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["schedule", "data"]:
                     rows = relay.source.get_rows()
                     live = {f.idx: k for k, f in relay.feeds.items()}
-                    return self._send({"rows": [{"row": i + 1, "url": u, "name": n,
+                    return self._send({"rows": [{"row": i + 1, "sheetRow": line,
+                                                 "url": u, "name": n,
                                                  "live": live.get(i)}
-                                                for i, (u, n) in enumerate(rows)],
+                                                for i, (u, n, line) in enumerate(rows)],
                                        "source": relay.source.health()})
                 if p == ["next"]:                       return self._send(relay.next_auto())
                 if p == ["reload"]:                     return self._send(relay.reload())

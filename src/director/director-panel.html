@@ -714,10 +714,13 @@ function schedRow(i){
 async function schedSave(tr, row){
   const btn = tr.querySelector(".save");
   btn.disabled = true; btn.textContent = "…"; btn.classList.remove("ok");
+  // Use the physical sheet row stamped by schedPoll; fall back to the stint
+  // number only for rows the poll hasn't stamped yet (e.g. a new ADD ROW).
+  const sheetRow = Number(tr.dataset.sheetRow || row);
   try{
     const r = await fetch("/schedule/set", {method:"POST", cache:"no-store",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({row, url: tr.querySelector(".u").value.trim(),
+      body: JSON.stringify({row: sheetRow, url: tr.querySelector(".u").value.trim(),
                             name: tr.querySelector(".nm").value.trim()})});
     const d = await r.json();
     if (d.error){ log("Schedule row " + row + ": " + d.error, "err"); btn.textContent = "RETRY"; return; }
@@ -733,8 +736,16 @@ async function schedSave(tr, row){
   }
 }
 $("#schedAdd").addEventListener("click", ()=>{
-  const next = document.querySelectorAll("#schedBody tr").length + 1;
-  const tr = schedRow(next); tr.dataset.dirty = 1;
+  // Compute next physical sheet row from the max of existing sheetRow stamps
+  // (so the new row appends after the last known physical row, not just the
+  // last tr in the table — important when the Schedule tab has a header row).
+  let maxSheet = 0;
+  document.querySelectorAll("#schedBody tr").forEach(r=>{
+    const v = Number(r.dataset.sheetRow || r.dataset.row || 0);
+    if (v > maxSheet) maxSheet = v;
+  });
+  const next = maxSheet + 1 || document.querySelectorAll("#schedBody tr").length + 1;
+  const tr = schedRow(next); tr.dataset.sheetRow = next; tr.dataset.dirty = 1;
   tr.querySelector(".nm").focus();
 });
 $("#povSave").addEventListener("click", async ()=>{
@@ -765,6 +776,8 @@ async function schedPoll(){
     if (d.error) return;
     d.rows.forEach(row=>{
       const tr = schedRow(row.row);
+      // Stamp the physical sheet row so schedSave and schedAdd use it.
+      tr.dataset.sheetRow = row.sheetRow;
       tr.querySelector(".livebadge").textContent = row.live || "";
       if (rowBusy(tr)) return;
       tr.querySelector(".nm").value = row.name;

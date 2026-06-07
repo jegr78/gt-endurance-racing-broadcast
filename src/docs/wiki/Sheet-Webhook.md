@@ -18,7 +18,7 @@ machine and the panel's SETUP row + URLs section are display-only.
 |---|---|
 | `timer` | Timer tab (race-timer state — see [Race-Timer](Race-Timer)) |
 | `setup` | Setup tab: the cell **below** a header (`Stint`, `Streamer`, `Session`, `Race Control`) — found by text, so the tab layout may move |
-| `schedule` | Schedule tab row N: URL (col A) + name (col B); row `last+1` appends |
+| `schedule` | Schedule tab **physical row N** (the panel sends the CSV line number automatically): URL (col A) + name (col B); row `last+1` appends. **The Schedule tab must not have leading blank rows** — the gviz CSV export maps physical sheet rows to CSV lines 1:1 when the tab starts at row 1. A header row is silently skipped when reading but its physical line number is still used when writing. |
 | `pov` | POV tab cell `A2` |
 
 The relay only sends Setup values that exist in the Configuration tab's
