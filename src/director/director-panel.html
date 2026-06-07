@@ -68,6 +68,7 @@
     font-size:13px;letter-spacing:.06em;cursor:pointer;background:linear-gradient(180deg,#1b2129,#141921);color:var(--ink)}
   .pill.go{border-color:var(--live);color:var(--live)}
   .pill.stop{border-color:var(--air);color:var(--air)}
+  .pill:disabled{opacity:.45;cursor:not-allowed}
 
   /* ---------- busses ---------- */
   .bus{display:flex;gap:14px;align-items:flex-start;
@@ -644,7 +645,7 @@ SETUP_FIELDS.forEach(([key,label])=>{
   $("#setupRow").appendChild(w);
 });
 { const b = document.createElement("button");
-  b.className = "pill stop"; b.textContent = "CLEAR RC";
+  b.className = "pill stop"; b.textContent = "CLEAR RC"; b.id = "clearRc";
   b.addEventListener("click", ()=>setupSet("racecontrol",""));
   $("#setupRow").appendChild(b); }
 
@@ -682,6 +683,7 @@ async function setupPoll(){
     sel.classList.toggle("pending", d.pending.includes(key));
     sel.disabled = ro;
   }
+  $("#clearRc").disabled = ro;
   $("#setupInfo").textContent = "Setup: " +
       (d.push === "ok" ? "sheet sync OK"
      : ro ? "read-only — set IRO_SHEET_PUSH_URL in .env (wiki: Sheet-Webhook)"
