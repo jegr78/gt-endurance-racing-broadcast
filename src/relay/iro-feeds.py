@@ -418,6 +418,33 @@ def merge_timer_states(local, sheet):
     return sheet if sheet.get("updated", 0.0) > local.get("updated", 0.0) else local
 
 
+def post_webhook(url, payload, timeout=10):
+    """POST JSON to the Apps-Script sheet-write webhook -> raw response bytes."""
+    req = Request(url, data=json.dumps(payload).encode("utf-8"), method="POST",
+                  headers={"User-Agent": "iro-feeds/1.0",
+                           "Content-Type": "application/json"})
+    with urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+def check_webhook_response(body, expected_action=None):
+    """(ok, error) from an Apps-Script response body. Apps Script answers
+    HTTP 200 even for errors, so only its own {"ok": true} counts. The v2
+    script echoes the action; an ok WITHOUT the echo on an action write is a
+    still-deployed v1 (timer-only) script -> report it, never a false success."""
+    try:
+        d = json.loads((body or b"{}").decode("utf-8", "replace"))
+    except ValueError:
+        d = None
+    if not isinstance(d, dict) or d.get("ok") is not True:
+        snippet = (body or b"")[:120].decode("utf-8", "replace")
+        return False, f"webhook did not confirm: {snippet!r}"
+    if expected_action and d.get("action") != expected_action:
+        return False, ("webhook script outdated (no action echo) — redeploy "
+                       "the v2 script (wiki: Sheet-Webhook)")
+    return True, None
+
+
 class TimerStore:
     """Race-timer state with three layers (spec §3): in-memory + local JSON
     file (restart-safe) + Sheet tab via CSV poll / Apps-Script webhook push
@@ -497,33 +524,22 @@ class TimerStore:
         return True
 
     # -- webhook push (Apps Script writes the Timer tab) --------------------
-    @staticmethod
-    def _post(url, body):
-        req = Request(url, data=body, method="POST",
-                      headers={"User-Agent": "iro-feeds/1.0",
-                               "Content-Type": "application/json"})
-        with urlopen(req, timeout=10) as resp:
-            return resp.read()
-
     def _push(self, payload):
-        """Success = the Apps Script's own {"ok": true} — Apps Script answers
-        HTTP 200 even for errors (bad key, exceptions render an HTML page), so
-        the status code alone is a false positive."""
+        """Success = the Apps Script's own {"ok": true} (see
+        check_webhook_response). Timer pushes carry no expected_action: a v1
+        script keeps working for the timer."""
         try:
-            body = self._post(self.push_url, json.dumps(payload).encode("utf-8"))
-            try:
-                ok = json.loads(body or b"{}").get("ok") is True
-            except (ValueError, AttributeError):
-                ok = False
-            if ok:
-                self.push_status = "ok"  # diagnostics: single ref assignments, no lock needed
-            else:
-                snippet = (body or b"")[:120].decode("utf-8", "replace")
-                self.push_status = "failed"
-                self.last_error = f"push: webhook did not confirm: {snippet!r}"
+            body = post_webhook(self.push_url, payload)
         except Exception as e:
             self.push_status = "failed"
             self.last_error = f"push: {type(e).__name__}: {e}"
+            return
+        ok, err = check_webhook_response(body)
+        if ok:
+            self.push_status = "ok"  # diagnostics: single ref assignments, no lock needed
+        else:
+            self.push_status = "failed"
+            self.last_error = f"push: {err}"
 
     def _spawn_push(self, payload):
         threading.Thread(target=self._push, args=(payload,), daemon=True).start()
