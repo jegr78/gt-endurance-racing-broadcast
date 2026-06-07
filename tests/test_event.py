@@ -144,7 +144,9 @@ def t_classify_app_levels():
 def t_classify_tailscale():
     assert m.classify_tailscale("100.64.1.2").level == "PASS"
     assert "100.64.1.2" in m.classify_tailscale("100.64.1.2").detail
-    assert m.classify_tailscale(None).level == "WARN"
+    miss = m.classify_tailscale(None)
+    assert miss.level == "WARN"
+    assert "Tailscale not connected" in miss.detail   # no 'tailnet' jargon
 
 
 def t_classify_relay():

@@ -183,7 +183,8 @@ def classify_tailscale(ip):
     if ip:
         return Result(PASS, "Tailscale", f"connected ({ip})")
     return Result(WARN, "Tailscale",
-                  "no tailnet IP — remote panel/tablet unreachable; sign in to Tailscale")
+                  "Tailscale not connected — directors cannot reach the panel/tablet "
+                  "remotely; sign in to Tailscale")
 
 
 def classify_relay(alive, http_ok, port=8088):
