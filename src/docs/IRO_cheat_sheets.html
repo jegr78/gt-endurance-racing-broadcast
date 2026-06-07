@@ -52,7 +52,7 @@
 
   <div class="top">
     <h1>IRO Broadcast — Cheat Sheets</h1>
-    <span>Print &amp; pin · v3 setup</span>
+    <span>Print &amp; pin · v4 setup</span>
   </div>
 
   <div class="cards">
@@ -100,12 +100,12 @@
 
         <h3>Before the event</h3>
         <ol>
-          <li>Update tools: <code>iro install-tools --update</code>.</li>
-          <li>Update GPU driver.</li>
-          <li>Tailscale running; a Director confirms access.</li>
-          <li>OBS → Tools → <span class="k">WebSocket on</span>; Companion green.</li>
-          <li>Run <span class="k">iro relay start</span>; confirm the feeds appear in OBS.</li>
-          <li>Test the Discord audio source.</li>
+          <li>Update: <code>iro update</code>, then <code>iro install-tools --update</code>.</li>
+          <li>Update GPU driver; <span class="k">reboot</span> the PC.</li>
+          <li>Refresh cookies: <code>iro cookies firefox</code> (log into YouTube in Firefox first).</li>
+          <li>Check the machine: <code>iro preflight</code> — fix anything it flags.</li>
+          <li>Bring everything up: <span class="k">iro event start</span> — Tailscale, Discord, relay, OBS, Companion; prints the director URLs to forward.</li>
+          <li>Companion green; a Director confirms access. Test the Discord audio source.</li>
           <li>Enter the <span class="k">IRO stream key</span> in OBS.</li>
         </ol>
 
@@ -127,7 +127,7 @@
         <h3>End</h3>
         <ul>
           <li>■ Stop Streaming.</li>
-          <li>Close feeds: <code>iro relay stop</code>.</li>
+          <li>Shut down services: <code>iro event stop</code>.</li>
         </ul>
       </div>
     </section>
@@ -141,8 +141,8 @@
 
         <h3>Connect</h3>
         <ol>
-          <li>Open <span class="k">director-panel.html</span> (via <code>file://</code> or <code>http://</code> — <span class="warn">not https</span>),<br>or Companion: <code>http://&lt;producer-tailscale-ip&gt;:8000/tablet</code>.</li>
-          <li>Enter Producer Tailscale IP + port <code>4455</code> + password → Connect.</li>
+          <li>Panel: <code>http://&lt;producer-tailscale-ip&gt;:8088/panel</code>,<br>or Companion buttons: <code>http://&lt;producer-tailscale-ip&gt;:8000/tablet</code>.</li>
+          <li>Panel scene/audio control only: enter the producer's Tailscale IP + port <code>4455</code> + the OBS WebSocket password → Connect (asked once — the browser remembers it). Companion buttons need no password.</li>
         </ol>
 
         <h3>During a stint</h3>
@@ -162,7 +162,7 @@
         <h3>Driver POV (optional)</h3>
         <ul>
           <li><span class="warn">Needs lead time (~5 min)</span>: driver goes live + sends URL well before you want it on air.</li>
-          <li>URL in Sheet tab <span class="k">POV</span> A2 → <code>POV Reload</code> → wait until <code>/status</code> shows <span class="k">serving</span> → <code>POV Toggle</code> (PiP bottom-right).</li>
+          <li>URL in Sheet tab <span class="k">POV</span> A2 → <code>POV Reload</code> → wait until the panel health line (or <code>/status</code>) shows <span class="k">serving</span> → <code>POV Toggle</code> (PiP bottom-right).</li>
           <li>Muted by default; <code>MUTE POV</code> / <code>VOL POV UP/DOWN</code> for sound. Done → <span class="warn">POV Toggle (hide) + POV Stop</span>.</li>
         </ul>
 

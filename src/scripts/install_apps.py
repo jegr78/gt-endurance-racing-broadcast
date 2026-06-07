@@ -306,7 +306,8 @@ def main():
         print("All apps up to date.")
         return
     print("All apps installed. First-run setup still needed:")
-    print("  Tailscale: sign in and join the IRO tailnet (invited account).")
+    print("  Tailscale: sign in and join the team's private Tailscale "
+          "network (your invited account).")
     print("  Companion: launch once, then `iro export companion` + import the config.")
     print("  OBS: run `iro setup` and import the localized collection.")
     print("  Discord: sign in — used for the interview audio (OBS app-audio capture).")
