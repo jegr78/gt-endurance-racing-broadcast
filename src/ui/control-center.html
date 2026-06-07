@@ -4,7 +4,11 @@
      model as director-panel.html). All state lives server-side; this page
      only polls /api/status and renders SSE streams.
      Design: "Ops Console" — slate dark + status colors, sans for labels,
-     monospace for data. Offline-safe: system fonts only, inline SVG icons. -->
+     monospace for data. Offline-safe: system fonts only, inline SVG icons.
+     Layout: a fixed left sidebar switches between views (Dashboard / Setup &
+     Assets / Logs); a docked, collapsible console at the bottom of the
+     workspace streams every job's live output — always in the same place,
+     visible no matter which view triggered it. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -16,41 +20,70 @@
     --bg:#0F172A; --card:#1B2336; --card2:#151C2E; --line:#273349;
     --txt:#F8FAFC; --dim:#94A3B8; --faint:#64748B;
     --ok:#22C55E; --warn:#F59E0B; --bad:#EF4444; --off:#475569;
-    --accent:#3B82F6;
+    --accent:#3B82F6; --nav:212px;
     --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
             "Liberation Mono", monospace;
   }
   * { box-sizing:border-box; }
+  /* class-level display rules (.navitem, button) outrank the UA [hidden]
+     rule, so toggling the `hidden` attribute would otherwise not hide them. */
+  [hidden] { display:none !important; }
+  html, body { height:100%; }
   body { margin:0; font:14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-         background:var(--bg); color:var(--txt);
-         background-image:radial-gradient(1200px 400px at 50% -200px,
-                          #1E293B 0%, var(--bg) 70%); }
-  header { display:flex; align-items:center; gap:14px; padding:14px 24px;
-           border-bottom:1px solid var(--line); }
-  .brand { display:flex; align-items:baseline; gap:8px; }
-  .brand .mark { font:700 15px/1 var(--mono); letter-spacing:.06em;
+         background:var(--bg); color:var(--txt); overflow:hidden; }
+
+  /* ---------- app shell ---------- */
+  .app { display:grid; grid-template-columns:var(--nav) 1fr; height:100dvh; }
+
+  /* ---------- sidebar ---------- */
+  .sidebar { display:flex; flex-direction:column; gap:6px; padding:16px 12px;
+             background:var(--card2); border-right:1px solid var(--line); }
+  .brand { display:flex; align-items:center; gap:10px; padding:4px 8px 14px; }
+  .brand .mark { font:700 14px/1 var(--mono); letter-spacing:.06em;
                  color:#0F172A; background:var(--accent); border-radius:6px;
-                 padding:5px 7px; }
-  .brand h1 { font-size:16px; font-weight:600; letter-spacing:.01em; margin:0; }
-  .ver { color:var(--faint); font:12px var(--mono); }
-  .spacer { flex:1; }
-  header a { color:var(--accent); font-size:13px; text-decoration:none;
-             border:1px solid var(--line); border-radius:8px; padding:7px 12px;
-             transition:border-color .2s, background .2s; }
-  header a:hover { border-color:var(--accent); background:#1E293B; }
-  main { max-width:1100px; margin:0 auto; padding:24px; display:grid; gap:18px; }
+                 padding:6px 7px; }
+  .brandname { font-size:14px; font-weight:600; letter-spacing:.01em; }
+  .ver { display:block; color:var(--faint); font:11px var(--mono); margin-top:1px; }
+  .nav { display:flex; flex-direction:column; gap:3px; }
+  .navfoot { margin-top:auto; display:flex; flex-direction:column; gap:3px;
+             padding-top:12px; border-top:1px solid var(--line); }
+  .navitem { display:flex; align-items:center; gap:10px; width:100%;
+             text-align:left; background:transparent; border:0; cursor:pointer;
+             color:var(--dim); font:500 13.5px/1 system-ui, sans-serif;
+             padding:10px 12px; border-radius:9px; text-decoration:none;
+             min-height:40px; transition:background .15s, color .15s; }
+  .navitem svg { width:17px; height:17px; stroke:currentColor; fill:none;
+                 stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+                 flex:0 0 auto; opacity:.9; }
+  .navitem:hover { background:rgba(148,163,184,.08); color:var(--txt); }
+  .navitem.active { background:rgba(59,130,246,.14); color:#BFDBFE;
+                    box-shadow:inset 2px 0 0 var(--accent); }
+  .navitem.danger { color:#FCA5A5; }
+  .navitem.danger:hover { background:rgba(239,68,68,.12); }
+
+  /* ---------- workspace (views + console) ---------- */
+  .workspace { display:flex; flex-direction:column; min-width:0; height:100dvh;
+               background-image:radial-gradient(1100px 380px at 60% -200px,
+                                #1E293B 0%, var(--bg) 70%); }
+  main { flex:1; overflow:auto; padding:22px 26px; }
+  .view { max-width:1040px; margin:0 auto; }
+  .viewhead { display:flex; align-items:center; gap:12px; margin:0 0 14px;
+              min-height:34px; }
+  .viewhead h2 { font-size:16px; font-weight:600; letter-spacing:.01em;
+                 margin:0; color:var(--txt); text-transform:none; }
+  .viewhead .sub { color:var(--dim); font:12px var(--mono); }
   section { background:var(--card); border:1px solid var(--line);
-            border-radius:12px; padding:18px 20px;
+            border-radius:12px; padding:8px 18px;
             box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 8px 24px rgba(2,6,23,.35); }
   h2 { display:flex; align-items:center; gap:8px; font-size:12px;
        text-transform:uppercase; letter-spacing:.1em; color:var(--dim);
        margin:0 0 10px; font-weight:600; }
-  .row { display:flex; align-items:center; gap:12px; padding:10px 8px;
+  .row { display:flex; align-items:center; gap:12px; padding:12px 8px;
          border-top:1px solid var(--line); flex-wrap:wrap; border-radius:8px;
          transition:background .15s; }
   .row:hover { background:rgba(148,163,184,.05); }
   .row:first-of-type { border-top:0; }
-  .name { width:110px; font-weight:600; font-size:14px; }
+  .name { width:104px; font-weight:600; font-size:14px; }
   .badge { display:inline-flex; align-items:center; gap:7px; padding:3px 11px;
            border-radius:99px; font:600 11px/1.6 var(--mono); letter-spacing:.04em;
            background:rgba(71,85,105,.25); color:var(--dim);
@@ -73,35 +106,38 @@
   @media (prefers-reduced-motion: reduce) {
     .badge.on .dot { animation:none; }
     .spin { animation:none !important; }
+    .chev, .navitem, .console-body { transition:none !important; }
   }
   .dim { color:var(--dim); font:12px var(--mono); font-variant-numeric:tabular-nums; }
   .grow { flex:1; min-width:140px; }
+  .spacer { flex:1; }
   button { display:inline-flex; align-items:center; gap:6px; min-height:34px;
            background:#232C42; color:var(--txt); border:1px solid var(--line);
            border-radius:8px; padding:6px 13px; cursor:pointer; font-size:13px;
            font-weight:500; transition:border-color .2s, background .2s,
            transform .1s; }
-  button svg { width:13px; height:13px; stroke:currentColor; fill:none;
-               stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round;
-               opacity:.85; }
-  button:hover { border-color:var(--accent); background:#283352; }
+  button.action svg, .row button svg, .console-head button svg {
+           width:13px; height:13px; stroke:currentColor; fill:none;
+           stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round;
+           opacity:.85; }
+  .row button:hover, .console-head button:hover { border-color:var(--accent);
+           background:#283352; }
   button:active { transform:scale(.97); }
   button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .navitem:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
   button.danger { color:#FCA5A5; }
   button.danger svg { stroke:#F87171; }
-  button.danger:hover { border-color:var(--bad); background:rgba(239,68,68,.12); }
+  .row button.danger:hover, .console-head button.danger:hover {
+           border-color:var(--bad); background:rgba(239,68,68,.12); }
   .chip { font:600 11px var(--mono); border-radius:6px; padding:3px 9px; }
   .chip.ok { color:#4ADE80; background:rgba(34,197,94,.12);
              border:1px solid rgba(34,197,94,.35); }
   .chip.fail { color:#FCA5A5; background:rgba(239,68,68,.12);
                border:1px solid rgba(239,68,68,.35); }
   .spin { width:13px; height:13px; border:2px solid var(--line);
-          border-top-color:var(--warn); border-radius:50%;
+          border-top-color:var(--warn); border-radius:50%; flex:0 0 auto;
           animation:rot .8s linear infinite; }
   @keyframes rot { to { transform:rotate(360deg); } }
-  pre { background:#0B1120; border:1px solid var(--line); border-radius:10px;
-        padding:12px 14px; height:280px; overflow:auto; white-space:pre-wrap;
-        margin:10px 0 0; font:12px/1.55 var(--mono); color:#CBD5E1; }
   select { background:#232C42; color:var(--txt); border:1px solid var(--line);
            border-radius:8px; padding:7px 10px; font-size:13px; min-height:34px;
            cursor:pointer; }
@@ -111,134 +147,212 @@
            font:13px var(--mono); min-height:34px; }
   input[type=number]:focus-visible { outline:2px solid var(--accent);
            outline-offset:2px; }
+  pre { background:#0B1120; border:1px solid var(--line); border-radius:10px;
+        padding:12px 14px; overflow:auto; white-space:pre-wrap; margin:0;
+        font:12px/1.55 var(--mono); color:#CBD5E1; }
+  #svclog { height:calc(100dvh - 220px); min-height:220px; margin-top:12px; }
+
+  /* ---------- docked console ---------- */
+  .console { border-top:1px solid var(--line); background:var(--card2);
+             flex:0 0 auto; display:flex; flex-direction:column; }
+  .console-head { display:flex; align-items:center; gap:10px; cursor:pointer;
+                  padding:10px 16px; user-select:none; min-height:44px; }
+  .console-head:hover { background:rgba(148,163,184,.05); }
+  .console-head .termico { width:15px; height:15px; stroke:var(--dim); fill:none;
+                  stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+                  flex:0 0 auto; }
+  .console-label { font:600 11px/1 var(--mono); letter-spacing:.1em;
+                   text-transform:uppercase; color:var(--dim); }
+  .console-job { font:600 13px var(--mono); color:var(--txt); }
+  .console-job.idle { color:var(--faint); font-weight:500; }
+  .chev { width:16px; height:16px; stroke:var(--dim); fill:none; stroke-width:2;
+          stroke-linecap:round; stroke-linejoin:round; flex:0 0 auto;
+          transition:transform .2s; }
+  .console.collapsed .chev { transform:rotate(180deg); }
+  .console-body { border:0; border-top:1px solid var(--line); border-radius:0;
+                  height:34dvh; min-height:160px; }
+  .console.collapsed .console-body { display:none; }
 </style>
 </head>
 <body>
-<header>
-  <div class="brand"><span class="mark">IRO</span><h1>Control Center</h1></div>
-  <span class="ver" id="ver"></span>
-  <span class="spacer"></span>
-  <a id="panel-link" href="#" target="_blank" hidden>Director panel ↗</a>
-  <button class="danger" onclick="quitUi()">
-    <svg viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-    Quit</button>
-</header>
-<main>
-  <section>
-    <h2>Dashboard</h2>
-    <div class="row"><span class="name">Relay</span>
-      <span class="badge" id="b-relay"><span class="dot"></span><span>…</span></span>
-      <span class="dim grow" id="d-relay"></span>
-      <button onclick="op('relay-start')">
-        <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button>
-      <button class="danger" onclick="op('relay-stop', true)">
-        <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button>
-      <button onclick="op('relay-restart', true)">
-        <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Restart</button></div>
-    <div class="row"><span class="name">Companion</span>
-      <span class="badge" id="b-companion"><span class="dot"></span><span>…</span></span>
-      <span class="dim grow" id="d-companion"></span>
-      <button onclick="op('companion-start')">
-        <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button>
-      <button class="danger" onclick="op('companion-stop', true)">
-        <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button>
-      <button onclick="op('companion-restart', true)">
-        <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Restart</button></div>
-    <div class="row"><span class="name">Streams</span>
-      <span class="badge" id="b-streams"><span class="dot"></span><span>…</span></span>
-      <span class="dim grow" id="d-streams"></span>
-      <button onclick="op('streams-start')">
-        <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button>
-      <button class="danger" onclick="op('streams-stop', true)">
-        <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button></div>
-    <div class="row"><span class="name">Tailscale</span>
-      <span class="badge" id="b-ts"><span class="dot"></span><span>…</span></span>
-      <span class="dim grow" id="d-ts"></span>
-      <button onclick="op('tailscale-up')">
-        <svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>Up</button>
-      <button class="danger" onclick="op('tailscale-down', true)">
-        <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Down</button></div>
-    <div class="row"><span class="name">Event</span>
-      <span class="dim grow">Bring the stack up (Tailscale, Discord, relay, OBS, Companion) / stop iro services</span>
-      <input id="stint" type="number" min="1" placeholder="stint" aria-label="Stint number for mid-event takeover">
-      <button onclick="opEventStart()">
-        <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button>
-      <button class="danger" onclick="op('event-stop', true)">
-        <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button></div>
-    <div class="row"><span class="name">OBS pages</span>
-      <span class="dim grow">Reload the relay-served HUD/timer browser sources</span>
-      <button onclick="op('obs-refresh')">
-        <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button></div>
-  </section>
-  <section id="job" hidden>
-    <h2>Job: <span id="jobtitle" style="color:var(--txt)"></span>
-        <span class="spin" id="jobspin"></span>
+<div class="app">
+  <nav class="sidebar">
+    <div class="brand"><span class="mark">IRO</span>
+      <div><div class="brandname">Control Center</div>
+        <span class="ver" id="ver"></span></div></div>
+    <div class="nav">
+      <button class="navitem active" data-nav="dashboard" onclick="showView('dashboard')">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>Dashboard</button>
+      <button class="navitem" data-nav="setup" onclick="showView('setup')">
+        <svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>Setup &amp; Assets</button>
+      <button class="navitem" data-nav="logs" onclick="showView('logs')">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>Logs</button>
+    </div>
+    <div class="navfoot">
+      <a id="panel-link" class="navitem" href="#" target="_blank" hidden>
+        <svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Director panel</a>
+      <button class="navitem danger" onclick="quitUi()">
+        <svg viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>Quit</button>
+    </div>
+  </nav>
+
+  <div class="workspace">
+    <main>
+      <!-- ===== Dashboard ===== -->
+      <div class="view" data-view="dashboard">
+        <div class="viewhead"><h2>Dashboard</h2>
+          <span class="spacer"></span>
+          <span class="sub">live service status</span></div>
+        <section>
+          <div class="row"><span class="name">Relay</span>
+            <span class="badge" id="b-relay"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-relay"></span>
+            <button onclick="op('relay-start')">
+              <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button>
+            <button class="danger" onclick="op('relay-stop', true)">
+              <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button>
+            <button onclick="op('relay-restart', true)">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Restart</button></div>
+          <div class="row"><span class="name">Companion</span>
+            <span class="badge" id="b-companion"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-companion"></span>
+            <button onclick="op('companion-start')">
+              <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button>
+            <button class="danger" onclick="op('companion-stop', true)">
+              <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button>
+            <button onclick="op('companion-restart', true)">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Restart</button></div>
+          <div class="row"><span class="name">Streams</span>
+            <span class="badge" id="b-streams"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-streams"></span>
+            <button onclick="op('streams-start')">
+              <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button>
+            <button class="danger" onclick="op('streams-stop', true)">
+              <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button></div>
+          <div class="row"><span class="name">Tailscale</span>
+            <span class="badge" id="b-ts"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-ts"></span>
+            <button onclick="op('tailscale-up')">
+              <svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>Up</button>
+            <button class="danger" onclick="op('tailscale-down', true)">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Down</button></div>
+          <div class="row"><span class="name">Event</span>
+            <span class="dim grow">Bring the stack up (Tailscale, Discord, relay, OBS, Companion) / stop iro services</span>
+            <input id="stint" type="number" min="1" placeholder="stint" aria-label="Stint number for mid-event takeover">
+            <button onclick="opEventStart()">
+              <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button>
+            <button class="danger" onclick="op('event-stop', true)">
+              <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button></div>
+          <div class="row"><span class="name">OBS pages</span>
+            <span class="dim grow">Reload the relay-served HUD/timer browser sources</span>
+            <button onclick="op('obs-refresh')">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button></div>
+        </section>
+      </div>
+
+      <!-- ===== Setup & Assets ===== -->
+      <div class="view" data-view="setup" hidden>
+        <div class="viewhead"><h2>Setup &amp; Assets</h2>
+          <span class="spacer"></span>
+          <span class="sub">one-time setup &amp; pre-event prep</span></div>
+        <section>
+          <div class="row"><span class="name">Cookies</span>
+            <span class="badge" id="b-cookies"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-cookies"></span>
+            <select id="browser" aria-label="Browser to export YouTube cookies from">
+              <option value="firefox" selected>firefox</option>
+              <option value="chrome">chrome</option>
+              <option value="edge">edge</option>
+              <option value="brave">brave</option>
+              <option value="safari">safari</option>
+            </select>
+            <button onclick="op('cookies', false, {browser: $('browser').value})">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button></div>
+          <div class="row"><span class="name">Graphics</span>
+            <span class="badge" id="b-graphics"><span class="dot"></span><span>unchecked</span></span>
+            <span class="dim grow" id="d-graphics"></span>
+            <button onclick="op('graphics')">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
+          <div class="row"><span class="name">Media</span>
+            <span class="badge" id="b-media"><span class="dot"></span><span>unchecked</span></span>
+            <span class="dim grow" id="d-media"></span>
+            <button onclick="op('media')">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
+          <div class="row"><span class="name">Assets</span>
+            <span class="dim grow">Verify graphics/media against the sheet's Assets tab (fetches the sheet)</span>
+            <button onclick="checkAssets()">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Check</button></div>
+          <div class="row"><span class="name">OBS setup</span>
+            <span class="dim grow">Write the localized OBS collection into runtime/ (import it in OBS afterwards)</span>
+            <button onclick="op('setup')">Export</button></div>
+          <div class="row"><span class="name">Companion</span>
+            <span class="dim grow">Write the button config into runtime/ (import it in Companion afterwards)</span>
+            <button onclick="op('export-companion')">Export</button></div>
+          <div class="row"><span class="name">Tools</span>
+            <span class="dim grow">yt-dlp / streamlink / ffmpeg / deno</span>
+            <button onclick="op('install-tools', true)">Install</button>
+            <button onclick="op('install-tools', true, {update: true})">Update</button></div>
+          <div class="row"><span class="name">Apps</span>
+            <span class="dim grow">OBS / Companion / Tailscale / Discord</span>
+            <button onclick="op('install-apps', true)">Install</button>
+            <button onclick="op('install-apps', true, {update: true})">Update</button></div>
+          <div class="row"><span class="name">Preflight</span>
+            <span class="dim grow">Hardware / tools / config check</span>
+            <button onclick="op('preflight')">Run</button></div>
+        </section>
+      </div>
+
+      <!-- ===== Logs ===== -->
+      <div class="view" data-view="logs" hidden>
+        <div class="viewhead"><h2>Logs</h2>
+          <span class="spacer"></span>
+          <select id="logsel" onchange="watchLog(this.value)" aria-label="Service log to tail">
+            <option value="">— select a log —</option>
+            <option value="relay">relay</option>
+            <option value="companion">companion</option>
+            <option value="streams">streams</option>
+          </select></div>
+        <pre id="svclog"></pre>
+      </div>
+    </main>
+
+    <!-- ===== docked console (job output) ===== -->
+    <aside class="console collapsed" id="console">
+      <div class="console-head" onclick="toggleConsole()">
+        <svg class="termico" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        <span class="console-label">Console</span>
+        <span class="console-job idle" id="jobtitle">idle</span>
+        <span class="spin" id="jobspin" hidden></span>
         <span id="jobchip" hidden></span>
         <span class="spacer"></span>
-        <button class="danger" id="jobcancel" hidden onclick="cancelJob()">
-          <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Cancel</button></h2>
-    <pre id="joblog"></pre>
-  </section>
-  <section>
-    <h2>Setup &amp; Assets</h2>
-    <div class="row"><span class="name">Cookies</span>
-      <span class="badge" id="b-cookies"><span class="dot"></span><span>…</span></span>
-      <span class="dim grow" id="d-cookies"></span>
-      <select id="browser" aria-label="Browser to export YouTube cookies from">
-        <option value="firefox" selected>firefox</option>
-        <option value="chrome">chrome</option>
-        <option value="edge">edge</option>
-        <option value="brave">brave</option>
-        <option value="safari">safari</option>
-      </select>
-      <button onclick="op('cookies', false, {browser: $('browser').value})">
-        <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button></div>
-    <div class="row"><span class="name">Graphics</span>
-      <span class="badge" id="b-graphics"><span class="dot"></span><span>unchecked</span></span>
-      <span class="dim grow" id="d-graphics"></span>
-      <button onclick="op('graphics')">
-        <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
-    <div class="row"><span class="name">Media</span>
-      <span class="badge" id="b-media"><span class="dot"></span><span>unchecked</span></span>
-      <span class="dim grow" id="d-media"></span>
-      <button onclick="op('media')">
-        <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
-    <div class="row"><span class="name">Assets</span>
-      <span class="dim grow">Verify graphics/media against the sheet's Assets tab (fetches the sheet)</span>
-      <button onclick="checkAssets()">
-        <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Check</button></div>
-    <div class="row"><span class="name">OBS setup</span>
-      <span class="dim grow">Write the localized OBS collection into runtime/ (import it in OBS afterwards)</span>
-      <button onclick="op('setup')">Export</button></div>
-    <div class="row"><span class="name">Companion</span>
-      <span class="dim grow">Write the button config into runtime/ (import it in Companion afterwards)</span>
-      <button onclick="op('export-companion')">Export</button></div>
-    <div class="row"><span class="name">Tools</span>
-      <span class="dim grow">yt-dlp / streamlink / ffmpeg / deno</span>
-      <button onclick="op('install-tools', true)">Install</button>
-      <button onclick="op('install-tools', true, {update: true})">Update</button></div>
-    <div class="row"><span class="name">Apps</span>
-      <span class="dim grow">OBS / Companion / Tailscale / Discord</span>
-      <button onclick="op('install-apps', true)">Install</button>
-      <button onclick="op('install-apps', true, {update: true})">Update</button></div>
-    <div class="row"><span class="name">Preflight</span>
-      <span class="dim grow">Hardware / tools / config check</span>
-      <button onclick="op('preflight')">Run</button></div>
-  </section>
-  <section>
-    <h2>Service logs</h2>
-    <select id="logsel" onchange="watchLog(this.value)">
-      <option value="">— select a log —</option>
-      <option value="relay">relay</option>
-      <option value="companion">companion</option>
-      <option value="streams">streams</option>
-    </select>
-    <pre id="svclog"></pre>
-  </section>
-</main>
+        <button class="danger" id="jobcancel" hidden onclick="cancelJob(event)">
+          <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Cancel</button>
+        <svg class="chev" id="consolechev" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <pre class="console-body" id="joblog"></pre>
+    </aside>
+  </div>
+</div>
+
 <script>
 const $ = id => document.getElementById(id);
 let jobES = null, logES = null;
+
+function showView(name) {
+  document.querySelectorAll('[data-view]').forEach(v => {
+    v.hidden = v.dataset.view !== name;
+  });
+  document.querySelectorAll('[data-nav]').forEach(n => {
+    n.classList.toggle('active', n.dataset.nav === name);
+  });
+}
+
+function toggleConsole(force) {
+  const c = $('console');
+  if (force === true) c.classList.remove('collapsed');
+  else if (force === false) c.classList.add('collapsed');
+  else c.classList.toggle('collapsed');
+}
 
 function setBadge(key, on, onText, offText, detail) {
   const b = $('b-' + key);
@@ -295,8 +409,10 @@ function watchJob(name, id) {
   if (jobES) jobES.close();
   jobId = id;
   jobCancelled = false;
-  $('job').hidden = false;
-  $('jobtitle').textContent = name;
+  toggleConsole(true);                 // reveal the docked console for this job
+  const title = $('jobtitle');
+  title.textContent = name;
+  title.classList.remove('idle');
   $('jobspin').hidden = false;
   $('jobchip').hidden = true;
   $('jobcancel').hidden = false;
@@ -322,7 +438,8 @@ function watchJob(name, id) {
   });
 }
 
-async function cancelJob() {
+async function cancelJob(ev) {
+  if (ev) ev.stopPropagation();        // don't collapse the console on click
   if (!jobId) return;
   jobCancelled = true;
   try { await fetch('/api/jobs/' + jobId + '/cancel', {method: 'POST'}); }
