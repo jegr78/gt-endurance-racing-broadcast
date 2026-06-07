@@ -261,7 +261,8 @@ Tailscale and sign in too. A director can then open `http://100.x.y.z:8000/table
 the show. More: [Director setup](Director-Setup) (the page to send your directors) and the [Director guide](Director).
 
 **You should now see:** this machine's `100.x.y.z` address in the Tailscale
-menu, and your invited directors listed in the Tailscale admin console.
+menu, and your invitation(s) showing in the Tailscale admin console
+(directors appear once they accept).
 <!-- screenshot: Tailscale menu showing this machine's 100.x.y.z IP -->
 
 ## 9 — Pre-flight check
