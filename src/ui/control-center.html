@@ -270,12 +270,12 @@
       <div><div class="brandname">Control Center</div>
         <span class="ver" id="ver"></span></div></div>
     <div class="nav">
-      <button class="navitem active" data-nav="dashboard" onclick="showView('dashboard')">
-        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>Dashboard</button>
-      <button class="navitem" data-nav="preflight" onclick="showView('preflight')">
+      <button class="navitem active" data-nav="preflight" onclick="showView('preflight')">
         <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Preflight</button>
       <button class="navitem" data-nav="event" onclick="showView('event')">
         <svg viewBox="0 0 24 24"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/></svg>Event</button>
+      <button class="navitem" data-nav="services" onclick="showView('services')">
+        <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>Services</button>
       <button class="navitem" data-nav="apps" onclick="showView('apps')">
         <svg viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>Apps</button>
       <button class="navitem" data-nav="tools" onclick="showView('tools')">
@@ -297,9 +297,9 @@
 
   <div class="workspace">
     <main>
-      <!-- ===== Dashboard ===== -->
-      <div class="view" data-view="dashboard">
-        <div class="viewhead"><h2>Dashboard</h2>
+      <!-- ===== Services ===== -->
+      <div class="view" data-view="services" hidden>
+        <div class="viewhead"><h2>Services</h2>
           <span class="spacer"></span>
           <span class="sub">live service status</span></div>
         <section>
@@ -335,10 +335,6 @@
               <svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>Up</button>
             <button class="danger" onclick="op('tailscale-down', true)">
               <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Down</button></div>
-          <div class="row"><span class="name">OBS pages</span>
-            <span class="dim grow">Reload the relay-served HUD/timer browser sources</span>
-            <button onclick="op('obs-refresh')">
-              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button></div>
         </section>
       </div>
 
@@ -442,7 +438,7 @@
       </div>
 
       <!-- ===== Preflight ===== -->
-      <div class="view" data-view="preflight" hidden>
+      <div class="view" data-view="preflight">
         <div class="viewhead"><h2>Preflight</h2>
           <span class="sub" id="pf-summary"></span>
           <span class="spacer"></span>
@@ -728,11 +724,15 @@ async function checkAssets() {
 // ----- Tools / Apps per-item status (on-demand /api/setup) -----
 const APP_LABEL = {obs: 'OBS', companion: 'Companion',
                    tailscale: 'Tailscale', discord: 'Discord'};
-// app-specific config exports live on the app's own row
-const APP_ACTION = {obs: {label: 'Export collection', op: 'setup'},
-                    companion: {label: 'Export config', op: 'export-companion'}};
+// app-specific actions live on the app's own row (each an array of buttons)
+const APP_ACTION = {
+  obs: [{label: 'Export collection', op: 'setup'},
+        {label: 'Refresh pages', op: 'obs-refresh',
+         title: 'Reload the relay-served HUD/timer browser sources'}],
+  companion: [{label: 'Export config', op: 'export-companion'}]
+};
 
-function itemRow(key, installed, version, action) {
+function itemRow(key, installed, version, actions) {
   const d = document.createElement('div');
   d.className = 'item ' + (installed ? 'ok' : 'miss');
   d.innerHTML = '<span class="idot"></span><span class="iname"></span>' +
@@ -740,12 +740,13 @@ function itemRow(key, installed, version, action) {
   d.children[1].textContent = APP_LABEL[key] || key;
   d.children[2].textContent = installed ? 'installed' : 'missing';
   d.children[3].textContent = version || '';
-  if (action) {
+  (actions || []).forEach(a => {
     const b = document.createElement('button');
-    b.textContent = action.label;
-    b.onclick = () => op(action.op);
+    b.textContent = a.label;
+    if (a.title) b.title = a.title;
+    b.onclick = () => op(a.op);
     d.appendChild(b);
-  }
+  });
   return d;
 }
 
