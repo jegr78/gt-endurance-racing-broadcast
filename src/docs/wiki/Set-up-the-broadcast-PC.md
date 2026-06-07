@@ -12,7 +12,25 @@ Do this **once** per machine — about 30 minutes. When you're done, go to
   reboot before events; 32 GB is comfortable. A wired internet connection.
 - A **YouTube login** (for cookies) and the **shared Google Sheet** link from the team.
 
+## Never used a terminal?
+
+Sixty seconds of background, and every command on this page makes sense:
+
+- **Open a terminal in a folder.** Windows: open the folder in Explorer,
+  right-click an empty spot → **Open in Terminal**. macOS: right-click the
+  folder in Finder → **Services → New Terminal at Folder** (or open
+  **Terminal** via Spotlight, type `cd `, drag the folder into the window,
+  press Enter). Linux: most file managers — right-click → **Open Terminal
+  Here**.
+- **You get a prompt** — a line ending in `$`, `%`, or `>`. Type or paste a
+  command (paste: `Ctrl+V`, macOS `Cmd+V`), press **Enter**, and read what
+  comes back.
+- Nothing runs until you press Enter, and the commands in this wiki only act
+  on the `iro` folder.
+
 ## 1 — Get the `iro` tool
+
+*Takes ~5 minutes.*
 
 Download the archive for your OS from the
 [latest release](https://github.com/jegr78/IRO_Broadcast_Setup/releases/latest):
@@ -25,7 +43,8 @@ Download the archive for your OS from the
 
 Extract it into a folder of its own (e.g. `Documents/IRO/`) — the tool keeps its
 working files (`.env`, `runtime/`) next to the binary. Open a terminal **in that
-folder** and check it runs:
+folder** (first time? [Never used a terminal?](#never-used-a-terminal)) and
+check it runs:
 
 ```bash
 ./iro --version          # Windows: iro --version   (PowerShell: .\iro)
@@ -33,6 +52,10 @@ folder** and check it runs:
 
 The first run also creates a `.env` file next to the binary (you fill it in at
 step 4).
+
+**You should now see:** the version number printed in the terminal, and a new
+`.env` file next to the binary.
+<!-- screenshot: terminal open in the iro folder with ./iro --version output -->
 
 > **One-time OS warning** (the binary is unsigned): **Windows** SmartScreen →
 > "More info" → "Run anyway". **macOS**: if blocked, System Settings →
@@ -81,6 +104,8 @@ needs repeating or debugging.
 
 ## 2 — Install the apps
 
+*Takes ~5–10 minutes (downloads).*
+
 ```bash
 iro install-apps
 ```
@@ -106,7 +131,12 @@ Linux (it lists the steps and asks before running them).
 | **Discord** | Interview audio | [discord.com/download](https://discord.com/download) |
 </details>
 
+**You should now see:** OBS Studio, Companion, Tailscale and Discord in your
+applications / Start menu.
+
 ## 3 — Install the command-line tools
+
+*Takes ~5 minutes.*
 
 ```bash
 iro install-tools
@@ -114,7 +144,8 @@ iro install-tools
 
 Installs `streamlink`, `yt-dlp`, `ffmpeg` and `deno` — they pull each
 commentator's stream into OBS and pass YouTube's bot check. Afterwards **open a
-new terminal** — installers update the PATH for new shells only (`iro preflight`
+new terminal** ([how?](#never-used-a-terminal)) — installers update the PATH for
+new shells only (`iro preflight`
 confirms everything is found).
 
 > `deno` is required — without it feeds fail with *"Sign in to confirm you're not a bot."*
@@ -131,7 +162,12 @@ confirms everything is found).
 Check them: `streamlink --version`, `yt-dlp --version`, `ffmpeg -version`, `deno --version`.
 </details>
 
+**You should now see:** in a **new** terminal, `streamlink --version`,
+`yt-dlp --version`, `ffmpeg -version` and `deno --version` each print a version.
+
 ## 4 — Add your secrets (`.env`)
+
+*Takes ~2 minutes.*
 
 The first `iro` run created a `.env` file next to the binary. Open it in any
 text editor and fill in the required value from the team:
@@ -143,7 +179,12 @@ text editor and fill in the required value from the team:
 
 Keep `.env` private; never share it. Full detail: [Configuration & secrets](Configuration).
 
+**You should now see:** your `.env` containing a filled `IRO_SHEET_ID=…` line.
+<!-- screenshot: .env open in an editor with IRO_SHEET_ID filled (value blurred) -->
+
 ## 5 — Import the OBS scenes
+
+*Takes ~5 minutes.*
 
 Download the broadcast assets first (they come from the shared Sheet), then
 localize and import the collection:
@@ -162,7 +203,14 @@ on macOS just grant OBS the *Screen & System Audio Recording* permission and kee
 Discord windowed. Step-by-step (incl. Discord audio):
 [OBS & scenes](OBS-Setup#5-discord-audio-interviews).
 
+**You should now see:** OBS switched to the imported collection — the scene
+list includes Standby / BRB, Stint, Splitscreen, Interview, Intro and Outro.
+<!-- screenshot: OBS Scene Collection -> Import dialog with runtime/IRO_Endurance.import.json selected -->
+<!-- screenshot: OBS after the import - scene list visible, Standby scene active -->
+
 ## 6 — Import the Companion buttons
+
+*Takes ~5 minutes.*
 
 ```bash
 iro companion start
@@ -171,7 +219,12 @@ iro companion start
 The first run just launches Companion (it creates its config on startup). In the
 launcher press **Launch GUI**, then import the provided button config in the admin
 (**Import/Export → Import** — `iro export companion` writes it to
-`runtime/iro-buttons.companionconfig`). Finally bind the board to the tailnet:
+`runtime/iro-buttons.companionconfig`). In the import dialog: a **first import**
+on a fresh machine → confirm **"Replace current configuration"**; **updating an
+existing board** later → choose **"Import, Resetting only Selected Components"**
+with the default checkboxes — that keeps Companion's settings, including the
+stored OBS WebSocket password (details: [Companion](Companion#import-the-button-board)).
+Finally bind the board to the tailnet:
 
 ```bash
 iro companion restart    # binds Companion to this machine's Tailscale IP
@@ -180,24 +233,47 @@ iro companion restart    # binds Companion to this machine's Tailscale IP
 (Linux: start and bind Companion manually — automated control is Windows/macOS
 only.) Details: [Companion](Companion).
 
+**You should now see:** the IRO buttons in Companion's admin **Buttons** tab.
+<!-- screenshot: Companion launcher with the Launch GUI button -->
+<!-- screenshot: Companion Import/Export -> Import dialog showing the Reset/Replace choices -->
+
 ## 7 — Let Companion control OBS
+
+*Takes ~2 minutes.*
 
 In OBS: **Tools → WebSocket Server Settings →** enable it (port `4455`), turn on
 authentication, set a password — and enter the **same** password in Companion's OBS
 connection.
 
+**You should now see:** the OBS connection **green** under Companion →
+**Connections**.
+<!-- screenshot: Companion Connections tab with the OBS connection green -->
+<!-- screenshot: OBS WebSocket Server Settings dialog (enabled, port 4455, authentication on) -->
+
 ## 8 — Connect remote directors (Tailscale)
+
+*Takes ~5 minutes.*
 
 Open Tailscale, sign in (free account — this owns your private network), then note this
 machine's IP (`100.x.y.z`) from the Tailscale menu. Invite each director (free, up to 6
 people) at [login.tailscale.com](https://login.tailscale.com/admin/users); they install
 Tailscale and sign in too. A director can then open `http://100.x.y.z:8000/tablet` to drive
-the show. More: [Director guide](Director).
+the show. More: [Director setup](Director-Setup) (the page to send your directors) and the [Director guide](Director).
+
+**You should now see:** this machine's `100.x.y.z` address in the Tailscale
+menu, and your invited directors listed in the Tailscale admin console.
+<!-- screenshot: Tailscale menu showing this machine's 100.x.y.z IP -->
 
 ## 9 — Pre-flight check
+
+*Takes ~1 minute.*
 
 ```bash
 iro preflight
 ```
 
 Fix anything it flags. Then you're ready → [Run an event](Run-an-event).
+
+**You should now see:** every check green — or only warnings you understand
+(e.g. Companion not running yet).
+<!-- screenshot: iro preflight output with everything green -->
