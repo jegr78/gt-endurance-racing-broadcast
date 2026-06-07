@@ -9,7 +9,9 @@ Usage:  python3 scripts/preflight.py
 Pure Python 3 standard library — no third-party dependencies.
 """
 import argparse
+import csv
 import ctypes
+import io
 import os
 import re
 import shutil
@@ -18,6 +20,8 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 PASS, WARN, FAIL, INFO = "PASS", "WARN", "FAIL", "INFO"
 
@@ -230,6 +234,48 @@ def cookies_status(path, max_age_hours=12, now=None):
 
 
 # --------------------------------------------------------------------------
+# Google Sheet (the schedule/HUD source — a shared production resource)
+# --------------------------------------------------------------------------
+SHEET_TAB = "Schedule"   # keep in sync with the relay's DEFAULT_SHEET_TAB
+
+
+def fetch_sheet_csv(sheet_id, tab=SHEET_TAB, timeout=10):
+    """Network probe, kept apart from the pure classifier:
+    ("ok", body_text) or ("error", message)."""
+    url = (f"https://docs.google.com/spreadsheets/d/{sheet_id}"
+           f"/gviz/tq?tqx=out:csv&sheet={quote(tab)}")
+    try:
+        req = Request(url, headers={"User-Agent": "iro-preflight/1.0"})
+        with urlopen(req, timeout=timeout) as resp:
+            return "ok", resp.read().decode("utf-8", "replace")
+    except Exception as exc:  # noqa: BLE001 — any network failure is the same FAIL
+        return "error", f"{type(exc).__name__}: {exc}"
+
+
+def classify_sheet(sheet_id, outcome=None, payload=""):
+    """Pure classifier over the fetch outcome. An HTML body is Google's
+    sign-in page — the classic 'sheet not shared' case."""
+    if not sheet_id:
+        return Result(WARN, "Google Sheet",
+                      "IRO_SHEET_ID not set — fill it in .env (run via `iro preflight`)")
+    if outcome == "error":
+        return Result(FAIL, "Google Sheet",
+                      f"not readable ({payload}) — check sharing: Share -> "
+                      f"'Anyone with the link: Viewer' (or no network)")
+    head = (payload or "").lstrip()[:200].lower()
+    if head.startswith("<!doctype") or head.startswith("<html"):
+        return Result(FAIL, "Google Sheet",
+                      "not readable (got a sign-in page) — check sharing: "
+                      "Share -> 'Anyone with the link: Viewer'")
+    rows = [r for r in csv.reader(io.StringIO(payload)) if any(c.strip() for c in r)]
+    if not rows:
+        return Result(FAIL, "Google Sheet",
+                      f"reachable but tab '{SHEET_TAB}' is empty — correct tab name?")
+    return Result(PASS, "Google Sheet",
+                  f"reachable ({len(rows)} row(s) in '{SHEET_TAB}')")
+
+
+# --------------------------------------------------------------------------
 # Applications installed? (presence only — `iro event status` covers running)
 # --------------------------------------------------------------------------
 # (app key, display name, level when missing, consequence)
@@ -320,13 +366,20 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
     for port in FEED_PORTS:
         ports.append(Result(PASS, f"port {port}", "free") if port_free(port)
                      else Result(WARN, f"port {port}",
-                                 "in use — relay already running or a port conflict"))
+                                 "in use — relay already running or a port conflict; "
+                                 "`iro status` shows whether that is the relay"))
     for port, svc in SERVICE_PORTS:
         ports.append(Result(PASS, f"port {port}", f"{svc} reachable")
                      if port_reachable("127.0.0.1", port)
                      else Result(WARN, f"port {port}",
                                  f"{svc} not reachable — start it before going live"))
     cookies = [cookies_status(resolve_cookies_path(preflight_file, runtime_dir, cookies_opt))]
+    sheet_id = os.environ.get("IRO_SHEET_ID")
+    if sheet_id:
+        outcome, payload = fetch_sheet_csv(sheet_id)
+        sheet = [classify_sheet(sheet_id, outcome, payload)]
+    else:
+        sheet = [classify_sheet(None)]
     network = [Result(INFO, "bandwidth",
                       "OBS pushes the program to YouTube WHILE the relay pulls up to "
                       "3 live feeds. Use a wired connection with stable upload headroom "
@@ -337,6 +390,7 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
         ("Applications", apps),
         ("Ports", ports),
         ("YouTube cookies", cookies),
+        ("Google Sheet", sheet),
         ("Network", network),
     ]
 

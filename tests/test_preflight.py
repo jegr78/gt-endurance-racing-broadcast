@@ -129,6 +129,36 @@ def t_install_apps_module_loads():
     assert callable(ia.app_present)
 
 
+def t_classify_sheet_no_id_warns():
+    r = m.classify_sheet(None)
+    assert r.level == "WARN"
+    assert "IRO_SHEET_ID" in r.detail
+
+
+def t_classify_sheet_fetch_error_fails_with_sharing_hint():
+    r = m.classify_sheet("SHEET_ID", "error", "URLError: timed out")
+    assert r.level == "FAIL"
+    assert "Anyone with the link" in r.detail
+
+
+def t_classify_sheet_html_body_is_signin_page():
+    r = m.classify_sheet("SHEET_ID", "ok", "<HTML><HEAD><TITLE>Sign in</TITLE>")
+    assert r.level == "FAIL"
+    assert "sign-in" in r.detail
+
+
+def t_classify_sheet_csv_passes_with_row_count():
+    r = m.classify_sheet("SHEET_ID", "ok", '"url","name"\n"https://x","Max"\n')
+    assert r.level == "PASS"
+    assert "2 row" in r.detail
+
+
+def t_classify_sheet_empty_csv_fails():
+    r = m.classify_sheet("SHEET_ID", "ok", "\n , \n")
+    assert r.level == "FAIL"
+    assert "empty" in r.detail
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

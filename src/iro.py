@@ -1036,6 +1036,13 @@ RUNTIME_DIR_ONESHOTS = ("preflight", "cookies")
 def _oneshot_code(command, rest):
     """Run a one-shot and return its exit code (the seam `iro init` uses to
     chain steps — oneshot() below keeps the exit-the-CLI behavior)."""
+    if command == "preflight":
+        # The sheet check reads IRO_SHEET_ID from the environment. Frozen mode
+        # already loads .env (_load_env_frozen); in repo/package mode preflight
+        # runs as a subprocess, which inherits os.environ — merge the .env file
+        # in (real environment wins, same semantics as the scripts' load_dotenv).
+        for key, val in _read_env_file().items():
+            os.environ.setdefault(key, val)
     extra = _oneshot_extra(command, rest, IS_FROZEN, _runtime_dir())
     if command == "update" and "--current" not in rest:
         extra += ["--current", version()]
