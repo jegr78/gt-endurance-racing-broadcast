@@ -170,6 +170,38 @@ def t_hudsource_keeps_last_good_on_failure():
     assert hs.data()["streamer"] == "JeGr"   # last-good preserved
 
 
+def t_parse_config_vocab():
+    v = m.parse_config_vocab(CONFIG_CSV)
+    assert v["stint"] == ["Stint 1", "Stint 2", "Stint 3"], v
+    assert v["streamer"] == ["JeGr", "GT45"], v
+    assert v["session"] == ["Qualifier", "Race"], v
+    assert v["racecontrol"] == ["Formation Lap", "Final Lap"], v
+
+
+def t_parse_config_vocab_missing_columns_safe():
+    v = m.parse_config_vocab("a,b\n1,2\n")
+    assert v == {"stint": [], "streamer": [], "session": [], "racecontrol": []}
+    assert m.parse_config_vocab("") == {"stint": [], "streamer": [],
+                                        "session": [], "racecontrol": []}
+
+
+def t_parse_config_vocab_dedupes_keeps_order():
+    v = m.parse_config_vocab("Streamers\nB\nA\nB\n\nA\n")
+    assert v["streamer"] == ["B", "A"], v
+
+
+def t_hudsource_vocab_from_refresh():
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    hs = m.HudSource("http://overlay", "http://config",
+                     _os.path.join(d, "hud.cache.json"))
+    hs._fetch = lambda url, timeout=10: OVERLAY_CSV if url == "http://overlay" else CONFIG_CSV
+    assert hs.vocab() == {"stint": [], "streamer": [], "session": [],
+                          "racecontrol": []}   # before any refresh
+    hs.refresh()
+    assert hs.vocab()["streamer"] == ["JeGr", "GT45"]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

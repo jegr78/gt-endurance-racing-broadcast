@@ -309,6 +309,34 @@ def parse_config_brands(text):
     return out
 
 
+# Configuration-tab vocabulary columns feeding the panel's Setup dropdowns
+# (strict: the panel offers ONLY these values — spec: panel-sheet-control).
+VOCAB_COLUMNS = {"stint": "stints", "streamer": "streamers",
+                 "session": "session", "racecontrol": "race control"}
+
+
+def parse_config_vocab(text):
+    """Configuration tab CSV -> {field_key: [options]} for the panel
+    dropdowns. Columns located by header name (parse_config_brands precedent);
+    blanks skipped, duplicates dropped, sheet order kept."""
+    rows = list(csv.reader(io.StringIO(text)))
+    out = {k: [] for k in VOCAB_COLUMNS}
+    if not rows:
+        return out
+    header = [(h or "").strip().lower() for h in rows[0]]
+    for key, name in VOCAB_COLUMNS.items():
+        if name not in header:
+            continue
+        i = header.index(name)
+        seen = set()
+        for row in rows[1:]:
+            v = (row[i] or "").strip() if len(row) > i else ""
+            if v and v not in seen:
+                seen.add(v)
+                out[key].append(v)
+    return out
+
+
 def build_hud_data(overlay, brands):
     """Combine an Overlay map + {team: brand_key} into the /hud/data contract."""
     return {
@@ -823,6 +851,7 @@ class HudSource:
         self.cache_path = cache_path
         self.lock = threading.Lock()
         self._data = None
+        self._vocab = {k: [] for k in VOCAB_COLUMNS}
         self.last_ok = None
         self.last_error = None
         self._load_cache()
@@ -843,13 +872,16 @@ class HudSource:
     def refresh(self, timeout=10):
         try:
             overlay = parse_overlay(self._fetch(self.overlay_url, timeout))
-            brands = parse_config_brands(self._fetch(self.config_url, timeout))
+            config_text = self._fetch(self.config_url, timeout)
+            brands = parse_config_brands(config_text)
+            vocab = parse_config_vocab(config_text)
             data = build_hud_data(overlay, brands)
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e}"
             return False
         with self.lock:
             self._data = data
+            self._vocab = vocab
             self.last_ok = time.time()
             self.last_error = None
         try:
@@ -862,6 +894,10 @@ class HudSource:
     def data(self):
         with self.lock:
             return self._data if self._data is not None else dict(self.EMPTY)
+
+    def vocab(self):
+        with self.lock:
+            return {k: list(v) for k, v in self._vocab.items()}
 
     def health(self):
         with self.lock:
