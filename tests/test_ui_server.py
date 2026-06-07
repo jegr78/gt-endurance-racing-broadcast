@@ -145,6 +145,34 @@ def t_empty_path_segments_are_404():
         httpd.shutdown()
 
 
+def t_job_stream_delivers_lines_then_done():
+    httpd, port = _serve(_ctx())
+    try:
+        _c, body = _post(port, "/api/op/echo")
+        job_id = json.loads(body)["job_id"]
+        req = urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/api/jobs/{job_id}/stream", timeout=10)
+        assert req.headers["Content-Type"] == "text/event-stream"
+        raw = b""
+        deadline = time.time() + 10
+        while b"event: done\ndata: 0\n\n" not in raw and time.time() < deadline:
+            raw += req.read(1)                  # tiny reads — no buffering surprises
+        req.close()
+        assert b"data: hi from job\n\n" in raw
+        assert b"event: done\ndata: 0\n\n" in raw
+    finally:
+        httpd.shutdown()
+
+
+def t_job_stream_unknown_id_is_404():
+    httpd, port = _serve(_ctx())
+    try:
+        code, _b = _get(port, "/api/jobs/nope/stream")
+        assert code == 404
+    finally:
+        httpd.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
