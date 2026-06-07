@@ -91,10 +91,12 @@ def t_streams_status_data_empty():
 def t_ui_status_payload_shape():
     payload = iro.ui_status_payload(
         relay=lambda: {"alive": False}, companion=lambda: {"running": False},
-        streams=lambda: [], tailscale=lambda: None)
+        streams=lambda: [], tailscale=lambda: None,
+        cookies=lambda: {"level": "WARN", "detail": "x"})
     assert payload == {"version": iro.version(), "relay": {"alive": False},
                        "companion": {"running": False}, "streams": [],
-                       "tailscale_ip": None}
+                       "tailscale_ip": None,
+                       "cookies": {"level": "WARN", "detail": "x"}}
 
 
 # ---------- ui_ops registry ----------
@@ -174,6 +176,37 @@ def t_build_argv_rejects_unknown_params():
         raise AssertionError("param on paramless op accepted")
     except ValueError:
         pass
+
+
+# ---------- readiness data ----------
+
+def t_cookies_status_data_shape():
+    class R:
+        level, detail = "PASS", "fresh (1 h old)"
+    d = iro.cookies_status_data(status=lambda: R)
+    assert d == {"level": "PASS", "detail": "fresh (1 h old)"}
+
+
+def t_assets_status_data_complete(tmp):
+    d = iro.assets_status_data(state=lambda ev: (tmp, tmp, [], []))
+    assert d["ok"] is True
+    assert d["graphics"]["level"] == "PASS" and d["media"]["level"] == "PASS"
+
+
+def t_assets_status_data_missing_and_unverified(tmp):
+    # graphics: sheet readable, one file missing -> FAIL with the filename;
+    # media: sheet unreadable (None) + empty local dir -> its severity (WARN)
+    d = iro.assets_status_data(state=lambda ev: (tmp, tmp, ["Overlay.png"], None))
+    assert d["graphics"]["level"] == "FAIL"
+    assert "Overlay.png" in d["graphics"]["detail"]
+    assert d["media"]["level"] == "WARN"
+
+
+def t_assets_status_data_error():
+    def boom(ev):
+        raise RuntimeError("no sheet")
+    d = iro.assets_status_data(state=boom)
+    assert d["ok"] is False and "no sheet" in d["error"]
 
 
 if __name__ == "__main__":

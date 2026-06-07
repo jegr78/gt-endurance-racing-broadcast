@@ -1153,14 +1153,46 @@ def aggregate_status(_rest=None):
     streams_status([])
 
 
-def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None):
+def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None,
+                      cookies=None):
     """Aggregate health for the Control Center dashboard (/api/status).
-    Each parameter is an optional zero-arg callable override (None = real probe)."""
+    Each parameter is an optional zero-arg callable override (None = real
+    probe). Cheap, local-only probes — the sheet-fetching asset check lives
+    in assets_status_data() behind the on-demand /api/assets."""
     return {"version": version(),
             "relay": (relay or relay_status_data)(),
             "companion": (companion or companion_status_data)(),
             "streams": (streams or streams_status_data)(),
-            "tailscale_ip": (tailscale or _tailscale_ip)()}
+            "tailscale_ip": (tailscale or _tailscale_ip)(),
+            "cookies": (cookies or cookies_status_data)()}
+
+
+def cookies_status_data(status=None):
+    """Local cookie-jar freshness (no network — safe for the 3 s poll)."""
+    if status is None:
+        pf = _event_modules()[1]
+        path = os.path.join(_runtime_dir(), "cookies.txt")
+        def status():
+            return pf.cookies_status(path)
+    res = status()
+    return {"level": res.level, "detail": res.detail}
+
+
+def assets_status_data(state=None):
+    """Sheet-driven graphics/media readiness (network: sheet fetch, takes
+    seconds — served on demand via /api/assets, never from the status poll)."""
+    ev = _event_modules()[0]
+    try:
+        g_dir, m_dir, missing_g, missing_m = (state or _asset_state)(ev)
+    except Exception as exc:
+        return {"ok": False, "error": f"asset check failed: {exc}"}
+    g = ev.classify_assets("Graphics", missing_g, ev.local_count(g_dir), ev.FAIL,
+                           "run `iro graphics`")
+    m = ev.classify_assets("Media", missing_m, ev.local_count(m_dir), ev.WARN,
+                           "run `iro media`")
+    return {"ok": True,
+            "graphics": {"level": g.level, "detail": g.detail},
+            "media": {"level": m.level, "detail": m.detail}}
 
 
 def _read_env_file():
