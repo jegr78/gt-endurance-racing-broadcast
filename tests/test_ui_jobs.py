@@ -18,6 +18,8 @@ class FakeProc:
     def wait(self):
         self.returncode = self._code
         return self._code
+    def terminate(self):
+        pass
 
 
 def _wait_done(jm, job_id, timeout=5):
@@ -94,6 +96,31 @@ def t_real_subprocess_lifecycle():
     assert snap["exit_code"] == 3
     lines, _, _ = jm.lines_since(job_id, 0)
     assert lines == ["hello"]
+
+
+def t_cancel_running_job():
+    code = "import time; print('started', flush=True); time.sleep(30)"
+    jm = ui_jobs.JobManager(lambda a: [sys.executable, "-c", code])
+    job_id, _ = jm.start("sleepy", [])
+    deadline = time.time() + 10            # wait until the child is really up
+    while time.time() < deadline:
+        lines, _n, _c = jm.lines_since(job_id, 0)
+        if lines:
+            break
+        time.sleep(0.05)
+    assert jm.cancel(job_id) is True
+    snap = _wait_done(jm, job_id, timeout=10)
+    assert snap["exit_code"] is not None and snap["exit_code"] != 0
+    assert snap["cancelled"] is True
+
+
+def t_cancel_finished_and_unknown():
+    jm = ui_jobs.JobManager(lambda a: ["ignored"], spawn=lambda argv: FakeProc())
+    job_id, _ = jm.start("echo", [])
+    _wait_done(jm, job_id)
+    assert jm.cancel(job_id) is False      # already finished
+    assert jm.cancel("nope") is None       # unknown id
+    assert jm.snapshot(job_id)["cancelled"] is False
 
 
 if __name__ == "__main__":

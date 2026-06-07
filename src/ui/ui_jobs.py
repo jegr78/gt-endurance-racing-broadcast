@@ -13,6 +13,7 @@ class Job:
         self.lines = []          # decoded output lines (head-trimmed, see dropped)
         self.dropped = 0         # lines trimmed off the head — keeps indices stable
         self.exit_code = None
+        self.cancelled = False   # cancel() was requested (exit code will be non-zero)
         self.lock = threading.Lock()
 
 
@@ -71,7 +72,26 @@ class JobManager:
             return None
         with job.lock:
             return {"id": job.id, "op": job.op,
-                    "running": job.exit_code is None, "exit_code": job.exit_code}
+                    "running": job.exit_code is None, "exit_code": job.exit_code,
+                    "cancelled": job.cancelled}
+
+    def cancel(self, job_id):
+        """Request termination of a running job. True = signalled, False =
+        already finished, None = unknown id. Terminates only the direct child
+        (a daemon the child already detached keeps running — by design: cancel
+        means 'stop this action', not 'tear down services')."""
+        job = self.jobs.get(job_id)        # GIL-atomic dict read
+        if job is None:
+            return None
+        with job.lock:
+            if job.exit_code is not None:
+                return False
+            job.cancelled = True
+        try:
+            job.proc.terminate()
+        except OSError:
+            pass                           # exited between the check and the signal
+        return True
 
     def lines_since(self, job_id, since):
         """(new lines from absolute index `since`, next index, exit_code).
