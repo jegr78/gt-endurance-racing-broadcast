@@ -10,6 +10,7 @@
   iro event     status|start|stop      # event-day readiness: check / bring-up / wind-down
   iro event start --stint N             # takeover: stint N is on air now — the relay starts there
   iro tailscale up|down|status          # connect / disconnect / inspect Tailscale
+  iro obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
   iro status                            # aggregate health of all services
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   iro export companion [--out PATH]     # write the Companion button config
@@ -17,7 +18,7 @@
   iro update [--check] [--yes]          # self-update the binary from GitHub Releases
   iro --version
 """
-import glob, json, os, shutil, sys, time, webbrowser
+import glob, hashlib, json, os, shutil, sys, time, webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Adapters (added in later tasks) import sibling modules from scripts/ at module
@@ -246,6 +247,71 @@ def _relay_log_path():
 
 RELAY_PORT = 8088
 
+# The relay-served pages OBS renders as browser sources (panel is tablet-only).
+OBS_PAGE_PATHS = ("/hud", "/timer")
+
+
+def _fetch_relay_page(path):
+    import urllib.request
+    return urllib.request.urlopen(
+        f"http://127.0.0.1:{RELAY_PORT}{path}", timeout=3).read()
+
+
+def served_pages_hash(fetch=None, paths=OBS_PAGE_PATHS):
+    """SHA-256 over the page bytes the relay actually serves to OBS. Hashing
+    what OBS would load (not the files on disk) means a still-running OLD
+    relay can never advance the staleness gate past pages OBS has not seen.
+    None when any page cannot be fetched (relay down, --no-hud/--no-timer)."""
+    fetch = fetch or _fetch_relay_page
+    h = hashlib.sha256()
+    for path in paths:
+        try:
+            h.update(fetch(path))
+        except Exception:
+            return None
+    return h.hexdigest()
+
+
+def refresh_decision(served, stored, force=False):
+    """Should the OBS page-refresh hook act? Pure for tests: 'skip-no-pages'
+    (relay down / pages disabled), 'skip-unchanged' (no on-air flicker), or
+    'refresh'."""
+    if served is None:
+        return "skip-no-pages"
+    if not force and served == stored:
+        return "skip-unchanged"
+    return "refresh"
+
+
+def read_pages_hash(path):
+    """Hash of the pages OBS last confirmed loading, or None (never refreshed)."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read().strip() or None
+    except OSError:
+        return None
+
+
+def write_pages_hash(path, value):
+    parent = os.path.dirname(path)
+    if parent:                       # a bare filename needs no directory
+        os.makedirs(parent, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(value + "\n")
+
+
+def wait_for(probe, wait, clock=time.monotonic, sleep=time.sleep):
+    """Poll probe() until truthy or `wait` seconds elapsed; checks at least
+    once, so wait=0 means 'probe now, no retries'."""
+    deadline = clock() + wait
+    while True:
+        if probe():
+            return True
+        if clock() >= deadline:
+            return False
+        sleep(0.5)
+
+
 SERVICES = ("relay", "companion", "streams")
 SERVICE_VERBS = ("start", "stop", "restart", "status", "logs")
 # Per-service verbs beyond the common set (relay foreground + browser-open shortcuts).
@@ -258,6 +324,7 @@ HIDDEN_VERBS = {"streams": ("run-feed",)}
 ONESHOTS = ("preflight", "cookies", "graphics", "media", "setup", "install-tools", "install-apps", "update")
 EVENT_VERBS = ("status", "start", "stop")
 TAILSCALE_VERBS = ("up", "down", "status")
+OBS_VERBS = ("refresh",)
 
 USAGE = __doc__
 
@@ -288,6 +355,11 @@ def route(argv):
         if verb not in TAILSCALE_VERBS:
             raise ValueError(f"usage: iro tailscale {{{'|'.join(TAILSCALE_VERBS)}}}")
         return {"kind": "service", "command": "tailscale", "verb": verb, "rest": rest[1:]}
+    if cmd == "obs":
+        verb = rest[0] if rest else None
+        if verb not in OBS_VERBS:
+            raise ValueError(f"usage: iro obs {{{'|'.join(OBS_VERBS)}}}")
+        return {"kind": "service", "command": "obs", "verb": verb, "rest": rest[1:]}
     if cmd == "init":
         return {"kind": "init", "rest": rest}
     if cmd in ONESHOTS:
@@ -355,7 +427,56 @@ def relay_start(rest):
     newpid = sv.start_detached(argv, _relay_log_path(), _relay_pid_path(),
                                env=_frozen_child_env())
     print(f"relay started (pid {newpid}). Watch it: iro relay logs -f")
+    _refresh_obs_pages(wait=10)   # pages may have changed since the last run
     return None
+
+def _obs_pages_hash_path():
+    return os.path.join(_runtime_dir(), "obs-pages.hash")
+
+
+def _refresh_obs_pages(force=False, wait=0):
+    """Refresh the relay-served OBS browser sources (HUD + race timer) when
+    the pages changed since the last successful refresh — replaces the manual
+    right-click → 'Refresh cache of current page' (OBS's CEF caches the page
+    JS until then; a producer updating the package must never go on air with
+    a stale page). Best effort like _release_obs_feeds: one notice, never an
+    exception. wait: seconds to allow a just-spawned relay to open its control
+    port — never refresh against a closed port (the source would load a CEF
+    error page that does not self-recover)."""
+    if not wait_for(_relay_http_ok, wait):
+        print(f"obs: page refresh skipped — relay not responding on port {RELAY_PORT}.")
+        return
+    served = served_pages_hash()
+    decision = refresh_decision(served, read_pages_hash(_obs_pages_hash_path()), force)
+    if decision == "skip-no-pages":
+        print("obs: page refresh skipped — could not read /hud + /timer from the relay.")
+        return
+    if decision == "skip-unchanged":
+        return                              # unchanged pages -> no on-air flicker
+    try:
+        import obs_ws
+        names, note = obs_ws.refresh_browser_inputs(needle=f"127.0.0.1:{RELAY_PORT}")
+        if note:
+            print(f"obs: page refresh skipped — {note}")
+            return                          # hash kept -> retried on the next start
+        write_pages_hash(_obs_pages_hash_path(), served)   # only confirmed refreshes advance the gate
+    except Exception as exc:                # a start must never fail on this
+        print(f"obs: page refresh skipped ({exc}).")
+        return
+    print(f"obs: refreshed browser sources {', '.join(names)}." if names
+          else "obs: no relay browser sources in OBS — nothing to refresh.")
+
+
+def obs_refresh_cmd(_rest):
+    """Force-refresh every relay-served browser source — the scriptable
+    right-click → Refresh (no staleness gate)."""
+    # Upfront probe for a real exit code + directive message; _refresh_obs_pages
+    # re-probes internally (best-effort, exit 0) — accepted localhost double GET.
+    if not _relay_http_ok():
+        sys.exit(f"obs: relay not responding on port {RELAY_PORT} — start it first "
+                 "(refreshing against a dead relay loads an error page in OBS).")
+    _refresh_obs_pages(force=True)
+
 
 def _release_obs_feeds():
     """Make OBS (via obs-websocket) drop its connections to the just-killed
@@ -852,6 +973,10 @@ def event_start(rest):
     print("\nWaiting for the launched services to come up (max 60 s)…")
     for name, up in sorted(ev.wait_until_up(probes).items()):
         print(f"  {name}: {'up' if up else 'still not up — see the report below'}")
+    # OBS may not have been running when relay_start's refresh hook fired
+    # (event start launches OBS AFTER the relay) — retry now that both sides
+    # are up. Hash-gated: a no-op when the first hook already delivered.
+    _refresh_obs_pages()
     print("\nEvent readiness:")
     event_status(rest)  # exit code: 0 = ready, 1 = FAILs remain
 
@@ -888,6 +1013,7 @@ DISPATCH = {
     ("event", "stop"): event_stop,
     ("tailscale", "up"): tailscale_up_cmd, ("tailscale", "down"): tailscale_down_cmd,
     ("tailscale", "status"): tailscale_status_cmd,
+    ("obs", "refresh"): obs_refresh_cmd,
 }
 
 ONESHOT_MAP = {

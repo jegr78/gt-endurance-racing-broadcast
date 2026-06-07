@@ -73,6 +73,29 @@ def t_tailscale_bad_verb_raises():
     _raises(lambda: m.route(["tailscale", "restart"]))
 
 
+def t_obs_refresh_route():
+    assert m.route(["obs", "refresh"]) == \
+        {"kind": "service", "command": "obs", "verb": "refresh", "rest": []}
+
+
+def t_obs_bad_verb_raises():
+    _raises(lambda: m.route(["obs"]))
+    _raises(lambda: m.route(["obs", "bogus"]))
+
+
+def t_obs_refresh_cmd_exits_when_relay_down():
+    old = m._relay_http_ok
+    m._relay_http_ok = lambda: False
+    try:
+        try:
+            m.obs_refresh_cmd([])
+            raise AssertionError("expected SystemExit")
+        except SystemExit as e:
+            assert "relay not responding" in str(e.code)
+    finally:
+        m._relay_http_ok = old
+
+
 def t_http_url():
     assert m._http_url("127.0.0.1", 8088, "/panel") == "http://127.0.0.1:8088/panel"
     assert m._http_url("100.64.10.20", 8000, "/tablet") == "http://100.64.10.20:8000/tablet"
@@ -465,6 +488,56 @@ def t_env_base_per_mode():
     assert m._env_base(True, "/opt/iro/iro", "/tmp/_MEIxx/src") == "/opt/iro"
     assert m._env_base(False, "", "/repo/src") == "/repo"
     assert m._env_base(False, "", "/pkg") == "/pkg"
+
+
+def t_refresh_decision():
+    assert m.refresh_decision(None, None) == "skip-no-pages"
+    assert m.refresh_decision(None, "abc") == "skip-no-pages"
+    assert m.refresh_decision("abc", "abc") == "skip-unchanged"
+    assert m.refresh_decision("abc", "old") == "refresh"
+    assert m.refresh_decision("abc", None) == "refresh"          # first run
+    assert m.refresh_decision("abc", "abc", force=True) == "refresh"
+
+
+def t_served_pages_hash_concatenates_in_order():
+    import hashlib
+    pages = {"/hud": b"HUD", "/timer": b"TIMER"}
+    expected = hashlib.sha256(b"HUDTIMER").hexdigest()
+    assert m.served_pages_hash(fetch=lambda p: pages[p]) == expected
+
+
+def t_served_pages_hash_none_when_any_fetch_fails():
+    def fetch(path):
+        if path == "/timer":
+            raise OSError("connection refused")
+        return b"HUD"
+    assert m.served_pages_hash(fetch=fetch) is None
+
+
+def t_served_pages_hash_none_when_first_fetch_fails():
+    def fetch(path):
+        raise OSError("connection refused")
+    assert m.served_pages_hash(fetch=fetch) is None
+
+
+def t_pages_hash_roundtrip_and_missing():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "state", "obs-pages.hash")
+        assert m.read_pages_hash(path) is None                   # missing file
+        m.write_pages_hash(path, "abc123")                       # creates the dir
+        assert m.read_pages_hash(path) == "abc123"
+
+
+def t_wait_for_polls_until_deadline():
+    ticks = iter([0, 1, 2, 3, 4, 5])
+    slept = []
+    ok = m.wait_for(lambda: False, 2, clock=lambda: next(ticks),
+                    sleep=slept.append)
+    assert ok is False
+    assert slept                                                 # polled, not busy-spun
+    assert m.wait_for(lambda: True, 0, clock=lambda: 0,
+                      sleep=lambda s: None) is True               # checks at least once
 
 
 def _raises(fn):

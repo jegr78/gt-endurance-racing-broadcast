@@ -26,9 +26,9 @@ order) and ends with a readiness report. Re-check any time with
 cookies, graphics and the intro/outro clips are present, and names the exact
 fix command for anything missing.
 
-> **Before going LIVE:** refresh the HUD overlay browser source in OBS once
-> (right-click the source → Refresh) — its auto-refresh is not fully
-> reliable.
+> **Page updates:** `iro event start` re-loads the HUD/timer browser sources
+> automatically when an update changed them. If a page ever looks stale,
+> `iro obs refresh` (or right-click the source → Refresh) forces it.
 
 After the broadcast, `iro event stop` stops the relay and Companion; OBS,
 Discord and Tailscale stay running. If OBS is still open, the stop also asks

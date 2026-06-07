@@ -169,6 +169,25 @@ def feed_input_names(inputs, get_settings, ports=RELAY_PORTS):
     return names
 
 
+def browser_input_names(inputs, get_settings, needle="127.0.0.1:8088"):
+    """Which browser sources show relay-served pages (HUD, race timer)?
+    Matches by URL substring so any future relay page is covered without a
+    name list; local-file pages and other URLs are left alone."""
+    names = []
+    for inp in inputs:
+        if inp.get("inputKind") != "browser_source":
+            continue
+        name = inp.get("inputName")
+        try:
+            settings = get_settings(name) or {}
+        except Exception:                            # one bad input must not stop the rest
+            continue
+        url = settings.get("url")
+        if isinstance(url, str) and needle in url:
+            names.append(name)
+    return names
+
+
 # --------------------------------------------------------------------------
 # Password / port discovery from OBS's own obs-websocket config
 # --------------------------------------------------------------------------
@@ -255,26 +274,19 @@ class _Session:
                                      f"{msg['d'].get('requestStatus')}")
                 return msg["d"].get("responseData", {})
 
+    def close(self):
+        try:
+            self.sock.sendall(encode_frame(b"", opcode=0x8))   # polite close
+        except OSError:
+            pass  # OBS may have dropped the socket first — close is courtesy only
+        self.sock.close()
 
-def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
-                        password=None, timeout=2.0):
-    """Make OBS drop its connections to the (just killed) relay feed ports by
-    re-applying each feed input's own settings — a forced source rebuild that
-    closes the socket without changing anything (see module docstring).
 
-    Returns (released_input_names, note). Best effort by design: any failure —
-    OBS not running, wrong password, protocol surprise — yields ([], reason)
-    and NEVER an exception; stopping the relay must always go through.
-    """
-    cfg = read_ws_config(default_config_path())
-    if port is None:
-        port = (cfg or {}).get("port") or DEFAULT_PORT
-    if password is None:
-        password = find_password(os.environ, default_config_path())
-    try:
-        sock = socket.create_connection((host, port), timeout=timeout)
-    except OSError:
-        return [], f"OBS WebSocket not reachable on {host}:{port} (OBS not running?)"
+def _open_session(host, port, password, timeout):
+    """Connect + WebSocket upgrade + obs-websocket identify. Returns an
+    identified _Session; raises on any failure (callers translate that into
+    their best-effort (names, note) contract)."""
+    sock = socket.create_connection((host, port), timeout=timeout)
     try:
         sock.settimeout(timeout)
         key = base64.b64encode(os.urandom(16)).decode()
@@ -291,6 +303,42 @@ def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
         identified = session.next_json()
         if identified.get("op") != 2:
             raise ValueError("OBS WebSocket identify failed")
+        return session
+    except Exception:
+        sock.close()
+        raise
+
+
+def _connect(host, port, password, timeout):
+    """(session, "") or (None, reason). Port + password fall back to OBS's own
+    obs-websocket config / IRO_OBS_WS_PASSWORD; never raises."""
+    cfg = read_ws_config(default_config_path())
+    if port is None:
+        port = (cfg or {}).get("port") or DEFAULT_PORT
+    if password is None:
+        password = find_password(os.environ, default_config_path())
+    try:
+        return _open_session(host, port, password, timeout), ""
+    except OSError:
+        return None, f"OBS WebSocket not reachable on {host}:{port} (OBS not running?)"
+    except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        return None, str(exc) or exc.__class__.__name__
+
+
+def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
+                        password=None, timeout=2.0):
+    """Make OBS drop its connections to the (just killed) relay feed ports by
+    re-applying each feed input's own settings — a forced source rebuild that
+    closes the socket without changing anything (see module docstring).
+
+    Returns (released_input_names, note). Best effort by design: any failure —
+    OBS not running, wrong password, protocol surprise — yields ([], reason)
+    and NEVER an exception; stopping the relay must always go through.
+    """
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return [], note
+    try:
         inputs = session.request("GetInputList",
                                  {"inputKind": "ffmpeg_source"}).get("inputs", [])
         settings = {}                                # filled by the name filter
@@ -305,13 +353,40 @@ def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
             session.request("SetInputSettings",      # unchanged -> rebuild only
                             {"inputName": name, "inputSettings": settings[name],
                              "overlay": True})
-        try:
-            sock.sendall(encode_frame(b"", opcode=0x8))   # polite close
-        except OSError:
-            pass  # OBS may have dropped the socket first — close is courtesy only
         return names, ""
     except Exception as exc:                         # noqa: BLE001 — see docstring
-        reason = str(exc) or exc.__class__.__name__
-        return [], f"could not release OBS feed inputs: {reason}"
+        return [], str(exc) or exc.__class__.__name__
     finally:
-        sock.close()
+        session.close()
+
+
+def refresh_browser_inputs(needle="127.0.0.1:8088", host="127.0.0.1", port=None,
+                           password=None, timeout=2.0):
+    """Press 'Refresh cache of current page' (refreshnocache) on every browser
+    source whose URL points at the relay — the programmatic right-click →
+    Refresh, used after the shipped HUD/timer pages changed (OBS's CEF caches
+    the page JS until then).
+
+    Returns (refreshed_input_names, note). Best effort like
+    release_feed_inputs(): any failure yields ([], reason), never an exception.
+    """
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return [], note
+    try:
+        inputs = session.request("GetInputList",
+                                 {"inputKind": "browser_source"}).get("inputs", [])
+
+        def get_settings(name):
+            return session.request("GetInputSettings",
+                                   {"inputName": name}).get("inputSettings", {})
+
+        names = browser_input_names(inputs, get_settings, needle)
+        for name in names:
+            session.request("PressInputPropertiesButton",
+                            {"inputName": name, "propertyName": "refreshnocache"})
+        return names, ""
+    except Exception as exc:                         # noqa: BLE001 — see docstring
+        return [], str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
