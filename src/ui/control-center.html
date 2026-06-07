@@ -120,8 +120,8 @@
            width:13px; height:13px; stroke:currentColor; fill:none;
            stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round;
            opacity:.85; }
-  .row button:hover, .console-head button:hover { border-color:var(--accent);
-           background:#283352; }
+  .row button:hover, .console-head button:hover, .item button:hover {
+           border-color:var(--accent); background:#283352; }
   button:active { transform:scale(.97); }
   button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
   .navitem:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
@@ -199,6 +199,27 @@
   .console-body { border:0; border-top:1px solid var(--line); border-radius:0;
                   height:34dvh; min-height:160px; }
   .console.collapsed .console-body { display:none; }
+
+  /* asset preview galleries + lightbox */
+  .gallery { display:flex; flex-wrap:wrap; gap:10px; padding:12px 8px 4px; }
+  .gallery:empty { display:none; }
+  .thumb { width:138px; border:1px solid var(--line); border-radius:9px;
+           overflow:hidden; background:#0B1120; cursor:pointer;
+           transition:border-color .15s, transform .1s; }
+  .thumb:hover { border-color:var(--accent); transform:translateY(-1px); }
+  .thumb img, .thumb video { width:100%; height:78px; object-fit:cover;
+           display:block; background:#000; }
+  .thumb video { cursor:default; }
+  .thumb .cap { font:11px var(--mono); color:var(--dim); padding:6px 8px;
+           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .gallery-empty { color:var(--faint); font:12px var(--mono); padding:10px 8px; }
+  .lightbox { position:fixed; inset:0; z-index:100; padding:40px;
+           background:rgba(2,6,23,.86); display:flex; align-items:center;
+           justify-content:center; cursor:zoom-out; }
+  .lightbox img { max-width:92vw; max-height:86vh; border-radius:10px;
+           box-shadow:0 24px 70px rgba(0,0,0,.6); }
+  .lightbox .cap { position:absolute; bottom:22px; left:0; right:0;
+           text-align:center; color:var(--txt); font:13px var(--mono); }
 </style>
 </head>
 <body>
@@ -210,10 +231,16 @@
     <div class="nav">
       <button class="navitem active" data-nav="dashboard" onclick="showView('dashboard')">
         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>Dashboard</button>
-      <button class="navitem" data-nav="setup" onclick="showView('setup')">
-        <svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>Setup &amp; Assets</button>
       <button class="navitem" data-nav="preflight" onclick="showView('preflight')">
         <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Preflight</button>
+      <button class="navitem" data-nav="event" onclick="showView('event')">
+        <svg viewBox="0 0 24 24"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/></svg>Event</button>
+      <button class="navitem" data-nav="apps" onclick="showView('apps')">
+        <svg viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>Apps</button>
+      <button class="navitem" data-nav="tools" onclick="showView('tools')">
+        <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Tools</button>
+      <button class="navitem" data-nav="assets" onclick="showView('assets')">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></svg>Assets</button>
       <button class="navitem" data-nav="logs" onclick="showView('logs')">
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>Logs</button>
     </div>
@@ -265,13 +292,6 @@
               <svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>Up</button>
             <button class="danger" onclick="op('tailscale-down', true)">
               <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Down</button></div>
-          <div class="row"><span class="name">Event</span>
-            <span class="dim grow">Bring the stack up (Tailscale, Discord, relay, OBS, Companion) / stop iro services</span>
-            <input id="stint" type="number" min="1" placeholder="stint" aria-label="Stint number for mid-event takeover">
-            <button onclick="opEventStart()">
-              <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button>
-            <button class="danger" onclick="op('event-stop', true)">
-              <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button></div>
           <div class="row"><span class="name">OBS pages</span>
             <span class="dim grow">Reload the relay-served HUD/timer browser sources</span>
             <button onclick="op('obs-refresh')">
@@ -279,11 +299,54 @@
         </section>
       </div>
 
-      <!-- ===== Setup & Assets ===== -->
-      <div class="view" data-view="setup" hidden>
-        <div class="viewhead"><h2>Setup &amp; Assets</h2>
+      <!-- ===== Event ===== -->
+      <div class="view" data-view="event" hidden>
+        <div class="viewhead"><h2>Event</h2>
           <span class="spacer"></span>
-          <span class="sub">one-time setup &amp; pre-event prep</span></div>
+          <span class="sub">bring the whole stack up / down</span></div>
+        <section>
+          <div class="row"><span class="name">Start</span>
+            <span class="dim grow">Bring everything up — Tailscale, Discord, relay, OBS, Companion. Optional stint = mid-event takeover (the given stint is treated as on air).</span>
+            <input id="stint" type="number" min="1" placeholder="stint" aria-label="Stint number for mid-event takeover">
+            <button onclick="opEventStart()">
+              <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button></div>
+          <div class="row"><span class="name">Stop</span>
+            <span class="dim grow">Stop the iro services (relay, …). The GUI apps (OBS, Companion, Discord) keep running.</span>
+            <button class="danger" onclick="op('event-stop', true)">
+              <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button></div>
+        </section>
+      </div>
+
+      <!-- ===== Apps ===== -->
+      <div class="view" data-view="apps" hidden>
+        <div class="viewhead"><h2>Apps</h2>
+          <span class="sub" id="d-apps"></span>
+          <span class="spacer"></span>
+          <button onclick="op('install-apps', true)">Install all</button>
+          <button onclick="op('install-apps', true, {update: true})">Update all</button></div>
+        <section><div id="applist">
+          <div class="item miss"><span class="idot"></span><span class="dim grow">loading…</span></div>
+        </div></section>
+      </div>
+
+      <!-- ===== Tools ===== -->
+      <div class="view" data-view="tools" hidden>
+        <div class="viewhead"><h2>Tools</h2>
+          <span class="sub" id="d-tools"></span>
+          <span class="spacer"></span>
+          <button onclick="op('install-tools', true)">Install all</button>
+          <button onclick="op('install-tools', true, {update: true})">Update all</button></div>
+        <section><div id="toollist">
+          <div class="item miss"><span class="idot"></span><span class="dim grow">loading…</span></div>
+        </div></section>
+      </div>
+
+      <!-- ===== Assets ===== -->
+      <div class="view" data-view="assets" hidden>
+        <div class="viewhead"><h2>Assets</h2>
+          <span class="spacer"></span>
+          <button onclick="checkAssets()">
+            <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Check vs sheet</button></div>
         <section>
           <div class="row"><span class="name">Cookies</span>
             <span class="badge" id="b-cookies"><span class="dot"></span><span>…</span></span>
@@ -297,36 +360,22 @@
             </select>
             <button onclick="op('cookies', false, {browser: $('browser').value})">
               <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button></div>
+        </section>
+        <section>
           <div class="row"><span class="name">Graphics</span>
-            <span class="badge" id="b-graphics"><span class="dot"></span><span>unchecked</span></span>
+            <span class="badge" id="b-graphics"><span class="dot"></span><span>…</span></span>
             <span class="dim grow" id="d-graphics"></span>
             <button onclick="op('graphics')">
               <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
+          <div class="gallery" id="gfx-gallery"></div>
+        </section>
+        <section>
           <div class="row"><span class="name">Media</span>
-            <span class="badge" id="b-media"><span class="dot"></span><span>unchecked</span></span>
+            <span class="badge" id="b-media"><span class="dot"></span><span>…</span></span>
             <span class="dim grow" id="d-media"></span>
             <button onclick="op('media')">
               <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
-          <div class="row"><span class="name">Assets</span>
-            <span class="dim grow">Verify graphics/media against the sheet's Assets tab (fetches the sheet)</span>
-            <button onclick="checkAssets()">
-              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Check</button></div>
-          <div class="row"><span class="name">OBS setup</span>
-            <span class="dim grow">Write the localized OBS collection into runtime/ (import it in OBS afterwards)</span>
-            <button onclick="op('setup')">Export</button></div>
-          <div class="row"><span class="name">Companion</span>
-            <span class="dim grow">Write the button config into runtime/ (import it in Companion afterwards)</span>
-            <button onclick="op('export-companion')">Export</button></div>
-          <div class="row"><span class="name">Tools</span>
-            <span class="dim grow" id="d-tools">yt-dlp / streamlink / ffmpeg / deno</span>
-            <button onclick="op('install-tools', true)">Install</button>
-            <button onclick="op('install-tools', true, {update: true})">Update</button></div>
-          <div id="toollist"></div>
-          <div class="row"><span class="name">Apps</span>
-            <span class="dim grow" id="d-apps">OBS / Companion / Tailscale / Discord</span>
-            <button onclick="op('install-apps', true)">Install</button>
-            <button onclick="op('install-apps', true, {update: true})">Update</button></div>
-          <div id="applist"></div>
+          <div class="gallery" id="media-gallery"></div>
         </section>
       </div>
 
@@ -374,11 +423,15 @@
   </div>
 </div>
 
+<div class="lightbox" id="lightbox" hidden onclick="closeLightbox()">
+  <img id="lightbox-img" alt=""><span class="cap" id="lightbox-cap"></span>
+</div>
+
 <script>
 const $ = id => document.getElementById(id);
 let jobES = null, logES = null;
 
-let setupLoaded = false, preflightRun = false;
+let setupLoaded = false, preflightRun = false, assetsLoaded = false;
 
 function showView(name) {
   document.querySelectorAll('[data-view]').forEach(v => {
@@ -387,9 +440,12 @@ function showView(name) {
   document.querySelectorAll('[data-nav]').forEach(n => {
     n.classList.toggle('active', n.dataset.nav === name);
   });
-  // lazy first-load: tool/app probes and preflight are on-demand (they shell
-  // out / fetch the sheet), so run them only when their view is first opened.
-  if (name === 'setup' && !setupLoaded) { setupLoaded = true; fetchSetup(); }
+  // lazy first-load: tool/app probes, preflight and asset listing are on-demand
+  // (they shell out / scan disk), so run them only when first opened.
+  if ((name === 'apps' || name === 'tools') && !setupLoaded) {
+    setupLoaded = true; fetchSetup();
+  }
+  if (name === 'assets' && !assetsLoaded) { assetsLoaded = true; fetchAssetFiles(); }
   if (name === 'preflight' && !preflightRun) { preflightRun = true; runPreflight(); }
 }
 
@@ -480,7 +536,7 @@ function watchJob(name, id) {
                                           : 'failed (exit ' + e.data + ')');
     jobES.close();
     refresh();
-    if (name === 'graphics' || name === 'media') checkAssets();
+    if (name === 'graphics' || name === 'media') fetchAssetFiles();
     if (name === 'install-tools' || name === 'install-apps') fetchSetup();
   });
 }
@@ -524,14 +580,26 @@ async function checkAssets() {
 }
 
 // ----- Tools / Apps per-item status (on-demand /api/setup) -----
-function itemRow(name, installed, version) {
+const APP_LABEL = {obs: 'OBS', companion: 'Companion',
+                   tailscale: 'Tailscale', discord: 'Discord'};
+// app-specific config exports live on the app's own row
+const APP_ACTION = {obs: {label: 'Export collection', op: 'setup'},
+                    companion: {label: 'Export config', op: 'export-companion'}};
+
+function itemRow(key, installed, version, action) {
   const d = document.createElement('div');
   d.className = 'item ' + (installed ? 'ok' : 'miss');
   d.innerHTML = '<span class="idot"></span><span class="iname"></span>' +
-                '<span class="istat"></span><span class="iver"></span>';
-  d.children[1].textContent = name;
+                '<span class="istat"></span><span class="iver grow"></span>';
+  d.children[1].textContent = APP_LABEL[key] || key;
   d.children[2].textContent = installed ? 'installed' : 'missing';
   d.children[3].textContent = version || '';
+  if (action) {
+    const b = document.createElement('button');
+    b.textContent = action.label;
+    b.onclick = () => op(action.op);
+    d.appendChild(b);
+  }
   return d;
 }
 
@@ -548,12 +616,78 @@ function renderItemList(containerId, summaryId, items, kind) {
   }
   const list = items[kind];
   const have = list.filter(x => x.installed).length;
-  list.forEach(x => c.appendChild(itemRow(x.name, x.installed, x.version)));
+  list.forEach(x => c.appendChild(itemRow(x.name, x.installed, x.version,
+                                  kind === 'apps' ? APP_ACTION[x.name] : null)));
   $(summaryId).textContent =
     have === list.length ? 'all ' + list.length + ' installed'
                          : have + ' of ' + list.length + ' installed — ' +
                            (list.length - have) + ' missing';
 }
+
+// ----- Asset preview galleries (on-demand /api/assets/files) -----
+function setCountBadge(key, n, noun) {
+  const b = $('b-' + key);
+  b.classList.remove('on', 'warn', 'fail');
+  if (n > 0) b.classList.add('on');
+  b.lastElementChild.textContent = n > 0 ? n + ' ' + noun : 'none yet';
+  $('d-' + key).textContent = '';
+}
+
+async function fetchAssetFiles() {
+  let d;
+  try { d = await (await fetch('/api/assets/files', {cache: 'no-store'})).json(); }
+  catch (e) { return; }                  // server gone — keep last state
+  if (!d.ok) return;
+  setCountBadge('graphics', d.graphics.length, d.graphics.length === 1 ? 'file' : 'files');
+  setCountBadge('media', d.media.length, d.media.length === 1 ? 'file' : 'files');
+  renderGallery('gfx-gallery', 'graphics', d.graphics, false);
+  renderGallery('media-gallery', 'media', d.media, true);
+}
+
+function renderGallery(containerId, kind, names, isVideo) {
+  const c = $(containerId);
+  c.textContent = '';
+  if (!names.length) {
+    const e = document.createElement('div');
+    e.className = 'gallery-empty';
+    e.textContent = 'none downloaded yet — press Download.';
+    c.appendChild(e);
+    return;
+  }
+  names.forEach(name => {
+    const url = '/api/assets/file/' + kind + '/' + encodeURIComponent(name);
+    const t = document.createElement('div');
+    t.className = 'thumb';
+    if (isVideo) {
+      const v = document.createElement('video');
+      v.src = url; v.controls = true; v.preload = 'metadata';
+      t.appendChild(v);
+    } else {
+      const img = document.createElement('img');
+      img.src = url; img.alt = name; img.loading = 'lazy';
+      t.appendChild(img);
+      t.onclick = () => openLightbox(url, name);
+    }
+    const cap = document.createElement('div');
+    cap.className = 'cap';
+    cap.textContent = name.replace(/\.[^.]+$/, '');
+    t.appendChild(cap);
+    c.appendChild(t);
+  });
+}
+
+function openLightbox(url, name) {
+  $('lightbox-img').src = url;
+  $('lightbox-cap').textContent = name;
+  $('lightbox').hidden = false;
+}
+function closeLightbox() {
+  $('lightbox').hidden = true;
+  $('lightbox-img').src = '';
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeLightbox();
+});
 
 async function fetchSetup() {
   let d;
