@@ -23,7 +23,7 @@ class JobManager:
         self.argv_for, self.env = argv_for, env
         self.spawn = spawn or self._spawn
         self.max_lines = max_lines
-        self.jobs = {}           # job_id -> Job
+        self.jobs = {}           # job_id -> Job (kept for the session — the op set is finite)
         self.lock = threading.Lock()
 
     def _spawn(self, argv):
@@ -36,12 +36,18 @@ class JobManager:
         (None, error-text)."""
         with self.lock:
             for job in self.jobs.values():
-                if job.op == op and job.exit_code is None:
+                if job.op == op and job.exit_code is None:  # exit_code writes are atomic
                     return None, f"{op} is already running"
             proc = self.spawn(self.argv_for(op_args))
             job = Job(uuid.uuid4().hex[:12], op, proc)
             self.jobs[job.id] = job
-        threading.Thread(target=self._reader, args=(job,), daemon=True).start()
+        reader = threading.Thread(target=self._reader, args=(job,), daemon=True)
+        try:
+            reader.start()
+        except RuntimeError as exc:      # OS thread exhaustion — unblock the op
+            with job.lock:
+                job.exit_code = -1
+                job.lines.append(f"(could not start output reader: {exc})")
         return job.id, None
 
     def _reader(self, job):
@@ -53,13 +59,14 @@ class JobManager:
                 if overflow > 0:
                     del job.lines[:overflow]
                     job.dropped += overflow
+        job.proc.stdout.close()          # release the pipe fd promptly
         code = job.proc.wait()
         with job.lock:
             job.exit_code = code
 
     def snapshot(self, job_id):
         """{'id','op','running','exit_code'} or None for an unknown id."""
-        job = self.jobs.get(job_id)
+        job = self.jobs.get(job_id)  # GIL-atomic dict read — no self.lock needed
         if job is None:
             return None
         with job.lock:
@@ -70,7 +77,7 @@ class JobManager:
         """(new lines from absolute index `since`, next index, exit_code).
         (None, since, None) for an unknown id. Head-trimmed lines are skipped —
         `since` stays an absolute position so SSE/poll clients never re-read."""
-        job = self.jobs.get(job_id)
+        job = self.jobs.get(job_id)  # GIL-atomic dict read — no self.lock needed
         if job is None:
             return None, since, None
         with job.lock:
