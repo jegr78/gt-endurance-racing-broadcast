@@ -29,7 +29,7 @@ IRO_SHEET_PUSH_URL=https://script.google.com/macros/s/…/exec?key=your_secret
 - **`IRO_SHEET_PUSH_URL`** *(optional)* — the Apps Script write webhook shared by the
   relay-hosted race timer **and** the director panel's sheet controls. The race timer uses
   it to sync start/stop/show/hide/correct actions to the Sheet's `Timer` tab (so a second
-  producer machine takes over with the same countdown). The panel's **SETUP row**
+  producer machine takes over with the same countdown). The panel's **HUD row**
   (Stint label / Streamer / Session / Race Control) and **URLs section** (Schedule + POV URL)
   use it to write changes back to the sheet — without it those panel controls are read-only.
   Unset = timer works on this machine only (no sheet sync); panel sheet controls become read-only. See [Sheet-Webhook](Sheet-Webhook)

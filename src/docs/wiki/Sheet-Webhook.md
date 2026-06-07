@@ -1,7 +1,7 @@
 # Sheet-Webhook — the write path back into the Google Sheet
 
 The relay reads the Sheet via CSV export (no key needed). Writing back —
-race-timer sync and the director panel's Setup/Schedule/POV controls — goes
+race-timer sync and the director panel's HUD/Schedule/POV controls — goes
 through **one** Google Apps Script web app deployed inside the broadcast
 Sheet. One URL + key in `.env` powers all of it:
 
@@ -10,7 +10,7 @@ IRO_SHEET_PUSH_URL=https://script.google.com/macros/s/…/exec?key=<your secret>
 ```
 
 Without it everything still works read-only: the timer stays local to one
-machine and the panel's SETUP row + URLs section are display-only.
+machine and the panel's HUD row + URLs section are display-only.
 
 ## What it writes
 
@@ -117,7 +117,7 @@ vocabulary columns — the same lists the sheet's own dropdowns use.
    ```
 
 5. Restart the relay. `iro event status` shows the `.env` check as PASS; the
-   panel's Setup line reports `sheet sync OK` after the first action.
+   panel's HUD line reports `sheet sync OK` after the first action.
 
 ## Updating the script later
 

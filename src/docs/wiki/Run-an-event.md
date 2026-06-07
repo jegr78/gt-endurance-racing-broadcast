@@ -86,7 +86,7 @@ so the Stream Deck and the panel share one muscle memory:
 |---|---|
 | **PGM** | one-press program switches (scene + feed visibility + mutes), identical to the Companion macros — STINT A/B, SPLIT, INTERVIEW, STANDBY, INTRO, OUTRO |
 | **FEEDS** | relay control: NEXT (driver change), feed reloads, POV reload/stop, SET STINT… |
-| **SETUP** | the Sheet's Setup-tab dropdowns (Stint HUD label, Streamer, Session, Race Control) — changes show on the HUD immediately and are written to the Sheet ([Director guide](Director)) |
+| **HUD** | the Sheet's Setup-tab dropdowns (Stint HUD label, Streamer, Session, Race Control) — changes show on the HUD immediately and are written to the Sheet ([Director guide](Director)) |
 | **SCN·VIS** | raw scene switches and feed visibility toggles |
 | **GFX** | graphics toggles (HUD, Standings, Schedule, results, weather, covers) |
 | **TIMER** | the race timer (see [Race Timer](Race-Timer)) |
@@ -94,8 +94,8 @@ so the Stream Deck and the panel share one muscle memory:
 | **URLs** | collapsible editor for the Schedule tab (per-stint name + URL, rows live on a feed are marked A/B) and the POV URL — saves write the Sheet only; feeds pick changes up on RELOAD/NEXT |
 
 The status strip at the top shows what is on air, which stint each feed
-carries, the POV state and the race timer. **FEEDS, TIMER, SETUP and URLs
-work relay-only** — no OBS connection needed (SETUP and URLs additionally
+carries, the POV state and the race timer. **FEEDS, TIMER, HUD and URLs
+work relay-only** — no OBS connection needed (HUD and URLs additionally
 need the sheet-write webhook, see [Sheet-Webhook](Sheet-Webhook); without it
 they are display-only). Everything else needs the OBS WebSocket connection:
 the producer's Tailscale IP, port `4455`, and the password from OBS → Tools →
@@ -121,7 +121,7 @@ flowchart LR
 At each change the director: cuts to **Splitscreen**, sets **Race Control** to *Driver
 Swaps* in the sheet, presses **Feeds Next**, updates the **Stint** and **Streamer** cells,
 cuts back with **STINT A** / **STINT B** (the incoming feed), then clears **Race Control**.
-The panel's **SETUP row** provides the same Stint / Streamer / Race Control dropdowns
+The panel's **HUD row** provides the same Stint / Streamer / Race Control dropdowns
 directly — editing the sheet and using the panel are equivalent.
 Full step-by-step: [Director guide](Director#at-a-driver-change). (Why two feeds:
 [Relay — how the feeds work](Relay-Mode).)

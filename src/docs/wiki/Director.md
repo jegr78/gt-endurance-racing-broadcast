@@ -49,24 +49,25 @@ Two pages — **show control** and **race timer & audio**. The left column on ea
 
 How the board is imported and built: [Companion](Companion).
 
-## Director panel — SETUP row
+## Director panel — HUD row
 
-The **director panel** (`http://<producer-tailscale-ip>:8088/panel`) has a **SETUP row** with
+The **director panel** (`http://<producer-tailscale-ip>:8088/panel`) has a **HUD row** with
 four dropdowns: **Stint (HUD label)**, **Streamer**, **Session**, and **Race Control** (plus a
 **CLEAR RC** button). The options come from the Configuration tab of the sheet — any new
 streamers or messages added there are picked up automatically without changing the panel.
 
-Each change takes effect on the HUD immediately and is written to the sheet in the background.
-An amber outline on the dropdown means the write is pending; the Setup status line shows the
-sync state. Editing the sheet dropdowns directly works exactly as before — the two methods are
-equivalent.
+Each change takes effect on the HUD immediately and is written to the sheet's Setup tab in
+the background. An amber outline on the dropdown means the write is pending; the HUD status
+line shows the sync state. Editing the sheet dropdowns directly works exactly as before — the
+two methods are equivalent.
 
-> **Stint (HUD label) ≠ feed stint index.** The SETUP Stint dropdown sets the *HUD display
+> **Stint (HUD label) ≠ feed stint index.** The HUD row's Stint dropdown sets the *HUD display
 > label* (what viewers see on the overlay). Advancing the actual feeds to the next commentator
 > stream is **NEXT** / **SET STINT** in the FEEDS row — those are separate operations.
 
-Both the panel SETUP row and the sheet dropdowns need the sheet-write webhook
-(`IRO_SHEET_PUSH_URL`). Without it the dropdowns are read-only. See [Sheet-Webhook](Sheet-Webhook).
+The panel HUD row needs the sheet-write webhook (`IRO_SHEET_PUSH_URL`); without it the panel
+dropdowns are read-only. (The sheet's own dropdowns work either way — they never need the
+webhook.) See [Sheet-Webhook](Sheet-Webhook).
 
 ## Director panel — URLs section
 
@@ -77,6 +78,10 @@ A or B) and the POV URL field.
 Saving a change writes it to the sheet only — **no feed reconnects automatically**. A new
 stream URL takes effect at the next **RELOAD A/B** / **NEXT** for that feed (POV: **POV
 RELOAD**), exactly as if the sheet had been edited directly.
+
+Each row also has a **CLEAR** button: it empties the row's name + URL in the sheet (after a
+confirmation). The row itself stays and can be refilled later — rows are never deleted,
+because removing a row would shift the stint numbering of everything after it.
 
 The URLs section also needs `IRO_SHEET_PUSH_URL` — without it the fields are read-only.
 

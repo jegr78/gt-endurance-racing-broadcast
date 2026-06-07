@@ -147,6 +147,9 @@
   .urls .save,.urls .add{padding:7px 10px;font-size:11px;letter-spacing:.1em;border-radius:8px;
     border:1px solid var(--edge);background:#141921;color:var(--muted);cursor:pointer;width:100%}
   .urls .save.ok{border-color:var(--live);color:var(--live)}
+  .urls .clear{margin-top:4px;padding:4px 10px;font-size:10px;letter-spacing:.1em;border-radius:8px;
+    border:1px solid var(--edge);background:#141921;color:var(--muted);cursor:pointer;width:100%}
+  .urls .clear:hover{border-color:var(--air);color:var(--air)}
   .urls .add{width:auto;margin-top:8px}
 
   /* ---------- log ---------- */
@@ -193,10 +196,10 @@
 
   <section class="bus"><div class="cap">Feeds</div><div class="keys" id="feedsBus"></div></section>
 
-  <section class="bus"><div class="cap">Setup</div>
+  <section class="bus"><div class="cap">HUD</div>
     <div class="body">
       <div class="setrow" id="setupRow"></div>
-      <div class="hint" id="setupInfo">Setup: connecting to relay…</div>
+      <div class="hint" id="setupInfo">HUD: connecting to relay…</div>
     </div>
   </section>
 
@@ -628,7 +631,7 @@ async function timerPoll(){
   }
 }
 
-/* ---------- SETUP row (sheet-backed dropdowns; relay-only) ----------
+/* ---------- HUD row (sheet-backed dropdowns; relay-only) ----------
    The "STINT" here is the HUD display LABEL (Setup tab) — unrelated to the
    feed stint index handled by NEXT / SET STINT in the FEEDS row. */
 const SETUP_FIELDS = [
@@ -655,10 +658,10 @@ async function setupSet(field, value){
   try{
     const r = await fetch("/" + path, {cache:"no-store"});
     const d = await r.json();
-    if (d.error){ log("Setup " + field + ": " + d.error, "err"); setupPoll(); return; }
-    log("Setup " + field + " → " + (value || "(cleared)"));
+    if (d.error){ log("HUD " + field + ": " + d.error, "err"); setupPoll(); return; }
+    log("HUD " + field + " → " + (value || "(cleared)"));
     setupPoll();
-  }catch(e){ log("Setup " + field + " failed (relay reachable?): " + e, "err"); }
+  }catch(e){ log("HUD " + field + " failed (relay reachable?): " + e, "err"); }
 }
 
 async function setupPoll(){
@@ -666,8 +669,8 @@ async function setupPoll(){
   try{
     const r = await fetch("/setup/data", {cache:"no-store"});
     d = await r.json();
-  }catch(e){ $("#setupInfo").textContent = "Setup: relay not reachable."; return; }
-  if (d.error){ $("#setupInfo").textContent = "Setup: " + d.error; return; }
+  }catch(e){ $("#setupInfo").textContent = "HUD: relay not reachable."; return; }
+  if (d.error){ $("#setupInfo").textContent = "HUD: " + d.error; return; }
   const ro = d.push === "disabled";
   for (const [key] of SETUP_FIELDS){
     const sel = document.querySelector(`select[data-setup="${key}"]`);
@@ -684,7 +687,7 @@ async function setupPoll(){
     sel.disabled = ro;
   }
   $("#clearRc").disabled = ro;
-  $("#setupInfo").textContent = "Setup: " +
+  $("#setupInfo").textContent = "HUD: " +
       (d.push === "ok" ? "sheet sync OK"
      : ro ? "read-only — set IRO_SHEET_PUSH_URL in .env (wiki: Sheet-Webhook)"
      : d.push === "failed" ? "SHEET SYNC FAILED — " + (d.last_error || "see relay log")
@@ -705,9 +708,18 @@ function schedRow(i){
   tr.innerHTML = `<td class="rn">${i}<span class="livebadge"></span></td>
     <td style="width:24%"><input class="nm" placeholder="name"></td>
     <td><input class="u" placeholder="https://www.youtube.com/watch?v=… or UC…"></td>
-    <td class="act"><button class="save">SAVE</button></td>`;
+    <td class="act"><button class="save">SAVE</button><button class="clear">CLEAR</button></td>`;
   tr.querySelectorAll("input").forEach(inp=>inp.addEventListener("input", ()=>tr.dataset.dirty = 1));
   tr.querySelector(".save").addEventListener("click", ()=>schedSave(tr, i));
+  tr.querySelector(".clear").addEventListener("click", ()=>{
+    // Clears name + URL in the sheet (the row itself stays — deleting rows
+    // would shift the stint indices of everything after it).
+    const live = tr.querySelector(".livebadge").textContent;
+    if (!confirm("Clear schedule row " + i + " (name + URL) in the sheet?" +
+                 (live ? ` Feed ${live} keeps playing until RELOAD ${live} / NEXT.` : ""))) return;
+    tr.querySelector(".nm").value = ""; tr.querySelector(".u").value = "";
+    schedSave(tr, i);
+  });
   $("#schedBody").appendChild(tr);
   return tr;
 }
