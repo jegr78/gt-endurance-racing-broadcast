@@ -456,13 +456,13 @@ def _refresh_obs_pages(force=False, wait=0):
     try:
         import obs_ws
         names, note = obs_ws.refresh_browser_inputs(needle=f"127.0.0.1:{RELAY_PORT}")
+        if note:
+            print(f"obs: page refresh skipped — {note}")
+            return                          # hash kept -> retried on the next start
+        write_pages_hash(_obs_pages_hash_path(), served)   # only confirmed refreshes advance the gate
     except Exception as exc:                # a start must never fail on this
         print(f"obs: page refresh skipped ({exc}).")
         return
-    if note:
-        print(f"obs: page refresh skipped — {note}")
-        return                              # hash kept -> retried on the next start
-    write_pages_hash(_obs_pages_hash_path(), served)   # only confirmed refreshes advance the gate
     print(f"obs: refreshed browser sources {', '.join(names)}." if names
           else "obs: no relay browser sources in OBS — nothing to refresh.")
 
