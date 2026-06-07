@@ -152,6 +152,33 @@
         font:12px/1.55 var(--mono); color:#CBD5E1; }
   #svclog { height:calc(100dvh - 220px); min-height:220px; margin-top:12px; }
 
+  /* per-item status sub-lists (Tools / Apps in Setup & Assets) */
+  .item { display:flex; align-items:center; gap:11px; padding:7px 8px 7px 22px;
+          border-top:1px solid var(--line); }
+  .item .idot { width:8px; height:8px; border-radius:50%; background:var(--off);
+                flex:0 0 auto; }
+  .item.ok .idot { background:var(--ok); }
+  .item.miss .idot { background:var(--warn); }
+  .item .iname { width:96px; font:13px var(--mono); color:var(--txt); }
+  .item .istat { font:600 11px var(--mono); letter-spacing:.03em; width:74px; }
+  .item.ok .istat { color:#4ADE80; }
+  .item.miss .istat { color:#FCD34D; }
+  .item .iver { color:var(--dim); font:11px var(--mono); }
+
+  /* preflight checklist level pills */
+  .pfbadge { font:600 10px/1 var(--mono); letter-spacing:.05em; padding:5px 7px;
+             border-radius:5px; min-width:46px; text-align:center; flex:0 0 auto; }
+  .pfbadge.PASS { color:#4ADE80; background:rgba(34,197,94,.12);
+                  border:1px solid rgba(34,197,94,.3); }
+  .pfbadge.WARN { color:#FCD34D; background:rgba(245,158,11,.12);
+                  border:1px solid rgba(245,158,11,.3); }
+  .pfbadge.FAIL { color:#FCA5A5; background:rgba(239,68,68,.12);
+                  border:1px solid rgba(239,68,68,.3); }
+  .pfbadge.INFO { color:#93C5FD; background:rgba(59,130,246,.12);
+                  border:1px solid rgba(59,130,246,.3); }
+  #pf-body section { margin-bottom:14px; }
+  #pf-body section:last-child { margin-bottom:0; }
+
   /* ---------- docked console ---------- */
   .console { border-top:1px solid var(--line); background:var(--card2);
              flex:0 0 auto; display:flex; flex-direction:column; }
@@ -185,6 +212,8 @@
         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>Dashboard</button>
       <button class="navitem" data-nav="setup" onclick="showView('setup')">
         <svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>Setup &amp; Assets</button>
+      <button class="navitem" data-nav="preflight" onclick="showView('preflight')">
+        <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Preflight</button>
       <button class="navitem" data-nav="logs" onclick="showView('logs')">
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>Logs</button>
     </div>
@@ -289,17 +318,28 @@
             <span class="dim grow">Write the button config into runtime/ (import it in Companion afterwards)</span>
             <button onclick="op('export-companion')">Export</button></div>
           <div class="row"><span class="name">Tools</span>
-            <span class="dim grow">yt-dlp / streamlink / ffmpeg / deno</span>
+            <span class="dim grow" id="d-tools">yt-dlp / streamlink / ffmpeg / deno</span>
             <button onclick="op('install-tools', true)">Install</button>
             <button onclick="op('install-tools', true, {update: true})">Update</button></div>
+          <div id="toollist"></div>
           <div class="row"><span class="name">Apps</span>
-            <span class="dim grow">OBS / Companion / Tailscale / Discord</span>
+            <span class="dim grow" id="d-apps">OBS / Companion / Tailscale / Discord</span>
             <button onclick="op('install-apps', true)">Install</button>
             <button onclick="op('install-apps', true, {update: true})">Update</button></div>
-          <div class="row"><span class="name">Preflight</span>
-            <span class="dim grow">Hardware / tools / config check</span>
-            <button onclick="op('preflight')">Run</button></div>
+          <div id="applist"></div>
         </section>
+      </div>
+
+      <!-- ===== Preflight ===== -->
+      <div class="view" data-view="preflight" hidden>
+        <div class="viewhead"><h2>Preflight</h2>
+          <span class="sub" id="pf-summary"></span>
+          <span class="spacer"></span>
+          <button id="pf-run" onclick="runPreflight()">
+            <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Run</button></div>
+        <div id="pf-body">
+          <section><div class="row"><span class="dim">Not run yet — press Run.</span></div></section>
+        </div>
       </div>
 
       <!-- ===== Logs ===== -->
@@ -338,6 +378,8 @@
 const $ = id => document.getElementById(id);
 let jobES = null, logES = null;
 
+let setupLoaded = false, preflightRun = false;
+
 function showView(name) {
   document.querySelectorAll('[data-view]').forEach(v => {
     v.hidden = v.dataset.view !== name;
@@ -345,6 +387,10 @@ function showView(name) {
   document.querySelectorAll('[data-nav]').forEach(n => {
     n.classList.toggle('active', n.dataset.nav === name);
   });
+  // lazy first-load: tool/app probes and preflight are on-demand (they shell
+  // out / fetch the sheet), so run them only when their view is first opened.
+  if (name === 'setup' && !setupLoaded) { setupLoaded = true; fetchSetup(); }
+  if (name === 'preflight' && !preflightRun) { preflightRun = true; runPreflight(); }
 }
 
 function toggleConsole(force) {
@@ -435,6 +481,7 @@ function watchJob(name, id) {
     jobES.close();
     refresh();
     if (name === 'graphics' || name === 'media') checkAssets();
+    if (name === 'install-tools' || name === 'install-apps') fetchSetup();
   });
 }
 
@@ -474,6 +521,106 @@ async function checkAssets() {
   setLevelBadge('media', a.media.level,
                 a.media.level === 'PASS' ? 'COMPLETE' : a.media.level,
                 a.media.detail);
+}
+
+// ----- Tools / Apps per-item status (on-demand /api/setup) -----
+function itemRow(name, installed, version) {
+  const d = document.createElement('div');
+  d.className = 'item ' + (installed ? 'ok' : 'miss');
+  d.innerHTML = '<span class="idot"></span><span class="iname"></span>' +
+                '<span class="istat"></span><span class="iver"></span>';
+  d.children[1].textContent = name;
+  d.children[2].textContent = installed ? 'installed' : 'missing';
+  d.children[3].textContent = version || '';
+  return d;
+}
+
+function renderItemList(containerId, summaryId, items, kind) {
+  const c = $(containerId);
+  c.textContent = '';
+  if (!items || !items.ok) {
+    const e = document.createElement('div');
+    e.className = 'item miss';
+    e.innerHTML = '<span class="idot"></span><span class="iver"></span>';
+    e.children[1].textContent = (items && items.error) || 'check failed';
+    c.appendChild(e);
+    return;
+  }
+  const list = items[kind];
+  const have = list.filter(x => x.installed).length;
+  list.forEach(x => c.appendChild(itemRow(x.name, x.installed, x.version)));
+  $(summaryId).textContent =
+    have === list.length ? 'all ' + list.length + ' installed'
+                         : have + ' of ' + list.length + ' installed — ' +
+                           (list.length - have) + ' missing';
+}
+
+async function fetchSetup() {
+  let d;
+  try { d = await (await fetch('/api/setup', {cache: 'no-store'})).json(); }
+  catch (e) { return; }                  // server gone — keep last state
+  renderItemList('toollist', 'd-tools', d.tools, 'tools');
+  renderItemList('applist', 'd-apps', d.apps, 'apps');
+}
+
+// ----- Preflight checklist (on-demand /api/preflight) -----
+async function runPreflight() {
+  const body = $('pf-body'), btn = $('pf-run'), sum = $('pf-summary');
+  btn.disabled = true;
+  sum.textContent = 'running…';
+  body.innerHTML = '<section><div class="row"><span class="spin"></span>' +
+    '<span class="dim grow">Running checks — hardware, tools, ports, sheet…</span></div></section>';
+  let d;
+  try { d = await (await fetch('/api/preflight', {cache: 'no-store'})).json(); }
+  catch (e) { d = {ok: false, error: 'Control Center not reachable'}; }
+  btn.disabled = false;
+  if (!d.ok) {
+    sum.textContent = '';
+    body.textContent = '';
+    const s = document.createElement('section');
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = '<span class="pfbadge FAIL">ERROR</span><span class="dim grow"></span>';
+    row.children[1].textContent = d.error || 'check failed';
+    s.appendChild(row);
+    body.appendChild(s);
+    return;
+  }
+  renderPreflight(d.sections);
+}
+
+function renderPreflight(sections) {
+  const body = $('pf-body');
+  body.textContent = '';
+  let f = 0, w = 0, p = 0, i = 0;
+  sections.forEach(sec => {
+    const s = document.createElement('section');
+    const h = document.createElement('h2');
+    h.textContent = sec.title;
+    s.appendChild(h);
+    sec.results.forEach(r => {
+      if (r.level === 'FAIL') f++;
+      else if (r.level === 'WARN') w++;
+      else if (r.level === 'PASS') p++;
+      else i++;
+      const row = document.createElement('div');
+      row.className = 'row';
+      const b = document.createElement('span');
+      b.className = 'pfbadge ' + r.level;
+      b.textContent = r.level;
+      const n = document.createElement('span');
+      n.className = 'name';
+      n.textContent = r.name;
+      const dt = document.createElement('span');
+      dt.className = 'dim grow';
+      dt.textContent = r.detail;
+      row.append(b, n, dt);
+      s.appendChild(row);
+    });
+    body.appendChild(s);
+  });
+  $('pf-summary').textContent =
+    f + ' FAIL · ' + w + ' WARN · ' + p + ' PASS' + (i ? ' · ' + i + ' info' : '');
 }
 
 function watchLog(name) {
