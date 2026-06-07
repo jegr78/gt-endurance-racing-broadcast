@@ -61,7 +61,7 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
 
 import argparse, csv, datetime, io, ipaddress, json, os, re, shutil, signal, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, quote
+from urllib.parse import urlparse, quote, unquote
 from urllib.request import Request, urlopen
 
 # ---------- Configuration ----------
@@ -1254,7 +1254,7 @@ class Relay:
 
 
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
-                 timer_store=None, timer_path=None):
+                 timer_store=None, timer_path=None, setup_ctl=None):
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
             body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
@@ -1327,6 +1327,24 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             return self._send({"error": "adjust takes +/- seconds"}, 400)
                         return self._send(timer_store.adjust(delta))
                     return self._send({"error": "unknown", "path": self.path}, 404)
+                if p[:1] == ["setup"]:
+                    if not setup_ctl:
+                        return self._send({"error": "setup control disabled"}, 404)
+                    if p == ["setup", "data"]:
+                        return self._send(setup_ctl.data())
+                    if len(p) == 4 and p[1] == "set":
+                        return self._send(setup_ctl.set_field(p[2].lower(),
+                                                              unquote(p[3])))
+                    if len(p) == 3 and p[1] == "clear":
+                        return self._send(setup_ctl.set_field(p[2].lower(), ""))
+                    return self._send({"error": "unknown", "path": self.path}, 404)
+                if p == ["schedule", "data"]:
+                    rows = relay.source.get_rows()
+                    live = {f.idx: k for k, f in relay.feeds.items()}
+                    return self._send({"rows": [{"row": i + 1, "url": u, "name": n,
+                                                 "live": live.get(i)}
+                                                for i, (u, n) in enumerate(rows)],
+                                       "source": relay.source.health()})
                 if p == ["next"]:                       return self._send(relay.next_auto())
                 if p == ["reload"]:                     return self._send(relay.reload())
                 if p == ["pov", "reload"]:              return self._send(relay.pov_reload())
@@ -1341,6 +1359,28 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 return self._send({"error": str(e)}, 500)
         def _ok(self, r):
             self._send(r) if r else self._send({"error":"feed? (A/B)"}, 404)
+        def do_POST(self):
+            p = [x for x in urlparse(self.path).path.split("/") if x]
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                if length > 65536:
+                    return self._send({"error": "body too large"}, 413)
+                try:
+                    body = json.loads(self.rfile.read(length) or b"{}")
+                except ValueError:
+                    return self._send({"error": "body must be JSON"}, 400)
+                if not isinstance(body, dict):
+                    return self._send({"error": "body must be a JSON object"}, 400)
+                if not setup_ctl:
+                    return self._send({"error": "setup control disabled"}, 404)
+                if p == ["schedule", "set"]:
+                    return self._send(setup_ctl.schedule_set(
+                        body.get("row"), body.get("url"), body.get("name")))
+                if p == ["pov", "set"]:
+                    return self._send(setup_ctl.pov_set(body.get("url")))
+                return self._send({"error": "unknown", "path": self.path}, 404)
+            except Exception as e:
+                return self._send({"error": str(e)}, 500)
     return H
 
 

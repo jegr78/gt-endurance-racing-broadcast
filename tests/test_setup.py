@@ -225,6 +225,123 @@ def t_push_failure_keeps_override_until_ttl():
         m.post_webhook = orig
 
 
+# ---------- endpoint routing (real server, ephemeral port) ----------
+
+def _client(setup_ctl):
+    import json as _json, threading as _t, urllib.error
+    from urllib.request import urlopen, Request
+
+    class _StubFeed:
+        def __init__(self, idx): self.idx = idx
+
+    class _StubSource:
+        def __init__(self, rows): self._rows = rows
+        def get_rows(self): return list(self._rows)
+        def health(self): return {"count": len(self._rows),
+                                  "last_ok_age_s": 0.0, "last_error": None}
+
+    class _StubRelay:
+        def __init__(self):
+            self.source = _StubSource([("https://www.youtube.com/watch?v=a", "Alpha"),
+                                       ("UCLA_DiR1FfKNvjuUpBHmylQ", "Beta")])
+            self.feeds = {"A": _StubFeed(0), "B": _StubFeed(1)}
+        def status(self): return {"schedule_len": 2, "feeds": {}}
+
+    handler = m.make_handler(_StubRelay(), setup_ctl=setup_ctl)
+    srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    _t.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+
+    def _read(req):
+        # error endpoints answer 404 etc. with a JSON body -> read it either way
+        try:
+            with urlopen(req, timeout=5) as r:
+                return _json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return _json.loads(e.read())
+
+    def get(path):
+        return _read(base + path)
+
+    def post(path, body):
+        return _read(Request(base + path, data=_json.dumps(body).encode(),
+                             headers={"Content-Type": "application/json"},
+                             method="POST"))
+
+    return srv, get, post
+
+
+def t_endpoints_setup_data_and_set():
+    ctl = m.SetupControl(None, _hs_stub())   # push disabled -> set errors cleanly
+    srv, get, post = _client(ctl)
+    try:
+        d = get("/setup/data")
+        assert d["fields"]["streamer"] == "JeGr" and d["push"] == "disabled"
+        r = get("/setup/set/streamer/GT45")
+        assert "webhook not configured" in r["error"]
+        r = get("/setup/clear/racecontrol")
+        assert "webhook not configured" in r["error"]
+        assert "error" in get("/setup/bogus")
+    finally:
+        srv.shutdown()
+
+
+def t_endpoints_setup_set_urlencoded_value():
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    srv, get, post = _client(ctl)
+    try:
+        r = get("/setup/set/racecontrol/Formation%20Lap")
+        assert r.get("ok") and r["value"] == "Formation Lap", r
+    finally:
+        srv.shutdown(); m.post_webhook = orig
+
+
+def t_endpoints_schedule_data_marks_live():
+    ctl = m.SetupControl(None, _hs_stub())
+    srv, get, post = _client(ctl)
+    try:
+        d = get("/schedule/data")
+        assert d["rows"][0] == {"row": 1, "url": "https://www.youtube.com/watch?v=a",
+                                "name": "Alpha", "live": "A"}
+        assert d["rows"][1]["live"] == "B"
+    finally:
+        srv.shutdown()
+
+
+def t_endpoints_post_writes():
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    srv, get, post = _client(ctl)
+    try:
+        r = post("/schedule/set", {"row": 1, "url": "https://youtu.be/x", "name": "N"})
+        assert r.get("ok"), r
+        assert pushes[-1]["action"] == "schedule"
+        r = post("/pov/set", {"url": "https://youtu.be/p"})
+        assert r.get("ok"), r
+        assert pushes[-1]["action"] == "pov"
+        assert "error" in post("/pov/bogus", {})
+    finally:
+        srv.shutdown(); m.post_webhook = orig
+
+
+def t_endpoints_post_rejects_bad_json():
+    import urllib.error
+    from urllib.request import urlopen, Request
+    ctl = m.SetupControl(None, _hs_stub())
+    srv, get, post = _client(ctl)
+    try:
+        req = Request(f"http://127.0.0.1:{srv.server_address[1]}/pov/set",
+                      data=b"not json", method="POST")
+        try:
+            urlopen(req, timeout=5)
+            raise AssertionError("expected HTTP 400")
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+    finally:
+        srv.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
