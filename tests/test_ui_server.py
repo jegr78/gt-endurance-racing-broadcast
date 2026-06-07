@@ -134,6 +134,17 @@ def t_quit_shuts_the_server_down():
     httpd.server_close()
 
 
+def t_empty_path_segments_are_404():
+    httpd, port = _serve(_ctx())
+    try:
+        code, _b = _get(port, "/api/jobs//stream")
+        assert code == 404
+        code, _b = _get(port, "/api/logs//stream")
+        assert code == 404
+    finally:
+        httpd.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

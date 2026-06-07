@@ -96,14 +96,20 @@ def make_handler(ctx):
             if path == "/api/ping":
                 return self._json({"app": APP_ID, "version": ctx["version"]})
             if path == "/api/status":
-                return self._json({"ok": True, **ctx["status"]()})
+                try:
+                    return self._json({"ok": True, **ctx["status"]()})
+                except Exception as exc:        # a broken probe must not 500-hang the poll
+                    return self._json({"ok": False, "error": f"status failed: {exc}"}, code=500)
             if path.startswith("/api/jobs/") and path.endswith("/stream"):
-                return self._stream_job(path.split("/")[3])
+                job_id = path.split("/")[3]
+                return self._stream_job(job_id) if job_id else self._not_found("unknown job")
             if path.startswith("/api/jobs/"):
-                snap = ctx["jobs"].snapshot(path.split("/")[3])
+                job_id = path.split("/")[3]
+                snap = ctx["jobs"].snapshot(job_id) if job_id else None
                 return self._json({"ok": True, **snap}) if snap else self._not_found("unknown job")
             if path.startswith("/api/logs/") and path.endswith("/stream"):
-                return self._stream_log(path.split("/")[3])
+                name = path.split("/")[3]
+                return self._stream_log(name) if name else self._not_found("unknown log")
             return self._not_found()
 
         def do_POST(self):
@@ -152,6 +158,8 @@ def make_handler(ctx):
                         self.wfile.write(sse_frame(line))
                     if chunk:
                         self.wfile.flush()
+                    # when the last lines and the exit code arrive together, the
+                    # done frame fires one iteration later (empty-chunk pass)
                     if code is not None and not chunk:
                         self.wfile.write(sse_done(code))
                         self.wfile.flush()
