@@ -953,6 +953,112 @@ class HudSource:
                     "last_error": self.last_error}
 
 
+# Panel setup fields: URL segment -> (Setup-tab header, /hud/data key).
+# NOTE: the Setup "Stint" is the HUD display LABEL — it has no relationship
+# to the relay's feed stint index (/set/stint, NEXT).
+SETUP_FIELDS = {
+    "stint": ("Stint", "stint"),
+    "streamer": ("Streamer", "streamer"),
+    "session": ("Session", "session"),
+    "racecontrol": ("Race Control", "raceControl"),
+}
+
+
+class SetupControl:
+    """Panel -> sheet writes (spec: panel-sheet-control). Setup fields are
+    async-optimistic (override now, push in the background, the sheet poll
+    confirms); Schedule/POV URL writes are synchronous (no local echo target,
+    and answering after the webhook confirm removes the save-vs-RELOAD race).
+    The sheet stays authoritative throughout."""
+
+    def __init__(self, push_url, hud_source):
+        self.push_url = push_url
+        self.hud = hud_source
+        self.push_status = "disabled" if not push_url else "never"
+        self.last_error = None
+
+    # -- shared blocking push -> (ok, error); diagnostics like TimerStore ----
+    def _push(self, payload, expected_action):
+        try:
+            body = post_webhook(self.push_url, payload)
+        except Exception as e:
+            self.push_status = "failed"
+            self.last_error = f"push: {type(e).__name__}: {e}"
+            return False, self.last_error
+        ok, err = check_webhook_response(body, expected_action)
+        self.push_status = "ok" if ok else "failed"
+        self.last_error = None if ok else err
+        return ok, err
+
+    # -- setup fields (async-optimistic) -------------------------------------
+    def set_field(self, key, value, now=None):
+        if key not in SETUP_FIELDS:
+            return {"error": f"unknown field: {key!r} "
+                             f"(one of {', '.join(sorted(SETUP_FIELDS))})"}
+        if not self.push_url:
+            return {"error": "webhook not configured — set IRO_SHEET_PUSH_URL "
+                             "in .env (wiki: Sheet-Webhook)"}
+        header, hud_key = SETUP_FIELDS[key]
+        if not value and key != "racecontrol":
+            return {"error": "empty value only allowed for racecontrol"}
+        if value and value not in self.hud.vocab().get(key, []):
+            return {"error": f"not in the Configuration vocabulary: {value!r} "
+                             "(add it to the Configuration tab first)"}
+        self.hud.set_override(hud_key, value, now)
+        threading.Thread(target=self._push_setup, args=(header, value),
+                         daemon=True).start()
+        return {"ok": True, "field": key, "value": value, "pending": True}
+
+    def _push_setup(self, header, value):
+        ok, _err = self._push({"action": "setup", "fields": {header: value}},
+                              "setup")
+        if ok:
+            self.hud.refresh()   # confirm now, not at the next poll tick
+
+    # -- URL writes (synchronous) --------------------------------------------
+    def schedule_set(self, row, url=None, name=None):
+        if not self.push_url:
+            return {"error": "webhook not configured — set IRO_SHEET_PUSH_URL "
+                             "in .env (wiki: Sheet-Webhook)"}
+        try:
+            row = int(row)
+        except (TypeError, ValueError):
+            return {"error": "row must be a number (1-based)"}
+        if row < 1:
+            return {"error": "row must be >= 1"}
+        payload = {"action": "schedule", "row": row}
+        if url is not None:
+            url = url.strip()
+            if url and not is_channel(url):
+                return {"error": "url must be a watch URL or UC… channel ID"}
+            payload["url"] = url
+        if name is not None:
+            payload["name"] = name.strip()
+        ok, err = self._push(payload, "schedule")
+        return {"ok": True, "row": row} if ok else {"error": err}
+
+    def pov_set(self, url):
+        if not self.push_url:
+            return {"error": "webhook not configured — set IRO_SHEET_PUSH_URL "
+                             "in .env (wiki: Sheet-Webhook)"}
+        url = (url or "").strip()
+        if url and not is_channel(url):
+            return {"error": "url must be a watch URL or UC… channel ID"}
+        ok, err = self._push({"action": "pov", "url": url}, "pov")
+        return {"ok": True} if ok else {"error": err}
+
+    # -- panel poll ------------------------------------------------------------
+    def data(self):
+        hud = self.hud.data()
+        pending = self.hud.pending()
+        return {"fields": {k: hud.get(hk, "") for k, (_h, hk) in SETUP_FIELDS.items()},
+                "options": self.hud.vocab(),
+                "pending": sorted(k for k, (_h, hk) in SETUP_FIELDS.items()
+                                  if hk in pending),
+                "push": self.push_status,
+                "last_error": self.last_error}
+
+
 class Feed:
     def __init__(self, name, port, idx, provider, logdir, cookies=None, fmt=YTDLP_FORMAT):
         self.name = name

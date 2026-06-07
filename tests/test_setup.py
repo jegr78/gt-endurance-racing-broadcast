@@ -83,6 +83,120 @@ def t_parse_rows_url_not_first_column():
                     ("UCbbbbbbbbbbbbbbbbbbbbbb", "")], rows
 
 
+# ---------- SetupControl ----------
+
+OVERLAY_CSV = (",Stint,Intro,,,,,,,\n,Streamer,JeGr,,,,,,,\n"
+               ",Session,Warmup,,,,,,,\n,Race Control,,,,,,,,\n")
+CONFIG_CSV = ("Stints,Streamers,Session,Race Control,Teams,Brand Name\n"
+              "Stint 1,JeGr,Qualifier,Formation Lap,T #1,Porsche\n"
+              "Stint 2,GT45,Race,Final Lap,T #2,BMW\n")
+
+
+def _hs_stub():
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    hs = m.HudSource("http://overlay", "http://config",
+                     _os.path.join(d, "hud.cache.json"))
+    hs._fetch = lambda url, timeout=10: OVERLAY_CSV if url == "http://overlay" else CONFIG_CSV
+    hs.refresh()
+    return hs
+
+
+def _ctl(pushes, response=b'{"ok": true, "action": "%s", "v": 2}'):
+    hs = _hs_stub()
+    ctl = m.SetupControl("http://push", hs)
+    def fake_post(url, payload, timeout=10):
+        pushes.append(payload)
+        return response % payload["action"].encode() if b"%s" in response else response
+    m.post_webhook, orig = fake_post, m.post_webhook
+    return ctl, hs, orig
+
+
+def t_set_field_unknown_field_and_value():
+    ctl = m.SetupControl("http://push", _hs_stub())
+    assert "error" in ctl.set_field("nope", "x")
+    assert "error" in ctl.set_field("streamer", "Not In Vocab")
+    assert "error" in ctl.set_field("streamer", "")   # only racecontrol clears
+
+
+def t_set_field_requires_webhook():
+    r = m.SetupControl(None, _hs_stub()).set_field("streamer", "GT45")
+    assert "error" in r and "webhook" in r["error"]
+
+
+def t_set_field_sets_override_and_pushes():
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    try:
+        r = ctl.set_field("streamer", "GT45", now=1000.0)
+        assert r.get("ok") and r.get("pending")
+        assert hs.data(now=1001.0)["streamer"] == "GT45"   # echo immediate
+        ctl._push_setup("Streamer", "GT45")                # the thread body, run sync
+        assert pushes[-1] == {"action": "setup", "fields": {"Streamer": "GT45"}}
+        assert ctl.push_status == "ok"
+    finally:
+        m.post_webhook = orig
+
+
+def t_clear_racecontrol_allowed():
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    try:
+        r = ctl.set_field("racecontrol", "", now=1000.0)
+        assert r.get("ok")
+        ctl._push_setup("Race Control", "")
+        assert pushes[-1]["fields"] == {"Race Control": ""}
+    finally:
+        m.post_webhook = orig
+
+
+def t_v1_script_reported_outdated():
+    pushes = []
+    ctl, hs, orig = _ctl(pushes, response=b'{"ok": true}')   # no action echo
+    try:
+        ctl._push_setup("Streamer", "GT45")
+        assert ctl.push_status == "failed"
+        assert "outdated" in ctl.last_error
+    finally:
+        m.post_webhook = orig
+
+
+def t_schedule_set_validates_and_pushes():
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    try:
+        assert "error" in ctl.schedule_set("x", url="https://youtu.be/a")
+        assert "error" in ctl.schedule_set(0, url="https://youtu.be/a")
+        assert "error" in ctl.schedule_set(1, url="not a url")
+        r = ctl.schedule_set(2, url="https://www.youtube.com/watch?v=x", name="Matt")
+        assert r.get("ok"), r
+        assert pushes[-1] == {"action": "schedule", "row": 2,
+                              "url": "https://www.youtube.com/watch?v=x", "name": "Matt"}
+    finally:
+        m.post_webhook = orig
+
+
+def t_pov_set_pushes():
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    try:
+        assert "error" in ctl.pov_set("nonsense")
+        r = ctl.pov_set("https://www.youtube.com/watch?v=p")
+        assert r.get("ok"), r
+        assert pushes[-1] == {"action": "pov", "url": "https://www.youtube.com/watch?v=p"}
+    finally:
+        m.post_webhook = orig
+
+
+def t_setup_data_shape():
+    ctl = m.SetupControl(None, _hs_stub())
+    d = ctl.data()
+    assert d["fields"] == {"stint": "Intro", "streamer": "JeGr",
+                           "session": "Warmup", "racecontrol": ""}
+    assert d["options"]["racecontrol"] == ["Formation Lap", "Final Lap"]
+    assert d["pending"] == [] and d["push"] == "disabled"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
