@@ -541,7 +541,7 @@ function renderItemList(containerId, summaryId, items, kind) {
   if (!items || !items.ok) {
     const e = document.createElement('div');
     e.className = 'item miss';
-    e.innerHTML = '<span class="idot"></span><span class="iver"></span>';
+    e.innerHTML = '<span class="idot"></span><span class="dim grow"></span>';
     e.children[1].textContent = (items && items.error) || 'check failed';
     c.appendChild(e);
     return;
