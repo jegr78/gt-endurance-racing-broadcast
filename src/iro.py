@@ -400,6 +400,16 @@ def _relay_extra():
         parts.append(f"tablet/panel http://{ts}:{RELAY_PORT}/panel")
     return "  ".join(parts)
 
+def _companion_tablet_port():
+    """Companion's web/tablet port from its config.json (best effort, 8000)."""
+    try:
+        cc = _companion()
+        with open(cc.companion_config_path(sys.platform), encoding="utf-8") as fh:
+            return int(json.load(fh).get("http_port", 8000))
+    except Exception:
+        return 8000
+
+
 def _frozen_child_env():
     """Env for daemon children spawned from the frozen --onefile binary.
     PyInstaller >= 6.10 treats a child running the SAME executable as a worker
@@ -977,6 +987,10 @@ def event_start(rest):
     # (event start launches OBS AFTER the relay) — retry now that both sides
     # are up. Hash-gated: a no-op when the first hook already delivered.
     _refresh_obs_pages()
+    print()
+    for line in ev.director_urls(_tailscale_ip(), _companion_tablet_port(),
+                                 relay_port=RELAY_PORT):
+        print(line)
     print("\nEvent readiness:")
     event_status(rest)  # exit code: 0 = ready, 1 = FAILs remain
 

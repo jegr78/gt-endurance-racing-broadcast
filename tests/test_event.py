@@ -227,6 +227,7 @@ def t_wait_until_up():
 
 def t_director_urls():
     lines = m.director_urls("100.64.1.2", companion_port=8000)
+    assert len(lines) == 4
     assert lines[0] == "Share with your directors:"
     assert "http://100.64.1.2:8088/panel" in lines[1]
     assert "http://100.64.1.2:8000/tablet" in lines[2]
