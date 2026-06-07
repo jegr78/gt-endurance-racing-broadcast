@@ -27,7 +27,8 @@ flowchart LR
 
 ## Director (remote)
 
-- Drives the whole show from a browser via Companion — no machine access. See
+- Drives the whole show from a browser (panel or Companion buttons) — no
+  machine access. First time: [Director setup](Director-Setup); then the
   [Director guide](Director).
 - Chooses scenes and graphics, presses **Feeds Next** at each driver change, and cuts
   to the interview segment (scene + broadcast audio). The interview conversation itself

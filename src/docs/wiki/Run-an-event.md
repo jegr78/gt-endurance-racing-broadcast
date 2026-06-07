@@ -60,7 +60,8 @@ the next time their scene goes active.
    Alternatively, start them individually: `iro relay start` then `iro companion
    start`. Confirm each live feed shows up in OBS.
 9. Make sure **Companion** is connected (green) and a director can reach
-   `http://<producer-tailscale-ip>:8000/tablet`.
+   `http://<producer-tailscale-ip>:8000/tablet` (first-time directors:
+   [Director setup](Director-Setup)).
 10. **Enter the IRO stream key** in OBS (**Settings → Stream**).
 
 ## Go live
@@ -74,8 +75,9 @@ audio. When the field is ready they cut into the race look (**STINT A** / **Spli
 
 Directors without a Stream Deck — or anyone on a tablet — can drive the same
 show from the **director panel** the relay serves at
-`http://<producer-tailscale-ip>:8088/panel` (`iro event start` prints the
-URL — just forward it).
+`http://<producer-tailscale-ip>:8088/panel` (`iro event start` prints both
+director URLs ready to forward; first-time directors:
+[Director setup](Director-Setup)).
 
 ![Director panel](images/director-panel.png)
 
@@ -85,7 +87,7 @@ so the Stream Deck and the panel share one muscle memory:
 | Bus | What it does |
 |---|---|
 | **PGM** | one-press program switches (scene + feed visibility + mutes), identical to the Companion macros — STINT A/B, SPLIT, INTERVIEW, STANDBY, INTRO, OUTRO, RED FLAG. SPLIT also sets Race Control to *Driver Swaps*, STINT A/B clear it, and RED FLAG toggles the Standby Cover together with the *Red Flag* message ([Director guide](Director#the-button-board)); these Race Control writes need the sheet-write webhook |
-| **FEEDS** | relay control: NEXT (driver change), feed reloads, POV reload/stop, SET STINT… |
+| **FEEDS** | relay control: NEXT (driver change), feed reloads, POV reload/stop, FEEDS → STINT… |
 | **HUD** | the Sheet's Setup-tab dropdowns (Stint HUD label, Streamer, Session, Race Control) — changes show on the HUD immediately and are written to the Sheet ([Director guide](Director)) |
 | **SCN·VIS** | raw scene switches and feed visibility toggles |
 | **GFX** | graphics toggles (HUD, Standings, Schedule, results, weather, covers) |

@@ -6,6 +6,7 @@
 **For operators**
 - [Set up the broadcast PC](Set-up-the-broadcast-PC)
 - [Run an event](Run-an-event)
+- [Director setup](Director-Setup)
 - [Director guide](Director)
 - [Who does what](Who-does-what)
 - [If something goes wrong](If-something-goes-wrong)

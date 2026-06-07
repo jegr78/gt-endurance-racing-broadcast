@@ -27,6 +27,7 @@ most setup problems (tools, ports, cookies) before they bite you live.
 
 | Problem | Fix |
 |---------|-----|
+| First triage | Director-side checks (Tailscale app, right URL, panel password) are on [Director setup → If you cannot connect](Director-Setup#if-you-cannot-connect) — have the director run through those while you check below. |
 | Director can't reach the buttons | Run `iro tailscale status` — the process icon alone says nothing about being connected; the backend must be `Running`. If it shows `Stopped`, run `iro tailscale up` first. Then check: Tailscale connected on both machines? Companion running with **GUI Interface = All Interfaces**? Using the **Tailscale** address (`100.x.y.z`), not a local one? |
 | Buttons load but OBS shows disconnected | OBS open with the WebSocket server on (port `4455`) and the **same password** entered in Companion? |
 

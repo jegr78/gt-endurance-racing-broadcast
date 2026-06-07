@@ -27,7 +27,8 @@ flowchart LR
 
 - **Setting up a machine for the first time?** → [Set up the broadcast PC](Set-up-the-broadcast-PC)
 - **Running a show today?** → [Run an event](Run-an-event)
-- **You're the remote director?** → [Director guide](Director)
+- **You're the remote director?** → [Director setup](Director-Setup) (first
+  time), then the [Director guide](Director)
 - **Not sure who does what?** → [Who does what](Who-does-what)
 - **Something's broken?** → [If something goes wrong](If-something-goes-wrong)
 - **Developer / want the technical detail?** → [Architecture](Architecture) and the
