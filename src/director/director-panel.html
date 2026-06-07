@@ -68,6 +68,7 @@
     font-size:13px;letter-spacing:.06em;cursor:pointer;background:linear-gradient(180deg,#1b2129,#141921);color:var(--ink)}
   .pill.go{border-color:var(--live);color:var(--live)}
   .pill.stop{border-color:var(--air);color:var(--air)}
+  .pill:disabled{opacity:.45;cursor:not-allowed}
 
   /* ---------- busses ---------- */
   .bus{display:flex;gap:14px;align-items:flex-start;
@@ -101,6 +102,11 @@
   button.k.air{border-color:var(--air);background:linear-gradient(180deg,#331414,#26100f);
     box-shadow:0 0 0 1px var(--air),0 0 20px var(--air-glow),inset 0 1px 0 rgba(255,255,255,.06)}
   button.k.air .tag{color:var(--air)}
+  /* RED FLAG: red label while idle; .on (cover visible) lights red, not green */
+  button.k.redflag{color:#ff8080}
+  button.k.redflag.on{border-color:var(--air);background:linear-gradient(180deg,#331414,#26100f);
+    box-shadow:0 0 0 1px var(--air),0 0 20px var(--air-glow),inset 0 1px 0 rgba(255,255,255,.06)}
+  button.k.redflag.on .tag{color:var(--air)}
   .pgm button.k{min-width:110px;min-height:62px;font-weight:600;font-size:14px}
 
   /* ---------- audio rows ---------- */
@@ -115,6 +121,41 @@
   .mute.muted{border-color:var(--air);color:var(--air);background:#26100f;box-shadow:0 0 12px var(--air-glow)}
 
   .hint{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5}
+
+  /* ---------- setup dropdowns (sheet-backed) ---------- */
+  .setrow{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .fld select{background:#0c0f13;border:1px solid var(--edge);color:var(--ink);
+    font-family:var(--mono);font-size:13px;padding:10px 12px;border-radius:9px;
+    min-width:150px;outline:none}
+  .fld select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(58,160,255,.18)}
+  .fld select.pending{border-color:var(--amber);box-shadow:0 0 0 3px var(--amber-glow)}
+  .fld select:disabled{opacity:.45}
+
+  /* ---------- URLs section ---------- */
+  details.urls{display:block}
+  details.urls summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;
+    font-family:var(--head);font-weight:700;letter-spacing:.12em;font-size:14px;text-transform:uppercase}
+  details.urls summary::before{content:"";width:6px;height:16px;background:var(--amber);
+    border-radius:2px;box-shadow:0 0 10px var(--amber-glow)}
+  details.urls summary::after{content:"▸";color:var(--muted);margin-left:4px}
+  details.urls[open] summary::after{content:"▾"}
+  .urls table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
+  .urls td{padding:4px 6px;vertical-align:middle}
+  .urls td.rn{width:54px;color:var(--muted);white-space:nowrap}
+  .urls .livebadge{display:inline-block;margin-left:5px;padding:1px 6px;border-radius:6px;
+    font-size:10px;font-weight:600;color:var(--air);border:1px solid var(--air)}
+  .urls .livebadge:empty{display:none}
+  .urls input{width:100%;background:#0c0f13;border:1px solid var(--edge);color:var(--ink);
+    font-family:var(--mono);font-size:12px;padding:7px 9px;border-radius:8px;outline:none}
+  .urls input:focus{border-color:var(--blue)}
+  .urls td.act{width:84px}
+  .urls .save,.urls .add{padding:7px 10px;font-size:11px;letter-spacing:.1em;border-radius:8px;
+    border:1px solid var(--edge);background:#141921;color:var(--muted);cursor:pointer;width:100%}
+  .urls .save.ok{border-color:var(--live);color:var(--live)}
+  .urls .clear{margin-top:4px;padding:4px 10px;font-size:10px;letter-spacing:.1em;border-radius:8px;
+    border:1px solid var(--edge);background:#141921;color:var(--muted);cursor:pointer;width:100%}
+  .urls .clear:hover{border-color:var(--air);color:var(--air)}
+  .urls .add{width:auto;margin-top:8px}
 
   /* ---------- log ---------- */
   #log{font-size:11px;color:var(--muted);margin-top:2px;max-height:90px;overflow:auto;
@@ -160,6 +201,13 @@
 
   <section class="bus"><div class="cap">Feeds</div><div class="keys" id="feedsBus"></div></section>
 
+  <section class="bus"><div class="cap">HUD</div>
+    <div class="body">
+      <div class="setrow" id="setupRow"></div>
+      <div class="hint" id="setupInfo">HUD: connecting to relay…</div>
+    </div>
+  </section>
+
   <section class="bus"><div class="cap">Scn·Vis</div><div class="keys" id="scnBus"></div></section>
 
   <section class="bus"><div class="cap">Gfx</div><div class="keys" id="gfxBus"></div></section>
@@ -172,6 +220,22 @@
   </section>
 
   <section class="bus"><div class="cap">Audio</div><div class="body" id="audio"></div></section>
+
+  <details class="bus urls" id="urlsBox">
+    <summary>URLs · Schedule + POV</summary>
+    <div class="body">
+      <table><tbody id="schedBody"></tbody></table>
+      <button class="add" id="schedAdd">+ ADD ROW</button>
+      <table><tbody>
+        <tr><td class="rn">POV</td>
+            <td><input id="povUrl" placeholder="https://www.youtube.com/watch?v=… or UC…"></td>
+            <td class="act"><button class="save" id="povSave">SAVE</button></td></tr>
+      </tbody></table>
+      <div class="hint">Saves write the Google Sheet only — a feed picks the new URL up
+        on RELOAD A/B / NEXT (rows marked <b>A</b>/<b>B</b> are live now); the POV URL
+        applies on POV RELOAD. Names/URLs can still be edited in the Sheet directly.</div>
+    </div>
+  </details>
 
   <div id="log">Ready. FEEDS + TIMER work relay-only; enter the Producer's Tailscale IP + OBS WebSocket password and Connect for everything else.</div>
 </div>
@@ -189,15 +253,18 @@
    ======================================================================= */
 const CONFIG = {
   macros: [
+    // rc: Race Control value written via the relay after the OBS steps
+    // ("" clears). Unconditional, mirrors the Companion combos: SPLIT stamps
+    // "Driver Swaps", cutting back to a stint clears whatever is shown.
     {label:"STINT A", scene:"Stint",
      show:[["Stint","Feed A"]], hide:[["Stint","Feed B"]],
-     unmute:["Feed A"], mute:["Feed B","Discord Audio Capture"]},
+     unmute:["Feed A"], mute:["Feed B","Discord Audio Capture"], rc:""},
     {label:"STINT B", scene:"Stint",
      show:[["Stint","Feed B"]], hide:[["Stint","Feed A"]],
-     unmute:["Feed B"], mute:["Feed A","Discord Audio Capture"]},
+     unmute:["Feed B"], mute:["Feed A","Discord Audio Capture"], rc:""},
     {label:"SPLIT", scene:"Splitscreen",
      show:[["Splitscreen","Feed A"],["Splitscreen","Feed B"]], hide:[],
-     unmute:["Feed A"], mute:["Feed B","Discord Audio Capture"]},
+     unmute:["Feed A"], mute:["Feed B","Discord Audio Capture"], rc:"Driver Swaps"},
     {label:"INTERVIEW", scene:"Interview", show:[], hide:[],
      unmute:["Discord Audio Capture"], mute:["Feed A","Feed B"]},
     {label:"STANDBY", scene:"Standby", show:[], hide:[],
@@ -288,6 +355,25 @@ CONFIG.macros.forEach(m=>{
   b._m = m; macroKeys.push(b); $("#pgmBus").appendChild(b);
 });
 
+/* RED FLAG — same combo as the Companion button: toggles the Standby Cover in
+   the Stint scene and sets/clears Race Control with it. Reads the real cover
+   state from OBS, so it always converges no matter how the cover was switched.
+   Lights red (via toggleKeys polling + .redflag.on) while the cover is up. */
+{
+  const item = {scene:"Stint", source:"Standby Cover"};
+  const b = mkKey("RED FLAG", "alarm", ()=>safe(async ()=>{
+    const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:item.scene, sourceName:item.source});
+    const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:item.scene, sceneItemId});
+    const on = !sceneItemEnabled;
+    await obs.call("SetSceneItemEnabled",{sceneName:item.scene, sceneItemId, sceneItemEnabled:on});
+    log("RED FLAG " + (on ? "— cover up" : "over — cover down"));
+    setupSet("racecontrol", on ? "Red Flag - Race Suspended" : "");
+    refresh();
+  }), true);
+  b.classList.add("redflag");
+  b._item = item; toggleKeys.push(b); $("#pgmBus").appendChild(b);
+}
+
 FEED_ACTIONS.forEach(([label, path, tag])=>{
   $("#feedsBus").appendChild(mkKey(label, tag, ()=>relayCall(path), false));
 });
@@ -370,6 +456,9 @@ async function runMacro(m){
     try{ await fn(); }
     catch(e){ log(`${m.label}: ${what} failed: ${e.message||e}`, "err"); }
   }
+  // Race Control side effect (relay, needs the sheet-write webhook) — after
+  // the cut, so the banner change never precedes the picture change.
+  if (m.rc !== undefined) setupSet("racecontrol", m.rc);
   refresh();
 }
 
@@ -549,7 +638,7 @@ function timerRender(d){
              : d.mode === "finished" ? "FINISHED (display blank)"
              : "HIDDEN";
   const sync = d.sync.push === "ok" ? "sheet sync OK"
-             : d.sync.push === "disabled" ? "local only (IRO_TIMER_PUSH_URL unset)"
+             : d.sync.push === "disabled" ? "local only (IRO_SHEET_PUSH_URL unset)"
              : d.sync.push === "failed" ? "SHEET SYNC FAILED — handover not safe"
              : "sheet sync not yet attempted";
   $("#timerInfo").textContent = `Timer: ${head} · ${sync}`;
@@ -572,11 +661,189 @@ async function timerPoll(){
   }
 }
 
+/* ---------- HUD row (sheet-backed dropdowns; relay-only) ----------
+   The "STINT" here is the HUD display LABEL (Setup tab) — unrelated to the
+   feed stint index handled by NEXT / SET STINT in the FEEDS row. */
+const SETUP_FIELDS = [
+  ["stint","STINT (HUD LABEL)"], ["streamer","STREAMER"],
+  ["session","SESSION"], ["racecontrol","RACE CONTROL"],
+];
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+SETUP_FIELDS.forEach(([key,label])=>{
+  const w = document.createElement("div"); w.className = "fld";
+  w.innerHTML = `<label>${label}</label><select data-setup="${key}" disabled></select>`;
+  w.querySelector("select").addEventListener("change", e=>setupSet(key, e.target.value));
+  $("#setupRow").appendChild(w);
+});
+{ const b = document.createElement("button");
+  b.className = "pill stop"; b.textContent = "CLEAR RC"; b.id = "clearRc";
+  b.addEventListener("click", ()=>setupSet("racecontrol",""));
+  $("#setupRow").appendChild(b); }
+
+async function setupSet(field, value){
+  const path = value === "" ? "setup/clear/" + field
+                            : "setup/set/" + field + "/" + encodeURIComponent(value);
+  try{
+    const r = await fetch("/" + path, {cache:"no-store"});
+    const d = await r.json();
+    if (d.error){ log("HUD " + field + ": " + d.error, "err"); setupPoll(); return; }
+    log("HUD " + field + " → " + (value || "(cleared)"));
+    setupPoll();
+  }catch(e){ log("HUD " + field + " failed (relay reachable?): " + e, "err"); }
+}
+
+async function setupPoll(){
+  let d;
+  try{
+    const r = await fetch("/setup/data", {cache:"no-store"});
+    d = await r.json();
+  }catch(e){ $("#setupInfo").textContent = "HUD: relay not reachable."; return; }
+  if (d.error){ $("#setupInfo").textContent = "HUD: " + d.error; return; }
+  const ro = d.push === "disabled";
+  for (const [key] of SETUP_FIELDS){
+    const sel = document.querySelector(`select[data-setup="${key}"]`);
+    if (!sel || sel === document.activeElement) continue;   // never yank an open menu
+    const opts = (key === "racecontrol" ? [""] : []).concat(d.options[key] || []);
+    const sig = JSON.stringify(opts);
+    if (sel.dataset.sig !== sig){
+      sel.innerHTML = opts.map(o=>`<option value="${escapeHtml(o)}">${o===""?"— none —":escapeHtml(o)}</option>`).join("");
+      sel.dataset.sig = sig;
+    }
+    const cur = d.fields[key] || "";
+    if ([...sel.options].some(o=>o.value===cur)) sel.value = cur;
+    sel.classList.toggle("pending", d.pending.includes(key));
+    sel.disabled = ro;
+  }
+  $("#clearRc").disabled = ro;
+  $("#setupInfo").textContent = "HUD: " +
+      (d.push === "ok" ? "sheet sync OK"
+     : ro ? "read-only — set IRO_SHEET_PUSH_URL in .env (wiki: Sheet-Webhook)"
+     : d.push === "failed" ? "SHEET SYNC FAILED — " + (d.last_error || "see relay log")
+     : "sheet sync not yet attempted");
+}
+
+/* ---------- URLs section (Schedule rows + POV; sheet writes, no reloads) -- */
+const SAVE_GUARD_MS = 30000;   // a just-saved value wins over a stale CSV poll
+function rowBusy(tr){
+  return tr.dataset.dirty ||
+         tr.contains(document.activeElement) ||
+         Date.now() - Number(tr.dataset.saved||0) < SAVE_GUARD_MS;
+}
+function schedRow(i){
+  let tr = document.querySelector(`#schedBody tr[data-row="${i}"]`);
+  if (tr) return tr;
+  tr = document.createElement("tr"); tr.dataset.row = i;
+  tr.innerHTML = `<td class="rn">${i}<span class="livebadge"></span></td>
+    <td style="width:24%"><input class="nm" placeholder="name"></td>
+    <td><input class="u" placeholder="https://www.youtube.com/watch?v=… or UC…"></td>
+    <td class="act"><button class="save">SAVE</button><button class="clear">CLEAR</button></td>`;
+  tr.querySelectorAll("input").forEach(inp=>inp.addEventListener("input", ()=>tr.dataset.dirty = 1));
+  tr.querySelector(".save").addEventListener("click", ()=>schedSave(tr, i));
+  tr.querySelector(".clear").addEventListener("click", ()=>{
+    // Clears name + URL in the sheet (the row itself stays — deleting rows
+    // would shift the stint indices of everything after it).
+    const live = tr.querySelector(".livebadge").textContent;
+    if (!confirm("Clear schedule row " + i + " (name + URL) in the sheet?" +
+                 (live ? ` Feed ${live} keeps playing until RELOAD ${live} / NEXT.` : ""))) return;
+    tr.querySelector(".nm").value = ""; tr.querySelector(".u").value = "";
+    schedSave(tr, i);
+  });
+  $("#schedBody").appendChild(tr);
+  return tr;
+}
+async function schedSave(tr, row){
+  const btn = tr.querySelector(".save");
+  btn.disabled = true; btn.textContent = "…"; btn.classList.remove("ok");
+  // Use the physical sheet row stamped by schedPoll; fall back to the stint
+  // number only for rows the poll hasn't stamped yet (e.g. a new ADD ROW).
+  const sheetRow = Number(tr.dataset.sheetRow || row);
+  try{
+    const r = await fetch("/schedule/set", {method:"POST", cache:"no-store",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({row: sheetRow, url: tr.querySelector(".u").value.trim(),
+                            name: tr.querySelector(".nm").value.trim()})});
+    const d = await r.json();
+    if (d.error){ log("Schedule row " + row + ": " + d.error, "err"); btn.textContent = "RETRY"; return; }
+    delete tr.dataset.dirty; tr.dataset.saved = Date.now();
+    btn.textContent = "SAVED ✓"; btn.classList.add("ok");
+    const live = tr.querySelector(".livebadge").textContent;
+    log("Schedule row " + row + " saved" +
+        (live ? ` — feed ${live} picks it up on RELOAD ${live} / NEXT` : ""));
+  }catch(e){ log("Schedule save failed: " + e, "err"); btn.textContent = "RETRY"; }
+  finally{
+    btn.disabled = false;
+    setTimeout(()=>{ if (btn.textContent === "SAVED ✓"){ btn.textContent = "SAVE"; btn.classList.remove("ok"); } }, 4000);
+  }
+}
+$("#schedAdd").addEventListener("click", ()=>{
+  // Compute next physical sheet row from the max of existing sheetRow stamps
+  // (so the new row appends after the last known physical row, not just the
+  // last tr in the table — important when the Schedule tab has a header row).
+  let maxSheet = 0;
+  document.querySelectorAll("#schedBody tr").forEach(r=>{
+    const v = Number(r.dataset.sheetRow || r.dataset.row || 0);
+    if (v > maxSheet) maxSheet = v;
+  });
+  const next = maxSheet + 1 || document.querySelectorAll("#schedBody tr").length + 1;
+  const tr = schedRow(next); tr.dataset.sheetRow = next; tr.dataset.dirty = 1;
+  tr.querySelector(".nm").focus();
+});
+$("#povSave").addEventListener("click", async ()=>{
+  const btn = $("#povSave");
+  btn.disabled = true; btn.textContent = "…"; btn.classList.remove("ok");
+  try{
+    const r = await fetch("/pov/set", {method:"POST", cache:"no-store",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({url: $("#povUrl").value.trim()})});
+    const d = await r.json();
+    if (d.error){ log("POV URL: " + d.error, "err"); btn.textContent = "RETRY"; return; }
+    delete $("#povUrl").dataset.dirty; $("#povUrl").dataset.saved = Date.now();
+    btn.textContent = "SAVED ✓"; btn.classList.add("ok");
+    log("POV URL saved — applies on POV RELOAD.");
+  }catch(e){ log("POV save failed: " + e, "err"); btn.textContent = "RETRY"; }
+  finally{
+    btn.disabled = false;
+    setTimeout(()=>{ if (btn.textContent === "SAVED ✓"){ btn.textContent = "SAVE"; btn.classList.remove("ok"); } }, 4000);
+  }
+});
+$("#povUrl").addEventListener("input", ()=>$("#povUrl").dataset.dirty = 1);
+
+async function schedPoll(){
+  if (!$("#urlsBox").open) return;   // closed section -> no traffic
+  try{
+    const r = await fetch("/schedule/data", {cache:"no-store"});
+    const d = await r.json();
+    if (d.error) return;
+    d.rows.forEach(row=>{
+      const tr = schedRow(row.row);
+      // Stamp the physical sheet row so schedSave and schedAdd use it.
+      tr.dataset.sheetRow = row.sheetRow;
+      tr.querySelector(".livebadge").textContent = row.live || "";
+      if (rowBusy(tr)) return;
+      tr.querySelector(".nm").value = row.name;
+      tr.querySelector(".u").value = row.url;
+    });
+  }catch(e){}
+  try{
+    const r = await fetch("/status", {cache:"no-store"});
+    const d = await r.json();
+    const inp = $("#povUrl");
+    if (d.pov && !inp.dataset.dirty && inp !== document.activeElement &&
+        Date.now() - Number(inp.dataset.saved||0) > SAVE_GUARD_MS)
+      inp.value = d.pov.url || "";
+  }catch(e){}
+}
+$("#urlsBox").addEventListener("toggle", ()=>schedPoll());
+
 /* ---------- boot ---------- */
 renderAir({});
 relayPoll(); timerPoll();
 setInterval(relayPoll, 2000);
 setInterval(timerPoll, 2000);
+setupPoll(); setInterval(setupPoll, 2000);
+setInterval(schedPoll, 2000);
 </script>
 </body>
 </html>

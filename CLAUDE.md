@@ -58,6 +58,7 @@ python3 tests/test_install_tools.py     # install-tools decision helpers
 python3 tests/test_install_apps.py      # install-apps decision helpers
 python3 tests/test_init.py           # iro init wizard logic (plan/skip/gates)
 python3 tests/test_timer.py          # relay race-timer unit checks
+python3 tests/test_setup.py          # panel sheet-control (webhook payloads, SetupControl, endpoints)
 python3 tools/run-tests.py           # the whole suite (exactly what CI runs)
 python3 tools/lint.py                # ruff lint (= the CI lint job); --fix auto-corrects.
                                      # Rules mirror the CodeQL alert classes — see ruff.toml.
@@ -119,8 +120,8 @@ from the repo (`src/...`) or the distributed package and pick paths accordingly 
 see `default_runtime_dir()` (relay/get-cookies) and `state_dir()` (scripts).
 
 ### Secrets via `.env` (gitignored, repo root)
-`IRO_SHEET_ID` (Google Sheet driving schedule + HUD) and `IRO_TIMER_PUSH_URL` (optional
-Apps Script webhook that lets the relay write race-timer state to the Sheet's Timer tab).
+`IRO_SHEET_ID` (Google Sheet driving schedule + HUD) and `IRO_SHEET_PUSH_URL` (optional
+Apps Script webhook that lets the relay write to the Sheet: race-timer state + the panel's HUD/Schedule/POV controls).
 A small bounded `load_dotenv()` — duplicated in
 `src/relay/iro-feeds.py`, `src/setup-assets.py`, `src/relay/get-media.py`, and
 `src/relay/get-graphics.py` — reads a `.env` only from the script dir or the project
@@ -193,6 +194,14 @@ for team→manufacturer), and `/hud/assets/{flags,brands}/<name>`
 serves bundled logos from `src/assets/`. The page polls `/hud/data` (no manual
 reloads); flags/brands resolve from text via `asset_key()`. Flags: `--no-hud`,
 `--overlay-tab`, `--config-tab`, `--hud-poll`. Tests: `tests/test_hud.py`.
+
+The panel's **sheet controls** write back through one Apps Script webhook
+(`IRO_SHEET_PUSH_URL`, shared with the race timer — wiki: Sheet-Webhook):
+Setup fields (Stint label/Streamer/Session/Race Control) are async-optimistic
+(`HudSource` override now, sheet poll confirms, 30 s expiry), Schedule/POV URL
+writes are synchronous; URL changes never auto-reload a feed. Setup "Stint" =
+HUD display label, NOT the feed stint index. `SetupControl` + endpoints
+`/setup/*`, `/schedule/*`, `/pov/set` (POST). Tests: `tests/test_setup.py`.
 
 ### Unified `iro` CLI (`src/iro.py`)
 `src/iro.py` is the single shipped entrypoint for operators. It dispatches to:

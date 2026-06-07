@@ -22,7 +22,7 @@ Two pages — **show control** and **race timer & audio**. The left column on ea
 
 | Row | Buttons |
 |-----|---------|
-| **Combos** | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO` — one press sets a whole look (the scene **and** the right feeds and audio). `INTRO` / `OUTRO` cut to the looping intro/outro clip (with its own audio) and mute the live feeds; they light while on air |
+| **Combos** | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO` — one press sets a whole look (the scene **and** the right feeds and audio). `SPLIT` also sets **Race Control → *Driver Swaps***; `STINT A` / `STINT B` **clear Race Control** on the way back — unconditionally, whatever it currently shows. `INTRO` / `OUTRO` cut to the looping intro/outro clip (with its own audio) and mute the live feeds; they light while on air. `RED FLAG` is a toggle: first press shows the Standby Cover in the Stint scene **and** sets Race Control to *Red Flag - Race Suspended*; second press hides the cover and clears Race Control. It lights red while the cover is up |
 | **Scenes + relay** | `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Next` (the handover), `Feeds Reload`, `Feeds Status` |
 | **Feeds & reloads** | `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Feed A Reload` (reconnect only Feed A → `/reload/A`), `Feed B Reload` (→ `/reload/B`), `POV Reload`, `POV Stop` |
 | **Graphics & weather** | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle` (incident cover — see [The race](#through-the-broadcast-scene--sheet-cues)), `Weather Race (1) Toggle`, `Weather Race (2) Toggle`, `Weather Quali Toggle` — the three weather buttons are full-screen Stint overlays, each an independent toggle like Standings/Results |
@@ -49,6 +49,42 @@ Two pages — **show control** and **race timer & audio**. The left column on ea
 
 How the board is imported and built: [Companion](Companion).
 
+## Director panel — HUD row
+
+The **director panel** (`http://<producer-tailscale-ip>:8088/panel`) has a **HUD row** with
+four dropdowns: **Stint (HUD label)**, **Streamer**, **Session**, and **Race Control** (plus a
+**CLEAR RC** button). The options come from the Configuration tab of the sheet — any new
+streamers or messages added there are picked up automatically without changing the panel.
+
+Each change takes effect on the HUD immediately and is written to the sheet's Setup tab in
+the background. An amber outline on the dropdown means the write is pending; the HUD status
+line shows the sync state. Editing the sheet dropdowns directly works exactly as before — the
+two methods are equivalent.
+
+> **Stint (HUD label) ≠ feed stint index.** The HUD row's Stint dropdown sets the *HUD display
+> label* (what viewers see on the overlay). Advancing the actual feeds to the next commentator
+> stream is **NEXT** / **SET STINT** in the FEEDS row — those are separate operations.
+
+The panel HUD row needs the sheet-write webhook (`IRO_SHEET_PUSH_URL`); without it the panel
+dropdowns are read-only. (The sheet's own dropdowns work either way — they never need the
+webhook.) See [Sheet-Webhook](Sheet-Webhook).
+
+## Director panel — URLs section
+
+Below the main rows the panel has a collapsible **URLs** section. It shows the Schedule tab
+entries (one per stint: name + stream URL; rows currently assigned to a live feed are marked
+A or B) and the POV URL field.
+
+Saving a change writes it to the sheet only — **no feed reconnects automatically**. A new
+stream URL takes effect at the next **RELOAD A/B** / **NEXT** for that feed (POV: **POV
+RELOAD**), exactly as if the sheet had been edited directly.
+
+Each row also has a **CLEAR** button: it empties the row's name + URL in the sheet (after a
+confirmation). The row itself stays and can be refilled later — rows are never deleted,
+because removing a row would shift the stint numbering of everything after it.
+
+The URLs section also needs `IRO_SHEET_PUSH_URL` — without it the fields are read-only.
+
 ## Through the broadcast (scene + sheet cues)
 
 As director you drive two things: the **scenes** (Companion) and three **HUD fields in the
@@ -65,7 +101,9 @@ listed value, or clear the cell to show nothing. The whole run, in order:
 - Sheet: **Stint → Intro**, **Session → Warmup**.
 
 **Formation lap** — the race always begins with a manual formation lap.
-- Sheet: **Race Control → Formation Lap**.
+- Sheet: **Race Control → Formation Lap**. Set it **after** the cut: the combos write
+  Race Control too (**SPLIT** stamps *Driver Swaps*, **STINT A/B** clear it), so a combo
+  pressed afterwards would wipe the *Formation Lap* message.
 - As the formation lap starts: **Stint → Stint 1**, **Session → Race**.
 - Just before the green flag: **clear Race Control**.
 
@@ -81,6 +119,10 @@ listed value, or clear the cell to show nothing. The whole run, in order:
   **Standby Toggle** to hold the picture — it hides the feeds and the POV but keeps the
   Race Control banner and timer visible (the button lights while it's active). When it's
   resolved, press **Standby Toggle** again and **clear Race Control**.
+  For a red flag specifically, **RED FLAG** does both in one press (cover + Race
+  Control *Red Flag - Race Suspended*); pressing it again ends the phase (cover
+  hidden, Race Control cleared). The Race Control write needs the sheet-write
+  webhook ([Sheet-Webhook](Sheet-Webhook)) — without it only the cover toggles.
 
 **Final lap** — once you're in the last stint and the leader starts the final lap:
 - Sheet: **Race Control → Final Lap**. **Clear it** as soon as the race finishes.
@@ -102,16 +144,15 @@ listed value, or clear the cell to show nothing. The whole run, in order:
 Every ~2 hours the commentator changes. You do this from your browser — both the Companion
 buttons **and** the shared Google Sheet. Each time:
 
-1. Cut to **Splitscreen** (covers the handover window).
-2. In the sheet, set **Race Control** to **Driver Swaps** — viewers see it on the overlay.
-3. Press **Feeds Next** — the off-air feed advances to the next commentator.
-4. **Just before cutting back, update the sheet** for the new commentator: set the **Stint**
+1. Cut to **Splitscreen** with the **SPLIT** combo (covers the handover window) — it also
+   sets **Race Control → Driver Swaps** for you, so viewers see it on the overlay.
+2. Press **Feeds Next** — the off-air feed advances to the next commentator.
+3. **Just before cutting back, update the sheet** for the new commentator: set the **Stint**
    and **Streamer** entries.
-5. **Make sure the incoming feed is active.** Cut back with the matching combo — **STINT A**
-   or **STINT B** — which selects the right feed (A or B alternate each stint) and shows the
-   **Stint** scene in one press. (Cutting manually? Toggle the incoming **Feed A** / **Feed B**
-   on first.)
-6. Back in **Stint**, **clear the Race Control entry** in the sheet (leave it empty).
+4. **Make sure the incoming feed is active.** Cut back with the matching combo — **STINT A**
+   or **STINT B** — which selects the right feed (A or B alternate each stint), shows the
+   **Stint** scene and **clears Race Control**, all in one press. (Cutting manually? Toggle
+   the incoming **Feed A** / **Feed B** on first — and clear Race Control yourself.)
 
 ## Showing a driver POV (plan ahead)
 

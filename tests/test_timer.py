@@ -215,37 +215,43 @@ def t_timerstore_refresh_failure_keeps_state():
 def t_timerstore_push_payload_and_status():
     ts, _ = _store(push_url="http://push?key=k")
     sent = []
-    def post_ok(url, body):
-        sent.append((url, body)); return b'{"ok":true}'
-    ts._post = post_ok
-    ts._spawn_push = ts._push                   # synchronous for the test
-    ts.set_duration(7200); ts.start(now=1000.0)
-    url, body = sent[-1]
-    import json as _json
-    p = _json.loads(body)
-    assert url == "http://push?key=k"
-    assert p == {"end": m.iso_utc(8200.0), "duration": "2:00:00",
-                 "visible": "TRUE", "remaining": ""}
-    assert ts.push_status == "ok"
-    ts.stop(now=2000.0)                         # paused -> remaining travels too
-    p = _json.loads(sent[-1][1])
-    assert p["end"] == "" and p["remaining"] == "1:43:20"   # 6200 s
-    def fail(url, body):
-        raise RuntimeError("403")
-    ts._post = fail
-    ts.hide()
-    assert ts.push_status == "failed"
+    orig = m.post_webhook
+    try:
+        def post_ok(url, payload, timeout=10):
+            sent.append((url, payload)); return b'{"ok":true}'
+        m.post_webhook = post_ok
+        ts._spawn_push = ts._push                   # synchronous for the test
+        ts.set_duration(7200); ts.start(now=1000.0)
+        url, payload = sent[-1]
+        assert url == "http://push?key=k"
+        assert payload == {"end": m.iso_utc(8200.0), "duration": "2:00:00",
+                           "visible": "TRUE", "remaining": ""}
+        assert ts.push_status == "ok"
+        ts.stop(now=2000.0)                         # paused -> remaining travels too
+        p = sent[-1][1]
+        assert p["end"] == "" and p["remaining"] == "1:43:20"   # 6200 s
+        def fail(url, payload, timeout=10):
+            raise RuntimeError("403")
+        m.post_webhook = fail
+        ts.hide()
+        assert ts.push_status == "failed"
+    finally:
+        m.post_webhook = orig
 
 
 def t_timerstore_push_unconfirmed_is_failed():
     # Apps Script answers HTTP 200 even for errors — only {"ok": true} counts.
     ts, _ = _store(push_url="http://push?key=k")
     ts._spawn_push = ts._push
-    for resp in (b'{"error":"bad key"}', b"<html>exception</html>", b"", None):
-        ts._post = lambda url, body, r=resp: r
-        ts.set_duration(7200)
-        assert ts.push_status == "failed", resp
-        assert "did not confirm" in ts.last_error
+    orig = m.post_webhook
+    try:
+        for resp in (b'{"error":"bad key"}', b"<html>exception</html>", b"", None):
+            m.post_webhook = lambda url, payload, timeout=10, r=resp: r
+            ts.set_duration(7200)
+            assert ts.push_status == "failed", resp
+            assert "did not confirm" in ts.last_error
+    finally:
+        m.post_webhook = orig
 
 
 def t_timerstore_push_disabled_without_url():

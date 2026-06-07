@@ -181,7 +181,7 @@ def t_classify_assets():
 def t_classify_env():
     assert m.classify_env("sheet", "http://push").level == "PASS"
     r = m.classify_env("sheet", "")          # push URL optional -> WARN, not FAIL
-    assert r.level == "WARN" and "IRO_TIMER_PUSH_URL" in r.detail
+    assert r.level == "WARN" and "IRO_SHEET_PUSH_URL" in r.detail
     r = m.classify_env("", "http://push")
     assert r.level == "FAIL" and "IRO_SHEET_ID" in r.detail
 

@@ -61,7 +61,7 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
 
 import argparse, csv, datetime, io, ipaddress, json, os, re, shutil, signal, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, quote
+from urllib.parse import urlparse, quote, unquote
 from urllib.request import Request, urlopen
 
 # ---------- Configuration ----------
@@ -309,6 +309,35 @@ def parse_config_brands(text):
     return out
 
 
+# Configuration-tab vocabulary columns feeding the panel's Setup dropdowns
+# (strict: the panel offers ONLY these values — spec: panel-sheet-control).
+# Dict KEYS are the API field names used by panel endpoints; VALUES are sheet headers (matched case-insensitively).
+VOCAB_COLUMNS = {"stint": "stints", "streamer": "streamers",
+                 "session": "session", "racecontrol": "race control"}
+
+
+def parse_config_vocab(text):
+    """Configuration tab CSV -> {field_key: [options]} for the panel
+    dropdowns. Columns located by header name (parse_config_brands precedent);
+    blanks skipped, duplicates dropped, sheet order kept."""
+    rows = list(csv.reader(io.StringIO(text)))
+    out = {k: [] for k in VOCAB_COLUMNS}
+    if not rows:
+        return out
+    header = [(h or "").strip().lower() for h in rows[0]]
+    for key, name in VOCAB_COLUMNS.items():
+        if name not in header:
+            continue
+        i = header.index(name)
+        seen = set()
+        for row in rows[1:]:
+            v = (row[i] or "").strip() if len(row) > i else ""
+            if v and v not in seen:
+                seen.add(v)
+                out[key].append(v)
+    return out
+
+
 def build_hud_data(overlay, brands):
     """Combine an Overlay map + {team: brand_key} into the /hud/data contract."""
     return {
@@ -418,6 +447,33 @@ def merge_timer_states(local, sheet):
     return sheet if sheet.get("updated", 0.0) > local.get("updated", 0.0) else local
 
 
+def post_webhook(url, payload, timeout=10):
+    """POST JSON to the Apps-Script sheet-write webhook -> raw response bytes."""
+    req = Request(url, data=json.dumps(payload).encode("utf-8"), method="POST",
+                  headers={"User-Agent": "iro-feeds/1.0",
+                           "Content-Type": "application/json"})
+    with urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+def check_webhook_response(body, expected_action=None):
+    """(ok, error) from an Apps-Script response body. Apps Script answers
+    HTTP 200 even for errors, so only its own {"ok": true} counts. The v2
+    script echoes the action; an ok WITHOUT the echo on an action write is a
+    still-deployed v1 (timer-only) script -> report it, never a false success."""
+    try:
+        d = json.loads((body or b"{}").decode("utf-8", "replace"))
+    except (ValueError, AttributeError):
+        d = None
+    if not isinstance(d, dict) or d.get("ok") is not True:
+        snippet = (body or b"")[:120].decode("utf-8", "replace")
+        return False, f"webhook did not confirm: {snippet!r}"
+    if expected_action and d.get("action") != expected_action:
+        return False, ("webhook script outdated (no action echo) — redeploy "
+                       "the v2 script (wiki: Sheet-Webhook)")
+    return True, None
+
+
 class TimerStore:
     """Race-timer state with three layers (spec §3): in-memory + local JSON
     file (restart-safe) + Sheet tab via CSV poll / Apps-Script webhook push
@@ -497,33 +553,22 @@ class TimerStore:
         return True
 
     # -- webhook push (Apps Script writes the Timer tab) --------------------
-    @staticmethod
-    def _post(url, body):
-        req = Request(url, data=body, method="POST",
-                      headers={"User-Agent": "iro-feeds/1.0",
-                               "Content-Type": "application/json"})
-        with urlopen(req, timeout=10) as resp:
-            return resp.read()
-
     def _push(self, payload):
-        """Success = the Apps Script's own {"ok": true} — Apps Script answers
-        HTTP 200 even for errors (bad key, exceptions render an HTML page), so
-        the status code alone is a false positive."""
+        """Success = the Apps Script's own {"ok": true} (see
+        check_webhook_response). Timer pushes carry no expected_action: a v1
+        script keeps working for the timer."""
         try:
-            body = self._post(self.push_url, json.dumps(payload).encode("utf-8"))
-            try:
-                ok = json.loads(body or b"{}").get("ok") is True
-            except (ValueError, AttributeError):
-                ok = False
-            if ok:
-                self.push_status = "ok"  # diagnostics: single ref assignments, no lock needed
-            else:
-                snippet = (body or b"")[:120].decode("utf-8", "replace")
-                self.push_status = "failed"
-                self.last_error = f"push: webhook did not confirm: {snippet!r}"
+            body = post_webhook(self.push_url, payload)
         except Exception as e:
             self.push_status = "failed"
             self.last_error = f"push: {type(e).__name__}: {e}"
+            return
+        ok, err = check_webhook_response(body)
+        if ok:
+            self.push_status = "ok"  # diagnostics: single ref assignments, no lock needed
+        else:
+            self.push_status = "failed"
+            self.last_error = f"push: {err}"
 
     def _spawn_push(self, payload):
         threading.Thread(target=self._push, args=(payload,), daemon=True).start()
@@ -701,11 +746,19 @@ class ScheduleSource:
         self.local_fallback = local_fallback
         self.lock = threading.Lock()
         self.items = []
+        self.rows = []
         self.last_ok = None
         self.last_error = None
 
     @staticmethod
-    def _parse_csv(text):
+    def _parse_rows(text):
+        """CSV -> [(url, name, line)] rows where *line* is the 1-based CSV line
+        index of each accepted row (== physical sheet row when the Schedule tab
+        starts at sheet row 1 with no leading blank rows — gviz export maps
+        1:1).  Header rows or any row whose URL cell fails is_channel() are
+        silently skipped; their line numbers are NOT remapped.  The URL column
+        is auto-detected (most cells matching is_channel); the name is the
+        cell right of it."""
         rows = list(csv.reader(io.StringIO(text)))
         if not rows:
             return None
@@ -717,9 +770,18 @@ class ScheduleSource:
                 best_cnt, best_col = cnt, c
         if best_col is None or best_cnt == 0:
             return None
-        items = [r[best_col].strip() for r in rows
-                 if len(r) > best_col and is_channel(r[best_col])]
-        return items or None
+        out = [(r[best_col].strip(),
+                (r[best_col + 1].strip() if len(r) > best_col + 1 else ""),
+                line)
+               for line, r in enumerate(rows, 1)
+               if len(r) > best_col and is_channel(r[best_col])]
+        return out or None
+
+    @staticmethod
+    def _parse_csv(text):
+        """URL-only wrapper around _parse_rows; kept for the URL-list callers/tests."""
+        rows = ScheduleSource._parse_rows(text)
+        return [u for u, _n, _l in rows] if rows else None
 
     def fetch(self, timeout=15):
         if not self.csv_url:
@@ -728,26 +790,27 @@ class ScheduleSource:
             req = Request(self.csv_url, headers={"User-Agent": "iro-feeds/1.0"})
             with urlopen(req, timeout=timeout) as resp:
                 text = resp.read().decode("utf-8", "replace")
-            items = self._parse_csv(text)
-            if not items:
+            rows = self._parse_rows(text)
+            if not rows:
                 self.last_error = ("Sheet reachable, but no channel IDs found "
                                    "(correct tab name? a column with UC… IDs / watch URLs? sharing?)")
                 return None
-            return items
+            return rows
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e}"
             return None
 
     def refresh(self, timeout=15):
-        items = self.fetch(timeout)
-        if items:
+        rows = self.fetch(timeout)
+        if rows:
             with self.lock:
-                self.items = items
+                self.rows = rows
+                self.items = [u for u, _n, _l in rows]
                 self.last_ok = time.time()
                 self.last_error = None
             try:
                 with open(self.cache_path, "w", encoding="utf-8") as fh:
-                    fh.write("\n".join(items) + "\n")
+                    fh.write("\n".join(u for u, _n, _l in rows) + "\n")
             except Exception:
                 pass  # cache write is best-effort; the in-memory schedule is current
             return True
@@ -766,6 +829,7 @@ class ScheduleSource:
                 if items:
                     with self.lock:
                         self.items = items
+                        self.rows = [(u, "", i + 1) for i, u in enumerate(items)]
                     print(f"WARN: sheet unreachable ({self.last_error}). "
                           f"Using {label}: {len(items)} stints.")
                     return
@@ -786,12 +850,19 @@ class ScheduleSource:
         with self.lock:
             return list(self.items)
 
+    def get_rows(self):
+        with self.lock:
+            return list(self.rows)
+
     def health(self):
         with self.lock:
             n = len(self.items)
         return {"count": n,
                 "last_ok_age_s": (round(time.time() - self.last_ok, 1) if self.last_ok else None),
                 "last_error": self.last_error}
+
+
+OVERRIDE_TTL = 30  # s: unconfirmed panel write -> HUD falls back to sheet truth
 
 
 class HudSource:
@@ -807,6 +878,8 @@ class HudSource:
         self.cache_path = cache_path
         self.lock = threading.Lock()
         self._data = None
+        self._vocab = {k: [] for k in VOCAB_COLUMNS}
+        self.overrides = {}   # hud-data key -> (value, expires_ts)
         self.last_ok = None
         self.last_error = None
         self._load_cache()
@@ -827,13 +900,19 @@ class HudSource:
     def refresh(self, timeout=10):
         try:
             overlay = parse_overlay(self._fetch(self.overlay_url, timeout))
-            brands = parse_config_brands(self._fetch(self.config_url, timeout))
+            config_text = self._fetch(self.config_url, timeout)
+            brands = parse_config_brands(config_text)
+            vocab = parse_config_vocab(config_text)
             data = build_hud_data(overlay, brands)
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e}"
             return False
         with self.lock:
             self._data = data
+            self._vocab = vocab
+            # a sheet poll that already shows the pushed value = confirmation
+            self.overrides = {k: (v, exp) for k, (v, exp) in self.overrides.items()
+                              if data.get(k) != v}
             self.last_ok = time.time()
             self.last_error = None
         try:
@@ -843,15 +922,159 @@ class HudSource:
             pass  # cache write is best-effort; the in-memory HUD data is current
         return True
 
-    def data(self):
+    def set_override(self, key, value, now=None):
+        """Optimistic echo for a panel write: /hud/data shows the value NOW;
+        the sheet poll confirms (clears) it, or it expires after OVERRIDE_TTL."""
+        now = time.time() if now is None else now
         with self.lock:
-            return self._data if self._data is not None else dict(self.EMPTY)
+            self.overrides[key] = (value, now + OVERRIDE_TTL)
+
+    def pending(self, now=None):
+        """Keys with an unconfirmed (and unexpired) optimistic override."""
+        now = time.time() if now is None else now
+        with self.lock:
+            return {k for k, (_v, exp) in self.overrides.items() if exp > now}
+
+    def data(self, now=None):
+        now = time.time() if now is None else now
+        with self.lock:
+            self.overrides = {k: (v, exp) for k, (v, exp) in self.overrides.items()
+                              if exp > now}
+            # Always shallow-copy: callers (and /setup/data decoration) must never
+            # be able to mutate the canonical dict.
+            base = dict(self._data) if self._data is not None else dict(self.EMPTY)
+            if not self.overrides:
+                return base
+            out = dict(base)
+            out.update({k: v for k, (v, _exp) in self.overrides.items()})
+            return out
+
+    def vocab(self):
+        with self.lock:
+            return {k: list(v) for k, v in self._vocab.items()}
 
     def health(self):
         with self.lock:
             return {"last_ok_age_s": (round(time.time() - self.last_ok, 1)
                                       if self.last_ok else None),
                     "last_error": self.last_error}
+
+
+# Panel setup fields: URL segment -> (Setup-tab header, /hud/data key).
+# NOTE: the Setup "Stint" is the HUD display LABEL — it has no relationship
+# to the relay's feed stint index (/set/stint, NEXT).
+SETUP_FIELDS = {
+    "stint": ("Stint", "stint"),
+    "streamer": ("Streamer", "streamer"),
+    "session": ("Session", "session"),
+    "racecontrol": ("Race Control", "raceControl"),
+}
+
+
+class SetupControl:
+    """Panel -> sheet writes (spec: panel-sheet-control). Setup fields are
+    async-optimistic (override now, push in the background, the sheet poll
+    confirms); Schedule/POV URL writes are synchronous (no local echo target,
+    and answering after the webhook confirm removes the save-vs-RELOAD race).
+    The sheet stays authoritative throughout."""
+
+    def __init__(self, push_url, hud_source):
+        self.push_url = push_url
+        self.hud = hud_source
+        self.push_status = "disabled" if not push_url else "never"
+        self.last_error = None
+
+    # -- shared blocking push -> (ok, error); diagnostics like TimerStore ----
+    def _push(self, payload, expected_action):
+        try:
+            body = post_webhook(self.push_url, payload)
+        except Exception as e:
+            self.push_status = "failed"
+            self.last_error = f"push: {type(e).__name__}: {e}"
+            return False, self.last_error
+        ok, err = check_webhook_response(body, expected_action)
+        # diagnostics: single ref assignments, no lock needed
+        self.push_status = "ok" if ok else "failed"
+        self.last_error = None if ok else err
+        return ok, err
+
+    # -- setup fields (async-optimistic) -------------------------------------
+    def set_field(self, key, value, now=None):
+        if key not in SETUP_FIELDS:
+            return {"error": f"unknown field: {key!r} "
+                             f"(one of {', '.join(sorted(SETUP_FIELDS))})"}
+        if not self.push_url:
+            return {"error": "webhook not configured — set IRO_SHEET_PUSH_URL "
+                             "in .env (wiki: Sheet-Webhook)"}
+        header, hud_key = SETUP_FIELDS[key]
+        if not value and key != "racecontrol":
+            return {"error": "empty value only allowed for racecontrol"}
+        if value and value not in self.hud.vocab().get(key, []):
+            return {"error": f"not in the Configuration vocabulary: {value!r} "
+                             "(add it to the Configuration tab first)"}
+        self.hud.set_override(hud_key, value, now)
+        threading.Thread(target=self._push_setup, args=(header, value),
+                         daemon=True).start()
+        return {"ok": True, "field": key, "value": value, "pending": True}
+
+    def _push_setup(self, header, value):
+        ok, _err = self._push({"action": "setup", "fields": {header: value}},
+                              "setup")
+        if ok:
+            self.hud.refresh()   # confirm now, not at the next poll tick
+
+    # -- URL writes (synchronous) --------------------------------------------
+    def schedule_set(self, row, url=None, name=None):
+        if not self.push_url:
+            return {"error": "webhook not configured — set IRO_SHEET_PUSH_URL "
+                             "in .env (wiki: Sheet-Webhook)"}
+        if isinstance(row, bool) or not isinstance(row, (int, str)):
+            return {"error": "row must be a whole number (1-based)"}
+        try:
+            row = int(row)
+        except (TypeError, ValueError):
+            return {"error": "row must be a number (1-based)"}
+        if row < 1:
+            return {"error": "row must be >= 1"}
+        if url is None and name is None:
+            return {"error": "nothing to write (provide url and/or name)"}
+        if url is not None and not isinstance(url, str):
+            return {"error": "url must be a string"}
+        if name is not None and not isinstance(name, str):
+            return {"error": "name must be a string"}
+        payload = {"action": "schedule", "row": row}
+        if url is not None:
+            url = url.strip()
+            if url and not is_channel(url):
+                return {"error": "url must be a watch URL or UC… channel ID"}
+            payload["url"] = url
+        if name is not None:
+            payload["name"] = name.strip()
+        ok, err = self._push(payload, "schedule")
+        return {"ok": True, "row": row} if ok else {"error": err}
+
+    def pov_set(self, url):
+        if not self.push_url:
+            return {"error": "webhook not configured — set IRO_SHEET_PUSH_URL "
+                             "in .env (wiki: Sheet-Webhook)"}
+        if url is not None and not isinstance(url, str):
+            return {"error": "url must be a string"}
+        url = (url or "").strip()
+        if url and not is_channel(url):
+            return {"error": "url must be a watch URL or UC… channel ID"}
+        ok, err = self._push({"action": "pov", "url": url}, "pov")
+        return {"ok": True} if ok else {"error": err}
+
+    # -- panel poll ------------------------------------------------------------
+    def data(self):
+        hud = self.hud.data()
+        pending = self.hud.pending()
+        return {"fields": {k: hud.get(hk, "") for k, (_h, hk) in SETUP_FIELDS.items()},
+                "options": self.hud.vocab(),
+                "pending": sorted(k for k, (_h, hk) in SETUP_FIELDS.items()
+                                  if hk in pending),
+                "push": self.push_status,
+                "last_error": self.last_error}
 
 
 class Feed:
@@ -1044,7 +1267,7 @@ class Relay:
 
 
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
-                 timer_store=None, timer_path=None):
+                 timer_store=None, timer_path=None, setup_ctl=None):
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
             body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
@@ -1117,6 +1340,25 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             return self._send({"error": "adjust takes +/- seconds"}, 400)
                         return self._send(timer_store.adjust(delta))
                     return self._send({"error": "unknown", "path": self.path}, 404)
+                if p[:1] == ["setup"]:
+                    if not setup_ctl:
+                        return self._send({"error": "setup control disabled"}, 404)
+                    if p == ["setup", "data"]:
+                        return self._send(setup_ctl.data())
+                    if len(p) == 4 and p[1] == "set":
+                        return self._send(setup_ctl.set_field(p[2].lower(),
+                                                              unquote(p[3])))
+                    if len(p) == 3 and p[1] == "clear":
+                        return self._send(setup_ctl.set_field(p[2].lower(), ""))
+                    return self._send({"error": "unknown", "path": self.path}, 404)
+                if p == ["schedule", "data"]:
+                    rows = relay.source.get_rows()
+                    live = {f.idx: k for k, f in relay.feeds.items()}
+                    return self._send({"rows": [{"row": i + 1, "sheetRow": line,
+                                                 "url": u, "name": n,
+                                                 "live": live.get(i)}
+                                                for i, (u, n, line) in enumerate(rows)],
+                                       "source": relay.source.health()})
                 if p == ["next"]:                       return self._send(relay.next_auto())
                 if p == ["reload"]:                     return self._send(relay.reload())
                 if p == ["pov", "reload"]:              return self._send(relay.pov_reload())
@@ -1131,6 +1373,28 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 return self._send({"error": str(e)}, 500)
         def _ok(self, r):
             self._send(r) if r else self._send({"error":"feed? (A/B)"}, 404)
+        def do_POST(self):
+            p = [x for x in urlparse(self.path).path.split("/") if x]
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                if length > 65536:
+                    return self._send({"error": "body too large"}, 413)
+                try:
+                    body = json.loads(self.rfile.read(length) or b"{}")
+                except ValueError:
+                    return self._send({"error": "body must be JSON"}, 400)
+                if not isinstance(body, dict):
+                    return self._send({"error": "body must be a JSON object"}, 400)
+                if not setup_ctl:
+                    return self._send({"error": "setup control disabled"}, 404)
+                if p == ["schedule", "set"]:
+                    return self._send(setup_ctl.schedule_set(
+                        body.get("row"), body.get("url"), body.get("name")))
+                if p == ["pov", "set"]:
+                    return self._send(setup_ctl.pov_set(body.get("url")))
+                return self._send({"error": "unknown", "path": self.path}, 404)
+            except Exception as e:
+                return self._send({"error": str(e)}, 500)
     return H
 
 
@@ -1321,8 +1585,12 @@ def main():
             print("WARN: hud.html not found — /hud will 404 (assets dir: "
                   f"{assets_dir}).")
 
+    # One sheet-write webhook powers the race timer AND the panel's
+    # Setup/Schedule/POV controls (wiki: Sheet-Webhook).
+    push_url = os.environ.get("IRO_SHEET_PUSH_URL")
+
     # Race timer: local file always; sheet sync derived from sheet-id/tab
-    # (custom --sheet-csv-url -> local-only); push via IRO_TIMER_PUSH_URL.
+    # (custom --sheet-csv-url -> local-only); push via IRO_SHEET_PUSH_URL.
     timer_store = None
     timer_path = None
     if not args.no_timer:
@@ -1330,7 +1598,7 @@ def main():
         if not args.sheet_csv_url:
             timer_csv = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
                          f"/gviz/tq?tqx=out:csv&sheet={quote(args.timer_tab)}")
-        timer_store = TimerStore(timer_csv, os.environ.get("IRO_TIMER_PUSH_URL"),
+        timer_store = TimerStore(timer_csv, push_url,
                                  os.path.join(runtime, "timer.json"))
         timer_store.refresh()   # non-fatal: adopt a newer sheet anchor on startup
         for cand in (os.path.join(here, "timer.html"),
@@ -1340,6 +1608,8 @@ def main():
                 timer_path = os.path.abspath(cand); break
         if not timer_path:
             print("WARN: timer.html not found — /timer will 404.")
+
+    setup_ctl = SetupControl(push_url, hud_source) if hud_source else None
 
     source = ScheduleSource(csv_url, cache, local)
     source.load_initial(SCHEDULE_TEMPLATE)
@@ -1362,7 +1632,7 @@ def main():
                          daemon=True).start()
 
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
-                           timer_store, timer_path)
+                           timer_store, timer_path, setup_ctl)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers = []
@@ -1407,9 +1677,12 @@ def main():
     if hud_source and hud_path:
         print(f"  HUD overlay (OBS source): http://127.0.0.1:{args.http_port}/hud  "
               f"(tabs '{args.overlay_tab}'/'{args.config_tab}', refresh {args.hud_poll}s)")
+    if setup_ctl:
+        mode = "writes ON" if push_url else "read-only (set IRO_SHEET_PUSH_URL)"
+        print(f"  Panel sheet controls (/setup /schedule /pov/set): {mode}")
     if timer_store and timer_path:
         push = "sheet+push" if timer_store.push_url else (
-            "sheet read-only (set IRO_TIMER_PUSH_URL for handover sync)"
+            "sheet read-only (set IRO_SHEET_PUSH_URL for handover sync)"
             if timer_store.csv_url else "local only")
         print(f"  Race timer (OBS source): http://127.0.0.1:{args.http_port}/timer  "
               f"(tab '{args.timer_tab}', {push}; controls /timer/start | /timer/stop)")

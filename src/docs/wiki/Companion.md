@@ -40,7 +40,11 @@ This page covers only how the board is wired up. The relay buttons (`Feeds Next`
 `Feeds Reload`, `Feeds Status`, `Feed A Reload`, `Feed B Reload`, `POV Reload`, `POV Stop`)
 use the **Generic HTTP Requests**
 connection — see [Relay Mode §4](Relay-Mode#4-control-it-companion--relay). Everything else
-uses the OBS connection.
+uses the OBS connection. Four combos sit on both: `RED FLAG` (Standby-Cover visibility
+through OBS, Race Control write through the relay), `SPLIT` (sets Race Control to
+*Driver Swaps*) and `STINT A` / `STINT B` (clear Race Control). The Race Control writes
+go to `/setup/set/racecontrol/…` / `/setup/clear/racecontrol` and need the
+[sheet-write webhook](Sheet-Webhook).
 
 ## Test
 

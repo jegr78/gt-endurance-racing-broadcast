@@ -219,6 +219,33 @@
            },
            "upgradeIndex": 8,
            "type": "action"
+          },
+          {
+           "id": "WI3bVZE8mgITIEdIfdcw4",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
+           "options": {
+            "url": {
+             "value": "http://127.0.0.1:8088/setup/clear/racecontrol",
+             "isExpression": false
+            },
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
+             "isExpression": false
+            },
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
+            },
+            "statusCodeVariable": {
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 1,
+           "type": "action"
           }
          ],
          "up": []
@@ -441,6 +468,33 @@
            },
            "upgradeIndex": 8,
            "type": "action"
+          },
+          {
+           "id": "mexVwG61R5oIDUVzxLX1-",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
+           "options": {
+            "url": {
+             "value": "http://127.0.0.1:8088/setup/clear/racecontrol",
+             "isExpression": false
+            },
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
+             "isExpression": false
+            },
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
+            },
+            "statusCodeVariable": {
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 1,
+           "type": "action"
           }
          ],
          "up": []
@@ -613,6 +667,33 @@
             }
            },
            "upgradeIndex": 8,
+           "type": "action"
+          },
+          {
+           "id": "McW7zYKcqIwW0lRg2qDbM",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
+           "options": {
+            "url": {
+             "value": "http://127.0.0.1:8088/setup/set/racecontrol/Driver%20Swaps",
+             "isExpression": false
+            },
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
+             "isExpression": false
+            },
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
+            },
+            "statusCodeVariable": {
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 1,
            "type": "action"
           }
          ],
@@ -1106,6 +1187,179 @@
            },
            "type": "action",
            "upgradeIndex": 8
+          }
+         ],
+         "up": []
+        },
+        "options": {
+         "runWhileHeld": []
+        }
+       }
+      },
+      "localVariables": []
+     },
+     "7": {
+      "type": "button",
+      "style": {
+       "text": "RED\nFLAG",
+       "textExpression": false,
+       "size": "18",
+       "png64": null,
+       "alignment": "center:center",
+       "pngalignment": "center:center",
+       "color": 16724787,
+       "bgcolor": 0,
+       "show_topbar": "default"
+      },
+      "options": {
+       "stepProgression": "auto",
+       "stepExpression": "",
+       "rotaryActions": false
+      },
+      "feedbacks": [
+       {
+        "id": "oRoJHDK377xcQdJ7pneE1",
+        "definitionId": "scene_item_active",
+        "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+        "options": {
+         "scene": {
+          "value": "Stint",
+          "isExpression": false
+         },
+         "source": {
+          "value": "Standby Cover",
+          "isExpression": false
+         }
+        },
+        "upgradeIndex": 8,
+        "type": "feedback",
+        "style": {
+         "color": 16777215,
+         "bgcolor": 12582912
+        },
+        "isInverted": {
+         "value": false,
+         "isExpression": false
+        }
+       }
+      ],
+      "steps": {
+       "0": {
+        "action_sets": {
+         "down": [
+          {
+           "id": "GbyN9wieGkymSnMelHrh4",
+           "definitionId": "toggle_scene_item",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "scene": {
+             "value": "Stint",
+             "isExpression": false
+            },
+            "all": {
+             "value": false,
+             "isExpression": false
+            },
+            "source": {
+             "value": "Standby Cover",
+             "isExpression": false
+            },
+            "visible": {
+             "value": "true",
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 8,
+           "type": "action"
+          },
+          {
+           "id": "JiQRW4wG_ensLqpcVfClz",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
+           "options": {
+            "url": {
+             "value": "http://127.0.0.1:8088/setup/set/racecontrol/Red%20Flag%20-%20Race%20Suspended",
+             "isExpression": false
+            },
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
+             "isExpression": false
+            },
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
+            },
+            "statusCodeVariable": {
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 1,
+           "type": "action"
+          }
+         ],
+         "up": []
+        },
+        "options": {
+         "runWhileHeld": []
+        }
+       },
+       "1": {
+        "action_sets": {
+         "down": [
+          {
+           "id": "-QRIZRj9lJtKPx0Bm0US-",
+           "definitionId": "toggle_scene_item",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "scene": {
+             "value": "Stint",
+             "isExpression": false
+            },
+            "all": {
+             "value": false,
+             "isExpression": false
+            },
+            "source": {
+             "value": "Standby Cover",
+             "isExpression": false
+            },
+            "visible": {
+             "value": "false",
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 8,
+           "type": "action"
+          },
+          {
+           "id": "m0NIW_70spTgqCJzAfjIF",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
+           "options": {
+            "url": {
+             "value": "http://127.0.0.1:8088/setup/clear/racecontrol",
+             "isExpression": false
+            },
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
+             "isExpression": false
+            },
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
+            },
+            "statusCodeVariable": {
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 1,
+           "type": "action"
           }
          ],
          "up": []

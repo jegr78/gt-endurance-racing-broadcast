@@ -708,7 +708,7 @@ def _event_sections(ev, pf):
     except Exception as exc:
         assets.append(ev.Result(ev.WARN, "Graphics/Media", f"check failed: {exc}"))
     config = [ev.classify_env(os.environ.get("IRO_SHEET_ID"),
-                              os.environ.get("IRO_TIMER_PUSH_URL"))]
+                              os.environ.get("IRO_SHEET_PUSH_URL"))]
     return [("Apps", apps), ("Services", services), ("Assets", assets),
             ("Config", config), ("Go-live reminders", [ev.GO_LIVE_REMINDER])]
 
@@ -979,8 +979,8 @@ def _init_env_run():
         shutil.copyfile(example, path)
         print(f"  created {path} from .env.example")
     while ins.env_done(_init_env_state()) is None:
-        _init_pause(f"Fill in IRO_SHEET_ID in {path} (IRO_TIMER_PUSH_URL is "
-                    "optional — see the Race-Timer wiki page)")
+        _init_pause(f"Fill in IRO_SHEET_ID in {path} (IRO_SHEET_PUSH_URL is "
+                    "optional — see the Sheet-Webhook wiki page)")
     for key, val in _read_env_file().items():
         os.environ.setdefault(key, val)   # downstream probes + children see them
     return 0
