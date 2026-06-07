@@ -204,6 +204,9 @@ def t_schedule_set_rejects_bool_float_and_noop():
         assert "error" in ctl.schedule_set(True, url="https://youtu.be/a")
         assert "error" in ctl.schedule_set(2.9, url="https://youtu.be/a")
         assert "error" in ctl.schedule_set(1)          # nothing to write
+        assert "error" in ctl.schedule_set(1, url=42)
+        assert "error" in ctl.schedule_set(1, name=42)
+        assert "error" in ctl.pov_set(42)
         assert pushes == []                            # no webhook call on any error
     finally:
         m.post_webhook = orig

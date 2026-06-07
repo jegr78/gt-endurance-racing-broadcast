@@ -1031,6 +1031,10 @@ class SetupControl:
             return {"error": "row must be >= 1"}
         if url is None and name is None:
             return {"error": "nothing to write (provide url and/or name)"}
+        if url is not None and not isinstance(url, str):
+            return {"error": "url must be a string"}
+        if name is not None and not isinstance(name, str):
+            return {"error": "name must be a string"}
         payload = {"action": "schedule", "row": row}
         if url is not None:
             url = url.strip()
@@ -1046,6 +1050,8 @@ class SetupControl:
         if not self.push_url:
             return {"error": "webhook not configured — set IRO_SHEET_PUSH_URL "
                              "in .env (wiki: Sheet-Webhook)"}
+        if url is not None and not isinstance(url, str):
+            return {"error": "url must be a string"}
         url = (url or "").strip()
         if url and not is_channel(url):
             return {"error": "url must be a watch URL or UC… channel ID"}
