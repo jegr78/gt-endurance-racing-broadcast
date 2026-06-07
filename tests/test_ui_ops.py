@@ -7,6 +7,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "src"))
 import iro
+sys.path.insert(0, os.path.join(ROOT, "src", "ui"))
+import ui_ops
 
 
 # ---------- relay ----------
@@ -94,9 +96,6 @@ def t_ui_status_payload_shape():
                        "companion": {"running": False}, "streams": [],
                        "tailscale_ip": None}
 
-
-sys.path.insert(0, os.path.join(ROOT, "src", "ui"))
-import ui_ops
 
 # ---------- ui_ops registry ----------
 
