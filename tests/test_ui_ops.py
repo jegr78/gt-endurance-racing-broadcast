@@ -95,6 +95,30 @@ def t_ui_status_payload_shape():
                        "tailscale_ip": None}
 
 
+sys.path.insert(0, os.path.join(ROOT, "src", "ui"))
+import ui_ops
+
+# ---------- ui_ops registry ----------
+
+def t_ops_registry_shape():
+    assert ui_ops.OPS["relay-start"] == ["relay", "start"]
+    assert ui_ops.OPS["obs-refresh"] == ["obs", "refresh"]
+    for name, argv in ui_ops.OPS.items():
+        assert isinstance(argv, list) and all(isinstance(a, str) for a in argv), name
+
+
+def t_job_argv_repo_mode():
+    argv = ui_ops.job_argv(["relay", "start"], frozen=False,
+                           executable="/usr/bin/python3", iro_script="/repo/src/iro.py")
+    assert argv == ["/usr/bin/python3", "/repo/src/iro.py", "relay", "start"]
+
+
+def t_job_argv_frozen_reinvokes_binary():
+    argv = ui_ops.job_argv(["relay", "stop"], frozen=True,
+                           executable="/opt/iro/iro", iro_script="/ignored")
+    assert argv == ["/opt/iro/iro", "relay", "stop"]
+
+
 if __name__ == "__main__":
     import inspect, tempfile
     with tempfile.TemporaryDirectory() as tmp:
