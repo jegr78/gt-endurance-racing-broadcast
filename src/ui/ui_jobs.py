@@ -66,7 +66,7 @@ class JobManager:
             job.exit_code = code
 
     def snapshot(self, job_id):
-        """{'id','op','running','exit_code'} or None for an unknown id."""
+        """{'id','op','running','exit_code','cancelled'} or None for an unknown id."""
         job = self.jobs.get(job_id)  # GIL-atomic dict read — no self.lock needed
         if job is None:
             return None
