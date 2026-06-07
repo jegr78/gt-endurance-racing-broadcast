@@ -46,6 +46,21 @@ def wiki_remote_from_origin():
     return url + ".wiki.git"
 
 
+def run_link_check():
+    """Abort the sync when tools/check-wiki-links.py finds broken links.
+    (The test suite is the primary gate; this is the maintainer's last line
+    of defense before pages go public.)"""
+    import importlib.util
+    path = os.path.join(ROOT, "tools", "check-wiki-links.py")
+    spec = importlib.util.spec_from_file_location("check_wiki_links", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    errors = mod.check_wiki(WIKI_SRC)
+    if errors:
+        sys.exit("ERROR: broken wiki links — fix before publishing:\n  "
+                 + "\n  ".join(errors))
+
+
 def ensure_clone(remote):
     """Clone the wiki repo into runtime/wiki, or fetch+reset if already present."""
     os.makedirs(os.path.dirname(CLONE), exist_ok=True)
@@ -130,6 +145,8 @@ def main():
         sys.exit(f"ERROR: wiki source not found: {WIKI_SRC}")
     if not any(f.endswith(".md") for f in os.listdir(WIKI_SRC)):
         sys.exit(f"ERROR: no Markdown pages under {WIKI_SRC}")
+
+    run_link_check()
 
     remote = a.remote or wiki_remote_from_origin()
     print(f"Wiki remote: {remote}")

@@ -109,6 +109,8 @@ def check_wiki(directory):
 def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     directory = args[0] if args else os.path.join(ROOT, "src", "docs", "wiki")
+    if not os.path.isdir(directory):
+        sys.exit(f"not a directory: {directory}")
     errors = check_wiki(directory)
     for e in errors:
         print(e)
