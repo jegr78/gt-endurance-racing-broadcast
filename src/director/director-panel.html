@@ -549,7 +549,7 @@ function timerRender(d){
              : d.mode === "finished" ? "FINISHED (display blank)"
              : "HIDDEN";
   const sync = d.sync.push === "ok" ? "sheet sync OK"
-             : d.sync.push === "disabled" ? "local only (IRO_TIMER_PUSH_URL unset)"
+             : d.sync.push === "disabled" ? "local only (IRO_SHEET_PUSH_URL unset)"
              : d.sync.push === "failed" ? "SHEET SYNC FAILED — handover not safe"
              : "sheet sync not yet attempted";
   $("#timerInfo").textContent = `Timer: ${head} · ${sync}`;

@@ -221,7 +221,7 @@ The first `iro` run created a `.env` file next to the binary. Open it in any tex
 editor and fill in the required value from the team:
 
 - `IRO_SHEET_ID` — the ID in the shared Google Sheet link.
-- *(optional)* `IRO_TIMER_PUSH_URL` — Apps Script write webhook for the relay-hosted
+- *(optional)* `IRO_SHEET_PUSH_URL` — Apps Script write webhook for the relay-hosted
   race timer (enables cross-machine countdown sync). See the Race-Timer wiki page.
 
 Keep `.env` private; never share it.

@@ -80,7 +80,7 @@ countdown. Set it up once per sheet:
 4. In `.env` on every producer machine:
 
    ```
-   IRO_TIMER_PUSH_URL=https://script.google.com/macros/s/…/exec?key=<your secret>
+   IRO_SHEET_PUSH_URL=https://script.google.com/macros/s/…/exec?key=<your secret>
    ```
 
 5. Restart the relay. `iro event status` shows the `.env` check as PASS, and

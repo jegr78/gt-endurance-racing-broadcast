@@ -119,8 +119,8 @@ from the repo (`src/...`) or the distributed package and pick paths accordingly 
 see `default_runtime_dir()` (relay/get-cookies) and `state_dir()` (scripts).
 
 ### Secrets via `.env` (gitignored, repo root)
-`IRO_SHEET_ID` (Google Sheet driving schedule + HUD) and `IRO_TIMER_PUSH_URL` (optional
-Apps Script webhook that lets the relay write race-timer state to the Sheet's Timer tab).
+`IRO_SHEET_ID` (Google Sheet driving schedule + HUD) and `IRO_SHEET_PUSH_URL` (optional
+Apps Script webhook that lets the relay write to the Sheet: race-timer state + the panel's Setup/Schedule/POV controls).
 A small bounded `load_dotenv()` — duplicated in
 `src/relay/iro-feeds.py`, `src/setup-assets.py`, `src/relay/get-media.py`, and
 `src/relay/get-graphics.py` — reads a `.env` only from the script dir or the project

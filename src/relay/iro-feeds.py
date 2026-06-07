@@ -1322,7 +1322,7 @@ def main():
                   f"{assets_dir}).")
 
     # Race timer: local file always; sheet sync derived from sheet-id/tab
-    # (custom --sheet-csv-url -> local-only); push via IRO_TIMER_PUSH_URL.
+    # (custom --sheet-csv-url -> local-only); push via IRO_SHEET_PUSH_URL.
     timer_store = None
     timer_path = None
     if not args.no_timer:
@@ -1330,7 +1330,7 @@ def main():
         if not args.sheet_csv_url:
             timer_csv = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
                          f"/gviz/tq?tqx=out:csv&sheet={quote(args.timer_tab)}")
-        timer_store = TimerStore(timer_csv, os.environ.get("IRO_TIMER_PUSH_URL"),
+        timer_store = TimerStore(timer_csv, os.environ.get("IRO_SHEET_PUSH_URL"),
                                  os.path.join(runtime, "timer.json"))
         timer_store.refresh()   # non-fatal: adopt a newer sheet anchor on startup
         for cand in (os.path.join(here, "timer.html"),
@@ -1409,7 +1409,7 @@ def main():
               f"(tabs '{args.overlay_tab}'/'{args.config_tab}', refresh {args.hud_poll}s)")
     if timer_store and timer_path:
         push = "sheet+push" if timer_store.push_url else (
-            "sheet read-only (set IRO_TIMER_PUSH_URL for handover sync)"
+            "sheet read-only (set IRO_SHEET_PUSH_URL for handover sync)"
             if timer_store.csv_url else "local only")
         print(f"  Race timer (OBS source): http://127.0.0.1:{args.http_port}/timer  "
               f"(tab '{args.timer_tab}', {push}; controls /timer/start | /timer/stop)")

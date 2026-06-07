@@ -221,16 +221,17 @@ def classify_assets(label, missing, count, severity, fix):
     return Result(PASS, label, f"complete ({count} file(s))")
 
 
-def classify_env(sheet_id, timer_push_url):
-    """IRO_SHEET_ID is required (FAIL); the race-timer webhook is optional —
-    missing means the timer cannot sync across producer machines (WARN)."""
+def classify_env(sheet_id, push_url):
+    """IRO_SHEET_ID is required (FAIL); the sheet-write webhook is optional —
+    missing means no timer handover sync and a read-only panel Setup row (WARN)."""
     if not sheet_id:
         return Result(FAIL, ".env", "missing: IRO_SHEET_ID — fill it in "
                       "(.env next to the binary / repo root)")
-    if not timer_push_url:
-        return Result(WARN, ".env", "IRO_TIMER_PUSH_URL unset — race-timer "
-                      "handover sync disabled (see the Race-Timer wiki page)")
-    return Result(PASS, ".env", "IRO_SHEET_ID and IRO_TIMER_PUSH_URL set")
+    if not push_url:
+        return Result(WARN, ".env", "IRO_SHEET_PUSH_URL unset — race-timer "
+                      "handover sync and panel sheet controls disabled "
+                      "(see the Sheet-Webhook wiki page)")
+    return Result(PASS, ".env", "IRO_SHEET_ID and IRO_SHEET_PUSH_URL set")
 
 
 GO_LIVE_REMINDER = Result(

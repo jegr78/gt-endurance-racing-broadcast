@@ -19,14 +19,14 @@ cp .env.example .env
 ```ini
 # .env  (gitignored — never commit this)
 IRO_SHEET_ID=your_google_sheet_id_here
-IRO_TIMER_PUSH_URL=https://script.google.com/macros/s/…/exec?key=your_secret
+IRO_SHEET_PUSH_URL=https://script.google.com/macros/s/…/exec?key=your_secret
 ```
 
 - **`IRO_SHEET_ID`** — the long ID from your HUD/schedule sheet URL:
   `https://docs.google.com/spreadsheets/d/`**`<THIS>`**`/edit`. Drives the relay:
   the schedule, the POV tab, and the HUD overlay (Overlay + Configuration tabs, served
   at `/hud`).
-- **`IRO_TIMER_PUSH_URL`** *(optional)* — the Apps Script write webhook for the relay-hosted
+- **`IRO_SHEET_PUSH_URL`** *(optional)* — the Apps Script write webhook for the relay-hosted
   race timer. Lets Director actions (start/stop/show/hide/correct) sync to the Sheet's
   `Timer` tab so a second producer machine takes over with the same countdown. Unset =
   timer works on this machine only. See [Race-Timer](Race-Timer) for setup.
@@ -42,7 +42,7 @@ Real environment variables take precedence over `.env`. The loader only reads a 
 from the script directory or the project root (marked by `.git` / `.env.example`),
 never an unrelated parent directory.
 
-> **Security:** `.env` is gitignored and must stay that way. The `IRO_TIMER_PUSH_URL`
+> **Security:** `.env` is gitignored and must stay that way. The `IRO_SHEET_PUSH_URL`
 > contains a shared secret — if it ever leaks, redeploy the Apps Script with a new key
 > and update the URL in `.env` on every producer machine.
 
