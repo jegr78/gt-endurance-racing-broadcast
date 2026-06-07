@@ -118,9 +118,60 @@ def t_job_argv_frozen_reinvokes_binary():
     assert argv == ["/opt/iro/iro", "relay", "stop"]
 
 
-def t_ops_registry_resolves_to_dispatch():
+def t_ops_registry_routes_in_iro():
+    # every registry entry must be a valid iro invocation (service verb,
+    # oneshot, or export) — route() raises ValueError on anything unknown
     for name, argv in ui_ops.OPS.items():
-        assert tuple(argv) in iro.DISPATCH, f"{name} maps to unknown iro verb {argv}"
+        action = iro.route(list(argv))
+        assert action["kind"] in ("service", "oneshot", "export"), name
+
+
+def t_build_argv_plain_and_unknown():
+    assert ui_ops.build_argv("relay-start") == ["relay", "start"]
+    try:
+        ui_ops.build_argv("not-an-op")
+        raise AssertionError("unknown op accepted")
+    except ValueError:
+        pass
+
+
+def t_build_argv_cookies_browser():
+    assert ui_ops.build_argv("cookies", {"browser": "firefox"}) == ["cookies", "firefox"]
+    assert ui_ops.build_argv("cookies") == ["cookies"]        # browser optional
+    try:
+        ui_ops.build_argv("cookies", {"browser": "lynx; rm -rf /"})
+        raise AssertionError("invalid browser accepted")
+    except ValueError:
+        pass
+
+
+def t_build_argv_event_stint():
+    assert ui_ops.build_argv("event-start", {"stint": "4"}) == \
+        ["event", "start", "--stint", "4"]
+    assert ui_ops.build_argv("event-start", {"stint": ""}) == ["event", "start"]
+    for bad in ("0", "-1", "abc", "1.5"):
+        try:
+            ui_ops.build_argv("event-start", {"stint": bad})
+            raise AssertionError(f"invalid stint accepted: {bad}")
+        except ValueError:
+            pass
+
+
+def t_build_argv_update_flag():
+    assert ui_ops.build_argv("install-tools", {"update": True}) == \
+        ["install-tools", "--yes", "--update"]
+    assert ui_ops.build_argv("install-tools", {"update": False}) == \
+        ["install-tools", "--yes"]
+    assert ui_ops.build_argv("install-apps", {"update": True}) == \
+        ["install-apps", "--yes", "--update"]
+
+
+def t_build_argv_rejects_unknown_params():
+    try:
+        ui_ops.build_argv("relay-start", {"stint": "4"})
+        raise AssertionError("param on paramless op accepted")
+    except ValueError:
+        pass
 
 
 if __name__ == "__main__":
