@@ -44,50 +44,9 @@ hidden → blank.
 
 Without it the timer still works on the producer machine, but Director actions
 cannot sync to the Sheet — a takeover machine would not pick up the running
-countdown. Set it up once per sheet:
-
-1. Open the broadcast Google Sheet → **Extensions → Apps Script**.
-2. Paste this script (replace `change-me` with a random secret):
-
-   ```javascript
-   const KEY = 'change-me';            // must match the key=... in the URL below
-   const TAB = 'Timer';
-   const ROWS = {'Race End (UTC)': 1, 'Duration': 2, 'Visible': 3,
-                 'Updated (UTC)': 4, 'Remaining': 5};
-
-   function doPost(e) {
-     const out = (o) => ContentService.createTextOutput(JSON.stringify(o))
-         .setMimeType(ContentService.MimeType.JSON);
-     if (((e.parameter && e.parameter.key) || '') !== KEY) return out({error: 'bad key'});
-     const p = JSON.parse(e.postData.contents);
-     const ss = SpreadsheetApp.getActiveSpreadsheet();
-     const sheet = ss.getSheetByName(TAB) || ss.insertSheet(TAB);
-     const write = (label, value) => {
-       sheet.getRange(ROWS[label], 1).setValue(label);
-       sheet.getRange(ROWS[label], 2).setNumberFormat('@').setValue(value);
-     };
-     if ('end' in p) write('Race End (UTC)', p.end);
-     if ('duration' in p) write('Duration', p.duration);
-     if ('visible' in p) write('Visible', p.visible);
-     if ('remaining' in p) write('Remaining', p.remaining);
-     write('Updated (UTC)', new Date().toISOString());
-     return out({ok: true});
-   }
-   ```
-
-3. **Deploy → New deployment → Web app**, execute as **Me**, access:
-   **Anyone**. Copy the `/exec` URL.
-4. In `.env` on every producer machine:
-
-   ```
-   IRO_SHEET_PUSH_URL=https://script.google.com/macros/s/…/exec?key=<your secret>
-   ```
-
-5. Restart the relay. `iro event status` shows the `.env` check as PASS, and
-   the panel's timer line reports `sheet sync OK` after the first action.
-
-The URL+key is a write credential for the Timer tab — treat it like the other
-`.env` secrets (never commit it).
+countdown. The timer shares the sheet-write webhook with the panel's
+Setup/Schedule/POV controls — set it up once per sheet: see
+**[Sheet-Webhook](Sheet-Webhook)**.
 
 ## Producer handover
 
