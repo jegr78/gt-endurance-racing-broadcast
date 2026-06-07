@@ -14,6 +14,8 @@ OPS = {
     "companion-restart": ["companion", "restart"],
     "streams-start": ["streams", "start"],
     "streams-stop": ["streams", "stop"],
+    "tailscale-up": ["tailscale", "up"],
+    "tailscale-down": ["tailscale", "down"],
     "obs-refresh": ["obs", "refresh"],
 }
 

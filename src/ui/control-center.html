@@ -8,6 +8,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>IRO Control Center</title>
+<link rel="icon" href="data:,"><!-- no favicon — silence the 404 console noise -->
 <style>
   :root { --bg:#14161a; --card:#1d2127; --line:#2c323b; --txt:#e8eaed;
           --dim:#9aa3ad; --ok:#2e9e5b; --bad:#5a6472; --accent:#3b82f6;
@@ -75,7 +76,9 @@
       <button class="danger" onclick="op('streams-stop', true)">Stop</button></div>
     <div class="row"><span class="name">Tailscale</span>
       <span class="badge" id="b-ts">…</span>
-      <span class="dim grow" id="d-ts"></span></div>
+      <span class="dim grow" id="d-ts"></span>
+      <button onclick="op('tailscale-up')">Up</button>
+      <button class="danger" onclick="op('tailscale-down', true)">Down</button></div>
     <div class="row"><span class="name">OBS pages</span>
       <span class="dim grow">Reload the relay-served HUD/timer browser sources</span>
       <button onclick="op('obs-refresh')">Refresh</button></div>
