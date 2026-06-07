@@ -85,7 +85,7 @@ following the `release_feed_inputs()` pattern:
 
 ### 3. Hooks
 
-- **`iro relay start` / `restart`** (`src/scripts/services.py` relay path):
+- **`iro relay start` / `restart`** (`relay_start()` in `src/iro.py`):
   after spawning the daemon, poll `http://127.0.0.1:8088/status` until it
   responds (cap ~10 s), then `refresh_if_stale()`. The wait is mandatory: a
   refresh against a closed relay port makes the browser source load a CEF
