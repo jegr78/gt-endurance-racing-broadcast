@@ -36,6 +36,8 @@ def probe_instance(host, port, fetch=None):
     try:
         body = fetch(host, port)
     except Exception:
+        # a foreign server that errors on /api/ping reads as 'free' — the
+        # subsequent bind then fails with OSError and prints the IRO_UI_PORT hint
         return "free"
     return classify_ping(body)
 

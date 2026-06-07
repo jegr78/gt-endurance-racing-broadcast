@@ -1278,8 +1278,7 @@ def _init_steps(opts):
 def _ui_modules():
     """src/ui modules — path-inserted like scripts/ (kept out of the module-level
     insert: only `iro ui` needs them)."""
-    ui_dir = os.path.join(HERE, "ui") if not IS_FROZEN else os.path.join(
-        _src_base(True, getattr(sys, "_MEIPASS", ""), HERE), "ui")
+    ui_dir = resource_path("ui")
     if ui_dir not in sys.path:
         sys.path.insert(0, ui_dir)
     import ui_jobs, ui_ops, ui_server
