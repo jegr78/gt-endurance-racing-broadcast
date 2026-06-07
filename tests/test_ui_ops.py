@@ -100,6 +100,7 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp:
         for name, fn in sorted(globals().items()):
             if name.startswith("t_") and callable(fn):
+                # parameterized tests get exactly one positional arg: the tempdir
                 fn(tmp) if inspect.signature(fn).parameters else fn()
                 print("ok", name)
     print("ALL PASS")

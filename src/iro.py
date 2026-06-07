@@ -659,21 +659,21 @@ def companion_status_data():
     try:
         cc = _companion()
         cmds = _companion_cmds(cc)
+        if cmds is None:
+            why = ("(Companion.exe not found — set IRO_COMPANION_EXE in .env)"
+                   if sys.platform.startswith("win") else f"(manual on {sys.platform})")
+            return companion_status_payload(False, False, None, why)
+        running = _companion_running(cc)
+        cfg = None
+        if running:
+            try:
+                with open(cc.companion_config_path(sys.platform), encoding="utf-8") as fh:
+                    cfg = json.load(fh)
+            except Exception:
+                cfg = None
+        return companion_status_payload(True, running, cfg)
     except Exception as exc:
         return companion_status_payload(False, False, None, f"check failed: {exc}")
-    if cmds is None:
-        why = ("(Companion.exe not found — set IRO_COMPANION_EXE in .env)"
-               if sys.platform.startswith("win") else f"(manual on {sys.platform})")
-        return companion_status_payload(False, False, None, why)
-    running = _companion_running(cc)
-    cfg = None
-    if running:
-        try:
-            with open(cc.companion_config_path(sys.platform), encoding="utf-8") as fh:
-                cfg = json.load(fh)
-        except Exception:
-            cfg = None
-    return companion_status_payload(True, running, cfg)
 
 
 def companion_status(rest):
@@ -1151,7 +1151,8 @@ def aggregate_status(_rest=None):
 
 
 def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None):
-    """Aggregate health for the Control Center dashboard (/api/status)."""
+    """Aggregate health for the Control Center dashboard (/api/status).
+    Each parameter is an optional zero-arg callable override (None = real probe)."""
     return {"version": version(),
             "relay": (relay or relay_status_data)(),
             "companion": (companion or companion_status_data)(),
