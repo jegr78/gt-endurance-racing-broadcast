@@ -72,6 +72,7 @@ YTDLP_FORMAT = "b[height<=1080]/b"   # prefer <=1080p, auto-fall back to lower
 YTDLP_FORMAT_POV = "b[height<=720]/b"  # driver-POV is shown small (PiP) -> cap at 720p
 STREAMLINK_SERVE = ["--ringbuffer-size", "64M", "--hls-live-edge", "4"]
 RESOLVE_RETRY = 15  # seconds between yt-dlp resolve attempts while a stint isn't live
+COOKIE_MAX_AGE_H = 12   # keep in sync with preflight.py cookies_status(max_age_hours)
 RETRY_SLEEP = 10    # seconds after a stream ends / manifest expires before re-resolving
 # Sheet ID is NOT hardcoded — it comes from IRO_SHEET_ID (env or a gitignored
 # .env at the repo/package root). See .env.example. Override per-run with --sheet-id.
@@ -1401,6 +1402,19 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
 def poller(source, interval, stop_evt):
     while not stop_evt.wait(interval):
         source.refresh()
+
+
+def cookie_health(path, now=None, max_age_hours=COOKIE_MAX_AGE_H):
+    """Cookie staleness for /status, computed on demand from the file mtime —
+    during a 24 h event the cookies age while the relay runs, so this must be
+    live, not a startup snapshot. Running cookie-less (path None / file gone)
+    is a legitimate configuration (public streams): present=False, stale=False
+    — the panel raises its cookie banner only on stale=True."""
+    if not path or not os.path.isfile(path):
+        return {"present": False, "age_h": None, "stale": False}
+    now = time.time() if now is None else now
+    age_h = round((now - os.path.getmtime(path)) / 3600, 1)
+    return {"present": True, "age_h": age_h, "stale": age_h > max_age_hours}
 
 
 def _cookie_hint(stderr_text, browser):
