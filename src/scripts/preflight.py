@@ -372,12 +372,21 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
                                  "in use — normal if the relay/feeds are running "
                                  "(`iro status` confirms); a conflict only if another app owns it"))
     for port, svc in SERVICE_PORTS:
-        # Not reachable just means it hasn't been launched yet (event start does
-        # that) — INFO, not a warning the operator must chase down.
-        ports.append(Result(PASS, f"port {port}", f"{svc} reachable")
-                     if port_reachable("127.0.0.1", port)
-                     else Result(INFO, f"port {port}",
-                                 f"{svc} not reachable yet — it is launched at event start"))
+        if svc == "OBS WebSocket":
+            ports.append(Result(PASS, f"port {port}",
+                                "OBS WebSocket reachable — one-button handover ready")
+                         if port_reachable("127.0.0.1", port)
+                         else Result(WARN, f"port {port}",
+                                     "OBS WebSocket not reachable — NEXT can't auto-cut; "
+                                     "enable obs-websocket in OBS "
+                                     "(Tools -> WebSocket Server Settings)"))
+        else:
+            # Not reachable just means it hasn't been launched yet (event start does
+            # that) — INFO, not a warning the operator must chase down.
+            ports.append(Result(PASS, f"port {port}", f"{svc} reachable")
+                         if port_reachable("127.0.0.1", port)
+                         else Result(INFO, f"port {port}",
+                                     f"{svc} not reachable yet — it is launched at event start"))
     cookies = [cookies_status(resolve_cookies_path(preflight_file, runtime_dir, cookies_opt))]
     sheet_id = os.environ.get("IRO_SHEET_ID")
     if sheet_id:

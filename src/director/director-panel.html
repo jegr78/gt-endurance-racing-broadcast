@@ -677,6 +677,11 @@ async function relayPoll(){
         `COOKIES ${Math.round(ck.age_h)} H OLD — next handover may fail · ` +
         `run 'iro cookies firefox' on the producer machine`);
     else clearBanner("cookies");
+    if (d.obs && d.obs.reachable === false)
+      setBanner("obs", "amber",
+        "OBS NOT REACHABLE — NEXT can't auto-cut · use the manual FEED/scene buttons; " +
+        "Feed " + (d.feeds.A.state === "serving" ? "A" : "B") + " state shown above");
+    else clearBanner("obs");
   }catch(e){
     relayLed(false);
     setBanner("relay", "red", "RELAY UNREACHABLE — feed & timer buttons will not work");
