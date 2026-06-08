@@ -36,6 +36,25 @@ def t_feed_has_fmt_attr():
     assert f.fmt == "b[height<=720]/b"
 
 
+def t_current_channel_idles_past_end():
+    # idx beyond the schedule -> idle (None), NOT a clamp onto the last stint
+    f = m.Feed("B", 53002, 1, lambda: ["https://youtu.be/only"], HERE)
+    assert f.current_channel() == (None, 1)        # one link, B on slot 2 -> idle
+    f2 = m.Feed("B", 53002, 0, lambda: ["https://youtu.be/only"], HERE)
+    assert f2.current_channel() == ("https://youtu.be/only", 0)
+
+
+def t_set_index_allows_one_past_end_for_idle():
+    f = m.Feed("A", 53001, 0, lambda: ["a", "b"], HERE)
+    assert f.set_index(2) is True                  # len 2 -> idle slot 2 is reachable
+    assert f.idx == 2
+    assert f.current_channel() == (None, 2)        # idles
+    f2 = m.Feed("A", 53001, 0, lambda: ["a", "b"], HERE)
+    assert f2.set_index(99) is True                # clamps to len (idle sentinel) from idx 0
+    assert f2.idx == 2
+    assert f2.set_index(99) is False               # already at the sentinel -> no-op
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

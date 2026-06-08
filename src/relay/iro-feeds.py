@@ -1112,10 +1112,9 @@ class Feed:
             return None, self.idx
         sched = self.provider()
         with self.lock:
-            if not sched:
-                return None, self.idx
-            i = min(self.idx, len(sched) - 1)
-            return sched[i], i
+            if not sched or self.idx >= len(sched):
+                return None, self.idx          # idle: empty schedule or own slot not filled yet
+            return sched[self.idx], self.idx
 
     def is_serving(self):
         p = self.proc
@@ -1140,8 +1139,7 @@ class Feed:
 
     def set_index(self, new_idx):
         sched = self.provider()
-        hi = max(0, len(sched) - 1)
-        new_idx = max(0, min(new_idx, hi))
+        new_idx = max(0, min(new_idx, len(sched)))   # len == idle slot (one past the last stint)
         with self.lock:
             if new_idx == self.idx:
                 return False
@@ -1671,8 +1669,8 @@ def main():
     source = ScheduleSource(csv_url, cache, local)
     source.load_initial(SCHEDULE_TEMPLATE)
     if len(source.get()) < 2:
-        print("WARN: schedule has fewer than 2 stints — Feed A and Feed B will serve the "
-              "SAME stream (no off-air feed to hand over to).")
+        print("INFO: schedule has fewer than 2 stints — Feed B idles on the empty next "
+              "slot (black) until that stint's link is added; Feed A keeps serving stint 1.")
 
     relay = Relay(source, ports, logdir, cookies,
                   pov_source=pov_source, pov_port=args.pov_port,
