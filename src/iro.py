@@ -1875,9 +1875,30 @@ def _ui_modules():
     return ui_server, ui_jobs, ui_ops
 
 
+def _iro_job_executable(frozen=IS_FROZEN, executable=None, win=None):
+    """Path to the `iro` binary that runs Control Center jobs. When the server
+    is launched by iro-ui (a sibling binary), jobs must still invoke `iro`, not
+    iro-ui. Frozen: the sibling iro/iro.exe next to the running executable.
+    Dev: the interpreter itself (paired with iro.py by job_argv)."""
+    executable = sys.executable if executable is None else executable
+    win = (os.name == "nt") if win is None else win
+    if frozen:
+        return os.path.join(os.path.dirname(executable),
+                            "iro.exe" if win else "iro")
+    return executable
+
+
 def ui_cmd(rest):
     """Run the Control Center web server in the foreground (Ctrl+C stops it).
     Spec: docs/superpowers/specs/2026-06-07-control-center-design.md."""
+    return run_ui(rest, fail=sys.exit, open_browser="--no-browser" not in rest)
+
+
+def run_ui(rest, fail=sys.exit, open_browser=True):
+    """Shared Control Center server core for both entrypoints. `fail(msg)` is
+    called on a fatal startup error (port taken / bind failure): the CLI passes
+    sys.exit; iro_ui passes a native-dialog variant. Returns None when the
+    server has stopped."""
     srv, jobs_mod, ops_mod = _ui_modules()
     for key, val in _read_env_file().items():
         os.environ.setdefault(key, val)        # IRO_UI_PORT from .env (env wins)
@@ -1885,11 +1906,12 @@ def ui_cmd(rest):
     instance = srv.probe_instance("127.0.0.1", port)
     if instance == "ours":
         print(f"Control Center already running on port {port} — opening the browser.")
-        _open_url(_http_url("127.0.0.1", port, "/"))
+        if open_browser:
+            _open_url(_http_url("127.0.0.1", port, "/"))
         return None
     if instance == "foreign":
-        sys.exit(f"iro: port {port} is in use by another application — set "
-                 "IRO_UI_PORT in .env to a free port and retry.")
+        return fail(f"iro: port {port} is in use by another application — set "
+                    "IRO_UI_PORT in .env to a free port and retry.")
 
     # The GitHub release check is one network round-trip — cache a good result
     # for an hour so the Home dashboard can call it freely (and so we never spam
@@ -1931,7 +1953,8 @@ def ui_cmd(rest):
         "env_read": env_entries_data,
         "env_write": env_write_data,
         "jobs": jobs_mod.JobManager(
-            lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN, sys.executable,
+            lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN,
+                                             _iro_job_executable(),
                                              os.path.join(HERE, "iro.py")),
             env=_frozen_child_env()),
         "log_paths": {"relay": _relay_log_path,
@@ -1941,11 +1964,11 @@ def ui_cmd(rest):
     try:
         httpd = srv.serve(ctx, "127.0.0.1", port)
     except OSError as exc:
-        sys.exit(f"iro: could not bind port {port} ({exc}) — set IRO_UI_PORT "
-                 "in .env to a free port and retry.")
+        return fail(f"iro: could not bind port {port} ({exc}) — set IRO_UI_PORT "
+                    "in .env to a free port and retry.")
     url = _http_url("127.0.0.1", port, "/")
     print(f"Control Center: {url}  (Ctrl+C or the Quit button stops it)")
-    if "--no-browser" not in rest:
+    if open_browser:
         _open_url(url)
     try:
         httpd.serve_forever()

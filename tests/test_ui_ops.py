@@ -600,6 +600,22 @@ def t_init_step_action_rejects_job_steps():
     assert "cookies" in res["error"]
 
 
+def t_iro_job_executable_frozen_uses_sibling():
+    # frozen iro-ui must spawn the sibling `iro`, not itself
+    posix = iro._iro_job_executable(frozen=True,
+                                    executable="/opt/iro/iro-ui", win=False)
+    assert posix == "/opt/iro/iro"
+    win = iro._iro_job_executable(frozen=True,
+                                  executable="C:\\iro\\iro-ui.exe", win=True)
+    assert win.endswith("iro.exe")
+
+
+def t_iro_job_executable_dev_uses_interpreter():
+    # non-frozen: the running interpreter (paired with iro.py)
+    assert iro._iro_job_executable(frozen=False, executable="/usr/bin/python3",
+                                   win=False) == "/usr/bin/python3"
+
+
 if __name__ == "__main__":
     import inspect, tempfile
     with tempfile.TemporaryDirectory() as tmp:
