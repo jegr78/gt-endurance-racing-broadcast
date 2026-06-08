@@ -1917,6 +1917,8 @@ def ui_cmd(rest):
         "streams_write": streams_config_write_data,
         "docs": docs_data,
         "docs_content": docs_content,
+        "init_plan": _init_plan,
+        "init_step": init_step_action_data,
         "ops": ops_mod.OPS,
         "build_argv": ops_mod.build_argv,
         "assets": assets_status_data,
