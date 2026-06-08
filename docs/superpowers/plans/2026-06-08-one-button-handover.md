@@ -777,6 +777,6 @@ git commit -m "docs(wiki): one-button handover flow for the director + relay mod
 
 - **Spec coverage:** Change 1 → Tasks 1-2; Change 2 → Tasks 3-5; §5 failure handling → Task 6; §7 instant inject → Tasks 7-8; §8 testing folded into each task; docs → Task 9. All spec sections map to a task.
 - **Type/name consistency:** `feed_state_intents` / `reflect_feed_state` (obs_ws), `live_feed` / `live_after_next` / `_reflect` / `obs_note` (Relay), `inject_row` (ScheduleSource), `schedule_source` (SetupControl) — used identically across tasks and tests.
-- **Invariant check:** "new live = non-advanced feed" holds because Task 1 keeps `A.idx`/`B.idx` always distinct (B = A+1 at start; each `/next` advances exactly one by +2, preserving the offset), so `live_feed()`'s `A.idx <= B.idx` is unambiguous.
+- **Invariant check:** "new live = non-advanced feed" holds because Task 1 keeps `A.idx`/`B.idx` always distinct (B = A+1 at start; each `/next` advances exactly one by +2, preserving the offset), so `live_feed()`'s `A.idx <= B.idx` is unambiguous — this holds through the last real handover; past end-of-schedule both feeds reach the idle sentinel (a benign tie), and the serving-gated cut + reflection prevent any wrong-feed program cut or on-air visibility flip in that case.
 - **Out of scope (unchanged):** POV feed, Discord audio, manual `/set/A|B` + `/prev` (fallback/expert ops, intentionally not auto-reflected), `/reload` (same stint → no identity change), HUD/timer/graphics, pull pipeline.
 ```

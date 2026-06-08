@@ -1300,8 +1300,9 @@ class Relay:
         new_live = self.live_after_next()
         target = "A" if new_live == "B" else "B"     # advance the OTHER (currently on-air) feed
         result = self.advance(target, +2)
-        cut = self.feeds[new_live].phase == "serving"  # never auto-cut to a black/buffering feed
-        self._reflect(new_live, cut)
+        cut = self.feeds[new_live].phase == "serving"  # only hand over to a feed that is actually live
+        if cut:
+            self._reflect(new_live, cut=True)        # never flip visibility/audio onto a black/not-yet-serving feed
         return {**result, "obs_cut": cut}
 
     def advance(self, which, delta):

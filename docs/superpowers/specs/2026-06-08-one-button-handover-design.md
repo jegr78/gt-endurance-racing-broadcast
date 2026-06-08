@@ -66,6 +66,11 @@ rather than duplicating the live stint. This yields the universal invariant:
 > **New live feed = the feed that `/next` did *not* advance** — always: full
 > schedule, single link, or mid-event takeover.
 
+This holds through the last real handover. Pressing `/next` *past* the last stint drives
+both feeds to the idle sentinel (a benign tie); the cut guard — and the fact that the
+reflection itself only fires when the incoming feed is `serving` — ensure no wrong-feed
+program cut and no on-air visibility flip in that case.
+
 Consequences:
 - No `A.idx == B.idx` tie → no off-by-one → no special case.
 - No on-air flash: the new live feed is always the pre-warmed (or visibly-black)
@@ -94,11 +99,12 @@ generic and already speaks v5):
 - **On `/next` only:** also `SetCurrentProgramScene("Stint")` — the automatic cut
   from Splitscreen to single.
 
-**Auto-cut guard:** the program cut on `/next` should fire only when the new live
-feed is confirmed `serving`; if it is not yet resolved (e.g. a link entered seconds
-earlier), the relay still advances the feeds and reflects visibility/audio, but holds
-the program scene and surfaces a clear notice — never auto-cut to a black/buffering
-feed.
+**Auto-cut guard:** on `/next`, the relay holds **both** the program cut and the
+visibility/audio reflection until the incoming feed is confirmed `serving`; if it is
+not yet resolved (e.g. a link entered seconds earlier), the relay still advances the
+feed indices but neither flips the Stint-scene source visibility/audio nor cuts the
+program scene — never touching the on-air picture when the incoming feed is
+black/buffering.
 
 The orchestration is split into a **pure planner** (`feed_state → list of obs
 requests`) and a thin best-effort **apply** (the I/O), so the planner is unit-testable

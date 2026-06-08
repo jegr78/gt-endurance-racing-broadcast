@@ -91,6 +91,38 @@ def t_cold_start_one_link_then_add_second():
     assert r.live_feed() == "B" and r.B.current_channel() == ("s2", 1)
 
 
+def t_next_reflects_only_when_incoming_serving():
+    r = _relay(["s1", "s2", "s3", "s4"])
+    calls = []
+    r._reflect = lambda live, cut: calls.append((live, cut))
+    r.feeds["B"].phase = "idle"                 # incoming feed not yet serving
+    out = r.next_auto()
+    assert out["obs_cut"] is False
+    assert calls == []                          # no visibility/audio flip onto a non-serving feed
+    r.feeds["A"].phase = "serving"              # next incoming feed is live
+    out2 = r.next_auto()
+    assert out2["obs_cut"] is True
+    assert calls == [("A", True)]
+
+
+def t_set_stint_reflects_live_feed_without_cut():
+    r = _relay(["s1", "s2", "s3", "s4"])
+    calls = []
+    r._reflect = lambda live, cut: calls.append((live, cut))
+    r.set_stint(3)                              # stint 3 on air -> A=2, B=3, live=A
+    assert (r.A.idx, r.B.idx) == (2, 3)
+    assert calls == [("A", False)]
+
+
+def t_next_past_end_is_idle_no_cut():
+    r = _relay(["s1", "s2"])
+    r.feeds["B"].phase = "serving"
+    r.next_auto()                               # the one real handover: B (s2) on air
+    assert r.live_feed() == "B"
+    out = r.next_auto()                         # over-press past the last stint
+    assert out["obs_cut"] is False              # incoming feed idle -> no cut, no crash
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
