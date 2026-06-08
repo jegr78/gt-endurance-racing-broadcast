@@ -1631,6 +1631,20 @@ def _wiki_repo():
         return "jegr78/IRO_Broadcast_Setup"
 
 
+def _resolve_doc(rel, resolve):
+    """Path of a bundled doc, or None. Checks src/docs/<f> (repo + binary, where
+    docs keep their docs/ prefix) AND the bare basename (the distributed package:
+    build.py copies the doc files to the package root)."""
+    for cand in (rel, os.path.basename(rel)):
+        try:
+            p = resolve(cand)
+            if os.path.isfile(p):
+                return p
+        except Exception:
+            pass
+    return None
+
+
 def docs_data(resolve=None):
     """Help/Docs resources for the Control Center: the bundled local docs that
     are actually present (served via /api/docs/file/<key>) plus the canonical
@@ -1641,11 +1655,7 @@ def docs_data(resolve=None):
     wiki = f"https://github.com/{repo}/wiki"
     local = []
     for key, rel in DOCS_FILES.items():
-        try:
-            present = os.path.isfile(resolve(rel))
-        except Exception:
-            present = False
-        if present:
+        if _resolve_doc(rel, resolve):
             title, desc = _DOC_TITLES[key]
             local.append({"key": key, "title": title, "desc": desc,
                           "kind": "html" if rel.endswith(".html") else "markdown"})
@@ -1663,12 +1673,7 @@ def docs_file_path(key, resolve=None):
     rel = DOCS_FILES.get(key)
     if not rel:
         return None
-    resolve = resolve or resource_path
-    try:
-        path = resolve(rel)
-        return path if os.path.isfile(path) else None
-    except Exception:
-        return None
+    return _resolve_doc(rel, resolve or resource_path)
 
 
 def _read_env_file():

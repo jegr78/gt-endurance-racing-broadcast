@@ -11,6 +11,10 @@ SRC = os.path.join(ROOT, "src")
 # Bundled data, laid out under _MEIPASS/src/ so every script's here-relative
 # path resolution (hud.html, assets/, OBS template) keeps working unchanged.
 DATA = ["relay", "scripts", "obs", "assets", "companion", "director", "ui", "setup-assets.py"]
+# Operator docs the Control Center's Help page serves (iro.DOCS_FILES) — only
+# these, kept under src/docs/; the docs/wiki/ subtree stays on GitHub.
+DOC_FILES = ["docs/IRO_cheat_sheets.html", "docs/IRO_Broadcast_Setup_Guide.md",
+             "docs/README_SETUP.md"]
 
 # The bundled scripts (relay, oneshots) are loaded at runtime via importlib, so
 # PyInstaller's static analyser cannot see their imports.  List every stdlib
@@ -79,6 +83,12 @@ def main():
         # in-process import then dies with EACCES trying to open() it.
         dest = f"src/{rel}" if os.path.isdir(path) else "src"
         cmd += ["--add-data", f"{path}{sep}{dest}"]
+    # The Control Center's Help page serves these three docs (iro.DOCS_FILES).
+    # Bundle them under src/docs/ (real dir DEST -> file lands inside) so
+    # resource_path("docs/<f>") finds them. The docs/wiki/ subtree is NOT bundled
+    # — it lives on GitHub and the Help page links to it.
+    for rel in DOC_FILES:
+        cmd += ["--add-data", f"{os.path.join(SRC, rel)}{sep}src/docs"]
     cmd.append(os.path.join(SRC, "iro.py"))
     print("Running:", " ".join(cmd), flush=True)
     if subprocess.call(cmd) != 0:
@@ -124,6 +134,7 @@ def smoke(binary, version):
                          "the throwaway _MEIPASS unpack dir (paths die with the process)")
     # `ui` starts the Control Center server in-process from the bundled
     # src/ui/ modules — catches a missing ui/ in DATA (ModuleNotFoundError).
+    import json
     import time
     import urllib.request
     env = os.environ.copy()
@@ -146,6 +157,16 @@ def smoke(binary, version):
             out = ui.stdout.read().decode("utf-8", "replace") if ui.poll() is not None else ""
             sys.exit(f"smoke ui FAILED: no Control Center ping on :8389 "
                      f"(rc={ui.poll()}) out={out!r}")
+        # Help page docs must be bundled (DOC_FILES under src/docs/) — catches a
+        # regression where the binary lists no local docs / 404s the cheat sheet.
+        with urllib.request.urlopen("http://127.0.0.1:8389/api/docs", timeout=2) as r:
+            docs = json.loads(r.read())
+        if not any(d.get("key") == "cheat-sheet" for d in docs.get("local", [])):
+            sys.exit(f"smoke ui FAILED: cheat sheet not bundled (local={docs.get('local')!r})")
+        with urllib.request.urlopen("http://127.0.0.1:8389/api/docs/file/cheat-sheet",
+                                    timeout=2) as r:
+            if b"<html" not in r.read().lower():
+                sys.exit("smoke ui FAILED: bundled cheat sheet did not serve as HTML")
         urllib.request.urlopen(urllib.request.Request(
             "http://127.0.0.1:8389/api/quit", method="POST", data=b""), timeout=5).read()
         ui.wait(timeout=10)
