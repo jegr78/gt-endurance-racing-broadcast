@@ -14,53 +14,65 @@ flowchart LR
   E --> F["Wrap up<br/>stop stream and relay"]
 ```
 
-## One-command bring-up
+## One-click bring-up
 
-On the event day, start everything with:
+On the event day, open the **[Control Center](Control-Center)** (double-click
+`iro-ui`) and press **Start event** on the **Home** dashboard.
 
-    iro event start
+![The Control Center Home dashboard](images/cc-home.png)
 
-This launches Tailscale, Discord, the relay, OBS and Companion (in that
-order) and ends with a readiness report. Re-check any time with
-`iro event status` — it verifies the apps and services are running and that
-cookies, graphics and the intro/outro clips are present, and names the exact
-fix command for anything missing.
+This launches Tailscale, Discord, the relay, OBS and Companion (in that order).
+The dashboard then shows each one's state at a glance, plus tiles for Preflight,
+Assets and Cookies readiness — so you can see what's still missing and fix it from
+the matching view.
 
-> **Page updates:** `iro event start` re-loads the HUD/timer browser sources
+> **Page updates:** starting the event re-loads the HUD/timer browser sources
 > automatically when an update changed them. If a page ever looks stale,
 > `iro obs refresh` (or right-click the source → Refresh) forces it.
 
-After the broadcast, `iro event stop` stops the relay and Companion; OBS,
-Discord and Tailscale stay running. If OBS is still open, the stop also asks
-it (via the OBS WebSocket, port 4455) to drop its connections to the dead
-feeds — otherwise OBS would pin the feed ports until it restarts and the next
-preflight would warn "port in use". The feed sources reconnect automatically
-the next time their scene goes active.
+After the broadcast, press **Stop event** — it stops the relay and Companion;
+OBS, Discord and Tailscale stay running. If OBS is still open, the stop also asks
+it (via the OBS WebSocket, port 4455) to drop its connections to the dead feeds —
+otherwise OBS would pin the feed ports until it restarts and the next preflight
+would warn "port in use". The feed sources reconnect automatically the next time
+their scene goes active.
+
+> **CLI alternative:** `iro event start` (bring-up), `iro event status`
+> (readiness report — names the exact fix command for anything missing),
+> `iro event stop` (wind-down).
 
 ## Before you go live
 
-1. **Update the tool:** `iro update` — picks up the latest release (skip if the team froze the version for the event).
+Do this from the Control Center; the CLI alternative is shown for each.
+
+1. **Update the tool.** The Control Center flags an available update in the
+   sidebar. Apply it (skip if the team froze the version for the event).
+   *CLI: `iro update`.*
 2. **Reboot** the PC (frees memory) and close heavy apps.
-3. **Update the tools:** `iro install-tools --update`. Outdated tools are the #1
-   cause of a feed not starting. (Manual alternative: `brew upgrade streamlink yt-dlp`
-   on macOS/Linux · `winget upgrade yt-dlp.yt-dlp Streamlink.Streamlink` on Windows.)
-4. **Refresh cookies:** `iro cookies firefox` (log into YouTube in Firefox first).
-5. **Refresh the intro/outro clips** (only if their URLs changed):
-   `iro media` — pulls the URLs from the Sheet **Assets** tab and
-   downloads `runtime/media/intro.mp4` / `outro.mp4`.
-6. **Refresh the graphics:** `iro graphics` — pulls every graphic from
-   the Sheet **Assets** tab into `runtime/graphics/` (Standings, Schedule, Race/Quali
-   Results, the three weather overlays, Standby, …). Run it whenever the sheet graphics
-   changed. The **weather** graphics are then available as full-screen toggles during the
-   race (see [Director guide](Director)).
-7. **Pre-flight check:** `iro preflight` — fix anything it flags.
-8. **Start the feeds and apps:** `iro event start` brings up Tailscale, Discord,
-   the relay, OBS and Companion in one go. If Tailscale's backend is stopped,
-   `event start` connects it automatically — no click in the Tailscale GUI needed.
-   Alternatively, start them individually: `iro relay start` then `iro companion
-   start`. Confirm each live feed shows up in OBS.
-9. Make sure **Companion** is connected (green) and a director can reach
-   `http://<producer-tailscale-ip>:8000/tablet` (first-time directors:
+3. **Update the tools:** **Tools → Update all**. Outdated tools are the #1 cause of
+   a feed not starting. *CLI: `iro install-tools --update`* (manual alternative:
+   `brew upgrade streamlink yt-dlp` on macOS/Linux · `winget upgrade yt-dlp.yt-dlp
+   Streamlink.Streamlink` on Windows).
+4. **Refresh cookies:** **Assets → Cookies → Refresh** (pick the browser; log into
+   YouTube in it first). *CLI: `iro cookies firefox`.*
+5. **Refresh the intro/outro clips** (only if their URLs changed): **Assets →
+   Media → Download** — pulls the URLs from the Sheet **Assets** tab and downloads
+   `runtime/media/intro.mp4` / `outro.mp4`. *CLI: `iro media`.*
+6. **Refresh the graphics:** **Assets → Graphics → Download** — pulls every graphic
+   from the Sheet **Assets** tab into `runtime/graphics/` (Standings, Schedule,
+   Race/Quali Results, the three weather overlays, Standby, …). Run it whenever the
+   sheet graphics changed. The **weather** graphics are then available as full-screen
+   toggles during the race (see [Director guide](Director)). *CLI: `iro graphics`.*
+7. **Pre-flight check:** **Preflight → Run** — fix anything it flags.
+   *CLI: `iro preflight`.*
+8. **Start the feeds and apps:** **Home → Start event** brings up Tailscale,
+   Discord, the relay, OBS and Companion in one go. If Tailscale's backend is
+   stopped, this connects it automatically — no click in the Tailscale GUI needed.
+   (Or start them individually from **Relay** and **Apps**.) Confirm each live feed
+   shows up in OBS. *CLI: `iro event start`, or `iro relay start` then
+   `iro companion start`.*
+9. On the **Home** dashboard, make sure **Companion** is connected and a director
+   can reach `http://<producer-tailscale-ip>:8000/tablet` (first-time directors:
    [Director setup](Director-Setup)).
 10. **Enter the IRO stream key** in OBS (**Settings → Stream**).
 
@@ -150,10 +162,11 @@ Feed A and preloads stint N+1 on Feed B; from there `/next` works as usual.
 Which feed carries which stint may therefore differ between the parts — that
 is fine.
 
-1. Incoming producer: `iro event start --stint <N>` — N is the stint **on air
-   right now** (1-based, from the schedule sheet / Discord). Taking over right
-   at a stint change (e.g. a part boundary like "end of stint 3"): pass the
-   stint that is starting.
+1. Incoming producer: on the Control Center **Home**, type the stint into the
+   field next to **Start event** and press it — N is the stint **on air right
+   now** (1-based, from the schedule sheet / Discord). Taking over right at a
+   stint change (e.g. a part boundary like "end of stint 3"): pass the stint that
+   is starting. *CLI: `iro event start --stint <N>`.*
 2. Verify Feed A shows the expected commentator (`/status` or the OBS
    preview).
 3. Start your OBS stream with this part's stream key — the overlap begins.
