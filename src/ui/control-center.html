@@ -224,6 +224,10 @@
            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .gallery-empty { color:var(--faint); font:12px var(--mono); padding:10px 8px; }
   .evnote { color:var(--dim); font:12px/1.6 var(--mono); margin:14px 2px 0; }
+  /* Help & Docs */
+  .docname { width:148px; font-weight:600; font-size:14px; flex:0 0 auto; }
+  .dlink { color:var(--accent); text-decoration:none; }
+  .dlink:hover { text-decoration:underline; }
 
   /* Settings (.env) editor */
   .envhead { display:flex; gap:8px; padding:2px 8px 10px;
@@ -327,6 +331,8 @@
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</button>
       <button class="navitem" data-nav="logs" onclick="showView('logs')">
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>Logs</button>
+      <button class="navitem" data-nav="help" onclick="showView('help')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Help &amp; Docs</button>
     </div>
     <div class="navfoot">
       <a id="panel-link" class="navitem" href="#" target="_blank" hidden>
@@ -547,6 +553,30 @@
           </select></div>
         <pre id="svclog"></pre>
       </div>
+
+      <!-- ===== Help & Docs ===== -->
+      <div class="view" data-view="help" hidden>
+        <div class="viewhead"><h2>Help &amp; Docs</h2>
+          <span class="spacer"></span>
+          <a id="wiki-open" class="linkbtn" target="_blank" rel="noopener" href="#">Open the wiki ↗</a></div>
+        <section>
+          <h2>On this machine</h2>
+          <div id="local-docs"><div class="row"><span class="dim">loading…</span></div></div>
+        </section>
+        <section>
+          <h2>Guides — rendered on the GitHub wiki</h2>
+          <div class="row"><span class="docname">Setup guide</span>
+            <span class="dim grow">Set up &amp; configure the broadcast PC, step by step.</span>
+            <a class="linkbtn" id="g-setup" target="_blank" rel="noopener">Open ↗</a></div>
+          <div class="row"><span class="docname">Director guide</span>
+            <span class="dim grow">For directors running the panel over Tailscale.</span>
+            <a class="linkbtn" id="g-director" target="_blank" rel="noopener">Open ↗</a></div>
+          <div class="row"><span class="docname">Run an event</span>
+            <span class="dim grow">Event-day workflow and checklist.</span>
+            <a class="linkbtn" id="g-event" target="_blank" rel="noopener">Open ↗</a></div>
+        </section>
+        <p class="envhint">The cheat sheet opens locally and works offline; the guides open the always-current rendered pages on the GitHub wiki. Found a bug or have a question? <a id="issues-link" class="dlink" target="_blank" rel="noopener">Open an issue on GitHub ↗</a></p>
+      </div>
     </main>
 
     <!-- ===== docked console (job output) ===== -->
@@ -578,7 +608,7 @@ const $ = id => document.getElementById(id);
 let jobES = null, logES = null;
 
 let setupLoaded = false, preflightRun = false, assetsLoaded = false,
-    settingsLoaded = false, streamsLoaded = false;
+    settingsLoaded = false, streamsLoaded = false, docsLoaded = false;
 let currentView = 'home', lastStatus = null;
 
 function showView(name) {
@@ -598,6 +628,7 @@ function showView(name) {
   if (name === 'preflight' && !preflightRun) { preflightRun = true; runPreflight(); }
   if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
   if (name === 'streams' && !streamsLoaded) { streamsLoaded = true; loadStreams(); }
+  if (name === 'help' && !docsLoaded) { docsLoaded = true; fetchDocs(); }
   // entering Home: refresh the live relay stats right away (don't wait for the poll)
   if (name === 'home' && lastStatus && lastStatus.relay
       && lastStatus.relay.alive && lastStatus.relay.http_ok) fetchRelayLive();
@@ -1334,6 +1365,45 @@ async function saveStreams() {
   b.textContent = 'Saved ✓';
   setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
   loadStreams();                         // reflect the canonical file
+}
+
+// ----- Help & Docs (local docs + wiki links) -----
+async function fetchDocs() {
+  let d;
+  try { d = await (await fetch('/api/docs', {cache: 'no-store'})).json(); }
+  catch (e) { return; }
+  if (!d.ok) return;
+  $('wiki-open').href = d.wiki_url;
+  $('g-setup').href = d.setup_url;
+  $('g-director').href = d.director_url;
+  $('g-event').href = d.event_url;
+  $('issues-link').href = d.issues_url;
+  const c = $('local-docs');
+  c.textContent = '';
+  if (!d.local.length) {
+    const e = document.createElement('div');
+    e.className = 'row';
+    e.innerHTML = '<span class="dim">no local docs bundled</span>';
+    c.appendChild(e);
+    return;
+  }
+  d.local.forEach(doc => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const nm = document.createElement('span');
+    nm.className = 'docname';
+    nm.textContent = doc.title;
+    const ds = document.createElement('span');
+    ds.className = 'dim grow';
+    ds.textContent = doc.desc;
+    const a = document.createElement('a');
+    a.className = 'linkbtn';
+    a.target = '_blank'; a.rel = 'noopener';
+    a.href = '/api/docs/file/' + encodeURIComponent(doc.key);
+    a.textContent = doc.kind === 'html' ? 'Open ↗' : 'View ↗';
+    row.append(nm, ds, a);
+    c.appendChild(row);
+  });
 }
 
 function watchLog(name) {

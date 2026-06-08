@@ -65,7 +65,8 @@ def _allowed(_handler):
 def make_handler(ctx):
     """ctx: version, page_path, status() -> dict, relay_live() -> dict,
     obs_ws() -> dict, update_check(force) -> dict, streams_read() -> dict,
-    streams_write(entries) -> dict, ops {name: argv},
+    streams_write(entries) -> dict, docs() -> dict, docs_path(key) -> path|None,
+    ops {name: argv},
     build_argv(name, params) -> argv (raises ValueError), assets() -> dict,
     asset_files() -> dict, asset_roots {kind: dir},
     tools() -> dict, apps() -> dict, preflight() -> dict,
@@ -77,7 +78,10 @@ def make_handler(ctx):
         _CTYPES = {".png": "image/png", ".jpg": "image/jpeg",
                    ".jpeg": "image/jpeg", ".webp": "image/webp",
                    ".gif": "image/gif", ".mp4": "video/mp4",
-                   ".webm": "video/webm", ".mov": "video/quicktime"}
+                   ".webm": "video/webm", ".mov": "video/quicktime",
+                   ".html": "text/html; charset=utf-8",
+                   ".md": "text/plain; charset=utf-8",
+                   ".txt": "text/plain; charset=utf-8"}
 
         def log_message(self, *args):
             pass                                  # quiet — one consumer, localhost
@@ -217,6 +221,21 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"streams config read failed: {exc}"},
                                       code=500)
+            if path == "/api/docs":
+                try:
+                    return self._json(ctx["docs"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"docs listing failed: {exc}"},
+                                      code=500)
+            if path.startswith("/api/docs/file/"):
+                # key is looked up in an allowlist (docs_path -> None for anything
+                # unknown), so no path can be traversed out of the doc set.
+                key = unquote(path[len("/api/docs/file/"):])
+                full = ctx["docs_path"](key)
+                if not full:
+                    return self._not_found("doc not found")
+                return self._serve_file(full)
             if path == "/api/env":
                 try:
                     return self._json(ctx["env_read"]())

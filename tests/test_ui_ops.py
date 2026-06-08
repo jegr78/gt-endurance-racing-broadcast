@@ -512,6 +512,29 @@ def t_obs_ws_link_data_missing_config():
     assert d["ok"] and d["port"] == 4455 and d["password"] is None
 
 
+def t_docs_data_lists_present_only(tmp):
+    # only docs that exist on disk are listed; wiki URLs always present
+    open(os.path.join(tmp, "IRO_cheat_sheets.html"), "w").close()
+    def resolve(rel):
+        return os.path.join(tmp, os.path.basename(rel))
+    d = iro.docs_data(resolve=resolve)
+    keys = [x["key"] for x in d["local"]]
+    assert keys == ["cheat-sheet"]                       # only the html exists
+    assert d["local"][0]["kind"] == "html"
+    assert "/wiki" in d["wiki_url"] and "Director-Setup" in d["director_url"]
+
+
+def t_docs_file_path_allowlist(tmp):
+    open(os.path.join(tmp, "IRO_cheat_sheets.html"), "w").close()
+    def resolve(rel):
+        return os.path.join(tmp, os.path.basename(rel))
+    assert iro.docs_file_path("cheat-sheet", resolve=resolve).endswith(
+        "IRO_cheat_sheets.html")
+    assert iro.docs_file_path("setup-guide", resolve=resolve) is None  # not on disk
+    assert iro.docs_file_path("../../etc/passwd", resolve=resolve) is None
+    assert iro.docs_file_path("unknown", resolve=resolve) is None
+
+
 def t_app_control_ops_route():
     for name in ("obs-start", "obs-stop", "discord-start", "discord-stop",
                  "tailscale-start", "tailscale-stop"):

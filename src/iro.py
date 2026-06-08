@@ -1609,6 +1609,68 @@ def preflight_data(gather=None):
         return {"ok": False, "error": f"preflight failed: {exc}"}
 
 
+# Bundled operator docs the Control Center's Help page can open (allowlist —
+# only these keys map to a file, so the HTTP layer can serve nothing else).
+DOCS_FILES = {
+    "cheat-sheet":  "docs/IRO_cheat_sheets.html",
+    "setup-guide":  "docs/IRO_Broadcast_Setup_Guide.md",
+    "setup-readme": "docs/README_SETUP.md",
+}
+_DOC_TITLES = {
+    "cheat-sheet":  ("Cheat sheet", "Printable one-page reference for event day."),
+    "setup-guide":  ("Setup guide", "Full broadcast-PC install & configuration walkthrough."),
+    "setup-readme": ("Setup README", "Quick setup notes and command reference."),
+}
+
+
+def _wiki_repo():
+    try:
+        import update
+        return update.REPO
+    except Exception:
+        return "jegr78/IRO_Broadcast_Setup"
+
+
+def docs_data(resolve=None):
+    """Help/Docs resources for the Control Center: the bundled local docs that
+    are actually present (served via /api/docs/file/<key>) plus the canonical
+    GitHub wiki URLs for the rendered guides. Never raises. `resolve` is a test
+    seam."""
+    resolve = resolve or resource_path
+    repo = _wiki_repo()
+    wiki = f"https://github.com/{repo}/wiki"
+    local = []
+    for key, rel in DOCS_FILES.items():
+        try:
+            present = os.path.isfile(resolve(rel))
+        except Exception:
+            present = False
+        if present:
+            title, desc = _DOC_TITLES[key]
+            local.append({"key": key, "title": title, "desc": desc,
+                          "kind": "html" if rel.endswith(".html") else "markdown"})
+    return {"ok": True, "wiki_url": wiki,
+            "setup_url": f"{wiki}/Set-up-the-broadcast-PC",
+            "director_url": f"{wiki}/Director-Setup",
+            "event_url": f"{wiki}/Run-an-event",
+            "issues_url": f"https://github.com/{repo}/issues",
+            "local": local}
+
+
+def docs_file_path(key, resolve=None):
+    """Absolute path of an allowlisted bundled doc, or None for an unknown key
+    or a missing file. The HTTP layer serves only what this returns."""
+    rel = DOCS_FILES.get(key)
+    if not rel:
+        return None
+    resolve = resolve or resource_path
+    try:
+        path = resolve(rel)
+        return path if os.path.isfile(path) else None
+    except Exception:
+        return None
+
+
 def _read_env_file():
     try:
         with open(_env_file(), encoding="utf-8") as fh:
@@ -1771,6 +1833,8 @@ def ui_cmd(rest):
         "update_check": update_check_cached,
         "streams_read": streams_config_data,
         "streams_write": streams_config_write_data,
+        "docs": docs_data,
+        "docs_path": docs_file_path,
         "ops": ops_mod.OPS,
         "build_argv": ops_mod.build_argv,
         "assets": assets_status_data,

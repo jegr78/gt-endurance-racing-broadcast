@@ -71,6 +71,12 @@ def _ctx(jobs=None):
                                                   "channel": "UC1", "port": "53001"}]},
             "streams_write": lambda entries: {"ok": True, "path": "/x/streams.json",
                                               "_got": entries},
+            "docs": lambda: {"ok": True, "wiki_url": "https://example/wiki",
+                             "local": [{"key": "cheat-sheet", "title": "Cheat sheet",
+                                        "desc": "d", "kind": "html"}]},
+            "docs_path": lambda key: (os.path.join(ROOT, "src", "ui",
+                                      "control-center.html")
+                                      if key == "cheat-sheet" else None),
             "jobs": jobs or ui_jobs.JobManager(
                 lambda a: [sys.executable, "-c", "print('hi from job')"]),
             "log_paths": {},
@@ -170,6 +176,20 @@ def t_streams_get_and_post_routes():
         got = json.loads(body)
         assert code == 200 and got["ok"] and got["_got"] == [{"channel": "UC2",
                                                               "port": "53002"}]
+    finally:
+        httpd.shutdown()
+
+
+def t_docs_route_and_file():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/docs")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] and data["local"][0]["key"] == "cheat-sheet"
+        code, body = _get(port, "/api/docs/file/cheat-sheet")     # allowlisted -> served
+        assert code == 200 and b"<html" in body.lower()
+        code, _b = _get(port, "/api/docs/file/unknown")           # not allowlisted -> 404
+        assert code == 404
     finally:
         httpd.shutdown()
 
