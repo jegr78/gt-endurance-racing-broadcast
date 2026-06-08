@@ -1297,6 +1297,28 @@ def relay_live_data(fetch=None, started=None):
                       "end": t.get("end"), "server_now": t.get("server_now")}}
 
 
+def obs_ws_link_data(env=None, config_path=None):
+    """OBS-WebSocket connection details for auto-connecting the Director panel
+    from the Control Center: local OBS (127.0.0.1), the configured port, and the
+    password (IRO_OBS_WS_PASSWORD wins, else OBS's own stored one). Localhost-only
+    data — the Control Center puts it in the panel link's URL *fragment* (never
+    sent to a server). Never raises; password is None when not discoverable.
+    `env`/`config_path` are test seams."""
+    try:
+        import obs_ws
+        if env is None:
+            env = dict(_read_env_file())
+            env.update(os.environ)
+        path = config_path or obs_ws.default_config_path()
+        cfg = obs_ws.read_ws_config(path) or {}
+        return {"ok": True, "ip": "127.0.0.1",
+                "port": int(cfg.get("port") or 4455),
+                "password": obs_ws.find_password(env, path),
+                "auth_required": bool(cfg.get("auth_required", True))}
+    except Exception as exc:
+        return {"ok": False, "error": f"obs-websocket info unavailable: {exc}"}
+
+
 def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None,
                       cookies=None, apps_running=None):
     """Aggregate health for the Control Center dashboard (/api/status).
@@ -1745,6 +1767,7 @@ def ui_cmd(rest):
         "page_path": resource_path("ui/control-center.html"),
         "status": ui_status_payload,
         "relay_live": relay_live_data,
+        "obs_ws": obs_ws_link_data,
         "update_check": update_check_cached,
         "streams_read": streams_config_data,
         "streams_write": streams_config_write_data,

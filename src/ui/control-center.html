@@ -650,10 +650,12 @@ function updateHome(s) {
   // address; the panel link prefers the Tailscale IP so a remote director can
   // reach it over the tailnet (falls back to localhost when Tailscale is down).
   setShareLink('h-companion-open', 'h-companion-copy', s.companion.url || '');
-  const panelUrl = (relayUp && s.relay.http_ok)
+  const panelShare = (relayUp && s.relay.http_ok)
     ? 'http://' + (s.tailscale_ip || '127.0.0.1') + ':' + s.relay.port + '/panel'
     : '';
-  setShareLink('h-relay-open', 'h-relay-copy', panelUrl);
+  // Open auto-connects the local OBS (credential fragment); Copy stays plain.
+  setShareLink('h-relay-open', 'h-relay-copy', panelShare,
+               panelShare ? panelOpenUrl(s.relay.port) : '');
   // Cookies readiness tile — short label only (full detail lives on Assets).
   if (s.cookies) setTile('cookies',
       s.cookies.level === 'PASS' ? 'ok' : (s.cookies.level === 'FAIL' ? 'bad' : 'warn'),
@@ -777,10 +779,37 @@ async function checkUpdate(force) {
   }
 }
 
-function setShareLink(openId, copyId, url) {
+function setShareLink(openId, copyId, url, openUrl) {
   const a = $(openId), b = $(copyId);
   a.hidden = b.hidden = !url;
-  if (url) { a.href = url; b.dataset.url = url; }
+  // The Open button may carry credentials (openUrl); Copy gets the plain url so
+  // a shared link never contains the OBS password.
+  if (url) { a.href = openUrl || url; b.dataset.url = url; }
+}
+
+// OBS-WebSocket connection details (local OBS) for auto-connecting the Director
+// panel — fetched once; the password rides only in the panel link's URL fragment.
+let obsWs = null;
+
+async function fetchObsWs() {
+  try { obsWs = await (await fetch('/api/obs-ws', {cache: 'no-store'})).json(); }
+  catch (e) { return; }
+  if (lastStatus) refresh();             // rebuild the panel links now we have it
+}
+
+// Producer-local panel link: served from 127.0.0.1, with OBS credentials in the
+// fragment so the panel auto-connects to the local OBS. The fragment is never
+// sent to the relay and the panel strips it from the address bar after reading.
+function panelOpenUrl(relayPort) {
+  let u = 'http://127.0.0.1:' + relayPort + '/panel';
+  if (obsWs && obsWs.ok) {
+    const f = new URLSearchParams();
+    f.set('ip', obsWs.ip || '127.0.0.1');
+    f.set('port', obsWs.port || 4455);
+    if (obsWs.password != null) f.set('pw', obsWs.password);
+    u += '#' + f.toString();
+  }
+  return u;
 }
 
 async function copyLink(btn) {
@@ -813,8 +842,9 @@ async function refresh() {
     relayUp ? (s.relay.http_ok ? 'control OK on port ' + s.relay.port
                                : 'port ' + s.relay.port + ' not responding') : '');
   const panelUp = relayUp && s.relay.http_ok;
-  const panelHref = 'http://' + (s.tailscale_ip || '127.0.0.1') + ':' +
-                    s.relay.port + '/panel';
+  // The sidebar quick-link and the Relay-page Open are the producer's own links
+  // — give them the credential fragment so the panel auto-connects to local OBS.
+  const panelHref = panelOpenUrl(s.relay.port);
   $('panel-link').hidden = !panelUp;
   $('panel-link').href = panelHref;
   const relOpen = $('rel-panel-open');
@@ -1328,6 +1358,7 @@ refresh();
 setInterval(refresh, 3000);
 setInterval(renderTimer, 1000);          // tick the Home race-timer clock locally
 checkUpdate();                           // one-shot GitHub release check (cached server-side)
+fetchObsWs();                            // OBS-WS creds for the auto-connecting panel link
 // Populate the Home tiles on startup: preflight auto-runs (a few seconds), and
 // the cheap asset listing fills the Assets tile + gallery.
 preflightRun = true; runPreflight();

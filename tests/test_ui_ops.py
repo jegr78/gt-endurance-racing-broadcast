@@ -487,6 +487,31 @@ def t_streams_config_write_rejects_bad(tmp):
     assert not os.path.exists(p)                        # nothing written on error
 
 
+def t_obs_ws_link_data_from_config(tmp):
+    import json
+    cfg = os.path.join(tmp, "obs-ws-config.json")
+    with open(cfg, "w") as fh:
+        json.dump({"server_port": 4466, "server_password": "secret-pw",
+                   "auth_required": True}, fh)
+    d = iro.obs_ws_link_data(env={}, config_path=cfg)
+    assert d["ok"] and d["ip"] == "127.0.0.1" and d["port"] == 4466
+    assert d["password"] == "secret-pw" and d["auth_required"] is True
+
+
+def t_obs_ws_link_data_env_override(tmp):
+    import json
+    cfg = os.path.join(tmp, "obs-ws-config2.json")
+    with open(cfg, "w") as fh:
+        json.dump({"server_port": 4455, "server_password": "stored"}, fh)
+    d = iro.obs_ws_link_data(env={"IRO_OBS_WS_PASSWORD": "override"}, config_path=cfg)
+    assert d["password"] == "override"          # env wins over the stored password
+
+
+def t_obs_ws_link_data_missing_config():
+    d = iro.obs_ws_link_data(env={}, config_path="/nope/obs.json")
+    assert d["ok"] and d["port"] == 4455 and d["password"] is None
+
+
 def t_app_control_ops_route():
     for name in ("obs-start", "obs-stop", "discord-start", "discord-stop",
                  "tailscale-start", "tailscale-stop"):

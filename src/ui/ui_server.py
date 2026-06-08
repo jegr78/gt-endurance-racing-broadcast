@@ -64,7 +64,7 @@ def _allowed(_handler):
 
 def make_handler(ctx):
     """ctx: version, page_path, status() -> dict, relay_live() -> dict,
-    update_check(force) -> dict, streams_read() -> dict,
+    obs_ws() -> dict, update_check(force) -> dict, streams_read() -> dict,
     streams_write(entries) -> dict, ops {name: argv},
     build_argv(name, params) -> argv (raises ValueError), assets() -> dict,
     asset_files() -> dict, asset_roots {kind: dir},
@@ -194,6 +194,13 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"relay stats failed: {exc}"},
+                                      code=500)
+            if path == "/api/obs-ws":
+                try:
+                    return self._json(ctx["obs_ws"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"obs-websocket info failed: {exc}"},
                                       code=500)
             if path == "/api/update":
                 force = "force=1" in (urlparse(self.path).query or "")
