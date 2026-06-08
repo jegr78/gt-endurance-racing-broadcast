@@ -4,9 +4,15 @@ This package sets up a complete producer station for the IRO Endurance
 broadcast: OBS scenes + HUD, the Companion button board, the director panel,
 and the relay that pulls each commentator's stream into OBS.
 
+**Quickest start:** double-click **`iro-ui`** to open the **Control Center** — a
+local web dashboard that runs setup and event day from your browser, no terminal
+needed. The `iro …` commands below are the CLI alternative.
+
 **The documentation lives in the project wiki** — always current, written for
 first-time producers:
 
+- **The Control Center:**
+  <https://github.com/jegr78/IRO_Broadcast_Setup/wiki/Control-Center>
 - **First-time setup** (one time, ~30 min):
   <https://github.com/jegr78/IRO_Broadcast_Setup/wiki/Set-up-the-broadcast-PC>
 - **Event day:**

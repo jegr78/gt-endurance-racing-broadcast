@@ -12,6 +12,21 @@ Do this **once** per machine — about 30 minutes. When you're done, go to
   reboot before events; 32 GB is comfortable. A wired internet connection.
 - A **YouTube login** (for cookies) and the **shared Google Sheet** link from the team.
 
+## The easy way — the Control Center
+
+The release archive contains two binaries: **`iro`** (the CLI used throughout this
+page) and **`iro-ui`** (the **[Control Center](Control-Center)**, the recommended
+way to set up the station). Download it (step 1), then **double-click `iro-ui`**
+(`iro-ui.exe` / `iro-ui.app`; Linux `./iro-ui`) — it opens at
+`http://127.0.0.1:8089/` and its **Setup** view walks you through the install and
+asset steps with a progress checklist, no terminal needed.
+
+![The Setup wizard in the Control Center](images/cc-setup.png)
+
+The step-by-step terminal instructions below remain the **full reference** — use
+them to repeat or debug a single step, on headless Linux, or if you prefer the
+command line. Every step notes its `iro …` command.
+
 ## Never used a terminal?
 
 Sixty seconds of background, and every command on this page makes sense:
@@ -75,15 +90,15 @@ Then use `python3 src/iro.py …` wherever the docs say `iro …`, and copy
 `.env.example` to `.env` in the repo root yourself.
 </details>
 
-### The short way: `iro init`
+### The short way: the Setup wizard (or `iro init`)
 
-One command walks through the automatable steps on this page in order — it
-installs the tools and apps, exports YouTube cookies, downloads graphics and
-media, builds the OBS import collection, writes the Companion button config,
-and finishes with the preflight report:
+The Control Center's **Setup** view, and the `iro init` command, both walk through
+the automatable steps on this page in order — they install the tools and apps,
+export YouTube cookies, download graphics and media, build the OBS import
+collection, and write the Companion button config:
 
 ```
-iro init
+iro init      # the CLI equivalent of the Control Center's Setup view
 ```
 
 It skips whatever is already done, so re-running it is always safe. It pauses
@@ -179,6 +194,8 @@ text editor and fill in the required value from the team:
 
 Keep `.env` private; never share it. Full detail: [Configuration & secrets](Configuration).
 
+> **In the Control Center:** the **Settings** view edits `.env` with masked values.
+
 **You should now see:** your `.env` containing a filled `IRO_SHEET_ID=…` line.
 <!-- screenshot: .env open in an editor with IRO_SHEET_ID filled (value blurred) -->
 
@@ -194,6 +211,9 @@ iro media       # Intro/Outro clips   -> runtime/media/
 iro graphics    # broadcast graphics  -> runtime/graphics/
 iro setup --out runtime/IRO_Endurance.import.json
 ```
+
+> **In the Control Center:** **Assets → Download** fetches the graphics and media;
+> the **Setup** view's `setup` step builds the import collection.
 
 Then in OBS: **Scene Collection → Import →** pick that file, and switch to it. Don't move
 the folder afterwards. (Running `iro setup` before the downloads also works — it only
@@ -272,6 +292,8 @@ menu, and your invitation(s) showing in the Tailscale admin console
 ```bash
 iro preflight
 ```
+
+> **In the Control Center:** the **Preflight** view runs the same check — press **Run**.
 
 Fix anything it flags. Then you're ready → [Run an event](Run-an-event).
 

@@ -19,12 +19,16 @@ flowchart LR
   Dir(["Director<br/>remote, chooses what is shown"]) -.-> PC
 ```
 
-- **Get the tool:** download the `iro` binary for your OS from the
-  [latest release](https://github.com/jegr78/IRO_Broadcast_Setup/releases/latest)
-  — then follow [Set up the broadcast PC](Set-up-the-broadcast-PC).
+- **Get the tool:** download the release for your OS from the
+  [latest release](https://github.com/jegr78/IRO_Broadcast_Setup/releases/latest),
+  extract it, and double-click **`iro-ui`** to open the
+  [Control Center](Control-Center) — the web app that runs the whole station from
+  your browser. Then follow [Set up the broadcast PC](Set-up-the-broadcast-PC).
+  (Prefer a terminal? Everything is also an `iro …` command.)
 
 ## Pick your path
 
+- **What is the Control Center?** → [The Control Center](Control-Center)
 - **Setting up a machine for the first time?** → [Set up the broadcast PC](Set-up-the-broadcast-PC)
 - **Running a show today?** → [Run an event](Run-an-event)
 - **You're the remote director?** → [Director setup](Director-Setup) (first

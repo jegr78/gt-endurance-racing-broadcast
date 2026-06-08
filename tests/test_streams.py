@@ -59,6 +59,35 @@ def t_feed_process_matchers():
     assert not stop.looks_like_feed('"notepad.exe","123",...', windows=True)
 
 
+def t_load_feeds_falls_back_to_builtin():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        assert start.load_feeds(d) == start.FEEDS        # no streams.json -> built-in
+
+
+def t_load_feeds_reads_config():
+    import json, tempfile
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "streams.json"), "w") as fh:
+            json.dump([{"label": "X", "channel": "UC9", "port": "53005"},
+                       {"channel": "UC8", "port": "53006"}], fh)
+        assert start.load_feeds(d) == [("UC9", "53005"), ("UC8", "53006")]
+
+
+def t_load_feeds_skips_incomplete_and_bad_json():
+    import json, tempfile
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "streams.json")
+        with open(p, "w") as fh:
+            json.dump([{"channel": "UC9", "port": ""},      # no port -> skip
+                       {"channel": "", "port": "53006"},    # no channel -> skip
+                       {"channel": "UC7", "port": "53007"}], fh)
+        assert start.load_feeds(d) == [("UC7", "53007")]
+        with open(p, "w") as fh:
+            fh.write("not json")                            # malformed -> FEEDS
+        assert start.load_feeds(d) == start.FEEDS
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

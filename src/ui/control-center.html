@@ -1,0 +1,1619 @@
+<!DOCTYPE html>
+<!-- IRO Control Center — producer web UI served by `iro ui` (ui_server.py).
+     Single static file, inline CSS/JS, no framework, no build step (same
+     model as director-panel.html). All state lives server-side; this page
+     only polls /api/status and renders SSE streams.
+     Design: "Ops Console" — slate dark + status colors, sans for labels,
+     monospace for data. Offline-safe: system fonts only, inline SVG icons.
+     Layout: a fixed left sidebar switches between views (Dashboard / Preflight
+     / Event / Apps / Tools / Assets / Logs); a docked, collapsible console at
+     the bottom of the workspace streams every job's live output — always in
+     the same place, visible no matter which view triggered it. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IRO Control Center</title>
+<link rel="icon" href="data:,"><!-- no favicon — silence the 404 console noise -->
+<style>
+  :root {
+    --bg:#0F172A; --card:#1B2336; --card2:#151C2E; --line:#273349;
+    --txt:#F8FAFC; --dim:#94A3B8; --faint:#64748B;
+    --ok:#22C55E; --warn:#F59E0B; --bad:#EF4444; --off:#475569;
+    --accent:#3B82F6; --nav:212px;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+            "Liberation Mono", monospace;
+  }
+  * { box-sizing:border-box; }
+  /* class-level display rules (.navitem, button) outrank the UA [hidden]
+     rule, so toggling the `hidden` attribute would otherwise not hide them. */
+  [hidden] { display:none !important; }
+  html, body { height:100%; }
+  body { margin:0; font:14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+         background:var(--bg); color:var(--txt); overflow:hidden; }
+
+  /* ---------- app shell ---------- */
+  .app { display:grid; grid-template-columns:var(--nav) 1fr; height:100dvh; }
+
+  /* ---------- sidebar ---------- */
+  .sidebar { display:flex; flex-direction:column; gap:6px; padding:16px 12px;
+             background:var(--card2); border-right:1px solid var(--line); }
+  .brand { display:flex; align-items:center; gap:10px; padding:4px 8px 14px; }
+  .brand .mark { font:700 14px/1 var(--mono); letter-spacing:.06em;
+                 color:#0F172A; background:var(--accent); border-radius:6px;
+                 padding:6px 7px; }
+  .brandname { font-size:14px; font-weight:600; letter-spacing:.01em; }
+  .ver { display:block; color:var(--faint); font:11px var(--mono); margin-top:1px; }
+  .nav { display:flex; flex-direction:column; gap:3px; }
+  .navfoot { margin-top:auto; display:flex; flex-direction:column; gap:3px;
+             padding-top:12px; border-top:1px solid var(--line); }
+  .navitem { display:flex; align-items:center; gap:10px; width:100%;
+             text-align:left; background:transparent; border:0; cursor:pointer;
+             color:var(--dim); font:500 13.5px/1 system-ui, sans-serif;
+             padding:10px 12px; border-radius:9px; text-decoration:none;
+             min-height:40px; transition:background .15s, color .15s; }
+  .navitem svg { width:17px; height:17px; stroke:currentColor; fill:none;
+                 stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+                 flex:0 0 auto; opacity:.9; }
+  .navitem:hover { background:rgba(148,163,184,.08); color:var(--txt); }
+  .navitem.active { background:rgba(59,130,246,.14); color:#BFDBFE;
+                    box-shadow:inset 2px 0 0 var(--accent); }
+  .navitem.danger { color:#FCA5A5; }
+  .navitem.danger:hover { background:rgba(239,68,68,.12); }
+
+  /* ---------- workspace (views + console) ---------- */
+  .workspace { display:flex; flex-direction:column; min-width:0; height:100dvh;
+               background-image:radial-gradient(1100px 380px at 60% -200px,
+                                #1E293B 0%, var(--bg) 70%); }
+  main { flex:1; overflow:auto; padding:22px 26px; }
+  .view { max-width:1040px; margin:0 auto; }
+  .viewhead { display:flex; align-items:center; gap:12px; margin:0 0 14px;
+              min-height:34px; }
+  .viewhead h2 { font-size:16px; font-weight:600; letter-spacing:.01em;
+                 margin:0; color:var(--txt); text-transform:none; }
+  .viewhead .sub { color:var(--dim); font:12px var(--mono); }
+  section { background:var(--card); border:1px solid var(--line);
+            border-radius:12px; padding:8px 18px;
+            box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 8px 24px rgba(2,6,23,.35); }
+  h2 { display:flex; align-items:center; gap:8px; font-size:12px;
+       text-transform:uppercase; letter-spacing:.1em; color:var(--dim);
+       margin:0 0 10px; font-weight:600; }
+  .row { display:flex; align-items:center; gap:12px; padding:12px 8px;
+         border-top:1px solid var(--line); flex-wrap:wrap; border-radius:8px;
+         transition:background .15s; }
+  .row:hover { background:rgba(148,163,184,.05); }
+  .row:first-of-type { border-top:0; }
+  .name { width:104px; font-weight:600; font-size:14px; }
+  .badge { display:inline-flex; align-items:center; gap:7px; padding:3px 11px;
+           border-radius:99px; font:600 11px/1.6 var(--mono); letter-spacing:.04em;
+           background:rgba(71,85,105,.25); color:var(--dim);
+           border:1px solid rgba(148,163,184,.18); }
+  .badge .dot { width:7px; height:7px; border-radius:50%; background:var(--off); }
+  .badge.on { background:rgba(34,197,94,.12); color:#4ADE80;
+              border-color:rgba(34,197,94,.35); }
+  .badge.on .dot { background:var(--ok); animation:pulse 2s ease-out infinite; }
+  .badge.warn { background:rgba(245,158,11,.12); color:#FCD34D;
+                border-color:rgba(245,158,11,.35); }
+  .badge.warn .dot { background:var(--warn); }
+  .badge.fail { background:rgba(239,68,68,.12); color:#FCA5A5;
+                border-color:rgba(239,68,68,.35); }
+  .badge.fail .dot { background:var(--bad); }
+  @keyframes pulse {
+    0%   { box-shadow:0 0 0 0 rgba(34,197,94,.45); }
+    70%  { box-shadow:0 0 0 6px rgba(34,197,94,0); }
+    100% { box-shadow:0 0 0 0 rgba(34,197,94,0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .badge.on .dot { animation:none; }
+    .spin { animation:none !important; }
+    .chev, .navitem, .console-body { transition:none !important; }
+  }
+  .dim { color:var(--dim); font:12px var(--mono); font-variant-numeric:tabular-nums; }
+  .grow { flex:1; min-width:140px; }
+  .spacer { flex:1; }
+  button { display:inline-flex; align-items:center; gap:6px; min-height:34px;
+           background:#232C42; color:var(--txt); border:1px solid var(--line);
+           border-radius:8px; padding:6px 13px; cursor:pointer; font-size:13px;
+           font-weight:500; transition:border-color .2s, background .2s,
+           transform .1s; }
+  button.action svg, .row button svg, .console-head button svg {
+           width:13px; height:13px; stroke:currentColor; fill:none;
+           stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round;
+           opacity:.85; }
+  .row button:hover, .console-head button:hover, .item button:hover {
+           border-color:var(--accent); background:#283352; }
+  button:active { transform:scale(.97); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  a.linkbtn { display:inline-flex; align-items:center; gap:6px; min-height:34px;
+           background:#232C42; color:var(--accent); border:1px solid var(--line);
+           border-radius:8px; padding:6px 13px; font-size:13px; font-weight:500;
+           text-decoration:none; transition:border-color .2s, background .2s; }
+  a.linkbtn:hover { border-color:var(--accent); background:#283352; }
+  a.linkbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .navitem:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+  button.danger { color:#FCA5A5; }
+  button.danger svg { stroke:#F87171; }
+  .row button.danger:hover, .console-head button.danger:hover {
+           border-color:var(--bad); background:rgba(239,68,68,.12); }
+  .chip { font:600 11px var(--mono); border-radius:6px; padding:3px 9px; }
+  .chip.ok { color:#4ADE80; background:rgba(34,197,94,.12);
+             border:1px solid rgba(34,197,94,.35); }
+  .chip.fail { color:#FCA5A5; background:rgba(239,68,68,.12);
+               border:1px solid rgba(239,68,68,.35); }
+  .spin { width:13px; height:13px; border:2px solid var(--line);
+          border-top-color:var(--warn); border-radius:50%; flex:0 0 auto;
+          animation:rot .8s linear infinite; }
+  @keyframes rot { to { transform:rotate(360deg); } }
+  select { background:#232C42; color:var(--txt); border:1px solid var(--line);
+           border-radius:8px; padding:7px 10px; font-size:13px; min-height:34px;
+           cursor:pointer; }
+  select:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  input[type=number] { background:#232C42; color:var(--txt); width:78px;
+           border:1px solid var(--line); border-radius:8px; padding:7px 10px;
+           font:13px var(--mono); min-height:34px; }
+  input[type=number]:focus-visible { outline:2px solid var(--accent);
+           outline-offset:2px; }
+  pre { background:#0B1120; border:1px solid var(--line); border-radius:10px;
+        padding:12px 14px; overflow:auto; white-space:pre-wrap; margin:0;
+        font:12px/1.55 var(--mono); color:#CBD5E1; }
+  #svclog { height:calc(100dvh - 220px); min-height:220px; margin-top:12px; }
+
+  /* per-item status sub-lists (Tools / Apps in Setup & Assets) */
+  .item { display:flex; align-items:center; gap:11px; padding:7px 8px 7px 22px;
+          border-top:1px solid var(--line); }
+  .item .idot { width:8px; height:8px; border-radius:50%; background:var(--off);
+                flex:0 0 auto; }
+  .item.ok .idot { background:var(--ok); }
+  .item.miss .idot { background:var(--warn); }
+  .item .iname { width:96px; font:13px var(--mono); color:var(--txt); }
+  .item .istat { font:600 11px var(--mono); letter-spacing:.03em; width:74px; }
+  .item.ok .istat { color:#4ADE80; }
+  .item.miss .istat { color:#FCD34D; }
+  .item .iver { color:var(--dim); font:11px var(--mono); }
+  /* running/stopped chip: fixed width so the action buttons line up per row */
+  .item .appstat { min-width:104px; }
+
+  /* preflight checklist level pills */
+  .pfbadge { font:600 10px/1 var(--mono); letter-spacing:.05em; padding:5px 7px;
+             border-radius:5px; min-width:46px; text-align:center; flex:0 0 auto; }
+  .pfbadge.PASS { color:#4ADE80; background:rgba(34,197,94,.12);
+                  border:1px solid rgba(34,197,94,.3); }
+  .pfbadge.WARN { color:#FCD34D; background:rgba(245,158,11,.12);
+                  border:1px solid rgba(245,158,11,.3); }
+  .pfbadge.FAIL { color:#FCA5A5; background:rgba(239,68,68,.12);
+                  border:1px solid rgba(239,68,68,.3); }
+  .pfbadge.INFO { color:#93C5FD; background:rgba(59,130,246,.12);
+                  border:1px solid rgba(59,130,246,.3); }
+  #pf-body section { margin-bottom:14px; }
+  #pf-body section:last-child { margin-bottom:0; }
+
+  /* ---------- docked console ---------- */
+  .console { border-top:1px solid var(--line); background:var(--card2);
+             flex:0 0 auto; display:flex; flex-direction:column; }
+  .console-head { display:flex; align-items:center; gap:10px; cursor:pointer;
+                  padding:10px 16px; user-select:none; min-height:44px; }
+  .console-head:hover { background:rgba(148,163,184,.05); }
+  .console-head:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+  .console-head .termico { width:15px; height:15px; stroke:var(--dim); fill:none;
+                  stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+                  flex:0 0 auto; }
+  .console-label { font:600 11px/1 var(--mono); letter-spacing:.1em;
+                   text-transform:uppercase; color:var(--dim); }
+  .console-job { font:600 13px var(--mono); color:var(--txt); }
+  .console-job.idle { color:var(--faint); font-weight:500; }
+  .chev { width:16px; height:16px; stroke:var(--dim); fill:none; stroke-width:2;
+          stroke-linecap:round; stroke-linejoin:round; flex:0 0 auto;
+          transition:transform .2s; }
+  .console.collapsed .chev { transform:rotate(180deg); }
+  .console-body { border:0; border-top:1px solid var(--line); border-radius:0;
+                  height:34dvh; min-height:160px; }
+  .console.collapsed .console-body { display:none; }
+
+  /* asset preview galleries + lightbox */
+  .gallery { display:flex; flex-wrap:wrap; gap:10px; padding:12px 8px 4px; }
+  .gallery:empty { display:none; }
+  .thumb { width:138px; border:1px solid var(--line); border-radius:9px;
+           overflow:hidden; background:#0B1120; cursor:pointer;
+           transition:border-color .15s, transform .1s; }
+  .thumb:hover { border-color:var(--accent); transform:translateY(-1px); }
+  .thumb img, .thumb video { width:100%; height:78px; object-fit:cover;
+           display:block; background:#000; }
+  .thumb video { cursor:default; }
+  .thumb .cap { font:11px var(--mono); color:var(--dim); padding:6px 8px;
+           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .gallery-empty { color:var(--faint); font:12px var(--mono); padding:10px 8px; }
+  .evnote { color:var(--dim); font:12px/1.6 var(--mono); margin:14px 2px 0; }
+  /* Help & Docs */
+  .docname { width:148px; font-weight:600; font-size:14px; flex:0 0 auto; }
+  .dlink { color:var(--accent); text-decoration:none; }
+  .dlink:hover { text-decoration:underline; }
+
+  /* Settings (.env) editor */
+  .envhead { display:flex; gap:8px; padding:2px 8px 10px;
+             font:600 11px var(--mono); letter-spacing:.06em;
+             text-transform:uppercase; color:var(--dim); }
+  .envrow { display:flex; align-items:center; gap:8px; padding:7px 8px;
+            border-top:1px solid var(--line); }
+  .envrow:first-child { border-top:0; }
+  .envrow input, .envhead .k, .envhead .v { box-sizing:border-box; }
+  .envrow input { background:#232C42; color:var(--txt);
+                  border:1px solid var(--line); border-radius:8px;
+                  padding:7px 10px; font:13px var(--mono); min-height:34px; }
+  .envrow input:focus-visible { outline:2px solid var(--accent);
+                  outline-offset:2px; }
+  .k { width:230px; flex:0 0 auto; }
+  .v { flex:1; min-width:120px; }
+  .iconbtn { display:inline-flex; align-items:center; justify-content:center;
+             min-height:34px; min-width:34px; padding:6px; background:#232C42;
+             border:1px solid var(--line); border-radius:8px; cursor:pointer;
+             color:var(--dim); flex:0 0 auto; transition:border-color .2s,
+             color .2s; }
+  .iconbtn:hover { border-color:var(--accent); color:var(--txt); }
+  .iconbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .iconbtn svg { width:15px; height:15px; stroke:currentColor; fill:none;
+                 stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .iconbtn.danger:hover { border-color:var(--bad); color:#FCA5A5; }
+  .envpath { color:var(--faint); font:12px var(--mono); margin:0 0 12px;
+             word-break:break-all; }
+  .enverr { color:#FCA5A5; background:rgba(239,68,68,.1);
+            border:1px solid rgba(239,68,68,.35); border-radius:8px;
+            padding:8px 12px; margin:0 0 12px; font:12px var(--mono); }
+  .envhint { color:var(--dim); font:12px/1.6 var(--mono); margin:14px 2px 0; }
+  .addrow { padding:12px 8px 4px; display:flex; gap:8px; align-items:center; }
+  .addrow button { white-space:nowrap; }
+  .lightbox { position:fixed; inset:0; z-index:100; padding:40px;
+           background:rgba(2,6,23,.86); display:flex; align-items:center;
+           justify-content:center; cursor:zoom-out; }
+  .lightbox img { max-width:92vw; max-height:86vh; border-radius:10px;
+           box-shadow:0 24px 70px rgba(0,0,0,.6); }
+  .lightbox .cap { position:absolute; bottom:22px; left:0; right:0;
+           text-align:center; color:var(--txt); font:13px var(--mono); }
+  /* Home readiness tiles */
+  section.tiles { display:flex; gap:10px; flex-wrap:wrap; }
+  .tile { flex:1 1 150px; background:#232C42; border:1px solid var(--line);
+          border-radius:10px; padding:11px 14px; cursor:pointer; text-align:left;
+          display:flex; flex-direction:column; gap:5px;
+          transition:border-color .2s, background .2s; }
+  .tile:hover { border-color:var(--accent); background:#283352; }
+  .tlabel { font:600 10px var(--mono); letter-spacing:.06em; color:var(--dim);
+            text-transform:uppercase; }
+  .tval { font-size:14px; font-weight:600; color:var(--txt); }
+  .tile.ok .tval { color:var(--ok); }
+  .tile.warn .tval { color:var(--warn); }
+  .tile.bad .tval { color:var(--bad); }
+  /* update banner in the Home head */
+  .updbanner { display:inline-flex; align-items:center; gap:6px;
+           padding:6px 12px; border-radius:8px; font-size:13px; font-weight:600;
+           background:rgba(245,158,11,.14); color:#FCD34D;
+           border:1px solid rgba(245,158,11,.4); text-decoration:none; }
+  .updbanner svg { width:14px; height:14px; stroke:currentColor; fill:none;
+           stroke-width:2; }
+  .updbanner:hover { background:rgba(245,158,11,.24); }
+  /* sidebar version + update state (always visible, click to re-check) */
+  .ver-note { display:block; font:11px var(--mono); color:var(--dim);
+              cursor:pointer; margin-top:3px; }
+  .ver-note:hover { color:var(--txt); }
+  .ver-note.avail { color:#FCD34D; font-weight:600; }
+  /* amber info callout (e.g. the Static Streams fallback notice) */
+  .note-warn { color:#FCD34D; background:rgba(245,158,11,.1);
+           border:1px solid rgba(245,158,11,.32); border-radius:8px;
+           padding:9px 13px; font:13px/1.55 var(--mono); margin:0 0 14px; }
+  /* static-streams feed table (reuses .envrow flex) */
+  .fl { width:150px; flex:0 0 auto; }
+  .fc { flex:1; min-width:150px; }
+  .fp { width:96px; flex:0 0 auto; }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="sidebar">
+    <div class="brand"><span class="mark">IRO</span>
+      <div><div class="brandname">Control Center</div>
+        <span class="ver" id="ver"></span>
+        <span class="ver-note" id="ver-note" onclick="checkUpdate(true)" title="Check for updates"></span></div></div>
+    <div class="nav">
+      <button class="navitem active" data-nav="home" onclick="showView('home')">
+        <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Home</button>
+      <button class="navitem" data-nav="wizard" onclick="showView('wizard')">
+        <svg viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="3"/></svg>Setup</button>
+      <button class="navitem" data-nav="preflight" onclick="showView('preflight')">
+        <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Preflight</button>
+      <button class="navitem" data-nav="services" onclick="showView('services')">
+        <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>Relay</button>
+      <button class="navitem" data-nav="streams" onclick="showView('streams')">
+        <svg viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>Static Streams</button>
+      <button class="navitem" data-nav="apps" onclick="showView('apps')">
+        <svg viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>Apps</button>
+      <button class="navitem" data-nav="tools" onclick="showView('tools')">
+        <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Tools</button>
+      <button class="navitem" data-nav="assets" onclick="showView('assets')">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></svg>Assets</button>
+      <button class="navitem" data-nav="settings" onclick="showView('settings')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</button>
+      <button class="navitem" data-nav="logs" onclick="showView('logs')">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>Logs</button>
+      <button class="navitem" data-nav="help" onclick="showView('help')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Help &amp; Docs</button>
+    </div>
+    <div class="navfoot">
+      <a id="panel-link" class="navitem" href="#" target="_blank" hidden>
+        <svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Director panel</a>
+      <button class="navitem danger" onclick="quitUi()">
+        <svg viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>Quit</button>
+    </div>
+  </nav>
+
+  <div class="workspace">
+    <main>
+      <!-- ===== Relay ===== -->
+      <div class="view" data-view="services" hidden>
+        <div class="viewhead"><h2>Relay</h2>
+          <span class="spacer"></span>
+          <span class="sub">live relay status</span></div>
+        <section>
+          <div class="row"><span class="name">Relay</span>
+            <span class="badge" id="b-relay"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-relay"></span>
+            <button onclick="op('relay-start')">
+              <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button>
+            <button class="danger" onclick="op('relay-stop', true)">
+              <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button>
+            <button onclick="op('relay-restart', true)">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Restart</button>
+            <a class="linkbtn" id="rel-panel-open" target="_blank" rel="noopener" hidden>Open panel ↗</a></div>
+        </section>
+        <p class="envhint">The relay reads its <b>schedule and HUD data from the Google Sheet</b> and is configured through <b>Settings</b>: <span class="mono">IRO_SHEET_ID</span> (the sheet) and <span class="mono">IRO_SHEET_PUSH_URL</span> (write-back for the timer + panel). There are no other local relay settings — tab names, ports and the bind mode use safe defaults.</p>
+      </div>
+
+      <!-- ===== Static Streams ===== -->
+      <div class="view" data-view="streams" hidden>
+        <div class="viewhead"><h2>Static Streams</h2>
+          <span class="badge" id="b-streams"><span class="dot"></span><span>…</span></span>
+          <span class="dim grow" id="d-streams"></span>
+          <span class="spacer"></span>
+          <button onclick="op('streams-start')">
+            <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start all</button>
+          <button class="danger" onclick="op('streams-stop', true)">
+            <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop all</button></div>
+        <div class="note-warn"><b>Fallback only.</b> The <b>relay</b> is the normal way to serve the commentator feeds (unlisted streams, automatic per-stint handover). Use Static Streams <b>only when the relay isn't working</b> — and only with <b>public</b> YouTube channels.</div>
+        <div class="enverr" id="streams-err" hidden></div>
+        <div class="envpath" id="streams-path"></div>
+        <section>
+          <div class="envhead"><span class="fl">Label</span><span class="fc">YouTube channel ID</span><span class="fp">Port</span></div>
+          <div id="feedrows"></div>
+          <div class="addrow"><button onclick="addFeedRow()">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add feed</button>
+          <button id="feeds-save" onclick="saveStreams()">
+            <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button>
+          <button onclick="loadStreams(true)">
+            <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button></div>
+        </section>
+        <p class="envhint">One streamlink server per row, served on its <b>Port</b> (must match the OBS media source). Saved to <span class="mono">runtime/static/streams.json</span> — <b>Save, then Start all</b> to apply. A channel ID looks like <span class="mono">UCxxxxxxxxxxxxxxxxxxxxxx</span> (from the channel's URL).</p>
+      </div>
+
+      <!-- ===== Home ===== -->
+      <div class="view" data-view="home">
+        <div class="viewhead"><h2>Home</h2>
+          <span class="sub" id="home-summary"></span>
+          <span class="spacer"></span>
+          <a id="upd-banner" class="updbanner" target="_blank" rel="noopener" hidden></a>
+          <input id="stint" type="number" min="1" placeholder="stint" aria-label="Stint number for mid-event takeover">
+          <button onclick="opEventStart()">
+            <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start event</button>
+          <button class="danger" onclick="op('event-stop', true)">
+            <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop event</button></div>
+        <section>
+          <div class="row"><span class="name">Tailscale</span>
+            <span class="badge" id="h-tailscale"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-tailscale"></span></div>
+          <div class="row"><span class="name">Discord</span>
+            <span class="badge" id="h-discord"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-discord"></span></div>
+          <div class="row"><span class="name">OBS</span>
+            <span class="badge" id="h-obs"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-obs"></span></div>
+          <div class="row"><span class="name">Relay</span>
+            <span class="badge" id="h-relay"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-relay"></span>
+            <a class="linkbtn" id="h-relay-open" target="_blank" rel="noopener" hidden>Open panel ↗</a>
+            <button id="h-relay-copy" hidden onclick="copyLink(this)">Copy link</button></div>
+          <div class="row"><span class="name">Companion</span>
+            <span class="badge" id="h-companion"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-companion"></span>
+            <a class="linkbtn" id="h-companion-open" target="_blank" rel="noopener" hidden>Open tablet ↗</a>
+            <button id="h-companion-copy" hidden onclick="copyLink(this)">Copy link</button></div>
+          <div class="row"><span class="name">Streams</span>
+            <span class="badge" id="h-streams"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-streams"></span></div>
+        </section>
+        <section id="home-live">
+          <div class="row"><span class="name">Race timer</span>
+            <span class="badge" id="h-timer"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-timer"></span></div>
+          <div class="row"><span class="name">Feeds</span>
+            <span class="dim grow" id="hd-feeds">start the relay for live stats</span></div>
+        </section>
+        <section class="tiles">
+          <button class="tile" onclick="showView('preflight')">
+            <span class="tlabel">Preflight</span>
+            <span class="tval" id="t-preflight">not run yet</span></button>
+          <button class="tile" onclick="showView('assets')">
+            <span class="tlabel">Assets</span>
+            <span class="tval" id="t-assets">checking…</span></button>
+          <button class="tile" onclick="showView('assets')">
+            <span class="tlabel">Cookies</span>
+            <span class="tval" id="t-cookies">checking…</span></button>
+        </section>
+        <p class="evnote">Start brings up Tailscale, Discord, OBS, relay and Companion (optional stint = mid-event takeover). Stop only stops the iro services — OBS, Discord and Tailscale keep running; quit them manually if needed. Use <b>Copy link</b> to share the Companion tablet and Director panel URLs with your directors (they reach them over Tailscale).</p>
+      </div>
+
+      <!-- ===== Apps ===== -->
+      <div class="view" data-view="apps" hidden>
+        <div class="viewhead"><h2>Apps</h2>
+          <span class="sub" id="d-apps"></span>
+          <span class="spacer"></span>
+          <button onclick="op('install-apps', true)">Install all</button>
+          <button onclick="op('install-apps', true, {update: true})">Update all</button></div>
+        <section><div id="applist">
+          <div class="item miss"><span class="idot"></span><span class="dim grow">loading…</span></div>
+        </div></section>
+        <p class="envhint">The badge shows whether each app is running. Start or stop any app here; OBS and Discord are also brought up automatically by <b>Start event</b> on Home. OBS additionally exports the scene collection and refreshes its browser sources. For Tailscale, <b>Start/Stop</b> launches or quits the app, while <b>Connect/Disconnect</b> brings the tunnel up or down.</p>
+      </div>
+
+      <!-- ===== Tools ===== -->
+      <div class="view" data-view="tools" hidden>
+        <div class="viewhead"><h2>Tools</h2>
+          <span class="sub" id="d-tools"></span>
+          <span class="spacer"></span>
+          <button onclick="op('install-tools', true)">Install all</button>
+          <button onclick="op('install-tools', true, {update: true})">Update all</button></div>
+        <section><div id="toollist">
+          <div class="item miss"><span class="idot"></span><span class="dim grow">loading…</span></div>
+        </div></section>
+      </div>
+
+      <!-- ===== Assets ===== -->
+      <div class="view" data-view="assets" hidden>
+        <div class="viewhead"><h2>Assets</h2>
+          <span class="spacer"></span>
+          <button onclick="checkAssets()">
+            <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Check vs sheet</button></div>
+        <section>
+          <div class="row"><span class="name">Cookies</span>
+            <span class="badge" id="b-cookies"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-cookies"></span>
+            <select id="browser" aria-label="Browser to export YouTube cookies from">
+              <option value="firefox" selected>firefox</option>
+              <option value="chrome">chrome</option>
+              <option value="edge">edge</option>
+              <option value="brave">brave</option>
+              <option value="safari">safari</option>
+            </select>
+            <button onclick="op('cookies', false, {browser: $('browser').value})">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button></div>
+        </section>
+        <section>
+          <div class="row"><span class="name">Graphics</span>
+            <span class="badge" id="b-graphics"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-graphics"></span>
+            <button onclick="op('graphics')">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
+          <div class="gallery" id="gfx-gallery"></div>
+        </section>
+        <section>
+          <div class="row"><span class="name">Media</span>
+            <span class="badge" id="b-media"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-media"></span>
+            <button onclick="op('media')">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
+          <div class="gallery" id="media-gallery"></div>
+        </section>
+      </div>
+
+      <!-- ===== Setup wizard ===== -->
+      <div class="view" data-view="wizard" hidden>
+        <div class="viewhead"><h2>Setup</h2>
+          <p class="sub">First-time setup, step by step. Already-completed
+            steps are detected and skipped. The closing checklist lists the
+            manual imports no script can do.</p></div>
+        <section>
+          <div class="row" style="justify-content:space-between;gap:10px;align-items:flex-end">
+            <span id="wiz-summary" class="dim" style="font-size:13px"></span>
+            <div style="display:flex;gap:10px;align-items:flex-end">
+              <label class="fl">YouTube browser
+                <select id="wiz-browser" onchange="fetchWizard()">
+                  <option value="firefox">firefox</option>
+                  <option value="chrome">chrome</option>
+                  <option value="edge">edge</option>
+                  <option value="brave">brave</option>
+                  <option value="safari">safari</option>
+                </select></label>
+              <button onclick="recheckWizard(this)">Re-check all</button>
+            </div>
+          </div>
+          <div id="wiz-steps"></div>
+        </section>
+        <section>
+          <h2>Manual next steps</h2>
+          <ol id="wiz-next" style="margin:0;padding-left:20px;color:var(--dim);font:13px/1.7 var(--mono);"></ol>
+        </section>
+      </div>
+
+      <!-- ===== Preflight ===== -->
+      <div class="view" data-view="preflight" hidden>
+        <div class="viewhead"><h2>Preflight</h2>
+          <span class="sub" id="pf-summary"></span>
+          <span class="spacer"></span>
+          <button id="pf-run" onclick="runPreflight()">
+            <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Run</button></div>
+        <div id="pf-body">
+          <section><div class="row"><span class="dim">Not run yet — press Run.</span></div></section>
+        </div>
+      </div>
+
+      <!-- ===== Settings (.env) ===== -->
+      <div class="view" data-view="settings" hidden>
+        <div class="viewhead"><h2>Settings</h2>
+          <span class="sub">.env</span>
+          <span class="spacer"></span>
+          <button onclick="loadSettings(true)">
+            <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button>
+          <button id="env-save" onclick="saveSettings()">
+            <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button></div>
+        <div class="enverr" id="env-err" hidden></div>
+        <div class="envpath" id="env-path"></div>
+        <section>
+          <div class="envhead"><span class="k">Key</span><span class="v">Value</span></div>
+          <div id="envrows"></div>
+          <div class="addrow"><button onclick="addSettingsRow()">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add entry</button></div>
+        </section>
+        <p class="envhint">Edits the local <b>.env</b> on this machine only. Values are masked — click the eye to reveal one. Comments in the file are preserved. Changes apply when you next (re)start the affected service (relay, …).</p>
+      </div>
+
+      <!-- ===== Logs ===== -->
+      <div class="view" data-view="logs" hidden>
+        <div class="viewhead"><h2>Logs</h2>
+          <span class="spacer"></span>
+          <select id="logsel" onchange="watchLog(this.value)" aria-label="Service log to tail">
+            <option value="">— select a log —</option>
+            <option value="relay">relay</option>
+            <option value="companion">companion</option>
+            <option value="streams">streams</option>
+          </select></div>
+        <pre id="svclog"></pre>
+      </div>
+
+      <!-- ===== Help & Docs ===== -->
+      <div class="view" data-view="help" hidden>
+        <div class="viewhead"><h2>Help &amp; Docs</h2>
+          <span class="spacer"></span>
+          <a id="wiki-open" class="linkbtn" target="_blank" rel="noopener" href="#">Open the wiki ↗</a></div>
+        <section>
+          <h2>On this machine</h2>
+          <div id="local-docs"><div class="row"><span class="dim">loading…</span></div></div>
+        </section>
+        <section>
+          <h2>Guides — rendered on the GitHub wiki</h2>
+          <div class="row"><span class="docname">Setup guide</span>
+            <span class="dim grow">Set up &amp; configure the broadcast PC, step by step.</span>
+            <a class="linkbtn" id="g-setup" target="_blank" rel="noopener">Open ↗</a></div>
+          <div class="row"><span class="docname">Director guide</span>
+            <span class="dim grow">For directors running the panel over Tailscale.</span>
+            <a class="linkbtn" id="g-director" target="_blank" rel="noopener">Open ↗</a></div>
+          <div class="row"><span class="docname">Run an event</span>
+            <span class="dim grow">Event-day workflow and checklist.</span>
+            <a class="linkbtn" id="g-event" target="_blank" rel="noopener">Open ↗</a></div>
+        </section>
+        <p class="envhint">The cheat sheet opens locally and works offline; the guides open the always-current rendered pages on the GitHub wiki. Found a bug or have a question? <a id="issues-link" class="dlink" target="_blank" rel="noopener">Open an issue on GitHub ↗</a></p>
+      </div>
+    </main>
+
+    <!-- ===== docked console (job output) ===== -->
+    <aside class="console collapsed" id="console">
+      <div class="console-head" role="button" tabindex="0" aria-expanded="false"
+           aria-controls="joblog" onclick="toggleConsole()"
+           onkeydown="if((event.key==='Enter'||event.key===' ')&&event.target===this){event.preventDefault();toggleConsole();}">
+        <svg class="termico" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        <span class="console-label">Console</span>
+        <span class="console-job idle" id="jobtitle">idle</span>
+        <span class="spin" id="jobspin" hidden></span>
+        <span id="jobchip" hidden></span>
+        <span class="spacer"></span>
+        <button class="danger" id="jobcancel" hidden onclick="cancelJob(event)">
+          <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Cancel</button>
+        <svg class="chev" id="consolechev" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <pre class="console-body" id="joblog"></pre>
+    </aside>
+  </div>
+</div>
+
+<div class="lightbox" id="lightbox" hidden onclick="closeLightbox()">
+  <img id="lightbox-img" alt=""><span class="cap" id="lightbox-cap"></span>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let jobES = null, logES = null;
+
+let setupLoaded = false, preflightRun = false, assetsLoaded = false,
+    settingsLoaded = false, streamsLoaded = false, docsLoaded = false,
+    wizardLoaded = false;
+// op name -> last job exit code (string) run from the wizard. Lets a step that
+// has no persistent "done" state (preflight) — or a failed job — show its real
+// outcome instead of a misleading "pending".
+let wizardJobResults = {};
+let currentView = 'home', lastStatus = null;
+
+function showView(name) {
+  currentView = name;
+  document.querySelectorAll('[data-view]').forEach(v => {
+    v.hidden = v.dataset.view !== name;
+  });
+  document.querySelectorAll('[data-nav]').forEach(n => {
+    n.classList.toggle('active', n.dataset.nav === name);
+  });
+  // lazy first-load: tool/app probes, preflight and asset listing are on-demand
+  // (they shell out / scan disk), so run them only when first opened.
+  if ((name === 'apps' || name === 'tools') && !setupLoaded) {
+    setupLoaded = true; fetchSetup();
+  }
+  if (name === 'assets' && !assetsLoaded) { assetsLoaded = true; fetchAssetFiles(); }
+  if (name === 'preflight' && !preflightRun) { preflightRun = true; runPreflight(); }
+  if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
+  if (name === 'streams' && !streamsLoaded) { streamsLoaded = true; loadStreams(); }
+  if (name === 'help' && !docsLoaded) { docsLoaded = true; fetchDocs(); }
+  if (name === 'wizard' && !wizardLoaded) { wizardLoaded = true; fetchWizard(); }
+  // entering Home: refresh the live relay stats right away (don't wait for the poll)
+  if (name === 'home' && lastStatus && lastStatus.relay
+      && lastStatus.relay.alive && lastStatus.relay.http_ok) fetchRelayLive();
+}
+
+function toggleConsole(force) {
+  const c = $('console');
+  if (force === true) c.classList.remove('collapsed');
+  else if (force === false) c.classList.add('collapsed');
+  else c.classList.toggle('collapsed');
+  const head = c.querySelector('.console-head');
+  if (head) head.setAttribute('aria-expanded', String(!c.classList.contains('collapsed')));
+}
+
+function setBadgeEl(badgeId, detailId, on, onText, offText, detail) {
+  const b = $(badgeId);
+  b.lastElementChild.textContent = on ? onText : offText;
+  b.classList.toggle('on', on);
+  if (detailId) $(detailId).textContent = detail || '';
+}
+
+function setBadge(key, on, onText, offText, detail) {
+  setBadgeEl('b-' + key, 'd-' + key, on, onText, offText, detail);
+}
+
+function updateHome(s) {
+  const ar = s.apps_running || {};
+  const tsUp = !!s.tailscale_ip, relayUp = s.relay.alive,
+        compUp = s.companion.running,
+        strAlive = s.streams.filter(f => f.alive).length;
+  setBadgeEl('h-tailscale', 'hd-tailscale', tsUp, 'CONNECTED', 'down',
+             s.tailscale_ip || 'not connected');
+  setBadgeEl('h-discord', 'hd-discord', !!ar.discord, 'RUNNING', 'not running',
+             ar.discord ? 'process running' : 'launched by Start');
+  setBadgeEl('h-obs', 'hd-obs', !!ar.obs, 'RUNNING', 'not running',
+             ar.obs ? 'process running' : 'launched by Start');
+  setBadgeEl('h-relay', 'hd-relay', relayUp, 'RUNNING', 'stopped',
+             relayUp ? (s.relay.http_ok ? 'control OK on port ' + s.relay.port
+                                        : 'port ' + s.relay.port + ' not responding')
+                     : 'iro service');
+  setBadgeEl('h-companion', 'hd-companion', compUp, 'RUNNING', 'stopped',
+             s.companion.url || s.companion.why || '');
+  setBadgeEl('h-streams', 'hd-streams', strAlive > 0, 'RUNNING', 'stopped',
+             s.streams.length ? strAlive + '/' + s.streams.length + ' feeds up'
+                              : 'no feeds');
+  const core = [tsUp, !!ar.discord, !!ar.obs, relayUp, compUp];
+  $('home-summary').textContent =
+    core.filter(Boolean).length + ' of ' + core.length + ' core services up';
+  // Shareable links for the directors. Companion's url is already its bound
+  // address; the panel link prefers the Tailscale IP so a remote director can
+  // reach it over the tailnet (falls back to localhost when Tailscale is down).
+  setShareLink('h-companion-open', 'h-companion-copy', s.companion.url || '');
+  const panelShare = (relayUp && s.relay.http_ok)
+    ? 'http://' + (s.tailscale_ip || '127.0.0.1') + ':' + s.relay.port + '/panel'
+    : '';
+  // Open auto-connects the local OBS (credential fragment); Copy stays plain.
+  setShareLink('h-relay-open', 'h-relay-copy', panelShare,
+               panelShare ? panelOpenUrl(s.relay.port) : '');
+  // Cookies readiness tile — short label only (full detail lives on Assets).
+  if (s.cookies) setTile('cookies',
+      s.cookies.level === 'PASS' ? 'ok' : (s.cookies.level === 'FAIL' ? 'bad' : 'warn'),
+      s.cookies.level === 'PASS' ? 'fresh'
+        : (s.cookies.level === 'FAIL' ? 'expired' : 'missing / stale'));
+  // Live relay stats only make sense while the control server answers.
+  if (!(relayUp && s.relay.http_ok)) {
+    liveTimer = null;
+    const tb = $('h-timer');
+    tb.classList.remove('on');
+    tb.lastElementChild.textContent = '—';
+    $('hd-timer').textContent = relayUp ? 'relay control not responding' : 'relay stopped';
+    $('hd-feeds').textContent = 'start the relay for live stats';
+  }
+}
+
+// ----- per-app running status on the Apps view (updated from the poll) -----
+function updateAppStatus(s) {
+  const ar = s.apps_running || {};
+  setAppStat('obs', !!ar.obs, 'RUNNING', 'stopped');
+  setAppStat('discord', !!ar.discord, 'RUNNING', 'stopped');
+  setAppStat('companion', s.companion.running, 'RUNNING', 'stopped');
+  setAppStat('tailscale', !!s.tailscale_ip, 'CONNECTED', 'offline');
+}
+
+function setAppStat(key, on, onText, offText) {
+  const b = $('appstat-' + key);
+  if (!b) return;                        // Apps view not rendered yet — nothing to update
+  b.classList.toggle('on', on);
+  b.lastElementChild.textContent = on ? onText : offText;
+}
+
+function setTile(key, cls, text) {
+  const t = $('t-' + key);
+  if (!t) return;
+  const tile = t.closest('.tile');
+  tile.classList.remove('ok', 'warn', 'bad');
+  if (cls) tile.classList.add(cls);
+  t.textContent = text;
+}
+
+// ----- live relay stats (timer + feeds), fetched while Home is open -----
+let liveTimer = null;                    // {t: timerPayload, at: clientEpochSeconds}
+
+async function fetchRelayLive() {
+  let d;
+  try { d = await (await fetch('/api/relay-live', {cache: 'no-store'})).json(); }
+  catch (e) { return; }                  // server gone — keep last state
+  if (!d || !d.ok) return;
+  const parts = (d.feeds || []).map(f =>
+    'Feed ' + f.feed + ' · Stint ' + (f.stint == null ? '?' : f.stint) +
+    (f.state ? ' (' + f.state + ')' : ''));
+  if (d.uptime_s != null) parts.push('relay up ' + fmtDur(d.uptime_s));
+  $('hd-feeds').textContent = parts.length ? parts.join('     ') : 'no feeds';
+  liveTimer = {t: d.timer || {}, at: Date.now() / 1000};
+  renderTimer();
+}
+
+function renderTimer() {
+  if (!liveTimer) return;
+  const t = liveTimer.t;
+  let secs;
+  if (t.mode === 'running' && t.end != null) {
+    const rem0 = t.end - (t.server_now == null ? t.end : t.server_now);
+    secs = Math.max(0, Math.round(rem0 - (Date.now() / 1000 - liveTimer.at)));
+  } else if (t.remaining_s != null) {
+    secs = t.remaining_s;
+  } else {
+    secs = t.duration_s;
+  }
+  const b = $('h-timer');
+  b.classList.toggle('on', t.mode === 'running');
+  b.lastElementChild.textContent = secs == null ? '—' : fmtClock(secs);
+  const bits = [t.mode || 'idle'];
+  if (t.visible === false) bits.push('hidden on air');
+  $('hd-timer').textContent = bits.join(' · ');
+}
+
+function fmtClock(s) {
+  s = Math.max(0, Math.floor(s));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const mm = String(m).padStart(2, '0'), ss = String(sec).padStart(2, '0');
+  return h > 0 ? h + ':' + mm + ':' + ss : mm + ':' + ss;
+}
+
+function fmtDur(s) {
+  s = Math.max(0, Math.floor(s));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  if (h > 0) return h + 'h' + (m ? m + 'm' : '');
+  if (m > 0) return m + 'm';
+  return s + 's';
+}
+
+// ----- self-update check (GitHub latest release, check-only) -----
+// Always reflects the version state in the sidebar (click to re-check); the
+// amber Home banner appears only when a newer release is actually out.
+async function checkUpdate(force) {
+  const note = $('ver-note');
+  if (note) note.textContent = 'checking…';
+  let d;
+  try {
+    d = await (await fetch('/api/update' + (force ? '?force=1' : ''),
+                           {cache: 'no-store'})).json();
+  } catch (e) { if (note) note.textContent = 'check failed — click to retry'; return; }
+  const b = $('upd-banner');
+  if (d && d.ok && d.update_available && d.latest) {
+    b.hidden = false;
+    b.href = d.releases_url;
+    b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 19V5"/>' +
+                  '<path d="m5 12 7-7 7 7"/></svg>Update → ' + d.latest;
+    b.title = 'A newer release (' + d.latest + ') is available — click to view it on GitHub';
+    if (note) { note.className = 'ver-note avail'; note.textContent = 'update → ' + d.latest; }
+  } else {
+    b.hidden = true;
+    if (note) {
+      note.className = 'ver-note';
+      if (!d || !d.ok) note.textContent = 'check failed — click to retry';
+      else if (d.note && d.note.indexOf('development') >= 0) note.textContent = 'dev build';
+      else note.textContent = 'up to date' + (d.latest ? ' · ' + d.latest : '');
+    }
+  }
+}
+
+function setShareLink(openId, copyId, url, openUrl) {
+  const a = $(openId), b = $(copyId);
+  a.hidden = b.hidden = !url;
+  // The Open button may carry credentials (openUrl); Copy gets the plain url so
+  // a shared link never contains the OBS password.
+  if (url) { a.href = openUrl || url; b.dataset.url = url; }
+}
+
+// OBS-WebSocket connection details (local OBS) for auto-connecting the Director
+// panel — fetched once; the password rides only in the panel link's URL fragment.
+let obsWs = null;
+
+async function fetchObsWs() {
+  try { obsWs = await (await fetch('/api/obs-ws', {cache: 'no-store'})).json(); }
+  catch (e) { return; }
+  if (lastStatus) refresh();             // rebuild the panel links now we have it
+}
+
+// Producer-local panel link: served from 127.0.0.1, with OBS credentials in the
+// fragment so the panel auto-connects to the local OBS. The fragment is never
+// sent to the relay and the panel strips it from the address bar after reading.
+function panelOpenUrl(relayPort) {
+  let u = 'http://127.0.0.1:' + relayPort + '/panel';
+  if (obsWs && obsWs.ok) {
+    const f = new URLSearchParams();
+    f.set('ip', obsWs.ip || '127.0.0.1');
+    f.set('port', obsWs.port || 4455);
+    if (obsWs.password != null) f.set('pw', obsWs.password);
+    u += '#' + f.toString();
+  }
+  return u;
+}
+
+async function copyLink(btn) {
+  const url = btn.dataset.url;
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch (e) {                          // clipboard API blocked — textarea fallback
+    const ta = document.createElement('textarea');
+    ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try { document.execCommand('copy'); } catch (e2) { /* give up silently */ }
+    ta.remove();
+  }
+  const orig = btn.textContent;
+  btn.textContent = 'Copied ✓';
+  setTimeout(() => { btn.textContent = orig; }, 1200);
+}
+
+async function refresh() {
+  let s;
+  try {
+    s = await (await fetch('/api/status', {cache: 'no-store'})).json();
+  } catch (e) { return; }            // server gone (quit) — keep the last state
+  if (!s.ok) return;                 // status provider error — keep the last state
+  lastStatus = s;
+  $('ver').textContent = s.version;
+  const relayUp = s.relay.alive;
+  setBadge('relay', relayUp, 'RUNNING', 'stopped',
+    relayUp ? (s.relay.http_ok ? 'control OK on port ' + s.relay.port
+                               : 'port ' + s.relay.port + ' not responding') : '');
+  const panelUp = relayUp && s.relay.http_ok;
+  // The sidebar quick-link and the Relay-page Open are the producer's own links
+  // — give them the credential fragment so the panel auto-connects to local OBS.
+  const panelHref = panelOpenUrl(s.relay.port);
+  $('panel-link').hidden = !panelUp;
+  $('panel-link').href = panelHref;
+  const relOpen = $('rel-panel-open');
+  if (relOpen) { relOpen.hidden = !panelUp; if (panelUp) relOpen.href = panelHref; }
+  setBadge('streams', s.streams.filter(f => f.alive).length > 0, 'RUNNING', 'stopped',
+           s.streams.length ? s.streams.filter(f => f.alive).length + '/' +
+                              s.streams.length + ' feeds up' : 'no feeds started');
+  if (s.cookies) setLevelBadge('cookies', s.cookies.level,
+      s.cookies.level === 'PASS' ? 'FRESH' : s.cookies.level, s.cookies.detail);
+  updateHome(s);
+  updateAppStatus(s);
+  // Live relay stats are a separate localhost round-trip — only while Home is
+  // open and the relay control server is actually answering.
+  if (currentView === 'home' && relayUp && s.relay.http_ok) fetchRelayLive();
+}
+
+// ----- Setup wizard (on-demand /api/init/plan) -----
+function setWizSummary(text) {
+  const el = $('wiz-summary');
+  if (el) el.textContent = text;
+}
+
+async function fetchWizard() {
+  const browser = ($('wiz-browser') || {}).value || 'firefox';
+  let r;
+  try {
+    r = await (await fetch('/api/init/plan?browser=' + encodeURIComponent(browser))).json();
+  } catch (e) { setWizSummary('Could not reach the Control Center.'); return; }
+  if (!r.ok) { setWizSummary(r.error || 'Re-check failed.'); return; }
+  renderWizard(r);
+  const steps = r.steps || [];
+  const done = steps.filter(s => s.done).length;
+  setWizSummary(done + ' of ' + steps.length + ' steps complete'
+               + (done < steps.length ? ' — run the pending steps below' : ''));
+}
+
+// "Re-check all" re-reads every step's state from the server (it does NOT re-run
+// anything). Show a brief busy state so a fast, unchanged re-check still visibly
+// registers — otherwise an already-complete plan looks like a dead button.
+async function recheckWizard(btn) {
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  setWizSummary('Checking…');
+  await Promise.all([fetchWizard(), new Promise(f => setTimeout(f, 350))]);
+  if (btn) { btn.disabled = false; btn.textContent = label || 'Re-check all'; }
+}
+
+function renderWizard(plan) {
+  const box = $('wiz-steps');
+  box.textContent = '';
+  (plan.steps || []).forEach((s, i) => {
+    const row = document.createElement('div');
+    row.className = 'item ' + (s.done ? 'ok' : 'miss');
+
+    // left cluster: number + label + done/pending chip + skip_reason dim + instruction warn
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'iname grow';
+    // build label text node with step number
+    const labelNode = document.createTextNode((i + 1) + '. ');
+    nameSpan.appendChild(labelNode);
+    const labelStrong = document.createElement('b');
+    labelStrong.textContent = s.label;
+    nameSpan.appendChild(labelStrong);
+    // status chip: done -> green "done"; else if this step's job already ran,
+    // show its last result (preflight has no persistent done-state, and a failed
+    // job must not look like an untouched "pending"); else "pending".
+    const chip = document.createElement('span');
+    chip.style.marginLeft = '8px';
+    const ran = (s.kind === 'job') ? wizardJobResults[s.op] : undefined;
+    if (s.done) {
+      chip.className = 'chip ok';
+      chip.textContent = 'done';
+    } else if (ran !== undefined) {
+      const okRun = ran === '0';
+      chip.className = 'chip ' + (okRun ? 'ok' : 'fail');
+      chip.textContent = okRun ? 'ran ✓' : ('failed (exit ' + ran + ')');
+    } else {
+      chip.className = 'chip';
+      chip.textContent = 'pending';
+    }
+    nameSpan.appendChild(chip);
+    // skip_reason (dim, when done)
+    if (s.done && s.skip_reason) {
+      const dim = document.createElement('span');
+      dim.className = 'dim';
+      dim.style.marginLeft = '8px';
+      dim.textContent = s.skip_reason;
+      nameSpan.appendChild(dim);
+    }
+    // instruction callout (amber, when not done)
+    if (!s.done && s.instruction) {
+      const instr = document.createElement('div');
+      instr.className = 'note-warn';
+      instr.style.marginTop = '6px';
+      instr.textContent = s.instruction;
+      nameSpan.appendChild(instr);
+    }
+    row.appendChild(nameSpan);
+
+    // right cluster: action button(s)
+    if (!s.done) {
+      if (s.kind === 'job') {
+        const btn = document.createElement('button');
+        btn.textContent = 'Run';
+        // s.op and s.key come from the server's fixed STEP_KINDS allowlist (safe identifiers)
+        const opName = s.op, stepKey = s.key;
+        btn.onclick = () => runWizardJob(opName, stepKey);
+        row.appendChild(btn);
+      } else if (s.key === 'env') {
+        const btnSettings = document.createElement('button');
+        btnSettings.textContent = 'Open Settings';
+        btnSettings.onclick = () => showView('settings');
+        row.appendChild(btnSettings);
+        const btnRecheck = document.createElement('button');
+        btnRecheck.textContent = 'Re-check';
+        const k = s.key;
+        btnRecheck.onclick = () => runWizardAction(k);
+        row.appendChild(btnRecheck);
+      } else {
+        const btn = document.createElement('button');
+        btn.textContent = 'Run';
+        const k = s.key;
+        btn.onclick = () => runWizardAction(k);
+        row.appendChild(btn);
+      }
+    }
+    box.appendChild(row);
+  });
+
+  const ol = $('wiz-next');
+  ol.textContent = '';
+  (plan.next_steps || []).forEach(t => {
+    const li = document.createElement('li');
+    li.textContent = t;
+    ol.appendChild(li);
+  });
+}
+
+function runWizardJob(opName, key) {
+  const params = key === 'cookies'
+    ? {browser: ($('wiz-browser') || {}).value || 'firefox'} : {};
+  op(opName, false, params);   // streams in the console; watchJob's 'done'
+                               // handler records the result + re-fetches the plan
+}
+
+async function runWizardAction(key) {
+  let r;
+  try {
+    r = await (await fetch('/api/init/step/' + encodeURIComponent(key),
+        {method: 'POST', headers: {'Content-Type': 'application/json'},
+         body: '{}'})).json();
+  } catch (e) { alert('Control Center not reachable.'); return; }
+  if (!r.ok) { alert(r.error); return; }
+  fetchWizard();
+}
+
+const CONFIRM_TEXT = {
+  'obs-stop': 'Quit OBS? (this closes OBS on this machine)',
+  'discord-stop': 'Quit Discord?',
+  'companion-stop': 'Stop Companion?',
+  'tailscale-stop': 'Quit the Tailscale app? Remote directors lose access.',
+  'tailscale-down': 'Disconnect Tailscale? Remote directors lose access.',
+  'relay-stop': 'Stop the relay?',
+  'streams-stop': 'Stop all static streams?',
+  'event-stop': 'Stop the event? (stops the iro services; OBS/Discord/Tailscale keep running)'
+};
+
+async function op(name, confirmFirst, params) {
+  if (confirmFirst && !confirm(CONFIRM_TEXT[name] || ('Run ' + name + '?'))) return;
+  let r;
+  try {
+    r = await (await fetch('/api/op/' + name, {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({params: params || {}})})).json();
+  } catch (e) { alert('Control Center not reachable.'); return; }
+  if (!r.ok) { alert(r.error); return; }
+  watchJob(name, r.job_id);
+}
+
+function opEventStart() {
+  const v = $('stint').value.trim();
+  op('event-start', true, v ? {stint: v} : {});
+}
+
+let jobId = null, jobCancelled = false;
+
+function watchJob(name, id) {
+  if (jobES) jobES.close();
+  jobId = id;
+  jobCancelled = false;
+  toggleConsole(true);                 // reveal the docked console for this job
+  const title = $('jobtitle');
+  title.textContent = name;
+  title.classList.remove('idle');
+  $('jobspin').hidden = false;
+  $('jobchip').hidden = true;
+  $('jobcancel').hidden = false;
+  $('joblog').textContent = '';
+  jobES = new EventSource('/api/jobs/' + id + '/stream');
+  jobES.onmessage = e => {
+    $('joblog').textContent += e.data + '\n';
+    $('joblog').scrollTop = 1e9;
+  };
+  jobES.addEventListener('done', e => {
+    const ok = e.data === '0';
+    $('jobspin').hidden = true;
+    $('jobcancel').hidden = true;
+    const chip = $('jobchip');
+    chip.hidden = false;
+    chip.className = 'chip ' + (ok ? 'ok' : 'fail');
+    chip.textContent = ok ? 'done'
+                          : (jobCancelled ? 'cancelled'
+                                          : 'failed (exit ' + e.data + ')');
+    jobES.close();
+    refresh();
+    if (name === 'graphics' || name === 'media') fetchAssetFiles();
+    if (name === 'install-tools' || name === 'install-apps') fetchSetup();
+    // wizard: record the outcome and re-render so the step's chip updates the
+    // moment the job ends (real-done steps flip to "done"; preflight/failed
+    // steps show their run result instead of a stuck "pending").
+    if (wizardLoaded) { wizardJobResults[name] = e.data; fetchWizard(); }
+  });
+}
+
+async function cancelJob(ev) {
+  if (ev) ev.stopPropagation();        // don't collapse the console on click
+  if (!jobId) return;
+  jobCancelled = true;
+  try { await fetch('/api/jobs/' + jobId + '/cancel', {method: 'POST'}); }
+  catch (e) {}
+}
+
+function setLevelBadge(key, level, text, detail) {
+  const b = $('b-' + key);
+  b.classList.remove('on', 'warn', 'fail');
+  if (level === 'PASS') b.classList.add('on');
+  else if (level === 'WARN') b.classList.add('warn');
+  else if (level === 'FAIL') b.classList.add('fail');
+  b.lastElementChild.textContent = text;
+  $('d-' + key).textContent = detail || '';
+}
+
+async function checkAssets() {
+  setLevelBadge('graphics', '', 'checking…', '');
+  setLevelBadge('media', '', 'checking…', '');
+  let a;
+  try {
+    a = await (await fetch('/api/assets', {cache: 'no-store'})).json();
+  } catch (e) { a = {ok: false, error: 'Control Center not reachable'}; }
+  if (!a.ok) {
+    setLevelBadge('graphics', 'WARN', 'ERROR', a.error || 'check failed');
+    setLevelBadge('media', 'WARN', 'ERROR', '');
+    return;
+  }
+  setLevelBadge('graphics', a.graphics.level,
+                a.graphics.level === 'PASS' ? 'COMPLETE' : a.graphics.level,
+                a.graphics.detail);
+  setLevelBadge('media', a.media.level,
+                a.media.level === 'PASS' ? 'COMPLETE' : a.media.level,
+                a.media.detail);
+}
+
+// ----- Tools / Apps per-item status (on-demand /api/setup) -----
+const APP_LABEL = {obs: 'OBS', companion: 'Companion',
+                   tailscale: 'Tailscale', discord: 'Discord'};
+// app-specific actions live on the app's own row (each an array of buttons).
+// confirm:true wraps the op in a confirm() dialog; danger:true styles it red.
+const APP_ACTION = {
+  obs: [{label: 'Start', op: 'obs-start'},
+        {label: 'Stop', op: 'obs-stop', danger: true, confirm: true},
+        {label: 'Export collection', op: 'setup'},
+        {label: 'Refresh pages', op: 'obs-refresh',
+         title: 'Reload the relay-served HUD/timer browser sources'}],
+  discord: [{label: 'Start', op: 'discord-start'},
+            {label: 'Stop', op: 'discord-stop', danger: true, confirm: true}],
+  companion: [{label: 'Start', op: 'companion-start'},
+              {label: 'Stop', op: 'companion-stop', danger: true, confirm: true},
+              {label: 'Export config', op: 'export-companion'}],
+  tailscale: [{label: 'Start', op: 'tailscale-start', title: 'Launch the Tailscale app'},
+              {label: 'Stop', op: 'tailscale-stop', danger: true, confirm: true,
+               title: 'Quit the Tailscale app'},
+              {label: 'Connect', op: 'tailscale-up', title: 'tailscale up — bring the tunnel up'},
+              {label: 'Disconnect', op: 'tailscale-down', danger: true, confirm: true,
+               title: 'tailscale down — drop the tunnel'}]
+};
+
+function itemRow(key, installed, version, actions, withStatus) {
+  const d = document.createElement('div');
+  d.className = 'item ' + (installed ? 'ok' : 'miss');
+  // status chip sits right after the install text (left cluster); the empty
+  // version column then grows to push the action buttons to the right.
+  d.innerHTML =
+    '<span class="idot"></span><span class="iname"></span>' +
+    '<span class="istat"></span>' +
+    (withStatus ? '<span class="badge appstat" id="appstat-' + key + '">' +
+                  '<span class="dot"></span><span>…</span></span>' : '') +
+    '<span class="iver grow"></span>';
+  d.querySelector('.iname').textContent = APP_LABEL[key] || key;
+  d.querySelector('.istat').textContent = installed ? 'installed' : 'missing';
+  d.querySelector('.iver').textContent = version || '';
+  (actions || []).forEach(a => {
+    const b = document.createElement('button');
+    if (a.danger) b.className = 'danger';
+    b.textContent = a.label;
+    if (a.title) b.title = a.title;
+    b.onclick = () => op(a.op, !!a.confirm);
+    d.appendChild(b);
+  });
+  return d;
+}
+
+function renderItemList(containerId, summaryId, items, kind) {
+  const c = $(containerId);
+  c.textContent = '';
+  if (!items || !items.ok) {
+    const e = document.createElement('div');
+    e.className = 'item miss';
+    e.innerHTML = '<span class="idot"></span><span class="dim grow"></span>';
+    e.children[1].textContent = (items && items.error) || 'check failed';
+    c.appendChild(e);
+    return;
+  }
+  const list = items[kind];
+  const have = list.filter(x => x.installed).length;
+  list.forEach(x => c.appendChild(itemRow(x.name, x.installed, x.version,
+                                  kind === 'apps' ? APP_ACTION[x.name] : null,
+                                  kind === 'apps')));
+  $(summaryId).textContent =
+    have === list.length ? 'all ' + list.length + ' installed'
+                         : have + ' of ' + list.length + ' installed — ' +
+                           (list.length - have) + ' missing';
+}
+
+// ----- Asset preview galleries (on-demand /api/assets/files) -----
+function setCountBadge(key, n, noun) {
+  const b = $('b-' + key);
+  b.classList.remove('on', 'warn', 'fail');
+  if (n > 0) b.classList.add('on');
+  b.lastElementChild.textContent = n > 0 ? n + ' ' + noun : 'none yet';
+  $('d-' + key).textContent = '';
+}
+
+async function fetchAssetFiles() {
+  let d;
+  try { d = await (await fetch('/api/assets/files', {cache: 'no-store'})).json(); }
+  catch (e) { return; }                  // server gone — keep last state
+  if (!d.ok) return;
+  setCountBadge('graphics', d.graphics.length, d.graphics.length === 1 ? 'file' : 'files');
+  setCountBadge('media', d.media.length, d.media.length === 1 ? 'file' : 'files');
+  renderGallery('gfx-gallery', 'graphics', d.graphics, false);
+  renderGallery('media-gallery', 'media', d.media, true);
+  setTile('assets', d.graphics.length > 0 ? 'ok' : 'warn',
+          d.graphics.length + ' graphics · ' + d.media.length + ' media');
+}
+
+function renderGallery(containerId, kind, names, isVideo) {
+  const c = $(containerId);
+  c.textContent = '';
+  if (!names.length) {
+    const e = document.createElement('div');
+    e.className = 'gallery-empty';
+    e.textContent = 'none downloaded yet — press Download.';
+    c.appendChild(e);
+    return;
+  }
+  names.forEach(name => {
+    const url = '/api/assets/file/' + kind + '/' + encodeURIComponent(name);
+    const t = document.createElement('div');
+    t.className = 'thumb';
+    if (isVideo) {
+      const v = document.createElement('video');
+      v.src = url; v.controls = true; v.preload = 'metadata';
+      t.appendChild(v);
+    } else {
+      const img = document.createElement('img');
+      img.src = url; img.alt = name; img.loading = 'lazy';
+      t.appendChild(img);
+      t.onclick = () => openLightbox(url, name);
+    }
+    const cap = document.createElement('div');
+    cap.className = 'cap';
+    cap.textContent = name.replace(/\.[^.]+$/, '');
+    t.appendChild(cap);
+    c.appendChild(t);
+  });
+}
+
+function openLightbox(url, name) {
+  $('lightbox-img').src = url;
+  $('lightbox-cap').textContent = name;
+  $('lightbox').hidden = false;
+}
+function closeLightbox() {
+  $('lightbox').hidden = true;
+  $('lightbox-img').src = '';
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeLightbox();
+});
+
+async function fetchSetup() {
+  let d;
+  try { d = await (await fetch('/api/setup', {cache: 'no-store'})).json(); }
+  catch (e) { return; }                  // server gone — keep last state
+  renderItemList('toollist', 'd-tools', d.tools, 'tools');
+  renderItemList('applist', 'd-apps', d.apps, 'apps');
+  if (lastStatus) updateAppStatus(lastStatus);   // fill running badges right away
+}
+
+// ----- Preflight checklist (on-demand /api/preflight) -----
+async function runPreflight() {
+  const body = $('pf-body'), btn = $('pf-run'), sum = $('pf-summary');
+  btn.disabled = true;
+  sum.textContent = 'running…';
+  setTile('preflight', '', 'running…');
+  body.innerHTML = '<section><div class="row"><span class="spin"></span>' +
+    '<span class="dim grow">Running checks — hardware, tools, ports, sheet…</span></div></section>';
+  let d;
+  try { d = await (await fetch('/api/preflight', {cache: 'no-store'})).json(); }
+  catch (e) { d = {ok: false, error: 'Control Center not reachable'}; }
+  btn.disabled = false;
+  if (!d.ok) {
+    sum.textContent = '';
+    body.textContent = '';
+    setTile('preflight', 'bad', 'error');
+    const s = document.createElement('section');
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = '<span class="pfbadge FAIL">ERROR</span><span class="dim grow"></span>';
+    row.children[1].textContent = d.error || 'check failed';
+    s.appendChild(row);
+    body.appendChild(s);
+    return;
+  }
+  renderPreflight(d.sections);
+}
+
+function renderPreflight(sections) {
+  const body = $('pf-body');
+  body.textContent = '';
+  let f = 0, w = 0, p = 0, i = 0;
+  sections.forEach(sec => {
+    const s = document.createElement('section');
+    const h = document.createElement('h2');
+    h.textContent = sec.title;
+    s.appendChild(h);
+    sec.results.forEach(r => {
+      if (r.level === 'FAIL') f++;
+      else if (r.level === 'WARN') w++;
+      else if (r.level === 'PASS') p++;
+      else i++;
+      const row = document.createElement('div');
+      row.className = 'row';
+      const b = document.createElement('span');
+      b.className = 'pfbadge ' + r.level;
+      b.textContent = r.level;
+      const n = document.createElement('span');
+      n.className = 'name';
+      n.textContent = r.name;
+      const dt = document.createElement('span');
+      dt.className = 'dim grow';
+      dt.textContent = r.detail;
+      row.append(b, n, dt);
+      s.appendChild(row);
+    });
+    body.appendChild(s);
+  });
+  $('pf-summary').textContent =
+    f + ' FAIL · ' + w + ' WARN · ' + p + ' PASS' + (i ? ' · ' + i + ' info' : '');
+  setTile('preflight', f > 0 ? 'bad' : (w > 0 ? 'warn' : 'ok'),
+          f > 0 ? f + ' fail' : (w > 0 ? w + ' warn' : 'all pass'));
+}
+
+// ----- Settings (.env) editor -----
+const EYE_SVG = '<svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF_SVG = '<svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+const X_SVG = '<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+
+function showEnvErr(msg) {
+  const e = $('env-err');
+  e.textContent = msg;
+  e.hidden = false;
+}
+
+function settingsRow(key, value) {
+  const r = document.createElement('div');
+  r.className = 'envrow';
+  const k = document.createElement('input');
+  k.className = 'k'; k.value = key; k.placeholder = 'KEY';
+  k.setAttribute('aria-label', 'Setting key');
+  k.autocomplete = 'off'; k.autocapitalize = 'off'; k.spellcheck = false;
+  const v = document.createElement('input');
+  v.className = 'v'; v.type = 'password'; v.value = value; v.placeholder = 'value';
+  v.setAttribute('aria-label', 'Setting value');
+  v.autocomplete = 'off'; v.spellcheck = false;
+  const eye = document.createElement('button');
+  eye.className = 'iconbtn'; eye.type = 'button';
+  eye.setAttribute('aria-label', 'Reveal value');
+  eye.innerHTML = EYE_SVG;
+  eye.onclick = () => {
+    const masked = v.type === 'password';
+    v.type = masked ? 'text' : 'password';
+    eye.innerHTML = masked ? EYE_OFF_SVG : EYE_SVG;
+    eye.setAttribute('aria-label', masked ? 'Hide value' : 'Reveal value');
+  };
+  const del = document.createElement('button');
+  del.className = 'iconbtn danger'; del.type = 'button';
+  del.setAttribute('aria-label', 'Delete entry');
+  del.innerHTML = X_SVG;
+  del.onclick = () => r.remove();
+  r.append(k, v, eye, del);
+  return r;
+}
+
+function addSettingsRow() {
+  const r = settingsRow('', '');
+  $('envrows').appendChild(r);
+  r.querySelector('.k').focus();
+}
+
+function collectSettings() {
+  return [...$('envrows').querySelectorAll('.envrow')].map(r => ({
+    key: r.querySelector('.k').value,
+    value: r.querySelector('.v').value
+  }));
+}
+
+async function loadSettings(force) {
+  if (force && !confirm('Reload from disk and discard any unsaved edits?')) return;
+  $('env-err').hidden = true;
+  let d;
+  try { d = await (await fetch('/api/env', {cache: 'no-store'})).json(); }
+  catch (e) { showEnvErr('Control Center not reachable.'); return; }
+  if (!d.ok) { showEnvErr(d.error || 'could not read .env'); return; }
+  $('env-path').textContent = d.path;
+  const c = $('envrows');
+  c.textContent = '';
+  d.entries.forEach(e => c.appendChild(settingsRow(e.key, e.value)));
+}
+
+async function saveSettings() {
+  if (!confirm('Save these settings to .env?')) return;
+  $('env-err').hidden = true;
+  const b = $('env-save');
+  b.disabled = true;                     // block re-entry through the feedback window
+  let d;
+  try {
+    d = await (await fetch('/api/env', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({entries: collectSettings()})})).json();
+  } catch (e) { showEnvErr('Control Center not reachable.'); b.disabled = false; return; }
+  if (!d.ok) { showEnvErr(d.error || 'could not save .env'); b.disabled = false; return; }
+  const orig = b.innerHTML;              // innerHTML: keep the icon (button is intact here)
+  b.textContent = 'Saved ✓';
+  setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
+  loadSettings();                        // reflect the canonical file (masked again)
+}
+
+// ----- Static Streams feed editor (runtime/static/streams.json) -----
+function showStreamsErr(msg) {
+  const e = $('streams-err');
+  e.textContent = msg;
+  e.hidden = false;
+}
+
+function feedRow(label, channel, port) {
+  const r = document.createElement('div');
+  r.className = 'envrow';
+  const mk = (cls, val, ph) => {
+    const i = document.createElement('input');
+    i.className = cls; i.value = val; i.placeholder = ph;
+    i.autocomplete = 'off'; i.autocapitalize = 'off'; i.spellcheck = false;
+    return i;
+  };
+  const l = mk('fl', label, 'label');
+  l.setAttribute('aria-label', 'Feed label');
+  const c = mk('fc', channel, 'UC… channel ID');
+  c.setAttribute('aria-label', 'YouTube channel ID');
+  const p = mk('fp', port, 'port');
+  p.inputMode = 'numeric';
+  p.setAttribute('aria-label', 'Port');
+  const del = document.createElement('button');
+  del.className = 'iconbtn danger'; del.type = 'button';
+  del.setAttribute('aria-label', 'Delete feed');
+  del.innerHTML = X_SVG;
+  del.onclick = () => r.remove();
+  r.append(l, c, p, del);
+  return r;
+}
+
+function addFeedRow() {
+  const r = feedRow('', '', '');
+  $('feedrows').appendChild(r);
+  r.querySelector('.fc').focus();
+}
+
+function collectStreams() {
+  return [...$('feedrows').querySelectorAll('.envrow')].map(r => ({
+    label: r.querySelector('.fl').value,
+    channel: r.querySelector('.fc').value,
+    port: r.querySelector('.fp').value
+  }));
+}
+
+async function loadStreams(force) {
+  if (force && !confirm('Reload from disk and discard any unsaved edits?')) return;
+  $('streams-err').hidden = true;
+  let d;
+  try { d = await (await fetch('/api/streams', {cache: 'no-store'})).json(); }
+  catch (e) { showStreamsErr('Control Center not reachable.'); return; }
+  if (!d.ok) { showStreamsErr(d.error || 'could not read streams config'); return; }
+  $('streams-path').textContent = d.path;
+  const c = $('feedrows');
+  c.textContent = '';
+  d.entries.forEach(e => c.appendChild(feedRow(e.label, e.channel, e.port)));
+}
+
+async function saveStreams() {
+  if (!confirm('Save the feed list to streams.json?')) return;
+  $('streams-err').hidden = true;
+  const b = $('feeds-save');
+  b.disabled = true;
+  let d;
+  try {
+    d = await (await fetch('/api/streams', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({entries: collectStreams()})})).json();
+  } catch (e) { showStreamsErr('Control Center not reachable.'); b.disabled = false; return; }
+  if (!d.ok) { showStreamsErr(d.error || 'could not save streams config'); b.disabled = false; return; }
+  const orig = b.innerHTML;
+  b.textContent = 'Saved ✓';
+  setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
+  loadStreams();                         // reflect the canonical file
+}
+
+// ----- Help & Docs (local docs + wiki links) -----
+async function fetchDocs() {
+  let d;
+  try { d = await (await fetch('/api/docs', {cache: 'no-store'})).json(); }
+  catch (e) { return; }
+  if (!d.ok) return;
+  $('wiki-open').href = d.wiki_url;
+  $('g-setup').href = d.setup_url;
+  $('g-director').href = d.director_url;
+  $('g-event').href = d.event_url;
+  $('issues-link').href = d.issues_url;
+  const c = $('local-docs');
+  c.textContent = '';
+  if (!d.local.length) {
+    const e = document.createElement('div');
+    e.className = 'row';
+    e.innerHTML = '<span class="dim">no local docs bundled</span>';
+    c.appendChild(e);
+    return;
+  }
+  d.local.forEach(doc => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const nm = document.createElement('span');
+    nm.className = 'docname';
+    nm.textContent = doc.title;
+    const ds = document.createElement('span');
+    ds.className = 'dim grow';
+    ds.textContent = doc.desc;
+    const a = document.createElement('a');
+    a.className = 'linkbtn';
+    a.target = '_blank'; a.rel = 'noopener';
+    a.href = '/api/docs/file/' + encodeURIComponent(doc.key);
+    a.textContent = doc.kind === 'html' ? 'Open ↗' : 'View ↗';
+    row.append(nm, ds, a);
+    c.appendChild(row);
+  });
+}
+
+function watchLog(name) {
+  if (logES) { logES.close(); logES = null; }
+  $('svclog').textContent = '';
+  if (!name) return;
+  logES = new EventSource('/api/logs/' + name + '/stream');
+  logES.onmessage = e => {
+    $('svclog').textContent += e.data + '\n';
+    $('svclog').scrollTop = 1e9;
+  };
+}
+
+async function quitUi() {
+  if (!confirm('Quit the Control Center? Relay/Companion/streams keep running.')) return;
+  try { await fetch('/api/quit', {method: 'POST'}); } catch (e) {}
+  document.body.innerHTML =
+    '<p style="padding:30px;font:14px system-ui;color:#F8FAFC">Control Center stopped — you can close this tab.</p>';
+}
+
+refresh();
+setInterval(refresh, 3000);
+setInterval(renderTimer, 1000);          // tick the Home race-timer clock locally
+checkUpdate();                           // one-shot GitHub release check (cached server-side)
+fetchObsWs();                            // OBS-WS creds for the auto-connecting panel link
+// Populate the Home tiles on startup: preflight auto-runs (a few seconds), and
+// the cheap asset listing fills the Assets tile + gallery.
+preflightRun = true; runPreflight();
+assetsLoaded = true; fetchAssetFiles();
+</script>
+</body>
+</html>

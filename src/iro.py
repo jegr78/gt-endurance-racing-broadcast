@@ -11,14 +11,16 @@
   iro event start --stint N             # takeover: stint N is on air now — the relay starts there
   iro tailscale up|down|status          # connect / disconnect / inspect Tailscale
   iro obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
+  iro app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
   iro status                            # aggregate health of all services
+  iro ui [--no-browser]                 # local Control Center web app (port 8089 / IRO_UI_PORT)
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   iro export companion [--out PATH]     # write the Companion button config
   iro init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
   iro update [--check] [--yes]          # self-update the binary from GitHub Releases
   iro --version
 """
-import glob, hashlib, json, os, shutil, sys, time, webbrowser
+import glob, hashlib, json, os, re, shutil, sys, time, webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Adapters (added in later tasks) import sibling modules from scripts/ at module
@@ -40,11 +42,24 @@ def resource_path(rel):
     """Absolute path of a bundled/checked-out source file, e.g. 'obs/hud.html'."""
     return os.path.join(_src_base(IS_FROZEN, getattr(sys, "_MEIPASS", ""), HERE), rel)
 
+def _app_home(executable):
+    """Directory holding a frozen binary's siblings — the other binary, runtime/,
+    .env. Normally dirname(executable). But inside a macOS .app bundle the
+    executable lives at <home>/<Name>.app/Contents/MacOS/<exe>, so the real home
+    (where the sibling `iro` binary and runtime/.env sit, NEXT TO the .app) is
+    three levels up from Contents/MacOS/."""
+    d = os.path.dirname(executable)
+    parts = d.split(os.sep)
+    if (len(parts) >= 3 and parts[-1] == "MacOS" and parts[-2] == "Contents"
+            and parts[-3].endswith(".app")):
+        return os.sep.join(parts[:-3]) or os.sep
+    return d
+
 def _runtime_base(frozen, executable, here):
     """Machine-local state dir. Frozen: next to the binary (document: keep the
     binary in its own folder). Repo (src/) -> <repo>/runtime ; package -> <pkg>/runtime."""
     if frozen:
-        return os.path.join(os.path.dirname(executable), "runtime")
+        return os.path.join(_app_home(executable), "runtime")
     if os.path.basename(here) == "src":
         return os.path.join(os.path.dirname(here), "runtime")
     return os.path.join(here, "runtime")
@@ -56,7 +71,7 @@ def _env_base(frozen, executable, here):
     """Directory whose .env configures this run (mirrors _runtime_base):
     frozen -> next to the binary; repo (src/) -> repo root; package -> here."""
     if frozen:
-        return os.path.dirname(executable)
+        return _app_home(executable)
     if os.path.basename(here) == "src":
         return os.path.dirname(here)
     return here
@@ -325,6 +340,8 @@ ONESHOTS = ("preflight", "cookies", "graphics", "media", "setup", "install-tools
 EVENT_VERBS = ("status", "start", "stop")
 TAILSCALE_VERBS = ("up", "down", "status")
 OBS_VERBS = ("refresh",)
+APP_VERBS = ("launch", "quit")          # GUI app control for the Control Center
+APP_CONTROLLED = ("obs", "discord", "tailscale")   # GUI apps iro can launch + quit
 
 USAGE = __doc__
 
@@ -360,6 +377,13 @@ def route(argv):
         if verb not in OBS_VERBS:
             raise ValueError(f"usage: iro obs {{{'|'.join(OBS_VERBS)}}}")
         return {"kind": "service", "command": "obs", "verb": verb, "rest": rest[1:]}
+    if cmd == "app":
+        verb = rest[0] if rest else None
+        if verb not in APP_VERBS:
+            raise ValueError(f"usage: iro app {{{'|'.join(APP_VERBS)}}} {{obs|discord}}")
+        return {"kind": "service", "command": "app", "verb": verb, "rest": rest[1:]}
+    if cmd == "ui":
+        return {"kind": "ui", "rest": rest}
     if cmd == "init":
         return {"kind": "init", "rest": rest}
     if cmd in ONESHOTS:
@@ -389,15 +413,31 @@ def _relay_http_ok():
         return False
 
 
-def _relay_extra():
-    parts = []
-    if _relay_http_ok():
-        parts.append(f"control http://127.0.0.1:{RELAY_PORT}/status OK")
-    else:
-        parts.append(f"(port {RELAY_PORT} not responding)")
-    ts = _tailscale_ip()
-    if ts:
-        parts.append(f"tablet/panel http://{ts}:{RELAY_PORT}/panel")
+def _relay_fetch_json(url, timeout=3):
+    """GET a relay control-server endpoint and parse its JSON body."""
+    import urllib.request
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def relay_status_data(read_pid=None, alive=None, http_ok=None):
+    """Structured relay state — one source for `iro status` (text) and the
+    Control Center's /api/status (JSON). Injection points are for tests."""
+    read_pid = read_pid or sv.read_pid
+    alive = alive or sv.pid_alive
+    http_ok = http_ok or _relay_http_ok
+    pid = read_pid(_relay_pid_path())
+    is_alive = alive(pid)
+    return {"pid": pid, "alive": is_alive, "port": RELAY_PORT,
+            "http_ok": http_ok() if is_alive else False}
+
+
+def _relay_extra_text(data, tailscale_ip):
+    """The CLI's extra column for a live relay, from relay_status_data()."""
+    parts = [f"control http://127.0.0.1:{data['port']}/status OK" if data["http_ok"]
+             else f"(port {data['port']} not responding)"]
+    if tailscale_ip:
+        parts.append(f"tablet/panel http://{tailscale_ip}:{data['port']}/panel")
     return "  ".join(parts)
 
 def _companion_tablet_port():
@@ -477,6 +517,47 @@ def _refresh_obs_pages(force=False, wait=0):
           else "obs: no relay browser sources in OBS — nothing to refresh.")
 
 
+def app_launch_cmd(rest):
+    """Launch a GUI app (obs|discord) detached — the same mechanism `iro event
+    start` uses, exposed as a button so the Control Center can start each app
+    individually. Best effort: a missing app or spawn error exits non-zero."""
+    name = rest[0] if rest else None
+    if name not in APP_CONTROLLED:
+        sys.exit(f"usage: iro app launch {{{'|'.join(APP_CONTROLLED)}}}")
+    ev = _event_modules()[0]
+    cmd = ev.launch_command(name, sys.platform)
+    if cmd is None:
+        sys.exit(f"app: cannot launch {name} on this system — is it installed?")
+    argv, cwd = cmd
+    try:
+        subprocess.Popen(argv, cwd=cwd, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, **sv.spawn_kwargs(os.name))
+    except OSError as exc:
+        sys.exit(f"app: failed to launch {name} ({exc}).")
+    print(f"Launched {name}.")
+
+
+def app_quit_cmd(rest):
+    """Ask a GUI app (obs|discord) to quit — graceful where possible (macOS
+    AppleScript quit, Windows taskkill, Linux pkill). The Control Center wraps
+    this in a confirm dialog; quitting OBS mid-broadcast is the operator's call."""
+    name = rest[0] if rest else None
+    if name not in APP_CONTROLLED:
+        sys.exit(f"usage: iro app quit {{{'|'.join(APP_CONTROLLED)}}}")
+    ev = _event_modules()[0]
+    cmd = ev.quit_command(name, sys.platform)
+    if cmd is None:
+        sys.exit(f"app: cannot quit {name} on this system.")
+    try:
+        rc = subprocess.run(cmd, capture_output=True).returncode
+    except OSError as exc:
+        sys.exit(f"app: failed to quit {name} ({exc}).")
+    if rc == 0:
+        print(f"Asked {name} to quit.")
+    else:
+        sys.exit(f"app: {name} did not quit (exit {rc}) — it may not be running.")
+
+
 def obs_refresh_cmd(_rest):
     """Force-refresh every relay-served browser source — the scriptable
     right-click → Refresh (no staleness gate)."""
@@ -525,9 +606,9 @@ def relay_restart(rest):
     relay_start(rest)
 
 def relay_status(rest):
-    pid = sv.read_pid(_relay_pid_path())
-    alive = sv.pid_alive(pid)
-    print(sv.status_line("relay", pid, alive, _relay_extra() if alive else ""))
+    d = relay_status_data()
+    extra = _relay_extra_text(d, _tailscale_ip()) if d["alive"] else ""
+    print(sv.status_line("relay", d["pid"], d["alive"], extra))
 
 def relay_logs(rest):
     sv.tail(_relay_log_path(), follow=("-f" in rest or "--follow" in rest))
@@ -585,7 +666,7 @@ def companion_start(rest):
     ts = _tailscale_ip()
     desired = cc.desired_bind_ip(bind_arg, ts)
     if bind_arg == "auto" and not ts:
-        print("  (warn) no Tailscale IP found — binding 127.0.0.1 (local only).")
+        print("companion: no Tailscale IP — the tablet will be reachable on this machine only.")
     plan = cc.plan_companion_action(current, desired, _companion_running(cc))
     if plan["stop_first"]:
         print("Stopping Companion to change its bind address…")
@@ -636,34 +717,59 @@ def companion_restart(rest):
     companion_stop([])
     companion_start(rest)
 
+def companion_status_payload(supported, running, cfg, why=""):
+    """Pure: shape the companion status dict from probed facts."""
+    url = None
+    if running and cfg:
+        url = f"http://{cfg.get('bind_ip', '127.0.0.1')}:{cfg.get('http_port', 8000)}/tablet"
+    return {"supported": supported, "running": running, "url": url, "why": why}
+
+
+def companion_status_data():
+    """Probe Companion and shape the result (best effort — a broken probe
+    reports as unsupported, never raises)."""
+    try:
+        cc = _companion()
+        cmds = _companion_cmds(cc)
+        if cmds is None:
+            why = ("(Companion.exe not found — set IRO_COMPANION_EXE in .env)"
+                   if sys.platform.startswith("win") else f"(manual on {sys.platform})")
+            return companion_status_payload(False, False, None, why)
+        running = _companion_running(cc)
+        cfg = None
+        if running:
+            try:
+                with open(cc.companion_config_path(sys.platform), encoding="utf-8") as fh:
+                    cfg = json.load(fh)
+            except Exception:
+                cfg = None
+        return companion_status_payload(True, running, cfg)
+    except Exception as exc:
+        return companion_status_payload(False, False, None, f"check failed: {exc}")
+
+
 def companion_status(rest):
-    cc = _companion()
-    cmds = _companion_cmds(cc)
-    if cmds is None:
-        why = ("(Companion.exe not found — set IRO_COMPANION_EXE in .env)"
-               if sys.platform.startswith("win") else f"(manual on {sys.platform})")
-        print(sv.status_line("companion", None, False, why))
-        return
-    running = _companion_running(cc)
-    extra = ""
-    if running:
-        cfg_path = cc.companion_config_path(sys.platform)
-        try:
-            with open(cfg_path, encoding="utf-8") as fh:
-                cfg = json.load(fh)
-            extra = f"http://{cfg.get('bind_ip')}:{cfg.get('http_port', 8000)}/tablet"
-        except Exception:
-            extra = ""
-    print(sv.status_line("companion", "?" if running else None, running, extra))
+    d = companion_status_data()
+    print(sv.status_line("companion", "?" if d["running"] else None,
+                         d["running"], d["url"] or d["why"]))
+
+def _companion_log_path():
+    """Newest Companion log file, or None (no logs / unsupported platform)."""
+    try:
+        cc = _companion()
+        logdir = os.path.join(os.path.dirname(cc.companion_config_path(sys.platform)), "logs")
+        logs = sorted(glob.glob(os.path.join(logdir, "*")), key=os.path.getmtime)
+        return logs[-1] if logs else None
+    except Exception:
+        return None
+
 
 def companion_logs(rest):
-    cc = _companion()
-    logdir = os.path.join(os.path.dirname(cc.companion_config_path(sys.platform)), "logs")
-    logs = sorted(glob.glob(os.path.join(logdir, "*")), key=os.path.getmtime)
-    if not logs:
-        print(f"(no Companion logs at {logdir})")
+    path = _companion_log_path()
+    if not path:
+        print("(no Companion logs found)")
         return
-    sv.tail(logs[-1], follow=("-f" in rest or "--follow" in rest))
+    sv.tail(path, follow=("-f" in rest or "--follow" in rest))
 
 
 def _streams_static_dir():
@@ -690,23 +796,40 @@ def streams_restart(rest):
     streams_stop([])
     streams_start(rest)
 
-def streams_status(rest):
-    pidfiles = sorted(glob.glob(os.path.join(_streams_static_dir(), "feed_*.pid")))
-    if not pidfiles:
-        print(sv.status_line("streams", None, False, "(no feeds started)"))
-        return
+def streams_status_data(pidfiles=None):
+    """Structured per-feed state of the static-streams mode."""
+    if pidfiles is None:
+        pidfiles = sorted(glob.glob(os.path.join(_streams_static_dir(), "feed_*.pid")))
+    feeds = []
     for pf in pidfiles:
         pid = sv.read_pid(pf)
-        label = "streams:" + os.path.basename(pf)[len("feed_"):-len(".pid")]
-        print(sv.status_line(label, pid, sv.pid_alive(pid)))
+        feeds.append({"label": os.path.basename(pf)[len("feed_"):-len(".pid")],
+                      "pid": pid, "alive": sv.pid_alive(pid)})
+    return feeds
 
-def streams_logs(rest):
+
+def streams_status(rest):
+    feeds = streams_status_data()
+    if not feeds:
+        print(sv.status_line("streams", None, False, "(no feeds started)"))
+        return
+    for f in feeds:
+        print(sv.status_line("streams:" + f["label"], f["pid"], f["alive"]))
+
+
+def _latest_stream_log():
+    """Newest static-feed log file, or None."""
     logs = sorted(glob.glob(os.path.join(_streams_static_dir(), "logs", "feed_*.log")),
                   key=os.path.getmtime)
-    if not logs:
+    return logs[-1] if logs else None
+
+
+def streams_logs(rest):
+    path = _latest_stream_log()
+    if not path:
         print(f"(no stream logs under {os.path.join(_streams_static_dir(), 'logs')})")
         return
-    sv.tail(logs[-1], follow=("-f" in rest or "--follow" in rest))
+    sv.tail(path, follow=("-f" in rest or "--follow" in rest))
 
 
 def _http_url(host, port, path):
@@ -980,6 +1103,12 @@ def event_start(rest):
     probes = {"relay": _relay_http_ok}
     if install_apps.app_present("obs", sys.platform):
         probes["obs"] = lambda: ev.app_running("obs")
+    # Companion is an Electron app — its HTTP server takes a few seconds to
+    # come up. Wait for it too, or the readiness report below races the launch
+    # and prints a spurious "Companion: not running" right after starting it.
+    cc = _companion()
+    if _companion_cmds(cc) is not None:   # controllable on this OS (not Linux)
+        probes["companion"] = lambda: _companion_running(cc)
     print("\nWaiting for the launched services to come up (max 60 s)…")
     for name, up in sorted(ev.wait_until_up(probes).items()):
         print(f"  {name}: {'up' if up else 'still not up — see the report below'}")
@@ -1028,6 +1157,7 @@ DISPATCH = {
     ("tailscale", "up"): tailscale_up_cmd, ("tailscale", "down"): tailscale_down_cmd,
     ("tailscale", "status"): tailscale_status_cmd,
     ("obs", "refresh"): obs_refresh_cmd,
+    ("app", "launch"): app_launch_cmd, ("app", "quit"): app_quit_cmd,
 }
 
 ONESHOT_MAP = {
@@ -1077,6 +1207,40 @@ def version():
         return "dev"
 
 
+def update_check_data(fetch=None, current=None, platform=None):
+    """Check-only view of the self-updater for the Home dashboard: is a newer
+    GitHub release out? Thin wrapper over scripts/update.py — the single source
+    of truth for the version compare and release lookup (the `iro update`
+    command installs it). Never downloads or replaces anything here. Network
+    call; served on demand via /api/update (cached), never from the status poll.
+    Never raises; {"ok": False} when offline / rate-limited / the tag is
+    malformed. A 'dev' (unstamped) build reports ok with no update. `fetch`/
+    `current`/`platform` are test seams."""
+    import update as upd
+    cur = current or version()
+    out = {"ok": True, "current": cur, "latest": None, "update_available": False,
+           "releases_url": f"https://github.com/{upd.REPO}/releases/latest"}
+    if upd.parse_version(cur) is None:        # 'dev'/unstamped — nothing to compare
+        out["note"] = "development build — update check skipped"
+        return out
+    try:
+        release = (fetch or upd.fetch_latest)()
+    except Exception:
+        out["ok"] = False
+        return out
+    try:
+        kind, detail, _url = upd.classify(release, platform or sys.platform, cur)
+    except Exception:
+        out["ok"] = False
+        return out
+    if kind == "error":
+        out["ok"] = False
+        return out
+    out["latest"] = detail                    # tag for up-to-date / update / building
+    out["update_available"] = kind in ("update", "building")
+    return out
+
+
 def export_companion(rest):
     """Write the bundled (password-stripped) Companion config for import.
     Default: runtime/ — the same home as the localized OBS collection."""
@@ -1097,6 +1261,453 @@ def aggregate_status(_rest=None):
     relay_status([])
     companion_status([])
     streams_status([])
+
+
+def running_apps_data(probe=None):
+    """OBS/Discord process running-state for the Event overview (cheap
+    pgrep/tasklist per app). Never raises — both False on any failure."""
+    try:
+        if probe is None:
+            probe = _event_modules()[0].app_running
+        return {"obs": bool(probe("obs")), "discord": bool(probe("discord"))}
+    except Exception:
+        return {"obs": False, "discord": False}
+
+
+def relay_live_data(fetch=None, started=None):
+    """Screenshot-safe live relay stats for the Home dashboard: race-timer
+    state and each feed's stint + coarse phase, pulled from the relay control
+    server on localhost. Deliberately omits stream URLs/channels — only the
+    1-based stint index and the state label leave the process. Network call to
+    localhost; served on demand via /api/relay-live, never from the status poll.
+    Never raises; {"ok": False} when the relay is unreachable. `fetch`/`started`
+    are test seams."""
+    fetch = fetch or _relay_fetch_json
+    try:
+        status = fetch(f"http://127.0.0.1:{RELAY_PORT}/status")
+        timer = fetch(f"http://127.0.0.1:{RELAY_PORT}/timer/data")
+    except Exception:
+        return {"ok": False}
+    if not isinstance(status, dict):
+        return {"ok": False}
+    feeds = []
+    for name in ("A", "B"):
+        f = (status.get("feeds") or {}).get(name)
+        if isinstance(f, dict):
+            feeds.append({"feed": name, "stint": f.get("stint"),
+                          "state": f.get("state")})
+    t = timer if isinstance(timer, dict) else {}
+    try:
+        get = started or (lambda: os.path.getmtime(_relay_pid_path()))
+        uptime = max(0, int(time.time() - get()))
+    except Exception:
+        uptime = None
+    return {"ok": True, "schedule_len": status.get("schedule_len"),
+            "uptime_s": uptime, "feeds": feeds,
+            "timer": {"mode": t.get("mode"), "visible": t.get("visible"),
+                      "remaining_s": t.get("remaining_s"),
+                      "duration_s": t.get("duration_s"),
+                      "end": t.get("end"), "server_now": t.get("server_now")}}
+
+
+def obs_ws_link_data(env=None, config_path=None):
+    """OBS-WebSocket connection details for auto-connecting the Director panel
+    from the Control Center: local OBS (127.0.0.1), the configured port, and the
+    password (IRO_OBS_WS_PASSWORD wins, else OBS's own stored one). Localhost-only
+    data — the Control Center puts it in the panel link's URL *fragment* (never
+    sent to a server). Never raises; password is None when not discoverable.
+    `env`/`config_path` are test seams."""
+    try:
+        import obs_ws
+        if env is None:
+            env = dict(_read_env_file())
+            env.update(os.environ)
+        path = config_path or obs_ws.default_config_path()
+        cfg = obs_ws.read_ws_config(path) or {}
+        return {"ok": True, "ip": "127.0.0.1",
+                "port": int(cfg.get("port") or 4455),
+                "password": obs_ws.find_password(env, path),
+                "auth_required": bool(cfg.get("auth_required", True))}
+    except Exception as exc:
+        return {"ok": False, "error": f"obs-websocket info unavailable: {exc}"}
+
+
+def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None,
+                      cookies=None, apps_running=None):
+    """Aggregate health for the Control Center dashboard (/api/status).
+    Each parameter is an optional zero-arg callable override (None = real
+    probe). Cheap, local-only probes — the sheet-fetching asset check lives
+    in assets_status_data() behind the on-demand /api/assets.
+    apps_running: OBS/Discord running-state used by the Event overview."""
+    return {"version": version(),
+            "relay": (relay or relay_status_data)(),
+            "companion": (companion or companion_status_data)(),
+            "streams": (streams or streams_status_data)(),
+            "tailscale_ip": (tailscale or _tailscale_ip)(),
+            "cookies": (cookies or cookies_status_data)(),
+            "apps_running": (apps_running or running_apps_data)()}
+
+
+def cookies_status_data(status=None):
+    """Local cookie-jar freshness (no network — safe for the 3 s poll;
+    never raises — a broken probe must not 500 the status poll)."""
+    try:
+        if status is None:
+            pf = _event_modules()[1]
+            path = os.path.join(_runtime_dir(), "cookies.txt")
+
+            def status():
+                return pf.cookies_status(path)
+        res = status()
+        return {"level": res.level, "detail": res.detail}
+    except Exception as exc:
+        return {"level": "WARN", "detail": f"check failed: {exc}"}
+
+
+def assets_status_data(state=None):
+    """Sheet-driven graphics/media readiness (network: sheet fetch, takes
+    seconds — served on demand via /api/assets, never from the status poll)."""
+    try:
+        ev = _event_modules()[0]
+        g_dir, m_dir, missing_g, missing_m = (state or _asset_state)(ev)
+    except Exception as exc:
+        return {"ok": False, "error": f"asset check failed: {exc}"}
+    g = ev.classify_assets("Graphics", missing_g, ev.local_count(g_dir), ev.FAIL,
+                           "run `iro graphics`")
+    m = ev.classify_assets("Media", missing_m, ev.local_count(m_dir), ev.WARN,
+                           "run `iro media`")
+    return {"ok": True,
+            "graphics": {"level": g.level, "detail": g.detail},
+            "media": {"level": m.level, "detail": m.detail}}
+
+
+def assets_files_data(roots=None):
+    """Local graphics/media files actually present in runtime/ (cheap listdir —
+    no sheet, no network). Returns {"ok": True, "graphics": [names], "media":
+    [names]} with sorted basenames, or {"ok": False, "error": ...}; never raises.
+    The `roots` override (a {"graphics": dir, "media": dir} dict) is the test
+    seam."""
+    IMG = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+    VID = (".mp4", ".webm", ".mov")
+    try:
+        if roots is None:
+            rt = _runtime_dir()
+            roots = {"graphics": os.path.join(rt, "graphics"),
+                     "media": os.path.join(rt, "media")}
+
+        def listing(d, exts):
+            if not os.path.isdir(d):
+                return []
+            return sorted(f for f in os.listdir(d)
+                          if f.lower().endswith(exts)
+                          and os.path.isfile(os.path.join(d, f)))
+        return {"ok": True,
+                "graphics": listing(roots["graphics"], IMG),
+                "media": listing(roots["media"], VID)}
+    except Exception as exc:
+        return {"ok": False, "error": f"asset listing failed: {exc}"}
+
+
+_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def env_entries_data(path=None):
+    """The active .env as ordered {key, value} entries for the Settings editor.
+    Missing file -> empty list (not an error). Never raises. Writes nothing —
+    `path` is a test seam; production resolves _env_file()."""
+    try:
+        p = path or _env_file()
+        text = ""
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as fh:
+                text = fh.read()
+        entries = [{"key": k, "value": v} for k, v in parse_env_text(text).items()]
+        return {"ok": True, "path": p, "entries": entries}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not read .env: {exc}"}
+
+
+def _validate_env_entries(entries):
+    """(cleaned [(key,value)], None) on success, (None, error_str) on failure.
+    Blank rows (no key) are dropped; keys must be valid env identifiers, unique;
+    values must not contain line breaks."""
+    seen, pairs = set(), []
+    for e in entries or []:
+        key = str(e.get("key", "")).strip()
+        val = str(e.get("value", ""))
+        if not key:
+            continue
+        if not _ENV_KEY_RE.match(key):
+            return None, (f"invalid key: {key!r} — use letters, digits and "
+                          "underscore, not starting with a digit")
+        if "\n" in val or "\r" in val:
+            return None, f"value for {key} must not contain line breaks"
+        if key in seen:
+            return None, f"duplicate key: {key}"
+        seen.add(key)
+        pairs.append((key, val.strip()))
+    return pairs, None
+
+
+def merge_env_text(original, pairs):
+    """Rewrite .env `original` text with `pairs` (ordered [(key,value)]):
+    update each existing key line in place (keeping its position and the
+    comments/blank lines around it), drop keys the user removed, append brand
+    new keys at the end. Comment and blank lines are always preserved."""
+    wanted = dict(pairs)
+    written = set()
+    out = []
+    for line in original.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in wanted:
+                out.append(f"{key}={wanted[key]}")
+                written.add(key)
+                continue
+            if _ENV_KEY_RE.match(key):          # a real key the user removed
+                continue
+        out.append(line)                        # comment / blank / non-key kept
+    extra = [f"{k}={v}" for k, v in pairs if k not in written]
+    if extra:
+        if out and out[-1].strip():
+            out.append("")
+        out.extend(extra)
+    return "\n".join(out) + "\n"
+
+
+def env_write_data(entries, path=None):
+    """Validate the Settings editor's entries and persist them to .env,
+    preserving comments. Atomic (tmp + os.replace). Writes ONLY the
+    server-resolved path (or the test-supplied `path`), never a client value.
+    Returns {ok:true, path} or {ok:false, error}; never raises."""
+    try:
+        pairs, err = _validate_env_entries(entries)
+        if err:
+            return {"ok": False, "error": err}
+        p = path or _env_file()
+        original = ""
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as fh:
+                original = fh.read()
+        text = merge_env_text(original, pairs)
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp, p)
+        return {"ok": True, "path": p}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not write .env: {exc}"}
+
+
+def _streams_config_path():
+    return os.path.join(_streams_static_dir(), "streams.json")
+
+
+def _default_stream_feeds():
+    """The built-in FEEDS from start-streams.py as editor entries, so the UI
+    opens pre-seeded the first time (before any streams.json is saved)."""
+    ss = _load_relay_module("scripts/start-streams.py")
+    return [{"label": f"Feed {chr(65 + i)}", "channel": ch, "port": port}
+            for i, (ch, port) in enumerate(ss.FEEDS)]
+
+
+def streams_config_data(path=None, default=None):
+    """static-stream feeds for the Control Center: the saved streams.json, or the
+    built-in defaults when none exists yet. {"ok": True, "path", "entries":
+    [{label, channel, port}]} — never raises. `path`/`default` are test seams."""
+    try:
+        p = path or _streams_config_path()
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as fh:
+                data = json.load(fh)
+            entries = [{"label": str(e.get("label", "")),
+                        "channel": str(e.get("channel", "")),
+                        "port": str(e.get("port", ""))}
+                       for e in data if isinstance(e, dict)]
+        else:
+            entries = (default or _default_stream_feeds)()
+        return {"ok": True, "path": p, "entries": entries}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not read streams config: {exc}"}
+
+
+def _validate_streams_entries(entries):
+    """(cleaned [{label,channel,port}], None) or (None, error). Rows with neither
+    channel nor port are dropped; a present row needs a channel and a numeric,
+    unique port (ports map 1:1 to OBS media sources)."""
+    seen, out = set(), []
+    for e in entries or []:
+        label = str(e.get("label", "")).strip()
+        channel = str(e.get("channel", "")).strip()
+        port = str(e.get("port", "")).strip()
+        if not channel and not port:
+            continue
+        if not channel:
+            return None, "every feed needs a channel ID"
+        if not port.isdigit():
+            return None, f"port for {channel} must be a number"
+        if port in seen:
+            return None, f"duplicate port: {port}"
+        seen.add(port)
+        out.append({"label": label, "channel": channel, "port": port})
+    return out, None
+
+
+def streams_config_write_data(entries, path=None):
+    """Validate and persist the static-stream feed list to streams.json (atomic
+    tmp + os.replace). Writes ONLY the server-resolved path. {"ok": True, "path"}
+    or {"ok": False, "error"}; never raises."""
+    try:
+        cleaned, err = _validate_streams_entries(entries)
+        if err:
+            return {"ok": False, "error": err}
+        p = path or _streams_config_path()
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(cleaned, fh, indent=2)
+        os.replace(tmp, p)
+        return {"ok": True, "path": p}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not write streams config: {exc}"}
+
+
+def tools_status_data(which=None, version=None):
+    """Per-tool install presence (+ version when present). On-demand: the
+    version probe shells out once per tool. Returns {"ok": True, "tools":[...]}
+    or {"ok": False, "error": ...}; never raises."""
+    try:
+        import install_tools as it
+        pf = _event_modules()[1]
+        which = which or shutil.which
+        version = version or pf.tool_version
+        tools = []
+        for name in it.TOOLS:
+            present = bool(which(name))
+            tools.append({"name": name, "installed": present,
+                          "version": version(name) if present else None})
+        return {"ok": True, "tools": tools}
+    except Exception as exc:
+        return {"ok": False, "error": f"tool check failed: {exc}"}
+
+
+def apps_status_data(present=None):
+    """Per-app install presence (filesystem/PATH probe — instant, no subprocess).
+    Returns {"ok": True, "apps":[...]} or {"ok": False, "error": ...}; never raises."""
+    try:
+        import install_apps as ia
+        present = present or (lambda app: ia.app_present(app, sys.platform))
+        apps = [{"name": a, "installed": bool(present(a))} for a in ia.APPS]
+        return {"ok": True, "apps": apps}
+    except Exception as exc:
+        return {"ok": False, "error": f"app check failed: {exc}"}
+
+
+def preflight_data(gather=None):
+    """Full preflight checklist as structured sections (on-demand: runs hardware
+    probes, per-tool version calls, and a Google-Sheet fetch when configured —
+    can take several seconds). Returns {"ok": True, "sections":[{"title","results":
+    [{"level","name","detail"}]}]} or {"ok": False, "error": ...}; never raises."""
+    try:
+        pf = _event_modules()[1]
+        run = gather or (lambda: pf.gather(resource_path("scripts/preflight.py"),
+                                           _runtime_dir()))
+        sections = [{"title": title,
+                     "results": [{"level": r.level, "name": r.name,
+                                  "detail": r.detail} for r in results]}
+                    for title, results in run()]
+        return {"ok": True, "sections": sections}
+    except Exception as exc:
+        return {"ok": False, "error": f"preflight failed: {exc}"}
+
+
+# Bundled operator docs the Control Center's Help page can open (allowlist —
+# only these keys map to a file, so the HTTP layer can serve nothing else).
+DOCS_FILES = {
+    "cheat-sheet":  "docs/IRO_cheat_sheets.html",
+    "setup-guide":  "docs/IRO_Broadcast_Setup_Guide.md",
+    "setup-readme": "docs/README_SETUP.md",
+}
+_DOC_TITLES = {
+    "cheat-sheet":  ("Cheat sheet", "Printable one-page reference for event day."),
+    "setup-guide":  ("Setup guide", "Full broadcast-PC install & configuration walkthrough."),
+    "setup-readme": ("Setup README", "Quick setup notes and command reference."),
+}
+
+
+def _wiki_repo():
+    try:
+        import update
+        return update.REPO
+    except Exception:
+        return "jegr78/IRO_Broadcast_Setup"
+
+
+def _resolve_doc(rel, resolve):
+    """Path of a bundled doc, or None. Checks src/docs/<f> (repo + binary, where
+    docs keep their docs/ prefix) AND the bare basename (the distributed package:
+    build.py copies the doc files to the package root)."""
+    for cand in (rel, os.path.basename(rel)):
+        try:
+            p = resolve(cand)
+            if os.path.isfile(p):
+                return p
+        except Exception:
+            pass
+    return None
+
+
+def docs_data(resolve=None):
+    """Help/Docs resources for the Control Center: the bundled local docs that
+    are actually present (served via /api/docs/file/<key>) plus the canonical
+    GitHub wiki URLs for the rendered guides. Never raises. `resolve` is a test
+    seam."""
+    resolve = resolve or resource_path
+    repo = _wiki_repo()
+    wiki = f"https://github.com/{repo}/wiki"
+    local = []
+    for key, rel in DOCS_FILES.items():
+        if _resolve_doc(rel, resolve):
+            title, desc = _DOC_TITLES[key]
+            local.append({"key": key, "title": title, "desc": desc,
+                          "kind": "html" if rel.endswith(".html") else "markdown"})
+    return {"ok": True, "wiki_url": wiki,
+            "setup_url": f"{wiki}/Set-up-the-broadcast-PC",
+            "director_url": f"{wiki}/Director-Setup",
+            "event_url": f"{wiki}/Run-an-event",
+            "issues_url": f"https://github.com/{repo}/issues",
+            "local": local}
+
+
+def docs_file_path(key, resolve=None):
+    """Absolute path of an allowlisted bundled doc, or None for an unknown key
+    or a missing file. The HTTP layer serves only what this returns."""
+    rel = DOCS_FILES.get(key)
+    if not rel:
+        return None
+    return _resolve_doc(rel, resolve or resource_path)
+
+
+def docs_content(key, resolve=None):
+    """(content_type, body_bytes) for an allowlisted Help doc, or None. HTML docs
+    are served as-is; Markdown docs are rendered to a styled, self-contained HTML
+    page (mdrender) so they read properly in a browser tab instead of as raw
+    text. Never raises — returns None on any failure."""
+    path = docs_file_path(key, resolve)
+    if not path:
+        return None
+    try:
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        if path.lower().endswith((".html", ".htm")):
+            return ("text/html; charset=utf-8", raw)
+        import mdrender
+        title = _DOC_TITLES.get(key, (key, ""))[0]
+        doc = mdrender.page(title, mdrender.render(raw.decode("utf-8", "replace")))
+        return ("text/html; charset=utf-8", doc.encode("utf-8"))
+    except Exception:
+        return None
 
 
 def _read_env_file():
@@ -1196,8 +1807,14 @@ def _init_steps(opts):
                      "run": lambda: _oneshot_code("graphics", [])},
         "media": {"done": lambda: _init_assets_done("media"),
                   "run": lambda: _oneshot_code("media", [])},
+        # The import JSON must be newer than .env (its values are baked in). The
+        # bundled OBS template is a dependency ONLY in dev (a real, stable file):
+        # in the frozen binary it lives in _MEIPASS, re-extracted with a fresh
+        # mtime on every launch, which would make `setup` look stale after every
+        # start. So frozen compares against .env alone.
         "setup": {"done": lambda: ins.setup_done(
                       _mtime(_init_import_json()),
+                      [_mtime(_env_file())] if IS_FROZEN else
                       [_mtime(resource_path("obs/IRO_Endurance.json")),
                        _mtime(_env_file())]),
                   "run": lambda: _oneshot_code("setup",
@@ -1210,6 +1827,182 @@ def _init_steps(opts):
     }
     return [{"key": k, "label": ins.STEP_LABELS[k], **by_key[k]}
             for k in ins.build_plan(opts["skip_installs"])]
+
+
+def init_plan_data(steps, kinds, browser="firefox", next_steps=None):
+    """Wizard plan for the Control Center: each step's current done/skip state
+    plus how the UI runs it (kind/op/instruction from ins.STEP_KINDS). Pure +
+    never-raise — a broken done-probe reads as 'not done' (the step then runs
+    and surfaces its own error), never a 500. `steps` is the _init_steps()-shaped
+    list; `next_steps` is the closing manual checklist."""
+    out = []
+    for st in steps:
+        meta = kinds.get(st["key"], {"kind": "action", "op": None})
+        try:
+            reason = st["done"]()
+        except Exception:
+            reason = None
+        instr = meta.get("instruction")
+        if instr:
+            instr = instr.replace("{browser}", browser)
+        out.append({"key": st["key"], "label": st["label"],
+                    "kind": meta["kind"], "op": meta.get("op"),
+                    "done": reason is not None, "skip_reason": reason,
+                    "instruction": instr})
+    return {"ok": True, "steps": out, "next_steps": list(next_steps or [])}
+
+
+def init_step_action_data(key):
+    """Run one non-job wizard step in-process and report its new state. Only the
+    '.env' gate and 'export-companion' action are UI-driven here; job steps run
+    through /api/op/<op>. Never raises — returns {ok: False, error} instead."""
+    try:
+        if key == "env":
+            path = _env_file()
+            example = os.path.join(os.path.dirname(path), ".env.example")
+            if not os.path.exists(path) and os.path.exists(example):
+                shutil.copyfile(example, path)
+            reason = ins.env_done(_init_env_state())
+            return {"ok": True, "key": key, "done": reason is not None,
+                    "skip_reason": reason}
+        if key == "export-companion":
+            _init_export_run()
+            reason = ins.export_done(os.path.exists(_init_companion_cfg()))
+            return {"ok": True, "key": key, "done": reason is not None,
+                    "skip_reason": reason}
+        return {"ok": False, "error": f"step '{key}' is not a UI action step"}
+    except Exception as exc:
+        return {"ok": False, "error": f"init step '{key}' failed: {exc}"}
+
+
+def _init_plan(browser="firefox"):
+    """ctx['init_plan'] wrapper: the wizard's view of the init steps. Preflight is
+    dropped — the Control Center has a dedicated Preflight page, and as the one
+    step with no persistent done-state it only ever read as 'pending' here — and
+    surfaced as a closing reminder instead. (The `iro init` CLI still runs it.)"""
+    opts = {"browser": browser or "firefox", "skip_installs": False, "force": False}
+    steps = [s for s in _init_steps(opts) if s["key"] != "preflight"]
+    nxt = ins.manual_next_steps(_init_import_json(), _init_companion_cfg())
+    nxt.append("Open the Preflight page (left menu) to verify hardware, tools, "
+               "and ports before going live.")
+    return init_plan_data(steps, ins.STEP_KINDS,
+                          browser=opts["browser"], next_steps=nxt)
+
+
+def _ui_modules():
+    """src/ui modules — path-inserted like scripts/ (kept out of the module-level
+    insert: only `iro ui` needs them)."""
+    ui_dir = resource_path("ui")
+    if ui_dir not in sys.path:
+        sys.path.insert(0, ui_dir)
+    import ui_jobs, ui_ops, ui_server
+    return ui_server, ui_jobs, ui_ops
+
+
+def _iro_job_executable(frozen=IS_FROZEN, executable=None, win=None):
+    """Path to the `iro` binary that runs Control Center jobs. When the server
+    is launched by iro-ui (a sibling binary), jobs must still invoke `iro`, not
+    iro-ui. Frozen: the sibling iro/iro.exe next to the running executable.
+    Dev: the interpreter itself (paired with iro.py by job_argv)."""
+    executable = sys.executable if executable is None else executable
+    win = (os.name == "nt") if win is None else win
+    if frozen:
+        return os.path.join(_app_home(executable),
+                            "iro.exe" if win else "iro")
+    return executable
+
+
+def ui_cmd(rest):
+    """Run the Control Center web server in the foreground (Ctrl+C stops it).
+    Spec: docs/superpowers/specs/2026-06-07-control-center-design.md."""
+    return run_ui(rest, fail=sys.exit, open_browser="--no-browser" not in rest)
+
+
+def run_ui(rest, fail=sys.exit, open_browser=True):
+    """Shared Control Center server core for both entrypoints. `fail(msg)` is
+    called on a fatal startup error (port taken / bind failure): the CLI passes
+    sys.exit; iro_ui passes a native-dialog variant. Returns None when the
+    server has stopped."""
+    srv, jobs_mod, ops_mod = _ui_modules()
+    for key, val in _read_env_file().items():
+        os.environ.setdefault(key, val)        # IRO_UI_PORT from .env (env wins)
+    port = srv.ui_port(os.environ)
+    instance = srv.probe_instance("127.0.0.1", port)
+    if instance == "ours":
+        print(f"Control Center already running on port {port} — opening the browser.")
+        if open_browser:
+            _open_url(_http_url("127.0.0.1", port, "/"))
+        return None
+    if instance == "foreign":
+        return fail(f"iro: port {port} is in use by another application — set "
+                    "IRO_UI_PORT in .env to a free port and retry.")
+
+    # The GitHub release check is one network round-trip — cache a good result
+    # for an hour so the Home dashboard can call it freely (and so we never spam
+    # the unauthenticated API into a rate limit). Failures aren't cached.
+    _upd = {"at": 0.0, "data": None}
+
+    def update_check_cached(force=False):
+        now = time.time()
+        if not force and _upd["data"] is not None and now - _upd["at"] <= 3600:
+            return _upd["data"]
+        fresh = update_check_data()
+        if fresh.get("ok"):
+            _upd["data"], _upd["at"] = fresh, now
+            return fresh
+        return _upd["data"] or fresh       # keep the last good result on a failed refresh
+
+    ctx = {
+        "version": version(),
+        "page_path": resource_path("ui/control-center.html"),
+        "status": ui_status_payload,
+        "relay_live": relay_live_data,
+        "obs_ws": obs_ws_link_data,
+        "update_check": update_check_cached,
+        "streams_read": streams_config_data,
+        "streams_write": streams_config_write_data,
+        "docs": docs_data,
+        "docs_content": docs_content,
+        "init_plan": _init_plan,
+        "init_step": init_step_action_data,
+        "ops": ops_mod.OPS,
+        "build_argv": ops_mod.build_argv,
+        "assets": assets_status_data,
+        "asset_files": assets_files_data,
+        "asset_roots": {"graphics": os.path.join(_runtime_dir(), "graphics"),
+                        "media": os.path.join(_runtime_dir(), "media")},
+        "tools": tools_status_data,
+        "apps": apps_status_data,
+        "preflight": preflight_data,
+        "env_read": env_entries_data,
+        "env_write": env_write_data,
+        "jobs": jobs_mod.JobManager(
+            lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN,
+                                             _iro_job_executable(),
+                                             os.path.join(HERE, "iro.py")),
+            env=_frozen_child_env()),
+        "log_paths": {"relay": _relay_log_path,
+                      "companion": _companion_log_path,
+                      "streams": _latest_stream_log},
+    }
+    try:
+        httpd = srv.serve(ctx, "127.0.0.1", port)
+    except OSError as exc:
+        return fail(f"iro: could not bind port {port} ({exc}) — set IRO_UI_PORT "
+                    "in .env to a free port and retry.")
+    url = _http_url("127.0.0.1", port, "/")
+    print(f"Control Center: {url}  (Ctrl+C or the Quit button stops it)")
+    if open_browser:
+        _open_url(url)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        httpd.server_close()
+    print("Control Center stopped — relay/companion/streams keep running.")
+    return None
+
 
 def init_cmd(rest):
     """Guided first-time setup: every automatable step in dependency order,
@@ -1252,6 +2045,8 @@ def main(argv=None):
         if not fn:
             sys.exit(f"iro: {action['command']} {action['verb']} not implemented yet")
         return fn(action["rest"])
+    if action["kind"] == "ui":
+        return ui_cmd(action["rest"])
     if action["kind"] == "init":
         return init_cmd(action["rest"])
     if action["kind"] == "oneshot":

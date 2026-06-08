@@ -121,6 +121,31 @@ def launch_command(app, platform, env=None, exists=os.path.exists, which=shutil.
     return ([exe], None) if exe else None
 
 
+# Windows process image names to taskkill (the GUI app, mirroring launch_command).
+_WIN_PROC_NAMES = {"obs": "obs64.exe", "discord": "Discord.exe",
+                   "tailscale": "tailscale-ipn.exe"}
+
+
+def quit_command(app, platform):
+    """argv that asks GUI app `app` to quit, or None when there is nothing to
+    exec on this platform. Graceful where the OS allows it: macOS AppleScript
+    `quit`, Windows taskkill by image name, Linux pkill. Mirrors launch_command
+    (the launchable GUI apps: obs, discord, tailscale); on Linux Tailscale is a
+    daemon with no GUI to quit. Companion has its own stop path (companion_common)
+    and the Tailscale *tunnel* is controlled separately by `tailscale down`. Pure
+    (no I/O) so it is unit-tested across platforms."""
+    if app not in _DARWIN_OPEN_NAMES:        # not a GUI app we launch -> nothing to quit
+        return None
+    if platform == "darwin":
+        return ["osascript", "-e",
+                f'tell application "{_DARWIN_OPEN_NAMES[app]}" to quit']
+    if platform.startswith("win"):
+        proc = _WIN_PROC_NAMES.get(app)
+        return ["taskkill", "/IM", proc] if proc else None
+    name = _LINUX_PATH_NAMES.get(app)        # tailscale has no Linux GUI -> None
+    return ["pkill", "-f", name] if name else None
+
+
 def check_assets(required_files, directory):
     """Sorted names from `required_files` missing in `directory` (an absent or
     unreadable directory misses everything)."""

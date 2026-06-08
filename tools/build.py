@@ -45,9 +45,11 @@ def main():
     cp("obs/timer.html", "timer.html")
     cp("setup-assets.py", "setup-assets.py")
     cp("iro.py", "iro.py")
+    cp("iro_ui.py", "iro_ui.py")   # windowed Control Center launcher (iro-ui)
     cp("assets", "assets")
     cp("scripts", "scripts")
     cp("relay", "relay")  # iro-feeds.py + get-cookies.py
+    cp("ui", "ui")        # Control Center server + page
 
     # intro/outro clips: download into the package so the artifact is self-contained.
     # Best-effort — offline / code-only builds must still succeed (the shipped
@@ -140,12 +142,15 @@ def main():
         ".env.example shipped": os.path.isfile(os.path.join(PKG, ".env.example")),
         "no sheet url in relay": not re.search(r"/spreadsheets/d/[A-Za-z0-9_-]{20,}/", relay),
         "iro cli shipped": os.path.isfile(os.path.join(PKG, "iro.py")),
+        "iro-ui launcher shipped": os.path.isfile(os.path.join(PKG, "iro_ui.py")),
         "services helper shipped": os.path.isfile(os.path.join(PKG, "scripts", "services.py")),
         "install-tools shipped": os.path.isfile(os.path.join(PKG, "scripts", "install_tools.py")),
         "install-apps shipped": os.path.isfile(os.path.join(PKG, "scripts", "install_apps.py")),
         "installer-common shipped": os.path.isfile(os.path.join(PKG, "scripts", "installer_common.py")),
         "old entrypoint removed: scripts/start-companion.py": not os.path.isfile(os.path.join(PKG, "scripts", "start-companion.py")),
         "old entrypoint removed: scripts/stop-companion.py": not os.path.isfile(os.path.join(PKG, "scripts", "stop-companion.py")),
+        "ui server shipped": os.path.isfile(os.path.join(PKG, "ui", "ui_server.py")),
+        "ui page shipped": os.path.isfile(os.path.join(PKG, "ui", "control-center.html")),
     }
     bad = [k for k, v in checks.items() if not v]
     print(f"Built {PKG}")

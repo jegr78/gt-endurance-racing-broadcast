@@ -59,6 +59,9 @@ python3 tests/test_install_apps.py      # install-apps decision helpers
 python3 tests/test_init.py           # iro init wizard logic (plan/skip/gates)
 python3 tests/test_timer.py          # relay race-timer unit checks
 python3 tests/test_setup.py          # panel sheet-control (webhook payloads, SetupControl, endpoints)
+python3 tests/test_ui_ops.py         # Control Center structured status providers + op registry
+python3 tests/test_ui_jobs.py        # Control Center job manager (child spawn, line buffer)
+python3 tests/test_ui_server.py      # Control Center HTTP server (routes, SSE, quit)
 python3 tools/run-tests.py           # the whole suite (exactly what CI runs)
 python3 tools/lint.py                # ruff lint (= the CI lint job); --fix auto-corrects.
                                      # Rules mirror the CodeQL alert classes — see ruff.toml.
@@ -81,6 +84,7 @@ python3 src/iro.py companion stop
 python3 src/iro.py streams start     # static/public-stream mode
 python3 src/iro.py streams stop
 python3 src/iro.py status            # aggregate health of all services
+python3 src/iro.py ui                # local Control Center web app (dashboard, service control, logs); port 8089 / IRO_UI_PORT
 python3 src/iro.py event status      # event-day readiness report (apps + services + assets)
 python3 src/iro.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later)
 python3 src/iro.py event stop        # stop iro services; GUI apps keep running

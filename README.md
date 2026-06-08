@@ -24,18 +24,30 @@ cp .env.example .env      # then put your Sheet ID into IRO_SHEET_ID
 ```
 Used by the relay (schedule/POV tabs) and by `setup-assets.py` (HUD browser source).
 
-## Get started — download the `iro` binary
+## Get started — the Control Center
 
 Download the latest release for your platform from
 [**GitHub Releases**](https://github.com/jegr78/IRO_Broadcast_Setup/releases/latest)
-(`iro-windows.zip` / `iro-macos.tar.gz` / `iro-linux.tar.gz`), extract it into
-**its own folder**, and run `iro` once — it creates a `.env` file next to itself
-that you fill in with your Sheet ID and other secrets.
-Full step-by-step: [Set up the broadcast PC (wiki)](https://github.com/jegr78/IRO_Broadcast_Setup/wiki/Set-up-the-broadcast-PC).
-Update later with a single command: `iro update`.
+(`iro-windows.zip` / `iro-macos.tar.gz` / `iro-linux.tar.gz`) and extract it into
+**its own folder**. The archive holds two binaries side by side: **`iro`** (the
+CLI) and **`iro-ui`** (the Control Center).
+
+**Double-click `iro-ui`** (`iro-ui.exe` / `iro-ui.app`; Linux: `./iro-ui`) to open
+the **Control Center** at `http://127.0.0.1:8089/` — a local web dashboard that
+runs the whole station (setup wizard, service control, logs) from your browser.
+The first launch creates a `.env` next to the binaries for your Sheet ID and
+secrets. Full step-by-step:
+[Set up the broadcast PC (wiki)](https://github.com/jegr78/IRO_Broadcast_Setup/wiki/Set-up-the-broadcast-PC)
+· [The Control Center (wiki)](https://github.com/jegr78/IRO_Broadcast_Setup/wiki/Control-Center).
 
 > **First start:** Windows SmartScreen / macOS Gatekeeper show a one-time warning for
 > unsigned binaries — choose "Run anyway" / right-click → Open.
+
+## The CLI (alternative)
+
+Everything the Control Center does is also an `iro …` command — the terminal stays
+a first-class option (and the only one on headless Linux). Run `iro` once to create
+the `.env`, then update later with `iro update`.
 
 ### One-time machine setup
 ```

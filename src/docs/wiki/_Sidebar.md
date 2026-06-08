@@ -4,6 +4,7 @@
 - [Home](Home)
 
 **For operators**
+- [The Control Center](Control-Center)
 - [Set up the broadcast PC](Set-up-the-broadcast-PC)
 - [Run an event](Run-an-event)
 - [Director setup](Director-Setup)

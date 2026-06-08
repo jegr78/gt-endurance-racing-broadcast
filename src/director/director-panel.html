@@ -957,6 +957,26 @@ setInterval(relayPoll, 2000);
 setInterval(timerPoll, 2000);
 setupPoll(); setInterval(setupPoll, 2000);
 setInterval(schedPoll, 2000);
+
+/* ---------- auto-connect to OBS ----------
+   Connection details may arrive in the URL fragment (the Control Center's
+   "Open panel" link: #ip=…&port=…&pw=…). A fragment is never sent to the server,
+   so the OBS password stays out of the relay's logs; we strip it from the
+   address bar right after reading. Otherwise we fall back to the values
+   remembered from the last manual Connect. Either way, if an IP is present we
+   connect on load — no need to fill the form and press Connect by hand. */
+(function autoConnect(){
+  try{
+    if (location.hash.length > 1){
+      const p = new URLSearchParams(location.hash.slice(1));
+      if (p.get("ip"))   $("#ip").value   = p.get("ip");
+      if (p.get("port")) $("#port").value = p.get("port");
+      if (p.has("pw"))   $("#pw").value   = p.get("pw");
+      history.replaceState(null, "", location.pathname + location.search);
+    }
+  }catch(e){}
+  if ($("#ip").value.trim()) $("#connectBtn").click();
+})();
 </script>
 </body>
 </html>

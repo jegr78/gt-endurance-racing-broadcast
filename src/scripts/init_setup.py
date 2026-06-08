@@ -25,6 +25,32 @@ STEP_LABELS = {
     "preflight": "preflight",
 }
 
+# Per-step UI execution kind, consumed by the Control Center wizard
+# (iro.init_plan_data). Three kinds:
+#   "job"    -> the UI runs it through the existing job machine (/api/op/<op>),
+#               streaming live output; "op" is the ui_ops.OPS name.
+#   "gate"   -> a manual, probe-verified checkpoint the UI re-checks
+#               (POST /api/init/step/<key>); no subprocess.
+#   "action" -> a quick in-process action the UI runs structured
+#               (POST /api/init/step/<key>).
+# "instruction" (optional) is the operator-facing text shown before the step;
+# "{browser}" is substituted by the wizard for the cookies step.
+STEP_KINDS = {
+    "env": {"kind": "gate", "op": None,
+            "instruction": "Open Settings and set IRO_SHEET_ID in .env "
+                           "(IRO_SHEET_PUSH_URL is optional). Then re-check."},
+    "install-tools": {"kind": "job", "op": "install-tools"},
+    "install-apps": {"kind": "job", "op": "install-apps"},
+    "cookies": {"kind": "job", "op": "cookies",
+                "instruction": "Log in to YouTube in {browser} first — the "
+                               "cookie export reads that browser's session."},
+    "graphics": {"kind": "job", "op": "graphics"},
+    "media": {"kind": "job", "op": "media"},
+    "setup": {"kind": "job", "op": "setup"},
+    "export-companion": {"kind": "action", "op": None},
+    "preflight": {"kind": "job", "op": "preflight"},
+}
+
 _USAGE = "usage: iro init [--browser NAME] [--skip-installs] [--force]"
 
 

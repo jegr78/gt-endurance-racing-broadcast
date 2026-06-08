@@ -55,6 +55,25 @@ def t_every_step_has_a_label():
         assert m.STEP_LABELS[key]
 
 
+def t_step_kinds_cover_every_step():
+    # every ordered step has a kind descriptor; kinds are the three the UI knows
+    assert set(m.STEP_KINDS) == set(m.STEP_ORDER)
+    for _key, meta in m.STEP_KINDS.items():
+        assert meta["kind"] in ("gate", "job", "action")
+        assert set(meta) <= {"kind", "op", "instruction"}
+
+
+def t_step_kinds_jobs_name_a_real_op():
+    # job steps carry the op name the UI POSTs to /api/op/<op>
+    jobs = {k: meta for k, meta in m.STEP_KINDS.items() if meta["kind"] == "job"}
+    assert jobs["cookies"]["op"] == "cookies"
+    assert jobs["preflight"]["op"] == "preflight"
+    # gate/action steps have no op
+    assert m.STEP_KINDS["env"]["kind"] == "gate"
+    assert m.STEP_KINDS["env"].get("op") is None
+    assert m.STEP_KINDS["export-companion"]["kind"] == "action"
+
+
 # ------------------------------------------------------------- done-detection
 
 def t_env_done():
