@@ -12,7 +12,7 @@
      technical character via type + role accent bars. */
   :root{
     --paper:#f4f1ea; --card:#fbfaf6; --ink:#16181c; --soft:#5b6168; --line:#d8d2c6;
-    --producer:#d62828; --director:#e08a00; --streamer:#1f7a8c;
+    --producer:#d62828; --director:#e08a00; --streamer:#1f7a8c; --cc:#2563a8;
     --mono:'IBM Plex Mono',ui-monospace,monospace; --head:'Saira Condensed',system-ui,sans-serif;
   }
   *{box-sizing:border-box}
@@ -44,6 +44,15 @@
   table{width:100%;border-collapse:collapse;margin:6px 0;font-size:11px}
   td{border-top:1px solid var(--line);padding:3px 0} td:last-child{text-align:right;font-weight:600}
   .foot{margin-top:18px;font-size:11px;color:var(--soft);border-top:1px solid var(--line);padding-top:10px;line-height:1.6}
+  .ccband{margin-top:18px;background:var(--card);border:1px solid var(--line);border-radius:14px;
+    box-shadow:0 2px 0 var(--line);overflow:hidden;page-break-inside:avoid;break-inside:avoid}
+  .ccband .bar{background:var(--cc)}
+  .ccband .body{padding:14px 17px 16px}
+  .ccband .role{color:var(--cc)}
+  .vmap{display:grid;grid-template-columns:repeat(3,1fr);gap:4px 20px;margin:8px 0 0}
+  @media(max-width:900px){.vmap{grid-template-columns:1fr}}
+  .vmap div{font-size:11px;line-height:1.5;border-top:1px solid var(--line);padding:3px 0}
+  .vmap .vn{font-weight:600;color:var(--cc)}
   @media print{ body{padding:0;background:#fff} .sheet{max-width:none} .top{padding:14px 14px 0} .cards{padding:0 14px} }
 </style>
 </head>
@@ -98,14 +107,15 @@
         <p class="role">Producer</p>
         <p class="sub">Set up, then only start &amp; stop the broadcast.</p>
 
-        <h3>Before the event</h3>
+        <h3>Before the event — Control Center</h3>
+        <p class="sub" style="margin:0 0 8px">Double-click <span class="k">iro-ui</span> → <code>127.0.0.1:8089</code>. <span class="k">CLI in ( )</span>.</p>
         <ol>
-          <li>Update tools: <code>iro install-tools --update</code>.</li>
+          <li><span class="k">Tools → Update all</span> <code>(iro install-tools --update)</code>.</li>
           <li>Update GPU driver.</li>
-          <li>Tailscale running; a Director confirms access.</li>
-          <li>OBS → Tools → <span class="k">WebSocket on</span>; Companion green.</li>
-          <li>Run <span class="k">iro relay start</span>; confirm the feeds appear in OBS.</li>
-          <li>Test the Discord audio source.</li>
+          <li><span class="k">Apps</span> → launch Tailscale (Director confirms access) &amp; Companion (green).</li>
+          <li>OBS → Tools → <span class="k">WebSocket on</span>.</li>
+          <li><span class="k">Home → Start event</span> <code>(iro event start)</code>; confirm the feeds appear in OBS.</li>
+          <li><span class="k">Preflight → Run</span> <code>(iro preflight)</code>; test the Discord audio source.</li>
           <li>Enter the <span class="k">IRO stream key</span> in OBS.</li>
         </ol>
 
@@ -127,7 +137,7 @@
         <h3>End</h3>
         <ul>
           <li>■ Stop Streaming.</li>
-          <li>Close feeds: <code>iro relay stop</code>.</li>
+          <li><span class="k">Home → Stop event</span> <code>(iro event stop)</code>.</li>
         </ul>
       </div>
     </section>
@@ -185,6 +195,27 @@
     </section>
 
   </div>
+
+  <section class="ccband">
+    <div class="bar" style="height:9px"></div>
+    <div class="body">
+      <p class="role">Control Center <span class="num">iro-ui</span></p>
+      <p class="sub" style="margin:3px 0 0">Run the whole station from your browser. <span class="k">Launch:</span> double-click <code>iro-ui</code> (Linux <code>./iro-ui</code>) → <code>http://127.0.0.1:8089</code>. Every action is also an <code>iro …</code> command.</p>
+      <div class="vmap">
+        <div><span class="vn">Home</span> — status; Start/Stop event</div>
+        <div><span class="vn">Setup</span> — first-time wizard</div>
+        <div><span class="vn">Preflight</span> — machine &amp; tool check</div>
+        <div><span class="vn">Relay</span> — start/stop the feeds</div>
+        <div><span class="vn">Static Streams</span> — public-channel fallback</div>
+        <div><span class="vn">Apps</span> — OBS/Companion/Tailscale/Discord</div>
+        <div><span class="vn">Tools</span> — yt-dlp/streamlink/ffmpeg/deno</div>
+        <div><span class="vn">Assets</span> — graphics, media, cookies</div>
+        <div><span class="vn">Settings</span> — the <code>.env</code> (masked)</div>
+        <div><span class="vn">Logs</span> — live service logs</div>
+        <div><span class="vn">Help &amp; Docs</span> — cheat sheet &amp; guides</div>
+      </div>
+    </div>
+  </section>
 
   <div class="foot">
     <span class="k">Quality floor:</span> 1080p preferred, never below 720p. &nbsp;·&nbsp;
