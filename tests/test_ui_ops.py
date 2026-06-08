@@ -600,6 +600,16 @@ def t_init_step_action_rejects_job_steps():
     assert "cookies" in res["error"]
 
 
+def t_wizard_job_ops_all_exist_in_registry():
+    # every kind=job wizard step must name an op the UI can actually run —
+    # a typo here would 404 the wizard's "Run" button at runtime
+    job_ops = [m["op"] for m in iro.ins.STEP_KINDS.values()
+               if m["kind"] == "job"]
+    assert job_ops                      # guard against an empty/renamed table
+    for op_name in job_ops:
+        assert op_name in ui_ops.OPS, f"wizard op {op_name!r} missing from OPS"
+
+
 def t_iro_job_executable_frozen_uses_sibling():
     # frozen iro-ui must spawn the sibling `iro`, not itself
     posix = iro._iro_job_executable(frozen=True,
