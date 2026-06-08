@@ -253,11 +253,12 @@ def smoke(binary, version):
             if b"<html" not in r.read().lower():
                 sys.exit("smoke ui FAILED: bundled cheat sheet did not serve as HTML")
         # a markdown doc must come back RENDERED (mdrender bundled + working),
-        # not as raw text.
+        # not as raw text. The setup README is a wiki-pointer stub (heading +
+        # bullet list, no tables), so assert on the full-page wrapper + a list.
         with urllib.request.urlopen("http://127.0.0.1:8389/api/docs/file/setup-readme",
                                     timeout=2) as r:
             md = r.read().decode("utf-8", "replace")
-        if "<!doctype html>" not in md or "<table" not in md:
+        if "<!doctype html>" not in md or "<li>" not in md:
             sys.exit("smoke ui FAILED: setup-readme markdown was not rendered to HTML")
         urllib.request.urlopen(urllib.request.Request(
             "http://127.0.0.1:8389/api/quit", method="POST", data=b""), timeout=5).read()

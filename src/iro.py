@@ -47,12 +47,14 @@ def _app_home(executable):
     .env. Normally dirname(executable). But inside a macOS .app bundle the
     executable lives at <home>/<Name>.app/Contents/MacOS/<exe>, so the real home
     (where the sibling `iro` binary and runtime/.env sit, NEXT TO the .app) is
-    three levels up from Contents/MacOS/."""
+    three levels up from Contents/MacOS/. A .app bundle is a macOS construct, so
+    its layout is always POSIX ('/') — parse with '/' explicitly, never os.sep,
+    which would mis-split this path on a Windows test runner."""
     d = os.path.dirname(executable)
-    parts = d.split(os.sep)
+    parts = d.split("/")
     if (len(parts) >= 3 and parts[-1] == "MacOS" and parts[-2] == "Contents"
             and parts[-3].endswith(".app")):
-        return os.sep.join(parts[:-3]) or os.sep
+        return "/".join(parts[:-3]) or "/"
     return d
 
 def _runtime_base(frozen, executable, here):
