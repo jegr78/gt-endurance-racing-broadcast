@@ -26,8 +26,11 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     # Same bootstrap as iro.main(): make sure .env exists next to the binary,
     # retire any stale update binary, load the frozen env + SSL certs.
-    iro.ensure_env_file(os.path.dirname(sys.executable))
-    iro.cleanup_old_binary(os.path.dirname(sys.executable))
+    # _app_home (not dirname) so a macOS .app resolves .env next to the bundle —
+    # where the sibling `iro` binary lives — not inside Contents/MacOS/.
+    home = iro._app_home(sys.executable)
+    iro.ensure_env_file(home)
+    iro.cleanup_old_binary(home)
     iro._load_env_frozen()
     iro._ensure_ssl_certs()
     try:

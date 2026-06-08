@@ -42,11 +42,24 @@ def resource_path(rel):
     """Absolute path of a bundled/checked-out source file, e.g. 'obs/hud.html'."""
     return os.path.join(_src_base(IS_FROZEN, getattr(sys, "_MEIPASS", ""), HERE), rel)
 
+def _app_home(executable):
+    """Directory holding a frozen binary's siblings — the other binary, runtime/,
+    .env. Normally dirname(executable). But inside a macOS .app bundle the
+    executable lives at <home>/<Name>.app/Contents/MacOS/<exe>, so the real home
+    (where the sibling `iro` binary and runtime/.env sit, NEXT TO the .app) is
+    three levels up from Contents/MacOS/."""
+    d = os.path.dirname(executable)
+    parts = d.split(os.sep)
+    if (len(parts) >= 3 and parts[-1] == "MacOS" and parts[-2] == "Contents"
+            and parts[-3].endswith(".app")):
+        return os.sep.join(parts[:-3]) or os.sep
+    return d
+
 def _runtime_base(frozen, executable, here):
     """Machine-local state dir. Frozen: next to the binary (document: keep the
     binary in its own folder). Repo (src/) -> <repo>/runtime ; package -> <pkg>/runtime."""
     if frozen:
-        return os.path.join(os.path.dirname(executable), "runtime")
+        return os.path.join(_app_home(executable), "runtime")
     if os.path.basename(here) == "src":
         return os.path.join(os.path.dirname(here), "runtime")
     return os.path.join(here, "runtime")
@@ -58,7 +71,7 @@ def _env_base(frozen, executable, here):
     """Directory whose .env configures this run (mirrors _runtime_base):
     frozen -> next to the binary; repo (src/) -> repo root; package -> here."""
     if frozen:
-        return os.path.dirname(executable)
+        return _app_home(executable)
     if os.path.basename(here) == "src":
         return os.path.dirname(here)
     return here
@@ -1883,7 +1896,7 @@ def _iro_job_executable(frozen=IS_FROZEN, executable=None, win=None):
     executable = sys.executable if executable is None else executable
     win = (os.name == "nt") if win is None else win
     if frozen:
-        return os.path.join(os.path.dirname(executable),
+        return os.path.join(_app_home(executable),
                             "iro.exe" if win else "iro")
     return executable
 
