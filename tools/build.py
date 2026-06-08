@@ -45,6 +45,7 @@ def main():
     cp("obs/timer.html", "timer.html")
     cp("setup-assets.py", "setup-assets.py")
     cp("iro.py", "iro.py")
+    cp("iro_ui.py", "iro_ui.py")   # windowed Control Center launcher (iro-ui)
     cp("assets", "assets")
     cp("scripts", "scripts")
     cp("relay", "relay")  # iro-feeds.py + get-cookies.py
@@ -141,6 +142,7 @@ def main():
         ".env.example shipped": os.path.isfile(os.path.join(PKG, ".env.example")),
         "no sheet url in relay": not re.search(r"/spreadsheets/d/[A-Za-z0-9_-]{20,}/", relay),
         "iro cli shipped": os.path.isfile(os.path.join(PKG, "iro.py")),
+        "iro-ui launcher shipped": os.path.isfile(os.path.join(PKG, "iro_ui.py")),
         "services helper shipped": os.path.isfile(os.path.join(PKG, "scripts", "services.py")),
         "install-tools shipped": os.path.isfile(os.path.join(PKG, "scripts", "install_tools.py")),
         "install-apps shipped": os.path.isfile(os.path.join(PKG, "scripts", "install_apps.py")),

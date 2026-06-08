@@ -31,6 +31,9 @@ Download the latest release for your platform from
 (`iro-windows.zip` / `iro-macos.tar.gz` / `iro-linux.tar.gz`), extract it into
 **its own folder**, and run `iro` once — it creates a `.env` file next to itself
 that you fill in with your Sheet ID and other secrets.
+The archive also contains **`iro-ui`** — double-click it (Windows/macOS) to open
+the **Control Center**, a local web dashboard (setup wizard, service control,
+logs) that drives the same actions without a terminal.
 Full step-by-step: [Set up the broadcast PC (wiki)](https://github.com/jegr78/IRO_Broadcast_Setup/wiki/Set-up-the-broadcast-PC).
 Update later with a single command: `iro update`.
 

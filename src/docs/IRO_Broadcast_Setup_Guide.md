@@ -72,6 +72,11 @@ terminal **in that folder** and check it runs:
 ./iro --version          # Windows: iro --version  (PowerShell: .\iro)
 ```
 
+> **Prefer a UI?** The same archive contains **`iro-ui`**. Double-click it
+> (Windows/macOS) to open the **Control Center** — a local web dashboard
+> (setup wizard, service start/stop, logs) that drives the steps below without
+> a terminal. Linux: run `./iro-ui` (or `./iro ui`).
+
 The first run creates a `.env` file next to the binary (you fill it in at Part E).
 
 > **One-time OS warning** (the binary is unsigned): **Windows** SmartScreen →
