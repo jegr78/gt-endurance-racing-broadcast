@@ -288,6 +288,10 @@
               cursor:pointer; margin-top:3px; }
   .ver-note:hover { color:var(--txt); }
   .ver-note.avail { color:#FCD34D; font-weight:600; }
+  /* amber info callout (e.g. the Static Streams fallback notice) */
+  .note-warn { color:#FCD34D; background:rgba(245,158,11,.1);
+           border:1px solid rgba(245,158,11,.32); border-radius:8px;
+           padding:9px 13px; font:13px/1.55 var(--mono); margin:0 0 14px; }
   /* static-streams feed table (reuses .envrow flex) */
   .fl { width:150px; flex:0 0 auto; }
   .fc { flex:1; min-width:150px; }
@@ -348,7 +352,7 @@
               <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Restart</button>
             <a class="linkbtn" id="rel-panel-open" target="_blank" rel="noopener" hidden>Open panel ↗</a></div>
         </section>
-        <p class="envhint">The relay reads its <b>schedule and HUD data from the Google Sheet</b> and is configured through <b>Settings</b>: <span class="mono">IRO_SHEET_ID</span> (the sheet) and <span class="mono">IRO_SHEET_PUSH_URL</span> (write-back for the timer + panel). There are no other local relay settings — tab names, ports and the bind mode use safe defaults. Companion and Tailscale moved to <b>Apps</b>; the commentator feed list lives under <b>Static Streams</b>.</p>
+        <p class="envhint">The relay reads its <b>schedule and HUD data from the Google Sheet</b> and is configured through <b>Settings</b>: <span class="mono">IRO_SHEET_ID</span> (the sheet) and <span class="mono">IRO_SHEET_PUSH_URL</span> (write-back for the timer + panel). There are no other local relay settings — tab names, ports and the bind mode use safe defaults.</p>
       </div>
 
       <!-- ===== Static Streams ===== -->
@@ -361,6 +365,7 @@
             <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start all</button>
           <button class="danger" onclick="op('streams-stop', true)">
             <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop all</button></div>
+        <div class="note-warn"><b>Fallback only.</b> The <b>relay</b> is the normal way to serve the commentator feeds (unlisted streams, automatic per-stint handover). Use Static Streams <b>only when the relay isn't working</b> — and only with <b>public</b> YouTube channels.</div>
         <div class="enverr" id="streams-err" hidden></div>
         <div class="envpath" id="streams-path"></div>
         <section>
@@ -373,7 +378,7 @@
           <button onclick="loadStreams(true)">
             <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button></div>
         </section>
-        <p class="envhint"><b>Public YouTube channels only</b> — one streamlink server per row, served on its <b>Port</b> (must match the OBS media source). The real unlisted-stream flow is the <b>relay</b>. Saved to <span class="mono">runtime/static/streams.json</span> — <b>Save, then Start all</b> to apply. A channel ID looks like <span class="mono">UCxxxxxxxxxxxxxxxxxxxxxx</span> (from the channel's URL).</p>
+        <p class="envhint">One streamlink server per row, served on its <b>Port</b> (must match the OBS media source). Saved to <span class="mono">runtime/static/streams.json</span> — <b>Save, then Start all</b> to apply. A channel ID looks like <span class="mono">UCxxxxxxxxxxxxxxxxxxxxxx</span> (from the channel's URL).</p>
       </div>
 
       <!-- ===== Home ===== -->
@@ -442,7 +447,7 @@
         <section><div id="applist">
           <div class="item miss"><span class="idot"></span><span class="dim grow">loading…</span></div>
         </div></section>
-        <p class="envhint">The badge shows whether each app is running. Companion and Tailscale start/stop here; OBS and Discord are launched by <b>Start event</b> on Home. OBS also exports the scene collection and refreshes its browser sources from here.</p>
+        <p class="envhint">The badge shows whether each app is running. Start or stop any app here; OBS and Discord are also brought up automatically by <b>Start event</b> on Home. OBS additionally exports the scene collection and refreshes its browser sources. For Tailscale, <b>Start/Stop</b> launches or quits the app, while <b>Connect/Disconnect</b> brings the tunnel up or down.</p>
       </div>
 
       <!-- ===== Tools ===== -->
@@ -823,6 +828,7 @@ const CONFIRM_TEXT = {
   'obs-stop': 'Quit OBS? (this closes OBS on this machine)',
   'discord-stop': 'Quit Discord?',
   'companion-stop': 'Stop Companion?',
+  'tailscale-stop': 'Quit the Tailscale app? Remote directors lose access.',
   'tailscale-down': 'Disconnect Tailscale? Remote directors lose access.',
   'relay-stop': 'Stop the relay?',
   'streams-stop': 'Stop all static streams?',
@@ -936,8 +942,12 @@ const APP_ACTION = {
   companion: [{label: 'Start', op: 'companion-start'},
               {label: 'Stop', op: 'companion-stop', danger: true, confirm: true},
               {label: 'Export config', op: 'export-companion'}],
-  tailscale: [{label: 'Connect', op: 'tailscale-up'},
-              {label: 'Disconnect', op: 'tailscale-down', danger: true, confirm: true}]
+  tailscale: [{label: 'Start', op: 'tailscale-start', title: 'Launch the Tailscale app'},
+              {label: 'Stop', op: 'tailscale-stop', danger: true, confirm: true,
+               title: 'Quit the Tailscale app'},
+              {label: 'Connect', op: 'tailscale-up', title: 'tailscale up — bring the tunnel up'},
+              {label: 'Disconnect', op: 'tailscale-down', danger: true, confirm: true,
+               title: 'tailscale down — drop the tunnel'}]
 };
 
 function itemRow(key, installed, version, actions, withStatus) {

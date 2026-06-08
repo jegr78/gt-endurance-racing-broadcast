@@ -488,7 +488,8 @@ def t_streams_config_write_rejects_bad(tmp):
 
 
 def t_app_control_ops_route():
-    for name in ("obs-start", "obs-stop", "discord-start", "discord-stop"):
+    for name in ("obs-start", "obs-stop", "discord-start", "discord-stop",
+                 "tailscale-start", "tailscale-stop"):
         assert iro.route(list(ui_ops.OPS[name]))["kind"] == "service"
 
 

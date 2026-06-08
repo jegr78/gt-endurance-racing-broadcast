@@ -364,15 +364,20 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
         apps = [Result(WARN, "applications", f"check failed: {exc}")]
     ports = []
     for port in FEED_PORTS:
+        # "In use" is normal once the relay/feeds are running (e.g. after event
+        # start) — report it as INFO, not a warning. `iro status` shows whether
+        # the occupant is the relay; only a foreign app is a real conflict.
         ports.append(Result(PASS, f"port {port}", "free") if port_free(port)
-                     else Result(WARN, f"port {port}",
-                                 "in use — relay already running or a port conflict; "
-                                 "`iro status` shows whether that is the relay"))
+                     else Result(INFO, f"port {port}",
+                                 "in use — normal if the relay/feeds are running "
+                                 "(`iro status` confirms); a conflict only if another app owns it"))
     for port, svc in SERVICE_PORTS:
+        # Not reachable just means it hasn't been launched yet (event start does
+        # that) — INFO, not a warning the operator must chase down.
         ports.append(Result(PASS, f"port {port}", f"{svc} reachable")
                      if port_reachable("127.0.0.1", port)
-                     else Result(WARN, f"port {port}",
-                                 f"{svc} not reachable — start it before going live"))
+                     else Result(INFO, f"port {port}",
+                                 f"{svc} not reachable yet — it is launched at event start"))
     cookies = [cookies_status(resolve_cookies_path(preflight_file, runtime_dir, cookies_opt))]
     sheet_id = os.environ.get("IRO_SHEET_ID")
     if sheet_id:

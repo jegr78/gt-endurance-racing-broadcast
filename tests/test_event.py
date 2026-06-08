@@ -257,10 +257,18 @@ def t_quit_command_per_platform():
     assert m.quit_command("obs", "linux") == ["pkill", "-f", "obs"]
 
 
-def t_quit_command_only_obs_discord():
-    # Tailscale is openable but not quit this way; unknown apps return None.
-    assert m.quit_command("tailscale", "darwin") is None
+def t_quit_command_tailscale_gui():
+    # The Tailscale GUI app quits on macOS/Windows; on Linux it's a daemon (None).
+    assert m.quit_command("tailscale", "darwin") == \
+        ["osascript", "-e", 'tell application "Tailscale" to quit']
+    assert m.quit_command("tailscale", "win32") == \
+        ["taskkill", "/IM", "tailscale-ipn.exe"]
+    assert m.quit_command("tailscale", "linux") is None
+
+
+def t_quit_command_unknown_app():
     assert m.quit_command("relay", "linux") is None
+    assert m.quit_command("companion", "darwin") is None      # own stop path
 
 
 def _raises(fn, exc=ValueError):

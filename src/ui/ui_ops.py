@@ -16,6 +16,8 @@ OPS = {
     "streams-stop": ["streams", "stop"],
     "tailscale-up": ["tailscale", "up"],
     "tailscale-down": ["tailscale", "down"],
+    "tailscale-start": ["app", "launch", "tailscale"],
+    "tailscale-stop": ["app", "quit", "tailscale"],
     "obs-start": ["app", "launch", "obs"],
     "obs-stop": ["app", "quit", "obs"],
     "discord-start": ["app", "launch", "discord"],

@@ -11,7 +11,7 @@
   iro event start --stint N             # takeover: stint N is on air now — the relay starts there
   iro tailscale up|down|status          # connect / disconnect / inspect Tailscale
   iro obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
-  iro app launch|quit obs|discord       # start / gracefully quit a GUI app (Control Center buttons)
+  iro app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
   iro status                            # aggregate health of all services
   iro ui [--no-browser]                 # local Control Center web app (port 8089 / IRO_UI_PORT)
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
@@ -327,8 +327,8 @@ ONESHOTS = ("preflight", "cookies", "graphics", "media", "setup", "install-tools
 EVENT_VERBS = ("status", "start", "stop")
 TAILSCALE_VERBS = ("up", "down", "status")
 OBS_VERBS = ("refresh",)
-APP_VERBS = ("launch", "quit")          # GUI app control (obs|discord) for the Control Center
-APP_CONTROLLED = ("obs", "discord")     # apps iro can launch *and* quit by process
+APP_VERBS = ("launch", "quit")          # GUI app control for the Control Center
+APP_CONTROLLED = ("obs", "discord", "tailscale")   # GUI apps iro can launch + quit
 
 USAGE = __doc__
 
