@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Launch one streamlink server per channel (static/public mode), backgrounded,
 each with a log + PID file so stop-streams.py can shut them down.
-EDIT the FEEDS list: (CHANNEL_ID, PORT). Ports must match the OBS media sources.
+Feeds come from <state-dir>/streams.json (managed by the Control Center) when
+present, else the built-in FEEDS default below — (CHANNEL_ID, PORT). Ports must
+match the OBS media sources.
 NOTE: PUBLIC channels only. The real unlisted flow is the relay (`iro relay start`).
 """
-import argparse, os, shutil, subprocess, sys
+import argparse, json, os, shutil, subprocess, sys
 
 
 def state_dir(here):
@@ -54,6 +56,28 @@ FEEDS = [
 ]
 # ------------------
 
+STREAMS_CONFIG = "streams.json"
+
+
+def load_feeds(state_dir):
+    """Feeds to serve: <state_dir>/streams.json (Control Center-managed) when it
+    exists and parses, else the built-in FEEDS default. Returns a list of
+    (channel, port) string pairs; entries missing a channel or port are skipped,
+    and a malformed/empty file falls back to FEEDS so a bad edit never serves
+    nothing."""
+    path = os.path.join(state_dir, STREAMS_CONFIG)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        feeds = []
+        for e in data:
+            ch, port = str(e.get("channel", "")).strip(), str(e.get("port", "")).strip()
+            if ch and port:
+                feeds.append((ch, port))
+        return feeds or FEEDS
+    except (OSError, ValueError, AttributeError, TypeError):
+        return FEEDS
+
 
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
@@ -68,7 +92,7 @@ def main():
         sys.exit("streamlink not found (brew install streamlink / pip install -U streamlink).")
     loop = os.path.join(here, "loopstream.py")
     frozen = bool(getattr(sys, "frozen", False))
-    for i, (ch, port) in enumerate(FEEDS, 1):
+    for i, (ch, port) in enumerate(load_feeds(sdir), 1):
         # Close the parent's log fd after the spawn — the child holds its own
         # duplicate (same pattern as services.start_detached).
         with open(os.path.join(logdir, f"feed_{port}.log"), "ab") as log:

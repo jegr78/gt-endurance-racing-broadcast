@@ -60,9 +60,15 @@ def _ctx(jobs=None):
                                    "feeds": [{"feed": "A", "stint": 3,
                                               "state": "serving"}],
                                    "timer": {"mode": "running"}},
-            "update_check": lambda: {"ok": True, "current": "v1.0.0",
+            "update_check": lambda force=False: {"ok": True, "current": "v1.0.0",
                                      "latest": "v1.1.0", "update_available": True,
+                                     "forced": force,
                                      "releases_url": "https://example/releases"},
+            "streams_read": lambda: {"ok": True, "path": "/x/streams.json",
+                                     "entries": [{"label": "Feed A",
+                                                  "channel": "UC1", "port": "53001"}]},
+            "streams_write": lambda entries: {"ok": True, "path": "/x/streams.json",
+                                              "_got": entries},
             "jobs": jobs or ui_jobs.JobManager(
                 lambda a: [sys.executable, "-c", "print('hi from job')"]),
             "log_paths": {},
@@ -133,7 +139,24 @@ def t_update_route_wraps_provider():
         code, body = _get(port, "/api/update")
         data = json.loads(body)
         assert code == 200 and data["update_available"] is True
-        assert data["latest"] == "v1.1.0"
+        assert data["latest"] == "v1.1.0" and data["forced"] is False
+        _c, body2 = _get(port, "/api/update?force=1")          # force re-check
+        assert json.loads(body2)["forced"] is True
+    finally:
+        httpd.shutdown()
+
+
+def t_streams_get_and_post_routes():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/streams")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] and data["entries"][0]["port"] == "53001"
+        code, body = _post_json(port, "/api/streams",
+                                {"entries": [{"channel": "UC2", "port": "53002"}]})
+        got = json.loads(body)
+        assert code == 200 and got["ok"] and got["_got"] == [{"channel": "UC2",
+                                                              "port": "53002"}]
     finally:
         httpd.shutdown()
 

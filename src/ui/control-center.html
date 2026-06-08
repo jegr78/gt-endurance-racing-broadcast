@@ -253,7 +253,8 @@
             border:1px solid rgba(239,68,68,.35); border-radius:8px;
             padding:8px 12px; margin:0 0 12px; font:12px var(--mono); }
   .envhint { color:var(--dim); font:12px/1.6 var(--mono); margin:14px 2px 0; }
-  .addrow { padding:12px 8px 4px; }
+  .addrow { padding:12px 8px 4px; display:flex; gap:8px; align-items:center; }
+  .addrow button { white-space:nowrap; }
   .lightbox { position:fixed; inset:0; z-index:100; padding:40px;
            background:rgba(2,6,23,.86); display:flex; align-items:center;
            justify-content:center; cursor:zoom-out; }
@@ -282,6 +283,15 @@
   .updbanner svg { width:14px; height:14px; stroke:currentColor; fill:none;
            stroke-width:2; }
   .updbanner:hover { background:rgba(245,158,11,.24); }
+  /* sidebar version + update state (always visible, click to re-check) */
+  .ver-note { display:block; font:11px var(--mono); color:var(--dim);
+              cursor:pointer; margin-top:3px; }
+  .ver-note:hover { color:var(--txt); }
+  .ver-note.avail { color:#FCD34D; font-weight:600; }
+  /* static-streams feed table (reuses .envrow flex) */
+  .fl { width:150px; flex:0 0 auto; }
+  .fc { flex:1; min-width:150px; }
+  .fp { width:96px; flex:0 0 auto; }
 </style>
 </head>
 <body>
@@ -289,14 +299,17 @@
   <nav class="sidebar">
     <div class="brand"><span class="mark">IRO</span>
       <div><div class="brandname">Control Center</div>
-        <span class="ver" id="ver"></span></div></div>
+        <span class="ver" id="ver"></span>
+        <span class="ver-note" id="ver-note" onclick="checkUpdate(true)" title="Check for updates"></span></div></div>
     <div class="nav">
       <button class="navitem active" data-nav="home" onclick="showView('home')">
         <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Home</button>
       <button class="navitem" data-nav="preflight" onclick="showView('preflight')">
         <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Preflight</button>
       <button class="navitem" data-nav="services" onclick="showView('services')">
-        <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>Services</button>
+        <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>Relay</button>
+      <button class="navitem" data-nav="streams" onclick="showView('streams')">
+        <svg viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>Static Streams</button>
       <button class="navitem" data-nav="apps" onclick="showView('apps')">
         <svg viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>Apps</button>
       <button class="navitem" data-nav="tools" onclick="showView('tools')">
@@ -318,11 +331,11 @@
 
   <div class="workspace">
     <main>
-      <!-- ===== Services ===== -->
+      <!-- ===== Relay ===== -->
       <div class="view" data-view="services" hidden>
-        <div class="viewhead"><h2>Services</h2>
+        <div class="viewhead"><h2>Relay</h2>
           <span class="spacer"></span>
-          <span class="sub">live service status</span></div>
+          <span class="sub">live relay status</span></div>
         <section>
           <div class="row"><span class="name">Relay</span>
             <span class="badge" id="b-relay"><span class="dot"></span><span>…</span></span>
@@ -332,16 +345,35 @@
             <button class="danger" onclick="op('relay-stop', true)">
               <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button>
             <button onclick="op('relay-restart', true)">
-              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Restart</button></div>
-          <div class="row"><span class="name">Streams</span>
-            <span class="badge" id="b-streams"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="d-streams"></span>
-            <button onclick="op('streams-start')">
-              <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button>
-            <button class="danger" onclick="op('streams-stop', true)">
-              <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button></div>
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Restart</button>
+            <a class="linkbtn" id="rel-panel-open" target="_blank" rel="noopener" hidden>Open panel ↗</a></div>
         </section>
-        <p class="evnote">Companion and Tailscale moved to <b>Apps</b> — start, stop and check them there alongside OBS and Discord.</p>
+        <p class="envhint">The relay reads its <b>schedule and HUD data from the Google Sheet</b> and is configured through <b>Settings</b>: <span class="mono">IRO_SHEET_ID</span> (the sheet) and <span class="mono">IRO_SHEET_PUSH_URL</span> (write-back for the timer + panel). There are no other local relay settings — tab names, ports and the bind mode use safe defaults. Companion and Tailscale moved to <b>Apps</b>; the commentator feed list lives under <b>Static Streams</b>.</p>
+      </div>
+
+      <!-- ===== Static Streams ===== -->
+      <div class="view" data-view="streams" hidden>
+        <div class="viewhead"><h2>Static Streams</h2>
+          <span class="badge" id="b-streams"><span class="dot"></span><span>…</span></span>
+          <span class="dim grow" id="d-streams"></span>
+          <span class="spacer"></span>
+          <button onclick="op('streams-start')">
+            <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start all</button>
+          <button class="danger" onclick="op('streams-stop', true)">
+            <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop all</button></div>
+        <div class="enverr" id="streams-err" hidden></div>
+        <div class="envpath" id="streams-path"></div>
+        <section>
+          <div class="envhead"><span class="fl">Label</span><span class="fc">YouTube channel ID</span><span class="fp">Port</span></div>
+          <div id="feedrows"></div>
+          <div class="addrow"><button onclick="addFeedRow()">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add feed</button>
+          <button id="feeds-save" onclick="saveStreams()">
+            <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button>
+          <button onclick="loadStreams(true)">
+            <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button></div>
+        </section>
+        <p class="envhint"><b>Public YouTube channels only</b> — one streamlink server per row, served on its <b>Port</b> (must match the OBS media source). The real unlisted-stream flow is the <b>relay</b>. Saved to <span class="mono">runtime/static/streams.json</span> — <b>Save, then Start all</b> to apply. A channel ID looks like <span class="mono">UCxxxxxxxxxxxxxxxxxxxxxx</span> (from the channel's URL).</p>
       </div>
 
       <!-- ===== Home ===== -->
@@ -536,7 +568,7 @@ const $ = id => document.getElementById(id);
 let jobES = null, logES = null;
 
 let setupLoaded = false, preflightRun = false, assetsLoaded = false,
-    settingsLoaded = false;
+    settingsLoaded = false, streamsLoaded = false;
 let currentView = 'home', lastStatus = null;
 
 function showView(name) {
@@ -555,6 +587,7 @@ function showView(name) {
   if (name === 'assets' && !assetsLoaded) { assetsLoaded = true; fetchAssetFiles(); }
   if (name === 'preflight' && !preflightRun) { preflightRun = true; runPreflight(); }
   if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
+  if (name === 'streams' && !streamsLoaded) { streamsLoaded = true; loadStreams(); }
   // entering Home: refresh the live relay stats right away (don't wait for the poll)
   if (name === 'home' && lastStatus && lastStatus.relay
       && lastStatus.relay.alive && lastStatus.relay.http_ok) fetchRelayLive();
@@ -703,10 +736,16 @@ function fmtDur(s) {
 }
 
 // ----- self-update check (GitHub latest release, check-only) -----
-async function checkUpdate() {
+// Always reflects the version state in the sidebar (click to re-check); the
+// amber Home banner appears only when a newer release is actually out.
+async function checkUpdate(force) {
+  const note = $('ver-note');
+  if (note) note.textContent = 'checking…';
   let d;
-  try { d = await (await fetch('/api/update', {cache: 'no-store'})).json(); }
-  catch (e) { return; }
+  try {
+    d = await (await fetch('/api/update' + (force ? '?force=1' : ''),
+                           {cache: 'no-store'})).json();
+  } catch (e) { if (note) note.textContent = 'check failed — click to retry'; return; }
   const b = $('upd-banner');
   if (d && d.ok && d.update_available && d.latest) {
     b.hidden = false;
@@ -714,8 +753,15 @@ async function checkUpdate() {
     b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 19V5"/>' +
                   '<path d="m5 12 7-7 7 7"/></svg>Update → ' + d.latest;
     b.title = 'A newer release (' + d.latest + ') is available — click to view it on GitHub';
+    if (note) { note.className = 'ver-note avail'; note.textContent = 'update → ' + d.latest; }
   } else {
     b.hidden = true;
+    if (note) {
+      note.className = 'ver-note';
+      if (!d || !d.ok) note.textContent = 'check failed — click to retry';
+      else if (d.note && d.note.indexOf('development') >= 0) note.textContent = 'dev build';
+      else note.textContent = 'up to date' + (d.latest ? ' · ' + d.latest : '');
+    }
   }
 }
 
@@ -754,9 +800,13 @@ async function refresh() {
   setBadge('relay', relayUp, 'RUNNING', 'stopped',
     relayUp ? (s.relay.http_ok ? 'control OK on port ' + s.relay.port
                                : 'port ' + s.relay.port + ' not responding') : '');
-  $('panel-link').hidden = !(relayUp && s.relay.http_ok);
-  $('panel-link').href = 'http://' + (s.tailscale_ip || '127.0.0.1') +
-                         ':' + s.relay.port + '/panel';
+  const panelUp = relayUp && s.relay.http_ok;
+  const panelHref = 'http://' + (s.tailscale_ip || '127.0.0.1') + ':' +
+                    s.relay.port + '/panel';
+  $('panel-link').hidden = !panelUp;
+  $('panel-link').href = panelHref;
+  const relOpen = $('rel-panel-open');
+  if (relOpen) { relOpen.hidden = !panelUp; if (panelUp) relOpen.href = panelHref; }
   setBadge('streams', s.streams.filter(f => f.alive).length > 0, 'RUNNING', 'stopped',
            s.streams.length ? s.streams.filter(f => f.alive).length + '/' +
                               s.streams.length + ' feeds up' : 'no feeds started');
@@ -769,8 +819,18 @@ async function refresh() {
   if (currentView === 'home' && relayUp && s.relay.http_ok) fetchRelayLive();
 }
 
+const CONFIRM_TEXT = {
+  'obs-stop': 'Quit OBS? (this closes OBS on this machine)',
+  'discord-stop': 'Quit Discord?',
+  'companion-stop': 'Stop Companion?',
+  'tailscale-down': 'Disconnect Tailscale? Remote directors lose access.',
+  'relay-stop': 'Stop the relay?',
+  'streams-stop': 'Stop all static streams?',
+  'event-stop': 'Stop the event? (stops the iro services; OBS/Discord/Tailscale keep running)'
+};
+
 async function op(name, confirmFirst, params) {
-  if (confirmFirst && !confirm('Run ' + name + '?')) return;
+  if (confirmFirst && !confirm(CONFIRM_TEXT[name] || ('Run ' + name + '?'))) return;
   let r;
   try {
     r = await (await fetch('/api/op/' + name, {method: 'POST',
@@ -866,12 +926,16 @@ const APP_LABEL = {obs: 'OBS', companion: 'Companion',
 // app-specific actions live on the app's own row (each an array of buttons).
 // confirm:true wraps the op in a confirm() dialog; danger:true styles it red.
 const APP_ACTION = {
-  obs: [{label: 'Export collection', op: 'setup'},
+  obs: [{label: 'Start', op: 'obs-start'},
+        {label: 'Stop', op: 'obs-stop', danger: true, confirm: true},
+        {label: 'Export collection', op: 'setup'},
         {label: 'Refresh pages', op: 'obs-refresh',
          title: 'Reload the relay-served HUD/timer browser sources'}],
-  companion: [{label: 'Export config', op: 'export-companion'},
-              {label: 'Start', op: 'companion-start'},
-              {label: 'Stop', op: 'companion-stop', danger: true, confirm: true}],
+  discord: [{label: 'Start', op: 'discord-start'},
+            {label: 'Stop', op: 'discord-stop', danger: true, confirm: true}],
+  companion: [{label: 'Start', op: 'companion-start'},
+              {label: 'Stop', op: 'companion-stop', danger: true, confirm: true},
+              {label: 'Export config', op: 'export-companion'}],
   tailscale: [{label: 'Connect', op: 'tailscale-up'},
               {label: 'Disconnect', op: 'tailscale-down', danger: true, confirm: true}]
 };
@@ -1143,6 +1207,83 @@ async function saveSettings() {
   b.textContent = 'Saved ✓';
   setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
   loadSettings();                        // reflect the canonical file (masked again)
+}
+
+// ----- Static Streams feed editor (runtime/static/streams.json) -----
+function showStreamsErr(msg) {
+  const e = $('streams-err');
+  e.textContent = msg;
+  e.hidden = false;
+}
+
+function feedRow(label, channel, port) {
+  const r = document.createElement('div');
+  r.className = 'envrow';
+  const mk = (cls, val, ph) => {
+    const i = document.createElement('input');
+    i.className = cls; i.value = val; i.placeholder = ph;
+    i.autocomplete = 'off'; i.autocapitalize = 'off'; i.spellcheck = false;
+    return i;
+  };
+  const l = mk('fl', label, 'label');
+  l.setAttribute('aria-label', 'Feed label');
+  const c = mk('fc', channel, 'UC… channel ID');
+  c.setAttribute('aria-label', 'YouTube channel ID');
+  const p = mk('fp', port, 'port');
+  p.inputMode = 'numeric';
+  p.setAttribute('aria-label', 'Port');
+  const del = document.createElement('button');
+  del.className = 'iconbtn danger'; del.type = 'button';
+  del.setAttribute('aria-label', 'Delete feed');
+  del.innerHTML = X_SVG;
+  del.onclick = () => r.remove();
+  r.append(l, c, p, del);
+  return r;
+}
+
+function addFeedRow() {
+  const r = feedRow('', '', '');
+  $('feedrows').appendChild(r);
+  r.querySelector('.fc').focus();
+}
+
+function collectStreams() {
+  return [...$('feedrows').querySelectorAll('.envrow')].map(r => ({
+    label: r.querySelector('.fl').value,
+    channel: r.querySelector('.fc').value,
+    port: r.querySelector('.fp').value
+  }));
+}
+
+async function loadStreams(force) {
+  if (force && !confirm('Reload from disk and discard any unsaved edits?')) return;
+  $('streams-err').hidden = true;
+  let d;
+  try { d = await (await fetch('/api/streams', {cache: 'no-store'})).json(); }
+  catch (e) { showStreamsErr('Control Center not reachable.'); return; }
+  if (!d.ok) { showStreamsErr(d.error || 'could not read streams config'); return; }
+  $('streams-path').textContent = d.path;
+  const c = $('feedrows');
+  c.textContent = '';
+  d.entries.forEach(e => c.appendChild(feedRow(e.label, e.channel, e.port)));
+}
+
+async function saveStreams() {
+  if (!confirm('Save the feed list to streams.json?')) return;
+  $('streams-err').hidden = true;
+  const b = $('feeds-save');
+  b.disabled = true;
+  let d;
+  try {
+    d = await (await fetch('/api/streams', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({entries: collectStreams()})})).json();
+  } catch (e) { showStreamsErr('Control Center not reachable.'); b.disabled = false; return; }
+  if (!d.ok) { showStreamsErr(d.error || 'could not save streams config'); b.disabled = false; return; }
+  const orig = b.innerHTML;
+  b.textContent = 'Saved ✓';
+  setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
+  loadStreams();                         // reflect the canonical file
 }
 
 function watchLog(name) {

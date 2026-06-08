@@ -64,7 +64,8 @@ def _allowed(_handler):
 
 def make_handler(ctx):
     """ctx: version, page_path, status() -> dict, relay_live() -> dict,
-    update_check() -> dict, ops {name: argv},
+    update_check(force) -> dict, streams_read() -> dict,
+    streams_write(entries) -> dict, ops {name: argv},
     build_argv(name, params) -> argv (raises ValueError), assets() -> dict,
     asset_files() -> dict, asset_roots {kind: dir},
     tools() -> dict, apps() -> dict, preflight() -> dict,
@@ -195,11 +196,19 @@ def make_handler(ctx):
                                        "error": f"relay stats failed: {exc}"},
                                       code=500)
             if path == "/api/update":
+                force = "force=1" in (urlparse(self.path).query or "")
                 try:
-                    return self._json(ctx["update_check"]())
+                    return self._json(ctx["update_check"](force))
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"update check failed: {exc}"},
+                                      code=500)
+            if path == "/api/streams":
+                try:
+                    return self._json(ctx["streams_read"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"streams config read failed: {exc}"},
                                       code=500)
             if path == "/api/env":
                 try:
@@ -240,6 +249,18 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"could not write .env: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/streams":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["streams_write"](body.get("entries") or [])
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not write streams config: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
             if path.startswith("/api/op/"):

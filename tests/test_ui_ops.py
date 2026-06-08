@@ -447,6 +447,51 @@ def t_update_check_offline_is_not_ok():
     assert d["ok"] is False and d["update_available"] is False
 
 
+# ---------- static-streams config (Static Streams page) ----------
+
+def t_streams_config_defaults_when_absent():
+    d = iro.streams_config_data(path="/nope/streams.json",
+                                default=lambda: [{"label": "Feed A",
+                                                  "channel": "UC1", "port": "53001"}])
+    assert d["ok"] and d["entries"][0]["port"] == "53001"
+
+
+def t_streams_config_round_trip(tmp):
+    p = os.path.join(tmp, "streams.json")
+    res = iro.streams_config_write_data(
+        [{"label": "Feed A", "channel": "UC9", "port": "53001"},
+         {"label": "", "channel": "UC8", "port": "53002"}], path=p)
+    assert res["ok"] is True
+    back = iro.streams_config_data(path=p)["entries"]
+    assert [e["channel"] for e in back] == ["UC9", "UC8"]
+    assert [e["port"] for e in back] == ["53001", "53002"]
+
+
+def t_streams_config_validation():
+    ok, err = iro._validate_streams_entries(
+        [{"channel": "UC1", "port": "53001"}, {"channel": "", "port": ""}])
+    assert err is None and len(ok) == 1                 # blank row dropped
+    _bad, err = iro._validate_streams_entries([{"channel": "UC1", "port": "x"}])
+    assert err and "number" in err
+    _bad, err = iro._validate_streams_entries([{"channel": "", "port": "53001"}])
+    assert err and "channel" in err
+    _bad, err = iro._validate_streams_entries(
+        [{"channel": "UC1", "port": "53001"}, {"channel": "UC2", "port": "53001"}])
+    assert err and "duplicate" in err
+
+
+def t_streams_config_write_rejects_bad(tmp):
+    p = os.path.join(tmp, "streams_reject.json")
+    res = iro.streams_config_write_data([{"channel": "UC1", "port": "x"}], path=p)
+    assert res["ok"] is False and "number" in res["error"]
+    assert not os.path.exists(p)                        # nothing written on error
+
+
+def t_app_control_ops_route():
+    for name in ("obs-start", "obs-stop", "discord-start", "discord-stop"):
+        assert iro.route(list(ui_ops.OPS[name]))["kind"] == "service"
+
+
 if __name__ == "__main__":
     import inspect, tempfile
     with tempfile.TemporaryDirectory() as tmp:

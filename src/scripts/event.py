@@ -121,6 +121,27 @@ def launch_command(app, platform, env=None, exists=os.path.exists, which=shutil.
     return ([exe], None) if exe else None
 
 
+# Windows process image names to taskkill (PRESENCE probe uses the same names).
+_WIN_PROC_NAMES = {"obs": "obs64.exe", "discord": "Discord.exe"}
+
+
+def quit_command(app, platform):
+    """argv that asks `app` to quit, or None when there is nothing to exec.
+    Graceful where the OS allows it: macOS AppleScript `quit`, Windows taskkill
+    by image name, Linux pkill. Only OBS and Discord are app-controlled this way
+    — Companion and Tailscale have their own stop paths (companion_common /
+    `tailscale down`). Pure (no I/O) so it is unit-tested across platforms."""
+    if app not in _DARWIN_OPEN_NAMES or app not in _LINUX_PATH_NAMES:
+        return None                          # not an app we launch -> nothing to quit
+    if platform == "darwin":
+        return ["osascript", "-e",
+                f'tell application "{_DARWIN_OPEN_NAMES[app]}" to quit']
+    if platform.startswith("win"):
+        proc = _WIN_PROC_NAMES.get(app)
+        return ["taskkill", "/IM", proc] if proc else None
+    return ["pkill", "-f", _LINUX_PATH_NAMES[app]]
+
+
 def check_assets(required_files, directory):
     """Sorted names from `required_files` missing in `directory` (an absent or
     unreadable directory misses everything)."""

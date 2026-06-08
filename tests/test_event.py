@@ -247,6 +247,22 @@ def t_director_urls_no_tailscale():
     assert "iro tailscale up" in lines[1]
 
 
+def t_quit_command_per_platform():
+    assert m.quit_command("obs", "darwin") == \
+        ["osascript", "-e", 'tell application "OBS" to quit']
+    assert m.quit_command("discord", "darwin") == \
+        ["osascript", "-e", 'tell application "Discord" to quit']
+    assert m.quit_command("obs", "win32") == ["taskkill", "/IM", "obs64.exe"]
+    assert m.quit_command("discord", "win32") == ["taskkill", "/IM", "Discord.exe"]
+    assert m.quit_command("obs", "linux") == ["pkill", "-f", "obs"]
+
+
+def t_quit_command_only_obs_discord():
+    # Tailscale is openable but not quit this way; unknown apps return None.
+    assert m.quit_command("tailscale", "darwin") is None
+    assert m.quit_command("relay", "linux") is None
+
+
 def _raises(fn, exc=ValueError):
     try:
         fn()

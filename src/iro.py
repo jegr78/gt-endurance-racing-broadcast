@@ -11,6 +11,7 @@
   iro event start --stint N             # takeover: stint N is on air now — the relay starts there
   iro tailscale up|down|status          # connect / disconnect / inspect Tailscale
   iro obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
+  iro app launch|quit obs|discord       # start / gracefully quit a GUI app (Control Center buttons)
   iro status                            # aggregate health of all services
   iro ui [--no-browser]                 # local Control Center web app (port 8089 / IRO_UI_PORT)
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
@@ -326,6 +327,8 @@ ONESHOTS = ("preflight", "cookies", "graphics", "media", "setup", "install-tools
 EVENT_VERBS = ("status", "start", "stop")
 TAILSCALE_VERBS = ("up", "down", "status")
 OBS_VERBS = ("refresh",)
+APP_VERBS = ("launch", "quit")          # GUI app control (obs|discord) for the Control Center
+APP_CONTROLLED = ("obs", "discord")     # apps iro can launch *and* quit by process
 
 USAGE = __doc__
 
@@ -361,6 +364,11 @@ def route(argv):
         if verb not in OBS_VERBS:
             raise ValueError(f"usage: iro obs {{{'|'.join(OBS_VERBS)}}}")
         return {"kind": "service", "command": "obs", "verb": verb, "rest": rest[1:]}
+    if cmd == "app":
+        verb = rest[0] if rest else None
+        if verb not in APP_VERBS:
+            raise ValueError(f"usage: iro app {{{'|'.join(APP_VERBS)}}} {{obs|discord}}")
+        return {"kind": "service", "command": "app", "verb": verb, "rest": rest[1:]}
     if cmd == "ui":
         return {"kind": "ui", "rest": rest}
     if cmd == "init":
@@ -494,6 +502,47 @@ def _refresh_obs_pages(force=False, wait=0):
         return
     print(f"obs: refreshed browser sources {', '.join(names)}." if names
           else "obs: no relay browser sources in OBS — nothing to refresh.")
+
+
+def app_launch_cmd(rest):
+    """Launch a GUI app (obs|discord) detached — the same mechanism `iro event
+    start` uses, exposed as a button so the Control Center can start each app
+    individually. Best effort: a missing app or spawn error exits non-zero."""
+    name = rest[0] if rest else None
+    if name not in APP_CONTROLLED:
+        sys.exit(f"usage: iro app launch {{{'|'.join(APP_CONTROLLED)}}}")
+    ev = _event_modules()[0]
+    cmd = ev.launch_command(name, sys.platform)
+    if cmd is None:
+        sys.exit(f"app: cannot launch {name} on this system — is it installed?")
+    argv, cwd = cmd
+    try:
+        subprocess.Popen(argv, cwd=cwd, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, **sv.spawn_kwargs(os.name))
+    except OSError as exc:
+        sys.exit(f"app: failed to launch {name} ({exc}).")
+    print(f"Launched {name}.")
+
+
+def app_quit_cmd(rest):
+    """Ask a GUI app (obs|discord) to quit — graceful where possible (macOS
+    AppleScript quit, Windows taskkill, Linux pkill). The Control Center wraps
+    this in a confirm dialog; quitting OBS mid-broadcast is the operator's call."""
+    name = rest[0] if rest else None
+    if name not in APP_CONTROLLED:
+        sys.exit(f"usage: iro app quit {{{'|'.join(APP_CONTROLLED)}}}")
+    ev = _event_modules()[0]
+    cmd = ev.quit_command(name, sys.platform)
+    if cmd is None:
+        sys.exit(f"app: cannot quit {name} on this system.")
+    try:
+        rc = subprocess.run(cmd, capture_output=True).returncode
+    except OSError as exc:
+        sys.exit(f"app: failed to quit {name} ({exc}).")
+    if rc == 0:
+        print(f"Asked {name} to quit.")
+    else:
+        sys.exit(f"app: {name} did not quit (exit {rc}) — it may not be running.")
 
 
 def obs_refresh_cmd(_rest):
@@ -1095,6 +1144,7 @@ DISPATCH = {
     ("tailscale", "up"): tailscale_up_cmd, ("tailscale", "down"): tailscale_down_cmd,
     ("tailscale", "status"): tailscale_status_cmd,
     ("obs", "refresh"): obs_refresh_cmd,
+    ("app", "launch"): app_launch_cmd, ("app", "quit"): app_quit_cmd,
 }
 
 ONESHOT_MAP = {
@@ -1415,6 +1465,79 @@ def env_write_data(entries, path=None):
         return {"ok": False, "error": f"could not write .env: {exc}"}
 
 
+def _streams_config_path():
+    return os.path.join(_streams_static_dir(), "streams.json")
+
+
+def _default_stream_feeds():
+    """The built-in FEEDS from start-streams.py as editor entries, so the UI
+    opens pre-seeded the first time (before any streams.json is saved)."""
+    ss = _load_relay_module("scripts/start-streams.py")
+    return [{"label": f"Feed {chr(65 + i)}", "channel": ch, "port": port}
+            for i, (ch, port) in enumerate(ss.FEEDS)]
+
+
+def streams_config_data(path=None, default=None):
+    """static-stream feeds for the Control Center: the saved streams.json, or the
+    built-in defaults when none exists yet. {"ok": True, "path", "entries":
+    [{label, channel, port}]} — never raises. `path`/`default` are test seams."""
+    try:
+        p = path or _streams_config_path()
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as fh:
+                data = json.load(fh)
+            entries = [{"label": str(e.get("label", "")),
+                        "channel": str(e.get("channel", "")),
+                        "port": str(e.get("port", ""))}
+                       for e in data if isinstance(e, dict)]
+        else:
+            entries = (default or _default_stream_feeds)()
+        return {"ok": True, "path": p, "entries": entries}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not read streams config: {exc}"}
+
+
+def _validate_streams_entries(entries):
+    """(cleaned [{label,channel,port}], None) or (None, error). Rows with neither
+    channel nor port are dropped; a present row needs a channel and a numeric,
+    unique port (ports map 1:1 to OBS media sources)."""
+    seen, out = set(), []
+    for e in entries or []:
+        label = str(e.get("label", "")).strip()
+        channel = str(e.get("channel", "")).strip()
+        port = str(e.get("port", "")).strip()
+        if not channel and not port:
+            continue
+        if not channel:
+            return None, "every feed needs a channel ID"
+        if not port.isdigit():
+            return None, f"port for {channel} must be a number"
+        if port in seen:
+            return None, f"duplicate port: {port}"
+        seen.add(port)
+        out.append({"label": label, "channel": channel, "port": port})
+    return out, None
+
+
+def streams_config_write_data(entries, path=None):
+    """Validate and persist the static-stream feed list to streams.json (atomic
+    tmp + os.replace). Writes ONLY the server-resolved path. {"ok": True, "path"}
+    or {"ok": False, "error"}; never raises."""
+    try:
+        cleaned, err = _validate_streams_entries(entries)
+        if err:
+            return {"ok": False, "error": err}
+        p = path or _streams_config_path()
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(cleaned, fh, indent=2)
+        os.replace(tmp, p)
+        return {"ok": True, "path": p}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not write streams config: {exc}"}
+
+
 def tools_status_data(which=None, version=None):
     """Per-tool install presence (+ version when present). On-demand: the
     version probe shells out once per tool. Returns {"ok": True, "tools":[...]}
@@ -1607,9 +1730,9 @@ def ui_cmd(rest):
     # the unauthenticated API into a rate limit). Failures aren't cached.
     _upd = {"at": 0.0, "data": None}
 
-    def update_check_cached():
+    def update_check_cached(force=False):
         now = time.time()
-        if _upd["data"] is not None and now - _upd["at"] <= 3600:
+        if not force and _upd["data"] is not None and now - _upd["at"] <= 3600:
             return _upd["data"]
         fresh = update_check_data()
         if fresh.get("ok"):
@@ -1623,6 +1746,8 @@ def ui_cmd(rest):
         "status": ui_status_payload,
         "relay_live": relay_live_data,
         "update_check": update_check_cached,
+        "streams_read": streams_config_data,
+        "streams_write": streams_config_write_data,
         "ops": ops_mod.OPS,
         "build_argv": ops_mod.build_argv,
         "assets": assets_status_data,
