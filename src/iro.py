@@ -1656,7 +1656,7 @@ def _resolve_doc(rel, resolve):
             if os.path.isfile(p):
                 return p
         except Exception:
-            pass
+            pass                # this candidate didn't resolve — try the next
     return None
 
 
@@ -2002,7 +2002,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        pass
+        pass                    # Ctrl+C is the intended way to stop the server
     finally:
         httpd.server_close()
     print("Control Center stopped — relay/companion/streams keep running.")
