@@ -563,6 +563,43 @@ def t_app_control_ops_route():
         assert iro.route(list(ui_ops.OPS[name]))["kind"] == "service"
 
 
+# ---------- init wizard providers ----------
+
+def t_init_plan_data_shape_and_safety():
+    steps = [
+        {"key": "env", "label": ".env", "done": lambda: "IRO_SHEET_ID set"},
+        {"key": "cookies", "label": "cookies", "done": lambda: None},
+        {"key": "preflight", "label": "preflight", "done": lambda: None},
+    ]
+    out = iro.init_plan_data(steps, iro.ins.STEP_KINDS, browser="chrome",
+                             next_steps=["import the OBS collection"])
+    assert out["ok"] is True
+    by_key = {s["key"]: s for s in out["steps"]}
+    assert by_key["env"]["done"] is True
+    assert by_key["env"]["kind"] == "gate"
+    assert by_key["cookies"]["done"] is False
+    assert by_key["cookies"]["op"] == "cookies"
+    # browser is interpolated into the instruction
+    assert "chrome" in by_key["cookies"]["instruction"]
+    assert out["next_steps"] == ["import the OBS collection"]
+
+
+def t_init_plan_data_never_raises_on_probe_error():
+    def boom():
+        raise RuntimeError("sheet down")
+    steps = [{"key": "graphics", "label": "graphics", "done": boom}]
+    out = iro.init_plan_data(steps, iro.ins.STEP_KINDS, browser="firefox",
+                             next_steps=[])
+    assert out["ok"] is True
+    assert out["steps"][0]["done"] is False
+
+
+def t_init_step_action_rejects_job_steps():
+    res = iro.init_step_action_data("cookies")
+    assert res["ok"] is False
+    assert "cookies" in res["error"]
+
+
 if __name__ == "__main__":
     import inspect, tempfile
     with tempfile.TemporaryDirectory() as tmp:

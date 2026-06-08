@@ -1809,6 +1809,62 @@ def _init_steps(opts):
     return [{"key": k, "label": ins.STEP_LABELS[k], **by_key[k]}
             for k in ins.build_plan(opts["skip_installs"])]
 
+
+def init_plan_data(steps, kinds, browser="firefox", next_steps=None):
+    """Wizard plan for the Control Center: each step's current done/skip state
+    plus how the UI runs it (kind/op/instruction from ins.STEP_KINDS). Pure +
+    never-raise — a broken done-probe reads as 'not done' (the step then runs
+    and surfaces its own error), never a 500. `steps` is the _init_steps()-shaped
+    list; `next_steps` is the closing manual checklist."""
+    out = []
+    for st in steps:
+        meta = kinds.get(st["key"], {"kind": "action", "op": None})
+        try:
+            reason = st["done"]()
+        except Exception:
+            reason = None
+        instr = meta.get("instruction")
+        if instr:
+            instr = instr.replace("{browser}", browser)
+        out.append({"key": st["key"], "label": st["label"],
+                    "kind": meta["kind"], "op": meta.get("op"),
+                    "done": reason is not None, "skip_reason": reason,
+                    "instruction": instr})
+    return {"ok": True, "steps": out, "next_steps": list(next_steps or [])}
+
+
+def init_step_action_data(key):
+    """Run one non-job wizard step in-process and report its new state. Only the
+    '.env' gate and 'export-companion' action are UI-driven here; job steps run
+    through /api/op/<op>. Never raises — returns {ok: False, error} instead."""
+    try:
+        if key == "env":
+            path = _env_file()
+            example = os.path.join(os.path.dirname(path), ".env.example")
+            if not os.path.exists(path) and os.path.exists(example):
+                shutil.copyfile(example, path)
+            reason = ins.env_done(_init_env_state())
+            return {"ok": True, "key": key, "done": reason is not None,
+                    "skip_reason": reason}
+        if key == "export-companion":
+            _init_export_run()
+            reason = ins.export_done(os.path.exists(_init_companion_cfg()))
+            return {"ok": True, "key": key, "done": reason is not None,
+                    "skip_reason": reason}
+        return {"ok": False, "error": f"step '{key}' is not a UI action step"}
+    except Exception as exc:
+        return {"ok": False, "error": f"init step '{key}' failed: {exc}"}
+
+
+def _init_plan(browser="firefox"):
+    """ctx['init_plan'] wrapper: build the full step list (no --skip-installs in
+    the UI), then describe it. Closing checklist mirrors `iro init`'s output."""
+    opts = {"browser": browser or "firefox", "skip_installs": False, "force": False}
+    nxt = ins.manual_next_steps(_init_import_json(), _init_companion_cfg())
+    return init_plan_data(_init_steps(opts), ins.STEP_KINDS,
+                          browser=opts["browser"], next_steps=nxt)
+
+
 def _ui_modules():
     """src/ui modules — path-inserted like scripts/ (kept out of the module-level
     insert: only `iro ui` needs them)."""
