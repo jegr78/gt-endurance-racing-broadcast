@@ -1807,8 +1807,14 @@ def _init_steps(opts):
                      "run": lambda: _oneshot_code("graphics", [])},
         "media": {"done": lambda: _init_assets_done("media"),
                   "run": lambda: _oneshot_code("media", [])},
+        # The import JSON must be newer than .env (its values are baked in). The
+        # bundled OBS template is a dependency ONLY in dev (a real, stable file):
+        # in the frozen binary it lives in _MEIPASS, re-extracted with a fresh
+        # mtime on every launch, which would make `setup` look stale after every
+        # start. So frozen compares against .env alone.
         "setup": {"done": lambda: ins.setup_done(
                       _mtime(_init_import_json()),
+                      [_mtime(_env_file())] if IS_FROZEN else
                       [_mtime(resource_path("obs/IRO_Endurance.json")),
                        _mtime(_env_file())]),
                   "run": lambda: _oneshot_code("setup",
@@ -1870,11 +1876,16 @@ def init_step_action_data(key):
 
 
 def _init_plan(browser="firefox"):
-    """ctx['init_plan'] wrapper: build the full step list (no --skip-installs in
-    the UI), then describe it. Closing checklist mirrors `iro init`'s output."""
+    """ctx['init_plan'] wrapper: the wizard's view of the init steps. Preflight is
+    dropped — the Control Center has a dedicated Preflight page, and as the one
+    step with no persistent done-state it only ever read as 'pending' here — and
+    surfaced as a closing reminder instead. (The `iro init` CLI still runs it.)"""
     opts = {"browser": browser or "firefox", "skip_installs": False, "force": False}
+    steps = [s for s in _init_steps(opts) if s["key"] != "preflight"]
     nxt = ins.manual_next_steps(_init_import_json(), _init_companion_cfg())
-    return init_plan_data(_init_steps(opts), ins.STEP_KINDS,
+    nxt.append("Open the Preflight page (left menu) to verify hardware, tools, "
+               "and ports before going live.")
+    return init_plan_data(steps, ins.STEP_KINDS,
                           browser=opts["browser"], next_steps=nxt)
 
 
