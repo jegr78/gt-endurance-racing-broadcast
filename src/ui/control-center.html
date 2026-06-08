@@ -518,16 +518,19 @@
             steps are detected and skipped. The closing checklist lists the
             manual imports no script can do.</p></div>
         <section>
-          <div class="row" style="justify-content:flex-end;gap:10px">
-            <label class="fl">YouTube browser
-              <select id="wiz-browser" onchange="fetchWizard()">
-                <option value="firefox">firefox</option>
-                <option value="chrome">chrome</option>
-                <option value="edge">edge</option>
-                <option value="brave">brave</option>
-                <option value="safari">safari</option>
-              </select></label>
-            <button onclick="fetchWizard()">Re-check all</button>
+          <div class="row" style="justify-content:space-between;gap:10px;align-items:flex-end">
+            <span id="wiz-summary" class="dim" style="font-size:13px"></span>
+            <div style="display:flex;gap:10px;align-items:flex-end">
+              <label class="fl">YouTube browser
+                <select id="wiz-browser" onchange="fetchWizard()">
+                  <option value="firefox">firefox</option>
+                  <option value="chrome">chrome</option>
+                  <option value="edge">edge</option>
+                  <option value="brave">brave</option>
+                  <option value="safari">safari</option>
+                </select></label>
+              <button onclick="recheckWizard(this)">Re-check all</button>
+            </div>
           </div>
           <div id="wiz-steps"></div>
         </section>
@@ -927,14 +930,34 @@ async function refresh() {
 }
 
 // ----- Setup wizard (on-demand /api/init/plan) -----
+function setWizSummary(text) {
+  const el = $('wiz-summary');
+  if (el) el.textContent = text;
+}
+
 async function fetchWizard() {
   const browser = ($('wiz-browser') || {}).value || 'firefox';
   let r;
   try {
     r = await (await fetch('/api/init/plan?browser=' + encodeURIComponent(browser))).json();
-  } catch (e) { return; }
-  if (!r.ok) return;
+  } catch (e) { setWizSummary('Could not reach the Control Center.'); return; }
+  if (!r.ok) { setWizSummary(r.error || 'Re-check failed.'); return; }
   renderWizard(r);
+  const steps = r.steps || [];
+  const done = steps.filter(s => s.done).length;
+  setWizSummary(done + ' of ' + steps.length + ' steps complete'
+               + (done < steps.length ? ' — run the pending steps below' : ''));
+}
+
+// "Re-check all" re-reads every step's state from the server (it does NOT re-run
+// anything). Show a brief busy state so a fast, unchanged re-check still visibly
+// registers — otherwise an already-complete plan looks like a dead button.
+async function recheckWizard(btn) {
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  setWizSummary('Checking…');
+  await Promise.all([fetchWizard(), new Promise(f => setTimeout(f, 350))]);
+  if (btn) { btn.disabled = false; btn.textContent = label || 'Re-check all'; }
 }
 
 function renderWizard(plan) {
