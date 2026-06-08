@@ -167,6 +167,13 @@ def smoke(binary, version):
                                     timeout=2) as r:
             if b"<html" not in r.read().lower():
                 sys.exit("smoke ui FAILED: bundled cheat sheet did not serve as HTML")
+        # a markdown doc must come back RENDERED (mdrender bundled + working),
+        # not as raw text.
+        with urllib.request.urlopen("http://127.0.0.1:8389/api/docs/file/setup-readme",
+                                    timeout=2) as r:
+            md = r.read().decode("utf-8", "replace")
+        if "<!doctype html>" not in md or "<table" not in md:
+            sys.exit("smoke ui FAILED: setup-readme markdown was not rendered to HTML")
         urllib.request.urlopen(urllib.request.Request(
             "http://127.0.0.1:8389/api/quit", method="POST", data=b""), timeout=5).read()
         ui.wait(timeout=10)

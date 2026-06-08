@@ -1676,6 +1676,27 @@ def docs_file_path(key, resolve=None):
     return _resolve_doc(rel, resolve or resource_path)
 
 
+def docs_content(key, resolve=None):
+    """(content_type, body_bytes) for an allowlisted Help doc, or None. HTML docs
+    are served as-is; Markdown docs are rendered to a styled, self-contained HTML
+    page (mdrender) so they read properly in a browser tab instead of as raw
+    text. Never raises — returns None on any failure."""
+    path = docs_file_path(key, resolve)
+    if not path:
+        return None
+    try:
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        if path.lower().endswith((".html", ".htm")):
+            return ("text/html; charset=utf-8", raw)
+        import mdrender
+        title = _DOC_TITLES.get(key, (key, ""))[0]
+        doc = mdrender.page(title, mdrender.render(raw.decode("utf-8", "replace")))
+        return ("text/html; charset=utf-8", doc.encode("utf-8"))
+    except Exception:
+        return None
+
+
 def _read_env_file():
     try:
         with open(_env_file(), encoding="utf-8") as fh:
@@ -1839,7 +1860,7 @@ def ui_cmd(rest):
         "streams_read": streams_config_data,
         "streams_write": streams_config_write_data,
         "docs": docs_data,
-        "docs_path": docs_file_path,
+        "docs_content": docs_content,
         "ops": ops_mod.OPS,
         "build_argv": ops_mod.build_argv,
         "assets": assets_status_data,

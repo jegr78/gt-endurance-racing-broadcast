@@ -65,8 +65,8 @@ def _allowed(_handler):
 def make_handler(ctx):
     """ctx: version, page_path, status() -> dict, relay_live() -> dict,
     obs_ws() -> dict, update_check(force) -> dict, streams_read() -> dict,
-    streams_write(entries) -> dict, docs() -> dict, docs_path(key) -> path|None,
-    ops {name: argv},
+    streams_write(entries) -> dict, docs() -> dict,
+    docs_content(key) -> (ctype, bytes)|None, ops {name: argv},
     build_argv(name, params) -> argv (raises ValueError), assets() -> dict,
     asset_files() -> dict, asset_roots {kind: dir},
     tools() -> dict, apps() -> dict, preflight() -> dict,
@@ -229,13 +229,21 @@ def make_handler(ctx):
                                        "error": f"docs listing failed: {exc}"},
                                       code=500)
             if path.startswith("/api/docs/file/"):
-                # key is looked up in an allowlist (docs_path -> None for anything
-                # unknown), so no path can be traversed out of the doc set.
+                # key is looked up in an allowlist (docs_content -> None for
+                # anything unknown), so no path can be traversed out of the doc
+                # set. Markdown is rendered to HTML; HTML is served as-is.
                 key = unquote(path[len("/api/docs/file/"):])
-                full = ctx["docs_path"](key)
-                if not full:
+                doc = ctx["docs_content"](key)
+                if not doc:
                     return self._not_found("doc not found")
-                return self._serve_file(full)
+                ctype, body = doc
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return None
             if path == "/api/env":
                 try:
                     return self._json(ctx["env_read"]())

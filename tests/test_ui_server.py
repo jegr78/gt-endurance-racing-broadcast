@@ -74,9 +74,9 @@ def _ctx(jobs=None):
             "docs": lambda: {"ok": True, "wiki_url": "https://example/wiki",
                              "local": [{"key": "cheat-sheet", "title": "Cheat sheet",
                                         "desc": "d", "kind": "html"}]},
-            "docs_path": lambda key: (os.path.join(ROOT, "src", "ui",
-                                      "control-center.html")
-                                      if key == "cheat-sheet" else None),
+            "docs_content": lambda key: (("text/html; charset=utf-8",
+                                          b"<html>cheat</html>")
+                                         if key == "cheat-sheet" else None),
             "jobs": jobs or ui_jobs.JobManager(
                 lambda a: [sys.executable, "-c", "print('hi from job')"]),
             "log_paths": {},
