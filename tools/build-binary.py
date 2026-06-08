@@ -116,6 +116,14 @@ def main():
     if not a.skip_smoke:
         smoke(iro_bin, a.version)
         smoke_ui(ui_bin)
+        # macOS ships the windowed launcher as iro-ui.app; smoke its INNER
+        # executable too. The .app nests the exe 3 levels deep, so sibling-iro
+        # resolution differs — a job spawn through it is the regression guard for
+        # the "Contents/MacOS/iro not found" bug (the plain ui_bin can't catch it).
+        app_exe = os.path.join(ROOT, "dist", "bin", "iro-ui.app",
+                               "Contents", "MacOS", "iro-ui")
+        if os.path.isfile(app_exe):
+            smoke_ui(app_exe)
 
 
 def smoke_ui(binary):
