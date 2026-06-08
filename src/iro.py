@@ -1909,8 +1909,11 @@ def _iro_job_executable(frozen=IS_FROZEN, executable=None, win=None):
     executable = sys.executable if executable is None else executable
     win = (os.name == "nt") if win is None else win
     if frozen:
-        return os.path.join(_app_home(executable),
-                            "iro.exe" if win else "iro")
+        # Join with the TARGET platform's separator (driven by `win`), not the
+        # host's: os.path.join emits '\' on a Windows runner and would corrupt
+        # the POSIX sibling path on a non-Windows target (and the unit tests).
+        sep = "\\" if win else "/"
+        return _app_home(executable) + sep + ("iro.exe" if win else "iro")
     return executable
 
 
