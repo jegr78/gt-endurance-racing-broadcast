@@ -172,13 +172,16 @@ def make_handler(ctx):
                         or name != os.path.basename(name)
                         or name in (".", "..")):
                     return self._not_found("asset not found")
-                # Normalize, then require the result to stay inside the trusted
-                # root (commonpath containment — CodeQL-recognized path sanitizer)
-                # and point at a real file. _serve_file opens this normalized path.
+                # Resolve, then require the normalized path to stay inside the
+                # trusted root before it reaches any filesystem call. The guard
+                # is its own statement (realpath normalize + startswith barrier —
+                # the sanitizer CodeQL recognizes; a compound `or` condition
+                # defeats that recognition).
                 root = os.path.realpath(roots[kind])
                 full = os.path.realpath(os.path.join(root, name))
-                if (os.path.commonpath([root, full]) != root
-                        or not os.path.isfile(full)):
+                if not full.startswith(root + os.sep):
+                    return self._not_found("asset not found")
+                if not os.path.isfile(full):
                     return self._not_found("asset not found")
                 return self._serve_file(full)
             if path == "/api/setup":
