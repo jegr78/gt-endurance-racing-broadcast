@@ -377,11 +377,11 @@ def make_handler(ctx):
                     if code is not None and not chunk:
                         self.wfile.write(sse_done(code))
                         self.wfile.flush()
-                        return
+                        return None
                     if not chunk:
                         time.sleep(0.4)
             except (BrokenPipeError, ConnectionResetError):
-                return                            # browser tab closed mid-stream
+                return None                       # browser tab closed mid-stream
 
         def _stream_log(self, name):
             path_fn = ctx["log_paths"].get(name)
@@ -411,7 +411,7 @@ def make_handler(ctx):
                         else:
                             time.sleep(0.5)
             except (BrokenPipeError, ConnectionResetError):
-                return
+                return None                       # browser tab closed mid-stream
 
     return Handler
 
