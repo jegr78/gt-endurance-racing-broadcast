@@ -55,6 +55,42 @@ def t_set_index_allows_one_past_end_for_idle():
     assert f2.set_index(99) is False               # already at the sentinel -> no-op
 
 
+class _StubSource:
+    def __init__(self, items): self._items = list(items)
+    def get(self): return list(self._items)
+    def refresh(self, timeout=6): return True
+    def health(self): return {"count": len(self._items), "last_ok_age_s": 0, "last_error": None}
+    def add(self, url): self._items.append(url)
+
+
+def _relay(items):
+    r = m.Relay(_StubSource(items), (53001, 53002), HERE)
+    r._reflect = lambda live, cut: None        # isolate index logic from OBS I/O
+    return r
+
+
+def t_next_new_live_is_the_non_advanced_feed():
+    r = _relay(["s1", "s2", "s3", "s4"])
+    assert (r.A.idx, r.B.idx) == (0, 1)
+    assert r.live_after_next() == "B"          # B (stint2) is pre-warmed -> next live
+    r.next_auto()
+    assert (r.A.idx, r.B.idx) == (2, 1)        # A advanced to stint3; B now live
+    assert r.live_feed() == "B"
+    r.next_auto()
+    assert (r.A.idx, r.B.idx) == (2, 3)        # B advanced to stint4; A now live
+    assert r.live_feed() == "A"
+
+
+def t_cold_start_one_link_then_add_second():
+    r = _relay(["s1"])                         # start with ONE link
+    assert (r.A.idx, r.B.idx) == (0, 1)
+    assert r.B.current_channel() == (None, 1)  # B idles (black) on the empty slot 2
+    r.source.add("s2")                         # link entered mid-event
+    assert r.live_after_next() == "B"
+    r.next_auto()
+    assert r.live_feed() == "B" and r.B.current_channel() == ("s2", 1)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

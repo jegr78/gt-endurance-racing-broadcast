@@ -64,6 +64,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, quote, unquote
 from urllib.request import Request, urlopen
 
+# OBS reflection (best effort). obs_ws lives in src/scripts (repo) or the
+# bundled tree (frozen). A missing client just disables reflection — it must
+# never break the relay.
+_REL_HERE = os.path.dirname(os.path.abspath(__file__))
+for _cand in (os.path.join(_REL_HERE, "..", "scripts"),
+              os.path.join(getattr(sys, "_MEIPASS", _REL_HERE), "src", "scripts")):
+    if os.path.isdir(_cand) and _cand not in sys.path:
+        sys.path.insert(0, _cand)
+try:
+    import obs_ws as _obs_ws
+except Exception:                                # noqa: BLE001 — reflection is optional
+    _obs_ws = None
+
 # ---------- Configuration ----------
 # Pipeline: yt-dlp resolves the live HLS URL (passes YouTube's bot-check via
 # cookies + JS-challenge solving) -> streamlink serves that direct URL to OBS
@@ -1206,6 +1219,7 @@ class Relay:
         self.A = Feed("A", ports[0], a_idx, source.get, logdir, cookies)
         self.B = Feed("B", ports[1], b_idx, source.get, logdir, cookies)
         self.feeds = {"A": self.A, "B": self.B}
+        self.obs_note = None          # last OBS-reflection note (None/"" = ok); read by status()
         # POV is a THIRD, independent feed — not part of the A/B index. Starts
         # paused (off) until the Director calls /pov/reload.
         self.pov_source = pov_source
@@ -1240,12 +1254,36 @@ class Relay:
                           "state": "stopped" if self.pov.paused else self.pov.phase,
                           "state_age_s": round(now - self.pov.phase_since, 1),
                           "source": self.pov_source.health() if self.pov_source else None}
+        out["obs"] = {"reachable": not self.obs_note, "note": self.obs_note}
         return out
 
+    def live_feed(self):
+        """The on-air feed = the one on the lower (earlier) stint index."""
+        return "A" if self.A.idx <= self.B.idx else "B"
+
+    def live_after_next(self):
+        """Which feed will be on air after the next /next: the one NOT advanced."""
+        return "B" if self.live_feed() == "A" else "A"
+
+    def _reflect(self, live, cut):
+        """Push the on-air feed (A/B) into OBS off-thread; never blocks the HTTP
+        response, never raises. Records the note for /status."""
+        if _obs_ws is None:
+            return
+
+        def run():
+            _applied, note = _obs_ws.reflect_feed_state(live, cut)
+            self.obs_note = note or None
+        threading.Thread(target=run, daemon=True).start()
+
     def next_auto(self):
-        self.source.refresh(timeout=6)              # fresh sheet data at handover (bounded wait)
-        target = "A" if self.A.idx <= self.B.idx else "B"
-        return self.advance(target, +2)
+        self.source.refresh(timeout=6)               # fresh sheet data at handover (bounded wait)
+        new_live = self.live_after_next()
+        target = "A" if new_live == "B" else "B"     # advance the OTHER (currently on-air) feed
+        result = self.advance(target, +2)
+        cut = self.feeds[new_live].phase == "serving"  # never auto-cut to a black/buffering feed
+        self._reflect(new_live, cut)
+        return {**result, "obs_cut": cut}
 
     def advance(self, which, delta):
         f = self.feeds.get(which.upper())
@@ -1266,6 +1304,7 @@ class Relay:
         a_idx, b_idx = stint_start_indices(stint, len(self.source.get()))
         self.A.set_index(a_idx)
         self.B.set_index(b_idx)
+        self._reflect(self.live_feed(), cut=False)   # set visibility/audio; director picks the scene
         return self.status()
 
     def reload(self, which=None):
@@ -1676,6 +1715,7 @@ def main():
                   pov_source=pov_source, pov_port=args.pov_port,
                   start_stint=args.stint)
     relay.start()
+    relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
 
     stop_evt = threading.Event()
     threading.Thread(target=poller, args=(source, args.poll, stop_evt), daemon=True).start()
