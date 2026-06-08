@@ -407,3 +407,38 @@ def refresh_browser_inputs(needle="127.0.0.1:8088", host="127.0.0.1", port=None,
         return [], str(exc) or exc.__class__.__name__
     finally:
         session.close()
+
+
+def reflect_feed_state(live, do_cut, scene=STINT_SCENE, sources=None,
+                       host="127.0.0.1", port=None, password=None, timeout=2.0):
+    """Reflect which feed (A/B) is on air into OBS: show/hide the Stint-scene
+    sources, mute/unmute the feed audio inputs, and (do_cut) cut the program to
+    Stint. Best effort by design: returns (applied_intents, note) and NEVER
+    raises — a handover must go through even if OBS is closed/locked. On any
+    failure the relay falls back to the manual panel/Companion controls."""
+    intents = feed_state_intents(live, do_cut, scene=scene, sources=sources)
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return [], note
+    applied = []
+    try:
+        for verb, target in intents:
+            if verb in ("show", "hide"):
+                sid = session.request("GetSceneItemId",
+                                      {"sceneName": scene, "sourceName": target}).get("sceneItemId")
+                if sid is None:
+                    raise ValueError(f"scene item '{target}' not found in scene '{scene}'")
+                session.request("SetSceneItemEnabled",
+                                {"sceneName": scene, "sceneItemId": sid,
+                                 "sceneItemEnabled": verb == "show"})
+            elif verb in ("mute", "unmute"):
+                session.request("SetInputMute",
+                                {"inputName": target, "inputMuted": verb == "mute"})
+            elif verb == "cut":
+                session.request("SetCurrentProgramScene", {"sceneName": target})
+            applied.append((verb, target))
+        return applied, ""
+    except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        return applied, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
