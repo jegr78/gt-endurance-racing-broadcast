@@ -715,10 +715,21 @@ In `src/docs/wiki/Director.md`, replace the multi-step "At a driver change" list
 You start a race with only the first stint's link in the **Schedule** sheet and add
 each next link ~20–30 min before its swap (panel **Schedule** rows or the sheet
 directly). Until a link is present the off-air feed shows a black tile in the split;
-it goes live on its own once the link is in. If the panel shows **OBS NOT REACHABLE**,
-NEXT can't auto-cut — use the manual **FEED A/B** and scene buttons (the break-glass
-fallback); `/status` shows which feed is live.
+it goes live on its own once the link is in.
+
+The relay also handles the audio (it mutes the off-air feed, unmutes the on-air one),
+so **MUTE A / MUTE B** are no longer part of the normal flow. **STINT A / STINT B**,
+**MUTE A / MUTE B** and **Feed A/B Toggle** stay on the panel and Stream Deck as a
+**break-glass fallback** only: if the panel shows **OBS NOT REACHABLE**, NEXT can't
+auto-cut — then use **STINT A / STINT B** (and, if needed, the manual FEED/MUTE
+buttons) to cut by hand; `/status` shows which feed is live.
 ```
+
+> **Operator-model note (decision: docs-only):** No Companion/panel buttons are
+> added or relabeled. `Feeds Next` + `SPLIT` already exist and now suffice; the
+> redundant A/B buttons keep working as fallback. This task only documents the new
+> normal path — there is intentionally no Companion-config change and no wiki
+> screenshot regeneration.
 
 - [ ] **Step 2: Update Relay-Mode controls note**
 
