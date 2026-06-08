@@ -382,6 +382,30 @@ def t_inject_row_rejects_empty_or_bad_url():
     assert s.get() == ["s1"]
 
 
+def t_schedule_set_injects_on_success():
+    src = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_y.cache"),
+                           local_fallback=None)
+    src.items = ["s1"]; src.rows = [("s1", "Ann", 1)]
+    ctl = m.SetupControl(push_url="https://example.test/push", hud_source=None,
+                         schedule_source=src)
+    ctl._push = lambda payload, expected: (True, "")     # stub the webhook
+    out = ctl.schedule_set(2, "https://www.youtube.com/watch?v=abc", "Ben")
+    assert out.get("ok") is True
+    assert src.get() == ["s1", "https://www.youtube.com/watch?v=abc"]   # available immediately
+
+
+def t_schedule_set_no_inject_on_push_failure():
+    src = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_z.cache"),
+                           local_fallback=None)
+    src.items = ["s1"]; src.rows = [("s1", "Ann", 1)]
+    ctl = m.SetupControl(push_url="https://example.test/push", hud_source=None,
+                         schedule_source=src)
+    ctl._push = lambda payload, expected: (False, "boom")
+    out = ctl.schedule_set(2, "https://www.youtube.com/watch?v=abc", "Ben")
+    assert "error" in out
+    assert src.get() == ["s1"]                            # nothing injected on failure
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

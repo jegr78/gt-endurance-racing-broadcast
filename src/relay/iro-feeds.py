@@ -1014,9 +1014,10 @@ class SetupControl:
     and answering after the webhook confirm removes the save-vs-RELOAD race).
     The sheet stays authoritative throughout."""
 
-    def __init__(self, push_url, hud_source):
+    def __init__(self, push_url, hud_source, schedule_source=None):
         self.push_url = push_url
         self.hud = hud_source
+        self.schedule_source = schedule_source
         self.push_status = "disabled" if not push_url else "never"
         self.last_error = None
 
@@ -1087,6 +1088,8 @@ class SetupControl:
         if name is not None:
             payload["name"] = name.strip()
         ok, err = self._push(payload, "schedule")
+        if ok and self.schedule_source is not None and url:
+            self.schedule_source.inject_row(row, url, payload.get("name", ""))
         return {"ok": True, "row": row} if ok else {"error": err}
 
     def pov_set(self, url):
@@ -1719,10 +1722,9 @@ def main():
         if not timer_path:
             print("WARN: timer.html not found — /timer will 404.")
 
-    setup_ctl = SetupControl(push_url, hud_source) if hud_source else None
-
     source = ScheduleSource(csv_url, cache, local)
     source.load_initial(SCHEDULE_TEMPLATE)
+    setup_ctl = SetupControl(push_url, hud_source, schedule_source=source) if hud_source else None
     if len(source.get()) < 2:
         print("INFO: schedule has fewer than 2 stints — Feed B idles on the empty next "
               "slot (black) until that stint's link is added; Feed A keeps serving stint 1.")
