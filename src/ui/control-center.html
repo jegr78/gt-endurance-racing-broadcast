@@ -261,6 +261,27 @@
            box-shadow:0 24px 70px rgba(0,0,0,.6); }
   .lightbox .cap { position:absolute; bottom:22px; left:0; right:0;
            text-align:center; color:var(--txt); font:13px var(--mono); }
+  /* Home readiness tiles */
+  section.tiles { display:flex; gap:10px; flex-wrap:wrap; }
+  .tile { flex:1 1 150px; background:#232C42; border:1px solid var(--line);
+          border-radius:10px; padding:11px 14px; cursor:pointer; text-align:left;
+          display:flex; flex-direction:column; gap:5px;
+          transition:border-color .2s, background .2s; }
+  .tile:hover { border-color:var(--accent); background:#283352; }
+  .tlabel { font:600 10px var(--mono); letter-spacing:.06em; color:var(--dim);
+            text-transform:uppercase; }
+  .tval { font-size:14px; font-weight:600; color:var(--txt); }
+  .tile.ok .tval { color:var(--ok); }
+  .tile.warn .tval { color:var(--warn); }
+  .tile.bad .tval { color:var(--bad); }
+  /* update banner in the Home head */
+  .updbanner { display:inline-flex; align-items:center; gap:6px;
+           padding:6px 12px; border-radius:8px; font-size:13px; font-weight:600;
+           background:rgba(245,158,11,.14); color:#FCD34D;
+           border:1px solid rgba(245,158,11,.4); text-decoration:none; }
+  .updbanner svg { width:14px; height:14px; stroke:currentColor; fill:none;
+           stroke-width:2; }
+  .updbanner:hover { background:rgba(245,158,11,.24); }
 </style>
 </head>
 <body>
@@ -270,10 +291,10 @@
       <div><div class="brandname">Control Center</div>
         <span class="ver" id="ver"></span></div></div>
     <div class="nav">
-      <button class="navitem active" data-nav="preflight" onclick="showView('preflight')">
+      <button class="navitem active" data-nav="home" onclick="showView('home')">
+        <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Home</button>
+      <button class="navitem" data-nav="preflight" onclick="showView('preflight')">
         <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Preflight</button>
-      <button class="navitem" data-nav="event" onclick="showView('event')">
-        <svg viewBox="0 0 24 24"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/></svg>Event</button>
       <button class="navitem" data-nav="services" onclick="showView('services')">
         <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>Services</button>
       <button class="navitem" data-nav="apps" onclick="showView('apps')">
@@ -312,15 +333,6 @@
               <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button>
             <button onclick="op('relay-restart', true)">
               <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Restart</button></div>
-          <div class="row"><span class="name">Companion</span>
-            <span class="badge" id="b-companion"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="d-companion"></span>
-            <button onclick="op('companion-start')">
-              <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button>
-            <button class="danger" onclick="op('companion-stop', true)">
-              <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button>
-            <button onclick="op('companion-restart', true)">
-              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Restart</button></div>
           <div class="row"><span class="name">Streams</span>
             <span class="badge" id="b-streams"><span class="dot"></span><span>…</span></span>
             <span class="dim grow" id="d-streams"></span>
@@ -328,21 +340,16 @@
               <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start</button>
             <button class="danger" onclick="op('streams-stop', true)">
               <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop</button></div>
-          <div class="row"><span class="name">Tailscale</span>
-            <span class="badge" id="b-ts"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="d-ts"></span>
-            <button onclick="op('tailscale-up')">
-              <svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>Up</button>
-            <button class="danger" onclick="op('tailscale-down', true)">
-              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Down</button></div>
         </section>
+        <p class="evnote">Companion and Tailscale moved to <b>Apps</b> — start, stop and check them there alongside OBS and Discord.</p>
       </div>
 
-      <!-- ===== Event ===== -->
-      <div class="view" data-view="event" hidden>
-        <div class="viewhead"><h2>Event</h2>
-          <span class="sub" id="ev-summary"></span>
+      <!-- ===== Home ===== -->
+      <div class="view" data-view="home">
+        <div class="viewhead"><h2>Home</h2>
+          <span class="sub" id="home-summary"></span>
           <span class="spacer"></span>
+          <a id="upd-banner" class="updbanner" target="_blank" rel="noopener" hidden></a>
           <input id="stint" type="number" min="1" placeholder="stint" aria-label="Stint number for mid-event takeover">
           <button onclick="opEventStart()">
             <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start event</button>
@@ -350,27 +357,45 @@
             <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop event</button></div>
         <section>
           <div class="row"><span class="name">Tailscale</span>
-            <span class="badge" id="ev-tailscale"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="evd-tailscale"></span></div>
+            <span class="badge" id="h-tailscale"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-tailscale"></span></div>
           <div class="row"><span class="name">Discord</span>
-            <span class="badge" id="ev-discord"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="evd-discord"></span></div>
+            <span class="badge" id="h-discord"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-discord"></span></div>
           <div class="row"><span class="name">OBS</span>
-            <span class="badge" id="ev-obs"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="evd-obs"></span></div>
+            <span class="badge" id="h-obs"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-obs"></span></div>
           <div class="row"><span class="name">Relay</span>
-            <span class="badge" id="ev-relay"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="evd-relay"></span>
-            <a class="linkbtn" id="ev-relay-open" target="_blank" rel="noopener" hidden>Open panel ↗</a>
-            <button id="ev-relay-copy" hidden onclick="copyLink(this)">Copy link</button></div>
+            <span class="badge" id="h-relay"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-relay"></span>
+            <a class="linkbtn" id="h-relay-open" target="_blank" rel="noopener" hidden>Open panel ↗</a>
+            <button id="h-relay-copy" hidden onclick="copyLink(this)">Copy link</button></div>
           <div class="row"><span class="name">Companion</span>
-            <span class="badge" id="ev-companion"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="evd-companion"></span>
-            <a class="linkbtn" id="ev-companion-open" target="_blank" rel="noopener" hidden>Open tablet ↗</a>
-            <button id="ev-companion-copy" hidden onclick="copyLink(this)">Copy link</button></div>
+            <span class="badge" id="h-companion"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-companion"></span>
+            <a class="linkbtn" id="h-companion-open" target="_blank" rel="noopener" hidden>Open tablet ↗</a>
+            <button id="h-companion-copy" hidden onclick="copyLink(this)">Copy link</button></div>
           <div class="row"><span class="name">Streams</span>
-            <span class="badge" id="ev-streams"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="evd-streams"></span></div>
+            <span class="badge" id="h-streams"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-streams"></span></div>
+        </section>
+        <section id="home-live">
+          <div class="row"><span class="name">Race timer</span>
+            <span class="badge" id="h-timer"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-timer"></span></div>
+          <div class="row"><span class="name">Feeds</span>
+            <span class="dim grow" id="hd-feeds">start the relay for live stats</span></div>
+        </section>
+        <section class="tiles">
+          <button class="tile" onclick="showView('preflight')">
+            <span class="tlabel">Preflight</span>
+            <span class="tval" id="t-preflight">not run yet</span></button>
+          <button class="tile" onclick="showView('assets')">
+            <span class="tlabel">Assets</span>
+            <span class="tval" id="t-assets">checking…</span></button>
+          <button class="tile" onclick="showView('assets')">
+            <span class="tlabel">Cookies</span>
+            <span class="tval" id="t-cookies">checking…</span></button>
         </section>
         <p class="evnote">Start brings up Tailscale, Discord, OBS, relay and Companion (optional stint = mid-event takeover). Stop only stops the iro services — OBS, Discord and Tailscale keep running; quit them manually if needed. Use <b>Copy link</b> to share the Companion tablet and Director panel URLs with your directors (they reach them over Tailscale).</p>
       </div>
@@ -385,6 +410,7 @@
         <section><div id="applist">
           <div class="item miss"><span class="idot"></span><span class="dim grow">loading…</span></div>
         </div></section>
+        <p class="envhint">The badge shows whether each app is running. Companion and Tailscale start/stop here; OBS and Discord are launched by <b>Start event</b> on Home. OBS also exports the scene collection and refreshes its browser sources from here.</p>
       </div>
 
       <!-- ===== Tools ===== -->
@@ -438,7 +464,7 @@
       </div>
 
       <!-- ===== Preflight ===== -->
-      <div class="view" data-view="preflight">
+      <div class="view" data-view="preflight" hidden>
         <div class="viewhead"><h2>Preflight</h2>
           <span class="sub" id="pf-summary"></span>
           <span class="spacer"></span>
@@ -511,8 +537,10 @@ let jobES = null, logES = null;
 
 let setupLoaded = false, preflightRun = false, assetsLoaded = false,
     settingsLoaded = false;
+let currentView = 'home', lastStatus = null;
 
 function showView(name) {
+  currentView = name;
   document.querySelectorAll('[data-view]').forEach(v => {
     v.hidden = v.dataset.view !== name;
   });
@@ -527,6 +555,9 @@ function showView(name) {
   if (name === 'assets' && !assetsLoaded) { assetsLoaded = true; fetchAssetFiles(); }
   if (name === 'preflight' && !preflightRun) { preflightRun = true; runPreflight(); }
   if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
+  // entering Home: refresh the live relay stats right away (don't wait for the poll)
+  if (name === 'home' && lastStatus && lastStatus.relay
+      && lastStatus.relay.alive && lastStatus.relay.http_ok) fetchRelayLive();
 }
 
 function toggleConsole(force) {
@@ -547,37 +578,145 @@ function setBadge(key, on, onText, offText, detail) {
   setBadgeEl('b-' + key, 'd-' + key, on, onText, offText, detail);
 }
 
-function updateEventView(s) {
+function updateHome(s) {
   const ar = s.apps_running || {};
   const tsUp = !!s.tailscale_ip, relayUp = s.relay.alive,
         compUp = s.companion.running,
         strAlive = s.streams.filter(f => f.alive).length;
-  setBadgeEl('ev-tailscale', 'evd-tailscale', tsUp, 'CONNECTED', 'down',
+  setBadgeEl('h-tailscale', 'hd-tailscale', tsUp, 'CONNECTED', 'down',
              s.tailscale_ip || 'not connected');
-  setBadgeEl('ev-discord', 'evd-discord', !!ar.discord, 'RUNNING', 'not running',
+  setBadgeEl('h-discord', 'hd-discord', !!ar.discord, 'RUNNING', 'not running',
              ar.discord ? 'process running' : 'launched by Start');
-  setBadgeEl('ev-obs', 'evd-obs', !!ar.obs, 'RUNNING', 'not running',
+  setBadgeEl('h-obs', 'hd-obs', !!ar.obs, 'RUNNING', 'not running',
              ar.obs ? 'process running' : 'launched by Start');
-  setBadgeEl('ev-relay', 'evd-relay', relayUp, 'RUNNING', 'stopped',
+  setBadgeEl('h-relay', 'hd-relay', relayUp, 'RUNNING', 'stopped',
              relayUp ? (s.relay.http_ok ? 'control OK on port ' + s.relay.port
                                         : 'port ' + s.relay.port + ' not responding')
                      : 'iro service');
-  setBadgeEl('ev-companion', 'evd-companion', compUp, 'RUNNING', 'stopped',
+  setBadgeEl('h-companion', 'hd-companion', compUp, 'RUNNING', 'stopped',
              s.companion.url || s.companion.why || '');
-  setBadgeEl('ev-streams', 'evd-streams', strAlive > 0, 'RUNNING', 'stopped',
+  setBadgeEl('h-streams', 'hd-streams', strAlive > 0, 'RUNNING', 'stopped',
              s.streams.length ? strAlive + '/' + s.streams.length + ' feeds up'
                               : 'no feeds');
   const core = [tsUp, !!ar.discord, !!ar.obs, relayUp, compUp];
-  $('ev-summary').textContent =
+  $('home-summary').textContent =
     core.filter(Boolean).length + ' of ' + core.length + ' core services up';
   // Shareable links for the directors. Companion's url is already its bound
   // address; the panel link prefers the Tailscale IP so a remote director can
   // reach it over the tailnet (falls back to localhost when Tailscale is down).
-  setShareLink('ev-companion-open', 'ev-companion-copy', s.companion.url || '');
+  setShareLink('h-companion-open', 'h-companion-copy', s.companion.url || '');
   const panelUrl = (relayUp && s.relay.http_ok)
     ? 'http://' + (s.tailscale_ip || '127.0.0.1') + ':' + s.relay.port + '/panel'
     : '';
-  setShareLink('ev-relay-open', 'ev-relay-copy', panelUrl);
+  setShareLink('h-relay-open', 'h-relay-copy', panelUrl);
+  // Cookies readiness tile — short label only (full detail lives on Assets).
+  if (s.cookies) setTile('cookies',
+      s.cookies.level === 'PASS' ? 'ok' : (s.cookies.level === 'FAIL' ? 'bad' : 'warn'),
+      s.cookies.level === 'PASS' ? 'fresh'
+        : (s.cookies.level === 'FAIL' ? 'expired' : 'missing / stale'));
+  // Live relay stats only make sense while the control server answers.
+  if (!(relayUp && s.relay.http_ok)) {
+    liveTimer = null;
+    const tb = $('h-timer');
+    tb.classList.remove('on');
+    tb.lastElementChild.textContent = '—';
+    $('hd-timer').textContent = relayUp ? 'relay control not responding' : 'relay stopped';
+    $('hd-feeds').textContent = 'start the relay for live stats';
+  }
+}
+
+// ----- per-app running status on the Apps view (updated from the poll) -----
+function updateAppStatus(s) {
+  const ar = s.apps_running || {};
+  setAppStat('obs', !!ar.obs, 'running', 'not running');
+  setAppStat('discord', !!ar.discord, 'running', 'not running');
+  setAppStat('companion', s.companion.running, 'running', 'stopped');
+  setAppStat('tailscale', !!s.tailscale_ip, 'connected', 'down');
+}
+
+function setAppStat(key, on, onText, offText) {
+  const b = $('appstat-' + key);
+  if (!b) return;                        // Apps view not rendered yet — nothing to update
+  b.classList.toggle('on', on);
+  b.lastElementChild.textContent = on ? onText : offText;
+}
+
+function setTile(key, cls, text) {
+  const t = $('t-' + key);
+  if (!t) return;
+  const tile = t.closest('.tile');
+  tile.classList.remove('ok', 'warn', 'bad');
+  if (cls) tile.classList.add(cls);
+  t.textContent = text;
+}
+
+// ----- live relay stats (timer + feeds), fetched while Home is open -----
+let liveTimer = null;                    // {t: timerPayload, at: clientEpochSeconds}
+
+async function fetchRelayLive() {
+  let d;
+  try { d = await (await fetch('/api/relay-live', {cache: 'no-store'})).json(); }
+  catch (e) { return; }                  // server gone — keep last state
+  if (!d || !d.ok) return;
+  const parts = (d.feeds || []).map(f =>
+    'Feed ' + f.feed + ' · Stint ' + (f.stint == null ? '?' : f.stint) +
+    (f.state ? ' (' + f.state + ')' : ''));
+  if (d.uptime_s != null) parts.push('relay up ' + fmtDur(d.uptime_s));
+  $('hd-feeds').textContent = parts.length ? parts.join('     ') : 'no feeds';
+  liveTimer = {t: d.timer || {}, at: Date.now() / 1000};
+  renderTimer();
+}
+
+function renderTimer() {
+  if (!liveTimer) return;
+  const t = liveTimer.t;
+  let secs;
+  if (t.mode === 'running' && t.end != null) {
+    const rem0 = t.end - (t.server_now == null ? t.end : t.server_now);
+    secs = Math.max(0, Math.round(rem0 - (Date.now() / 1000 - liveTimer.at)));
+  } else if (t.remaining_s != null) {
+    secs = t.remaining_s;
+  } else {
+    secs = t.duration_s;
+  }
+  const b = $('h-timer');
+  b.classList.toggle('on', t.mode === 'running');
+  b.lastElementChild.textContent = secs == null ? '—' : fmtClock(secs);
+  const bits = [t.mode || 'idle'];
+  if (t.visible === false) bits.push('hidden on air');
+  $('hd-timer').textContent = bits.join(' · ');
+}
+
+function fmtClock(s) {
+  s = Math.max(0, Math.floor(s));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const mm = String(m).padStart(2, '0'), ss = String(sec).padStart(2, '0');
+  return h > 0 ? h + ':' + mm + ':' + ss : mm + ':' + ss;
+}
+
+function fmtDur(s) {
+  s = Math.max(0, Math.floor(s));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  if (h > 0) return h + 'h' + (m ? m + 'm' : '');
+  if (m > 0) return m + 'm';
+  return s + 's';
+}
+
+// ----- self-update check (GitHub latest release, check-only) -----
+async function checkUpdate() {
+  let d;
+  try { d = await (await fetch('/api/update', {cache: 'no-store'})).json(); }
+  catch (e) { return; }
+  const b = $('upd-banner');
+  if (d && d.ok && d.update_available && d.latest) {
+    b.hidden = false;
+    b.href = d.releases_url;
+    b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 19V5"/>' +
+                  '<path d="m5 12 7-7 7 7"/></svg>Update → ' + d.latest;
+    b.title = 'A newer release (' + d.latest + ') is available — click to view it on GitHub';
+  } else {
+    b.hidden = true;
+  }
 }
 
 function setShareLink(openId, copyId, url) {
@@ -609,6 +748,7 @@ async function refresh() {
     s = await (await fetch('/api/status', {cache: 'no-store'})).json();
   } catch (e) { return; }            // server gone (quit) — keep the last state
   if (!s.ok) return;                 // status provider error — keep the last state
+  lastStatus = s;
   $('ver').textContent = s.version;
   const relayUp = s.relay.alive;
   setBadge('relay', relayUp, 'RUNNING', 'stopped',
@@ -617,17 +757,16 @@ async function refresh() {
   $('panel-link').hidden = !(relayUp && s.relay.http_ok);
   $('panel-link').href = 'http://' + (s.tailscale_ip || '127.0.0.1') +
                          ':' + s.relay.port + '/panel';
-  setBadge('companion', s.companion.running, 'RUNNING', 'stopped',
-           s.companion.url || s.companion.why);
-  const up = s.streams.filter(f => f.alive).length;
-  setBadge('streams', up > 0, 'RUNNING', 'stopped',
-           s.streams.length ? up + '/' + s.streams.length + ' feeds up'
-                            : 'no feeds started');
-  setBadge('ts', !!s.tailscale_ip, 'CONNECTED', 'down',
-           s.tailscale_ip || 'not connected');
+  setBadge('streams', s.streams.filter(f => f.alive).length > 0, 'RUNNING', 'stopped',
+           s.streams.length ? s.streams.filter(f => f.alive).length + '/' +
+                              s.streams.length + ' feeds up' : 'no feeds started');
   if (s.cookies) setLevelBadge('cookies', s.cookies.level,
       s.cookies.level === 'PASS' ? 'FRESH' : s.cookies.level, s.cookies.detail);
-  updateEventView(s);
+  updateHome(s);
+  updateAppStatus(s);
+  // Live relay stats are a separate localhost round-trip — only while Home is
+  // open and the relay control server is actually answering.
+  if (currentView === 'home' && relayUp && s.relay.http_ok) fetchRelayLive();
 }
 
 async function op(name, confirmFirst, params) {
@@ -724,27 +863,36 @@ async function checkAssets() {
 // ----- Tools / Apps per-item status (on-demand /api/setup) -----
 const APP_LABEL = {obs: 'OBS', companion: 'Companion',
                    tailscale: 'Tailscale', discord: 'Discord'};
-// app-specific actions live on the app's own row (each an array of buttons)
+// app-specific actions live on the app's own row (each an array of buttons).
+// confirm:true wraps the op in a confirm() dialog; danger:true styles it red.
 const APP_ACTION = {
   obs: [{label: 'Export collection', op: 'setup'},
         {label: 'Refresh pages', op: 'obs-refresh',
          title: 'Reload the relay-served HUD/timer browser sources'}],
-  companion: [{label: 'Export config', op: 'export-companion'}]
+  companion: [{label: 'Export config', op: 'export-companion'},
+              {label: 'Start', op: 'companion-start'},
+              {label: 'Stop', op: 'companion-stop', danger: true, confirm: true}],
+  tailscale: [{label: 'Connect', op: 'tailscale-up'},
+              {label: 'Disconnect', op: 'tailscale-down', danger: true, confirm: true}]
 };
 
-function itemRow(key, installed, version, actions) {
+function itemRow(key, installed, version, actions, withStatus) {
   const d = document.createElement('div');
   d.className = 'item ' + (installed ? 'ok' : 'miss');
-  d.innerHTML = '<span class="idot"></span><span class="iname"></span>' +
-                '<span class="istat"></span><span class="iver grow"></span>';
-  d.children[1].textContent = APP_LABEL[key] || key;
-  d.children[2].textContent = installed ? 'installed' : 'missing';
-  d.children[3].textContent = version || '';
+  d.innerHTML =
+    '<span class="idot"></span><span class="iname"></span>' +
+    '<span class="istat"></span><span class="iver grow"></span>' +
+    (withStatus ? '<span class="badge appstat" id="appstat-' + key + '">' +
+                  '<span class="dot"></span><span>…</span></span>' : '');
+  d.querySelector('.iname').textContent = APP_LABEL[key] || key;
+  d.querySelector('.istat').textContent = installed ? 'installed' : 'missing';
+  d.querySelector('.iver').textContent = version || '';
   (actions || []).forEach(a => {
     const b = document.createElement('button');
+    if (a.danger) b.className = 'danger';
     b.textContent = a.label;
     if (a.title) b.title = a.title;
-    b.onclick = () => op(a.op);
+    b.onclick = () => op(a.op, !!a.confirm);
     d.appendChild(b);
   });
   return d;
@@ -764,7 +912,8 @@ function renderItemList(containerId, summaryId, items, kind) {
   const list = items[kind];
   const have = list.filter(x => x.installed).length;
   list.forEach(x => c.appendChild(itemRow(x.name, x.installed, x.version,
-                                  kind === 'apps' ? APP_ACTION[x.name] : null)));
+                                  kind === 'apps' ? APP_ACTION[x.name] : null,
+                                  kind === 'apps')));
   $(summaryId).textContent =
     have === list.length ? 'all ' + list.length + ' installed'
                          : have + ' of ' + list.length + ' installed — ' +
@@ -789,6 +938,8 @@ async function fetchAssetFiles() {
   setCountBadge('media', d.media.length, d.media.length === 1 ? 'file' : 'files');
   renderGallery('gfx-gallery', 'graphics', d.graphics, false);
   renderGallery('media-gallery', 'media', d.media, true);
+  setTile('assets', d.graphics.length > 0 ? 'ok' : 'warn',
+          d.graphics.length + ' graphics · ' + d.media.length + ' media');
 }
 
 function renderGallery(containerId, kind, names, isVideo) {
@@ -842,6 +993,7 @@ async function fetchSetup() {
   catch (e) { return; }                  // server gone — keep last state
   renderItemList('toollist', 'd-tools', d.tools, 'tools');
   renderItemList('applist', 'd-apps', d.apps, 'apps');
+  if (lastStatus) updateAppStatus(lastStatus);   // fill running badges right away
 }
 
 // ----- Preflight checklist (on-demand /api/preflight) -----
@@ -849,6 +1001,7 @@ async function runPreflight() {
   const body = $('pf-body'), btn = $('pf-run'), sum = $('pf-summary');
   btn.disabled = true;
   sum.textContent = 'running…';
+  setTile('preflight', '', 'running…');
   body.innerHTML = '<section><div class="row"><span class="spin"></span>' +
     '<span class="dim grow">Running checks — hardware, tools, ports, sheet…</span></div></section>';
   let d;
@@ -858,6 +1011,7 @@ async function runPreflight() {
   if (!d.ok) {
     sum.textContent = '';
     body.textContent = '';
+    setTile('preflight', 'bad', 'error');
     const s = document.createElement('section');
     const row = document.createElement('div');
     row.className = 'row';
@@ -902,6 +1056,8 @@ function renderPreflight(sections) {
   });
   $('pf-summary').textContent =
     f + ' FAIL · ' + w + ' WARN · ' + p + ' PASS' + (i ? ' · ' + i + ' info' : '');
+  setTile('preflight', f > 0 ? 'bad' : (w > 0 ? 'warn' : 'ok'),
+          f > 0 ? f + ' fail' : (w > 0 ? w + ' warn' : 'all pass'));
 }
 
 // ----- Settings (.env) editor -----
@@ -1009,6 +1165,12 @@ async function quitUi() {
 
 refresh();
 setInterval(refresh, 3000);
+setInterval(renderTimer, 1000);          // tick the Home race-timer clock locally
+checkUpdate();                           // one-shot GitHub release check (cached server-side)
+// Populate the Home tiles on startup: preflight auto-runs (a few seconds), and
+// the cheap asset listing fills the Assets tile + gallery.
+preflightRun = true; runPreflight();
+assetsLoaded = true; fetchAssetFiles();
 </script>
 </body>
 </html>

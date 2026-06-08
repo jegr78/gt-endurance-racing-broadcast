@@ -369,6 +369,84 @@ def t_env_write_drops_blank_rows(tmp):
     assert iro.env_entries_data(path=p)["entries"] == [{"key": "A", "value": "1"}]
 
 
+# ---------- relay live stats (Home dashboard) ----------
+
+def t_relay_live_data_safe_subset():
+    # The relay /status carries channel/url fields per feed; relay_live_data
+    # must surface ONLY the stint + state (screenshot/share safe).
+    def fetch(url):
+        if url.endswith("/status"):
+            return {"schedule_len": 12, "feeds": {
+                "A": {"stint": 3, "state": "serving", "channel": "secret-handle",
+                      "index": 2, "port": 53001},
+                "B": {"stint": 4, "state": "serving", "channel": "other"}}}
+        return {"mode": "running", "visible": True, "end": 1000.0,
+                "server_now": 940.0, "remaining_s": None, "duration_s": 3600}
+    d = iro.relay_live_data(fetch=fetch, started=lambda: 100.0)
+    assert d["ok"] is True and d["schedule_len"] == 12
+    assert d["feeds"] == [{"feed": "A", "stint": 3, "state": "serving"},
+                          {"feed": "B", "stint": 4, "state": "serving"}]
+    blob = repr(d)
+    assert "channel" not in blob and "secret-handle" not in blob
+    assert d["timer"]["mode"] == "running" and d["timer"]["end"] == 1000.0
+    assert isinstance(d["uptime_s"], int) and d["uptime_s"] >= 0
+
+
+def t_relay_live_data_unreachable():
+    def boom(url):
+        raise OSError("connection refused")
+    assert iro.relay_live_data(fetch=boom) == {"ok": False}
+
+
+def t_relay_live_data_never_raises_on_garbage():
+    assert iro.relay_live_data(fetch=lambda url: "not-a-dict") == {"ok": False}
+
+
+# ---------- self-update check (UI wrapper over scripts/update.py) ----------
+
+def _release(tag, with_asset=True):
+    """A GitHub latest-release payload shaped like update.classify expects."""
+    rel = {"tag_name": tag, "assets": []}
+    if with_asset:
+        rel["assets"] = [{"name": "iro-windows.zip", "browser_download_url": "u"},
+                         {"name": "iro-macos.tar.gz", "browser_download_url": "u"},
+                         {"name": "iro-linux.tar.gz", "browser_download_url": "u"}]
+    return rel
+
+
+def t_update_check_newer_available():
+    d = iro.update_check_data(fetch=lambda: _release("v1.3.0"), current="v1.2.0",
+                              platform="darwin")
+    assert d["ok"] and d["update_available"] is True
+    assert d["latest"] == "v1.3.0" and d["current"] == "v1.2.0"
+    assert "releases/latest" in d["releases_url"]
+
+
+def t_update_check_building_counts_as_available():
+    # newer tag, platform asset not uploaded yet -> still "update available"
+    d = iro.update_check_data(fetch=lambda: _release("v1.3.0", with_asset=False),
+                              current="v1.2.0", platform="darwin")
+    assert d["ok"] and d["update_available"] is True and d["latest"] == "v1.3.0"
+
+
+def t_update_check_up_to_date():
+    d = iro.update_check_data(fetch=lambda: _release("v1.2.0"), current="v1.2.0",
+                              platform="darwin")
+    assert d["ok"] and d["update_available"] is False and d["latest"] == "v1.2.0"
+
+
+def t_update_check_dev_build_skips():
+    d = iro.update_check_data(fetch=lambda: _release("v9.9.9"), current="dev")
+    assert d["ok"] and d["update_available"] is False and d["latest"] is None
+
+
+def t_update_check_offline_is_not_ok():
+    def boom():
+        raise OSError("offline")
+    d = iro.update_check_data(fetch=boom, current="v1.2.0")
+    assert d["ok"] is False and d["update_available"] is False
+
+
 if __name__ == "__main__":
     import inspect, tempfile
     with tempfile.TemporaryDirectory() as tmp:

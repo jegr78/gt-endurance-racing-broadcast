@@ -392,6 +392,13 @@ def _relay_http_ok():
         return False
 
 
+def _relay_fetch_json(url, timeout=3):
+    """GET a relay control-server endpoint and parse its JSON body."""
+    import urllib.request
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
 def relay_status_data(read_pid=None, alive=None, http_ok=None):
     """Structured relay state — one source for `iro status` (text) and the
     Control Center's /api/status (JSON). Injection points are for tests."""
@@ -1137,6 +1144,40 @@ def version():
         return "dev"
 
 
+def update_check_data(fetch=None, current=None, platform=None):
+    """Check-only view of the self-updater for the Home dashboard: is a newer
+    GitHub release out? Thin wrapper over scripts/update.py — the single source
+    of truth for the version compare and release lookup (the `iro update`
+    command installs it). Never downloads or replaces anything here. Network
+    call; served on demand via /api/update (cached), never from the status poll.
+    Never raises; {"ok": False} when offline / rate-limited / the tag is
+    malformed. A 'dev' (unstamped) build reports ok with no update. `fetch`/
+    `current`/`platform` are test seams."""
+    import update as upd
+    cur = current or version()
+    out = {"ok": True, "current": cur, "latest": None, "update_available": False,
+           "releases_url": f"https://github.com/{upd.REPO}/releases/latest"}
+    if upd.parse_version(cur) is None:        # 'dev'/unstamped — nothing to compare
+        out["note"] = "development build — update check skipped"
+        return out
+    try:
+        release = (fetch or upd.fetch_latest)()
+    except Exception:
+        out["ok"] = False
+        return out
+    try:
+        kind, detail, _url = upd.classify(release, platform or sys.platform, cur)
+    except Exception:
+        out["ok"] = False
+        return out
+    if kind == "error":
+        out["ok"] = False
+        return out
+    out["latest"] = detail                    # tag for up-to-date / update / building
+    out["update_available"] = kind in ("update", "building")
+    return out
+
+
 def export_companion(rest):
     """Write the bundled (password-stripped) Companion config for import.
     Default: runtime/ — the same home as the localized OBS collection."""
@@ -1168,6 +1209,42 @@ def running_apps_data(probe=None):
         return {"obs": bool(probe("obs")), "discord": bool(probe("discord"))}
     except Exception:
         return {"obs": False, "discord": False}
+
+
+def relay_live_data(fetch=None, started=None):
+    """Screenshot-safe live relay stats for the Home dashboard: race-timer
+    state and each feed's stint + coarse phase, pulled from the relay control
+    server on localhost. Deliberately omits stream URLs/channels — only the
+    1-based stint index and the state label leave the process. Network call to
+    localhost; served on demand via /api/relay-live, never from the status poll.
+    Never raises; {"ok": False} when the relay is unreachable. `fetch`/`started`
+    are test seams."""
+    fetch = fetch or _relay_fetch_json
+    try:
+        status = fetch(f"http://127.0.0.1:{RELAY_PORT}/status")
+        timer = fetch(f"http://127.0.0.1:{RELAY_PORT}/timer/data")
+    except Exception:
+        return {"ok": False}
+    if not isinstance(status, dict):
+        return {"ok": False}
+    feeds = []
+    for name in ("A", "B"):
+        f = (status.get("feeds") or {}).get(name)
+        if isinstance(f, dict):
+            feeds.append({"feed": name, "stint": f.get("stint"),
+                          "state": f.get("state")})
+    t = timer if isinstance(timer, dict) else {}
+    try:
+        get = started or (lambda: os.path.getmtime(_relay_pid_path()))
+        uptime = max(0, int(time.time() - get()))
+    except Exception:
+        uptime = None
+    return {"ok": True, "schedule_len": status.get("schedule_len"),
+            "uptime_s": uptime, "feeds": feeds,
+            "timer": {"mode": t.get("mode"), "visible": t.get("visible"),
+                      "remaining_s": t.get("remaining_s"),
+                      "duration_s": t.get("duration_s"),
+                      "end": t.get("end"), "server_now": t.get("server_now")}}
 
 
 def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None,
@@ -1524,10 +1601,28 @@ def ui_cmd(rest):
     if instance == "foreign":
         sys.exit(f"iro: port {port} is in use by another application — set "
                  "IRO_UI_PORT in .env to a free port and retry.")
+
+    # The GitHub release check is one network round-trip — cache a good result
+    # for an hour so the Home dashboard can call it freely (and so we never spam
+    # the unauthenticated API into a rate limit). Failures aren't cached.
+    _upd = {"at": 0.0, "data": None}
+
+    def update_check_cached():
+        now = time.time()
+        if _upd["data"] is not None and now - _upd["at"] <= 3600:
+            return _upd["data"]
+        fresh = update_check_data()
+        if fresh.get("ok"):
+            _upd["data"], _upd["at"] = fresh, now
+            return fresh
+        return _upd["data"] or fresh       # keep the last good result on a failed refresh
+
     ctx = {
         "version": version(),
         "page_path": resource_path("ui/control-center.html"),
         "status": ui_status_payload,
+        "relay_live": relay_live_data,
+        "update_check": update_check_cached,
         "ops": ops_mod.OPS,
         "build_argv": ops_mod.build_argv,
         "assets": assets_status_data,

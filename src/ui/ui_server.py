@@ -63,7 +63,8 @@ def _allowed(_handler):
 
 
 def make_handler(ctx):
-    """ctx: version, page_path, status() -> dict, ops {name: argv},
+    """ctx: version, page_path, status() -> dict, relay_live() -> dict,
+    update_check() -> dict, ops {name: argv},
     build_argv(name, params) -> argv (raises ValueError), assets() -> dict,
     asset_files() -> dict, asset_roots {kind: dir},
     tools() -> dict, apps() -> dict, preflight() -> dict,
@@ -185,6 +186,20 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"preflight check failed: {exc}"},
+                                      code=500)
+            if path == "/api/relay-live":
+                try:
+                    return self._json(ctx["relay_live"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"relay stats failed: {exc}"},
+                                      code=500)
+            if path == "/api/update":
+                try:
+                    return self._json(ctx["update_check"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"update check failed: {exc}"},
                                       code=500)
             if path == "/api/env":
                 try:

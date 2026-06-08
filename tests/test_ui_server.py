@@ -56,6 +56,13 @@ def _ctx(jobs=None):
             "preflight": lambda: {"ok": True, "sections": [
                 {"title": "Hardware", "results": [
                     {"level": "PASS", "name": "RAM", "detail": "32 GB"}]}]},
+            "relay_live": lambda: {"ok": True, "schedule_len": 5, "uptime_s": 60,
+                                   "feeds": [{"feed": "A", "stint": 3,
+                                              "state": "serving"}],
+                                   "timer": {"mode": "running"}},
+            "update_check": lambda: {"ok": True, "current": "v1.0.0",
+                                     "latest": "v1.1.0", "update_available": True,
+                                     "releases_url": "https://example/releases"},
             "jobs": jobs or ui_jobs.JobManager(
                 lambda a: [sys.executable, "-c", "print('hi from job')"]),
             "log_paths": {},
@@ -105,6 +112,28 @@ def t_status_route_wraps_provider():
         code, body = _get(port, "/api/status")
         data = json.loads(body)
         assert code == 200 and data["ok"] is True and data["relay"] == {"alive": False}
+    finally:
+        httpd.shutdown()
+
+
+def t_relay_live_route_wraps_provider():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/relay-live")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["feeds"][0]["stint"] == 3 and data["timer"]["mode"] == "running"
+    finally:
+        httpd.shutdown()
+
+
+def t_update_route_wraps_provider():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/update")
+        data = json.loads(body)
+        assert code == 200 and data["update_available"] is True
+        assert data["latest"] == "v1.1.0"
     finally:
         httpd.shutdown()
 
