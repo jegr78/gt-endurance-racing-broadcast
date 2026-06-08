@@ -735,11 +735,14 @@ def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
 
 def stint_start_indices(stint, schedule_len):
     """0-based (A, B) start indices for a producer takeover: 1-based stint
-    <stint> is on air NOW -> Feed A serves it, Feed B preloads the next one.
-    Both clamped to the schedule (last stint / empty schedule -> A == B)."""
+    <stint> is on air NOW -> Feed A serves it, Feed B preloads the NEXT slot.
+    A is clamped to a real stint; B is always A+1 and may point past the end
+    (an empty/missing slot) — the off-air feed then idles (black) until that
+    stint's link appears, instead of duplicating A's stream."""
     stint = max(1, int(stint))
     hi = max(0, schedule_len - 1)
-    return min(stint - 1, hi), min(stint, hi)
+    a = min(stint - 1, hi)
+    return a, a + 1
 
 
 class ScheduleSource:

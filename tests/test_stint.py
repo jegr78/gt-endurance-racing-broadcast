@@ -10,29 +10,24 @@ spec = importlib.util.spec_from_file_location(
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
 
-def t_indices_default_stint_1():
-    # stint 1 == today's behaviour, bit-for-bit: A=0, B=1 (B=0 on 1-stint schedules)
+def t_start_from_one():
     assert m.stint_start_indices(1, 8) == (0, 1)
     assert m.stint_start_indices(1, 2) == (0, 1)
-    assert m.stint_start_indices(1, 1) == (0, 0)
-    assert m.stint_start_indices(1, 0) == (0, 0)
+    assert m.stint_start_indices(1, 1) == (0, 1)   # was (0,0): B idles on the empty slot 2
+    assert m.stint_start_indices(1, 0) == (0, 1)   # was (0,0): empty schedule, both idle
 
 
-def t_indices_takeover():
-    # "--stint 3" = stint 3 is on air NOW: A serves it (idx 2), B preloads 4 (idx 3)
+def t_takeover_midschedule():
     assert m.stint_start_indices(3, 8) == (2, 3)
     assert m.stint_start_indices(4, 8) == (3, 4)
 
 
-def t_indices_clamped():
-    # beyond the schedule -> clamp to the last stint
-    assert m.stint_start_indices(9, 8) == (7, 7)
-    # last stint: B clamps onto A (same as 1-stint schedules today)
-    assert m.stint_start_indices(8, 8) == (7, 7)
+def t_takeover_last_stint_b_idles():
+    assert m.stint_start_indices(9, 8) == (7, 8)   # was (7,7): clamp A to last; B idles (no next)
+    assert m.stint_start_indices(8, 8) == (7, 8)   # was (7,7): last stint live; B idles
 
 
-def t_indices_garbage_safe():
-    # endpoint feeds raw ints in here — never produce a negative index
+def t_takeover_below_one_clamps_to_one():
     assert m.stint_start_indices(0, 8) == (0, 1)
     assert m.stint_start_indices(-5, 8) == (0, 1)
 
@@ -60,7 +55,7 @@ def t_relay_start_stint_positions_feeds():
 
 def t_relay_start_stint_clamped():
     r = m.Relay(FakeSource(URLS8[:2]), [53001, 53002], HERE, start_stint=9)
-    assert (r.A.idx, r.B.idx) == (1, 1)
+    assert (r.A.idx, r.B.idx) == (1, 2)           # A clamped to last (idx 1); B idles past end
 
 
 def t_set_stint_repositions_both_feeds():
