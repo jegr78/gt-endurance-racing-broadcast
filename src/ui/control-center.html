@@ -315,6 +315,8 @@
     <div class="nav">
       <button class="navitem active" data-nav="home" onclick="showView('home')">
         <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Home</button>
+      <button class="navitem" data-nav="wizard" onclick="showView('wizard')">
+        <svg viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="3"/></svg>Setup</button>
       <button class="navitem" data-nav="preflight" onclick="showView('preflight')">
         <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Preflight</button>
       <button class="navitem" data-nav="services" onclick="showView('services')">
@@ -509,6 +511,32 @@
         </section>
       </div>
 
+      <!-- ===== Setup wizard ===== -->
+      <div class="view" data-view="wizard" hidden>
+        <div class="viewhead"><h2>Setup</h2>
+          <p class="sub">First-time setup, step by step. Already-completed
+            steps are detected and skipped. The closing checklist lists the
+            manual imports no script can do.</p></div>
+        <section>
+          <div class="row" style="justify-content:flex-end;gap:10px">
+            <label class="fl">YouTube browser
+              <select id="wiz-browser" onchange="fetchWizard()">
+                <option value="firefox">firefox</option>
+                <option value="chrome">chrome</option>
+                <option value="edge">edge</option>
+                <option value="brave">brave</option>
+                <option value="safari">safari</option>
+              </select></label>
+            <button onclick="fetchWizard()">Re-check all</button>
+          </div>
+          <div id="wiz-steps"></div>
+        </section>
+        <section>
+          <h2>Manual next steps</h2>
+          <ol id="wiz-next" style="margin:0;padding-left:20px;color:var(--dim);font:13px/1.7 var(--mono);"></ol>
+        </section>
+      </div>
+
       <!-- ===== Preflight ===== -->
       <div class="view" data-view="preflight" hidden>
         <div class="viewhead"><h2>Preflight</h2>
@@ -608,7 +636,8 @@ const $ = id => document.getElementById(id);
 let jobES = null, logES = null;
 
 let setupLoaded = false, preflightRun = false, assetsLoaded = false,
-    settingsLoaded = false, streamsLoaded = false, docsLoaded = false;
+    settingsLoaded = false, streamsLoaded = false, docsLoaded = false,
+    wizardLoaded = false;
 let currentView = 'home', lastStatus = null;
 
 function showView(name) {
@@ -629,6 +658,7 @@ function showView(name) {
   if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
   if (name === 'streams' && !streamsLoaded) { streamsLoaded = true; loadStreams(); }
   if (name === 'help' && !docsLoaded) { docsLoaded = true; fetchDocs(); }
+  if (name === 'wizard' && !wizardLoaded) { wizardLoaded = true; fetchWizard(); }
   // entering Home: refresh the live relay stats right away (don't wait for the poll)
   if (name === 'home' && lastStatus && lastStatus.relay
       && lastStatus.relay.alive && lastStatus.relay.http_ok) fetchRelayLive();
@@ -890,6 +920,114 @@ async function refresh() {
   // Live relay stats are a separate localhost round-trip — only while Home is
   // open and the relay control server is actually answering.
   if (currentView === 'home' && relayUp && s.relay.http_ok) fetchRelayLive();
+}
+
+// ----- Setup wizard (on-demand /api/init/plan) -----
+async function fetchWizard() {
+  const browser = ($('wiz-browser') || {}).value || 'firefox';
+  let r;
+  try {
+    r = await (await fetch('/api/init/plan?browser=' + encodeURIComponent(browser))).json();
+  } catch (e) { return; }
+  if (!r.ok) return;
+  renderWizard(r);
+}
+
+function renderWizard(plan) {
+  const box = $('wiz-steps');
+  box.textContent = '';
+  (plan.steps || []).forEach((s, i) => {
+    const row = document.createElement('div');
+    row.className = 'item ' + (s.done ? 'ok' : 'miss');
+
+    // left cluster: number + label + done/pending chip + skip_reason dim + instruction warn
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'iname grow';
+    // build label text node with step number
+    const labelNode = document.createTextNode((i + 1) + '. ');
+    nameSpan.appendChild(labelNode);
+    const labelStrong = document.createElement('b');
+    labelStrong.textContent = s.label;
+    nameSpan.appendChild(labelStrong);
+    // done/pending chip
+    const chip = document.createElement('span');
+    chip.className = s.done ? 'chip ok' : 'chip';
+    chip.style.marginLeft = '8px';
+    chip.textContent = s.done ? 'done' : 'pending';
+    nameSpan.appendChild(chip);
+    // skip_reason (dim, when done)
+    if (s.done && s.skip_reason) {
+      const dim = document.createElement('span');
+      dim.className = 'dim';
+      dim.style.marginLeft = '8px';
+      dim.textContent = s.skip_reason;
+      nameSpan.appendChild(dim);
+    }
+    // instruction callout (amber, when not done)
+    if (!s.done && s.instruction) {
+      const instr = document.createElement('div');
+      instr.className = 'note-warn';
+      instr.style.marginTop = '6px';
+      instr.textContent = s.instruction;
+      nameSpan.appendChild(instr);
+    }
+    row.appendChild(nameSpan);
+
+    // right cluster: action button(s)
+    if (!s.done) {
+      if (s.kind === 'job') {
+        const btn = document.createElement('button');
+        btn.textContent = 'Run';
+        // s.op and s.key come from the server's fixed STEP_KINDS allowlist (safe identifiers)
+        const opName = s.op, stepKey = s.key;
+        btn.onclick = () => runWizardJob(opName, stepKey);
+        row.appendChild(btn);
+      } else if (s.key === 'env') {
+        const btnSettings = document.createElement('button');
+        btnSettings.textContent = 'Open Settings';
+        btnSettings.onclick = () => showView('settings');
+        row.appendChild(btnSettings);
+        const btnRecheck = document.createElement('button');
+        btnRecheck.textContent = 'Re-check';
+        const k = s.key;
+        btnRecheck.onclick = () => runWizardAction(k);
+        row.appendChild(btnRecheck);
+      } else {
+        const btn = document.createElement('button');
+        btn.textContent = 'Run';
+        const k = s.key;
+        btn.onclick = () => runWizardAction(k);
+        row.appendChild(btn);
+      }
+    }
+    box.appendChild(row);
+  });
+
+  const ol = $('wiz-next');
+  ol.textContent = '';
+  (plan.next_steps || []).forEach(t => {
+    const li = document.createElement('li');
+    li.textContent = t;
+    ol.appendChild(li);
+  });
+}
+
+function runWizardJob(opName, key) {
+  const params = key === 'cookies'
+    ? {browser: ($('wiz-browser') || {}).value || 'firefox'} : {};
+  op(opName, false, params);
+  setTimeout(fetchWizard, 1500);
+}
+
+async function runWizardAction(key) {
+  let r;
+  try {
+    r = await (await fetch('/api/init/step/' + encodeURIComponent(key),
+        {method: 'POST', headers: {'Content-Type': 'application/json'},
+         body: '{}'})).json();
+  } catch (e) { alert('Control Center not reachable.'); return; }
+  if (!r.ok) { alert(r.error); return; }
+  fetchWizard();
 }
 
 const CONFIRM_TEXT = {
