@@ -11,8 +11,9 @@ Follow the steps **in this order**.
 
 ## System Requirements
 
-Run `iro preflight` on the producer machine before every event —
-it checks all of the below plus your tool chain, ports, and YouTube cookies.
+Open the Control Center's **Preflight** view (or run `iro preflight`) on the
+producer machine before every event — it checks all of the below plus your tool
+chain, ports, and YouTube cookies.
 
 | Component | Minimum | Recommended |
 |-----------|---------|-------------|
@@ -33,7 +34,7 @@ assets in `src/assets/flags/` and `src/assets/brands/`.
 
 ---
 
-## 0. Get the `iro` tool
+## 0. Get the tool & open the Control Center
 
 Download the archive for your OS from the
 [latest release](https://github.com/jegr78/IRO_Broadcast_Setup/releases/latest):
@@ -45,46 +46,41 @@ Download the archive for your OS from the
 | Linux | `iro-linux.tar.gz` |
 
 Extract into a folder of its own (e.g. `~/IRO_Broadcast` or `C:\IRO_Broadcast`) —
-the tool keeps its working files (`.env`, `runtime/`) next to the binary. Open a
-terminal **in that folder** and check it runs:
+the tools keep their working files (`.env`, `runtime/`) next to them. The archive
+holds two binaries side by side: **`iro`** (the CLI) and **`iro-ui`** (the Control
+Center — the recommended way to run the station).
 
-```bash
-./iro --version          # Windows: iro --version  (PowerShell: .\iro)
-```
+**Open the Control Center:** double-click **`iro-ui.exe`** (Windows) or
+**`iro-ui.app`** (macOS); on Linux run `./iro-ui` (or `./iro ui`). It opens your
+browser at `http://127.0.0.1:8089/` and creates a `.env` file next to the binaries
+(filled in at step 2). The **Setup** view walks you through steps 1–5 below;
+everything also has a CLI alternative for the terminal.
 
-> **Prefer a UI?** The same archive contains **`iro-ui`**. Double-click it
-> (Windows/macOS) to open the **Control Center** — a local web dashboard
-> (setup wizard, service start/stop, logs) that drives the steps below without
-> a terminal. Linux: run `./iro-ui` (or `./iro ui`).
+> **Do not move the folder after the OBS import** — OBS stores absolute image
+> paths. Moved it? Redo step 3a + the OBS import.
 
-The first run also creates a `.env` file next to the binary (you fill it in at
-step 2). **Do not move the folder after the OBS import** — OBS stores absolute
-image paths. Moved it? Redo step 2 + the OBS import.
-
-> **One-time OS warning** (the binary is unsigned): **Windows** SmartScreen →
+> **One-time OS warning** (the binaries are unsigned): **Windows** SmartScreen →
 > "More info" → "Run anyway". **macOS**: if blocked, System Settings →
 > Privacy & Security → "Open Anyway" (or right-click → Open).
 
-All commands below are written as `iro …` — type them in a terminal in this
-folder (macOS/Linux: `./iro …` unless you add the folder to your PATH).
+> **CLI alternative:** open a terminal in that folder and run `./iro --version`
+> (Windows: `iro --version`; PowerShell: `.\iro`). Use `./iro …` wherever this
+> doc says `iro …`.
 
 ## 1. Install the apps and tools (once)
 
-```bash
-iro install-apps
-```
+In the Control Center, open **Apps → Install all** and **Tools → Install all** (or
+run the `install-apps` / `install-tools` steps in the **Setup** wizard).
 
-Installs whichever of these are missing — **OBS Studio**, **Bitfocus Companion**,
-**Tailscale**, **Discord** — via winget (Windows), Homebrew (macOS), or apt +
-official vendor installers (Linux). It lists the steps and asks before running.
+**Apps** installs whichever of these are missing — **OBS Studio**, **Bitfocus
+Companion**, **Tailscale**, **Discord** — via winget (Windows), Homebrew (macOS),
+or apt + official vendor installers (Linux).
 
-```bash
-iro install-tools
-```
-
-Installs `streamlink`, `yt-dlp`, `ffmpeg`, and `deno` — they pull each
+**Tools** installs `streamlink`, `yt-dlp`, `ffmpeg`, and `deno` — they pull each
 commentator's stream into OBS and pass YouTube's bot check. **`deno` is required**
 for the relay (otherwise pulls fail with "Sign in to confirm you're not a bot").
+
+> **CLI alternative:** `iro install-apps` and `iro install-tools`.
 
 <details>
 <summary>Alternative: install apps and tools manually</summary>
@@ -106,8 +102,8 @@ Check them: `streamlink --version`, `yt-dlp --version`, `ffmpeg -version`, `deno
 
 ## 2. Add your secrets (`.env`)
 
-The first `iro` run created a `.env` file next to the binary. Open it in any text
-editor and fill in the required value from the team:
+In the Control Center, open **Settings** and fill in the required value from the
+team (values are masked; comments are preserved):
 
 - `IRO_SHEET_ID` — the ID in the shared Google Sheet link.
 - *(optional)* `IRO_SHEET_PUSH_URL` — Apps Script write webhook for the relay-hosted
@@ -115,21 +111,27 @@ editor and fill in the required value from the team:
 
 Keep `.env` private; never share it.
 
+> **CLI alternative:** the first `iro` run created `.env` next to the binary —
+> open it in any text editor.
+
 ## 3. Set up OBS
 
 ### 3a. Import the scene collection
 
-Download the broadcast assets from the sheet first, then localize the collection:
-
-```bash
-iro media       # Intro/Outro clips   -> runtime/media/
-iro graphics    # broadcast graphics  -> runtime/graphics/
-iro setup --out runtime/IRO_Endurance.import.json
-```
+In the Control Center, open **Assets** and **Download** the graphics and media,
+then run the `setup` step in the **Setup** wizard to build the import collection
+(`runtime/IRO_Endurance.import.json`).
 
 Then in OBS: **Scene Collection → Import** → pick that file, and switch to it.
-(Downloading after the import also works — `iro setup` only warns, and OBS shows
-those sources black until the files exist.)
+(Building the collection before the downloads also works — it only warns, and OBS
+shows those sources black until the files exist.)
+
+> **CLI alternative:**
+> ```
+> iro media       # Intro/Outro clips   -> runtime/media/
+> iro graphics    # broadcast graphics  -> runtime/graphics/
+> iro setup --out runtime/IRO_Endurance.import.json
+> ```
 
 ### 3b. OBS WebSocket
 
@@ -326,8 +328,9 @@ Companion is preferred for directors.
 - **HUD & graphics** pull live data from the shared Google Sheet — a shared production
   resource. The sheet must stay shared.
 - **Discord** must run in **windowed mode** (macOS audio capture).
-- Before every event update the tools: `iro install-tools --update` (manual
-  alternative: `brew upgrade …` on macOS / `winget upgrade …` on Windows).
+- Before every event update the tools: Control Center **Tools → Update all** (CLI:
+  `iro install-tools --update`; manual alternative: `brew upgrade …` on macOS /
+  `winget upgrade …` on Windows).
 
 ## Relay-mode quickstart (short version)
 

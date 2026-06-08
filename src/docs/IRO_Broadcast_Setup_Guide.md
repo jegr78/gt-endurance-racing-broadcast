@@ -53,7 +53,7 @@ The Producer's only live job: start and stop the IRO broadcast. Everything else 
 
 ---
 
-## 3. PART A — Get the `iro` tool
+## 3. PART A — Get the tool & open the Control Center
 
 Download the archive for your OS from the
 [latest release](https://github.com/jegr78/IRO_Broadcast_Setup/releases/latest):
@@ -65,26 +65,23 @@ Download the archive for your OS from the
 | Linux | `iro-linux.tar.gz` |
 
 Extract into a folder of its own (e.g. `~/IRO_Broadcast` or `C:\IRO_Broadcast`) —
-the tool keeps its working files (`.env`, `runtime/`) next to the binary. Open a
-terminal **in that folder** and check it runs:
+the tools keep their working files (`.env`, `runtime/`) next to them. The archive
+holds two binaries side by side: **`iro`** (the CLI) and **`iro-ui`** (the Control
+Center — the recommended way to run the station).
 
-```bash
-./iro --version          # Windows: iro --version  (PowerShell: .\iro)
-```
+**Open the Control Center:** double-click **`iro-ui.exe`** (Windows) or
+**`iro-ui.app`** (macOS); on Linux run `./iro-ui` (or `./iro ui`). It opens your
+browser at `http://127.0.0.1:8089/` and creates a `.env` file next to the binaries
+(filled in at Part E). The **Setup** view walks you through the install/asset
+steps; every action also has a CLI alternative for the terminal.
 
-> **Prefer a UI?** The same archive contains **`iro-ui`**. Double-click it
-> (Windows/macOS) to open the **Control Center** — a local web dashboard
-> (setup wizard, service start/stop, logs) that drives the steps below without
-> a terminal. Linux: run `./iro-ui` (or `./iro ui`).
-
-The first run creates a `.env` file next to the binary (you fill it in at Part E).
-
-> **One-time OS warning** (the binary is unsigned): **Windows** SmartScreen →
+> **One-time OS warning** (the binaries are unsigned): **Windows** SmartScreen →
 > "More info" → "Run anyway". **macOS**: if blocked, System Settings →
 > Privacy & Security → "Open Anyway" (or right-click → Open).
 
-All commands in this guide are written as `iro …` — type them in a terminal in
-this folder (macOS/Linux: `./iro …` unless you add the folder to your PATH).
+> **CLI alternative:** open a terminal in that folder and run `./iro --version`
+> (Windows: `iro --version`; PowerShell: `.\iro`). Use `./iro …` wherever this
+> guide says `iro …`.
 
 <details>
 <summary>Alternative: run from source (needs Python 3)</summary>
@@ -168,9 +165,8 @@ station — back up first if it has other content.
 
 **Give the Directors access (web buttons over Tailscale):**
 
-```bash
-iro companion start    # binds Companion to this machine's Tailscale IP
-```
+In the Control Center, **Apps → Launch Companion** binds it to this machine's
+Tailscale IP (CLI: `iro companion start`).
 
 Directors open `http://<PRODUCER-TAILSCALE-IP>:8000/tablet` in their browser.
 Multiple Directors can open it at once. They need nothing else — no OBS, no
@@ -182,20 +178,17 @@ Companion, no password.
 
 ### 7.1 Install apps and tools
 
-```bash
-iro install-apps
-```
+In the Control Center, open **Apps → Install all** and **Tools → Install all** (or
+run the matching steps in the **Setup** wizard).
 
-Installs whichever of these are missing — **OBS Studio**, **Bitfocus Companion**,
-**Tailscale**, **Discord** — via winget (Windows), Homebrew (macOS), or apt +
-official vendor installers (Linux).
+**Apps** installs whichever of these are missing — **OBS Studio**, **Bitfocus
+Companion**, **Tailscale**, **Discord** — via winget (Windows), Homebrew (macOS),
+or apt + official vendor installers (Linux).
 
-```bash
-iro install-tools
-```
+**Tools** installs `streamlink`, `yt-dlp`, `ffmpeg`, and `deno`. **`deno` is
+required** — without it feeds fail with "Sign in to confirm you're not a bot."
 
-Installs `streamlink`, `yt-dlp`, `ffmpeg`, and `deno`. **`deno` is required** —
-without it feeds fail with "Sign in to confirm you're not a bot."
+> **CLI alternative:** `iro install-apps` and `iro install-tools`.
 
 <details>
 <summary>Alternative: install apps and tools manually</summary>
@@ -222,8 +215,8 @@ Check them: `streamlink --version`, `yt-dlp --version`, `ffmpeg -version`, `deno
 
 ### 7.2 Add your secrets (`.env`)
 
-The first `iro` run created a `.env` file next to the binary. Open it in any text
-editor and fill in the required value from the team:
+In the Control Center, open **Settings** and fill in the required value from the
+team (values are masked; comments are preserved):
 
 - `IRO_SHEET_ID` — the ID in the shared Google Sheet link.
 - *(optional)* `IRO_SHEET_PUSH_URL` — Apps Script write webhook for the relay-hosted
@@ -231,27 +224,26 @@ editor and fill in the required value from the team:
 
 Keep `.env` private; never share it.
 
+> **CLI alternative:** the first `iro` run created `.env` next to the binary —
+> open it in any text editor.
+
 ---
 
 ## 8. PART F — OBS scenes & sources
 
 ### 8.1 Import the scene collection
 
-Download the broadcast graphics first (OBS shows a source black until they are present):
-
-```bash
-iro graphics    # -> runtime/graphics/<Label>.png
-```
-
-Then generate the localized OBS collection:
-
-```bash
-iro setup --out runtime/IRO_Endurance.import.json
-```
+In the Control Center, open **Assets** and **Download** the graphics and media
+(OBS shows a source black until they are present), then run the `setup` step in the
+**Setup** wizard to generate the localized OBS collection
+(`runtime/IRO_Endurance.import.json`).
 
 In OBS: **Scene Collection → Import** → pick that file, and switch to it. **Do
-not move the folder afterwards** (absolute image paths). Moved it? Redo `iro setup`
-+ re-import.
+not move the folder afterwards** (absolute image paths). Moved it? Re-run the
+`setup` step + re-import.
+
+> **CLI alternative:** `iro graphics` (and `iro media`), then
+> `iro setup --out runtime/IRO_Endurance.import.json`.
 
 ### 8.2 Scene layout
 
@@ -308,12 +300,16 @@ stint.
 
 ### 9.2 Start / stop
 
-```bash
-iro relay start       # start in background
-iro relay stop        # stop it
-iro relay logs -f     # tail the log
-iro relay run         # foreground / debug mode
-```
+Start/stop/restart the relay and watch its log from the Control Center's **Relay**
+and **Logs** views.
+
+> **CLI alternative:**
+> ```
+> iro relay start       # start in background
+> iro relay stop        # stop it
+> iro relay logs -f     # tail the log
+> iro relay run         # foreground / debug mode
+> ```
 
 ### 9.3 YouTube cookies (refresh before each event)
 
@@ -338,12 +334,10 @@ Companion's **Generic HTTP Requests** connections drive the relay:
 
 ### 9.5 Static mode (fallback — public channels only)
 
-For public channels / fixed feeds without a stint schedule:
+For public channels / fixed feeds without a stint schedule. Edit the channel/port
+list and start/stop the set from the Control Center's **Static Streams** view.
 
-```bash
-iro streams start
-iro streams stop
-```
+> **CLI alternative:** `iro streams start` / `iro streams stop`.
 
 ---
 
@@ -362,21 +356,23 @@ iro streams stop
 
 ## 11. Runbook
 
-**Before the event (Producer):**
-1. Update the tools: `iro install-tools --update` (apps too, if you want:
-   `iro install-apps --update`). YouTube changes often — outdated tools are the
-   #1 cause of feeds failing to start. Manual alternative: `brew upgrade …` /
-   `winget upgrade …`.
+**Before the event (Producer)** — from the Control Center; CLI alternative in
+italics:
+1. **Tools → Update all.** YouTube changes often — outdated tools are the #1 cause
+   of feeds failing to start. *CLI: `iro install-tools --update`* (manual:
+   `brew upgrade …` / `winget upgrade …`).
 2. Update GPU driver (hardware-encoding the broadcast and decoding the feeds leans on the GPU).
-3. Tailscale running; a Director confirms they can open
+3. **Apps → Launch Tailscale**; a Director confirms they can open
    `http://<producer-tailscale-ip>:8000/tablet`.
-4. Get cookies: `iro cookies firefox`.
-5. Download graphics + media: `iro graphics` and `iro media`.
-6. Run `iro setup --out runtime/IRO_Endurance.import.json` and (re-)import into OBS
-   if the collection has not been imported yet on this machine.
-7. OBS WebSocket on; Companion connected (green); scenes/sources loaded.
-8. Start the relay: `iro relay start`.
-9. Run the preflight check: `iro preflight`. Fix anything flagged.
+4. **Assets → Cookies → Refresh.** *CLI: `iro cookies firefox`.*
+5. **Assets → Download** graphics and media. *CLI: `iro graphics` and `iro media`.*
+6. Run the **Setup** wizard's `setup` step and (re-)import into OBS if the
+   collection has not been imported yet on this machine. *CLI:
+   `iro setup --out runtime/IRO_Endurance.import.json`.*
+7. OBS WebSocket on; Companion connected (green, check **Home**); scenes/sources loaded.
+8. **Home → Start event** (or **Relay → Start**). *CLI: `iro event start` /
+   `iro relay start`.*
+9. **Preflight → Run.** Fix anything flagged. *CLI: `iro preflight`.*
 10. Enter the IRO stream key in OBS.
 
 **Start:** Producer clicks **Start Streaming** in OBS. From here the Director runs the show.
