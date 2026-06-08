@@ -122,6 +122,37 @@ def extract_binary(archive, dest_dir):
     return None
 
 
+def ui_asset_name(platform):
+    """The iro-ui artifact name inside the release archive (mirrors release.yml's
+    matrix): a .exe on Windows, a .app bundle on macOS, a bare binary on Linux."""
+    if platform.startswith("win"):
+        return "iro-ui.exe"
+    if platform == "darwin":
+        return "iro-ui.app"
+    return "iro-ui"
+
+
+def install_ui(src_dir, target_dir, platform):
+    """Place the extracted iro-ui artifact next to the iro binary, replacing any
+    existing one. The archive ships iro + iro-ui together, so the GUI launcher
+    travels with every update. Returns the install path, or None when the archive
+    carried no iro-ui (pre-1.2 releases). Best-effort: the caller treats an OSError
+    as non-fatal — the iro swap has already succeeded by then."""
+    name = ui_asset_name(platform)
+    src = os.path.join(src_dir, name)
+    if not os.path.exists(src):
+        return None
+    dst = os.path.join(target_dir, name)
+    if os.path.isdir(dst) and not os.path.islink(dst):
+        shutil.rmtree(dst)          # macOS .app is a directory bundle
+    elif os.path.lexists(dst):
+        os.remove(dst)
+    shutil.move(src, dst)
+    if not platform.startswith("win") and os.path.isfile(dst):
+        os.chmod(dst, os.stat(dst).st_mode | 0o755)
+    return dst
+
+
 def perform(plan):
     """Execute a swap_plan. Steps are tiny on purpose — the logic lives in
     swap_plan() where it is unit-tested."""
@@ -192,7 +223,17 @@ def main():
             hint = (" Restore by renaming iro-old.exe back to iro.exe."
                     if sys.platform.startswith("win") and not os.path.exists(exe) else "")
             sys.exit(f"update: swap failed ({exc}).{hint}")
+        # The archive ships the iro-ui launcher alongside iro — install it too, but
+        # never let a hiccup here undo the successful iro swap above (best-effort).
+        try:
+            ui_path = install_ui(td, os.path.dirname(exe), sys.platform)
+        except OSError as exc:
+            ui_path = None
+            print(f"update: note — iro-ui not installed ({exc}); "
+                  "use `iro ui` from the CLI, or reinstall the archive.")
     print(f"updated to {tag} — restart iro to use it.")
+    if ui_path:
+        print(f"installed {os.path.basename(ui_path)} next to iro.")
     if sys.platform.startswith("win"):
         print("(the old binary was kept as iro-old.exe and is removed on the next start)")
 
