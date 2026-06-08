@@ -1312,6 +1312,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
+            # The panel/HUD/timer pages change between releases — never let a
+            # browser serve a stale copy (e.g. a panel without the latest JS).
+            self.send_header("Cache-Control", "no-store")
             self.end_headers(); self.wfile.write(body)
             return None
         def _send_asset(self, assets_dir, sub, key):
