@@ -33,7 +33,7 @@ def t_sse_frames():
 
 # ---------- live server ----------
 
-def _ctx(jobs=None):
+def _ctx(jobs=None, init_plan=None, init_step=None):
     page = os.path.join(ROOT, "src", "ui", "control-center.html")
     return {"version": "test",
             "page_path": page,
@@ -82,7 +82,12 @@ def _ctx(jobs=None):
             "log_paths": {},
             "env_read": lambda: {"ok": True, "path": "/x/.env",
                                  "entries": [{"key": "IRO_SHEET_ID", "value": "abc"}]},
-            "env_write": lambda entries: {"ok": True, "path": "/x/.env", "_got": entries}}
+            "env_write": lambda entries: {"ok": True, "path": "/x/.env", "_got": entries},
+            "init_plan": init_plan or (lambda browser="firefox": {
+                "ok": True, "steps": [], "next_steps": []}),
+            "init_step": init_step or (lambda key: {"ok": True, "key": key,
+                                                    "done": True,
+                                                    "skip_reason": None})}
 
 
 def _serve(ctx):
@@ -554,6 +559,64 @@ def t_env_post_malformed_body_is_400():
         except urllib.error.HTTPError as e:
             code = e.code
         assert code == 400
+    finally:
+        httpd.shutdown()
+
+
+def t_init_plan_route_returns_plan():
+    ctx = _ctx(init_plan=lambda browser="firefox": {
+        "ok": True, "steps": [{"key": "env", "label": ".env", "kind": "gate",
+                               "op": None, "done": False, "skip_reason": None,
+                               "instruction": "set it"}],
+        "next_steps": []})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/init/plan")
+        data = json.loads(body)
+        assert code == 200
+        assert data["ok"] is True
+        assert data["steps"][0]["key"] == "env"
+    finally:
+        httpd.shutdown()
+
+
+def t_init_plan_route_passes_browser_query():
+    seen = {}
+    def plan(browser="firefox"):
+        seen["browser"] = browser
+        return {"ok": True, "steps": [], "next_steps": []}
+    httpd, port = _serve(_ctx(init_plan=plan))
+    try:
+        code, body = _get(port, "/api/init/plan?browser=edge")
+        json.loads(body)
+        assert code == 200
+        assert seen["browser"] == "edge"
+    finally:
+        httpd.shutdown()
+
+
+def t_init_step_route_runs_action():
+    ctx = _ctx(init_step=lambda key: {"ok": True, "key": key, "done": True,
+                                      "skip_reason": "config already exported"})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/init/step/export-companion", {})
+        data = json.loads(body)
+        assert code == 200
+        assert data["ok"] is True
+        assert data["done"] is True
+    finally:
+        httpd.shutdown()
+
+
+def t_init_step_route_reports_error_as_400():
+    ctx = _ctx(init_step=lambda key: {"ok": False, "error": "nope"})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/init/step/cookies", {})
+        data = json.loads(body)
+        assert code == 400
+        assert data["ok"] is False
     finally:
         httpd.shutdown()
 

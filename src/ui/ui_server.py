@@ -6,7 +6,7 @@ v2 Tailscale+password feature are this module's serve() and _allowed().
 Spec: docs/superpowers/specs/2026-06-07-control-center-design.md."""
 import json, os, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 APP_ID = "iro-control-center"
 DEFAULT_PORT = 8089
@@ -71,6 +71,8 @@ def make_handler(ctx):
     asset_files() -> dict, asset_roots {kind: dir},
     tools() -> dict, apps() -> dict, preflight() -> dict,
     env_read() -> dict, env_write(entries) -> dict,
+    init_plan(browser) -> dict (wizard plan: per-step done/kind/op/instruction),
+    init_step(key) -> dict (run one non-job wizard step, {ok, done} | {ok: False, error}),
     jobs (ui_jobs.JobManager), log_paths {name: () -> path|None},
     shutdown() (installed by serve())."""
 
@@ -251,6 +253,15 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"could not read .env: {exc}"},
                                       code=500)
+            if path == "/api/init/plan":
+                browser = parse_qs(urlparse(self.path).query or "").get(
+                    "browser", ["firefox"])[0]
+                try:
+                    return self._json(ctx["init_plan"](browser))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"init plan failed: {exc}"},
+                                      code=500)
             if path.startswith("/api/jobs/") and path.endswith("/stream"):
                 job_id = path.split("/")[3]
                 return self._stream_job(job_id) if job_id else self._not_found("unknown job")
@@ -295,6 +306,15 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"could not write streams config: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path.startswith("/api/init/step/"):
+                key = unquote(path[len("/api/init/step/"):])
+                try:
+                    result = ctx["init_step"](key)
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"init step failed: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
             if path.startswith("/api/op/"):
