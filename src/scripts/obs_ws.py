@@ -36,6 +36,23 @@ WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"   # RFC 6455 magic
 DEFAULT_PORT = 4455
 RELAY_PORTS = (53001, 53002, 53003)
 
+STINT_SCENE = "Stint"                       # single-cam scene holding both feeds
+FEED_SOURCES = {"A": "Feed A", "B": "Feed B"}   # scene-item name == audio input name
+
+
+def feed_state_intents(live, do_cut, feeds=("A", "B"),
+                       scene=STINT_SCENE, sources=None):
+    """Pure: the OBS intent list that makes `live` (A/B) the on-air feed in the
+    Stint scene. Visibility first, then audio, then (do_cut) the program cut.
+    reflect_feed_state() turns each (verb, target) into obs-websocket requests."""
+    sources = sources or FEED_SOURCES
+    others = [f for f in feeds if f != live]
+    intents = [("show", sources[live])] + [("hide", sources[f]) for f in others]
+    intents += [("unmute", sources[live])] + [("mute", sources[f]) for f in others]
+    if do_cut:
+        intents.append(("cut", scene))
+    return intents
+
 
 # --------------------------------------------------------------------------
 # WebSocket plumbing (RFC 6455) — pure functions, unit-tested

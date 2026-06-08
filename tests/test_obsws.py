@@ -438,6 +438,24 @@ def _raises(fn, exc=ValueError):
     raise AssertionError(f"expected {exc.__name__}")
 
 
+# --------------------------------------------------------------------------
+# Pure intent planner — feed_state_intents
+# --------------------------------------------------------------------------
+def t_feed_state_intents_live_a_with_cut():
+    assert m.feed_state_intents("A", True) == [
+        ("show", "Feed A"), ("hide", "Feed B"),
+        ("unmute", "Feed A"), ("mute", "Feed B"),
+        ("cut", "Stint"),
+    ]
+
+
+def t_feed_state_intents_live_b_no_cut():
+    assert m.feed_state_intents("B", False) == [
+        ("show", "Feed B"), ("hide", "Feed A"),
+        ("unmute", "Feed B"), ("mute", "Feed A"),
+    ]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
