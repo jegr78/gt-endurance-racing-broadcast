@@ -104,6 +104,61 @@ def t_fetch_latest_parses_json():
     assert rel["tag_name"] == "v0.2.0"
 
 
+# --- ui_asset_name: the iro-ui artifact name in the archive, per platform -----------
+def t_ui_asset_name_per_platform():
+    assert m.ui_asset_name("win32") == "iro-ui.exe"
+    assert m.ui_asset_name("darwin") == "iro-ui.app"
+    assert m.ui_asset_name("linux") == "iro-ui"
+
+
+# --- install_ui: place the sibling iro-ui next to the iro binary --------------------
+def _write(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def t_install_ui_moves_file():
+    import tempfile
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+        _write(os.path.join(src, "iro-ui"), "new")
+        dst = m.install_ui(src, tgt, "linux")
+        assert dst == os.path.join(tgt, "iro-ui")
+        assert os.path.isfile(dst)
+        assert not os.path.exists(os.path.join(src, "iro-ui"))
+
+
+def t_install_ui_overwrites_existing_file():
+    import tempfile
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+        _write(os.path.join(src, "iro-ui"), "new")
+        _write(os.path.join(tgt, "iro-ui"), "old")
+        m.install_ui(src, tgt, "linux")
+        with open(os.path.join(tgt, "iro-ui"), encoding="utf-8") as fh:
+            assert fh.read() == "new"
+
+
+def t_install_ui_app_bundle_overwrites_dir():
+    import tempfile
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+        _write(os.path.join(src, "iro-ui.app", "Contents", "MacOS", "iro-ui"), "new")
+        _write(os.path.join(tgt, "iro-ui.app", "Contents", "MacOS", "iro-ui"), "old")
+        dst = m.install_ui(src, tgt, "darwin")
+        assert dst == os.path.join(tgt, "iro-ui.app")
+        assert os.path.isdir(dst)
+        inner = os.path.join(dst, "Contents", "MacOS", "iro-ui")
+        with open(inner, encoding="utf-8") as fh:
+            assert fh.read() == "new"
+        assert not os.path.exists(os.path.join(src, "iro-ui.app"))
+
+
+def t_install_ui_missing_returns_none():
+    import tempfile
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+        assert m.install_ui(src, tgt, "linux") is None
+        assert os.listdir(tgt) == []
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
