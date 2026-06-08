@@ -874,6 +874,22 @@ class ScheduleSource:
         with self.lock:
             return list(self.rows)
 
+    def inject_row(self, physical_row, url, name=""):
+        """Optimistically merge a panel schedule write into the in-memory
+        schedule so an idling feed adopts it before the next poll. Keyed by
+        physical sheet row (matches _parse_rows line numbers); the next poll
+        reconciles against the sheet. No-op for an empty/invalid URL."""
+        url = (url or "").strip()
+        if not is_channel(url):
+            return False
+        with self.lock:
+            rows = [r for r in self.rows if r[2] != physical_row]
+            rows.append((url, (name or "").strip(), physical_row))
+            rows.sort(key=lambda r: r[2])
+            self.rows = rows
+            self.items = [u for u, _n, _l in rows]
+        return True
+
     def health(self):
         with self.lock:
             n = len(self.items)
