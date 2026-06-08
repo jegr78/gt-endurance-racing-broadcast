@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v1.2.0...v1.2.1) (2026-06-08)
+
+
+### Bug Fixes
+
+* **update:** install the iro-ui launcher alongside iro on self-update ([#19](https://github.com/jegr78/IRO_Broadcast_Setup/issues/19)) ([b47fd94](https://github.com/jegr78/IRO_Broadcast_Setup/commit/b47fd949e4ef74a7ad9988b017099b9610f90485))
+
 ## [1.2.0](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v1.1.0...v1.2.0) (2026-06-08)
 
 
