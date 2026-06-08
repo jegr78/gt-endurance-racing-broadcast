@@ -171,6 +171,8 @@
   .item.ok .istat { color:#4ADE80; }
   .item.miss .istat { color:#FCD34D; }
   .item .iver { color:var(--dim); font:11px var(--mono); }
+  /* running/stopped chip: fixed width so the action buttons line up per row */
+  .item .appstat { min-width:104px; }
 
   /* preflight checklist level pills */
   .pfbadge { font:600 10px/1 var(--mono); letter-spacing:.05em; padding:5px 7px;
@@ -192,6 +194,7 @@
   .console-head { display:flex; align-items:center; gap:10px; cursor:pointer;
                   padding:10px 16px; user-select:none; min-height:44px; }
   .console-head:hover { background:rgba(148,163,184,.05); }
+  .console-head:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
   .console-head .termico { width:15px; height:15px; stroke:var(--dim); fill:none;
                   stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
                   flex:0 0 auto; }
@@ -548,7 +551,9 @@
 
     <!-- ===== docked console (job output) ===== -->
     <aside class="console collapsed" id="console">
-      <div class="console-head" onclick="toggleConsole()">
+      <div class="console-head" role="button" tabindex="0" aria-expanded="false"
+           aria-controls="joblog" onclick="toggleConsole()"
+           onkeydown="if((event.key==='Enter'||event.key===' ')&&event.target===this){event.preventDefault();toggleConsole();}">
         <svg class="termico" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
         <span class="console-label">Console</span>
         <span class="console-job idle" id="jobtitle">idle</span>
@@ -603,6 +608,8 @@ function toggleConsole(force) {
   if (force === true) c.classList.remove('collapsed');
   else if (force === false) c.classList.add('collapsed');
   else c.classList.toggle('collapsed');
+  const head = c.querySelector('.console-head');
+  if (head) head.setAttribute('aria-expanded', String(!c.classList.contains('collapsed')));
 }
 
 function setBadgeEl(badgeId, detailId, on, onText, offText, detail) {
@@ -666,10 +673,10 @@ function updateHome(s) {
 // ----- per-app running status on the Apps view (updated from the poll) -----
 function updateAppStatus(s) {
   const ar = s.apps_running || {};
-  setAppStat('obs', !!ar.obs, 'running', 'not running');
-  setAppStat('discord', !!ar.discord, 'running', 'not running');
-  setAppStat('companion', s.companion.running, 'running', 'stopped');
-  setAppStat('tailscale', !!s.tailscale_ip, 'connected', 'down');
+  setAppStat('obs', !!ar.obs, 'RUNNING', 'stopped');
+  setAppStat('discord', !!ar.discord, 'RUNNING', 'stopped');
+  setAppStat('companion', s.companion.running, 'RUNNING', 'stopped');
+  setAppStat('tailscale', !!s.tailscale_ip, 'CONNECTED', 'offline');
 }
 
 function setAppStat(key, on, onText, offText) {
@@ -953,11 +960,14 @@ const APP_ACTION = {
 function itemRow(key, installed, version, actions, withStatus) {
   const d = document.createElement('div');
   d.className = 'item ' + (installed ? 'ok' : 'miss');
+  // status chip sits right after the install text (left cluster); the empty
+  // version column then grows to push the action buttons to the right.
   d.innerHTML =
     '<span class="idot"></span><span class="iname"></span>' +
-    '<span class="istat"></span><span class="iver grow"></span>' +
+    '<span class="istat"></span>' +
     (withStatus ? '<span class="badge appstat" id="appstat-' + key + '">' +
-                  '<span class="dot"></span><span>…</span></span>' : '');
+                  '<span class="dot"></span><span>…</span></span>' : '') +
+    '<span class="iver grow"></span>';
   d.querySelector('.iname').textContent = APP_LABEL[key] || key;
   d.querySelector('.istat').textContent = installed ? 'installed' : 'missing';
   d.querySelector('.iver').textContent = version || '';
