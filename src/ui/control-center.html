@@ -638,6 +638,10 @@ let jobES = null, logES = null;
 let setupLoaded = false, preflightRun = false, assetsLoaded = false,
     settingsLoaded = false, streamsLoaded = false, docsLoaded = false,
     wizardLoaded = false;
+// op name -> last job exit code (string) run from the wizard. Lets a step that
+// has no persistent "done" state (preflight) — or a failed job — show its real
+// outcome instead of a misleading "pending".
+let wizardJobResults = {};
 let currentView = 'home', lastStatus = null;
 
 function showView(name) {
@@ -949,11 +953,23 @@ function renderWizard(plan) {
     const labelStrong = document.createElement('b');
     labelStrong.textContent = s.label;
     nameSpan.appendChild(labelStrong);
-    // done/pending chip
+    // status chip: done -> green "done"; else if this step's job already ran,
+    // show its last result (preflight has no persistent done-state, and a failed
+    // job must not look like an untouched "pending"); else "pending".
     const chip = document.createElement('span');
-    chip.className = s.done ? 'chip ok' : 'chip';
     chip.style.marginLeft = '8px';
-    chip.textContent = s.done ? 'done' : 'pending';
+    const ran = (s.kind === 'job') ? wizardJobResults[s.op] : undefined;
+    if (s.done) {
+      chip.className = 'chip ok';
+      chip.textContent = 'done';
+    } else if (ran !== undefined) {
+      const okRun = ran === '0';
+      chip.className = 'chip ' + (okRun ? 'ok' : 'fail');
+      chip.textContent = okRun ? 'ran ✓' : ('failed (exit ' + ran + ')');
+    } else {
+      chip.className = 'chip';
+      chip.textContent = 'pending';
+    }
     nameSpan.appendChild(chip);
     // skip_reason (dim, when done)
     if (s.done && s.skip_reason) {
@@ -1015,8 +1031,8 @@ function renderWizard(plan) {
 function runWizardJob(opName, key) {
   const params = key === 'cookies'
     ? {browser: ($('wiz-browser') || {}).value || 'firefox'} : {};
-  op(opName, false, params);
-  setTimeout(fetchWizard, 1500);
+  op(opName, false, params);   // streams in the console; watchJob's 'done'
+                               // handler records the result + re-fetches the plan
 }
 
 async function runWizardAction(key) {
@@ -1091,6 +1107,10 @@ function watchJob(name, id) {
     refresh();
     if (name === 'graphics' || name === 'media') fetchAssetFiles();
     if (name === 'install-tools' || name === 'install-apps') fetchSetup();
+    // wizard: record the outcome and re-render so the step's chip updates the
+    // moment the job ends (real-done steps flip to "done"; preflight/failed
+    // steps show their run result instead of a stuck "pending").
+    if (wizardLoaded) { wizardJobResults[name] = e.data; fetchWizard(); }
   });
 }
 
