@@ -218,19 +218,27 @@ show nothing. The whole run, in order:
 ## At a driver change
 
 Every ~2 hours the commentator changes. You do this from your browser — the
-buttons (Companion or panel) **and** the shared Google Sheet. Each time:
+buttons (Companion or panel) **and** the shared Google Sheet.
 
 1. Cut to **Splitscreen** with the **SPLIT** combo (covers the handover window) — it also
    sets **Race Control → Driver Swaps** for you, so viewers see it on the overlay.
-2. Press **Feeds Next** (panel: **NEXT**) — the off-air feed advances to the next
-   commentator.
-3. **Just before cutting back, update the sheet** for the new commentator: set the **Stint**
-   and **Streamer** entries (panel: the HUD bus dropdowns do the same).
-4. **Make sure the incoming feed is active.** Cut back with the matching combo — **STINT A**
-   or **STINT B** — which selects the right feed (A or B alternate each stint), shows the
-   **Stint** scene and **clears Race Control**, all in one press. (Cutting manually? Toggle
-   the incoming **Feed A** / **Feed B** on first — and clear Race Control yourself.)
-   On the panel, the feed pill shows when the incoming feed is `LIVE`.
+2. Press **NEXT** once. The relay hands the feed over, shows the new commentator
+   in the **Stint** scene, switches the audio, and cuts the program to **Stint** —
+   you do not pick Feed A or Feed B. (Update the sheet for the new commentator —
+   set the **Stint** and **Streamer** entries, panel: the HUD bus dropdowns — and the
+   one-press cut clears Race Control for you.)
+
+You start a race with only the first stint's link in the **Schedule** sheet and add
+each next link ~20–30 min before its swap (panel **Schedule** rows or the sheet
+directly). Until a link is present the off-air feed shows a black tile in the split;
+it goes live on its own once the link is in.
+
+The relay also handles the audio (it mutes the off-air feed, unmutes the on-air one),
+so **MUTE A / MUTE B** are no longer part of the normal flow. **STINT A / STINT B**,
+**MUTE A / MUTE B** and **Feed A/B Toggle** stay on the panel and Stream Deck as a
+**break-glass fallback** only: if the panel shows **OBS NOT REACHABLE**, NEXT can't
+auto-cut — then use **STINT A / STINT B** (and, if needed, the manual FEED/MUTE
+buttons) to cut by hand; `/status` shows which feed is live.
 
 ## Showing a driver POV (plan ahead)
 

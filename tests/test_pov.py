@@ -36,6 +36,93 @@ def t_feed_has_fmt_attr():
     assert f.fmt == "b[height<=720]/b"
 
 
+def t_current_channel_idles_past_end():
+    # idx beyond the schedule -> idle (None), NOT a clamp onto the last stint
+    f = m.Feed("B", 53002, 1, lambda: ["https://youtu.be/only"], HERE)
+    assert f.current_channel() == (None, 1)        # one link, B on slot 2 -> idle
+    f2 = m.Feed("B", 53002, 0, lambda: ["https://youtu.be/only"], HERE)
+    assert f2.current_channel() == ("https://youtu.be/only", 0)
+
+
+def t_set_index_allows_one_past_end_for_idle():
+    f = m.Feed("A", 53001, 0, lambda: ["a", "b"], HERE)
+    assert f.set_index(2) is True                  # len 2 -> idle slot 2 is reachable
+    assert f.idx == 2
+    assert f.current_channel() == (None, 2)        # idles
+    f2 = m.Feed("A", 53001, 0, lambda: ["a", "b"], HERE)
+    assert f2.set_index(99) is True                # clamps to len (idle sentinel) from idx 0
+    assert f2.idx == 2
+    assert f2.set_index(99) is False               # already at the sentinel -> no-op
+
+
+class _StubSource:
+    def __init__(self, items): self._items = list(items)
+    def get(self): return list(self._items)
+    def refresh(self, timeout=6): return True
+    def health(self): return {"count": len(self._items), "last_ok_age_s": 0, "last_error": None}
+    def add(self, url): self._items.append(url)
+
+
+def _relay(items):
+    r = m.Relay(_StubSource(items), (53001, 53002), HERE)
+    r._reflect = lambda live, cut: None        # isolate index logic from OBS I/O
+    return r
+
+
+def t_next_new_live_is_the_non_advanced_feed():
+    r = _relay(["s1", "s2", "s3", "s4"])
+    assert (r.A.idx, r.B.idx) == (0, 1)
+    assert r.live_after_next() == "B"          # B (stint2) is pre-warmed -> next live
+    r.next_auto()
+    assert (r.A.idx, r.B.idx) == (2, 1)        # A advanced to stint3; B now live
+    assert r.live_feed() == "B"
+    r.next_auto()
+    assert (r.A.idx, r.B.idx) == (2, 3)        # B advanced to stint4; A now live
+    assert r.live_feed() == "A"
+
+
+def t_cold_start_one_link_then_add_second():
+    r = _relay(["s1"])                         # start with ONE link
+    assert (r.A.idx, r.B.idx) == (0, 1)
+    assert r.B.current_channel() == (None, 1)  # B idles (black) on the empty slot 2
+    r.source.add("s2")                         # link entered mid-event
+    assert r.live_after_next() == "B"
+    r.next_auto()
+    assert r.live_feed() == "B" and r.B.current_channel() == ("s2", 1)
+
+
+def t_next_reflects_only_when_incoming_serving():
+    r = _relay(["s1", "s2", "s3", "s4"])
+    calls = []
+    r._reflect = lambda live, cut: calls.append((live, cut))
+    r.feeds["B"].phase = "idle"                 # incoming feed not yet serving
+    out = r.next_auto()
+    assert out["obs_cut"] is False
+    assert calls == []                          # no visibility/audio flip onto a non-serving feed
+    r.feeds["A"].phase = "serving"              # next incoming feed is live
+    out2 = r.next_auto()
+    assert out2["obs_cut"] is True
+    assert calls == [("A", True)]
+
+
+def t_set_stint_reflects_live_feed_without_cut():
+    r = _relay(["s1", "s2", "s3", "s4"])
+    calls = []
+    r._reflect = lambda live, cut: calls.append((live, cut))
+    r.set_stint(3)                              # stint 3 on air -> A=2, B=3, live=A
+    assert (r.A.idx, r.B.idx) == (2, 3)
+    assert calls == [("A", False)]
+
+
+def t_next_past_end_is_idle_no_cut():
+    r = _relay(["s1", "s2"])
+    r.feeds["B"].phase = "serving"
+    r.next_auto()                               # the one real handover: B (s2) on air
+    assert r.live_feed() == "B"
+    out = r.next_auto()                         # over-press past the last stint
+    assert out["obs_cut"] is False              # incoming feed idle -> no cut, no crash
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

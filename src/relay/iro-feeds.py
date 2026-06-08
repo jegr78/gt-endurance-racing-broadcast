@@ -64,6 +64,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, quote, unquote
 from urllib.request import Request, urlopen
 
+# OBS reflection (best effort). obs_ws lives in src/scripts (repo) or the
+# bundled tree (frozen). A missing client just disables reflection — it must
+# never break the relay.
+_REL_HERE = os.path.dirname(os.path.abspath(__file__))
+for _cand in (os.path.join(_REL_HERE, "..", "scripts"),
+              os.path.join(getattr(sys, "_MEIPASS", _REL_HERE), "src", "scripts")):
+    if os.path.isdir(_cand) and _cand not in sys.path:
+        sys.path.insert(0, _cand)
+try:
+    import obs_ws as _obs_ws
+except Exception:                                # noqa: BLE001 — reflection is optional
+    _obs_ws = None
+
 # ---------- Configuration ----------
 # Pipeline: yt-dlp resolves the live HLS URL (passes YouTube's bot-check via
 # cookies + JS-challenge solving) -> streamlink serves that direct URL to OBS
@@ -735,11 +748,14 @@ def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
 
 def stint_start_indices(stint, schedule_len):
     """0-based (A, B) start indices for a producer takeover: 1-based stint
-    <stint> is on air NOW -> Feed A serves it, Feed B preloads the next one.
-    Both clamped to the schedule (last stint / empty schedule -> A == B)."""
+    <stint> is on air NOW -> Feed A serves it, Feed B preloads the NEXT slot.
+    A is clamped to a real stint; B is always A+1 and may point past the end
+    (an empty/missing slot) — the off-air feed then idles (black) until that
+    stint's link appears, instead of duplicating A's stream."""
     stint = max(1, int(stint))
     hi = max(0, schedule_len - 1)
-    return min(stint - 1, hi), min(stint, hi)
+    a = min(stint - 1, hi)
+    return a, a + 1
 
 
 class ScheduleSource:
@@ -857,6 +873,22 @@ class ScheduleSource:
     def get_rows(self):
         with self.lock:
             return list(self.rows)
+
+    def inject_row(self, physical_row, url, name=""):
+        """Optimistically merge a panel schedule write into the in-memory
+        schedule so an idling feed adopts it before the next poll. Keyed by
+        physical sheet row (matches _parse_rows line numbers); the next poll
+        reconciles against the sheet. No-op for an empty/invalid URL."""
+        url = (url or "").strip()
+        if not is_channel(url):
+            return False
+        with self.lock:
+            rows = [r for r in self.rows if r[2] != physical_row]
+            rows.append((url, (name or "").strip(), physical_row))
+            rows.sort(key=lambda r: r[2])
+            self.rows = rows
+            self.items = [u for u, _n, _l in rows]
+        return True
 
     def health(self):
         with self.lock:
@@ -982,9 +1014,10 @@ class SetupControl:
     and answering after the webhook confirm removes the save-vs-RELOAD race).
     The sheet stays authoritative throughout."""
 
-    def __init__(self, push_url, hud_source):
+    def __init__(self, push_url, hud_source, schedule_source=None):
         self.push_url = push_url
         self.hud = hud_source
+        self.schedule_source = schedule_source
         self.push_status = "disabled" if not push_url else "never"
         self.last_error = None
 
@@ -1055,6 +1088,8 @@ class SetupControl:
         if name is not None:
             payload["name"] = name.strip()
         ok, err = self._push(payload, "schedule")
+        if ok and self.schedule_source is not None and url:
+            self.schedule_source.inject_row(row, url, payload.get("name", ""))
         return {"ok": True, "row": row} if ok else {"error": err}
 
     def pov_set(self, url):
@@ -1109,10 +1144,9 @@ class Feed:
             return None, self.idx
         sched = self.provider()
         with self.lock:
-            if not sched:
-                return None, self.idx
-            i = min(self.idx, len(sched) - 1)
-            return sched[i], i
+            if not sched or self.idx >= len(sched):
+                return None, self.idx          # idle: empty schedule or own slot not filled yet
+            return sched[self.idx], self.idx
 
     def is_serving(self):
         p = self.proc
@@ -1137,8 +1171,7 @@ class Feed:
 
     def set_index(self, new_idx):
         sched = self.provider()
-        hi = max(0, len(sched) - 1)
-        new_idx = max(0, min(new_idx, hi))
+        new_idx = max(0, min(new_idx, len(sched)))   # len == idle slot (one past the last stint)
         with self.lock:
             if new_idx == self.idx:
                 return False
@@ -1205,6 +1238,7 @@ class Relay:
         self.A = Feed("A", ports[0], a_idx, source.get, logdir, cookies)
         self.B = Feed("B", ports[1], b_idx, source.get, logdir, cookies)
         self.feeds = {"A": self.A, "B": self.B}
+        self.obs_note = None          # last OBS-reflection note (None/"" = ok); read by status()
         # POV is a THIRD, independent feed — not part of the A/B index. Starts
         # paused (off) until the Director calls /pov/reload.
         self.pov_source = pov_source
@@ -1239,12 +1273,37 @@ class Relay:
                           "state": "stopped" if self.pov.paused else self.pov.phase,
                           "state_age_s": round(now - self.pov.phase_since, 1),
                           "source": self.pov_source.health() if self.pov_source else None}
+        out["obs"] = {"reachable": not self.obs_note, "note": self.obs_note}
         return out
 
+    def live_feed(self):
+        """The on-air feed = the one on the lower (earlier) stint index."""
+        return "A" if self.A.idx <= self.B.idx else "B"
+
+    def live_after_next(self):
+        """Which feed will be on air after the next /next: the one NOT advanced."""
+        return "B" if self.live_feed() == "A" else "A"
+
+    def _reflect(self, live, cut):
+        """Push the on-air feed (A/B) into OBS off-thread; never blocks the HTTP
+        response, never raises. Records the note for /status."""
+        if _obs_ws is None:
+            return
+
+        def run():
+            _applied, note = _obs_ws.reflect_feed_state(live, cut)
+            self.obs_note = note or None
+        threading.Thread(target=run, daemon=True).start()
+
     def next_auto(self):
-        self.source.refresh(timeout=6)              # fresh sheet data at handover (bounded wait)
-        target = "A" if self.A.idx <= self.B.idx else "B"
-        return self.advance(target, +2)
+        self.source.refresh(timeout=6)               # fresh sheet data at handover (bounded wait)
+        new_live = self.live_after_next()
+        target = "A" if new_live == "B" else "B"     # advance the OTHER (currently on-air) feed
+        result = self.advance(target, +2)
+        cut = self.feeds[new_live].phase == "serving"  # only hand over to a feed that is actually live
+        if cut:
+            self._reflect(new_live, cut=True)        # never flip visibility/audio onto a black/not-yet-serving feed
+        return {**result, "obs_cut": cut}
 
     def advance(self, which, delta):
         f = self.feeds.get(which.upper())
@@ -1265,6 +1324,7 @@ class Relay:
         a_idx, b_idx = stint_start_indices(stint, len(self.source.get()))
         self.A.set_index(a_idx)
         self.B.set_index(b_idx)
+        self._reflect(self.live_feed(), cut=False)   # set visibility/audio; director picks the scene
         return self.status()
 
     def reload(self, which=None):
@@ -1663,18 +1723,18 @@ def main():
         if not timer_path:
             print("WARN: timer.html not found — /timer will 404.")
 
-    setup_ctl = SetupControl(push_url, hud_source) if hud_source else None
-
     source = ScheduleSource(csv_url, cache, local)
     source.load_initial(SCHEDULE_TEMPLATE)
+    setup_ctl = SetupControl(push_url, hud_source, schedule_source=source) if hud_source else None
     if len(source.get()) < 2:
-        print("WARN: schedule has fewer than 2 stints — Feed A and Feed B will serve the "
-              "SAME stream (no off-air feed to hand over to).")
+        print("INFO: schedule has fewer than 2 stints — Feed B idles on the empty next "
+              "slot (black) until that stint's link is added; Feed A keeps serving stint 1.")
 
     relay = Relay(source, ports, logdir, cookies,
                   pov_source=pov_source, pov_port=args.pov_port,
                   start_stint=args.stint)
     relay.start()
+    relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
 
     stop_evt = threading.Event()
     threading.Thread(target=poller, args=(source, args.poll, stop_evt), daemon=True).start()

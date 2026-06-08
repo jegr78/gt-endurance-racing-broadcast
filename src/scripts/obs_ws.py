@@ -36,6 +36,23 @@ WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"   # RFC 6455 magic
 DEFAULT_PORT = 4455
 RELAY_PORTS = (53001, 53002, 53003)
 
+STINT_SCENE = "Stint"                       # single-cam scene holding both feeds
+FEED_SOURCES = {"A": "Feed A", "B": "Feed B"}   # scene-item name == audio input name
+
+
+def feed_state_intents(live, do_cut, feeds=("A", "B"),
+                       scene=STINT_SCENE, sources=None):
+    """Pure: the OBS intent list that makes `live` (A/B) the on-air feed in the
+    Stint scene. Visibility first, then audio, then (do_cut) the program cut.
+    reflect_feed_state() turns each (verb, target) into obs-websocket requests."""
+    sources = sources or FEED_SOURCES
+    others = [f for f in feeds if f != live]
+    intents = [("show", sources[live])] + [("hide", sources[f]) for f in others]
+    intents += [("unmute", sources[live])] + [("mute", sources[f]) for f in others]
+    if do_cut:
+        intents.append(("cut", scene))
+    return intents
+
 
 # --------------------------------------------------------------------------
 # WebSocket plumbing (RFC 6455) — pure functions, unit-tested
@@ -388,5 +405,40 @@ def refresh_browser_inputs(needle="127.0.0.1:8088", host="127.0.0.1", port=None,
         return names, ""
     except Exception as exc:                         # noqa: BLE001 — see docstring
         return [], str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
+def reflect_feed_state(live, do_cut, scene=STINT_SCENE, sources=None,
+                       host="127.0.0.1", port=None, password=None, timeout=2.0):
+    """Reflect which feed (A/B) is on air into OBS: show/hide the Stint-scene
+    sources, mute/unmute the feed audio inputs, and (do_cut) cut the program to
+    Stint. Best effort by design: returns (applied_intents, note) and NEVER
+    raises — a handover must go through even if OBS is closed/locked. On any
+    failure the relay falls back to the manual panel/Companion controls."""
+    intents = feed_state_intents(live, do_cut, scene=scene, sources=sources)
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return [], note
+    applied = []
+    try:
+        for verb, target in intents:
+            if verb in ("show", "hide"):
+                sid = session.request("GetSceneItemId",
+                                      {"sceneName": scene, "sourceName": target}).get("sceneItemId")
+                if sid is None:
+                    raise ValueError(f"scene item '{target}' not found in scene '{scene}'")
+                session.request("SetSceneItemEnabled",
+                                {"sceneName": scene, "sceneItemId": sid,
+                                 "sceneItemEnabled": verb == "show"})
+            elif verb in ("mute", "unmute"):
+                session.request("SetInputMute",
+                                {"inputName": target, "inputMuted": verb == "mute"})
+            elif verb == "cut":
+                session.request("SetCurrentProgramScene", {"sceneName": target})
+            applied.append((verb, target))
+        return applied, ""
+    except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        return applied, str(exc) or exc.__class__.__name__
     finally:
         session.close()

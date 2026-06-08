@@ -85,6 +85,13 @@ Companion connection **"Generic HTTP Requests"**, action **GET**:
 | **Feed A Reload** | `http://127.0.0.1:8088/reload/A` | reconnect only Feed A (one feed glitched mid-stint) |
 | **Feed B Reload** | `http://127.0.0.1:8088/reload/B` | reconnect only Feed B |
 
+**Feeds Next (`/next`)** now also drives OBS over obs-websocket: it makes the new
+commentator visible in the **Stint** scene, switches the feed audio, and cuts the
+program to **Stint** (only once the incoming feed is actually serving — never to a
+black/buffering feed). No Feed A/B choice and no special case for starting with one
+link. Requires obs-websocket reachable (see Pre-flight); otherwise the manual
+panel/Companion FEED + scene buttons remain the fallback.
+
 Works for remote directors too — Companion makes the request locally on the producer
 station.
 

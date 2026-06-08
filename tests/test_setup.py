@@ -356,6 +356,56 @@ def t_endpoints_post_rejects_bad_json():
         srv.shutdown()
 
 
+def t_inject_row_adds_link_before_poll():
+    s = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_x.cache"),
+                         local_fallback=None)
+    s.items = ["s1"]; s.rows = [("s1", "Ann", 1)]
+    assert s.inject_row(2, "https://www.youtube.com/watch?v=abc", "Ben") is True
+    assert s.get() == ["s1", "https://www.youtube.com/watch?v=abc"]
+    assert s.get_rows()[1] == ("https://www.youtube.com/watch?v=abc", "Ben", 2)
+
+
+def t_inject_row_replaces_same_physical_row():
+    s = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_x.cache"),
+                         local_fallback=None)
+    s.items = ["s1", "old"]; s.rows = [("s1", "Ann", 1), ("old", "X", 2)]
+    s.inject_row(2, "UC1234567890123456789012", "New")
+    assert s.get() == ["s1", "UC1234567890123456789012"]
+
+
+def t_inject_row_rejects_empty_or_bad_url():
+    s = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_x.cache"),
+                         local_fallback=None)
+    s.items = ["s1"]; s.rows = [("s1", "Ann", 1)]
+    assert s.inject_row(2, "", "Ben") is False
+    assert s.inject_row(2, "not-a-channel", "Ben") is False
+    assert s.get() == ["s1"]
+
+
+def t_schedule_set_injects_on_success():
+    src = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_y.cache"),
+                           local_fallback=None)
+    src.items = ["s1"]; src.rows = [("s1", "Ann", 1)]
+    ctl = m.SetupControl(push_url="https://example.test/push", hud_source=None,
+                         schedule_source=src)
+    ctl._push = lambda payload, expected: (True, "")     # stub the webhook
+    out = ctl.schedule_set(2, "https://www.youtube.com/watch?v=abc", "Ben")
+    assert out.get("ok") is True
+    assert src.get() == ["s1", "https://www.youtube.com/watch?v=abc"]   # available immediately
+
+
+def t_schedule_set_no_inject_on_push_failure():
+    src = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_z.cache"),
+                           local_fallback=None)
+    src.items = ["s1"]; src.rows = [("s1", "Ann", 1)]
+    ctl = m.SetupControl(push_url="https://example.test/push", hud_source=None,
+                         schedule_source=src)
+    ctl._push = lambda payload, expected: (False, "boom")
+    out = ctl.schedule_set(2, "https://www.youtube.com/watch?v=abc", "Ben")
+    assert "error" in out
+    assert src.get() == ["s1"]                            # nothing injected on failure
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
