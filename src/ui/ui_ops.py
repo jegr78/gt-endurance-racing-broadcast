@@ -59,7 +59,7 @@ def _update_flag(value):
     return ["--update"] if value else []
 
 
-_TAG_RE = re.compile(r"^(v\d|preview-)[\w.-]+$")
+_TAG_RE = re.compile(r"^(v\d|preview-)[\w.-]+\Z")
 
 
 def _tag_arg(value):

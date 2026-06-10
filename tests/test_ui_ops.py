@@ -195,10 +195,15 @@ def t_build_argv_update_preview_tag():
         ["update", "--yes", "--tag", "v1.2.3"]
 
 
+def t_build_argv_update_preview_empty_tag_omits_flag():
+    # blank tag is "not provided" -> no --tag appended (build_argv contract)
+    assert ui_ops.build_argv("update-preview", {"tag": ""}) == ["update", "--yes"]
+
+
 def t_build_argv_update_preview_rejects_bad_tag():
     # An empty/blank tag is treated as "not provided" by build_argv (it just
     # omits --tag), so it is NOT in this bad-tag loop — only malformed tags raise.
-    for bad in ("preview-pr-42; rm -rf /", "../../etc", "weird tag", "release"):
+    for bad in ("preview-pr-42; rm -rf /", "../../etc", "weird tag", "release", "v1.2.3\n"):
         try:
             ui_ops.build_argv("update-preview", {"tag": bad})
             raise AssertionError(f"accepted bad tag {bad!r}")
