@@ -22,6 +22,16 @@ def t_benign_client_disconnect_classifies_aborts():
     assert not m._benign_client_disconnect(None)
 
 
+def t_no_window_kwargs_per_os():
+    # The relay daemon runs DETACHED (no console), so its yt-dlp/streamlink/
+    # tailscale children would each pop a terminal window on Windows (issue #30).
+    # CREATE_NO_WINDOW only on Windows; a no-op (empty kwargs) everywhere else so
+    # the same spawn site stays cross-platform.
+    assert m._no_window_kwargs("nt") == {"creationflags": 0x08000000}
+    assert m._no_window_kwargs("posix") == {}
+    assert m._no_window_kwargs("java") == {}
+
+
 def t_parse_one_url():
     items = m.ScheduleSource._parse_csv("url\nhttps://www.youtube.com/watch?v=abc123\n")
     assert items == ["https://www.youtube.com/watch?v=abc123"], items
