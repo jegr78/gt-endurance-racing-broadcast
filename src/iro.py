@@ -18,7 +18,7 @@
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   iro export companion [--out PATH]     # write the Companion button config
   iro init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
-  iro update [--check] [--yes]          # self-update the binary from GitHub Releases
+  iro update [--check] [--yes] [--tag TAG]   # self-update the binary (--tag installs an exact release)
   iro --version
 """
 import glob, hashlib, json, os, re, shutil, sys, time, webbrowser
@@ -1409,6 +1409,23 @@ def version():
         return "dev"
 
 
+def _render_notes_html(md):
+    """Render release-notes Markdown to sanitized HTML for the update dialog.
+    Best-effort: returns "" if the renderer is unavailable (the UI then falls
+    back to plaintext). mdrender escapes both text and link hrefs, so notes
+    authored in a PR are safe to inject as HTML."""
+    if not md:
+        return ""
+    try:
+        ui_dir = resource_path("ui")
+        if ui_dir not in sys.path:
+            sys.path.insert(0, ui_dir)
+        import mdrender
+        return mdrender.render(md)
+    except Exception:
+        return ""
+
+
 def update_check_data(fetch=None, current=None, platform=None):
     """Check-only view of the self-updater for the Home dashboard: is a newer
     GitHub release out? Thin wrapper over scripts/update.py — the single source
@@ -1421,6 +1438,7 @@ def update_check_data(fetch=None, current=None, platform=None):
     import update as upd
     cur = current or version()
     out = {"ok": True, "current": cur, "latest": None, "update_available": False,
+           "notes": "", "notes_html": "",
            "releases_url": f"https://github.com/{upd.REPO}/releases/latest"}
     if upd.parse_version(cur) is None:        # 'dev'/unstamped — nothing to compare
         out["note"] = "development build — update check skipped"
@@ -1440,6 +1458,31 @@ def update_check_data(fetch=None, current=None, platform=None):
         return out
     out["latest"] = detail                    # tag for up-to-date / update / building
     out["update_available"] = kind in ("update", "building")
+    out["notes"] = release.get("body") or ""
+    out["notes_html"] = _render_notes_html(out["notes"])
+    return out
+
+
+def preview_list_data(fetch=None, platform=None):
+    """On-demand list of installable preview builds for the Control Center's
+    Help view. Network call (the GitHub releases list); never downloads an
+    asset. Thin wrapper over scripts/update.py's pure classifier. {"ok": False}
+    when offline / rate-limited. `fetch`/`platform` are test seams."""
+    import update as upd
+    out = {"ok": True, "previews": []}
+    try:
+        releases = (fetch or upd.fetch_releases)()
+    except Exception:
+        out["ok"] = False
+        return out
+    try:
+        rows = upd.classify_prereleases(releases, platform or sys.platform)
+    except Exception:
+        out["ok"] = False
+        return out
+    for row in rows:
+        row["notes_html"] = _render_notes_html(row.get("notes", ""))
+    out["previews"] = rows
     return out
 
 
@@ -2174,6 +2217,18 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
             return fresh
         return _upd["data"] or fresh       # keep the last good result on a failed refresh
 
+    _prev = {"at": 0.0, "data": None}
+
+    def preview_list_cached(force=False):
+        now = time.time()
+        if not force and _prev["data"] is not None and now - _prev["at"] <= 600:
+            return _prev["data"]
+        fresh = preview_list_data()
+        if fresh.get("ok"):
+            _prev["data"], _prev["at"] = fresh, now
+            return fresh
+        return _prev["data"] or fresh
+
     ctx = {
         "version": version(),
         "page_path": resource_path("ui/control-center.html"),
@@ -2182,6 +2237,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "obs_ws": obs_ws_link_data,
         "obs_collection": obs_collection_data,
         "update_check": update_check_cached,
+        "previews": preview_list_cached,
         "streams_read": streams_config_data,
         "streams_write": streams_config_write_data,
         "docs": docs_data,

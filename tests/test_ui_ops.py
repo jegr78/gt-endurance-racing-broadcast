@@ -184,6 +184,37 @@ def t_build_argv_update_flag():
         ["install-apps", "--yes"]
 
 
+def t_build_argv_update():
+    # Regular update: no tag -> goes to the latest release.
+    assert ui_ops.build_argv("update") == ["update", "--yes"]
+
+
+def t_build_argv_update_with_preview_tag():
+    # A preview install is the SAME op with a tag param (one op name -> the job
+    # manager serialises it against a concurrent regular update).
+    assert ui_ops.build_argv("update", {"tag": "preview-pr-42"}) == \
+        ["update", "--yes", "--tag", "preview-pr-42"]
+    assert ui_ops.build_argv("update", {"tag": "preview-main"}) == \
+        ["update", "--yes", "--tag", "preview-main"]
+
+
+def t_build_argv_update_empty_tag_omits_flag():
+    # blank tag is "not provided" -> no --tag appended (build_argv contract)
+    assert ui_ops.build_argv("update", {"tag": ""}) == ["update", "--yes"]
+
+
+def t_build_argv_update_rejects_non_preview_tag():
+    # The UI op installs PREVIEW tags only: stable v-tags (downgrade vector),
+    # junk, shell-metachars, whitespace and trailing-newline all rejected.
+    for bad in ("v1.2.3", "preview-pr-42; rm -rf /", "../../etc", "weird tag",
+                "release", "preview-x\n"):
+        try:
+            ui_ops.build_argv("update", {"tag": bad})
+            raise AssertionError(f"accepted bad tag {bad!r}")
+        except ValueError:
+            pass
+
+
 def t_build_argv_rejects_unknown_params():
     try:
         ui_ops.build_argv("relay-start", {"stint": "4"})
@@ -445,6 +476,55 @@ def t_update_check_offline_is_not_ok():
         raise OSError("offline")
     d = iro.update_check_data(fetch=boom, current="v1.2.0")
     assert d["ok"] is False and d["update_available"] is False
+
+
+def t_update_check_includes_release_notes():
+    rel = {"tag_name": "v9.9.9", "body": "## What's new\n- stuff",
+           "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/m"}]}
+    d = iro.update_check_data(fetch=lambda: rel, current="v1.0.0", platform="darwin")
+    assert d["ok"] and d["notes"] == "## What's new\n- stuff"
+    # notes_html is the rendered (and HTML-escaped) form for the dialog
+    assert "<h2>What's new</h2>" in d["notes_html"]
+    assert "<li>stuff</li>" in d["notes_html"]
+
+
+def t_update_check_notes_html_is_xss_safe():
+    rel = {"tag_name": "v9.9.9",
+           "body": "[x](javascript:alert(1)) <script>alert(2)</script>",
+           "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/m"}]}
+    d = iro.update_check_data(fetch=lambda: rel, current="v1.0.0", platform="darwin")
+    assert "javascript:" not in d["notes_html"]
+    assert "<script>" not in d["notes_html"]
+
+
+def t_preview_list_data_renders_notes_html():
+    releases = [{"tag_name": "preview-pr-7", "prerelease": True, "name": "P7",
+                 "target_commitish": "abc1234", "body": "**bold**",
+                 "assets": [{"name": "iro-macos.tar.gz",
+                             "browser_download_url": "https://x/p7"}]}]
+    d = iro.preview_list_data(fetch=lambda: releases, platform="darwin")
+    assert "<strong>bold</strong>" in d["previews"][0]["notes_html"]
+
+
+def t_preview_list_data_ok():
+    releases = [
+        {"tag_name": "v1.0.0", "prerelease": False, "assets": []},
+        {"tag_name": "preview-pr-7", "prerelease": True, "name": "Preview: PR #7",
+         "target_commitish": "abc1234", "published_at": "2026-06-10T00:00:00Z",
+         "body": "n", "assets": [{"name": "iro-macos.tar.gz",
+                                  "browser_download_url": "https://x/p7"}]},
+    ]
+    d = iro.preview_list_data(fetch=lambda: releases, platform="darwin")
+    assert d["ok"]
+    assert [p["tag"] for p in d["previews"]] == ["preview-pr-7"]
+    assert d["previews"][0]["asset_url"] == "https://x/p7"
+
+
+def t_preview_list_data_offline_returns_not_ok():
+    def boom():
+        raise OSError("no network")
+    d = iro.preview_list_data(fetch=boom, platform="darwin")
+    assert d == {"ok": False, "previews": []}
 
 
 # ---------- static-streams config (Static Streams page) ----------

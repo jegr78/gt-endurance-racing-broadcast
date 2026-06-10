@@ -228,6 +228,14 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"update check failed: {exc}"},
                                       code=500)
+            if path == "/api/previews":
+                force = "force=1" in (urlparse(self.path).query or "")
+                try:
+                    return self._json(ctx["previews"](force))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"preview list failed: {exc}"},
+                                      code=500)
             if path == "/api/streams":
                 try:
                     return self._json(ctx["streams_read"]())

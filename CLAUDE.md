@@ -92,6 +92,7 @@ python3 src/iro.py tailscale up|down|status  # connect/disconnect/inspect Tailsc
 python3 src/iro.py obs refresh       # force-reload the relay-served OBS browser sources (HUD/timer)
 python3 src/iro.py obs collection    # check the active OBS scene collection (add `set` to switch to IRO Endurance)
 python3 src/iro.py init              # guided first-time setup: .env gate, install-tools/-apps, cookies, graphics, media, setup, export companion, preflight — with skip-detection (--browser NAME, --skip-installs, --force)
+python3 src/iro.py update            # self-update the binary from GitHub Releases (--tag TAG installs an exact release; UI previews use this)
 python3 src/iro.py preflight         # hardware/tool check
 python3 src/iro.py cookies firefox   # refresh YouTube cookies before an event (Firefox recommended; Windows Chrome/Edge exports are blocked by app-bound encryption)
 python3 src/iro.py graphics          # download broadcast graphics -> runtime/graphics/
