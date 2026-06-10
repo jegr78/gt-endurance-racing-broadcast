@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.2](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v1.2.1...v1.2.2) (2026-06-10)
+
+
+### Bug Fixes
+
+* **cli:** force UTF-8 console output (Windows cp1252 + Linux C-locale) ([#24](https://github.com/jegr78/IRO_Broadcast_Setup/issues/24)) ([#28](https://github.com/jegr78/IRO_Broadcast_Setup/issues/28)) ([fdfbb2c](https://github.com/jegr78/IRO_Broadcast_Setup/commit/fdfbb2c4723f11cf58ca9fbe2f17ca17f32956c8))
+* **relay:** hide console windows for relay-spawned children on Windows ([#30](https://github.com/jegr78/IRO_Broadcast_Setup/issues/30)) ([#31](https://github.com/jegr78/IRO_Broadcast_Setup/issues/31)) ([bae3bda](https://github.com/jegr78/IRO_Broadcast_Setup/commit/bae3bda67b81c604b3dcd7e80b3232c04bc928ce))
+* **relay:** swallow benign client disconnects instead of crashing ([#25](https://github.com/jegr78/IRO_Broadcast_Setup/issues/25)) ([#29](https://github.com/jegr78/IRO_Broadcast_Setup/issues/29)) ([a740fed](https://github.com/jegr78/IRO_Broadcast_Setup/commit/a740fed4d3061f0a9f7eed1f395cd4137a2a8e51))
+* **ui:** resolve real folder out of macOS App Translocation ([#22](https://github.com/jegr78/IRO_Broadcast_Setup/issues/22)) ([#26](https://github.com/jegr78/IRO_Broadcast_Setup/issues/26)) ([fd604ed](https://github.com/jegr78/IRO_Broadcast_Setup/commit/fd604ed90138816128d8c024f1b8b1c685dfbf43))
+* **ui:** stop Windows console-window flicker in the windowed app ([#23](https://github.com/jegr78/IRO_Broadcast_Setup/issues/23)) ([#27](https://github.com/jegr78/IRO_Broadcast_Setup/issues/27)) ([d306561](https://github.com/jegr78/IRO_Broadcast_Setup/commit/d30656146e891f65bbd9620be0084c1e102efa8d))
+
 ## [1.2.1](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v1.2.0...v1.2.1) (2026-06-08)
 
 
