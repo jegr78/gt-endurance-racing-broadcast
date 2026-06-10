@@ -16,14 +16,16 @@ run in-process under the frozen binary. Keep the parsing/boundary rules in sync.
 """
 
 import os
+from dataclasses import dataclass, field
 
 PROJECT_MARKERS = (".git", ".env.example")
 
 
 def find_project_root(start, markers=PROJECT_MARKERS, max_levels=4):
-    """Walk up from `start` (at most `max_levels`) to the nearest ancestor that
-    holds a marker. Returns that directory, or None. Bounded on purpose: never
-    reaches an unrelated parent (same security boundary as the scripts)."""
+    """Walk up from `start`, checking `start` itself and up to `max_levels-1`
+    ancestors (default: 4 dirs), and return the nearest one holding a marker,
+    or None. Bounded on purpose: never reaches an unrelated parent (mirrors the
+    scripts' `for _ in range(4)` load_dotenv walk)."""
     d = start
     for _ in range(max_levels):
         if any(os.path.exists(os.path.join(d, mk)) for mk in markers):
@@ -37,8 +39,10 @@ def find_project_root(start, markers=PROJECT_MARKERS, max_levels=4):
 
 def parse_env_text(text):
     """Parse KEY=VALUE lines into a dict. Ignores blank lines, '#' comments and
-    lines without '='; strips surrounding whitespace and a single layer of
-    matching quotes. '=' inside a value is preserved. Pure."""
+    lines without '='; strips surrounding whitespace and any wrapping
+    single/double quotes. '=' inside a value is preserved. Mirrors the
+    standalone scripts' load_dotenv parser (not a strict matched-pair quote
+    check). Pure."""
     out = {}
     for line in text.splitlines():
         line = line.strip()
@@ -136,9 +140,6 @@ def resolve_active_profile(available, *, override=None, env_value=None,
     raise ProfileError(
         "multiple profiles exist; choose one with --profile or "
         f"'racecast profile use <name>' (available: {', '.join(available)})")
-
-
-from dataclasses import dataclass, field  # noqa: E402
 
 
 @dataclass
