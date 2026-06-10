@@ -315,6 +315,12 @@
   .updactions { display:flex; align-items:center; gap:10px; }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
   button.primary:hover { background: color-mix(in srgb, var(--accent) 82%, #000); border-color: color-mix(in srgb, var(--accent) 82%, #000); }
+  .prevsec { margin-top: 24px; border-top: 1px solid var(--line, #273349); padding-top: 16px; }
+  .prevtoggle { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+  .prevrow { display: flex; align-items: center; gap: 10px; padding: 8px 0;
+             border-bottom: 1px solid var(--line, #273349); }
+  .prevrow .meta { flex: 1; font-size: 13px; }
+  .prevrow .sub { color: var(--dim, #8aa); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -619,6 +625,19 @@
             <a class="linkbtn" id="g-event" target="_blank" rel="noopener">Open ↗</a></div>
         </section>
         <p class="envhint">The cheat sheet opens locally and works offline; the guides open the always-current rendered pages on the GitHub wiki. Found a bug or have a question? <a id="issues-link" class="dlink" target="_blank" rel="noopener">Open an issue on GitHub ↗</a></p>
+        <section class="prevsec">
+          <h2>Preview / testing builds</h2>
+          <label class="prevtoggle">
+            <input type="checkbox" id="prevopt" onchange="togglePreviews()">
+            Show preview builds (pre-release CI binaries — for testing)
+          </label>
+          <p class="envhint" id="prevhint" hidden>
+            Preview builds come from open PRs and branches. They are not version-ordered —
+            install one to test it, then restart the Control Center. Use a stable release
+            for production.
+          </p>
+          <div id="prevlist" hidden></div>
+        </section>
       </div>
     </main>
 
@@ -827,6 +846,62 @@ function fmtDur(s) {
   if (h > 0) return h + 'h' + (m ? m + 'm' : '');
   if (m > 0) return m + 'm';
   return s + 's';
+}
+
+// ----- preview builds opt-in (Help view) -----
+const PREV_OPT_KEY = 'iro.previews.optin';
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function initPreviewOptin() {
+  const box = $('prevopt');
+  if (!box) return;                       // Help view not in the DOM yet
+  const on = localStorage.getItem(PREV_OPT_KEY) === '1';
+  box.checked = on;
+  $('prevhint').hidden = !on;
+  $('prevlist').hidden = !on;
+  if (on) loadPreviews();
+}
+
+function togglePreviews() {
+  const on = $('prevopt').checked;
+  localStorage.setItem(PREV_OPT_KEY, on ? '1' : '0');
+  $('prevhint').hidden = !on;
+  $('prevlist').hidden = !on;
+  if (on) loadPreviews();
+}
+
+async function loadPreviews() {
+  const box = $('prevlist');
+  box.textContent = 'loading…';
+  let d;
+  try { d = await (await fetch('/api/previews', {cache: 'no-store'})).json(); }
+  catch (e) { box.textContent = 'could not reach the Control Center.'; return; }
+  if (!d || !d.ok) { box.textContent = 'preview list unavailable (offline or rate-limited).'; return; }
+  if (!d.previews.length) { box.textContent = 'no preview builds right now.'; return; }
+  box.textContent = '';
+  d.previews.forEach(p => {
+    const row = document.createElement('div'); row.className = 'prevrow';
+    const meta = document.createElement('div'); meta.className = 'meta';
+    const date = (p.published_at || '').slice(0, 10);
+    meta.innerHTML = '<div>' + escapeHtml(p.title || p.tag) + '</div>' +
+      '<div class="sub">' + escapeHtml(p.commit ? p.commit.slice(0, 7) : '') +
+      (date ? ' · ' + escapeHtml(date) : '') + '</div>';
+    const btn = document.createElement('button');
+    if (p.asset_url) {
+      btn.textContent = 'Install';
+      btn.className = 'primary';
+      btn.onclick = () => openUpdModal({title: p.title || p.tag, notes: p.notes, tag: p.tag});
+    } else {
+      btn.textContent = 'building…';
+      btn.disabled = true;
+    }
+    row.appendChild(meta); row.appendChild(btn);
+    box.appendChild(row);
+  });
 }
 
 // ----- update release-notes modal -----
@@ -1666,6 +1741,7 @@ refresh();
 setInterval(refresh, 3000);
 setInterval(renderTimer, 1000);          // tick the Home race-timer clock locally
 checkUpdate();                           // one-shot GitHub release check (cached server-side)
+initPreviewOptin();                      // restore preview opt-in state from localStorage
 fetchObsWs();                            // OBS-WS creds for the auto-connecting panel link
 // Populate the Home tiles on startup: preflight auto-runs (a few seconds), and
 // the cheap asset listing fills the Assets tile + gallery.
