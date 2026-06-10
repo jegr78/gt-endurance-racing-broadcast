@@ -134,6 +134,25 @@ def parse_tailscale_status(output):
     return None
 
 
+def _no_window_kwargs(os_name=None):
+    """Popen/run kwargs that stop a console child from flashing its own terminal
+    window on Windows. The relay is spawned as a daemon with DETACHED_PROCESS
+    (services.spawn_kwargs), so it has NO console — every console subprocess it
+    starts (yt-dlp, streamlink, the tailscale CLI) otherwise pops a transient
+    window, and the per-feed yt-dlp resolve fires every ~15 s, so the desktop
+    flickers continuously during an event (issue #30). CREATE_NO_WINDOW gives the
+    child a hidden console instead; harmless when a console already exists (the
+    foreground `iro relay run`), and a no-op (empty kwargs) off Windows so the
+    same spawn site stays cross-platform. Mirrors services.no_window_kwargs — the
+    standalone relay imports nothing from scripts/, so the flag is duplicated here
+    (same pattern as detect_tailscale_ip)."""
+    os_name = os.name if os_name is None else os_name
+    if os_name == "nt":
+        CREATE_NO_WINDOW = 0x08000000
+        return {"creationflags": CREATE_NO_WINDOW}
+    return {}
+
+
 def detect_tailscale_ip():
     """This machine's connected Tailscale IPv4 via the CLI, or None if the
     Tailscale backend is unavailable, stopped, or logged out.
@@ -145,7 +164,8 @@ def detect_tailscale_ip():
     for binary in _TAILSCALE_BINS:
         try:
             out = subprocess.run([binary, "status", "--json"], capture_output=True,
-                                 text=True, errors="replace", timeout=3)
+                                 text=True, errors="replace", timeout=3,
+                                 **_no_window_kwargs())
         except (OSError, subprocess.SubprocessError):
             continue
         ip = parse_tailscale_status(out.stdout)
@@ -722,7 +742,7 @@ def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
         cmd += ["--cookies", cookies]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, errors="replace",
-                           timeout=90)
+                           timeout=90, **_no_window_kwargs())
     except FileNotFoundError:
         # Startup checks for yt-dlp; reaching here means it vanished mid-run.
         try:
@@ -1209,7 +1229,8 @@ class Feed:
                 cmd = ["streamlink", hls, "best", "--player-external-http",
                        "--player-external-http-port", str(self.port)] + STREAMLINK_SERVE
                 try:
-                    self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
+                    self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT,
+                                                 **_no_window_kwargs())
                     self.last_error = None
                     self._set_phase("serving")
                     self.proc.wait()
@@ -1531,7 +1552,8 @@ def export_cookies(browser, out):
     try:
         proc = subprocess.run(["yt-dlp", "--cookies-from-browser", browser, "--cookies", out,
                                "--skip-download", "--no-warnings", url],
-                              timeout=90, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                              timeout=90, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                              **_no_window_kwargs())
     except FileNotFoundError:
         print("WARN: yt-dlp not found — cannot auto-export cookies."); return False
     except subprocess.TimeoutExpired:
