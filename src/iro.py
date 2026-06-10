@@ -57,6 +57,78 @@ def _app_home(executable):
         return "/".join(parts[:-3]) or "/"
     return d
 
+def _sec_original_path(path):
+    """Map a macOS App-Translocation path back to its original on-disk location
+    via Security.framework's SecTranslocateCreateOriginalPathForURL (10.12+).
+    Returns the original filesystem path, or None when the API is unavailable or
+    the lookup fails (caller falls back to the input). Pure ctypes — no new dep."""
+    import ctypes, ctypes.util
+    sec_lib = ctypes.util.find_library("Security")
+    cf_lib = ctypes.util.find_library("CoreFoundation")
+    if not sec_lib or not cf_lib:
+        return None
+    sec, cf = ctypes.CDLL(sec_lib), ctypes.CDLL(cf_lib)
+    if not hasattr(sec, "SecTranslocateCreateOriginalPathForURL"):
+        return None
+    vp, b, l, cp = ctypes.c_void_p, ctypes.c_bool, ctypes.c_long, ctypes.c_char_p
+    cf.CFURLCreateFromFileSystemRepresentation.restype = vp
+    cf.CFURLCreateFromFileSystemRepresentation.argtypes = [vp, cp, l, b]
+    cf.CFURLGetFileSystemRepresentation.restype = b
+    cf.CFURLGetFileSystemRepresentation.argtypes = [vp, b, cp, l]
+    cf.CFRelease.argtypes = [vp]
+    sec.SecTranslocateCreateOriginalPathForURL.restype = vp
+    sec.SecTranslocateCreateOriginalPathForURL.argtypes = [vp, vp]
+    raw = path.encode("utf-8")
+    url = cf.CFURLCreateFromFileSystemRepresentation(None, raw, len(raw), False)
+    if not url:
+        return None
+    try:
+        original = sec.SecTranslocateCreateOriginalPathForURL(url, None)
+        if not original:
+            return None
+        try:
+            buf = ctypes.create_string_buffer(4096)
+            if not cf.CFURLGetFileSystemRepresentation(original, True, buf, len(buf)):
+                return None
+            return buf.value.decode("utf-8")
+        finally:
+            cf.CFRelease(original)
+    finally:
+        cf.CFRelease(url)
+
+
+def _untranslocate(path, frozen=None, platform=None, resolver=None):
+    """Guard against macOS App Translocation. A quarantined .app launched from
+    Finder runs from a randomized read-only copy under
+    .../AppTranslocation/<uuid>/d/, so sys.executable — and every sibling path
+    derived from it (.env, runtime/, the sibling iro binary) — points into that
+    throwaway mount instead of the folder where the producer keeps the .app
+    (issue #22: Settings showed .env under /private/var/.../AppTranslocation/).
+    Map the path back to its real on-disk location. Translocation only affects a
+    frozen .app on macOS, so both guards short-circuit elsewhere; best-effort —
+    any failure returns `path` unchanged. Pure-by-injection for tests."""
+    frozen = IS_FROZEN if frozen is None else frozen
+    platform = sys.platform if platform is None else platform
+    if not frozen or not platform.startswith("darwin"):
+        return path
+    resolver = _sec_original_path if resolver is None else resolver
+    try:
+        return resolver(path) or path
+    except Exception:
+        return path
+
+
+_REAL_EXE = None
+
+def _real_executable():
+    """sys.executable, mapped out of any macOS App-Translocation mount so sibling
+    resolution finds the producer's real folder. Cached (stable per process)."""
+    global _REAL_EXE
+    if _REAL_EXE is None:
+        _REAL_EXE = _untranslocate(sys.executable)
+    return _REAL_EXE
+
+
 def _runtime_base(frozen, executable, here):
     """Machine-local state dir. Frozen: next to the binary (document: keep the
     binary in its own folder). Repo (src/) -> <repo>/runtime ; package -> <pkg>/runtime."""
@@ -67,7 +139,7 @@ def _runtime_base(frozen, executable, here):
     return os.path.join(here, "runtime")
 
 def _runtime_dir():
-    return _runtime_base(IS_FROZEN, sys.executable, HERE)
+    return _runtime_base(IS_FROZEN, _real_executable(), HERE)
 
 def _env_base(frozen, executable, here):
     """Directory whose .env configures this run (mirrors _runtime_base):
@@ -79,7 +151,7 @@ def _env_base(frozen, executable, here):
     return here
 
 def _env_file():
-    return os.path.join(_env_base(IS_FROZEN, sys.executable, HERE), ".env")
+    return os.path.join(_env_base(IS_FROZEN, _real_executable(), HERE), ".env")
 
 def parse_env_text(text):
     """Minimal .env parser (KEY=VALUE, '#' comments, optional quotes) — matches the
@@ -161,7 +233,10 @@ def _load_env_frozen():
     the throwaway _MEIPASS dir — but they all let real env vars take precedence."""
     if not IS_FROZEN:
         return
-    path = os.path.join(os.path.dirname(sys.executable), ".env")
+    # _app_home (not dirname): a macOS .app nests the exe under Contents/MacOS/,
+    # so .env lives next to the bundle, not inside it; _real_executable also maps
+    # out of any App-Translocation mount (issue #22).
+    path = os.path.join(_app_home(_real_executable()), ".env")
     try:
         with open(path, encoding="utf-8") as fh:
             pairs = parse_env_text(fh.read())
@@ -662,7 +737,7 @@ def _companion_running(cc):
     # "ausgeführt" = 0x81), which is NOT decodable as the ANSI codepage Python
     # uses for text=True. The matched token (Companion.exe) is pure ASCII.
     probe = subprocess.run(cmds["running"], capture_output=True, text=True,
-                           errors="replace")
+                           errors="replace", **sv.no_window_kwargs())
     return cc.parse_running(sys.platform, probe.returncode, probe.stdout or "")
 
 def companion_start(rest):
@@ -1925,7 +2000,7 @@ def _iro_job_executable(frozen=IS_FROZEN, executable=None, win=None):
     is launched by iro-ui (a sibling binary), jobs must still invoke `iro`, not
     iro-ui. Frozen: the sibling iro/iro.exe next to the running executable.
     Dev: the interpreter itself (paired with iro.py by job_argv)."""
-    executable = sys.executable if executable is None else executable
+    executable = _real_executable() if executable is None else executable
     win = (os.name == "nt") if win is None else win
     if frozen:
         # Join with the TARGET platform's separator (driven by `win`), not the
@@ -2047,8 +2122,9 @@ def init_cmd(rest):
 
 def main(argv=None):
     _force_utf8_io()    # UTF-8 stdout/stderr before anything prints (issue #24)
-    ensure_env_file(os.path.dirname(sys.executable))
-    cleanup_old_binary(os.path.dirname(sys.executable))
+    home = _app_home(_real_executable())   # plain CLI binary: == dirname(exe)
+    ensure_env_file(home)
+    cleanup_old_binary(home)
     _load_env_frozen()
     _ensure_ssl_certs()
     argv = sys.argv[1:] if argv is None else argv

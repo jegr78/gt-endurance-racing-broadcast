@@ -134,6 +134,25 @@ def parse_tailscale_status(output):
     return None
 
 
+def _no_window_kwargs(os_name=None):
+    """Popen/run kwargs that stop a console child from flashing its own terminal
+    window on Windows. The relay is spawned as a daemon with DETACHED_PROCESS
+    (services.spawn_kwargs), so it has NO console — every console subprocess it
+    starts (yt-dlp, streamlink, the tailscale CLI) otherwise pops a transient
+    window, and the per-feed yt-dlp resolve fires every ~15 s, so the desktop
+    flickers continuously during an event (issue #30). CREATE_NO_WINDOW gives the
+    child a hidden console instead; harmless when a console already exists (the
+    foreground `iro relay run`), and a no-op (empty kwargs) off Windows so the
+    same spawn site stays cross-platform. Mirrors services.no_window_kwargs — the
+    standalone relay imports nothing from scripts/, so the flag is duplicated here
+    (same pattern as detect_tailscale_ip)."""
+    os_name = os.name if os_name is None else os_name
+    if os_name == "nt":
+        CREATE_NO_WINDOW = 0x08000000
+        return {"creationflags": CREATE_NO_WINDOW}
+    return {}
+
+
 def detect_tailscale_ip():
     """This machine's connected Tailscale IPv4 via the CLI, or None if the
     Tailscale backend is unavailable, stopped, or logged out.
@@ -145,7 +164,8 @@ def detect_tailscale_ip():
     for binary in _TAILSCALE_BINS:
         try:
             out = subprocess.run([binary, "status", "--json"], capture_output=True,
-                                 text=True, errors="replace", timeout=3)
+                                 text=True, errors="replace", timeout=3,
+                                 **_no_window_kwargs())
         except (OSError, subprocess.SubprocessError):
             continue
         ip = parse_tailscale_status(out.stdout)
@@ -722,7 +742,7 @@ def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
         cmd += ["--cookies", cookies]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, errors="replace",
-                           timeout=90)
+                           timeout=90, **_no_window_kwargs())
     except FileNotFoundError:
         # Startup checks for yt-dlp; reaching here means it vanished mid-run.
         try:
@@ -1209,7 +1229,8 @@ class Feed:
                 cmd = ["streamlink", hls, "best", "--player-external-http",
                        "--player-external-http-port", str(self.port)] + STREAMLINK_SERVE
                 try:
-                    self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
+                    self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT,
+                                                 **_no_window_kwargs())
                     self.last_error = None
                     self._set_phase("serving")
                     self.proc.wait()
@@ -1355,6 +1376,29 @@ class Relay:
         if self.pov: self.pov.shutdown()
 
 
+def _benign_client_disconnect(exc):
+    """True when `exc` is a client hanging up mid-response — an OBS browser
+    source closing, a panel tab refreshing, a director's tablet going to sleep.
+    ConnectionError covers BrokenPipeError, ConnectionResetError and
+    ConnectionAbortedError (WinError 10053, issue #25) on every platform. These
+    are never a relay fault, so the server must neither try to answer on the dead
+    socket nor log a traceback. A plain OSError (e.g. disk full) is NOT a
+    ConnectionError and still surfaces."""
+    return isinstance(exc, ConnectionError)
+
+
+class QuietThreadingHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer that stays silent when a client disconnects mid-
+    response. The stdlib's handle_error() dumps a full traceback for the
+    ConnectionAbortedError that wfile.flush() raises after the client is gone
+    (issue #25: the HUD/timer browser sources poll and close constantly), which
+    floods the relay console with noise that looks like a crash."""
+    def handle_error(self, request, client_address):
+        if _benign_client_disconnect(sys.exc_info()[1]):
+            return                       # client went away — nothing to report
+        super().handle_error(request, client_address)
+
+
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
                  timer_store=None, timer_path=None, setup_ctl=None):
     class H(BaseHTTPRequestHandler):
@@ -1461,8 +1505,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if len(p)==3 and p[:2]==["set","stint"]: return self._send(relay.set_stint(int(p[2])))
                 if len(p)==3 and p[0]=="set":           return self._ok(relay.set_index(p[1], int(p[2])))
                 return self._send({"error":"unknown","path":self.path}, 404)
+            except ConnectionError:
+                return None              # client hung up mid-response — benign (issue #25)
             except Exception as e:
-                return self._send({"error": str(e)}, 500)
+                try:
+                    return self._send({"error": str(e)}, 500)
+                except ConnectionError:
+                    return None          # client also gone before the error could be sent
         def _ok(self, r):
             self._send(r) if r else self._send({"error":"feed? (A/B)"}, 404)
         def do_POST(self):
@@ -1485,8 +1534,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["pov", "set"]:
                     return self._send(setup_ctl.pov_set(body.get("url")))
                 return self._send({"error": "unknown", "path": self.path}, 404)
+            except ConnectionError:
+                return None              # client hung up mid-response — benign (issue #25)
             except Exception as e:
-                return self._send({"error": str(e)}, 500)
+                try:
+                    return self._send({"error": str(e)}, 500)
+                except ConnectionError:
+                    return None          # client also gone before the error could be sent
     return H
 
 
@@ -1531,7 +1585,8 @@ def export_cookies(browser, out):
     try:
         proc = subprocess.run(["yt-dlp", "--cookies-from-browser", browser, "--cookies", out,
                                "--skip-download", "--no-warnings", url],
-                              timeout=90, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                              timeout=90, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                              **_no_window_kwargs())
     except FileNotFoundError:
         print("WARN: yt-dlp not found — cannot auto-export cookies."); return False
     except subprocess.TimeoutExpired:
@@ -1756,7 +1811,7 @@ def main():
     servers = []
     for addr in bind_addrs:
         try:
-            servers.append(ThreadingHTTPServer((addr, args.http_port), handler))
+            servers.append(QuietThreadingHTTPServer((addr, args.http_port), handler))
         except OSError as e:
             print(f"  (warn) could not bind {addr}:{args.http_port} — {e}")
     if not servers:
