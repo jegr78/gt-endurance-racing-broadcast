@@ -2,6 +2,7 @@
 trigger, and how to build the child argv. Pure data + pure helpers (no I/O) —
 the UI server routes /api/op/<name> through this table and build_argv() only,
 so the HTTP surface can never run arbitrary commands or pass free-form args."""
+import re
 
 # name -> base iro argv. Installs always run with --yes: jobs have no stdin
 # (DEVNULL), so an interactive prompt would silently read EOF and decline.
@@ -33,6 +34,8 @@ OPS = {
     "export-companion": ["export", "companion"],
     "install-tools": ["install-tools", "--yes"],
     "install-apps": ["install-apps", "--yes"],
+    "update": ["update", "--yes"],
+    "update-preview": ["update", "--yes"],
 }
 
 # Browsers get-cookies can export from (yt-dlp --cookies-from-browser names).
@@ -56,6 +59,19 @@ def _update_flag(value):
     return ["--update"] if value else []
 
 
+_TAG_RE = re.compile(r"^(v\d|preview-)[\w.-]+$")
+
+
+def _tag_arg(value):
+    """A release tag the UI may install. Allowlist: a vX… stable tag or a
+    preview-… tag. Defends against argv junk (the UI only ever sends a tag it
+    got from /api/previews)."""
+    s = str(value)
+    if not _TAG_RE.match(s):
+        raise ValueError(f"invalid release tag: {value!r}")
+    return ["--tag", s]
+
+
 # op name -> {param name: validator(value) -> argv fragment}. Ops absent here
 # accept no parameters at all.
 PARAMS = {
@@ -63,6 +79,7 @@ PARAMS = {
     "event-start": {"stint": _stint_arg},
     "install-tools": {"update": _update_flag},
     "install-apps": {"update": _update_flag},
+    "update-preview": {"tag": _tag_arg},
 }
 
 

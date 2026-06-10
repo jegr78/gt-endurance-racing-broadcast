@@ -184,6 +184,28 @@ def t_build_argv_update_flag():
         ["install-apps", "--yes"]
 
 
+def t_build_argv_update():
+    assert ui_ops.build_argv("update") == ["update", "--yes"]
+
+
+def t_build_argv_update_preview_tag():
+    assert ui_ops.build_argv("update-preview", {"tag": "preview-pr-42"}) == \
+        ["update", "--yes", "--tag", "preview-pr-42"]
+    assert ui_ops.build_argv("update-preview", {"tag": "v1.2.3"}) == \
+        ["update", "--yes", "--tag", "v1.2.3"]
+
+
+def t_build_argv_update_preview_rejects_bad_tag():
+    # An empty/blank tag is treated as "not provided" by build_argv (it just
+    # omits --tag), so it is NOT in this bad-tag loop — only malformed tags raise.
+    for bad in ("preview-pr-42; rm -rf /", "../../etc", "weird tag", "release"):
+        try:
+            ui_ops.build_argv("update-preview", {"tag": bad})
+            raise AssertionError(f"accepted bad tag {bad!r}")
+        except ValueError:
+            pass
+
+
 def t_build_argv_rejects_unknown_params():
     try:
         ui_ops.build_argv("relay-start", {"stint": "4"})
