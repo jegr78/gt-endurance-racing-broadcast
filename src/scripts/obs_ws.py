@@ -39,6 +39,29 @@ RELAY_PORTS = (53001, 53002, 53003)
 STINT_SCENE = "Stint"                       # single-cam scene holding both feeds
 FEED_SOURCES = {"A": "Feed A", "B": "Feed B"}   # scene-item name == audio input name
 
+# The scene collection the broadcast assumes. Mirrors the "name" field of
+# src/obs/IRO_Endurance.json (the name OBS shows after importing the localized
+# collection). Keep the two in sync. Not a secret, so the no-hardcoding rule
+# does not apply; not parsed at runtime because the file is renamed + tokenized
+# in the shipped package and bundled differently when frozen.
+EXPECTED_SCENE_COLLECTION = "IRO Endurance"
+
+
+def scene_collection_status(current, available, expected=EXPECTED_SCENE_COLLECTION):
+    """Pure: classify the active OBS scene collection. `current` is OBS's
+    currentSceneCollectionName; `available` is the full list it reported.
+    Returns a dict (see keys below). The only "correct" state is match=True;
+    renamed_variant flags a non-exact "IRO Endurance*" (e.g. an import-renamed
+    'IRO Endurance 2'), which we never switch to automatically."""
+    available = list(available)
+    renamed = next((n for n in available
+                    if n != expected and isinstance(n, str)
+                    and n.startswith(expected)), None)
+    return {"current": current, "expected": expected, "available": available,
+            "match": current == expected,
+            "expected_present": expected in available,
+            "renamed_variant": renamed}
+
 
 def feed_state_intents(live, do_cut, feeds=("A", "B"),
                        scene=STINT_SCENE, sources=None):

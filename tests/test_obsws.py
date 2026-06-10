@@ -430,6 +430,45 @@ def t_refresh_browser_inputs_unreachable_is_quiet():
     assert note                                    # human-readable reason
 
 
+# --------------------------------------------------------------------------
+# Pure scene-collection classifier — scene_collection_status
+# --------------------------------------------------------------------------
+def t_scene_collection_status_match():
+    s = m.scene_collection_status("IRO Endurance", ["IRO Endurance", "Other"])
+    assert s == {"current": "IRO Endurance", "expected": "IRO Endurance",
+                 "available": ["IRO Endurance", "Other"], "match": True,
+                 "expected_present": True, "renamed_variant": None}
+
+
+def t_scene_collection_status_wrong_but_present():
+    s = m.scene_collection_status("Other", ["IRO Endurance", "Other"])
+    assert s["match"] is False
+    assert s["expected_present"] is True
+    assert s["renamed_variant"] is None
+
+
+def t_scene_collection_status_renamed_variant():
+    s = m.scene_collection_status("IRO Endurance 2", ["IRO Endurance 2", "Scene"])
+    assert s["match"] is False
+    assert s["expected_present"] is False
+    assert s["renamed_variant"] == "IRO Endurance 2"
+
+
+def t_scene_collection_status_expected_absent():
+    s = m.scene_collection_status("Scene", ["Scene", "Foo"])
+    assert s["match"] is False
+    assert s["expected_present"] is False
+    assert s["renamed_variant"] is None
+
+
+def t_scene_collection_status_empty_current():
+    s = m.scene_collection_status(None, [])
+    assert s["match"] is False
+    assert s["expected_present"] is False
+    assert s["renamed_variant"] is None
+    assert s["current"] is None
+
+
 def _raises(fn, exc=ValueError):
     try:
         fn()
