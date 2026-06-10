@@ -646,6 +646,35 @@ def t_iro_job_executable_macos_app_finds_sibling_next_to_bundle():
                                    win=False) == "/Users/x/IRO/iro"
 
 
+# ---------- obs scene collection ----------
+
+def t_obs_collection_set_op_builds_argv():
+    assert ui_ops.build_argv("obs-collection-set") == ["obs", "collection", "set"]
+
+
+def t_obs_collection_set_op_rejects_params():
+    try:
+        ui_ops.build_argv("obs-collection-set", {"x": "1"})
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError for an unexpected param")
+
+
+def t_obs_collection_data_ok_passes_status_through():
+    status = {"current": "Other", "expected": "IRO Endurance",
+              "available": ["IRO Endurance", "Other"], "match": False,
+              "expected_present": True, "renamed_variant": None}
+    d = iro.obs_collection_data(get=lambda: (status, ""))
+    assert d["ok"] is True
+    assert d["current"] == "Other"
+    assert d["expected_present"] is True
+
+
+def t_obs_collection_data_failure_is_not_ok():
+    d = iro.obs_collection_data(get=lambda: (None, "OBS not reachable"))
+    assert d == {"ok": False, "note": "OBS not reachable"}
+
+
 if __name__ == "__main__":
     import inspect, tempfile
     with tempfile.TemporaryDirectory() as tmp:

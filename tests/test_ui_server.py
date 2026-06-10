@@ -62,6 +62,10 @@ def _ctx(jobs=None, init_plan=None, init_step=None):
                                    "timer": {"mode": "running"}},
             "obs_ws": lambda: {"ok": True, "ip": "127.0.0.1", "port": 4455,
                                "password": "pw", "auth_required": True},
+            "obs_collection": lambda: {"ok": True, "current": "Other",
+                                       "expected": "IRO Endurance", "match": False,
+                                       "expected_present": True,
+                                       "renamed_variant": None},
             "update_check": lambda force=False: {"ok": True, "current": "v1.0.0",
                                      "latest": "v1.1.0", "update_available": True,
                                      "forced": force,
@@ -153,6 +157,17 @@ def t_obs_ws_route_wraps_provider():
         data = json.loads(body)
         assert code == 200 and data["ok"] and data["port"] == 4455
         assert data["ip"] == "127.0.0.1" and data["password"] == "pw"
+    finally:
+        httpd.shutdown()
+
+
+def t_obs_collection_route_wraps_provider():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/obs-collection")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["expected"] == "IRO Endurance" and data["match"] is False
     finally:
         httpd.shutdown()
 
