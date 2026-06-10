@@ -66,7 +66,7 @@ def _ctx(jobs=None, init_plan=None, init_step=None):
                                      "latest": "v1.1.0", "update_available": True,
                                      "forced": force,
                                      "releases_url": "https://example/releases"},
-            "previews": lambda force=False: {"ok": True, "previews": [
+            "previews": lambda force=False: {"ok": True, "forced": force, "previews": [
                 {"tag": "preview-pr-42", "title": "Preview: PR #42", "commit": "abc1234",
                  "published_at": "2026-06-10T08:00:00Z", "asset_url": "https://x/p42",
                  "notes": "n"}]},
@@ -182,7 +182,8 @@ def t_previews_route_wraps_provider():
         d = json.loads(body)
         assert d["ok"] and d["previews"][0]["tag"] == "preview-pr-42"
         _c, body2 = _get(port, "/api/previews?force=1")        # force re-check
-        assert json.loads(body2)["ok"]
+        d2 = json.loads(body2)
+        assert d2["ok"] and d2["forced"] is True               # force forwarded to provider
     finally:
         httpd.shutdown()
 
