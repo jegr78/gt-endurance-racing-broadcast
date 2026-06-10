@@ -24,6 +24,23 @@ def spawn_kwargs(os_name):
     return {}
 
 
+def no_window_kwargs(os_name=None):
+    """Popen/run kwargs that stop a console child from flashing its own terminal
+    window on Windows. A frozen --windowed app (iro-ui.exe) has NO console, so
+    every console subprocess it spawns — tasklist, the tailscale CLI, the sibling
+    iro.exe — otherwise pops a transient terminal window, and the Control Center's
+    2-3 s status poll did it continuously (issue #23). CREATE_NO_WINDOW gives the
+    child a hidden console instead; children of such a process inherit that hidden
+    console, so applying it at the job root suppresses the whole tree. Harmless
+    when a console already exists, and a no-op (empty kwargs) off Windows so the
+    same call site stays cross-platform."""
+    os_name = os.name if os_name is None else os_name
+    if os_name == "nt":
+        CREATE_NO_WINDOW = 0x08000000
+        return {"creationflags": CREATE_NO_WINDOW}
+    return {}
+
+
 def stop_commands(os_name, pid, force):
     """argv to stop a PID on Windows (taskkill), or None where POSIX signals apply.
     /T kills the child tree — the relay's streamlink/yt-dlp children must not be
@@ -116,7 +133,7 @@ def _reap_zombie(pid):
 def _signal_stop(pid, force):
     cmd = stop_commands(os.name, pid, force)
     if cmd is not None:
-        subprocess.run(cmd, capture_output=True)
+        subprocess.run(cmd, capture_output=True, **no_window_kwargs(os.name))
         return
     try:
         os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
