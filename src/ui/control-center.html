@@ -303,6 +303,17 @@
   .fl { width:150px; flex:0 0 auto; }
   .fc { flex:1; min-width:150px; }
   .fp { width:96px; flex:0 0 auto; }
+  /* update release-notes modal */
+  .updmodal { max-width:640px; width:90vw; border:none; border-radius:10px; padding:20px;
+              background:var(--card); color:var(--txt); }
+  .updmodal::backdrop { background:rgba(0,0,0,.45); }
+  .updnotes { max-height:50vh; overflow:auto; font-size:13px; line-height:1.5;
+              border:1px solid var(--line, #ddd); border-radius:6px; padding:10px;
+              margin:10px 0; white-space:pre-wrap; }
+  .updwarn { color:#b26a00; background:#fff5e6; border-radius:6px; padding:8px 10px; }
+  .updactions { display:flex; align-items:center; gap:10px; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.primary:hover { background:#2563EB; border-color:#2563EB; }
 </style>
 </head>
 <body>
@@ -817,6 +828,45 @@ function fmtDur(s) {
   return s + 's';
 }
 
+// ----- update release-notes modal -----
+// Open the update dialog for either the latest release (tag omitted -> op
+// 'update') or a specific preview tag (op 'update-preview'). Renders notes and
+// a non-blocking "services running" warning, then runs the streamed job.
+// Status payload shape (see updateHome/onStatus): s.relay.alive,
+// s.companion.running, and s.streams is an ARRAY of feeds each with .alive.
+function servicesRunning() {
+  const s = lastStatus || {};
+  const out = [];
+  if (s.relay && s.relay.alive) out.push('relay');
+  if (s.companion && s.companion.running) out.push('companion');
+  if (Array.isArray(s.streams) && s.streams.some(f => f.alive)) out.push('static streams');
+  return out;
+}
+
+function openUpdModal(opts) {
+  // opts: {title, notes, releasesUrl, op, tag}
+  $('updtitle').textContent = opts.title || 'Update';
+  $('updnotes').textContent = opts.notes || '(no release notes)';
+  const gh = $('updgh');
+  if (opts.releasesUrl) { gh.hidden = false; gh.href = opts.releasesUrl; }
+  else gh.hidden = true;
+  const running = servicesRunning();
+  const warn = $('updwarn');
+  if (running.length) {
+    warn.hidden = false;
+    warn.textContent = 'Running now: ' + running.join(', ') +
+      '. Updating swaps the binary and needs a restart — avoid this during a live show.';
+  } else warn.hidden = true;
+  $('updgo').onclick = () => {
+    closeUpdModal();
+    if (opts.tag) op('update-preview', false, {tag: opts.tag});
+    else op('update', false);
+  };
+  $('updmodal').showModal();
+}
+
+function closeUpdModal() { $('updmodal').close(); }
+
 // ----- self-update check (GitHub latest release, check-only) -----
 // Always reflects the version state in the sidebar (click to re-check); the
 // amber Home banner appears only when a newer release is actually out.
@@ -831,10 +881,13 @@ async function checkUpdate(force) {
   const b = $('upd-banner');
   if (d && d.ok && d.update_available && d.latest) {
     b.hidden = false;
-    b.href = d.releases_url;
+    b.href = '#';
+    b.onclick = (e) => { e.preventDefault();
+      openUpdModal({title: 'Update → ' + d.latest, notes: d.notes,
+                    releasesUrl: d.releases_url, op: 'update'}); };
     b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 19V5"/>' +
                   '<path d="m5 12 7-7 7 7"/></svg>Update → ' + d.latest;
-    b.title = 'A newer release (' + d.latest + ') is available — click to view it on GitHub';
+    b.title = 'A newer release (' + d.latest + ') is available — click for notes and to install';
     if (note) { note.className = 'ver-note avail'; note.textContent = 'update → ' + d.latest; }
   } else {
     b.hidden = true;
@@ -1134,6 +1187,9 @@ function watchJob(name, id) {
     // moment the job ends (real-done steps flip to "done"; preflight/failed
     // steps show their run result instead of a stuck "pending").
     if (wizardLoaded) { wizardJobResults[name] = e.data; fetchWizard(); }
+    if ((name === 'update' || name === 'update-preview') && ok) {
+      alert('Update installed. Quit and reopen the Control Center to use the new version.');
+    }
   });
 }
 
@@ -1615,5 +1671,17 @@ fetchObsWs();                            // OBS-WS creds for the auto-connecting
 preflightRun = true; runPreflight();
 assetsLoaded = true; fetchAssetFiles();
 </script>
+
+<dialog id="updmodal" class="updmodal">
+  <h3 id="updtitle">Update</h3>
+  <p id="updwarn" class="updwarn" hidden></p>
+  <div id="updnotes" class="updnotes"></div>
+  <div class="updactions">
+    <a id="updgh" class="dlink" target="_blank" rel="noopener">View on GitHub ↗</a>
+    <span style="flex:1"></span>
+    <button onclick="closeUpdModal()">Cancel</button>
+    <button class="primary" id="updgo">Update now</button>
+  </div>
+</dialog>
 </body>
 </html>
