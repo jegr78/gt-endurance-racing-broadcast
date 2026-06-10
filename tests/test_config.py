@@ -66,6 +66,38 @@ def t_load_machine_env_returns_empty_when_no_dotenv():
         assert m.load_machine_env(root) == {}
 
 
+def _mkprofile(root, name, body):
+    pdir = os.path.join(root, "profiles", name)
+    os.makedirs(pdir)
+    with open(os.path.join(pdir, "profile.env"), "w", encoding="utf-8") as fh:
+        fh.write(body)
+    return pdir
+
+
+def t_list_profiles_sorted_excludes_example_and_dirs_without_profile_env():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro", "SHEET_ID=a\n")
+        _mkprofile(root, "erf", "SHEET_ID=b\n")
+        _mkprofile(root, "example", "SHEET_ID=\n")           # template, excluded
+        os.makedirs(os.path.join(root, "profiles", "empty"))  # no profile.env
+        assert m.list_profiles(root) == ["erf", "iro"]
+
+
+def t_list_profiles_empty_when_no_profiles_dir():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        assert m.list_profiles(root) == []
+
+
+def t_parse_profile_reads_named_profile():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro", "NAME=IRO Endurance\nSHEET_ID=abc\n")
+        assert m.parse_profile(root, "iro") == {
+            "NAME": "IRO Endurance", "SHEET_ID": "abc"}
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

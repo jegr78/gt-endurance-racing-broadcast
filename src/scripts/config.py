@@ -63,3 +63,33 @@ def load_machine_env(start):
             with open(p, encoding="utf-8") as fh:
                 return parse_env_text(fh.read())
     return {}
+
+
+PROFILE_ENV_NAME = "profile.env"
+
+
+def profiles_dir(root):
+    return os.path.join(root, "profiles")
+
+
+def list_profiles(root):
+    """Sorted names of profiles/<name>/ dirs that contain a profile.env.
+    'example' (the shipped template) is excluded — it is not a usable league."""
+    pdir = profiles_dir(root)
+    if not os.path.isdir(pdir):
+        return []
+    names = []
+    for name in sorted(os.listdir(pdir)):
+        if name == "example":
+            continue
+        if os.path.isfile(os.path.join(pdir, name, PROFILE_ENV_NAME)):
+            names.append(name)
+    return names
+
+
+def parse_profile(root, name):
+    """Read profiles/<name>/profile.env into a dict. Raises FileNotFoundError if
+    the profile.env is missing."""
+    p = os.path.join(profiles_dir(root), name, PROFILE_ENV_NAME)
+    with open(p, encoding="utf-8") as fh:
+        return parse_env_text(fh.read())
