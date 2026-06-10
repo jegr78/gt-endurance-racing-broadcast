@@ -51,6 +51,21 @@ def t_parse_env_text_ignores_blanks_comments_and_strips_quotes():
     }
 
 
+def t_load_machine_env_reads_dotenv_at_root():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        with open(os.path.join(root, ".env"), "w", encoding="utf-8") as fh:
+            fh.write("RACECAST_PROFILE=iro\nRACECAST_UI_PORT=8089\n")
+        got = m.load_machine_env(root)
+        assert got == {"RACECAST_PROFILE": "iro", "RACECAST_UI_PORT": "8089"}
+
+
+def t_load_machine_env_returns_empty_when_no_dotenv():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)   # marker present, but no .env file
+        assert m.load_machine_env(root) == {}
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

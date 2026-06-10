@@ -47,3 +47,19 @@ def parse_env_text(text):
         k, v = line.split("=", 1)
         out[k.strip()] = v.strip().strip('"').strip("'")
     return out
+
+
+def load_machine_env(start):
+    """Read the machine .env (from `start` or the project root above it) into a
+    dict. Does NOT mutate os.environ — callers decide precedence. Bounded to the
+    project (same boundary as find_project_root). Returns {} if no .env."""
+    candidates = [start]
+    root = find_project_root(start)
+    if root and root != start:
+        candidates.append(root)
+    for c in candidates:
+        p = os.path.join(c, ".env")
+        if os.path.isfile(p):
+            with open(p, encoding="utf-8") as fh:
+                return parse_env_text(fh.read())
+    return {}
