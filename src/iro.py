@@ -17,7 +17,7 @@
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   iro export companion [--out PATH]     # write the Companion button config
   iro init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
-  iro update [--check] [--yes]          # self-update the binary from GitHub Releases
+  iro update [--check] [--yes] [--tag TAG]   # self-update the binary (--tag installs an exact release)
   iro --version
 """
 import glob, hashlib, json, os, re, shutil, sys, time, webbrowser
@@ -1334,6 +1334,26 @@ def update_check_data(fetch=None, current=None, platform=None):
         return out
     out["latest"] = detail                    # tag for up-to-date / update / building
     out["update_available"] = kind in ("update", "building")
+    out["notes"] = release.get("body") or ""
+    return out
+
+
+def preview_list_data(fetch=None, platform=None):
+    """On-demand list of installable preview builds for the Control Center's
+    Help view. Thin wrapper over scripts/update.py's pure classifier — never
+    downloads. Network call; {"ok": False} when offline / rate-limited. `fetch`/
+    `platform` are test seams."""
+    import update as upd
+    out = {"ok": True, "previews": []}
+    try:
+        releases = (fetch or upd.fetch_releases)()
+    except Exception:
+        out["ok"] = False
+        return out
+    try:
+        out["previews"] = upd.classify_prereleases(releases, platform or sys.platform)
+    except Exception:
+        out["ok"] = False
     return out
 
 
@@ -2051,6 +2071,18 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
             return fresh
         return _upd["data"] or fresh       # keep the last good result on a failed refresh
 
+    _prev = {"at": 0.0, "data": None}
+
+    def preview_list_cached(force=False):
+        now = time.time()
+        if not force and _prev["data"] is not None and now - _prev["at"] <= 600:
+            return _prev["data"]
+        fresh = preview_list_data()
+        if fresh.get("ok"):
+            _prev["data"], _prev["at"] = fresh, now
+            return fresh
+        return _prev["data"] or fresh
+
     ctx = {
         "version": version(),
         "page_path": resource_path("ui/control-center.html"),
@@ -2058,6 +2090,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "relay_live": relay_live_data,
         "obs_ws": obs_ws_link_data,
         "update_check": update_check_cached,
+        "previews": preview_list_cached,
         "streams_read": streams_config_data,
         "streams_write": streams_config_write_data,
         "docs": docs_data,
