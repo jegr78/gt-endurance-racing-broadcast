@@ -203,11 +203,42 @@ def confirmed(answer):
     return answer.strip().lower().startswith("y")
 
 
+def _download_and_swap(url, tag):
+    """Download the archive at `url`, swap the running binary, reinstall iro-ui.
+    Shared by the latest-release flow and the --tag flow. Prints progress."""
+    exe = sys.executable
+    with tempfile.TemporaryDirectory(dir=os.path.dirname(exe)) as td:
+        archive = os.path.join(td, asset_name(sys.platform))
+        print("Downloading:", url)
+        download(url, archive)
+        new = extract_binary(archive, td)
+        if not new:
+            sys.exit("update: archive did not contain the iro binary — aborted, nothing changed.")
+        try:
+            perform(swap_plan(sys.platform, exe, new))
+        except OSError as exc:
+            hint = (" Restore by renaming iro-old.exe back to iro.exe."
+                    if sys.platform.startswith("win") and not os.path.exists(exe) else "")
+            sys.exit(f"update: swap failed ({exc}).{hint}")
+        try:
+            ui_path = install_ui(td, os.path.dirname(exe), sys.platform)
+        except OSError as exc:
+            ui_path = None
+            print(f"update: note — iro-ui not installed ({exc}); "
+                  "use `iro ui` from the CLI, or reinstall the archive.")
+    print(f"updated to {tag} — restart iro to use it.")
+    if ui_path:
+        print(f"installed {os.path.basename(ui_path)} next to iro.")
+    if sys.platform.startswith("win"):
+        print("(the old binary was kept as iro-old.exe and is removed on the next start)")
+
+
 def main():
     ap = argparse.ArgumentParser(prog="update", add_help=True)
     ap.add_argument("--check", action="store_true", help="report only, change nothing")
     ap.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
     ap.add_argument("--current", default="dev", help=argparse.SUPPRESS)  # injected by iro
+    ap.add_argument("--tag", help="install this exact release tag (UI preview/pin path)")
     a = ap.parse_args()
 
     # Frozen one-shots run in-process in the binary, so sys.frozen is visible
@@ -216,6 +247,30 @@ def main():
     frozen = bool(getattr(sys, "frozen", False))
     if parse_version(a.current) is None and not frozen:
         sys.exit("update: running from source — update with `git pull` instead.")
+
+    if a.tag:
+        import urllib.error
+        try:
+            release = fetch_release_by_tag(a.tag)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                sys.exit(f"update: no release tagged {a.tag!r}.")
+            sys.exit(f"update: cannot fetch release {a.tag!r} ({exc}).")
+        except Exception as exc:
+            sys.exit(f"update: cannot reach GitHub ({exc}). Check your connection.")
+        kind, tag, url = classify_tag(release, sys.platform)
+        if kind == "error":
+            sys.exit(f"update: {tag if isinstance(tag, str) else release.get('tag_name')}")
+        if kind == "building":
+            sys.exit(f"update: {tag} has no {asset_name(sys.platform)} asset yet — "
+                     "retry in a few minutes.")
+        print(f"update: installing {tag}")
+        if not a.yes and not confirmed(input("Download and replace this binary? [y/N] ")):
+            print("aborted.")
+            return
+        _download_and_swap(url, tag)
+        return
+
     try:
         release = fetch_latest()
     except Exception as exc:
@@ -239,37 +294,7 @@ def main():
     if not a.yes and not confirmed(input("Download and replace this binary? [y/N] ")):
         print("aborted.")
         return
-
-    exe = sys.executable
-    # Tempdir NEXT TO the binary: same filesystem, so the final os.replace is an
-    # atomic rename (a system tempdir can be another fs -> EXDEV; copy-overwrite
-    # of a running ELF would be ETXTBSY).
-    with tempfile.TemporaryDirectory(dir=os.path.dirname(exe)) as td:
-        archive = os.path.join(td, asset_name(sys.platform))
-        print("Downloading:", url)
-        download(url, archive)
-        new = extract_binary(archive, td)
-        if not new:
-            sys.exit("update: archive did not contain the iro binary — aborted, nothing changed.")
-        try:
-            perform(swap_plan(sys.platform, exe, new))
-        except OSError as exc:
-            hint = (" Restore by renaming iro-old.exe back to iro.exe."
-                    if sys.platform.startswith("win") and not os.path.exists(exe) else "")
-            sys.exit(f"update: swap failed ({exc}).{hint}")
-        # The archive ships the iro-ui launcher alongside iro — install it too, but
-        # never let a hiccup here undo the successful iro swap above (best-effort).
-        try:
-            ui_path = install_ui(td, os.path.dirname(exe), sys.platform)
-        except OSError as exc:
-            ui_path = None
-            print(f"update: note — iro-ui not installed ({exc}); "
-                  "use `iro ui` from the CLI, or reinstall the archive.")
-    print(f"updated to {tag} — restart iro to use it.")
-    if ui_path:
-        print(f"installed {os.path.basename(ui_path)} next to iro.")
-    if sys.platform.startswith("win"):
-        print("(the old binary was kept as iro-old.exe and is removed on the next start)")
+    _download_and_swap(url, tag)
 
 
 if __name__ == "__main__":
