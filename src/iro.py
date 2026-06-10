@@ -718,7 +718,7 @@ def _companion_running(cc):
     # "ausgeführt" = 0x81), which is NOT decodable as the ANSI codepage Python
     # uses for text=True. The matched token (Companion.exe) is pure ASCII.
     probe = subprocess.run(cmds["running"], capture_output=True, text=True,
-                           errors="replace")
+                           errors="replace", **sv.no_window_kwargs())
     return cc.parse_running(sys.platform, probe.returncode, probe.stdout or "")
 
 def companion_start(rest):

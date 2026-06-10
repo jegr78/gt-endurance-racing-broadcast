@@ -13,6 +13,7 @@ import csv, io, ntpath, os, shutil, subprocess, sys, time
 # as real frozen modules (hidden-imports in tools/build-binary.py).
 import install_apps
 import preflight
+import services
 
 PASS, WARN, FAIL, INFO = preflight.PASS, preflight.WARN, preflight.FAIL, preflight.INFO
 Result = preflight.Result
@@ -57,7 +58,8 @@ def app_running(app, platform=None):
     for name in _names(app, platform):
         try:
             out = subprocess.run(probe_command(name, platform), capture_output=True,
-                                 text=True, errors="replace", timeout=5)
+                                 text=True, errors="replace", timeout=5,
+                                 **services.no_window_kwargs())
         except (OSError, subprocess.SubprocessError):
             continue
         if parse_probe(platform, out.returncode, out.stdout, name):
