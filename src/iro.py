@@ -1340,9 +1340,9 @@ def update_check_data(fetch=None, current=None, platform=None):
 
 def preview_list_data(fetch=None, platform=None):
     """On-demand list of installable preview builds for the Control Center's
-    Help view. Thin wrapper over scripts/update.py's pure classifier — never
-    downloads. Network call; {"ok": False} when offline / rate-limited. `fetch`/
-    `platform` are test seams."""
+    Help view. Network call (the GitHub releases list); never downloads an
+    asset. Thin wrapper over scripts/update.py's pure classifier. {"ok": False}
+    when offline / rate-limited. `fetch`/`platform` are test seams."""
     import update as upd
     out = {"ok": True, "previews": []}
     try:

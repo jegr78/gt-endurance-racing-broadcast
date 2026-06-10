@@ -447,6 +447,34 @@ def t_update_check_offline_is_not_ok():
     assert d["ok"] is False and d["update_available"] is False
 
 
+def t_update_check_includes_release_notes():
+    rel = {"tag_name": "v9.9.9", "body": "## What's new\n- stuff",
+           "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/m"}]}
+    d = iro.update_check_data(fetch=lambda: rel, current="v1.0.0", platform="darwin")
+    assert d["ok"] and d["notes"] == "## What's new\n- stuff"
+
+
+def t_preview_list_data_ok():
+    releases = [
+        {"tag_name": "v1.0.0", "prerelease": False, "assets": []},
+        {"tag_name": "preview-pr-7", "prerelease": True, "name": "Preview: PR #7",
+         "target_commitish": "abc1234", "published_at": "2026-06-10T00:00:00Z",
+         "body": "n", "assets": [{"name": "iro-macos.tar.gz",
+                                  "browser_download_url": "https://x/p7"}]},
+    ]
+    d = iro.preview_list_data(fetch=lambda: releases, platform="darwin")
+    assert d["ok"]
+    assert [p["tag"] for p in d["previews"]] == ["preview-pr-7"]
+    assert d["previews"][0]["asset_url"] == "https://x/p7"
+
+
+def t_preview_list_data_offline_returns_not_ok():
+    def boom():
+        raise OSError("no network")
+    d = iro.preview_list_data(fetch=boom, platform="darwin")
+    assert d == {"ok": False, "previews": []}
+
+
 # ---------- static-streams config (Static Streams page) ----------
 
 def t_streams_config_defaults_when_absent():
