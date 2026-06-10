@@ -150,6 +150,69 @@ def t_resolve_active_profile_none_raises():
         assert "no profiles" in str(e)
 
 
+def t_profile_runtime_dir_is_runtime_slash_name():
+    assert m.profile_runtime_dir("/p", "erf") == os.path.join("/p", "runtime", "erf")
+
+
+def t_resolve_config_end_to_end_single_profile():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro",
+                   "NAME=IRO Endurance\nSHEET_ID=abc\nSHEET_PUSH_URL=https://x?key=y\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.profile == "iro"
+        assert cfg.name == "IRO Endurance"
+        assert cfg.sheet_id == "abc"
+        assert cfg.sheet_push_url == "https://x?key=y"
+        assert cfg.intro_url == "" and cfg.outro_url == ""
+        assert cfg.logo_path == ""              # no LOGO set
+        assert cfg.profile_dir == os.path.join(root, "profiles", "iro")
+        assert cfg.runtime_dir == os.path.join(root, "runtime", "iro")
+
+
+def t_resolve_config_name_defaults_to_profile_when_unset():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "erf", "SHEET_ID=zzz\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.name == "erf"
+
+
+def t_resolve_config_override_selects_among_many():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro", "SHEET_ID=a\n")
+        _mkprofile(root, "erf", "SHEET_ID=b\n")
+        cfg = m.resolve_config(root, override="erf", environ={})
+        assert cfg.profile == "erf" and cfg.sheet_id == "b"
+
+
+def t_resolve_config_env_var_selects_among_many():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro", "SHEET_ID=a\n")
+        _mkprofile(root, "erf", "SHEET_ID=b\n")
+        cfg = m.resolve_config(root, environ={"RACECAST_PROFILE": "iro"})
+        assert cfg.profile == "iro"
+
+
+def t_resolve_config_logo_path_resolved_when_file_present():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        pdir = _mkprofile(root, "iro", "SHEET_ID=a\nLOGO=logo.png\n")
+        open(os.path.join(pdir, "logo.png"), "w").close()
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.logo_path == os.path.join(pdir, "logo.png")
+
+
+def t_resolve_config_logo_path_blank_when_file_missing():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro", "SHEET_ID=a\nLOGO=missing.png\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.logo_path == ""
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

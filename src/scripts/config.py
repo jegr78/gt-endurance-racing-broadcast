@@ -136,3 +136,60 @@ def resolve_active_profile(available, *, override=None, env_value=None,
     raise ProfileError(
         "multiple profiles exist; choose one with --profile or "
         f"'racecast profile use <name>' (available: {', '.join(available)})")
+
+
+from dataclasses import dataclass, field  # noqa: E402
+
+
+@dataclass
+class ResolvedConfig:
+    profile: str
+    name: str
+    sheet_id: str
+    sheet_push_url: str = ""
+    intro_url: str = ""
+    outro_url: str = ""
+    logo_path: str = ""          # absolute path, or "" if unset/missing
+    profile_dir: str = ""
+    runtime_dir: str = ""
+    machine_env: dict = field(default_factory=dict)
+
+
+def profile_runtime_dir(root, name):
+    """Profile-scoped runtime dir: <root>/runtime/<name>."""
+    return os.path.join(root, "runtime", name)
+
+
+def resolve_config(root, *, override=None, runtime_root=None, environ=None):
+    """Machine .env + active profile -> ResolvedConfig. `root` is the project
+    root; `runtime_root` defaults to <root>/runtime; `environ` defaults to
+    os.environ (a real RACECAST_PROFILE wins over the machine .env's). Raises
+    ProfileError if no profile can be resolved."""
+    environ = os.environ if environ is None else environ
+    runtime_root = runtime_root or os.path.join(root, "runtime")
+    machine = load_machine_env(root)
+    available = list_profiles(root)
+    name = resolve_active_profile(
+        available,
+        override=override,
+        env_value=environ.get("RACECAST_PROFILE") or machine.get("RACECAST_PROFILE"),
+        pointer=read_active_pointer(runtime_root),
+    )
+    prof = parse_profile(root, name)
+    pdir = os.path.join(profiles_dir(root), name)
+    logo = prof.get("LOGO", "")
+    logo_path = os.path.join(pdir, logo) if logo else ""
+    if logo_path and not os.path.isfile(logo_path):
+        logo_path = ""
+    return ResolvedConfig(
+        profile=name,
+        name=prof.get("NAME", name),
+        sheet_id=prof.get("SHEET_ID", ""),
+        sheet_push_url=prof.get("SHEET_PUSH_URL", ""),
+        intro_url=prof.get("INTRO_URL", ""),
+        outro_url=prof.get("OUTRO_URL", ""),
+        logo_path=logo_path,
+        profile_dir=pdir,
+        runtime_dir=profile_runtime_dir(root, name),
+        machine_env=machine,
+    )
