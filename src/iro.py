@@ -136,6 +136,24 @@ def cleanup_old_binary(exe_dir, frozen=None, platform=None):
     return False
 
 
+def _force_utf8_io(streams=None):
+    """Make console output UTF-8 so the non-ASCII glyphs in our messages
+    (-> arrows U+2192, em dashes, ellipses) and German subprocess text never
+    crash or mojibake. On Windows, stdout falls back to the legacy ANSI codepage
+    (cp1252) whenever it is redirected — e.g. the Control Center captures a job's
+    output through a pipe — and printing '\\u2192' then dies with
+    UnicodeEncodeError (issue #24); the captured bytes also reach the UTF-8 web UI
+    garbled. Reconfiguring to UTF-8 fixes both; errors='replace' is a backstop so
+    an un-encodable char degrades to '?' instead of raising. Best-effort: a stream
+    that is None (a --windowed build has no stdout), predates reconfigure()
+    (py<3.7), or rejects it is silently skipped."""
+    for stream in (streams if streams is not None else (sys.stdout, sys.stderr)):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def _load_env_frozen():
     """Frozen binary: load <exe-dir>/.env into os.environ (existing env wins).
     The scripts' own load_dotenv() can't find it — their marker walk starts in
@@ -2027,6 +2045,7 @@ def init_cmd(rest):
 
 
 def main(argv=None):
+    _force_utf8_io()    # UTF-8 stdout/stderr before anything prints (issue #24)
     ensure_env_file(os.path.dirname(sys.executable))
     cleanup_old_binary(os.path.dirname(sys.executable))
     _load_env_frozen()

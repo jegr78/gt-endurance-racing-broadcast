@@ -115,6 +115,22 @@ def t_runtime_base_modes():
         os.path.join("apps", "runtime")
 
 
+def t_force_utf8_io_reconfigures_and_is_safe():
+    calls = []
+    class Stream:
+        def reconfigure(self, **kw):
+            calls.append(kw)
+    class NoReconfigure:                      # py<3.7 / an exotic stream
+        pass
+    class Raises:
+        def reconfigure(self, **kw):
+            raise OSError("console detached")
+    # None models a --windowed app whose PyInstaller build has no stdout — must
+    # never raise; non-reconfigurable / raising streams are skipped, not fatal.
+    m._force_utf8_io([Stream(), NoReconfigure(), Raises(), None, Stream()])
+    assert calls == [{"encoding": "utf-8", "errors": "replace"}] * 2
+
+
 def t_parse_env_text():
     text = "# comment\nIRO_SHEET_ID=abc\nIRO_TIMER_URL='http://x'\n\nnot a pair\n"
     assert m.parse_env_text(text) == {"IRO_SHEET_ID": "abc", "IRO_TIMER_URL": "http://x"}

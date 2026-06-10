@@ -24,6 +24,7 @@ def _fatal(message):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    iro._force_utf8_io()    # UTF-8 stdout/stderr before anything prints (issue #24)
     # Same bootstrap as iro.main(): make sure .env exists next to the binary,
     # retire any stale update binary, load the frozen env + SSL certs.
     # _app_home (not dirname) so a macOS .app resolves .env next to the bundle —
