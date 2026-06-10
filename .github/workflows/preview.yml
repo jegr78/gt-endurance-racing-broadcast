@@ -64,19 +64,45 @@ jobs:
     needs: meta
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.meta.outputs.sha }}
+          fetch-depth: 0          # full history so the changelog range resolves
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build the changelog notes for this preview
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # PR: the commits the PR adds (base..head). Dispatch: changes since the
+          # last real release (a v* tag), else the most recent 30 commits.
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ -n "$BASE_SHA" ]; then
+            RANGE="$BASE_SHA..HEAD"
+          else
+            PREV="$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null || true)"
+            [ -n "$PREV" ] && RANGE="$PREV..HEAD" || RANGE=""
+          fi
+          if [ -n "$RANGE" ] && git log --format=%s "$RANGE" > commits.txt 2>/dev/null; then
+            :
+          else
+            git log --format=%s -n 30 > commits.txt
+          fi
+          python tools/preview_meta.py notes \
+            --sha "${{ needs.meta.outputs.sha }}" < commits.txt > notes.md
       - name: (Re)create the rolling pre-release for this preview tag
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           # Rolling: drop any prior pre-release for this tag so target commit,
-          # title and assets all reflect the NEW build, then recreate it empty.
+          # title, notes and assets all reflect the NEW build, then recreate it.
           gh release delete "${{ needs.meta.outputs.tag }}" --cleanup-tag --yes || true
           gh release create "${{ needs.meta.outputs.tag }}" \
             --prerelease \
             --target "${{ needs.meta.outputs.sha }}" \
             --title "${{ needs.meta.outputs.title }}" \
-            --notes "Automated preview build — not a release. Built from commit ${{ needs.meta.outputs.sha }}. Unsigned: expect a one-time SmartScreen/Gatekeeper warning on first run."
+            --notes-file notes.md
 
   build:
     needs: [meta, release]
