@@ -95,8 +95,9 @@ def _commit_of(release):
     if target:
         return target
     text = release.get("version") or release.get("name") or release.get("tag_name") or ""
-    tail = text.rsplit("-", 1)[-1]
-    return tail if tail and tail.isalnum() else ""
+    tail = text.rsplit("-", 1)[-1].lower()
+    is_short_sha = 1 <= len(tail) <= 12 and all(c in "0123456789abcdef" for c in tail)
+    return tail if is_short_sha else ""
 
 
 def classify_prereleases(releases, platform):

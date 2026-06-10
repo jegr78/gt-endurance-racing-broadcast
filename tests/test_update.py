@@ -217,11 +217,19 @@ def t_classify_prereleases_marks_building_with_none_asset():
     assert building["asset_url"] is None
 
 
-def t_classify_prereleases_commit_falls_back_to_version_sha():
-    rel = [{"tag_name": "preview-pr-9", "prerelease": True, "name": "x",
-            "version": "preview-pr9-cafef00", "target_commitish": "",
+def t_classify_prereleases_commit_falls_back_to_name_sha():
+    # No target_commitish -> _commit_of falls back to the SHA tail of `name`
+    # (GitHub releases carry `name`/`tag_name`, never a `version` field).
+    rel = [{"tag_name": "preview-pr-9", "prerelease": True,
+            "name": "preview-pr9-cafef00", "target_commitish": "",
             "assets": []}]
     assert m.classify_prereleases(rel, "linux")[0]["commit"] == "cafef00"
+
+
+def t_classify_prereleases_commit_rejects_non_sha_tail():
+    rel = [{"tag_name": "preview-main", "prerelease": True, "name": "preview-main",
+            "target_commitish": "", "assets": []}]
+    assert m.classify_prereleases(rel, "linux")[0]["commit"] == ""
 
 
 def t_classify_prereleases_empty():
