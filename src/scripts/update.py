@@ -4,7 +4,7 @@ Checks /releases/latest, compares semver tags, downloads the platform archive
 and swaps the running binary (Windows: rename trick — a running exe can be
 renamed but not overwritten). Frozen-only: a repo checkout updates with
 `git pull`. Design: docs/superpowers/specs/2026-06-05-self-update-design.md."""
-import argparse, json, os, shutil, sys, tarfile, tempfile, zipfile
+import argparse, json, os, shutil, sys, tarfile, tempfile, urllib.error, urllib.request, zipfile
 
 REPO = "jegr78/IRO_Broadcast_Setup"
 API_LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
@@ -76,8 +76,59 @@ def fetch_release_by_tag(tag, opener=None):
     """GET one release by tag. `opener(request, timeout)` is injectable for tests.
     Raises urllib HTTPError(404) for an unknown tag (caller maps to a friendly
     'no such release')."""
-    import urllib.request
     url = f"https://api.github.com/repos/{REPO}/releases/tags/{tag}"
+    req = urllib.request.Request(url, headers={"User-Agent": "iro-update"})
+    opener = urllib.request.urlopen if opener is None else opener
+    resp = opener(req, timeout=15)
+    try:
+        return json.load(resp)
+    finally:
+        close = getattr(resp, "close", None)
+        if close:
+            close()
+
+
+def _commit_of(release):
+    """Best commit id for a pre-release row: the release target SHA, else the
+    short SHA embedded in the version/name (e.g. 'cafef00' in 'preview-pr9-cafef00')."""
+    target = (release.get("target_commitish") or "").strip()
+    if target:
+        return target
+    text = release.get("version") or release.get("name") or release.get("tag_name") or ""
+    tail = text.rsplit("-", 1)[-1]
+    return tail if tail and tail.isalnum() else ""
+
+
+def classify_prereleases(releases, platform):
+    """Map the GitHub /releases list to the UI's installable-preview rows. Pure.
+    Keeps only prereleases; for each returns
+    {tag, version, title, commit, published_at, asset_url|None, notes}
+    where asset_url is None when this platform's asset is not uploaded yet."""
+    want = asset_name(platform)
+    rows = []
+    for rel in releases:
+        if not rel.get("prerelease"):
+            continue
+        url = None
+        for asset in rel.get("assets", []):
+            if asset.get("name") == want:
+                url = asset.get("browser_download_url")
+                break
+        rows.append({
+            "tag": rel.get("tag_name", ""),
+            "version": rel.get("version") or rel.get("name") or rel.get("tag_name", ""),
+            "title": rel.get("name") or rel.get("tag_name", ""),
+            "commit": _commit_of(rel),
+            "published_at": rel.get("published_at", ""),
+            "asset_url": url,
+            "notes": rel.get("body") or "",
+        })
+    return rows
+
+
+def fetch_releases(per_page=30, opener=None):
+    """GET the releases list (newest first). `opener` injectable for tests."""
+    url = f"https://api.github.com/repos/{REPO}/releases?per_page={int(per_page)}"
     req = urllib.request.Request(url, headers={"User-Agent": "iro-update"})
     opener = urllib.request.urlopen if opener is None else opener
     resp = opener(req, timeout=15)
@@ -111,7 +162,6 @@ def safe_member(name):
 
 def fetch_latest(opener=None):
     """GET the latest-release JSON. `opener(request, timeout)` is injectable for tests."""
-    import urllib.request
     req = urllib.request.Request(API_LATEST, headers={"User-Agent": "iro-update"})
     opener = urllib.request.urlopen if opener is None else opener
     with_resp = opener(req, timeout=15)
@@ -125,7 +175,6 @@ def fetch_latest(opener=None):
 
 def download(url, dst, opener=None):
     """Fetch `url` to file path `dst` (HTTPS, cert-verified)."""
-    import urllib.request
     req = urllib.request.Request(url, headers={"User-Agent": "iro-update"})
     opener = urllib.request.urlopen if opener is None else opener
     resp = opener(req, timeout=120)
@@ -249,7 +298,6 @@ def main():
         sys.exit("update: running from source — update with `git pull` instead.")
 
     if a.tag:
-        import urllib.error
         try:
             release = fetch_release_by_tag(a.tag)
         except urllib.error.HTTPError as exc:

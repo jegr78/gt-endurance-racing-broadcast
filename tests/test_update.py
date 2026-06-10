@@ -186,6 +186,48 @@ def t_fetch_release_by_tag_parses_json():
     assert rel["tag_name"] == "preview-pr-42"
 
 
+# --- classify_prereleases: the UI's installable-previews list ------------------
+RELEASES = [
+    {"tag_name": "v1.2.2", "prerelease": False, "name": "1.2.2",
+     "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/stable"}]},
+    {"tag_name": "preview-pr-42", "prerelease": True, "name": "Preview: PR #42 (abc1234)",
+     "target_commitish": "abc1234deadbeef", "published_at": "2026-06-10T08:00:00Z",
+     "body": "notes for 42",
+     "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/p42"}]},
+    {"tag_name": "preview-main", "prerelease": True, "name": "Preview: main (deadbee)",
+     "target_commitish": "", "published_at": "2026-06-09T08:00:00Z", "body": "notes main",
+     "assets": []},   # still building — no platform asset yet
+]
+
+
+def t_classify_prereleases_filters_stable_and_shapes_rows():
+    rows = m.classify_prereleases(RELEASES, "darwin")
+    assert [r["tag"] for r in rows] == ["preview-pr-42", "preview-main"]
+    r0 = rows[0]
+    assert r0["title"] == "Preview: PR #42 (abc1234)"
+    assert r0["commit"] == "abc1234deadbeef"
+    assert r0["published_at"] == "2026-06-10T08:00:00Z"
+    assert r0["notes"] == "notes for 42"
+    assert r0["asset_url"] == "https://x/p42"
+
+
+def t_classify_prereleases_marks_building_with_none_asset():
+    rows = m.classify_prereleases(RELEASES, "darwin")
+    building = [r for r in rows if r["tag"] == "preview-main"][0]
+    assert building["asset_url"] is None
+
+
+def t_classify_prereleases_commit_falls_back_to_version_sha():
+    rel = [{"tag_name": "preview-pr-9", "prerelease": True, "name": "x",
+            "version": "preview-pr9-cafef00", "target_commitish": "",
+            "assets": []}]
+    assert m.classify_prereleases(rel, "linux")[0]["commit"] == "cafef00"
+
+
+def t_classify_prereleases_empty():
+    assert m.classify_prereleases([], "darwin") == []
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
