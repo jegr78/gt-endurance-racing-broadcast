@@ -9,6 +9,19 @@ spec = importlib.util.spec_from_file_location(
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
 
+def t_benign_client_disconnect_classifies_aborts():
+    # A browser source / panel tab that closes mid-response trips one of these;
+    # they are the client's doing, never a relay fault, so they must be swallowed
+    # (ConnectionAbortedError == WinError 10053 from issue #25).
+    assert m._benign_client_disconnect(ConnectionAbortedError())
+    assert m._benign_client_disconnect(ConnectionResetError())
+    assert m._benign_client_disconnect(BrokenPipeError())
+    # real faults must still surface (a generic OSError is NOT a ConnectionError).
+    assert not m._benign_client_disconnect(ValueError("real bug"))
+    assert not m._benign_client_disconnect(OSError("disk full"))
+    assert not m._benign_client_disconnect(None)
+
+
 def t_no_window_kwargs_per_os():
     # The relay daemon runs DETACHED (no console), so its yt-dlp/streamlink/
     # tailscale children would each pop a terminal window on Windows (issue #30).

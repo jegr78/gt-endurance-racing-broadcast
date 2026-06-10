@@ -1376,6 +1376,29 @@ class Relay:
         if self.pov: self.pov.shutdown()
 
 
+def _benign_client_disconnect(exc):
+    """True when `exc` is a client hanging up mid-response — an OBS browser
+    source closing, a panel tab refreshing, a director's tablet going to sleep.
+    ConnectionError covers BrokenPipeError, ConnectionResetError and
+    ConnectionAbortedError (WinError 10053, issue #25) on every platform. These
+    are never a relay fault, so the server must neither try to answer on the dead
+    socket nor log a traceback. A plain OSError (e.g. disk full) is NOT a
+    ConnectionError and still surfaces."""
+    return isinstance(exc, ConnectionError)
+
+
+class QuietThreadingHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer that stays silent when a client disconnects mid-
+    response. The stdlib's handle_error() dumps a full traceback for the
+    ConnectionAbortedError that wfile.flush() raises after the client is gone
+    (issue #25: the HUD/timer browser sources poll and close constantly), which
+    floods the relay console with noise that looks like a crash."""
+    def handle_error(self, request, client_address):
+        if _benign_client_disconnect(sys.exc_info()[1]):
+            return                       # client went away — nothing to report
+        super().handle_error(request, client_address)
+
+
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
                  timer_store=None, timer_path=None, setup_ctl=None):
     class H(BaseHTTPRequestHandler):
@@ -1482,8 +1505,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if len(p)==3 and p[:2]==["set","stint"]: return self._send(relay.set_stint(int(p[2])))
                 if len(p)==3 and p[0]=="set":           return self._ok(relay.set_index(p[1], int(p[2])))
                 return self._send({"error":"unknown","path":self.path}, 404)
+            except ConnectionError:
+                return None              # client hung up mid-response — benign (issue #25)
             except Exception as e:
-                return self._send({"error": str(e)}, 500)
+                try:
+                    return self._send({"error": str(e)}, 500)
+                except ConnectionError:
+                    return None          # client also gone before the error could be sent
         def _ok(self, r):
             self._send(r) if r else self._send({"error":"feed? (A/B)"}, 404)
         def do_POST(self):
@@ -1506,8 +1534,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["pov", "set"]:
                     return self._send(setup_ctl.pov_set(body.get("url")))
                 return self._send({"error": "unknown", "path": self.path}, 404)
+            except ConnectionError:
+                return None              # client hung up mid-response — benign (issue #25)
             except Exception as e:
-                return self._send({"error": str(e)}, 500)
+                try:
+                    return self._send({"error": str(e)}, 500)
+                except ConnectionError:
+                    return None          # client also gone before the error could be sent
     return H
 
 
@@ -1774,7 +1807,7 @@ def main():
     servers = []
     for addr in bind_addrs:
         try:
-            servers.append(ThreadingHTTPServer((addr, args.http_port), handler))
+            servers.append(QuietThreadingHTTPServer((addr, args.http_port), handler))
         except OSError as e:
             print(f"  (warn) could not bind {addr}:{args.http_port} — {e}")
     if not servers:
