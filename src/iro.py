@@ -11,6 +11,7 @@
   iro event start --stint N             # takeover: stint N is on air now — the relay starts there
   iro tailscale up|down|status          # connect / disconnect / inspect Tailscale
   iro obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
+  iro obs collection [set]              # report the active OBS scene collection (set = switch to IRO Endurance)
   iro app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
   iro status                            # aggregate health of all services
   iro ui [--no-browser]                 # local Control Center web app (port 8089 / IRO_UI_PORT)
@@ -675,7 +676,7 @@ def obs_collection_cmd(rest):
         ok, note = obs_ws.set_scene_collection()
         if not ok:
             sys.exit(f"obs: scene collection switch failed — {note}")
-        print(f"obs: scene collection — {note or 'switched to ' + obs_ws.EXPECTED_SCENE_COLLECTION}.")
+        print(f"obs: {note or 'scene collection switched to ' + obs_ws.EXPECTED_SCENE_COLLECTION}.")
         return
     if rest:
         sys.exit("usage: iro obs collection [set]")
