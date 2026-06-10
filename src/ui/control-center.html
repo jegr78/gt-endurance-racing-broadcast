@@ -315,12 +315,12 @@
   .updactions { display:flex; align-items:center; gap:10px; }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
   button.primary:hover { background: color-mix(in srgb, var(--accent) 82%, #000); border-color: color-mix(in srgb, var(--accent) 82%, #000); }
-  .prevsec { margin-top: 24px; border-top: 1px solid var(--line, #273349); padding-top: 16px; }
+  .prevsec { margin-top: 24px; }
   .prevtoggle { display: flex; gap: 8px; align-items: center; font-size: 14px; }
   .prevrow { display: flex; align-items: center; gap: 10px; padding: 8px 0;
              border-bottom: 1px solid var(--line, #273349); }
   .prevrow .meta { flex: 1; font-size: 13px; }
-  .prevrow .sub { color: var(--dim, #8aa); font-size: 12px; }
+  .prevrow .sub { color: var(--dim, #94A3B8); font: 12px var(--mono); }
 </style>
 </head>
 <body>
@@ -858,7 +858,7 @@ function escapeHtml(s) {
 
 function initPreviewOptin() {
   const box = $('prevopt');
-  if (!box) return;                       // Help view not in the DOM yet
+  if (!box) return;                       // defensive: element always present in practice
   const on = localStorage.getItem(PREV_OPT_KEY) === '1';
   box.checked = on;
   $('prevhint').hidden = !on;
