@@ -271,6 +271,52 @@ def t_quit_command_unknown_app():
     assert m.quit_command("companion", "darwin") is None      # own stop path
 
 
+# --------------------------------------------------------------------------
+# OBS scene-collection readiness line
+# --------------------------------------------------------------------------
+def t_classify_scene_collection_skipped_when_status_none():
+    r = m.classify_scene_collection(None, "OBS WebSocket not reachable")
+    assert r.level == m.WARN
+    assert "skipped" in r.detail
+    assert "not reachable" in r.detail
+
+
+def t_classify_scene_collection_match_is_pass():
+    status = {"current": "IRO Endurance", "expected": "IRO Endurance",
+              "available": ["IRO Endurance"], "match": True,
+              "expected_present": True, "renamed_variant": None}
+    r = m.classify_scene_collection(status, "")
+    assert r.level == m.PASS
+    assert "IRO Endurance" in r.detail
+
+
+def t_classify_scene_collection_wrong_but_present_warns_with_fix():
+    status = {"current": "Other", "expected": "IRO Endurance",
+              "available": ["IRO Endurance", "Other"], "match": False,
+              "expected_present": True, "renamed_variant": None}
+    r = m.classify_scene_collection(status, "")
+    assert r.level == m.WARN
+    assert "iro obs collection set" in r.detail
+
+
+def t_classify_scene_collection_renamed_variant_warns_manual():
+    status = {"current": "IRO Endurance 2", "expected": "IRO Endurance",
+              "available": ["IRO Endurance 2"], "match": False,
+              "expected_present": False, "renamed_variant": "IRO Endurance 2"}
+    r = m.classify_scene_collection(status, "")
+    assert r.level == m.WARN
+    assert "renamed" in r.detail
+
+
+def t_classify_scene_collection_absent_warns_import():
+    status = {"current": "Scene", "expected": "IRO Endurance",
+              "available": ["Scene"], "match": False,
+              "expected_present": False, "renamed_variant": None}
+    r = m.classify_scene_collection(status, "")
+    assert r.level == m.WARN
+    assert "not found" in r.detail
+
+
 def _raises(fn, exc=ValueError):
     try:
         fn()

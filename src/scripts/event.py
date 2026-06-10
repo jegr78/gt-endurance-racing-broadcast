@@ -233,6 +233,28 @@ def classify_companion(running, supported, unsupported_detail=""):
     return Result(WARN, "Companion", "not running — `iro companion start`")
 
 
+def classify_scene_collection(status, note):
+    """OBS scene-collection readiness. WARN-level by design: a wrong collection
+    is fixable in one click (`iro obs collection set` / the Control Center OBS
+    row), and a flaky best-effort live probe must not turn the report red on its
+    own. `status` is obs_ws.scene_collection_status(...) or None (probe failed)."""
+    if status is None:
+        return Result(WARN, "OBS scene collection", f"check skipped — {note}")
+    if status["match"]:
+        return Result(PASS, "OBS scene collection", f"{status['expected']} active")
+    if status["renamed_variant"]:
+        return Result(WARN, "OBS scene collection",
+                      f"'{status['current']}' active — looks renamed; switch to "
+                      f"{status['expected']} manually")
+    if status["expected_present"]:
+        return Result(WARN, "OBS scene collection",
+                      f"'{status['current']}' active — switch with "
+                      f"`iro obs collection set`")
+    return Result(WARN, "OBS scene collection",
+                  f"{status['expected']} collection not found — import it "
+                  f"(`iro setup`)")
+
+
 def classify_assets(label, missing, count, severity, fix):
     """`missing` is the check_assets() list when the sheet was readable, or
     None when only the local fallback could run. `severity` is the not-OK
