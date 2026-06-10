@@ -1493,6 +1493,23 @@ def obs_ws_link_data(env=None, config_path=None):
         return {"ok": False, "error": f"obs-websocket info unavailable: {exc}"}
 
 
+def obs_collection_data(get=None):
+    """Live OBS scene-collection check for the Control Center Apps view (on-demand
+    /api/obs-collection). Best effort: {"ok": True, **status} when OBS answered,
+    else {"ok": False, "note": reason}. Never raises (the route wraps it too).
+    `get` is a test seam (defaults to obs_ws.get_scene_collection)."""
+    if get is None:
+        try:
+            import obs_ws
+            get = obs_ws.get_scene_collection
+        except Exception as exc:                     # noqa: BLE001 — best effort
+            return {"ok": False, "note": str(exc)}
+    status, note = get()
+    if status is None:
+        return {"ok": False, "note": note}
+    return {"ok": True, **status}
+
+
 def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None,
                       cookies=None, apps_running=None):
     """Aggregate health for the Control Center dashboard (/api/status).
@@ -2122,6 +2139,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "status": ui_status_payload,
         "relay_live": relay_live_data,
         "obs_ws": obs_ws_link_data,
+        "obs_collection": obs_collection_data,
         "update_check": update_check_cached,
         "streams_read": streams_config_data,
         "streams_write": streams_config_write_data,
