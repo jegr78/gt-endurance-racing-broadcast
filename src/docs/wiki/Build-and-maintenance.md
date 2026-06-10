@@ -47,6 +47,31 @@ git tag v0.2.0 && git push origin v0.2.0
 the authoritative version is always the git tag (stamped into `iro --version`
 at build time).
 
+## Preview builds (test before releasing)
+
+Sometimes a build must be tested *before* a real release — a single PR, or
+`main` after several PRs merged with no release yet. The **Preview** workflow
+publishes real, downloadable binaries as a GitHub **pre-release** (public
+download URLs, but never the "Latest" slot), built green (full test gate runs
+first).
+
+- **From a PR:** add the **`preview`** label to the PR. Every push to the
+  labeled PR (re)builds a `preview-pr-<N>` pre-release for all three OSes, and a
+  PR comment lists the download links. Closing the PR deletes the pre-release.
+- **From `main` (or any branch):** Actions → **Preview** → *Run workflow* →
+  pick the ref (default `main`). Publishes a rolling `preview-<ref>` pre-release.
+
+Preview tags are `preview-*`, never `v*`, so they never trigger `release.yml` or
+disturb the release-please Release PR. `iro --version` of a preview binary prints
+e.g. `preview-pr42-0123abc` so a tester knows the exact commit. Preview binaries
+are unsigned, same one-time SmartScreen/Gatekeeper warning as releases.
+
+> One-time setup: the `preview` label must exist in the repo —
+> `gh label create preview --color FFA500 --description "Build a downloadable preview binary"`.
+>
+> Fork PRs cannot publish previews (GitHub gives fork-PR workflows a read-only
+> token); the team's same-repo branch workflow is unaffected.
+
 ## Round-trips that keep secrets/paths out of git
 
 - **OBS collection.** Edit scenes in OBS, export, then fold back with

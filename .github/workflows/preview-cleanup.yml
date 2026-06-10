@@ -1,0 +1,23 @@
+name: Preview cleanup
+# When a PR closes (merged or not), delete its preview pre-release + tag so the
+# Releases page and the tag namespace stay tidy. Dispatch previews (preview-<ref>)
+# are rolling and overwritten on the next dispatch, so they need no per-PR hook.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  delete-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the PR's preview pre-release and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: preview-pr-${{ github.event.pull_request.number }}
+        run: |
+          # No-op (|| true) when the PR never had a preview.
+          gh release delete "$TAG" --cleanup-tag --yes || true
