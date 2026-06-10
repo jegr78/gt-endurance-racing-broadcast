@@ -260,7 +260,7 @@ def main():
             sys.exit(f"update: cannot reach GitHub ({exc}). Check your connection.")
         kind, tag, url = classify_tag(release, sys.platform)
         if kind == "error":
-            sys.exit(f"update: {tag if isinstance(tag, str) else release.get('tag_name')}")
+            sys.exit(f"update: {tag}")
         if kind == "building":
             sys.exit(f"update: {tag} has no {asset_name(sys.platform)} asset yet — "
                      "retry in a few minutes.")
