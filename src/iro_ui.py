@@ -28,7 +28,10 @@ def main(argv=None):
     # retire any stale update binary, load the frozen env + SSL certs.
     # _app_home (not dirname) so a macOS .app resolves .env next to the bundle —
     # where the sibling `iro` binary lives — not inside Contents/MacOS/.
-    home = iro._app_home(sys.executable)
+    # _real_executable maps out of any App-Translocation mount first (issue #22:
+    # a quarantined .app double-clicked in Finder otherwise runs from a random
+    # read-only /private/var/.../AppTranslocation/ copy, not the producer's folder).
+    home = iro._app_home(iro._real_executable())
     iro.ensure_env_file(home)
     iro.cleanup_old_binary(home)
     iro._load_env_frozen()
