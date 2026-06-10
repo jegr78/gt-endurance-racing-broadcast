@@ -1224,9 +1224,14 @@ def _check_scene_collection():
     if status["match"]:
         print(f"obs: scene collection '{status['current']}' active — correct.")
         return
-    print(f"obs: WARNING — scene collection '{status['current']}' active, expected "
-          f"'{status['expected']}'. Switch with `iro obs collection set` (or the OBS "
-          f"row in the Control Center) before going live.")
+    if status["expected_present"]:
+        print(f"obs: WARNING — scene collection '{status['current']}' active, expected "
+              f"'{status['expected']}'. Switch with `iro obs collection set` (or the OBS "
+              f"row in the Control Center) before going live.")
+    else:
+        print(f"obs: WARNING — scene collection '{status['current']}' active, expected "
+              f"'{status['expected']}' not found in OBS — import it with `iro setup` "
+              f"before going live.")
 
 
 def event_start(rest):

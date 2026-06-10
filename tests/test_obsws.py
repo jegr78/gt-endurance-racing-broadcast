@@ -564,6 +564,16 @@ def t_scene_collection_status_match_suppresses_renamed_variant():
     assert s["renamed_variant"] is None
 
 
+def t_scene_collection_status_overlap_present_and_renamed():
+    # A renamed duplicate is active while the real collection ALSO exists:
+    # both flags are truthy — consumers must prefer the switchable case.
+    s = m.scene_collection_status("IRO Endurance 2",
+                                  ["IRO Endurance", "IRO Endurance 2"])
+    assert s["match"] is False
+    assert s["expected_present"] is True
+    assert s["renamed_variant"] == "IRO Endurance 2"
+
+
 def t_scene_collection_status_expected_absent():
     s = m.scene_collection_status("Scene", ["Scene", "Foo"])
     assert s["match"] is False

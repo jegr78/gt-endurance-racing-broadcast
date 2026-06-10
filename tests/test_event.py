@@ -317,6 +317,19 @@ def t_classify_scene_collection_absent_warns_import():
     assert "not found" in r.detail
 
 
+def t_classify_scene_collection_overlap_prefers_switch_over_manual():
+    # expected_present must win over renamed_variant — the real collection is
+    # present, so the actionable advice is `iro obs collection set`, matching
+    # the CLI and the Control Center.
+    status = {"current": "IRO Endurance 2", "expected": "IRO Endurance",
+              "available": ["IRO Endurance", "IRO Endurance 2"], "match": False,
+              "expected_present": True, "renamed_variant": "IRO Endurance 2"}
+    r = m.classify_scene_collection(status, "")
+    assert r.level == m.WARN
+    assert "iro obs collection set" in r.detail
+    assert "manually" not in r.detail
+
+
 def _raises(fn, exc=ValueError):
     try:
         fn()

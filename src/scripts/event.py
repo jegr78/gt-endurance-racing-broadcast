@@ -242,14 +242,14 @@ def classify_scene_collection(status, note):
         return Result(WARN, "OBS scene collection", f"check skipped — {note}")
     if status["match"]:
         return Result(PASS, "OBS scene collection", f"{status['expected']} active")
-    if status["renamed_variant"]:
-        return Result(WARN, "OBS scene collection",
-                      f"'{status['current']}' active — looks renamed; switch to "
-                      f"{status['expected']} manually")
     if status["expected_present"]:
         return Result(WARN, "OBS scene collection",
                       f"'{status['current']}' active — switch with "
                       f"`iro obs collection set`")
+    if status["renamed_variant"]:
+        return Result(WARN, "OBS scene collection",
+                      f"'{status['current']}' active — looks renamed; switch to "
+                      f"{status['expected']} manually")
     return Result(WARN, "OBS scene collection",
                   f"{status['expected']} collection not found — import it "
                   f"(`iro setup`)")
