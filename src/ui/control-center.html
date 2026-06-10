@@ -307,9 +307,27 @@
   .updmodal { max-width:640px; width:90vw; border:none; border-radius:10px; padding:20px;
               background:var(--card); color:var(--txt); }
   .updmodal::backdrop { background:rgba(0,0,0,.45); }
-  .updnotes { max-height:50vh; overflow:auto; font-size:13px; line-height:1.5;
-              border:1px solid var(--line, #ddd); border-radius:6px; padding:10px;
-              margin:10px 0; white-space:pre-wrap; }
+  .updnotes { max-height:50vh; overflow:auto; font-size:13px; line-height:1.55;
+              border:1px solid var(--line); border-radius:6px; padding:10px 13px;
+              margin:10px 0; }
+  .updnotes.plain { white-space:pre-wrap; }     /* plaintext fallback */
+  /* rendered-markdown elements scoped to the dialog (mdrender output) */
+  .updnotes h1, .updnotes h2, .updnotes h3, .updnotes h4 {
+              font-size:1.05em; margin:1em 0 .4em; color:var(--txt); }
+  .updnotes h1:first-child, .updnotes h2:first-child { margin-top:0; }
+  .updnotes p { margin:.5em 0; }
+  .updnotes ul, .updnotes ol { margin:.4em 0; padding-left:1.4em; }
+  .updnotes li { margin:.15em 0; }
+  .updnotes a { color:var(--accent); }
+  .updnotes code { background:var(--card2); border:1px solid var(--line);
+              border-radius:4px; padding:.05em .35em; font-size:.92em; }
+  .updnotes pre { background:#0B1120; border:1px solid var(--line); border-radius:8px;
+              padding:10px 12px; overflow:auto; }
+  .updnotes pre code { background:none; border:0; padding:0; }
+  .updnotes blockquote { margin:.5em 0; padding:.2em .8em; color:var(--dim);
+              border-left:3px solid var(--accent); }
+  .updnotes table { border-collapse:collapse; margin:.6em 0; font-size:.95em; }
+  .updnotes th, .updnotes td { border:1px solid var(--line); padding:4px 8px; }
   .updwarn { color: #FCD34D; background: rgba(245,158,11,.1);
            border: 1px solid rgba(245,158,11,.32); border-radius: 8px; padding: 9px 13px; }
   .updactions { display:flex; align-items:center; gap:10px; }
@@ -696,6 +714,9 @@ function showView(name) {
   if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
   if (name === 'streams' && !streamsLoaded) { streamsLoaded = true; loadStreams(); }
   if (name === 'help' && !docsLoaded) { docsLoaded = true; fetchDocs(); }
+  // preview list (opt-in) lives in Help — load it lazily on each visit so a
+  // newly-pushed preview shows up, but never at startup or when opted out.
+  if (name === 'help' && previewsOptedIn()) loadPreviews();
   if (name === 'wizard' && !wizardLoaded) { wizardLoaded = true; fetchWizard(); }
   // entering Home: refresh the live relay stats right away (don't wait for the poll)
   if (name === 'home' && lastStatus && lastStatus.relay
@@ -856,14 +877,17 @@ function escapeHtml(s) {
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+function previewsOptedIn() { return localStorage.getItem(PREV_OPT_KEY) === '1'; }
+
 function initPreviewOptin() {
   const box = $('prevopt');
   if (!box) return;                       // defensive: element always present in practice
-  const on = localStorage.getItem(PREV_OPT_KEY) === '1';
+  const on = previewsOptedIn();
   box.checked = on;
   $('prevhint').hidden = !on;
   $('prevlist').hidden = !on;
-  if (on) loadPreviews();
+  // The list lives in the Help view and hits the heavier GitHub /releases call,
+  // so it loads lazily when that view is opened (see showView), not at startup.
 }
 
 function togglePreviews() {
@@ -874,12 +898,16 @@ function togglePreviews() {
   if (on) loadPreviews();
 }
 
+let prevInflight = false;
 async function loadPreviews() {
+  if (prevInflight) return;              // guard against overlapping loads
+  prevInflight = true;
   const box = $('prevlist');
   box.textContent = 'loading…';
   let d;
   try { d = await (await fetch('/api/previews', {cache: 'no-store'})).json(); }
   catch (e) { box.textContent = 'could not reach the Control Center.'; return; }
+  finally { prevInflight = false; }
   if (!d || !d.ok) { box.textContent = 'preview list unavailable (offline or rate-limited).'; return; }
   if (!d.previews.length) { box.textContent = 'no preview builds right now.'; return; }
   box.textContent = '';
@@ -894,7 +922,8 @@ async function loadPreviews() {
     if (p.asset_url) {
       btn.textContent = 'Install';
       btn.className = 'primary';
-      btn.onclick = () => openUpdModal({title: p.title || p.tag, notes: p.notes, tag: p.tag});
+      btn.onclick = () => openUpdModal({title: p.title || p.tag, notes: p.notes,
+                                        notesHtml: p.notes_html, tag: p.tag});
     } else {
       btn.textContent = 'building…';
       btn.disabled = true;
@@ -905,9 +934,12 @@ async function loadPreviews() {
 }
 
 // ----- update release-notes modal -----
-// Open the update dialog for either the latest release (tag omitted -> op
-// 'update') or a specific preview tag (op 'update-preview'). Renders notes and
-// a non-blocking "services running" warning, then runs the streamed job.
+// Open the update dialog for either the latest release (tag omitted) or a
+// specific preview build (tag set). Both run the SAME 'update' op — one op name
+// means the job manager refuses a second concurrent run, so a regular update
+// and a preview install can never swap the binary at the same time. Renders the
+// notes (sanitised HTML from the server, plaintext fallback) and a non-blocking
+// "services running" warning, then runs the streamed job.
 // Status payload shape (see updateHome/onStatus): s.relay.alive,
 // s.companion.running, and s.streams is an ARRAY of feeds each with .alive.
 function servicesRunning() {
@@ -920,9 +952,16 @@ function servicesRunning() {
 }
 
 function openUpdModal(opts) {
-  // opts: {title, notes, releasesUrl, tag}
+  // opts: {title, notes, notesHtml, releasesUrl, tag}
   $('updtitle').textContent = opts.title || 'Update';
-  $('updnotes').textContent = opts.notes || '(no release notes)';  // raw markdown, shown as plaintext (no renderer)
+  const nb = $('updnotes');
+  if (opts.notesHtml) {                  // server-rendered, sanitised by mdrender
+    nb.classList.remove('plain');
+    nb.innerHTML = opts.notesHtml;
+  } else {                               // fallback: raw markdown as safe plaintext
+    nb.classList.add('plain');
+    nb.textContent = opts.notes || '(no release notes)';
+  }
   const gh = $('updgh');
   if (opts.releasesUrl) { gh.hidden = false; gh.href = opts.releasesUrl; }
   else gh.hidden = true;
@@ -935,8 +974,7 @@ function openUpdModal(opts) {
   } else warn.hidden = true;
   $('updgo').onclick = () => {
     closeUpdModal();
-    if (opts.tag) op('update-preview', false, {tag: opts.tag});
-    else op('update', false);
+    op('update', false, opts.tag ? {tag: opts.tag} : {});
   };
   $('updmodal').showModal();
 }
@@ -957,10 +995,10 @@ async function checkUpdate(force) {
   const b = $('upd-banner');
   if (d && d.ok && d.update_available && d.latest) {
     b.hidden = false;
-    b.href = '#';
-    b.onclick = (e) => { e.preventDefault();
+    b.href = d.releases_url;          // middle-/cmd-click still opens GitHub in a tab
+    b.onclick = (e) => { e.preventDefault();   // left-click opens the notes dialog
       openUpdModal({title: 'Update → ' + d.latest, notes: d.notes,
-                    releasesUrl: d.releases_url}); };
+                    notesHtml: d.notes_html, releasesUrl: d.releases_url}); };
     b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 19V5"/>' +
                   '<path d="m5 12 7-7 7 7"/></svg>Update → ' + d.latest;
     b.title = 'A newer release (' + d.latest + ') is available — click for notes and to install';
@@ -1263,7 +1301,10 @@ function watchJob(name, id) {
     // moment the job ends (real-done steps flip to "done"; preflight/failed
     // steps show their run result instead of a stuck "pending").
     if (wizardLoaded) { wizardJobResults[name] = e.data; fetchWizard(); }
-    if ((name === 'update' || name === 'update-preview') && ok) {
+    // Only prompt a restart when a swap actually happened: exit 0 alone is not
+    // enough (an "already up to date" run also exits 0). The updater prints
+    // "updated to <tag>" only after it replaces the binary.
+    if (name === 'update' && ok && $('joblog').textContent.indexOf('updated to ') >= 0) {
       alert('Update installed. Quit and reopen the Control Center to use the new version.');
     }
   });

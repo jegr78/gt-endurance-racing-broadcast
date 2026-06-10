@@ -34,8 +34,7 @@ OPS = {
     "export-companion": ["export", "companion"],
     "install-tools": ["install-tools", "--yes"],
     "install-apps": ["install-apps", "--yes"],
-    "update": ["update", "--yes"],
-    "update-preview": ["update", "--yes"],
+    "update": ["update", "--yes"],   # optional `tag` param installs a preview build
 }
 
 # Browsers get-cookies can export from (yt-dlp --cookies-from-browser names).
@@ -59,16 +58,21 @@ def _update_flag(value):
     return ["--update"] if value else []
 
 
-_TAG_RE = re.compile(r"^(v\d|preview-)[\w.-]+\Z")
+# The UI's `update` op only ever installs a PREVIEW build by tag (a regular
+# update sends no tag and goes to the latest release). Restricting the allowlist
+# to preview-* means a crafted /api/op/update {tag: "v1.0.0"} cannot silently
+# downgrade to an arbitrary stable release. (`iro update --tag <vX.Y.Z>` on the
+# CLI is still free to pin/downgrade — that boundary is the shell, not the UI.)
+_TAG_RE = re.compile(r"^preview-[\w.-]+\Z")
 
 
 def _tag_arg(value):
-    """A release tag the UI may install. Allowlist: a vX… stable tag or a
-    preview-… tag. Defends against argv junk (the UI only ever sends a tag it
-    got from /api/previews)."""
+    """A preview release tag the UI may install. Allowlist: preview-* only.
+    Defends against argv junk and stable-tag downgrades (the UI only ever sends
+    a tag it got from /api/previews, which lists prereleases)."""
     s = str(value)
     if not _TAG_RE.match(s):
-        raise ValueError(f"invalid release tag: {value!r}")
+        raise ValueError(f"invalid preview tag: {value!r}")
     return ["--tag", s]
 
 
@@ -79,7 +83,7 @@ PARAMS = {
     "event-start": {"stint": _stint_arg},
     "install-tools": {"update": _update_flag},
     "install-apps": {"update": _update_flag},
-    "update-preview": {"tag": _tag_arg},
+    "update": {"tag": _tag_arg},
 }
 
 

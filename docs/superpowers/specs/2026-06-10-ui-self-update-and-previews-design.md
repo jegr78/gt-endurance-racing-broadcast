@@ -201,3 +201,35 @@ Preview install:
   deliberate click).
 - A CLI affordance for *listing* previews (the UI is the consumer; `iro update
   --tag` is the only new CLI surface, and it is independently useful).
+
+## Review follow-ups (PR #35, high-effort code review)
+
+A post-implementation review surfaced issues that were fixed in the same PR;
+these supersede the original design where they differ:
+
+- **Single `update` op (was `update` + `update-preview`).** Two distinct op
+  names let the job manager run both concurrently — two binary swaps racing. A
+  preview install is now the SAME `update` op with an optional `tag` param, so
+  one op name serialises them (`ui_jobs` refuses a second concurrent run).
+- **UI tag allowlist is preview-only.** `_tag_arg`'s regex is now
+  `^preview-[\w.-]+\Z`. A regular update sends no tag (→ latest); the UI never
+  needs to install a specific *stable* tag, so rejecting `vX.Y.Z` closes a
+  crafted-`/api/op/update {tag:"v1.0.0"}` downgrade vector. (`iro update --tag
+  <vX.Y.Z>` on the CLI is still unrestricted — that boundary is the shell.)
+- **Release notes ARE rendered (hardened mdrender), not plaintext.** The
+  original design deferred to plaintext for safety. Instead `mdrender`'s link
+  rule was hardened (href HTML-escaped + scheme allowlist; `javascript:`/`data:`
+  dropped), making it safe for PR-authored notes. The server returns a rendered,
+  sanitised `notes_html`; the dialog uses it via `innerHTML` with a plaintext
+  (`textContent`) fallback when rendering is unavailable. This also hardens the
+  existing docs-rendering path.
+- **Restart prompt gated on a real swap.** The "Update installed — restart"
+  alert now fires only when the job log contains the updater's `updated to <tag>`
+  marker, not merely on exit 0 (an "already up to date" run also exits 0).
+- **Preview list loads lazily.** Fetched when the Help view is opened (if opted
+  in), not eagerly at startup, with an in-flight guard against overlapping loads.
+- **Robustness:** `--tag` honours `--check` (dry-run); a non-writable binary dir
+  fails with a clear message instead of a traceback; `_commit_of` only trusts
+  `target_commitish` when it parses as a hex SHA (GitHub stores a branch name
+  there for branch-targeted releases). Shared `_get_json` / `_find_asset_url`
+  helpers de-duplicate the fetch and asset-scan boilerplate.

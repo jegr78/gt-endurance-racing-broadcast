@@ -1303,6 +1303,23 @@ def version():
         return "dev"
 
 
+def _render_notes_html(md):
+    """Render release-notes Markdown to sanitized HTML for the update dialog.
+    Best-effort: returns "" if the renderer is unavailable (the UI then falls
+    back to plaintext). mdrender escapes both text and link hrefs, so notes
+    authored in a PR are safe to inject as HTML."""
+    if not md:
+        return ""
+    try:
+        ui_dir = resource_path("ui")
+        if ui_dir not in sys.path:
+            sys.path.insert(0, ui_dir)
+        import mdrender
+        return mdrender.render(md)
+    except Exception:
+        return ""
+
+
 def update_check_data(fetch=None, current=None, platform=None):
     """Check-only view of the self-updater for the Home dashboard: is a newer
     GitHub release out? Thin wrapper over scripts/update.py — the single source
@@ -1315,6 +1332,7 @@ def update_check_data(fetch=None, current=None, platform=None):
     import update as upd
     cur = current or version()
     out = {"ok": True, "current": cur, "latest": None, "update_available": False,
+           "notes": "", "notes_html": "",
            "releases_url": f"https://github.com/{upd.REPO}/releases/latest"}
     if upd.parse_version(cur) is None:        # 'dev'/unstamped — nothing to compare
         out["note"] = "development build — update check skipped"
@@ -1335,6 +1353,7 @@ def update_check_data(fetch=None, current=None, platform=None):
     out["latest"] = detail                    # tag for up-to-date / update / building
     out["update_available"] = kind in ("update", "building")
     out["notes"] = release.get("body") or ""
+    out["notes_html"] = _render_notes_html(out["notes"])
     return out
 
 
@@ -1351,9 +1370,13 @@ def preview_list_data(fetch=None, platform=None):
         out["ok"] = False
         return out
     try:
-        out["previews"] = upd.classify_prereleases(releases, platform or sys.platform)
+        rows = upd.classify_prereleases(releases, platform or sys.platform)
     except Exception:
         out["ok"] = False
+        return out
+    for row in rows:
+        row["notes_html"] = _render_notes_html(row.get("notes", ""))
+    out["previews"] = rows
     return out
 
 

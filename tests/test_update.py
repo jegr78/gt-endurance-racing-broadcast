@@ -236,6 +236,29 @@ def t_classify_prereleases_empty():
     assert m.classify_prereleases([], "darwin") == []
 
 
+def t_commit_of_rejects_branch_name_target_commitish():
+    # GitHub sets target_commitish to a branch name (e.g. 'main') for
+    # branch-targeted releases — that is not a commit SHA. Fall back to the
+    # SHA embedded in the name instead of showing 'main' as the commit.
+    rel = {"target_commitish": "main", "name": "preview-main-cafe123",
+           "tag_name": "preview-main"}
+    assert m._commit_of(rel) == "cafe123"
+
+
+def t_commit_of_accepts_full_sha_target_commitish():
+    rel = {"target_commitish": "abc1234deadbeefabc1234deadbeefabc1234dee",
+           "name": "x", "tag_name": "preview-pr-1"}
+    assert m._commit_of(rel) == "abc1234deadbeefabc1234deadbeefabc1234dee"
+
+
+def t_find_asset_url():
+    rel = {"assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/m"},
+                      {"name": "iro-windows.zip", "browser_download_url": "https://x/w"}]}
+    assert m._find_asset_url(rel, "darwin") == "https://x/m"
+    assert m._find_asset_url(rel, "win32") == "https://x/w"
+    assert m._find_asset_url(rel, "linux") is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

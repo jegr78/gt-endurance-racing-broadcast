@@ -29,6 +29,36 @@ def asset_name(platform):
     return "iro-linux.tar.gz"
 
 
+def _find_asset_url(release, platform):
+    """The download URL of this platform's asset in `release`, or None when it is
+    not (yet) uploaded. Shared by classify/classify_tag/classify_prereleases."""
+    want = asset_name(platform)
+    for asset in release.get("assets", []):
+        if asset.get("name") == want:
+            return asset.get("browser_download_url")
+    return None
+
+
+def _is_hex_sha(s, lo=7, hi=40):
+    """True iff `s` looks like a (short or full) commit SHA: lo..hi hex chars."""
+    s = (s or "").lower()
+    return lo <= len(s) <= hi and all(c in "0123456789abcdef" for c in s)
+
+
+def _get_json(url, opener=None):
+    """GET `url` and parse JSON. `opener(request, timeout)` is injectable for tests.
+    Shared by fetch_latest / fetch_release_by_tag / fetch_releases."""
+    req = urllib.request.Request(url, headers={"User-Agent": "iro-update"})
+    opener = urllib.request.urlopen if opener is None else opener
+    resp = opener(req, timeout=15)
+    try:
+        return json.load(resp)
+    finally:
+        close = getattr(resp, "close", None)
+        if close:
+            close()
+
+
 def classify(release, platform, current, frozen=False):
     """The whole update decision, pure. Always a (kind, detail, url) 3-tuple:
     ('dev',        None, None)   running from source -> refuse
@@ -48,11 +78,8 @@ def classify(release, platform, current, frozen=False):
         return ("error", f"unexpected tag on the latest release: {tag!r}", None)
     if cur is not None and new <= cur:
         return ("up-to-date", tag, None)
-    want = asset_name(platform)
-    for asset in release.get("assets", []):
-        if asset.get("name") == want:
-            return ("update", tag, asset.get("browser_download_url"))
-    return ("building", tag, None)
+    url = _find_asset_url(release, platform)
+    return ("update", tag, url) if url else ("building", tag, None)
 
 
 def classify_tag(release, platform):
@@ -65,39 +92,29 @@ def classify_tag(release, platform):
     tag = release.get("tag_name", "")
     if not tag:
         return ("error", "release has no tag_name", None)
-    want = asset_name(platform)
-    for asset in release.get("assets", []):
-        if asset.get("name") == want:
-            return ("install", tag, asset.get("browser_download_url"))
-    return ("building", tag, None)
+    url = _find_asset_url(release, platform)
+    return ("install", tag, url) if url else ("building", tag, None)
 
 
 def fetch_release_by_tag(tag, opener=None):
     """GET one release by tag. `opener(request, timeout)` is injectable for tests.
     Raises urllib HTTPError(404) for an unknown tag (caller maps to a friendly
     'no such release')."""
-    url = f"https://api.github.com/repos/{REPO}/releases/tags/{tag}"
-    req = urllib.request.Request(url, headers={"User-Agent": "iro-update"})
-    opener = urllib.request.urlopen if opener is None else opener
-    resp = opener(req, timeout=15)
-    try:
-        return json.load(resp)
-    finally:
-        close = getattr(resp, "close", None)
-        if close:
-            close()
+    return _get_json(f"https://api.github.com/repos/{REPO}/releases/tags/{tag}", opener)
 
 
 def _commit_of(release):
-    """Best commit id for a pre-release row: the release target SHA, else the
-    short SHA embedded in the version/name (e.g. 'cafef00' in 'preview-pr9-cafef00')."""
+    """Best commit id for a pre-release row: the release target SHA when it
+    actually is one, else the short SHA embedded in the version/name (e.g.
+    'cafef00' in 'preview-pr9-cafef00'). GitHub sets target_commitish to a
+    *branch name* for branch-targeted releases, so it is only trusted when it
+    parses as a hex SHA."""
     target = (release.get("target_commitish") or "").strip()
-    if target:
+    if _is_hex_sha(target):
         return target
     text = release.get("version") or release.get("name") or release.get("tag_name") or ""
     tail = text.rsplit("-", 1)[-1].lower()
-    is_short_sha = 1 <= len(tail) <= 12 and all(c in "0123456789abcdef" for c in tail)
-    return tail if is_short_sha else ""
+    return tail if _is_hex_sha(tail, lo=1, hi=12) else ""
 
 
 def classify_prereleases(releases, platform):
@@ -105,16 +122,11 @@ def classify_prereleases(releases, platform):
     Keeps only prereleases; for each returns
     {tag, version, title, commit, published_at, asset_url|None, notes}
     where asset_url is None when this platform's asset is not uploaded yet."""
-    want = asset_name(platform)
     rows = []
     for rel in releases:
         if not rel.get("prerelease"):
             continue
-        url = None
-        for asset in rel.get("assets", []):
-            if asset.get("name") == want:
-                url = asset.get("browser_download_url")
-                break
+        url = _find_asset_url(rel, platform)
         rows.append({
             "tag": rel.get("tag_name", ""),
             "version": rel.get("version") or rel.get("name") or rel.get("tag_name", ""),
@@ -129,16 +141,8 @@ def classify_prereleases(releases, platform):
 
 def fetch_releases(per_page=30, opener=None):
     """GET the releases list (newest first). `opener` injectable for tests."""
-    url = f"https://api.github.com/repos/{REPO}/releases?per_page={int(per_page)}"
-    req = urllib.request.Request(url, headers={"User-Agent": "iro-update"})
-    opener = urllib.request.urlopen if opener is None else opener
-    resp = opener(req, timeout=15)
-    try:
-        return json.load(resp)
-    finally:
-        close = getattr(resp, "close", None)
-        if close:
-            close()
+    return _get_json(
+        f"https://api.github.com/repos/{REPO}/releases?per_page={int(per_page)}", opener)
 
 
 def swap_plan(platform, exe, new):
@@ -163,15 +167,7 @@ def safe_member(name):
 
 def fetch_latest(opener=None):
     """GET the latest-release JSON. `opener(request, timeout)` is injectable for tests."""
-    req = urllib.request.Request(API_LATEST, headers={"User-Agent": "iro-update"})
-    opener = urllib.request.urlopen if opener is None else opener
-    with_resp = opener(req, timeout=15)
-    try:
-        return json.load(with_resp)
-    finally:
-        close = getattr(with_resp, "close", None)
-        if close:
-            close()
+    return _get_json(API_LATEST, opener)
 
 
 def download(url, dst, opener=None):
@@ -257,7 +253,16 @@ def _download_and_swap(url, tag):
     """Download the archive at `url`, swap the running binary, reinstall iro-ui.
     Shared by the latest-release flow and the --tag flow. Prints progress."""
     exe = sys.executable
-    with tempfile.TemporaryDirectory(dir=os.path.dirname(exe)) as td:
+    # Tempdir NEXT TO the binary so the final swap is an atomic same-filesystem
+    # rename (a system tempdir can be another fs -> EXDEV; copy-overwrite of a
+    # running ELF -> ETXTBSY). If that dir is not writable, fail with a clear
+    # message instead of an opaque traceback (the binary is still untouched).
+    try:
+        td_ctx = tempfile.TemporaryDirectory(dir=os.path.dirname(exe))
+    except OSError as exc:
+        sys.exit(f"update: cannot write next to the binary ({exc}). "
+                 "Move iro to a writable folder and retry.")
+    with td_ctx as td:
         archive = os.path.join(td, asset_name(sys.platform))
         print("Downloading:", url)
         download(url, archive)
@@ -313,6 +318,10 @@ def main():
         if kind == "building":
             sys.exit(f"update: {tag} has no {asset_name(sys.platform)} asset yet — "
                      "retry in a few minutes.")
+        if a.check:
+            print(f"update --check: {tag} is available for this platform "
+                   "(run without --check to install).")
+            return
         print(f"update: installing {tag}")
         if not a.yes and not confirmed(input("Download and replace this binary? [y/N] ")):
             print("aborted.")
