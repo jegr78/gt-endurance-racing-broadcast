@@ -132,3 +132,35 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ needs.meta.outputs.tag }}" "${{ matrix.asset }}" --clobber
+
+  comment:
+    needs: [meta, build]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post/refresh the download-links comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          BASE="https://github.com/$REPO/releases/download/$TAG"
+          BODY="$(cat <<EOF
+          <!-- preview-build -->
+          ### 🔬 Preview build \`$VERSION\`
+
+          Download (unsigned — one-time SmartScreen/Gatekeeper warning on first run):
+
+          - **Windows:** $BASE/iro-windows.zip
+          - **macOS:** $BASE/iro-macos.tar.gz
+          - **Linux:** $BASE/iro-linux.tar.gz
+
+          Rebuilt automatically on every push to this PR. \`iro --version\` prints \`$VERSION\`.
+          EOF
+          )"
+          # --edit-last reuses the bot's previous preview comment; --create-if-none
+          # posts the first one (gh >= 2.61, present on GitHub-hosted runners).
+          gh pr comment "$PR" --body "$BODY" --edit-last --create-if-none
