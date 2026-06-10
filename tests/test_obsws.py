@@ -445,6 +445,7 @@ def t_scene_collection_status_wrong_but_present():
     assert s["match"] is False
     assert s["expected_present"] is True
     assert s["renamed_variant"] is None
+    assert s["current"] == "Other"
 
 
 def t_scene_collection_status_renamed_variant():
@@ -452,6 +453,16 @@ def t_scene_collection_status_renamed_variant():
     assert s["match"] is False
     assert s["expected_present"] is False
     assert s["renamed_variant"] == "IRO Endurance 2"
+    assert s["current"] == "IRO Endurance 2"
+
+
+def t_scene_collection_status_match_suppresses_renamed_variant():
+    # A correct collection plus an old import-renamed duplicate must NOT report
+    # a renamed_variant — match wins, no false "looks renamed" warning.
+    s = m.scene_collection_status("IRO Endurance",
+                                  ["IRO Endurance", "IRO Endurance 2"])
+    assert s["match"] is True
+    assert s["renamed_variant"] is None
 
 
 def t_scene_collection_status_expected_absent():

@@ -54,9 +54,10 @@ def scene_collection_status(current, available, expected=EXPECTED_SCENE_COLLECTI
     renamed_variant flags a non-exact "IRO Endurance*" (e.g. an import-renamed
     'IRO Endurance 2'), which we never switch to automatically."""
     available = list(available)
-    renamed = next((n for n in available
-                    if n != expected and isinstance(n, str)
-                    and n.startswith(expected)), None)
+    # A correct collection wins: never flag a renamed variant when we already match.
+    renamed = None if current == expected else next(
+        (n for n in available
+         if n != expected and isinstance(n, str) and n.startswith(expected)), None)
     return {"current": current, "expected": expected, "available": available,
             "match": current == expected,
             "expected_present": expected in available,
