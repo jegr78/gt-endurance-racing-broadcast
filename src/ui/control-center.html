@@ -494,6 +494,7 @@
         <section><div id="applist">
           <div class="item miss"><span class="idot"></span><span class="dim grow">loading…</span></div>
         </div></section>
+        <p class="envhint" id="obscoll">OBS scene collection: <span class="dim">checking…</span></p>
         <p class="envhint">The badge shows whether each app is running. Start or stop any app here; OBS and Discord are also brought up automatically by <b>Start event</b> on Home. OBS additionally exports the scene collection and refreshes its browser sources. For Tailscale, <b>Start/Stop</b> launches or quits the app, while <b>Connect/Disconnect</b> brings the tunnel up or down.</p>
       </div>
 
@@ -709,6 +710,7 @@ function showView(name) {
   if ((name === 'apps' || name === 'tools') && !setupLoaded) {
     setupLoaded = true; fetchSetup();
   }
+  if (name === 'apps') fetchObsCollection();
   if (name === 'assets' && !assetsLoaded) { assetsLoaded = true; fetchAssetFiles(); }
   if (name === 'preflight' && !preflightRun) { preflightRun = true; runPreflight(); }
   if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
@@ -1244,7 +1246,8 @@ const CONFIRM_TEXT = {
   'tailscale-down': 'Disconnect Tailscale? Remote directors lose access.',
   'relay-stop': 'Stop the relay?',
   'streams-stop': 'Stop all static streams?',
-  'event-stop': 'Stop the event? (stops the iro services; OBS/Discord/Tailscale keep running)'
+  'event-stop': 'Stop the event? (stops the iro services; OBS/Discord/Tailscale keep running)',
+  'obs-collection-set': 'Switch OBS to the IRO Endurance scene collection? This rebuilds all sources (incl. the relay feeds).'
 };
 
 async function op(name, confirmFirst, params) {
@@ -1297,6 +1300,7 @@ function watchJob(name, id) {
     refresh();
     if (name === 'graphics' || name === 'media') fetchAssetFiles();
     if (name === 'install-tools' || name === 'install-apps') fetchSetup();
+    if (name === 'obs-collection-set') fetchObsCollection();
     // wizard: record the outcome and re-render so the step's chip updates the
     // moment the job ends (real-done steps flip to "done"; preflight/failed
     // steps show their run result instead of a stuck "pending").
@@ -1426,6 +1430,49 @@ function setCountBadge(key, n, noun) {
   if (n > 0) b.classList.add('on');
   b.lastElementChild.textContent = n > 0 ? n + ' ' + noun : 'none yet';
   $('d-' + key).textContent = '';
+}
+
+// OBS scene-collection check (on-demand, live obs-websocket connect) for the
+// Apps view. Shows ✓ correct / ⚠ wrong, with a Switch button only when the
+// IRO Endurance collection is present to switch to.
+async function fetchObsCollection() {
+  const el = $('obscoll');
+  if (!el) return;
+  let d;
+  try { d = await (await fetch('/api/obs-collection', {cache: 'no-store'})).json(); }
+  catch (e) { return; }                  // server gone — keep last state
+  el.textContent = 'OBS scene collection: ';
+  if (!d.ok) {
+    const s = document.createElement('span');
+    s.className = 'dim';
+    s.textContent = 'check skipped — ' + (d.note || d.error || 'OBS not reachable');
+    el.appendChild(s);
+    return;
+  }
+  if (d.match) {
+    const b = document.createElement('b');
+    b.textContent = d.current;
+    el.appendChild(b);
+    el.appendChild(document.createTextNode(' active — correct.'));
+    return;
+  }
+  const msg = document.createElement('span');
+  if (d.expected_present) {
+    msg.textContent = '⚠ "' + d.current + '" active — expected "' + d.expected + '". ';
+    el.appendChild(msg);
+    const b = document.createElement('button');
+    b.textContent = 'Switch to ' + d.expected;
+    b.onclick = () => op('obs-collection-set', true);
+    el.appendChild(b);
+  } else if (d.renamed_variant) {
+    msg.textContent = '⚠ "' + d.current + '" active — looks renamed from "'
+                    + d.expected + '"; switch manually in OBS.';
+    el.appendChild(msg);
+  } else {
+    msg.textContent = '⚠ "' + d.expected + '" collection not found in OBS — '
+                    + 'import it (Export collection / `iro setup`).';
+    el.appendChild(msg);
+  }
 }
 
 async function fetchAssetFiles() {

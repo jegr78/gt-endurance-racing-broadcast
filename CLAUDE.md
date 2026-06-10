@@ -90,6 +90,7 @@ python3 src/iro.py event start       # bring everything up (Tailscale, Discord, 
 python3 src/iro.py event stop        # stop iro services; GUI apps keep running
 python3 src/iro.py tailscale up|down|status  # connect/disconnect/inspect Tailscale (event start connects automatically)
 python3 src/iro.py obs refresh       # force-reload the relay-served OBS browser sources (HUD/timer)
+python3 src/iro.py obs collection    # check the active OBS scene collection (add `set` to switch to IRO Endurance)
 python3 src/iro.py init              # guided first-time setup: .env gate, install-tools/-apps, cookies, graphics, media, setup, export companion, preflight — with skip-detection (--browser NAME, --skip-installs, --force)
 python3 src/iro.py update            # self-update the binary from GitHub Releases (--tag TAG installs an exact release; UI previews use this)
 python3 src/iro.py preflight         # hardware/tool check
@@ -234,6 +235,7 @@ HUD display label, NOT the feed stint index. `SetupControl` + endpoints
   rebuild against a live relay would just reconnect). Password auto-discovered from
   OBS's obs-websocket config.json (`IRO_OBS_WS_PASSWORD` in `.env` overrides). Fully
   best-effort: any failure prints one notice and the stop continues.
+  It also exposes a scene-collection check/switch (`GetSceneCollectionList` / `SetCurrentSceneCollection`): `iro obs collection [set]`, a warning during `iro event start`, a line in `iro event status`, and the Control Center's OBS row. Switching is always an explicit producer action — it rebuilds every source — never automatic. The expected name is `EXPECTED_SCENE_COLLECTION`, which mirrors the `name` field of `src/obs/IRO_Endurance.json`.
 
 `tools/` is maintainer-only (build, tokenize, sync) and is not shipped to producers.
 

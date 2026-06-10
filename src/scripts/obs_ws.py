@@ -39,6 +39,30 @@ RELAY_PORTS = (53001, 53002, 53003)
 STINT_SCENE = "Stint"                       # single-cam scene holding both feeds
 FEED_SOURCES = {"A": "Feed A", "B": "Feed B"}   # scene-item name == audio input name
 
+# The scene collection the broadcast assumes. Mirrors the "name" field of
+# src/obs/IRO_Endurance.json (the name OBS shows after importing the localized
+# collection). Keep the two in sync. Not a secret, so the no-hardcoding rule
+# does not apply; not parsed at runtime because the file is renamed + tokenized
+# in the shipped package and bundled differently when frozen.
+EXPECTED_SCENE_COLLECTION = "IRO Endurance"
+
+
+def scene_collection_status(current, available, expected=EXPECTED_SCENE_COLLECTION):
+    """Pure: classify the active OBS scene collection. `current` is OBS's
+    currentSceneCollectionName; `available` is the full list it reported.
+    Returns a dict (see keys below). The only "correct" state is match=True;
+    renamed_variant flags a non-exact "IRO Endurance*" (e.g. an import-renamed
+    'IRO Endurance 2'), which we never switch to automatically."""
+    available = list(available)
+    # A correct collection wins: never flag a renamed variant when we already match.
+    renamed = None if current == expected else next(
+        (n for n in available
+         if n != expected and isinstance(n, str) and n.startswith(expected)), None)
+    return {"current": current, "expected": expected, "available": available,
+            "match": current == expected,
+            "expected_present": expected in available,
+            "renamed_variant": renamed}
+
 
 def feed_state_intents(live, do_cut, feeds=("A", "B"),
                        scene=STINT_SCENE, sources=None):
@@ -440,5 +464,54 @@ def reflect_feed_state(live, do_cut, scene=STINT_SCENE, sources=None,
         return applied, ""
     except Exception as exc:                         # noqa: BLE001 — best-effort contract
         return applied, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
+def get_scene_collection(host="127.0.0.1", port=None, password=None, timeout=2.0):
+    """Ask OBS which scene collection is active and classify it against
+    EXPECTED_SCENE_COLLECTION. Returns (status_dict, note); (None, reason) on any
+    failure — OBS closed, wrong password, protocol surprise — NEVER an exception
+    (same best-effort contract as release_feed_inputs/refresh_browser_inputs)."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return None, note
+    try:
+        resp = session.request("GetSceneCollectionList", {})
+        status = scene_collection_status(resp.get("currentSceneCollectionName"),
+                                         resp.get("sceneCollections", []))
+        return status, ""
+    except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        return None, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
+def set_scene_collection(name=EXPECTED_SCENE_COLLECTION, host="127.0.0.1",
+                         port=None, password=None, timeout=2.0):
+    """Switch OBS to scene collection `name`. Returns (ok, note). Best effort:
+    - already on `name`            -> (True, "already on '<name>'"), no switch
+    - `name` not in the live list  -> (False, "...not found...") — never creates
+    - OBS rejects (output active)  -> (False, <obs error>) — _Session.request
+      raises ValueError on a failed requestStatus; caught here, never re-raised
+    - OBS unreachable              -> (False, reason)
+    Heavyweight in OBS: the switch tears down and rebuilds ALL sources (incl. the
+    relay feeds), so it is an explicit producer action, never automatic."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return False, note
+    try:
+        resp = session.request("GetSceneCollectionList", {})
+        current = resp.get("currentSceneCollectionName")
+        available = resp.get("sceneCollections", [])
+        if current == name:
+            return True, f"already on '{name}'"
+        if name not in available:
+            return False, (f"scene collection '{name}' not found in OBS "
+                           f"(import it with `iro setup`)")
+        session.request("SetCurrentSceneCollection", {"sceneCollectionName": name})
+        return True, ""
+    except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        return False, str(exc) or exc.__class__.__name__
     finally:
         session.close()

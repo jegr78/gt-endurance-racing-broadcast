@@ -24,6 +24,7 @@ OPS = {
     "discord-start": ["app", "launch", "discord"],
     "discord-stop": ["app", "quit", "discord"],
     "obs-refresh": ["obs", "refresh"],
+    "obs-collection-set": ["obs", "collection", "set"],
     "event-start": ["event", "start"],
     "event-stop": ["event", "stop"],
     "cookies": ["cookies"],
