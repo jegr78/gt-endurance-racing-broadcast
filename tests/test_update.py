@@ -175,7 +175,15 @@ def t_classify_tag_building_when_platform_asset_missing():
 
 
 def t_classify_tag_error_on_missing_tag():
-    assert m.classify_tag({"assets": []}, "darwin")[0] == "error"
+    assert m.classify_tag({"assets": []}, "darwin") == ("error", "release has no tag_name", None)
+
+
+# --- fetch_release_by_tag: parsing with an injected opener -------------------------
+def t_fetch_release_by_tag_parses_json():
+    import io, json
+    body = json.dumps(TAGREL).encode()
+    rel = m.fetch_release_by_tag("preview-pr-42", opener=lambda req, timeout: io.BytesIO(body))
+    assert rel["tag_name"] == "preview-pr-42"
 
 
 if __name__ == "__main__":
