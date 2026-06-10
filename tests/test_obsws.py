@@ -333,7 +333,21 @@ def _fake_obs_server(server_sock, password, state):
         req = json.loads(payload)
         rtype, rid = req["d"]["requestType"], req["d"]["requestId"]
         rdata = req["d"].get("requestData", {})
-        if rtype == "GetInputList":
+        if rtype == "GetSceneCollectionList":
+            resp = {"currentSceneCollectionName": state.get("current_collection", ""),
+                    "sceneCollections": state.get("collections", [])}
+        elif rtype == "SetCurrentSceneCollection":
+            if state.get("output_active"):     # OBS refuses while streaming/recording
+                _srv_send_json(conn, {"op": 7, "d": {
+                    "requestType": rtype, "requestId": rid,
+                    "requestStatus": {"result": False, "code": 501,
+                                      "comment": "output active"},
+                    "responseData": {}}})
+                continue
+            state["set_collection"] = rdata["sceneCollectionName"]
+            state["current_collection"] = rdata["sceneCollectionName"]
+            resp = {}
+        elif rtype == "GetInputList":
             kind = rdata.get("inputKind")
             resp = {"inputs": [i for i in inputs
                                if not kind or i["inputKind"] == kind]}
@@ -428,6 +442,91 @@ def t_refresh_browser_inputs_unreachable_is_quiet():
                                            timeout=0.5)
     assert names == []
     assert note                                    # human-readable reason
+
+
+# --------------------------------------------------------------------------
+# get_scene_collection / set_scene_collection — best-effort, like the others
+# --------------------------------------------------------------------------
+def _start_fake_obs(state, password="supersecret"):
+    """Spin up the loopback fake OBS server; return its port (daemon thread)."""
+    server_sock = socket.socket()
+    server_sock.bind(("127.0.0.1", 0))
+    server_sock.listen(1)
+    port = server_sock.getsockname()[1]
+    thread = threading.Thread(target=_fake_obs_server,
+                              args=(server_sock, password, state), daemon=True)
+    thread.start()
+    return port, server_sock
+
+
+def t_get_scene_collection_reads_current_and_list():
+    state = {"released": [], "current_collection": "IRO Endurance",
+             "collections": ["IRO Endurance", "Other"]}
+    port, srv = _start_fake_obs(state)
+    status, note = m.get_scene_collection(port=port, password="supersecret", timeout=5)
+    assert note == "", note
+    assert status["current"] == "IRO Endurance"
+    assert status["match"] is True
+    assert status["available"] == ["IRO Endurance", "Other"]
+    srv.close()
+
+
+def t_get_scene_collection_unreachable_is_quiet():
+    sock = socket.socket(); sock.bind(("127.0.0.1", 0))
+    free_port = sock.getsockname()[1]; sock.close()
+    status, note = m.get_scene_collection(port=free_port, password="x", timeout=0.5)
+    assert status is None
+    assert note
+
+
+def t_set_scene_collection_switches_when_present_and_different():
+    state = {"released": [], "current_collection": "Other",
+             "collections": ["IRO Endurance", "Other"]}
+    port, srv = _start_fake_obs(state)
+    ok, note = m.set_scene_collection(port=port, password="supersecret", timeout=5)
+    assert ok is True, note
+    assert state["set_collection"] == "IRO Endurance"
+    srv.close()
+
+
+def t_set_scene_collection_noop_when_already_correct():
+    state = {"released": [], "current_collection": "IRO Endurance",
+             "collections": ["IRO Endurance"]}
+    port, srv = _start_fake_obs(state)
+    ok, note = m.set_scene_collection(port=port, password="supersecret", timeout=5)
+    assert ok is True
+    assert "already" in note
+    assert "set_collection" not in state          # no switch request issued
+    srv.close()
+
+
+def t_set_scene_collection_refuses_when_absent():
+    state = {"released": [], "current_collection": "Other",
+             "collections": ["Other", "Spare"]}
+    port, srv = _start_fake_obs(state)
+    ok, note = m.set_scene_collection(port=port, password="supersecret", timeout=5)
+    assert ok is False
+    assert "not found" in note
+    assert "set_collection" not in state
+    srv.close()
+
+
+def t_set_scene_collection_output_active_is_note_not_crash():
+    state = {"released": [], "current_collection": "Other",
+             "collections": ["IRO Endurance", "Other"], "output_active": True}
+    port, srv = _start_fake_obs(state)
+    ok, note = m.set_scene_collection(port=port, password="supersecret", timeout=5)
+    assert ok is False
+    assert note                                    # carries OBS's rejection
+    srv.close()
+
+
+def t_set_scene_collection_unreachable_is_quiet():
+    sock = socket.socket(); sock.bind(("127.0.0.1", 0))
+    free_port = sock.getsockname()[1]; sock.close()
+    ok, note = m.set_scene_collection(port=free_port, password="x", timeout=0.5)
+    assert ok is False
+    assert note
 
 
 # --------------------------------------------------------------------------
