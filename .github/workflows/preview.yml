@@ -77,3 +77,58 @@ jobs:
             --target "${{ needs.meta.outputs.sha }}" \
             --title "${{ needs.meta.outputs.title }}" \
             --notes "Automated preview build — not a release. Built from commit ${{ needs.meta.outputs.sha }}. Unsigned: expect a one-time SmartScreen/Gatekeeper warning on first run."
+
+  build:
+    needs: [meta, release]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: iro-windows.zip
+            built: dist/bin/iro.exe
+            binary: iro.exe
+            built_ui: dist/bin/iro-ui.exe
+            binary_ui: iro-ui.exe
+          - os: macos-latest
+            asset: iro-macos.tar.gz
+            built: dist/bin/iro
+            binary: iro
+            built_ui: dist/bin/iro-ui.app
+            binary_ui: iro-ui.app
+          - os: ubuntu-latest
+            asset: iro-linux.tar.gz
+            built: dist/bin/iro
+            binary: iro
+            built_ui: dist/bin/iro-ui
+            binary_ui: iro-ui
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.meta.outputs.sha }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Run test suite (full gate — preview is green-built)
+        run: python tools/run-tests.py
+      - name: Install PyInstaller
+        run: python -m pip install pyinstaller
+      - name: Build + smoke-test the binary
+        run: python tools/build-binary.py --version "${{ needs.meta.outputs.version }}"
+      - name: Package the preview asset (binaries + .env.example)
+        run: |
+          mkdir staging
+          cp -R "${{ matrix.built }}" "staging/${{ matrix.binary }}"
+          cp -R "${{ matrix.built_ui }}" "staging/${{ matrix.binary_ui }}"
+          cp .env.example staging/
+          cd staging
+          case "${{ matrix.asset }}" in
+            *.zip)    python -m zipfile -c "../${{ matrix.asset }}" "${{ matrix.binary }}" "${{ matrix.binary_ui }}" .env.example ;;
+            *.tar.gz) tar czf "../${{ matrix.asset }}" "${{ matrix.binary }}" "${{ matrix.binary_ui }}" .env.example ;;
+            *)        echo "Unknown asset format: ${{ matrix.asset }}"; exit 1 ;;
+          esac
+      - name: Upload the asset to the pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ needs.meta.outputs.tag }}" "${{ matrix.asset }}" --clobber
