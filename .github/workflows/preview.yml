@@ -1,0 +1,79 @@
+name: Preview
+# Build a downloadable PRE-RELEASE binary for testing BEFORE a real release.
+# Triggered by the 'preview' label on a PR (builds the PR branch) or by
+# workflow_dispatch (builds a chosen ref, default main). Publishes a
+# `preview-*` pre-release with public download URLs. preview-* tags never match
+# v*, so release.yml and release-please are never triggered by a preview.
+on:
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch/ref to build a preview from"
+        default: main
+
+permissions:
+  contents: write          # create/upload the pre-release
+  pull-requests: write     # the download-links PR comment
+
+# Per preview target (PR number, or the dispatched ref). The group must use
+# parse-time expressions only -- it cannot reference the meta job's computed tag.
+concurrency:
+  group: preview-${{ github.event.pull_request.number || inputs.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  meta:
+    # Only build for PRs that actually carry the 'preview' label: the labeled
+    # event also fires for OTHER labels, and synchronize fires on every push.
+    # workflow_dispatch is always allowed.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'preview')
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.id.outputs.tag }}
+      version: ${{ steps.id.outputs.version }}
+      title: ${{ steps.id.outputs.title }}
+      sha: ${{ steps.id.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # PR: build the PR head commit. Dispatch: build the chosen ref.
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.pull_request.head.sha }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Compute preview identity (tag/version/title/sha)
+        id: id
+        run: |
+          SHA="$(git rev-parse HEAD)"
+          python tools/preview_meta.py \
+            --event "${{ github.event_name }}" \
+            --pr "${{ github.event.pull_request.number }}" \
+            --ref "${{ inputs.ref }}" \
+            --sha "$SHA" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - name: (Re)create the rolling pre-release for this preview tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Rolling: drop any prior pre-release for this tag so target commit,
+          # title and assets all reflect the NEW build, then recreate it empty.
+          gh release delete "${{ needs.meta.outputs.tag }}" --cleanup-tag --yes || true
+          gh release create "${{ needs.meta.outputs.tag }}" \
+            --prerelease \
+            --target "${{ needs.meta.outputs.sha }}" \
+            --title "${{ needs.meta.outputs.title }}" \
+            --notes "Automated preview build — not a release. Built from commit ${{ needs.meta.outputs.sha }}. Unsigned: expect a one-time SmartScreen/Gatekeeper warning on first run."
