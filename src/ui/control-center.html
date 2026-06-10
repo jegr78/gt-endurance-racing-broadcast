@@ -310,10 +310,11 @@
   .updnotes { max-height:50vh; overflow:auto; font-size:13px; line-height:1.5;
               border:1px solid var(--line, #ddd); border-radius:6px; padding:10px;
               margin:10px 0; white-space:pre-wrap; }
-  .updwarn { color:#b26a00; background:#fff5e6; border-radius:6px; padding:8px 10px; }
+  .updwarn { color: #FCD34D; background: rgba(245,158,11,.1);
+           border: 1px solid rgba(245,158,11,.32); border-radius: 8px; padding: 9px 13px; }
   .updactions { display:flex; align-items:center; gap:10px; }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-  button.primary:hover { background:#2563EB; border-color:#2563EB; }
+  button.primary:hover { background: color-mix(in srgb, var(--accent) 82%, #000); border-color: color-mix(in srgb, var(--accent) 82%, #000); }
 </style>
 </head>
 <body>
@@ -844,9 +845,9 @@ function servicesRunning() {
 }
 
 function openUpdModal(opts) {
-  // opts: {title, notes, releasesUrl, op, tag}
+  // opts: {title, notes, releasesUrl, tag}
   $('updtitle').textContent = opts.title || 'Update';
-  $('updnotes').textContent = opts.notes || '(no release notes)';
+  $('updnotes').textContent = opts.notes || '(no release notes)';  // raw markdown, shown as plaintext (no renderer)
   const gh = $('updgh');
   if (opts.releasesUrl) { gh.hidden = false; gh.href = opts.releasesUrl; }
   else gh.hidden = true;
@@ -884,7 +885,7 @@ async function checkUpdate(force) {
     b.href = '#';
     b.onclick = (e) => { e.preventDefault();
       openUpdModal({title: 'Update → ' + d.latest, notes: d.notes,
-                    releasesUrl: d.releases_url, op: 'update'}); };
+                    releasesUrl: d.releases_url}); };
     b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 19V5"/>' +
                   '<path d="m5 12 7-7 7 7"/></svg>Update → ' + d.latest;
     b.title = 'A newer release (' + d.latest + ') is available — click for notes and to install';
@@ -1679,7 +1680,7 @@ assetsLoaded = true; fetchAssetFiles();
   <div class="updactions">
     <a id="updgh" class="dlink" target="_blank" rel="noopener">View on GitHub ↗</a>
     <span style="flex:1"></span>
-    <button onclick="closeUpdModal()">Cancel</button>
+    <button onclick="closeUpdModal()" autofocus>Cancel</button>
     <button class="primary" id="updgo">Update now</button>
   </div>
 </dialog>
