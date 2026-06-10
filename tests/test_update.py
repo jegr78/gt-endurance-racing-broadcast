@@ -159,6 +159,25 @@ def t_install_ui_missing_returns_none():
         assert os.listdir(tgt) == []
 
 
+# --- classify_tag: install exactly one named release (no semver compare) -------
+TAGREL = {"tag_name": "preview-pr-42",
+          "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/m"},
+                     {"name": "iro-windows.zip", "browser_download_url": "https://x/w"}]}
+
+
+def t_classify_tag_install_when_asset_present():
+    assert m.classify_tag(TAGREL, "darwin") == ("install", "preview-pr-42", "https://x/m")
+    assert m.classify_tag(TAGREL, "win32") == ("install", "preview-pr-42", "https://x/w")
+
+
+def t_classify_tag_building_when_platform_asset_missing():
+    assert m.classify_tag(TAGREL, "linux") == ("building", "preview-pr-42", None)
+
+
+def t_classify_tag_error_on_missing_tag():
+    assert m.classify_tag({"assets": []}, "darwin")[0] == "error"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

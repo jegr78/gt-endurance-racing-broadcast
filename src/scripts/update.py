@@ -55,6 +55,40 @@ def classify(release, platform, current, frozen=False):
     return ("building", tag, None)
 
 
+def classify_tag(release, platform):
+    """Decide how to install one *named* release (the UI's preview/explicit
+    path). Pure. No semver compare — an explicit tag means 'install exactly
+    this'. Returns a (kind, tag, url) 3-tuple:
+    ('error',    message, None)  malformed release data (no tag_name)
+    ('building', tag, None)      release exists, platform asset not uploaded yet
+    ('install',  tag, url)"""
+    tag = release.get("tag_name", "")
+    if not tag:
+        return ("error", "release has no tag_name", None)
+    want = asset_name(platform)
+    for asset in release.get("assets", []):
+        if asset.get("name") == want:
+            return ("install", tag, asset.get("browser_download_url"))
+    return ("building", tag, None)
+
+
+def fetch_release_by_tag(tag, opener=None):
+    """GET one release by tag. `opener(request, timeout)` is injectable for tests.
+    Raises urllib HTTPError(404) for an unknown tag (caller maps to a friendly
+    'no such release')."""
+    import urllib.request
+    url = f"https://api.github.com/repos/{REPO}/releases/tags/{tag}"
+    req = urllib.request.Request(url, headers={"User-Agent": "iro-update"})
+    opener = urllib.request.urlopen if opener is None else opener
+    resp = opener(req, timeout=15)
+    try:
+        return json.load(resp)
+    finally:
+        close = getattr(resp, "close", None)
+        if close:
+            close()
+
+
 def swap_plan(platform, exe, new):
     """Ordered steps that put `new` in place of the running `exe`.
     ntpath for the Windows branch — keeps the function pure/computable when
