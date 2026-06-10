@@ -259,6 +259,13 @@ explicitly. `ci.yml` runs the suite on all
 three OSes for every PR. Unsigned binaries: SmartScreen/Gatekeeper show a
 one-time "run anyway" warning.
 
+A separate **preview** channel (`.github/workflows/preview.yml`, helper
+`tools/preview_meta.py`) publishes pre-release binaries for testing ahead of a
+real release — triggered by the `preview` label on a PR or by `workflow_dispatch`
+against a ref. Its tags are `preview-*` (never `v*`), so it never triggers
+`release.yml` or release-please; `preview-cleanup.yml` deletes a PR's pre-release
+on close.
+
 ### Static mode (`src/scripts/`) — the simpler alternative
 `loopstream.py` keeps one streamlink server alive for one public channel; `start-streams.py`
 / `stop-streams.py` manage a set of them with PID/log files under `runtime/static/`. This
