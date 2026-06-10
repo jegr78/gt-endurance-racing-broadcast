@@ -1662,7 +1662,11 @@ def main():
                          "yt-dlp (e.g. firefox, chrome, safari, edge, brave) and use them. "
                          "Writes cookies.txt next to this script.")
     args = ap.parse_args()
-    try: sys.stdout.reconfigure(line_buffering=True)   # show logs immediately
+    # line_buffering: show logs immediately. encoding="utf-8": the relay runs as a
+    # daemon with stdout piped to a log file, so Python would otherwise use the
+    # locale/ANSI codepage (cp1252 on Windows) and crash/mojibake on the non-ASCII
+    # glyphs in our banner (-> arrows, em dashes) — same class as issue #24.
+    try: sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
     except Exception: pass   # not all stdout objects support reconfigure (e.g. pipes)
 
     if not args.sheet_csv_url and not args.sheet_id:
