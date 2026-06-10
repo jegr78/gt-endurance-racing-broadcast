@@ -75,6 +75,52 @@ def t_unknown_event_raises():
     raise AssertionError("expected ValueError for unsupported event")
 
 
+# --- format_preview_notes: changelog body for the pre-release ----------------
+def t_notes_lists_commits():
+    body = m.format_preview_notes(
+        ["fix: thing (abc1234)", "feat: other (def5678)"], sha="0123abcdef")
+    assert "### Changes" in body
+    assert "- fix: thing (abc1234)" in body
+    assert "- feat: other (def5678)" in body
+    assert "Built from commit `0123abc`." in body
+    assert "Automated preview build" in body
+
+
+def t_notes_empty_degrades_to_preamble():
+    body = m.format_preview_notes([], sha="0123abcdef")
+    assert "### Changes" not in body
+    assert "Built from commit `0123abc`." in body
+    assert "Automated preview build" in body
+
+
+def t_notes_skips_blank_lines():
+    body = m.format_preview_notes(["real subject", "", "   "], sha="abc1234")
+    assert body.count("\n- ") == 1
+    assert "- real subject" in body
+
+
+def t_notes_truncates_to_limit():
+    commits = [f"commit {i}" for i in range(60)]
+    body = m.format_preview_notes(commits, sha="abc1234", limit=50)
+    assert body.count("\n- commit") == 50
+    assert "…and 10 more commits" in body
+
+
+def t_main_notes_mode_reads_stdin():
+    import sys
+    buf, stdin = io.StringIO(), io.StringIO("fix: one\nfeat: two\n")
+    old = sys.stdin
+    sys.stdin = stdin
+    try:
+        with contextlib.redirect_stdout(buf):
+            m.main(["notes", "--sha", "1234567abc"])
+    finally:
+        sys.stdin = old
+    out = buf.getvalue()
+    assert "- fix: one" in out and "- feat: two" in out
+    assert "Built from commit `1234567`." in out
+
+
 # --- main(): emits GITHUB_OUTPUT key=value lines -----------------------------
 def t_main_pr_emits_output_lines():
     buf = io.StringIO()

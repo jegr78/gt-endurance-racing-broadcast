@@ -12,6 +12,34 @@ Usage (from the workflow):
       --sha "$SHA" >> "$GITHUB_OUTPUT"
 """
 import argparse
+import sys
+
+PREVIEW_PREAMBLE = ("Automated preview build — not a release. Unsigned: expect a "
+                    "one-time SmartScreen/Gatekeeper warning on first run.")
+
+
+def format_preview_notes(commits, sha, limit=50):
+    """Markdown body for a preview pre-release: a bulleted **Changes** list of the
+    commit subjects in `commits` (already most-recent-first) above the standing
+    preview preamble + build provenance. Blank/whitespace lines are dropped; more
+    than `limit` commits are truncated with a '…and N more' line. An empty list
+    (no commits in range, or git history unavailable) degrades gracefully to just
+    the provenance + preamble, so the release is never noteless. Pure for tests."""
+    short = (sha or "")[:7]
+    clean = [c.strip() for c in commits if c and c.strip()]
+    out = []
+    if clean:
+        shown = clean[:limit]
+        out.append("### Changes")
+        out.extend(f"- {c}" for c in shown)
+        extra = len(clean) - len(shown)
+        if extra > 0:
+            out.append(f"- …and {extra} more commit{'' if extra == 1 else 's'}")
+        out.append("")
+    out.append(f"Built from commit `{short}`." if short else "Built from an unknown commit.")
+    out.append("")
+    out.append(PREVIEW_PREAMBLE)
+    return "\n".join(out)
 
 
 def _sanitize_ref(ref):
@@ -54,6 +82,17 @@ def compute_preview_meta(event_name, pr_number=None, ref=None, sha=None):
 
 
 def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # `notes` mode: read commit subjects from stdin (one per line, most-recent
+    # first — from `git log --format=%s <range>`) and print the pre-release body.
+    if argv and argv[0] == "notes":
+        ap = argparse.ArgumentParser(prog="preview_meta.py notes")
+        ap.add_argument("--sha", required=True)
+        ap.add_argument("--limit", type=int, default=50)
+        a = ap.parse_args(argv[1:])
+        sys.stdout.write(format_preview_notes(sys.stdin.read().splitlines(),
+                                              a.sha, a.limit) + "\n")
+        return
     ap = argparse.ArgumentParser()
     ap.add_argument("--event", required=True)
     ap.add_argument("--pr")

@@ -278,6 +278,42 @@ def _ensure_ssl_certs():
     if bundle:
         os.environ["SSL_CERT_FILE"] = bundle
 
+# Where `iro install-tools` (brew) drops yt-dlp/streamlink/ffmpeg/deno on macOS:
+# Apple-silicon Homebrew, then Intel Homebrew. A Finder/Dock launch omits these
+# from PATH (issue #38).
+TOOL_PATH_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
+
+
+def augment_path(current, candidates, exists=os.path.isdir):
+    """The PATH `current` should become so the tool dirs in `candidates` are
+    reachable: each candidate that exists on disk but is missing from PATH,
+    prepended (candidate order preserved) ahead of the existing entries. Returns
+    None when nothing needs adding (every existing candidate is already on PATH,
+    or none exist) so the caller can leave os.environ untouched. Pure for tests."""
+    have = current.split(os.pathsep) if current else []
+    add = [d for d in candidates if exists(d) and d not in have]
+    if not add:
+        return None
+    return os.pathsep.join(add + have)
+
+
+def _ensure_tool_path():
+    """Frozen on macOS: a binary launched from Finder/Dock (how producers run the
+    preview build) inherits a truncated PATH (/usr/bin:/bin:/usr/sbin:/sbin) that
+    omits Homebrew — so shutil.which() can't find yt-dlp/streamlink/ffmpeg/deno
+    even though `iro install-tools` put them there, and both preflight AND the
+    relay's pulls report them missing (issue #38). Prepend the Homebrew bin dirs
+    that exist; in-process preflight and spawned children inherit the fixed PATH.
+    Binary-relative paths (settings/assets) never went through PATH, which is why
+    those already work. A terminal launch already has the full PATH, so this only
+    ever adds genuinely-missing dirs."""
+    if not IS_FROZEN or sys.platform != "darwin":
+        return
+    new = augment_path(os.environ.get("PATH", ""), TOOL_PATH_DIRS)
+    if new:
+        os.environ["PATH"] = new
+
+
 def _script_invocation(rel, args, frozen, base=None):
     """How to run a src/ script: subprocess in repo/package mode; in-process when
     frozen (the .py files ship as bundled data, there is no python3 to exec)."""
@@ -2215,6 +2251,7 @@ def main(argv=None):
     cleanup_old_binary(home)
     _load_env_frozen()
     _ensure_ssl_certs()
+    _ensure_tool_path()    # Finder/Dock launch truncates PATH past Homebrew (#38)
     argv = sys.argv[1:] if argv is None else argv
     try:
         action = route(argv)
