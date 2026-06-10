@@ -139,19 +139,20 @@ def cleanup_old_binary(exe_dir, frozen=None, platform=None):
 def _force_utf8_io(streams=None):
     """Make console output UTF-8 so the non-ASCII glyphs in our messages
     (-> arrows U+2192, em dashes, ellipses) and German subprocess text never
-    crash or mojibake. On Windows, stdout falls back to the legacy ANSI codepage
-    (cp1252) whenever it is redirected — e.g. the Control Center captures a job's
-    output through a pipe — and printing '\\u2192' then dies with
-    UnicodeEncodeError (issue #24); the captured bytes also reach the UTF-8 web UI
-    garbled. Reconfiguring to UTF-8 fixes both; errors='replace' is a backstop so
-    an un-encodable char degrades to '?' instead of raising. Best-effort: a stream
-    that is None (a --windowed build has no stdout), predates reconfigure()
-    (py<3.7), or rejects it is silently skipped."""
+    crash or mojibake. Not Windows-only: whenever stdout is redirected (the
+    Control Center captures a job's output through a pipe) Python uses the
+    locale/ANSI encoding instead of UTF-8 — cp1252 on Windows, but equally
+    ASCII under a POSIX/`LANG=C` locale on Linux — and printing '\\u2192' then
+    dies with UnicodeEncodeError (issue #24); the captured bytes also reach the
+    UTF-8 web UI garbled. Reconfiguring to UTF-8 fixes both; errors='replace' is
+    a backstop so an un-encodable char degrades to '?' instead of raising.
+    Best-effort: a stream that is None (a --windowed build has no stdout),
+    predates reconfigure() (py<3.7), or rejects it is silently skipped."""
     for stream in (streams if streams is not None else (sys.stdout, sys.stderr)):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError, OSError):
-            pass
+            pass    # stream missing/old/non-reconfigurable — leave it as-is
 
 
 def _load_env_frozen():
