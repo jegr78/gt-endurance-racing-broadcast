@@ -98,6 +98,58 @@ def t_parse_profile_reads_named_profile():
             "NAME": "IRO Endurance", "SHEET_ID": "abc"}
 
 
+def t_read_active_pointer_reads_and_strips():
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "active-profile"), "w", encoding="utf-8") as fh:
+            fh.write("erf\n")
+        assert m.read_active_pointer(td) == "erf"
+        os.remove(os.path.join(td, "active-profile"))
+        assert m.read_active_pointer(td) is None
+
+
+def t_resolve_active_profile_precedence_override_beats_env_and_pointer():
+    avail = ["erf", "iro"]
+    assert m.resolve_active_profile(
+        avail, override="iro", env_value="erf", pointer="erf") == "iro"
+
+
+def t_resolve_active_profile_env_beats_pointer():
+    assert m.resolve_active_profile(
+        ["erf", "iro"], env_value="erf", pointer="iro") == "erf"
+
+
+def t_resolve_active_profile_pointer_used_when_no_override_or_env():
+    assert m.resolve_active_profile(["erf", "iro"], pointer="iro") == "iro"
+
+
+def t_resolve_active_profile_single_profile_is_implicit():
+    assert m.resolve_active_profile(["iro"]) == "iro"
+
+
+def t_resolve_active_profile_unknown_name_raises():
+    try:
+        m.resolve_active_profile(["iro"], override="ghost")
+        raise AssertionError("expected ProfileError")
+    except m.ProfileError as e:
+        assert "ghost" in str(e) and "iro" in str(e)
+
+
+def t_resolve_active_profile_ambiguous_raises():
+    try:
+        m.resolve_active_profile(["erf", "iro"])
+        raise AssertionError("expected ProfileError")
+    except m.ProfileError as e:
+        assert "--profile" in str(e)
+
+
+def t_resolve_active_profile_none_raises():
+    try:
+        m.resolve_active_profile([])
+        raise AssertionError("expected ProfileError")
+    except m.ProfileError as e:
+        assert "no profiles" in str(e)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

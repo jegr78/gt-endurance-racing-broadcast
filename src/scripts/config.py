@@ -93,3 +93,46 @@ def parse_profile(root, name):
     p = os.path.join(profiles_dir(root), name, PROFILE_ENV_NAME)
     with open(p, encoding="utf-8") as fh:
         return parse_env_text(fh.read())
+
+
+ACTIVE_PROFILE_FILE = "active-profile"   # lives under runtime/
+
+
+def read_active_pointer(runtime_root):
+    """Return the persisted active-profile name from runtime/active-profile, or
+    None if the pointer file is absent/empty."""
+    p = os.path.join(runtime_root, ACTIVE_PROFILE_FILE)
+    if os.path.isfile(p):
+        with open(p, encoding="utf-8") as fh:
+            return fh.read().strip() or None
+    return None
+
+
+class ProfileError(Exception):
+    """The active profile could not be resolved (none / ambiguous / unknown)."""
+
+
+def resolve_active_profile(available, *, override=None, env_value=None,
+                           pointer=None):
+    """Resolve the active profile by precedence:
+        override (--profile) > env_value (RACECAST_PROFILE) > pointer
+        (runtime/active-profile) > the sole profile when exactly one exists.
+    `available` is the list of known profile names. Raises ProfileError with a
+    helpful message on an unknown name, ambiguity, or no profiles at all."""
+    for source, value in (("--profile", override),
+                          ("RACECAST_PROFILE", env_value),
+                          ("active-profile", pointer)):
+        if value:
+            if value not in available:
+                raise ProfileError(
+                    f"{source}={value!r} is not a known profile "
+                    f"(available: {', '.join(available) or 'none'})")
+            return value
+    if len(available) == 1:
+        return available[0]
+    if not available:
+        raise ProfileError(
+            "no profiles found — create one under profiles/<name>/profile.env")
+    raise ProfileError(
+        "multiple profiles exist; choose one with --profile or "
+        f"'racecast profile use <name>' (available: {', '.join(available)})")
