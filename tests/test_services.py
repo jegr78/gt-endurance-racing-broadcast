@@ -53,6 +53,14 @@ def t_spawn_kwargs_per_os():
     assert sv.spawn_kwargs("java") == {}
 
 
+def t_no_window_kwargs_per_os():
+    # CREATE_NO_WINDOW only on Windows; a no-op (empty kwargs) everywhere else so
+    # the same call site stays cross-platform.
+    assert sv.no_window_kwargs("nt") == {"creationflags": 0x08000000}
+    assert sv.no_window_kwargs("posix") == {}
+    assert sv.no_window_kwargs("java") == {}
+
+
 def t_stop_commands_per_os():
     assert sv.stop_commands("posix", 123, force=False) is None
     assert sv.stop_commands("posix", 123, force=True) is None

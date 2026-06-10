@@ -13,6 +13,7 @@ convention (cf. load_dotenv). Keep the two in sync.
 Spec: docs/superpowers/specs/2026-06-06-tailscale-connect-design.md.
 Tests: tests/test_tailscale.py."""
 import ipaddress, json, subprocess
+import services   # sibling module (scripts/ on sys.path) — no_window_kwargs (#23)
 
 _CGNAT_NET = ipaddress.ip_network("100.64.0.0/10")  # Tailscale's IPv4 range
 # Candidate Tailscale CLI locations (PATH first, then the platform installers).
@@ -67,7 +68,8 @@ def tailscale_backend(timeout=3):
     for binary in _TAILSCALE_BINS:
         try:
             out = subprocess.run([binary, "status", "--json"], capture_output=True,
-                                 text=True, errors="replace", timeout=timeout)
+                                 text=True, errors="replace", timeout=timeout,
+                                 **services.no_window_kwargs())
         except (OSError, subprocess.SubprocessError):
             continue
         state, ip = parse_tailscale_backend(out.stdout)
@@ -103,7 +105,8 @@ def _run_verb(binary, verb, timeout):
     login flow — callers never invoke it in the NeedsLogin state."""
     try:
         out = subprocess.run([binary, verb], capture_output=True, text=True,
-                             errors="replace", timeout=timeout)
+                             errors="replace", timeout=timeout,
+                             **services.no_window_kwargs())
     except subprocess.TimeoutExpired:
         return False, f"timed out after {timeout}s"
     except (OSError, subprocess.SubprocessError) as exc:
