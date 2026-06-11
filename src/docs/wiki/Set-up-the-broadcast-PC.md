@@ -72,9 +72,24 @@ step 4).
 `.env` file next to the binary.
 <!-- screenshot: terminal open in the racecast folder with ./racecast --version output -->
 
-> **One-time OS warning** (the binary is unsigned): **Windows** SmartScreen →
-> "More info" → "Run anyway". **macOS**: if blocked, System Settings →
-> Privacy & Security → "Open Anyway" (or right-click → Open).
+> **One-time OS warning** (the binaries are unsigned — there is no Apple/Windows
+> code-signing certificate, so the OS flags the download):
+>
+> - **Windows:** SmartScreen → "More info" → "Run anyway".
+> - **macOS:** right-click → **Open** once (or System Settings → Privacy &
+>   Security → "Open Anyway"). **Better**, clear the download quarantine from both
+>   binaries in one go — run this in the folder where they live:
+>
+>   ```bash
+>   xattr -dr com.apple.quarantine racecast racecast-ui.app
+>   ```
+>
+>   This removes the prompt **and** stops macOS **App Translocation**: a
+>   quarantined `.app` double-clicked from Finder is run from a throwaway,
+>   read-only copy under `/private/var/.../AppTranslocation/` instead of your
+>   folder, which can make the Control Center misbehave (e.g. the asset previews
+>   failing to load). If the prompt ever returns after a manual re-download,
+>   run it again.
 
 All commands in this wiki are written as `racecast …` — type them in a terminal in
 this folder (macOS/Linux: `./racecast …` unless you add the folder to your PATH).
