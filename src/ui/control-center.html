@@ -558,7 +558,9 @@
             aria-label="Overlay CSS" placeholder="Custom CSS for the selected overlay page"></textarea>
           <p class="envhint">Per-profile CSS overrides for the relay-served overlay pages, stored in
             <b>profiles/&lt;active&gt;/overlay/</b>. Save writes the file; <b>Apply in OBS</b> reloads the
-            HUD/Timer browser sources (same as <b>obs refresh</b> — needs the relay up + obs-websocket).</p>
+            HUD/Timer browser sources (same as <b>obs refresh</b> — needs the relay up + obs-websocket).
+            First override on a profile that had no overlay yet? Restart the relay once
+            (<b>racecast relay restart</b>) to activate it; later edits apply live via <b>Apply in OBS</b>.</p>
         </section>
 
         <div class="viewhead"><h3>Assets</h3>
