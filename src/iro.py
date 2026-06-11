@@ -2541,6 +2541,11 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "preflight": preflight_data,
         "env_read": env_entries_data,
         "env_write": env_write_data,
+        "profiles": profiles_data,
+        "profile_use": profile_use_data,
+        "profile_new": profile_new_data,
+        "profile_env_read": profile_env_entries_data,
+        "profile_env_write": profile_env_write_data,
         "jobs": jobs_mod.JobManager(
             lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN,
                                              _iro_job_executable(),

@@ -273,6 +273,20 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"could not read .env: {exc}"},
                                       code=500)
+            if path == "/api/profiles":
+                try:
+                    return self._json(ctx["profiles"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"profiles listing failed: {exc}"},
+                                      code=500)
+            if path == "/api/profile/env":
+                try:
+                    return self._json(ctx["profile_env_read"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not read profile .env: {exc}"},
+                                      code=500)
             if path == "/api/init/plan":
                 browser = parse_qs(urlparse(self.path).query or "").get(
                     "browser", ["firefox"])[0]
@@ -326,6 +340,42 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"could not write streams config: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/profile/use":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["profile_use"](body.get("name"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not switch profile: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/profile/new":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["profile_new"](body.get("name"), body.get("from"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not create profile: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/profile/env":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["profile_env_write"](body.get("entries") or [])
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not write profile .env: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
             if path.startswith("/api/init/step/"):

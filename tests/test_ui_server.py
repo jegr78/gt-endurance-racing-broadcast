@@ -95,7 +95,17 @@ def _ctx(jobs=None, init_plan=None, init_step=None):
                 "ok": True, "steps": [], "next_steps": []}),
             "init_step": init_step or (lambda key: {"ok": True, "key": key,
                                                     "done": True,
-                                                    "skip_reason": None})}
+                                                    "skip_reason": None}),
+            "profiles": lambda: {"ok": True, "active": "iro",
+                                 "profiles": [{"name": "iro"}, {"name": "erf"}]},
+            "profile_use": lambda name: {"ok": True, "active": name},
+            "profile_new": lambda name, source=None: {"ok": True, "name": name,
+                                                      "from": source},
+            "profile_env_read": lambda: {"ok": True, "path": "/x/profile.env",
+                                         "entries": [{"key": "K", "value": "v"}]},
+            "profile_env_write": lambda entries: {"ok": True,
+                                                  "path": "/x/profile.env",
+                                                  "_got": entries}}
 
 
 def _serve(ctx):
@@ -650,6 +660,86 @@ def t_init_step_route_reports_error_as_400():
         data = json.loads(body)
         assert code == 400
         assert data["ok"] is False
+    finally:
+        httpd.shutdown()
+
+
+def t_profiles_get_route_wraps_provider():
+    seen = []
+    ctx = _ctx()
+    ctx["profiles"] = lambda: seen.append(True) or {"ok": True, "active": "iro",
+                                                    "profiles": [{"name": "iro"}]}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/profiles")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["active"] == "iro" and data["profiles"][0]["name"] == "iro"
+        assert seen == [True]
+    finally:
+        httpd.shutdown()
+
+
+def t_profile_use_post_passes_name():
+    seen = []
+    ctx = _ctx()
+    ctx["profile_use"] = lambda name: seen.append(name) or {"ok": True,
+                                                            "active": name}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/profile/use", {"name": "erf"})
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True and data["active"] == "erf"
+        assert seen == ["erf"]
+    finally:
+        httpd.shutdown()
+
+
+def t_profile_new_post_passes_name_and_source():
+    seen = []
+    ctx = _ctx()
+    ctx["profile_new"] = lambda name, source=None: (
+        seen.append((name, source)) or {"ok": True, "name": name, "from": source})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/profile/new",
+                                {"name": "gt3", "from": "iro"})
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["name"] == "gt3" and data["from"] == "iro"
+        assert seen == [("gt3", "iro")]
+    finally:
+        httpd.shutdown()
+
+
+def t_profile_env_get_route_wraps_provider():
+    seen = []
+    ctx = _ctx()
+    ctx["profile_env_read"] = lambda: seen.append(True) or {
+        "ok": True, "path": "/x/profile.env",
+        "entries": [{"key": "K", "value": "v"}]}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/profile/env")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["entries"][0]["key"] == "K"
+        assert seen == [True]
+    finally:
+        httpd.shutdown()
+
+
+def t_profile_env_post_passes_entries():
+    seen = []
+    ctx = _ctx()
+    ctx["profile_env_write"] = lambda entries: seen.append(entries) or {
+        "ok": True, "path": "/x/profile.env"}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/profile/env",
+                                {"entries": [{"key": "A", "value": "1"}]})
+        assert code == 200 and json.loads(body)["ok"] is True
+        assert seen == [[{"key": "A", "value": "1"}]]
     finally:
         httpd.shutdown()
 
