@@ -93,7 +93,7 @@ def fetch_assets_csv(sheet_id, tab, timeout=15):
     """Fetch the Assets tab as CSV via the public gviz endpoint (no API key)."""
     url = (f"https://docs.google.com/spreadsheets/d/{sheet_id}"
            f"/gviz/tq?tqx=out:csv&sheet={quote(tab)}")
-    req = Request(url, headers={"User-Agent": "iro-media/1.0"})
+    req = Request(url, headers={"User-Agent": "racecast-media/1.0"})
     with urlopen(req, timeout=timeout) as resp:
         return resp.read().decode("utf-8", "replace")
 

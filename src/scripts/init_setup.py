@@ -25,7 +25,7 @@ STEP_LABELS = {
 }
 
 # Per-step UI execution kind, consumed by the Control Center wizard
-# (iro.init_plan_data). Three kinds:
+# (racecast.init_plan_data). Three kinds:
 #   "job"    -> the UI runs it through the existing job machine (/api/op/<op>),
 #               streaming live output; "op" is the ui_ops.OPS name.
 #   "gate"   -> a manual, probe-verified checkpoint the UI re-checks

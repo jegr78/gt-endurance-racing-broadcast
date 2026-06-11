@@ -303,7 +303,7 @@ class _Session:
 
     def request(self, request_type, request_data):
         self.counter += 1
-        rid = f"iro-{self.counter}"
+        rid = f"racecast-{self.counter}"
         self.send_json({"op": 6, "d": {"requestType": request_type,
                                        "requestId": rid,
                                        "requestData": request_data}})

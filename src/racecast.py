@@ -51,7 +51,7 @@ def _app_home(executable):
     """Directory holding a frozen binary's siblings — the other binary, runtime/,
     .env. Normally dirname(executable). But inside a macOS .app bundle the
     executable lives at <home>/<Name>.app/Contents/MacOS/<exe>, so the real home
-    (where the sibling `iro` binary and runtime/.env sit, NEXT TO the .app) is
+    (where the sibling `racecast` binary and runtime/.env sit, NEXT TO the .app) is
     three levels up from Contents/MacOS/. A .app bundle is a macOS construct, so
     its layout is always POSIX ('/') — parse with '/' explicitly, never os.sep,
     which would mis-split this path on a Windows test runner."""
@@ -390,7 +390,7 @@ def _run_module(path, args):
         spec.loader.exec_module(mod)
         fn = getattr(mod, "main", None)
         if fn is None:
-            print(f"iro: {os.path.basename(path)} has no main()", file=sys.stderr)
+            print(f"racecast: {os.path.basename(path)} has no main()", file=sys.stderr)
             return 1
         result = fn()
         return result if isinstance(result, int) else 0
@@ -604,7 +604,7 @@ def profile_cmd(rest):
     try:
         opts = pa.parse_profile_args(rest)
     except ValueError as e:
-        sys.exit(f"iro: {e}")
+        sys.exit(f"racecast: {e}")
     root = _env_base(IS_FROZEN, _real_executable(), HERE)
     runtime_root = _runtime_base_dir()   # the active-profile pointer is un-scoped
     active = pcfg.read_active_pointer(runtime_root)
@@ -616,7 +616,7 @@ def profile_cmd(rest):
         try:
             target = pa.create_profile(root, opts["name"], opts["source"])
         except ValueError as e:
-            sys.exit(f"iro: {e}")
+            sys.exit(f"racecast: {e}")
         env_path = os.path.join(target, pcfg.PROFILE_ENV_NAME)
         print(f"created profile '{opts['name']}' at {target}")
         print(f"  edit {env_path} (fill in SHEET_ID), then: "
@@ -626,7 +626,7 @@ def profile_cmd(rest):
         try:
             pa.set_active_profile(root, runtime_root, opts["name"])
         except ValueError as e:
-            sys.exit(f"iro: {e}")
+            sys.exit(f"racecast: {e}")
         print(f"active profile: {opts['name']}")
         return None
     # verb == "show"
@@ -634,7 +634,7 @@ def profile_cmd(rest):
         rcfg = pcfg.resolve_config(root, override=opts["name"],
                                    runtime_root=runtime_root)
     except pcfg.ProfileError as e:
-        sys.exit(f"iro: {e}")
+        sys.exit(f"racecast: {e}")
     print(pa.format_profile_show(rcfg, active))
     return None
 
@@ -953,12 +953,12 @@ def companion_start(rest):
         else:
             sys.exit("companion: did not stop in time; aborting (config untouched).")
     if plan["edit"]:
-        shutil.copy2(cfg_path, cfg_path + ".iro-bak")
+        shutil.copy2(cfg_path, cfg_path + ".racecast-bak")
         tmp = cfg_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
             fh.write(cc.config_with_bind_ip(text, desired))
         os.replace(tmp, cfg_path)
-        print(f"Set Companion bind_ip {current} -> {desired} (backup: {cfg_path}.iro-bak)")
+        print(f"Set Companion bind_ip {current} -> {desired} (backup: {cfg_path}.racecast-bak)")
     if plan["start"]:
         print("Starting Companion…")
         subprocess.Popen(cmds["start"], stdout=subprocess.DEVNULL,
@@ -1436,7 +1436,7 @@ def event_start(rest):
 
 
 def event_stop(rest):
-    """Stop iro-managed services only — never the GUI apps (a mistyped command
+    """Stop racecast-managed services only — never the GUI apps (a mistyped command
     must not be able to kill a live broadcast)."""
     relay_stop([])
     try:
@@ -2250,11 +2250,11 @@ def _init_profile_run():
         try:
             pa.create_profile(root, name)
         except ValueError as e:
-            sys.exit(f"iro: {e}")
+            sys.exit(f"racecast: {e}")
         try:
             pa.set_active_profile(root, base, name)
         except ValueError as e:
-            sys.exit(f"iro: profile created at profiles/{name}/ but could not "
+            sys.exit(f"racecast: profile created at profiles/{name}/ but could not "
                      f"set it active ({e}). Run: racecast profile use {name}")
         print(f"  created profile '{name}' (profiles/{name}/profile.env)")
     while True:
@@ -2486,7 +2486,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
             _open_url(_http_url("127.0.0.1", port, "/"))
         return None
     if instance == "foreign":
-        return fail(f"iro: port {port} is in use by another application — set "
+        return fail(f"racecast: port {port} is in use by another application — set "
                     "RACECAST_UI_PORT in .env to a free port and retry.")
 
     # The GitHub release check is one network round-trip — cache a good result
@@ -2559,7 +2559,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
     try:
         httpd = srv.serve(ctx, "127.0.0.1", port)
     except OSError as exc:
-        return fail(f"iro: could not bind port {port} ({exc}) — set RACECAST_UI_PORT "
+        return fail(f"racecast: could not bind port {port} ({exc}) — set RACECAST_UI_PORT "
                     "in .env to a free port and retry.")
     url = _http_url("127.0.0.1", port, "/")
     print(f"Control Center: {url}  (Ctrl+C or the Quit button stops it)")
@@ -2582,7 +2582,7 @@ def init_cmd(rest):
     try:
         opts = ins.parse_init_args(rest)
     except ValueError as e:
-        sys.exit(f"iro: {e}")
+        sys.exit(f"racecast: {e}")
     code, finished = ins.run_wizard(_init_steps(opts), opts["force"], print)
     if finished:   # incl. a preflight FAIL — the machine is set up either way
         print("\nManual next steps:")
@@ -2604,14 +2604,14 @@ def main(argv=None):
     try:
         argv, _profile = pa.split_profile_flag(argv)
     except ValueError as e:
-        sys.exit(f"iro: {e}")
+        sys.exit(f"racecast: {e}")
     if _profile:
         os.environ["RACECAST_PROFILE"] = _profile   # M3 consumers read this
     _apply_active_profile_env()   # inject the active profile's sheet config for children
     try:
         action = route(argv)
     except ValueError as e:
-        sys.exit(f"iro: {e}")
+        sys.exit(f"racecast: {e}")
     if action["kind"] == "help":
         print(USAGE)
         return None
@@ -2624,7 +2624,7 @@ def main(argv=None):
     if action["kind"] == "service":
         fn = DISPATCH.get((action["command"], action["verb"]))
         if not fn:
-            sys.exit(f"iro: {action['command']} {action['verb']} not implemented yet")
+            sys.exit(f"racecast: {action['command']} {action['verb']} not implemented yet")
         return fn(action["rest"])
     if action["kind"] == "ui":
         return ui_cmd(action["rest"])
@@ -2637,7 +2637,7 @@ def main(argv=None):
     if action["kind"] == "aggregate":
         aggregate_status()
         return None
-    sys.exit(f"iro: {action['kind']} not implemented")
+    sys.exit(f"racecast: {action['kind']} not implemented")
 
 
 if __name__ == "__main__":

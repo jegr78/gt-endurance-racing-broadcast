@@ -13,7 +13,7 @@ SRC = os.path.join(ROOT, "src")
 # Bundled data, laid out under _MEIPASS/src/ so every script's here-relative
 # path resolution (hud.html, assets/, OBS template) keeps working unchanged.
 DATA = ["relay", "scripts", "obs", "assets", "companion", "director", "ui", "setup-assets.py"]
-# Operator docs the Control Center's Help page serves (iro.DOCS_FILES) — only
+# Operator docs the Control Center's Help page serves (racecast.DOCS_FILES) — only
 # these, kept under src/docs/; the docs/wiki/ subtree stays on GitHub.
 DOC_FILES = ["docs/IRO_cheat_sheets.html", "docs/IRO_Broadcast_Setup_Guide.md",
              "docs/README_SETUP.md"]
@@ -59,7 +59,7 @@ def build_target(launcher, workdir, version_file, sep, entry, name, windowed):
            "--workpath", os.path.join(workdir, "build", name),
            "--specpath", workdir,
            # services/companion_common/event (+ its imports preflight,
-           # install_apps)/tailscale are real frozen modules (iro.py imports them)
+           # install_apps)/tailscale are real frozen modules (racecast.py imports them)
            "--paths", os.path.join(SRC, "scripts"),
            "--hidden-import", "services", "--hidden-import", "companion_common",
            "--hidden-import", "event", "--hidden-import", "preflight",
@@ -79,7 +79,7 @@ def build_target(launcher, workdir, version_file, sep, entry, name, windowed):
         # in-process import then dies with EACCES trying to open() it.
         dest = f"src/{rel}" if os.path.isdir(path) else "src"
         cmd += ["--add-data", f"{path}{sep}{dest}"]
-    # The Control Center's Help page serves these three docs (iro.DOCS_FILES).
+    # The Control Center's Help page serves these three docs (racecast.DOCS_FILES).
     # Bundle them under src/docs/ (real dir DEST -> file lands inside) so
     # resource_path("docs/<f>") finds them. The docs/wiki/ subtree is NOT bundled
     # — it lives on GitHub and the Help page links to it.

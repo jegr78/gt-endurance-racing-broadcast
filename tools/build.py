@@ -45,7 +45,7 @@ def main():
     cp("obs/timer.html", "timer.html")
     cp("setup-assets.py", "setup-assets.py")
     cp("racecast.py", "racecast.py")
-    cp("racecast_ui.py", "racecast_ui.py")   # windowed Control Center launcher (iro-ui)
+    cp("racecast_ui.py", "racecast_ui.py")   # windowed Control Center launcher (racecast-ui)
     cp("assets", "assets")
     cp("scripts", "scripts")
     cp("relay", "relay")  # racecast-feeds.py + get-cookies.py

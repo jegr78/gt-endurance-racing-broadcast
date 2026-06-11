@@ -245,7 +245,7 @@ def fetch_sheet_csv(sheet_id, tab=SHEET_TAB, timeout=10):
     url = (f"https://docs.google.com/spreadsheets/d/{sheet_id}"
            f"/gviz/tq?tqx=out:csv&sheet={quote(tab)}")
     try:
-        req = Request(url, headers={"User-Agent": "iro-preflight/1.0"})
+        req = Request(url, headers={"User-Agent": "racecast-preflight/1.0"})
         with urlopen(req, timeout=timeout) as resp:
             return "ok", resp.read().decode("utf-8", "replace")
     except Exception as exc:  # noqa: BLE001 — any network failure is the same FAIL

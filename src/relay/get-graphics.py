@@ -108,7 +108,7 @@ def fetch_assets_csv(sheet_id, tab, timeout=15):
     """Fetch the Assets tab as CSV via the public gviz endpoint (no API key)."""
     url = (f"https://docs.google.com/spreadsheets/d/{sheet_id}"
            f"/gviz/tq?tqx=out:csv&sheet={quote(tab)}")
-    req = Request(url, headers={"User-Agent": "iro-graphics/1.0"})
+    req = Request(url, headers={"User-Agent": "racecast-graphics/1.0"})
     with urlopen(req, timeout=timeout) as resp:
         return resp.read().decode("utf-8", "replace")
 
@@ -116,7 +116,7 @@ def fetch_assets_csv(sheet_id, tab, timeout=15):
 def download(url, out_path, timeout=60):
     """GET a Drive file to out_path as a PNG. Handles the large-file confirm
     interstitial. Writes atomically; verifies the PNG signature before committing."""
-    req = Request(url, headers={"User-Agent": "iro-graphics/1.0"})
+    req = Request(url, headers={"User-Agent": "racecast-graphics/1.0"})
     with urlopen(req, timeout=timeout) as resp:
         ctype = resp.headers.get("Content-Type", "")
         data = resp.read()
@@ -125,7 +125,7 @@ def download(url, out_path, timeout=60):
         if not m:
             raise RuntimeError("Drive returned an HTML interstitial with no confirm token")
         req2 = Request(url + "&confirm=" + m.group(1).decode(),
-                       headers={"User-Agent": "iro-graphics/1.0"})
+                       headers={"User-Agent": "racecast-graphics/1.0"})
         with urlopen(req2, timeout=timeout) as resp2:
             data = resp2.read()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
