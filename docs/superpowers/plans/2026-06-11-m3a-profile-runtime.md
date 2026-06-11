@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make all runtime state and league config profile-scoped — `iro <command>` and `iro event start` run entirely against the active profile's `runtime/<profile>/` dir and that profile's Google Sheet, so two leagues (IRO, ERF) never collide.
+**Goal:** Make all runtime state and league config profile-scoped — `iro <command>` and `iro event start` run entirely against the active profile's `runtime/<profile>/` dir and that profile's Google Sheet, so two leagues (IRO, ERF) never collide — while the YouTube cookie jar stays shared machine-wide.
 
-**Architecture:** `src/iro.py` is the profile authority. At startup `main()` resolves the active profile (via M1's `config.py`) and injects its league values (`RACECAST_SHEET_ID`/`_PUSH_URL`/`_INTRO_URL`/`_OUTRO_URL`) into `os.environ`; every child (relay daemon, one-shots, probes) inherits them. `_runtime_dir()` becomes `runtime/<profile>/`, so the relay, timer, caches, cookies, assets, PID/logs, and the OBS import JSON all land under the profile. The relay and the asset scripts stay self-contained — they just read the renamed `RACECAST_*` vars and the `--runtime-dir`/`--out` paths the CLI hands them. The only thing that stays at the un-scoped `runtime/` root is the `active-profile` pointer.
+**Architecture:** `src/iro.py` is the profile authority. At startup `main()` resolves the active profile (via M1's `config.py`) and injects its league values (`RACECAST_SHEET_ID`/`_PUSH_URL`/`_INTRO_URL`/`_OUTRO_URL`) into `os.environ`; every child (relay daemon, one-shots, probes) inherits them. `_runtime_dir()` becomes `runtime/<profile>/`, so the relay state, timer, caches, assets, PID/logs, and the OBS import JSON all land under the profile. Two things stay at the un-scoped `runtime/` root: the `active-profile` pointer and the shared `cookies.txt` jar (a machine-level YouTube login). The relay and asset scripts stay self-contained — they read the renamed `RACECAST_*` vars and the `--runtime-dir`/`--cookies`/`--out` paths the CLI hands them.
 
 **Tech Stack:** Python 3.11+ stdlib only. Tests: no-pytest idiom (`t_`-prefixed, bare `assert`/`raise AssertionError`, `importlib` load, `if __name__=="__main__"` runner, auto-discovered by `tools/run-tests.py`).
 
@@ -12,14 +12,14 @@
 
 ## Scope Decisions (resolved during planning)
 
-1. **Cookies are profile-scoped, not shared.** The spec said cookies shared, but cookie paths hang off `_runtime_dir()` in 5+ places; scoping them per-profile falls out for free, whereas "shared" would thread a base-vs-profile distinction through relay/preflight/init. Operationally fine (`iro cookies` is re-run per event anyway). The only un-scoped thing is the `active-profile` pointer. If shared cookies are wanted later, that's a small follow-up.
-2. **OBS token rename `__IRO_*__` → `__RACECAST_*__` stays in M5.** The token is just a literal placeholder that `setup-assets.py` resolves; renaming it is cosmetic de-branding, not functional. M3a keeps the tokens and the committed `src/obs/IRO_Endurance.json` as-is; it only changes WHERE setup points the resolved paths (profile runtime) and WHICH sheet id it bakes in (active profile).
+1. **Cookies are shared across leagues** (one machine-level YouTube login), per the spec. The jar lives at the un-scoped `runtime/cookies.txt`; the relay is handed `--cookies <base>/cookies.txt`, and `iro cookies`/`preflight` use the base runtime dir for it. Everything else is profile-scoped. Un-scoped at `runtime/` root: the `active-profile` pointer and `cookies.txt`.
+2. **OBS token rename `__IRO_*__` → `__RACECAST_*__` stays in M5.** The token is a literal placeholder `setup-assets.py` resolves; renaming it is cosmetic de-branding. M3a keeps the tokens and the committed `src/obs/IRO_Endurance.json` as-is; it only changes WHERE setup points the resolved paths (profile runtime) and WHICH sheet id it bakes in (active profile).
 3. **The `iro` → `racecast` binary rename + machine-var renames (`IRO_OBS_WS_PASSWORD`, `IRO_COMPANION_EXE`, `IRO_UI_PORT`) stay in M5.** M3a renames ONLY the four league-config reads that move into the profile: `IRO_SHEET_ID`, `IRO_SHEET_PUSH_URL`, `IRO_INTRO_URL`, `IRO_OUTRO_URL` (+ the dynamic `IRO_{KEY}_URL`).
-4. **The init wizard is M3b.** M3a leaves `init_setup.py`, `_init_env_run`, `REQUIRED_ENV`, and `.env.example` untouched (the env step still gates the legacy `IRO_SHEET_ID` — unused by events after M3a, reconciled in M3b). M3a is otherwise the full event path.
+4. **The init wizard is M3b.** M3a leaves `init_setup.py`, `_init_env_run`, `REQUIRED_ENV`, `.env.example`, and the `_init_*` cookie paths untouched (the env step still gates the legacy `IRO_SHEET_ID` — unused by events after M3a, reconciled in M3b). M3a is otherwise the full event path.
 
 ## File Structure
 
-- **Modify:** `src/iro.py` — profile-scoped `_runtime_dir()` + `_runtime_base_dir()` + `_active_profile_name()`; `_apply_active_profile_env()` in `main()`; `_oneshot_extra()` always points asset output at the profile runtime; `_asset_dirs()` profile-scoped; `profile_cmd` pointer at the base; the 3 league-sheet env reads renamed.
+- **Modify:** `src/iro.py` — profile-scoped `_runtime_dir()` + `_runtime_base_dir()` + `_active_profile_name()`; `_apply_active_profile_env()` in `main()`; `_oneshot_extra()` (asset `--out` at profile runtime, `--runtime-dir` at base); `_asset_dirs()` profile-scoped; `_cookies_path()` + `_relay_runtime_args()` keep cookies shared and the relay pointed right; `profile_cmd` pointer at the base; the league-sheet env reads renamed.
 - **Modify:** `src/relay/iro-feeds.py`, `src/setup-assets.py`, `src/relay/get-graphics.py`, `src/relay/get-media.py`, `src/scripts/preflight.py` — rename the league-config env reads + their user-facing strings to `RACECAST_*` (self-contained scripts; no imports added).
 - **Modify:** `tests/test_iro.py` (+ the rename sweep across `tests/`) — new pure-helper tests + updated env-var names.
 
@@ -60,8 +60,8 @@ Replace it with:
 
 ```python
 def _runtime_base_dir():
-    """The un-scoped machine runtime/ dir. Only the active-profile pointer lives
-    here directly; per-league state lives under _runtime_dir()."""
+    """The un-scoped machine runtime/ dir. The active-profile pointer and the
+    shared cookie jar live here directly; per-league state lives under _runtime_dir()."""
     return _runtime_base(IS_FROZEN, _real_executable(), HERE)
 
 def _profile_runtime(base_runtime, profile_name):
@@ -116,7 +116,7 @@ Expected: `ALL PASS` (includes `ok t_profile_runtime_scoping`).
 
 ```bash
 git add src/iro.py tests/test_iro.py
-git commit -m "feat(cli): profile-scoped runtime dir (pointer stays at base)"
+git commit -m "feat(cli): profile-scoped runtime dir (pointer + cookies stay at base)"
 ```
 
 ---
@@ -393,7 +393,7 @@ Replace with:
 
 Run this to find every remaining LEAGUE-var reference in the tests:
 ```bash
-grep -rn "IRO_SHEET_ID\|IRO_SHEET_PUSH_URL\|IRO_INTRO_URL\|IRO_OUTRO_URL\|IRO_{.*}_URL\|IRO_INTRO\|IRO_OUTRO" tests/
+grep -rn "IRO_SHEET_ID\|IRO_SHEET_PUSH_URL\|IRO_INTRO_URL\|IRO_OUTRO_URL\|IRO_INTRO\|IRO_OUTRO" tests/
 ```
 For EACH hit in the test files, rename the token to its `RACECAST_` equivalent (`IRO_SHEET_ID`→`RACECAST_SHEET_ID`, `IRO_SHEET_PUSH_URL`→`RACECAST_SHEET_PUSH_URL`, `IRO_INTRO_URL`→`RACECAST_INTRO_URL`, `IRO_OUTRO_URL`→`RACECAST_OUTRO_URL`, and any `IRO_{key}_URL` f-string →`RACECAST_{key}_URL`). Do NOT touch `IRO_OBS_WS_PASSWORD`, `IRO_COMPANION_EXE`, or `IRO_UI_PORT` (machine vars, renamed in M5).
 
@@ -401,7 +401,7 @@ Then confirm nothing league-related is left in src/ either:
 ```bash
 grep -rn "IRO_SHEET_ID\|IRO_SHEET_PUSH_URL\|IRO_INTRO_URL\|IRO_OUTRO_URL" src/
 ```
-Expected: no hits (only the machine vars + the `__IRO_*__` OBS tokens, which are NOT these names, remain).
+Expected: no hits (only the machine vars + the `__IRO_*__` OBS tokens, which are different strings, remain).
 
 - [ ] **Step 8: Run the full suite**
 
@@ -417,9 +417,9 @@ git commit -m "feat: read league sheet config from RACECAST_* (CLI-injected from
 
 ---
 
-### Task 4: point the asset one-shots at the profile runtime in every run mode
+### Task 4: point the asset one-shots at the profile runtime, base for cookies/preflight
 
-The asset writers (`graphics`/`media`/`setup`) previously got profile-redirected `--out` only when frozen; in repo mode they used their own `runtime/` defaults. Now the CLI always points them at `runtime/<profile>/`, and the asset-dir probe matches.
+The asset writers (`graphics`/`media`/`setup`) previously got profile-redirected `--out` only when frozen; in repo mode they used their own `runtime/` defaults. Now the CLI always points them at `runtime/<profile>/`; the `--runtime-dir` one-shots (preflight, cookies) get the un-scoped base so the shared cookie jar stays at `runtime/cookies.txt`.
 
 **Files:**
 - Modify: `src/iro.py` (`_oneshot_extra`, `_oneshot_code`, `_asset_dirs`, `_asset_state`)
@@ -430,24 +430,26 @@ The asset writers (`graphics`/`media`/`setup`) previously got profile-redirected
 Append to `tests/test_iro.py`:
 
 ```python
-def t_oneshot_extra_points_assets_at_profile_runtime():
-    rd = os.path.join("R", "iro")
-    assert m._oneshot_extra("graphics", [], rd) == [
+def t_oneshot_extra_paths():
+    rd = os.path.join("R", "iro")   # profile runtime
+    base = "R"                       # base runtime (cookies/preflight)
+    assert m._oneshot_extra("graphics", [], rd, base) == [
         "--out", os.path.join(rd, "graphics")]
-    assert m._oneshot_extra("media", [], rd) == [
+    assert m._oneshot_extra("media", [], rd, base) == [
         "--out", os.path.join(rd, "media")]
-    assert m._oneshot_extra("setup", [], rd) == [
+    assert m._oneshot_extra("setup", [], rd, base) == [
         "--out", os.path.join(rd, "IRO_Endurance.import.json"),
         "--media", os.path.join(rd, "media"),
         "--graphics", os.path.join(rd, "graphics")]
-    assert m._oneshot_extra("cookies", [], rd) == ["--runtime-dir", rd]
-    assert m._oneshot_extra("graphics", ["--out", "X"], rd) == []   # user override respected
+    assert m._oneshot_extra("cookies", [], rd, base) == ["--runtime-dir", base]
+    assert m._oneshot_extra("preflight", [], rd, base) == ["--runtime-dir", base]
+    assert m._oneshot_extra("graphics", ["--out", "X"], rd, base) == []  # user override respected
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `python3 tests/test_iro.py`
-Expected: FAIL — the current `_oneshot_extra` takes 4 args `(command, rest, frozen, runtime_dir)`, so the 3-arg call raises `TypeError`.
+Expected: FAIL — the current `_oneshot_extra(command, rest, frozen, runtime_dir)` binds `frozen=rd`, `runtime_dir=base`, so the asset assertions get the wrong paths (assertion error).
 
 - [ ] **Step 3: Rewrite `_oneshot_extra`**
 
@@ -479,15 +481,16 @@ def _oneshot_extra(command, rest, frozen, runtime_dir):
 Replace it with:
 
 ```python
-def _oneshot_extra(command, rest, runtime_dir):
-    """Extra argv for a one-shot: --runtime-dir where the script supports it (see
-    RUNTIME_DIR_ONESHOTS), and the profile-scoped output locations for the asset
-    writers (--out, plus setup's --media/--graphics — those are baked into the
-    OBS collection as absolute paths, so they must point at THIS profile's
-    runtime dir in every run mode, not just frozen). The user's own --out wins."""
+def _oneshot_extra(command, rest, runtime_dir, base_dir):
+    """Extra argv for a one-shot. The asset writers (graphics/media/setup) get a
+    profile-scoped --out (+ setup's --media/--graphics) so their output lands
+    under runtime/<profile>/ in every run mode -- those are baked into the OBS
+    collection as absolute paths. The machine-level one-shots that take
+    --runtime-dir (preflight, cookies) get the un-scoped BASE runtime, so the
+    shared cookie jar stays at runtime/cookies.txt. The user's own --out wins."""
     extra = []
     if command in RUNTIME_DIR_ONESHOTS:
-        extra += ["--runtime-dir", runtime_dir]
+        extra += ["--runtime-dir", base_dir]
     if "--out" not in rest:
         out = {"graphics": os.path.join(runtime_dir, "graphics"),
                "media": os.path.join(runtime_dir, "media"),
@@ -512,7 +515,7 @@ In `src/iro.py` `_oneshot_code`, find:
 Replace with:
 
 ```python
-    extra = _oneshot_extra(command, rest, _runtime_dir())
+    extra = _oneshot_extra(command, rest, _runtime_dir(), _runtime_base_dir())
 ```
 
 - [ ] **Step 5: Make `_asset_dirs` profile-scoped in every mode**
@@ -559,9 +562,126 @@ Replace with:
 Run: `python3 tests/test_iro.py`
 Expected: `ALL PASS`.
 
-> If `tests/test_iro.py` had a pre-existing `_oneshot_extra(...)` test using the old 4-arg signature, update that call to drop the `frozen`/`IS_FROZEN` argument (now 3 args) and re-run.
+> If `tests/test_iro.py` had a pre-existing `_oneshot_extra(...)` test using the old `(command, rest, frozen, runtime_dir)` signature, update that call to the new `(command, rest, runtime_dir, base_dir)` form and re-run.
 
-- [ ] **Step 7: Run the full gate**
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/iro.py tests/test_iro.py
+git commit -m "feat(cli): asset one-shots use the profile runtime; preflight/cookies the base"
+```
+
+---
+
+### Task 5: keep the YouTube cookie jar shared across leagues
+
+The relay's runtime dir is now profile-scoped, but cookies are a machine-level YouTube login. Hand the relay an explicit `--cookies <base>/cookies.txt`, and read the jar from the base everywhere a cookie-status probe runs.
+
+**Files:**
+- Modify: `src/iro.py` (`_cookies_path`, `_relay_runtime_args`, `_relay_daemon_argv`, `relay_run`, the two cookie-status probes)
+
+- [ ] **Step 1: Add the cookie-path + relay-args helpers**
+
+In `src/iro.py`, find this exact function:
+
+```python
+def _relay_log_path():
+    return os.path.join(_runtime_dir(), "logs", "relay.console.log")
+```
+
+Insert immediately AFTER it:
+
+```python
+def _cookies_path():
+    """The YouTube cookie jar -- SHARED across leagues (a machine-level login),
+    so it lives at the un-scoped runtime/ root, never under a profile dir."""
+    return os.path.join(_runtime_base_dir(), "cookies.txt")
+
+def _relay_runtime_args():
+    """Runtime args every relay invocation gets: its profile-scoped runtime dir
+    plus the shared cookie jar (see _cookies_path). Placed before the caller's
+    rest so an explicit --cookies/--runtime-dir in rest still wins."""
+    return ["--runtime-dir", _runtime_dir(), "--cookies", _cookies_path()]
+```
+
+- [ ] **Step 2: Route both relay launch paths through the helper**
+
+In `src/iro.py`, find this exact function:
+
+```python
+def _relay_daemon_argv(rest, frozen):
+    """Detached relay child: frozen -> the binary re-invokes itself in foreground
+    mode; otherwise python3 runs the script directly (as before)."""
+    if frozen:
+        return [sys.executable, "relay", "run"] + list(rest)
+    return [sys.executable, _relay_script(), "--runtime-dir", _runtime_dir()] + list(rest)
+```
+
+Replace it with:
+
+```python
+def _relay_daemon_argv(rest, frozen):
+    """Detached relay child: frozen -> the binary re-invokes itself in foreground
+    mode (relay_run adds the runtime args there); otherwise python3 runs the
+    script directly with this profile's runtime + the shared cookie jar."""
+    if frozen:
+        return [sys.executable, "relay", "run"] + list(rest)
+    return [sys.executable, _relay_script()] + _relay_runtime_args() + list(rest)
+```
+
+Then find this exact function:
+
+```python
+def relay_run(rest):
+    raise SystemExit(_run_script("relay/iro-feeds.py",
+                                 ["--runtime-dir", _runtime_dir()] + rest))
+```
+
+Replace it with:
+
+```python
+def relay_run(rest):
+    raise SystemExit(_run_script("relay/iro-feeds.py",
+                                 _relay_runtime_args() + rest))
+```
+
+- [ ] **Step 3: Read the cookie jar from the base in the status probes**
+
+In `src/iro.py`, find this exact line (in the event-status assets list):
+
+```python
+    assets = [pf.cookies_status(os.path.join(_runtime_dir(), "cookies.txt"))]
+```
+
+Replace with:
+
+```python
+    assets = [pf.cookies_status(_cookies_path())]
+```
+
+Then find this exact line (in `cookies_status_data`):
+
+```python
+            path = os.path.join(_runtime_dir(), "cookies.txt")
+```
+
+Replace with:
+
+```python
+            path = _cookies_path()
+```
+
+- [ ] **Step 4: Verify the base/profile split without launching the relay**
+
+Run:
+```bash
+python3 src/iro.py profile new ctest >/dev/null && python3 src/iro.py profile use ctest >/dev/null
+python3 -c "import importlib.util; s=importlib.util.spec_from_file_location('iro','src/iro.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print('cookies:', m._cookies_path()); print('relay:', m._relay_runtime_args())"
+rm -rf profiles/ctest runtime/ctest runtime/active-profile
+```
+Expected: `cookies:` ends with `runtime/cookies.txt` (NOT `runtime/ctest/cookies.txt`); `relay:` shows `--runtime-dir .../runtime/ctest --cookies .../runtime/cookies.txt`.
+
+- [ ] **Step 5: Run the full gate**
 
 Run:
 ```bash
@@ -571,16 +691,16 @@ python3 tools/build.py
 ```
 Expected: `ALL TEST FILES PASS`, lint clean, build verify passes.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/iro.py tests/test_iro.py
-git commit -m "feat(cli): point asset one-shots + asset probe at the profile runtime"
+git add src/iro.py
+git commit -m "feat(cli): keep the YouTube cookie jar shared across profiles"
 ```
 
 ---
 
-### Task 5: end-to-end profile-separation smoke test
+### Task 6: end-to-end profile-separation smoke test
 
 **Files:** none modified — this verifies the whole M3a chain.
 
@@ -600,24 +720,25 @@ Run:
 ```bash
 python3 src/iro.py --profile alpha setup
 python3 src/iro.py --profile beta  setup
-echo "--- alpha import contains ALPHASHEET:" ; grep -c ALPHASHEET runtime/alpha/IRO_Endurance.import.json
-echo "--- alpha import contains BETASHEET (should be 0):" ; grep -c BETASHEET runtime/alpha/IRO_Endurance.import.json
-echo "--- beta import contains BETASHEET:" ; grep -c BETASHEET runtime/beta/IRO_Endurance.import.json
+echo "alpha has ALPHASHEET:" ; grep -c ALPHASHEET runtime/alpha/IRO_Endurance.import.json
+echo "alpha has BETASHEET (want 0):" ; grep -c BETASHEET runtime/alpha/IRO_Endurance.import.json
+echo "beta has BETASHEET:" ; grep -c BETASHEET runtime/beta/IRO_Endurance.import.json
 ls -d runtime/alpha runtime/beta
 ```
 Expected:
 - `runtime/alpha/IRO_Endurance.import.json` and `runtime/beta/IRO_Endurance.import.json` both exist (proves profile-scoped `--out` in repo mode).
-- alpha's import contains `ALPHASHEET` (count > 0) and NOT `BETASHEET` (count 0); beta's contains `BETASHEET` — proving the active profile's sheet id flowed end-to-end (profile.env -> RACECAST_SHEET_ID -> setup-assets) and the two leagues are isolated.
+- alpha's import contains `ALPHASHEET` (count > 0) and NOT `BETASHEET` (count 0); beta's contains `BETASHEET` — proving the active profile's sheet id flows end-to-end (profile.env -> RACECAST_SHEET_ID -> setup-assets) and the two leagues are isolated.
 
-- [ ] **Step 3: Confirm the active-profile pointer stayed at the base**
+- [ ] **Step 3: Confirm pointer + cookies stayed at the base**
 
 Run:
 ```bash
 python3 src/iro.py profile use alpha
 test -f runtime/active-profile && echo "pointer at base: OK"
 test ! -e runtime/alpha/active-profile && echo "no pointer under profile dir: OK"
+python3 -c "import importlib.util; s=importlib.util.spec_from_file_location('iro','src/iro.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); p=m._cookies_path(); print('cookies shared:', p.endswith('runtime/cookies.txt') or p.endswith('runtime\\\\cookies.txt'))"
 ```
-Expected: both `OK` lines.
+Expected: `pointer at base: OK`, `no pointer under profile dir: OK`, `cookies shared: True`.
 
 - [ ] **Step 4: Clean up**
 
@@ -628,25 +749,25 @@ git status --short
 ```
 Expected: working tree clean (all created files were gitignored under `profiles/*` and `runtime/`).
 
-- [ ] **Step 5: Final gate + commit (docs only, if anything)**
+- [ ] **Step 5: Final gate**
 
-Run `python3 tools/run-tests.py` once more → `ALL TEST FILES PASS`. No code commit needed for this task (verification only); if the smoke test surfaced a bug, fix it under the relevant earlier task's files and commit there.
+Run `python3 tools/run-tests.py` once more → `ALL TEST FILES PASS`. No code commit for this task (verification only); if the smoke surfaced a bug, fix it under the relevant earlier task's files and commit there.
 
 ---
 
 ## Self-Review
 
 **Spec coverage (M3, the M3a slice):**
-- "runtime/<profile>/ scoping (graphics/media/timer/PID/obs-pages.hash/import json)" → Task 1 (`_runtime_dir` profile-scoped; everything derived from it follows) + Task 4 (asset `--out`). ✅
+- "runtime/<profile>/ scoping (graphics/media/timer/PID/obs-pages.hash/import json)" → Task 1 (`_runtime_dir` profile-scoped; everything derived follows) + Task 4 (asset `--out`). ✅
 - "consumers read SHEET_ID from the active profile" → Task 2 (inject) + Task 3 (rename reads). ✅
 - "setup-assets writes to runtime/<profile>/" → Task 4 (`--out` always profile). ✅
-- "cookies shared" → **deviated** to profile-scoped (Scope Decision 1; flagged to the user). 
-- "token rename __RACECAST_*__" → **deferred to M5** (Scope Decision 2).
-- "profile-aware init wizard" + "OBS collection switch tie-in" → **M3b** (Scope Decision 4).
+- "cookies shared" → Task 5 (shared `runtime/cookies.txt`; relay `--cookies`; preflight/cookies one-shots use base). ✅
+- "token rename __RACECAST_*__" → deferred to M5 (Scope Decision 2).
+- "profile-aware init wizard" + "OBS collection switch tie-in" → M3b (Scope Decision 4).
 
-**Placeholder scan:** the only non-literal step is Task 3 Step 7 (a `grep` rename sweep across tests) — this is a precise, enumerated token list with an explicit exclusion set, not a vague "handle the rest", so it complies.
+**Placeholder scan:** the only non-literal step is Task 3 Step 7 (a `grep` rename sweep across tests) — a precise enumerated token list with an explicit exclusion set, not a vague "handle the rest". Complies.
 
-**Type/name consistency:** `_runtime_base_dir`, `_profile_runtime`, `_active_profile_name`, `_runtime_dir`, `_profile_env_vars`, `_apply_active_profile_env`, `_oneshot_extra` (now 3-arg), `_asset_dirs` (now 0-arg) — names used identically across tasks and at their call sites (`profile_cmd`, `main`, `_oneshot_code`, `_asset_state`). `pcfg` is the iro.py alias for `config` (from M2); `m.pcfg.ResolvedConfig` in the test resolves it. The injected var names (`RACECAST_SHEET_ID`/`_PUSH_URL`/`_INTRO_URL`/`_OUTRO_URL`) match exactly between `_profile_env_vars` (Task 2) and every read renamed in Task 3.
+**Type/name consistency:** `_runtime_base_dir`, `_profile_runtime`, `_active_profile_name`, `_runtime_dir`, `_profile_env_vars`, `_apply_active_profile_env`, `_oneshot_extra` (now `(command, rest, runtime_dir, base_dir)`), `_asset_dirs` (now 0-arg), `_cookies_path`, `_relay_runtime_args` — names used identically across tasks and at their call sites (`profile_cmd`, `main`, `_oneshot_code`, `_asset_state`, `_relay_daemon_argv`, `relay_run`). `pcfg` is the iro.py alias for `config` (M2); `m.pcfg.ResolvedConfig` in the test resolves it. Injected var names (`RACECAST_SHEET_ID`/`_PUSH_URL`/`_INTRO_URL`/`_OUTRO_URL`) match exactly between `_profile_env_vars` (Task 2) and every read renamed in Task 3.
 
 ---
 
@@ -655,5 +776,5 @@ Run `python3 tools/run-tests.py` once more → `ALL TEST FILES PASS`. No code co
 - `python3 tools/run-tests.py` → `ALL TEST FILES PASS`
 - `python3 tools/lint.py` → clean
 - `python3 tools/build.py` → verify passes
-- Smoke test (Task 5) proves two profiles produce isolated, correctly-keyed OBS imports under their own `runtime/<profile>/`.
+- Smoke (Task 6): two profiles produce isolated, correctly-keyed OBS imports under their own `runtime/<profile>/`; pointer + cookies stay at base.
 - Untouched in M3a: `init_setup.py`, `_init_env_run`, `REQUIRED_ENV`, `.env.example`, the `__IRO_*__` OBS tokens, the machine vars (`IRO_OBS_WS_PASSWORD`/`IRO_COMPANION_EXE`/`IRO_UI_PORT`), the `iro` binary name.
