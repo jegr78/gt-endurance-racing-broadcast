@@ -33,7 +33,7 @@ def t_sse_frames():
 
 # ---------- live server ----------
 
-def _ctx(jobs=None, init_plan=None, init_step=None):
+def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
     page = os.path.join(ROOT, "src", "ui", "control-center.html")
     return {"version": "test",
             "page_path": page,
@@ -96,6 +96,7 @@ def _ctx(jobs=None, init_plan=None, init_step=None):
             "init_step": init_step or (lambda key: {"ok": True, "key": key,
                                                     "done": True,
                                                     "skip_reason": None}),
+            "profile_logo": profile_logo or (lambda: None),
             "profiles": lambda: {"ok": True, "active": "iro",
                                  "profiles": [{"name": "iro"}, {"name": "erf"}]},
             "profile_use": lambda name: {"ok": True, "active": name},
@@ -874,6 +875,31 @@ def t_overlay_post_provider_error_is_400():
         code, body = _post_json(port, "/api/overlay",
                                 {"page": "panel", "content": "x"})
         assert code == 400 and "invalid page" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_profile_logo_route_serves_image_with_type():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        svg = os.path.join(td, "logo.svg")
+        with open(svg, "wb") as fh:
+            fh.write(b"<svg/>")
+        httpd, port = _serve(_ctx(profile_logo=lambda: svg))
+        try:
+            with _urlopen(f"http://127.0.0.1:{port}/api/profile/logo") as r:
+                assert r.status == 200
+                assert r.headers.get("Content-Type") == "image/svg+xml"
+                assert r.read() == b"<svg/>"
+        finally:
+            httpd.shutdown()
+
+
+def t_profile_logo_route_404_when_no_logo():
+    httpd, port = _serve(_ctx())            # default profile_logo -> None
+    try:
+        code, _ = _get(port, "/api/profile/logo")
+        assert code == 404
     finally:
         httpd.shutdown()
 
