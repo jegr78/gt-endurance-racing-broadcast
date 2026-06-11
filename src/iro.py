@@ -1927,6 +1927,44 @@ def env_write_data(entries, path=None):
     return _write_env_file(path or _env_file(), entries)
 
 
+def _active_profile_env_strict():
+    """(active_name, profile.env path) for the active profile, or (None, None)
+    when no profile resolves. Distinct from _active_profile_env_path(), which
+    falls back to the machine .env — the Profile editor must never edit .env."""
+    active = _active_profile_name()
+    if not active:
+        return None, None
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    return active, os.path.join(pcfg.profiles_dir(root), active, pcfg.PROFILE_ENV_NAME)
+
+
+def profile_env_entries_data():
+    """The active profile's profile.env as {key,value} entries for the Profile
+    editor. {ok, path, active, entries} or {ok:false, error}. Never raises."""
+    try:
+        active, path = _active_profile_env_strict()
+        if not active:
+            return {"ok": False, "error": "no active profile — create or select one first"}
+        text = ""
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+        entries = [{"key": k, "value": v} for k, v in parse_env_text(text).items()]
+        return {"ok": True, "path": path, "active": active, "entries": entries}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not read profile.env: {exc}"}
+
+
+def profile_env_write_data(entries):
+    """Persist the Profile editor entries to the active profile's profile.env
+    (validate + comment-preserving merge, atomic). {ok,path} or {ok:false,error}.
+    Server resolves the path from the active profile, never a client value."""
+    active, path = _active_profile_env_strict()
+    if not active:
+        return {"ok": False, "error": "no active profile — create or select one first"}
+    return _write_env_file(path, entries)
+
+
 def _streams_config_path():
     return os.path.join(_streams_static_dir(), "streams.json")
 

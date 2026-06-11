@@ -763,6 +763,70 @@ def t_profile_new_data_bad_name_is_error():
         assert d["ok"] is False and d["error"]
 
 
+def t_profile_env_entries_data_reads_active():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        prof = os.path.join(td, "profiles", "iro")
+        os.makedirs(prof)
+        open(os.path.join(td, ".env.example"), "w").close()
+        with open(os.path.join(prof, "profile.env"), "w") as fh:
+            fh.write("# comment\nSHEET_ID=abc\nNAME=IRO\n")
+        os.makedirs(os.path.join(td, "runtime"))
+        with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
+            fh.write("iro\n")
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            d = m.profile_env_entries_data()
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        assert d["ok"] is True and d["active"] == "iro"
+        keys = [e["key"] for e in d["entries"]]
+        assert "SHEET_ID" in keys and "NAME" in keys
+
+
+def t_profile_env_entries_data_no_profile_is_error():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        open(os.path.join(td, ".env.example"), "w").close()
+        os.makedirs(os.path.join(td, "runtime"))
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            d = m.profile_env_entries_data()
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        assert d["ok"] is False and d["error"]
+
+
+def t_profile_env_write_data_persists_to_active():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        prof = os.path.join(td, "profiles", "iro")
+        os.makedirs(prof)
+        open(os.path.join(td, ".env.example"), "w").close()
+        with open(os.path.join(prof, "profile.env"), "w") as fh:
+            fh.write("# keep me\nSHEET_ID=old\n")
+        os.makedirs(os.path.join(td, "runtime"))
+        with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
+            fh.write("iro\n")
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            d = m.profile_env_write_data([{"key": "SHEET_ID", "value": "new"},
+                                          {"key": "OBS_COLLECTION", "value": "GT3"}])
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        assert d["ok"] is True
+        with open(os.path.join(prof, "profile.env")) as fh:
+            text = fh.read()
+        assert "SHEET_ID=new" in text and "OBS_COLLECTION=GT3" in text
+        assert "# keep me" in text
+
+
 def _raises(fn):
     try:
         fn()
