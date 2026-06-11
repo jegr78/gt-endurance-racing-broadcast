@@ -4,12 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A self-contained broadcast-production toolkit for the "IRO Endurance" sim-racing
-championship, run on a producer's machine (Windows, macOS, or Linux). The core is a **relay** that pulls one
-commentator YouTube stream per race stint and serves it to OBS; around it sit an
-OBS scene collection, a Stream Deck (Companion) button config, and operator docs.
-Pure Python + stdlib (no framework, no package manager); external runtime deps are
-`yt-dlp`, `streamlink`, `ffmpeg`, `deno` (installed via brew, not vendored).
+A self-contained broadcast-production toolkit (**GT Endurance Racing Broadcast**) for
+sim-racing endurance leagues, run on a producer's machine (Windows, macOS, or Linux).
+The core is a **relay** that pulls one commentator YouTube stream per race stint and
+serves it to OBS; around it sit an OBS scene collection, a Stream Deck (Companion)
+button config, and operator docs. It is **multi-profile**: one install hosts several
+leagues, each as a `profiles/<name>/` directory (league config + optional per-league
+overlay CSS); the active profile is switchable. Pure Python + stdlib (no framework,
+no package manager); external runtime deps are `yt-dlp`, `streamlink`, `ffmpeg`,
+`deno` (installed via brew, not vendored).
 
 ## Hard rules
 
@@ -48,7 +51,10 @@ python3 tests/test_bind.py           # relay auto dual-bind (localhost + Tailsca
 python3 tests/test_companion.py      # Companion start/stop bind helpers
 python3 tests/test_preflight.py      # preflight classifier unit checks
 python3 tests/test_services.py       # daemon helper (PID/spawn/stop)
-python3 tests/test_iro.py            # iro CLI routing
+python3 tests/test_iro.py            # racecast CLI routing
+python3 tests/test_config.py         # profile/config resolver (machine .env + profile.env, active pointer)
+python3 tests/test_profile.py        # profile admin (list/show/use/new --from)
+python3 tests/test_overlay.py        # per-league overlay overrides (hud/timer CSS + fonts serving)
 python3 tests/test_streams.py       # static-streams helpers (frozen feed spawn)
 python3 tests/test_event.py          # event readiness helpers (probes/launch/assets)
 python3 tests/test_tailscale.py      # Tailscale detection/control helpers
@@ -56,7 +62,7 @@ python3 tests/test_obsws.py          # minimal obs-websocket client (feed releas
 python3 tests/test_installer_common.py  # shared installer helpers (brew bootstrap)
 python3 tests/test_install_tools.py     # install-tools decision helpers
 python3 tests/test_install_apps.py      # install-apps decision helpers
-python3 tests/test_init.py           # iro init wizard logic (plan/skip/gates)
+python3 tests/test_init.py           # racecast init wizard logic (plan/skip/gates)
 python3 tests/test_timer.py          # relay race-timer unit checks
 python3 tests/test_setup.py          # panel sheet-control (webhook payloads, SetupControl, endpoints)
 python3 tests/test_ui_ops.py         # Control Center structured status providers + op registry
@@ -70,38 +76,43 @@ python3 tools/lint.py                # ruff lint (= the CI lint job); --fix auto
 python3 -c "import sys; sys.path.insert(0,'tests'); import test_pov as t; t.t_pov_format_constant()"
 
 # Build the distributable (assembles + self-verifies dist/)
-python3 tools/build.py               # -> dist/IRO_Broadcast_Package/ + .zip
+python3 tools/build.py               # -> dist/GT_Racecast_Package/ + .zip
 # Standalone binary (maintainer; CI builds all three OSes on tags v*)
-python3 tools/build-binary.py        # -> dist/bin/iro (+ smoke test)
+python3 tools/build-binary.py        # -> dist/bin/racecast + dist/bin/racecast-ui (+ smoke test)
 
 # Unified operator CLI (the producer's main entrypoint)
-python3 src/iro.py relay start       # start the relay in the background
-python3 src/iro.py relay stop        # stop it
-python3 src/iro.py relay logs -f     # tail the relay log
-python3 src/iro.py relay run         # foreground/debug mode
-python3 src/iro.py companion start   # bind Companion to Tailscale IP and start it
-python3 src/iro.py companion stop
-python3 src/iro.py streams start     # static/public-stream mode
-python3 src/iro.py streams stop
-python3 src/iro.py status            # aggregate health of all services
-python3 src/iro.py ui                # local Control Center web app (dashboard, service control, logs); port 8089 / IRO_UI_PORT
-python3 src/iro.py event status      # event-day readiness report (apps + services + assets)
-python3 src/iro.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later)
-python3 src/iro.py event stop        # stop iro services; GUI apps keep running
-python3 src/iro.py tailscale up|down|status  # connect/disconnect/inspect Tailscale (event start connects automatically)
-python3 src/iro.py obs refresh       # force-reload the relay-served OBS browser sources (HUD/timer)
-python3 src/iro.py obs collection    # check the active OBS scene collection (add `set` to switch to IRO Endurance)
-python3 src/iro.py init              # guided first-time setup: .env gate, install-tools/-apps, cookies, graphics, media, setup, export companion, preflight — with skip-detection (--browser NAME, --skip-installs, --force)
-python3 src/iro.py update            # self-update the binary from GitHub Releases (--tag TAG installs an exact release; UI previews use this)
-python3 src/iro.py preflight         # hardware/tool check
-python3 src/iro.py cookies firefox   # refresh YouTube cookies before an event (Firefox recommended; Windows Chrome/Edge exports are blocked by app-bound encryption)
-python3 src/iro.py graphics          # download broadcast graphics -> runtime/graphics/
-python3 src/iro.py media             # download Intro/Outro clips -> runtime/media/
-python3 src/iro.py setup --out runtime/IRO_Endurance.import.json   # localize OBS collection
-python3 src/iro.py install-tools     # install yt-dlp/streamlink/ffmpeg/deno (winget/brew/apt; bootstraps brew on macOS); --update also upgrades installed ones (pre-event)
-python3 src/iro.py install-apps      # install OBS/Companion/Tailscale/Discord (winget/brew/apt+official installers); --update upgrades installed ones (Linux: prints per-app guide)
-python3 src/iro.py export companion  # write the Companion button config for import
-python3 src/iro.py --version
+python3 src/racecast.py relay start       # start the relay in the background
+python3 src/racecast.py relay stop        # stop it
+python3 src/racecast.py relay logs -f     # tail the relay log
+python3 src/racecast.py relay run         # foreground/debug mode
+python3 src/racecast.py companion start   # bind Companion to Tailscale IP and start it
+python3 src/racecast.py companion stop
+python3 src/racecast.py streams start     # static/public-stream mode
+python3 src/racecast.py streams stop
+python3 src/racecast.py status            # aggregate health of all services
+python3 src/racecast.py ui                # local Control Center web app (dashboard, service control, logs, profiles, settings); port 8089 / RACECAST_UI_PORT
+python3 src/racecast.py profile list      # list league profiles (profiles/<name>/profile.env)
+python3 src/racecast.py profile show      # show the active profile's resolved league config (add <name> for another)
+python3 src/racecast.py profile use NAME  # switch the active profile (writes runtime/active-profile)
+python3 src/racecast.py profile new NAME  # scaffold a new league profile (--from SRC copies an existing one)
+python3 src/racecast.py --profile NAME <command>  # run ONE command against a non-active profile
+python3 src/racecast.py event status      # event-day readiness report (apps + services + assets)
+python3 src/racecast.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later)
+python3 src/racecast.py event stop        # stop racecast services; GUI apps keep running
+python3 src/racecast.py tailscale up|down|status  # connect/disconnect/inspect Tailscale (event start connects automatically)
+python3 src/racecast.py obs refresh       # force-reload the relay-served OBS browser sources (HUD/timer)
+python3 src/racecast.py obs collection    # check the active OBS scene collection (add `set` to switch to the active profile's collection)
+python3 src/racecast.py init              # guided first-time setup: .env gate, profile select, install-tools/-apps, cookies, graphics, media, setup, export companion, preflight — with skip-detection (--browser NAME, --skip-installs, --force)
+python3 src/racecast.py update            # self-update the binary from GitHub Releases (--tag TAG installs an exact release; UI previews use this)
+python3 src/racecast.py preflight         # hardware/tool check
+python3 src/racecast.py cookies firefox   # refresh YouTube cookies before an event (Firefox recommended; Windows Chrome/Edge exports are blocked by app-bound encryption)
+python3 src/racecast.py graphics          # download broadcast graphics -> runtime/<profile>/graphics/
+python3 src/racecast.py media             # download Intro/Outro clips -> runtime/<profile>/media/
+python3 src/racecast.py setup --out runtime/<profile>/GT_Endurance.import.json   # localize OBS collection
+python3 src/racecast.py install-tools     # install yt-dlp/streamlink/ffmpeg/deno (winget/brew/apt; bootstraps brew on macOS); --update also upgrades installed ones (pre-event)
+python3 src/racecast.py install-apps      # install OBS/Companion/Tailscale/Discord (winget/brew/apt+official installers); --update upgrades installed ones (Linux: prints per-app guide)
+python3 src/racecast.py export companion  # write the Companion button config for import
+python3 src/racecast.py --version
 
 # Fetch any missing HUD country flags from the sheet's Configuration tab
 python3 tools/fetch-flags.py            # adds missing -> src/assets/flags/ (keeps old)
@@ -119,58 +130,109 @@ scripts).
 
 ### Single-source + build
 `src/` is the only source of truth. `tools/build.py` copies it into
-`dist/IRO_Broadcast_Package/` (the artifact handed to other producers), stripping
+`dist/GT_Racecast_Package/` (the artifact handed to other producers), stripping
 the Companion password and renaming the tokenized OBS collection to
-`IRO_Endurance.template.json`. `runtime/` holds machine-local state (cookies, logs,
+`GT_Endurance.template.json`. `runtime/` holds machine-local state (cookies, logs,
 caches, the localized OBS import) and is gitignored. Helpers detect whether they run
 from the repo (`src/...`) or the distributed package and pick paths accordingly —
 see `default_runtime_dir()` (relay/get-cookies) and `state_dir()` (scripts).
 
-### Secrets via `.env` (gitignored, repo root)
-`IRO_SHEET_ID` (Google Sheet driving schedule + HUD) and `IRO_SHEET_PUSH_URL` (optional
-Apps Script webhook that lets the relay write to the Sheet: race-timer state + the panel's HUD/Schedule/POV controls).
-A small bounded `load_dotenv()` — duplicated in
-`src/relay/iro-feeds.py`, `src/setup-assets.py`, `src/relay/get-media.py`, and
-`src/relay/get-graphics.py` — reads a `.env` only from the script dir or the project
-root (marker: `.git`/`.env.example`), never an unrelated parent; real environment
-variables take precedence. `.env.example` is the template.
-Keep the four `load_dotenv` copies in sync if you touch one.
+### Profiles + config (`src/scripts/config.py`) — the multi-profile model
+Config comes from **two layers** and one resolver:
+- **Machine `.env`** (gitignored, repo root or next to the binary; template
+  `.env.example`) holds ONLY machine-local knobs — never league secrets:
+  `RACECAST_OBS_WS_PASSWORD`, `RACECAST_COMPANION_EXE`, `RACECAST_UI_PORT`,
+  `RACECAST_UI_PASSWORD` (reserved/unused), and `RACECAST_PROFILE` (default active
+  profile when no `--profile` is given).
+- **`profiles/<name>/profile.env`** is the **league** — un-prefixed keys `NAME`,
+  `SHEET_ID` (Google Sheet driving schedule + HUD), `SHEET_PUSH_URL` (optional Apps
+  Script webhook that lets the relay write to the Sheet: race-timer state + the
+  panel's HUD/Schedule/POV controls), `INTRO_URL`, `OUTRO_URL`, `LOGO`,
+  `OBS_COLLECTION`. The shipped `profiles/example/` is a template, excluded from the
+  usable-league list. One install hosts several leagues this way.
+
+`src/scripts/config.py` is the resolver: it parses the machine `.env` + the selected
+`profiles/<name>/profile.env`, picks the active profile (precedence: `--profile` >
+`RACECAST_PROFILE` env > `runtime/active-profile` pointer file > the sole profile when
+exactly one exists), and returns a `ResolvedConfig`. The CLI then **injects** the
+active league's values into child processes as **prefixed** env vars
+(`RACECAST_SHEET_ID`, `RACECAST_SHEET_PUSH_URL`, `RACECAST_INTRO_URL`,
+`RACECAST_OUTRO_URL`, `RACECAST_OBS_COLLECTION` — see `_profile_env_vars` /
+`_apply_active_profile_env` in `src/racecast.py`), so the relay and the asset
+downloaders read a flat environment and stay profile-agnostic. `racecast profile
+list|show|use|new [--from]` manages profiles; global `--profile NAME` runs one command
+against a non-active profile.
+
+A small bounded `load_dotenv()` is **duplicated** in the four self-contained scripts
+that can run standalone — `src/relay/racecast-feeds.py`, `src/setup-assets.py`,
+`src/relay/get-media.py`, and `src/relay/get-graphics.py` — reading a `.env` only from
+the script dir or the project root (marker: `.git`/`.env.example`), never an unrelated
+parent; real environment variables take precedence. These deliberately do NOT import
+`config.py` (the relay stays dependency-light), but the canonical loader for everything
+else is `src/scripts/config.py`. Keep the four `load_dotenv` copies in sync if you
+touch one.
+
+### Profile-scoped runtime
+Per-league machine state lives under **`runtime/<profile>/`**: the localized OBS
+import (`GT_Endurance.import.json`), downloaded `graphics/` and `media/`, etc. Shared
+machine state (cookies jar, the active-profile pointer) stays at `runtime/` top level.
+So `racecast graphics` / `media` / `setup` always write into the active profile's
+runtime dir; switching profiles points the CLI at a different one.
 
 ### Two token round-trips (keep paths/secrets out of git)
-- **OBS.** `src/obs/IRO_Endurance.json` stores tokens: `__IRO_GRAPHICS__` (broadcast
-  still-graphics dir), `__IRO_SHEET__` (HUD sheet), `__IRO_MEDIA__` (Intro/Outro clip
-  dir). The race timer is relay-served (`/timer`, fixed loopback URL in the collection —
-  no token); state = Sheet tab `Timer` + `runtime/timer.json`, Director-controlled via
-  `/timer/*` endpoints. **OBS browser sources cache JS aggressively:** after `hud.html`/`timer.html`
-  change, OBS keeps the old page until refreshed. `iro relay start` and
-  `iro event start` do that automatically — a hash gate over the *served* page
-  bytes (`runtime/obs-pages.hash`) triggers obs-websocket `refreshnocache` on
-  every browser source pointing at the relay; `iro obs refresh` forces it. The
-  manual right-click → Refresh remains the fallback when obs-websocket is
-  unreachable. Anything that must survive a reload therefore lives server-side
-  (`runtime/timer.json`, the Sheet), never in page JS. When you edit scenes inside OBS, re-export and fold it back with
-  `tools/tokenize-obs.py exported.json src/obs/IRO_Endurance.json`
-  (regex-tokenizes sheet URLs + image-source basenames). `src/setup-assets.py` does
-  the reverse, injecting real values from `.env` into an importable collection. OBS
-  stores **absolute** paths, so the localized collection must not be moved after
-  import. `src/relay/get-media.py` downloads the Intro/Outro clips (sheet-driven via
-  the Assets tab `Intro Video`/`Outro Video` labels, or `IRO_INTRO_URL`/
-  `IRO_OUTRO_URL` env overrides) into `runtime/media/`; the `Intro`/`Outro` OBS
-  scenes play them looping with audio.
+- **OBS.** `src/obs/GT_Endurance.json` stores tokens: `__RACECAST_GRAPHICS__` (broadcast
+  still-graphics dir) and `__RACECAST_MEDIA__` (Intro/Outro clip dir). The HUD and the
+  race timer are relay-served on the fixed loopback (`127.0.0.1:8088`, no token) — the
+  Sheet URL is no longer embedded in the collection (the relay reads `SHEET_ID` from the
+  active profile). Timer state = Sheet tab `Timer` + `runtime/timer.json`,
+  Director-controlled via `/timer/*` endpoints. **OBS browser sources cache JS
+  aggressively:** after `hud.html`/`timer.html` (or a per-profile overlay CSS) change,
+  OBS keeps the old page until refreshed. `racecast relay start` and
+  `racecast event start` do that automatically — a hash gate over the *served* page
+  bytes (`runtime/obs-pages.hash`, covering `OBS_PAGE_PATHS` = `/hud`, `/timer`,
+  `/hud/override.css`, `/timer/override.css`) triggers obs-websocket `refreshnocache`
+  on every browser source pointing at the relay; `racecast obs refresh` forces it. The
+  manual right-click → Refresh remains the fallback when obs-websocket is unreachable.
+  Anything that must survive a reload therefore lives server-side (`runtime/timer.json`,
+  the Sheet), never in page JS. When you edit scenes inside OBS, re-export and fold it
+  back with `tools/tokenize-obs.py exported.json src/obs/GT_Endurance.json`
+  (regex-tokenizes the graphics/media image-source basenames). `src/setup-assets.py`
+  does the reverse, injecting real values (the active profile's runtime dirs) into an
+  importable collection at `runtime/<profile>/GT_Endurance.import.json`, naming it the
+  league's `OBS_COLLECTION` (default `GT Endurance Racing — <league>`). OBS stores
+  **absolute** paths, so the localized collection must not be moved after import.
+  `src/relay/get-media.py` downloads the Intro/Outro clips (sheet-driven via the Assets
+  tab `Intro Video`/`Outro Video` labels, or `RACECAST_INTRO_URL`/`RACECAST_OUTRO_URL`
+  env overrides) into `runtime/<profile>/media/`; the `Intro`/`Outro` OBS scenes play
+  them looping with audio.
 - **Broadcast graphics are pure-runtime** (same model as the Intro/Outro clips): the
   still-graphics (Overlay, Standings, Schedule, Race/Quali Results, the three weather
   overlays, Standby, …) are **never committed**. `python3 src/relay/get-graphics.py`
-  downloads each one from the Sheet **Assets** tab into `runtime/graphics/<Label>.png`
-  (the Sheet label *is* the filename — no mapping table; YouTube Intro/Outro rows are
-  skipped). They are tokenised `__IRO_GRAPHICS__/<Label>.png` in the collection and
-  resolved by `setup-assets.py` (which warns, never fails, on a missing file → OBS shows
-  black until you run `get-graphics.py`). `src/assets/` therefore now holds **only** the
-  HUD `flags/` + `brands/` logos (still committed, relay-served).
+  downloads each one from the Sheet **Assets** tab into
+  `runtime/<profile>/graphics/<Label>.png` (the Sheet label *is* the filename — no
+  mapping table; YouTube Intro/Outro rows are skipped). They are tokenised
+  `__RACECAST_GRAPHICS__/<Label>.png` in the collection and resolved by
+  `setup-assets.py` (which warns, never fails, on a missing file → OBS shows black until
+  you run `get-graphics.py`). `src/assets/` therefore holds **only** the HUD `flags/` +
+  `brands/` logos (still committed, relay-served).
 - **Companion.** Export the config into the gitignored `incoming/` folder, then
   `tools/strip_companion_pass.py` blanks the WebSocket password and writes
-  `src/companion/iro-buttons.companionconfig`. `build.py` re-strips defensively.
+  `src/companion/racecast-buttons.companionconfig`. `build.py` re-strips defensively.
+- **Per-league overlay (optional).** `profiles/<name>/overlay/{hud,timer}.css` +
+  `overlay/fonts/` restyle the relay-served HUD/timer per league via cascade-wins
+  override CSS — the base `hud.html`/`timer.html` carry a `<link>` to the override last
+  in `<head>`, so a league can recolor/reposition the overlay without forking the page.
+  The relay serves `/hud/override.css`, `/timer/override.css`, and
+  `/overlay/fonts/<file>` (each read per request from the `--overlay-dir`; empty body
+  when the file is absent). The CLI passes `--overlay-dir profiles/<active>/overlay`
+  whenever that dir exists (`_overlay_relay_args` in `src/racecast.py`). The two
+  override.css are part of `OBS_PAGE_PATHS`, so editing them advances the refresh hash
+  and OBS reloads automatically. Editable in the Control Center; the **first** override
+  on a profile whose `overlay/` did not exist when the relay started needs one
+  `racecast relay restart` (the `--overlay-dir` flag is decided at launch), but later
+  edits apply live. Tests: `tests/test_overlay.py`.
 
-### The relay (`src/relay/iro-feeds.py`) — the heart
+### The relay (`src/relay/racecast-feeds.py`) — the heart
 A 2-feed "ping-pong": **Feed A** (port 53001) serves odd stints, **Feed B** (53002)
 even stints; at each handover the off-air feed advances to the next stint's
 commentator stream, so OBS media sources never change URL. A 3rd **POV** feed
@@ -184,7 +246,9 @@ serves that URL to one OBS client. (`curl`-ing the port returns nothing — it s
 single consumer; that is not a failure.)
 
 Control is an **unauthenticated** `ThreadingHTTPServer` on port `8088` exposing GET
-endpoints (`/next`, `/reload`, `/set/A/<n>`, `/pov/reload`, `/timer/*`, `/status`, `/panel`, …)
+endpoints (`/next`, `/reload`, `/set/A/<n>`, `/pov/reload`, `/timer/*`, `/status`,
+`/panel`, plus the served pages `/hud`, `/timer` and the per-league overlay assets
+`/hud/override.css`, `/timer/override.css`, `/overlay/fonts/<file>`, …)
 driven by Companion's Generic-HTTP module. `--bind` defaults to **`auto`** (plug &
 play): it binds `127.0.0.1` (OBS always reaches the HUD/feeds on the fixed loopback
 address — the OBS collection never needs editing) **and** this machine's Tailscale IP
@@ -204,28 +268,36 @@ brand-text column — header `Brand Name`/`Brand Key`/`Brand`, see `BRAND_TEXT_H
 for team→manufacturer), and `/hud/assets/{flags,brands}/<name>`
 serves bundled logos from `src/assets/`. The page polls `/hud/data` (no manual
 reloads); flags/brands resolve from text via `asset_key()`. Flags: `--no-hud`,
-`--overlay-tab`, `--config-tab`, `--hud-poll`. Tests: `tests/test_hud.py`.
+`--overlay-tab`, `--config-tab`, `--hud-poll`, `--overlay-dir` (per-league override
+CSS/fonts, passed by the CLI when `profiles/<active>/overlay` exists). Tests:
+`tests/test_hud.py`.
 
 The panel's **sheet controls** write back through one Apps Script webhook
-(`IRO_SHEET_PUSH_URL`, shared with the race timer — wiki: Sheet-Webhook):
+(`RACECAST_SHEET_PUSH_URL`, injected by the CLI from the active profile's
+`SHEET_PUSH_URL`, shared with the race timer — wiki: Sheet-Webhook):
 Setup fields (Stint label/Streamer/Session/Race Control) are async-optimistic
 (`HudSource` override now, sheet poll confirms, 30 s expiry), Schedule/POV URL
 writes are synchronous; URL changes never auto-reload a feed. Setup "Stint" =
 HUD display label, NOT the feed stint index. `SetupControl` + endpoints
 `/setup/*`, `/schedule/*`, `/pov/set` (POST). Tests: `tests/test_setup.py`.
 
-### Unified `iro` CLI (`src/iro.py`)
-`src/iro.py` is the single shipped entrypoint for operators. It dispatches to:
+### Unified `racecast` CLI (`src/racecast.py`)
+`src/racecast.py` is the single shipped entrypoint for operators. It resolves the
+active profile (via `src/scripts/config.py`) and injects its league values into the
+environment before dispatching to:
 - **`src/scripts/services.py`** — daemon helper for the relay and static-streams: spawns
   subprocesses, writes PID + log files under `runtime/`, and provides start/stop/restart/
-  status/logs for both. `iro relay run` is the foreground/debug mode (no daemon).
-- **Companion adapter** (over `src/scripts/companion_common.py`) — `iro companion
+  status/logs for both. `racecast relay run` is the foreground/debug mode (no daemon).
+- **Companion adapter** (over `src/scripts/companion_common.py`) — `racecast companion
   start/stop/restart/status/logs` wraps the Companion bind logic (Windows + macOS
   automated; Linux manual by design).
-- **One-shot wrappers** — `iro preflight`, `iro cookies`, `iro graphics`, `iro media`,
-  `iro setup` delegate to the corresponding `src/` modules without needing to remember
-  individual script paths.
-- **`iro status`** — aggregate health of relay + companion + streams at a glance.
+- **One-shot wrappers** — `racecast preflight`, `racecast cookies`, `racecast graphics`,
+  `racecast media`, `racecast setup` delegate to the corresponding `src/` modules
+  without needing to remember individual script paths.
+- **`racecast profile list|show|use|new [--from]`** + global `--profile NAME` — manage
+  league profiles (logic in `src/scripts/profile_admin.py` + `config.py`); `use` writes
+  the `runtime/active-profile` pointer.
+- **`racecast status`** — aggregate health of relay + companion + streams at a glance.
 - **`src/scripts/obs_ws.py`** — minimal obs-websocket v5 client (stdlib only). After
   `relay stop`/`streams stop` kill the feeds, `_release_obs_feeds()` re-applies the
   feed media inputs' own settings via `SetInputSettings` — the one request that makes
@@ -233,30 +305,41 @@ HUD display label, NOT the feed stint index. `SetupControl` + endpoints
   ignored for inactive sources). Without it OBS pins the feed ports in FIN_WAIT_1
   until it restarts and preflight warns "port in use". Must run AFTER the kill (a
   rebuild against a live relay would just reconnect). Password auto-discovered from
-  OBS's obs-websocket config.json (`IRO_OBS_WS_PASSWORD` in `.env` overrides). Fully
+  OBS's obs-websocket config.json (`RACECAST_OBS_WS_PASSWORD` in `.env` overrides). Fully
   best-effort: any failure prints one notice and the stop continues.
-  It also exposes a scene-collection check/switch (`GetSceneCollectionList` / `SetCurrentSceneCollection`): `iro obs collection [set]`, a warning during `iro event start`, a line in `iro event status`, and the Control Center's OBS row. Switching is always an explicit producer action — it rebuilds every source — never automatic. The expected name is `EXPECTED_SCENE_COLLECTION`, which mirrors the `name` field of `src/obs/IRO_Endurance.json`.
+  It also exposes a scene-collection check/switch (`GetSceneCollectionList` / `SetCurrentSceneCollection`): `racecast obs collection [set]`, a warning during `racecast event start`, a line in `racecast event status`, and the Control Center's OBS row. Switching is always an explicit producer action — it rebuilds every source — never automatic. The canonical product name is `EXPECTED_SCENE_COLLECTION` (`GT Endurance Racing`), which mirrors the `name` field of `src/obs/GT_Endurance.json`; a localized per-league collection defaults to `GT Endurance Racing — <league>` (`PRODUCT_COLLECTION_PREFIX` + the profile name, unless the profile sets `OBS_COLLECTION`), so several leagues keep separate collections in one OBS. `racecast obs collection set` switches to the active profile's expected name.
+
+### Control Center (`src/racecast_ui.py` + `src/ui/`)
+`racecast ui` serves a local web app (`src/ui/ui_server.py`, port 8089 /
+`RACECAST_UI_PORT`) for dashboard, service control and logs. Two settings surfaces:
+- **Profile view** — switch the active profile, create a new one (new-profile dialog,
+  optionally `--from` an existing one), edit the active league's `profile.env`, edit the
+  per-league **overlay CSS** (`hud.css`/`timer.css`), and download profile-scoped
+  graphics/media. Routes: `/api/profiles`, `/api/profile/{use,new,env}`, `/api/overlay`.
+- **General Settings** — machine-wide knobs: the `.env` editor (`RACECAST_*` vars) and
+  cookie refresh.
 
 `tools/` is maintainer-only (build, tokenize, sync) and is not shipped to producers.
 
 ### Standalone binary (PyInstaller)
-`tools/build-binary.py` freezes `src/iro.py` into one executable per OS; the whole
-`src/` tree ships as bundled data under `sys._MEIPASS/src/`, so here-relative path
-resolution keeps working. In frozen mode (`sys.frozen`), `iro` runs bundled scripts
-**in-process** (importlib + patched argv, string `sys.exit` payloads go to stderr)
-and daemons re-invoke the binary itself (`iro relay run`, hidden `iro streams
-run-feed`) with `PYINSTALLER_RESET_ENVIRONMENT=1` so each child extracts its own
-bundle and outlives the parent. `runtime/` and `.env` live next to the binary —
-keep it in its own folder. `services.py`/`companion_common.py` carry the per-OS
-process control (Windows: ctypes PID probe — `os.kill(pid, 0)` would TERMINATE the
-target there — taskkill/tasklist, Companion.exe discovery + `IRO_COMPANION_EXE`
-override in `.env`; Linux Companion control is manual by design — in WSL/Docker
-setups Companion runs on the host). Releases: merge the standing
-**release-please** Release PR (or push a `v*` tag manually — both work) —
-`.github/workflows/release.yml` tests, builds, smoke-tests and uploads
-`iro-windows.zip` / `iro-macos.tar.gz` / `iro-linux.tar.gz` (each contains the
-`iro` binary + `.env.example`; on first run the frozen binary copies it to `.env` —
-see `ensure_env_file`). release-please tags via GITHUB_TOKEN, which cannot
+`tools/build-binary.py` freezes `src/racecast.py` into the `racecast` executable and
+`src/racecast_ui.py` into the windowed `racecast-ui` (Control Center launcher) — one
+pair per OS; the whole `src/` tree ships as bundled data under `sys._MEIPASS/src/`, so
+here-relative path resolution keeps working. In frozen mode (`sys.frozen`), `racecast`
+runs bundled scripts **in-process** (importlib + patched argv, string `sys.exit`
+payloads go to stderr) and daemons re-invoke the binary itself (`racecast relay run`,
+hidden `racecast streams run-feed`) with `PYINSTALLER_RESET_ENVIRONMENT=1` so each
+child extracts its own bundle and outlives the parent. `runtime/`, `profiles/` and
+`.env` live next to the binary — keep it in its own folder.
+`services.py`/`companion_common.py` carry the per-OS process control (Windows: ctypes
+PID probe — `os.kill(pid, 0)` would TERMINATE the target there — taskkill/tasklist,
+Companion.exe discovery + `RACECAST_COMPANION_EXE` override in `.env`; Linux Companion
+control is manual by design — in WSL/Docker setups Companion runs on the host).
+Releases: merge the standing **release-please** Release PR (or push a `v*` tag manually
+— both work) — `.github/workflows/release.yml` tests, builds, smoke-tests and uploads
+`racecast-windows.zip` / `racecast-macos.tar.gz` / `racecast-linux.tar.gz` (each
+contains the `racecast` binary + `.env.example`; on first run the frozen binary copies
+it to `.env` — see `ensure_env_file`). release-please tags via GITHUB_TOKEN, which cannot
 trigger on-tag workflows, so `release-please.yml` dispatches `release.yml`
 explicitly. `ci.yml` runs the suite on all
 three OSes for every PR. Unsigned binaries: SmartScreen/Gatekeeper show a
@@ -273,7 +356,7 @@ on close.
 `loopstream.py` keeps one streamlink server alive for one public channel; `start-streams.py`
 / `stop-streams.py` manage a set of them with PID/log files under `runtime/static/`. This
 is the fallback for public streams; the real unlisted-stream flow is the relay. Invoke via
-`iro streams start/stop` — `start-streams.py`/`stop-streams.py` are logic modules, not
+`racecast streams start/stop` — `start-streams.py`/`stop-streams.py` are logic modules, not
 the operator entrypoint. `stop-streams.py` validates a PID actually belongs to a feed
 process before killing.
 
@@ -283,11 +366,11 @@ process before killing.
 can open `http://<tailscale-ip>:<port>/tablet` over the tailnet — same plug-&-play model as
 the relay's `--bind auto`, and likewise **not** the LAN. It auto-detects the Tailscale IP
 (Tailscale detection/control lives in `src/scripts/tailscale.py`; its `detect_tailscale_ip` is duplicated in the standalone relay — keep those two in sync), and — only while Companion
-is stopped, with a `.iro-bak` backup — sets `bind_ip` in Companion's `config.json`
+is stopped, with a `.racecast-bak` backup — sets `bind_ip` in Companion's `config.json`
 (`~/Library/Application Support/companion/config.json` on macOS; the GUI launcher reads
 it as `--admin-address`). Windows + macOS automated (Windows: Companion.exe discovery +
-`IRO_COMPANION_EXE` override in `.env`); Linux manual by design — in WSL/Docker setups
-Companion runs on the host. Invoke via `iro companion start/stop`. **Important:**
+`RACECAST_COMPANION_EXE` override in `.env`); Linux manual by design — in WSL/Docker setups
+Companion runs on the host. Invoke via `racecast companion start/stop`. **Important:**
 binding only controls *where* Companion listens — Companion serves `/tablet` and the admin
 GUI on one port + one shared socket API (its admin password is a casual deterrent, not a
 boundary), so isolating the admin from directors is a **Tailscale-ACL** job (restrict who
@@ -298,7 +381,7 @@ unsupported-but-stable; re-check after Companion upgrades.
 
 - `README.md` — operator quickstart (the commands above).
 - `src/docs/` — shipped operator material (`README_SETUP.md`,
-  `IRO_Broadcast_Setup_Guide.md`, printable `IRO_cheat_sheets.html`).
+  `Broadcast_Setup_Guide.md`, printable `cheat_sheets.html`).
 - `src/docs/wiki/` — canonical source for the **GitHub wiki** (split-up onboarding
   pages + Mermaid architecture diagrams). The wiki is generated, never hand-edited on
   GitHub: edit these pages, then `python3 tools/sync-wiki.py` mirrors them to the
