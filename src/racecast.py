@@ -1761,6 +1761,19 @@ def obs_collection_data(get=None):
     return {"ok": True, **status}
 
 
+_LOGO_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg")
+
+
+def servable_logo_path(logo_path):
+    """Return `logo_path` only when it is a web-image file (by extension),
+    else "". Pure extension gate: keeps the /api/profile/logo route from
+    serving a non-image file someone put in LOGO (e.g. profile.env). Existence
+    is validated upstream in config.py (ResolvedConfig.logo_path)."""
+    if logo_path and os.path.splitext(logo_path)[1].lower() in _LOGO_EXTS:
+        return logo_path
+    return ""
+
+
 def profiles_data():
     """Control Center profile switcher data: the effective active profile plus
     every available profile with its display NAME and whether SHEET_ID is set.

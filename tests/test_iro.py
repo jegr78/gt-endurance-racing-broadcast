@@ -1025,6 +1025,13 @@ def t_relay_runtime_args_omits_overlay_when_absent():
     assert m._overlay_relay_args("/no/such/overlay/dir") == []
 
 
+def t_servable_logo_path_allows_web_images_only():
+    for p in ("a/logo.png", "a/logo.JPG", "x.jpeg", "x.webp", "x.gif", "brand.svg"):
+        assert m.servable_logo_path(p) == p          # web image -> passed through
+    for p in ("", "profile.env", "notes.txt", "clip.mp4", "a/logo", "x.PNG.bak"):
+        assert m.servable_logo_path(p) == ""          # not a web image -> blanked
+
+
 def _raises(fn):
     try:
         fn()
