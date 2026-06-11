@@ -129,8 +129,8 @@ def main():
 
 def smoke_ui(binary):
     """The windowed launcher must bind, answer the ping with the Control Center
-    signature, run a job through the sibling `iro` binary, and quit. No --version
-    check: a windowed Windows build has no stdout. The sibling `iro` lives next
+    signature, run a job through the sibling `racecast` binary, and quit. No --version
+    check: a windowed Windows build has no stdout. The sibling `racecast` lives next
     to this binary in dist/bin/, so the job spawn exercises _iro_job_executable."""
     import json
     import time
