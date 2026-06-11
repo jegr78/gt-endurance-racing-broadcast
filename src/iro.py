@@ -374,10 +374,11 @@ def _run_script(rel, args):
 
 def _relay_daemon_argv(rest, frozen):
     """Detached relay child: frozen -> the binary re-invokes itself in foreground
-    mode; otherwise python3 runs the script directly (as before)."""
+    mode (relay_run adds the runtime args there); otherwise python3 runs the
+    script directly with this profile's runtime + the shared cookie jar."""
     if frozen:
         return [sys.executable, "relay", "run"] + list(rest)
-    return [sys.executable, _relay_script(), "--runtime-dir", _runtime_dir()] + list(rest)
+    return [sys.executable, _relay_script()] + _relay_runtime_args() + list(rest)
 
 def _oneshot_extra(command, rest, runtime_dir, base_dir):
     """Extra argv for a one-shot. The asset writers (graphics/media/setup) get a
@@ -409,6 +410,17 @@ def _relay_pid_path():
 
 def _relay_log_path():
     return os.path.join(_runtime_dir(), "logs", "relay.console.log")
+
+def _cookies_path():
+    """The YouTube cookie jar -- SHARED across leagues (a machine-level login),
+    so it lives at the un-scoped runtime/ root, never under a profile dir."""
+    return os.path.join(_runtime_base_dir(), "cookies.txt")
+
+def _relay_runtime_args():
+    """Runtime args every relay invocation gets: its profile-scoped runtime dir
+    plus the shared cookie jar (see _cookies_path). Placed before the caller's
+    rest so an explicit --cookies/--runtime-dir in rest still wins."""
+    return ["--runtime-dir", _runtime_dir(), "--cookies", _cookies_path()]
 
 RELAY_PORT = 8088
 
@@ -809,7 +821,7 @@ def relay_logs(rest):
 
 def relay_run(rest):
     raise SystemExit(_run_script("relay/iro-feeds.py",
-                                 ["--runtime-dir", _runtime_dir()] + rest))
+                                 _relay_runtime_args() + rest))
 
 
 def _companion():
@@ -1143,7 +1155,7 @@ def _event_sections(ev, pf):
     except Exception as exc:
         services.append(ev.Result(ev.WARN, "Companion", f"check failed: {exc}"))
     # Assets — a broken probe must never traceback the report (spec: error behaviour).
-    assets = [pf.cookies_status(os.path.join(_runtime_dir(), "cookies.txt"))]
+    assets = [pf.cookies_status(_cookies_path())]
     try:
         g_dir, m_dir, missing_g, missing_m = _asset_state(ev)
         assets += [ev.classify_assets("Graphics", missing_g, ev.local_count(g_dir),
@@ -1545,7 +1557,7 @@ def cookies_status_data(status=None):
     try:
         if status is None:
             pf = _event_modules()[1]
-            path = os.path.join(_runtime_dir(), "cookies.txt")
+            path = _cookies_path()
 
             def status():
                 return pf.cookies_status(path)
