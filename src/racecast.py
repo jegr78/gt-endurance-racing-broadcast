@@ -454,16 +454,35 @@ def _cookies_path():
     so it lives at the un-scoped runtime/ root, never under a profile dir."""
     return os.path.join(_runtime_base_dir(), "cookies.txt")
 
+def _active_overlay_dir():
+    """profiles/<active>/overlay for the active profile, or None when no profile
+    resolves. (Does not check existence — callers decide.)"""
+    active = _active_profile_name()
+    if not active:
+        return None
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    return os.path.join(pcfg.profiles_dir(root), active, "overlay")
+
+def _overlay_relay_args(overlay_dir):
+    """['--overlay-dir', DIR] when DIR exists, else [] (pure for tests)."""
+    if overlay_dir and os.path.isdir(overlay_dir):
+        return ["--overlay-dir", overlay_dir]
+    return []
+
 def _relay_runtime_args():
     """Runtime args every relay invocation gets: its profile-scoped runtime dir
-    plus the shared cookie jar (see _cookies_path). Placed before the caller's
-    rest so an explicit --cookies/--runtime-dir in rest still wins."""
-    return ["--runtime-dir", _runtime_dir(), "--cookies", _cookies_path()]
+    plus the shared cookie jar (see _cookies_path), and --overlay-dir when the
+    active profile ships an overlay/ dir. Placed before the caller's rest so an
+    explicit flag in rest still wins."""
+    return (["--runtime-dir", _runtime_dir(), "--cookies", _cookies_path()]
+            + _overlay_relay_args(_active_overlay_dir()))
 
 RELAY_PORT = 8088
 
 # The relay-served pages OBS renders as browser sources (panel is tablet-only).
-OBS_PAGE_PATHS = ("/hud", "/timer")
+# The two override.css are hashed too, so a per-profile CSS edit advances the
+# staleness gate and triggers an OBS browser-source refresh.
+OBS_PAGE_PATHS = ("/hud", "/timer", "/hud/override.css", "/timer/override.css")
 
 
 def _fetch_relay_page(path):

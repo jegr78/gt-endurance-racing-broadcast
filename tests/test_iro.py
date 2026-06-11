@@ -558,8 +558,9 @@ def t_refresh_decision():
 
 def t_served_pages_hash_concatenates_in_order():
     import hashlib
-    pages = {"/hud": b"HUD", "/timer": b"TIMER"}
-    expected = hashlib.sha256(b"HUDTIMER").hexdigest()
+    pages = {"/hud": b"HUD", "/timer": b"TIMER",
+             "/hud/override.css": b"HC", "/timer/override.css": b"TC"}
+    expected = hashlib.sha256(b"HUDTIMERHCTC").hexdigest()
     assert m.served_pages_hash(fetch=lambda p: pages[p]) == expected
 
 
@@ -842,6 +843,22 @@ def t_profile_env_write_data_no_profile_is_error():
         assert d["ok"] is False and d["error"]
         # the machine .env must never be touched when no profile is active
         assert not os.path.exists(os.path.join(td, ".env"))
+
+
+def t_obs_page_paths_include_overrides():
+    assert m.OBS_PAGE_PATHS == ("/hud", "/timer", "/hud/override.css", "/timer/override.css")
+
+
+def t_relay_runtime_args_adds_overlay_when_dir_exists():
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as tmp:
+        od = os.path.join(tmp, "overlay"); os.makedirs(od)
+        assert m._overlay_relay_args(od) == ["--overlay-dir", od]
+
+
+def t_relay_runtime_args_omits_overlay_when_absent():
+    assert m._overlay_relay_args(None) == []
+    assert m._overlay_relay_args("/no/such/overlay/dir") == []
 
 
 def _raises(fn):
