@@ -468,18 +468,21 @@ def reflect_feed_state(live, do_cut, scene=STINT_SCENE, sources=None,
         session.close()
 
 
-def get_scene_collection(host="127.0.0.1", port=None, password=None, timeout=2.0):
+def get_scene_collection(host="127.0.0.1", port=None, password=None, timeout=2.0,
+                         expected=EXPECTED_SCENE_COLLECTION):
     """Ask OBS which scene collection is active and classify it against
-    EXPECTED_SCENE_COLLECTION. Returns (status_dict, note); (None, reason) on any
-    failure — OBS closed, wrong password, protocol surprise — NEVER an exception
-    (same best-effort contract as release_feed_inputs/refresh_browser_inputs)."""
+    `expected` (default EXPECTED_SCENE_COLLECTION). Returns (status_dict, note);
+    (None, reason) on any failure — OBS closed, wrong password, protocol
+    surprise — NEVER an exception (same best-effort contract as
+    release_feed_inputs/refresh_browser_inputs)."""
     session, note = _connect(host, port, password, timeout)
     if session is None:
         return None, note
     try:
         resp = session.request("GetSceneCollectionList", {})
         status = scene_collection_status(resp.get("currentSceneCollectionName"),
-                                         resp.get("sceneCollections", []))
+                                         resp.get("sceneCollections", []),
+                                         expected=expected)
         return status, ""
     except Exception as exc:                         # noqa: BLE001 — best-effort contract
         return None, str(exc) or exc.__class__.__name__

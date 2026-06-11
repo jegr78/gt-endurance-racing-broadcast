@@ -471,6 +471,18 @@ def t_get_scene_collection_reads_current_and_list():
     srv.close()
 
 
+def t_get_scene_collection_honors_custom_expected():
+    state = {"released": [], "current_collection": "ERF Endurance",
+             "collections": ["ERF Endurance", "IRO Endurance"]}
+    port, srv = _start_fake_obs(state)
+    status, note = m.get_scene_collection(port=port, password="supersecret",
+                                          timeout=5, expected="ERF Endurance")
+    assert note == "", note
+    assert status["expected"] == "ERF Endurance"
+    assert status["match"] is True          # would be False against the default
+    srv.close()
+
+
 def t_get_scene_collection_unreachable_is_quiet():
     sock = socket.socket(); sock.bind(("127.0.0.1", 0))
     free_port = sock.getsockname()[1]; sock.close()
