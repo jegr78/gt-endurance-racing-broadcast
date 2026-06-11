@@ -647,7 +647,8 @@ def t_app_control_ops_route():
 
 def t_init_plan_data_shape_and_safety():
     steps = [
-        {"key": "env", "label": ".env", "done": lambda: "IRO_SHEET_ID set"},
+        {"key": "profile", "label": "profile (league)",
+         "done": lambda: "profile 'iro' ready"},
         {"key": "cookies", "label": "cookies", "done": lambda: None},
         {"key": "preflight", "label": "preflight", "done": lambda: None},
     ]
@@ -655,8 +656,8 @@ def t_init_plan_data_shape_and_safety():
                              next_steps=["import the OBS collection"])
     assert out["ok"] is True
     by_key = {s["key"]: s for s in out["steps"]}
-    assert by_key["env"]["done"] is True
-    assert by_key["env"]["kind"] == "gate"
+    assert by_key["profile"]["done"] is True
+    assert by_key["profile"]["kind"] == "gate"
     assert by_key["cookies"]["done"] is False
     assert by_key["cookies"]["op"] == "cookies"
     # browser is interpolated into the instruction

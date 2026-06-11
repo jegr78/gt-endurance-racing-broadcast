@@ -8,13 +8,12 @@ one-shots; it owns no install/download logic.
 Spec: docs/superpowers/specs/2026-06-06-iro-init-design.md.
 Tests: tests/test_init.py."""
 
-REQUIRED_ENV = ("IRO_SHEET_ID",)
-
-STEP_ORDER = ("env", "install-tools", "install-apps", "cookies", "graphics",
-              "media", "setup", "export-companion", "preflight")
+STEP_ORDER = ("profile", "env", "install-tools", "install-apps", "cookies",
+              "graphics", "media", "setup", "export-companion", "preflight")
 INSTALL_STEPS = ("install-tools", "install-apps")
 STEP_LABELS = {
-    "env": ".env",
+    "profile": "profile (league)",
+    "env": ".env (machine)",
     "install-tools": "install-tools",
     "install-apps": "install-apps",
     "cookies": "cookies",
@@ -36,9 +35,10 @@ STEP_LABELS = {
 # "instruction" (optional) is the operator-facing text shown before the step;
 # "{browser}" is substituted by the wizard for the cookies step.
 STEP_KINDS = {
-    "env": {"kind": "gate", "op": None,
-            "instruction": "Open Settings and set IRO_SHEET_ID in .env "
-                           "(IRO_SHEET_PUSH_URL is optional). Then re-check."},
+    "profile": {"kind": "gate", "op": None,
+                "instruction": "Create or select a league profile and set its "
+                               "SHEET_ID (profiles/<name>/profile.env). Then re-check."},
+    "env": {"kind": "action", "op": None},
     "install-tools": {"kind": "job", "op": "install-tools"},
     "install-apps": {"kind": "job", "op": "install-apps"},
     "cookies": {"kind": "job", "op": "cookies",

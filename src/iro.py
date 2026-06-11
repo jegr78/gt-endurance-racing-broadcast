@@ -2086,30 +2086,77 @@ def _read_env_file():
     except OSError:
         return {}
 
-def _init_env_state():
-    """os.environ merged over the .env file (real environment wins) — the
-    mapping env_done() judges."""
-    env = dict(_read_env_file())
-    env.update(os.environ)
-    return env
-
 def _init_pause(message):
     ins.gate_pause(message, sys.stdin.isatty())
 
+def _active_sheet_id(root, base, active):
+    """The active profile's SHEET_ID, or '' if no profile / unresolvable."""
+    if not active:
+        return ""
+    try:
+        return pcfg.resolve_config(root, override=active,
+                                   runtime_root=base).sheet_id
+    except pcfg.ProfileError:
+        return ""
+
+
+def _active_profile_env_path():
+    """profiles/<active>/profile.env for the active profile (falls back to the
+    machine .env when no profile is active)."""
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    active = _active_profile_name()
+    if not active:
+        return _env_file()
+    return os.path.join(pcfg.profiles_dir(root), active, pcfg.PROFILE_ENV_NAME)
+
+
+def _init_profile_done():
+    """Wizard done-probe for the profile step."""
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    base = _runtime_base_dir()
+    active = _active_profile_name()
+    return ins.profile_done(active, _active_sheet_id(root, base, active))
+
+
+def _init_profile_run():
+    """Ensure a league profile is active with its SHEET_ID filled. Creates one
+    from the example template (prompting for a name) when none exists, pauses
+    until SHEET_ID is set, then re-injects the profile's config for the steps
+    that follow (graphics/media/setup)."""
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    base = _runtime_base_dir()
+    if not pcfg.list_profiles(root):
+        name = ins.prompt_value(
+            "Name your league profile (e.g. iro, erf)", sys.stdin.isatty())
+        try:
+            pa.create_profile(root, name)
+            pa.set_active_profile(root, base, name)
+        except ValueError as e:
+            sys.exit(f"iro: {e}")
+        print(f"  created profile '{name}' (profiles/{name}/profile.env)")
+    while True:
+        active = _active_profile_name()
+        if active is None:
+            _init_pause("Select a league profile: run `iro profile use <name>`")
+            continue
+        if _active_sheet_id(root, base, active):
+            break
+        path = os.path.join(pcfg.profiles_dir(root), active, pcfg.PROFILE_ENV_NAME)
+        _init_pause(f"Fill in SHEET_ID in {path} (SHEET_PUSH_URL is optional)")
+    _apply_active_profile_env()
+    return 0
+
+
 def _init_env_run():
-    """The .env step has no script to run — its work IS the gate: make sure
-    the file exists (copy the template once, any run mode), then pause until
-    the operator filled in the required values."""
+    """Machine .env: create it from the template if missing (optional machine
+    vars + the default profile). No gate -- league config lives in the profile."""
     path = _env_file()
     example = os.path.join(os.path.dirname(path), ".env.example")
     if not os.path.exists(path) and os.path.exists(example):
         shutil.copyfile(example, path)
         print(f"  created {path} from .env.example")
-    while ins.env_done(_init_env_state()) is None:
-        _init_pause(f"Fill in IRO_SHEET_ID in {path} (IRO_SHEET_PUSH_URL is "
-                    "optional — see the Sheet-Webhook wiki page)")
     for key, val in _read_env_file().items():
-        os.environ.setdefault(key, val)   # downstream probes + children see them
+        os.environ.setdefault(key, val)
     return 0
 
 def _init_cookies_run(browser):
@@ -2161,7 +2208,10 @@ def _init_steps(opts):
         res = pf.cookies_status(cookies_path)
         return ins.cookies_done(res.level, res.detail)
     by_key = {
-        "env": {"done": lambda: ins.env_done(_init_env_state()),
+        "profile": {"done": _init_profile_done,
+                    "run": _init_profile_run},
+        "env": {"done": lambda: ".env present"
+                if os.path.exists(_env_file()) else None,
                 "run": _init_env_run},
         "install-tools": {"done": lambda: ins.tools_done(shutil.which,
                                                          pf.REQUIRED_TOOLS),
@@ -2183,9 +2233,9 @@ def _init_steps(opts):
         # start. So frozen compares against .env alone.
         "setup": {"done": lambda: ins.setup_done(
                       _mtime(_init_import_json()),
-                      [_mtime(_env_file())] if IS_FROZEN else
+                      [_mtime(_active_profile_env_path())] if IS_FROZEN else
                       [_mtime(resource_path("obs/IRO_Endurance.json")),
-                       _mtime(_env_file())]),
+                       _mtime(_active_profile_env_path())]),
                   "run": lambda: _oneshot_code("setup",
                                                ["--out", _init_import_json()])},
         "export-companion": {"done": lambda: ins.export_done(
@@ -2222,16 +2272,22 @@ def init_plan_data(steps, kinds, browser="firefox", next_steps=None):
 
 
 def init_step_action_data(key):
-    """Run one non-job wizard step in-process and report its new state. Only the
-    '.env' gate and 'export-companion' action are UI-driven here; job steps run
-    through /api/op/<op>. Never raises — returns {ok: False, error} instead."""
+    """Run one non-job wizard step in-process and report its new state.
+    Handled here: 'profile' gate (re-probes the active profile's SHEET_ID),
+    'env' action (creates .env from template if missing), and
+    'export-companion' action. Job steps run through /api/op/<op>.
+    Never raises -- returns {ok: False, error} instead."""
     try:
+        if key == "profile":
+            reason = _init_profile_done()
+            return {"ok": True, "key": key, "done": reason is not None,
+                    "skip_reason": reason}
         if key == "env":
             path = _env_file()
             example = os.path.join(os.path.dirname(path), ".env.example")
             if not os.path.exists(path) and os.path.exists(example):
                 shutil.copyfile(example, path)
-            reason = ins.env_done(_init_env_state())
+            reason = ".env present" if os.path.exists(path) else None
             return {"ok": True, "key": key, "done": reason is not None,
                     "skip_reason": reason}
         if key == "export-companion":

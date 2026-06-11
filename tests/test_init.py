@@ -39,15 +39,15 @@ def t_parse_unknown_raises():
 # ------------------------------------------------------------------ step plan
 
 def t_plan_full_order():
-    assert m.build_plan() == ["env", "install-tools", "install-apps", "cookies",
-                              "graphics", "media", "setup", "export-companion",
-                              "preflight"]
+    assert m.build_plan() == ["profile", "env", "install-tools", "install-apps",
+                              "cookies", "graphics", "media", "setup",
+                              "export-companion", "preflight"]
 
 
 def t_plan_skip_installs():
     plan = m.build_plan(skip_installs=True)
     assert "install-tools" not in plan and "install-apps" not in plan
-    assert plan[0] == "env" and plan[-1] == "preflight" and len(plan) == 7
+    assert plan[0] == "profile" and plan[-1] == "preflight" and len(plan) == 8
 
 
 def t_every_step_has_a_label():
@@ -69,7 +69,9 @@ def t_step_kinds_jobs_name_a_real_op():
     assert jobs["cookies"]["op"] == "cookies"
     assert jobs["preflight"]["op"] == "preflight"
     # gate/action steps have no op
-    assert m.STEP_KINDS["env"]["kind"] == "gate"
+    assert m.STEP_KINDS["profile"]["kind"] == "gate"
+    assert m.STEP_KINDS["profile"].get("op") is None
+    assert m.STEP_KINDS["env"]["kind"] == "action"
     assert m.STEP_KINDS["env"].get("op") is None
     assert m.STEP_KINDS["export-companion"]["kind"] == "action"
 
