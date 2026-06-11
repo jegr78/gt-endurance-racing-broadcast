@@ -17,7 +17,9 @@ flowchart LR
 ## One-click bring-up
 
 On the event day, open the **[Control Center](Control-Center)** (double-click
-`iro-ui`) and press **Start event** on the **Home** dashboard.
+`racecast-ui`), confirm the **active league profile** in the sidebar (switch in the
+**Profile** view if you run several leagues), and press **Start event** on the **Home**
+dashboard.
 
 ![The Control Center Home dashboard](images/cc-home.png)
 
@@ -28,7 +30,7 @@ the matching view.
 
 > **Page updates:** starting the event re-loads the HUD/timer browser sources
 > automatically when an update changed them. If a page ever looks stale,
-> `iro obs refresh` (or right-click the source → Refresh) forces it.
+> `racecast obs refresh` (or right-click the source → Refresh) forces it.
 
 After the broadcast, press **Stop event** — it stops the relay and Companion;
 OBS, Discord and Tailscale stay running. If OBS is still open, the stop also asks
@@ -37,42 +39,46 @@ otherwise OBS would pin the feed ports until it restarts and the next preflight
 would warn "port in use". The feed sources reconnect automatically the next time
 their scene goes active.
 
-> **CLI alternative:** `iro event start` (bring-up), `iro event status`
+> **CLI alternative:** `racecast event start` (bring-up), `racecast event status`
 > (readiness report — names the exact fix command for anything missing),
-> `iro event stop` (wind-down).
+> `racecast event stop` (wind-down). All act on the active league profile; run one
+> against another league with `racecast --profile <name> event …`.
 
 ## Before you go live
 
 Plan **about 30 minutes** for these steps before the broadcast slot. Do them from
 the Control Center; the CLI alternative is in italics.
 
-1. **Update the tool.** The Control Center flags an available update in the
+1. **Pick the league.** Confirm the active league in the sidebar; if this machine
+   serves several leagues, switch in the **Profile** view. Every following step acts
+   on the active league. *CLI: `racecast profile use <name>`.*
+2. **Update the tool.** The Control Center flags an available update in the
    sidebar. Apply it (skip if the team froze the version for the event).
-   *CLI: `iro update`.*
-2. **Reboot** the PC (frees memory) and close heavy apps.
-3. **Tools → Update all.** Outdated tools are the #1 cause of a feed not starting.
-   *CLI: `iro install-tools --update`* (manual: `brew upgrade streamlink yt-dlp` on
+   *CLI: `racecast update`.*
+3. **Reboot** the PC (frees memory) and close heavy apps.
+4. **Tools → Update all.** Outdated tools are the #1 cause of a feed not starting.
+   *CLI: `racecast install-tools --update`* (manual: `brew upgrade streamlink yt-dlp` on
    macOS/Linux · `winget upgrade yt-dlp.yt-dlp Streamlink.Streamlink` on Windows).
-4. **Assets → Cookies → Refresh** (pick the browser; log into YouTube in it first).
-   *CLI: `iro cookies firefox`.*
-5. **Refresh the intro/outro clips** (only if their URLs changed): **Assets →
-   Media → Download** — pulls the URLs from the Sheet **Assets** tab into
-   `runtime/media/intro.mp4` / `outro.mp4`. *CLI: `iro media`.*
-6. **Refresh the graphics:** **Assets → Graphics → Download** — pulls every graphic
-   from the Sheet **Assets** tab into `runtime/graphics/` (Standings, Schedule,
-   Race/Quali Results, the three weather overlays, Standby, …). Run it whenever the
-   sheet graphics changed. The **weather** graphics are then available as full-screen
-   toggles during the race (see [Director guide](Director)). *CLI: `iro graphics`.*
-7. **Preflight → Run** — fix anything it flags. *CLI: `iro preflight`.*
-8. **Home → Start event** brings up Tailscale, Discord, the relay, OBS and
+5. **Assets → Cookies → Refresh** (pick the browser; log into YouTube in it first).
+   *CLI: `racecast cookies firefox`.*
+6. **Refresh the intro/outro clips** (only if their URLs changed): **Assets →
+   Media → Download** — pulls the URLs from the Sheet **Assets** tab into the active
+   profile's `runtime/<profile>/media/intro.mp4` / `outro.mp4`. *CLI: `racecast media`.*
+7. **Refresh the graphics:** **Assets → Graphics → Download** — pulls every graphic
+   from the Sheet **Assets** tab into the active profile's `runtime/<profile>/graphics/`
+   (Standings, Schedule, Race/Quali Results, the three weather overlays, Standby, …). Run
+   it whenever the sheet graphics changed. The **weather** graphics are then available as
+   full-screen toggles during the race (see [Director guide](Director)). *CLI: `racecast graphics`.*
+8. **Preflight → Run** — fix anything it flags. *CLI: `racecast preflight`.*
+9. **Home → Start event** brings up Tailscale, Discord, the relay, OBS and
    Companion in one go. If Tailscale's backend is stopped, this connects it
    automatically — no click in the Tailscale GUI needed. (Or start them individually
    from **Relay** and **Apps**.) Confirm each live feed shows up in OBS. *CLI:
-   `iro event start`, or `iro relay start` then `iro companion start`.*
-9. On the **Home** dashboard, make sure **Companion** is connected and a director
+   `racecast event start`, or `racecast relay start` then `racecast companion start`.*
+10. On the **Home** dashboard, make sure **Companion** is connected and a director
    can reach `http://<producer-tailscale-ip>:8000/tablet` (first-time directors:
    [Director setup](Director-Setup)).
-10. **Enter the IRO stream key** in OBS (**Settings → Stream**).
+11. **Enter the league's stream key** in OBS (**Settings → Stream**).
 
 ## Go live
 
@@ -89,7 +95,7 @@ the **Start Streaming** button now reads **Stop Streaming**.
 
 Directors without a Stream Deck — or anyone on a tablet — can drive the same
 show from the **director panel** the relay serves at
-`http://<producer-tailscale-ip>:8088/panel` (`iro event start` prints both
+`http://<producer-tailscale-ip>:8088/panel` (`racecast event start` prints both
 director URLs ready to forward; first-time directors:
 [Director setup](Director-Setup)).
 
@@ -165,7 +171,7 @@ Which feed carries which stint may therefore differ between the parts — that
 is fine.
 
 1. Incoming producer: on the Control Center **Home**, type the stint into the
-   field next to **Start event** and press it (*CLI: `iro event start --stint <N>`*).
+   field next to **Start event** and press it (*CLI: `racecast event start --stint <N>`*).
    N is the stint **on air right now** (1-based, from the schedule sheet / Discord).
    The **outgoing producer's** panel status strip (or their `/status`) shows the
    stint each feed carries and which is on air — anyone with that panel open can
@@ -174,10 +180,10 @@ is fine.
 2. Verify Feed A shows the expected commentator (`/status` or the OBS
    preview).
 3. Start your OBS stream with this part's stream key — the overlap begins.
-4. Share your panel/tablet URLs with the directors (`iro event start` prints
+4. Share your panel/tablet URLs with the directors (`racecast event start` prints
    them — just forward).
 5. Outgoing producer: stop the stream (the YouTube redirect takes over), then
-   `iro event stop`.
+   `racecast event stop`.
 
 Typo, or forgot `--stint`? Fix it **before going live**:
 `http://127.0.0.1:8088/set/stint/<N>` repositions both feeds. Like the other

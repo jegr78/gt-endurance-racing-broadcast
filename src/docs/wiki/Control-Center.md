@@ -3,34 +3,34 @@
 The **Control Center** is a local web app that runs the whole producer station —
 first-time setup, event-day bring-up, service control, logs — from your browser,
 no terminal needed. It is the recommended way to drive the station. Everything it
-does is also available as an `iro …` command (shown as a *CLI alternative*
+does is also available as a `racecast …` command (shown as a *CLI alternative*
 throughout the operator guides), so the terminal stays a first-class option for
 Linux, scripting, and remote sessions.
 
-It is shipped in the same release archive as the CLI: alongside the `iro` binary
-you get **`iro-ui`**, the Control Center launcher.
+It is shipped in the same release archive as the CLI: alongside the `racecast` binary
+you get **`racecast-ui`**, the Control Center launcher.
 
 ## Launch it
 
 | Platform | How |
 |---|---|
-| **Windows** | Double-click **`iro-ui.exe`**. |
-| **macOS** | Double-click **`iro-ui.app`**. |
-| **Linux** | Run `./iro-ui` (or `./iro ui`) — most Linux desktops don't launch a plain binary on double-click. |
+| **Windows** | Double-click **`racecast-ui.exe`**. |
+| **macOS** | Double-click **`racecast-ui.app`**. |
+| **Linux** | Run `./racecast-ui` (or `./racecast ui`) — most Linux desktops don't launch a plain binary on double-click. |
 
-It opens your default browser at `http://127.0.0.1:8089/`. Keep `iro-ui` in the
-same folder as `iro` and your `.env` — the two binaries sit side by side and
-share the `runtime/` folder next to them.
+It opens your default browser at `http://127.0.0.1:8089/`. Keep `racecast-ui` in the
+same folder as `racecast`, your `.env` and `profiles/` — the two binaries sit side by
+side and share the `runtime/` folder next to them.
 
 - **Already running?** Launching again just reopens the browser — there is only
   ever one Control Center per machine.
 - **Closing the tab** leaves it running in the background. Use the **Quit**
   button (bottom-left) to stop the server. Stopping the Control Center does *not*
   stop the relay, Companion, or streams — those are independent and keep running.
-- **Port busy?** Set `IRO_UI_PORT` in `.env` to a free port and relaunch.
+- **Port busy?** Set `RACECAST_UI_PORT` in `.env` to a free port and relaunch.
 
-> **CLI alternative:** `iro ui` runs the same server in a terminal (add
-> `--no-browser` to skip opening a tab). `iro ui` and `iro-ui` are interchangeable.
+> **CLI alternative:** `racecast ui` runs the same server in a terminal (add
+> `--no-browser` to skip opening a tab). `racecast ui` and `racecast-ui` are interchangeable.
 
 ## Security — keep it local
 
@@ -53,10 +53,11 @@ The dashboard. At a glance: how many core services are up, the state of Tailscal
 Discord, OBS, the relay, Companion and the static streams, the race-timer state,
 and tiles for Preflight / Assets / Cookies readiness. **Start event** brings the
 station up (optional stint number for a mid-event takeover); **Stop event** winds
-the `iro` services down. From here you also open the Director panel and copy the
-director/tablet links.
+the `racecast` services down. The sidebar also shows the **active league profile**
+(click it to jump to the Profile view). From here you also open the Director panel
+and copy the director/tablet links.
 
-> **CLI alternative:** `iro status`, `iro event start [--stint N]`, `iro event stop`.
+> **CLI alternative:** `racecast status`, `racecast event start [--stint N]`, `racecast event stop`.
 
 ### Setup
 
@@ -64,13 +65,15 @@ director/tablet links.
 
 The first-time-setup **wizard**. It detects what is already done and marks each
 step `done` or `pending`, with a running "*X of N complete*" summary. Run the
-pending steps in order — installs, YouTube cookies, broadcast graphics, intro/
-outro media, the OBS scene collection, the Companion config — each streams its
+pending steps in order — creating/selecting a league profile, installs, YouTube
+cookies, broadcast graphics, intro/outro media, the OBS scene collection, the
+Companion config — each streams its
 output in the Console. **Re-check all** re-reads the state (e.g. after you fill in
-`.env`). The closing **Manual next steps** list covers the imports no script can
-do (importing the OBS collection and Companion config, signing in to Tailscale).
+the active profile's `SHEET_ID`). The closing **Manual next steps** list covers the
+imports no script can do (importing the OBS collection and Companion config, signing in
+to Tailscale).
 
-> **CLI alternative:** `iro init` runs the same steps in the terminal.
+> **CLI alternative:** `racecast init` runs the same steps in the terminal.
 
 ### Preflight
 
@@ -81,7 +84,7 @@ line tools (`yt-dlp`, `streamlink`, `ffmpeg`, `deno`) with versions; and the fou
 apps (OBS, Companion, Tailscale, Discord). Each line is `PASS` / `WARN` / `INFO` /
 `FAIL`. **Run** re-checks.
 
-> **CLI alternative:** `iro preflight`.
+> **CLI alternative:** `racecast preflight`.
 
 ### Apps & Tools
 
@@ -93,45 +96,64 @@ Tailscale and Discord. **Tools** does the same for the command-line tools
 
 ![Control Center — Tools](images/cc-tools.png)
 
-> **CLI alternative:** `iro install-apps`, `iro install-tools` (add `--update` to
-> upgrade), `iro app launch|quit obs|discord|tailscale`.
+> **CLI alternative:** `racecast install-apps`, `racecast install-tools` (add `--update` to
+> upgrade), `racecast app launch|quit obs|discord|tailscale`.
 
 ### Relay & Static Streams
 
 ![Control Center — Relay](images/cc-relay.png)
 
 **Relay** starts / stops / restarts the commentator-feed relay (the normal mode)
-and shows its live status. It reads its schedule and HUD data from the Google
-Sheet; there are no local relay knobs — ports and bind mode use safe defaults.
+and shows its live status. It reads its schedule and HUD data from the **active
+profile's** Google Sheet, and applies that profile's overlay CSS; there are no local
+relay knobs — ports and bind mode use safe defaults.
 
 ![Control Center — Static Streams](images/cc-streams.png)
 
 **Static Streams** is the **fallback** for plain public channels when the relay
 mode can't be used. Edit the channel/port list here and start/stop the set.
 
-> **CLI alternative:** `iro relay start|stop|restart|status|logs`,
-> `iro streams start|stop`.
+> **CLI alternative:** `racecast relay start|stop|restart|status|logs`,
+> `racecast streams start|stop`.
 
-### Assets
+### Profile
 
 ![Control Center — Assets](images/cc-assets.png)
 
-The broadcast graphics, intro/outro media and YouTube cookies. Thumbnails show
-which graphics are present; **Download** fetches them from the Sheet's Assets tab;
-**Check vs sheet** compares what's on disk against what the Sheet lists. The
-cookies row shows freshness and re-exports with **Refresh**.
+Everything that belongs to a **league**, gathered in one view:
 
-> **CLI alternative:** `iro graphics`, `iro media`, `iro cookies <browser>`.
+- **Active profile** — a switcher to change the active league (every other view then
+  acts on it), and a **New profile** dialog that copies an existing profile (e.g.
+  `example`) into a new one.
+- **`profile.env` editor** — the active league's config (Sheet ID, push URL,
+  intro/outro, logo, and the OBS scene-collection name `OBS_COLLECTION`). Secret values
+  are **masked** — click the eye to reveal one. Changes apply the next time you (re)start
+  the relay.
+- **Overlay CSS** — per-profile CSS for the relay-served **HUD** and **Timer** pages
+  (`profiles/<active>/overlay/`). **Save** writes the file; **Apply in OBS** reloads the
+  browser sources (same as `obs refresh`). The first override on a profile that had no
+  `overlay/` yet needs one `racecast relay restart` to activate; later edits apply live.
+- **Assets** — the active profile's broadcast graphics and intro/outro media. Thumbnails
+  show which graphics are present; **Download** fetches them from the Sheet's Assets tab;
+  **Check vs sheet** compares what's on disk against what the Sheet lists.
 
-### Settings
+> **CLI alternative:** `racecast profile list|show|use|new`, `racecast graphics`,
+> `racecast media`. Edit `profiles/<name>/profile.env` and
+> `profiles/<name>/overlay/{hud,timer}.css` in any text editor.
+
+### General Settings
 
 ![Control Center — Settings (.env)](images/cc-settings.png)
 
-A safe editor for the local `.env` (this machine only). Secret values are
-**masked** — click the eye to reveal one. Comments in the file are preserved.
-Changes apply the next time you (re)start the affected service.
+Machine-wide (not league) configuration:
 
-> **CLI alternative:** edit `.env` in any text editor.
+- A safe editor for the local `.env` (this machine only — OBS-WebSocket password,
+  Control Center port, the Windows Companion path). Secret values are **masked** — click
+  the eye to reveal one. Comments in the file are preserved. Changes apply the next time
+  you (re)start the affected service.
+- **YouTube cookies** — freshness status, re-exported with **Refresh** (pick the browser).
+
+> **CLI alternative:** edit `.env` in any text editor; `racecast cookies <browser>`.
 
 ### Logs
 
@@ -141,7 +163,7 @@ Live tail of the relay, Companion and static-stream logs — pick a source from 
 dropdown. The example above shows the relay reporting it couldn't reach its Google
 Sheet (a misconfigured-sheet state).
 
-> **CLI alternative:** `iro relay logs -f` (and `companion` / `streams`).
+> **CLI alternative:** `racecast relay logs -f` (and `companion` / `streams`).
 
 ### Help & Docs
 
@@ -160,5 +182,5 @@ links to the always-current pages on this wiki.
 ---
 
 > This page is generated from `src/docs/wiki/` in the
-> [main repository](https://github.com/jegr78/IRO_Broadcast_Setup) — don't edit it
+> [main repository](https://github.com/jegr78/gt-endurance-racing-broadcast) — don't edit it
 > here by hand. See [Build & maintenance](Build-and-maintenance).
