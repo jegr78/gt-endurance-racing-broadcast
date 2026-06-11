@@ -827,6 +827,23 @@ def t_profile_env_write_data_persists_to_active():
         assert "# keep me" in text
 
 
+def t_profile_env_write_data_no_profile_is_error():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        open(os.path.join(td, ".env.example"), "w").close()
+        os.makedirs(os.path.join(td, "runtime"))
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            d = m.profile_env_write_data([{"key": "SHEET_ID", "value": "x"}])
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        assert d["ok"] is False and d["error"]
+        # the machine .env must never be touched when no profile is active
+        assert not os.path.exists(os.path.join(td, ".env"))
+
+
 def _raises(fn):
     try:
         fn()
