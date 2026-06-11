@@ -44,8 +44,8 @@ def t_media_dir_repo():
 
 
 def t_media_dir_pkg():
-    got = m.media_dir(os.path.join("/x/IRO_Broadcast_Package", "relay"))
-    assert got == os.path.join("/x/IRO_Broadcast_Package", "media"), got
+    got = m.media_dir(os.path.join("/x/GT_Racecast_Package", "relay"))
+    assert got == os.path.join("/x/GT_Racecast_Package", "media"), got
 
 
 def t_resolve_priority_cli_then_env():

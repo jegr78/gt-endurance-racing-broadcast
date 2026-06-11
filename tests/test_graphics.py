@@ -62,8 +62,8 @@ def t_graphics_dir_repo():
 
 
 def t_graphics_dir_pkg():
-    got = m.graphics_dir(os.path.join("/x/IRO_Broadcast_Package", "relay"))
-    assert got == os.path.join("/x/IRO_Broadcast_Package", "graphics"), got
+    got = m.graphics_dir(os.path.join("/x/GT_Racecast_Package", "relay"))
+    assert got == os.path.join("/x/GT_Racecast_Package", "graphics"), got
 
 
 if __name__ == "__main__":

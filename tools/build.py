@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build the distributable from src/ (single source of truth).
-Produces dist/IRO_Broadcast_Package/ + dist/IRO_Broadcast_Package.zip.
+Produces dist/GT_Racecast_Package/ + dist/GT_Racecast_Package.zip.
 Usage: python3 tools/build.py
 """
 import json, os, re, shutil, subprocess, sys, zipfile
@@ -8,7 +8,7 @@ import json, os, re, shutil, subprocess, sys, zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src")
 DIST = os.path.join(ROOT, "dist")
-PKG = os.path.join(DIST, "IRO_Broadcast_Package")
+PKG = os.path.join(DIST, "GT_Racecast_Package")
 
 
 def blank_pass(o):
@@ -96,7 +96,7 @@ def main():
                 shutil.rmtree(os.path.join(root, d)); dirs.remove(d)
 
     # zip
-    zip_path = os.path.join(DIST, "IRO_Broadcast_Package.zip")
+    zip_path = os.path.join(DIST, "GT_Racecast_Package.zip")
     if os.path.exists(zip_path):
         os.remove(zip_path)
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
