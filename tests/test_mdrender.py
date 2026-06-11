@@ -33,6 +33,20 @@ def t_links():
     assert '<a href="https://example/wiki" target="_blank" rel="noopener">the wiki</a>' in h
 
 
+def t_autolink_angle_brackets():
+    # The bundled operator docs link via <https://...> (Markdown autolinks), which
+    # must become a clickable anchor — not show the literal &lt;...&gt; text (#48).
+    h = md.render("Open <https://example.com/wiki/Run-an-event> now.")
+    assert ('<a href="https://example.com/wiki/Run-an-event" target="_blank" '
+            'rel="noopener">https://example.com/wiki/Run-an-event</a>') in h
+    assert "&lt;https" not in h and "&gt;" not in h
+
+
+def t_autolink_mailto():
+    h = md.render("Mail <mailto:crew@example.com> please.")
+    assert '<a href="mailto:crew@example.com"' in h
+
+
 def t_link_javascript_scheme_dropped():
     # Untrusted input (e.g. a release note) must not yield a javascript: anchor.
     h = md.render("[click](javascript:alert(1))")
@@ -117,6 +131,8 @@ def t_renders_real_docs_without_crashing():
             h = md.render(fh.read())
         assert "<h1>" in h and "<li>" in h
         assert "\x00" not in h                             # all code placeholders restored
+        assert '<a href="https://' in h                    # wiki autolinks are clickable (#48)
+        assert "&lt;https" not in h                        # not shown as literal <https...>
 
 
 if __name__ == "__main__":

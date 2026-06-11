@@ -32,6 +32,17 @@ def _link(m):
     return f'<a href="{href}" target="_blank" rel="noopener">{m.group(1)}</a>'
 
 
+def _autolink(m):
+    """Markdown autolink <url>: the URL is both the target and the link text. By
+    this point '<'/'>' are already escaped to &lt;/&gt; (group 1 is the inner URL,
+    still HTML-escaped)."""
+    url = m.group(1)
+    href = _safe_href(url)
+    if not href:                                 # unsafe scheme -> leave as written
+        return m.group(0)
+    return f'<a href="{href}" target="_blank" rel="noopener">{url}</a>'
+
+
 def _inline(s):
     """Inline formatting for one line of text (already plain Markdown)."""
     s = html.escape(s, quote=False)
@@ -43,6 +54,7 @@ def _inline(s):
 
     s = re.sub(r"`([^`]+)`", stash, s)                       # protect inline code
     s = re.sub(r"!?\[([^\]]+)\]\(([^)\s]+)\)", _link, s)      # links (images -> link)
+    s = re.sub(r"&lt;((?:https?://|mailto:)[^\s]+?)&gt;", _autolink, s)  # <url> autolinks
     s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
     s = re.sub(r"__(.+?)__", r"<strong>\1</strong>", s)
     s = re.sub(r"\*([^*\n]+)\*", r"<em>\1</em>", s)          # only *italic* (not _ -> snake_case safe)
