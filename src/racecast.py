@@ -1984,6 +1984,56 @@ def profile_env_write_data(entries):
     return _write_env_file(path, entries)
 
 
+def _active_profile_overlay_path(page):
+    """(active, abs path to overlay/<page>.css) for the active profile, or
+    (None, None) when no profile resolves or `page` is not an overlay page.
+    Server-resolved; never a client path. Mirrors _active_profile_env_strict."""
+    if page not in ("hud", "timer"):
+        return None, None
+    active = _active_profile_name()
+    if not active:
+        return None, None
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    od = os.path.join(pcfg.profiles_dir(root), active, "overlay")
+    return active, os.path.join(od, f"{page}.css")
+
+
+def overlay_read_data(page):
+    """The active profile's overlay/<page>.css text for the editor.
+    {ok, page, active, css, path} or {ok:false, error}. Never raises."""
+    try:
+        active, path = _active_profile_overlay_path(page)
+        if not active:
+            return {"ok": False, "error": "no active profile or invalid page"}
+        css = ""
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
+                css = fh.read()
+        return {"ok": True, "page": page, "active": active, "css": css, "path": path}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not read overlay css: {exc}"}
+
+
+def overlay_write_data(page, content):
+    """Persist editor content to the active profile's overlay/<page>.css
+    (creates overlay/ if needed, atomic tmp+replace). {ok,path} or
+    {ok:false,error}. Server resolves the path, never a client value."""
+    try:
+        active, path = _active_profile_overlay_path(page)
+        if not active:
+            return {"ok": False, "error": "no active profile or invalid page"}
+        if not isinstance(content, str):
+            return {"ok": False, "error": "content must be a string"}
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.replace(tmp, path)
+        return {"ok": True, "path": path}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not write overlay css: {exc}"}
+
+
 def _streams_config_path():
     return os.path.join(_streams_static_dir(), "streams.json")
 
@@ -2566,6 +2616,8 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "profile_new": profile_new_data,
         "profile_env_read": profile_env_entries_data,
         "profile_env_write": profile_env_write_data,
+        "overlay_read": overlay_read_data,
+        "overlay_write": overlay_write_data,
         "jobs": jobs_mod.JobManager(
             lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN,
                                              _iro_job_executable(),

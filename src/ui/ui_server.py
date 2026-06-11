@@ -287,6 +287,15 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"could not read profile .env: {exc}"},
                                       code=500)
+            if path == "/api/overlay":
+                try:
+                    page = (parse_qs(urlparse(self.path).query or "").get(
+                        "page") or ["hud"])[0]
+                    return self._json(ctx["overlay_read"](page))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not read overlay css: {exc}"},
+                                      code=500)
             if path == "/api/init/plan":
                 browser = parse_qs(urlparse(self.path).query or "").get(
                     "browser", ["firefox"])[0]
@@ -376,6 +385,18 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"could not write profile .env: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/overlay":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["overlay_write"](body.get("page"), body.get("content"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not write overlay css: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
             if path.startswith("/api/init/step/"):

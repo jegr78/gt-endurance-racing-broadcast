@@ -853,6 +853,85 @@ def t_profile_env_write_data_no_profile_is_error():
         assert not os.path.exists(os.path.join(td, ".env"))
 
 
+def t_overlay_read_absent_ok_empty():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        prof = os.path.join(td, "profiles", "iro")
+        os.makedirs(prof)
+        open(os.path.join(prof, "profile.env"), "w").close()
+        open(os.path.join(td, ".env.example"), "w").close()
+        os.makedirs(os.path.join(td, "runtime"))
+        with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
+            fh.write("iro\n")
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            d = m.overlay_read_data("hud")
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        assert d["ok"] is True and d["css"] == "" and d["page"] == "hud"
+
+
+def t_overlay_write_then_read_roundtrip():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        prof = os.path.join(td, "profiles", "iro")
+        os.makedirs(prof)
+        open(os.path.join(prof, "profile.env"), "w").close()
+        open(os.path.join(td, ".env.example"), "w").close()
+        os.makedirs(os.path.join(td, "runtime"))
+        with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
+            fh.write("iro\n")
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            w = m.overlay_write_data("hud", "#stint{left:5px}")
+            d = m.overlay_read_data("hud")
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        assert w["ok"] is True
+        assert d["ok"] is True and d["css"] == "#stint{left:5px}"
+        on_disk = os.path.join(td, "profiles", "iro", "overlay", "hud.css")
+        assert os.path.exists(on_disk)
+
+
+def t_overlay_rejects_unknown_page():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        prof = os.path.join(td, "profiles", "iro")
+        os.makedirs(prof)
+        open(os.path.join(prof, "profile.env"), "w").close()
+        open(os.path.join(td, ".env.example"), "w").close()
+        os.makedirs(os.path.join(td, "runtime"))
+        with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
+            fh.write("iro\n")
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            assert m.overlay_write_data("panel", "x")["ok"] is False
+            assert m.overlay_read_data("../etc")["ok"] is False
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+
+
+def t_overlay_no_profile_is_error():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        open(os.path.join(td, ".env.example"), "w").close()
+        os.makedirs(os.path.join(td, "runtime"))
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            assert m.overlay_read_data("hud")["ok"] is False
+            assert m.overlay_write_data("hud", "x")["ok"] is False
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+
+
 def t_obs_page_paths_include_overrides():
     assert m.OBS_PAGE_PATHS == ("/hud", "/timer", "/hud/override.css", "/timer/override.css")
 

@@ -105,7 +105,12 @@ def _ctx(jobs=None, init_plan=None, init_step=None):
                                          "entries": [{"key": "K", "value": "v"}]},
             "profile_env_write": lambda entries: {"ok": True,
                                                   "path": "/x/profile.env",
-                                                  "_got": entries}}
+                                                  "_got": entries},
+            "overlay_read": lambda page: {"ok": True, "page": page,
+                                          "active": "iro", "css": "",
+                                          "path": "/x/overlay/%s.css" % page},
+            "overlay_write": lambda page, content: {"ok": True,
+                                                    "path": "/x/overlay/%s.css" % page}}
 
 
 def _serve(ctx):
@@ -740,6 +745,64 @@ def t_profile_env_post_passes_entries():
                                 {"entries": [{"key": "A", "value": "1"}]})
         assert code == 200 and json.loads(body)["ok"] is True
         assert seen == [[{"key": "A", "value": "1"}]]
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_get_route_wraps_provider():
+    seen = []
+    ctx = _ctx()
+    ctx["overlay_read"] = lambda page: seen.append(page) or {
+        "ok": True, "page": page, "active": "iro",
+        "css": "#x{}", "path": "/x/overlay/%s.css" % page}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/overlay?page=hud")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["page"] == "hud" and data["css"] == "#x{}"
+        assert seen == ["hud"]
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_get_route_defaults_to_hud():
+    seen = []
+    ctx = _ctx()
+    ctx["overlay_read"] = lambda page: seen.append(page) or {
+        "ok": True, "page": page, "active": "iro", "css": "", "path": "/x"}
+    httpd, port = _serve(ctx)
+    try:
+        code, _b = _get(port, "/api/overlay")
+        assert code == 200 and seen == ["hud"]
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_post_passes_page_and_content():
+    seen = []
+    ctx = _ctx()
+    ctx["overlay_write"] = lambda page, content: seen.append((page, content)) or {
+        "ok": True, "path": "/x/overlay/%s.css" % page}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/overlay",
+                                {"page": "timer", "content": "#t{}"})
+        assert code == 200 and json.loads(body)["ok"] is True
+        assert seen == [("timer", "#t{}")]
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_post_provider_error_is_400():
+    ctx = _ctx()
+    ctx["overlay_write"] = lambda page, content: {"ok": False,
+                                                  "error": "no active profile or invalid page"}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/overlay",
+                                {"page": "panel", "content": "x"})
+        assert code == 400 and "invalid page" in json.loads(body)["error"]
     finally:
         httpd.shutdown()
 
