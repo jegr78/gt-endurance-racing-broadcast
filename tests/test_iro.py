@@ -180,7 +180,7 @@ def t_ensure_env_file_creates_once():
 def t_cleanup_old_binary():
     import tempfile
     with tempfile.TemporaryDirectory() as d:
-        old = os.path.join(d, "iro-old.exe")
+        old = os.path.join(d, "racecast-old.exe")
         with open(old, "wb") as fh:
             fh.write(b"x")
         # only frozen windows cleans up

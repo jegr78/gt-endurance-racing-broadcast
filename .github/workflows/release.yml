@@ -24,23 +24,23 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            asset: iro-windows.zip
-            built: dist/bin/iro.exe
-            binary: iro.exe
-            built_ui: dist/bin/iro-ui.exe
-            binary_ui: iro-ui.exe
+            asset: racecast-windows.zip
+            built: dist/bin/racecast.exe
+            binary: racecast.exe
+            built_ui: dist/bin/racecast-ui.exe
+            binary_ui: racecast-ui.exe
           - os: macos-latest
-            asset: iro-macos.tar.gz
-            built: dist/bin/iro
-            binary: iro
-            built_ui: dist/bin/iro-ui.app
-            binary_ui: iro-ui.app
+            asset: racecast-macos.tar.gz
+            built: dist/bin/racecast
+            binary: racecast
+            built_ui: dist/bin/racecast-ui.app
+            binary_ui: racecast-ui.app
           - os: ubuntu-latest
-            asset: iro-linux.tar.gz
-            built: dist/bin/iro
-            binary: iro
-            built_ui: dist/bin/iro-ui
-            binary_ui: iro-ui
+            asset: racecast-linux.tar.gz
+            built: dist/bin/racecast
+            binary: racecast
+            built_ui: dist/bin/racecast-ui
+            binary_ui: racecast-ui
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6

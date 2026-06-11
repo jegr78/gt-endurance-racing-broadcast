@@ -439,9 +439,9 @@ def _release(tag, with_asset=True):
     """A GitHub latest-release payload shaped like update.classify expects."""
     rel = {"tag_name": tag, "assets": []}
     if with_asset:
-        rel["assets"] = [{"name": "iro-windows.zip", "browser_download_url": "u"},
-                         {"name": "iro-macos.tar.gz", "browser_download_url": "u"},
-                         {"name": "iro-linux.tar.gz", "browser_download_url": "u"}]
+        rel["assets"] = [{"name": "racecast-windows.zip", "browser_download_url": "u"},
+                         {"name": "racecast-macos.tar.gz", "browser_download_url": "u"},
+                         {"name": "racecast-linux.tar.gz", "browser_download_url": "u"}]
     return rel
 
 
@@ -480,7 +480,7 @@ def t_update_check_offline_is_not_ok():
 
 def t_update_check_includes_release_notes():
     rel = {"tag_name": "v9.9.9", "body": "## What's new\n- stuff",
-           "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/m"}]}
+           "assets": [{"name": "racecast-macos.tar.gz", "browser_download_url": "https://x/m"}]}
     d = iro.update_check_data(fetch=lambda: rel, current="v1.0.0", platform="darwin")
     assert d["ok"] and d["notes"] == "## What's new\n- stuff"
     # notes_html is the rendered (and HTML-escaped) form for the dialog
@@ -491,7 +491,7 @@ def t_update_check_includes_release_notes():
 def t_update_check_notes_html_is_xss_safe():
     rel = {"tag_name": "v9.9.9",
            "body": "[x](javascript:alert(1)) <script>alert(2)</script>",
-           "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/m"}]}
+           "assets": [{"name": "racecast-macos.tar.gz", "browser_download_url": "https://x/m"}]}
     d = iro.update_check_data(fetch=lambda: rel, current="v1.0.0", platform="darwin")
     assert "javascript:" not in d["notes_html"]
     assert "<script>" not in d["notes_html"]
@@ -500,7 +500,7 @@ def t_update_check_notes_html_is_xss_safe():
 def t_preview_list_data_renders_notes_html():
     releases = [{"tag_name": "preview-pr-7", "prerelease": True, "name": "P7",
                  "target_commitish": "abc1234", "body": "**bold**",
-                 "assets": [{"name": "iro-macos.tar.gz",
+                 "assets": [{"name": "racecast-macos.tar.gz",
                              "browser_download_url": "https://x/p7"}]}]
     d = iro.preview_list_data(fetch=lambda: releases, platform="darwin")
     assert "<strong>bold</strong>" in d["previews"][0]["notes_html"]
@@ -511,7 +511,7 @@ def t_preview_list_data_ok():
         {"tag_name": "v1.0.0", "prerelease": False, "assets": []},
         {"tag_name": "preview-pr-7", "prerelease": True, "name": "Preview: PR #7",
          "target_commitish": "abc1234", "published_at": "2026-06-10T00:00:00Z",
-         "body": "n", "assets": [{"name": "iro-macos.tar.gz",
+         "body": "n", "assets": [{"name": "racecast-macos.tar.gz",
                                   "browser_download_url": "https://x/p7"}]},
     ]
     d = iro.preview_list_data(fetch=lambda: releases, platform="darwin")

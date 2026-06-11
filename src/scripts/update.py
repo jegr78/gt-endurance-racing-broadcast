@@ -23,10 +23,10 @@ def parse_version(tag):
 def asset_name(platform):
     """The release asset for a sys.platform value (mirrors release.yml's matrix)."""
     if platform.startswith("win"):
-        return "iro-windows.zip"
+        return "racecast-windows.zip"
     if platform == "darwin":
-        return "iro-macos.tar.gz"
-    return "iro-linux.tar.gz"
+        return "racecast-macos.tar.gz"
+    return "racecast-linux.tar.gz"
 
 
 def _find_asset_url(release, platform):
@@ -48,7 +48,7 @@ def _is_hex_sha(s, lo=7, hi=40):
 def _get_json(url, opener=None):
     """GET `url` and parse JSON. `opener(request, timeout)` is injectable for tests.
     Shared by fetch_latest / fetch_release_by_tag / fetch_releases."""
-    req = urllib.request.Request(url, headers={"User-Agent": "iro-update"})
+    req = urllib.request.Request(url, headers={"User-Agent": "racecast-update"})
     opener = urllib.request.urlopen if opener is None else opener
     resp = opener(req, timeout=15)
     try:
@@ -151,7 +151,7 @@ def swap_plan(platform, exe, new):
     tests run on macOS/Linux (os.path.dirname can't split C:\\ paths there)."""
     if platform.startswith("win"):
         import ntpath
-        old = ntpath.join(ntpath.dirname(exe), "iro-old.exe")
+        old = ntpath.join(ntpath.dirname(exe), "racecast-old.exe")
         return [("rename", exe, old), ("move", new, exe)]
     return [("replace", new, exe), ("chmod", exe)]
 
@@ -172,7 +172,7 @@ def fetch_latest(opener=None):
 
 def download(url, dst, opener=None):
     """Fetch `url` to file path `dst` (HTTPS, cert-verified)."""
-    req = urllib.request.Request(url, headers={"User-Agent": "iro-update"})
+    req = urllib.request.Request(url, headers={"User-Agent": "racecast-update"})
     opener = urllib.request.urlopen if opener is None else opener
     resp = opener(req, timeout=120)
     try:
@@ -186,7 +186,7 @@ def download(url, dst, opener=None):
 
 def extract_binary(archive, dest_dir):
     """Extract the archive (zip or tar.gz) into dest_dir with the safe_member
-    guard and return the path of the contained iro binary, or None."""
+    guard and return the path of the contained racecast binary, or None."""
     if archive.endswith(".zip"):
         with zipfile.ZipFile(archive) as zf:
             names = [n for n in zf.namelist() if safe_member(n)]
@@ -195,7 +195,7 @@ def extract_binary(archive, dest_dir):
         with tarfile.open(archive, "r:gz") as tf:
             members = [mem for mem in tf.getmembers() if safe_member(mem.name)]
             tf.extractall(dest_dir, members=members)
-    for name in ("iro.exe", "iro"):
+    for name in ("racecast.exe", "racecast"):
         path = os.path.join(dest_dir, name)
         if os.path.isfile(path):
             return path
@@ -203,21 +203,21 @@ def extract_binary(archive, dest_dir):
 
 
 def ui_asset_name(platform):
-    """The iro-ui artifact name inside the release archive (mirrors release.yml's
+    """The racecast-ui artifact name inside the release archive (mirrors release.yml's
     matrix): a .exe on Windows, a .app bundle on macOS, a bare binary on Linux."""
     if platform.startswith("win"):
-        return "iro-ui.exe"
+        return "racecast-ui.exe"
     if platform == "darwin":
-        return "iro-ui.app"
-    return "iro-ui"
+        return "racecast-ui.app"
+    return "racecast-ui"
 
 
 def install_ui(src_dir, target_dir, platform):
-    """Place the extracted iro-ui artifact next to the iro binary, replacing any
-    existing one. The archive ships iro + iro-ui together, so the GUI launcher
+    """Place the extracted racecast-ui artifact next to the racecast binary, replacing any
+    existing one. The archive ships racecast + racecast-ui together, so the GUI launcher
     travels with every update. Returns the install path, or None when the archive
-    carried no iro-ui (pre-1.2 releases). Best-effort: the caller treats an OSError
-    as non-fatal — the iro swap has already succeeded by then."""
+    carried no racecast-ui (pre-1.2 releases). Best-effort: the caller treats an OSError
+    as non-fatal — the racecast swap has already succeeded by then."""
     name = ui_asset_name(platform)
     src = os.path.join(src_dir, name)
     if not os.path.exists(src):
@@ -250,7 +250,7 @@ def confirmed(answer):
 
 
 def _download_and_swap(url, tag):
-    """Download the archive at `url`, swap the running binary, reinstall iro-ui.
+    """Download the archive at `url`, swap the running binary, reinstall racecast-ui.
     Shared by the latest-release flow and the --tag flow. Prints progress."""
     exe = sys.executable
     # Tempdir NEXT TO the binary so the final swap is an atomic same-filesystem
@@ -261,31 +261,31 @@ def _download_and_swap(url, tag):
         td_ctx = tempfile.TemporaryDirectory(dir=os.path.dirname(exe))
     except OSError as exc:
         sys.exit(f"update: cannot write next to the binary ({exc}). "
-                 "Move iro to a writable folder and retry.")
+                 "Move racecast to a writable folder and retry.")
     with td_ctx as td:
         archive = os.path.join(td, asset_name(sys.platform))
         print("Downloading:", url)
         download(url, archive)
         new = extract_binary(archive, td)
         if not new:
-            sys.exit("update: archive did not contain the iro binary — aborted, nothing changed.")
+            sys.exit("update: archive did not contain the racecast binary — aborted, nothing changed.")
         try:
             perform(swap_plan(sys.platform, exe, new))
         except OSError as exc:
-            hint = (" Restore by renaming iro-old.exe back to iro.exe."
+            hint = (" Restore by renaming racecast-old.exe back to racecast.exe."
                     if sys.platform.startswith("win") and not os.path.exists(exe) else "")
             sys.exit(f"update: swap failed ({exc}).{hint}")
         try:
             ui_path = install_ui(td, os.path.dirname(exe), sys.platform)
         except OSError as exc:
             ui_path = None
-            print(f"update: note — iro-ui not installed ({exc}); "
+            print(f"update: note — racecast-ui not installed ({exc}); "
                   "use `racecast ui` from the CLI, or reinstall the archive.")
-    print(f"updated to {tag} — restart iro to use it.")
+    print(f"updated to {tag} — restart racecast to use it.")
     if ui_path:
-        print(f"installed {os.path.basename(ui_path)} next to iro.")
+        print(f"installed {os.path.basename(ui_path)} next to racecast.")
     if sys.platform.startswith("win"):
-        print("(the old binary was kept as iro-old.exe and is removed on the next start)")
+        print("(the old binary was kept as racecast-old.exe and is removed on the next start)")
 
 
 def main():
