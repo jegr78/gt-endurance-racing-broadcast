@@ -2175,7 +2175,7 @@ def _wiki_repo():
         import update
         return update.REPO
     except Exception:
-        return "jegr78/IRO_Broadcast_Setup"
+        return "jegr78/gt-endurance-racing-broadcast"
 
 
 def _resolve_doc(rel, resolve):

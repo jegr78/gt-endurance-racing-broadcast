@@ -6,7 +6,9 @@ renamed but not overwritten). Frozen-only: a repo checkout updates with
 `git pull`. Design: docs/superpowers/specs/2026-06-05-self-update-design.md."""
 import argparse, json, os, shutil, sys, tarfile, tempfile, urllib.error, urllib.request, zipfile
 
-REPO = "jegr78/IRO_Broadcast_Setup"
+# Already-released binaries embed the old slug and rely on GitHub's rename
+# redirect; this constant governs future releases.
+REPO = "jegr78/gt-endurance-racing-broadcast"
 API_LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
 
 
