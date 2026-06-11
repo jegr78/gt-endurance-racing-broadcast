@@ -81,7 +81,7 @@ def _ctx(jobs=None, init_plan=None, init_step=None):
                 lambda a: [sys.executable, "-c", "print('hi from job')"]),
             "log_paths": {},
             "env_read": lambda: {"ok": True, "path": "/x/.env",
-                                 "entries": [{"key": "IRO_SHEET_ID", "value": "abc"}]},
+                                 "entries": [{"key": "RACECAST_SHEET_ID", "value": "abc"}]},
             "env_write": lambda entries: {"ok": True, "path": "/x/.env", "_got": entries},
             "init_plan": init_plan or (lambda browser="firefox": {
                 "ok": True, "steps": [], "next_steps": []}),
@@ -504,7 +504,7 @@ def t_env_get_route():
         code, body = _get(port, "/api/env")
         data = json.loads(body)
         assert code == 200 and data["ok"] is True
-        assert data["entries"][0]["key"] == "IRO_SHEET_ID"
+        assert data["entries"][0]["key"] == "RACECAST_SHEET_ID"
     finally:
         httpd.shutdown()
 

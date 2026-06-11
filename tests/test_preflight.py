@@ -132,7 +132,7 @@ def t_install_apps_module_loads():
 def t_classify_sheet_no_id_warns():
     r = m.classify_sheet(None)
     assert r.level == "WARN"
-    assert "IRO_SHEET_ID" in r.detail
+    assert "RACECAST_SHEET_ID" in r.detail
 
 
 def t_classify_sheet_fetch_error_fails_with_sharing_hint():

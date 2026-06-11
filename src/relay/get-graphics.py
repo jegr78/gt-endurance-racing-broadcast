@@ -142,15 +142,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=graphics_dir(here),
                     help="Target dir for <Label>.png files (default: graphics_dir).")
-    ap.add_argument("--sheet-id", default=os.environ.get("IRO_SHEET_ID"),
-                    help="Google Sheet ID holding the Assets tab. Default: env IRO_SHEET_ID.")
+    ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
+                    help="Google Sheet ID holding the Assets tab. Default: env RACECAST_SHEET_ID.")
     ap.add_argument("--assets-tab", default="Assets")
     ap.add_argument("--only", default=None,
                     help="Comma-separated labels to fetch (default: all graphic rows).")
     a = ap.parse_args()
 
     if not a.sheet_id:
-        sys.exit("ERROR: no Sheet ID (set IRO_SHEET_ID in .env or pass --sheet-id).")
+        sys.exit("ERROR: no Sheet ID (set SHEET_ID in the active profile or pass --sheet-id).")
     try:
         csv_text = fetch_assets_csv(a.sheet_id, a.assets_tab)
     except Exception as e:

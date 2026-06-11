@@ -87,8 +87,8 @@ STREAMLINK_SERVE = ["--ringbuffer-size", "64M", "--hls-live-edge", "4"]
 RESOLVE_RETRY = 15  # seconds between yt-dlp resolve attempts while a stint isn't live
 COOKIE_MAX_AGE_H = 12   # keep in sync with preflight.py cookies_status(max_age_hours)
 RETRY_SLEEP = 10    # seconds after a stream ends / manifest expires before re-resolving
-# Sheet ID is NOT hardcoded — it comes from IRO_SHEET_ID (env or a gitignored
-# .env at the repo/package root). See .env.example. Override per-run with --sheet-id.
+# Sheet ID is NOT hardcoded — it comes from RACECAST_SHEET_ID (injected by the CLI
+# from the active profile). Override per-run with --sheet-id.
 DEFAULT_SHEET_TAB = "Schedule"
 DEFAULT_POV_TAB = "POV"
 
@@ -1061,8 +1061,8 @@ class SetupControl:
             return {"error": f"unknown field: {key!r} "
                              f"(one of {', '.join(sorted(SETUP_FIELDS))})"}
         if not self.push_url:
-            return {"error": "webhook not configured — set IRO_SHEET_PUSH_URL "
-                             "in .env (wiki: Sheet-Webhook)"}
+            return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
+                             "in the active profile or .env (wiki: Sheet-Webhook)"}
         header, hud_key = SETUP_FIELDS[key]
         if not value and key != "racecontrol":
             return {"error": "empty value only allowed for racecontrol"}
@@ -1083,8 +1083,8 @@ class SetupControl:
     # -- URL writes (synchronous) --------------------------------------------
     def schedule_set(self, row, url=None, name=None):
         if not self.push_url:
-            return {"error": "webhook not configured — set IRO_SHEET_PUSH_URL "
-                             "in .env (wiki: Sheet-Webhook)"}
+            return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
+                             "in the active profile or .env (wiki: Sheet-Webhook)"}
         if isinstance(row, bool) or not isinstance(row, (int, str)):
             return {"error": "row must be a whole number (1-based)"}
         try:
@@ -1114,8 +1114,8 @@ class SetupControl:
 
     def pov_set(self, url):
         if not self.push_url:
-            return {"error": "webhook not configured — set IRO_SHEET_PUSH_URL "
-                             "in .env (wiki: Sheet-Webhook)"}
+            return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
+                             "in the active profile or .env (wiki: Sheet-Webhook)"}
         if url is not None and not isinstance(url, str):
             return {"error": "url must be a string"}
         url = (url or "").strip()
@@ -1607,9 +1607,9 @@ def export_cookies(browser, out):
 def main():
     load_dotenv(os.path.dirname(os.path.abspath(__file__)))  # before defaults are read
     ap = argparse.ArgumentParser(description="IRO 2-feed relay with Google-Sheet schedule")
-    ap.add_argument("--sheet-id", default=os.environ.get("IRO_SHEET_ID"),
+    ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
                     help="Google Sheet ID for the schedule/POV tabs. Default: env "
-                         "IRO_SHEET_ID (or a .env at the repo/package root). See .env.example.")
+                         "RACECAST_SHEET_ID (injected by the CLI from the active profile).")
     ap.add_argument("--sheet-tab", default=DEFAULT_SHEET_TAB)
     ap.add_argument("--sheet-csv-url", default=None,
                     help="Full CSV URL (overrides sheet-id/tab; e.g. publish-to-web)")
@@ -1670,9 +1670,8 @@ def main():
     except Exception: pass   # not all stdout objects support reconfigure (e.g. pipes)
 
     if not args.sheet_csv_url and not args.sheet_id:
-        sys.exit("ERROR: no Google Sheet configured. Set IRO_SHEET_ID in a .env file "
-                 "at the repo/package root (see .env.example) or the environment, "
-                 "or pass --sheet-id / --sheet-csv-url.")
+        sys.exit("ERROR: no Google Sheet configured. Set SHEET_ID in the active profile "
+                 "(profiles/<name>/profile.env), or pass --sheet-id / --sheet-csv-url.")
 
     if args.stint < 1:
         sys.exit("ERROR: --stint must be >= 1 (1-based stint number, as in the sheet).")
@@ -1760,10 +1759,10 @@ def main():
 
     # One sheet-write webhook powers the race timer AND the panel's
     # Setup/Schedule/POV controls (wiki: Sheet-Webhook).
-    push_url = os.environ.get("IRO_SHEET_PUSH_URL")
+    push_url = os.environ.get("RACECAST_SHEET_PUSH_URL")
 
     # Race timer: local file always; sheet sync derived from sheet-id/tab
-    # (custom --sheet-csv-url -> local-only); push via IRO_SHEET_PUSH_URL.
+    # (custom --sheet-csv-url -> local-only); push via RACECAST_SHEET_PUSH_URL.
     timer_store = None
     timer_path = None
     if not args.no_timer:
@@ -1853,11 +1852,11 @@ def main():
         print(f"  HUD overlay (OBS source): http://127.0.0.1:{args.http_port}/hud  "
               f"(tabs '{args.overlay_tab}'/'{args.config_tab}', refresh {args.hud_poll}s)")
     if setup_ctl:
-        mode = "writes ON" if push_url else "read-only (set IRO_SHEET_PUSH_URL)"
+        mode = "writes ON" if push_url else "read-only (set RACECAST_SHEET_PUSH_URL)"
         print(f"  Panel sheet controls (/setup /schedule /pov/set): {mode}")
     if timer_store and timer_path:
         push = "sheet+push" if timer_store.push_url else (
-            "sheet read-only (set IRO_SHEET_PUSH_URL for handover sync)"
+            "sheet read-only (set RACECAST_SHEET_PUSH_URL for handover sync)"
             if timer_store.csv_url else "local only")
         print(f"  Race timer (OBS source): http://127.0.0.1:{args.http_port}/timer  "
               f"(tab '{args.timer_tab}', {push}; controls /timer/start | /timer/stop)")

@@ -250,16 +250,16 @@ def classify_assets(label, missing, count, severity, fix):
 
 
 def classify_env(sheet_id, push_url):
-    """IRO_SHEET_ID is required (FAIL); the sheet-write webhook is optional —
+    """RACECAST_SHEET_ID is required (FAIL); the sheet-write webhook is optional —
     missing means no timer handover sync and a read-only panel Setup row (WARN)."""
     if not sheet_id:
-        return Result(FAIL, ".env", "missing: IRO_SHEET_ID — fill it in "
-                      "(.env next to the binary / repo root)")
+        return Result(FAIL, ".env", "missing: RACECAST_SHEET_ID — set SHEET_ID "
+                      "in the active profile (profiles/<name>/profile.env)")
     if not push_url:
-        return Result(WARN, ".env", "IRO_SHEET_PUSH_URL unset — race-timer "
+        return Result(WARN, ".env", "RACECAST_SHEET_PUSH_URL unset — race-timer "
                       "handover sync and panel sheet controls disabled "
                       "(see the Sheet-Webhook wiki page)")
-    return Result(PASS, ".env", "IRO_SHEET_ID and IRO_SHEET_PUSH_URL set")
+    return Result(PASS, ".env", "RACECAST_SHEET_ID and RACECAST_SHEET_PUSH_URL set")
 
 
 def director_urls(ts_ip, companion_port=8000, relay_port=8088):

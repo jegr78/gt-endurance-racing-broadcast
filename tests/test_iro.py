@@ -153,28 +153,28 @@ def t_force_utf8_io_reconfigures_and_is_safe():
 
 
 def t_parse_env_text():
-    text = "# comment\nIRO_SHEET_ID=abc\nIRO_TIMER_URL='http://x'\n\nnot a pair\n"
-    assert m.parse_env_text(text) == {"IRO_SHEET_ID": "abc", "IRO_TIMER_URL": "http://x"}
+    text = "# comment\nRACECAST_SHEET_ID=abc\nIRO_TIMER_URL='http://x'\n\nnot a pair\n"
+    assert m.parse_env_text(text) == {"RACECAST_SHEET_ID": "abc", "IRO_TIMER_URL": "http://x"}
 
 
 def t_ensure_env_file_creates_once():
     import tempfile
     with tempfile.TemporaryDirectory() as d:
         with open(os.path.join(d, ".env.example"), "w", encoding="utf-8") as fh:
-            fh.write("IRO_SHEET_ID=\n")
+            fh.write("RACECAST_SHEET_ID=\n")
         # not frozen -> no-op
         assert m.ensure_env_file(d, frozen=False) is False
         assert not os.path.exists(os.path.join(d, ".env"))
         # frozen + template + no .env -> created from the template
         assert m.ensure_env_file(d, frozen=True) is True
         with open(os.path.join(d, ".env"), encoding="utf-8") as fh:
-            assert fh.read() == "IRO_SHEET_ID=\n"
+            assert fh.read() == "RACECAST_SHEET_ID=\n"
         # existing .env is never overwritten
         with open(os.path.join(d, ".env"), "w", encoding="utf-8") as fh:
-            fh.write("IRO_SHEET_ID=real\n")
+            fh.write("RACECAST_SHEET_ID=real\n")
         assert m.ensure_env_file(d, frozen=True) is False
         with open(os.path.join(d, ".env"), encoding="utf-8") as fh:
-            assert fh.read() == "IRO_SHEET_ID=real\n"
+            assert fh.read() == "RACECAST_SHEET_ID=real\n"
 
 
 def t_cleanup_old_binary():
@@ -206,7 +206,7 @@ def t_ensure_env_file_copy_failure():
         raise OSError("boom")
     with tempfile.TemporaryDirectory() as d:
         with open(os.path.join(d, ".env.example"), "w", encoding="utf-8") as fh:
-            fh.write("IRO_SHEET_ID=\n")
+            fh.write("RACECAST_SHEET_ID=\n")
         orig = m.shutil.copyfile
         m.shutil.copyfile = boom
         try:

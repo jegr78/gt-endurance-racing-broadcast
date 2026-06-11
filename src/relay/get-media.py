@@ -2,7 +2,7 @@
 """Download the stream Intro/Outro clips for OBS from YouTube.
 
 URL resolution priority per clip:  --intro-url/--outro-url  >  env
-IRO_INTRO_URL/IRO_OUTRO_URL  >  Google Sheet 'Assets' tab (a cell whose
+RACECAST_INTRO_URL/RACECAST_OUTRO_URL  >  Google Sheet 'Assets' tab (a cell whose
 text is 'Intro Video'/'Outro Video', URL in the next non-empty cell to its right).
 
 Clips are written as intro.mp4 / outro.mp4 into the media dir (repo:
@@ -80,12 +80,12 @@ def media_dir(here):
 
 def resolve_urls(which, cli, env, csv_text):
     """Resolve a URL per key in `which` (a set of 'intro'/'outro').
-    Priority: cli[key]  >  env['IRO_<KEY>_URL']  >  sheet label lookup.
+    Priority: cli[key]  >  env['RACECAST_<KEY>_URL']  >  sheet label lookup.
     `csv_text` may be None (sheet not fetched)."""
     sheet = media_urls_from_csv(list(csv.reader(io.StringIO(csv_text)))) if csv_text else {}
     out = {}
     for key in which:
-        out[key] = (cli.get(key) or env.get(f"IRO_{key.upper()}_URL") or sheet.get(key))
+        out[key] = (cli.get(key) or env.get(f"RACECAST_{key.upper()}_URL") or sheet.get(key))
     return out
 
 
@@ -115,8 +115,8 @@ def main():
     ap.add_argument("--which", choices=["intro", "outro", "both"], default="both")
     ap.add_argument("--out", default=media_dir(here),
                     help="Target dir for intro.mp4 / outro.mp4 (default: media_dir).")
-    ap.add_argument("--sheet-id", default=os.environ.get("IRO_SHEET_ID"),
-                    help="Google Sheet ID holding the Assets tab. Default: env IRO_SHEET_ID.")
+    ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
+                    help="Google Sheet ID holding the Assets tab. Default: env RACECAST_SHEET_ID.")
     ap.add_argument("--assets-tab", default="Assets")
     ap.add_argument("--intro-url", default=None)
     ap.add_argument("--outro-url", default=None)
@@ -127,7 +127,7 @@ def main():
 
     # Only hit the sheet if a CLI/env URL is missing for something we need.
     csv_text = None
-    need_sheet = any(not (cli.get(k) or os.environ.get(f"IRO_{k.upper()}_URL")) for k in which)
+    need_sheet = any(not (cli.get(k) or os.environ.get(f"RACECAST_{k.upper()}_URL")) for k in which)
     if need_sheet and a.sheet_id:
         try:
             csv_text = fetch_assets_csv(a.sheet_id, a.assets_tab)
@@ -145,7 +145,7 @@ def main():
         url = urls.get(key)
         if not url:
             print(f"WARNING: no URL for {key} "
-                  f"(sheet label '{key.title()} Video' / --{key}-url / IRO_{key.upper()}_URL)")
+                  f"(sheet label '{key.title()} Video' / --{key}-url / RACECAST_{key.upper()}_URL)")
             failed.append(key)
             continue
         out_path = os.path.join(a.out, f"{key}.mp4")

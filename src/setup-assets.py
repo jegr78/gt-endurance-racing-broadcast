@@ -123,7 +123,7 @@ def replace_tokens(obj, mapping):
 
 def main():
     base = os.path.dirname(os.path.abspath(__file__))
-    load_dotenv(base)  # picks up IRO_SHEET_ID from a gitignored .env at repo/package root
+    load_dotenv(base)  # picks up machine vars from a gitignored .env at repo/package root
     ap = argparse.ArgumentParser()
     ap.add_argument("--assets", default=os.path.join(base, "assets"))
     ap.add_argument("--template", default=None)
@@ -134,9 +134,9 @@ def main():
     ap.add_argument("--graphics", default=graphics_dir(base),
                     help="Folder with the broadcast graphics (<Label>.png) for the "
                          "image sources (replaces __IRO_GRAPHICS__). Default: graphics_dir().")
-    ap.add_argument("--sheet-id", default=os.environ.get("IRO_SHEET_ID"),
+    ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
                     help="Google Sheet ID injected into the HUD browser source. "
-                         "Default: env IRO_SHEET_ID (or .env). See .env.example.")
+                         "Default: env RACECAST_SHEET_ID (from the active profile).")
     a = ap.parse_args()
 
     tpl = a.template
@@ -164,8 +164,8 @@ def main():
     if SHEET_TOKEN in raw:
         if not a.sheet_id:
             sys.exit(f"ERROR: the collection references the HUD sheet ({SHEET_TOKEN}) but no "
-                     "Sheet ID is set. Add IRO_SHEET_ID to .env at the repo/package root "
-                     "(see .env.example) or pass --sheet-id.")
+                     "Sheet ID is set. Set SHEET_ID in the active profile "
+                     "(profiles/<name>/profile.env) or pass --sheet-id.")
         mapping[SHEET_TOKEN] = a.sheet_id
     if MEDIA_TOKEN in raw:
         mapping[MEDIA_TOKEN] = a.media

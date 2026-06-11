@@ -238,7 +238,7 @@ def ensure_env_file(exe_dir, frozen=None):
         print(f"warning: could not create .env next to the binary ({exc}) — "
               "copy .env.example to .env manually.", file=sys.stderr)
         return False
-    print("created .env next to the binary — fill in IRO_SHEET_ID "
+    print("created .env next to the binary — fill in the required values "
           "(see the comments inside).", file=sys.stderr)
     return True
 
@@ -1114,13 +1114,13 @@ def _asset_state(ev):
     absorbs fetch errors into None — it never raises). Only module-load /
     directory-resolution failures raise — callers classify/fall back.
 
-    Note: get-graphics' load_dotenv also fills IRO_* env vars for repo/package
-    modes (frozen already loaded .env next to the binary at startup)."""
+    Note: the CLI injects RACECAST_SHEET_ID from the active profile before this
+    runs (get-graphics' load_dotenv still fills machine vars from .env)."""
     gg = _load_relay_module("relay/get-graphics.py")
     gm = _load_relay_module("relay/get-media.py")
     gg.load_dotenv(os.path.dirname(os.path.abspath(gg.__file__)))
     g_dir, m_dir = _asset_dirs(gg, gm)
-    rows = ev.fetch_assets_rows(gg, os.environ.get("IRO_SHEET_ID"))
+    rows = ev.fetch_assets_rows(gg, os.environ.get("RACECAST_SHEET_ID"))
     missing_g = ev.check_assets(ev.required_graphics(gg, rows), g_dir) if rows else None
     missing_m = ev.check_assets(ev.required_media(gm, rows), m_dir) if rows else None
     return g_dir, m_dir, missing_g, missing_m
@@ -1154,8 +1154,8 @@ def _event_sections(ev, pf):
                                       ev.WARN, "run `iro media`")]
     except Exception as exc:
         assets.append(ev.Result(ev.WARN, "Graphics/Media", f"check failed: {exc}"))
-    config = [ev.classify_env(os.environ.get("IRO_SHEET_ID"),
-                              os.environ.get("IRO_SHEET_PUSH_URL"))]
+    config = [ev.classify_env(os.environ.get("RACECAST_SHEET_ID"),
+                              os.environ.get("RACECAST_SHEET_PUSH_URL"))]
     return [("Apps", apps), ("Services", services), ("Assets", assets),
             ("Config", config), ("Go-live reminders", [ev.GO_LIVE_REMINDER])]
 
@@ -1374,7 +1374,7 @@ def _oneshot_code(command, rest):
     """Run a one-shot and return its exit code (the seam `iro init` uses to
     chain steps — oneshot() below keeps the exit-the-CLI behavior)."""
     if command == "preflight":
-        # The sheet check reads IRO_SHEET_ID from the environment. Frozen mode
+        # The sheet check reads RACECAST_SHEET_ID from the environment. Frozen mode
         # already loads .env (_load_env_frozen); in repo/package mode preflight
         # runs as a subprocess, which inherits os.environ — merge the .env file
         # in (real environment wins, same semantics as the scripts' load_dotenv).

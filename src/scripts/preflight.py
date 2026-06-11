@@ -257,7 +257,7 @@ def classify_sheet(sheet_id, outcome=None, payload=""):
     sign-in page — the classic 'sheet not shared' case."""
     if not sheet_id:
         return Result(WARN, "Google Sheet",
-                      "IRO_SHEET_ID not set — fill it in .env (run via `iro preflight`)")
+                      "RACECAST_SHEET_ID not set — set SHEET_ID in the active profile")
     if outcome == "error":
         return Result(FAIL, "Google Sheet",
                       f"not readable ({payload}) — check sharing: Share -> "
@@ -388,7 +388,7 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
                          else Result(INFO, f"port {port}",
                                      f"{svc} not reachable yet — it is launched at event start"))
     cookies = [cookies_status(resolve_cookies_path(preflight_file, runtime_dir, cookies_opt))]
-    sheet_id = os.environ.get("IRO_SHEET_ID")
+    sheet_id = os.environ.get("RACECAST_SHEET_ID")
     if sheet_id:
         outcome, payload = fetch_sheet_csv(sheet_id)
         sheet = [classify_sheet(sheet_id, outcome, payload)]

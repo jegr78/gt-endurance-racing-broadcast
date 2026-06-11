@@ -317,10 +317,10 @@ def t_assets_files_data_error():
 def t_env_entries_data_reads(tmp):
     p = os.path.join(tmp, ".env")
     with open(p, "w", encoding="utf-8") as f:
-        f.write("# comment\nIRO_SHEET_ID=abc\nIRO_UI_PORT=8090\n")
+        f.write("# comment\nRACECAST_SHEET_ID=abc\nIRO_UI_PORT=8090\n")
     d = iro.env_entries_data(path=p)
     assert d["ok"] is True and d["path"] == p
-    assert d["entries"] == [{"key": "IRO_SHEET_ID", "value": "abc"},
+    assert d["entries"] == [{"key": "RACECAST_SHEET_ID", "value": "abc"},
                             {"key": "IRO_UI_PORT", "value": "8090"}]
 
 
@@ -332,18 +332,18 @@ def t_env_entries_data_missing_file(tmp):
 def t_env_write_preserves_comments_and_round_trips(tmp):
     p = os.path.join(tmp, ".env")
     with open(p, "w", encoding="utf-8") as f:
-        f.write("# header\nIRO_SHEET_ID=old\n\n# port note\nIRO_UI_PORT=8089\n")
-    res = iro.env_write_data([{"key": "IRO_SHEET_ID", "value": "new"},
+        f.write("# header\nRACECAST_SHEET_ID=old\n\n# port note\nIRO_UI_PORT=8089\n")
+    res = iro.env_write_data([{"key": "RACECAST_SHEET_ID", "value": "new"},
                               {"key": "IRO_NEW", "value": "x"}], path=p)
     assert res["ok"] is True
     with open(p, encoding="utf-8") as fh:
         text = fh.read()
     assert "# header" in text and "# port note" in text     # comments kept
-    assert "IRO_SHEET_ID=new" in text                       # updated in place
+    assert "RACECAST_SHEET_ID=new" in text                  # updated in place
     assert "IRO_UI_PORT" not in text                        # removed
     assert "IRO_NEW=x" in text                              # appended
     back = iro.env_entries_data(path=p)["entries"]
-    assert {"key": "IRO_SHEET_ID", "value": "new"} in back
+    assert {"key": "RACECAST_SHEET_ID", "value": "new"} in back
     assert {"key": "IRO_NEW", "value": "x"} in back
 
 
