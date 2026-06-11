@@ -79,7 +79,8 @@ def make_handler(ctx):
     class Handler(BaseHTTPRequestHandler):
         _CTYPES = {".png": "image/png", ".jpg": "image/jpeg",
                    ".jpeg": "image/jpeg", ".webp": "image/webp",
-                   ".gif": "image/gif", ".mp4": "video/mp4",
+                   ".gif": "image/gif", ".svg": "image/svg+xml",
+                   ".mp4": "video/mp4",
                    ".webm": "video/webm", ".mov": "video/quicktime",
                    ".html": "text/html; charset=utf-8",
                    ".md": "text/plain; charset=utf-8",
@@ -287,6 +288,9 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"could not read profile .env: {exc}"},
                                       code=500)
+            if path == "/api/profile/logo":
+                p = ctx["profile_logo"]()
+                return self._serve_file(p) if p else self._not_found("no logo")
             if path == "/api/overlay":
                 try:
                     page = (parse_qs(urlparse(self.path).query or "").get(

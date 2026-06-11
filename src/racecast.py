@@ -1761,24 +1761,52 @@ def obs_collection_data(get=None):
     return {"ok": True, **status}
 
 
+_LOGO_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg")
+
+
+def servable_logo_path(logo_path):
+    """Return `logo_path` only when it is a web-image file (by extension),
+    else "". Pure extension gate: keeps the /api/profile/logo route from
+    serving a non-image file someone put in LOGO (e.g. profile.env). Existence
+    is validated upstream in config.py (ResolvedConfig.logo_path)."""
+    if logo_path and os.path.splitext(logo_path)[1].lower() in _LOGO_EXTS:
+        return logo_path
+    return ""
+
+
+def profile_logo():
+    """Absolute path to the ACTIVE profile's logo when it is a servable web
+    image, else None. Best-effort (never raises) -- the header logo is optional.
+    Served by GET /api/profile/logo."""
+    try:
+        root = _env_base(IS_FROZEN, _real_executable(), HERE)
+        rc = pcfg.resolve_config(root, runtime_root=_runtime_base_dir())
+        return servable_logo_path(rc.logo_path) or None
+    except Exception:  # noqa: BLE001 — best effort
+        return None
+
+
 def profiles_data():
     """Control Center profile switcher data: the effective active profile plus
     every available profile with its display NAME and whether SHEET_ID is set.
-    {ok, active, profiles:[{name, display, sheet_set}]} or {ok:false, error}.
+    {ok, active, logo, profiles:[{name, display, sheet_set}]} or {ok:false, error}.
     Never raises."""
     try:
         root = _env_base(IS_FROZEN, _real_executable(), HERE)
         runtime_root = _runtime_base_dir()
         active = _active_profile_name()
         out = []
+        logo = False
         for n in pcfg.list_profiles(root):
             try:
                 rc = pcfg.resolve_config(root, override=n, runtime_root=runtime_root)
                 out.append({"name": n, "display": rc.name,
                             "sheet_set": bool(rc.sheet_id)})
+                if n == active:
+                    logo = bool(servable_logo_path(rc.logo_path))
             except pcfg.ProfileError:
                 out.append({"name": n, "display": n, "sheet_set": False})
-        return {"ok": True, "active": active, "profiles": out}
+        return {"ok": True, "active": active, "logo": logo, "profiles": out}
     except Exception as exc:
         return {"ok": False, "error": f"could not read profiles: {exc}"}
 
@@ -2653,6 +2681,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "env_read": env_entries_data,
         "env_write": env_write_data,
         "profiles": profiles_data,
+        "profile_logo": profile_logo,
         "profile_use": profile_use_data,
         "profile_new": profile_new_data,
         "profile_env_read": profile_env_entries_data,
