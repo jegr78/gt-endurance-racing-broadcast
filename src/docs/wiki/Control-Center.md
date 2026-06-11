@@ -118,7 +118,7 @@ mode can't be used. Edit the channel/port list here and start/stop the set.
 
 ### Profile
 
-![Control Center — Assets](images/cc-assets.png)
+![Control Center — Profile](images/cc-profile.png)
 
 Everything that belongs to a **league**, gathered in one view (the model behind it is in
 [League profiles](Profiles)):
@@ -145,7 +145,7 @@ Everything that belongs to a **league**, gathered in one view (the model behind 
 
 ### General Settings
 
-![Control Center — Settings (.env)](images/cc-settings.png)
+![Control Center — General Settings (.env)](images/cc-settings.png)
 
 Machine-wide (not league) configuration:
 
