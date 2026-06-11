@@ -358,7 +358,7 @@
 <body>
 <div class="app">
   <nav class="sidebar">
-    <div class="brand"><span class="mark">IRO</span>
+    <div class="brand"><span class="mark">GT</span>
       <div><div class="brandname">Control Center</div>
         <div class="brandsub" id="active-profile-badge" title="Active league profile — click to manage" onclick="showView('profile')">—</div>
         <span class="ver" id="ver"></span>
@@ -496,7 +496,7 @@
             <span class="tlabel">Cookies</span>
             <span class="tval" id="t-cookies">checking…</span></button>
         </section>
-        <p class="evnote">Start brings up Tailscale, Discord, OBS, relay and Companion (optional stint = mid-event takeover). Stop only stops the iro services — OBS, Discord and Tailscale keep running; quit them manually if needed. Use <b>Copy link</b> to share the Companion tablet and Director panel URLs with your directors (they reach them over Tailscale).</p>
+        <p class="evnote">Start brings up Tailscale, Discord, OBS, relay and Companion (optional stint = mid-event takeover). Stop only stops the racecast services — OBS, Discord and Tailscale keep running; quit them manually if needed. Use <b>Copy link</b> to share the Companion tablet and Director panel URLs with your directors (they reach them over Tailscale).</p>
       </div>
 
       <!-- ===== Profile (active league: config + assets) ===== -->
@@ -841,7 +841,7 @@ function updateHome(s) {
   setBadgeEl('h-relay', 'hd-relay', relayUp, 'RUNNING', 'stopped',
              relayUp ? (s.relay.http_ok ? 'control OK on port ' + s.relay.port
                                         : 'port ' + s.relay.port + ' not responding')
-                     : 'iro service');
+                     : 'racecast service');
   setBadgeEl('h-companion', 'hd-companion', compUp, 'RUNNING', 'stopped',
              s.companion.url || s.companion.why || '');
   setBadgeEl('h-streams', 'hd-streams', strAlive > 0, 'RUNNING', 'stopped',
@@ -1328,7 +1328,7 @@ const CONFIRM_TEXT = {
   'tailscale-down': 'Disconnect Tailscale? Remote directors lose access.',
   'relay-stop': 'Stop the relay?',
   'streams-stop': 'Stop all static streams?',
-  'event-stop': 'Stop the event? (stops the iro services; OBS/Discord/Tailscale keep running)',
+  'event-stop': 'Stop the event? (stops the racecast services; OBS/Discord/Tailscale keep running)',
   'obs-collection-set': 'Switch OBS to the GT Endurance Racing scene collection? This rebuilds all sources (incl. the relay feeds).'
 };
 
@@ -1552,7 +1552,7 @@ async function fetchObsCollection() {
     el.appendChild(msg);
   } else {
     msg.textContent = '⚠ "' + d.expected + '" collection not found in OBS — '
-                    + 'import it (Export collection / `iro setup`).';
+                    + 'import it (Export collection / `racecast setup`).';
     el.appendChild(msg);
   }
 }

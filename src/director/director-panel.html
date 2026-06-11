@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>IRO · Director Console</title>
+<title>GT Endurance Racing · Director Console</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/obs-websocket-js@5.0.6/dist/obs-ws.global.js" integrity="sha384-cFeq2Xcu17x+Az+nlYMZAaV1gxGNNfUT48om81Bp23aa9pTsmi+YXAe5XQ7Cx1s+" crossorigin="anonymous"></script>
 <style>
   /* =========================================================
-     IRO DIRECTOR CONSOLE — vision-mixer busses
+     GT ENDURANCE RACING DIRECTOR CONSOLE — vision-mixer busses
      Horizontal action rows mirroring the Companion pages.
      Dark, high-contrast, glanceable. Built for tablet + desktop.
      ========================================================= */
@@ -195,7 +195,7 @@
 <div class="wrap">
 
   <header>
-    <div class="brand">Director Console<small>IRO · ENDURANCE BROADCAST</small></div>
+    <div class="brand">Director Console<small>GT ENDURANCE RACING BROADCAST</small></div>
     <div class="strip">
       <span class="st air" id="stAir">ON AIR <b>—</b></span>
       <span class="st" id="stA">A <b>—</b></span>
@@ -675,7 +675,7 @@ async function relayPoll(){
     if (ck && ck.stale)
       setBanner("cookies", "amber",
         `COOKIES ${Math.round(ck.age_h)} H OLD — next handover may fail · ` +
-        `run 'iro cookies firefox' on the producer machine`);
+        `run 'racecast cookies firefox' on the producer machine`);
     else clearBanner("cookies");
     if (d.obs && d.obs.reachable === false)
       setBanner("obs", "amber",

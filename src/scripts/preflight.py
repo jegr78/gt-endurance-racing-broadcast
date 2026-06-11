@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pre-flight readiness check for the IRO broadcast setup.
+"""Pre-flight readiness check for the GT Endurance Racing broadcast setup.
 
 Run before an event to confirm this machine can run OBS + the relay:
 hardware, tool chain, ports, and YouTube cookies. Prints a traffic-light
@@ -432,7 +432,7 @@ def report(sections, color):
 
 def parse_args(argv):
     ap = argparse.ArgumentParser(
-        description="Pre-flight readiness check for the IRO broadcast setup.")
+        description="Pre-flight readiness check for the GT Endurance Racing broadcast setup.")
     ap.add_argument("--runtime-dir", default=None,
                     help="Directory holding cookies.txt (mirrors the relay's --runtime-dir).")
     ap.add_argument("--cookies", default=None,
