@@ -112,14 +112,14 @@ def t_untranslocate_app_translocation():
     # both guards must short-circuit BEFORE the (macOS-only) resolver is consulted.
     seen = []
     def resolver(p):
-        seen.append(p); return "/Users/x/IRO/iro-ui.app/Contents/MacOS/iro-ui"
-    tl = "/private/var/folders/pk/T/AppTranslocation/UUID/d/iro-ui.app/Contents/MacOS/iro-ui"
+        seen.append(p); return "/Users/x/IRO/racecast-ui.app/Contents/MacOS/racecast-ui"
+    tl = "/private/var/folders/pk/T/AppTranslocation/UUID/d/racecast-ui.app/Contents/MacOS/racecast-ui"
     assert m._untranslocate(tl, frozen=False, platform="darwin", resolver=resolver) == tl
     assert m._untranslocate(tl, frozen=True, platform="linux", resolver=resolver) == tl
     assert seen == []
     # frozen + macOS: map the translocated path back to its real on-disk location.
     assert m._untranslocate(tl, frozen=True, platform="darwin", resolver=resolver) == \
-        "/Users/x/IRO/iro-ui.app/Contents/MacOS/iro-ui"
+        "/Users/x/IRO/racecast-ui.app/Contents/MacOS/racecast-ui"
     # best-effort: a resolver that fails (None / raises) falls back to the input.
     assert m._untranslocate(tl, frozen=True, platform="darwin",
                             resolver=lambda p: None) == tl

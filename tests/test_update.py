@@ -104,7 +104,7 @@ def t_fetch_latest_parses_json():
     assert rel["tag_name"] == "v0.2.0"
 
 
-# --- ui_asset_name: the iro-ui artifact name in the archive, per platform -----------
+# --- ui_asset_name: the racecast-ui artifact name in the archive, per platform -----------
 def t_ui_asset_name_per_platform():
     assert m.ui_asset_name("win32") == "racecast-ui.exe"
     assert m.ui_asset_name("darwin") == "racecast-ui.app"

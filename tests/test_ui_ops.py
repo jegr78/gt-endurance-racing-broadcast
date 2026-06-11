@@ -708,8 +708,8 @@ def t_iro_job_executable_dev_uses_interpreter():
 
 
 def t_app_home_plain_binary_is_dirname():
-    assert iro._app_home("/opt/iro/iro-ui") == "/opt/iro"
-    assert iro._app_home("/opt/iro/iro") == "/opt/iro"
+    assert iro._app_home("/opt/iro/racecast-ui") == "/opt/iro"
+    assert iro._app_home("/opt/iro/racecast") == "/opt/iro"
 
 
 def t_app_home_macos_app_resolves_next_to_bundle():
