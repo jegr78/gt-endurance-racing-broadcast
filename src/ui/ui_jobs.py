@@ -6,8 +6,8 @@ parallel in-process ops would interleave output — and a child can be killed.
 Spec: docs/superpowers/specs/2026-06-07-control-center-design.md."""
 import os, subprocess, threading, uuid
 
-# A frozen --windowed app (iro-ui.exe) has no console, so spawning the console
-# sibling iro.exe pops a terminal window per job (issue #23). CREATE_NO_WINDOW
+# A frozen --windowed app (racecast-ui.exe) has no console, so spawning the console
+# sibling racecast.exe pops a terminal window per job (issue #23). CREATE_NO_WINDOW
 # gives the child a hidden console; its own subprocess children inherit it, so
 # this one flag at the job root suppresses the whole tree. (Mirrors
 # services.no_window_kwargs — ui_jobs is import-isolated from scripts/ in its
