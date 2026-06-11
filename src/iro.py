@@ -1815,7 +1815,7 @@ def preflight_data(gather=None):
     try:
         pf = _event_modules()[1]
         run = gather or (lambda: pf.gather(resource_path("scripts/preflight.py"),
-                                           _runtime_dir()))
+                                           _runtime_base_dir()))
         sections = [{"title": title,
                      "results": [{"level": r.level, "name": r.name,
                                   "detail": r.detail} for r in results]}
@@ -1951,7 +1951,7 @@ def _init_cookies_run(browser):
     the cookies are actually missing/stale — under --force a fresh cookie jar
     skips the pause but still re-exports."""
     _pf = _event_modules()[1]
-    res = _pf.cookies_status(os.path.join(_runtime_dir(), "cookies.txt"))
+    res = _pf.cookies_status(_cookies_path())
     if ins.cookies_done(res.level, res.detail) is None:
         _init_pause(f"Log in to YouTube in {browser} — the cookie export "
                     "needs that browser session")
@@ -1990,7 +1990,7 @@ def _init_steps(opts):
     and orders the subset that runs."""
     pf = _event_modules()[1]
     import install_apps
-    cookies_path = os.path.join(_runtime_dir(), "cookies.txt")
+    cookies_path = _cookies_path()
     def cookies_skip():
         res = pf.cookies_status(cookies_path)
         return ins.cookies_done(res.level, res.detail)
