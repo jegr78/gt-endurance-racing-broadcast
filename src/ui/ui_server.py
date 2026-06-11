@@ -68,7 +68,7 @@ def make_handler(ctx):
     streams_write(entries) -> dict, docs() -> dict,
     docs_content(key) -> (ctype, bytes)|None, ops {name: argv},
     build_argv(name, params) -> argv (raises ValueError), assets() -> dict,
-    asset_files() -> dict, asset_roots {kind: dir},
+    asset_files() -> dict, asset_roots() -> {kind: dir} (resolved live per call),
     tools() -> dict, apps() -> dict, preflight() -> dict,
     env_read() -> dict, env_write(entries) -> dict,
     init_plan(browser) -> dict (wizard plan: per-step done/kind/op/instruction),
@@ -167,7 +167,11 @@ def make_handler(ctx):
                 rest = path[len("/api/assets/file/"):]
                 kind, _, raw = rest.partition("/")
                 name = unquote(raw)
-                roots = ctx["asset_roots"]
+                # Resolved LIVE per request (a callable, not a startup snapshot):
+                # the listing route /api/assets/files resolves the runtime dir on
+                # every call, so serving must too, or the two diverge (#55 — the
+                # gallery listed files that serving then 404'd).
+                roots = ctx["asset_roots"]()
                 # Reject traversal: name must be a bare basename within the root.
                 if (kind not in roots or not name
                         or name != os.path.basename(name)
