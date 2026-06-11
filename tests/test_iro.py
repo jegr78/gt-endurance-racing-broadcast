@@ -635,6 +635,30 @@ def t_profile_env_vars_filters_empty():
         "RACECAST_SHEET_ID": "abc", "RACECAST_INTRO_URL": "https://i"}
 
 
+def t_profile_env_vars_includes_obs_collection():
+    rc = m.pcfg.ResolvedConfig(profile="iro", name="IRO Endurance", sheet_id="abc",
+                               obs_collection="IRO Broadcast")
+    out = m._profile_env_vars(rc)
+    assert out["RACECAST_OBS_COLLECTION"] == "IRO Broadcast"
+
+
+def t_active_obs_collection_falls_back_to_constant_without_profile():
+    import tempfile
+    import obs_ws
+    saved = dict(os.environ)
+    try:
+        os.environ.pop("RACECAST_PROFILE", None)
+        with tempfile.TemporaryDirectory() as td:
+            orig = m._env_base
+            m._env_base = lambda *a, **k: td      # empty root -> no profile resolves
+            try:
+                assert m._active_obs_collection() == obs_ws.EXPECTED_SCENE_COLLECTION
+            finally:
+                m._env_base = orig
+    finally:
+        os.environ.clear(); os.environ.update(saved)
+
+
 def t_profile_runtime_scoping():
     assert m._profile_runtime("/r", "iro") == os.path.join("/r", "iro")
     assert m._profile_runtime("/r", "erf") == os.path.join("/r", "erf")

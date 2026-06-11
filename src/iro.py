@@ -176,7 +176,8 @@ def _profile_env_vars(rc):
     pairs = (("RACECAST_SHEET_ID", rc.sheet_id),
              ("RACECAST_SHEET_PUSH_URL", rc.sheet_push_url),
              ("RACECAST_INTRO_URL", rc.intro_url),
-             ("RACECAST_OUTRO_URL", rc.outro_url))
+             ("RACECAST_OUTRO_URL", rc.outro_url),
+             ("RACECAST_OBS_COLLECTION", rc.obs_collection))
     return {k: v for k, v in pairs if v}
 
 def _apply_active_profile_env():
@@ -818,15 +819,16 @@ def obs_collection_cmd(rest):
     with obs-websocket reachable. A mismatch exits non-zero so scripts/CI notice;
     `set` exits non-zero on failure so the Control Center job shows red."""
     import obs_ws
+    expected = _active_obs_collection()
     if rest[:1] == ["set"] and len(rest) == 1:
-        ok, note = obs_ws.set_scene_collection()
+        ok, note = obs_ws.set_scene_collection(name=expected)
         if not ok:
             sys.exit(f"obs: scene collection switch failed — {note}")
-        print(f"obs: {note or 'scene collection switched to ' + obs_ws.EXPECTED_SCENE_COLLECTION}.")
+        print(f"obs: {note or 'scene collection switched to ' + expected}.")
         return
     if rest:
         sys.exit("usage: iro obs collection [set]")
-    status, note = obs_ws.get_scene_collection()
+    status, note = obs_ws.get_scene_collection(expected=expected)
     if status is None:
         sys.exit(f"obs: scene collection check skipped — {note}")
     if status["match"]:
@@ -1216,7 +1218,7 @@ def _event_sections(ev, pf):
     if obs_running:
         try:
             import obs_ws
-            status, note = obs_ws.get_scene_collection()
+            status, note = obs_ws.get_scene_collection(expected=_active_obs_collection())
             apps.append(ev.classify_scene_collection(status, note))
         except Exception as exc:                     # noqa: BLE001 — best effort
             apps.append(ev.Result(ev.WARN, "OBS scene collection",
@@ -1357,7 +1359,7 @@ def _check_scene_collection():
     the Control Center OBS row (a switch rebuilds all sources, so it stays manual)."""
     try:
         import obs_ws
-        status, note = obs_ws.get_scene_collection()
+        status, note = obs_ws.get_scene_collection(expected=_active_obs_collection())
     except Exception as exc:                         # noqa: BLE001 — best effort
         print(f"obs: scene collection check skipped ({exc}).")
         return
@@ -1692,7 +1694,9 @@ def obs_collection_data(get=None):
     if get is None:
         try:
             import obs_ws
-            get = obs_ws.get_scene_collection
+            expected = _active_obs_collection()
+            def get():
+                return obs_ws.get_scene_collection(expected=expected)
         except Exception as exc:                     # noqa: BLE001 — best effort
             return {"ok": False, "note": str(exc)}
     status, note = get()
@@ -2098,6 +2102,22 @@ def _active_sheet_id(root, base, active):
                                    runtime_root=base).sheet_id
     except pcfg.ProfileError:
         return ""
+
+
+def _active_obs_collection():
+    """The active profile's OBS scene-collection name, or the obs_ws default
+    constant when no profile resolves. Tolerant: any resolution failure -> the
+    constant, so the check/switch still work on a profile-less machine."""
+    import obs_ws
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    active = _active_profile_name()
+    if active:
+        try:
+            return pcfg.resolve_config(root, override=active,
+                                       runtime_root=_runtime_base_dir()).obs_collection
+        except pcfg.ProfileError:
+            pass
+    return obs_ws.EXPECTED_SCENE_COLLECTION
 
 
 def _active_profile_env_path():
