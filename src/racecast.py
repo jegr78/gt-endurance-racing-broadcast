@@ -1774,6 +1774,18 @@ def servable_logo_path(logo_path):
     return ""
 
 
+def profile_logo():
+    """Absolute path to the ACTIVE profile's logo when it is a servable web
+    image, else None. Best-effort (never raises) -- the header logo is optional.
+    Served by GET /api/profile/logo."""
+    try:
+        root = _env_base(IS_FROZEN, _real_executable(), HERE)
+        rc = pcfg.resolve_config(root, runtime_root=_runtime_base_dir())
+        return servable_logo_path(rc.logo_path) or None
+    except Exception:  # noqa: BLE001 — best effort
+        return None
+
+
 def profiles_data():
     """Control Center profile switcher data: the effective active profile plus
     every available profile with its display NAME and whether SHEET_ID is set.
@@ -2669,6 +2681,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "env_read": env_entries_data,
         "env_write": env_write_data,
         "profiles": profiles_data,
+        "profile_logo": profile_logo,
         "profile_use": profile_use_data,
         "profile_new": profile_new_data,
         "profile_env_read": profile_env_entries_data,

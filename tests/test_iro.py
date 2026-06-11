@@ -1058,6 +1058,33 @@ def t_servable_logo_path_allows_web_images_only():
         assert m.servable_logo_path(p) == ""          # not a web image -> blanked
 
 
+def t_profile_logo_returns_active_servable_path():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        prof = os.path.join(td, "profiles")
+        os.makedirs(os.path.join(prof, "iro"))
+        open(os.path.join(td, ".env.example"), "w").close()
+        with open(os.path.join(prof, "iro", "profile.env"), "w") as fh:
+            fh.write("NAME=IRO\nLOGO=logo.svg\n")
+        logo = os.path.join(prof, "iro", "logo.svg")
+        with open(logo, "wb") as fh:
+            fh.write(b"<svg/>")
+        os.makedirs(os.path.join(td, "runtime"))
+        with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
+            fh.write("iro\n")
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            got = m.profile_logo()
+            os.remove(logo)                # file gone -> None
+            gone = m.profile_logo()
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        assert got == logo
+        assert gone is None
+
+
 def _raises(fn):
     try:
         fn()
