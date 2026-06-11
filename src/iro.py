@@ -379,22 +379,23 @@ def _relay_daemon_argv(rest, frozen):
         return [sys.executable, "relay", "run"] + list(rest)
     return [sys.executable, _relay_script(), "--runtime-dir", _runtime_dir()] + list(rest)
 
-def _oneshot_extra(command, rest, frozen, runtime_dir):
-    """Extra argv for a one-shot. --runtime-dir where the script supports it (see
-    RUNTIME_DIR_ONESHOTS); when frozen, also redirect default locations away from
-    the throwaway _MEIPASS unpack dir (unless the user passed the flag himself):
-    --out for the writers, and setup's --media/--graphics — those are INJECTED
-    into the OBS collection as absolute paths and must outlive the process."""
+def _oneshot_extra(command, rest, runtime_dir, base_dir):
+    """Extra argv for a one-shot. The asset writers (graphics/media/setup) get a
+    profile-scoped --out (+ setup's --media/--graphics) so their output lands
+    under runtime/<profile>/ in every run mode -- those are baked into the OBS
+    collection as absolute paths. The machine-level one-shots that take
+    --runtime-dir (preflight, cookies) get the un-scoped BASE runtime, so the
+    shared cookie jar stays at runtime/cookies.txt. The user's own --out wins."""
     extra = []
     if command in RUNTIME_DIR_ONESHOTS:
-        extra += ["--runtime-dir", runtime_dir]
-    if frozen and "--out" not in rest:
+        extra += ["--runtime-dir", base_dir]
+    if "--out" not in rest:
         out = {"graphics": os.path.join(runtime_dir, "graphics"),
                "media": os.path.join(runtime_dir, "media"),
                "setup": os.path.join(runtime_dir, "IRO_Endurance.import.json")}.get(command)
         if out:
             extra += ["--out", out]
-    if frozen and command == "setup":
+    if command == "setup":
         for flag, sub in (("--media", "media"), ("--graphics", "graphics")):
             if flag not in rest:
                 extra += [flag, os.path.join(runtime_dir, sub)]
@@ -1096,15 +1097,12 @@ def _load_relay_module(rel):
     return mod
 
 
-def _asset_dirs(gg, gm):
-    """Where `iro graphics`/`iro media` put files in THIS run mode. Frozen:
-    the oneshot injection redirects to runtime/ (see _oneshot_extra); repo and
-    package follow the scripts' own defaults (runtime/ vs. package root)."""
-    if IS_FROZEN:
-        return (os.path.join(_runtime_dir(), "graphics"),
-                os.path.join(_runtime_dir(), "media"))
-    return (gg.graphics_dir(os.path.dirname(os.path.abspath(gg.__file__))),
-            gm.media_dir(os.path.dirname(os.path.abspath(gm.__file__))))
+def _asset_dirs():
+    """Where `iro graphics`/`iro media` write: always the active profile's
+    runtime dir (the one-shot injection points --out there in every run mode --
+    see _oneshot_extra)."""
+    return (os.path.join(_runtime_dir(), "graphics"),
+            os.path.join(_runtime_dir(), "media"))
 
 
 def _asset_state(ev):
@@ -1119,7 +1117,7 @@ def _asset_state(ev):
     gg = _load_relay_module("relay/get-graphics.py")
     gm = _load_relay_module("relay/get-media.py")
     gg.load_dotenv(os.path.dirname(os.path.abspath(gg.__file__)))
-    g_dir, m_dir = _asset_dirs(gg, gm)
+    g_dir, m_dir = _asset_dirs()
     rows = ev.fetch_assets_rows(gg, os.environ.get("RACECAST_SHEET_ID"))
     missing_g = ev.check_assets(ev.required_graphics(gg, rows), g_dir) if rows else None
     missing_m = ev.check_assets(ev.required_media(gm, rows), m_dir) if rows else None
@@ -1380,7 +1378,7 @@ def _oneshot_code(command, rest):
         # in (real environment wins, same semantics as the scripts' load_dotenv).
         for key, val in _read_env_file().items():
             os.environ.setdefault(key, val)
-    extra = _oneshot_extra(command, rest, IS_FROZEN, _runtime_dir())
+    extra = _oneshot_extra(command, rest, _runtime_dir(), _runtime_base_dir())
     if command == "update" and "--current" not in rest:
         extra += ["--current", version()]
     return _run_script(ONESHOT_MAP[command], list(rest) + extra)

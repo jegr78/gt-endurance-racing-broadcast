@@ -256,24 +256,25 @@ def t_relay_daemon_argv():
 
 
 def t_oneshot_extra():
-    R = os.path.join("x", "runtime")
-    assert m._oneshot_extra("preflight", [], False, R) == ["--runtime-dir", R]
-    assert m._oneshot_extra("graphics", [], False, R) == []
-    assert m._oneshot_extra("graphics", [], True, R) == \
+    # new signature: (command, rest, runtime_dir, base_dir)
+    # --out is always injected now (profile-scoped, not only when frozen)
+    R = os.path.join("x", "runtime", "iro")   # profile runtime
+    B = os.path.join("x", "runtime")           # base runtime
+    assert m._oneshot_extra("preflight", [], R, B) == ["--runtime-dir", B]
+    assert m._oneshot_extra("graphics", [], R, B) == \
         ["--out", os.path.join(R, "graphics")]
-    assert m._oneshot_extra("media", [], True, R) == ["--out", os.path.join(R, "media")]
-    # setup INJECTS media/graphics dirs into the collection — frozen defaults
-    # would point into the throwaway _MEIPASS dir, so they get redirected too.
-    assert m._oneshot_extra("setup", [], True, R) == \
+    assert m._oneshot_extra("media", [], R, B) == ["--out", os.path.join(R, "media")]
+    # setup INJECTS media/graphics dirs into the collection -- always profile-scoped.
+    assert m._oneshot_extra("setup", [], R, B) == \
         ["--out", os.path.join(R, "IRO_Endurance.import.json"),
          "--media", os.path.join(R, "media"),
          "--graphics", os.path.join(R, "graphics")]
-    assert m._oneshot_extra("setup", ["--media", "m"], True, R) == \
+    assert m._oneshot_extra("setup", ["--media", "m"], R, B) == \
         ["--out", os.path.join(R, "IRO_Endurance.import.json"),
          "--graphics", os.path.join(R, "graphics")]
     assert m._oneshot_extra(
-        "setup", ["--out", "z", "--media", "m", "--graphics", "g"], True, R) == []
-    assert m._oneshot_extra("graphics", ["--out", "z"], True, R) == []
+        "setup", ["--out", "z", "--media", "m", "--graphics", "g"], R, B) == []
+    assert m._oneshot_extra("graphics", ["--out", "z"], R, B) == []
 
 
 def t_run_module_exit_codes():
@@ -370,8 +371,7 @@ def t_update_routes_as_oneshot():
 
 def t_update_oneshot_extra_injects_nothing():
     # update needs no runtime-dir/--out injection; --current is added in oneshot()
-    assert m._oneshot_extra("update", [], True, "/rt") == []
-    assert m._oneshot_extra("update", [], False, "/rt") == []
+    assert m._oneshot_extra("update", [], "/rt/iro", "/rt") == []
 
 
 def t_event_routes():
@@ -589,6 +589,22 @@ def t_profile_routing():
     # an unknown profile verb is NOT validated at the route seam (parse_profile_args
     # does that) — route just hands the rest through:
     assert m.route(["profile", "bogus"]) == {"kind": "profile", "rest": ["bogus"]}
+
+
+def t_oneshot_extra_paths():
+    rd = os.path.join("R", "iro")   # profile runtime
+    base = "R"                       # base runtime (cookies/preflight)
+    assert m._oneshot_extra("graphics", [], rd, base) == [
+        "--out", os.path.join(rd, "graphics")]
+    assert m._oneshot_extra("media", [], rd, base) == [
+        "--out", os.path.join(rd, "media")]
+    assert m._oneshot_extra("setup", [], rd, base) == [
+        "--out", os.path.join(rd, "IRO_Endurance.import.json"),
+        "--media", os.path.join(rd, "media"),
+        "--graphics", os.path.join(rd, "graphics")]
+    assert m._oneshot_extra("cookies", [], rd, base) == ["--runtime-dir", base]
+    assert m._oneshot_extra("preflight", [], rd, base) == ["--runtime-dir", base]
+    assert m._oneshot_extra("graphics", ["--out", "X"], rd, base) == []  # user override respected
 
 
 def t_profile_env_vars_filters_empty():
