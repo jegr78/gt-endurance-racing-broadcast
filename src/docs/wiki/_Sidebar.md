@@ -1,4 +1,4 @@
-### IRO Broadcast
+### GT Endurance Racing Broadcast
 
 **Start here**
 - [Home](Home)

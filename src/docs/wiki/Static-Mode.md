@@ -40,8 +40,8 @@ Advanced.
 ## Start / stop
 
 ```bash
-iro streams start     # launches one streamlink server per feed
-iro streams stop      # stops them (validates each PID is really a feed)
+racecast streams start     # launches one streamlink server per feed
+racecast streams stop      # stops them (validates each PID is really a feed)
 ```
 
 PID and log files live under `runtime/static/`. `stop-streams.py` verifies a PID actually

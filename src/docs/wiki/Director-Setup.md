@@ -29,7 +29,7 @@ are done when the Tailscale app shows **Connected**.
 
 ## Step 3 — Bookmark your two pages
 
-The producer gives you their address — it looks like `100.x.y.z` (`iro event
+The producer gives you their address — it looks like `100.x.y.z` (`racecast event
 start` prints both URLs ready to forward, see
 [Run an event](Run-an-event#before-you-go-live)):
 
@@ -53,9 +53,9 @@ Things you can check yourself, in order:
 | Tailscale app open and **Connected**? | Open the app and switch the connection on, then reload the page. |
 | Right address? | Both URLs use the producer's `100.x.y.z` address — not `localhost`, not a `192.168.…` one. Compare with what the producer sent you. |
 | Signed into the right account? | Your device must be signed into the Tailscale account that was invited. Unsure? Ask the producer to check their Tailscale admin for your device. |
-| Page loads, but a red **RELAY UNREACHABLE** banner shows | You ARE connected — the problem is on the producer's side. Tell the producer; `iro status` shows them what's down. |
+| Page loads, but a red **RELAY UNREACHABLE** banner shows | You ARE connected — the problem is on the producer's side. Tell the producer; `racecast status` shows them what's down. |
 | Panel loads, but scene/audio buttons stay grey or ON AIR says **OBS OFFLINE** | Check the three fields at the top of the panel — producer IP, port `4455`, the OBS WebSocket password — and press **Connect**. |
-| Still stuck | Ask the producer to run `iro tailscale status` and `iro status` — those name the problem. |
+| Still stuck | Ask the producer to run `racecast tailscale status` and `racecast status` — those name the problem. |
 
 ---
 

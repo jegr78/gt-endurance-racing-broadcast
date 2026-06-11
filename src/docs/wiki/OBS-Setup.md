@@ -8,9 +8,12 @@ collection.
 
 ## 1. Import the scene collection
 
-1. OBS → **Scene Collection → Import** → select `runtime/IRO_Endurance.import.json`
-   (in the package: `obs/IRO_Endurance.import.json`).
-2. Switch to the **IRO Endurance** collection.
+1. OBS → **Scene Collection → Import** → select the active profile's
+   `runtime/<profile>/GT_Endurance.import.json` (in the package: `obs/GT_Endurance.import.json`).
+2. Switch to the league's collection (named after the profile's `OBS_COLLECTION`, the
+   convention is **GT Endurance Racing — <league>**). Once imported, you can switch the
+   active league's collection from the CLI with `racecast obs collection set` — it
+   rebuilds every source, so it is always an explicit producer action, never automatic.
 3. **Images there?** Overlay / Standings / … should be visible. If not, `setup-assets.py`
    didn't run for this machine — re-run it and re-import (see [Configuration](Configuration)).
 
@@ -26,7 +29,7 @@ collection.
   on top. The director toggles it with the Companion **Standby Toggle** button (a
   *Set Source Visibility* toggle on `Stint / Standby Cover`, with a *Source Visible*
   feedback so it lights while active). Re-add the source after a rebuild with
-  `python3 tools/add_standby_cover.py src/obs/IRO_Endurance.json`.
+  `python3 tools/add_standby_cover.py src/obs/GT_Endurance.json`.
 - **Splitscreen** — two feeds side by side, for the ~10-minute handover.
 - **Interview** — interview graphic + Discord audio.
 - **Standby / BRB** — for breaks.
@@ -34,7 +37,7 @@ collection.
   audio**, played from local files (`runtime/media/intro.mp4` / `outro.mp4`). The director
   switches to them with the Companion **INTRO** / **OUTRO** buttons. The file paths are
   tokenised as `__RACECAST_MEDIA__` in the collection and resolved by `setup-assets.py`; download
-  or refresh the clips from the Sheet **Assets** tab with `iro media`
+  or refresh the clips from the Sheet **Assets** tab with `racecast media`
   (see [Configuration](Configuration)). If the clips are missing the scene shows black.
 
 > **Broadcast graphics are local files.** The still-graphics image sources — Overlay,
@@ -42,7 +45,7 @@ collection.
 > **weather** overlays (**Race Weather 1**, **Race Weather 2**, **Quali Weather**) — read from
 > `runtime/graphics/<Label>.png`. They are tokenised `__RACECAST_GRAPHICS__` in the collection
 > and resolved by `setup-assets.py`. Download them from the Sheet **Assets** tab with
-> `iro graphics` (one PNG per Assets row, the Sheet label is the
+> `racecast graphics` (one PNG per Assets row, the Sheet label is the
 > filename); a source whose file is missing shows black until you fetch it. The three
 > weather graphics are **hidden full-screen overlays in the Stint scene**, each switchable
 > by its own Companion toggle (`Weather Race (1) Toggle` / `Weather Race (2) Toggle` / `Weather Quali Toggle` — see
@@ -106,7 +109,7 @@ the optional Apps Script write-webhook setup.
 
 ## 5. Discord audio (interviews)
 
-The source **Discord Audio Capture** comes with the collection. `iro setup` realizes it
+The source **Discord Audio Capture** comes with the collection. `racecast setup` realizes it
 for the importing OS — no manual source-switching needed.
 
 - **macOS:** `App Audio Capture` (ScreenCaptureKit), bound to the Discord app. Grant OBS
@@ -118,11 +121,11 @@ for the importing OS — no manual source-switching needed.
 - **Linux:** requires the
   [PipeWire Audio Capture plugin](https://obsproject.com/forum/resources/pipewire-audio-capture.1458/)
   (untested). Install the plugin before importing the collection.
-- **Switched production machine or OS?** Re-run `iro setup` and re-import the collection.
+- **Switched production machine or OS?** Re-run `racecast setup` and re-import the collection.
 
 ## 6. Stream key
 
-Enter the **IRO YouTube channel** stream key in OBS only at event time
+Enter **the league's YouTube channel** stream key in OBS only at event time
 (**Settings → Stream**).
 
 Next: [Companion](Companion), then [Relay Mode](Relay-Mode).

@@ -3,10 +3,10 @@
 The relay reads the Sheet via CSV export (no key needed). Writing back —
 race-timer sync and the director panel's HUD/Schedule/POV controls — goes
 through **one** Google Apps Script web app deployed inside the broadcast
-Sheet. One URL + key in `.env` powers all of it:
+Sheet. One URL + key in the active profile's `profile.env` powers all of it:
 
 ```
-IRO_SHEET_PUSH_URL=https://script.google.com/macros/s/…/exec?key=<your secret>
+SHEET_PUSH_URL=https://script.google.com/macros/s/…/exec?key=<your secret>
 ```
 
 Without it everything still works read-only: the timer stays local to one
@@ -110,20 +110,20 @@ vocabulary columns — the same lists the sheet's own dropdowns use.
 
 3. **Deploy → New deployment → Web app**, execute as **Me**, access:
    **Anyone**. Copy the `/exec` URL.
-4. In `.env` on every producer machine:
+4. In the league's `profiles/<name>/profile.env` on every producer machine:
 
    ```
-   IRO_SHEET_PUSH_URL=https://script.google.com/macros/s/…/exec?key=<your secret>
+   SHEET_PUSH_URL=https://script.google.com/macros/s/…/exec?key=<your secret>
    ```
 
-5. Restart the relay. `iro event status` shows the `.env` check as PASS; the
+5. Restart the relay. `racecast event status` shows the profile check as PASS; the
    panel's HUD line reports `sheet sync OK` after the first action.
 
 ## Updating the script later
 
 **Manage deployments → ✎ Edit → Version: New version → Deploy.** This keeps
-the `/exec` URL — no `.env` change on any machine. (A *New deployment*
-instead creates a NEW URL and every `.env` must be updated.)
+the `/exec` URL — no `profile.env` change on any machine. (A *New deployment*
+instead creates a NEW URL and every `profile.env` must be updated.)
 
 The relay detects an outdated (v1, timer-only) script: panel writes then
 report *"webhook script outdated — redeploy"* instead of failing silently.
@@ -131,6 +131,6 @@ report *"webhook script outdated — redeploy"* instead of failing silently.
 ## Security
 
 The URL+key is a write credential for the Sheet — treat it like the other
-`.env` secrets (never commit it). The endpoints the panel uses sit on the
+`profile.env` secrets (never commit it). The endpoints the panel uses sit on the
 relay's unauthenticated control server: the tailnet is the trust boundary,
 same as all other `/panel` controls.

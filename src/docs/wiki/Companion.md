@@ -10,10 +10,10 @@ actions for directors without a Stream Deck. Install it first per
 
 ## Import the button board
 
-1. Start Companion: `iro companion start` (Windows/macOS — the first run just
+1. Start Companion: `racecast companion start` (Windows/macOS — the first run just
    launches Companion; Linux: start it manually). In the launcher press **Launch GUI**.
-2. In the admin: **Import/Export → Import** → the file `iro export companion` writes
-   (`runtime/iro-buttons.companionconfig`). The import dialog offers two paths:
+2. In the admin: **Import/Export → Import** → the file `racecast export companion` writes
+   (the active profile's `runtime/<profile>/racecast-buttons.companionconfig`). The import dialog offers two paths:
    - **First import on a fresh machine:** confirm **"Replace current
      configuration"**. Afterwards enter the OBS WebSocket password once (next
      section) — the shipped config is password-stripped.
@@ -21,7 +21,7 @@ actions for directors without a Stream Deck. Install it first per
      Components"** and keep the **default checkboxes** — this preserves
      Companion's settings, **including the stored OBS WebSocket password**;
      nothing needs re-typing.
-3. Bind the board to the tailnet: `iro companion restart` — sets Companion's bind
+3. Bind the board to the tailnet: `racecast companion restart` — sets Companion's bind
    address to this machine's Tailscale IP. (Linux: set the launcher's **GUI
    Interface** to the Tailscale IP manually.)
 
@@ -56,7 +56,7 @@ go to `/setup/set/racecontrol/…` / `/setup/clear/racecontrol` and need the
 
 ## Test
 
-Run `iro companion open-tablet` (opens the board on Companion's bound address), press
+Run `racecast companion open-tablet` (opens the board on Companion's bound address), press
 a button → OBS reacts. For remote directors, see [Director (Remote)](Director).
 
 ## State feedback (optional)

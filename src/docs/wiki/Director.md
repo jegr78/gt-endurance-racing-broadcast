@@ -59,10 +59,10 @@ while the condition holds and disappear on their own when it is resolved:
 
 | Banner | Meaning | Who acts |
 |---|---|---|
-| **RELAY UNREACHABLE** (red) | the panel cannot reach the producer's relay — buttons in FEEDS/TIMER will not work | tell the producer (`iro status` on their side names the problem) |
+| **RELAY UNREACHABLE** (red) | the panel cannot reach the producer's relay — buttons in FEEDS/TIMER will not work | tell the producer (`racecast status` on their side names the problem) |
 | **SHEET SYNC FAILED** (red) | a write to the shared sheet did not go through | tell the producer; re-try the change once the banner clears |
 | **TIMER SHEET SYNC FAILED** (red) | the race timer's state is not reaching the sheet — a producer handover would not pick up the correct remaining time | tell the producer; details in [Race Timer](Race-Timer) |
-| **COOKIES N H OLD** (amber) | the producer's YouTube cookies are stale — the **next handover may fail** | tell the producer: `iro cookies firefox` on the producer machine |
+| **COOKIES N H OLD** (amber) | the producer's YouTube cookies are stale — the **next handover may fail** | tell the producer: `racecast cookies firefox` on the producer machine |
 
 One-off action failures (a button press that didn't take) show as short
 toasts in the top-right corner and are also logged in the log box at the
@@ -94,7 +94,7 @@ Setup tab in the background. An amber outline on the dropdown means the write
 is pending; the HUD status line shows the sync state. Editing the sheet
 dropdowns directly works exactly as before — the two methods are equivalent.
 
-The panel HUD row needs the sheet-write webhook (`IRO_SHEET_PUSH_URL`);
+The panel HUD row needs the sheet-write webhook (the profile's `SHEET_PUSH_URL`);
 without it the panel dropdowns are read-only. (The sheet's own dropdowns work
 either way — they never need the webhook.) See [Sheet-Webhook](Sheet-Webhook).
 
@@ -114,7 +114,7 @@ sheet (after a confirmation). The row itself stays and can be refilled later —
 rows are never deleted, because removing a row would shift the stint numbering
 of everything after it.
 
-The URLs section also needs `IRO_SHEET_PUSH_URL` — without it the fields are
+The URLs section also needs the profile's `SHEET_PUSH_URL` — without it the fields are
 read-only.
 
 ## The Companion button board
