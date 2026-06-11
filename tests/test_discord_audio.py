@@ -110,6 +110,13 @@ def t_apply_collection_name_noop_on_blank():
     assert out2["name"] == "IRO Endurance"
 
 
+def t_canonicalize_name_resets_to_constant():
+    d = {"name": "ERF Endurance", "sources": []}
+    out = tk.canonicalize_name(d)
+    assert out["name"] == tk.CANONICAL_COLLECTION_NAME
+    assert tk.CANONICAL_COLLECTION_NAME == "IRO Endurance"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

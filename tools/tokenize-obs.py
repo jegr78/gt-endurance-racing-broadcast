@@ -22,6 +22,19 @@ DISCORD_AUDIO_CANONICAL = ("sck_audio_capture",
                            {"type": 1, "application": "com.hnc.Discord"})
 
 
+# The canonical scene-collection name in the committed source. Mirrors
+# obs_ws.EXPECTED_SCENE_COLLECTION and src/obs/IRO_Endurance.json's "name";
+# M5 renames all three together. Folding an export back resets the name so a
+# per-league name (written by setup-assets) never lands in git.
+CANONICAL_COLLECTION_NAME = "IRO Endurance"
+
+
+def canonicalize_name(d):
+    """Reset the collection's display name to the canonical source name."""
+    d["name"] = CANONICAL_COLLECTION_NAME
+    return d
+
+
 def canonicalize_discord_audio(d):
     """True iff a non-canonical Discord audio source was rewritten."""
     src_id, settings = DISCORD_AUDIO_CANONICAL
@@ -74,6 +87,7 @@ def main():
     d = tokenize_sheets(d, sheet_count)
     if canonicalize_discord_audio(d):
         print("Discord audio source folded back to the canonical macOS form.")
+    canonicalize_name(d)
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(d, fh, ensure_ascii=False, indent=4)
