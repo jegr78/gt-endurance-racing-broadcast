@@ -897,6 +897,31 @@ def t_overlay_write_then_read_roundtrip():
         assert os.path.exists(on_disk)
 
 
+def t_overlay_timer_write_then_read_roundtrip():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        prof = os.path.join(td, "profiles", "iro")
+        os.makedirs(prof)
+        open(os.path.join(prof, "profile.env"), "w").close()
+        open(os.path.join(td, ".env.example"), "w").close()
+        os.makedirs(os.path.join(td, "runtime"))
+        with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
+            fh.write("iro\n")
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            w = m.overlay_write_data("timer", "#clock{font-size:300px}")
+            d = m.overlay_read_data("timer")
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        assert w["ok"] is True
+        assert d["ok"] is True and d["css"] == "#clock{font-size:300px}"
+        assert d["page"] == "timer"
+        on_disk = os.path.join(td, "profiles", "iro", "overlay", "timer.css")
+        assert os.path.exists(on_disk)
+
+
 def t_overlay_rejects_unknown_page():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
