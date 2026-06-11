@@ -1916,6 +1916,19 @@ def assets_files_data(roots=None):
         return {"ok": False, "error": f"asset listing failed: {exc}"}
 
 
+def asset_roots_data():
+    """The active profile's graphics/media dirs the asset-file route serves from,
+    resolved LIVE on every call (NOT snapshotted when the Control Center starts).
+    /api/assets/files lists from the same _runtime_dir(); freezing this one at
+    startup let the two diverge — the gallery LISTED files (live, correct) that
+    serving then 404'd from a stale root. That bit a Finder-launched (App-
+    Translocated) .app, where early-startup path resolution differs from the
+    settled per-request value, and would also bite a runtime profile switch (#55)."""
+    rt = _runtime_dir()
+    return {"graphics": os.path.join(rt, "graphics"),
+            "media": os.path.join(rt, "media")}
+
+
 _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -2673,8 +2686,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "build_argv": ops_mod.build_argv,
         "assets": assets_status_data,
         "asset_files": assets_files_data,
-        "asset_roots": {"graphics": os.path.join(_runtime_dir(), "graphics"),
-                        "media": os.path.join(_runtime_dir(), "media")},
+        "asset_roots": asset_roots_data,
         "tools": tools_status_data,
         "apps": apps_status_data,
         "preflight": preflight_data,
