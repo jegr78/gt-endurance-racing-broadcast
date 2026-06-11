@@ -119,9 +119,80 @@ def _serve(ctx):
     return httpd, httpd.server_address[1]
 
 
+_real_urlopen = urllib.request.urlopen
+
+
+def _urlopen(url_or_req, timeout=5, _tries=4):
+    """urlopen with a short retry on transient connection-abort errors. These
+    tests drive a real ThreadingHTTPServer, and Windows CI occasionally aborts the
+    client socket mid-handshake (ConnectionAbortedError / WinError 10053) — a
+    non-deterministic network flake, not a server bug (the relay treats the same
+    error as benign, issue #25). HTTPError (a real HTTP response) and any
+    non-transient error propagate immediately; the final attempt re-raises the
+    real exception rather than a sentinel, so there is no `raise None` path."""
+    for attempt in range(_tries):
+        try:
+            return _real_urlopen(url_or_req, timeout=timeout)
+        except urllib.error.HTTPError:
+            raise                                   # a real response, not a flake
+        except (urllib.error.URLError, ConnectionError, TimeoutError) as exc:
+            reason = getattr(exc, "reason", exc)    # URLError wraps the cause in .reason
+            transient = isinstance(exc, (ConnectionError, TimeoutError)) or \
+                isinstance(reason, (ConnectionError, TimeoutError))
+            if not transient or attempt == _tries - 1:
+                raise                               # give up: surface the real error
+        time.sleep(0.1 * (attempt + 1))
+    raise AssertionError("unreachable: _tries must be >= 1")
+
+
+def _with_fake_urlopen(fake):
+    """Swap _real_urlopen + neutralise the retry backoff for a test; returns a
+    restore() callable."""
+    global _real_urlopen
+    saved_open, saved_sleep = _real_urlopen, time.sleep
+    _real_urlopen = fake
+    time.sleep = lambda *_a, **_k: None
+    def restore():
+        global _real_urlopen
+        _real_urlopen, time.sleep = saved_open, saved_sleep
+    return restore
+
+
+def t_urlopen_retries_then_raises_the_real_error():
+    calls = []
+    def always_abort(url, timeout=None):
+        calls.append(url)
+        raise ConnectionAbortedError(10053, "aborted")
+    restore = _with_fake_urlopen(always_abort)
+    try:
+        try:
+            _urlopen("http://x", timeout=1, _tries=3)
+            raise AssertionError("expected the connection error to surface")
+        except ConnectionAbortedError:
+            pass                                    # the real error, never TypeError/None
+    finally:
+        restore()
+    assert len(calls) == 3                          # retried up to _tries
+
+
+def t_urlopen_returns_after_a_transient_then_success():
+    calls = []
+    def flaky(url, timeout=None):
+        calls.append(url)
+        if len(calls) < 2:
+            raise ConnectionResetError(10054, "reset")
+        return "RESPONSE"
+    restore = _with_fake_urlopen(flaky)
+    try:
+        assert _urlopen("http://x", _tries=3) == "RESPONSE"
+    finally:
+        restore()
+    assert len(calls) == 2
+
+
 def _get(port, path):
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=5) as r:
+        with _urlopen(f"http://127.0.0.1:{port}{path}", timeout=5) as r:
             return r.status, r.read()
     except urllib.error.HTTPError as e:
         return e.code, e.read()
@@ -131,7 +202,7 @@ def _post(port, path):
     req = urllib.request.Request(f"http://127.0.0.1:{port}{path}",
                                  method="POST", data=b"")
     try:
-        with urllib.request.urlopen(req, timeout=5) as r:
+        with _urlopen(req, timeout=5) as r:
             return r.status, r.read()
     except urllib.error.HTTPError as e:
         return e.code, e.read()
@@ -308,7 +379,7 @@ def t_job_stream_delivers_lines_then_done():
     try:
         _c, body = _post(port, "/api/op/echo")
         job_id = json.loads(body)["job_id"]
-        req = urllib.request.urlopen(
+        req = _urlopen(
             f"http://127.0.0.1:{port}/api/jobs/{job_id}/stream", timeout=10)
         assert req.headers["Content-Type"] == "text/event-stream"
         raw = b""
@@ -357,7 +428,7 @@ def _post_json(port, path, obj):
         data=json.dumps(obj).encode("utf-8"),
         headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=5) as r:
+        with _urlopen(req, timeout=5) as r:
             return r.status, r.read()
     except urllib.error.HTTPError as e:
         return e.code, e.read()
@@ -383,7 +454,7 @@ def t_op_malformed_body_is_400():
             f"http://127.0.0.1:{port}/api/op/echo", method="POST",
             data=b"{not json", headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=5) as r:
+            with _urlopen(req, timeout=5) as r:
                 code = r.status
         except urllib.error.HTTPError as e:
             code = e.code
@@ -512,7 +583,7 @@ def t_asset_file_serves_bytes_with_ctype():
     try:
         req = urllib.request.Request(
             f"http://127.0.0.1:{port}/api/assets/file/graphics/Overlay.png")
-        with urllib.request.urlopen(req, timeout=5) as r:
+        with _urlopen(req, timeout=5) as r:
             assert r.status == 200
             assert r.headers.get("Content-Type") == "image/png"
             assert r.read().startswith(b"\x89PNG")
@@ -602,7 +673,7 @@ def t_env_post_malformed_body_is_400():
             f"http://127.0.0.1:{port}/api/env", method="POST",
             data=b"{not json", headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=5) as r:
+            with _urlopen(req, timeout=5) as r:
                 code = r.status
         except urllib.error.HTTPError as e:
             code = e.code
