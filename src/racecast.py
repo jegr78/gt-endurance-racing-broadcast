@@ -1916,6 +1916,19 @@ def assets_files_data(roots=None):
         return {"ok": False, "error": f"asset listing failed: {exc}"}
 
 
+def asset_roots_data():
+    """The active profile's graphics/media dirs the asset-file route serves from,
+    resolved LIVE on every call (NOT snapshotted when the Control Center starts).
+    /api/assets/files lists from the same _runtime_dir(); freezing this one at
+    startup let the two diverge — the gallery LISTED files (live, correct) that
+    serving then 404'd from a stale root. That bit a Finder-launched (App-
+    Translocated) .app, where early-startup path resolution differs from the
+    settled per-request value, and would also bite a runtime profile switch (#55)."""
+    rt = _runtime_dir()
+    return {"graphics": os.path.join(rt, "graphics"),
+            "media": os.path.join(rt, "media")}
+
+
 _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -2674,8 +2687,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "build_argv": ops_mod.build_argv,
         "assets": assets_status_data,
         "asset_files": assets_files_data,
-        "asset_roots": {"graphics": os.path.join(_runtime_dir(), "graphics"),
-                        "media": os.path.join(_runtime_dir(), "media")},
+        "asset_roots": asset_roots_data,
         "tools": tools_status_data,
         "apps": apps_status_data,
         "preflight": preflight_data,
@@ -2734,7 +2746,18 @@ def init_cmd(rest):
     raise SystemExit(code)
 
 
-def main(argv=None):
+def _bootstrap(argv):
+    """Shared process startup for BOTH binaries: the `racecast` CLI (main) and the
+    windowed `racecast-ui` launcher (racecast_ui.main). It lives in one place on
+    purpose — the two used to duplicate this sequence and drifted, so the launcher
+    shipped without _ensure_tool_path (#46, tools shown missing) and then without
+    _apply_active_profile_env (#54, the active profile's SHEET_ID was never injected
+    so preflight/asset checks read an empty env). Runs UTF-8 IO setup, .env +
+    example-profile seeding, stale-binary cleanup, frozen env load, SSL certs, and
+    tool PATH; consumes a global --profile; injects the active profile's league env
+    for the in-process providers and any children. Returns argv with --profile
+    removed. Raises ValueError on a malformed --profile (each entrypoint renders
+    that fatally in its own way: CLI -> stderr exit, launcher -> native dialog)."""
     _force_utf8_io()    # UTF-8 stdout/stderr before anything prints (issue #24)
     home = _app_home(_real_executable())   # plain CLI binary: == dirname(exe)
     ensure_env_file(home)
@@ -2743,14 +2766,19 @@ def main(argv=None):
     _load_env_frozen()
     _ensure_ssl_certs()
     _ensure_tool_path()    # Finder/Dock launch truncates PATH past Homebrew (#38)
+    argv, profile = pa.split_profile_flag(argv)
+    if profile:
+        os.environ["RACECAST_PROFILE"] = profile   # M3 consumers read this
+    _apply_active_profile_env()   # inject the active profile's sheet config for children
+    return argv
+
+
+def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     try:
-        argv, _profile = pa.split_profile_flag(argv)
+        argv = _bootstrap(argv)
     except ValueError as e:
         sys.exit(f"racecast: {e}")
-    if _profile:
-        os.environ["RACECAST_PROFILE"] = _profile   # M3 consumers read this
-    _apply_active_profile_env()   # inject the active profile's sheet config for children
     try:
         action = route(argv)
     except ValueError as e:

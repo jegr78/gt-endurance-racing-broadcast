@@ -47,7 +47,7 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "asset_files": lambda: {"ok": True,
                                     "graphics": ["Overlay.png"],
                                     "media": ["intro.mp4"]},
-            "asset_roots": {"graphics": ROOT, "media": ROOT},
+            "asset_roots": lambda: {"graphics": ROOT, "media": ROOT},
             "tools": lambda: {"ok": True, "tools": [
                 {"name": "yt-dlp", "installed": True, "version": "1.2.3"},
                 {"name": "ffmpeg", "installed": False, "version": None}]},
@@ -602,7 +602,7 @@ def t_asset_file_serves_bytes_with_ctype():
     with open(os.path.join(d, "Overlay.png"), "wb") as f:
         f.write(b"\x89PNG\r\n\x1a\nFAKE")
     ctx = _ctx()
-    ctx["asset_roots"] = {"graphics": d, "media": d}
+    ctx["asset_roots"] = lambda: {"graphics": d, "media": d}
     httpd, port = _serve(ctx)
     try:
         req = urllib.request.Request(
@@ -617,7 +617,7 @@ def t_asset_file_serves_bytes_with_ctype():
 
 def t_asset_file_rejects_traversal():
     ctx = _ctx()
-    ctx["asset_roots"] = {"graphics": ROOT, "media": ROOT}
+    ctx["asset_roots"] = lambda: {"graphics": ROOT, "media": ROOT}
     httpd, port = _serve(ctx)
     try:
         for bad in ("/api/assets/file/graphics/..%2F..%2Fsecret",
@@ -631,12 +631,39 @@ def t_asset_file_rejects_traversal():
 
 def t_asset_file_missing_is_404():
     ctx = _ctx()
-    ctx["asset_roots"] = {"graphics": tempfile.mkdtemp(),
-                          "media": tempfile.mkdtemp()}
+    ctx["asset_roots"] = lambda: {"graphics": tempfile.mkdtemp(),
+                                  "media": tempfile.mkdtemp()}
     httpd, port = _serve(ctx)
     try:
         code, _b = _get(port, "/api/assets/file/graphics/nothere.png")
         assert code == 404
+    finally:
+        httpd.shutdown()
+
+
+def t_asset_file_root_resolved_live_per_request():
+    # Regression for #55: serving must resolve the runtime root the SAME way the
+    # listing (/api/assets/files) does — LIVE, per request — not from a dict
+    # snapshotted at Control Center startup. A stale snapshot let the gallery list
+    # files (live, correct) that serving then 404'd (stale): the Finder-launched
+    # App-Translocated .app and the runtime profile-switch both hit it. asset_roots
+    # is therefore a zero-arg callable; serving follows its CURRENT return.
+    empty = tempfile.mkdtemp()
+    real = tempfile.mkdtemp()
+    with open(os.path.join(real, "Overlay.png"), "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\nFAKE")
+    state = {"graphics": empty, "media": empty}
+    ctx = _ctx()
+    ctx["asset_roots"] = lambda: state          # live: reflects the current root
+    httpd, port = _serve(ctx)
+    try:
+        code, _b = _get(port, "/api/assets/file/graphics/Overlay.png")
+        assert code == 404                       # not under the current root yet
+        state["graphics"] = real                 # root resolves (profile settles)
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/assets/file/graphics/Overlay.png")
+        with _urlopen(req, timeout=5) as r:
+            assert r.status == 200 and r.read().startswith(b"\x89PNG")
     finally:
         httpd.shutdown()
 
