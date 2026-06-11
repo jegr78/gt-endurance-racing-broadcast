@@ -76,6 +76,11 @@ def main():
     # .env template (repo root, not src/) so producers can set their own RACECAST_SHEET_ID
     shutil.copy2(os.path.join(ROOT, ".env.example"), os.path.join(PKG, ".env.example"))
 
+    # profiles/example/ (repo root, not src/): the league template `racecast profile
+    # new` copies from. Without it the shipped package can't create a profile (#45).
+    shutil.copytree(os.path.join(ROOT, "profiles", "example"),
+                    os.path.join(PKG, "profiles", "example"))
+
     # companion: copy + strip password (defense in depth)
     os.makedirs(os.path.join(PKG, "companion"))
     with open(os.path.join(SRC, "companion", "racecast-buttons.companionconfig"), encoding="utf-8") as fh:
@@ -140,6 +145,8 @@ def main():
         "preflight shipped": os.path.isfile(os.path.join(PKG, "scripts", "preflight.py")),
         "timer html shipped": os.path.isfile(os.path.join(PKG, "timer.html")),
         ".env.example shipped": os.path.isfile(os.path.join(PKG, ".env.example")),
+        "example profile shipped": os.path.isfile(
+            os.path.join(PKG, "profiles", "example", "profile.env")),
         "no sheet url in relay": not re.search(r"/spreadsheets/d/[A-Za-z0-9_-]{20,}/", relay),
         "racecast cli shipped": os.path.isfile(os.path.join(PKG, "racecast.py")),
         "racecast-ui launcher shipped": os.path.isfile(os.path.join(PKG, "racecast_ui.py")),

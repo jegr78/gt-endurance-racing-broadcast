@@ -77,6 +77,16 @@ def t_valid_profile_name():
     assert not m.valid_profile_name("")
 
 
+def t_slugify_makes_directory_safe_slug():
+    assert m.slugify("IRO GTEC") == "iro-gtec"
+    assert m.slugify("erf") == "erf"
+    assert m.slugify("gt-2026_a") == "gt-2026_a"        # already-valid slugs unchanged
+    assert m.slugify("  Hello   World!  ") == "hello-world"
+    assert m.slugify("../../etc") == "etc"               # path traversal collapses to a slug
+    assert m.slugify("!!!") == ""                        # nothing usable
+    assert m.slugify("") == ""
+
+
 def _mkroot_with_example(td):
     """A fake project root with profiles/example/profile.env."""
     root = os.path.join(td, "proj")
@@ -109,13 +119,24 @@ def t_create_profile_from_other_profile():
         assert m.cfg.parse_profile(root, "erf")["SHEET_ID"] == "abc"
 
 
-def t_create_profile_rejects_bad_name_existing_and_missing_source():
+def t_create_profile_accepts_spaces_via_slug_and_sets_display_name():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot_with_example(td)
-        _raises(lambda: m.create_profile(root, "BAD NAME"))
+        target = m.create_profile(root, "IRO GTEC")
+        assert target == os.path.join(root, "profiles", "iro-gtec")   # slugged dir
+        assert m.cfg.list_profiles(root) == ["iro-gtec"]
+        # the typed name is preserved as the league display NAME, not the slug
+        assert m.cfg.parse_profile(root, "iro-gtec")["NAME"] == "IRO GTEC"
+
+
+def t_create_profile_rejects_unsluggable_existing_and_missing_source():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot_with_example(td)
+        _raises(lambda: m.create_profile(root, "!!!"))       # nothing usable -> empty slug
         _raises(lambda: m.create_profile(root, "example"))   # reserved
         m.create_profile(root, "erf")
         _raises(lambda: m.create_profile(root, "erf"))        # already exists
+        _raises(lambda: m.create_profile(root, "Erf"))        # same slug already exists
         _raises(lambda: m.create_profile(root, "x", source="ghost"))  # no source
 
 

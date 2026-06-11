@@ -67,7 +67,10 @@ racecast profile new <name> --from example     # copy a profile dir to start a n
 ```
 
 `racecast profile new <name>` copies `profiles/example/` (or another profile via
-`--from <src>`) into `profiles/<name>/`. `--from` defaults to `example`.
+`--from <src>`) into `profiles/<name>/`. `--from` defaults to `example`. The name you
+type may contain spaces and capitals — e.g. `racecast profile new "IRO GTEC"`: it is
+slugged into the directory name (`profiles/iro-gtec/`) and kept verbatim as the league
+display `NAME` in the new `profile.env`. Use that slug for `profile use` / `--profile`.
 
 A global **`--profile <name>`** flag runs a single command against a non-active league
 without switching:
@@ -88,9 +91,10 @@ With several profiles and none of the above set, the CLI asks you to choose one.
 ## Add a second league
 
 ```bash
-racecast profile new <name> --from example   # copy the template into profiles/<name>/
-# edit profiles/<name>/profile.env — fill in NAME, SHEET_ID, (optional) SHEET_PUSH_URL, …
-racecast profile use <name>                  # make it active
+racecast profile new <name> --from example   # copy the template into profiles/<slug>/
+# edit profiles/<slug>/profile.env — fill in SHEET_ID, (optional) SHEET_PUSH_URL, … (NAME
+# is already set from the name you typed)
+racecast profile use <slug>                  # make it active
 ```
 
 Then run the per-league setup steps for it — `racecast graphics`, `racecast media`,

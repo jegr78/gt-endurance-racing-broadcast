@@ -193,6 +193,40 @@ def t_cleanup_old_binary():
         assert m.cleanup_old_binary(d, frozen=True, platform="win32") is False
 
 
+def t_ensure_example_profile_seeds_once():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        bundled = os.path.join(d, "bundled-example")
+        os.makedirs(bundled)
+        with open(os.path.join(bundled, "profile.env"), "w", encoding="utf-8") as fh:
+            fh.write("NAME=Example League\nSHEET_ID=\n")
+        home = os.path.join(d, "home")
+        os.makedirs(home)
+        # not frozen -> no-op
+        assert m.ensure_example_profile(home, frozen=False, bundled=bundled) is False
+        assert not os.path.exists(os.path.join(home, "profiles", "example"))
+        # frozen + bundled template + no profiles/example -> seeded next to the binary
+        assert m.ensure_example_profile(home, frozen=True, bundled=bundled) is True
+        seeded = os.path.join(home, "profiles", "example", "profile.env")
+        assert os.path.isfile(seeded)
+        # existing profiles/example is never clobbered
+        with open(seeded, "w", encoding="utf-8") as fh:
+            fh.write("NAME=Edited\n")
+        assert m.ensure_example_profile(home, frozen=True, bundled=bundled) is False
+        with open(seeded, encoding="utf-8") as fh:
+            assert fh.read() == "NAME=Edited\n"
+
+
+def t_ensure_example_profile_without_bundle():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        home = os.path.join(d, "home")
+        os.makedirs(home)
+        missing = os.path.join(d, "nope")
+        assert m.ensure_example_profile(home, frozen=True, bundled=missing) is False
+        assert not os.path.exists(os.path.join(home, "profiles", "example"))
+
+
 def t_ensure_env_file_without_template():
     import tempfile
     with tempfile.TemporaryDirectory() as d:
@@ -757,6 +791,24 @@ def t_profile_new_data_creates_from_example():
         assert os.path.isfile(os.path.join(td, "profiles", "gt3", "profile.env"))
 
 
+def t_profile_new_data_spaced_name_returns_slug():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        ex = os.path.join(td, "profiles", "example")
+        os.makedirs(ex)
+        open(os.path.join(td, ".env.example"), "w").close()
+        with open(os.path.join(ex, "profile.env"), "w") as fh:
+            fh.write("NAME=Example\nSHEET_ID=\n")
+        orig_b = m._env_base
+        m._env_base = lambda *a, **k: td
+        try:
+            d = m.profile_new_data("IRO GTEC", "example")
+        finally:
+            m._env_base = orig_b
+        assert d["ok"] is True and d["name"] == "iro-gtec"   # slug, switchable via `use`
+        assert os.path.isfile(os.path.join(td, "profiles", "iro-gtec", "profile.env"))
+
+
 def t_profile_new_data_bad_name_is_error():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
@@ -766,7 +818,7 @@ def t_profile_new_data_bad_name_is_error():
         orig_b = m._env_base
         m._env_base = lambda *a, **k: td
         try:
-            d = m.profile_new_data("../evil", "example")
+            d = m.profile_new_data("!!!", "example")   # slugifies to empty -> rejected
         finally:
             m._env_base = orig_b
         assert d["ok"] is False and d["error"]

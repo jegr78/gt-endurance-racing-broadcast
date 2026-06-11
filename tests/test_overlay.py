@@ -53,6 +53,16 @@ def t_resolve_overlay_font_ok():
         assert hit and hit[1] == "font/woff2"
         assert os.path.basename(hit[0]) == "Title.woff2"
 
+def t_font_ctypes_out_is_identity_whitelist():
+    # The handler re-derives the Content-Type header from this constant map
+    # (defense vs. header injection, mirroring ASSET_CTYPES), so every ctype
+    # resolve_overlay_font can return must map back to itself — otherwise a valid
+    # font would 404 — and any unknown value must drop to None.
+    for ctype in feeds.FONT_CTYPES.values():
+        assert feeds.FONT_CTYPES_OUT.get(ctype) == ctype
+    assert feeds.FONT_CTYPES_OUT.get("text/html; charset=utf-8") is None
+
+
 def t_resolve_overlay_font_rejects_traversal_and_bad_ext():
     with tempfile.TemporaryDirectory() as tmp:
         od = _mkoverlay(tmp, fonts={"ok.ttf": b"x"})

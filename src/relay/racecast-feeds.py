@@ -236,6 +236,10 @@ def resolve_asset(assets_dir, sub, key):
 OVERLAY_PAGES = ("hud", "timer")
 FONT_CTYPES = {"woff2": "font/woff2", "woff": "font/woff",
                "ttf": "font/ttf", "otf": "font/otf"}
+# Identity whitelist (same role as ASSET_CTYPES): the handler re-derives the
+# Content-Type header value from this constant map, so a request-derived string
+# can never reach send_header().
+FONT_CTYPES_OUT = {ctype: ctype for ctype in FONT_CTYPES.values()}
 FONT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 def read_overlay_css(overlay_dir, page):
@@ -1476,6 +1480,17 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             if not ctype:
                 return self._send({"error": "asset not found", "key": key}, 404)
             return self._send_file(path, ctype)
+        def _send_font(self, overlay_dir, name):
+            hit = resolve_overlay_font(overlay_dir, name)
+            if not hit:
+                return self._send({"error": "font not found", "key": name}, 404)
+            path, ctype = hit
+            # Header value comes from the FONT_CTYPES_OUT constant, never from the
+            # request-derived tuple (defense vs. header injection) — mirrors _send_asset.
+            ctype = FONT_CTYPES_OUT.get(ctype)
+            if not ctype:
+                return self._send({"error": "font not found", "key": name}, 404)
+            return self._send_file(path, ctype)
         def log_message(self, *a): pass
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
@@ -1502,10 +1517,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["timer", "override.css"]:
                     return self._send_css(read_overlay_css(overlay_dir, "timer"))
                 if len(p) == 3 and p[:2] == ["overlay", "fonts"]:
-                    hit = resolve_overlay_font(overlay_dir, p[2])
-                    if not hit:
-                        return self._send({"error": "font not found", "key": p[2]}, 404)
-                    return self._send_file(hit[0], hit[1])
+                    return self._send_font(overlay_dir, p[2])
                 if p[:1] == ["timer"]:
                     if p == ["timer"]:
                         if not timer_path: return self._send({"error": "timer disabled"}, 404)

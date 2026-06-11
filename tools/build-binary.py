@@ -85,6 +85,13 @@ def build_target(launcher, workdir, version_file, sep, entry, name, windowed):
     # — it lives on GitHub and the Help page links to it.
     for rel in DOC_FILES:
         cmd += ["--add-data", f"{os.path.join(SRC, rel)}{sep}src/docs"]
+    # profiles/example/ is the league template `racecast profile new` copies from.
+    # It lives at the repo root (a sibling of src/), not under src/, so bundle it
+    # explicitly to profiles/example — racecast.ensure_example_profile() unpacks it
+    # next to the binary on first run (the release archive ships only the binaries
+    # + .env.example, and `racecast update` swaps just the binary). See issue #45.
+    cmd += ["--add-data",
+            f"{os.path.join(ROOT, 'profiles', 'example')}{sep}profiles/example"]
     cmd.append(os.path.join(SRC, entry))
     print("Running:", " ".join(cmd), flush=True)
     if subprocess.call(cmd) != 0:
