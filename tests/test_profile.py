@@ -46,6 +46,8 @@ def t_parse_new_with_from():
     assert m.parse_profile_args(["new", "erf", "--from=iro"])["source"] == "iro"
     _raises(lambda: m.parse_profile_args(["new"]))
     _raises(lambda: m.parse_profile_args(["new", "erf", "--bogus"]))
+    _raises(lambda: m.parse_profile_args(["new", "erf", "--from"]))    # missing value
+    _raises(lambda: m.parse_profile_args(["new", "erf", "--from="]))   # empty value
 
 
 def t_parse_unknown_verb_raises():
@@ -63,6 +65,7 @@ def t_split_profile_flag_extracts_anywhere():
 
 def t_split_profile_flag_missing_value_raises():
     _raises(lambda: m.split_profile_flag(["--profile"]))
+    _raises(lambda: m.split_profile_flag(["--profile=", "relay"]))   # empty value
 
 
 def t_valid_profile_name():

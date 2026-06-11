@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.join(HERE, "scripts"))
 import subprocess
 import services as sv
 import init_setup as ins
-import config as pcfg
+import config as pcfg    # 'pcfg' (not 'cfg'): avoids F811 clash with local `cfg = json.loads(...)` dicts elsewhere in this file
 import profile_admin as pa
 
 # PyInstaller marks the frozen binary with sys.frozen and unpacks bundled data

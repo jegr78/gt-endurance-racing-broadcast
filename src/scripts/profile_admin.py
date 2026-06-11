@@ -51,10 +51,15 @@ def parse_profile_args(rest):
         toks = list(args[1:])
         while toks:
             t = toks.pop(0)
-            if t == "--from" and toks:
+            if t == "--from":
+                if not toks:
+                    raise ValueError("--from requires a profile name")
                 out["source"] = toks.pop(0)
             elif t.startswith("--from="):
-                out["source"] = t.split("=", 1)[1]
+                src = t.split("=", 1)[1]
+                if not src:
+                    raise ValueError("--from requires a profile name")
+                out["source"] = src
             else:
                 raise ValueError(_USAGE)
     return out
@@ -75,6 +80,8 @@ def split_profile_flag(argv):
             continue
         if t.startswith("--profile="):
             name = t.split("=", 1)[1]
+            if not name:
+                raise ValueError("--profile requires a profile name")
             i += 1
             continue
         out.append(t)
