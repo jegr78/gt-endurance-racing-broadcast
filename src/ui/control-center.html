@@ -1296,7 +1296,7 @@ const CONFIRM_TEXT = {
   'relay-stop': 'Stop the relay?',
   'streams-stop': 'Stop all static streams?',
   'event-stop': 'Stop the event? (stops the iro services; OBS/Discord/Tailscale keep running)',
-  'obs-collection-set': 'Switch OBS to the IRO Endurance scene collection? This rebuilds all sources (incl. the relay feeds).'
+  'obs-collection-set': 'Switch OBS to the GT Endurance Racing scene collection? This rebuilds all sources (incl. the relay feeds).'
 };
 
 async function op(name, confirmFirst, params) {
@@ -1483,7 +1483,7 @@ function setCountBadge(key, n, noun) {
 
 // OBS scene-collection check (on-demand, live obs-websocket connect) for the
 // Apps view. Shows ✓ correct / ⚠ wrong, with a Switch button only when the
-// IRO Endurance collection is present to switch to.
+// GT Endurance Racing collection is present to switch to.
 async function fetchObsCollection() {
   const el = $('obscoll');
   if (!el) return;

@@ -282,17 +282,17 @@ def t_classify_scene_collection_skipped_when_status_none():
 
 
 def t_classify_scene_collection_match_is_pass():
-    status = {"current": "IRO Endurance", "expected": "IRO Endurance",
-              "available": ["IRO Endurance"], "match": True,
+    status = {"current": "GT Endurance Racing", "expected": "GT Endurance Racing",
+              "available": ["GT Endurance Racing"], "match": True,
               "expected_present": True, "renamed_variant": None}
     r = m.classify_scene_collection(status, "")
     assert r.level == m.PASS
-    assert "IRO Endurance" in r.detail
+    assert "GT Endurance Racing" in r.detail
 
 
 def t_classify_scene_collection_wrong_but_present_warns_with_fix():
-    status = {"current": "Other", "expected": "IRO Endurance",
-              "available": ["IRO Endurance", "Other"], "match": False,
+    status = {"current": "Other", "expected": "GT Endurance Racing",
+              "available": ["GT Endurance Racing", "Other"], "match": False,
               "expected_present": True, "renamed_variant": None}
     r = m.classify_scene_collection(status, "")
     assert r.level == m.WARN
@@ -300,16 +300,16 @@ def t_classify_scene_collection_wrong_but_present_warns_with_fix():
 
 
 def t_classify_scene_collection_renamed_variant_warns_manual():
-    status = {"current": "IRO Endurance 2", "expected": "IRO Endurance",
-              "available": ["IRO Endurance 2"], "match": False,
-              "expected_present": False, "renamed_variant": "IRO Endurance 2"}
+    status = {"current": "GT Endurance Racing 2", "expected": "GT Endurance Racing",
+              "available": ["GT Endurance Racing 2"], "match": False,
+              "expected_present": False, "renamed_variant": "GT Endurance Racing 2"}
     r = m.classify_scene_collection(status, "")
     assert r.level == m.WARN
     assert "renamed" in r.detail
 
 
 def t_classify_scene_collection_absent_warns_import():
-    status = {"current": "Scene", "expected": "IRO Endurance",
+    status = {"current": "Scene", "expected": "GT Endurance Racing",
               "available": ["Scene"], "match": False,
               "expected_present": False, "renamed_variant": None}
     r = m.classify_scene_collection(status, "")
@@ -321,9 +321,9 @@ def t_classify_scene_collection_overlap_prefers_switch_over_manual():
     # expected_present must win over renamed_variant — the real collection is
     # present, so the actionable advice is `iro obs collection set`, matching
     # the CLI and the Control Center.
-    status = {"current": "IRO Endurance 2", "expected": "IRO Endurance",
-              "available": ["IRO Endurance", "IRO Endurance 2"], "match": False,
-              "expected_present": True, "renamed_variant": "IRO Endurance 2"}
+    status = {"current": "GT Endurance Racing 2", "expected": "GT Endurance Racing",
+              "available": ["GT Endurance Racing", "GT Endurance Racing 2"], "match": False,
+              "expected_present": True, "renamed_variant": "GT Endurance Racing 2"}
     r = m.classify_scene_collection(status, "")
     assert r.level == m.WARN
     assert "iro obs collection set" in r.detail

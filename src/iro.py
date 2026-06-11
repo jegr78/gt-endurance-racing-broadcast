@@ -11,7 +11,7 @@
   iro event start --stint N             # takeover: stint N is on air now — the relay starts there
   iro tailscale up|down|status          # connect / disconnect / inspect Tailscale
   iro obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
-  iro obs collection [set]              # report the active OBS scene collection (set = switch to IRO Endurance)
+  iro obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
   iro app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
   iro status                            # aggregate health of all services
   iro profile   list | show [<name>] | use <name> | new <name> [--from <source>]
@@ -431,7 +431,7 @@ def _oneshot_extra(command, rest, runtime_dir, base_dir):
     if "--out" not in rest:
         out = {"graphics": os.path.join(runtime_dir, "graphics"),
                "media": os.path.join(runtime_dir, "media"),
-               "setup": os.path.join(runtime_dir, "IRO_Endurance.import.json")}.get(command)
+               "setup": os.path.join(runtime_dir, "GT_Endurance.import.json")}.get(command)
         if out:
             extra += ["--out", out]
     if command == "setup":
@@ -815,7 +815,7 @@ def obs_refresh_cmd(_rest):
 
 def obs_collection_cmd(rest):
     """`iro obs collection` reports the active OBS scene collection; add `set` to
-    switch OBS to the IRO Endurance collection. Best effort — OBS must be running
+    switch OBS to the GT Endurance Racing collection. Best effort — OBS must be running
     with obs-websocket reachable. A mismatch exits non-zero so scripts/CI notice;
     `set` exits non-zero on failure so the Control Center job shows red."""
     import obs_ws
@@ -2312,7 +2312,7 @@ def _mtime(path):
         return None
 
 def _init_import_json():
-    return os.path.join(_runtime_dir(), "IRO_Endurance.import.json")
+    return os.path.join(_runtime_dir(), "GT_Endurance.import.json")
 
 def _init_companion_cfg():
     return os.path.join(_runtime_dir(), "iro-buttons.companionconfig")
@@ -2357,7 +2357,7 @@ def _init_steps(opts):
         "setup": {"done": lambda: ins.setup_done(
                       _mtime(_init_import_json()),
                       [_mtime(_active_profile_env_path())] if IS_FROZEN else
-                      [_mtime(resource_path("obs/IRO_Endurance.json")),
+                      [_mtime(resource_path("obs/GT_Endurance.json")),
                        _mtime(_active_profile_env_path())]),
                   "run": lambda: _oneshot_code("setup",
                                                ["--out", _init_import_json()])},

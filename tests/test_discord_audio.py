@@ -89,7 +89,7 @@ def t_tokenize_folds_any_variant_back():
 
 def t_committed_template_carries_the_source():
     # Guards against the uuid drifting when scenes are re-exported.
-    path = os.path.join(ROOT, "src", "obs", "IRO_Endurance.json")
+    path = os.path.join(ROOT, "src", "obs", "GT_Endurance.json")
     with open(path, encoding="utf-8") as fh:
         d = json.load(fh)
     hits = [s for s in d.get("sources", []) if s.get("uuid") == sa.DISCORD_AUDIO_UUID]
@@ -97,24 +97,24 @@ def t_committed_template_carries_the_source():
 
 
 def t_apply_collection_name_sets_top_level_name():
-    c = {"name": "IRO Endurance", "sources": []}
+    c = {"name": "GT Endurance Racing", "sources": []}
     out = sa.apply_collection_name(c, "ERF Endurance")
     assert out["name"] == "ERF Endurance"
 
 
 def t_apply_collection_name_noop_on_blank():
-    c = {"name": "IRO Endurance", "sources": []}
+    c = {"name": "GT Endurance Racing", "sources": []}
     out = sa.apply_collection_name(c, "")
-    assert out["name"] == "IRO Endurance"
+    assert out["name"] == "GT Endurance Racing"
     out2 = sa.apply_collection_name(c, None)
-    assert out2["name"] == "IRO Endurance"
+    assert out2["name"] == "GT Endurance Racing"
 
 
 def t_canonicalize_name_resets_to_constant():
     d = {"name": "ERF Endurance", "sources": []}
     out = tk.canonicalize_name(d)
     assert out["name"] == tk.CANONICAL_COLLECTION_NAME
-    assert tk.CANONICAL_COLLECTION_NAME == "IRO Endurance"
+    assert tk.CANONICAL_COLLECTION_NAME == "GT Endurance Racing"
 
 
 if __name__ == "__main__":

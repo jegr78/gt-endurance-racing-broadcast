@@ -136,7 +136,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--assets", default=os.path.join(base, "assets"))
     ap.add_argument("--template", default=None)
-    ap.add_argument("--out", default=os.path.join(base, "obs", "IRO_Endurance.import.json"))
+    ap.add_argument("--out", default=os.path.join(base, "obs", "GT_Endurance.import.json"))
     ap.add_argument("--media", default=media_dir(base),
                     help="Folder with intro.mp4/outro.mp4 for the Intro/Outro "
                          "scenes (replaces __RACECAST_MEDIA__). Default: media_dir().")
@@ -153,7 +153,7 @@ def main():
 
     tpl = a.template
     if tpl is None:
-        for cand in ("IRO_Endurance.template.json", "IRO_Endurance.json"):
+        for cand in ("GT_Endurance.template.json", "GT_Endurance.json"):
             p = os.path.join(base, "obs", cand)
             if os.path.exists(p):
                 tpl = p

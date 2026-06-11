@@ -286,11 +286,11 @@ def t_oneshot_extra():
     assert m._oneshot_extra("media", [], R, B) == ["--out", os.path.join(R, "media")]
     # setup INJECTS media/graphics dirs into the collection -- always profile-scoped.
     assert m._oneshot_extra("setup", [], R, B) == \
-        ["--out", os.path.join(R, "IRO_Endurance.import.json"),
+        ["--out", os.path.join(R, "GT_Endurance.import.json"),
          "--media", os.path.join(R, "media"),
          "--graphics", os.path.join(R, "graphics")]
     assert m._oneshot_extra("setup", ["--media", "m"], R, B) == \
-        ["--out", os.path.join(R, "IRO_Endurance.import.json"),
+        ["--out", os.path.join(R, "GT_Endurance.import.json"),
          "--graphics", os.path.join(R, "graphics")]
     assert m._oneshot_extra(
         "setup", ["--out", "z", "--media", "m", "--graphics", "g"], R, B) == []
@@ -619,7 +619,7 @@ def t_oneshot_extra_paths():
     assert m._oneshot_extra("media", [], rd, base) == [
         "--out", os.path.join(rd, "media")]
     assert m._oneshot_extra("setup", [], rd, base) == [
-        "--out", os.path.join(rd, "IRO_Endurance.import.json"),
+        "--out", os.path.join(rd, "GT_Endurance.import.json"),
         "--media", os.path.join(rd, "media"),
         "--graphics", os.path.join(rd, "graphics")]
     assert m._oneshot_extra("cookies", [], rd, base) == ["--runtime-dir", base]

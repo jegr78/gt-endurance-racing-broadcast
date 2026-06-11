@@ -86,8 +86,8 @@ def main():
 
     # obs: ship the tokenized collection as .template.json (setup-assets localizes it)
     os.makedirs(os.path.join(PKG, "obs"))
-    shutil.copy2(os.path.join(SRC, "obs", "IRO_Endurance.json"),
-                 os.path.join(PKG, "obs", "IRO_Endurance.template.json"))
+    shutil.copy2(os.path.join(SRC, "obs", "GT_Endurance.json"),
+                 os.path.join(PKG, "obs", "GT_Endurance.template.json"))
 
     # drop any stray __pycache__ from copied trees
     for root, dirs, _ in os.walk(PKG):
@@ -113,7 +113,7 @@ def main():
             return any(has_pw(x) for x in o)
         return False
 
-    with open(os.path.join(PKG, "obs", "IRO_Endurance.template.json"), encoding="utf-8") as fh:
+    with open(os.path.join(PKG, "obs", "GT_Endurance.template.json"), encoding="utf-8") as fh:
         tpl = fh.read()
     with open(os.path.join(PKG, "relay", "iro-feeds.py"), encoding="utf-8") as fh:
         relay = fh.read()
