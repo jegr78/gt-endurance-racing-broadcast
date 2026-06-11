@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.0.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.2.2...v2.0.0) (2026-06-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* the CLI/binary is now `racecast` / `racecast-ui` (was `iro` / `iro-ui`); machine environment variables are `RACECAST_*` (was `IRO_*`); the producer package is `GT_Racecast_Package` and release archives are `racecast-{windows.zip,macos.tar.gz,linux.tar.gz}`; league config (Sheet ID, push URL, intro/outro, OBS collection) now lives per-league in `profiles/<name>/profile.env`, no longer in the machine `.env`. Existing installs must recreate `.env` from `.env.example` and create a profile (`racecast profile new <league>` or the `racecast init` profile step).
+
+### Features
+
+* **ci:** list commit changes in preview pre-release notes ([#37](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/37)) ([#41](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/41)) ([c6502c0](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c6502c0f8089ad0679a2c6c346450150258b77fc))
+* multi-league profiles + rebrand to GT Endurance Racing Broadcast ([#43](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/43)) ([e86f21f](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e86f21fdbf6f58873f5222c87e5afdd21ee2baf3))
+* **obs:** scene-collection check & switch ([#36](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/36)) ([#39](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/39)) ([17d1a8c](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/17d1a8c08a4a54bc4eda120ec2a76f6721a21d06))
+* **ui:** one-click update with release notes + preview installs ([#34](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/34)) ([#35](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/35)) ([0fab2cd](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/0fab2cd99d034c041005538845dc76c53524a318))
+
+
+### Bug Fixes
+
+* **cli:** augment PATH with Homebrew bins so frozen mac binary finds tools ([#38](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/38)) ([#40](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/40)) ([e1bdb85](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e1bdb8540c9af128e263b7544d753b4a64b1f7c7))
+
 ## [1.2.2](https://github.com/jegr78/IRO_Broadcast_Setup/compare/v1.2.1...v1.2.2) (2026-06-10)
 
 
