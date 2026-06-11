@@ -694,6 +694,75 @@ def t_profiles_data_lists_active_and_available():
         assert names["erf"]["sheet_set"] is False
 
 
+def t_profile_use_data_switches_pointer():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        prof = os.path.join(td, "profiles", "iro")
+        os.makedirs(prof)
+        open(os.path.join(td, ".env.example"), "w").close()
+        with open(os.path.join(prof, "profile.env"), "w") as fh:
+            fh.write("SHEET_ID=abc\n")
+        os.makedirs(os.path.join(td, "runtime"))
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            d = m.profile_use_data("iro")
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        assert d == {"ok": True, "active": "iro"}
+        with open(os.path.join(td, "runtime", "active-profile")) as fh:
+            assert fh.read().strip() == "iro"
+
+
+def t_profile_use_data_unknown_is_error():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        open(os.path.join(td, ".env.example"), "w").close()
+        os.makedirs(os.path.join(td, "runtime"))
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            d = m.profile_use_data("nope")
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        assert d["ok"] is False and d["error"]
+
+
+def t_profile_new_data_creates_from_example():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        ex = os.path.join(td, "profiles", "example")
+        os.makedirs(ex)
+        open(os.path.join(td, ".env.example"), "w").close()
+        with open(os.path.join(ex, "profile.env"), "w") as fh:
+            fh.write("NAME=Example\nSHEET_ID=\n")
+        orig_b = m._env_base
+        m._env_base = lambda *a, **k: td
+        try:
+            d = m.profile_new_data("gt3", "example")
+        finally:
+            m._env_base = orig_b
+        assert d["ok"] is True and d["name"] == "gt3"
+        assert os.path.isfile(os.path.join(td, "profiles", "gt3", "profile.env"))
+
+
+def t_profile_new_data_bad_name_is_error():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        os.makedirs(os.path.join(td, "profiles", "example"))
+        open(os.path.join(td, ".env.example"), "w").close()
+        open(os.path.join(td, "profiles", "example", "profile.env"), "w").close()
+        orig_b = m._env_base
+        m._env_base = lambda *a, **k: td
+        try:
+            d = m.profile_new_data("../evil", "example")
+        finally:
+            m._env_base = orig_b
+        assert d["ok"] is False and d["error"]
+
+
 def _raises(fn):
     try:
         fn()

@@ -1727,6 +1727,33 @@ def profiles_data():
         return {"ok": False, "error": f"could not read profiles: {exc}"}
 
 
+def profile_use_data(name, set_active=None):
+    """Switch the active profile (synchronous pointer write, like env_write_data).
+    {ok, active} or {ok:false, error}. `set_active` is a test seam."""
+    try:
+        root = _env_base(IS_FROZEN, _real_executable(), HERE)
+        runtime_root = _runtime_base_dir()
+        (set_active or pa.set_active_profile)(root, runtime_root, name)
+        return {"ok": True, "active": name}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not switch profile: {exc}"}
+
+
+def profile_new_data(name, source="example", create=None):
+    """Create a new profile by copying `source` (default the example template).
+    Does NOT switch to it. {ok, name, path} or {ok:false, error}. `create` seam."""
+    try:
+        root = _env_base(IS_FROZEN, _real_executable(), HERE)
+        target = (create or pa.create_profile)(root, name, source or "example")
+        return {"ok": True, "name": name, "path": target}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not create profile: {exc}"}
+
+
 def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None,
                       cookies=None, apps_running=None):
     """Aggregate health for the Control Center dashboard (/api/status).
