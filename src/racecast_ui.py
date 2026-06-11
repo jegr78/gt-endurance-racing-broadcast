@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Second entrypoint: the windowed Control Center launcher (the `iro-ui`
+"""Second entrypoint: the windowed Control Center launcher (the `racecast-ui`
 binary). Producers double-click it — there is no terminal. It runs the same
-server as `iro ui` via iro.run_ui(), but a fatal startup error (port taken /
+server as `racecast ui` via racecast.run_ui(), but a fatal startup error (port taken /
 bind failure) is shown in a NATIVE dialog instead of being written to a console
-that does not exist. Jobs still spawn the sibling `iro` binary (see
-iro._iro_job_executable). Spec: docs/superpowers/specs/2026-06-07-control-center-design.md."""
+that does not exist. Jobs still spawn the sibling `racecast` binary (see
+racecast._iro_job_executable). Spec: docs/superpowers/specs/2026-06-07-control-center-design.md."""
 import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
-    sys.path.insert(0, HERE)            # import the sibling iro module
+    sys.path.insert(0, HERE)            # import the sibling racecast module
 
 import racecast                         # noqa: E402 — after the path insert
 import native_dialog                    # noqa: E402 — from scripts/ (racecast added it to sys.path)
@@ -25,10 +25,10 @@ def _fatal(message):
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     racecast._force_utf8_io()    # UTF-8 stdout/stderr before anything prints (issue #24)
-    # Same bootstrap as iro.main(): make sure .env exists next to the binary,
+    # Same bootstrap as racecast.main(): make sure .env exists next to the binary,
     # retire any stale update binary, load the frozen env + SSL certs.
     # _app_home (not dirname) so a macOS .app resolves .env next to the bundle —
-    # where the sibling `iro` binary lives — not inside Contents/MacOS/.
+    # where the sibling `racecast` binary lives — not inside Contents/MacOS/.
     # _real_executable maps out of any App-Translocation mount first (issue #22:
     # a quarantined .app double-clicked in Finder otherwise runs from a random
     # read-only /private/var/.../AppTranslocation/ copy, not the producer's folder).

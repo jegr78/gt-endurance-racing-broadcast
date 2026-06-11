@@ -1,4 +1,4 @@
-"""Control Center job manager: run one `iro <args>` child per triggered
+"""Control Center job manager: run one `racecast <args>` child per triggered
 operation, keep its combined stdout/stderr lines in memory for the web UI
 (poll or SSE), and refuse a second concurrent run of the same operation.
 Jobs are subprocesses (not threads) because sys.stdout is process-global —

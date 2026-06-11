@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stdlib checks for the `iro update` decision helpers. Run: python3 tests/test_update.py"""
+"""Stdlib checks for the `racecast update` decision helpers. Run: python3 tests/test_update.py"""
 import importlib.util, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))

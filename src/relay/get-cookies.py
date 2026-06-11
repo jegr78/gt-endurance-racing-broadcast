@@ -28,7 +28,7 @@ def failure_hint(stderr_text, browser):
         return f"no {browser} profile found — is {browser} installed on this machine?"
     if "decrypt" in s or "dpapi" in s:
         return (f"{browser}'s cookie encryption blocked the export — log into "
-                f"YouTube in Firefox and run: iro cookies firefox")
+                f"YouTube in Firefox and run: racecast cookies firefox")
     return f"is {browser} installed and logged in to YouTube?"
 
 

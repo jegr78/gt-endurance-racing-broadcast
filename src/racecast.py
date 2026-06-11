@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 """IRO operator CLI — one entrypoint for every service and setup action.
 
-  python3 src/iro.py relay start        # repo
-  python3 iro.py     relay start        # shipped package
+  python3 src/racecast.py relay start        # repo
+  python3 racecast.py     relay start        # shipped package
 
-  iro relay     start|stop|restart|status|logs|run|open-panel|open-hud|open-status
-  iro companion start|stop|restart|status|logs|open-tablet|open-admin
-  iro streams   start|stop|restart|status|logs
-  iro event     status|start|stop      # event-day readiness: check / bring-up / wind-down
-  iro event start --stint N             # takeover: stint N is on air now — the relay starts there
-  iro tailscale up|down|status          # connect / disconnect / inspect Tailscale
-  iro obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
-  iro obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
-  iro app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
-  iro status                            # aggregate health of all services
-  iro profile   list | show [<name>] | use <name> | new <name> [--from <source>]
-  iro --profile <name> <command>        # run one command against a non-active profile
-  iro ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
-  iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
-  iro export companion [--out PATH]     # write the Companion button config
-  iro init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
-  iro update [--check] [--yes] [--tag TAG]   # self-update the binary (--tag installs an exact release)
-  iro --version
+  racecast relay     start|stop|restart|status|logs|run|open-panel|open-hud|open-status
+  racecast companion start|stop|restart|status|logs|open-tablet|open-admin
+  racecast streams   start|stop|restart|status|logs
+  racecast event     status|start|stop      # event-day readiness: check / bring-up / wind-down
+  racecast event start --stint N             # takeover: stint N is on air now — the relay starts there
+  racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
+  racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
+  racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
+  racecast app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
+  racecast status                            # aggregate health of all services
+  racecast profile   list | show [<name>] | use <name> | new <name> [--from <source>]
+  racecast --profile <name> <command>        # run one command against a non-active profile
+  racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
+  racecast preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
+  racecast export companion [--out PATH]     # write the Companion button config
+  racecast init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
+  racecast update [--check] [--yes] [--tag TAG]   # self-update the binary (--tag installs an exact release)
+  racecast --version
 """
 import glob, hashlib, json, os, re, shutil, sys, time, webbrowser
 
@@ -106,7 +106,7 @@ def _untranslocate(path, frozen=None, platform=None, resolver=None):
     """Guard against macOS App Translocation. A quarantined .app launched from
     Finder runs from a randomized read-only copy under
     .../AppTranslocation/<uuid>/d/, so sys.executable — and every sibling path
-    derived from it (.env, runtime/, the sibling iro binary) — points into that
+    derived from it (.env, runtime/, the sibling racecast binary) — points into that
     throwaway mount instead of the folder where the producer keeps the .app
     (issue #22: Settings showed .env under /private/var/.../AppTranslocation/).
     Map the path back to its real on-disk location. Translocation only affects a
@@ -246,7 +246,7 @@ def ensure_env_file(exe_dir, frozen=None):
 
 
 def cleanup_old_binary(exe_dir, frozen=None, platform=None):
-    """Best-effort removal of the iro-old.exe that `iro update` leaves behind on
+    """Best-effort removal of the iro-old.exe that `racecast update` leaves behind on
     Windows (a running exe can only be renamed, not deleted, during the swap).
     Returns True iff the leftover existed and was removed."""
     frozen = IS_FROZEN if frozen is None else frozen
@@ -332,7 +332,7 @@ def _ensure_ssl_certs():
     if bundle:
         os.environ["SSL_CERT_FILE"] = bundle
 
-# Where `iro install-tools` (brew) drops yt-dlp/streamlink/ffmpeg/deno on macOS:
+# Where `racecast install-tools` (brew) drops yt-dlp/streamlink/ffmpeg/deno on macOS:
 # Apple-silicon Homebrew, then Intel Homebrew. A Finder/Dock launch omits these
 # from PATH (issue #38).
 TOOL_PATH_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
@@ -355,7 +355,7 @@ def _ensure_tool_path():
     """Frozen on macOS: a binary launched from Finder/Dock (how producers run the
     preview build) inherits a truncated PATH (/usr/bin:/bin:/usr/sbin:/sbin) that
     omits Homebrew — so shutil.which() can't find yt-dlp/streamlink/ffmpeg/deno
-    even though `iro install-tools` put them there, and both preflight AND the
+    even though `racecast install-tools` put them there, and both preflight AND the
     relay's pulls report them missing (issue #38). Prepend the Homebrew bin dirs
     that exist; in-process preflight and spawned children inherit the fixed PATH.
     Binary-relative paths (settings/assets) never went through PATH, which is why
@@ -541,7 +541,7 @@ EVENT_VERBS = ("status", "start", "stop")
 TAILSCALE_VERBS = ("up", "down", "status")
 OBS_VERBS = ("refresh", "collection")
 APP_VERBS = ("launch", "quit")          # GUI app control for the Control Center
-APP_CONTROLLED = ("obs", "discord", "tailscale")   # GUI apps iro can launch + quit
+APP_CONTROLLED = ("obs", "discord", "tailscale")   # GUI apps racecast can launch + quit
 
 USAGE = __doc__
 
@@ -560,27 +560,27 @@ def route(argv):
         verb = rest[0] if rest else None
         valid = SERVICE_VERBS + EXTRA_VERBS.get(cmd, ())
         if verb not in valid + HIDDEN_VERBS.get(cmd, ()):
-            raise ValueError(f"usage: iro {cmd} {{{'|'.join(valid)}}}")
+            raise ValueError(f"usage: racecast {cmd} {{{'|'.join(valid)}}}")
         return {"kind": "service", "command": cmd, "verb": verb, "rest": rest[1:]}
     if cmd == "event":
         verb = rest[0] if rest else None
         if verb not in EVENT_VERBS:
-            raise ValueError(f"usage: iro event {{{'|'.join(EVENT_VERBS)}}}")
+            raise ValueError(f"usage: racecast event {{{'|'.join(EVENT_VERBS)}}}")
         return {"kind": "service", "command": "event", "verb": verb, "rest": rest[1:]}
     if cmd == "tailscale":
         verb = rest[0] if rest else None
         if verb not in TAILSCALE_VERBS:
-            raise ValueError(f"usage: iro tailscale {{{'|'.join(TAILSCALE_VERBS)}}}")
+            raise ValueError(f"usage: racecast tailscale {{{'|'.join(TAILSCALE_VERBS)}}}")
         return {"kind": "service", "command": "tailscale", "verb": verb, "rest": rest[1:]}
     if cmd == "obs":
         verb = rest[0] if rest else None
         if verb not in OBS_VERBS:
-            raise ValueError(f"usage: iro obs {{{'|'.join(OBS_VERBS)}}}")
+            raise ValueError(f"usage: racecast obs {{{'|'.join(OBS_VERBS)}}}")
         return {"kind": "service", "command": "obs", "verb": verb, "rest": rest[1:]}
     if cmd == "app":
         verb = rest[0] if rest else None
         if verb not in APP_VERBS:
-            raise ValueError(f"usage: iro app {{{'|'.join(APP_VERBS)}}} {{obs|discord}}")
+            raise ValueError(f"usage: racecast app {{{'|'.join(APP_VERBS)}}} {{obs|discord}}")
         return {"kind": "service", "command": "app", "verb": verb, "rest": rest[1:]}
     if cmd == "ui":
         return {"kind": "ui", "rest": rest}
@@ -592,13 +592,13 @@ def route(argv):
         return {"kind": "oneshot", "command": cmd, "rest": rest}
     if cmd == "export":
         if rest[:1] != ["companion"]:
-            raise ValueError("usage: iro export companion [--out PATH]")
+            raise ValueError("usage: racecast export companion [--out PATH]")
         return {"kind": "export", "target": "companion", "rest": rest[1:]}
     raise ValueError(f"unknown command: {cmd}")
 
 
 def profile_cmd(rest):
-    """`iro profile list|show|use|new` -- manage league profiles. Resolves the
+    """`racecast profile list|show|use|new` -- manage league profiles. Resolves the
     project root + runtime dir the same way the rest of the CLI does, so it
     sees profiles/ and runtime/active-profile consistently with config.py."""
     try:
@@ -620,7 +620,7 @@ def profile_cmd(rest):
         env_path = os.path.join(target, pcfg.PROFILE_ENV_NAME)
         print(f"created profile '{opts['name']}' at {target}")
         print(f"  edit {env_path} (fill in SHEET_ID), then: "
-              f"iro profile use {opts['name']}")
+              f"racecast profile use {opts['name']}")
         return None
     if verb == "use":
         try:
@@ -665,7 +665,7 @@ def _relay_fetch_json(url, timeout=3):
 
 
 def relay_status_data(read_pid=None, alive=None, http_ok=None):
-    """Structured relay state — one source for `iro status` (text) and the
+    """Structured relay state — one source for `racecast status` (text) and the
     Control Center's /api/status (JSON). Injection points are for tests."""
     read_pid = read_pid or sv.read_pid
     alive = alive or sv.pid_alive
@@ -720,7 +720,7 @@ def relay_start(rest):
     argv = _relay_daemon_argv(rest, IS_FROZEN)
     newpid = sv.start_detached(argv, _relay_log_path(), _relay_pid_path(),
                                env=_frozen_child_env())
-    print(f"relay started (pid {newpid}). Watch it: iro relay logs -f")
+    print(f"relay started (pid {newpid}). Watch it: racecast relay logs -f")
     _refresh_obs_pages(wait=10)   # pages may have changed since the last run
     return None
 
@@ -762,12 +762,12 @@ def _refresh_obs_pages(force=False, wait=0):
 
 
 def app_launch_cmd(rest):
-    """Launch a GUI app (obs|discord) detached — the same mechanism `iro event
+    """Launch a GUI app (obs|discord) detached — the same mechanism `racecast event
     start` uses, exposed as a button so the Control Center can start each app
     individually. Best effort: a missing app or spawn error exits non-zero."""
     name = rest[0] if rest else None
     if name not in APP_CONTROLLED:
-        sys.exit(f"usage: iro app launch {{{'|'.join(APP_CONTROLLED)}}}")
+        sys.exit(f"usage: racecast app launch {{{'|'.join(APP_CONTROLLED)}}}")
     ev = _event_modules()[0]
     cmd = ev.launch_command(name, sys.platform)
     if cmd is None:
@@ -787,7 +787,7 @@ def app_quit_cmd(rest):
     this in a confirm dialog; quitting OBS mid-broadcast is the operator's call."""
     name = rest[0] if rest else None
     if name not in APP_CONTROLLED:
-        sys.exit(f"usage: iro app quit {{{'|'.join(APP_CONTROLLED)}}}")
+        sys.exit(f"usage: racecast app quit {{{'|'.join(APP_CONTROLLED)}}}")
     ev = _event_modules()[0]
     cmd = ev.quit_command(name, sys.platform)
     if cmd is None:
@@ -814,7 +814,7 @@ def obs_refresh_cmd(_rest):
 
 
 def obs_collection_cmd(rest):
-    """`iro obs collection` reports the active OBS scene collection; add `set` to
+    """`racecast obs collection` reports the active OBS scene collection; add `set` to
     switch OBS to the GT Endurance Racing collection. Best effort — OBS must be running
     with obs-websocket reachable. A mismatch exits non-zero so scripts/CI notice;
     `set` exits non-zero on failure so the Control Center job shows red."""
@@ -827,7 +827,7 @@ def obs_collection_cmd(rest):
         print(f"obs: {note or 'scene collection switched to ' + expected}.")
         return
     if rest:
-        sys.exit("usage: iro obs collection [set]")
+        sys.exit("usage: racecast obs collection [set]")
     status, note = obs_ws.get_scene_collection(expected=expected)
     if status is None:
         sys.exit(f"obs: scene collection check skipped — {note}")
@@ -836,12 +836,12 @@ def obs_collection_cmd(rest):
         return
     if status["expected_present"]:
         sys.exit(f"obs: scene collection '{status['current']}' active — expected "
-                 f"'{status['expected']}'. Run `iro obs collection set`.")
+                 f"'{status['expected']}'. Run `racecast obs collection set`.")
     if status["renamed_variant"]:
         sys.exit(f"obs: scene collection '{status['current']}' active — looks renamed "
                  f"from '{status['expected']}'; switch manually in OBS.")
     sys.exit(f"obs: '{status['expected']}' collection not found in OBS — import it "
-             f"with `iro setup`.")
+             f"with `racecast setup`.")
 
 
 def _release_obs_feeds():
@@ -930,7 +930,7 @@ def companion_start(rest):
         # First launch: Companion creates its config on startup — start it
         # plainly now, bind on the next run (the bind edit needs the file).
         print(f"companion: first launch (no config at {cfg_path} yet) — starting Companion as-is.")
-        print("  When it is up, run `iro companion restart` to bind it to the Tailscale IP.")
+        print("  When it is up, run `racecast companion restart` to bind it to the Tailscale IP.")
         subprocess.Popen(cmds["start"], stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, **sv.spawn_kwargs(os.name))
         return
@@ -1179,7 +1179,7 @@ def _load_relay_module(rel):
 
 
 def _asset_dirs():
-    """Where `iro graphics`/`iro media` write: always the active profile's
+    """Where `racecast graphics`/`racecast media` write: always the active profile's
     runtime dir (the one-shot injection points --out there in every run mode --
     see _oneshot_extra)."""
     return (os.path.join(_runtime_dir(), "graphics"),
@@ -1187,7 +1187,7 @@ def _asset_dirs():
 
 
 def _asset_state(ev):
-    """Sheet-driven asset facts shared by `iro event status` and `iro init`:
+    """Sheet-driven asset facts shared by `racecast event status` and `racecast init`:
     (g_dir, m_dir, missing_g, missing_m). missing_* follow ev.check_assets()
     semantics and are None when the sheet could not be read (fetch_assets_rows
     absorbs fetch errors into None — it never raises). Only module-load /
@@ -1240,9 +1240,9 @@ def _event_sections(ev, pf):
     try:
         g_dir, m_dir, missing_g, missing_m = _asset_state(ev)
         assets += [ev.classify_assets("Graphics", missing_g, ev.local_count(g_dir),
-                                      ev.FAIL, "run `iro graphics`"),
+                                      ev.FAIL, "run `racecast graphics`"),
                    ev.classify_assets("Media", missing_m, ev.local_count(m_dir),
-                                      ev.WARN, "run `iro media`")]
+                                      ev.WARN, "run `racecast media`")]
     except Exception as exc:
         assets.append(ev.Result(ev.WARN, "Graphics/Media", f"check failed: {exc}"))
     config = [ev.classify_env(os.environ.get("RACECAST_SHEET_ID"),
@@ -1262,7 +1262,7 @@ def _event_launch(ev, app):
     Returns True iff a launch was actually attempted."""
     import install_apps
     if not install_apps.app_present(app, sys.platform):
-        print(f"{app}: not installed — run `iro install-apps`.")
+        print(f"{app}: not installed — run `racecast install-apps`.")
         return False
     cmd = ev.launch_command(app, sys.platform)
     if cmd is None:
@@ -1286,7 +1286,7 @@ def _tailscale_connect(ev=None):
     ("the opposite of tailscale down"). Launches the app first when no backend
     answers (macOS: the backend only lives while the app runs); never runs `up`
     in NeedsLogin — that would trigger the interactive browser login. Shared by
-    `iro tailscale up` and `iro event start`; returns the tailnet IP or None."""
+    `racecast tailscale up` and `racecast event start`; returns the tailnet IP or None."""
     import tailscale as ts
     binary, state, ip = ts.tailscale_backend()
     if ts.plan_tailscale_up(state) == "launch-app":
@@ -1344,18 +1344,18 @@ def tailscale_status_cmd(_rest):
     import tailscale as ts
     _binary, state, ip = ts.tailscale_backend()
     if state is None:
-        print("Tailscale: backend not running — `iro tailscale up` starts and connects it.")
+        print("Tailscale: backend not running — `racecast tailscale up` starts and connects it.")
     elif state == "Running":
         print(f"Tailscale: connected ({ip or 'no IPv4 yet'}).")
     elif state in ("NeedsLogin", "NeedsMachineAuth"):
         print(f"Tailscale: {state} — open the Tailscale app and sign in.")
     else:
-        print(f"Tailscale: {state} — run `iro tailscale up` to connect.")
+        print(f"Tailscale: {state} — run `racecast tailscale up` to connect.")
 
 
 def _check_scene_collection():
     """Best-effort warning if OBS is on the wrong scene collection at event start.
-    Never blocks bring-up: the producer switches with `iro obs collection set` or
+    Never blocks bring-up: the producer switches with `racecast obs collection set` or
     the Control Center OBS row (a switch rebuilds all sources, so it stays manual)."""
     try:
         import obs_ws
@@ -1371,11 +1371,11 @@ def _check_scene_collection():
         return
     if status["expected_present"]:
         print(f"obs: WARNING — scene collection '{status['current']}' active, expected "
-              f"'{status['expected']}'. Switch with `iro obs collection set` (or the OBS "
+              f"'{status['expected']}'. Switch with `racecast obs collection set` (or the OBS "
               f"row in the Control Center) before going live.")
     else:
         print(f"obs: WARNING — scene collection '{status['current']}' active, expected "
-              f"'{status['expected']}' not found in OBS — import it with `iro setup` "
+              f"'{status['expected']}' not found in OBS — import it with `racecast setup` "
               f"before going live.")
 
 
@@ -1489,7 +1489,7 @@ RUNTIME_DIR_ONESHOTS = ("preflight", "cookies")
 
 
 def _oneshot_code(command, rest):
-    """Run a one-shot and return its exit code (the seam `iro init` uses to
+    """Run a one-shot and return its exit code (the seam `racecast init` uses to
     chain steps — oneshot() below keeps the exit-the-CLI behavior)."""
     if command == "preflight":
         # The sheet check reads RACECAST_SHEET_ID from the environment. Frozen mode
@@ -1538,7 +1538,7 @@ def _render_notes_html(md):
 def update_check_data(fetch=None, current=None, platform=None):
     """Check-only view of the self-updater for the Home dashboard: is a newer
     GitHub release out? Thin wrapper over scripts/update.py — the single source
-    of truth for the version compare and release lookup (the `iro update`
+    of truth for the version compare and release lookup (the `racecast update`
     command installs it). Never downloads or replaces anything here. Network
     call; served on demand via /api/update (cached), never from the status poll.
     Never raises; {"ok": False} when offline / rate-limited / the tag is
@@ -1602,7 +1602,7 @@ def export_companion(rest):
     if rest[:1] == ["--out"] and len(rest) == 2:
         out = rest[1]
     elif rest:
-        sys.exit("usage: iro export companion [--out PATH]")
+        sys.exit("usage: racecast export companion [--out PATH]")
     dst = out or os.path.join(_runtime_dir(), "racecast-buttons.companionconfig")
     if os.path.isdir(dst):
         dst = os.path.join(dst, "racecast-buttons.companionconfig")
@@ -1795,9 +1795,9 @@ def assets_status_data(state=None):
     except Exception as exc:
         return {"ok": False, "error": f"asset check failed: {exc}"}
     g = ev.classify_assets("Graphics", missing_g, ev.local_count(g_dir), ev.FAIL,
-                           "run `iro graphics`")
+                           "run `racecast graphics`")
     m = ev.classify_assets("Media", missing_m, ev.local_count(m_dir), ev.WARN,
-                           "run `iro media`")
+                           "run `racecast media`")
     return {"ok": True,
             "graphics": {"level": g.level, "detail": g.detail},
             "media": {"level": m.level, "detail": m.detail}}
@@ -2216,7 +2216,7 @@ def _active_profile_env_path():
     """profiles/<active>/profile.env for the active profile. Falls back to the
     machine .env when no profile is active -- used by the setup freshness probe;
     in practice the profile step gates before setup, so the fallback is only hit
-    on a direct `iro setup` without a profile (intentional, do not 'fix')."""
+    on a direct `racecast setup` without a profile (intentional, do not 'fix')."""
     root = _env_base(IS_FROZEN, _real_executable(), HERE)
     active = _active_profile_name()
     if not active:
@@ -2255,12 +2255,12 @@ def _init_profile_run():
             pa.set_active_profile(root, base, name)
         except ValueError as e:
             sys.exit(f"iro: profile created at profiles/{name}/ but could not "
-                     f"set it active ({e}). Run: iro profile use {name}")
+                     f"set it active ({e}). Run: racecast profile use {name}")
         print(f"  created profile '{name}' (profiles/{name}/profile.env)")
     while True:
         active = _active_profile_name()
         if active is None:
-            _init_pause("Select a league profile: run `iro profile use <name>`")
+            _init_pause("Select a league profile: run `racecast profile use <name>`")
             continue
         if _active_sheet_id(root, base, active):
             break
@@ -2427,7 +2427,7 @@ def _init_plan(browser="firefox"):
     """ctx['init_plan'] wrapper: the wizard's view of the init steps. Preflight is
     dropped — the Control Center has a dedicated Preflight page, and as the one
     step with no persistent done-state it only ever read as 'pending' here — and
-    surfaced as a closing reminder instead. (The `iro init` CLI still runs it.)"""
+    surfaced as a closing reminder instead. (The `racecast init` CLI still runs it.)"""
     opts = {"browser": browser or "firefox", "skip_installs": False, "force": False}
     steps = [s for s in _init_steps(opts) if s["key"] != "preflight"]
     nxt = ins.manual_next_steps(_init_import_json(), _init_companion_cfg())
@@ -2439,7 +2439,7 @@ def _init_plan(browser="firefox"):
 
 def _ui_modules():
     """src/ui modules — path-inserted like scripts/ (kept out of the module-level
-    insert: only `iro ui` needs them)."""
+    insert: only `racecast ui` needs them)."""
     ui_dir = resource_path("ui")
     if ui_dir not in sys.path:
         sys.path.insert(0, ui_dir)
@@ -2473,7 +2473,7 @@ def ui_cmd(rest):
 def run_ui(rest, fail=sys.exit, open_browser=True):
     """Shared Control Center server core for both entrypoints. `fail(msg)` is
     called on a fatal startup error (port taken / bind failure): the CLI passes
-    sys.exit; iro_ui passes a native-dialog variant. Returns None when the
+    sys.exit; racecast_ui passes a native-dialog variant. Returns None when the
     server has stopped."""
     srv, jobs_mod, ops_mod = _ui_modules()
     for key, val in _read_env_file().items():
@@ -2616,7 +2616,7 @@ def main(argv=None):
         print(USAGE)
         return None
     if action["kind"] == "version":
-        print(f"iro {version()}")
+        print(f"racecast {version()}")
         return None
     if action["kind"] == "export":
         export_companion(action["rest"])

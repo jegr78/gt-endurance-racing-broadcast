@@ -121,7 +121,7 @@ def t_apps_section_levels():
     assert by["Companion"].level == "WARN"
     assert by["Tailscale"].level == "WARN"
     assert by["Discord"].level == "WARN"
-    assert "iro install-apps" in by["Discord"].detail
+    assert "racecast install-apps" in by["Discord"].detail
 
 
 def t_install_apps_module_loads():

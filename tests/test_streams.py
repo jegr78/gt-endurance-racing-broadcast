@@ -49,13 +49,13 @@ def t_feed_process_matchers():
     # POSIX `ps -o command=` lines
     assert stop.looks_like_feed("python3 /x/loopstream.py UC1 53001")
     assert stop.looks_like_feed("/usr/local/bin/streamlink --player-external-http ...")
-    assert stop.looks_like_feed("/apps/iro streams run-feed UC1 53001")  # frozen child
+    assert stop.looks_like_feed("/apps/racecast streams run-feed UC1 53001")  # frozen child
     assert not stop.looks_like_feed("/usr/bin/vim notes.txt")
     assert not stop.looks_like_feed("python3 some_other_tool.py")  # bare python on POSIX is NOT a feed
     # Windows `tasklist` CSV-ish output
     assert stop.looks_like_feed('"python.exe","123",...', windows=True)
     assert stop.looks_like_feed('"streamlink.exe","123",...', windows=True)
-    assert stop.looks_like_feed('"iro.exe","123",...', windows=True)   # frozen child
+    assert stop.looks_like_feed('"racecast.exe","123",...', windows=True)   # frozen child
     assert not stop.looks_like_feed('"notepad.exe","123",...', windows=True)
 
 

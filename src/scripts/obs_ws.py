@@ -511,7 +511,7 @@ def set_scene_collection(name=EXPECTED_SCENE_COLLECTION, host="127.0.0.1",
             return True, f"already on '{name}'"
         if name not in available:
             return False, (f"scene collection '{name}' not found in OBS "
-                           f"(import it with `iro setup`)")
+                           f"(import it with `racecast setup`)")
         session.request("SetCurrentSceneCollection", {"sceneCollectionName": name})
         return True, ""
     except Exception as exc:                         # noqa: BLE001 — best-effort contract

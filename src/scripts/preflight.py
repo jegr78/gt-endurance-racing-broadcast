@@ -215,7 +215,7 @@ def cookies_status(path, max_age_hours=12, now=None):
     now = time.time() if now is None else now
     if not os.path.isfile(path):
         return Result(WARN, "cookies.txt",
-                      f"not found at {path} — run `iro cookies firefox` before the event")
+                      f"not found at {path} — run `racecast cookies firefox` before the event")
     age_h = (now - os.path.getmtime(path)) / 3600
     try:
         with open(path, encoding="utf-8", errors="ignore") as fh:
@@ -225,7 +225,7 @@ def cookies_status(path, max_age_hours=12, now=None):
     has_login = any(marker in text for marker in COOKIE_MARKERS)
     if age_h > max_age_hours:
         return Result(WARN, "cookies.txt",
-                      f"{age_h:.0f} h old — cookies rotate; re-run `iro cookies firefox`")
+                      f"{age_h:.0f} h old — cookies rotate; re-run `racecast cookies firefox`")
     if not has_login:
         return Result(WARN, "cookies.txt",
                       "present but no logged-in YouTube session markers found")
@@ -276,7 +276,7 @@ def classify_sheet(sheet_id, outcome=None, payload=""):
 
 
 # --------------------------------------------------------------------------
-# Applications installed? (presence only — `iro event status` covers running)
+# Applications installed? (presence only — `racecast event status` covers running)
 # --------------------------------------------------------------------------
 # (app key, display name, level when missing, consequence)
 APP_CHECKS = (
@@ -307,7 +307,7 @@ def apps_section(present):
             results.append(Result(PASS, pretty, "installed"))
         else:
             results.append(Result(miss_level, pretty,
-                                  f"not installed — {consequence}; run `iro install-apps`"))
+                                  f"not installed — {consequence}; run `racecast install-apps`"))
     return results
 
 
@@ -365,12 +365,12 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
     ports = []
     for port in FEED_PORTS:
         # "In use" is normal once the relay/feeds are running (e.g. after event
-        # start) — report it as INFO, not a warning. `iro status` shows whether
+        # start) — report it as INFO, not a warning. `racecast status` shows whether
         # the occupant is the relay; only a foreign app is a real conflict.
         ports.append(Result(PASS, f"port {port}", "free") if port_free(port)
                      else Result(INFO, f"port {port}",
                                  "in use — normal if the relay/feeds are running "
-                                 "(`iro status` confirms); a conflict only if another app owns it"))
+                                 "(`racecast status` confirms); a conflict only if another app owns it"))
     for port, svc in SERVICE_PORTS:
         if svc == "OBS WebSocket":
             ports.append(Result(PASS, f"port {port}",

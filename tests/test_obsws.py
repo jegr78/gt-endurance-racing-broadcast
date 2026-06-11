@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for the minimal obs-websocket v5 client (src/scripts/obs_ws.py):
-feed-port release on `iro relay|streams|event stop` and browser-source refresh on
-`iro relay|event start`. Run: python3 tests/test_obsws.py"""
+feed-port release on `racecast relay|streams|event stop` and browser-source refresh on
+`racecast relay|event start`. Run: python3 tests/test_obsws.py"""
 import base64
 import hashlib
 import importlib.util
@@ -237,7 +237,7 @@ def t_find_password_env_overrides_config():
 
 
 # --------------------------------------------------------------------------
-# release_feed_inputs — the best-effort entry point used by `iro ... stop`
+# release_feed_inputs — the best-effort entry point used by `racecast ... stop`
 # --------------------------------------------------------------------------
 def t_release_feed_inputs_unreachable_is_quiet():
     # Nothing listens on this port: must return a note, never raise.
@@ -413,7 +413,7 @@ def t_release_feed_inputs_wrong_password_is_note_not_crash():
 
 
 # --------------------------------------------------------------------------
-# refresh_browser_inputs — the auto-refresh used by `iro relay|event start`
+# refresh_browser_inputs — the auto-refresh used by `racecast relay|event start`
 # --------------------------------------------------------------------------
 def t_refresh_browser_inputs_end_to_end_against_fake_server():
     server_sock = socket.socket()

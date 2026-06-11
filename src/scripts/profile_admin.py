@@ -14,7 +14,7 @@ import shutil
 import config as cfg   # sibling in src/scripts (sys.path injected by iro.py/tests)
 
 PROFILE_VERBS = ("list", "show", "use", "new")
-_USAGE = ("usage: iro profile {list | show [<name>] | use <name> | "
+_USAGE = ("usage: racecast profile {list | show [<name>] | use <name> | "
           "new <name> [--from <source>]}")
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
@@ -128,7 +128,7 @@ def set_active_profile(root, runtime_root, name):
 def format_profile_list(names, active):
     """One profile per line, the active one marked with '* '. ASCII only."""
     if not names:
-        return "no profiles -- create one with `iro profile new <name>`"
+        return "no profiles -- create one with `racecast profile new <name>`"
     return "\n".join(("* " if n == active else "  ") + n for n in names)
 
 

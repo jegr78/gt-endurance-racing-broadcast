@@ -129,7 +129,7 @@ def t_gate_pause_non_tty_exits():
     try:
         m.gate_pause("Fill in .env", False)
     except SystemExit as e:
-        assert "Fill in .env" in str(e.code) and "iro init" in str(e.code)
+        assert "Fill in .env" in str(e.code) and "racecast init" in str(e.code)
         return
     raise AssertionError("expected SystemExit")
 
@@ -166,7 +166,7 @@ def t_wizard_stops_on_failure():
     code, finished = m.run_wizard(steps, False, out.append)
     assert (code, finished) == (3, False)
     assert log == ["a"]                       # b never ran
-    assert any("iro init" in line for line in out)   # re-run hint printed
+    assert any("racecast init" in line for line in out)   # re-run hint printed
 
 
 def t_wizard_last_step_failure_finishes():

@@ -4,7 +4,7 @@ each with a log + PID file so stop-streams.py can shut them down.
 Feeds come from <state-dir>/streams.json (managed by the Control Center) when
 present, else the built-in FEEDS default below — (CHANNEL_ID, PORT). Ports must
 match the OBS media sources.
-NOTE: PUBLIC channels only. The real unlisted flow is the relay (`iro relay start`).
+NOTE: PUBLIC channels only. The real unlisted flow is the relay (`racecast relay start`).
 """
 import argparse, json, os, shutil, subprocess, sys
 
@@ -17,7 +17,7 @@ def state_dir(here):
     return here
 
 def feed_argv(frozen, executable, loop_path, channel, port):
-    """Child argv for one feed. Frozen iro binary: re-invoke ourselves with the
+    """Child argv for one feed. Frozen racecast binary: re-invoke ourselves with the
     hidden `streams run-feed` verb (no python3 on producer machines); otherwise
     run loopstream.py with the current interpreter."""
     if frozen:
@@ -26,9 +26,9 @@ def feed_argv(frozen, executable, loop_path, channel, port):
 
 
 def feed_env(frozen, base_env):
-    """Env for frozen feed children. They re-run the iro --onefile binary, and
+    """Env for frozen feed children. They re-run the racecast --onefile binary, and
     PYINSTALLER_RESET_ENVIRONMENT=1 makes each an independent instance (own
-    _MEIPASS) that outlives this parent — same fix as iro.py's
+    _MEIPASS) that outlives this parent — same fix as racecast.py's
     _frozen_child_env(); keep the two in sync. Repo mode: None (inherit)."""
     if not frozen:
         return None
@@ -83,7 +83,7 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     ap = argparse.ArgumentParser()
     ap.add_argument("--state-dir", default=state_dir(here),
-                    help="PID/log dir (iro passes <runtime>/static explicitly).")
+                    help="PID/log dir (racecast passes <runtime>/static explicitly).")
     a = ap.parse_args()
     sdir = a.state_dir
     logdir = os.path.join(sdir, "logs")
@@ -104,7 +104,7 @@ def main():
             fh.write(str(p.pid))
         print(f"Started Feed {i} -> channel {ch} on http://127.0.0.1:{port} (log: {logdir}/feed_{port}.log)")
     print("\nAll feeds launched. Point each OBS media source at its http://127.0.0.1:PORT.")
-    print("Stop everything with:  iro streams stop")
+    print("Stop everything with:  racecast streams stop")
 
 
 if __name__ == "__main__":

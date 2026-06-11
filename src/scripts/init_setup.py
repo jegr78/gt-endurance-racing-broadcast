@@ -1,4 +1,4 @@
-"""First-time setup wizard logic behind `iro init`.
+"""First-time setup wizard logic behind `racecast init`.
 
 Pure building blocks wired by iro.py: the ordered step plan, done-detection
 predicates (every probe is injected — tests never touch the system), the gate
@@ -51,7 +51,7 @@ STEP_KINDS = {
     "preflight": {"kind": "job", "op": "preflight"},
 }
 
-_USAGE = "usage: iro init [--browser NAME] [--skip-installs] [--force]"
+_USAGE = "usage: racecast init [--browser NAME] [--skip-installs] [--force]"
 
 
 def parse_init_args(rest):
@@ -101,7 +101,7 @@ def prompt_value(message, isatty, ask=input):
     answer. Non-TTY (CI/pipe): degrade to checkpoint-and-exit (same contract as
     gate_pause)."""
     if not isatty:
-        raise SystemExit(f"{message}\nThen run `iro init` again.")
+        raise SystemExit(f"{message}\nThen run `racecast init` again.")
     return ask(f"{message}: ").strip()
 
 
@@ -159,7 +159,7 @@ def gate_pause(message, isatty, ask=input):
     Non-TTY (CI/pipe): degrade to checkpoint-and-exit — SystemExit(str) prints
     the instruction to stderr and exits 1 (Python semantics)."""
     if not isatty:
-        raise SystemExit(f"{message}\nThen run `iro init` again — completed "
+        raise SystemExit(f"{message}\nThen run `racecast init` again — completed "
                          "steps are skipped.")
     ask(f"{message} — press Enter to continue: ")
 
@@ -183,7 +183,7 @@ def run_wizard(steps, force, echo):
         code = step["run"]()
         if code and idx < total:
             echo(f"\nStep '{step['label']}' failed (exit {code}). Fix the "
-                 "issue above, then run `iro init` again — completed steps "
+                 "issue above, then run `racecast init` again — completed steps "
                  "are skipped.")
             return code, False
     return code, True

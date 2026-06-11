@@ -1,10 +1,10 @@
-"""Control Center operation registry: which `iro` invocations the web UI may
+"""Control Center operation registry: which `racecast` invocations the web UI may
 trigger, and how to build the child argv. Pure data + pure helpers (no I/O) —
 the UI server routes /api/op/<name> through this table and build_argv() only,
 so the HTTP surface can never run arbitrary commands or pass free-form args."""
 import re
 
-# name -> base iro argv. Installs always run with --yes: jobs have no stdin
+# name -> base racecast argv. Installs always run with --yes: jobs have no stdin
 # (DEVNULL), so an interactive prompt would silently read EOF and decline.
 OPS = {
     "relay-start": ["relay", "start"],
@@ -62,7 +62,7 @@ def _update_flag(value):
 # The UI's `update` op only ever installs a PREVIEW build by tag (a regular
 # update sends no tag and goes to the latest release). Restricting the allowlist
 # to preview-* means a crafted /api/op/update {tag: "v1.0.0"} cannot silently
-# downgrade to an arbitrary stable release. (`iro update --tag <vX.Y.Z>` on the
+# downgrade to an arbitrary stable release. (`racecast update --tag <vX.Y.Z>` on the
 # CLI is still free to pin/downgrade — that boundary is the shell, not the UI.)
 _TAG_RE = re.compile(r"^preview-[\w.-]+\Z")
 
@@ -108,7 +108,7 @@ def build_argv(name, params=None):
 
 
 def job_argv(op_args, frozen, executable, iro_script):
-    """argv to run `iro <op_args...>` as a child process: the frozen binary
+    """argv to run `racecast <op_args...>` as a child process: the frozen binary
     re-invokes itself (same mechanism as the daemon spawns); repo/package mode
     runs iro.py with this interpreter."""
     if frozen:

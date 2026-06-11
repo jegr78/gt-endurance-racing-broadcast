@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared helpers for the iro installer verbs (install-tools, install-apps).
+"""Shared helpers for the racecast installer verbs (install-tools, install-apps).
 Loaded by both via importlib from the sibling path — works in repo mode, the
 test loaders, and the frozen binary (scripts ship as data under _MEIPASS)."""
 import os, shutil, subprocess

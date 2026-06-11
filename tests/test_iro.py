@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stdlib checks for the iro dispatcher routing. Run: python3 tests/test_iro.py"""
+"""Stdlib checks for the racecast dispatcher routing. Run: python3 tests/test_iro.py"""
 import importlib.util, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))

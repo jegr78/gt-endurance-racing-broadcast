@@ -135,7 +135,7 @@ def t_job_argv_frozen_reinvokes_binary():
 
 
 def t_ops_registry_routes_in_iro():
-    # every registry entry must be a valid iro invocation (service verb,
+    # every registry entry must be a valid racecast invocation (service verb,
     # oneshot, or export) — route() raises ValueError on anything unknown
     for name, argv in ui_ops.OPS.items():
         action = iro.route(list(argv))

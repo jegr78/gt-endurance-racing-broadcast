@@ -142,7 +142,7 @@ def _no_window_kwargs(os_name=None):
     window, and the per-feed yt-dlp resolve fires every ~15 s, so the desktop
     flickers continuously during an event (issue #30). CREATE_NO_WINDOW gives the
     child a hidden console instead; harmless when a console already exists (the
-    foreground `iro relay run`), and a no-op (empty kwargs) off Windows so the
+    foreground `racecast relay run`), and a no-op (empty kwargs) off Windows so the
     same spawn site stays cross-platform. Mirrors services.no_window_kwargs — the
     standalone relay imports nothing from scripts/, so the flag is duplicated here
     (same pattern as detect_tailscale_ip)."""
@@ -717,7 +717,7 @@ class TimerStore:
                          "last_error": self.last_error}}
 
     def summary(self):
-        """Compact line for /status and `iro status`."""
+        """Compact line for /status and `racecast status`."""
         d = self.data()
         return {"mode": d["mode"], "visible": d["visible"],
                 "remaining_s": (max(0, int(d["end"] - d["server_now"]))
@@ -1726,7 +1726,7 @@ def main():
         _ch = cookie_health(cookies)
         if _ch["stale"]:
             print(f"WARN: cookies.txt is {_ch['age_h']:.0f} h old — cookies rotate; "
-                  "run 'iro cookies firefox' before the event.")
+                  "run 'racecast cookies firefox' before the event.")
 
     # Locate the director panel (shipped in the package root, one level up from relay/)
     panel_path = None
@@ -1815,7 +1815,7 @@ def main():
             print(f"  (warn) could not bind {addr}:{args.http_port} — {e}")
     if not servers:
         sys.exit(f"Could not bind the control server on {bind_addrs} port {args.http_port} "
-                 f"— port may already be in use: run 'iro preflight' or 'iro status' "
+                 f"— port may already be in use: run 'racecast preflight' or 'racecast status' "
                  f"to see what holds it.")
 
     def shutdown(*_):

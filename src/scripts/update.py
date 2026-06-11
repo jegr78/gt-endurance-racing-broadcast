@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""`iro update` — self-update the standalone binary from GitHub Releases.
+"""`racecast update` — self-update the standalone binary from GitHub Releases.
 Checks /releases/latest, compares semver tags, downloads the platform archive
 and swaps the running binary (Windows: rename trick — a running exe can be
 renamed but not overwritten). Frozen-only: a repo checkout updates with
@@ -280,7 +280,7 @@ def _download_and_swap(url, tag):
         except OSError as exc:
             ui_path = None
             print(f"update: note — iro-ui not installed ({exc}); "
-                  "use `iro ui` from the CLI, or reinstall the archive.")
+                  "use `racecast ui` from the CLI, or reinstall the archive.")
     print(f"updated to {tag} — restart iro to use it.")
     if ui_path:
         print(f"installed {os.path.basename(ui_path)} next to iro.")
@@ -346,7 +346,7 @@ def main():
 
     _, tag, url = action
     if a.check:
-        print(f"update available: {a.current} -> {tag}  (run `iro update` to install)")
+        print(f"update available: {a.current} -> {tag}  (run `racecast update` to install)")
         return
     print(f"update: {a.current} -> {tag}")
     if not a.yes and not confirmed(input("Download and replace this binary? [y/N] ")):

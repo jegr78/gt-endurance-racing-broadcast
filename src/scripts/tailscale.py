@@ -1,8 +1,8 @@
-"""Tailscale detection and connect/disconnect control for the iro CLI.
+"""Tailscale detection and connect/disconnect control for the racecast CLI.
 
 One home for everything Tailscale: CLI-binary discovery, BackendState-aware
-detection, and the argument-less `up`/`down` control behind `iro tailscale ...`
-and `iro event start`. A stopped/disconnected node keeps its assigned tailnet
+detection, and the argument-less `up`/`down` control behind `racecast tailscale ...`
+and `racecast event start`. A stopped/disconnected node keeps its assigned tailnet
 IP, so `tailscale ip -4` alone reports false positives — only BackendState
 "Running" counts as connected.
 

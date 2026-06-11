@@ -154,29 +154,29 @@ def t_classify_relay():
     r = m.classify_relay(True, False)
     assert r.level == "FAIL" and "8088" in r.detail   # alive but port dead
     r = m.classify_relay(False, False)
-    assert r.level == "FAIL" and "iro relay start" in r.detail
+    assert r.level == "FAIL" and "racecast relay start" in r.detail
 
 
 def t_classify_companion():
     assert m.classify_companion(True, True).level == "PASS"
     r = m.classify_companion(False, True)
-    assert r.level == "WARN" and "iro companion start" in r.detail
+    assert r.level == "WARN" and "racecast companion start" in r.detail
     r = m.classify_companion(False, False, "manual on linux")
     assert r.level == "WARN" and "manual on linux" in r.detail
 
 
 def t_classify_assets():
     # sheet readable, complete
-    assert m.classify_assets("Graphics", [], 9, "FAIL", "run `iro graphics`").level == "PASS"
+    assert m.classify_assets("Graphics", [], 9, "FAIL", "run `racecast graphics`").level == "PASS"
     # sheet readable, files missing -> severity, names listed
-    r = m.classify_assets("Graphics", ["Standby.png"], 8, "FAIL", "run `iro graphics`")
-    assert r.level == "FAIL" and "Standby.png" in r.detail and "iro graphics" in r.detail
-    r = m.classify_assets("Media", ["outro.mp4"], 1, "WARN", "run `iro media`")
+    r = m.classify_assets("Graphics", ["Standby.png"], 8, "FAIL", "run `racecast graphics`")
+    assert r.level == "FAIL" and "Standby.png" in r.detail and "racecast graphics" in r.detail
+    r = m.classify_assets("Media", ["outro.mp4"], 1, "WARN", "run `racecast media`")
     assert r.level == "WARN"
     # sheet unreachable (missing=None) -> local fallback
-    r = m.classify_assets("Graphics", None, 9, "FAIL", "run `iro graphics`")
+    r = m.classify_assets("Graphics", None, 9, "FAIL", "run `racecast graphics`")
     assert r.level == "WARN" and "not verified" in r.detail
-    r = m.classify_assets("Graphics", None, 0, "FAIL", "run `iro graphics`")
+    r = m.classify_assets("Graphics", None, 0, "FAIL", "run `racecast graphics`")
     assert r.level == "FAIL"      # nothing local at all
 
 
@@ -244,7 +244,7 @@ def t_director_urls_no_tailscale():
     assert len(lines) == 2
     assert lines[0] == "Share with your directors:"
     assert "Tailscale not connected" in lines[1]
-    assert "iro tailscale up" in lines[1]
+    assert "racecast tailscale up" in lines[1]
 
 
 def t_quit_command_per_platform():
@@ -296,7 +296,7 @@ def t_classify_scene_collection_wrong_but_present_warns_with_fix():
               "expected_present": True, "renamed_variant": None}
     r = m.classify_scene_collection(status, "")
     assert r.level == m.WARN
-    assert "iro obs collection set" in r.detail
+    assert "racecast obs collection set" in r.detail
 
 
 def t_classify_scene_collection_renamed_variant_warns_manual():
@@ -319,14 +319,14 @@ def t_classify_scene_collection_absent_warns_import():
 
 def t_classify_scene_collection_overlap_prefers_switch_over_manual():
     # expected_present must win over renamed_variant — the real collection is
-    # present, so the actionable advice is `iro obs collection set`, matching
+    # present, so the actionable advice is `racecast obs collection set`, matching
     # the CLI and the Control Center.
     status = {"current": "GT Endurance Racing 2", "expected": "GT Endurance Racing",
               "available": ["GT Endurance Racing", "GT Endurance Racing 2"], "match": False,
               "expected_present": True, "renamed_variant": "GT Endurance Racing 2"}
     r = m.classify_scene_collection(status, "")
     assert r.level == m.WARN
-    assert "iro obs collection set" in r.detail
+    assert "racecast obs collection set" in r.detail
     assert "manually" not in r.detail
 
 

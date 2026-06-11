@@ -60,8 +60,8 @@ def t_link_relative_and_anchor_preserved():
 
 
 def t_fenced_code_is_escaped_verbatim():
-    h = md.render("```\niro relay start <x>\n```")
-    assert "<pre><code>" in h and "iro relay start &lt;x&gt;" in h
+    h = md.render("```\nracecast relay start <x>\n```")
+    assert "<pre><code>" in h and "racecast relay start &lt;x&gt;" in h
     assert "<em>" not in h                                 # no inline formatting in code
 
 
