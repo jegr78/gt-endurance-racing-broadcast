@@ -2448,10 +2448,11 @@ def _ui_modules():
 
 
 def _iro_job_executable(frozen=IS_FROZEN, executable=None, win=None):
-    """Path to the `iro` binary that runs Control Center jobs. When the server
-    is launched by iro-ui (a sibling binary), jobs must still invoke `iro`, not
-    iro-ui. Frozen: the sibling iro/iro.exe next to the running executable.
-    Dev: the interpreter itself (paired with iro.py by job_argv)."""
+    """Path to the `racecast` binary that runs Control Center jobs. When the
+    server is launched by racecast-ui (a sibling binary), jobs must still invoke
+    `racecast`, not racecast-ui. Frozen: the sibling racecast/racecast.exe next
+    to the running executable. Dev: the interpreter itself (paired with
+    racecast.py by job_argv)."""
     executable = _real_executable() if executable is None else executable
     win = (os.name == "nt") if win is None else win
     if frozen:
@@ -2459,7 +2460,7 @@ def _iro_job_executable(frozen=IS_FROZEN, executable=None, win=None):
         # host's: os.path.join emits '\' on a Windows runner and would corrupt
         # the POSIX sibling path on a non-Windows target (and the unit tests).
         sep = "\\" if win else "/"
-        return _app_home(executable) + sep + ("iro.exe" if win else "iro")
+        return _app_home(executable) + sep + ("racecast.exe" if win else "racecast")
     return executable
 
 

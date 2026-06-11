@@ -692,17 +692,17 @@ def t_wizard_job_ops_all_exist_in_registry():
 
 
 def t_iro_job_executable_frozen_uses_sibling():
-    # frozen iro-ui must spawn the sibling `iro`, not itself
+    # frozen racecast-ui must spawn the sibling `racecast`, not itself
     posix = iro._iro_job_executable(frozen=True,
-                                    executable="/opt/iro/iro-ui", win=False)
-    assert posix == "/opt/iro/iro"
+                                    executable="/opt/iro/racecast-ui", win=False)
+    assert posix == "/opt/iro/racecast"
     win = iro._iro_job_executable(frozen=True,
-                                  executable="C:\\iro\\iro-ui.exe", win=True)
-    assert win.endswith("iro.exe")
+                                  executable="C:\\iro\\racecast-ui.exe", win=True)
+    assert win.endswith("racecast.exe")
 
 
 def t_iro_job_executable_dev_uses_interpreter():
-    # non-frozen: the running interpreter (paired with iro.py)
+    # non-frozen: the running interpreter (paired with racecast.py)
     assert iro._iro_job_executable(frozen=False, executable="/usr/bin/python3",
                                    win=False) == "/usr/bin/python3"
 
@@ -714,17 +714,17 @@ def t_app_home_plain_binary_is_dirname():
 
 def t_app_home_macos_app_resolves_next_to_bundle():
     # inside a .app the real home is the folder CONTAINING the bundle (where the
-    # sibling iro binary + runtime/.env live), not Contents/MacOS/
-    exe = "/Users/x/IRO/iro-ui.app/Contents/MacOS/iro-ui"
+    # sibling racecast binary + runtime/.env live), not Contents/MacOS/
+    exe = "/Users/x/IRO/racecast-ui.app/Contents/MacOS/racecast-ui"
     assert iro._app_home(exe) == "/Users/x/IRO"
 
 
 def t_iro_job_executable_macos_app_finds_sibling_next_to_bundle():
-    # the .app job-spawn bug: jobs must target <home>/iro, not the missing
-    # Contents/MacOS/iro inside the bundle
-    exe = "/Users/x/IRO/iro-ui.app/Contents/MacOS/iro-ui"
+    # the .app job-spawn bug: jobs must target <home>/racecast, not the missing
+    # Contents/MacOS/racecast inside the bundle
+    exe = "/Users/x/IRO/racecast-ui.app/Contents/MacOS/racecast-ui"
     assert iro._iro_job_executable(frozen=True, executable=exe,
-                                   win=False) == "/Users/x/IRO/iro"
+                                   win=False) == "/Users/x/IRO/racecast"
 
 
 # ---------- obs scene collection ----------

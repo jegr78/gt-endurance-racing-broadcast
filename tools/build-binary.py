@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Build the standalone `iro` and `iro-ui` binaries with PyInstaller and
-smoke-test both.  One pair of binaries per OS — run this on the OS you are
+"""Build the standalone `racecast` and `racecast-ui` binaries with PyInstaller
+and smoke-test both.  One pair of binaries per OS — run this on the OS you are
 targeting (CI runs a 3-OS matrix).
 Usage: python3 tools/build-binary.py [--version vX.Y.Z] [--skip-smoke]
-Output: dist/bin/iro + dist/bin/iro-ui (+ .exe on Windows; + iro-ui.app on
-macOS). The producer ZIP package is a separate artifact built by tools/build.py."""
+Output: dist/bin/racecast + dist/bin/racecast-ui (+ .exe on Windows;
++ racecast-ui.app on macOS). The producer ZIP package is a separate artifact
+built by tools/build.py."""
 import argparse, os, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -104,24 +105,24 @@ def main():
     launcher = _pyinstaller_cmd()
     if launcher is None:
         sys.exit("pyinstaller not found (pip install pyinstaller / brew install pyinstaller).")
-    workdir = tempfile.mkdtemp(prefix="iro-build-")
+    workdir = tempfile.mkdtemp(prefix="racecast-build-")
     version_file = os.path.join(workdir, "VERSION")
     with open(version_file, "w", encoding="utf-8") as fh:
         fh.write(a.version + "\n")
     sep = ";" if os.name == "nt" else ":"
     iro_bin = build_target(launcher, workdir, version_file, sep,
-                           "racecast.py", "iro", windowed=False)
+                           "racecast.py", "racecast", windowed=False)
     ui_bin = build_target(launcher, workdir, version_file, sep,
-                          "racecast_ui.py", "iro-ui", windowed=True)
+                          "racecast_ui.py", "racecast-ui", windowed=True)
     if not a.skip_smoke:
         smoke(iro_bin, a.version)
         smoke_ui(ui_bin)
-        # macOS ships the windowed launcher as iro-ui.app; smoke its INNER
-        # executable too. The .app nests the exe 3 levels deep, so sibling-iro
+        # macOS ships the windowed launcher as racecast-ui.app; smoke its INNER
+        # executable too. The .app nests the exe 3 levels deep, so sibling-racecast
         # resolution differs — a job spawn through it is the regression guard for
-        # the "Contents/MacOS/iro not found" bug (the plain ui_bin can't catch it).
-        app_exe = os.path.join(ROOT, "dist", "bin", "iro-ui.app",
-                               "Contents", "MacOS", "iro-ui")
+        # the "Contents/MacOS/racecast not found" bug (the plain ui_bin can't catch it).
+        app_exe = os.path.join(ROOT, "dist", "bin", "racecast-ui.app",
+                               "Contents", "MacOS", "racecast-ui")
         if os.path.isfile(app_exe):
             smoke_ui(app_exe)
 
