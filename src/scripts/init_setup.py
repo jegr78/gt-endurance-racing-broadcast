@@ -87,11 +87,22 @@ def build_plan(skip_installs=False):
 # is already done, or None when it must run. All probes are injected.
 # ---------------------------------------------------------------------------
 
-def env_done(env):
-    """`env` is the merged os.environ + .env mapping."""
-    if all(env.get(k) for k in REQUIRED_ENV):
-        return "IRO_SHEET_ID set"
+def profile_done(active, sheet_id):
+    """The profile step is done when a league profile is active and its SHEET_ID
+    is filled in. `active` is the active profile name (or None); `sheet_id` its
+    SHEET_ID value (or '')."""
+    if active and sheet_id:
+        return f"profile '{active}' ready"
     return None
+
+
+def prompt_value(message, isatty, ask=input):
+    """Collect one line at a manual step. Interactive: return the stripped
+    answer. Non-TTY (CI/pipe): degrade to checkpoint-and-exit (same contract as
+    gate_pause)."""
+    if not isatty:
+        raise SystemExit(f"{message}\nThen run `iro init` again.")
+    return ask(f"{message}: ").strip()
 
 
 def tools_done(which, tools):

@@ -76,12 +76,6 @@ def t_step_kinds_jobs_name_a_real_op():
 
 # ------------------------------------------------------------- done-detection
 
-def t_env_done():
-    assert m.env_done({"IRO_SHEET_ID": "x"}) is not None
-    assert m.env_done({"IRO_SHEET_ID": ""}) is None
-    assert m.env_done({}) is None
-
-
 def t_tools_done():
     tools = ("yt-dlp", "ffmpeg")
     assert m.tools_done(lambda t: "/bin/" + t, tools) is not None
@@ -189,6 +183,25 @@ def t_manual_next_steps():
     text = " ".join(lines)
     assert "/rt/import.json" in text and "/rt/buttons.companionconfig" in text
     assert "Tailscale" in text and len(lines) == 3
+
+
+def t_profile_done():
+    assert m.profile_done("iro", "SHEET123") is not None
+    assert m.profile_done("iro", "") is None
+    assert m.profile_done(None, "SHEET123") is None
+    assert m.profile_done(None, "") is None
+
+
+def t_prompt_value_returns_stripped_answer_when_tty():
+    assert m.prompt_value("Name", True, ask=lambda _p: "  erf  ") == "erf"
+
+
+def t_prompt_value_checkpoints_when_not_tty():
+    try:
+        m.prompt_value("Name", False, ask=lambda _p: "x")
+        raise AssertionError("expected SystemExit")
+    except SystemExit:
+        pass
 
 
 def _raises(fn, exc=ValueError):
