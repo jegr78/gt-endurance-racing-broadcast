@@ -213,6 +213,31 @@ def t_resolve_config_logo_path_blank_when_file_missing():
         assert cfg.logo_path == ""
 
 
+def t_resolve_config_obs_collection_from_field():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro",
+                   "NAME=IRO Endurance\nSHEET_ID=abc\nOBS_COLLECTION=IRO Broadcast\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.obs_collection == "IRO Broadcast"
+
+
+def t_resolve_config_obs_collection_falls_back_to_name():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "erf", "NAME=ERF Endurance\nSHEET_ID=abc\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.obs_collection == "ERF Endurance"
+
+
+def t_resolve_config_obs_collection_falls_back_to_profile_dir_when_no_name():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "erf", "SHEET_ID=abc\n")   # no NAME, no OBS_COLLECTION
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.obs_collection == "erf"           # == cfg.name fallback
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

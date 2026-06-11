@@ -150,6 +150,7 @@ class ResolvedConfig:
     sheet_push_url: str = ""
     intro_url: str = ""
     outro_url: str = ""
+    obs_collection: str = ""     # OBS scene-collection name; falls back to NAME
     logo_path: str = ""          # absolute path, or "" if unset/missing
     profile_dir: str = ""
     runtime_dir: str = ""
@@ -182,13 +183,15 @@ def resolve_config(root, *, override=None, runtime_root=None, environ=None):
     logo_path = os.path.join(pdir, logo) if logo else ""
     if logo_path and not os.path.isfile(logo_path):
         logo_path = ""
+    resolved_name = prof.get("NAME", name)
     return ResolvedConfig(
         profile=name,
-        name=prof.get("NAME", name),
+        name=resolved_name,
         sheet_id=prof.get("SHEET_ID", ""),
         sheet_push_url=prof.get("SHEET_PUSH_URL", ""),
         intro_url=prof.get("INTRO_URL", ""),
         outro_url=prof.get("OUTRO_URL", ""),
+        obs_collection=prof.get("OBS_COLLECTION") or resolved_name,
         logo_path=logo_path,
         profile_dir=pdir,
         runtime_dir=profile_runtime_dir(root, name),
