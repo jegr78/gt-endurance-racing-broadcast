@@ -20,6 +20,10 @@ from dataclasses import dataclass, field
 
 PROJECT_MARKERS = (".git", ".env.example")
 
+# Default OBS scene-collection name = product prefix + the league NAME, so several
+# leagues' collections group together in OBS. An explicit OBS_COLLECTION wins.
+PRODUCT_COLLECTION_PREFIX = "GT Endurance Racing"
+
 
 def find_project_root(start, markers=PROJECT_MARKERS, max_levels=4):
     """Walk up from `start`, checking `start` itself and up to `max_levels-1`
@@ -191,7 +195,7 @@ def resolve_config(root, *, override=None, runtime_root=None, environ=None):
         sheet_push_url=prof.get("SHEET_PUSH_URL", ""),
         intro_url=prof.get("INTRO_URL", ""),
         outro_url=prof.get("OUTRO_URL", ""),
-        obs_collection=prof.get("OBS_COLLECTION") or resolved_name,
+        obs_collection=prof.get("OBS_COLLECTION") or f"{PRODUCT_COLLECTION_PREFIX} — {resolved_name}",
         logo_path=logo_path,
         profile_dir=pdir,
         runtime_dir=profile_runtime_dir(root, name),
