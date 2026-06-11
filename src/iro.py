@@ -13,6 +13,8 @@
   iro obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
   iro app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
   iro status                            # aggregate health of all services
+  iro profile   list | show [<name>] | use <name> | new <name> [--from <source>]
+  iro --profile <name> <command>        # run one command against a non-active profile
   iro ui [--no-browser]                 # local Control Center web app (port 8089 / IRO_UI_PORT)
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   iro export companion [--out PATH]     # write the Companion button config
@@ -29,6 +31,8 @@ sys.path.insert(0, os.path.join(HERE, "scripts"))
 import subprocess
 import services as sv
 import init_setup as ins
+import config as pcfg
+import profile_admin as pa
 
 # PyInstaller marks the frozen binary with sys.frozen and unpacks bundled data
 # (the whole src/ tree) to sys._MEIPASS. Repo + package mode stay subprocess-based.
@@ -482,6 +486,8 @@ def route(argv):
         return {"kind": "ui", "rest": rest}
     if cmd == "init":
         return {"kind": "init", "rest": rest}
+    if cmd == "profile":
+        return {"kind": "profile", "rest": rest}
     if cmd in ONESHOTS:
         return {"kind": "oneshot", "command": cmd, "rest": rest}
     if cmd == "export":
@@ -489,6 +495,48 @@ def route(argv):
             raise ValueError("usage: iro export companion [--out PATH]")
         return {"kind": "export", "target": "companion", "rest": rest[1:]}
     raise ValueError(f"unknown command: {cmd}")
+
+
+def profile_cmd(rest):
+    """`iro profile list|show|use|new` -- manage league profiles. Resolves the
+    project root + runtime dir the same way the rest of the CLI does, so it
+    sees profiles/ and runtime/active-profile consistently with config.py."""
+    try:
+        opts = pa.parse_profile_args(rest)
+    except ValueError as e:
+        sys.exit(f"iro: {e}")
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    runtime_root = _runtime_dir()
+    active = pcfg.read_active_pointer(runtime_root)
+    verb = opts["verb"]
+    if verb == "list":
+        print(pa.format_profile_list(pcfg.list_profiles(root), active))
+        return None
+    if verb == "new":
+        try:
+            target = pa.create_profile(root, opts["name"], opts["source"])
+        except ValueError as e:
+            sys.exit(f"iro: {e}")
+        env_path = os.path.join(target, pcfg.PROFILE_ENV_NAME)
+        print(f"created profile '{opts['name']}' at {target}")
+        print(f"  edit {env_path} (fill in SHEET_ID), then: "
+              f"iro profile use {opts['name']}")
+        return None
+    if verb == "use":
+        try:
+            pa.set_active_profile(root, runtime_root, opts["name"])
+        except ValueError as e:
+            sys.exit(f"iro: {e}")
+        print(f"active profile: {opts['name']}")
+        return None
+    # verb == "show"
+    try:
+        rcfg = pcfg.resolve_config(root, override=opts["name"],
+                                   runtime_root=runtime_root)
+    except pcfg.ProfileError as e:
+        sys.exit(f"iro: {e}")
+    print(pa.format_profile_show(rcfg, active))
+    return None
 
 
 def _tailscale_ip():
@@ -2129,6 +2177,12 @@ def main(argv=None):
     _ensure_ssl_certs()
     argv = sys.argv[1:] if argv is None else argv
     try:
+        argv, _profile = pa.split_profile_flag(argv)
+    except ValueError as e:
+        sys.exit(f"iro: {e}")
+    if _profile:
+        os.environ["RACECAST_PROFILE"] = _profile   # M3 consumers read this
+    try:
         action = route(argv)
     except ValueError as e:
         sys.exit(f"iro: {e}")
@@ -2150,6 +2204,8 @@ def main(argv=None):
         return ui_cmd(action["rest"])
     if action["kind"] == "init":
         return init_cmd(action["rest"])
+    if action["kind"] == "profile":
+        return profile_cmd(action["rest"])
     if action["kind"] == "oneshot":
         return oneshot(action["command"], action["rest"])
     if action["kind"] == "aggregate":

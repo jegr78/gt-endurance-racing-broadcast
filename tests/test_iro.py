@@ -582,6 +582,15 @@ def t_route_ui():
     assert m.route(["ui", "--no-browser"]) == {"kind": "ui", "rest": ["--no-browser"]}
 
 
+def t_profile_routing():
+    assert m.route(["profile", "list"]) == {"kind": "profile", "rest": ["list"]}
+    assert m.route(["profile", "new", "erf", "--from", "example"]) == {
+        "kind": "profile", "rest": ["new", "erf", "--from", "example"]}
+    # an unknown profile verb is NOT validated at the route seam (parse_profile_args
+    # does that) — route just hands the rest through:
+    assert m.route(["profile", "bogus"]) == {"kind": "profile", "rest": ["bogus"]}
+
+
 def _raises(fn):
     try:
         fn()
