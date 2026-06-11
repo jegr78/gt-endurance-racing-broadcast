@@ -26,7 +26,7 @@ MEDIA_LABELS = {"intro video": "intro", "outro video": "outro"}
 def load_dotenv(start):
     """Load KEY=VALUE pairs from a .env at the script dir or the project root into
     os.environ (real env vars win). Bounded to the project (nearest ancestor with
-    a .git/.env.example marker). KEEP IN SYNC with the copies in iro-feeds.py and
+    a .git/.env.example marker). KEEP IN SYNC with the copies in racecast-feeds.py and
     setup-assets.py."""
     candidates, d = [start], start
     for _ in range(4):
@@ -137,7 +137,7 @@ def main():
     urls = resolve_urls(which, cli, os.environ, csv_text)
     os.makedirs(a.out, exist_ok=True)
     # cookies.txt lives in the runtime dir (next to the default media dir),
-    # independent of --out, matching get-cookies.py / iro-feeds.py.
+    # independent of --out, matching get-cookies.py / racecast-feeds.py.
     cookies = os.path.join(os.path.dirname(media_dir(here)), "cookies.txt")
 
     failed = []

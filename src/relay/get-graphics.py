@@ -18,7 +18,7 @@ from urllib.request import Request, urlopen
 def load_dotenv(start):
     """Load KEY=VALUE pairs from a .env at the script dir or the project root into
     os.environ (real env vars win). Bounded to the project (nearest ancestor with a
-    .git/.env.example marker). KEEP IN SYNC with the copies in iro-feeds.py,
+    .git/.env.example marker). KEEP IN SYNC with the copies in racecast-feeds.py,
     setup-assets.py and get-media.py."""
     candidates, d = [start], start
     for _ in range(4):

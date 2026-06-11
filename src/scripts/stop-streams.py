@@ -82,7 +82,7 @@ def main():
         kill_tree(pid)
         print(f"Stopped {os.path.basename(pf)[:-4]} (PID {pid})")
         os.remove(pf)
-    # NOTE: no broad `pkill -f player-external-http` here — the relay (iro-feeds.py)
+    # NOTE: no broad `pkill -f player-external-http` here — the relay (racecast-feeds.py)
     # also serves with --player-external-http, so a catch-all would kill live relay
     # feeds. Only the tracked PID files are stopped.
     if not pidfiles:

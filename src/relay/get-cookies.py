@@ -10,7 +10,7 @@ import argparse, os, re, subprocess, sys
 
 
 def default_runtime_dir(here):
-    """Match iro-feeds.py: repo layout (src/relay/) -> <repo>/runtime ; dist (relay/) -> here."""
+    """Match racecast-feeds.py: repo layout (src/relay/) -> <repo>/runtime ; dist (relay/) -> here."""
     if os.path.basename(here) == "relay" and os.path.basename(os.path.dirname(here)) == "src":
         return os.path.join(os.path.dirname(os.path.dirname(here)), "runtime")
     return here

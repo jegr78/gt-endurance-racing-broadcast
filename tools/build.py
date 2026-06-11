@@ -44,11 +44,11 @@ def main():
     cp("obs/hud.html", "hud.html")
     cp("obs/timer.html", "timer.html")
     cp("setup-assets.py", "setup-assets.py")
-    cp("iro.py", "iro.py")
-    cp("iro_ui.py", "iro_ui.py")   # windowed Control Center launcher (iro-ui)
+    cp("racecast.py", "racecast.py")
+    cp("racecast_ui.py", "racecast_ui.py")   # windowed Control Center launcher (iro-ui)
     cp("assets", "assets")
     cp("scripts", "scripts")
-    cp("relay", "relay")  # iro-feeds.py + get-cookies.py
+    cp("relay", "relay")  # racecast-feeds.py + get-cookies.py
     cp("ui", "ui")        # Control Center server + page
 
     # intro/outro clips: download into the package so the artifact is self-contained.
@@ -78,10 +78,10 @@ def main():
 
     # companion: copy + strip password (defense in depth)
     os.makedirs(os.path.join(PKG, "companion"))
-    with open(os.path.join(SRC, "companion", "iro-buttons.companionconfig"), encoding="utf-8") as fh:
+    with open(os.path.join(SRC, "companion", "racecast-buttons.companionconfig"), encoding="utf-8") as fh:
         cfg = json.load(fh)
     blank_pass(cfg)
-    with open(os.path.join(PKG, "companion", "iro-buttons.companionconfig"), "w", encoding="utf-8") as fh:
+    with open(os.path.join(PKG, "companion", "racecast-buttons.companionconfig"), "w", encoding="utf-8") as fh:
         json.dump(cfg, fh, indent=1)
 
     # obs: ship the tokenized collection as .template.json (setup-assets localizes it)
@@ -115,11 +115,11 @@ def main():
 
     with open(os.path.join(PKG, "obs", "GT_Endurance.template.json"), encoding="utf-8") as fh:
         tpl = fh.read()
-    with open(os.path.join(PKG, "relay", "iro-feeds.py"), encoding="utf-8") as fh:
+    with open(os.path.join(PKG, "relay", "racecast-feeds.py"), encoding="utf-8") as fh:
         relay = fh.read()
     # Re-read the SHIPPED companion config from disk (not the in-memory cfg) so the
     # password check actually verifies what was written, not what we already blanked.
-    with open(os.path.join(PKG, "companion", "iro-buttons.companionconfig"), encoding="utf-8") as fh:
+    with open(os.path.join(PKG, "companion", "racecast-buttons.companionconfig"), encoding="utf-8") as fh:
         written = json.load(fh)
     blob = json.dumps(written)
     checks = {
@@ -141,8 +141,8 @@ def main():
         "timer html shipped": os.path.isfile(os.path.join(PKG, "timer.html")),
         ".env.example shipped": os.path.isfile(os.path.join(PKG, ".env.example")),
         "no sheet url in relay": not re.search(r"/spreadsheets/d/[A-Za-z0-9_-]{20,}/", relay),
-        "iro cli shipped": os.path.isfile(os.path.join(PKG, "iro.py")),
-        "iro-ui launcher shipped": os.path.isfile(os.path.join(PKG, "iro_ui.py")),
+        "iro cli shipped": os.path.isfile(os.path.join(PKG, "racecast.py")),
+        "iro-ui launcher shipped": os.path.isfile(os.path.join(PKG, "racecast_ui.py")),
         "services helper shipped": os.path.isfile(os.path.join(PKG, "scripts", "services.py")),
         "install-tools shipped": os.path.isfile(os.path.join(PKG, "scripts", "install_tools.py")),
         "install-apps shipped": os.path.isfile(os.path.join(PKG, "scripts", "install_apps.py")),

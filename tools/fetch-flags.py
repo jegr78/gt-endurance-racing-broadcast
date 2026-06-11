@@ -44,7 +44,7 @@ ALIASES = {
 def _load_relay_helpers():
     """Reuse asset_key / load_dotenv from the relay so naming stays in sync."""
     spec = importlib.util.spec_from_file_location(
-        "irofeeds", os.path.join(ROOT, "src", "relay", "iro-feeds.py"))
+        "irofeeds", os.path.join(ROOT, "src", "relay", "racecast-feeds.py"))
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m

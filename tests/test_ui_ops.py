@@ -6,7 +6,7 @@ import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "src"))
-import iro
+import racecast as iro
 sys.path.insert(0, os.path.join(ROOT, "src", "ui"))
 import ui_ops
 
@@ -124,8 +124,8 @@ def t_ops_registry_shape():
 
 def t_job_argv_repo_mode():
     argv = ui_ops.job_argv(["relay", "start"], frozen=False,
-                           executable="/usr/bin/python3", iro_script="/repo/src/iro.py")
-    assert argv == ["/usr/bin/python3", "/repo/src/iro.py", "relay", "start"]
+                           executable="/usr/bin/python3", iro_script="/repo/src/racecast.py")
+    assert argv == ["/usr/bin/python3", "/repo/src/racecast.py", "relay", "start"]
 
 
 def t_job_argv_frozen_reinvokes_binary():

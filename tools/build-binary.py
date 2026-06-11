@@ -19,15 +19,15 @@ DOC_FILES = ["docs/IRO_cheat_sheets.html", "docs/IRO_Broadcast_Setup_Guide.md",
 
 # The bundled scripts (relay, oneshots) are loaded at runtime via importlib, so
 # PyInstaller's static analyser cannot see their imports.  List every stdlib
-# module they use that is NOT already guaranteed by iro.py's own imports.
+# module they use that is NOT already guaranteed by racecast.py's own imports.
 HIDDEN_STDLIB = [
-    # iro-feeds.py
+    # racecast-feeds.py
     "http.server", "ipaddress",
-    # iro-feeds.py + get-graphics.py + get-media.py
+    # racecast-feeds.py + get-graphics.py + get-media.py
     "urllib.parse", "urllib.request",
     # preflight.py
     "ctypes", "dataclasses", "socket",
-    # hud.html data endpoint (iro-feeds.py uses csv, io at module level)
+    # hud.html data endpoint (racecast-feeds.py uses csv, io at module level)
     "csv", "io",
     # ui_jobs.py (loaded via importlib through ui_server.py)
     "uuid",
@@ -110,9 +110,9 @@ def main():
         fh.write(a.version + "\n")
     sep = ";" if os.name == "nt" else ":"
     iro_bin = build_target(launcher, workdir, version_file, sep,
-                           "iro.py", "iro", windowed=False)
+                           "racecast.py", "iro", windowed=False)
     ui_bin = build_target(launcher, workdir, version_file, sep,
-                          "iro_ui.py", "iro-ui", windowed=True)
+                          "racecast_ui.py", "iro-ui", windowed=True)
     if not a.skip_smoke:
         smoke(iro_bin, a.version)
         smoke_ui(ui_bin)
@@ -203,7 +203,7 @@ def smoke(binary, version):
         sys.exit(f"smoke event status FAILED: rc={ev.returncode} "
                  f"out={ev.stdout!r} err={ev.stderr!r}")
     with tempfile.TemporaryDirectory() as td:
-        dst = os.path.join(td, "iro-buttons.companionconfig")
+        dst = os.path.join(td, "racecast-buttons.companionconfig")
         ex = run(["export", "companion", "--out", dst])
         if ex.returncode != 0 or not os.path.isfile(dst):
             sys.exit(f"smoke export FAILED: rc={ex.returncode} err={ex.stderr!r}")

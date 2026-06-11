@@ -12,8 +12,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)            # import the sibling iro module
 
-import iro                              # noqa: E402 — after the path insert
-import native_dialog                    # noqa: E402 — from scripts/ (iro added it to sys.path)
+import racecast                         # noqa: E402 — after the path insert
+import native_dialog                    # noqa: E402 — from scripts/ (racecast added it to sys.path)
 
 
 def _fatal(message):
@@ -24,7 +24,7 @@ def _fatal(message):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    iro._force_utf8_io()    # UTF-8 stdout/stderr before anything prints (issue #24)
+    racecast._force_utf8_io()    # UTF-8 stdout/stderr before anything prints (issue #24)
     # Same bootstrap as iro.main(): make sure .env exists next to the binary,
     # retire any stale update binary, load the frozen env + SSL certs.
     # _app_home (not dirname) so a macOS .app resolves .env next to the bundle —
@@ -32,13 +32,13 @@ def main(argv=None):
     # _real_executable maps out of any App-Translocation mount first (issue #22:
     # a quarantined .app double-clicked in Finder otherwise runs from a random
     # read-only /private/var/.../AppTranslocation/ copy, not the producer's folder).
-    home = iro._app_home(iro._real_executable())
-    iro.ensure_env_file(home)
-    iro.cleanup_old_binary(home)
-    iro._load_env_frozen()
-    iro._ensure_ssl_certs()
+    home = racecast._app_home(racecast._real_executable())
+    racecast.ensure_env_file(home)
+    racecast.cleanup_old_binary(home)
+    racecast._load_env_frozen()
+    racecast._ensure_ssl_certs()
     try:
-        iro.run_ui(argv, fail=_fatal,
+        racecast.run_ui(argv, fail=_fatal,
                    open_browser="--no-browser" not in argv)
     except SystemExit as exc:
         # belt-and-suspenders: a string exit code means a fatal message slipped

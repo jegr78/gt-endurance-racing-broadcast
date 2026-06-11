@@ -441,7 +441,7 @@ def _oneshot_extra(command, rest, runtime_dir, base_dir):
     return extra
 
 def _relay_script():
-    return os.path.join(HERE, "relay", "iro-feeds.py")
+    return os.path.join(HERE, "relay", "racecast-feeds.py")
 
 def _relay_pid_path():
     return os.path.join(_runtime_dir(), "relay.pid")
@@ -889,7 +889,7 @@ def relay_logs(rest):
     sv.tail(_relay_log_path(), follow=("-f" in rest or "--follow" in rest))
 
 def relay_run(rest):
-    raise SystemExit(_run_script("relay/iro-feeds.py",
+    raise SystemExit(_run_script("relay/racecast-feeds.py",
                                  _relay_runtime_args() + rest))
 
 
@@ -1603,11 +1603,11 @@ def export_companion(rest):
         out = rest[1]
     elif rest:
         sys.exit("usage: iro export companion [--out PATH]")
-    dst = out or os.path.join(_runtime_dir(), "iro-buttons.companionconfig")
+    dst = out or os.path.join(_runtime_dir(), "racecast-buttons.companionconfig")
     if os.path.isdir(dst):
-        dst = os.path.join(dst, "iro-buttons.companionconfig")
+        dst = os.path.join(dst, "racecast-buttons.companionconfig")
     os.makedirs(os.path.dirname(os.path.abspath(dst)), exist_ok=True)
-    shutil.copyfile(resource_path("companion/iro-buttons.companionconfig"), dst)
+    shutil.copyfile(resource_path("companion/racecast-buttons.companionconfig"), dst)
     print(f"Wrote {dst} — import it in Companion (Import / Export -> Import).")
 
 
@@ -2315,7 +2315,7 @@ def _init_import_json():
     return os.path.join(_runtime_dir(), "GT_Endurance.import.json")
 
 def _init_companion_cfg():
-    return os.path.join(_runtime_dir(), "iro-buttons.companionconfig")
+    return os.path.join(_runtime_dir(), "racecast-buttons.companionconfig")
 
 def _init_export_run():
     export_companion([])
@@ -2549,7 +2549,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "jobs": jobs_mod.JobManager(
             lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN,
                                              _iro_job_executable(),
-                                             os.path.join(HERE, "iro.py")),
+                                             os.path.join(HERE, "racecast.py")),
             env=_frozen_child_env()),
         "log_paths": {"relay": _relay_log_path,
                       "companion": _companion_log_path,

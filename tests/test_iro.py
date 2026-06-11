@@ -4,7 +4,7 @@ import importlib.util, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-spec = importlib.util.spec_from_file_location("iro", os.path.join(ROOT, "src", "iro.py"))
+spec = importlib.util.spec_from_file_location("iro", os.path.join(ROOT, "src", "racecast.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
 
@@ -259,17 +259,17 @@ def t_script_invocation_repo():
 
 
 def t_script_invocation_frozen():
-    kind, path, args = m._script_invocation("relay/iro-feeds.py", ["--no-pov"], True,
+    kind, path, args = m._script_invocation("relay/racecast-feeds.py", ["--no-pov"], True,
                                             base=os.path.join("MEI", "src"))
     assert kind == "inprocess"
-    assert path == os.path.join("MEI", "src", "relay", "iro-feeds.py")
+    assert path == os.path.join("MEI", "src", "relay", "racecast-feeds.py")
     assert args == ["--no-pov"]
 
 
 def t_relay_daemon_argv():
     import sys as _sys
     repo = m._relay_daemon_argv(["--no-pov"], False)
-    assert repo[0] == _sys.executable and repo[1].endswith("iro-feeds.py")
+    assert repo[0] == _sys.executable and repo[1].endswith("racecast-feeds.py")
     assert "--runtime-dir" in repo and repo[-1] == "--no-pov"
     assert m._relay_daemon_argv(["--no-pov"], True) == \
         [_sys.executable, "relay", "run", "--no-pov"]
@@ -373,7 +373,7 @@ def t_export_companion_default_into_runtime():
         m._runtime_dir = lambda: os.path.join(td, "runtime")
         try:
             m.export_companion([])
-            out = os.path.join(td, "runtime", "iro-buttons.companionconfig")
+            out = os.path.join(td, "runtime", "racecast-buttons.companionconfig")
             assert os.path.getsize(out) > 0
         finally:
             m._runtime_dir = old

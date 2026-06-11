@@ -1,4 +1,4 @@
-"""Shared pure logic for the `iro companion` adapter (src/iro.py).
+"""Shared pure logic for the `iro companion` adapter (src/racecast.py).
 
 These helpers bind Bitfocus Companion's admin/web-buttons server to this machine's
 Tailscale IP (plug & play) so a tablet can open http://<tailscale-ip>:<port>/tablet

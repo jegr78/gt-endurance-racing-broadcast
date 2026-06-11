@@ -9,7 +9,7 @@ loading its config. Two layers:
   * profiles/<name>/profile.env — the league: SHEET_ID, SHEET_PUSH_URL, NAME, ...
 
 The bounded .env loader here is the CANONICAL copy. The standalone scripts
-(relay/iro-feeds.py, setup-assets.py, relay/get-media.py, relay/get-graphics.py)
+(relay/racecast-feeds.py, setup-assets.py, relay/get-media.py, relay/get-graphics.py)
 keep their own self-contained load_dotenv on purpose — the relay is deliberately
 import-free (same rationale as its duplicated detect_tailscale_ip) and all four
 run in-process under the frozen binary. Keep the parsing/boundary rules in sync.

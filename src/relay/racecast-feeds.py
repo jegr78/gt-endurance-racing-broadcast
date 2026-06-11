@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-iro-feeds.py — Relay mode for the IRO broadcast (2-feed ping-pong)
+racecast-feeds.py — Relay mode for the IRO broadcast (2-feed ping-pong)
 with a remotely-maintainable stint schedule from a Google Sheet.
 
 Concept: exactly one commentator stream per stint. Two fixed OBS feeds
