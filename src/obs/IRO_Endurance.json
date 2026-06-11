@@ -612,7 +612,7 @@
             "id": "image_source",
             "versioned_id": "image_source",
             "settings": {
-                "file": "__IRO_GRAPHICS__/Overlay.png",
+                "file": "__RACECAST_GRAPHICS__/Overlay.png",
                 "linear_alpha": true
             },
             "mixers": 0,
@@ -639,7 +639,7 @@
             "id": "image_source",
             "versioned_id": "image_source",
             "settings": {
-                "file": "__IRO_GRAPHICS__/Post Race Interviews.png",
+                "file": "__RACECAST_GRAPHICS__/Post Race Interviews.png",
                 "unload": false,
                 "linear_alpha": true
             },
@@ -667,7 +667,7 @@
             "id": "image_source",
             "versioned_id": "image_source",
             "settings": {
-                "file": "__IRO_GRAPHICS__/Quali Results.png",
+                "file": "__RACECAST_GRAPHICS__/Quali Results.png",
                 "unload": false,
                 "linear_alpha": true
             },
@@ -695,7 +695,7 @@
             "id": "image_source",
             "versioned_id": "image_source",
             "settings": {
-                "file": "__IRO_GRAPHICS__/Race Results.png",
+                "file": "__RACECAST_GRAPHICS__/Race Results.png",
                 "unload": false,
                 "linear_alpha": true
             },
@@ -723,7 +723,7 @@
             "id": "image_source",
             "versioned_id": "image_source",
             "settings": {
-                "file": "__IRO_GRAPHICS__/Schedule.png",
+                "file": "__RACECAST_GRAPHICS__/Schedule.png",
                 "unload": false,
                 "linear_alpha": true
             },
@@ -1139,7 +1139,7 @@
             "id": "image_source",
             "versioned_id": "image_source",
             "settings": {
-                "file": "__IRO_GRAPHICS__/Standings.png",
+                "file": "__RACECAST_GRAPHICS__/Standings.png",
                 "unload": false,
                 "linear_alpha": true
             },
@@ -1871,7 +1871,7 @@
             "id": "image_source",
             "versioned_id": "image_source",
             "settings": {
-                "file": "__IRO_GRAPHICS__/Standby.png"
+                "file": "__RACECAST_GRAPHICS__/Standby.png"
             },
             "mixers": 0,
             "sync": 0,
@@ -1975,7 +1975,7 @@
             "id": "image_source",
             "versioned_id": "image_source",
             "settings": {
-                "file": "__IRO_GRAPHICS__/Standby Cover.png"
+                "file": "__RACECAST_GRAPHICS__/Standby Cover.png"
             },
             "mixers": 0,
             "sync": 0,
@@ -2003,7 +2003,7 @@
             "settings": {
                 "close_when_inactive": true,
                 "hw_decode": true,
-                "local_file": "__IRO_MEDIA__/intro.mp4",
+                "local_file": "__RACECAST_MEDIA__/intro.mp4",
                 "is_local_file": true,
                 "looping": true,
                 "clear_on_media_end": false,
@@ -2046,7 +2046,7 @@
             "settings": {
                 "close_when_inactive": true,
                 "hw_decode": true,
-                "local_file": "__IRO_MEDIA__/outro.mp4",
+                "local_file": "__RACECAST_MEDIA__/outro.mp4",
                 "is_local_file": true,
                 "looping": true,
                 "clear_on_media_end": false,
@@ -2233,7 +2233,7 @@
             "id": "image_source",
             "versioned_id": "image_source",
             "settings": {
-                "file": "__IRO_GRAPHICS__/Race Weather 1.png",
+                "file": "__RACECAST_GRAPHICS__/Race Weather 1.png",
                 "unload": false,
                 "linear_alpha": true
             },
@@ -2261,7 +2261,7 @@
             "id": "image_source",
             "versioned_id": "image_source",
             "settings": {
-                "file": "__IRO_GRAPHICS__/Race Weather 2.png",
+                "file": "__RACECAST_GRAPHICS__/Race Weather 2.png",
                 "unload": false,
                 "linear_alpha": true
             },
@@ -2289,7 +2289,7 @@
             "id": "image_source",
             "versioned_id": "image_source",
             "settings": {
-                "file": "__IRO_GRAPHICS__/Quali Weather.png",
+                "file": "__RACECAST_GRAPHICS__/Quali Weather.png",
                 "unload": false,
                 "linear_alpha": true
             },

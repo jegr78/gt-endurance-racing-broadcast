@@ -15,7 +15,7 @@ import copy, json, sys
 
 COVER_NAME = "Standby Cover"
 COVER_UUID = "bbbbbbb1-0000-4000-8000-000000000001"   # A/B/POV use aaaaaaaN-; cover bbbbbbb1-
-COVER_FILE = "__IRO_GRAPHICS__/Standby Cover.png"      # dedicated neutral cover (tokenized)
+COVER_FILE = "__RACECAST_GRAPHICS__/Standby Cover.png"      # dedicated neutral cover (tokenized)
 POV_NAME   = "Feed POV"
 
 

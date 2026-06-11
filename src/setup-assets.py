@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Localize the tokenized OBS collection for THIS machine: replace the
-__IRO_ASSETS__/__IRO_SHEET__/__IRO_MEDIA__/__IRO_GRAPHICS__ tokens with this
+__RACECAST_ASSETS__/__RACECAST_SHEET__/__RACECAST_MEDIA__/__RACECAST_GRAPHICS__ tokens with this
 machine's real paths/values and write an importable collection.
 Works from the repo (src/) or the distributed package — same ./obs ./assets layout.
 
@@ -8,10 +8,10 @@ Usage: python3 setup-assets.py [--out PATH] [--assets DIR] [--template FILE]
 """
 import argparse, json, os, re, sys
 
-ASSETS_TOKEN = "__IRO_ASSETS__"
-SHEET_TOKEN = "__IRO_SHEET__"
-MEDIA_TOKEN = "__IRO_MEDIA__"
-GRAPHICS_TOKEN = "__IRO_GRAPHICS__"
+ASSETS_TOKEN = "__RACECAST_ASSETS__"
+SHEET_TOKEN = "__RACECAST_SHEET__"
+MEDIA_TOKEN = "__RACECAST_MEDIA__"
+GRAPHICS_TOKEN = "__RACECAST_GRAPHICS__"
 
 
 def media_dir(base):
@@ -139,10 +139,10 @@ def main():
     ap.add_argument("--out", default=os.path.join(base, "obs", "IRO_Endurance.import.json"))
     ap.add_argument("--media", default=media_dir(base),
                     help="Folder with intro.mp4/outro.mp4 for the Intro/Outro "
-                         "scenes (replaces __IRO_MEDIA__). Default: media_dir().")
+                         "scenes (replaces __RACECAST_MEDIA__). Default: media_dir().")
     ap.add_argument("--graphics", default=graphics_dir(base),
                     help="Folder with the broadcast graphics (<Label>.png) for the "
-                         "image sources (replaces __IRO_GRAPHICS__). Default: graphics_dir().")
+                         "image sources (replaces __RACECAST_GRAPHICS__). Default: graphics_dir().")
     ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
                     help="Google Sheet ID injected into the HUD browser source. "
                          "Default: env RACECAST_SHEET_ID (from the active profile).")
@@ -189,7 +189,7 @@ def main():
                   "until then).")
     if GRAPHICS_TOKEN in raw:
         mapping[GRAPHICS_TOKEN] = a.graphics
-        refs = sorted(set(re.findall(r"__IRO_GRAPHICS__/([^\"\\]+\.png)", raw)))
+        refs = sorted(set(re.findall(r"__RACECAST_GRAPHICS__/([^\"\\]+\.png)", raw)))
         missing = [f for f in refs if not os.path.isfile(os.path.join(a.graphics, f))]
         if missing:
             print(f"  WARNING: graphic(s) missing in {a.graphics}: "

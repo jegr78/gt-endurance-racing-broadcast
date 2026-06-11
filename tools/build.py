@@ -125,16 +125,16 @@ def main():
     checks = {
         "companion pov buttons": "pov/reload" in blob,
         "companion password empty": not has_pw(written),
-        "obs graphics tokenized": "__IRO_GRAPHICS__/" in tpl
+        "obs graphics tokenized": "__RACECAST_GRAPHICS__/" in tpl
             and "GoogleDrive" not in tpl and "drive.google.com" not in tpl,
         # The HUD no longer embeds the sheet (the relay serves /hud), so the
-        # collection legitimately has no __IRO_SHEET__ token — just assert no raw
+        # collection legitimately has no __RACECAST_SHEET__ token — just assert no raw
         # sheet URL ever leaks in.
         "obs no raw sheet url": not re.search(r"/spreadsheets/d/[A-Za-z0-9_-]{20,}/", tpl),
         "obs timer is relay-served": "http://127.0.0.1:8088/timer" in tpl
-            and "__IRO_TIMER__" not in tpl and "stagetimer" not in tpl,
+            and "__RACECAST_TIMER__" not in tpl and "stagetimer" not in tpl,
         "relay timer endpoint": "/timer/data" in relay,
-        "obs media tokenized": "__IRO_MEDIA__/" in tpl,
+        "obs media tokenized": "__RACECAST_MEDIA__/" in tpl,
         "relay pov endpoint": "pov/reload" in relay,
         "no .sh/.bat shipped": not any(fn.endswith((".sh", ".bat")) for _, _, fs in os.walk(PKG) for fn in fs),
         "preflight shipped": os.path.isfile(os.path.join(PKG, "scripts", "preflight.py")),
@@ -161,7 +161,7 @@ def main():
         ok = os.path.isfile(os.path.join(PKG, "media", clip))
         print(f"  [{'OK' if ok else 'warn'}] media {clip} "
               f"{'present' if ok else 'MISSING (run get-media.py before release)'}")
-    for fn in sorted(set(re.findall(r"__IRO_GRAPHICS__/([^\"\\]+\.png)", tpl))):
+    for fn in sorted(set(re.findall(r"__RACECAST_GRAPHICS__/([^\"\\]+\.png)", tpl))):
         ok = os.path.isfile(os.path.join(PKG, "graphics", fn))
         print(f"  [{'OK' if ok else 'warn'}] graphic {fn} "
               f"{'present' if ok else 'MISSING (run get-graphics.py before release)'}")

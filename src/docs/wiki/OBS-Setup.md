@@ -33,14 +33,14 @@ collection.
 - **Intro** / **Outro** — full-screen stream-open and stream-close clips that **loop with
   audio**, played from local files (`runtime/media/intro.mp4` / `outro.mp4`). The director
   switches to them with the Companion **INTRO** / **OUTRO** buttons. The file paths are
-  tokenised as `__IRO_MEDIA__` in the collection and resolved by `setup-assets.py`; download
+  tokenised as `__RACECAST_MEDIA__` in the collection and resolved by `setup-assets.py`; download
   or refresh the clips from the Sheet **Assets** tab with `iro media`
   (see [Configuration](Configuration)). If the clips are missing the scene shows black.
 
 > **Broadcast graphics are local files.** The still-graphics image sources — Overlay,
 > Standings, Schedule, Race Results, Quali Results, Standby, Standby Cover, and the three
 > **weather** overlays (**Race Weather 1**, **Race Weather 2**, **Quali Weather**) — read from
-> `runtime/graphics/<Label>.png`. They are tokenised `__IRO_GRAPHICS__` in the collection
+> `runtime/graphics/<Label>.png`. They are tokenised `__RACECAST_GRAPHICS__` in the collection
 > and resolved by `setup-assets.py`. Download them from the Sheet **Assets** tab with
 > `iro graphics` (one PNG per Assets row, the Sheet label is the
 > filename); a source whose file is missing shows black until you fetch it. The three

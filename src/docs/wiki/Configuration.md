@@ -64,15 +64,15 @@ The tokens in the collection:
 
 | Token | Resolves to |
 |-------|-------------|
-| `__IRO_GRAPHICS__` | `runtime/graphics/` (package: `graphics/`) — the Sheet-driven broadcast graphics, `__IRO_GRAPHICS__/<Label>.png` |
-| `__IRO_MEDIA__` | `runtime/media/` — the Intro/Outro clips |
+| `__RACECAST_GRAPHICS__` | `runtime/graphics/` (package: `graphics/`) — the Sheet-driven broadcast graphics, `__RACECAST_GRAPHICS__/<Label>.png` |
+| `__RACECAST_MEDIA__` | `runtime/media/` — the Intro/Outro clips |
 
 (The HUD overlay and the race timer are both served by the relay at fixed loopback URLs —
 the collection embeds neither the sheet ID nor any external service URL; no token is
 needed for them.)
 
 So `setup-assets.py`:
-- rewrites the broadcast-graphic image paths (`__IRO_GRAPHICS__`) to **this** machine's
+- rewrites the broadcast-graphic image paths (`__RACECAST_GRAPHICS__`) to **this** machine's
   `runtime/graphics/` folder. Those PNGs are **not** committed — download them first with
   `iro graphics` (see [Sheet-driven graphics](#sheet-driven-graphics)
   below); a graphic still missing prints a warning and OBS shows that source black.
@@ -80,7 +80,7 @@ So `setup-assets.py`:
 (The HUD overlay and race timer need no injection — both are served by the relay;
 `IRO_SHEET_ID` is read by the relay, not the collection.)
 
-> `__IRO_ASSETS__` is retired from the OBS collection. `src/assets/` now holds **only**
+> `__RACECAST_ASSETS__` is retired from the OBS collection. `src/assets/` now holds **only**
 > the bundled HUD `flags/` + `brands/` logos — these stay committed and are served by the
 > relay HUD, not by the OBS collection.
 
@@ -103,7 +103,7 @@ iro graphics            # -> runtime/graphics/<Label>.png
 ```
 
 Run it before `setup-assets.py` (and again before an event when the sheet graphics
-changed). `setup-assets.py` then resolves `__IRO_GRAPHICS__` to this folder; a graphic
+changed). `setup-assets.py` then resolves `__RACECAST_GRAPHICS__` to this folder; a graphic
 that is still missing only prints a warning (it never fails) and OBS shows that source
 black until you fetch it.
 

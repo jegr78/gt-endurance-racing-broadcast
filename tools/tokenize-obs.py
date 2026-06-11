@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Replace absolute asset paths in an OBS collection with the __IRO_GRAPHICS__ token.
+"""Replace absolute asset paths in an OBS collection with the __RACECAST_GRAPHICS__ token.
 
 Recognized assets = every image_source 'file' path (the broadcast graphics live in
-runtime/graphics and are tokenized to __IRO_GRAPHICS__/<basename>). Path matching is
+runtime/graphics and are tokenized to __RACECAST_GRAPHICS__/<basename>). Path matching is
 separator-agnostic. Idempotent (already-tokenized paths are left alone).
 
 Usage: tokenize-obs.py IN [OUT]
 """
 import argparse, json, os, re
 
-TOKEN = "__IRO_GRAPHICS__"
-SHEET_TOKEN = "__IRO_SHEET__"
+TOKEN = "__RACECAST_GRAPHICS__"
+SHEET_TOKEN = "__RACECAST_SHEET__"
 # Any /spreadsheets/d/<id>/ — the {20,} length guard skips the short token itself.
 SHEET_RE = re.compile(r"(/spreadsheets/d/)[A-Za-z0-9_-]{20,}(/)")
 
@@ -53,7 +53,7 @@ def base(path):
 
 
 def tokenize_sheets(obj, counter):
-    """Recursively replace any Google-Sheet ID in a URL with __IRO_SHEET__."""
+    """Recursively replace any Google-Sheet ID in a URL with __RACECAST_SHEET__."""
     if isinstance(obj, dict):
         return {k: tokenize_sheets(v, counter) for k, v in obj.items()}
     if isinstance(obj, list):
@@ -80,7 +80,7 @@ def main():
             continue
         st = s.get("settings") or {}
         f = st.get("file")
-        if isinstance(f, str) and f and not f.startswith("__IRO_"):
+        if isinstance(f, str) and f and not f.startswith("__RACECAST_"):
             st["file"] = f"{TOKEN}/{base(f)}"
             n += 1
     sheet_count = [0]
