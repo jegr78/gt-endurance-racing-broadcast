@@ -35,6 +35,24 @@ HIDDEN_STDLIB = [
 ]
 
 
+def _icon_arg(platform=None, osname=None, exists=None):
+    """PyInstaller --icon for the current OS, or [] when none applies. macOS uses
+    the .icns (the .app bundle/Dock icon), Windows the .ico (the .exe icon);
+    Linux can't embed an icon into an ELF, so it gets none. Pure-by-injection for
+    tests. Missing the committed icon file is non-fatal — the binary just builds
+    without one (regenerate with tools/make-icons.py). See issue #58."""
+    platform = sys.platform if platform is None else platform
+    osname = os.name if osname is None else osname
+    if platform == "darwin":
+        path = os.path.join(SRC, "assets", "app-icon.icns")
+    elif osname == "nt":
+        path = os.path.join(SRC, "assets", "app-icon.ico")
+    else:
+        return []
+    exists = os.path.isfile if exists is None else exists
+    return ["--icon", path] if exists(path) else []
+
+
 def _pyinstaller_cmd():
     """Return the PyInstaller invocation as a list.  Prefers the `pyinstaller`
     executable on PATH; falls back to `python3 -m PyInstaller` when the module
@@ -67,6 +85,7 @@ def build_target(launcher, workdir, version_file, sep, entry, name, windowed):
            "--hidden-import", "tailscale", "--hidden-import", "init_setup",
            "--hidden-import", "native_dialog",
            "--add-data", f"{version_file}{sep}src"]
+    cmd += _icon_arg()      # the racecast "rc" app icon (.icns/.ico), #58
     if windowed:
         cmd += ["--windowed"]
     for mod in HIDDEN_STDLIB:
