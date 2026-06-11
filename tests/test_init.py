@@ -188,7 +188,7 @@ def t_manual_next_steps():
 
 
 def t_profile_done():
-    assert m.profile_done("iro", "SHEET123") is not None
+    assert m.profile_done("iro", "SHEET123") == "profile 'iro' ready"
     assert m.profile_done("iro", "") is None
     assert m.profile_done(None, "SHEET123") is None
     assert m.profile_done(None, "") is None
@@ -200,7 +200,7 @@ def t_prompt_value_returns_stripped_answer_when_tty():
 
 def t_prompt_value_checkpoints_when_not_tty():
     try:
-        m.prompt_value("Name", False, ask=lambda _p: "x")
+        m.prompt_value("Name", False)
         raise AssertionError("expected SystemExit")
     except SystemExit:
         pass

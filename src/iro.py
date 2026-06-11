@@ -2101,8 +2101,10 @@ def _active_sheet_id(root, base, active):
 
 
 def _active_profile_env_path():
-    """profiles/<active>/profile.env for the active profile (falls back to the
-    machine .env when no profile is active)."""
+    """profiles/<active>/profile.env for the active profile. Falls back to the
+    machine .env when no profile is active -- used by the setup freshness probe;
+    in practice the profile step gates before setup, so the fallback is only hit
+    on a direct `iro setup` without a profile (intentional, do not 'fix')."""
     root = _env_base(IS_FROZEN, _real_executable(), HERE)
     active = _active_profile_name()
     if not active:
@@ -2126,13 +2128,22 @@ def _init_profile_run():
     root = _env_base(IS_FROZEN, _real_executable(), HERE)
     base = _runtime_base_dir()
     if not pcfg.list_profiles(root):
-        name = ins.prompt_value(
-            "Name your league profile (e.g. iro, erf)", sys.stdin.isatty())
+        while True:
+            name = ins.prompt_value(
+                "Name your league profile (e.g. iro, erf)", sys.stdin.isatty())
+            if pa.valid_profile_name(name) and name != "example":
+                break
+            print(f"  '{name}' is not a valid profile name (lowercase letters, "
+                  "digits, '-' or '_'; not 'example')")
         try:
             pa.create_profile(root, name)
-            pa.set_active_profile(root, base, name)
         except ValueError as e:
             sys.exit(f"iro: {e}")
+        try:
+            pa.set_active_profile(root, base, name)
+        except ValueError as e:
+            sys.exit(f"iro: profile created at profiles/{name}/ but could not "
+                     f"set it active ({e}). Run: iro profile use {name}")
         print(f"  created profile '{name}' (profiles/{name}/profile.env)")
     while True:
         active = _active_profile_name()
