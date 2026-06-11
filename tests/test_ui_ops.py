@@ -596,7 +596,7 @@ def t_docs_data_lists_present_only(tmp):
     # only docs that exist on disk are listed; wiki URLs always present
     base = os.path.join(tmp, "docs_data")
     os.makedirs(base, exist_ok=True)
-    open(os.path.join(base, "IRO_cheat_sheets.html"), "w").close()
+    open(os.path.join(base, "cheat_sheets.html"), "w").close()
     def resolve(rel):
         return os.path.join(base, os.path.basename(rel))
     d = iro.docs_data(resolve=resolve)
@@ -609,11 +609,11 @@ def t_docs_data_lists_present_only(tmp):
 def t_docs_file_path_allowlist(tmp):
     base = os.path.join(tmp, "docs_path")
     os.makedirs(base, exist_ok=True)
-    open(os.path.join(base, "IRO_cheat_sheets.html"), "w").close()
+    open(os.path.join(base, "cheat_sheets.html"), "w").close()
     def resolve(rel):
         return os.path.join(base, os.path.basename(rel))
     assert iro.docs_file_path("cheat-sheet", resolve=resolve).endswith(
-        "IRO_cheat_sheets.html")
+        "cheat_sheets.html")
     assert iro.docs_file_path("setup-guide", resolve=resolve) is None  # not on disk
     assert iro.docs_file_path("../../etc/passwd", resolve=resolve) is None
     assert iro.docs_file_path("unknown", resolve=resolve) is None
@@ -622,7 +622,7 @@ def t_docs_file_path_allowlist(tmp):
 def t_docs_content_html_passthrough_and_md_rendered(tmp):
     base = os.path.join(tmp, "docs_content")
     os.makedirs(base, exist_ok=True)
-    with open(os.path.join(base, "IRO_cheat_sheets.html"), "w") as fh:
+    with open(os.path.join(base, "cheat_sheets.html"), "w") as fh:
         fh.write("<html><body>cheat</body></html>")
     with open(os.path.join(base, "README_SETUP.md"), "w") as fh:
         fh.write("# Title\n\n| A | B |\n|--|--|\n| 1 | 2 |\n")

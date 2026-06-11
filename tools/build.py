@@ -38,7 +38,7 @@ def main():
     os.makedirs(PKG)
 
     # top-level docs + director panel + setup-assets
-    for f in ("IRO_Broadcast_Setup_Guide.md", "IRO_cheat_sheets.html", "README_SETUP.md"):
+    for f in ("Broadcast_Setup_Guide.md", "cheat_sheets.html", "README_SETUP.md"):
         cp(f"docs/{f}", f)
     cp("director/director-panel.html", "director-panel.html")
     cp("obs/hud.html", "hud.html")

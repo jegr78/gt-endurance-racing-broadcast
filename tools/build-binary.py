@@ -15,7 +15,7 @@ SRC = os.path.join(ROOT, "src")
 DATA = ["relay", "scripts", "obs", "assets", "companion", "director", "ui", "setup-assets.py"]
 # Operator docs the Control Center's Help page serves (racecast.DOCS_FILES) — only
 # these, kept under src/docs/; the docs/wiki/ subtree stays on GitHub.
-DOC_FILES = ["docs/IRO_cheat_sheets.html", "docs/IRO_Broadcast_Setup_Guide.md",
+DOC_FILES = ["docs/cheat_sheets.html", "docs/Broadcast_Setup_Guide.md",
              "docs/README_SETUP.md"]
 
 # The bundled scripts (relay, oneshots) are loaded at runtime via importlib, so

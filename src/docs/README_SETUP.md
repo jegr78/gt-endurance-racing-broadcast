@@ -35,5 +35,5 @@ On event day:
 `iro preflight` checks this machine any time and names the exact fix for
 anything missing.
 
-The printable role cheat sheets are in `IRO_cheat_sheets.html` (open it in a
+The printable role cheat sheets are in `cheat_sheets.html` (open it in a
 browser, print).

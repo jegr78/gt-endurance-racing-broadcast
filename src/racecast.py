@@ -2159,8 +2159,8 @@ def preflight_data(gather=None):
 # Bundled operator docs the Control Center's Help page can open (allowlist —
 # only these keys map to a file, so the HTTP layer can serve nothing else).
 DOCS_FILES = {
-    "cheat-sheet":  "docs/IRO_cheat_sheets.html",
-    "setup-guide":  "docs/IRO_Broadcast_Setup_Guide.md",
+    "cheat-sheet":  "docs/cheat_sheets.html",
+    "setup-guide":  "docs/Broadcast_Setup_Guide.md",
     "setup-readme": "docs/README_SETUP.md",
 }
 _DOC_TITLES = {
