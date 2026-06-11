@@ -708,6 +708,32 @@ def t_profile_runtime_scoping():
     assert m._profile_runtime("/r", None) == "/r"
 
 
+def t_profiles_data_reports_active_logo_flag():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        prof = os.path.join(td, "profiles")
+        os.makedirs(os.path.join(prof, "iro"))
+        open(os.path.join(td, ".env.example"), "w").close()
+        with open(os.path.join(prof, "iro", "profile.env"), "w") as fh:
+            fh.write("NAME=IRO GTEC\nLOGO=logo.png\n")
+        with open(os.path.join(prof, "iro", "logo.png"), "wb") as fh:
+            fh.write(b"\x89PNG\r\n\x1a\nFAKE")              # any bytes; isfile is what matters
+        os.makedirs(os.path.join(td, "runtime"))
+        with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
+            fh.write("iro\n")
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            with_logo = m.profiles_data()
+            os.remove(os.path.join(prof, "iro", "logo.png"))   # file gone -> flag false
+            without_logo = m.profiles_data()
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        assert with_logo["ok"] is True and with_logo["logo"] is True
+        assert without_logo["logo"] is False
+
+
 def t_profiles_data_lists_active_and_available():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
