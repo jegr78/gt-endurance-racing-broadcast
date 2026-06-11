@@ -736,7 +736,7 @@ let jobES = null, logES = null;
 
 let setupLoaded = false, preflightRun = false, assetsLoaded = false,
     settingsLoaded = false, streamsLoaded = false, docsLoaded = false,
-    wizardLoaded = false;
+    wizardLoaded = false, profilesLoaded = false;
 // op name -> last job exit code (string) run from the wizard. Lets a step that
 // has no persistent "done" state (preflight) — or a failed job — show its real
 // outcome instead of a misleading "pending".
@@ -757,9 +757,10 @@ function showView(name) {
     setupLoaded = true; fetchSetup();
   }
   if (name === 'apps') fetchObsCollection();
-  // TODO(M4 JS task): rewire lazy-load to the new 'profile' (graphics/media) +
-  // 'settings' (cookies) views; the old 'assets' view no longer exists.
-  if (name === 'assets' && !assetsLoaded) { assetsLoaded = true; fetchAssetFiles(); }
+  // Profile view: switcher/profile.env loaded once; graphics/media gallery
+  // (the old 'assets' view's job) likewise re-uses fetchAssetFiles.
+  if (name === 'profile' && !profilesLoaded) { profilesLoaded = true; loadProfiles(); }
+  if (name === 'profile' && !assetsLoaded) { assetsLoaded = true; fetchAssetFiles(); }
   if (name === 'preflight' && !preflightRun) { preflightRun = true; runPreflight(); }
   if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
   if (name === 'streams' && !streamsLoaded) { streamsLoaded = true; loadStreams(); }
@@ -1665,7 +1666,10 @@ function showEnvErr(msg) {
   e.hidden = false;
 }
 
-function settingsRow(key, value) {
+// Shared masked KEY/value editor row — used by both the machine .env editor
+// (#envrows) and the profile.env editor (#penvrows). Identical component; only
+// the container id differs.
+function envEditorRow(key, value) {
   const r = document.createElement('div');
   r.className = 'envrow';
   const k = document.createElement('input');
@@ -1695,18 +1699,25 @@ function settingsRow(key, value) {
   return r;
 }
 
-function addSettingsRow() {
-  const r = settingsRow('', '');
-  $('envrows').appendChild(r);
+// Append one empty editor row to a container and focus its key input.
+function addEnvEditorRow(containerId) {
+  const r = envEditorRow('', '');
+  $(containerId).appendChild(r);
   r.querySelector('.k').focus();
 }
 
-function collectSettings() {
-  return [...$('envrows').querySelectorAll('.envrow')].map(r => ({
+// Read every editor row in a container into [{key, value}].
+function collectEnvEditor(containerId) {
+  return [...$(containerId).querySelectorAll('.envrow')].map(r => ({
     key: r.querySelector('.k').value,
     value: r.querySelector('.v').value
   }));
 }
+
+// thin machine-.env wrappers (kept for the existing inline onclick handlers)
+function settingsRow(key, value) { return envEditorRow(key, value); }
+function addSettingsRow() { addEnvEditorRow('envrows'); }
+function collectSettings() { return collectEnvEditor('envrows'); }
 
 async function loadSettings(force) {
   if (force && !confirm('Reload from disk and discard any unsaved edits?')) return;
@@ -1737,6 +1748,166 @@ async function saveSettings() {
   b.textContent = 'Saved ✓';
   setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
   loadSettings();                        // reflect the canonical file (masked again)
+}
+
+// ----- Profile (league) view: switcher + new-profile + profile.env editor -----
+// The /api/profile/* POST routes return HTTP 400 on a {ok:false} result (same
+// as /api/env), so every fetch here parses the JSON body regardless of status
+// and branches on d.ok — never on r.ok.
+let activeProfile = null;
+
+function showProfileErr(elId, msg) {
+  const e = $(elId);
+  e.textContent = msg;
+  e.hidden = false;
+}
+
+async function loadProfiles(force) {
+  let d;
+  try { d = await (await fetch('/api/profiles', {cache: 'no-store'})).json(); }
+  catch (e) { showProfileErr('profile-hint', 'Control Center not reachable.'); return; }
+  if (!d.ok) { showProfileErr('profile-hint', d.error || 'could not list profiles'); return; }
+  $('profile-hint').hidden = true;
+  $('profile-hint').textContent = '';
+  const profiles = d.profiles || [];
+  // active-profile switcher
+  const sel = $('profile-select');
+  sel.textContent = '';
+  profiles.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.name;
+    o.textContent = p.display + (p.sheet_set ? '' : ' — no sheet');
+    sel.appendChild(o);
+  });
+  if (d.active) sel.value = d.active;
+  // "copy from" template list: the bundled example + every existing profile
+  const from = $('newprofile-from');
+  from.textContent = '';
+  const ex = document.createElement('option');
+  ex.value = 'example'; ex.textContent = 'example (template)';
+  from.appendChild(ex);
+  profiles.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.name; o.textContent = p.name;
+    from.appendChild(o);
+  });
+  activeProfile = d.active || null;
+  const label = d.active || 'no profile';
+  $('profile-active-sub').textContent = label;
+  const badge = $('active-profile-badge');
+  if (badge) badge.textContent = label;
+  loadProfileEnv();                       // editor reflects the now-active profile
+}
+
+async function useProfile(name) {
+  if (name === activeProfile) return;     // no-op: already active
+  let d;
+  try {
+    d = await (await fetch('/api/profile/use', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name})})).json();
+  } catch (e) {
+    showProfileErr('profile-switch-note', 'Control Center not reachable.');
+    $('profile-select').value = activeProfile || '';
+    return;
+  }
+  if (!d.ok) {
+    showProfileErr('profile-switch-note', d.error || 'could not switch profile');
+    $('profile-select').value = activeProfile || '';   // revert the dropdown
+    return;
+  }
+  $('profile-switch-note').hidden = true;
+  activeProfile = d.active || name;
+  loadProfiles();
+  loadProfileEnv();
+  refresh();                              // pull fresh status (badges, services)
+  offerRestart();                         // running services still serve the old league
+}
+
+async function newProfile() {
+  const name = $('newprofile-name').value.trim();
+  const from = $('newprofile-from').value;
+  if (!name) { showProfileErr('newprofile-err', 'Enter a profile name.'); return; }
+  let d;
+  try {
+    d = await (await fetch('/api/profile/new', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name, from})})).json();
+  } catch (e) { showProfileErr('newprofile-err', 'Control Center not reachable.'); return; }
+  if (!d.ok) { showProfileErr('newprofile-err', d.error || 'could not create profile'); return; }
+  $('newprofile-err').hidden = true;
+  $('newprofile-name').value = '';
+  loadProfiles();
+  // Creation never auto-switches — tell the producer to select it to activate.
+  const hint = $('profile-hint');
+  hint.hidden = false;
+  hint.textContent = "created '" + name + "' — select it above to activate";
+}
+
+// After a profile switch, the relay/Companion still serve the previous league
+// until restarted. Offer a one-click restart for whichever is running; nothing
+// restarts without the producer clicking. Best-effort against the cached status.
+function offerRestart() {
+  const note = $('profile-switch-note');
+  const s = lastStatus;
+  if (!s) {                               // status unknown — generic hint only
+    note.hidden = false;
+    note.textContent = 'Switched. Restart any running services to apply the new league.';
+    return;
+  }
+  const relayUp = !!(s.relay && s.relay.alive);
+  const compUp = !!(s.companion && s.companion.running);
+  if (!relayUp && !compUp) { note.hidden = true; return; }
+  const which = [relayUp && 'Relay', compUp && 'Companion'].filter(Boolean).join(' / ');
+  note.hidden = false;
+  note.textContent = which + ' still serving the previous league — restart to apply. ';
+  const btn = document.createElement('button');
+  btn.textContent = 'Restart now';
+  btn.onclick = () => {
+    if (relayUp) op('relay-restart', true);
+    if (compUp) op('companion-restart', true);
+  };
+  note.appendChild(btn);
+}
+
+// profile.env editor — mirrors the machine-.env editor, on #penvrows.
+async function loadProfileEnv(force) {
+  if (force && !confirm('Reload from disk and discard any unsaved edits?')) return;
+  let d;
+  try { d = await (await fetch('/api/profile/env', {cache: 'no-store'})).json(); }
+  catch (e) { showProfileErr('penv-err', 'Control Center not reachable.');
+              $('penvrows').textContent = ''; $('penv-path').textContent = ''; return; }
+  if (!d.ok) {
+    showProfileErr('penv-err', d.error || 'could not read profile.env');
+    $('penvrows').textContent = '';
+    $('penv-path').textContent = '';
+    return;
+  }
+  $('penv-err').hidden = true;
+  $('penv-path').textContent = d.path;
+  const c = $('penvrows');
+  c.textContent = '';
+  d.entries.forEach(e => c.appendChild(envEditorRow(e.key, e.value)));
+}
+
+function addProfileEnvRow() { addEnvEditorRow('penvrows'); }
+
+async function saveProfileEnv() {
+  if (!confirm('Save these settings to the active profile.env?')) return;
+  $('penv-err').hidden = true;
+  const b = $('penv-save');
+  b.disabled = true;
+  let d;
+  try {
+    d = await (await fetch('/api/profile/env', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({entries: collectEnvEditor('penvrows')})})).json();
+  } catch (e) { showProfileErr('penv-err', 'Control Center not reachable.'); b.disabled = false; return; }
+  if (!d.ok) { showProfileErr('penv-err', d.error || 'could not save profile.env'); b.disabled = false; return; }
+  const orig = b.innerHTML;
+  b.textContent = 'Saved ✓';
+  setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
+  loadProfileEnv();                        // reflect the canonical file (masked again)
 }
 
 // ----- Static Streams feed editor (runtime/static/streams.json) -----
@@ -1877,6 +2048,8 @@ refresh();
 setInterval(refresh, 3000);
 setInterval(renderTimer, 1000);          // tick the Home race-timer clock locally
 checkUpdate();                           // one-shot GitHub release check (cached server-side)
+// Populate the active-league sidebar badge regardless of which view opens first.
+profilesLoaded = true; loadProfiles();
 initPreviewOptin();                      // restore preview opt-in state from localStorage
 fetchObsWs();                            // OBS-WS creds for the auto-connecting panel link
 // Populate the Home tiles on startup: preflight auto-runs (a few seconds), and
