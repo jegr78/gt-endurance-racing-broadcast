@@ -665,6 +665,35 @@ def t_profile_runtime_scoping():
     assert m._profile_runtime("/r", None) == "/r"
 
 
+def t_profiles_data_lists_active_and_available():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        prof = os.path.join(td, "profiles")
+        os.makedirs(os.path.join(prof, "iro"))
+        os.makedirs(os.path.join(prof, "erf"))
+        open(os.path.join(td, ".env.example"), "w").close()
+        with open(os.path.join(prof, "iro", "profile.env"), "w") as fh:
+            fh.write("NAME=IRO Endurance\nSHEET_ID=abc\n")
+        with open(os.path.join(prof, "erf", "profile.env"), "w") as fh:
+            fh.write("NAME=ERF\n")
+        os.makedirs(os.path.join(td, "runtime"))
+        with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
+            fh.write("iro\n")
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            d = m.profiles_data()
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        assert d["ok"] is True
+        assert d["active"] == "iro"
+        names = {p["name"]: p for p in d["profiles"]}
+        assert names["iro"]["display"] == "IRO Endurance"
+        assert names["iro"]["sheet_set"] is True
+        assert names["erf"]["sheet_set"] is False
+
+
 def _raises(fn):
     try:
         fn()

@@ -1705,6 +1705,28 @@ def obs_collection_data(get=None):
     return {"ok": True, **status}
 
 
+def profiles_data():
+    """Control Center profile switcher data: the effective active profile plus
+    every available profile with its display NAME and whether SHEET_ID is set.
+    {ok, active, profiles:[{name, display, sheet_set}]} or {ok:false, error}.
+    Never raises."""
+    try:
+        root = _env_base(IS_FROZEN, _real_executable(), HERE)
+        runtime_root = _runtime_base_dir()
+        active = _active_profile_name()
+        out = []
+        for n in pcfg.list_profiles(root):
+            try:
+                rc = pcfg.resolve_config(root, override=n, runtime_root=runtime_root)
+                out.append({"name": n, "display": rc.name,
+                            "sheet_set": bool(rc.sheet_id)})
+            except pcfg.ProfileError:
+                out.append({"name": n, "display": n, "sheet_set": False})
+        return {"ok": True, "active": active, "profiles": out}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not read profiles: {exc}"}
+
+
 def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None,
                       cookies=None, apps_running=None):
     """Aggregate health for the Control Center dashboard (/api/status).
