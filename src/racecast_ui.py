@@ -34,6 +34,7 @@ def main(argv=None):
     # read-only /private/var/.../AppTranslocation/ copy, not the producer's folder).
     home = racecast._app_home(racecast._real_executable())
     racecast.ensure_env_file(home)
+    racecast.ensure_example_profile(home)   # seed profiles/example so `profile new` works (#45)
     racecast.cleanup_old_binary(home)
     racecast._load_env_frozen()
     racecast._ensure_ssl_certs()

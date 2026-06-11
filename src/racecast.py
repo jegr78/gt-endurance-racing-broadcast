@@ -245,6 +245,42 @@ def ensure_env_file(exe_dir, frozen=None):
     return True
 
 
+def _bundled_example_profile():
+    """Path of the profiles/example/ league template bundled inside the frozen
+    binary (build-binary.py --add-data). None when not frozen / not bundled."""
+    if not IS_FROZEN:
+        return None
+    return os.path.join(getattr(sys, "_MEIPASS", ""), "profiles", "example")
+
+
+def ensure_example_profile(exe_dir, frozen=None, bundled=None):
+    """First run of the frozen binary: seed profiles/example/ next to the binary
+    from the template bundled inside it, so `racecast profile new <name>` (which
+    copies profiles/example/) works out of the box. The release archives ship only
+    the binaries + .env.example, and `racecast update` swaps just the binary, so the
+    template has to travel inside the binary and be unpacked here once. Never
+    clobbers an existing profiles/example/. Returns True iff it was created."""
+    frozen = IS_FROZEN if frozen is None else frozen
+    if not frozen:
+        return False
+    src = _bundled_example_profile() if bundled is None else bundled
+    target = os.path.join(exe_dir, "profiles", "example")
+    if (os.path.exists(target) or not src
+            or not os.path.isfile(os.path.join(src, "profile.env"))):
+        return False
+    try:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copytree(src, target)
+    except OSError as exc:
+        print(f"warning: could not seed profiles/example next to the binary "
+              f"({exc}) — `racecast profile new` will not find a template.",
+              file=sys.stderr)
+        return False
+    print("seeded profiles/example next to the binary (league template for "
+          "`racecast profile new`).", file=sys.stderr)
+    return True
+
+
 def cleanup_old_binary(exe_dir, frozen=None, platform=None):
     """Best-effort removal of the racecast-old.exe that `racecast update` leaves behind on
     Windows (a running exe can only be renamed, not deleted, during the swap).
@@ -636,10 +672,11 @@ def profile_cmd(rest):
             target = pa.create_profile(root, opts["name"], opts["source"])
         except ValueError as e:
             sys.exit(f"racecast: {e}")
+        slug = os.path.basename(target)        # typed name -> directory slug
         env_path = os.path.join(target, pcfg.PROFILE_ENV_NAME)
-        print(f"created profile '{opts['name']}' at {target}")
+        print(f"created profile '{slug}' at {target}")
         print(f"  edit {env_path} (fill in SHEET_ID), then: "
-              f"racecast profile use {opts['name']}")
+              f"racecast profile use {slug}")
         return None
     if verb == "use":
         try:
@@ -1766,7 +1803,9 @@ def profile_new_data(name, source="example", create=None):
     try:
         root = _env_base(IS_FROZEN, _real_executable(), HERE)
         target = (create or pa.create_profile)(root, name, source or "example")
-        return {"ok": True, "name": name, "path": target}
+        # return the directory slug (what `profile use` / the active pointer need),
+        # which may differ from a typed display name like "IRO GTEC" -> "iro-gtec".
+        return {"ok": True, "name": os.path.basename(target), "path": target}
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
     except Exception as exc:
@@ -2311,21 +2350,23 @@ def _init_profile_run():
     if not pcfg.list_profiles(root):
         while True:
             name = ins.prompt_value(
-                "Name your league profile (e.g. iro, erf)", sys.stdin.isatty())
-            if pa.valid_profile_name(name) and name != "example":
+                "Name your league profile (e.g. IRO GTEC)", sys.stdin.isatty())
+            slug = pa.slugify(name)
+            if pa.valid_profile_name(slug) and slug != "example":
                 break
-            print(f"  '{name}' is not a valid profile name (lowercase letters, "
-                  "digits, '-' or '_'; not 'example')")
+            print(f"  '{name}' has no usable profile name (needs at least one "
+                  "letter or digit; not 'example')")
         try:
-            pa.create_profile(root, name)
+            target = pa.create_profile(root, name)
         except ValueError as e:
             sys.exit(f"racecast: {e}")
+        slug = os.path.basename(target)
         try:
-            pa.set_active_profile(root, base, name)
+            pa.set_active_profile(root, base, slug)
         except ValueError as e:
-            sys.exit(f"racecast: profile created at profiles/{name}/ but could not "
-                     f"set it active ({e}). Run: racecast profile use {name}")
-        print(f"  created profile '{name}' (profiles/{name}/profile.env)")
+            sys.exit(f"racecast: profile created at profiles/{slug}/ but could not "
+                     f"set it active ({e}). Run: racecast profile use {slug}")
+        print(f"  created profile '{slug}' (profiles/{slug}/profile.env)")
     while True:
         active = _active_profile_name()
         if active is None:
@@ -2667,6 +2708,7 @@ def main(argv=None):
     _force_utf8_io()    # UTF-8 stdout/stderr before anything prints (issue #24)
     home = _app_home(_real_executable())   # plain CLI binary: == dirname(exe)
     ensure_env_file(home)
+    ensure_example_profile(home)   # seed profiles/example so `profile new` works (#45)
     cleanup_old_binary(home)
     _load_env_frozen()
     _ensure_ssl_certs()

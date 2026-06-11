@@ -25,6 +25,37 @@ def valid_profile_name(name):
     return bool(_NAME_RE.match(name or ""))
 
 
+def slugify(name):
+    """Turn a free-form league name into a directory-safe slug: lowercase, runs of
+    anything outside [a-z0-9_-] collapse to a single '-', and leading/trailing
+    '-'/'_' are trimmed. 'IRO GTEC' -> 'iro-gtec'; an already-valid slug is
+    unchanged. Returns '' when nothing usable remains. Doubles as path-traversal
+    defense ('../etc' -> 'etc')."""
+    s = re.sub(r"[^a-z0-9_-]+", "-", (name or "").strip().lower())
+    return s.strip("-_")
+
+
+def _display_name(name):
+    """The league display NAME we store from a typed profile name: trimmed, with
+    internal whitespace runs collapsed to single spaces. 'IRO  GTEC ' -> 'IRO GTEC'."""
+    return " ".join((name or "").split())
+
+
+def _set_env_name(env_path, display):
+    """Rewrite the first `NAME=` line in a profile.env to `display`, preserving the
+    rest of the file (comments, other keys). Appends a NAME line if none exists."""
+    with open(env_path, encoding="utf-8") as fh:
+        lines = fh.read().splitlines()
+    for i, ln in enumerate(lines):
+        if not ln.lstrip().startswith("#") and re.match(r"\s*NAME\s*=", ln):
+            lines[i] = f"NAME={display}"
+            break
+    else:
+        lines.append(f"NAME={display}")
+    with open(env_path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
+
+
 def parse_profile_args(rest):
     """argv after `profile` -> {verb, name, source}. Raises ValueError (with
     usage text) on an unknown/missing verb, wrong arity, or an unknown flag."""
@@ -90,24 +121,28 @@ def split_profile_flag(argv):
 
 
 def create_profile(root, name, source="example"):
-    """Copy profiles/<source>/ -> profiles/<name>/ and return the new dir path.
-    Raises ValueError on an invalid/reserved name, an existing target, or a
-    missing source profile.env."""
-    if not valid_profile_name(name):
-        raise ValueError(f"invalid profile name {name!r} (use lowercase "
-                         "letters, digits, '-' or '_')")
-    if name == "example":
+    """Copy profiles/<source>/ -> profiles/<slug>/ and return the new dir path.
+    The typed `name` may contain spaces/capitals (e.g. "IRO GTEC"): it is slugged
+    for the directory ("iro-gtec") and kept verbatim as the league display NAME in
+    the new profile.env. Raises ValueError when the name has no sluggable
+    characters, the slug is reserved/already exists, or the source is missing."""
+    slug = slugify(name)
+    if not valid_profile_name(slug):
+        raise ValueError(f"invalid profile name {name!r} (needs at least one "
+                         "letter or digit)")
+    if slug == "example":
         raise ValueError("'example' is the reserved template name")
     pdir = cfg.profiles_dir(root)
-    target = os.path.join(pdir, name)
+    target = os.path.join(pdir, slug)
     if os.path.exists(target):
-        raise ValueError(f"profile {name!r} already exists ({target})")
+        raise ValueError(f"profile {slug!r} already exists ({target})")
     src = os.path.join(pdir, source)
     if not os.path.isfile(os.path.join(src, cfg.PROFILE_ENV_NAME)):
         raise ValueError(
             f"source profile {source!r} not found "
             f"({os.path.join(src, cfg.PROFILE_ENV_NAME)})")
     shutil.copytree(src, target)
+    _set_env_name(os.path.join(target, cfg.PROFILE_ENV_NAME), _display_name(name))
     return target
 
 
