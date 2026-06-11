@@ -157,11 +157,11 @@ def t_mask_hides_secret_body():
 
 def t_format_profile_show_masks_push_url():
     cfg_obj = m.cfg.ResolvedConfig(
-        profile="iro", name="IRO Endurance", sheet_id="SHEETID123",
+        profile="iro", name="IRO GTEC", sheet_id="SHEETID123",
         sheet_push_url="https://x/exec?key=TOPSECRET",
         profile_dir="/p/profiles/iro", runtime_dir="/p/runtime/iro")
     out = m.format_profile_show(cfg_obj, active="iro")
-    assert "IRO Endurance" in out
+    assert "IRO GTEC" in out
     assert "SHEETID123" in out          # sheet id shown (link-shared, not a secret)
     assert "TOPSECRET" not in out       # push-url secret masked
     assert "(active)" in out

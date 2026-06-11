@@ -39,14 +39,14 @@ def t_parse_env_text_ignores_blanks_comments_and_strips_quotes():
         "# a comment",
         "",
         "SHEET_ID=abc123",
-        '  NAME = "IRO Endurance" ',
+        '  NAME = "IRO GTEC" ',
         "URL='https://x/y?key=z'",   # '=' inside the value is kept
         "noequals",
     ])
     got = m.parse_env_text(text)
     assert got == {
         "SHEET_ID": "abc123",
-        "NAME": "IRO Endurance",
+        "NAME": "IRO GTEC",
         "URL": "https://x/y?key=z",
     }
 
@@ -93,9 +93,9 @@ def t_list_profiles_empty_when_no_profiles_dir():
 def t_parse_profile_reads_named_profile():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
-        _mkprofile(root, "iro", "NAME=IRO Endurance\nSHEET_ID=abc\n")
+        _mkprofile(root, "iro", "NAME=IRO GTEC\nSHEET_ID=abc\n")
         assert m.parse_profile(root, "iro") == {
-            "NAME": "IRO Endurance", "SHEET_ID": "abc"}
+            "NAME": "IRO GTEC", "SHEET_ID": "abc"}
 
 
 def t_read_active_pointer_reads_and_strips():
@@ -158,10 +158,10 @@ def t_resolve_config_end_to_end_single_profile():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
         _mkprofile(root, "iro",
-                   "NAME=IRO Endurance\nSHEET_ID=abc\nSHEET_PUSH_URL=https://x?key=y\n")
+                   "NAME=IRO GTEC\nSHEET_ID=abc\nSHEET_PUSH_URL=https://x?key=y\n")
         cfg = m.resolve_config(root, environ={})
         assert cfg.profile == "iro"
-        assert cfg.name == "IRO Endurance"
+        assert cfg.name == "IRO GTEC"
         assert cfg.sheet_id == "abc"
         assert cfg.sheet_push_url == "https://x?key=y"
         assert cfg.intro_url == "" and cfg.outro_url == ""
@@ -217,7 +217,7 @@ def t_resolve_config_obs_collection_from_field():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
         _mkprofile(root, "iro",
-                   "NAME=IRO Endurance\nSHEET_ID=abc\nOBS_COLLECTION=IRO Broadcast\n")
+                   "NAME=IRO GTEC\nSHEET_ID=abc\nOBS_COLLECTION=IRO Broadcast\n")
         cfg = m.resolve_config(root, environ={})
         assert cfg.obs_collection == "IRO Broadcast"
 
@@ -243,16 +243,16 @@ def t_resolve_config_obs_collection_falls_back_to_profile_dir_when_no_name():
 def t_resolve_config_obs_collection_default_is_prefixed():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
-        _mkprofile(root, "iro", "NAME=IRO Endurance\nSHEET_ID=x\n")  # no OBS_COLLECTION
+        _mkprofile(root, "iro", "NAME=IRO GTEC\nSHEET_ID=x\n")  # no OBS_COLLECTION
         cfg = m.resolve_config(root, environ={})
-        assert cfg.obs_collection == "GT Endurance Racing — IRO Endurance"
+        assert cfg.obs_collection == "GT Endurance Racing — IRO GTEC"
 
 
 def t_resolve_config_obs_collection_explicit_wins_over_prefix():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
         _mkprofile(root, "iro",
-                   "NAME=IRO Endurance\nSHEET_ID=x\nOBS_COLLECTION=Custom Name\n")
+                   "NAME=IRO GTEC\nSHEET_ID=x\nOBS_COLLECTION=Custom Name\n")
         cfg = m.resolve_config(root, environ={})
         assert cfg.obs_collection == "Custom Name"
 

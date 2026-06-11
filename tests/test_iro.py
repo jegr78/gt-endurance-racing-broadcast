@@ -645,7 +645,7 @@ def t_profile_env_vars_filters_empty():
 
 
 def t_profile_env_vars_includes_obs_collection():
-    rc = m.pcfg.ResolvedConfig(profile="iro", name="IRO Endurance", sheet_id="abc",
+    rc = m.pcfg.ResolvedConfig(profile="iro", name="IRO GTEC", sheet_id="abc",
                                obs_collection="IRO Broadcast")
     out = m._profile_env_vars(rc)
     assert out["RACECAST_OBS_COLLECTION"] == "IRO Broadcast"
@@ -682,7 +682,7 @@ def t_profiles_data_lists_active_and_available():
         os.makedirs(os.path.join(prof, "erf"))
         open(os.path.join(td, ".env.example"), "w").close()
         with open(os.path.join(prof, "iro", "profile.env"), "w") as fh:
-            fh.write("NAME=IRO Endurance\nSHEET_ID=abc\n")
+            fh.write("NAME=IRO GTEC\nSHEET_ID=abc\n")
         with open(os.path.join(prof, "erf", "profile.env"), "w") as fh:
             fh.write("NAME=ERF\n")
         os.makedirs(os.path.join(td, "runtime"))
@@ -698,7 +698,7 @@ def t_profiles_data_lists_active_and_available():
         assert d["ok"] is True
         assert d["active"] == "iro"
         names = {p["name"]: p for p in d["profiles"]}
-        assert names["iro"]["display"] == "IRO Endurance"
+        assert names["iro"]["display"] == "IRO GTEC"
         assert names["iro"]["sheet_set"] is True
         assert names["erf"]["sheet_set"] is False
 
