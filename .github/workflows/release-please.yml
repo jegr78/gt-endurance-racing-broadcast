@@ -18,7 +18,7 @@ jobs:
       # the tag push triggers release.yml natively. Falls back to GITHUB_TOKEN
       # when the secret is missing/expired -- then CI on the Release PR needs a
       # manual close/reopen and the dispatch step below builds the binaries.
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
