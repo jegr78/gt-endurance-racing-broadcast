@@ -572,6 +572,14 @@ def t_served_pages_hash_none_when_any_fetch_fails():
     assert m.served_pages_hash(fetch=fetch) is None
 
 
+def t_served_pages_hash_none_when_override_css_fetch_fails():
+    def fetch(path):
+        if path == "/hud/override.css":
+            raise OSError("connection refused")
+        return b"x"
+    assert m.served_pages_hash(fetch=fetch) is None
+
+
 def t_served_pages_hash_none_when_first_fetch_fails():
     def fetch(path):
         raise OSError("connection refused")
