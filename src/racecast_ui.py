@@ -24,22 +24,16 @@ def _fatal(message):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    racecast._force_utf8_io()    # UTF-8 stdout/stderr before anything prints (issue #24)
-    # Same bootstrap as racecast.main(): make sure .env exists next to the binary,
-    # retire any stale update binary, load the frozen env + SSL certs.
-    # _app_home (not dirname) so a macOS .app resolves .env next to the bundle —
-    # where the sibling `racecast` binary lives — not inside Contents/MacOS/.
-    # _real_executable maps out of any App-Translocation mount first (issue #22:
-    # a quarantined .app double-clicked in Finder otherwise runs from a random
-    # read-only /private/var/.../AppTranslocation/ copy, not the producer's folder).
-    home = racecast._app_home(racecast._real_executable())
-    racecast.ensure_env_file(home)
-    racecast.ensure_example_profile(home)   # seed profiles/example so `profile new` works (#45)
-    racecast.cleanup_old_binary(home)
-    racecast._load_env_frozen()
-    racecast._ensure_ssl_certs()
-    racecast._ensure_tool_path()    # Finder/Dock launch truncates PATH past Homebrew,
-                                    # so tools_status_data() reported everything missing (#46/#38)
+    # Exactly the same startup as the `racecast` CLI — one shared _bootstrap, so the
+    # windowed launcher can never again skip a step the CLI runs (it once shipped
+    # without the tool-PATH fix #46, then without the active-profile env injection
+    # #54). _bootstrap handles _app_home/_real_executable (resolving a macOS .app out
+    # of any App-Translocation mount, #22), the .env + example-profile seeding, the
+    # frozen env + SSL certs, the tool PATH, and the active profile's league env.
+    try:
+        argv = racecast._bootstrap(argv)
+    except ValueError as exc:
+        _fatal(f"racecast: {exc}")
     try:
         racecast.run_ui(argv, fail=_fatal,
                    open_browser="--no-browser" not in argv)
