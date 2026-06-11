@@ -14,9 +14,9 @@ TAIL_LINES = 40          # how much history a log stream starts with
 
 
 def ui_port(env):
-    """Port from IRO_UI_PORT (.env/environment), falling back to 8089."""
+    """Port from RACECAST_UI_PORT (.env/environment), falling back to 8089."""
     try:
-        return int(env.get("IRO_UI_PORT") or DEFAULT_PORT)
+        return int(env.get("RACECAST_UI_PORT") or DEFAULT_PORT)
     except ValueError:
         return DEFAULT_PORT
 
@@ -37,7 +37,7 @@ def probe_instance(host, port, fetch=None):
         body = fetch(host, port)
     except Exception:
         # a foreign server that errors on /api/ping reads as 'free' — the
-        # subsequent bind then fails with OSError and prints the IRO_UI_PORT hint
+        # subsequent bind then fails with OSError and prints the RACECAST_UI_PORT hint
         return "free"
     return classify_ping(body)
 
@@ -58,7 +58,7 @@ def sse_done(exit_code):
 
 def _allowed(_handler):
     """Auth seam: always allowed in v1 (localhost-only bind is the boundary).
-    v2 (Tailscale + IRO_UI_PASSWORD session cookie) changes only this."""
+    v2 (Tailscale + RACECAST_UI_PASSWORD session cookie) changes only this."""
     return True
 
 
@@ -484,7 +484,7 @@ def make_handler(ctx):
 def serve(ctx, host, port):
     """Build the server (caller runs serve_forever) and install ctx['shutdown'].
     Raises OSError when the port is taken — callers turn that into the
-    IRO_UI_PORT hint."""
+    RACECAST_UI_PORT hint."""
     httpd = ThreadingHTTPServer((host, port), make_handler(ctx))
     httpd.daemon_threads = True                  # SSE threads die with the process
     ctx["shutdown"] = httpd.shutdown

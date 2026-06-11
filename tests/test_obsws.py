@@ -231,7 +231,7 @@ def t_find_password_env_overrides_config():
         path = os.path.join(tmp, "config.json")
         with open(path, "w") as fh:
             json.dump({"auth_required": True, "server_password": "from-config"}, fh)
-        assert m.find_password({"IRO_OBS_WS_PASSWORD": "from-env"}, path) == "from-env"
+        assert m.find_password({"RACECAST_OBS_WS_PASSWORD": "from-env"}, path) == "from-env"
         assert m.find_password({}, path) == "from-config"
         assert m.find_password({}, os.path.join(tmp, "nope.json")) is None
 

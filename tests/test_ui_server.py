@@ -14,9 +14,9 @@ import ui_server as us
 
 def t_ui_port_default_and_override():
     assert us.ui_port({}) == 8089
-    assert us.ui_port({"IRO_UI_PORT": "9100"}) == 9100
-    assert us.ui_port({"IRO_UI_PORT": ""}) == 8089
-    assert us.ui_port({"IRO_UI_PORT": "not-a-port"}) == 8089
+    assert us.ui_port({"RACECAST_UI_PORT": "9100"}) == 9100
+    assert us.ui_port({"RACECAST_UI_PORT": ""}) == 8089
+    assert us.ui_port({"RACECAST_UI_PORT": "not-a-port"}) == 8089
 
 
 def t_classify_ping():

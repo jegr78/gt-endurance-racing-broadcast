@@ -73,7 +73,7 @@ def main():
     except Exception as e:
         print(f"  [WARN] graphics fetch skipped: {e}")
 
-    # .env template (repo root, not src/) so producers can set their own IRO_SHEET_ID
+    # .env template (repo root, not src/) so producers can set their own RACECAST_SHEET_ID
     shutil.copy2(os.path.join(ROOT, ".env.example"), os.path.join(PKG, ".env.example"))
 
     # companion: copy + strip password (defense in depth)

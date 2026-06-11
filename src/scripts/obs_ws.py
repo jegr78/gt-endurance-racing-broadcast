@@ -20,7 +20,7 @@ Everything is best effort: the entry point never raises — a stop must never
 hang or crash because OBS is closed, locked, or speaks a newer protocol.
 
 The WebSocket password is auto-discovered from OBS's own obs-websocket
-config.json (same machine, same user); `IRO_OBS_WS_PASSWORD` in the
+config.json (same machine, same user); `RACECAST_OBS_WS_PASSWORD` in the
 environment / .env overrides it for non-standard setups.
 """
 import base64
@@ -180,7 +180,7 @@ def identify_payload(hello, password):
     if auth:
         if not password:
             raise ValueError("OBS WebSocket requires a password "
-                             "(set IRO_OBS_WS_PASSWORD or enable auto-discovery)")
+                             "(set RACECAST_OBS_WS_PASSWORD or enable auto-discovery)")
         d["authentication"] = auth_token(password, auth["salt"], auth["challenge"])
     return {"op": 1, "d": d}
 
@@ -261,8 +261,8 @@ def default_config_path():
 
 
 def find_password(env, config_path):
-    """IRO_OBS_WS_PASSWORD wins; else OBS's own stored server password."""
-    override = env.get("IRO_OBS_WS_PASSWORD")
+    """RACECAST_OBS_WS_PASSWORD wins; else OBS's own stored server password."""
+    override = env.get("RACECAST_OBS_WS_PASSWORD")
     if override:
         return override
     cfg = read_ws_config(config_path)
@@ -352,7 +352,7 @@ def _open_session(host, port, password, timeout):
 
 def _connect(host, port, password, timeout):
     """(session, "") or (None, reason). Port + password fall back to OBS's own
-    obs-websocket config / IRO_OBS_WS_PASSWORD; never raises."""
+    obs-websocket config / RACECAST_OBS_WS_PASSWORD; never raises."""
     cfg = read_ws_config(default_config_path())
     if port is None:
         port = (cfg or {}).get("port") or DEFAULT_PORT

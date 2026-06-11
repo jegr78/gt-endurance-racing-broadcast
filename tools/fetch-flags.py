@@ -80,8 +80,8 @@ def main():
     m.load_dotenv(ROOT)
 
     ap = argparse.ArgumentParser(description="Fetch missing HUD country flags.")
-    ap.add_argument("--sheet-id", default=os.environ.get("IRO_SHEET_ID"),
-                    help="Google Sheet ID (default: env IRO_SHEET_ID / .env).")
+    ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
+                    help="Google Sheet ID (default: env RACECAST_SHEET_ID / .env).")
     ap.add_argument("--config-tab", default="Configuration",
                     help="Tab holding the Country column (default 'Configuration').")
     ap.add_argument("--dry-run", action="store_true",
@@ -91,7 +91,7 @@ def main():
     args = ap.parse_args()
 
     if not args.sheet_id:
-        sys.exit("ERROR: no sheet id. Set IRO_SHEET_ID in .env or pass --sheet-id.")
+        sys.exit("ERROR: no sheet id. Set RACECAST_SHEET_ID in .env or pass --sheet-id.")
 
     os.makedirs(FLAGS_DIR, exist_ok=True)
     countries = _sheet_countries(args.sheet_id, args.config_tab)

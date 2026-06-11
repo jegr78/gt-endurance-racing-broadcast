@@ -16,7 +16,7 @@
   iro status                            # aggregate health of all services
   iro profile   list | show [<name>] | use <name> | new <name> [--from <source>]
   iro --profile <name> <command>        # run one command against a non-active profile
-  iro ui [--no-browser]                 # local Control Center web app (port 8089 / IRO_UI_PORT)
+  iro ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   iro export companion [--out PATH]     # write the Companion button config
   iro init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
@@ -903,7 +903,7 @@ def _companion_cmds(cc):
 
 def _companion_unsupported_msg():
     if sys.platform.startswith("win"):
-        return ("companion: Companion.exe not found. Set IRO_COMPANION_EXE in .env "
+        return ("companion: Companion.exe not found. Set RACECAST_COMPANION_EXE in .env "
                 "to its full path and retry.")
     return ("companion: automated control supports Windows and macOS. On Linux "
             "(WSL/Docker), run and bind Companion on the host instead.")
@@ -1007,7 +1007,7 @@ def companion_status_data():
         cc = _companion()
         cmds = _companion_cmds(cc)
         if cmds is None:
-            why = ("(Companion.exe not found — set IRO_COMPANION_EXE in .env)"
+            why = ("(Companion.exe not found — set RACECAST_COMPANION_EXE in .env)"
                    if sys.platform.startswith("win") else f"(manual on {sys.platform})")
             return companion_status_payload(False, False, None, why)
         running = _companion_running(cc)
@@ -1667,7 +1667,7 @@ def relay_live_data(fetch=None, started=None):
 def obs_ws_link_data(env=None, config_path=None):
     """OBS-WebSocket connection details for auto-connecting the Director panel
     from the Control Center: local OBS (127.0.0.1), the configured port, and the
-    password (IRO_OBS_WS_PASSWORD wins, else OBS's own stored one). Localhost-only
+    password (RACECAST_OBS_WS_PASSWORD wins, else OBS's own stored one). Localhost-only
     data — the Control Center puts it in the panel link's URL *fragment* (never
     sent to a server). Never raises; password is None when not discoverable.
     `env`/`config_path` are test seams."""
@@ -2476,7 +2476,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
     server has stopped."""
     srv, jobs_mod, ops_mod = _ui_modules()
     for key, val in _read_env_file().items():
-        os.environ.setdefault(key, val)        # IRO_UI_PORT from .env (env wins)
+        os.environ.setdefault(key, val)        # RACECAST_UI_PORT from .env (env wins)
     port = srv.ui_port(os.environ)
     instance = srv.probe_instance("127.0.0.1", port)
     if instance == "ours":
@@ -2486,7 +2486,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         return None
     if instance == "foreign":
         return fail(f"iro: port {port} is in use by another application — set "
-                    "IRO_UI_PORT in .env to a free port and retry.")
+                    "RACECAST_UI_PORT in .env to a free port and retry.")
 
     # The GitHub release check is one network round-trip — cache a good result
     # for an hour so the Home dashboard can call it freely (and so we never spam
@@ -2558,7 +2558,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
     try:
         httpd = srv.serve(ctx, "127.0.0.1", port)
     except OSError as exc:
-        return fail(f"iro: could not bind port {port} ({exc}) — set IRO_UI_PORT "
+        return fail(f"iro: could not bind port {port} ({exc}) — set RACECAST_UI_PORT "
                     "in .env to a free port and retry.")
     url = _http_url("127.0.0.1", port, "/")
     print(f"Control Center: {url}  (Ctrl+C or the Quit button stops it)")

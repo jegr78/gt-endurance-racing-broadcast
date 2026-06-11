@@ -750,7 +750,7 @@ function timerRender(d){
              : d.mode === "finished" ? "FINISHED (display blank)"
              : "HIDDEN";
   const sync = d.sync.push === "ok" ? "sheet sync OK"
-             : d.sync.push === "disabled" ? "local only (IRO_SHEET_PUSH_URL unset)"
+             : d.sync.push === "disabled" ? "local only (RACECAST_SHEET_PUSH_URL unset)"
              : d.sync.push === "failed" ? "SHEET SYNC FAILED — handover not safe"
              : "sheet sync not yet attempted";
   if (d.sync.push === "failed")
@@ -837,7 +837,7 @@ async function setupPoll(){
   else clearBanner("sync");
   $("#setupInfo").textContent = "HUD: " +
       (d.push === "ok" ? "sheet sync OK"
-     : ro ? "read-only — set IRO_SHEET_PUSH_URL in .env (wiki: Sheet-Webhook)"
+     : ro ? "read-only — set RACECAST_SHEET_PUSH_URL in .env (wiki: Sheet-Webhook)"
      : d.push === "failed" ? "SHEET SYNC FAILED — " + (d.last_error || "see relay log")
      : "sheet sync not yet attempted");
 }

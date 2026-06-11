@@ -348,11 +348,11 @@ def t_assets_files_data_error():
 def t_env_entries_data_reads(tmp):
     p = os.path.join(tmp, ".env")
     with open(p, "w", encoding="utf-8") as f:
-        f.write("# comment\nRACECAST_SHEET_ID=abc\nIRO_UI_PORT=8090\n")
+        f.write("# comment\nRACECAST_SHEET_ID=abc\nRACECAST_UI_PORT=8090\n")
     d = iro.env_entries_data(path=p)
     assert d["ok"] is True and d["path"] == p
     assert d["entries"] == [{"key": "RACECAST_SHEET_ID", "value": "abc"},
-                            {"key": "IRO_UI_PORT", "value": "8090"}]
+                            {"key": "RACECAST_UI_PORT", "value": "8090"}]
 
 
 def t_env_entries_data_missing_file(tmp):
@@ -363,7 +363,7 @@ def t_env_entries_data_missing_file(tmp):
 def t_env_write_preserves_comments_and_round_trips(tmp):
     p = os.path.join(tmp, ".env")
     with open(p, "w", encoding="utf-8") as f:
-        f.write("# header\nRACECAST_SHEET_ID=old\n\n# port note\nIRO_UI_PORT=8089\n")
+        f.write("# header\nRACECAST_SHEET_ID=old\n\n# port note\nRACECAST_UI_PORT=8089\n")
     res = iro.env_write_data([{"key": "RACECAST_SHEET_ID", "value": "new"},
                               {"key": "IRO_NEW", "value": "x"}], path=p)
     assert res["ok"] is True
@@ -371,7 +371,7 @@ def t_env_write_preserves_comments_and_round_trips(tmp):
         text = fh.read()
     assert "# header" in text and "# port note" in text     # comments kept
     assert "RACECAST_SHEET_ID=new" in text                  # updated in place
-    assert "IRO_UI_PORT" not in text                        # removed
+    assert "RACECAST_UI_PORT" not in text                   # removed
     assert "IRO_NEW=x" in text                              # appended
     back = iro.env_entries_data(path=p)["entries"]
     assert {"key": "RACECAST_SHEET_ID", "value": "new"} in back
@@ -583,7 +583,7 @@ def t_obs_ws_link_data_env_override(tmp):
     cfg = os.path.join(tmp, "obs-ws-config2.json")
     with open(cfg, "w") as fh:
         json.dump({"server_port": 4455, "server_password": "stored"}, fh)
-    d = iro.obs_ws_link_data(env={"IRO_OBS_WS_PASSWORD": "override"}, config_path=cfg)
+    d = iro.obs_ws_link_data(env={"RACECAST_OBS_WS_PASSWORD": "override"}, config_path=cfg)
     assert d["password"] == "override"          # env wins over the stored password
 
 

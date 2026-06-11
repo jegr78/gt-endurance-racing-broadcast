@@ -135,7 +135,7 @@ def smoke_ui(binary):
     import time
     import urllib.request
     env = os.environ.copy()
-    env["IRO_UI_PORT"] = "8390"
+    env["RACECAST_UI_PORT"] = "8390"
     ui = subprocess.Popen([binary, "--no-browser"], env=env,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
@@ -223,7 +223,7 @@ def smoke(binary, version):
     import time
     import urllib.request
     env = os.environ.copy()
-    env["IRO_UI_PORT"] = "8389"
+    env["RACECAST_UI_PORT"] = "8389"
     ui = subprocess.Popen([binary, "ui", "--no-browser"], env=env,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     try:
