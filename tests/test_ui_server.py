@@ -62,10 +62,18 @@ def _ctx(jobs=None, init_plan=None, init_step=None):
                                    "timer": {"mode": "running"}},
             "obs_ws": lambda: {"ok": True, "ip": "127.0.0.1", "port": 4455,
                                "password": "pw", "auth_required": True},
+            "obs_collection": lambda: {"ok": True, "current": "Other",
+                                       "expected": "IRO Endurance", "match": False,
+                                       "expected_present": True,
+                                       "renamed_variant": None},
             "update_check": lambda force=False: {"ok": True, "current": "v1.0.0",
                                      "latest": "v1.1.0", "update_available": True,
                                      "forced": force,
                                      "releases_url": "https://example/releases"},
+            "previews": lambda force=False: {"ok": True, "forced": force, "previews": [
+                {"tag": "preview-pr-42", "title": "Preview: PR #42", "commit": "abc1234",
+                 "published_at": "2026-06-10T08:00:00Z", "asset_url": "https://x/p42",
+                 "notes": "n"}]},
             "streams_read": lambda: {"ok": True, "path": "/x/streams.json",
                                      "entries": [{"label": "Feed A",
                                                   "channel": "UC1", "port": "53001"}]},
@@ -157,6 +165,17 @@ def t_obs_ws_route_wraps_provider():
         httpd.shutdown()
 
 
+def t_obs_collection_route_wraps_provider():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/obs-collection")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["expected"] == "IRO Endurance" and data["match"] is False
+    finally:
+        httpd.shutdown()
+
+
 def t_update_route_wraps_provider():
     httpd, port = _serve(_ctx())
     try:
@@ -166,6 +185,20 @@ def t_update_route_wraps_provider():
         assert data["latest"] == "v1.1.0" and data["forced"] is False
         _c, body2 = _get(port, "/api/update?force=1")          # force re-check
         assert json.loads(body2)["forced"] is True
+    finally:
+        httpd.shutdown()
+
+
+def t_previews_route_wraps_provider():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/previews")
+        assert code == 200
+        d = json.loads(body)
+        assert d["ok"] and d["previews"][0]["tag"] == "preview-pr-42"
+        _c, body2 = _get(port, "/api/previews?force=1")        # force re-check
+        d2 = json.loads(body2)
+        assert d2["ok"] and d2["forced"] is True               # force forwarded to provider
     finally:
         httpd.shutdown()
 

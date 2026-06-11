@@ -33,6 +33,32 @@ def t_links():
     assert '<a href="https://example/wiki" target="_blank" rel="noopener">the wiki</a>' in h
 
 
+def t_link_javascript_scheme_dropped():
+    # Untrusted input (e.g. a release note) must not yield a javascript: anchor.
+    h = md.render("[click](javascript:alert(1))")
+    assert "javascript:" not in h
+    assert "<a " not in h                 # unsafe URL -> link text only, no anchor
+    assert "click" in h
+
+
+def t_link_data_scheme_dropped():
+    h = md.render("[x](data:text/html,<script>alert(1)</script>)")
+    assert "data:" not in h
+    assert "<a " not in h
+
+
+def t_link_quote_in_href_cannot_break_out_of_attribute():
+    # A double-quote in the URL must be escaped so it cannot inject an attribute.
+    h = md.render('[x](https://e"onmouseover="alert(1))')
+    assert 'onmouseover="' not in h       # no raw attribute injection
+    assert "&quot;" in h                  # the quote was neutralised
+
+
+def t_link_relative_and_anchor_preserved():
+    assert '<a href="#section"' in md.render("[s](#section)")
+    assert '<a href="docs/x.md"' in md.render("[d](docs/x.md)")
+
+
 def t_fenced_code_is_escaped_verbatim():
     h = md.render("```\niro relay start <x>\n```")
     assert "<pre><code>" in h and "iro relay start &lt;x&gt;" in h

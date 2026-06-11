@@ -159,6 +159,106 @@ def t_install_ui_missing_returns_none():
         assert os.listdir(tgt) == []
 
 
+# --- classify_tag: install exactly one named release (no semver compare) -------
+TAGREL = {"tag_name": "preview-pr-42",
+          "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/m"},
+                     {"name": "iro-windows.zip", "browser_download_url": "https://x/w"}]}
+
+
+def t_classify_tag_install_when_asset_present():
+    assert m.classify_tag(TAGREL, "darwin") == ("install", "preview-pr-42", "https://x/m")
+    assert m.classify_tag(TAGREL, "win32") == ("install", "preview-pr-42", "https://x/w")
+
+
+def t_classify_tag_building_when_platform_asset_missing():
+    assert m.classify_tag(TAGREL, "linux") == ("building", "preview-pr-42", None)
+
+
+def t_classify_tag_error_on_missing_tag():
+    assert m.classify_tag({"assets": []}, "darwin") == ("error", "release has no tag_name", None)
+
+
+# --- fetch_release_by_tag: parsing with an injected opener -------------------------
+def t_fetch_release_by_tag_parses_json():
+    import io, json
+    body = json.dumps(TAGREL).encode()
+    rel = m.fetch_release_by_tag("preview-pr-42", opener=lambda req, timeout: io.BytesIO(body))
+    assert rel["tag_name"] == "preview-pr-42"
+
+
+# --- classify_prereleases: the UI's installable-previews list ------------------
+RELEASES = [
+    {"tag_name": "v1.2.2", "prerelease": False, "name": "1.2.2",
+     "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/stable"}]},
+    {"tag_name": "preview-pr-42", "prerelease": True, "name": "Preview: PR #42 (abc1234)",
+     "target_commitish": "abc1234deadbeef", "published_at": "2026-06-10T08:00:00Z",
+     "body": "notes for 42",
+     "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/p42"}]},
+    {"tag_name": "preview-main", "prerelease": True, "name": "Preview: main (deadbee)",
+     "target_commitish": "", "published_at": "2026-06-09T08:00:00Z", "body": "notes main",
+     "assets": []},   # still building — no platform asset yet
+]
+
+
+def t_classify_prereleases_filters_stable_and_shapes_rows():
+    rows = m.classify_prereleases(RELEASES, "darwin")
+    assert [r["tag"] for r in rows] == ["preview-pr-42", "preview-main"]
+    r0 = rows[0]
+    assert r0["title"] == "Preview: PR #42 (abc1234)"
+    assert r0["commit"] == "abc1234deadbeef"
+    assert r0["published_at"] == "2026-06-10T08:00:00Z"
+    assert r0["notes"] == "notes for 42"
+    assert r0["asset_url"] == "https://x/p42"
+
+
+def t_classify_prereleases_marks_building_with_none_asset():
+    rows = m.classify_prereleases(RELEASES, "darwin")
+    building = [r for r in rows if r["tag"] == "preview-main"][0]
+    assert building["asset_url"] is None
+
+
+def t_classify_prereleases_commit_falls_back_to_name_sha():
+    # No target_commitish -> _commit_of falls back to the SHA tail of `name`
+    # (GitHub releases carry `name`/`tag_name`, never a `version` field).
+    rel = [{"tag_name": "preview-pr-9", "prerelease": True,
+            "name": "preview-pr9-cafef00", "target_commitish": "",
+            "assets": []}]
+    assert m.classify_prereleases(rel, "linux")[0]["commit"] == "cafef00"
+
+
+def t_classify_prereleases_commit_rejects_non_sha_tail():
+    rel = [{"tag_name": "preview-main", "prerelease": True, "name": "preview-main",
+            "target_commitish": "", "assets": []}]
+    assert m.classify_prereleases(rel, "linux")[0]["commit"] == ""
+
+
+def t_classify_prereleases_empty():
+    assert m.classify_prereleases([], "darwin") == []
+
+
+def t_commit_of_rejects_branch_name_target_commitish():
+    # GitHub sets target_commitish to a branch name (e.g. 'main') for
+    # branch-targeted releases — that is not a commit SHA. Fall back to the
+    # SHA embedded in the name instead of showing 'main' as the commit.
+    rel = {"target_commitish": "main", "name": "preview-main-cafe123",
+           "tag_name": "preview-main"}
+    assert m._commit_of(rel) == "cafe123"
+
+
+def t_commit_of_accepts_full_sha_target_commitish():
+    rel = {"target_commitish": "abc1234deadbeefabc1234deadbeefabc1234dee",
+           "name": "x", "tag_name": "preview-pr-1"}
+    assert m._commit_of(rel) == "abc1234deadbeefabc1234deadbeefabc1234dee"
+
+
+def t_find_asset_url():
+    rel = {"assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/m"},
+                      {"name": "iro-windows.zip", "browser_download_url": "https://x/w"}]}
+    assert m._find_asset_url(rel, "darwin") == "https://x/m"
+    assert m._find_asset_url(rel, "win32") == "https://x/w"
+    assert m._find_asset_url(rel, "linux") is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

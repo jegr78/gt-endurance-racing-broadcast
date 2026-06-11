@@ -9,6 +9,27 @@ import html
 import re
 
 _LIST_RE = re.compile(r"^(\s*)([-*+]|\d+\.)\s+(.*)$")
+_SAFE_SCHEMES = ("http://", "https://", "mailto:", "/", "#", "./", "../")
+
+
+def _safe_href(url):
+    """Sanitize a link target for untrusted Markdown (e.g. GitHub release notes).
+    Returns the href to emit, or '' to drop the link. Allows http(s)/mailto and
+    relative/anchor targets; rejects javascript:/data:/other schemes. The URL has
+    already been HTML-escaped with quote=False, so `&<>` are safe here — only the
+    attribute-breakout char `\"` must still be neutralised."""
+    low = url.strip().lower()
+    safe = low.startswith(_SAFE_SCHEMES) or ":" not in low.split("/", 1)[0]
+    if not safe:
+        return ""
+    return url.replace('"', "&quot;")
+
+
+def _link(m):
+    href = _safe_href(m.group(2))
+    if not href:                                 # unsafe scheme -> link text only
+        return m.group(1)
+    return f'<a href="{href}" target="_blank" rel="noopener">{m.group(1)}</a>'
 
 
 def _inline(s):
@@ -21,9 +42,7 @@ def _inline(s):
         return f"\x00{len(codes) - 1}\x00"
 
     s = re.sub(r"`([^`]+)`", stash, s)                       # protect inline code
-    s = re.sub(r"!?\[([^\]]+)\]\(([^)\s]+)\)",               # links (images -> link)
-               lambda m: f'<a href="{m.group(2)}" target="_blank" '
-                         f'rel="noopener">{m.group(1)}</a>', s)
+    s = re.sub(r"!?\[([^\]]+)\]\(([^)\s]+)\)", _link, s)      # links (images -> link)
     s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
     s = re.sub(r"__(.+?)__", r"<strong>\1</strong>", s)
     s = re.sub(r"\*([^*\n]+)\*", r"<em>\1</em>", s)          # only *italic* (not _ -> snake_case safe)

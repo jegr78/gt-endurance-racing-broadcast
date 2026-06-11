@@ -11,6 +11,7 @@
   iro event start --stint N             # takeover: stint N is on air now — the relay starts there
   iro tailscale up|down|status          # connect / disconnect / inspect Tailscale
   iro obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
+  iro obs collection [set]              # report the active OBS scene collection (set = switch to IRO Endurance)
   iro app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
   iro status                            # aggregate health of all services
   iro profile   list | show [<name>] | use <name> | new <name> [--from <source>]
@@ -19,7 +20,7 @@
   iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   iro export companion [--out PATH]     # write the Companion button config
   iro init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
-  iro update [--check] [--yes]          # self-update the binary from GitHub Releases
+  iro update [--check] [--yes] [--tag TAG]   # self-update the binary (--tag installs an exact release)
   iro --version
 """
 import glob, hashlib, json, os, re, shutil, sys, time, webbrowser
@@ -330,6 +331,42 @@ def _ensure_ssl_certs():
     if bundle:
         os.environ["SSL_CERT_FILE"] = bundle
 
+# Where `iro install-tools` (brew) drops yt-dlp/streamlink/ffmpeg/deno on macOS:
+# Apple-silicon Homebrew, then Intel Homebrew. A Finder/Dock launch omits these
+# from PATH (issue #38).
+TOOL_PATH_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
+
+
+def augment_path(current, candidates, exists=os.path.isdir):
+    """The PATH `current` should become so the tool dirs in `candidates` are
+    reachable: each candidate that exists on disk but is missing from PATH,
+    prepended (candidate order preserved) ahead of the existing entries. Returns
+    None when nothing needs adding (every existing candidate is already on PATH,
+    or none exist) so the caller can leave os.environ untouched. Pure for tests."""
+    have = current.split(os.pathsep) if current else []
+    add = [d for d in candidates if exists(d) and d not in have]
+    if not add:
+        return None
+    return os.pathsep.join(add + have)
+
+
+def _ensure_tool_path():
+    """Frozen on macOS: a binary launched from Finder/Dock (how producers run the
+    preview build) inherits a truncated PATH (/usr/bin:/bin:/usr/sbin:/sbin) that
+    omits Homebrew — so shutil.which() can't find yt-dlp/streamlink/ffmpeg/deno
+    even though `iro install-tools` put them there, and both preflight AND the
+    relay's pulls report them missing (issue #38). Prepend the Homebrew bin dirs
+    that exist; in-process preflight and spawned children inherit the fixed PATH.
+    Binary-relative paths (settings/assets) never went through PATH, which is why
+    those already work. A terminal launch already has the full PATH, so this only
+    ever adds genuinely-missing dirs."""
+    if not IS_FROZEN or sys.platform != "darwin":
+        return
+    new = augment_path(os.environ.get("PATH", ""), TOOL_PATH_DIRS)
+    if new:
+        os.environ["PATH"] = new
+
+
 def _script_invocation(rel, args, frozen, base=None):
     """How to run a src/ script: subprocess in repo/package mode; in-process when
     frozen (the .py files ship as bundled data, there is no python3 to exec)."""
@@ -501,7 +538,7 @@ HIDDEN_VERBS = {"streams": ("run-feed",)}
 ONESHOTS = ("preflight", "cookies", "graphics", "media", "setup", "install-tools", "install-apps", "update")
 EVENT_VERBS = ("status", "start", "stop")
 TAILSCALE_VERBS = ("up", "down", "status")
-OBS_VERBS = ("refresh",)
+OBS_VERBS = ("refresh", "collection")
 APP_VERBS = ("launch", "quit")          # GUI app control for the Control Center
 APP_CONTROLLED = ("obs", "discord", "tailscale")   # GUI apps iro can launch + quit
 
@@ -773,6 +810,36 @@ def obs_refresh_cmd(_rest):
         sys.exit(f"obs: relay not responding on port {RELAY_PORT} — start it first "
                  "(refreshing against a dead relay loads an error page in OBS).")
     _refresh_obs_pages(force=True)
+
+
+def obs_collection_cmd(rest):
+    """`iro obs collection` reports the active OBS scene collection; add `set` to
+    switch OBS to the IRO Endurance collection. Best effort — OBS must be running
+    with obs-websocket reachable. A mismatch exits non-zero so scripts/CI notice;
+    `set` exits non-zero on failure so the Control Center job shows red."""
+    import obs_ws
+    if rest[:1] == ["set"] and len(rest) == 1:
+        ok, note = obs_ws.set_scene_collection()
+        if not ok:
+            sys.exit(f"obs: scene collection switch failed — {note}")
+        print(f"obs: {note or 'scene collection switched to ' + obs_ws.EXPECTED_SCENE_COLLECTION}.")
+        return
+    if rest:
+        sys.exit("usage: iro obs collection [set]")
+    status, note = obs_ws.get_scene_collection()
+    if status is None:
+        sys.exit(f"obs: scene collection check skipped — {note}")
+    if status["match"]:
+        print(f"obs: scene collection '{status['current']}' active — correct.")
+        return
+    if status["expected_present"]:
+        sys.exit(f"obs: scene collection '{status['current']}' active — expected "
+                 f"'{status['expected']}'. Run `iro obs collection set`.")
+    if status["renamed_variant"]:
+        sys.exit(f"obs: scene collection '{status['current']}' active — looks renamed "
+                 f"from '{status['expected']}'; switch manually in OBS.")
+    sys.exit(f"obs: '{status['expected']}' collection not found in OBS — import it "
+             f"with `iro setup`.")
 
 
 def _release_obs_feeds():
@@ -1139,9 +1206,21 @@ def _asset_state(ev):
 def _event_sections(ev, pf):
     """Gather all event-day facts and classify them into report sections."""
     # Apps
-    apps = [ev.classify_app("obs", ev.app_running("obs")),
+    obs_running = ev.app_running("obs")
+    apps = [ev.classify_app("obs", obs_running),
             ev.classify_app("discord", ev.app_running("discord")),
             ev.classify_tailscale(_tailscale_ip())]
+    # Scene-collection line — only probe obs-websocket when OBS is actually up
+    # (no point paying the connect timeout otherwise). Best effort: a broken
+    # probe must never traceback the readiness report.
+    if obs_running:
+        try:
+            import obs_ws
+            status, note = obs_ws.get_scene_collection()
+            apps.append(ev.classify_scene_collection(status, note))
+        except Exception as exc:                     # noqa: BLE001 — best effort
+            apps.append(ev.Result(ev.WARN, "OBS scene collection",
+                                  f"check failed: {exc}"))
     # Services
     pid = sv.read_pid(_relay_pid_path())
     alive = sv.pid_alive(pid)
@@ -1272,6 +1351,32 @@ def tailscale_status_cmd(_rest):
         print(f"Tailscale: {state} — run `iro tailscale up` to connect.")
 
 
+def _check_scene_collection():
+    """Best-effort warning if OBS is on the wrong scene collection at event start.
+    Never blocks bring-up: the producer switches with `iro obs collection set` or
+    the Control Center OBS row (a switch rebuilds all sources, so it stays manual)."""
+    try:
+        import obs_ws
+        status, note = obs_ws.get_scene_collection()
+    except Exception as exc:                         # noqa: BLE001 — best effort
+        print(f"obs: scene collection check skipped ({exc}).")
+        return
+    if status is None:
+        print(f"obs: scene collection check skipped — {note}.")
+        return
+    if status["match"]:
+        print(f"obs: scene collection '{status['current']}' active — correct.")
+        return
+    if status["expected_present"]:
+        print(f"obs: WARNING — scene collection '{status['current']}' active, expected "
+              f"'{status['expected']}'. Switch with `iro obs collection set` (or the OBS "
+              f"row in the Control Center) before going live.")
+    else:
+        print(f"obs: WARNING — scene collection '{status['current']}' active, expected "
+              f"'{status['expected']}' not found in OBS — import it with `iro setup` "
+              f"before going live.")
+
+
 def event_start(rest):
     """Bring the event stack up. Order matters: Tailscale first (the Companion
     bind needs its IP), relay before OBS (the HUD browser source then connects
@@ -1319,6 +1424,7 @@ def event_start(rest):
     # (event start launches OBS AFTER the relay) — retry now that both sides
     # are up. Hash-gated: a no-op when the first hook already delivered.
     _refresh_obs_pages()
+    _check_scene_collection()       # warn (never switch) if the wrong collection is up
     print()
     for line in ev.director_urls(_tailscale_ip(), _companion_tablet_port(),
                                  relay_port=RELAY_PORT):
@@ -1359,7 +1465,7 @@ DISPATCH = {
     ("event", "stop"): event_stop,
     ("tailscale", "up"): tailscale_up_cmd, ("tailscale", "down"): tailscale_down_cmd,
     ("tailscale", "status"): tailscale_status_cmd,
-    ("obs", "refresh"): obs_refresh_cmd,
+    ("obs", "refresh"): obs_refresh_cmd, ("obs", "collection"): obs_collection_cmd,
     ("app", "launch"): app_launch_cmd, ("app", "quit"): app_quit_cmd,
 }
 
@@ -1410,6 +1516,23 @@ def version():
         return "dev"
 
 
+def _render_notes_html(md):
+    """Render release-notes Markdown to sanitized HTML for the update dialog.
+    Best-effort: returns "" if the renderer is unavailable (the UI then falls
+    back to plaintext). mdrender escapes both text and link hrefs, so notes
+    authored in a PR are safe to inject as HTML."""
+    if not md:
+        return ""
+    try:
+        ui_dir = resource_path("ui")
+        if ui_dir not in sys.path:
+            sys.path.insert(0, ui_dir)
+        import mdrender
+        return mdrender.render(md)
+    except Exception:
+        return ""
+
+
 def update_check_data(fetch=None, current=None, platform=None):
     """Check-only view of the self-updater for the Home dashboard: is a newer
     GitHub release out? Thin wrapper over scripts/update.py — the single source
@@ -1422,6 +1545,7 @@ def update_check_data(fetch=None, current=None, platform=None):
     import update as upd
     cur = current or version()
     out = {"ok": True, "current": cur, "latest": None, "update_available": False,
+           "notes": "", "notes_html": "",
            "releases_url": f"https://github.com/{upd.REPO}/releases/latest"}
     if upd.parse_version(cur) is None:        # 'dev'/unstamped — nothing to compare
         out["note"] = "development build — update check skipped"
@@ -1441,6 +1565,31 @@ def update_check_data(fetch=None, current=None, platform=None):
         return out
     out["latest"] = detail                    # tag for up-to-date / update / building
     out["update_available"] = kind in ("update", "building")
+    out["notes"] = release.get("body") or ""
+    out["notes_html"] = _render_notes_html(out["notes"])
+    return out
+
+
+def preview_list_data(fetch=None, platform=None):
+    """On-demand list of installable preview builds for the Control Center's
+    Help view. Network call (the GitHub releases list); never downloads an
+    asset. Thin wrapper over scripts/update.py's pure classifier. {"ok": False}
+    when offline / rate-limited. `fetch`/`platform` are test seams."""
+    import update as upd
+    out = {"ok": True, "previews": []}
+    try:
+        releases = (fetch or upd.fetch_releases)()
+    except Exception:
+        out["ok"] = False
+        return out
+    try:
+        rows = upd.classify_prereleases(releases, platform or sys.platform)
+    except Exception:
+        out["ok"] = False
+        return out
+    for row in rows:
+        row["notes_html"] = _render_notes_html(row.get("notes", ""))
+    out["previews"] = rows
     return out
 
 
@@ -1533,6 +1682,23 @@ def obs_ws_link_data(env=None, config_path=None):
                 "auth_required": bool(cfg.get("auth_required", True))}
     except Exception as exc:
         return {"ok": False, "error": f"obs-websocket info unavailable: {exc}"}
+
+
+def obs_collection_data(get=None):
+    """Live OBS scene-collection check for the Control Center Apps view (on-demand
+    /api/obs-collection). Best effort: {"ok": True, **status} when OBS answered,
+    else {"ok": False, "note": reason}. Never raises (the route wraps it too).
+    `get` is a test seam (defaults to obs_ws.get_scene_collection)."""
+    if get is None:
+        try:
+            import obs_ws
+            get = obs_ws.get_scene_collection
+        except Exception as exc:                     # noqa: BLE001 — best effort
+            return {"ok": False, "note": str(exc)}
+    status, note = get()
+    if status is None:
+        return {"ok": False, "note": note}
+    return {"ok": True, **status}
 
 
 def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None,
@@ -2158,13 +2324,27 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
             return fresh
         return _upd["data"] or fresh       # keep the last good result on a failed refresh
 
+    _prev = {"at": 0.0, "data": None}
+
+    def preview_list_cached(force=False):
+        now = time.time()
+        if not force and _prev["data"] is not None and now - _prev["at"] <= 600:
+            return _prev["data"]
+        fresh = preview_list_data()
+        if fresh.get("ok"):
+            _prev["data"], _prev["at"] = fresh, now
+            return fresh
+        return _prev["data"] or fresh
+
     ctx = {
         "version": version(),
         "page_path": resource_path("ui/control-center.html"),
         "status": ui_status_payload,
         "relay_live": relay_live_data,
         "obs_ws": obs_ws_link_data,
+        "obs_collection": obs_collection_data,
         "update_check": update_check_cached,
+        "previews": preview_list_cached,
         "streams_read": streams_config_data,
         "streams_write": streams_config_write_data,
         "docs": docs_data,
@@ -2234,6 +2414,7 @@ def main(argv=None):
     cleanup_old_binary(home)
     _load_env_frozen()
     _ensure_ssl_certs()
+    _ensure_tool_path()    # Finder/Dock launch truncates PATH past Homebrew (#38)
     argv = sys.argv[1:] if argv is None else argv
     try:
         argv, _profile = pa.split_profile_flag(argv)

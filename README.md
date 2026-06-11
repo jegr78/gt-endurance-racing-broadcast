@@ -89,6 +89,9 @@ iro relay status         # health + tailnet URL
 iro companion start      # bind Companion to Tailscale, start it
 iro status               # all services at a glance
 iro relay stop           # stop the relay
+iro obs refresh          # force-reload the relay-served OBS browser sources (HUD/timer)
+iro obs collection       # check the active OBS scene collection
+iro obs collection set   # switch OBS to the IRO Endurance collection
 ```
 
 For live debugging, run the relay in the foreground: `iro relay run`.

@@ -229,6 +229,26 @@ def t_pick_ca_bundle():
     assert m.pick_ca_bundle(None, None, ("/etc/a",), exists=ex(set())) is None
 
 
+def t_augment_path():
+    ex = lambda paths: (lambda p: p in paths)
+    sep = os.pathsep
+    # a missing-from-PATH tool dir that exists gets prepended (Homebrew wins)
+    assert m.augment_path("/usr/bin", ("/opt/homebrew/bin", "/usr/local/bin"),
+                          exists=ex({"/opt/homebrew/bin"})) == "/opt/homebrew/bin" + sep + "/usr/bin"
+    # already on PATH -> nothing to add (no duplicate)
+    assert m.augment_path("/opt/homebrew/bin" + sep + "/usr/bin",
+                          ("/opt/homebrew/bin",), exists=ex({"/opt/homebrew/bin"})) is None
+    # candidate doesn't exist on disk -> left alone
+    assert m.augment_path("/usr/bin", ("/opt/homebrew/bin",), exists=ex(set())) is None
+    # several existing+missing dirs keep candidate order, ahead of the old PATH
+    assert m.augment_path("/usr/bin", ("/opt/homebrew/bin", "/usr/local/bin"),
+                          exists=ex({"/opt/homebrew/bin", "/usr/local/bin"})) \
+        == sep.join(("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"))
+    # empty PATH -> just the existing candidates
+    assert m.augment_path("", ("/opt/homebrew/bin", "/usr/local/bin"),
+                          exists=ex({"/opt/homebrew/bin"})) == "/opt/homebrew/bin"
+
+
 def t_script_invocation_repo():
     import sys as _sys
     kind, argv, _ = m._script_invocation("scripts/preflight.py", ["--quick"], False)
