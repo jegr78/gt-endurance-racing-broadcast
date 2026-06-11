@@ -43,6 +43,8 @@
                  color:#0F172A; background:var(--accent); border-radius:6px;
                  padding:6px 7px; }
   .brandname { font-size:14px; font-weight:600; letter-spacing:.01em; }
+  .brandsub { font-size:11px; color:var(--dim); padding:2px 14px 8px; cursor:pointer; }
+  .brandsub:hover { color:var(--txt); }
   .ver { display:block; color:var(--faint); font:11px var(--mono); margin-top:1px; }
   .nav { display:flex; flex-direction:column; gap:3px; }
   .navfoot { margin-top:auto; display:flex; flex-direction:column; gap:3px;
@@ -71,6 +73,7 @@
               min-height:34px; }
   .viewhead h2 { font-size:16px; font-weight:600; letter-spacing:.01em;
                  margin:0; color:var(--txt); text-transform:none; }
+  .viewhead h3 { font-size:13px; font-weight:600; margin:0; color:var(--txt); }
   .viewhead .sub { color:var(--dim); font:12px var(--mono); }
   section { background:var(--card); border:1px solid var(--line);
             border-radius:12px; padding:8px 18px;
@@ -346,11 +349,14 @@
   <nav class="sidebar">
     <div class="brand"><span class="mark">IRO</span>
       <div><div class="brandname">Control Center</div>
+        <div class="brandsub" id="active-profile-badge" title="Active league profile — click to manage" onclick="showView('profile')">—</div>
         <span class="ver" id="ver"></span>
         <span class="ver-note" id="ver-note" onclick="checkUpdate(true)" title="Check for updates"></span></div></div>
     <div class="nav">
       <button class="navitem active" data-nav="home" onclick="showView('home')">
         <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Home</button>
+      <button class="navitem" data-nav="profile" onclick="showView('profile')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>Profile</button>
       <button class="navitem" data-nav="wizard" onclick="showView('wizard')">
         <svg viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="3"/></svg>Setup</button>
       <button class="navitem" data-nav="preflight" onclick="showView('preflight')">
@@ -363,10 +369,8 @@
         <svg viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>Apps</button>
       <button class="navitem" data-nav="tools" onclick="showView('tools')">
         <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Tools</button>
-      <button class="navitem" data-nav="assets" onclick="showView('assets')">
-        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></svg>Assets</button>
       <button class="navitem" data-nav="settings" onclick="showView('settings')">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</button>
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>General Settings</button>
       <button class="navitem" data-nav="logs" onclick="showView('logs')">
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>Logs</button>
       <button class="navitem" data-nav="help" onclick="showView('help')">
@@ -474,14 +478,79 @@
           <button class="tile" onclick="showView('preflight')">
             <span class="tlabel">Preflight</span>
             <span class="tval" id="t-preflight">not run yet</span></button>
-          <button class="tile" onclick="showView('assets')">
+          <button class="tile" onclick="showView('profile')">
             <span class="tlabel">Assets</span>
             <span class="tval" id="t-assets">checking…</span></button>
-          <button class="tile" onclick="showView('assets')">
+          <button class="tile" onclick="showView('settings')">
             <span class="tlabel">Cookies</span>
             <span class="tval" id="t-cookies">checking…</span></button>
         </section>
         <p class="evnote">Start brings up Tailscale, Discord, OBS, relay and Companion (optional stint = mid-event takeover). Stop only stops the iro services — OBS, Discord and Tailscale keep running; quit them manually if needed. Use <b>Copy link</b> to share the Companion tablet and Director panel URLs with your directors (they reach them over Tailscale).</p>
+      </div>
+
+      <!-- ===== Profile (active league: config + assets) ===== -->
+      <div class="view" data-view="profile" hidden>
+        <div class="viewhead"><h2>Profile</h2>
+          <span class="sub" id="profile-active-sub">…</span>
+          <span class="spacer"></span>
+          <button onclick="loadProfiles(true)">
+            <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button></div>
+
+        <section>
+          <div class="row"><span class="name">Active profile</span>
+            <select id="profile-select" aria-label="Active league profile" onchange="useProfile(this.value)"></select>
+            <span class="dim grow" id="profile-hint"></span></div>
+          <div class="enverr" id="profile-switch-note" hidden></div>
+        </section>
+
+        <section>
+          <div class="viewhead"><h3>New profile</h3></div>
+          <div class="row"><span class="name">Name</span>
+            <input id="newprofile-name" placeholder="e.g. erf" aria-label="New profile name">
+            <span class="name">Copy from</span>
+            <select id="newprofile-from" aria-label="Template to copy from"></select>
+            <button onclick="newProfile()">
+              <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Create</button></div>
+          <div class="enverr" id="newprofile-err" hidden></div>
+        </section>
+
+        <section>
+          <div class="viewhead"><h3>League config</h3>
+            <span class="sub">profile.env</span><span class="spacer"></span>
+            <button onclick="loadProfileEnv(true)">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button>
+            <button id="penv-save" onclick="saveProfileEnv()">
+              <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button></div>
+          <div class="enverr" id="penv-err" hidden></div>
+          <div class="envpath" id="penv-path"></div>
+          <div class="envhead"><span class="k">Key</span><span class="v">Value</span></div>
+          <div id="penvrows"></div>
+          <div class="addrow"><button onclick="addProfileEnvRow()">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add entry</button></div>
+          <p class="envhint">League config for the <b>active profile</b> — Sheet ID, push URL, intro/outro, logo, and the OBS scene-collection name (<b>OBS_COLLECTION</b>). Stored in <b>profiles/&lt;active&gt;/profile.env</b>. Values are masked; click the eye to reveal. Changes apply when you next (re)start the relay.</p>
+        </section>
+
+        <div class="viewhead"><h3>Assets</h3>
+          <span class="sub">graphics + media for the active profile</span>
+          <span class="spacer"></span>
+          <button onclick="checkAssets()">
+            <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Check vs sheet</button></div>
+        <section>
+          <div class="row"><span class="name">Graphics</span>
+            <span class="badge" id="b-graphics"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-graphics"></span>
+            <button onclick="op('graphics')">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
+          <div class="gallery" id="gfx-gallery"></div>
+        </section>
+        <section>
+          <div class="row"><span class="name">Media</span>
+            <span class="badge" id="b-media"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-media"></span>
+            <button onclick="op('media')">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
+          <div class="gallery" id="media-gallery"></div>
+        </section>
       </div>
 
       <!-- ===== Apps ===== -->
@@ -508,44 +577,6 @@
         <section><div id="toollist">
           <div class="item miss"><span class="idot"></span><span class="dim grow">loading…</span></div>
         </div></section>
-      </div>
-
-      <!-- ===== Assets ===== -->
-      <div class="view" data-view="assets" hidden>
-        <div class="viewhead"><h2>Assets</h2>
-          <span class="spacer"></span>
-          <button onclick="checkAssets()">
-            <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Check vs sheet</button></div>
-        <section>
-          <div class="row"><span class="name">Cookies</span>
-            <span class="badge" id="b-cookies"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="d-cookies"></span>
-            <select id="browser" aria-label="Browser to export YouTube cookies from">
-              <option value="firefox" selected>firefox</option>
-              <option value="chrome">chrome</option>
-              <option value="edge">edge</option>
-              <option value="brave">brave</option>
-              <option value="safari">safari</option>
-            </select>
-            <button onclick="op('cookies', false, {browser: $('browser').value})">
-              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button></div>
-        </section>
-        <section>
-          <div class="row"><span class="name">Graphics</span>
-            <span class="badge" id="b-graphics"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="d-graphics"></span>
-            <button onclick="op('graphics')">
-              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
-          <div class="gallery" id="gfx-gallery"></div>
-        </section>
-        <section>
-          <div class="row"><span class="name">Media</span>
-            <span class="badge" id="b-media"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="d-media"></span>
-            <button onclick="op('media')">
-              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
-          <div class="gallery" id="media-gallery"></div>
-        </section>
       </div>
 
       <!-- ===== Setup wizard ===== -->
@@ -589,15 +620,30 @@
         </div>
       </div>
 
-      <!-- ===== Settings (.env) ===== -->
+      <!-- ===== General Settings (.env) ===== -->
       <div class="view" data-view="settings" hidden>
-        <div class="viewhead"><h2>Settings</h2>
+        <div class="viewhead"><h2>General Settings</h2>
           <span class="sub">.env</span>
           <span class="spacer"></span>
           <button onclick="loadSettings(true)">
             <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button>
           <button id="env-save" onclick="saveSettings()">
             <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button></div>
+        <div class="viewhead"><h3>Cookies</h3><span class="sub">YouTube login — shared across all leagues</span></div>
+        <section>
+          <div class="row"><span class="name">Cookies</span>
+            <span class="badge" id="b-cookies"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-cookies"></span>
+            <select id="browser" aria-label="Browser to export YouTube cookies from">
+              <option value="firefox" selected>firefox</option>
+              <option value="chrome">chrome</option>
+              <option value="edge">edge</option>
+              <option value="brave">brave</option>
+              <option value="safari">safari</option>
+            </select>
+            <button onclick="op('cookies', false, {browser: $('browser').value})">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button></div>
+        </section>
         <div class="enverr" id="env-err" hidden></div>
         <div class="envpath" id="env-path"></div>
         <section>
@@ -606,7 +652,7 @@
           <div class="addrow"><button onclick="addSettingsRow()">
             <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add entry</button></div>
         </section>
-        <p class="envhint">Edits the local <b>.env</b> on this machine only. Values are masked — click the eye to reveal one. Comments in the file are preserved. Changes apply when you next (re)start the affected service (relay, …).</p>
+        <p class="envhint">Machine-level <b>.env</b> on this computer (ports, OBS-WebSocket password, Companion path) — shared across all leagues. League config (Sheet, OBS collection, …) lives under <b>Profile</b>. Values are masked; comments are preserved. Changes apply when you next (re)start the affected service.</p>
       </div>
 
       <!-- ===== Logs ===== -->
@@ -711,6 +757,8 @@ function showView(name) {
     setupLoaded = true; fetchSetup();
   }
   if (name === 'apps') fetchObsCollection();
+  // TODO(M4 JS task): rewire lazy-load to the new 'profile' (graphics/media) +
+  // 'settings' (cookies) views; the old 'assets' view no longer exists.
   if (name === 'assets' && !assetsLoaded) { assetsLoaded = true; fetchAssetFiles(); }
   if (name === 'preflight' && !preflightRun) { preflightRun = true; runPreflight(); }
   if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
