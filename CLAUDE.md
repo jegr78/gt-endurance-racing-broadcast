@@ -196,7 +196,8 @@ runtime dir; switching profiles points the CLI at a different one.
   Anything that must survive a reload therefore lives server-side (`runtime/timer.json`,
   the Sheet), never in page JS. When you edit scenes inside OBS, re-export and fold it
   back with `tools/tokenize-obs.py exported.json src/obs/GT_Endurance.json`
-  (regex-tokenizes the graphics/media image-source basenames). `src/setup-assets.py`
+  (regex-tokenizes the graphics image-source basenames + any Google-Sheet URLs).
+  `src/setup-assets.py`
   does the reverse, injecting real values (the active profile's runtime dirs) into an
   importable collection at `runtime/<profile>/GT_Endurance.import.json`, naming it the
   league's `OBS_COLLECTION` (default `GT Endurance Racing — <league>`). OBS stores
