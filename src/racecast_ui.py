@@ -37,6 +37,8 @@ def main(argv=None):
     racecast.cleanup_old_binary(home)
     racecast._load_env_frozen()
     racecast._ensure_ssl_certs()
+    racecast._ensure_tool_path()    # Finder/Dock launch truncates PATH past Homebrew,
+                                    # so tools_status_data() reported everything missing (#46/#38)
     try:
         racecast.run_ui(argv, fail=_fatal,
                    open_browser="--no-browser" not in argv)
