@@ -1,4 +1,4 @@
-"""Control Center job manager: run one `iro <args>` child per triggered
+"""Control Center job manager: run one `racecast <args>` child per triggered
 operation, keep its combined stdout/stderr lines in memory for the web UI
 (poll or SSE), and refuse a second concurrent run of the same operation.
 Jobs are subprocesses (not threads) because sys.stdout is process-global —
@@ -6,8 +6,8 @@ parallel in-process ops would interleave output — and a child can be killed.
 Spec: docs/superpowers/specs/2026-06-07-control-center-design.md."""
 import os, subprocess, threading, uuid
 
-# A frozen --windowed app (iro-ui.exe) has no console, so spawning the console
-# sibling iro.exe pops a terminal window per job (issue #23). CREATE_NO_WINDOW
+# A frozen --windowed app (racecast-ui.exe) has no console, so spawning the console
+# sibling racecast.exe pops a terminal window per job (issue #23). CREATE_NO_WINDOW
 # gives the child a hidden console; its own subprocess children inherit it, so
 # this one flag at the job root suppresses the whole tree. (Mirrors
 # services.no_window_kwargs — ui_jobs is import-isolated from scripts/ in its

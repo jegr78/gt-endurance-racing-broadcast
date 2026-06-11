@@ -14,7 +14,7 @@ never hand-edit them. `tools/` holds maintainer scripts. After any change that s
 ## Build the distributable
 
 ```bash
-python3 tools/build.py      # assembles dist/IRO_Broadcast_Package/ + .zip and self-verifies
+python3 tools/build.py      # assembles dist/GT_Racecast_Package/ + .zip and self-verifies
 ```
 
 The verify step checks: tokens are in place (no raw sheet/timer URLs or machine paths),
@@ -23,15 +23,16 @@ shipped, and preflight + `.env.example` are included.
 
 ## Releases (standalone binaries)
 
-Operators download `iro` from GitHub Releases and never need Python.
+Operators download `racecast` from GitHub Releases and never need Python.
 
 **Primary flow — merge the Release PR:** a release-please bot maintains a
 standing PR that collects every `feat:`/`fix:` commit since the last release,
 with the computed next version and changelog. When an event approaches and
 `main` is in a good state, **merge that PR** — this creates the `vX.Y.Z` tag,
 the GitHub release with notes, and kicks off the binary build that uploads
-`iro-windows.zip` / `iro-macos.tar.gz` / `iro-linux.tar.gz` (each contains the
-`iro` binary plus `.env.example`; on first run the binary copies it to `.env`).
+`racecast-windows.zip` / `racecast-macos.tar.gz` / `racecast-linux.tar.gz` (each contains
+the `racecast` + `racecast-ui` binaries plus `.env.example`; on first run the binary
+copies it to `.env`).
 No Release PR open = nothing release-worthy happened (`docs:`/`ci:` commits
 don't count). The binaries are unsigned — operators see a one-time
 SmartScreen/Gatekeeper warning (documented on the setup page).
@@ -44,7 +45,7 @@ git tag v0.2.0 && git push origin v0.2.0
 ```
 
 `CHANGELOG.md` and `version.txt` in the repo root are maintained by the bot;
-the authoritative version is always the git tag (stamped into `iro --version`
+the authoritative version is always the git tag (stamped into `racecast --version`
 at build time).
 
 ## Preview builds (test before releasing)
@@ -62,7 +63,7 @@ first).
   pick the ref (default `main`). Publishes a rolling `preview-<ref>` pre-release.
 
 Preview tags are `preview-*`, never `v*`, so they never trigger `release.yml` or
-disturb the release-please Release PR. `iro --version` of a preview binary prints
+disturb the release-please Release PR. `racecast --version` of a preview binary prints
 e.g. `preview-pr42-0123abc` so a tester knows the exact commit. Preview binaries
 are unsigned, same one-time SmartScreen/Gatekeeper warning as releases.
 
@@ -75,11 +76,12 @@ are unsigned, same one-time SmartScreen/Gatekeeper warning as releases.
 ## Round-trips that keep secrets/paths out of git
 
 - **OBS collection.** Edit scenes in OBS, export, then fold back with
-  `python3 tools/tokenize-obs.py exported.json src/obs/IRO_Endurance.json` (re-tokenizes
-  sheet/timer URLs + asset paths). `src/setup-assets.py` does the reverse for a machine.
+  `python3 tools/tokenize-obs.py exported.json src/obs/GT_Endurance.json` (re-tokenizes
+  sheet/timer URLs + asset paths). `src/setup-assets.py` does the reverse for a machine
+  (injecting the active profile's values).
 - **Companion config.** Export into the gitignored `incoming/` folder, then
   `python3 tools/strip_companion_pass.py` blanks the WebSocket password and writes
-  `src/companion/iro-buttons.companionconfig`. `build.py` re-strips defensively.
+  `src/companion/racecast-buttons.companionconfig`. `build.py` re-strips defensively.
 
 ## Publish this wiki
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for the minimal obs-websocket v5 client (src/scripts/obs_ws.py):
-feed-port release on `iro relay|streams|event stop` and browser-source refresh on
-`iro relay|event start`. Run: python3 tests/test_obsws.py"""
+feed-port release on `racecast relay|streams|event stop` and browser-source refresh on
+`racecast relay|event start`. Run: python3 tests/test_obsws.py"""
 import base64
 import hashlib
 import importlib.util
@@ -231,13 +231,13 @@ def t_find_password_env_overrides_config():
         path = os.path.join(tmp, "config.json")
         with open(path, "w") as fh:
             json.dump({"auth_required": True, "server_password": "from-config"}, fh)
-        assert m.find_password({"IRO_OBS_WS_PASSWORD": "from-env"}, path) == "from-env"
+        assert m.find_password({"RACECAST_OBS_WS_PASSWORD": "from-env"}, path) == "from-env"
         assert m.find_password({}, path) == "from-config"
         assert m.find_password({}, os.path.join(tmp, "nope.json")) is None
 
 
 # --------------------------------------------------------------------------
-# release_feed_inputs — the best-effort entry point used by `iro ... stop`
+# release_feed_inputs — the best-effort entry point used by `racecast ... stop`
 # --------------------------------------------------------------------------
 def t_release_feed_inputs_unreachable_is_quiet():
     # Nothing listens on this port: must return a note, never raise.
@@ -413,7 +413,7 @@ def t_release_feed_inputs_wrong_password_is_note_not_crash():
 
 
 # --------------------------------------------------------------------------
-# refresh_browser_inputs — the auto-refresh used by `iro relay|event start`
+# refresh_browser_inputs — the auto-refresh used by `racecast relay|event start`
 # --------------------------------------------------------------------------
 def t_refresh_browser_inputs_end_to_end_against_fake_server():
     server_sock = socket.socket()
@@ -460,14 +460,26 @@ def _start_fake_obs(state, password="supersecret"):
 
 
 def t_get_scene_collection_reads_current_and_list():
-    state = {"released": [], "current_collection": "IRO Endurance",
-             "collections": ["IRO Endurance", "Other"]}
+    state = {"released": [], "current_collection": "GT Endurance Racing",
+             "collections": ["GT Endurance Racing", "Other"]}
     port, srv = _start_fake_obs(state)
     status, note = m.get_scene_collection(port=port, password="supersecret", timeout=5)
     assert note == "", note
-    assert status["current"] == "IRO Endurance"
+    assert status["current"] == "GT Endurance Racing"
     assert status["match"] is True
-    assert status["available"] == ["IRO Endurance", "Other"]
+    assert status["available"] == ["GT Endurance Racing", "Other"]
+    srv.close()
+
+
+def t_get_scene_collection_honors_custom_expected():
+    state = {"released": [], "current_collection": "ERF Endurance",
+             "collections": ["ERF Endurance", "GT Endurance Racing"]}
+    port, srv = _start_fake_obs(state)
+    status, note = m.get_scene_collection(port=port, password="supersecret",
+                                          timeout=5, expected="ERF Endurance")
+    assert note == "", note
+    assert status["expected"] == "ERF Endurance"
+    assert status["match"] is True          # would be False against the default
     srv.close()
 
 
@@ -481,17 +493,17 @@ def t_get_scene_collection_unreachable_is_quiet():
 
 def t_set_scene_collection_switches_when_present_and_different():
     state = {"released": [], "current_collection": "Other",
-             "collections": ["IRO Endurance", "Other"]}
+             "collections": ["GT Endurance Racing", "Other"]}
     port, srv = _start_fake_obs(state)
     ok, note = m.set_scene_collection(port=port, password="supersecret", timeout=5)
     assert ok is True, note
-    assert state["set_collection"] == "IRO Endurance"
+    assert state["set_collection"] == "GT Endurance Racing"
     srv.close()
 
 
 def t_set_scene_collection_noop_when_already_correct():
-    state = {"released": [], "current_collection": "IRO Endurance",
-             "collections": ["IRO Endurance"]}
+    state = {"released": [], "current_collection": "GT Endurance Racing",
+             "collections": ["GT Endurance Racing"]}
     port, srv = _start_fake_obs(state)
     ok, note = m.set_scene_collection(port=port, password="supersecret", timeout=5)
     assert ok is True
@@ -513,7 +525,7 @@ def t_set_scene_collection_refuses_when_absent():
 
 def t_set_scene_collection_output_active_is_note_not_crash():
     state = {"released": [], "current_collection": "Other",
-             "collections": ["IRO Endurance", "Other"], "output_active": True}
+             "collections": ["GT Endurance Racing", "Other"], "output_active": True}
     port, srv = _start_fake_obs(state)
     ok, note = m.set_scene_collection(port=port, password="supersecret", timeout=5)
     assert ok is False
@@ -533,14 +545,14 @@ def t_set_scene_collection_unreachable_is_quiet():
 # Pure scene-collection classifier — scene_collection_status
 # --------------------------------------------------------------------------
 def t_scene_collection_status_match():
-    s = m.scene_collection_status("IRO Endurance", ["IRO Endurance", "Other"])
-    assert s == {"current": "IRO Endurance", "expected": "IRO Endurance",
-                 "available": ["IRO Endurance", "Other"], "match": True,
+    s = m.scene_collection_status("GT Endurance Racing", ["GT Endurance Racing", "Other"])
+    assert s == {"current": "GT Endurance Racing", "expected": "GT Endurance Racing",
+                 "available": ["GT Endurance Racing", "Other"], "match": True,
                  "expected_present": True, "renamed_variant": None}
 
 
 def t_scene_collection_status_wrong_but_present():
-    s = m.scene_collection_status("Other", ["IRO Endurance", "Other"])
+    s = m.scene_collection_status("Other", ["GT Endurance Racing", "Other"])
     assert s["match"] is False
     assert s["expected_present"] is True
     assert s["renamed_variant"] is None
@@ -548,18 +560,18 @@ def t_scene_collection_status_wrong_but_present():
 
 
 def t_scene_collection_status_renamed_variant():
-    s = m.scene_collection_status("IRO Endurance 2", ["IRO Endurance 2", "Scene"])
+    s = m.scene_collection_status("GT Endurance Racing 2", ["GT Endurance Racing 2", "Scene"])
     assert s["match"] is False
     assert s["expected_present"] is False
-    assert s["renamed_variant"] == "IRO Endurance 2"
-    assert s["current"] == "IRO Endurance 2"
+    assert s["renamed_variant"] == "GT Endurance Racing 2"
+    assert s["current"] == "GT Endurance Racing 2"
 
 
 def t_scene_collection_status_match_suppresses_renamed_variant():
     # A correct collection plus an old import-renamed duplicate must NOT report
     # a renamed_variant — match wins, no false "looks renamed" warning.
-    s = m.scene_collection_status("IRO Endurance",
-                                  ["IRO Endurance", "IRO Endurance 2"])
+    s = m.scene_collection_status("GT Endurance Racing",
+                                  ["GT Endurance Racing", "GT Endurance Racing 2"])
     assert s["match"] is True
     assert s["renamed_variant"] is None
 
@@ -567,11 +579,11 @@ def t_scene_collection_status_match_suppresses_renamed_variant():
 def t_scene_collection_status_overlap_present_and_renamed():
     # A renamed duplicate is active while the real collection ALSO exists:
     # both flags are truthy — consumers must prefer the switchable case.
-    s = m.scene_collection_status("IRO Endurance 2",
-                                  ["IRO Endurance", "IRO Endurance 2"])
+    s = m.scene_collection_status("GT Endurance Racing 2",
+                                  ["GT Endurance Racing", "GT Endurance Racing 2"])
     assert s["match"] is False
     assert s["expected_present"] is True
-    assert s["renamed_variant"] == "IRO Endurance 2"
+    assert s["renamed_variant"] == "GT Endurance Racing 2"
 
 
 def t_scene_collection_status_expected_absent():

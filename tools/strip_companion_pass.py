@@ -2,8 +2,8 @@
 """Import a Companion full-config export into the repo, blanking the OBS password.
 
 Default round-trip (no args):
-  reads   incoming/iro-buttons.companionconfig   (gitignored inbox)
-  writes  src/companion/iro-buttons.companionconfig  (password stripped)
+  reads   incoming/racecast-buttons.companionconfig   (gitignored inbox)
+  writes  src/companion/racecast-buttons.companionconfig  (password stripped)
 
 Drop your Companion 'Export -> Full Configuration' into the incoming/ folder, then run:
   python3 tools/strip_companion_pass.py
@@ -12,8 +12,8 @@ Explicit paths still work:  python3 tools/strip_companion_pass.py IN OUT
 import gzip, json, os, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_IN = os.path.join(ROOT, "incoming", "iro-buttons.companionconfig")
-DEFAULT_OUT = os.path.join(ROOT, "src", "companion", "iro-buttons.companionconfig")
+DEFAULT_IN = os.path.join(ROOT, "incoming", "racecast-buttons.companionconfig")
+DEFAULT_OUT = os.path.join(ROOT, "src", "companion", "racecast-buttons.companionconfig")
 
 
 def blank(o):

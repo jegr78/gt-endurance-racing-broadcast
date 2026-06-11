@@ -39,15 +39,15 @@ def t_parse_unknown_raises():
 # ------------------------------------------------------------------ step plan
 
 def t_plan_full_order():
-    assert m.build_plan() == ["env", "install-tools", "install-apps", "cookies",
-                              "graphics", "media", "setup", "export-companion",
-                              "preflight"]
+    assert m.build_plan() == ["profile", "env", "install-tools", "install-apps",
+                              "cookies", "graphics", "media", "setup",
+                              "export-companion", "preflight"]
 
 
 def t_plan_skip_installs():
     plan = m.build_plan(skip_installs=True)
     assert "install-tools" not in plan and "install-apps" not in plan
-    assert plan[0] == "env" and plan[-1] == "preflight" and len(plan) == 7
+    assert plan[0] == "profile" and plan[-1] == "preflight" and len(plan) == 8
 
 
 def t_every_step_has_a_label():
@@ -69,18 +69,14 @@ def t_step_kinds_jobs_name_a_real_op():
     assert jobs["cookies"]["op"] == "cookies"
     assert jobs["preflight"]["op"] == "preflight"
     # gate/action steps have no op
-    assert m.STEP_KINDS["env"]["kind"] == "gate"
+    assert m.STEP_KINDS["profile"]["kind"] == "gate"
+    assert m.STEP_KINDS["profile"].get("op") is None
+    assert m.STEP_KINDS["env"]["kind"] == "action"
     assert m.STEP_KINDS["env"].get("op") is None
     assert m.STEP_KINDS["export-companion"]["kind"] == "action"
 
 
 # ------------------------------------------------------------- done-detection
-
-def t_env_done():
-    assert m.env_done({"IRO_SHEET_ID": "x"}) is not None
-    assert m.env_done({"IRO_SHEET_ID": ""}) is None
-    assert m.env_done({}) is None
-
 
 def t_tools_done():
     tools = ("yt-dlp", "ffmpeg")
@@ -133,7 +129,7 @@ def t_gate_pause_non_tty_exits():
     try:
         m.gate_pause("Fill in .env", False)
     except SystemExit as e:
-        assert "Fill in .env" in str(e.code) and "iro init" in str(e.code)
+        assert "Fill in .env" in str(e.code) and "racecast init" in str(e.code)
         return
     raise AssertionError("expected SystemExit")
 
@@ -170,7 +166,7 @@ def t_wizard_stops_on_failure():
     code, finished = m.run_wizard(steps, False, out.append)
     assert (code, finished) == (3, False)
     assert log == ["a"]                       # b never ran
-    assert any("iro init" in line for line in out)   # re-run hint printed
+    assert any("racecast init" in line for line in out)   # re-run hint printed
 
 
 def t_wizard_last_step_failure_finishes():
@@ -189,6 +185,25 @@ def t_manual_next_steps():
     text = " ".join(lines)
     assert "/rt/import.json" in text and "/rt/buttons.companionconfig" in text
     assert "Tailscale" in text and len(lines) == 3
+
+
+def t_profile_done():
+    assert m.profile_done("iro", "SHEET123") == "profile 'iro' ready"
+    assert m.profile_done("iro", "") is None
+    assert m.profile_done(None, "SHEET123") is None
+    assert m.profile_done(None, "") is None
+
+
+def t_prompt_value_returns_stripped_answer_when_tty():
+    assert m.prompt_value("Name", True, ask=lambda _p: "  erf  ") == "erf"
+
+
+def t_prompt_value_checkpoints_when_not_tty():
+    try:
+        m.prompt_value("Name", False)
+        raise AssertionError("expected SystemExit")
+    except SystemExit:
+        pass
 
 
 def _raises(fn, exc=ValueError):

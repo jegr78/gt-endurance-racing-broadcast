@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
-"""IRO operator CLI — one entrypoint for every service and setup action.
+"""racecast operator CLI — one entrypoint for every service and setup action.
 
-  python3 src/iro.py relay start        # repo
-  python3 iro.py     relay start        # shipped package
+  python3 src/racecast.py relay start        # repo
+  python3 racecast.py     relay start        # shipped package
 
-  iro relay     start|stop|restart|status|logs|run|open-panel|open-hud|open-status
-  iro companion start|stop|restart|status|logs|open-tablet|open-admin
-  iro streams   start|stop|restart|status|logs
-  iro event     status|start|stop      # event-day readiness: check / bring-up / wind-down
-  iro event start --stint N             # takeover: stint N is on air now — the relay starts there
-  iro tailscale up|down|status          # connect / disconnect / inspect Tailscale
-  iro obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
-  iro obs collection [set]              # report the active OBS scene collection (set = switch to IRO Endurance)
-  iro app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
-  iro status                            # aggregate health of all services
-  iro ui [--no-browser]                 # local Control Center web app (port 8089 / IRO_UI_PORT)
-  iro preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
-  iro export companion [--out PATH]     # write the Companion button config
-  iro init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
-  iro update [--check] [--yes] [--tag TAG]   # self-update the binary (--tag installs an exact release)
-  iro --version
+  racecast relay     start|stop|restart|status|logs|run|open-panel|open-hud|open-status
+  racecast companion start|stop|restart|status|logs|open-tablet|open-admin
+  racecast streams   start|stop|restart|status|logs
+  racecast event     status|start|stop      # event-day readiness: check / bring-up / wind-down
+  racecast event start --stint N             # takeover: stint N is on air now — the relay starts there
+  racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
+  racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
+  racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
+  racecast app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
+  racecast status                            # aggregate health of all services
+  racecast profile   list | show [<name>] | use <name> | new <name> [--from <source>]
+  racecast --profile <name> <command>        # run one command against a non-active profile
+  racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
+  racecast preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
+  racecast export companion [--out PATH]     # write the Companion button config
+  racecast init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
+  racecast update [--check] [--yes] [--tag TAG]   # self-update the binary (--tag installs an exact release)
+  racecast --version
 """
 import glob, hashlib, json, os, re, shutil, sys, time, webbrowser
 
@@ -30,6 +32,8 @@ sys.path.insert(0, os.path.join(HERE, "scripts"))
 import subprocess
 import services as sv
 import init_setup as ins
+import config as pcfg    # 'pcfg' (not 'cfg'): avoids F811 clash with local `cfg = json.loads(...)` dicts elsewhere in this file
+import profile_admin as pa
 
 # PyInstaller marks the frozen binary with sys.frozen and unpacks bundled data
 # (the whole src/ tree) to sys._MEIPASS. Repo + package mode stay subprocess-based.
@@ -47,7 +51,7 @@ def _app_home(executable):
     """Directory holding a frozen binary's siblings — the other binary, runtime/,
     .env. Normally dirname(executable). But inside a macOS .app bundle the
     executable lives at <home>/<Name>.app/Contents/MacOS/<exe>, so the real home
-    (where the sibling `iro` binary and runtime/.env sit, NEXT TO the .app) is
+    (where the sibling `racecast` binary and runtime/.env sit, NEXT TO the .app) is
     three levels up from Contents/MacOS/. A .app bundle is a macOS construct, so
     its layout is always POSIX ('/') — parse with '/' explicitly, never os.sep,
     which would mis-split this path on a Windows test runner."""
@@ -102,7 +106,7 @@ def _untranslocate(path, frozen=None, platform=None, resolver=None):
     """Guard against macOS App Translocation. A quarantined .app launched from
     Finder runs from a randomized read-only copy under
     .../AppTranslocation/<uuid>/d/, so sys.executable — and every sibling path
-    derived from it (.env, runtime/, the sibling iro binary) — points into that
+    derived from it (.env, runtime/, the sibling racecast binary) — points into that
     throwaway mount instead of the folder where the producer keeps the .app
     (issue #22: Settings showed .env under /private/var/.../AppTranslocation/).
     Map the path back to its real on-disk location. Translocation only affects a
@@ -139,8 +143,58 @@ def _runtime_base(frozen, executable, here):
         return os.path.join(os.path.dirname(here), "runtime")
     return os.path.join(here, "runtime")
 
-def _runtime_dir():
+def _runtime_base_dir():
+    """The un-scoped machine runtime/ dir. The active-profile pointer and the
+    shared cookie jar live here directly; per-league state lives under _runtime_dir()."""
     return _runtime_base(IS_FROZEN, _real_executable(), HERE)
+
+def _profile_runtime(base_runtime, profile_name):
+    """Profile-scoped runtime dir: <base>/<profile> when a profile is active,
+    else the base (fresh machine / no profile yet)."""
+    return os.path.join(base_runtime, profile_name) if profile_name else base_runtime
+
+def _active_profile_name():
+    """The active profile name (tolerant): RACECAST_PROFILE env / the active
+    pointer / the sole profile -- or None if none can be resolved, so commands
+    that do not need a profile still work."""
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    try:
+        return pcfg.resolve_active_profile(
+            pcfg.list_profiles(root),
+            env_value=os.environ.get("RACECAST_PROFILE"),
+            pointer=pcfg.read_active_pointer(_runtime_base_dir()))
+    except pcfg.ProfileError:
+        return None
+
+def _runtime_dir():
+    return _profile_runtime(_runtime_base_dir(), _active_profile_name())
+
+def _profile_env_vars(rc):
+    """The league values from a ResolvedConfig to push into the child env, as a
+    dict of the non-empty ones. These are exactly what the relay / one-shots /
+    probes read (RACECAST_SHEET_ID etc.)."""
+    pairs = (("RACECAST_SHEET_ID", rc.sheet_id),
+             ("RACECAST_SHEET_PUSH_URL", rc.sheet_push_url),
+             ("RACECAST_INTRO_URL", rc.intro_url),
+             ("RACECAST_OUTRO_URL", rc.outro_url),
+             ("RACECAST_OBS_COLLECTION", rc.obs_collection))
+    return {k: v for k, v in pairs if v}
+
+def _apply_active_profile_env():
+    """Resolve the active profile and inject its league values into os.environ so
+    every downstream consumer (relay daemon, one-shots, event probes) inherits
+    them. Tolerant: no profile -> no-op. Returns the profile name or None."""
+    name = _active_profile_name()
+    if not name:
+        return None
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    try:
+        rc = pcfg.resolve_config(root, override=name,
+                                 runtime_root=_runtime_base_dir())
+    except pcfg.ProfileError:
+        return None
+    os.environ.update(_profile_env_vars(rc))
+    return name
 
 def _env_base(frozen, executable, here):
     """Directory whose .env configures this run (mirrors _runtime_base):
@@ -186,20 +240,20 @@ def ensure_env_file(exe_dir, frozen=None):
         print(f"warning: could not create .env next to the binary ({exc}) — "
               "copy .env.example to .env manually.", file=sys.stderr)
         return False
-    print("created .env next to the binary — fill in IRO_SHEET_ID "
+    print("created .env next to the binary — fill in the required values "
           "(see the comments inside).", file=sys.stderr)
     return True
 
 
 def cleanup_old_binary(exe_dir, frozen=None, platform=None):
-    """Best-effort removal of the iro-old.exe that `iro update` leaves behind on
+    """Best-effort removal of the racecast-old.exe that `racecast update` leaves behind on
     Windows (a running exe can only be renamed, not deleted, during the swap).
     Returns True iff the leftover existed and was removed."""
     frozen = IS_FROZEN if frozen is None else frozen
     platform = sys.platform if platform is None else platform
     if not frozen or not platform.startswith("win"):
         return False
-    old = os.path.join(exe_dir, "iro-old.exe")
+    old = os.path.join(exe_dir, "racecast-old.exe")
     try:
         if os.path.exists(old):
             os.remove(old)
@@ -278,7 +332,7 @@ def _ensure_ssl_certs():
     if bundle:
         os.environ["SSL_CERT_FILE"] = bundle
 
-# Where `iro install-tools` (brew) drops yt-dlp/streamlink/ffmpeg/deno on macOS:
+# Where `racecast install-tools` (brew) drops yt-dlp/streamlink/ffmpeg/deno on macOS:
 # Apple-silicon Homebrew, then Intel Homebrew. A Finder/Dock launch omits these
 # from PATH (issue #38).
 TOOL_PATH_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
@@ -301,7 +355,7 @@ def _ensure_tool_path():
     """Frozen on macOS: a binary launched from Finder/Dock (how producers run the
     preview build) inherits a truncated PATH (/usr/bin:/bin:/usr/sbin:/sbin) that
     omits Homebrew — so shutil.which() can't find yt-dlp/streamlink/ffmpeg/deno
-    even though `iro install-tools` put them there, and both preflight AND the
+    even though `racecast install-tools` put them there, and both preflight AND the
     relay's pulls report them missing (issue #38). Prepend the Homebrew bin dirs
     that exist; in-process preflight and spawned children inherit the fixed PATH.
     Binary-relative paths (settings/assets) never went through PATH, which is why
@@ -336,7 +390,7 @@ def _run_module(path, args):
         spec.loader.exec_module(mod)
         fn = getattr(mod, "main", None)
         if fn is None:
-            print(f"iro: {os.path.basename(path)} has no main()", file=sys.stderr)
+            print(f"racecast: {os.path.basename(path)} has no main()", file=sys.stderr)
             return 1
         result = fn()
         return result if isinstance(result, int) else 0
@@ -358,34 +412,36 @@ def _run_script(rel, args):
 
 def _relay_daemon_argv(rest, frozen):
     """Detached relay child: frozen -> the binary re-invokes itself in foreground
-    mode; otherwise python3 runs the script directly (as before)."""
+    mode (relay_run adds the runtime args there); otherwise python3 runs the
+    script directly with this profile's runtime + the shared cookie jar."""
     if frozen:
         return [sys.executable, "relay", "run"] + list(rest)
-    return [sys.executable, _relay_script(), "--runtime-dir", _runtime_dir()] + list(rest)
+    return [sys.executable, _relay_script()] + _relay_runtime_args() + list(rest)
 
-def _oneshot_extra(command, rest, frozen, runtime_dir):
-    """Extra argv for a one-shot. --runtime-dir where the script supports it (see
-    RUNTIME_DIR_ONESHOTS); when frozen, also redirect default locations away from
-    the throwaway _MEIPASS unpack dir (unless the user passed the flag himself):
-    --out for the writers, and setup's --media/--graphics — those are INJECTED
-    into the OBS collection as absolute paths and must outlive the process."""
+def _oneshot_extra(command, rest, runtime_dir, base_dir):
+    """Extra argv for a one-shot. The asset writers (graphics/media/setup) get a
+    profile-scoped --out (+ setup's --media/--graphics) so their output lands
+    under runtime/<profile>/ in every run mode -- those are baked into the OBS
+    collection as absolute paths. The machine-level one-shots that take
+    --runtime-dir (preflight, cookies) get the un-scoped BASE runtime, so the
+    shared cookie jar stays at runtime/cookies.txt. The user's own --out wins."""
     extra = []
     if command in RUNTIME_DIR_ONESHOTS:
-        extra += ["--runtime-dir", runtime_dir]
-    if frozen and "--out" not in rest:
+        extra += ["--runtime-dir", base_dir]
+    if "--out" not in rest:
         out = {"graphics": os.path.join(runtime_dir, "graphics"),
                "media": os.path.join(runtime_dir, "media"),
-               "setup": os.path.join(runtime_dir, "IRO_Endurance.import.json")}.get(command)
+               "setup": os.path.join(runtime_dir, "GT_Endurance.import.json")}.get(command)
         if out:
             extra += ["--out", out]
-    if frozen and command == "setup":
+    if command == "setup":
         for flag, sub in (("--media", "media"), ("--graphics", "graphics")):
             if flag not in rest:
                 extra += [flag, os.path.join(runtime_dir, sub)]
     return extra
 
 def _relay_script():
-    return os.path.join(HERE, "relay", "iro-feeds.py")
+    return os.path.join(HERE, "relay", "racecast-feeds.py")
 
 def _relay_pid_path():
     return os.path.join(_runtime_dir(), "relay.pid")
@@ -393,10 +449,40 @@ def _relay_pid_path():
 def _relay_log_path():
     return os.path.join(_runtime_dir(), "logs", "relay.console.log")
 
+def _cookies_path():
+    """The YouTube cookie jar -- SHARED across leagues (a machine-level login),
+    so it lives at the un-scoped runtime/ root, never under a profile dir."""
+    return os.path.join(_runtime_base_dir(), "cookies.txt")
+
+def _active_overlay_dir():
+    """profiles/<active>/overlay for the active profile, or None when no profile
+    resolves. (Does not check existence — callers decide.)"""
+    active = _active_profile_name()
+    if not active:
+        return None
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    return os.path.join(pcfg.profiles_dir(root), active, "overlay")
+
+def _overlay_relay_args(overlay_dir):
+    """['--overlay-dir', DIR] when DIR exists, else [] (pure for tests)."""
+    if overlay_dir and os.path.isdir(overlay_dir):
+        return ["--overlay-dir", overlay_dir]
+    return []
+
+def _relay_runtime_args():
+    """Runtime args every relay invocation gets: its profile-scoped runtime dir
+    plus the shared cookie jar (see _cookies_path), and --overlay-dir when the
+    active profile ships an overlay/ dir. Placed before the caller's rest so an
+    explicit flag in rest still wins."""
+    return (["--runtime-dir", _runtime_dir(), "--cookies", _cookies_path()]
+            + _overlay_relay_args(_active_overlay_dir()))
+
 RELAY_PORT = 8088
 
 # The relay-served pages OBS renders as browser sources (panel is tablet-only).
-OBS_PAGE_PATHS = ("/hud", "/timer")
+# The two override.css are hashed too, so a per-profile CSS edit advances the
+# staleness gate and triggers an OBS browser-source refresh.
+OBS_PAGE_PATHS = ("/hud", "/timer", "/hud/override.css", "/timer/override.css")
 
 
 def _fetch_relay_page(path):
@@ -474,7 +560,7 @@ EVENT_VERBS = ("status", "start", "stop")
 TAILSCALE_VERBS = ("up", "down", "status")
 OBS_VERBS = ("refresh", "collection")
 APP_VERBS = ("launch", "quit")          # GUI app control for the Control Center
-APP_CONTROLLED = ("obs", "discord", "tailscale")   # GUI apps iro can launch + quit
+APP_CONTROLLED = ("obs", "discord", "tailscale")   # GUI apps racecast can launch + quit
 
 USAGE = __doc__
 
@@ -493,39 +579,83 @@ def route(argv):
         verb = rest[0] if rest else None
         valid = SERVICE_VERBS + EXTRA_VERBS.get(cmd, ())
         if verb not in valid + HIDDEN_VERBS.get(cmd, ()):
-            raise ValueError(f"usage: iro {cmd} {{{'|'.join(valid)}}}")
+            raise ValueError(f"usage: racecast {cmd} {{{'|'.join(valid)}}}")
         return {"kind": "service", "command": cmd, "verb": verb, "rest": rest[1:]}
     if cmd == "event":
         verb = rest[0] if rest else None
         if verb not in EVENT_VERBS:
-            raise ValueError(f"usage: iro event {{{'|'.join(EVENT_VERBS)}}}")
+            raise ValueError(f"usage: racecast event {{{'|'.join(EVENT_VERBS)}}}")
         return {"kind": "service", "command": "event", "verb": verb, "rest": rest[1:]}
     if cmd == "tailscale":
         verb = rest[0] if rest else None
         if verb not in TAILSCALE_VERBS:
-            raise ValueError(f"usage: iro tailscale {{{'|'.join(TAILSCALE_VERBS)}}}")
+            raise ValueError(f"usage: racecast tailscale {{{'|'.join(TAILSCALE_VERBS)}}}")
         return {"kind": "service", "command": "tailscale", "verb": verb, "rest": rest[1:]}
     if cmd == "obs":
         verb = rest[0] if rest else None
         if verb not in OBS_VERBS:
-            raise ValueError(f"usage: iro obs {{{'|'.join(OBS_VERBS)}}}")
+            raise ValueError(f"usage: racecast obs {{{'|'.join(OBS_VERBS)}}}")
         return {"kind": "service", "command": "obs", "verb": verb, "rest": rest[1:]}
     if cmd == "app":
         verb = rest[0] if rest else None
         if verb not in APP_VERBS:
-            raise ValueError(f"usage: iro app {{{'|'.join(APP_VERBS)}}} {{obs|discord}}")
+            raise ValueError(f"usage: racecast app {{{'|'.join(APP_VERBS)}}} {{obs|discord}}")
         return {"kind": "service", "command": "app", "verb": verb, "rest": rest[1:]}
     if cmd == "ui":
         return {"kind": "ui", "rest": rest}
     if cmd == "init":
         return {"kind": "init", "rest": rest}
+    if cmd == "profile":
+        return {"kind": "profile", "rest": rest}
     if cmd in ONESHOTS:
         return {"kind": "oneshot", "command": cmd, "rest": rest}
     if cmd == "export":
         if rest[:1] != ["companion"]:
-            raise ValueError("usage: iro export companion [--out PATH]")
+            raise ValueError("usage: racecast export companion [--out PATH]")
         return {"kind": "export", "target": "companion", "rest": rest[1:]}
     raise ValueError(f"unknown command: {cmd}")
+
+
+def profile_cmd(rest):
+    """`racecast profile list|show|use|new` -- manage league profiles. Resolves the
+    project root + runtime dir the same way the rest of the CLI does, so it
+    sees profiles/ and runtime/active-profile consistently with config.py."""
+    try:
+        opts = pa.parse_profile_args(rest)
+    except ValueError as e:
+        sys.exit(f"racecast: {e}")
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    runtime_root = _runtime_base_dir()   # the active-profile pointer is un-scoped
+    active = pcfg.read_active_pointer(runtime_root)
+    verb = opts["verb"]
+    if verb == "list":
+        print(pa.format_profile_list(pcfg.list_profiles(root), active))
+        return None
+    if verb == "new":
+        try:
+            target = pa.create_profile(root, opts["name"], opts["source"])
+        except ValueError as e:
+            sys.exit(f"racecast: {e}")
+        env_path = os.path.join(target, pcfg.PROFILE_ENV_NAME)
+        print(f"created profile '{opts['name']}' at {target}")
+        print(f"  edit {env_path} (fill in SHEET_ID), then: "
+              f"racecast profile use {opts['name']}")
+        return None
+    if verb == "use":
+        try:
+            pa.set_active_profile(root, runtime_root, opts["name"])
+        except ValueError as e:
+            sys.exit(f"racecast: {e}")
+        print(f"active profile: {opts['name']}")
+        return None
+    # verb == "show"
+    try:
+        rcfg = pcfg.resolve_config(root, override=opts["name"],
+                                   runtime_root=runtime_root)
+    except pcfg.ProfileError as e:
+        sys.exit(f"racecast: {e}")
+    print(pa.format_profile_show(rcfg, active))
+    return None
 
 
 def _tailscale_ip():
@@ -554,7 +684,7 @@ def _relay_fetch_json(url, timeout=3):
 
 
 def relay_status_data(read_pid=None, alive=None, http_ok=None):
-    """Structured relay state — one source for `iro status` (text) and the
+    """Structured relay state — one source for `racecast status` (text) and the
     Control Center's /api/status (JSON). Injection points are for tests."""
     read_pid = read_pid or sv.read_pid
     alive = alive or sv.pid_alive
@@ -609,7 +739,7 @@ def relay_start(rest):
     argv = _relay_daemon_argv(rest, IS_FROZEN)
     newpid = sv.start_detached(argv, _relay_log_path(), _relay_pid_path(),
                                env=_frozen_child_env())
-    print(f"relay started (pid {newpid}). Watch it: iro relay logs -f")
+    print(f"relay started (pid {newpid}). Watch it: racecast relay logs -f")
     _refresh_obs_pages(wait=10)   # pages may have changed since the last run
     return None
 
@@ -651,12 +781,12 @@ def _refresh_obs_pages(force=False, wait=0):
 
 
 def app_launch_cmd(rest):
-    """Launch a GUI app (obs|discord) detached — the same mechanism `iro event
+    """Launch a GUI app (obs|discord) detached — the same mechanism `racecast event
     start` uses, exposed as a button so the Control Center can start each app
     individually. Best effort: a missing app or spawn error exits non-zero."""
     name = rest[0] if rest else None
     if name not in APP_CONTROLLED:
-        sys.exit(f"usage: iro app launch {{{'|'.join(APP_CONTROLLED)}}}")
+        sys.exit(f"usage: racecast app launch {{{'|'.join(APP_CONTROLLED)}}}")
     ev = _event_modules()[0]
     cmd = ev.launch_command(name, sys.platform)
     if cmd is None:
@@ -676,7 +806,7 @@ def app_quit_cmd(rest):
     this in a confirm dialog; quitting OBS mid-broadcast is the operator's call."""
     name = rest[0] if rest else None
     if name not in APP_CONTROLLED:
-        sys.exit(f"usage: iro app quit {{{'|'.join(APP_CONTROLLED)}}}")
+        sys.exit(f"usage: racecast app quit {{{'|'.join(APP_CONTROLLED)}}}")
     ev = _event_modules()[0]
     cmd = ev.quit_command(name, sys.platform)
     if cmd is None:
@@ -703,20 +833,21 @@ def obs_refresh_cmd(_rest):
 
 
 def obs_collection_cmd(rest):
-    """`iro obs collection` reports the active OBS scene collection; add `set` to
-    switch OBS to the IRO Endurance collection. Best effort — OBS must be running
+    """`racecast obs collection` reports the active OBS scene collection; add `set` to
+    switch OBS to the GT Endurance Racing collection. Best effort — OBS must be running
     with obs-websocket reachable. A mismatch exits non-zero so scripts/CI notice;
     `set` exits non-zero on failure so the Control Center job shows red."""
     import obs_ws
+    expected = _active_obs_collection()
     if rest[:1] == ["set"] and len(rest) == 1:
-        ok, note = obs_ws.set_scene_collection()
+        ok, note = obs_ws.set_scene_collection(name=expected)
         if not ok:
             sys.exit(f"obs: scene collection switch failed — {note}")
-        print(f"obs: {note or 'scene collection switched to ' + obs_ws.EXPECTED_SCENE_COLLECTION}.")
+        print(f"obs: {note or 'scene collection switched to ' + expected}.")
         return
     if rest:
-        sys.exit("usage: iro obs collection [set]")
-    status, note = obs_ws.get_scene_collection()
+        sys.exit("usage: racecast obs collection [set]")
+    status, note = obs_ws.get_scene_collection(expected=expected)
     if status is None:
         sys.exit(f"obs: scene collection check skipped — {note}")
     if status["match"]:
@@ -724,12 +855,12 @@ def obs_collection_cmd(rest):
         return
     if status["expected_present"]:
         sys.exit(f"obs: scene collection '{status['current']}' active — expected "
-                 f"'{status['expected']}'. Run `iro obs collection set`.")
+                 f"'{status['expected']}'. Run `racecast obs collection set`.")
     if status["renamed_variant"]:
         sys.exit(f"obs: scene collection '{status['current']}' active — looks renamed "
                  f"from '{status['expected']}'; switch manually in OBS.")
     sys.exit(f"obs: '{status['expected']}' collection not found in OBS — import it "
-             f"with `iro setup`.")
+             f"with `racecast setup`.")
 
 
 def _release_obs_feeds():
@@ -777,8 +908,8 @@ def relay_logs(rest):
     sv.tail(_relay_log_path(), follow=("-f" in rest or "--follow" in rest))
 
 def relay_run(rest):
-    raise SystemExit(_run_script("relay/iro-feeds.py",
-                                 ["--runtime-dir", _runtime_dir()] + rest))
+    raise SystemExit(_run_script("relay/racecast-feeds.py",
+                                 _relay_runtime_args() + rest))
 
 
 def _companion():
@@ -791,7 +922,7 @@ def _companion_cmds(cc):
 
 def _companion_unsupported_msg():
     if sys.platform.startswith("win"):
-        return ("companion: Companion.exe not found. Set IRO_COMPANION_EXE in .env "
+        return ("companion: Companion.exe not found. Set RACECAST_COMPANION_EXE in .env "
                 "to its full path and retry.")
     return ("companion: automated control supports Windows and macOS. On Linux "
             "(WSL/Docker), run and bind Companion on the host instead.")
@@ -818,7 +949,7 @@ def companion_start(rest):
         # First launch: Companion creates its config on startup — start it
         # plainly now, bind on the next run (the bind edit needs the file).
         print(f"companion: first launch (no config at {cfg_path} yet) — starting Companion as-is.")
-        print("  When it is up, run `iro companion restart` to bind it to the Tailscale IP.")
+        print("  When it is up, run `racecast companion restart` to bind it to the Tailscale IP.")
         subprocess.Popen(cmds["start"], stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, **sv.spawn_kwargs(os.name))
         return
@@ -841,12 +972,12 @@ def companion_start(rest):
         else:
             sys.exit("companion: did not stop in time; aborting (config untouched).")
     if plan["edit"]:
-        shutil.copy2(cfg_path, cfg_path + ".iro-bak")
+        shutil.copy2(cfg_path, cfg_path + ".racecast-bak")
         tmp = cfg_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
             fh.write(cc.config_with_bind_ip(text, desired))
         os.replace(tmp, cfg_path)
-        print(f"Set Companion bind_ip {current} -> {desired} (backup: {cfg_path}.iro-bak)")
+        print(f"Set Companion bind_ip {current} -> {desired} (backup: {cfg_path}.racecast-bak)")
     if plan["start"]:
         print("Starting Companion…")
         subprocess.Popen(cmds["start"], stdout=subprocess.DEVNULL,
@@ -895,7 +1026,7 @@ def companion_status_data():
         cc = _companion()
         cmds = _companion_cmds(cc)
         if cmds is None:
-            why = ("(Companion.exe not found — set IRO_COMPANION_EXE in .env)"
+            why = ("(Companion.exe not found — set RACECAST_COMPANION_EXE in .env)"
                    if sys.platform.startswith("win") else f"(manual on {sys.platform})")
             return companion_status_payload(False, False, None, why)
         running = _companion_running(cc)
@@ -1066,31 +1197,28 @@ def _load_relay_module(rel):
     return mod
 
 
-def _asset_dirs(gg, gm):
-    """Where `iro graphics`/`iro media` put files in THIS run mode. Frozen:
-    the oneshot injection redirects to runtime/ (see _oneshot_extra); repo and
-    package follow the scripts' own defaults (runtime/ vs. package root)."""
-    if IS_FROZEN:
-        return (os.path.join(_runtime_dir(), "graphics"),
-                os.path.join(_runtime_dir(), "media"))
-    return (gg.graphics_dir(os.path.dirname(os.path.abspath(gg.__file__))),
-            gm.media_dir(os.path.dirname(os.path.abspath(gm.__file__))))
+def _asset_dirs():
+    """Where `racecast graphics`/`racecast media` write: always the active profile's
+    runtime dir (the one-shot injection points --out there in every run mode --
+    see _oneshot_extra)."""
+    return (os.path.join(_runtime_dir(), "graphics"),
+            os.path.join(_runtime_dir(), "media"))
 
 
 def _asset_state(ev):
-    """Sheet-driven asset facts shared by `iro event status` and `iro init`:
+    """Sheet-driven asset facts shared by `racecast event status` and `racecast init`:
     (g_dir, m_dir, missing_g, missing_m). missing_* follow ev.check_assets()
     semantics and are None when the sheet could not be read (fetch_assets_rows
     absorbs fetch errors into None — it never raises). Only module-load /
     directory-resolution failures raise — callers classify/fall back.
 
-    Note: get-graphics' load_dotenv also fills IRO_* env vars for repo/package
-    modes (frozen already loaded .env next to the binary at startup)."""
+    Note: the CLI injects RACECAST_SHEET_ID from the active profile before this
+    runs (get-graphics' load_dotenv still fills machine vars from .env)."""
     gg = _load_relay_module("relay/get-graphics.py")
     gm = _load_relay_module("relay/get-media.py")
     gg.load_dotenv(os.path.dirname(os.path.abspath(gg.__file__)))
-    g_dir, m_dir = _asset_dirs(gg, gm)
-    rows = ev.fetch_assets_rows(gg, os.environ.get("IRO_SHEET_ID"))
+    g_dir, m_dir = _asset_dirs()
+    rows = ev.fetch_assets_rows(gg, os.environ.get("RACECAST_SHEET_ID"))
     missing_g = ev.check_assets(ev.required_graphics(gg, rows), g_dir) if rows else None
     missing_m = ev.check_assets(ev.required_media(gm, rows), m_dir) if rows else None
     return g_dir, m_dir, missing_g, missing_m
@@ -1109,7 +1237,7 @@ def _event_sections(ev, pf):
     if obs_running:
         try:
             import obs_ws
-            status, note = obs_ws.get_scene_collection()
+            status, note = obs_ws.get_scene_collection(expected=_active_obs_collection())
             apps.append(ev.classify_scene_collection(status, note))
         except Exception as exc:                     # noqa: BLE001 — best effort
             apps.append(ev.Result(ev.WARN, "OBS scene collection",
@@ -1127,17 +1255,17 @@ def _event_sections(ev, pf):
     except Exception as exc:
         services.append(ev.Result(ev.WARN, "Companion", f"check failed: {exc}"))
     # Assets — a broken probe must never traceback the report (spec: error behaviour).
-    assets = [pf.cookies_status(os.path.join(_runtime_dir(), "cookies.txt"))]
+    assets = [pf.cookies_status(_cookies_path())]
     try:
         g_dir, m_dir, missing_g, missing_m = _asset_state(ev)
         assets += [ev.classify_assets("Graphics", missing_g, ev.local_count(g_dir),
-                                      ev.FAIL, "run `iro graphics`"),
+                                      ev.FAIL, "run `racecast graphics`"),
                    ev.classify_assets("Media", missing_m, ev.local_count(m_dir),
-                                      ev.WARN, "run `iro media`")]
+                                      ev.WARN, "run `racecast media`")]
     except Exception as exc:
         assets.append(ev.Result(ev.WARN, "Graphics/Media", f"check failed: {exc}"))
-    config = [ev.classify_env(os.environ.get("IRO_SHEET_ID"),
-                              os.environ.get("IRO_SHEET_PUSH_URL"))]
+    config = [ev.classify_env(os.environ.get("RACECAST_SHEET_ID"),
+                              os.environ.get("RACECAST_SHEET_PUSH_URL"))]
     return [("Apps", apps), ("Services", services), ("Assets", assets),
             ("Config", config), ("Go-live reminders", [ev.GO_LIVE_REMINDER])]
 
@@ -1153,7 +1281,7 @@ def _event_launch(ev, app):
     Returns True iff a launch was actually attempted."""
     import install_apps
     if not install_apps.app_present(app, sys.platform):
-        print(f"{app}: not installed — run `iro install-apps`.")
+        print(f"{app}: not installed — run `racecast install-apps`.")
         return False
     cmd = ev.launch_command(app, sys.platform)
     if cmd is None:
@@ -1177,7 +1305,7 @@ def _tailscale_connect(ev=None):
     ("the opposite of tailscale down"). Launches the app first when no backend
     answers (macOS: the backend only lives while the app runs); never runs `up`
     in NeedsLogin — that would trigger the interactive browser login. Shared by
-    `iro tailscale up` and `iro event start`; returns the tailnet IP or None."""
+    `racecast tailscale up` and `racecast event start`; returns the tailnet IP or None."""
     import tailscale as ts
     binary, state, ip = ts.tailscale_backend()
     if ts.plan_tailscale_up(state) == "launch-app":
@@ -1235,22 +1363,22 @@ def tailscale_status_cmd(_rest):
     import tailscale as ts
     _binary, state, ip = ts.tailscale_backend()
     if state is None:
-        print("Tailscale: backend not running — `iro tailscale up` starts and connects it.")
+        print("Tailscale: backend not running — `racecast tailscale up` starts and connects it.")
     elif state == "Running":
         print(f"Tailscale: connected ({ip or 'no IPv4 yet'}).")
     elif state in ("NeedsLogin", "NeedsMachineAuth"):
         print(f"Tailscale: {state} — open the Tailscale app and sign in.")
     else:
-        print(f"Tailscale: {state} — run `iro tailscale up` to connect.")
+        print(f"Tailscale: {state} — run `racecast tailscale up` to connect.")
 
 
 def _check_scene_collection():
     """Best-effort warning if OBS is on the wrong scene collection at event start.
-    Never blocks bring-up: the producer switches with `iro obs collection set` or
+    Never blocks bring-up: the producer switches with `racecast obs collection set` or
     the Control Center OBS row (a switch rebuilds all sources, so it stays manual)."""
     try:
         import obs_ws
-        status, note = obs_ws.get_scene_collection()
+        status, note = obs_ws.get_scene_collection(expected=_active_obs_collection())
     except Exception as exc:                         # noqa: BLE001 — best effort
         print(f"obs: scene collection check skipped ({exc}).")
         return
@@ -1262,11 +1390,11 @@ def _check_scene_collection():
         return
     if status["expected_present"]:
         print(f"obs: WARNING — scene collection '{status['current']}' active, expected "
-              f"'{status['expected']}'. Switch with `iro obs collection set` (or the OBS "
+              f"'{status['expected']}'. Switch with `racecast obs collection set` (or the OBS "
               f"row in the Control Center) before going live.")
     else:
         print(f"obs: WARNING — scene collection '{status['current']}' active, expected "
-              f"'{status['expected']}' not found in OBS — import it with `iro setup` "
+              f"'{status['expected']}' not found in OBS — import it with `racecast setup` "
               f"before going live.")
 
 
@@ -1327,7 +1455,7 @@ def event_start(rest):
 
 
 def event_stop(rest):
-    """Stop iro-managed services only — never the GUI apps (a mistyped command
+    """Stop racecast-managed services only — never the GUI apps (a mistyped command
     must not be able to kill a live broadcast)."""
     relay_stop([])
     try:
@@ -1380,16 +1508,16 @@ RUNTIME_DIR_ONESHOTS = ("preflight", "cookies")
 
 
 def _oneshot_code(command, rest):
-    """Run a one-shot and return its exit code (the seam `iro init` uses to
+    """Run a one-shot and return its exit code (the seam `racecast init` uses to
     chain steps — oneshot() below keeps the exit-the-CLI behavior)."""
     if command == "preflight":
-        # The sheet check reads IRO_SHEET_ID from the environment. Frozen mode
+        # The sheet check reads RACECAST_SHEET_ID from the environment. Frozen mode
         # already loads .env (_load_env_frozen); in repo/package mode preflight
         # runs as a subprocess, which inherits os.environ — merge the .env file
         # in (real environment wins, same semantics as the scripts' load_dotenv).
         for key, val in _read_env_file().items():
             os.environ.setdefault(key, val)
-    extra = _oneshot_extra(command, rest, IS_FROZEN, _runtime_dir())
+    extra = _oneshot_extra(command, rest, _runtime_dir(), _runtime_base_dir())
     if command == "update" and "--current" not in rest:
         extra += ["--current", version()]
     return _run_script(ONESHOT_MAP[command], list(rest) + extra)
@@ -1429,7 +1557,7 @@ def _render_notes_html(md):
 def update_check_data(fetch=None, current=None, platform=None):
     """Check-only view of the self-updater for the Home dashboard: is a newer
     GitHub release out? Thin wrapper over scripts/update.py — the single source
-    of truth for the version compare and release lookup (the `iro update`
+    of truth for the version compare and release lookup (the `racecast update`
     command installs it). Never downloads or replaces anything here. Network
     call; served on demand via /api/update (cached), never from the status poll.
     Never raises; {"ok": False} when offline / rate-limited / the tag is
@@ -1493,12 +1621,12 @@ def export_companion(rest):
     if rest[:1] == ["--out"] and len(rest) == 2:
         out = rest[1]
     elif rest:
-        sys.exit("usage: iro export companion [--out PATH]")
-    dst = out or os.path.join(_runtime_dir(), "iro-buttons.companionconfig")
+        sys.exit("usage: racecast export companion [--out PATH]")
+    dst = out or os.path.join(_runtime_dir(), "racecast-buttons.companionconfig")
     if os.path.isdir(dst):
-        dst = os.path.join(dst, "iro-buttons.companionconfig")
+        dst = os.path.join(dst, "racecast-buttons.companionconfig")
     os.makedirs(os.path.dirname(os.path.abspath(dst)), exist_ok=True)
-    shutil.copyfile(resource_path("companion/iro-buttons.companionconfig"), dst)
+    shutil.copyfile(resource_path("companion/racecast-buttons.companionconfig"), dst)
     print(f"Wrote {dst} — import it in Companion (Import / Export -> Import).")
 
 
@@ -1558,7 +1686,7 @@ def relay_live_data(fetch=None, started=None):
 def obs_ws_link_data(env=None, config_path=None):
     """OBS-WebSocket connection details for auto-connecting the Director panel
     from the Control Center: local OBS (127.0.0.1), the configured port, and the
-    password (IRO_OBS_WS_PASSWORD wins, else OBS's own stored one). Localhost-only
+    password (RACECAST_OBS_WS_PASSWORD wins, else OBS's own stored one). Localhost-only
     data — the Control Center puts it in the panel link's URL *fragment* (never
     sent to a server). Never raises; password is None when not discoverable.
     `env`/`config_path` are test seams."""
@@ -1585,13 +1713,64 @@ def obs_collection_data(get=None):
     if get is None:
         try:
             import obs_ws
-            get = obs_ws.get_scene_collection
+            expected = _active_obs_collection()
+            def get():
+                return obs_ws.get_scene_collection(expected=expected)
         except Exception as exc:                     # noqa: BLE001 — best effort
             return {"ok": False, "note": str(exc)}
     status, note = get()
     if status is None:
         return {"ok": False, "note": note}
     return {"ok": True, **status}
+
+
+def profiles_data():
+    """Control Center profile switcher data: the effective active profile plus
+    every available profile with its display NAME and whether SHEET_ID is set.
+    {ok, active, profiles:[{name, display, sheet_set}]} or {ok:false, error}.
+    Never raises."""
+    try:
+        root = _env_base(IS_FROZEN, _real_executable(), HERE)
+        runtime_root = _runtime_base_dir()
+        active = _active_profile_name()
+        out = []
+        for n in pcfg.list_profiles(root):
+            try:
+                rc = pcfg.resolve_config(root, override=n, runtime_root=runtime_root)
+                out.append({"name": n, "display": rc.name,
+                            "sheet_set": bool(rc.sheet_id)})
+            except pcfg.ProfileError:
+                out.append({"name": n, "display": n, "sheet_set": False})
+        return {"ok": True, "active": active, "profiles": out}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not read profiles: {exc}"}
+
+
+def profile_use_data(name, set_active=None):
+    """Switch the active profile (synchronous pointer write, like env_write_data).
+    {ok, active} or {ok:false, error}. `set_active` is a test seam."""
+    try:
+        root = _env_base(IS_FROZEN, _real_executable(), HERE)
+        runtime_root = _runtime_base_dir()
+        (set_active or pa.set_active_profile)(root, runtime_root, name)
+        return {"ok": True, "active": name}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not switch profile: {exc}"}
+
+
+def profile_new_data(name, source="example", create=None):
+    """Create a new profile by copying `source` (default the example template).
+    Does NOT switch to it. {ok, name, path} or {ok:false, error}. `create` seam."""
+    try:
+        root = _env_base(IS_FROZEN, _real_executable(), HERE)
+        target = (create or pa.create_profile)(root, name, source or "example")
+        return {"ok": True, "name": name, "path": target}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not create profile: {exc}"}
 
 
 def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None,
@@ -1616,7 +1795,7 @@ def cookies_status_data(status=None):
     try:
         if status is None:
             pf = _event_modules()[1]
-            path = os.path.join(_runtime_dir(), "cookies.txt")
+            path = _cookies_path()
 
             def status():
                 return pf.cookies_status(path)
@@ -1635,9 +1814,9 @@ def assets_status_data(state=None):
     except Exception as exc:
         return {"ok": False, "error": f"asset check failed: {exc}"}
     g = ev.classify_assets("Graphics", missing_g, ev.local_count(g_dir), ev.FAIL,
-                           "run `iro graphics`")
+                           "run `racecast graphics`")
     m = ev.classify_assets("Media", missing_m, ev.local_count(m_dir), ev.WARN,
-                           "run `iro media`")
+                           "run `racecast media`")
     return {"ok": True,
             "graphics": {"level": g.level, "detail": g.detail},
             "media": {"level": m.level, "detail": m.detail}}
@@ -1738,28 +1917,121 @@ def merge_env_text(original, pairs):
     return "\n".join(out) + "\n"
 
 
-def env_write_data(entries, path=None):
-    """Validate the Settings editor's entries and persist them to .env,
-    preserving comments. Atomic (tmp + os.replace). Writes ONLY the
-    server-resolved path (or the test-supplied `path`), never a client value.
-    Returns {ok:true, path} or {ok:false, error}; never raises."""
+def _write_env_file(path, entries):
+    """Validate `entries`, merge into the file at `path` (preserving comments),
+    write atomically (tmp + os.replace). {ok, path} or {ok:false, error}. Never
+    raises. Shared by the machine .env and profile.env editors."""
     try:
         pairs, err = _validate_env_entries(entries)
         if err:
             return {"ok": False, "error": err}
-        p = path or _env_file()
         original = ""
-        if os.path.exists(p):
-            with open(p, encoding="utf-8") as fh:
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
                 original = fh.read()
         text = merge_env_text(original, pairs)
-        tmp = p + ".tmp"
+        tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
             fh.write(text)
-        os.replace(tmp, p)
-        return {"ok": True, "path": p}
+        os.replace(tmp, path)
+        return {"ok": True, "path": path}
     except Exception as exc:
-        return {"ok": False, "error": f"could not write .env: {exc}"}
+        return {"ok": False, "error": f"could not write {os.path.basename(path)}: {exc}"}
+
+
+def env_write_data(entries, path=None):
+    """Validate the Settings editor's entries and persist them to .env,
+    preserving comments. Atomic. Writes ONLY the server-resolved path (or the
+    test-supplied `path`), never a client value. {ok,path} or {ok:false,error}."""
+    return _write_env_file(path or _env_file(), entries)
+
+
+def _active_profile_env_strict():
+    """(active_name, profile.env path) for the active profile, or (None, None)
+    when no profile resolves. Distinct from _active_profile_env_path(), which
+    falls back to the machine .env — the Profile editor must never edit .env."""
+    active = _active_profile_name()
+    if not active:
+        return None, None
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    return active, os.path.join(pcfg.profiles_dir(root), active, pcfg.PROFILE_ENV_NAME)
+
+
+def profile_env_entries_data():
+    """The active profile's profile.env as {key,value} entries for the Profile
+    editor. {ok, path, active, entries} or {ok:false, error}. Never raises."""
+    try:
+        active, path = _active_profile_env_strict()
+        if not active:
+            return {"ok": False, "error": "no active profile — create or select one first"}
+        text = ""
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+        entries = [{"key": k, "value": v} for k, v in parse_env_text(text).items()]
+        return {"ok": True, "path": path, "active": active, "entries": entries}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not read profile.env: {exc}"}
+
+
+def profile_env_write_data(entries):
+    """Persist the Profile editor entries to the active profile's profile.env
+    (validate + comment-preserving merge, atomic). {ok,path} or {ok:false,error}.
+    Server resolves the path from the active profile, never a client value."""
+    active, path = _active_profile_env_strict()
+    if not active:
+        return {"ok": False, "error": "no active profile — create or select one first"}
+    return _write_env_file(path, entries)
+
+
+def _active_profile_overlay_path(page):
+    """(active, abs path to overlay/<page>.css) for the active profile, or
+    (None, None) when no profile resolves or `page` is not an overlay page.
+    Server-resolved; never a client path. Mirrors _active_profile_env_strict."""
+    if page not in ("hud", "timer"):
+        return None, None
+    active = _active_profile_name()
+    if not active:
+        return None, None
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    od = os.path.join(pcfg.profiles_dir(root), active, "overlay")
+    return active, os.path.join(od, f"{page}.css")
+
+
+def overlay_read_data(page):
+    """The active profile's overlay/<page>.css text for the editor.
+    {ok, page, active, css, path} or {ok:false, error}. Never raises."""
+    try:
+        active, path = _active_profile_overlay_path(page)
+        if not active:
+            return {"ok": False, "error": "no active profile or invalid page"}
+        css = ""
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
+                css = fh.read()
+        return {"ok": True, "page": page, "active": active, "css": css, "path": path}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not read overlay css: {exc}"}
+
+
+def overlay_write_data(page, content):
+    """Persist editor content to the active profile's overlay/<page>.css
+    (creates overlay/ if needed, atomic tmp+replace). {ok,path} or
+    {ok:false,error}. Server resolves the path, never a client value."""
+    try:
+        active, path = _active_profile_overlay_path(page)
+        if not active:
+            return {"ok": False, "error": "no active profile or invalid page"}
+        if not isinstance(content, str):
+            return {"ok": False, "error": "content must be a string"}
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.replace(tmp, path)
+        return {"ok": True, "path": path}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not write overlay css: {exc}"}
 
 
 def _streams_config_path():
@@ -1874,7 +2146,7 @@ def preflight_data(gather=None):
     try:
         pf = _event_modules()[1]
         run = gather or (lambda: pf.gather(resource_path("scripts/preflight.py"),
-                                           _runtime_dir()))
+                                           _runtime_base_dir()))
         sections = [{"title": title,
                      "results": [{"level": r.level, "name": r.name,
                                   "detail": r.detail} for r in results]}
@@ -1887,8 +2159,8 @@ def preflight_data(gather=None):
 # Bundled operator docs the Control Center's Help page can open (allowlist —
 # only these keys map to a file, so the HTTP layer can serve nothing else).
 DOCS_FILES = {
-    "cheat-sheet":  "docs/IRO_cheat_sheets.html",
-    "setup-guide":  "docs/IRO_Broadcast_Setup_Guide.md",
+    "cheat-sheet":  "docs/cheat_sheets.html",
+    "setup-guide":  "docs/Broadcast_Setup_Guide.md",
     "setup-readme": "docs/README_SETUP.md",
 }
 _DOC_TITLES = {
@@ -1903,7 +2175,7 @@ def _wiki_repo():
         import update
         return update.REPO
     except Exception:
-        return "jegr78/IRO_Broadcast_Setup"
+        return "jegr78/gt-endurance-racing-broadcast"
 
 
 def _resolve_doc(rel, resolve):
@@ -1979,30 +2251,104 @@ def _read_env_file():
     except OSError:
         return {}
 
-def _init_env_state():
-    """os.environ merged over the .env file (real environment wins) — the
-    mapping env_done() judges."""
-    env = dict(_read_env_file())
-    env.update(os.environ)
-    return env
-
 def _init_pause(message):
     ins.gate_pause(message, sys.stdin.isatty())
 
+def _active_sheet_id(root, base, active):
+    """The active profile's SHEET_ID, or '' if no profile / unresolvable."""
+    if not active:
+        return ""
+    try:
+        return pcfg.resolve_config(root, override=active,
+                                   runtime_root=base).sheet_id
+    except pcfg.ProfileError:
+        return ""
+
+
+def _active_obs_collection():
+    """The active profile's OBS scene-collection name, or the obs_ws default
+    constant when no profile resolves. Tolerant: any resolution failure -> the
+    constant, so the check/switch still work on a profile-less machine."""
+    import obs_ws
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    active = _active_profile_name()
+    if active:
+        try:
+            return pcfg.resolve_config(root, override=active,
+                                       runtime_root=_runtime_base_dir()).obs_collection
+        except pcfg.ProfileError:
+            pass
+    return obs_ws.EXPECTED_SCENE_COLLECTION
+
+
+def _active_profile_env_path():
+    """profiles/<active>/profile.env for the active profile. Falls back to the
+    machine .env when no profile is active -- used by the setup freshness probe;
+    in practice the profile step gates before setup, so the fallback is only hit
+    on a direct `racecast setup` without a profile (intentional, do not 'fix')."""
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    active = _active_profile_name()
+    if not active:
+        return _env_file()
+    return os.path.join(pcfg.profiles_dir(root), active, pcfg.PROFILE_ENV_NAME)
+
+
+def _init_profile_done():
+    """Wizard done-probe for the profile step."""
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    base = _runtime_base_dir()
+    active = _active_profile_name()
+    return ins.profile_done(active, _active_sheet_id(root, base, active))
+
+
+def _init_profile_run():
+    """Ensure a league profile is active with its SHEET_ID filled. Creates one
+    from the example template (prompting for a name) when none exists, pauses
+    until SHEET_ID is set, then re-injects the profile's config for the steps
+    that follow (graphics/media/setup)."""
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    base = _runtime_base_dir()
+    if not pcfg.list_profiles(root):
+        while True:
+            name = ins.prompt_value(
+                "Name your league profile (e.g. iro, erf)", sys.stdin.isatty())
+            if pa.valid_profile_name(name) and name != "example":
+                break
+            print(f"  '{name}' is not a valid profile name (lowercase letters, "
+                  "digits, '-' or '_'; not 'example')")
+        try:
+            pa.create_profile(root, name)
+        except ValueError as e:
+            sys.exit(f"racecast: {e}")
+        try:
+            pa.set_active_profile(root, base, name)
+        except ValueError as e:
+            sys.exit(f"racecast: profile created at profiles/{name}/ but could not "
+                     f"set it active ({e}). Run: racecast profile use {name}")
+        print(f"  created profile '{name}' (profiles/{name}/profile.env)")
+    while True:
+        active = _active_profile_name()
+        if active is None:
+            _init_pause("Select a league profile: run `racecast profile use <name>`")
+            continue
+        if _active_sheet_id(root, base, active):
+            break
+        path = os.path.join(pcfg.profiles_dir(root), active, pcfg.PROFILE_ENV_NAME)
+        _init_pause(f"Fill in SHEET_ID in {path} (SHEET_PUSH_URL is optional)")
+    _apply_active_profile_env()
+    return 0
+
+
 def _init_env_run():
-    """The .env step has no script to run — its work IS the gate: make sure
-    the file exists (copy the template once, any run mode), then pause until
-    the operator filled in the required values."""
+    """Machine .env: create it from the template if missing (optional machine
+    vars + the default profile). No gate -- league config lives in the profile."""
     path = _env_file()
     example = os.path.join(os.path.dirname(path), ".env.example")
     if not os.path.exists(path) and os.path.exists(example):
         shutil.copyfile(example, path)
         print(f"  created {path} from .env.example")
-    while ins.env_done(_init_env_state()) is None:
-        _init_pause(f"Fill in IRO_SHEET_ID in {path} (IRO_SHEET_PUSH_URL is "
-                    "optional — see the Sheet-Webhook wiki page)")
     for key, val in _read_env_file().items():
-        os.environ.setdefault(key, val)   # downstream probes + children see them
+        os.environ.setdefault(key, val)
     return 0
 
 def _init_cookies_run(browser):
@@ -2010,7 +2356,7 @@ def _init_cookies_run(browser):
     the cookies are actually missing/stale — under --force a fresh cookie jar
     skips the pause but still re-exports."""
     _pf = _event_modules()[1]
-    res = _pf.cookies_status(os.path.join(_runtime_dir(), "cookies.txt"))
+    res = _pf.cookies_status(_cookies_path())
     if ins.cookies_done(res.level, res.detail) is None:
         _init_pause(f"Log in to YouTube in {browser} — the cookie export "
                     "needs that browser session")
@@ -2035,10 +2381,10 @@ def _mtime(path):
         return None
 
 def _init_import_json():
-    return os.path.join(_runtime_dir(), "IRO_Endurance.import.json")
+    return os.path.join(_runtime_dir(), "GT_Endurance.import.json")
 
 def _init_companion_cfg():
-    return os.path.join(_runtime_dir(), "iro-buttons.companionconfig")
+    return os.path.join(_runtime_dir(), "racecast-buttons.companionconfig")
 
 def _init_export_run():
     export_companion([])
@@ -2049,12 +2395,15 @@ def _init_steps(opts):
     and orders the subset that runs."""
     pf = _event_modules()[1]
     import install_apps
-    cookies_path = os.path.join(_runtime_dir(), "cookies.txt")
+    cookies_path = _cookies_path()
     def cookies_skip():
         res = pf.cookies_status(cookies_path)
         return ins.cookies_done(res.level, res.detail)
     by_key = {
-        "env": {"done": lambda: ins.env_done(_init_env_state()),
+        "profile": {"done": _init_profile_done,
+                    "run": _init_profile_run},
+        "env": {"done": lambda: ".env present"
+                if os.path.exists(_env_file()) else None,
                 "run": _init_env_run},
         "install-tools": {"done": lambda: ins.tools_done(shutil.which,
                                                          pf.REQUIRED_TOOLS),
@@ -2076,9 +2425,9 @@ def _init_steps(opts):
         # start. So frozen compares against .env alone.
         "setup": {"done": lambda: ins.setup_done(
                       _mtime(_init_import_json()),
-                      [_mtime(_env_file())] if IS_FROZEN else
-                      [_mtime(resource_path("obs/IRO_Endurance.json")),
-                       _mtime(_env_file())]),
+                      [_mtime(_active_profile_env_path())] if IS_FROZEN else
+                      [_mtime(resource_path("obs/GT_Endurance.json")),
+                       _mtime(_active_profile_env_path())]),
                   "run": lambda: _oneshot_code("setup",
                                                ["--out", _init_import_json()])},
         "export-companion": {"done": lambda: ins.export_done(
@@ -2115,16 +2464,22 @@ def init_plan_data(steps, kinds, browser="firefox", next_steps=None):
 
 
 def init_step_action_data(key):
-    """Run one non-job wizard step in-process and report its new state. Only the
-    '.env' gate and 'export-companion' action are UI-driven here; job steps run
-    through /api/op/<op>. Never raises — returns {ok: False, error} instead."""
+    """Run one non-job wizard step in-process and report its new state.
+    Handled here: 'profile' gate (re-probes the active profile's SHEET_ID),
+    'env' action (creates .env from template if missing), and
+    'export-companion' action. Job steps run through /api/op/<op>.
+    Never raises -- returns {ok: False, error} instead."""
     try:
+        if key == "profile":
+            reason = _init_profile_done()
+            return {"ok": True, "key": key, "done": reason is not None,
+                    "skip_reason": reason}
         if key == "env":
             path = _env_file()
             example = os.path.join(os.path.dirname(path), ".env.example")
             if not os.path.exists(path) and os.path.exists(example):
                 shutil.copyfile(example, path)
-            reason = ins.env_done(_init_env_state())
+            reason = ".env present" if os.path.exists(path) else None
             return {"ok": True, "key": key, "done": reason is not None,
                     "skip_reason": reason}
         if key == "export-companion":
@@ -2141,7 +2496,7 @@ def _init_plan(browser="firefox"):
     """ctx['init_plan'] wrapper: the wizard's view of the init steps. Preflight is
     dropped — the Control Center has a dedicated Preflight page, and as the one
     step with no persistent done-state it only ever read as 'pending' here — and
-    surfaced as a closing reminder instead. (The `iro init` CLI still runs it.)"""
+    surfaced as a closing reminder instead. (The `racecast init` CLI still runs it.)"""
     opts = {"browser": browser or "firefox", "skip_installs": False, "force": False}
     steps = [s for s in _init_steps(opts) if s["key"] != "preflight"]
     nxt = ins.manual_next_steps(_init_import_json(), _init_companion_cfg())
@@ -2153,7 +2508,7 @@ def _init_plan(browser="firefox"):
 
 def _ui_modules():
     """src/ui modules — path-inserted like scripts/ (kept out of the module-level
-    insert: only `iro ui` needs them)."""
+    insert: only `racecast ui` needs them)."""
     ui_dir = resource_path("ui")
     if ui_dir not in sys.path:
         sys.path.insert(0, ui_dir)
@@ -2162,10 +2517,11 @@ def _ui_modules():
 
 
 def _iro_job_executable(frozen=IS_FROZEN, executable=None, win=None):
-    """Path to the `iro` binary that runs Control Center jobs. When the server
-    is launched by iro-ui (a sibling binary), jobs must still invoke `iro`, not
-    iro-ui. Frozen: the sibling iro/iro.exe next to the running executable.
-    Dev: the interpreter itself (paired with iro.py by job_argv)."""
+    """Path to the `racecast` binary that runs Control Center jobs. When the
+    server is launched by racecast-ui (a sibling binary), jobs must still invoke
+    `racecast`, not racecast-ui. Frozen: the sibling racecast/racecast.exe next
+    to the running executable. Dev: the interpreter itself (paired with
+    racecast.py by job_argv)."""
     executable = _real_executable() if executable is None else executable
     win = (os.name == "nt") if win is None else win
     if frozen:
@@ -2173,7 +2529,7 @@ def _iro_job_executable(frozen=IS_FROZEN, executable=None, win=None):
         # host's: os.path.join emits '\' on a Windows runner and would corrupt
         # the POSIX sibling path on a non-Windows target (and the unit tests).
         sep = "\\" if win else "/"
-        return _app_home(executable) + sep + ("iro.exe" if win else "iro")
+        return _app_home(executable) + sep + ("racecast.exe" if win else "racecast")
     return executable
 
 
@@ -2186,11 +2542,11 @@ def ui_cmd(rest):
 def run_ui(rest, fail=sys.exit, open_browser=True):
     """Shared Control Center server core for both entrypoints. `fail(msg)` is
     called on a fatal startup error (port taken / bind failure): the CLI passes
-    sys.exit; iro_ui passes a native-dialog variant. Returns None when the
+    sys.exit; racecast_ui passes a native-dialog variant. Returns None when the
     server has stopped."""
     srv, jobs_mod, ops_mod = _ui_modules()
     for key, val in _read_env_file().items():
-        os.environ.setdefault(key, val)        # IRO_UI_PORT from .env (env wins)
+        os.environ.setdefault(key, val)        # RACECAST_UI_PORT from .env (env wins)
     port = srv.ui_port(os.environ)
     instance = srv.probe_instance("127.0.0.1", port)
     if instance == "ours":
@@ -2199,8 +2555,8 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
             _open_url(_http_url("127.0.0.1", port, "/"))
         return None
     if instance == "foreign":
-        return fail(f"iro: port {port} is in use by another application — set "
-                    "IRO_UI_PORT in .env to a free port and retry.")
+        return fail(f"racecast: port {port} is in use by another application — set "
+                    "RACECAST_UI_PORT in .env to a free port and retry.")
 
     # The GitHub release check is one network round-trip — cache a good result
     # for an hour so the Home dashboard can call it freely (and so we never spam
@@ -2255,10 +2611,17 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "preflight": preflight_data,
         "env_read": env_entries_data,
         "env_write": env_write_data,
+        "profiles": profiles_data,
+        "profile_use": profile_use_data,
+        "profile_new": profile_new_data,
+        "profile_env_read": profile_env_entries_data,
+        "profile_env_write": profile_env_write_data,
+        "overlay_read": overlay_read_data,
+        "overlay_write": overlay_write_data,
         "jobs": jobs_mod.JobManager(
             lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN,
                                              _iro_job_executable(),
-                                             os.path.join(HERE, "iro.py")),
+                                             os.path.join(HERE, "racecast.py")),
             env=_frozen_child_env()),
         "log_paths": {"relay": _relay_log_path,
                       "companion": _companion_log_path,
@@ -2267,7 +2630,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
     try:
         httpd = srv.serve(ctx, "127.0.0.1", port)
     except OSError as exc:
-        return fail(f"iro: could not bind port {port} ({exc}) — set IRO_UI_PORT "
+        return fail(f"racecast: could not bind port {port} ({exc}) — set RACECAST_UI_PORT "
                     "in .env to a free port and retry.")
     url = _http_url("127.0.0.1", port, "/")
     print(f"Control Center: {url}  (Ctrl+C or the Quit button stops it)")
@@ -2286,11 +2649,11 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
 def init_cmd(rest):
     """Guided first-time setup: every automatable step in dependency order,
     pausing only at the manual gates. Spec:
-    docs/superpowers/specs/2026-06-06-iro-init-design.md."""
+    docs/superpowers/specs/2026-06-06-racecast-init-design.md."""
     try:
         opts = ins.parse_init_args(rest)
     except ValueError as e:
-        sys.exit(f"iro: {e}")
+        sys.exit(f"racecast: {e}")
     code, finished = ins.run_wizard(_init_steps(opts), opts["force"], print)
     if finished:   # incl. a preflight FAIL — the machine is set up either way
         print("\nManual next steps:")
@@ -2310,14 +2673,21 @@ def main(argv=None):
     _ensure_tool_path()    # Finder/Dock launch truncates PATH past Homebrew (#38)
     argv = sys.argv[1:] if argv is None else argv
     try:
+        argv, _profile = pa.split_profile_flag(argv)
+    except ValueError as e:
+        sys.exit(f"racecast: {e}")
+    if _profile:
+        os.environ["RACECAST_PROFILE"] = _profile   # M3 consumers read this
+    _apply_active_profile_env()   # inject the active profile's sheet config for children
+    try:
         action = route(argv)
     except ValueError as e:
-        sys.exit(f"iro: {e}")
+        sys.exit(f"racecast: {e}")
     if action["kind"] == "help":
         print(USAGE)
         return None
     if action["kind"] == "version":
-        print(f"iro {version()}")
+        print(f"racecast {version()}")
         return None
     if action["kind"] == "export":
         export_companion(action["rest"])
@@ -2325,18 +2695,20 @@ def main(argv=None):
     if action["kind"] == "service":
         fn = DISPATCH.get((action["command"], action["verb"]))
         if not fn:
-            sys.exit(f"iro: {action['command']} {action['verb']} not implemented yet")
+            sys.exit(f"racecast: {action['command']} {action['verb']} not implemented yet")
         return fn(action["rest"])
     if action["kind"] == "ui":
         return ui_cmd(action["rest"])
     if action["kind"] == "init":
         return init_cmd(action["rest"])
+    if action["kind"] == "profile":
+        return profile_cmd(action["rest"])
     if action["kind"] == "oneshot":
         return oneshot(action["command"], action["rest"])
     if action["kind"] == "aggregate":
         aggregate_status()
         return None
-    sys.exit(f"iro: {action['kind']} not implemented")
+    sys.exit(f"racecast: {action['kind']} not implemented")
 
 
 if __name__ == "__main__":

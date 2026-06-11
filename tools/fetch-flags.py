@@ -44,14 +44,14 @@ ALIASES = {
 def _load_relay_helpers():
     """Reuse asset_key / load_dotenv from the relay so naming stays in sync."""
     spec = importlib.util.spec_from_file_location(
-        "irofeeds", os.path.join(ROOT, "src", "relay", "iro-feeds.py"))
+        "irofeeds", os.path.join(ROOT, "src", "relay", "racecast-feeds.py"))
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m
 
 
 def _get(url, timeout=20):
-    return urlopen(Request(url, headers={"User-Agent": "iro-feeds/1.0"}),
+    return urlopen(Request(url, headers={"User-Agent": "racecast-feeds/1.0"}),
                    timeout=timeout).read()
 
 
@@ -80,8 +80,8 @@ def main():
     m.load_dotenv(ROOT)
 
     ap = argparse.ArgumentParser(description="Fetch missing HUD country flags.")
-    ap.add_argument("--sheet-id", default=os.environ.get("IRO_SHEET_ID"),
-                    help="Google Sheet ID (default: env IRO_SHEET_ID / .env).")
+    ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
+                    help="Google Sheet ID (default: env RACECAST_SHEET_ID / .env).")
     ap.add_argument("--config-tab", default="Configuration",
                     help="Tab holding the Country column (default 'Configuration').")
     ap.add_argument("--dry-run", action="store_true",
@@ -91,7 +91,7 @@ def main():
     args = ap.parse_args()
 
     if not args.sheet_id:
-        sys.exit("ERROR: no sheet id. Set IRO_SHEET_ID in .env or pass --sheet-id.")
+        sys.exit("ERROR: no sheet id. Set RACECAST_SHEET_ID in .env or pass --sheet-id.")
 
     os.makedirs(FLAGS_DIR, exist_ok=True)
     countries = _sheet_countries(args.sheet_id, args.config_tab)

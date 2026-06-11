@@ -20,7 +20,7 @@ Everything is best effort: the entry point never raises — a stop must never
 hang or crash because OBS is closed, locked, or speaks a newer protocol.
 
 The WebSocket password is auto-discovered from OBS's own obs-websocket
-config.json (same machine, same user); `IRO_OBS_WS_PASSWORD` in the
+config.json (same machine, same user); `RACECAST_OBS_WS_PASSWORD` in the
 environment / .env overrides it for non-standard setups.
 """
 import base64
@@ -40,19 +40,19 @@ STINT_SCENE = "Stint"                       # single-cam scene holding both feed
 FEED_SOURCES = {"A": "Feed A", "B": "Feed B"}   # scene-item name == audio input name
 
 # The scene collection the broadcast assumes. Mirrors the "name" field of
-# src/obs/IRO_Endurance.json (the name OBS shows after importing the localized
+# src/obs/GT_Endurance.json (the name OBS shows after importing the localized
 # collection). Keep the two in sync. Not a secret, so the no-hardcoding rule
 # does not apply; not parsed at runtime because the file is renamed + tokenized
 # in the shipped package and bundled differently when frozen.
-EXPECTED_SCENE_COLLECTION = "IRO Endurance"
+EXPECTED_SCENE_COLLECTION = "GT Endurance Racing"
 
 
 def scene_collection_status(current, available, expected=EXPECTED_SCENE_COLLECTION):
     """Pure: classify the active OBS scene collection. `current` is OBS's
     currentSceneCollectionName; `available` is the full list it reported.
     Returns a dict (see keys below). The only "correct" state is match=True;
-    renamed_variant flags a non-exact "IRO Endurance*" (e.g. an import-renamed
-    'IRO Endurance 2'), which we never switch to automatically."""
+    renamed_variant flags a non-exact "GT Endurance Racing*" (e.g. an import-renamed
+    'GT Endurance Racing 2'), which we never switch to automatically."""
     available = list(available)
     # A correct collection wins: never flag a renamed variant when we already match.
     renamed = None if current == expected else next(
@@ -180,7 +180,7 @@ def identify_payload(hello, password):
     if auth:
         if not password:
             raise ValueError("OBS WebSocket requires a password "
-                             "(set IRO_OBS_WS_PASSWORD or enable auto-discovery)")
+                             "(set RACECAST_OBS_WS_PASSWORD or enable auto-discovery)")
         d["authentication"] = auth_token(password, auth["salt"], auth["challenge"])
     return {"op": 1, "d": d}
 
@@ -261,8 +261,8 @@ def default_config_path():
 
 
 def find_password(env, config_path):
-    """IRO_OBS_WS_PASSWORD wins; else OBS's own stored server password."""
-    override = env.get("IRO_OBS_WS_PASSWORD")
+    """RACECAST_OBS_WS_PASSWORD wins; else OBS's own stored server password."""
+    override = env.get("RACECAST_OBS_WS_PASSWORD")
     if override:
         return override
     cfg = read_ws_config(config_path)
@@ -303,7 +303,7 @@ class _Session:
 
     def request(self, request_type, request_data):
         self.counter += 1
-        rid = f"iro-{self.counter}"
+        rid = f"racecast-{self.counter}"
         self.send_json({"op": 6, "d": {"requestType": request_type,
                                        "requestId": rid,
                                        "requestData": request_data}})
@@ -352,7 +352,7 @@ def _open_session(host, port, password, timeout):
 
 def _connect(host, port, password, timeout):
     """(session, "") or (None, reason). Port + password fall back to OBS's own
-    obs-websocket config / IRO_OBS_WS_PASSWORD; never raises."""
+    obs-websocket config / RACECAST_OBS_WS_PASSWORD; never raises."""
     cfg = read_ws_config(default_config_path())
     if port is None:
         port = (cfg or {}).get("port") or DEFAULT_PORT
@@ -468,18 +468,21 @@ def reflect_feed_state(live, do_cut, scene=STINT_SCENE, sources=None,
         session.close()
 
 
-def get_scene_collection(host="127.0.0.1", port=None, password=None, timeout=2.0):
+def get_scene_collection(host="127.0.0.1", port=None, password=None, timeout=2.0,
+                         expected=EXPECTED_SCENE_COLLECTION):
     """Ask OBS which scene collection is active and classify it against
-    EXPECTED_SCENE_COLLECTION. Returns (status_dict, note); (None, reason) on any
-    failure — OBS closed, wrong password, protocol surprise — NEVER an exception
-    (same best-effort contract as release_feed_inputs/refresh_browser_inputs)."""
+    `expected` (default EXPECTED_SCENE_COLLECTION). Returns (status_dict, note);
+    (None, reason) on any failure — OBS closed, wrong password, protocol
+    surprise — NEVER an exception (same best-effort contract as
+    release_feed_inputs/refresh_browser_inputs)."""
     session, note = _connect(host, port, password, timeout)
     if session is None:
         return None, note
     try:
         resp = session.request("GetSceneCollectionList", {})
         status = scene_collection_status(resp.get("currentSceneCollectionName"),
-                                         resp.get("sceneCollections", []))
+                                         resp.get("sceneCollections", []),
+                                         expected=expected)
         return status, ""
     except Exception as exc:                         # noqa: BLE001 — best-effort contract
         return None, str(exc) or exc.__class__.__name__
@@ -508,7 +511,7 @@ def set_scene_collection(name=EXPECTED_SCENE_COLLECTION, host="127.0.0.1",
             return True, f"already on '{name}'"
         if name not in available:
             return False, (f"scene collection '{name}' not found in OBS "
-                           f"(import it with `iro setup`)")
+                           f"(import it with `racecast setup`)")
         session.request("SetCurrentSceneCollection", {"sceneCollectionName": name})
         return True, ""
     except Exception as exc:                         # noqa: BLE001 — best-effort contract

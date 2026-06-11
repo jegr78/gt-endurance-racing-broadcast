@@ -121,7 +121,7 @@ def t_apps_section_levels():
     assert by["Companion"].level == "WARN"
     assert by["Tailscale"].level == "WARN"
     assert by["Discord"].level == "WARN"
-    assert "iro install-apps" in by["Discord"].detail
+    assert "racecast install-apps" in by["Discord"].detail
 
 
 def t_install_apps_module_loads():
@@ -132,7 +132,7 @@ def t_install_apps_module_loads():
 def t_classify_sheet_no_id_warns():
     r = m.classify_sheet(None)
     assert r.level == "WARN"
-    assert "IRO_SHEET_ID" in r.detail
+    assert "RACECAST_SHEET_ID" in r.detail
 
 
 def t_classify_sheet_fetch_error_fails_with_sharing_hint():

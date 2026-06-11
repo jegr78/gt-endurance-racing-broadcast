@@ -1,10 +1,10 @@
-"""Shared pure logic for the `iro companion` adapter (src/iro.py).
+"""Shared pure logic for the `racecast companion` adapter (src/racecast.py).
 
 These helpers bind Bitfocus Companion's admin/web-buttons server to this machine's
 Tailscale IP (plug & play) so a tablet can open http://<tailscale-ip>:<port>/tablet
 over the tailnet, without exposing Companion on the local LAN the way 0.0.0.0 would.
 
-Tailscale detection lives in scripts/tailscale.py; iro.py passes the detected
+Tailscale detection lives in scripts/tailscale.py; racecast.py passes the detected
 IP into desired_bind_ip() — this module holds Companion logic only.
 
 NOTE: this binds *where* Companion listens; it does NOT separate /tablet from the
@@ -59,7 +59,7 @@ def companion_config_path(platform, env=None):
 
 
 # Default install locations of Companion.exe — a heuristic, validated on the
-# Windows streaming PC before the first release. IRO_COMPANION_EXE overrides.
+# Windows streaming PC before the first release. RACECAST_COMPANION_EXE overrides.
 WINDOWS_COMPANION_CANDIDATES = (
     r"%LOCALAPPDATA%\Programs\companion\Companion.exe",
     r"C:\Program Files\Companion\Companion.exe",
@@ -68,9 +68,9 @@ WINDOWS_COMPANION_CANDIDATES = (
 
 
 def find_companion_exe(env=None, exists=os.path.exists):
-    """Path to Companion.exe on Windows, or None. IRO_COMPANION_EXE wins."""
+    """Path to Companion.exe on Windows, or None. RACECAST_COMPANION_EXE wins."""
     env = os.environ if env is None else env
-    override = env.get("IRO_COMPANION_EXE")
+    override = env.get("RACECAST_COMPANION_EXE")
     if override:
         return override if exists(override) else None
     for cand in WINDOWS_COMPANION_CANDIDATES:

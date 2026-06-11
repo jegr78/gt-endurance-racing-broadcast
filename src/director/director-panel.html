@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>IRO · Director Console</title>
+<title>GT Endurance Racing · Director Console</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/obs-websocket-js@5.0.6/dist/obs-ws.global.js" integrity="sha384-cFeq2Xcu17x+Az+nlYMZAaV1gxGNNfUT48om81Bp23aa9pTsmi+YXAe5XQ7Cx1s+" crossorigin="anonymous"></script>
 <style>
   /* =========================================================
-     IRO DIRECTOR CONSOLE — vision-mixer busses
+     GT ENDURANCE RACING DIRECTOR CONSOLE — vision-mixer busses
      Horizontal action rows mirroring the Companion pages.
      Dark, high-contrast, glanceable. Built for tablet + desktop.
      ========================================================= */
@@ -195,7 +195,7 @@
 <div class="wrap">
 
   <header>
-    <div class="brand">Director Console<small>IRO · ENDURANCE BROADCAST</small></div>
+    <div class="brand">Director Console<small>GT ENDURANCE RACING BROADCAST</small></div>
     <div class="strip">
       <span class="st air" id="stAir">ON AIR <b>—</b></span>
       <span class="st" id="stA">A <b>—</b></span>
@@ -269,7 +269,7 @@
 <script>
 /* =======================================================================
    CONFIG — mirrors the Companion button config (src/companion/) and the
-   OBS collection (src/obs/IRO_Endurance.json). Edit here if scenes/sources
+   OBS collection (src/obs/GT_Endurance.json). Edit here if scenes/sources
    are renamed in OBS; keep Companion and this file in sync.
    - macros:   PGM bus, exact Companion page-1 row-0 semantics
    - scenes:   raw scene switches
@@ -675,7 +675,7 @@ async function relayPoll(){
     if (ck && ck.stale)
       setBanner("cookies", "amber",
         `COOKIES ${Math.round(ck.age_h)} H OLD — next handover may fail · ` +
-        `run 'iro cookies firefox' on the producer machine`);
+        `run 'racecast cookies firefox' on the producer machine`);
     else clearBanner("cookies");
     if (d.obs && d.obs.reachable === false)
       setBanner("obs", "amber",
@@ -750,7 +750,7 @@ function timerRender(d){
              : d.mode === "finished" ? "FINISHED (display blank)"
              : "HIDDEN";
   const sync = d.sync.push === "ok" ? "sheet sync OK"
-             : d.sync.push === "disabled" ? "local only (IRO_SHEET_PUSH_URL unset)"
+             : d.sync.push === "disabled" ? "local only (RACECAST_SHEET_PUSH_URL unset)"
              : d.sync.push === "failed" ? "SHEET SYNC FAILED — handover not safe"
              : "sheet sync not yet attempted";
   if (d.sync.push === "failed")
@@ -837,7 +837,7 @@ async function setupPoll(){
   else clearBanner("sync");
   $("#setupInfo").textContent = "HUD: " +
       (d.push === "ok" ? "sheet sync OK"
-     : ro ? "read-only — set IRO_SHEET_PUSH_URL in .env (wiki: Sheet-Webhook)"
+     : ro ? "read-only — set RACECAST_SHEET_PUSH_URL in .env (wiki: Sheet-Webhook)"
      : d.push === "failed" ? "SHEET SYNC FAILED — " + (d.last_error || "see relay log")
      : "sheet sync not yet attempted");
 }

@@ -6,16 +6,16 @@ import argparse, glob, os, signal, subprocess
 def looks_like_feed(probe_output, windows=False):
     """True iff a ps/tasklist probe line describes one of our feed processes:
     loopstream/streamlink children (or their python.exe image on Windows), or
-    the frozen iro binary running the hidden `streams run-feed` verb. Guards
+    the frozen racecast binary running the hidden `streams run-feed` verb. Guards
     against stale/recycled PID files naming an unrelated process.
 
     On POSIX the full command line is available, so we require either "run-feed"
-    (frozen iro child) or a loopstream/streamlink token — bare "python" alone is
+    (frozen racecast child) or a loopstream/streamlink token — bare "python" alone is
     intentionally NOT accepted (too broad; any python process would match).
     On Windows the probe returns only the image name (no argv), so we accept
-    "python", "streamlink", and "iro.exe"."""
+    "python", "streamlink", and "racecast.exe"."""
     text = probe_output.lower()
-    if "run-feed" in text or "iro.exe" in text:   # frozen children (both platforms)
+    if "run-feed" in text or "racecast.exe" in text:   # frozen children (both platforms)
         return True
     tokens = ("python", "streamlink") if windows else ("loopstream", "streamlink")
     return any(tok in text for tok in tokens)
@@ -82,7 +82,7 @@ def main():
         kill_tree(pid)
         print(f"Stopped {os.path.basename(pf)[:-4]} (PID {pid})")
         os.remove(pf)
-    # NOTE: no broad `pkill -f player-external-http` here — the relay (iro-feeds.py)
+    # NOTE: no broad `pkill -f player-external-http` here — the relay (racecast-feeds.py)
     # also serves with --player-external-http, so a catch-all would kill live relay
     # feeds. Only the tracked PID files are stopped.
     if not pidfiles:

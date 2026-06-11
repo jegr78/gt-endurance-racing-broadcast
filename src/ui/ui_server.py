@@ -8,21 +8,21 @@ import json, os, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-APP_ID = "iro-control-center"
+APP_ID = "racecast-control-center"
 DEFAULT_PORT = 8089
 TAIL_LINES = 40          # how much history a log stream starts with
 
 
 def ui_port(env):
-    """Port from IRO_UI_PORT (.env/environment), falling back to 8089."""
+    """Port from RACECAST_UI_PORT (.env/environment), falling back to 8089."""
     try:
-        return int(env.get("IRO_UI_PORT") or DEFAULT_PORT)
+        return int(env.get("RACECAST_UI_PORT") or DEFAULT_PORT)
     except ValueError:
         return DEFAULT_PORT
 
 
 def classify_ping(body):
-    """'ours' when an IRO Control Center answered the ping, else 'foreign'."""
+    """'ours' when a racecast Control Center answered the ping, else 'foreign'."""
     try:
         return "ours" if json.loads(body.decode()).get("app") == APP_ID else "foreign"
     except Exception:
@@ -37,7 +37,7 @@ def probe_instance(host, port, fetch=None):
         body = fetch(host, port)
     except Exception:
         # a foreign server that errors on /api/ping reads as 'free' — the
-        # subsequent bind then fails with OSError and prints the IRO_UI_PORT hint
+        # subsequent bind then fails with OSError and prints the RACECAST_UI_PORT hint
         return "free"
     return classify_ping(body)
 
@@ -58,7 +58,7 @@ def sse_done(exit_code):
 
 def _allowed(_handler):
     """Auth seam: always allowed in v1 (localhost-only bind is the boundary).
-    v2 (Tailscale + IRO_UI_PASSWORD session cookie) changes only this."""
+    v2 (Tailscale + RACECAST_UI_PASSWORD session cookie) changes only this."""
     return True
 
 
@@ -273,6 +273,29 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"could not read .env: {exc}"},
                                       code=500)
+            if path == "/api/profiles":
+                try:
+                    return self._json(ctx["profiles"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"profiles listing failed: {exc}"},
+                                      code=500)
+            if path == "/api/profile/env":
+                try:
+                    return self._json(ctx["profile_env_read"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not read profile .env: {exc}"},
+                                      code=500)
+            if path == "/api/overlay":
+                try:
+                    page = (parse_qs(urlparse(self.path).query or "").get(
+                        "page") or ["hud"])[0]
+                    return self._json(ctx["overlay_read"](page))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not read overlay css: {exc}"},
+                                      code=500)
             if path == "/api/init/plan":
                 browser = parse_qs(urlparse(self.path).query or "").get(
                     "browser", ["firefox"])[0]
@@ -326,6 +349,54 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"could not write streams config: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/profile/use":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["profile_use"](body.get("name"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not switch profile: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/profile/new":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["profile_new"](body.get("name"), body.get("from"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not create profile: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/profile/env":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["profile_env_write"](body.get("entries") or [])
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not write profile .env: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/overlay":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["overlay_write"](body.get("page"), body.get("content"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not write overlay css: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
             if path.startswith("/api/init/step/"):
@@ -434,7 +505,7 @@ def make_handler(ctx):
 def serve(ctx, host, port):
     """Build the server (caller runs serve_forever) and install ctx['shutdown'].
     Raises OSError when the port is taken — callers turn that into the
-    IRO_UI_PORT hint."""
+    RACECAST_UI_PORT hint."""
     httpd = ThreadingHTTPServer((host, port), make_handler(ctx))
     httpd.daemon_threads = True                  # SSE threads die with the process
     ctx["shutdown"] = httpd.shutdown

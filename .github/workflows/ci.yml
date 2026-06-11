@@ -1,6 +1,6 @@
 name: CI
 
-# Test gate. Runs the stdlib test suite on all three target OSes (the iro
+# Test gate. Runs the stdlib test suite on all three target OSes (the racecast
 # binary ships for Windows/macOS/Linux) across supported Python versions, plus
 # the build self-verify (tokenization, blanked password, no secrets shipped).
 # Public repo: Actions minutes are free, macOS runners included.

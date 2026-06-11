@@ -1,6 +1,9 @@
 runtime/
 dist/
 incoming/
+# league profiles are machine-local; only the example template ships
+profiles/*
+!profiles/example/
 __pycache__/
 *.pyc
 .DS_Store

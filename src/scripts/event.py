@@ -1,6 +1,6 @@
-"""Event-day readiness logic behind `iro event status|start|stop`.
+"""Event-day readiness logic behind `racecast event status|start|stop`.
 
-Pure(-ish) building blocks wired by iro.py — process probes for the GUI apps
+Pure(-ish) building blocks wired by racecast.py — process probes for the GUI apps
 (OBS, Discord), per-OS launch commands, asset-completeness checks against the
 Sheet's Assets tab, and classifiers turning raw facts into preflight Result
 lines. Reuses preflight's Result/report model and install_apps' path
@@ -8,7 +8,7 @@ candidates. Spec: docs/superpowers/specs/2026-06-05-event-readiness-design.md.
 Tests: tests/test_event.py."""
 import csv, io, ntpath, os, shutil, subprocess, sys, time
 
-# Plain sibling imports: scripts/ is on sys.path in repo+package mode (iro.py
+# Plain sibling imports: scripts/ is on sys.path in repo+package mode (racecast.py
 # injects it; standalone tests insert it), and the frozen binary ships these
 # as real frozen modules (hidden-imports in tools/build-binary.py).
 import install_apps
@@ -20,7 +20,7 @@ Result = preflight.Result
 
 # Process image names per app/OS for the running probe. Tailscale is probed
 # via detect_tailscale_ip() (connected beats running) and Companion via the
-# existing iro.py probe — only the plain GUI apps live here.
+# existing racecast.py probe — only the plain GUI apps live here.
 PROCESS_NAMES = {
     "obs": {"darwin": ("OBS",), "win": ("obs64.exe",), "linux": ("obs",)},
     "discord": {"darwin": ("Discord",), "win": ("Discord.exe",), "linux": ("Discord",)},
@@ -45,7 +45,7 @@ def parse_probe(platform, returncode, stdout, name):
     """Interpret a probe_command() run. Windows tasklist exits 0 even with no
     match — the image name must appear in the output (decode with
     errors='replace'; the names we match are pure ASCII, same OEM-codepage
-    caveat as iro.py's _companion_running)."""
+    caveat as racecast.py's _companion_running)."""
     if platform.startswith("win"):
         return name.lower() in (stdout or "").lower()
     return returncode == 0
@@ -71,7 +71,7 @@ def wait_until_up(probes, timeout=60, interval=5, clock=time.monotonic,
                   sleep=time.sleep):
     """Poll `probes` ({name: callable -> bool}) until all pass or `timeout`
     seconds elapse; returns {name: bool} with the final state. A probe that
-    turned True stays True (no re-poll). Used by `iro event start` so the
+    turned True stays True (no re-poll). Used by `racecast event start` so the
     closing readiness report does not race the just-launched services —
     static problems (missing graphics, stale cookies) are deliberately NOT
     waited on; they never self-heal."""
@@ -201,7 +201,7 @@ def classify_app(app, running):
     """OBS is broadcast-critical (FAIL); Discord only carries interview audio."""
     if app == "obs":
         return (Result(PASS, "OBS", "running") if running else
-                Result(FAIL, "OBS", "not running — launch OBS (or `iro event start`)"))
+                Result(FAIL, "OBS", "not running — launch OBS (or `racecast event start`)"))
     return (Result(PASS, "Discord", "running") if running else
             Result(WARN, "Discord", "not running — interview audio unavailable; launch Discord"))
 
@@ -219,8 +219,8 @@ def classify_relay(alive, http_ok, port=8088):
         return Result(PASS, "Relay", f"running — control http://127.0.0.1:{port}/status OK")
     if alive:
         return Result(FAIL, "Relay",
-                      f"process alive but port {port} not responding — check `iro relay logs`")
-    return Result(FAIL, "Relay", "not running — `iro relay start` (or `iro event start`)")
+                      f"process alive but port {port} not responding — check `racecast relay logs`")
+    return Result(FAIL, "Relay", "not running — `racecast relay start` (or `racecast event start`)")
 
 
 def classify_companion(running, supported, unsupported_detail=""):
@@ -230,12 +230,12 @@ def classify_companion(running, supported, unsupported_detail=""):
                       unsupported_detail or "no automated probe on this OS — check manually")
     if running:
         return Result(PASS, "Companion", "running")
-    return Result(WARN, "Companion", "not running — `iro companion start`")
+    return Result(WARN, "Companion", "not running — `racecast companion start`")
 
 
 def classify_scene_collection(status, note):
     """OBS scene-collection readiness. WARN-level by design: a wrong collection
-    is fixable in one click (`iro obs collection set` / the Control Center OBS
+    is fixable in one click (`racecast obs collection set` / the Control Center OBS
     row), and a flaky best-effort live probe must not turn the report red on its
     own. `status` is obs_ws.scene_collection_status(...) or None (probe failed)."""
     if status is None:
@@ -245,14 +245,14 @@ def classify_scene_collection(status, note):
     if status["expected_present"]:
         return Result(WARN, "OBS scene collection",
                       f"'{status['current']}' active — switch with "
-                      f"`iro obs collection set`")
+                      f"`racecast obs collection set`")
     if status["renamed_variant"]:
         return Result(WARN, "OBS scene collection",
                       f"'{status['current']}' active — looks renamed; switch to "
                       f"{status['expected']} manually")
     return Result(WARN, "OBS scene collection",
                   f"{status['expected']} collection not found — import it "
-                  f"(`iro setup`)")
+                  f"(`racecast setup`)")
 
 
 def classify_assets(label, missing, count, severity, fix):
@@ -272,26 +272,26 @@ def classify_assets(label, missing, count, severity, fix):
 
 
 def classify_env(sheet_id, push_url):
-    """IRO_SHEET_ID is required (FAIL); the sheet-write webhook is optional —
+    """RACECAST_SHEET_ID is required (FAIL); the sheet-write webhook is optional —
     missing means no timer handover sync and a read-only panel Setup row (WARN)."""
     if not sheet_id:
-        return Result(FAIL, ".env", "missing: IRO_SHEET_ID — fill it in "
-                      "(.env next to the binary / repo root)")
+        return Result(FAIL, ".env", "missing: RACECAST_SHEET_ID — set SHEET_ID "
+                      "in the active profile (profiles/<name>/profile.env)")
     if not push_url:
-        return Result(WARN, ".env", "IRO_SHEET_PUSH_URL unset — race-timer "
+        return Result(WARN, ".env", "RACECAST_SHEET_PUSH_URL unset — race-timer "
                       "handover sync and panel sheet controls disabled "
                       "(see the Sheet-Webhook wiki page)")
-    return Result(PASS, ".env", "IRO_SHEET_ID and IRO_SHEET_PUSH_URL set")
+    return Result(PASS, ".env", "RACECAST_SHEET_ID and RACECAST_SHEET_PUSH_URL set")
 
 
 def director_urls(ts_ip, companion_port=8000, relay_port=8088):
-    """Printable 'Share with your directors' block for `iro event start`.
+    """Printable 'Share with your directors' block for `racecast event start`.
     Pure: the caller supplies the detected Tailscale IP (or None) and
     Companion's web port (config.json `http_port`, default 8000)."""
     lines = ["Share with your directors:"]
     if not ts_ip:
         lines.append("  Tailscale not connected — directors cannot connect "
-                     "remotely (iro tailscale up).")
+                     "remotely (racecast tailscale up).")
         return lines
     lines += [
         f"  Director panel:     http://{ts_ip}:{relay_port}/panel",

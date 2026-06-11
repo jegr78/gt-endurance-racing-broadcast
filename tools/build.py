@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build the distributable from src/ (single source of truth).
-Produces dist/IRO_Broadcast_Package/ + dist/IRO_Broadcast_Package.zip.
+Produces dist/GT_Racecast_Package/ + dist/GT_Racecast_Package.zip.
 Usage: python3 tools/build.py
 """
 import json, os, re, shutil, subprocess, sys, zipfile
@@ -8,7 +8,7 @@ import json, os, re, shutil, subprocess, sys, zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src")
 DIST = os.path.join(ROOT, "dist")
-PKG = os.path.join(DIST, "IRO_Broadcast_Package")
+PKG = os.path.join(DIST, "GT_Racecast_Package")
 
 
 def blank_pass(o):
@@ -38,17 +38,17 @@ def main():
     os.makedirs(PKG)
 
     # top-level docs + director panel + setup-assets
-    for f in ("IRO_Broadcast_Setup_Guide.md", "IRO_cheat_sheets.html", "README_SETUP.md"):
+    for f in ("Broadcast_Setup_Guide.md", "cheat_sheets.html", "README_SETUP.md"):
         cp(f"docs/{f}", f)
     cp("director/director-panel.html", "director-panel.html")
     cp("obs/hud.html", "hud.html")
     cp("obs/timer.html", "timer.html")
     cp("setup-assets.py", "setup-assets.py")
-    cp("iro.py", "iro.py")
-    cp("iro_ui.py", "iro_ui.py")   # windowed Control Center launcher (iro-ui)
+    cp("racecast.py", "racecast.py")
+    cp("racecast_ui.py", "racecast_ui.py")   # windowed Control Center launcher (racecast-ui)
     cp("assets", "assets")
     cp("scripts", "scripts")
-    cp("relay", "relay")  # iro-feeds.py + get-cookies.py
+    cp("relay", "relay")  # racecast-feeds.py + get-cookies.py
     cp("ui", "ui")        # Control Center server + page
 
     # intro/outro clips: download into the package so the artifact is self-contained.
@@ -73,21 +73,21 @@ def main():
     except Exception as e:
         print(f"  [WARN] graphics fetch skipped: {e}")
 
-    # .env template (repo root, not src/) so producers can set their own IRO_SHEET_ID
+    # .env template (repo root, not src/) so producers can set their own RACECAST_SHEET_ID
     shutil.copy2(os.path.join(ROOT, ".env.example"), os.path.join(PKG, ".env.example"))
 
     # companion: copy + strip password (defense in depth)
     os.makedirs(os.path.join(PKG, "companion"))
-    with open(os.path.join(SRC, "companion", "iro-buttons.companionconfig"), encoding="utf-8") as fh:
+    with open(os.path.join(SRC, "companion", "racecast-buttons.companionconfig"), encoding="utf-8") as fh:
         cfg = json.load(fh)
     blank_pass(cfg)
-    with open(os.path.join(PKG, "companion", "iro-buttons.companionconfig"), "w", encoding="utf-8") as fh:
+    with open(os.path.join(PKG, "companion", "racecast-buttons.companionconfig"), "w", encoding="utf-8") as fh:
         json.dump(cfg, fh, indent=1)
 
     # obs: ship the tokenized collection as .template.json (setup-assets localizes it)
     os.makedirs(os.path.join(PKG, "obs"))
-    shutil.copy2(os.path.join(SRC, "obs", "IRO_Endurance.json"),
-                 os.path.join(PKG, "obs", "IRO_Endurance.template.json"))
+    shutil.copy2(os.path.join(SRC, "obs", "GT_Endurance.json"),
+                 os.path.join(PKG, "obs", "GT_Endurance.template.json"))
 
     # drop any stray __pycache__ from copied trees
     for root, dirs, _ in os.walk(PKG):
@@ -96,7 +96,7 @@ def main():
                 shutil.rmtree(os.path.join(root, d)); dirs.remove(d)
 
     # zip
-    zip_path = os.path.join(DIST, "IRO_Broadcast_Package.zip")
+    zip_path = os.path.join(DIST, "GT_Racecast_Package.zip")
     if os.path.exists(zip_path):
         os.remove(zip_path)
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
@@ -113,36 +113,36 @@ def main():
             return any(has_pw(x) for x in o)
         return False
 
-    with open(os.path.join(PKG, "obs", "IRO_Endurance.template.json"), encoding="utf-8") as fh:
+    with open(os.path.join(PKG, "obs", "GT_Endurance.template.json"), encoding="utf-8") as fh:
         tpl = fh.read()
-    with open(os.path.join(PKG, "relay", "iro-feeds.py"), encoding="utf-8") as fh:
+    with open(os.path.join(PKG, "relay", "racecast-feeds.py"), encoding="utf-8") as fh:
         relay = fh.read()
     # Re-read the SHIPPED companion config from disk (not the in-memory cfg) so the
     # password check actually verifies what was written, not what we already blanked.
-    with open(os.path.join(PKG, "companion", "iro-buttons.companionconfig"), encoding="utf-8") as fh:
+    with open(os.path.join(PKG, "companion", "racecast-buttons.companionconfig"), encoding="utf-8") as fh:
         written = json.load(fh)
     blob = json.dumps(written)
     checks = {
         "companion pov buttons": "pov/reload" in blob,
         "companion password empty": not has_pw(written),
-        "obs graphics tokenized": "__IRO_GRAPHICS__/" in tpl
+        "obs graphics tokenized": "__RACECAST_GRAPHICS__/" in tpl
             and "GoogleDrive" not in tpl and "drive.google.com" not in tpl,
         # The HUD no longer embeds the sheet (the relay serves /hud), so the
-        # collection legitimately has no __IRO_SHEET__ token — just assert no raw
+        # collection legitimately has no __RACECAST_SHEET__ token — just assert no raw
         # sheet URL ever leaks in.
         "obs no raw sheet url": not re.search(r"/spreadsheets/d/[A-Za-z0-9_-]{20,}/", tpl),
         "obs timer is relay-served": "http://127.0.0.1:8088/timer" in tpl
-            and "__IRO_TIMER__" not in tpl and "stagetimer" not in tpl,
+            and "__RACECAST_TIMER__" not in tpl and "stagetimer" not in tpl,
         "relay timer endpoint": "/timer/data" in relay,
-        "obs media tokenized": "__IRO_MEDIA__/" in tpl,
+        "obs media tokenized": "__RACECAST_MEDIA__/" in tpl,
         "relay pov endpoint": "pov/reload" in relay,
         "no .sh/.bat shipped": not any(fn.endswith((".sh", ".bat")) for _, _, fs in os.walk(PKG) for fn in fs),
         "preflight shipped": os.path.isfile(os.path.join(PKG, "scripts", "preflight.py")),
         "timer html shipped": os.path.isfile(os.path.join(PKG, "timer.html")),
         ".env.example shipped": os.path.isfile(os.path.join(PKG, ".env.example")),
         "no sheet url in relay": not re.search(r"/spreadsheets/d/[A-Za-z0-9_-]{20,}/", relay),
-        "iro cli shipped": os.path.isfile(os.path.join(PKG, "iro.py")),
-        "iro-ui launcher shipped": os.path.isfile(os.path.join(PKG, "iro_ui.py")),
+        "racecast cli shipped": os.path.isfile(os.path.join(PKG, "racecast.py")),
+        "racecast-ui launcher shipped": os.path.isfile(os.path.join(PKG, "racecast_ui.py")),
         "services helper shipped": os.path.isfile(os.path.join(PKG, "scripts", "services.py")),
         "install-tools shipped": os.path.isfile(os.path.join(PKG, "scripts", "install_tools.py")),
         "install-apps shipped": os.path.isfile(os.path.join(PKG, "scripts", "install_apps.py")),
@@ -161,7 +161,7 @@ def main():
         ok = os.path.isfile(os.path.join(PKG, "media", clip))
         print(f"  [{'OK' if ok else 'warn'}] media {clip} "
               f"{'present' if ok else 'MISSING (run get-media.py before release)'}")
-    for fn in sorted(set(re.findall(r"__IRO_GRAPHICS__/([^\"\\]+\.png)", tpl))):
+    for fn in sorted(set(re.findall(r"__RACECAST_GRAPHICS__/([^\"\\]+\.png)", tpl))):
         ok = os.path.isfile(os.path.join(PKG, "graphics", fn))
         print(f"  [{'OK' if ok else 'warn'}] graphic {fn} "
               f"{'present' if ok else 'MISSING (run get-graphics.py before release)'}")

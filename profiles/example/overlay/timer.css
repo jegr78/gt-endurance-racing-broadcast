@@ -1,0 +1,8 @@
+/* Per-league race-timer override — OPTIONAL. Served at /timer/override.css,
+ * loaded after the base timer.html styles (cascade wins). Empty/missing = base.
+ *
+ * Overridable element: #clock (the digits). Examples:
+ *   #clock { font-size: 380px; top: 240px; color: #f4f4f4; }
+ *   @font-face { font-family: "League"; src: url(/overlay/fonts/League.woff2); }
+ *   #clock { font-family: "League", monospace; }
+ */

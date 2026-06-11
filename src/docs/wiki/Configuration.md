@@ -2,31 +2,52 @@
 
 > Technical reference. The setup steps are in [Set up the broadcast PC](Set-up-the-broadcast-PC).
 
-Two things are machine- and event-specific and are **never** hardcoded or committed:
-the **Google Sheet ID** (schedule + HUD data) and, optionally, the **race-timer webhook
-URL**. Both come from a gitignored `.env` file. Then `setup-assets.py` localizes the OBS
-collection for this machine.
+Config splits in two and is **never** hardcoded or committed:
 
-## The `.env` file
+- **League config** — the **Google Sheet ID** (schedule + HUD data), the optional
+  **sheet-write webhook URL**, and the league's intro/outro/logo. This lives **per league**
+  in `profiles/<name>/profile.env`, not in `.env`. One machine can hold several leagues.
+- **Machine config** — a handful of optional, machine-only switches (OBS-WebSocket
+  password, Control Center port, the Windows Companion path). This lives in a gitignored
+  `.env` at the repo (or package) root.
 
-At the repository (or package) root there is a tracked template, `.env.example`. Copy
-it and fill in your values:
+Then `setup-assets.py` localizes the OBS collection for this machine using the **active**
+profile's values.
+
+## League profiles (`profiles/<name>/profile.env`)
+
+Each league is a folder under `profiles/` with a `profile.env`. `profiles/example/` is the
+template — copy it (or use `racecast profile new`) and fill in your values. For the wider
+profile model (machine vs. league config, the active-profile rules, adding a second league),
+see [League profiles](Profiles); for per-league HUD/timer styling see [HUD overlays](HUD-Overlays).
 
 ```bash
-cp .env.example .env
+racecast profile new myleague --from example   # copies profiles/example/ -> profiles/myleague/
+racecast profile use myleague                  # make it the active league
+racecast profile list                          # which leagues exist (★ = active)
+racecast profile show                          # the active league's resolved config
 ```
+
+`profiles/<name>/profile.env` uses **un-prefixed** keys (the file *is* the league — real
+environment variables and the machine `.env` do **not** override these):
 
 ```ini
-# .env  (gitignored — never commit this)
-IRO_SHEET_ID=your_google_sheet_id_here
-IRO_SHEET_PUSH_URL=https://script.google.com/macros/s/…/exec?key=your_secret
+# profiles/myleague/profile.env  (gitignored values you fill in)
+NAME=My League
+SHEET_ID=your_google_sheet_id_here
+SHEET_PUSH_URL=https://script.google.com/macros/s/…/exec?key=your_secret
+INTRO_URL=
+OUTRO_URL=
+LOGO=
+OBS_COLLECTION=
 ```
 
-- **`IRO_SHEET_ID`** — the long ID from your HUD/schedule sheet URL:
+- **`NAME`** — display name shown in the CLI / Control Center / docs (not the HUD).
+- **`SHEET_ID`** — the long ID from your HUD/schedule sheet URL:
   `https://docs.google.com/spreadsheets/d/`**`<THIS>`**`/edit`. Drives the relay:
   the schedule, the POV tab, and the HUD overlay (Overlay + Configuration tabs, served
   at `/hud`).
-- **`IRO_SHEET_PUSH_URL`** *(optional)* — the Apps Script write webhook shared by the
+- **`SHEET_PUSH_URL`** *(optional)* — the Apps Script write webhook shared by the
   relay-hosted race timer **and** the director panel's sheet controls. The race timer uses
   it to sync start/stop/show/hide/correct actions to the Sheet's `Timer` tab (so a second
   producer machine takes over with the same countdown). The panel's **HUD row**
@@ -34,57 +55,97 @@ IRO_SHEET_PUSH_URL=https://script.google.com/macros/s/…/exec?key=your_secret
   use it to write changes back to the sheet — without it those panel controls are read-only.
   Unset = timer works on this machine only (no sheet sync); panel sheet controls become read-only. See [Sheet-Webhook](Sheet-Webhook)
   for setup.
-- **`IRO_INTRO_URL` / `IRO_OUTRO_URL`** *(optional)* — override the Intro/Outro clip
-  URLs that normally come from the Sheet **Assets** tab (used by `iro media`).
-- **`IRO_COMPANION_EXE`** *(optional, Windows)* — full path to `Companion.exe` for
-  `iro companion start/stop`. Only needed when Companion sits in a non-standard
+- **`INTRO_URL` / `OUTRO_URL`** *(optional)* — override the Intro/Outro clip URLs that
+  normally come from the Sheet **Assets** tab (used by `racecast media`).
+- **`LOGO`** *(optional)* — a logo image (relative to the profile dir) for the Control Center.
+- **`OBS_COLLECTION`** *(optional)* — the OBS scene-collection name this league uses, so
+  several leagues can keep separate collections in OBS on one machine. `racecast setup`
+  writes this name into the import JSON; blank = the template name `GT Endurance Racing`.
+  The per-league convention is `GT Endurance Racing — <league>`.
+
+**Which profile is active** (resolution order): a global `--profile <name>` flag wins;
+then the machine `RACECAST_PROFILE` (or `.env`) value; then the `runtime/active-profile`
+pointer (set by `racecast profile use`); and if you keep exactly one profile, it is
+selected implicitly. Run one command against a non-active league with
+`racecast --profile <name> <command>`.
+
+## The machine `.env` file
+
+At the repository (or package) root there is a tracked template, `.env.example`. Copy
+it and fill in only what you need — all keys are optional:
+
+```bash
+cp .env.example .env
+```
+
+```ini
+# .env  (gitignored — never commit this; league config is NOT here)
+RACECAST_OBS_WS_PASSWORD=
+RACECAST_COMPANION_EXE=
+RACECAST_UI_PORT=
+RACECAST_PROFILE=
+```
+
+- **`RACECAST_OBS_WS_PASSWORD`** *(optional)* — OBS-WebSocket password for the feed-port
+  release on `racecast … stop`. Normally **not** needed — auto-read from OBS's own
+  obs-websocket config; set it only for portable / non-standard OBS installs.
+- **`RACECAST_COMPANION_EXE`** *(optional, Windows)* — full path to `Companion.exe` for
+  `racecast companion start/stop`. Only needed when Companion sits in a non-standard
   location; the standard install paths are found automatically, e.g. the
-  winget / `iro install-apps` default:
-  `IRO_COMPANION_EXE=C:\Program Files\Companion\Companion.exe`
+  winget / `racecast install-apps` default:
+  `RACECAST_COMPANION_EXE=C:\Program Files\Companion\Companion.exe`
+- **`RACECAST_UI_PORT`** *(optional)* — port of the local Control Center web app
+  (`racecast ui`); set only when another app already occupies the default `8089`.
+- **`RACECAST_PROFILE`** *(optional)* — the default active league when neither `--profile`
+  nor the `runtime/active-profile` pointer applies. Leave unset if you keep one profile.
+- **`RACECAST_UI_PASSWORD`** *(reserved)* — for the future Control-Center-over-Tailscale
+  feature; not read by any current version, leave commented out.
 
 Real environment variables take precedence over `.env`. The loader only reads a `.env`
 from the script directory or the project root (marked by `.git` / `.env.example`),
 never an unrelated parent directory.
 
-> **Security:** `.env` is gitignored and must stay that way. The `IRO_SHEET_PUSH_URL`
-> contains a shared secret — if it ever leaks, redeploy the Apps Script with a new key
-> and update the URL in `.env` on every producer machine.
+> **Security:** `.env` and `profiles/<name>/profile.env` are gitignored and must stay
+> that way. A profile's `SHEET_PUSH_URL` contains a shared secret — if it ever leaks,
+> redeploy the Apps Script with a new key and update the URL in that league's
+> `profile.env` on every producer machine.
 
 ## Localize the OBS collection (`setup-assets.py`)
 
 The OBS scene collection in git is deliberately **path- and secret-free**: it stores
-tokens instead of real paths and URLs. `setup-assets.py` injects the real values from
-`.env` and writes an importable collection:
+tokens instead of real paths and URLs. `setup-assets.py` injects the real values for the
+**active** profile and writes an importable collection (per-league, under
+`runtime/<profile>/`, named after the profile's `OBS_COLLECTION`):
 
 ```bash
-iro setup --out runtime/IRO_Endurance.import.json
+racecast setup --out runtime/GT_Endurance.import.json
 ```
 
 The tokens in the collection:
 
 | Token | Resolves to |
 |-------|-------------|
-| `__IRO_GRAPHICS__` | `runtime/graphics/` (package: `graphics/`) — the Sheet-driven broadcast graphics, `__IRO_GRAPHICS__/<Label>.png` |
-| `__IRO_MEDIA__` | `runtime/media/` — the Intro/Outro clips |
+| `__RACECAST_GRAPHICS__` | the active profile's `runtime/<profile>/graphics/` (package: `graphics/`) — the Sheet-driven broadcast graphics, `__RACECAST_GRAPHICS__/<Label>.png` |
+| `__RACECAST_MEDIA__` | the active profile's `runtime/<profile>/media/` — the Intro/Outro clips |
 
 (The HUD overlay and the race timer are both served by the relay at fixed loopback URLs —
 the collection embeds neither the sheet ID nor any external service URL; no token is
 needed for them.)
 
 So `setup-assets.py`:
-- rewrites the broadcast-graphic image paths (`__IRO_GRAPHICS__`) to **this** machine's
-  `runtime/graphics/` folder. Those PNGs are **not** committed — download them first with
-  `iro graphics` (see [Sheet-driven graphics](#sheet-driven-graphics)
+- rewrites the broadcast-graphic image paths (`__RACECAST_GRAPHICS__`) to the active
+  profile's graphics folder. Those PNGs are **not** committed — download them first with
+  `racecast graphics` (see [Sheet-driven graphics](#sheet-driven-graphics)
   below); a graphic still missing prints a warning and OBS shows that source black.
 
 (The HUD overlay and race timer need no injection — both are served by the relay;
-`IRO_SHEET_ID` is read by the relay, not the collection.)
+the profile's `SHEET_ID` is read by the relay, not the collection.)
 
-> `__IRO_ASSETS__` is retired from the OBS collection. `src/assets/` now holds **only**
+> `__RACECAST_ASSETS__` is retired from the OBS collection. `src/assets/` now holds **only**
 > the bundled HUD `flags/` + `brands/` logos — these stay committed and are served by the
 > relay HUD, not by the OBS collection.
 
-You can override the graphics path per-run without `.env`: `--sheet-id <ID>`.
+You can override the sheet per-run without touching the profile: `--sheet-id <ID>`.
 
 > **Import the `.import.json`, not the `.template.json`.** And **do not move the folder
 > after importing into OBS** — OBS stores absolute image paths. If you move it, re-run
@@ -95,15 +156,16 @@ You can override the graphics path per-run without `.env`: `--sheet-id <ID>`.
 The broadcast still-graphics (Overlay, Standings, Schedule, Race/Quali Results, the three
 weather overlays, Standby, …) are **pure-runtime**: they are driven from the Google Sheet
 **Assets** tab and **never committed**, the same model as the Intro/Outro clips. Each
-Assets row that points at a graphic is downloaded as `runtime/graphics/<Label>.png` — the
-Sheet label *is* the filename (no mapping table; the Intro/Outro YouTube rows are skipped):
+Assets row that points at a graphic is downloaded as the active profile's
+`runtime/<profile>/graphics/<Label>.png` — the Sheet label *is* the filename (no mapping
+table; the Intro/Outro YouTube rows are skipped):
 
 ```bash
-iro graphics            # -> runtime/graphics/<Label>.png
+racecast graphics       # -> the active profile's runtime/<profile>/graphics/<Label>.png
 ```
 
 Run it before `setup-assets.py` (and again before an event when the sheet graphics
-changed). `setup-assets.py` then resolves `__IRO_GRAPHICS__` to this folder; a graphic
+changed). `setup-assets.py` then resolves `__RACECAST_GRAPHICS__` to this folder; a graphic
 that is still missing only prints a warning (it never fails) and OBS shows that source
 black until you fetch it.
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Stdlib checks for the Control Center's structured status providers in iro.py.
+"""Stdlib checks for the Control Center's structured status providers in racecast.py.
 Run: python3 tests/test_ui_ops.py"""
 import os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "src"))
-import iro
+import racecast as iro
 sys.path.insert(0, os.path.join(ROOT, "src", "ui"))
 import ui_ops
 
@@ -124,8 +124,8 @@ def t_ops_registry_shape():
 
 def t_job_argv_repo_mode():
     argv = ui_ops.job_argv(["relay", "start"], frozen=False,
-                           executable="/usr/bin/python3", iro_script="/repo/src/iro.py")
-    assert argv == ["/usr/bin/python3", "/repo/src/iro.py", "relay", "start"]
+                           executable="/usr/bin/python3", iro_script="/repo/src/racecast.py")
+    assert argv == ["/usr/bin/python3", "/repo/src/racecast.py", "relay", "start"]
 
 
 def t_job_argv_frozen_reinvokes_binary():
@@ -135,7 +135,7 @@ def t_job_argv_frozen_reinvokes_binary():
 
 
 def t_ops_registry_routes_in_iro():
-    # every registry entry must be a valid iro invocation (service verb,
+    # every registry entry must be a valid racecast invocation (service verb,
     # oneshot, or export) — route() raises ValueError on anything unknown
     for name, argv in ui_ops.OPS.items():
         action = iro.route(list(argv))
@@ -348,11 +348,11 @@ def t_assets_files_data_error():
 def t_env_entries_data_reads(tmp):
     p = os.path.join(tmp, ".env")
     with open(p, "w", encoding="utf-8") as f:
-        f.write("# comment\nIRO_SHEET_ID=abc\nIRO_UI_PORT=8090\n")
+        f.write("# comment\nRACECAST_SHEET_ID=abc\nRACECAST_UI_PORT=8090\n")
     d = iro.env_entries_data(path=p)
     assert d["ok"] is True and d["path"] == p
-    assert d["entries"] == [{"key": "IRO_SHEET_ID", "value": "abc"},
-                            {"key": "IRO_UI_PORT", "value": "8090"}]
+    assert d["entries"] == [{"key": "RACECAST_SHEET_ID", "value": "abc"},
+                            {"key": "RACECAST_UI_PORT", "value": "8090"}]
 
 
 def t_env_entries_data_missing_file(tmp):
@@ -363,18 +363,18 @@ def t_env_entries_data_missing_file(tmp):
 def t_env_write_preserves_comments_and_round_trips(tmp):
     p = os.path.join(tmp, ".env")
     with open(p, "w", encoding="utf-8") as f:
-        f.write("# header\nIRO_SHEET_ID=old\n\n# port note\nIRO_UI_PORT=8089\n")
-    res = iro.env_write_data([{"key": "IRO_SHEET_ID", "value": "new"},
+        f.write("# header\nRACECAST_SHEET_ID=old\n\n# port note\nRACECAST_UI_PORT=8089\n")
+    res = iro.env_write_data([{"key": "RACECAST_SHEET_ID", "value": "new"},
                               {"key": "IRO_NEW", "value": "x"}], path=p)
     assert res["ok"] is True
     with open(p, encoding="utf-8") as fh:
         text = fh.read()
     assert "# header" in text and "# port note" in text     # comments kept
-    assert "IRO_SHEET_ID=new" in text                       # updated in place
-    assert "IRO_UI_PORT" not in text                        # removed
+    assert "RACECAST_SHEET_ID=new" in text                  # updated in place
+    assert "RACECAST_UI_PORT" not in text                   # removed
     assert "IRO_NEW=x" in text                              # appended
     back = iro.env_entries_data(path=p)["entries"]
-    assert {"key": "IRO_SHEET_ID", "value": "new"} in back
+    assert {"key": "RACECAST_SHEET_ID", "value": "new"} in back
     assert {"key": "IRO_NEW", "value": "x"} in back
 
 
@@ -439,9 +439,9 @@ def _release(tag, with_asset=True):
     """A GitHub latest-release payload shaped like update.classify expects."""
     rel = {"tag_name": tag, "assets": []}
     if with_asset:
-        rel["assets"] = [{"name": "iro-windows.zip", "browser_download_url": "u"},
-                         {"name": "iro-macos.tar.gz", "browser_download_url": "u"},
-                         {"name": "iro-linux.tar.gz", "browser_download_url": "u"}]
+        rel["assets"] = [{"name": "racecast-windows.zip", "browser_download_url": "u"},
+                         {"name": "racecast-macos.tar.gz", "browser_download_url": "u"},
+                         {"name": "racecast-linux.tar.gz", "browser_download_url": "u"}]
     return rel
 
 
@@ -480,7 +480,7 @@ def t_update_check_offline_is_not_ok():
 
 def t_update_check_includes_release_notes():
     rel = {"tag_name": "v9.9.9", "body": "## What's new\n- stuff",
-           "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/m"}]}
+           "assets": [{"name": "racecast-macos.tar.gz", "browser_download_url": "https://x/m"}]}
     d = iro.update_check_data(fetch=lambda: rel, current="v1.0.0", platform="darwin")
     assert d["ok"] and d["notes"] == "## What's new\n- stuff"
     # notes_html is the rendered (and HTML-escaped) form for the dialog
@@ -491,7 +491,7 @@ def t_update_check_includes_release_notes():
 def t_update_check_notes_html_is_xss_safe():
     rel = {"tag_name": "v9.9.9",
            "body": "[x](javascript:alert(1)) <script>alert(2)</script>",
-           "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/m"}]}
+           "assets": [{"name": "racecast-macos.tar.gz", "browser_download_url": "https://x/m"}]}
     d = iro.update_check_data(fetch=lambda: rel, current="v1.0.0", platform="darwin")
     assert "javascript:" not in d["notes_html"]
     assert "<script>" not in d["notes_html"]
@@ -500,7 +500,7 @@ def t_update_check_notes_html_is_xss_safe():
 def t_preview_list_data_renders_notes_html():
     releases = [{"tag_name": "preview-pr-7", "prerelease": True, "name": "P7",
                  "target_commitish": "abc1234", "body": "**bold**",
-                 "assets": [{"name": "iro-macos.tar.gz",
+                 "assets": [{"name": "racecast-macos.tar.gz",
                              "browser_download_url": "https://x/p7"}]}]
     d = iro.preview_list_data(fetch=lambda: releases, platform="darwin")
     assert "<strong>bold</strong>" in d["previews"][0]["notes_html"]
@@ -511,7 +511,7 @@ def t_preview_list_data_ok():
         {"tag_name": "v1.0.0", "prerelease": False, "assets": []},
         {"tag_name": "preview-pr-7", "prerelease": True, "name": "Preview: PR #7",
          "target_commitish": "abc1234", "published_at": "2026-06-10T00:00:00Z",
-         "body": "n", "assets": [{"name": "iro-macos.tar.gz",
+         "body": "n", "assets": [{"name": "racecast-macos.tar.gz",
                                   "browser_download_url": "https://x/p7"}]},
     ]
     d = iro.preview_list_data(fetch=lambda: releases, platform="darwin")
@@ -583,7 +583,7 @@ def t_obs_ws_link_data_env_override(tmp):
     cfg = os.path.join(tmp, "obs-ws-config2.json")
     with open(cfg, "w") as fh:
         json.dump({"server_port": 4455, "server_password": "stored"}, fh)
-    d = iro.obs_ws_link_data(env={"IRO_OBS_WS_PASSWORD": "override"}, config_path=cfg)
+    d = iro.obs_ws_link_data(env={"RACECAST_OBS_WS_PASSWORD": "override"}, config_path=cfg)
     assert d["password"] == "override"          # env wins over the stored password
 
 
@@ -596,7 +596,7 @@ def t_docs_data_lists_present_only(tmp):
     # only docs that exist on disk are listed; wiki URLs always present
     base = os.path.join(tmp, "docs_data")
     os.makedirs(base, exist_ok=True)
-    open(os.path.join(base, "IRO_cheat_sheets.html"), "w").close()
+    open(os.path.join(base, "cheat_sheets.html"), "w").close()
     def resolve(rel):
         return os.path.join(base, os.path.basename(rel))
     d = iro.docs_data(resolve=resolve)
@@ -609,11 +609,11 @@ def t_docs_data_lists_present_only(tmp):
 def t_docs_file_path_allowlist(tmp):
     base = os.path.join(tmp, "docs_path")
     os.makedirs(base, exist_ok=True)
-    open(os.path.join(base, "IRO_cheat_sheets.html"), "w").close()
+    open(os.path.join(base, "cheat_sheets.html"), "w").close()
     def resolve(rel):
         return os.path.join(base, os.path.basename(rel))
     assert iro.docs_file_path("cheat-sheet", resolve=resolve).endswith(
-        "IRO_cheat_sheets.html")
+        "cheat_sheets.html")
     assert iro.docs_file_path("setup-guide", resolve=resolve) is None  # not on disk
     assert iro.docs_file_path("../../etc/passwd", resolve=resolve) is None
     assert iro.docs_file_path("unknown", resolve=resolve) is None
@@ -622,7 +622,7 @@ def t_docs_file_path_allowlist(tmp):
 def t_docs_content_html_passthrough_and_md_rendered(tmp):
     base = os.path.join(tmp, "docs_content")
     os.makedirs(base, exist_ok=True)
-    with open(os.path.join(base, "IRO_cheat_sheets.html"), "w") as fh:
+    with open(os.path.join(base, "cheat_sheets.html"), "w") as fh:
         fh.write("<html><body>cheat</body></html>")
     with open(os.path.join(base, "README_SETUP.md"), "w") as fh:
         fh.write("# Title\n\n| A | B |\n|--|--|\n| 1 | 2 |\n")
@@ -647,7 +647,8 @@ def t_app_control_ops_route():
 
 def t_init_plan_data_shape_and_safety():
     steps = [
-        {"key": "env", "label": ".env", "done": lambda: "IRO_SHEET_ID set"},
+        {"key": "profile", "label": "profile (league)",
+         "done": lambda: "profile 'iro' ready"},
         {"key": "cookies", "label": "cookies", "done": lambda: None},
         {"key": "preflight", "label": "preflight", "done": lambda: None},
     ]
@@ -655,8 +656,8 @@ def t_init_plan_data_shape_and_safety():
                              next_steps=["import the OBS collection"])
     assert out["ok"] is True
     by_key = {s["key"]: s for s in out["steps"]}
-    assert by_key["env"]["done"] is True
-    assert by_key["env"]["kind"] == "gate"
+    assert by_key["profile"]["done"] is True
+    assert by_key["profile"]["kind"] == "gate"
     assert by_key["cookies"]["done"] is False
     assert by_key["cookies"]["op"] == "cookies"
     # browser is interpolated into the instruction
@@ -691,39 +692,39 @@ def t_wizard_job_ops_all_exist_in_registry():
 
 
 def t_iro_job_executable_frozen_uses_sibling():
-    # frozen iro-ui must spawn the sibling `iro`, not itself
+    # frozen racecast-ui must spawn the sibling `racecast`, not itself
     posix = iro._iro_job_executable(frozen=True,
-                                    executable="/opt/iro/iro-ui", win=False)
-    assert posix == "/opt/iro/iro"
+                                    executable="/opt/iro/racecast-ui", win=False)
+    assert posix == "/opt/iro/racecast"
     win = iro._iro_job_executable(frozen=True,
-                                  executable="C:\\iro\\iro-ui.exe", win=True)
-    assert win.endswith("iro.exe")
+                                  executable="C:\\iro\\racecast-ui.exe", win=True)
+    assert win.endswith("racecast.exe")
 
 
 def t_iro_job_executable_dev_uses_interpreter():
-    # non-frozen: the running interpreter (paired with iro.py)
+    # non-frozen: the running interpreter (paired with racecast.py)
     assert iro._iro_job_executable(frozen=False, executable="/usr/bin/python3",
                                    win=False) == "/usr/bin/python3"
 
 
 def t_app_home_plain_binary_is_dirname():
-    assert iro._app_home("/opt/iro/iro-ui") == "/opt/iro"
-    assert iro._app_home("/opt/iro/iro") == "/opt/iro"
+    assert iro._app_home("/opt/iro/racecast-ui") == "/opt/iro"
+    assert iro._app_home("/opt/iro/racecast") == "/opt/iro"
 
 
 def t_app_home_macos_app_resolves_next_to_bundle():
     # inside a .app the real home is the folder CONTAINING the bundle (where the
-    # sibling iro binary + runtime/.env live), not Contents/MacOS/
-    exe = "/Users/x/IRO/iro-ui.app/Contents/MacOS/iro-ui"
+    # sibling racecast binary + runtime/.env live), not Contents/MacOS/
+    exe = "/Users/x/IRO/racecast-ui.app/Contents/MacOS/racecast-ui"
     assert iro._app_home(exe) == "/Users/x/IRO"
 
 
 def t_iro_job_executable_macos_app_finds_sibling_next_to_bundle():
-    # the .app job-spawn bug: jobs must target <home>/iro, not the missing
-    # Contents/MacOS/iro inside the bundle
-    exe = "/Users/x/IRO/iro-ui.app/Contents/MacOS/iro-ui"
+    # the .app job-spawn bug: jobs must target <home>/racecast, not the missing
+    # Contents/MacOS/racecast inside the bundle
+    exe = "/Users/x/IRO/racecast-ui.app/Contents/MacOS/racecast-ui"
     assert iro._iro_job_executable(frozen=True, executable=exe,
-                                   win=False) == "/Users/x/IRO/iro"
+                                   win=False) == "/Users/x/IRO/racecast"
 
 
 # ---------- obs scene collection ----------
@@ -741,8 +742,8 @@ def t_obs_collection_set_op_rejects_params():
 
 
 def t_obs_collection_data_ok_passes_status_through():
-    status = {"current": "Other", "expected": "IRO Endurance",
-              "available": ["IRO Endurance", "Other"], "match": False,
+    status = {"current": "Other", "expected": "GT Endurance Racing",
+              "available": ["GT Endurance Racing", "Other"], "match": False,
               "expected_present": True, "renamed_variant": None}
     d = iro.obs_collection_data(get=lambda: (status, ""))
     assert d["ok"] is True

@@ -10,7 +10,7 @@ import argparse, os, re, subprocess, sys
 
 
 def default_runtime_dir(here):
-    """Match iro-feeds.py: repo layout (src/relay/) -> <repo>/runtime ; dist (relay/) -> here."""
+    """Match racecast-feeds.py: repo layout (src/relay/) -> <repo>/runtime ; dist (relay/) -> here."""
     if os.path.basename(here) == "relay" and os.path.basename(os.path.dirname(here)) == "src":
         return os.path.join(os.path.dirname(os.path.dirname(here)), "runtime")
     return here
@@ -28,7 +28,7 @@ def failure_hint(stderr_text, browser):
         return f"no {browser} profile found — is {browser} installed on this machine?"
     if "decrypt" in s or "dpapi" in s:
         return (f"{browser}'s cookie encryption blocked the export — log into "
-                f"YouTube in Firefox and run: iro cookies firefox")
+                f"YouTube in Firefox and run: racecast cookies firefox")
     return f"is {browser} installed and logged in to YouTube?"
 
 

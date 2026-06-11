@@ -58,7 +58,7 @@ def compute_preview_meta(event_name, pr_number=None, ref=None, sha=None):
 
     PR builds are keyed by PR number (one rolling pre-release per open PR);
     dispatch builds are keyed by the sanitized ref (one per branch, e.g.
-    preview-main). The version embeds the 7-char short SHA so `iro --version`
+    preview-main). The version embeds the 7-char short SHA so `racecast --version`
     pinpoints the exact commit a tester is running.
     """
     short = (sha or "")[:7]

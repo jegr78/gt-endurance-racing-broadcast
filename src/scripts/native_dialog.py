@@ -1,11 +1,11 @@
 """Show a fatal startup message to a user with no terminal — the windowed
-`iro-ui` binary has no console to print to. Pure command builders plus a thin,
+`racecast-ui` binary has no console to print to. Pure command builders plus a thin,
 fully-injected dispatcher (tests pass fakes; nothing touches the system).
-Used by src/iro_ui.py. Tests: tests/test_native_dialog.py."""
+Used by src/racecast_ui.py. Tests: tests/test_native_dialog.py."""
 import subprocess
 import sys
 
-TITLE = "IRO Control Center"
+TITLE = "racecast Control Center"
 
 
 def osascript_argv(message):

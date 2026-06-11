@@ -1,12 +1,12 @@
-"""Tailscale detection and connect/disconnect control for the iro CLI.
+"""Tailscale detection and connect/disconnect control for the racecast CLI.
 
 One home for everything Tailscale: CLI-binary discovery, BackendState-aware
-detection, and the argument-less `up`/`down` control behind `iro tailscale ...`
-and `iro event start`. A stopped/disconnected node keeps its assigned tailnet
+detection, and the argument-less `up`/`down` control behind `racecast tailscale ...`
+and `racecast event start`. A stopped/disconnected node keeps its assigned tailnet
 IP, so `tailscale ip -4` alone reports false positives — only BackendState
 "Running" counts as connected.
 
-detect_tailscale_ip() is duplicated in src/relay/iro-feeds.py (the relay is a
+detect_tailscale_ip() is duplicated in src/relay/racecast-feeds.py (the relay is a
 standalone single file by design) — the project's bounded-duplication
 convention (cf. load_dotenv). Keep the two in sync.
 

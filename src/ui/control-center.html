@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- IRO Control Center — producer web UI served by `iro ui` (ui_server.py).
+<!-- racecast Control Center — producer web UI served by `racecast ui` (ui_server.py).
      Single static file, inline CSS/JS, no framework, no build step (same
      model as director-panel.html). All state lives server-side; this page
      only polls /api/status and renders SSE streams.
@@ -13,7 +13,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>IRO Control Center</title>
+<title>racecast Control Center</title>
 <link rel="icon" href="data:,"><!-- no favicon — silence the 404 console noise -->
 <style>
   :root {
@@ -43,6 +43,8 @@
                  color:#0F172A; background:var(--accent); border-radius:6px;
                  padding:6px 7px; }
   .brandname { font-size:14px; font-weight:600; letter-spacing:.01em; }
+  .brandsub { font-size:11px; color:var(--dim); padding:2px 14px 8px; cursor:pointer; }
+  .brandsub:hover { color:var(--txt); }
   .ver { display:block; color:var(--faint); font:11px var(--mono); margin-top:1px; }
   .nav { display:flex; flex-direction:column; gap:3px; }
   .navfoot { margin-top:auto; display:flex; flex-direction:column; gap:3px;
@@ -71,6 +73,7 @@
               min-height:34px; }
   .viewhead h2 { font-size:16px; font-weight:600; letter-spacing:.01em;
                  margin:0; color:var(--txt); text-transform:none; }
+  .viewhead h3 { font-size:13px; font-weight:600; margin:0; color:var(--txt); }
   .viewhead .sub { color:var(--dim); font:12px var(--mono); }
   section { background:var(--card); border:1px solid var(--line);
             border-radius:12px; padding:8px 18px;
@@ -262,6 +265,17 @@
   .envhint { color:var(--dim); font:12px/1.6 var(--mono); margin:14px 2px 0; }
   .addrow { padding:12px 8px 4px; display:flex; gap:8px; align-items:center; }
   .addrow button { white-space:nowrap; }
+  /* Overlay-CSS editor */
+  .seg { display:inline-flex; gap:6px; }
+  .seg button.on { border-color:var(--accent); background:#283352;
+                   color:var(--txt); }
+  textarea.css-editor { width:100%; box-sizing:border-box; resize:vertical;
+                   background:#232C42; color:var(--txt);
+                   border:1px solid var(--line); border-radius:8px;
+                   padding:10px 12px; font:13px/1.5 var(--mono); margin:0 0 8px; }
+  textarea.css-editor:focus-visible { outline:2px solid var(--accent);
+                   outline-offset:2px; }
+  textarea.css-editor:disabled { opacity:.5; cursor:not-allowed; }
   .lightbox { position:fixed; inset:0; z-index:100; padding:40px;
            background:rgba(2,6,23,.86); display:flex; align-items:center;
            justify-content:center; cursor:zoom-out; }
@@ -344,13 +358,16 @@
 <body>
 <div class="app">
   <nav class="sidebar">
-    <div class="brand"><span class="mark">IRO</span>
+    <div class="brand"><span class="mark">GT</span>
       <div><div class="brandname">Control Center</div>
+        <div class="brandsub" id="active-profile-badge" title="Active league profile — click to manage" onclick="showView('profile')">—</div>
         <span class="ver" id="ver"></span>
         <span class="ver-note" id="ver-note" onclick="checkUpdate(true)" title="Check for updates"></span></div></div>
     <div class="nav">
       <button class="navitem active" data-nav="home" onclick="showView('home')">
         <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Home</button>
+      <button class="navitem" data-nav="profile" onclick="showView('profile')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>Profile</button>
       <button class="navitem" data-nav="wizard" onclick="showView('wizard')">
         <svg viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="3"/></svg>Setup</button>
       <button class="navitem" data-nav="preflight" onclick="showView('preflight')">
@@ -363,10 +380,8 @@
         <svg viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>Apps</button>
       <button class="navitem" data-nav="tools" onclick="showView('tools')">
         <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Tools</button>
-      <button class="navitem" data-nav="assets" onclick="showView('assets')">
-        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></svg>Assets</button>
       <button class="navitem" data-nav="settings" onclick="showView('settings')">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</button>
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>General Settings</button>
       <button class="navitem" data-nav="logs" onclick="showView('logs')">
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>Logs</button>
       <button class="navitem" data-nav="help" onclick="showView('help')">
@@ -399,7 +414,7 @@
               <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Restart</button>
             <a class="linkbtn" id="rel-panel-open" target="_blank" rel="noopener" hidden>Open panel ↗</a></div>
         </section>
-        <p class="envhint">The relay reads its <b>schedule and HUD data from the Google Sheet</b> and is configured through <b>Settings</b>: <span class="mono">IRO_SHEET_ID</span> (the sheet) and <span class="mono">IRO_SHEET_PUSH_URL</span> (write-back for the timer + panel). There are no other local relay settings — tab names, ports and the bind mode use safe defaults.</p>
+        <p class="envhint">The relay reads its <b>schedule and HUD data from the Google Sheet</b> and is configured through <b>Settings</b>: <span class="mono">RACECAST_SHEET_ID</span> (the sheet) and <span class="mono">RACECAST_SHEET_PUSH_URL</span> (write-back for the timer + panel). There are no other local relay settings — tab names, ports and the bind mode use safe defaults.</p>
       </div>
 
       <!-- ===== Static Streams ===== -->
@@ -474,14 +489,101 @@
           <button class="tile" onclick="showView('preflight')">
             <span class="tlabel">Preflight</span>
             <span class="tval" id="t-preflight">not run yet</span></button>
-          <button class="tile" onclick="showView('assets')">
+          <button class="tile" onclick="showView('profile')">
             <span class="tlabel">Assets</span>
             <span class="tval" id="t-assets">checking…</span></button>
-          <button class="tile" onclick="showView('assets')">
+          <button class="tile" onclick="showView('settings')">
             <span class="tlabel">Cookies</span>
             <span class="tval" id="t-cookies">checking…</span></button>
         </section>
-        <p class="evnote">Start brings up Tailscale, Discord, OBS, relay and Companion (optional stint = mid-event takeover). Stop only stops the iro services — OBS, Discord and Tailscale keep running; quit them manually if needed. Use <b>Copy link</b> to share the Companion tablet and Director panel URLs with your directors (they reach them over Tailscale).</p>
+        <p class="evnote">Start brings up Tailscale, Discord, OBS, relay and Companion (optional stint = mid-event takeover). Stop only stops the racecast services — OBS, Discord and Tailscale keep running; quit them manually if needed. Use <b>Copy link</b> to share the Companion tablet and Director panel URLs with your directors (they reach them over Tailscale).</p>
+      </div>
+
+      <!-- ===== Profile (active league: config + assets) ===== -->
+      <div class="view" data-view="profile" hidden>
+        <div class="viewhead"><h2>Profile</h2>
+          <span class="sub" id="profile-active-sub">…</span>
+          <span class="spacer"></span>
+          <button onclick="loadProfiles(true)">
+            <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button></div>
+
+        <section>
+          <div class="row"><span class="name">Active profile</span>
+            <select id="profile-select" aria-label="Active league profile" onchange="useProfile(this.value)"></select>
+            <span class="dim grow" id="profile-hint"></span></div>
+          <div class="enverr" id="profile-switch-note" hidden></div>
+        </section>
+
+        <section>
+          <div class="viewhead"><h3>New profile</h3></div>
+          <div class="row"><span class="name">Name</span>
+            <input id="newprofile-name" placeholder="e.g. erf" aria-label="New profile name">
+            <span class="name">Copy from</span>
+            <select id="newprofile-from" aria-label="Template to copy from"></select>
+            <button onclick="newProfile()">
+              <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Create</button></div>
+          <div class="enverr" id="newprofile-err" hidden></div>
+        </section>
+
+        <section>
+          <div class="viewhead"><h3>League config</h3>
+            <span class="sub">profile.env</span><span class="spacer"></span>
+            <button onclick="loadProfileEnv(true)">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button>
+            <button id="penv-save" onclick="saveProfileEnv()">
+              <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button></div>
+          <div class="enverr" id="penv-err" hidden></div>
+          <div class="envpath" id="penv-path"></div>
+          <div class="envhead"><span class="k">Key</span><span class="v">Value</span></div>
+          <div id="penvrows"></div>
+          <div class="addrow"><button onclick="addProfileEnvRow()">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add entry</button></div>
+          <p class="envhint">League config for the <b>active profile</b> — Sheet ID, push URL, intro/outro, logo, and the OBS scene-collection name (<b>OBS_COLLECTION</b>). Stored in <b>profiles/&lt;active&gt;/profile.env</b>. Values are masked; click the eye to reveal. Changes apply when you next (re)start the relay.</p>
+        </section>
+
+        <section>
+          <div class="viewhead"><h3>Overlay CSS</h3>
+            <span class="sub">HUD + Timer styling</span><span class="spacer"></span>
+            <div class="seg" role="group" aria-label="Overlay page">
+              <button id="overlay-tab-hud" class="on" onclick="setOverlayPage('hud')">HUD</button>
+              <button id="overlay-tab-timer" onclick="setOverlayPage('timer')">Timer</button>
+            </div>
+            <button id="overlay-save" onclick="saveOverlay()">
+              <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button>
+            <button id="overlay-apply" onclick="applyOverlay()" title="Reload the relay-served HUD/timer browser sources in OBS (needs the relay up + obs-websocket)">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Apply in OBS</button></div>
+          <div class="enverr" id="overlay-err" hidden></div>
+          <div class="envpath" id="overlay-path"></div>
+          <textarea id="overlayCss" class="css-editor" rows="12" spellcheck="false"
+            aria-label="Overlay CSS" placeholder="Custom CSS for the selected overlay page"></textarea>
+          <p class="envhint">Per-profile CSS overrides for the relay-served overlay pages, stored in
+            <b>profiles/&lt;active&gt;/overlay/</b>. Save writes the file; <b>Apply in OBS</b> reloads the
+            HUD/Timer browser sources (same as <b>obs refresh</b> — needs the relay up + obs-websocket).
+            First override on a profile that had no overlay yet? Restart the relay once
+            (<b>racecast relay restart</b>) to activate it; later edits apply live via <b>Apply in OBS</b>.</p>
+        </section>
+
+        <div class="viewhead"><h3>Assets</h3>
+          <span class="sub">graphics + media for the active profile</span>
+          <span class="spacer"></span>
+          <button onclick="checkAssets()">
+            <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Check vs sheet</button></div>
+        <section>
+          <div class="row"><span class="name">Graphics</span>
+            <span class="badge" id="b-graphics"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-graphics"></span>
+            <button onclick="op('graphics')">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
+          <div class="gallery" id="gfx-gallery"></div>
+        </section>
+        <section>
+          <div class="row"><span class="name">Media</span>
+            <span class="badge" id="b-media"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-media"></span>
+            <button onclick="op('media')">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
+          <div class="gallery" id="media-gallery"></div>
+        </section>
       </div>
 
       <!-- ===== Apps ===== -->
@@ -508,44 +610,6 @@
         <section><div id="toollist">
           <div class="item miss"><span class="idot"></span><span class="dim grow">loading…</span></div>
         </div></section>
-      </div>
-
-      <!-- ===== Assets ===== -->
-      <div class="view" data-view="assets" hidden>
-        <div class="viewhead"><h2>Assets</h2>
-          <span class="spacer"></span>
-          <button onclick="checkAssets()">
-            <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Check vs sheet</button></div>
-        <section>
-          <div class="row"><span class="name">Cookies</span>
-            <span class="badge" id="b-cookies"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="d-cookies"></span>
-            <select id="browser" aria-label="Browser to export YouTube cookies from">
-              <option value="firefox" selected>firefox</option>
-              <option value="chrome">chrome</option>
-              <option value="edge">edge</option>
-              <option value="brave">brave</option>
-              <option value="safari">safari</option>
-            </select>
-            <button onclick="op('cookies', false, {browser: $('browser').value})">
-              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button></div>
-        </section>
-        <section>
-          <div class="row"><span class="name">Graphics</span>
-            <span class="badge" id="b-graphics"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="d-graphics"></span>
-            <button onclick="op('graphics')">
-              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
-          <div class="gallery" id="gfx-gallery"></div>
-        </section>
-        <section>
-          <div class="row"><span class="name">Media</span>
-            <span class="badge" id="b-media"><span class="dot"></span><span>…</span></span>
-            <span class="dim grow" id="d-media"></span>
-            <button onclick="op('media')">
-              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
-          <div class="gallery" id="media-gallery"></div>
-        </section>
       </div>
 
       <!-- ===== Setup wizard ===== -->
@@ -589,15 +653,30 @@
         </div>
       </div>
 
-      <!-- ===== Settings (.env) ===== -->
+      <!-- ===== General Settings (.env) ===== -->
       <div class="view" data-view="settings" hidden>
-        <div class="viewhead"><h2>Settings</h2>
+        <div class="viewhead"><h2>General Settings</h2>
           <span class="sub">.env</span>
           <span class="spacer"></span>
           <button onclick="loadSettings(true)">
             <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button>
           <button id="env-save" onclick="saveSettings()">
             <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button></div>
+        <div class="viewhead"><h3>Cookies</h3><span class="sub">YouTube login — shared across all leagues</span></div>
+        <section>
+          <div class="row"><span class="name">Cookies</span>
+            <span class="badge" id="b-cookies"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="d-cookies"></span>
+            <select id="browser" aria-label="Browser to export YouTube cookies from">
+              <option value="firefox" selected>firefox</option>
+              <option value="chrome">chrome</option>
+              <option value="edge">edge</option>
+              <option value="brave">brave</option>
+              <option value="safari">safari</option>
+            </select>
+            <button onclick="op('cookies', false, {browser: $('browser').value})">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button></div>
+        </section>
         <div class="enverr" id="env-err" hidden></div>
         <div class="envpath" id="env-path"></div>
         <section>
@@ -606,7 +685,7 @@
           <div class="addrow"><button onclick="addSettingsRow()">
             <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add entry</button></div>
         </section>
-        <p class="envhint">Edits the local <b>.env</b> on this machine only. Values are masked — click the eye to reveal one. Comments in the file are preserved. Changes apply when you next (re)start the affected service (relay, …).</p>
+        <p class="envhint">Machine-level <b>.env</b> on this computer (ports, OBS-WebSocket password, Companion path) — shared across all leagues. League config (Sheet, OBS collection, …) lives under <b>Profile</b>. Values are masked; comments are preserved. Changes apply when you next (re)start the affected service.</p>
       </div>
 
       <!-- ===== Logs ===== -->
@@ -690,7 +769,7 @@ let jobES = null, logES = null;
 
 let setupLoaded = false, preflightRun = false, assetsLoaded = false,
     settingsLoaded = false, streamsLoaded = false, docsLoaded = false,
-    wizardLoaded = false;
+    wizardLoaded = false, profilesLoaded = false;
 // op name -> last job exit code (string) run from the wizard. Lets a step that
 // has no persistent "done" state (preflight) — or a failed job — show its real
 // outcome instead of a misleading "pending".
@@ -711,7 +790,10 @@ function showView(name) {
     setupLoaded = true; fetchSetup();
   }
   if (name === 'apps') fetchObsCollection();
-  if (name === 'assets' && !assetsLoaded) { assetsLoaded = true; fetchAssetFiles(); }
+  // Profile view: switcher/profile.env loaded once; graphics/media gallery
+  // (the old 'assets' view's job) likewise re-uses fetchAssetFiles.
+  if (name === 'profile' && !profilesLoaded) { profilesLoaded = true; loadProfiles(); }
+  if (name === 'profile' && !assetsLoaded) { assetsLoaded = true; fetchAssetFiles(); }
   if (name === 'preflight' && !preflightRun) { preflightRun = true; runPreflight(); }
   if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
   if (name === 'streams' && !streamsLoaded) { streamsLoaded = true; loadStreams(); }
@@ -759,7 +841,7 @@ function updateHome(s) {
   setBadgeEl('h-relay', 'hd-relay', relayUp, 'RUNNING', 'stopped',
              relayUp ? (s.relay.http_ok ? 'control OK on port ' + s.relay.port
                                         : 'port ' + s.relay.port + ' not responding')
-                     : 'iro service');
+                     : 'racecast service');
   setBadgeEl('h-companion', 'hd-companion', compUp, 'RUNNING', 'stopped',
              s.companion.url || s.companion.why || '');
   setBadgeEl('h-streams', 'hd-streams', strAlive > 0, 'RUNNING', 'stopped',
@@ -1246,8 +1328,8 @@ const CONFIRM_TEXT = {
   'tailscale-down': 'Disconnect Tailscale? Remote directors lose access.',
   'relay-stop': 'Stop the relay?',
   'streams-stop': 'Stop all static streams?',
-  'event-stop': 'Stop the event? (stops the iro services; OBS/Discord/Tailscale keep running)',
-  'obs-collection-set': 'Switch OBS to the IRO Endurance scene collection? This rebuilds all sources (incl. the relay feeds).'
+  'event-stop': 'Stop the event? (stops the racecast services; OBS/Discord/Tailscale keep running)',
+  'obs-collection-set': 'Switch OBS to the GT Endurance Racing scene collection? This rebuilds all sources (incl. the relay feeds).'
 };
 
 async function op(name, confirmFirst, params) {
@@ -1434,7 +1516,7 @@ function setCountBadge(key, n, noun) {
 
 // OBS scene-collection check (on-demand, live obs-websocket connect) for the
 // Apps view. Shows ✓ correct / ⚠ wrong, with a Switch button only when the
-// IRO Endurance collection is present to switch to.
+// GT Endurance Racing collection is present to switch to.
 async function fetchObsCollection() {
   const el = $('obscoll');
   if (!el) return;
@@ -1470,7 +1552,7 @@ async function fetchObsCollection() {
     el.appendChild(msg);
   } else {
     msg.textContent = '⚠ "' + d.expected + '" collection not found in OBS — '
-                    + 'import it (Export collection / `iro setup`).';
+                    + 'import it (Export collection / `racecast setup`).';
     el.appendChild(msg);
   }
 }
@@ -1617,7 +1699,10 @@ function showEnvErr(msg) {
   e.hidden = false;
 }
 
-function settingsRow(key, value) {
+// Shared masked KEY/value editor row — used by both the machine .env editor
+// (#envrows) and the profile.env editor (#penvrows). Identical component; only
+// the container id differs.
+function envEditorRow(key, value) {
   const r = document.createElement('div');
   r.className = 'envrow';
   const k = document.createElement('input');
@@ -1647,18 +1732,25 @@ function settingsRow(key, value) {
   return r;
 }
 
-function addSettingsRow() {
-  const r = settingsRow('', '');
-  $('envrows').appendChild(r);
+// Append one empty editor row to a container and focus its key input.
+function addEnvEditorRow(containerId) {
+  const r = envEditorRow('', '');
+  $(containerId).appendChild(r);
   r.querySelector('.k').focus();
 }
 
-function collectSettings() {
-  return [...$('envrows').querySelectorAll('.envrow')].map(r => ({
+// Read every editor row in a container into [{key, value}].
+function collectEnvEditor(containerId) {
+  return [...$(containerId).querySelectorAll('.envrow')].map(r => ({
     key: r.querySelector('.k').value,
     value: r.querySelector('.v').value
   }));
 }
+
+// thin machine-.env wrappers (kept for the existing inline onclick handlers)
+function settingsRow(key, value) { return envEditorRow(key, value); }
+function addSettingsRow() { addEnvEditorRow('envrows'); }
+function collectSettings() { return collectEnvEditor('envrows'); }
 
 async function loadSettings(force) {
   if (force && !confirm('Reload from disk and discard any unsaved edits?')) return;
@@ -1690,6 +1782,221 @@ async function saveSettings() {
   setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
   loadSettings();                        // reflect the canonical file (masked again)
 }
+
+// ----- Profile (league) view: switcher + new-profile + profile.env editor -----
+// The /api/profile/* POST routes return HTTP 400 on a {ok:false} result (same
+// as /api/env), so every fetch here parses the JSON body regardless of status
+// and branches on d.ok — never on r.ok.
+let activeProfile = null;
+
+function showProfileErr(elId, msg) {
+  const e = $(elId);
+  e.textContent = msg;
+  e.hidden = false;
+}
+
+async function loadProfiles(force) {
+  let d;
+  try { d = await (await fetch('/api/profiles', {cache: 'no-store'})).json(); }
+  catch (e) { showProfileErr('profile-hint', 'Control Center not reachable.'); return; }
+  if (!d.ok) { showProfileErr('profile-hint', d.error || 'could not list profiles'); return; }
+  $('profile-hint').hidden = true;
+  $('profile-hint').textContent = '';
+  const profiles = d.profiles || [];
+  // active-profile switcher
+  const sel = $('profile-select');
+  sel.textContent = '';
+  profiles.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.name;
+    o.textContent = p.display + (p.sheet_set ? '' : ' — no sheet');
+    sel.appendChild(o);
+  });
+  if (d.active) sel.value = d.active;
+  // "copy from" template list: the bundled example + every existing profile
+  const from = $('newprofile-from');
+  from.textContent = '';
+  const ex = document.createElement('option');
+  ex.value = 'example'; ex.textContent = 'example (template)';
+  from.appendChild(ex);
+  profiles.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.name; o.textContent = p.name;
+    from.appendChild(o);
+  });
+  activeProfile = d.active || null;
+  const label = d.active || 'no profile';
+  $('profile-active-sub').textContent = label;
+  const badge = $('active-profile-badge');
+  if (badge) badge.textContent = label;
+  loadProfileEnv();                       // editor reflects the now-active profile
+  loadOverlay();                          // overlay-CSS editor for the active profile
+}
+
+async function useProfile(name) {
+  if (name === activeProfile) return;     // no-op: already active
+  let d;
+  try {
+    d = await (await fetch('/api/profile/use', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name})})).json();
+  } catch (e) {
+    showProfileErr('profile-switch-note', 'Control Center not reachable.');
+    $('profile-select').value = activeProfile || '';
+    return;
+  }
+  if (!d.ok) {
+    showProfileErr('profile-switch-note', d.error || 'could not switch profile');
+    $('profile-select').value = activeProfile || '';   // revert the dropdown
+    return;
+  }
+  $('profile-switch-note').hidden = true;
+  activeProfile = d.active || name;
+  loadProfiles();
+  loadProfileEnv();
+  refresh();                              // pull fresh status (badges, services)
+  offerRestart();                         // running services still serve the old league
+}
+
+async function newProfile() {
+  const name = $('newprofile-name').value.trim();
+  const from = $('newprofile-from').value;
+  if (!name) { showProfileErr('newprofile-err', 'Enter a profile name.'); return; }
+  let d;
+  try {
+    d = await (await fetch('/api/profile/new', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name, from})})).json();
+  } catch (e) { showProfileErr('newprofile-err', 'Control Center not reachable.'); return; }
+  if (!d.ok) { showProfileErr('newprofile-err', d.error || 'could not create profile'); return; }
+  $('newprofile-err').hidden = true;
+  $('newprofile-name').value = '';
+  loadProfiles();
+  // Creation never auto-switches — tell the producer to select it to activate.
+  const hint = $('profile-hint');
+  hint.hidden = false;
+  hint.textContent = "created '" + name + "' — select it above to activate";
+}
+
+// After a profile switch, the relay/Companion still serve the previous league
+// until restarted. Offer a one-click restart for whichever is running; nothing
+// restarts without the producer clicking. Best-effort against the cached status.
+function offerRestart() {
+  const note = $('profile-switch-note');
+  const s = lastStatus;
+  if (!s) {                               // status unknown — generic hint only
+    note.hidden = false;
+    note.textContent = 'Switched. Restart any running services to apply the new league.';
+    return;
+  }
+  const relayUp = !!(s.relay && s.relay.alive);
+  const compUp = !!(s.companion && s.companion.running);
+  if (!relayUp && !compUp) { note.hidden = true; return; }
+  const which = [relayUp && 'Relay', compUp && 'Companion'].filter(Boolean).join(' / ');
+  note.hidden = false;
+  note.textContent = which + ' still serving the previous league — restart to apply. ';
+  const btn = document.createElement('button');
+  btn.textContent = 'Restart now';
+  btn.onclick = () => {
+    if (relayUp) op('relay-restart', true);
+    if (compUp) op('companion-restart', true);
+  };
+  note.appendChild(btn);
+}
+
+// profile.env editor — mirrors the machine-.env editor, on #penvrows.
+async function loadProfileEnv(force) {
+  if (force && !confirm('Reload from disk and discard any unsaved edits?')) return;
+  let d;
+  try { d = await (await fetch('/api/profile/env', {cache: 'no-store'})).json(); }
+  catch (e) { showProfileErr('penv-err', 'Control Center not reachable.');
+              $('penvrows').textContent = ''; $('penv-path').textContent = ''; return; }
+  if (!d.ok) {
+    showProfileErr('penv-err', d.error || 'could not read profile.env');
+    $('penvrows').textContent = '';
+    $('penv-path').textContent = '';
+    return;
+  }
+  $('penv-err').hidden = true;
+  $('penv-path').textContent = d.path;
+  const c = $('penvrows');
+  c.textContent = '';
+  d.entries.forEach(e => c.appendChild(envEditorRow(e.key, e.value)));
+}
+
+function addProfileEnvRow() { addEnvEditorRow('penvrows'); }
+
+async function saveProfileEnv() {
+  if (!confirm('Save these settings to the active profile.env?')) return;
+  $('penv-err').hidden = true;
+  const b = $('penv-save');
+  b.disabled = true;
+  let d;
+  try {
+    d = await (await fetch('/api/profile/env', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({entries: collectEnvEditor('penvrows')})})).json();
+  } catch (e) { showProfileErr('penv-err', 'Control Center not reachable.'); b.disabled = false; return; }
+  if (!d.ok) { showProfileErr('penv-err', d.error || 'could not save profile.env'); b.disabled = false; return; }
+  const orig = b.innerHTML;
+  b.textContent = 'Saved ✓';
+  setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
+  loadProfileEnv();                        // reflect the canonical file (masked again)
+}
+
+// Overlay-CSS editor — two per-profile CSS files (HUD + Timer), served by the
+// /api/overlay backend. Loads with the Profile view (via loadProfiles) and on
+// every profile switch. Errors surface inline on #overlay-err (same as the
+// profile.env editor); save confirms with the button's "Saved ✓" pattern.
+let overlayPage = 'hud';
+
+function setOverlayPage(p) {
+  overlayPage = p;
+  $('overlay-tab-hud').classList.toggle('on', p === 'hud');
+  $('overlay-tab-timer').classList.toggle('on', p === 'timer');
+  loadOverlay();
+}
+
+async function loadOverlay() {
+  $('overlay-err').hidden = true;
+  const ta = $('overlayCss');
+  let d;
+  try { d = await (await fetch('/api/overlay?page=' + overlayPage, {cache: 'no-store'})).json(); }
+  catch (e) { ta.value = ''; ta.disabled = true; $('overlay-path').textContent = '';
+              showProfileErr('overlay-err', 'Control Center not reachable.'); return; }
+  if (!d.ok) {
+    ta.value = ''; ta.disabled = true;
+    $('overlay-path').textContent = '';
+    showProfileErr('overlay-err', d.error || 'no active profile');
+    return;
+  }
+  ta.value = d.css || '';
+  ta.disabled = false;
+  $('overlay-path').textContent = d.path || '';
+}
+
+async function saveOverlay() {
+  $('overlay-err').hidden = true;
+  const b = $('overlay-save');
+  b.disabled = true;
+  let d;
+  try {
+    d = await (await fetch('/api/overlay', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({page: overlayPage, content: $('overlayCss').value})})).json();
+  } catch (e) { showProfileErr('overlay-err', 'Control Center not reachable.'); b.disabled = false; return; }
+  if (!d.ok) { showProfileErr('overlay-err', d.error || 'could not save overlay CSS'); b.disabled = false; return; }
+  if (d.path) $('overlay-path').textContent = d.path;
+  const orig = b.innerHTML;
+  b.textContent = 'Saved ✓ — Apply in OBS';
+  setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1800);
+}
+
+// Reuse the exact OBS browser-source refresh the Apps view uses (obs-refresh op,
+// === `racecast obs refresh`): reloads the relay-served HUD/Timer pages so a
+// saved CSS change shows. Best-effort — needs the relay up + obs-websocket; the
+// job console surfaces the result.
+function applyOverlay() { op('obs-refresh'); }
 
 // ----- Static Streams feed editor (runtime/static/streams.json) -----
 function showStreamsErr(msg) {
@@ -1829,6 +2136,8 @@ refresh();
 setInterval(refresh, 3000);
 setInterval(renderTimer, 1000);          // tick the Home race-timer clock locally
 checkUpdate();                           // one-shot GitHub release check (cached server-side)
+// Populate the active-league sidebar badge regardless of which view opens first.
+profilesLoaded = true; loadProfiles();
 initPreviewOptin();                      // restore preview opt-in state from localStorage
 fetchObsWs();                            // OBS-WS creds for the auto-connecting panel link
 // Populate the Home tiles on startup: preflight auto-runs (a few seconds), and

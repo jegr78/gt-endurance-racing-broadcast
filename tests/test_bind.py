@@ -6,7 +6,7 @@ import importlib.util, json, os
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 spec = importlib.util.spec_from_file_location(
-    "irofeeds", os.path.join(ROOT, "src", "relay", "iro-feeds.py"))
+    "irofeeds", os.path.join(ROOT, "src", "relay", "racecast-feeds.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
 

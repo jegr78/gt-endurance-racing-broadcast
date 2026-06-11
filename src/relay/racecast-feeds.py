@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-iro-feeds.py — Relay mode for the IRO broadcast (2-feed ping-pong)
+racecast-feeds.py — Relay mode for the GT Endurance Racing broadcast (2-feed ping-pong)
 with a remotely-maintainable stint schedule from a Google Sheet.
 
 Concept: exactly one commentator stream per stint. Two fixed OBS feeds
@@ -87,8 +87,8 @@ STREAMLINK_SERVE = ["--ringbuffer-size", "64M", "--hls-live-edge", "4"]
 RESOLVE_RETRY = 15  # seconds between yt-dlp resolve attempts while a stint isn't live
 COOKIE_MAX_AGE_H = 12   # keep in sync with preflight.py cookies_status(max_age_hours)
 RETRY_SLEEP = 10    # seconds after a stream ends / manifest expires before re-resolving
-# Sheet ID is NOT hardcoded — it comes from IRO_SHEET_ID (env or a gitignored
-# .env at the repo/package root). See .env.example. Override per-run with --sheet-id.
+# Sheet ID is NOT hardcoded — it comes from RACECAST_SHEET_ID (injected by the CLI
+# from the active profile). Override per-run with --sheet-id.
 DEFAULT_SHEET_TAB = "Schedule"
 DEFAULT_POV_TAB = "POV"
 
@@ -142,7 +142,7 @@ def _no_window_kwargs(os_name=None):
     window, and the per-feed yt-dlp resolve fires every ~15 s, so the desktop
     flickers continuously during an event (issue #30). CREATE_NO_WINDOW gives the
     child a hidden console instead; harmless when a console already exists (the
-    foreground `iro relay run`), and a no-op (empty kwargs) off Windows so the
+    foreground `racecast relay run`), and a no-op (empty kwargs) off Windows so the
     same spawn site stays cross-platform. Mirrors services.no_window_kwargs — the
     standalone relay imports nothing from scripts/, so the flag is duplicated here
     (same pattern as detect_tailscale_ip)."""
@@ -191,7 +191,7 @@ def resolve_bind_addresses(bind_arg, tailscale_ip):
     return [bind_arg]
 
 SCHEDULE_TEMPLATE = (
-    "# IRO relay offline fallback schedule — used ONLY if the Google Sheet AND the\n"
+    "# racecast relay offline fallback schedule — used ONLY if the Google Sheet AND the\n"
     "# last-good cache are both unavailable. One entry per stint, in order:\n"
     "#   a YouTube channel ID (UC...) OR a full watch URL (https://www.youtube.com/watch?v=...).\n"
     "# Lines starting with # are ignored. The real schedule lives in the Sheet tab 'Schedule'.\n"
@@ -228,6 +228,43 @@ def resolve_asset(assets_dir, sub, key):
         if os.path.exists(path):
             return path, ctype
     return None
+
+
+# Per-profile overlay overrides (profiles/<name>/overlay/). Override CSS is read
+# fresh per request (so a Control Center edit applies on the next OBS refresh
+# without a relay restart); fonts reuse the resolve_asset security pattern.
+OVERLAY_PAGES = ("hud", "timer")
+FONT_CTYPES = {"woff2": "font/woff2", "woff": "font/woff",
+               "ttf": "font/ttf", "otf": "font/otf"}
+FONT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+def read_overlay_css(overlay_dir, page):
+    """Bytes of profiles/<name>/overlay/<page>.css, or b'' when the dir is unset,
+    the page is not a known overlay page, or the file is absent/unreadable. Read
+    per request so editor saves apply without a relay restart."""
+    if not overlay_dir or page not in OVERLAY_PAGES:
+        return b""
+    try:
+        with open(os.path.join(overlay_dir, f"{page}.css"), "rb") as fh:
+            return fh.read()
+    except OSError:
+        return b""
+
+def resolve_overlay_font(overlay_dir, name):
+    """Resolve overlay/fonts/<name> to (path, content_type); None if unsafe or
+    missing. Same containment guarantees as resolve_asset (strict name + ext
+    allow-list + realpath inside fonts/ + constant content-type)."""
+    if not overlay_dir or not FONT_NAME_RE.match(name) or "." not in name:
+        return None
+    ext = name.rsplit(".", 1)[1].lower()
+    ctype = FONT_CTYPES.get(ext)
+    if not ctype:
+        return None
+    base = os.path.realpath(os.path.join(overlay_dir, "fonts"))
+    path = os.path.realpath(os.path.join(base, name))
+    if not path.startswith(base + os.sep):
+        return None
+    return (path, ctype) if os.path.exists(path) else None
 
 def default_runtime_dir(here):
     """Where runtime data lives when --runtime-dir is not given.
@@ -484,7 +521,7 @@ def merge_timer_states(local, sheet):
 def post_webhook(url, payload, timeout=10):
     """POST JSON to the Apps-Script sheet-write webhook -> raw response bytes."""
     req = Request(url, data=json.dumps(payload).encode("utf-8"), method="POST",
-                  headers={"User-Agent": "iro-feeds/1.0",
+                  headers={"User-Agent": "racecast-feeds/1.0",
                            "Content-Type": "application/json"})
     with urlopen(req, timeout=timeout) as resp:
         return resp.read()
@@ -565,7 +602,7 @@ class TimerStore:
     # -- sheet read (poller + adopt-if-newer merge) -------------------------
     @staticmethod
     def _fetch(url, timeout=10):
-        req = Request(url, headers={"User-Agent": "iro-feeds/1.0"})
+        req = Request(url, headers={"User-Agent": "racecast-feeds/1.0"})
         with urlopen(req, timeout=timeout) as resp:
             return resp.read().decode("utf-8", "replace")
 
@@ -717,7 +754,7 @@ class TimerStore:
                          "last_error": self.last_error}}
 
     def summary(self):
-        """Compact line for /status and `iro status`."""
+        """Compact line for /status and `racecast status`."""
         d = self.data()
         return {"mode": d["mode"], "visible": d["visible"],
                 "remaining_s": (max(0, int(d["end"] - d["server_now"]))
@@ -827,7 +864,7 @@ class ScheduleSource:
         if not self.csv_url:
             return None
         try:
-            req = Request(self.csv_url, headers={"User-Agent": "iro-feeds/1.0"})
+            req = Request(self.csv_url, headers={"User-Agent": "racecast-feeds/1.0"})
             with urlopen(req, timeout=timeout) as resp:
                 text = resp.read().decode("utf-8", "replace")
             rows = self._parse_rows(text)
@@ -942,7 +979,7 @@ class HudSource:
 
     @staticmethod
     def _fetch(url, timeout=10):
-        req = Request(url, headers={"User-Agent": "iro-feeds/1.0"})
+        req = Request(url, headers={"User-Agent": "racecast-feeds/1.0"})
         with urlopen(req, timeout=timeout) as resp:
             return resp.read().decode("utf-8", "replace")
 
@@ -1061,8 +1098,8 @@ class SetupControl:
             return {"error": f"unknown field: {key!r} "
                              f"(one of {', '.join(sorted(SETUP_FIELDS))})"}
         if not self.push_url:
-            return {"error": "webhook not configured — set IRO_SHEET_PUSH_URL "
-                             "in .env (wiki: Sheet-Webhook)"}
+            return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
+                             "in the active profile or .env (wiki: Sheet-Webhook)"}
         header, hud_key = SETUP_FIELDS[key]
         if not value and key != "racecontrol":
             return {"error": "empty value only allowed for racecontrol"}
@@ -1083,8 +1120,8 @@ class SetupControl:
     # -- URL writes (synchronous) --------------------------------------------
     def schedule_set(self, row, url=None, name=None):
         if not self.push_url:
-            return {"error": "webhook not configured — set IRO_SHEET_PUSH_URL "
-                             "in .env (wiki: Sheet-Webhook)"}
+            return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
+                             "in the active profile or .env (wiki: Sheet-Webhook)"}
         if isinstance(row, bool) or not isinstance(row, (int, str)):
             return {"error": "row must be a whole number (1-based)"}
         try:
@@ -1114,8 +1151,8 @@ class SetupControl:
 
     def pov_set(self, url):
         if not self.push_url:
-            return {"error": "webhook not configured — set IRO_SHEET_PUSH_URL "
-                             "in .env (wiki: Sheet-Webhook)"}
+            return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
+                             "in the active profile or .env (wiki: Sheet-Webhook)"}
         if url is not None and not isinstance(url, str):
             return {"error": "url must be a string"}
         url = (url or "").strip()
@@ -1400,7 +1437,7 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
 
 
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
-                 timer_store=None, timer_path=None, setup_ctl=None):
+                 timer_store=None, timer_path=None, setup_ctl=None, overlay_dir=None):
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
             body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
@@ -1412,12 +1449,19 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             try:
                 with open(path, "rb") as fh: body = fh.read()
             except OSError:
-                return self._send({"error": "panel not found", "looked_for": path}, 404)
+                return self._send({"error": "file not found", "looked_for": path}, 404)
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             # The panel/HUD/timer pages change between releases — never let a
             # browser serve a stale copy (e.g. a panel without the latest JS).
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(body)
+            return None
+        def _send_css(self, body):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/css; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers(); self.wfile.write(body)
             return None
@@ -1453,6 +1497,15 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send(hud_source.data())
                 if len(p) == 4 and p[:2] == ["hud", "assets"]:
                     return self._send_asset(assets_dir, p[2], p[3])
+                if p == ["hud", "override.css"]:
+                    return self._send_css(read_overlay_css(overlay_dir, "hud"))
+                if p == ["timer", "override.css"]:
+                    return self._send_css(read_overlay_css(overlay_dir, "timer"))
+                if len(p) == 3 and p[:2] == ["overlay", "fonts"]:
+                    hit = resolve_overlay_font(overlay_dir, p[2])
+                    if not hit:
+                        return self._send({"error": "font not found", "key": p[2]}, 404)
+                    return self._send_file(hit[0], hit[1])
                 if p[:1] == ["timer"]:
                     if p == ["timer"]:
                         if not timer_path: return self._send({"error": "timer disabled"}, 404)
@@ -1606,10 +1659,10 @@ def export_cookies(browser, out):
 
 def main():
     load_dotenv(os.path.dirname(os.path.abspath(__file__)))  # before defaults are read
-    ap = argparse.ArgumentParser(description="IRO 2-feed relay with Google-Sheet schedule")
-    ap.add_argument("--sheet-id", default=os.environ.get("IRO_SHEET_ID"),
+    ap = argparse.ArgumentParser(description="GT Endurance Racing 2-feed relay with Google-Sheet schedule")
+    ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
                     help="Google Sheet ID for the schedule/POV tabs. Default: env "
-                         "IRO_SHEET_ID (or a .env at the repo/package root). See .env.example.")
+                         "RACECAST_SHEET_ID (injected by the CLI from the active profile).")
     ap.add_argument("--sheet-tab", default=DEFAULT_SHEET_TAB)
     ap.add_argument("--sheet-csv-url", default=None,
                     help="Full CSV URL (overrides sheet-id/tab; e.g. publish-to-web)")
@@ -1644,6 +1697,9 @@ def main():
                     help="HUD sheet refresh interval in seconds (default 5).")
     ap.add_argument("--no-hud", action="store_true",
                     help="Do not serve the HUD overlay at /hud.")
+    ap.add_argument("--overlay-dir", default=None,
+                    help="profiles/<name>/overlay dir with per-profile hud.css/"
+                         "timer.css/fonts (relay-served at /hud/override.css etc).")
     ap.add_argument("--timer-tab", default="Timer",
                     help="Google-Sheet tab holding the race-timer anchor (default 'Timer').")
     ap.add_argument("--no-timer", action="store_true",
@@ -1670,9 +1726,8 @@ def main():
     except Exception: pass   # not all stdout objects support reconfigure (e.g. pipes)
 
     if not args.sheet_csv_url and not args.sheet_id:
-        sys.exit("ERROR: no Google Sheet configured. Set IRO_SHEET_ID in a .env file "
-                 "at the repo/package root (see .env.example) or the environment, "
-                 "or pass --sheet-id / --sheet-csv-url.")
+        sys.exit("ERROR: no Google Sheet configured. Set SHEET_ID in the active profile "
+                 "(profiles/<name>/profile.env), or pass --sheet-id / --sheet-csv-url.")
 
     if args.stint < 1:
         sys.exit("ERROR: --stint must be >= 1 (1-based stint number, as in the sheet).")
@@ -1727,7 +1782,7 @@ def main():
         _ch = cookie_health(cookies)
         if _ch["stale"]:
             print(f"WARN: cookies.txt is {_ch['age_h']:.0f} h old — cookies rotate; "
-                  "run 'iro cookies firefox' before the event.")
+                  "run 'racecast cookies firefox' before the event.")
 
     # Locate the director panel (shipped in the package root, one level up from relay/)
     panel_path = None
@@ -1760,10 +1815,10 @@ def main():
 
     # One sheet-write webhook powers the race timer AND the panel's
     # Setup/Schedule/POV controls (wiki: Sheet-Webhook).
-    push_url = os.environ.get("IRO_SHEET_PUSH_URL")
+    push_url = os.environ.get("RACECAST_SHEET_PUSH_URL")
 
     # Race timer: local file always; sheet sync derived from sheet-id/tab
-    # (custom --sheet-csv-url -> local-only); push via IRO_SHEET_PUSH_URL.
+    # (custom --sheet-csv-url -> local-only); push via RACECAST_SHEET_PUSH_URL.
     timer_store = None
     timer_path = None
     if not args.no_timer:
@@ -1805,7 +1860,8 @@ def main():
                          daemon=True).start()
 
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
-                           timer_store, timer_path, setup_ctl)
+                           timer_store, timer_path, setup_ctl,
+                           overlay_dir=args.overlay_dir)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers = []
@@ -1816,7 +1872,7 @@ def main():
             print(f"  (warn) could not bind {addr}:{args.http_port} — {e}")
     if not servers:
         sys.exit(f"Could not bind the control server on {bind_addrs} port {args.http_port} "
-                 f"— port may already be in use: run 'iro preflight' or 'iro status' "
+                 f"— port may already be in use: run 'racecast preflight' or 'racecast status' "
                  f"to see what holds it.")
 
     def shutdown(*_):
@@ -1831,7 +1887,7 @@ def main():
     # The non-loopback bind (if any) is the address remote directors/tablets use.
     remote_host = next((a for a in bind_addrs if a not in ("127.0.0.1", "localhost")), None)
 
-    print(f"IRO relay running.  Schedule source: {'CSV URL' if args.sheet_csv_url else f'sheet tab “{args.sheet_tab}”'}")
+    print(f"racecast relay running.  Schedule source: {'CSV URL' if args.sheet_csv_url else f'sheet tab “{args.sheet_tab}”'}")
     print(f"  Feed A -> http://127.0.0.1:{ports[0]}   Feed B -> http://127.0.0.1:{ports[1]}")
     if args.stint != 1:
         if relay.A.idx != args.stint - 1:
@@ -1853,11 +1909,11 @@ def main():
         print(f"  HUD overlay (OBS source): http://127.0.0.1:{args.http_port}/hud  "
               f"(tabs '{args.overlay_tab}'/'{args.config_tab}', refresh {args.hud_poll}s)")
     if setup_ctl:
-        mode = "writes ON" if push_url else "read-only (set IRO_SHEET_PUSH_URL)"
+        mode = "writes ON" if push_url else "read-only (set RACECAST_SHEET_PUSH_URL)"
         print(f"  Panel sheet controls (/setup /schedule /pov/set): {mode}")
     if timer_store and timer_path:
         push = "sheet+push" if timer_store.push_url else (
-            "sheet read-only (set IRO_SHEET_PUSH_URL for handover sync)"
+            "sheet read-only (set RACECAST_SHEET_PUSH_URL for handover sync)"
             if timer_store.csv_url else "local only")
         print(f"  Race timer (OBS source): http://127.0.0.1:{args.http_port}/timer  "
               f"(tab '{args.timer_tab}', {push}; controls /timer/start | /timer/stop)")

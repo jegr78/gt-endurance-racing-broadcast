@@ -1,20 +1,19 @@
-"""First-time setup wizard logic behind `iro init`.
+"""First-time setup wizard logic behind `racecast init`.
 
-Pure building blocks wired by iro.py: the ordered step plan, done-detection
+Pure building blocks wired by racecast.py: the ordered step plan, done-detection
 predicates (every probe is injected — tests never touch the system), the gate
 pause (interactive vs non-TTY checkpoint-and-exit), the wizard loop, and the
 closing manual-next-steps text. The wizard only orchestrates the existing
 one-shots; it owns no install/download logic.
-Spec: docs/superpowers/specs/2026-06-06-iro-init-design.md.
+Spec: docs/superpowers/specs/2026-06-06-racecast-init-design.md.
 Tests: tests/test_init.py."""
 
-REQUIRED_ENV = ("IRO_SHEET_ID",)
-
-STEP_ORDER = ("env", "install-tools", "install-apps", "cookies", "graphics",
-              "media", "setup", "export-companion", "preflight")
+STEP_ORDER = ("profile", "env", "install-tools", "install-apps", "cookies",
+              "graphics", "media", "setup", "export-companion", "preflight")
 INSTALL_STEPS = ("install-tools", "install-apps")
 STEP_LABELS = {
-    "env": ".env",
+    "profile": "profile (league)",
+    "env": ".env (machine)",
     "install-tools": "install-tools",
     "install-apps": "install-apps",
     "cookies": "cookies",
@@ -26,7 +25,7 @@ STEP_LABELS = {
 }
 
 # Per-step UI execution kind, consumed by the Control Center wizard
-# (iro.init_plan_data). Three kinds:
+# (racecast.init_plan_data). Three kinds:
 #   "job"    -> the UI runs it through the existing job machine (/api/op/<op>),
 #               streaming live output; "op" is the ui_ops.OPS name.
 #   "gate"   -> a manual, probe-verified checkpoint the UI re-checks
@@ -36,9 +35,10 @@ STEP_LABELS = {
 # "instruction" (optional) is the operator-facing text shown before the step;
 # "{browser}" is substituted by the wizard for the cookies step.
 STEP_KINDS = {
-    "env": {"kind": "gate", "op": None,
-            "instruction": "Open Settings and set IRO_SHEET_ID in .env "
-                           "(IRO_SHEET_PUSH_URL is optional). Then re-check."},
+    "profile": {"kind": "gate", "op": None,
+                "instruction": "Create or select a league profile and set its "
+                               "SHEET_ID (profiles/<name>/profile.env). Then re-check."},
+    "env": {"kind": "action", "op": None},
     "install-tools": {"kind": "job", "op": "install-tools"},
     "install-apps": {"kind": "job", "op": "install-apps"},
     "cookies": {"kind": "job", "op": "cookies",
@@ -51,7 +51,7 @@ STEP_KINDS = {
     "preflight": {"kind": "job", "op": "preflight"},
 }
 
-_USAGE = "usage: iro init [--browser NAME] [--skip-installs] [--force]"
+_USAGE = "usage: racecast init [--browser NAME] [--skip-installs] [--force]"
 
 
 def parse_init_args(rest):
@@ -87,11 +87,22 @@ def build_plan(skip_installs=False):
 # is already done, or None when it must run. All probes are injected.
 # ---------------------------------------------------------------------------
 
-def env_done(env):
-    """`env` is the merged os.environ + .env mapping."""
-    if all(env.get(k) for k in REQUIRED_ENV):
-        return "IRO_SHEET_ID set"
+def profile_done(active, sheet_id):
+    """The profile step is done when a league profile is active and its SHEET_ID
+    is filled in. `active` is the active profile name (or None); `sheet_id` its
+    SHEET_ID value (or '')."""
+    if active and sheet_id:
+        return f"profile '{active}' ready"
     return None
+
+
+def prompt_value(message, isatty, ask=input):
+    """Collect one line at a manual step. Interactive: return the stripped
+    answer. Non-TTY (CI/pipe): degrade to checkpoint-and-exit (same contract as
+    gate_pause)."""
+    if not isatty:
+        raise SystemExit(f"{message}\nThen run `racecast init` again.")
+    return ask(f"{message}: ").strip()
 
 
 def tools_done(which, tools):
@@ -139,7 +150,7 @@ def export_done(exists):
 
 
 # ---------------------------------------------------------------------------
-# Wizard: gates, loop, output. The step dicts are built by iro.py:
+# Wizard: gates, loop, output. The step dicts are built by racecast.py:
 #   {"key": str, "label": str, "done": () -> str|None, "run": () -> int}
 # ---------------------------------------------------------------------------
 
@@ -148,7 +159,7 @@ def gate_pause(message, isatty, ask=input):
     Non-TTY (CI/pipe): degrade to checkpoint-and-exit — SystemExit(str) prints
     the instruction to stderr and exits 1 (Python semantics)."""
     if not isatty:
-        raise SystemExit(f"{message}\nThen run `iro init` again — completed "
+        raise SystemExit(f"{message}\nThen run `racecast init` again — completed "
                          "steps are skipped.")
     ask(f"{message} — press Enter to continue: ")
 
@@ -172,7 +183,7 @@ def run_wizard(steps, force, echo):
         code = step["run"]()
         if code and idx < total:
             echo(f"\nStep '{step['label']}' failed (exit {code}). Fix the "
-                 "issue above, then run `iro init` again — completed steps "
+                 "issue above, then run `racecast init` again — completed steps "
                  "are skipped.")
             return code, False
     return code, True

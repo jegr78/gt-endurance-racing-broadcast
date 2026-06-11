@@ -60,8 +60,8 @@ def t_link_relative_and_anchor_preserved():
 
 
 def t_fenced_code_is_escaped_verbatim():
-    h = md.render("```\niro relay start <x>\n```")
-    assert "<pre><code>" in h and "iro relay start &lt;x&gt;" in h
+    h = md.render("```\nracecast relay start <x>\n```")
+    assert "<pre><code>" in h and "racecast relay start &lt;x&gt;" in h
     assert "<em>" not in h                                 # no inline formatting in code
 
 
@@ -112,7 +112,7 @@ def t_renders_real_docs_without_crashing():
     # the actual bundled docs (wiki-pointer stubs) must render cleanly — a
     # heading and a list, with no leftover code placeholders. Table rendering is
     # covered by the t_table_* tests above.
-    for rel in ("docs/README_SETUP.md", "docs/IRO_Broadcast_Setup_Guide.md"):
+    for rel in ("docs/README_SETUP.md", "docs/Broadcast_Setup_Guide.md"):
         with open(os.path.join(ROOT, "src", rel), encoding="utf-8") as fh:
             h = md.render(fh.read())
         assert "<h1>" in h and "<li>" in h

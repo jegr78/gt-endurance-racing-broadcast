@@ -1,39 +1,45 @@
-# IRO Endurance Broadcast — Setup Package
+# GT Endurance Racing Broadcast — Setup Package
 
-This package sets up a complete producer station for the IRO Endurance
+This package sets up a complete producer station for the GT Endurance Racing
 broadcast: OBS scenes + HUD, the Companion button board, the director panel,
 and the relay that pulls each commentator's stream into OBS.
 
-**Quickest start:** double-click **`iro-ui`** to open the **Control Center** — a
-local web dashboard that runs setup and event day from your browser, no terminal
-needed. The `iro …` commands below are the CLI alternative.
+**Quickest start:** double-click **`racecast-ui`** to open the **Control
+Center** — a local web dashboard that runs setup and event day from your browser,
+no terminal needed. The `racecast …` commands below are the CLI alternative.
 
 **The documentation lives in the project wiki** — always current, written for
 first-time producers:
 
 - **The Control Center:**
-  <https://github.com/jegr78/IRO_Broadcast_Setup/wiki/Control-Center>
+  <https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Control-Center>
 - **First-time setup** (one time, ~30 min):
-  <https://github.com/jegr78/IRO_Broadcast_Setup/wiki/Set-up-the-broadcast-PC>
+  <https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Set-up-the-broadcast-PC>
 - **Event day:**
-  <https://github.com/jegr78/IRO_Broadcast_Setup/wiki/Run-an-event>
+  <https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Run-an-event>
 - **Start page** (all roles):
-  <https://github.com/jegr78/IRO_Broadcast_Setup/wiki>
+  <https://github.com/jegr78/gt-endurance-racing-broadcast/wiki>
 
 ## Quickstart
 
-First-time setup — one guided command (it skips whatever is already done):
+First-time setup — one guided command. It creates or selects a **league
+profile** (and fills in that league's Google Sheet ID), then installs everything
+and skips whatever is already done:
 
-    iro init
+    racecast init
+
+Each league lives in its own profile (`profiles/<name>/`). Switch leagues with
+`racecast profile use <name>`, or create a new one with
+`racecast profile new <name> --from example`.
 
 On event day:
 
-    iro cookies firefox    # refresh YouTube cookies (log into YouTube in Firefox first)
-    iro event start        # bring everything up; prints the director URLs
-    iro event stop         # after the broadcast
+    racecast cookies firefox    # refresh YouTube cookies (log into YouTube in Firefox first)
+    racecast event start        # bring everything up; prints the director URLs
+    racecast event stop         # after the broadcast
 
-`iro preflight` checks this machine any time and names the exact fix for
+`racecast preflight` checks this machine any time and names the exact fix for
 anything missing.
 
-The printable role cheat sheets are in `IRO_cheat_sheets.html` (open it in a
+The printable role cheat sheets are in `cheat_sheets.html` (open it in a
 browser, print).

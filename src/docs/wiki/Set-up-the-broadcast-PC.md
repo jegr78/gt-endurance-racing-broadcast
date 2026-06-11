@@ -3,7 +3,7 @@
 Do this **once** per machine — about 30 minutes. When you're done, go to
 [Run an event](Run-an-event).
 
-> Tip: `iro preflight` checks your machine and tells you what's still missing.
+> Tip: `racecast preflight` checks your machine and tells you what's still missing.
 > Run it whenever you're unsure.
 
 ## What you need
@@ -14,10 +14,10 @@ Do this **once** per machine — about 30 minutes. When you're done, go to
 
 ## The easy way — the Control Center
 
-The release archive contains two binaries: **`iro`** (the CLI used throughout this
-page) and **`iro-ui`** (the **[Control Center](Control-Center)**, the recommended
-way to set up the station). Download it (step 1), then **double-click `iro-ui`**
-(`iro-ui.exe` / `iro-ui.app`; Linux `./iro-ui`) — it opens at
+The release archive contains two binaries: **`racecast`** (the CLI used throughout this
+page) and **`racecast-ui`** (the **[Control Center](Control-Center)**, the recommended
+way to set up the station). Download it (step 1), then **double-click `racecast-ui`**
+(`racecast-ui.exe` / `racecast-ui.app`; Linux `./racecast-ui`) — it opens at
 `http://127.0.0.1:8089/` and its **Setup** view walks you through the install and
 asset steps with a progress checklist, no terminal needed.
 
@@ -25,7 +25,7 @@ asset steps with a progress checklist, no terminal needed.
 
 The step-by-step terminal instructions below remain the **full reference** — use
 them to repeat or debug a single step, on headless Linux, or if you prefer the
-command line. Every step notes its `iro …` command.
+command line. Every step notes its `racecast …` command.
 
 ## Never used a terminal?
 
@@ -41,28 +41,28 @@ Sixty seconds of background, and every command on this page makes sense:
   command (paste: `Ctrl+V`, macOS `Cmd+V`), press **Enter**, and read what
   comes back.
 - Nothing runs until you press Enter, and the commands in this wiki only act
-  on the `iro` folder.
+  on the `racecast` folder.
 
-## 1 — Get the `iro` tool
+## 1 — Get the `racecast` tool
 
 *Takes ~5 minutes.*
 
 Download the archive for your OS from the
-[latest release](https://github.com/jegr78/IRO_Broadcast_Setup/releases/latest):
+[latest release](https://github.com/jegr78/gt-endurance-racing-broadcast/releases/latest):
 
 | OS | File |
 |---|---|
-| Windows | `iro-windows.zip` |
-| macOS | `iro-macos.tar.gz` |
-| Linux | `iro-linux.tar.gz` |
+| Windows | `racecast-windows.zip` |
+| macOS | `racecast-macos.tar.gz` |
+| Linux | `racecast-linux.tar.gz` |
 
-Extract it into a folder of its own (e.g. `Documents/IRO/`) — the tool keeps its
-working files (`.env`, `runtime/`) next to the binary. Open a terminal **in that
-folder** (first time? [Never used a terminal?](#never-used-a-terminal)) and
+Extract it into a folder of its own (e.g. `Documents/Racecast/`) — the tool keeps its
+working files (`.env`, `profiles/`, `runtime/`) next to the binary. Open a terminal **in
+that folder** (first time? [Never used a terminal?](#never-used-a-terminal)) and
 check it runs:
 
 ```bash
-./iro --version          # Windows: iro --version   (PowerShell: .\iro)
+./racecast --version     # Windows: racecast --version   (PowerShell: .\racecast)
 ```
 
 The first run also creates a `.env` file next to the binary (you fill it in at
@@ -70,15 +70,15 @@ step 4).
 
 **You should now see:** the version number printed in the terminal, and a new
 `.env` file next to the binary.
-<!-- screenshot: terminal open in the iro folder with ./iro --version output -->
+<!-- screenshot: terminal open in the racecast folder with ./racecast --version output -->
 
 > **One-time OS warning** (the binary is unsigned): **Windows** SmartScreen →
 > "More info" → "Run anyway". **macOS**: if blocked, System Settings →
 > Privacy & Security → "Open Anyway" (or right-click → Open).
 
-All commands in this wiki are written as `iro …` — type them in a terminal in
-this folder (macOS/Linux: `./iro …` unless you add the folder to your PATH).
-Updating later is one command: `iro update`.
+All commands in this wiki are written as `racecast …` — type them in a terminal in
+this folder (macOS/Linux: `./racecast …` unless you add the folder to your PATH).
+Updating later is one command: `racecast update`.
 
 <details>
 <summary>Alternative: run from source (needs Python 3)</summary>
@@ -86,23 +86,24 @@ Updating later is one command: `iro update`.
 Clone or download this repository and install Python 3 (macOS: usually
 preinstalled, else `brew install python`; Windows: [python.org](https://www.python.org/downloads/)
 installer with **"Add python.exe to PATH"** ticked; Linux: `sudo apt install python3`).
-Then use `python3 src/iro.py …` wherever the docs say `iro …`, and copy
+Then use `python3 src/racecast.py …` wherever the docs say `racecast …`, and copy
 `.env.example` to `.env` in the repo root yourself.
 </details>
 
-### The short way: the Setup wizard (or `iro init`)
+### The short way: the Setup wizard (or `racecast init`)
 
-The Control Center's **Setup** view, and the `iro init` command, both walk through
-the automatable steps on this page in order — they install the tools and apps,
-export YouTube cookies, download graphics and media, build the OBS import
-collection, and write the Companion button config:
+The Control Center's **Setup** view, and the `racecast init` command, both walk through
+the automatable steps on this page in order — they create or select your league
+profile, install the tools and apps, export YouTube cookies, download graphics and
+media, build the OBS import collection, and write the Companion button config:
 
 ```
-iro init      # the CLI equivalent of the Control Center's Setup view
+racecast init      # the CLI equivalent of the Control Center's Setup view
 ```
 
 It skips whatever is already done, so re-running it is always safe. It pauses
-for the things only you can do: filling in `.env` and — when cookies are
+for the things only you can do: creating/selecting a league profile and filling in
+its `SHEET_ID`, and — when cookies are
 missing or stale — logging into YouTube in Firefox (cookie details and the
 before-each-event refresh:
 [Relay — how the feeds work](Relay-Mode#2-get-youtube-cookies-before-each-event)).
@@ -122,7 +123,7 @@ needs repeating or debugging.
 *Takes ~5–10 minutes (downloads).*
 
 ```bash
-iro install-apps
+racecast install-apps
 ```
 
 Installs whichever of these are missing — **OBS Studio** (the broadcast itself),
@@ -154,13 +155,13 @@ applications / Start menu.
 *Takes ~5 minutes.*
 
 ```bash
-iro install-tools
+racecast install-tools
 ```
 
 Installs `streamlink`, `yt-dlp`, `ffmpeg` and `deno` — they pull each
 commentator's stream into OBS and pass YouTube's bot check. Afterwards **open a
 new terminal** ([how?](#never-used-a-terminal)) — installers update the PATH for
-new shells only (`iro preflight`
+new shells only (`racecast preflight`
 confirms everything is found).
 
 > `deno` is required — without it feeds fail with *"Sign in to confirm you're not a bot."*
@@ -180,24 +181,36 @@ Check them: `streamlink --version`, `yt-dlp --version`, `ffmpeg -version`, `deno
 **You should now see:** in a **new** terminal, `streamlink --version`,
 `yt-dlp --version`, `ffmpeg -version` and `deno --version` each print a version.
 
-## 4 — Add your secrets (`.env`)
+## 4 — Create your league profile (secrets)
 
 *Takes ~2 minutes.*
 
-The first `iro` run created a `.env` file next to the binary. Open it in any
-text editor and fill in the required value from the team:
+Each league's config lives in its own **profile** (`profiles/<name>/profile.env`), so
+one machine can serve several leagues. Create one from the bundled template and make it
+active:
 
-- `IRO_SHEET_ID` — the ID in the shared Google Sheet link.
-- *(optional)* `IRO_SHEET_PUSH_URL` — the Apps Script write webhook for the relay-hosted
+```bash
+racecast profile new myleague --from example   # copies profiles/example/ -> profiles/myleague/
+racecast profile use myleague                  # make it the active league
+```
+
+Open `profiles/myleague/profile.env` in any text editor and fill in the values from the team:
+
+- `SHEET_ID` — the ID in the shared Google Sheet link.
+- *(optional)* `SHEET_PUSH_URL` — the Apps Script write webhook for the relay-hosted
   race timer. Enables Director timer actions to sync to the Sheet so a second producer
   machine takes over with the same countdown. See [Sheet-Webhook](Sheet-Webhook) to set it up.
 
-Keep `.env` private; never share it. Full detail: [Configuration & secrets](Configuration).
+Keep the profile private; never share it. The machine-only `.env` (created on first
+run) holds just optional switches and needs nothing here. Full detail:
+[Configuration & secrets](Configuration).
 
-> **In the Control Center:** the **Settings** view edits `.env` with masked values.
+> **In the Control Center:** the **Profile** view switches leagues, copies a new profile,
+> and edits `profile.env` with masked values; **General Settings** edits the machine `.env`.
 
-**You should now see:** your `.env` containing a filled `IRO_SHEET_ID=…` line.
-<!-- screenshot: .env open in an editor with IRO_SHEET_ID filled (value blurred) -->
+**You should now see:** `profiles/myleague/profile.env` containing a filled `SHEET_ID=…` line,
+and `racecast profile show` listing it as the active league.
+<!-- screenshot: profile.env open in an editor with SHEET_ID filled (value blurred) -->
 
 ## 5 — Import the OBS scenes
 
@@ -207,16 +220,19 @@ Download the broadcast assets first (they come from the shared Sheet), then
 localize and import the collection:
 
 ```bash
-iro media       # Intro/Outro clips   -> runtime/media/
-iro graphics    # broadcast graphics  -> runtime/graphics/
-iro setup --out runtime/IRO_Endurance.import.json
+racecast media       # Intro/Outro clips   -> runtime/<profile>/media/
+racecast graphics    # broadcast graphics  -> runtime/<profile>/graphics/
+racecast setup --out runtime/GT_Endurance.import.json
 ```
 
 > **In the Control Center:** **Assets → Download** fetches the graphics and media;
 > the **Setup** view's `setup` step builds the import collection.
 
-Then in OBS: **Scene Collection → Import →** pick that file, and switch to it. Don't move
-the folder afterwards. (Running `iro setup` before the downloads also works — it only
+Then in OBS: **Scene Collection → Import →** pick that file, and switch to it. The
+collection is named after your profile's `OBS_COLLECTION` (the convention is
+`GT Endurance Racing — <league>`), so several leagues can co-exist in OBS — switch the
+active league's collection later with `racecast obs collection set`. Don't move
+the folder afterwards. (Running `racecast setup` before the downloads also works — it only
 warns and OBS shows those sources black until the files exist.) The collection already
 includes the **Discord Audio Capture** source for the interviews, set up for your OS —
 on macOS just grant OBS the *Screen & System Audio Recording* permission and keep
@@ -225,7 +241,7 @@ Discord windowed. Step-by-step (incl. Discord audio):
 
 **You should now see:** OBS switched to the imported collection — the scene
 list includes Standby / BRB, Stint, Splitscreen, Interview, Intro and Outro.
-<!-- screenshot: OBS Scene Collection -> Import dialog with runtime/IRO_Endurance.import.json selected -->
+<!-- screenshot: OBS Scene Collection -> Import dialog with runtime/GT_Endurance.import.json selected -->
 <!-- screenshot: OBS after the import - scene list visible, Standby scene active -->
 
 ## 6 — Import the Companion buttons
@@ -233,13 +249,13 @@ list includes Standby / BRB, Stint, Splitscreen, Interview, Intro and Outro.
 *Takes ~5 minutes.*
 
 ```bash
-iro companion start
+racecast companion start
 ```
 
 The first run just launches Companion (it creates its config on startup). In the
 launcher press **Launch GUI**, then import the provided button config in the admin
-(**Import/Export → Import** — `iro export companion` writes it to
-`runtime/iro-buttons.companionconfig`). In the import dialog: a **first import**
+(**Import/Export → Import** — `racecast export companion` writes it to
+`runtime/<profile>/racecast-buttons.companionconfig`). In the import dialog: a **first import**
 on a fresh machine → confirm **"Replace current configuration"**; **updating an
 existing board** later → choose **"Import, Resetting only Selected Components"**
 with the default checkboxes — that keeps Companion's settings, including the
@@ -247,13 +263,13 @@ stored OBS WebSocket password (details: [Companion](Companion#import-the-button-
 Finally bind the board to the tailnet:
 
 ```bash
-iro companion restart    # binds Companion to this machine's Tailscale IP
+racecast companion restart    # binds Companion to this machine's Tailscale IP
 ```
 
 (Linux: start and bind Companion manually — automated control is Windows/macOS
 only.) Details: [Companion](Companion).
 
-**You should now see:** the IRO buttons in Companion's admin **Buttons** tab.
+**You should now see:** the broadcast buttons in Companion's admin **Buttons** tab.
 <!-- screenshot: Companion launcher with the Launch GUI button -->
 <!-- screenshot: Companion Import/Export -> Import dialog showing the Reset/Replace choices -->
 
@@ -290,7 +306,7 @@ menu, and your invitation(s) showing in the Tailscale admin console
 *Takes ~1 minute.*
 
 ```bash
-iro preflight
+racecast preflight
 ```
 
 > **In the Control Center:** the **Preflight** view runs the same check — press **Run**.
@@ -299,4 +315,4 @@ Fix anything it flags. Then you're ready → [Run an event](Run-an-event).
 
 **You should now see:** every check green — or only warnings you understand
 (e.g. Companion not running yet).
-<!-- screenshot: iro preflight output with everything green -->
+<!-- screenshot: racecast preflight output with everything green -->

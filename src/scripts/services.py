@@ -26,9 +26,9 @@ def spawn_kwargs(os_name):
 
 def no_window_kwargs(os_name=None):
     """Popen/run kwargs that stop a console child from flashing its own terminal
-    window on Windows. A frozen --windowed app (iro-ui.exe) has NO console, so
+    window on Windows. A frozen --windowed app (racecast-ui.exe) has NO console, so
     every console subprocess it spawns — tasklist, the tailscale CLI, the sibling
-    iro.exe — otherwise pops a transient terminal window, and the Control Center's
+    racecast.exe — otherwise pops a transient terminal window, and the Control Center's
     2-3 s status poll did it continuously (issue #23). CREATE_NO_WINDOW gives the
     child a hidden console instead; children of such a process inherit that hidden
     console, so applying it at the job root suppresses the whole tree. Harmless

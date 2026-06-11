@@ -2,7 +2,7 @@
 """Keep ONE streamlink server alive for one public YouTube channel (static mode).
 Usage: python3 loopstream.py <CHANNEL_ID> <PORT>
 Serves http://127.0.0.1:<PORT> for an OBS media source. Prefers 1080p, >=720p.
-NOTE: PUBLIC channels only. The real (unlisted) flow is the relay (`iro relay start`).
+NOTE: PUBLIC channels only. The real (unlisted) flow is the relay (`racecast relay start`).
 """
 import subprocess, sys, time
 

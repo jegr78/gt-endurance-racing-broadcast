@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Localize the tokenized OBS collection for THIS machine: replace the
-__IRO_ASSETS__/__IRO_SHEET__/__IRO_MEDIA__/__IRO_GRAPHICS__ tokens with this
+__RACECAST_ASSETS__/__RACECAST_SHEET__/__RACECAST_MEDIA__/__RACECAST_GRAPHICS__ tokens with this
 machine's real paths/values and write an importable collection.
 Works from the repo (src/) or the distributed package — same ./obs ./assets layout.
 
@@ -8,10 +8,10 @@ Usage: python3 setup-assets.py [--out PATH] [--assets DIR] [--template FILE]
 """
 import argparse, json, os, re, sys
 
-ASSETS_TOKEN = "__IRO_ASSETS__"
-SHEET_TOKEN = "__IRO_SHEET__"
-MEDIA_TOKEN = "__IRO_MEDIA__"
-GRAPHICS_TOKEN = "__IRO_GRAPHICS__"
+ASSETS_TOKEN = "__RACECAST_ASSETS__"
+SHEET_TOKEN = "__RACECAST_SHEET__"
+MEDIA_TOKEN = "__RACECAST_MEDIA__"
+GRAPHICS_TOKEN = "__RACECAST_GRAPHICS__"
 
 
 def media_dir(base):
@@ -77,6 +77,15 @@ def localize_discord_audio(collection, platform):
     return None
 
 
+def apply_collection_name(collection, name):
+    """Set the OBS collection's top-level display name to `name` (the active
+    profile's OBS_COLLECTION). Blank/None -> leave the template name untouched.
+    Mutates and returns `collection` (consistent with the other transforms)."""
+    if name:
+        collection["name"] = name
+    return collection
+
+
 def load_dotenv(start):
     """Load KEY=VALUE pairs from a .env at the script dir or the project root
     into os.environ. Real environment variables win (setdefault). No dependency.
@@ -123,25 +132,28 @@ def replace_tokens(obj, mapping):
 
 def main():
     base = os.path.dirname(os.path.abspath(__file__))
-    load_dotenv(base)  # picks up IRO_SHEET_ID from a gitignored .env at repo/package root
+    load_dotenv(base)  # picks up machine vars from a gitignored .env at repo/package root
     ap = argparse.ArgumentParser()
     ap.add_argument("--assets", default=os.path.join(base, "assets"))
     ap.add_argument("--template", default=None)
-    ap.add_argument("--out", default=os.path.join(base, "obs", "IRO_Endurance.import.json"))
+    ap.add_argument("--out", default=os.path.join(base, "obs", "GT_Endurance.import.json"))
     ap.add_argument("--media", default=media_dir(base),
                     help="Folder with intro.mp4/outro.mp4 for the Intro/Outro "
-                         "scenes (replaces __IRO_MEDIA__). Default: media_dir().")
+                         "scenes (replaces __RACECAST_MEDIA__). Default: media_dir().")
     ap.add_argument("--graphics", default=graphics_dir(base),
                     help="Folder with the broadcast graphics (<Label>.png) for the "
-                         "image sources (replaces __IRO_GRAPHICS__). Default: graphics_dir().")
-    ap.add_argument("--sheet-id", default=os.environ.get("IRO_SHEET_ID"),
+                         "image sources (replaces __RACECAST_GRAPHICS__). Default: graphics_dir().")
+    ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
                     help="Google Sheet ID injected into the HUD browser source. "
-                         "Default: env IRO_SHEET_ID (or .env). See .env.example.")
+                         "Default: env RACECAST_SHEET_ID (from the active profile).")
+    ap.add_argument("--collection", default=os.environ.get("RACECAST_OBS_COLLECTION"),
+                    help="OBS scene-collection display name written into the import "
+                         "JSON. Default: env RACECAST_OBS_COLLECTION (active profile).")
     a = ap.parse_args()
 
     tpl = a.template
     if tpl is None:
-        for cand in ("IRO_Endurance.template.json", "IRO_Endurance.json"):
+        for cand in ("GT_Endurance.template.json", "GT_Endurance.json"):
             p = os.path.join(base, "obs", cand)
             if os.path.exists(p):
                 tpl = p
@@ -164,8 +176,8 @@ def main():
     if SHEET_TOKEN in raw:
         if not a.sheet_id:
             sys.exit(f"ERROR: the collection references the HUD sheet ({SHEET_TOKEN}) but no "
-                     "Sheet ID is set. Add IRO_SHEET_ID to .env at the repo/package root "
-                     "(see .env.example) or pass --sheet-id.")
+                     "Sheet ID is set. Set SHEET_ID in the active profile "
+                     "(profiles/<name>/profile.env) or pass --sheet-id.")
         mapping[SHEET_TOKEN] = a.sheet_id
     if MEDIA_TOKEN in raw:
         mapping[MEDIA_TOKEN] = a.media
@@ -177,7 +189,7 @@ def main():
                   "until then).")
     if GRAPHICS_TOKEN in raw:
         mapping[GRAPHICS_TOKEN] = a.graphics
-        refs = sorted(set(re.findall(r"__IRO_GRAPHICS__/([^\"\\]+\.png)", raw)))
+        refs = sorted(set(re.findall(r"__RACECAST_GRAPHICS__/([^\"\\]+\.png)", raw)))
         missing = [f for f in refs if not os.path.isfile(os.path.join(a.graphics, f))]
         if missing:
             print(f"  WARNING: graphic(s) missing in {a.graphics}: "
@@ -186,6 +198,7 @@ def main():
 
     localized = replace_tokens(collection, mapping)
     swapped = localize_discord_audio(localized, sys.platform)
+    apply_collection_name(localized, a.collection)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as fh:
         json.dump(localized, fh, ensure_ascii=False, indent=4)
@@ -198,6 +211,8 @@ def main():
         print(f"  Intro/Outro clip dir: {a.media}")
     if GRAPHICS_TOKEN in mapping:
         print(f"  Graphics dir: {a.graphics}")
+    if a.collection:
+        print(f"  OBS collection name: {a.collection}")
     if swapped:
         print(f"  Discord audio source: {swapped}")
     elif discord_variant(sys.platform) is None:

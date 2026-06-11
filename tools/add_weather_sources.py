@@ -4,7 +4,7 @@
 Idempotent (mirrors tools/add_standby_cover.py): deep-copies the 'Standings' image
 source and its full-screen Stint scene item as templates, so the result always matches
 OBS's schema. Re-running is a no-op once the sources exist. Files are tokenised as
-__IRO_GRAPHICS__/<name>.png (resolved by setup-assets.py).
+__RACECAST_GRAPHICS__/<name>.png (resolved by setup-assets.py).
 
 Usage: python3 tools/add_weather_sources.py <collection.json>
 """
@@ -32,7 +32,7 @@ def add_weather_sources(d):
         src["name"] = name
         src["uuid"] = uuid
         src["settings"] = dict(src.get("settings", {}))
-        src["settings"]["file"] = f"__IRO_GRAPHICS__/{name}.png"
+        src["settings"]["file"] = f"__RACECAST_GRAPHICS__/{name}.png"
         srcs.append(src)
 
         item = copy.deepcopy(tmpl_item)

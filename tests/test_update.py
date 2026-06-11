@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stdlib checks for the `iro update` decision helpers. Run: python3 tests/test_update.py"""
+"""Stdlib checks for the `racecast update` decision helpers. Run: python3 tests/test_update.py"""
 import importlib.util, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -22,15 +22,15 @@ def t_parse_version_bad():
 
 # --- asset_name ----------------------------------------------------------------
 def t_asset_name_per_platform():
-    assert m.asset_name("win32") == "iro-windows.zip"
-    assert m.asset_name("darwin") == "iro-macos.tar.gz"
-    assert m.asset_name("linux") == "iro-linux.tar.gz"
+    assert m.asset_name("win32") == "racecast-windows.zip"
+    assert m.asset_name("darwin") == "racecast-macos.tar.gz"
+    assert m.asset_name("linux") == "racecast-linux.tar.gz"
 
 
 # --- classify: the whole decision in one pure function --------------------------
 REL = {"tag_name": "v0.2.0",
-       "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/m"},
-                  {"name": "iro-windows.zip", "browser_download_url": "https://x/w"}]}
+       "assets": [{"name": "racecast-macos.tar.gz", "browser_download_url": "https://x/m"},
+                  {"name": "racecast-windows.zip", "browser_download_url": "https://x/w"}]}
 
 
 def t_classify_dev_refused():
@@ -74,23 +74,23 @@ def t_classify_bad_tag_is_error():
 
 # --- swap_plan -------------------------------------------------------------------
 def t_swap_plan_posix_inplace():
-    assert m.swap_plan("darwin", "/app/iro", "/tmp/new/iro") == \
-        [("replace", "/tmp/new/iro", "/app/iro"), ("chmod", "/app/iro")]
+    assert m.swap_plan("darwin", "/app/racecast", "/tmp/new/racecast") == \
+        [("replace", "/tmp/new/racecast", "/app/racecast"), ("chmod", "/app/racecast")]
 
 
 def t_swap_plan_windows_rename_trick():
     # impl must use ntpath so this is computable when the test runs on macOS/Linux
-    plan = m.swap_plan("win32", r"C:\IRO\iro.exe", r"C:\tmp\iro.exe")
-    assert plan == [("rename", r"C:\IRO\iro.exe", r"C:\IRO\iro-old.exe"),
-                    ("move", r"C:\tmp\iro.exe", r"C:\IRO\iro.exe")]
+    plan = m.swap_plan("win32", r"C:\IRO\racecast.exe", r"C:\tmp\racecast.exe")
+    assert plan == [("rename", r"C:\IRO\racecast.exe", r"C:\IRO\racecast-old.exe"),
+                    ("move", r"C:\tmp\racecast.exe", r"C:\IRO\racecast.exe")]
 
 
 # --- safe_member: archive extraction guard ----------------------------------------
 def t_safe_member():
-    assert m.safe_member("iro") and m.safe_member(".env.example")
-    assert m.safe_member("sub/iro")
+    assert m.safe_member("racecast") and m.safe_member(".env.example")
+    assert m.safe_member("sub/racecast")
     assert not m.safe_member("/etc/passwd")
-    assert not m.safe_member("..\\iro.exe")
+    assert not m.safe_member("..\\racecast.exe")
     assert not m.safe_member("a/../../b")
     assert not m.safe_member("C:\\evil")
     assert not m.safe_member("")
@@ -104,14 +104,14 @@ def t_fetch_latest_parses_json():
     assert rel["tag_name"] == "v0.2.0"
 
 
-# --- ui_asset_name: the iro-ui artifact name in the archive, per platform -----------
+# --- ui_asset_name: the racecast-ui artifact name in the archive, per platform -----------
 def t_ui_asset_name_per_platform():
-    assert m.ui_asset_name("win32") == "iro-ui.exe"
-    assert m.ui_asset_name("darwin") == "iro-ui.app"
-    assert m.ui_asset_name("linux") == "iro-ui"
+    assert m.ui_asset_name("win32") == "racecast-ui.exe"
+    assert m.ui_asset_name("darwin") == "racecast-ui.app"
+    assert m.ui_asset_name("linux") == "racecast-ui"
 
 
-# --- install_ui: place the sibling iro-ui next to the iro binary --------------------
+# --- install_ui: place the sibling racecast-ui next to the racecast binary ----------
 def _write(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
@@ -121,35 +121,35 @@ def _write(path, text):
 def t_install_ui_moves_file():
     import tempfile
     with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-        _write(os.path.join(src, "iro-ui"), "new")
+        _write(os.path.join(src, "racecast-ui"), "new")
         dst = m.install_ui(src, tgt, "linux")
-        assert dst == os.path.join(tgt, "iro-ui")
+        assert dst == os.path.join(tgt, "racecast-ui")
         assert os.path.isfile(dst)
-        assert not os.path.exists(os.path.join(src, "iro-ui"))
+        assert not os.path.exists(os.path.join(src, "racecast-ui"))
 
 
 def t_install_ui_overwrites_existing_file():
     import tempfile
     with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-        _write(os.path.join(src, "iro-ui"), "new")
-        _write(os.path.join(tgt, "iro-ui"), "old")
+        _write(os.path.join(src, "racecast-ui"), "new")
+        _write(os.path.join(tgt, "racecast-ui"), "old")
         m.install_ui(src, tgt, "linux")
-        with open(os.path.join(tgt, "iro-ui"), encoding="utf-8") as fh:
+        with open(os.path.join(tgt, "racecast-ui"), encoding="utf-8") as fh:
             assert fh.read() == "new"
 
 
 def t_install_ui_app_bundle_overwrites_dir():
     import tempfile
     with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
-        _write(os.path.join(src, "iro-ui.app", "Contents", "MacOS", "iro-ui"), "new")
-        _write(os.path.join(tgt, "iro-ui.app", "Contents", "MacOS", "iro-ui"), "old")
+        _write(os.path.join(src, "racecast-ui.app", "Contents", "MacOS", "racecast-ui"), "new")
+        _write(os.path.join(tgt, "racecast-ui.app", "Contents", "MacOS", "racecast-ui"), "old")
         dst = m.install_ui(src, tgt, "darwin")
-        assert dst == os.path.join(tgt, "iro-ui.app")
+        assert dst == os.path.join(tgt, "racecast-ui.app")
         assert os.path.isdir(dst)
-        inner = os.path.join(dst, "Contents", "MacOS", "iro-ui")
+        inner = os.path.join(dst, "Contents", "MacOS", "racecast-ui")
         with open(inner, encoding="utf-8") as fh:
             assert fh.read() == "new"
-        assert not os.path.exists(os.path.join(src, "iro-ui.app"))
+        assert not os.path.exists(os.path.join(src, "racecast-ui.app"))
 
 
 def t_install_ui_missing_returns_none():
@@ -161,8 +161,8 @@ def t_install_ui_missing_returns_none():
 
 # --- classify_tag: install exactly one named release (no semver compare) -------
 TAGREL = {"tag_name": "preview-pr-42",
-          "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/m"},
-                     {"name": "iro-windows.zip", "browser_download_url": "https://x/w"}]}
+          "assets": [{"name": "racecast-macos.tar.gz", "browser_download_url": "https://x/m"},
+                     {"name": "racecast-windows.zip", "browser_download_url": "https://x/w"}]}
 
 
 def t_classify_tag_install_when_asset_present():
@@ -189,11 +189,11 @@ def t_fetch_release_by_tag_parses_json():
 # --- classify_prereleases: the UI's installable-previews list ------------------
 RELEASES = [
     {"tag_name": "v1.2.2", "prerelease": False, "name": "1.2.2",
-     "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/stable"}]},
+     "assets": [{"name": "racecast-macos.tar.gz", "browser_download_url": "https://x/stable"}]},
     {"tag_name": "preview-pr-42", "prerelease": True, "name": "Preview: PR #42 (abc1234)",
      "target_commitish": "abc1234deadbeef", "published_at": "2026-06-10T08:00:00Z",
      "body": "notes for 42",
-     "assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/p42"}]},
+     "assets": [{"name": "racecast-macos.tar.gz", "browser_download_url": "https://x/p42"}]},
     {"tag_name": "preview-main", "prerelease": True, "name": "Preview: main (deadbee)",
      "target_commitish": "", "published_at": "2026-06-09T08:00:00Z", "body": "notes main",
      "assets": []},   # still building — no platform asset yet
@@ -252,8 +252,8 @@ def t_commit_of_accepts_full_sha_target_commitish():
 
 
 def t_find_asset_url():
-    rel = {"assets": [{"name": "iro-macos.tar.gz", "browser_download_url": "https://x/m"},
-                      {"name": "iro-windows.zip", "browser_download_url": "https://x/w"}]}
+    rel = {"assets": [{"name": "racecast-macos.tar.gz", "browser_download_url": "https://x/m"},
+                      {"name": "racecast-windows.zip", "browser_download_url": "https://x/w"}]}
     assert m._find_asset_url(rel, "darwin") == "https://x/m"
     assert m._find_asset_url(rel, "win32") == "https://x/w"
     assert m._find_asset_url(rel, "linux") is None

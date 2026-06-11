@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+"""Stdlib unit checks for the profile-aware config resolver.
+Run: python3 tests/test_config.py"""
+import importlib.util, os, tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+spec = importlib.util.spec_from_file_location(
+    "racecast_config", os.path.join(ROOT, "src", "scripts", "config.py"))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+
+def _mkroot(td):
+    """A fake project root: a dir holding a .env.example marker."""
+    root = os.path.join(td, "proj")
+    os.makedirs(root)
+    open(os.path.join(root, ".env.example"), "w").close()
+    return root
+
+
+def t_find_project_root_finds_marker_above_start():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        start = os.path.join(root, "src", "scripts")
+        os.makedirs(start)
+        assert m.find_project_root(start) == root
+
+
+def t_find_project_root_returns_none_when_no_marker_within_bound():
+    with tempfile.TemporaryDirectory() as td:
+        deep = os.path.join(td, "a", "b", "c", "d", "e")
+        os.makedirs(deep)
+        # no marker anywhere -> None (bounded walk, never an unrelated parent)
+        assert m.find_project_root(deep, max_levels=4) is None
+
+
+def t_parse_env_text_ignores_blanks_comments_and_strips_quotes():
+    text = '\n'.join([
+        "# a comment",
+        "",
+        "SHEET_ID=abc123",
+        '  NAME = "IRO GTEC" ',
+        "URL='https://x/y?key=z'",   # '=' inside the value is kept
+        "noequals",
+    ])
+    got = m.parse_env_text(text)
+    assert got == {
+        "SHEET_ID": "abc123",
+        "NAME": "IRO GTEC",
+        "URL": "https://x/y?key=z",
+    }
+
+
+def t_load_machine_env_reads_dotenv_at_root():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        with open(os.path.join(root, ".env"), "w", encoding="utf-8") as fh:
+            fh.write("RACECAST_PROFILE=iro\nRACECAST_UI_PORT=8089\n")
+        got = m.load_machine_env(root)
+        assert got == {"RACECAST_PROFILE": "iro", "RACECAST_UI_PORT": "8089"}
+
+
+def t_load_machine_env_returns_empty_when_no_dotenv():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)   # marker present, but no .env file
+        assert m.load_machine_env(root) == {}
+
+
+def _mkprofile(root, name, body):
+    pdir = os.path.join(root, "profiles", name)
+    os.makedirs(pdir)
+    with open(os.path.join(pdir, "profile.env"), "w", encoding="utf-8") as fh:
+        fh.write(body)
+    return pdir
+
+
+def t_list_profiles_sorted_excludes_example_and_dirs_without_profile_env():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro", "SHEET_ID=a\n")
+        _mkprofile(root, "erf", "SHEET_ID=b\n")
+        _mkprofile(root, "example", "SHEET_ID=\n")           # template, excluded
+        os.makedirs(os.path.join(root, "profiles", "empty"))  # no profile.env
+        assert m.list_profiles(root) == ["erf", "iro"]
+
+
+def t_list_profiles_empty_when_no_profiles_dir():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        assert m.list_profiles(root) == []
+
+
+def t_parse_profile_reads_named_profile():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro", "NAME=IRO GTEC\nSHEET_ID=abc\n")
+        assert m.parse_profile(root, "iro") == {
+            "NAME": "IRO GTEC", "SHEET_ID": "abc"}
+
+
+def t_read_active_pointer_reads_and_strips():
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "active-profile"), "w", encoding="utf-8") as fh:
+            fh.write("erf\n")
+        assert m.read_active_pointer(td) == "erf"
+        os.remove(os.path.join(td, "active-profile"))
+        assert m.read_active_pointer(td) is None
+
+
+def t_resolve_active_profile_precedence_override_beats_env_and_pointer():
+    avail = ["erf", "iro"]
+    assert m.resolve_active_profile(
+        avail, override="iro", env_value="erf", pointer="erf") == "iro"
+
+
+def t_resolve_active_profile_env_beats_pointer():
+    assert m.resolve_active_profile(
+        ["erf", "iro"], env_value="erf", pointer="iro") == "erf"
+
+
+def t_resolve_active_profile_pointer_used_when_no_override_or_env():
+    assert m.resolve_active_profile(["erf", "iro"], pointer="iro") == "iro"
+
+
+def t_resolve_active_profile_single_profile_is_implicit():
+    assert m.resolve_active_profile(["iro"]) == "iro"
+
+
+def t_resolve_active_profile_unknown_name_raises():
+    try:
+        m.resolve_active_profile(["iro"], override="ghost")
+        raise AssertionError("expected ProfileError")
+    except m.ProfileError as e:
+        assert "ghost" in str(e) and "iro" in str(e)
+
+
+def t_resolve_active_profile_ambiguous_raises():
+    try:
+        m.resolve_active_profile(["erf", "iro"])
+        raise AssertionError("expected ProfileError")
+    except m.ProfileError as e:
+        assert "--profile" in str(e)
+
+
+def t_resolve_active_profile_none_raises():
+    try:
+        m.resolve_active_profile([])
+        raise AssertionError("expected ProfileError")
+    except m.ProfileError as e:
+        assert "no profiles" in str(e)
+
+
+def t_profile_runtime_dir_is_runtime_slash_name():
+    assert m.profile_runtime_dir("/p", "erf") == os.path.join("/p", "runtime", "erf")
+
+
+def t_resolve_config_end_to_end_single_profile():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro",
+                   "NAME=IRO GTEC\nSHEET_ID=abc\nSHEET_PUSH_URL=https://x?key=y\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.profile == "iro"
+        assert cfg.name == "IRO GTEC"
+        assert cfg.sheet_id == "abc"
+        assert cfg.sheet_push_url == "https://x?key=y"
+        assert cfg.intro_url == "" and cfg.outro_url == ""
+        assert cfg.logo_path == ""              # no LOGO set
+        assert cfg.profile_dir == os.path.join(root, "profiles", "iro")
+        assert cfg.runtime_dir == os.path.join(root, "runtime", "iro")
+
+
+def t_resolve_config_name_defaults_to_profile_when_unset():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "erf", "SHEET_ID=zzz\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.name == "erf"
+
+
+def t_resolve_config_override_selects_among_many():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro", "SHEET_ID=a\n")
+        _mkprofile(root, "erf", "SHEET_ID=b\n")
+        cfg = m.resolve_config(root, override="erf", environ={})
+        assert cfg.profile == "erf" and cfg.sheet_id == "b"
+
+
+def t_resolve_config_env_var_selects_among_many():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro", "SHEET_ID=a\n")
+        _mkprofile(root, "erf", "SHEET_ID=b\n")
+        cfg = m.resolve_config(root, environ={"RACECAST_PROFILE": "iro"})
+        assert cfg.profile == "iro"
+
+
+def t_resolve_config_logo_path_resolved_when_file_present():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        pdir = _mkprofile(root, "iro", "SHEET_ID=a\nLOGO=logo.png\n")
+        open(os.path.join(pdir, "logo.png"), "w").close()
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.logo_path == os.path.join(pdir, "logo.png")
+
+
+def t_resolve_config_logo_path_blank_when_file_missing():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro", "SHEET_ID=a\nLOGO=missing.png\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.logo_path == ""
+
+
+def t_resolve_config_obs_collection_from_field():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro",
+                   "NAME=IRO GTEC\nSHEET_ID=abc\nOBS_COLLECTION=IRO Broadcast\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.obs_collection == "IRO Broadcast"
+
+
+def t_resolve_config_obs_collection_falls_back_to_name():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "erf", "NAME=ERF Endurance\nSHEET_ID=abc\n")
+        cfg = m.resolve_config(root, environ={})
+        # default = product prefix + the league NAME (em-dash separator)
+        assert cfg.obs_collection == "GT Endurance Racing — ERF Endurance"
+
+
+def t_resolve_config_obs_collection_falls_back_to_profile_dir_when_no_name():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "erf", "SHEET_ID=abc\n")   # no NAME, no OBS_COLLECTION
+        cfg = m.resolve_config(root, environ={})
+        # falls back to cfg.name (= profile dir name), still prefixed
+        assert cfg.obs_collection == "GT Endurance Racing — erf"
+
+
+def t_resolve_config_obs_collection_default_is_prefixed():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro", "NAME=IRO GTEC\nSHEET_ID=x\n")  # no OBS_COLLECTION
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.obs_collection == "GT Endurance Racing — IRO GTEC"
+
+
+def t_resolve_config_obs_collection_explicit_wins_over_prefix():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "iro",
+                   "NAME=IRO GTEC\nSHEET_ID=x\nOBS_COLLECTION=Custom Name\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.obs_collection == "Custom Name"
+
+
+if __name__ == "__main__":
+    for name, fn in sorted(globals().items()):
+        if name.startswith("t_") and callable(fn):
+            fn(); print("ok", name)
+    print("ALL PASS")

@@ -114,8 +114,8 @@ def t_control_commands_darwin_unchanged():
 # --- find_companion_exe ------------------------------------------------------
 def t_find_companion_exe_override_wins():
     path = os.path.join("D:" + os.sep, "Tools", "Companion.exe")
-    assert cc.find_companion_exe({"IRO_COMPANION_EXE": path}, exists=lambda p: True) == path
-    assert cc.find_companion_exe({"IRO_COMPANION_EXE": path}, exists=lambda p: False) is None
+    assert cc.find_companion_exe({"RACECAST_COMPANION_EXE": path}, exists=lambda p: True) == path
+    assert cc.find_companion_exe({"RACECAST_COMPANION_EXE": path}, exists=lambda p: False) is None
 
 
 def t_find_companion_exe_candidates():

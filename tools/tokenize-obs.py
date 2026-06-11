@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Replace absolute asset paths in an OBS collection with the __IRO_GRAPHICS__ token.
+"""Replace absolute asset paths in an OBS collection with the __RACECAST_GRAPHICS__ token.
 
 Recognized assets = every image_source 'file' path (the broadcast graphics live in
-runtime/graphics and are tokenized to __IRO_GRAPHICS__/<basename>). Path matching is
+runtime/graphics and are tokenized to __RACECAST_GRAPHICS__/<basename>). Path matching is
 separator-agnostic. Idempotent (already-tokenized paths are left alone).
 
 Usage: tokenize-obs.py IN [OUT]
 """
 import argparse, json, os, re
 
-TOKEN = "__IRO_GRAPHICS__"
-SHEET_TOKEN = "__IRO_SHEET__"
+TOKEN = "__RACECAST_GRAPHICS__"
+SHEET_TOKEN = "__RACECAST_SHEET__"
 # Any /spreadsheets/d/<id>/ — the {20,} length guard skips the short token itself.
 SHEET_RE = re.compile(r"(/spreadsheets/d/)[A-Za-z0-9_-]{20,}(/)")
 
@@ -20,6 +20,19 @@ SHEET_RE = re.compile(r"(/spreadsheets/d/)[A-Za-z0-9_-]{20,}(/)")
 DISCORD_AUDIO_UUID = "0085d4f3-bf43-4aef-9fe4-28cfd3270c7d"
 DISCORD_AUDIO_CANONICAL = ("sck_audio_capture",
                            {"type": 1, "application": "com.hnc.Discord"})
+
+
+# The canonical scene-collection name in the committed source. Mirrors
+# obs_ws.EXPECTED_SCENE_COLLECTION and src/obs/GT_Endurance.json's "name";
+# M5 renames all three together. Folding an export back resets the name so a
+# per-league name (written by setup-assets) never lands in git.
+CANONICAL_COLLECTION_NAME = "GT Endurance Racing"
+
+
+def canonicalize_name(d):
+    """Reset the collection's display name to the canonical source name."""
+    d["name"] = CANONICAL_COLLECTION_NAME
+    return d
 
 
 def canonicalize_discord_audio(d):
@@ -40,7 +53,7 @@ def base(path):
 
 
 def tokenize_sheets(obj, counter):
-    """Recursively replace any Google-Sheet ID in a URL with __IRO_SHEET__."""
+    """Recursively replace any Google-Sheet ID in a URL with __RACECAST_SHEET__."""
     if isinstance(obj, dict):
         return {k: tokenize_sheets(v, counter) for k, v in obj.items()}
     if isinstance(obj, list):
@@ -67,13 +80,14 @@ def main():
             continue
         st = s.get("settings") or {}
         f = st.get("file")
-        if isinstance(f, str) and f and not f.startswith("__IRO_"):
+        if isinstance(f, str) and f and not f.startswith("__RACECAST_"):
             st["file"] = f"{TOKEN}/{base(f)}"
             n += 1
     sheet_count = [0]
     d = tokenize_sheets(d, sheet_count)
     if canonicalize_discord_audio(d):
         print("Discord audio source folded back to the canonical macOS form.")
+    canonicalize_name(d)
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(d, fh, ensure_ascii=False, indent=4)

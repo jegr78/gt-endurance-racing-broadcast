@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Build the standalone `iro` and `iro-ui` binaries with PyInstaller and
-smoke-test both.  One pair of binaries per OS — run this on the OS you are
+"""Build the standalone `racecast` and `racecast-ui` binaries with PyInstaller
+and smoke-test both.  One pair of binaries per OS — run this on the OS you are
 targeting (CI runs a 3-OS matrix).
 Usage: python3 tools/build-binary.py [--version vX.Y.Z] [--skip-smoke]
-Output: dist/bin/iro + dist/bin/iro-ui (+ .exe on Windows; + iro-ui.app on
-macOS). The producer ZIP package is a separate artifact built by tools/build.py."""
+Output: dist/bin/racecast + dist/bin/racecast-ui (+ .exe on Windows;
++ racecast-ui.app on macOS). The producer ZIP package is a separate artifact
+built by tools/build.py."""
 import argparse, os, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -12,22 +13,22 @@ SRC = os.path.join(ROOT, "src")
 # Bundled data, laid out under _MEIPASS/src/ so every script's here-relative
 # path resolution (hud.html, assets/, OBS template) keeps working unchanged.
 DATA = ["relay", "scripts", "obs", "assets", "companion", "director", "ui", "setup-assets.py"]
-# Operator docs the Control Center's Help page serves (iro.DOCS_FILES) — only
+# Operator docs the Control Center's Help page serves (racecast.DOCS_FILES) — only
 # these, kept under src/docs/; the docs/wiki/ subtree stays on GitHub.
-DOC_FILES = ["docs/IRO_cheat_sheets.html", "docs/IRO_Broadcast_Setup_Guide.md",
+DOC_FILES = ["docs/cheat_sheets.html", "docs/Broadcast_Setup_Guide.md",
              "docs/README_SETUP.md"]
 
 # The bundled scripts (relay, oneshots) are loaded at runtime via importlib, so
 # PyInstaller's static analyser cannot see their imports.  List every stdlib
-# module they use that is NOT already guaranteed by iro.py's own imports.
+# module they use that is NOT already guaranteed by racecast.py's own imports.
 HIDDEN_STDLIB = [
-    # iro-feeds.py
+    # racecast-feeds.py
     "http.server", "ipaddress",
-    # iro-feeds.py + get-graphics.py + get-media.py
+    # racecast-feeds.py + get-graphics.py + get-media.py
     "urllib.parse", "urllib.request",
     # preflight.py
     "ctypes", "dataclasses", "socket",
-    # hud.html data endpoint (iro-feeds.py uses csv, io at module level)
+    # hud.html data endpoint (racecast-feeds.py uses csv, io at module level)
     "csv", "io",
     # ui_jobs.py (loaded via importlib through ui_server.py)
     "uuid",
@@ -58,7 +59,7 @@ def build_target(launcher, workdir, version_file, sep, entry, name, windowed):
            "--workpath", os.path.join(workdir, "build", name),
            "--specpath", workdir,
            # services/companion_common/event (+ its imports preflight,
-           # install_apps)/tailscale are real frozen modules (iro.py imports them)
+           # install_apps)/tailscale are real frozen modules (racecast.py imports them)
            "--paths", os.path.join(SRC, "scripts"),
            "--hidden-import", "services", "--hidden-import", "companion_common",
            "--hidden-import", "event", "--hidden-import", "preflight",
@@ -78,7 +79,7 @@ def build_target(launcher, workdir, version_file, sep, entry, name, windowed):
         # in-process import then dies with EACCES trying to open() it.
         dest = f"src/{rel}" if os.path.isdir(path) else "src"
         cmd += ["--add-data", f"{path}{sep}{dest}"]
-    # The Control Center's Help page serves these three docs (iro.DOCS_FILES).
+    # The Control Center's Help page serves these three docs (racecast.DOCS_FILES).
     # Bundle them under src/docs/ (real dir DEST -> file lands inside) so
     # resource_path("docs/<f>") finds them. The docs/wiki/ subtree is NOT bundled
     # — it lives on GitHub and the Help page links to it.
@@ -104,38 +105,38 @@ def main():
     launcher = _pyinstaller_cmd()
     if launcher is None:
         sys.exit("pyinstaller not found (pip install pyinstaller / brew install pyinstaller).")
-    workdir = tempfile.mkdtemp(prefix="iro-build-")
+    workdir = tempfile.mkdtemp(prefix="racecast-build-")
     version_file = os.path.join(workdir, "VERSION")
     with open(version_file, "w", encoding="utf-8") as fh:
         fh.write(a.version + "\n")
     sep = ";" if os.name == "nt" else ":"
     iro_bin = build_target(launcher, workdir, version_file, sep,
-                           "iro.py", "iro", windowed=False)
+                           "racecast.py", "racecast", windowed=False)
     ui_bin = build_target(launcher, workdir, version_file, sep,
-                          "iro_ui.py", "iro-ui", windowed=True)
+                          "racecast_ui.py", "racecast-ui", windowed=True)
     if not a.skip_smoke:
         smoke(iro_bin, a.version)
         smoke_ui(ui_bin)
-        # macOS ships the windowed launcher as iro-ui.app; smoke its INNER
-        # executable too. The .app nests the exe 3 levels deep, so sibling-iro
+        # macOS ships the windowed launcher as racecast-ui.app; smoke its INNER
+        # executable too. The .app nests the exe 3 levels deep, so sibling-racecast
         # resolution differs — a job spawn through it is the regression guard for
-        # the "Contents/MacOS/iro not found" bug (the plain ui_bin can't catch it).
-        app_exe = os.path.join(ROOT, "dist", "bin", "iro-ui.app",
-                               "Contents", "MacOS", "iro-ui")
+        # the "Contents/MacOS/racecast not found" bug (the plain ui_bin can't catch it).
+        app_exe = os.path.join(ROOT, "dist", "bin", "racecast-ui.app",
+                               "Contents", "MacOS", "racecast-ui")
         if os.path.isfile(app_exe):
             smoke_ui(app_exe)
 
 
 def smoke_ui(binary):
     """The windowed launcher must bind, answer the ping with the Control Center
-    signature, run a job through the sibling `iro` binary, and quit. No --version
-    check: a windowed Windows build has no stdout. The sibling `iro` lives next
+    signature, run a job through the sibling `racecast` binary, and quit. No --version
+    check: a windowed Windows build has no stdout. The sibling `racecast` lives next
     to this binary in dist/bin/, so the job spawn exercises _iro_job_executable."""
     import json
     import time
     import urllib.request
     env = os.environ.copy()
-    env["IRO_UI_PORT"] = "8390"
+    env["RACECAST_UI_PORT"] = "8390"
     ui = subprocess.Popen([binary, "--no-browser"], env=env,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
@@ -158,18 +159,18 @@ def smoke_ui(binary):
             except OSError:
                 if ui.poll() is not None:
                     break
-        if b"iro-control-center" not in body:
+        if b"racecast-control-center" not in body:
             out = ui.stdout.read().decode("utf-8", "replace") if ui.poll() is not None else ""
-            sys.exit(f"smoke iro-ui FAILED: no Control Center ping on :8390 "
+            sys.exit(f"smoke racecast-ui FAILED: no Control Center ping on :8390 "
                      f"(rc={ui.poll()}) out={out!r}")
         # Start a read-only job (preflight) and confirm it spawns + completes —
-        # this proves iro-ui spawns the sibling `iro` binary, not itself.
+        # this proves racecast-ui spawns the sibling `racecast` binary, not itself.
         # snapshot() returns {"id","op","running","exit_code","cancelled"};
         # /api/jobs/<id> returns {"ok": True, **snap}. A job is done when
         # exit_code is not None (running == False); there is no "done" key.
         job = json.loads(_post("/api/op/preflight"))
         if not job.get("ok") or not job.get("job_id"):
-            sys.exit(f"smoke iro-ui FAILED: could not start preflight job ({job!r})")
+            sys.exit(f"smoke racecast-ui FAILED: could not start preflight job ({job!r})")
         jid, snap = job["job_id"], {}
         for _ in range(60):                  # up to ~30 s for preflight to finish
             time.sleep(0.5)
@@ -177,13 +178,13 @@ def smoke_ui(binary):
             if snap.get("exit_code") is not None:
                 break
         if snap.get("exit_code") is None:
-            sys.exit(f"smoke iro-ui FAILED: preflight job never finished ({snap!r})")
+            sys.exit(f"smoke racecast-ui FAILED: preflight job never finished ({snap!r})")
         _post("/api/quit")
         ui.wait(timeout=10)
     finally:
         if ui.poll() is None:
             ui.kill()
-    print("Smoke test OK (iro-ui: ping, sibling-iro job, quit).")
+    print("Smoke test OK (racecast-ui: ping, sibling-racecast job, quit).")
 
 
 def smoke(binary, version):
@@ -203,7 +204,7 @@ def smoke(binary, version):
         sys.exit(f"smoke event status FAILED: rc={ev.returncode} "
                  f"out={ev.stdout!r} err={ev.stderr!r}")
     with tempfile.TemporaryDirectory() as td:
-        dst = os.path.join(td, "iro-buttons.companionconfig")
+        dst = os.path.join(td, "racecast-buttons.companionconfig")
         ex = run(["export", "companion", "--out", dst])
         if ex.returncode != 0 or not os.path.isfile(dst):
             sys.exit(f"smoke export FAILED: rc={ex.returncode} err={ex.stderr!r}")
@@ -223,7 +224,7 @@ def smoke(binary, version):
     import time
     import urllib.request
     env = os.environ.copy()
-    env["IRO_UI_PORT"] = "8389"
+    env["RACECAST_UI_PORT"] = "8389"
     ui = subprocess.Popen([binary, "ui", "--no-browser"], env=env,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     try:
@@ -238,7 +239,7 @@ def smoke(binary, version):
             except OSError:
                 if ui.poll() is not None:   # crashed before binding
                     break
-        if b"iro-control-center" not in body:
+        if b"racecast-control-center" not in body:
             out = ui.stdout.read().decode("utf-8", "replace") if ui.poll() is not None else ""
             sys.exit(f"smoke ui FAILED: no Control Center ping on :8389 "
                      f"(rc={ui.poll()}) out={out!r}")

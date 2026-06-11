@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""`iro install-apps` — install the producer APPLICATIONS (OBS Studio, Bitfocus
+"""`racecast install-apps` — install the producer APPLICATIONS (OBS Studio, Bitfocus
 Companion, Tailscale) via winget (Windows) / brew casks (macOS) / official vendor
 paths (Linux, apt-based distros). Linux is automated after an explicit operator
 confirmation (sudo prompts surface to the operator); other distros get the manual
@@ -252,7 +252,7 @@ def main():
     missing = [app for app in APPS if not app_present(app, sys.platform)]
     if not missing and not a.update:
         print("All apps already installed:", ", ".join(APPS))
-        print("  (run `iro install-apps --update` to upgrade them)")
+        print("  (run `racecast install-apps --update` to upgrade them)")
         return
     if missing:
         print("Missing apps:", ", ".join(missing))
@@ -308,8 +308,8 @@ def main():
     print("All apps installed. First-run setup still needed:")
     print("  Tailscale: sign in and join the team's private Tailscale "
           "network (your invited account).")
-    print("  Companion: launch once, then `iro export companion` + import the config.")
-    print("  OBS: run `iro setup` and import the localized collection.")
+    print("  Companion: launch once, then `racecast export companion` + import the config.")
+    print("  OBS: run `racecast setup` and import the localized collection.")
     print("  Discord: sign in — used for the interview audio (OBS app-audio capture).")
 
 

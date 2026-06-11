@@ -1,108 +1,151 @@
-# IRO Endurance Broadcast — Repository
+# GT Endurance Racing Broadcast — Repository
 
-Single-source repo for the IRO Endurance broadcast producer station.
+Single-source repo for the GT Endurance Racing broadcast producer station.
 **Edit only under `src/`.** `dist/` and `runtime/` are generated and gitignored.
 
-📖 **Operator docs & onboarding:** see the [project wiki](https://github.com/jegr78/IRO_Broadcast_Setup/wiki)
+📖 **Operator docs & onboarding:** see the [project wiki](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki)
 (architecture diagrams, setup, runbook, troubleshooting). Its source lives in
 `src/docs/wiki/` and is published with `python3 tools/sync-wiki.py`.
 
 ## Layout
 - `src/` — source of truth: `relay/`, `obs/`, `companion/`, `director/`, `assets/`, `scripts/`, `docs/`, `setup-assets.py`
-- `.env` — machine-local secrets/config (gitignored; copy from `.env.example`)
+- `profiles/` — one directory per league (`profiles/<name>/profile.env` + `overlay/`); `profiles/example/` ships as the template
+- `.env` — machine-local config (gitignored; copy from `.env.example`)
 - `tools/` — maintainer scripts (build, tokenize, sync, helpers) — not shipped
 - `tests/` — `test_pov.py`
-- `runtime/` — cookies/logs/caches (gitignored)
+- `runtime/` — cookies/logs/caches + per-profile state (gitignored)
 - `dist/` — built distributable + ZIP (gitignored)
 - `docs/superpowers/` — specs & plans
 
-## Configure the Google Sheet (once)
-The HUD + relay schedule live in a Google Sheet. Its ID is **not** hardcoded —
-it comes from `IRO_SHEET_ID` (env var or a gitignored `.env` at the repo root):
+## Configuration model — machine vs. league
+
+Two layers, kept deliberately separate so one machine can run several leagues:
+
+- **Machine config — `.env`** (copy from `.env.example`, gitignored, repo root).
+  Holds only machine-local values, never league secrets:
+  `RACECAST_OBS_WS_PASSWORD`, `RACECAST_COMPANION_EXE`, `RACECAST_UI_PORT`,
+  `RACECAST_UI_PASSWORD` (reserved), and `RACECAST_PROFILE` (the default active
+  league). Real environment variables take precedence.
+  ```bash
+  cp .env.example .env
+  ```
+- **League config — `profiles/<name>/profile.env`.** Each league is a profile
+  directory with **un-prefixed** keys: `NAME`, `SHEET_ID`, `SHEET_PUSH_URL`,
+  `INTRO_URL`, `OUTRO_URL`, `LOGO`, `OBS_COLLECTION`. The Google Sheet that
+  drives the HUD + relay schedule comes from this file's `SHEET_ID` — **not**
+  from `.env`. `profiles/example/` is the template; copy it with
+  `racecast profile new <name> --from example`.
+
+## Profiles (leagues)
+
 ```bash
-cp .env.example .env      # then put your Sheet ID into IRO_SHEET_ID
+racecast profile list            # all profiles; marks the active one
+racecast profile show [<name>]   # resolved config for a profile (defaults to active)
+racecast profile use <name>      # set the active profile (writes runtime/active-profile)
+racecast profile new <name> --from example   # copy a profile dir to start a new league
+racecast --profile <name> <cmd>  # run one command against a non-active profile
 ```
-Used by the relay (schedule/POV tabs) and by `setup-assets.py` (HUD browser source).
+
+Active-profile precedence: `--profile` > `RACECAST_PROFILE` (in `.env`) >
+`runtime/active-profile` pointer > the sole profile if only one exists. Each
+league keeps its own OBS scene collection, graphics/media, and HUD overlay, so
+switching leagues is a profile switch — no editing of `.env` or the collection.
+
+### Per-league HUD overlays
+Each profile can restyle the relay-served HUD and race timer via
+`profiles/<name>/overlay/{hud,timer}.css` (with optional `overlay/fonts/`). These
+override the bundled defaults per league and are editable in the Control Center.
+The first override on a profile whose `overlay/` did not exist when the relay
+started needs one `racecast relay restart`; later edits apply live (Apply in OBS).
+See the [HUD overlays](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/HUD-Overlays) wiki page.
 
 ## Get started — the Control Center
 
 Download the latest release for your platform from
-[**GitHub Releases**](https://github.com/jegr78/IRO_Broadcast_Setup/releases/latest)
-(`iro-windows.zip` / `iro-macos.tar.gz` / `iro-linux.tar.gz`) and extract it into
-**its own folder**. The archive holds two binaries side by side: **`iro`** (the
-CLI) and **`iro-ui`** (the Control Center).
+[**GitHub Releases**](https://github.com/jegr78/gt-endurance-racing-broadcast/releases/latest)
+(`racecast-windows.zip` / `racecast-macos.tar.gz` / `racecast-linux.tar.gz`) and
+extract it into **its own folder**. The archive holds two binaries side by side:
+**`racecast`** (the CLI) and **`racecast-ui`** (the Control Center).
 
-**Double-click `iro-ui`** (`iro-ui.exe` / `iro-ui.app`; Linux: `./iro-ui`) to open
-the **Control Center** at `http://127.0.0.1:8089/` — a local web dashboard that
-runs the whole station (setup wizard, service control, logs) from your browser.
-The first launch creates a `.env` next to the binaries for your Sheet ID and
-secrets. Full step-by-step:
-[Set up the broadcast PC (wiki)](https://github.com/jegr78/IRO_Broadcast_Setup/wiki/Set-up-the-broadcast-PC)
-· [The Control Center (wiki)](https://github.com/jegr78/IRO_Broadcast_Setup/wiki/Control-Center).
+**Double-click `racecast-ui`** (`racecast-ui.exe` / `racecast-ui.app`; Linux:
+`./racecast-ui`) to open the **Control Center** at `http://127.0.0.1:8089/` — a
+local web dashboard that runs the whole station (setup wizard, service control,
+logs, the Profile view, and General Settings) from your browser. The first launch
+creates a `.env` next to the binaries for your machine config. Full step-by-step:
+[Set up the broadcast PC (wiki)](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Set-up-the-broadcast-PC)
+· [The Control Center (wiki)](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Control-Center).
+
+The **Profile view** switches leagues, copies a profile to create a new one,
+edits `profile.env` (incl. `OBS_COLLECTION`), edits the overlay CSS, and manages
+that profile's graphics/media. **General Settings** holds the machine `.env` and
+cookies.
 
 > **First start:** Windows SmartScreen / macOS Gatekeeper show a one-time warning for
 > unsigned binaries — choose "Run anyway" / right-click → Open.
 
 ## The CLI (alternative)
 
-Everything the Control Center does is also an `iro …` command — the terminal stays
-a first-class option (and the only one on headless Linux). Run `iro` once to create
-the `.env`, then update later with `iro update`.
+Everything the Control Center does is also a `racecast …` command — the terminal
+stays a first-class option (and the only one on headless Linux). Run `racecast`
+once to create the `.env`, then update later with `racecast update`.
 
 ### One-time machine setup
 ```
-iro init              # guided setup: installs tools+apps, cookies, graphics,
-                      # media, OBS collection, Companion config, preflight —
-                      # skips what is already done; re-run any time
+racecast init         # guided setup: picks/creates a league profile (fills its
+                      # SHEET_ID), installs tools+apps, cookies, graphics, media,
+                      # OBS collection, Companion config, preflight — skips what is
+                      # already done; re-run any time
 ```
 
 Or run the steps individually:
 ```
-iro install-tools     # installs yt-dlp/streamlink/ffmpeg/deno (offers Homebrew setup on a fresh Mac)
-iro install-apps      # optional: installs OBS, Companion, Tailscale
-iro preflight         # verify the machine is ready
-iro export companion  # write the Companion button config -> runtime/iro-buttons.companionconfig
+racecast profile new <name> --from example   # create the league, then fill its SHEET_ID
+racecast install-tools     # installs yt-dlp/streamlink/ffmpeg/deno (offers Homebrew setup on a fresh Mac)
+racecast install-apps      # optional: installs OBS, Companion, Tailscale
+racecast preflight         # verify the machine is ready
+racecast export companion  # write the Companion button config -> runtime/racecast-buttons.companionconfig
 ```
 
 ### One-time / pre-event setup
 ```
-iro cookies firefox      # refresh YouTube cookies before each event (log into YouTube in Firefox first)
-iro media                # download Intro/Outro clips -> runtime/media/
-iro graphics             # download broadcast graphics -> runtime/graphics/
-iro setup --out runtime/IRO_Endurance.import.json   # localize OBS assets + inject Sheet ID
-# OBS -> Scene Collection -> Import -> runtime/IRO_Endurance.import.json
+racecast cookies firefox   # refresh YouTube cookies before each event (log into YouTube in Firefox first)
+racecast media             # download the active profile's Intro/Outro clips -> runtime/<profile>/media/
+racecast graphics          # download the active profile's broadcast graphics -> runtime/<profile>/graphics/
+racecast setup --out runtime/GT_Endurance.import.json   # localize OBS assets + inject the profile's Sheet ID
+# (default --out is the profile-scoped runtime/<profile>/GT_Endurance.import.json)
+# OBS -> Scene Collection -> Import -> the import JSON above
 ```
 
 ## Run it
 
 ```
-iro event start          # bring everything up: Tailscale, Discord, relay, OBS, Companion
-iro event start --stint 4 # take over mid-event (12h/24h): stint 4 is on air now
-iro event status         # event-day readiness report (apps, services, cookies, graphics, media, config)
-iro event stop           # stop relay/Companion/streams — OBS & friends keep running
-iro tailscale up         # connect Tailscale (event start does this automatically)
-iro tailscale down       # disconnect Tailscale after the event
-iro preflight            # check tools/hardware
-iro relay start          # start the relay (background)
-iro relay logs -f        # watch it live
-iro relay status         # health + tailnet URL
-iro companion start      # bind Companion to Tailscale, start it
-iro status               # all services at a glance
-iro relay stop           # stop the relay
-iro obs refresh          # force-reload the relay-served OBS browser sources (HUD/timer)
-iro obs collection       # check the active OBS scene collection
-iro obs collection set   # switch OBS to the IRO Endurance collection
+racecast event start          # bring everything up: Tailscale, Discord, relay, OBS, Companion
+racecast event start --stint 4 # take over mid-event (12h/24h): stint 4 is on air now
+racecast event status         # event-day readiness report (apps, services, cookies, graphics, media, config)
+racecast event stop           # stop relay/Companion/streams — OBS & friends keep running
+racecast tailscale up         # connect Tailscale (event start does this automatically)
+racecast tailscale down       # disconnect Tailscale after the event
+racecast preflight            # check tools/hardware
+racecast relay start          # start the relay (background)
+racecast relay logs -f        # watch it live
+racecast relay status         # health + tailnet URL
+racecast companion start      # bind Companion to Tailscale, start it
+racecast status               # all services at a glance
+racecast relay stop           # stop the relay
+racecast obs refresh          # force-reload the relay-served OBS browser sources (HUD/timer)
+racecast obs collection       # check the active OBS scene collection
+racecast obs collection set   # switch OBS to this league's scene collection
 ```
 
-For live debugging, run the relay in the foreground: `iro relay run`.
+For live debugging, run the relay in the foreground: `racecast relay run`.
 
 ## Build the distributable (maintainer)
 ```bash
-python3 tools/build.py     # -> dist/IRO_Broadcast_Package/ + dist/IRO_Broadcast_Package.zip
+python3 tools/build.py     # -> dist/GT_Racecast_Package/ + dist/GT_Racecast_Package.zip
 ```
 
 ## After editing the OBS collection in OBS
 Re-export from OBS, then fold the change back into the tokenized source:
 ```bash
-python3 tools/tokenize-obs.py /path/to/exported.json src/obs/IRO_Endurance.json
+python3 tools/tokenize-obs.py /path/to/exported.json src/obs/GT_Endurance.json
 ```

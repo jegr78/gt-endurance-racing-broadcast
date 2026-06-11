@@ -44,13 +44,13 @@ def t_media_dir_repo():
 
 
 def t_media_dir_pkg():
-    got = m.media_dir(os.path.join("/x/IRO_Broadcast_Package", "relay"))
-    assert got == os.path.join("/x/IRO_Broadcast_Package", "media"), got
+    got = m.media_dir(os.path.join("/x/GT_Racecast_Package", "relay"))
+    assert got == os.path.join("/x/GT_Racecast_Package", "media"), got
 
 
 def t_resolve_priority_cli_then_env():
     cli = {"intro": "CLI", "outro": None}
-    env = {"IRO_OUTRO_URL": "ENV"}
+    env = {"RACECAST_OUTRO_URL": "ENV"}
     csv_text = "Intro Video,SHEET_I\nOutro Video,SHEET_O\n"
     out = m.resolve_urls({"intro", "outro"}, cli, env, csv_text)
     assert out == {"intro": "CLI", "outro": "ENV"}, out

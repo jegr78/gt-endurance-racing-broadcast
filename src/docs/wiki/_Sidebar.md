@@ -1,4 +1,4 @@
-### IRO Broadcast
+### GT Endurance Racing Broadcast
 
 **Start here**
 - [Home](Home)
@@ -20,5 +20,7 @@
 - [OBS &amp; scenes](OBS-Setup)
 - [Companion (button config)](Companion)
 - [Configuration &amp; secrets](Configuration)
+- [League profiles](Profiles)
+- [HUD overlays](HUD-Overlays)
 - [Static mode](Static-Mode)
 - [Build &amp; maintenance](Build-and-maintenance)

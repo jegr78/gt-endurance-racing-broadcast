@@ -7,7 +7,7 @@ import importlib.util, os, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 spec = importlib.util.spec_from_file_location(
-    "irofeeds", os.path.join(ROOT, "src", "relay", "iro-feeds.py"))
+    "irofeeds", os.path.join(ROOT, "src", "relay", "racecast-feeds.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
 
@@ -154,7 +154,7 @@ def t_status_pov_stopped_when_paused_with_age():
 
 
 def t_cookie_health_vanished_file_treated_as_absent():
-    # The cookies file can be swapped/deleted mid-poll (iro cookies refresh
+    # The cookies file can be swapped/deleted mid-poll (racecast cookies refresh
     # while the relay runs) — must degrade to absent, never raise.
     with tempfile.TemporaryDirectory() as td:
         gone = os.path.join(td, "soon-gone.txt")

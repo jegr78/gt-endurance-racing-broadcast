@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""`iro install-tools` — install the external runtime tools (yt-dlp, streamlink,
+"""`racecast install-tools` — install the external runtime tools (yt-dlp, streamlink,
 ffmpeg, deno) via the platform's package manager: winget (Windows), brew (macOS),
 apt (Linux). Never elevates privileges itself — the brew bootstrap and the
 package managers prompt for sudo on their own; failed installs end with a manual
@@ -144,7 +144,7 @@ def _note_new_terminal():
     update the registry / shell profile, not running shells."""
     not_on_path = [t for t in TOOLS if not shutil.which(t)]
     if not_on_path:
-        print("NOTE: open a NEW terminal before `iro preflight` / `iro relay start` —")
+        print("NOTE: open a NEW terminal before `racecast preflight` / `racecast relay start` —")
         print("      not on this shell's PATH yet:", ", ".join(not_on_path))
 
 
@@ -161,7 +161,7 @@ def main():
     missing = missing_tools(which=_which_with_fresh_path(windows_fresh_path()))
     if not missing and not a.update:
         print("All external tools already installed:", ", ".join(TOOLS))
-        print("  (run `iro install-tools --update` to upgrade them)")
+        print("  (run `racecast install-tools --update` to upgrade them)")
         _note_new_terminal()
         return
     if missing:
@@ -211,7 +211,7 @@ def main():
     # Tools may sit in brew's prefix / the registry PATH but not THIS shell's.
     _note_new_terminal()
     print("All tools " + ("up to date" if a.update else "installed")
-          + ". Run `iro preflight` to verify.")
+          + ". Run `racecast preflight` to verify.")
 
 
 if __name__ == "__main__":

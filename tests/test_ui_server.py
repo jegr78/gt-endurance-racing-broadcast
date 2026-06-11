@@ -14,9 +14,9 @@ import ui_server as us
 
 def t_ui_port_default_and_override():
     assert us.ui_port({}) == 8089
-    assert us.ui_port({"IRO_UI_PORT": "9100"}) == 9100
-    assert us.ui_port({"IRO_UI_PORT": ""}) == 8089
-    assert us.ui_port({"IRO_UI_PORT": "not-a-port"}) == 8089
+    assert us.ui_port({"RACECAST_UI_PORT": "9100"}) == 9100
+    assert us.ui_port({"RACECAST_UI_PORT": ""}) == 8089
+    assert us.ui_port({"RACECAST_UI_PORT": "not-a-port"}) == 8089
 
 
 def t_classify_ping():
@@ -63,7 +63,7 @@ def _ctx(jobs=None, init_plan=None, init_step=None):
             "obs_ws": lambda: {"ok": True, "ip": "127.0.0.1", "port": 4455,
                                "password": "pw", "auth_required": True},
             "obs_collection": lambda: {"ok": True, "current": "Other",
-                                       "expected": "IRO Endurance", "match": False,
+                                       "expected": "GT Endurance Racing", "match": False,
                                        "expected_present": True,
                                        "renamed_variant": None},
             "update_check": lambda force=False: {"ok": True, "current": "v1.0.0",
@@ -89,13 +89,28 @@ def _ctx(jobs=None, init_plan=None, init_step=None):
                 lambda a: [sys.executable, "-c", "print('hi from job')"]),
             "log_paths": {},
             "env_read": lambda: {"ok": True, "path": "/x/.env",
-                                 "entries": [{"key": "IRO_SHEET_ID", "value": "abc"}]},
+                                 "entries": [{"key": "RACECAST_SHEET_ID", "value": "abc"}]},
             "env_write": lambda entries: {"ok": True, "path": "/x/.env", "_got": entries},
             "init_plan": init_plan or (lambda browser="firefox": {
                 "ok": True, "steps": [], "next_steps": []}),
             "init_step": init_step or (lambda key: {"ok": True, "key": key,
                                                     "done": True,
-                                                    "skip_reason": None})}
+                                                    "skip_reason": None}),
+            "profiles": lambda: {"ok": True, "active": "iro",
+                                 "profiles": [{"name": "iro"}, {"name": "erf"}]},
+            "profile_use": lambda name: {"ok": True, "active": name},
+            "profile_new": lambda name, source=None: {"ok": True, "name": name,
+                                                      "from": source},
+            "profile_env_read": lambda: {"ok": True, "path": "/x/profile.env",
+                                         "entries": [{"key": "K", "value": "v"}]},
+            "profile_env_write": lambda entries: {"ok": True,
+                                                  "path": "/x/profile.env",
+                                                  "_got": entries},
+            "overlay_read": lambda page: {"ok": True, "page": page,
+                                          "active": "iro", "css": "",
+                                          "path": "/x/overlay/%s.css" % page},
+            "overlay_write": lambda page, content: {"ok": True,
+                                                    "path": "/x/overlay/%s.css" % page}}
 
 
 def _serve(ctx):
@@ -171,7 +186,7 @@ def t_obs_collection_route_wraps_provider():
         code, body = _get(port, "/api/obs-collection")
         data = json.loads(body)
         assert code == 200 and data["ok"] is True
-        assert data["expected"] == "IRO Endurance" and data["match"] is False
+        assert data["expected"] == "GT Endurance Racing" and data["match"] is False
     finally:
         httpd.shutdown()
 
@@ -321,7 +336,7 @@ def t_root_serves_the_page():
     try:
         code, body = _get(port, "/")
         assert code == 200
-        assert b"IRO Control Center" in body
+        assert b"racecast Control Center" in body
         assert b"/api/status" in body          # the page talks to our API
     finally:
         httpd.shutdown()
@@ -537,7 +552,7 @@ def t_env_get_route():
         code, body = _get(port, "/api/env")
         data = json.loads(body)
         assert code == 200 and data["ok"] is True
-        assert data["entries"][0]["key"] == "IRO_SHEET_ID"
+        assert data["entries"][0]["key"] == "RACECAST_SHEET_ID"
     finally:
         httpd.shutdown()
 
@@ -650,6 +665,144 @@ def t_init_step_route_reports_error_as_400():
         data = json.loads(body)
         assert code == 400
         assert data["ok"] is False
+    finally:
+        httpd.shutdown()
+
+
+def t_profiles_get_route_wraps_provider():
+    seen = []
+    ctx = _ctx()
+    ctx["profiles"] = lambda: seen.append(True) or {"ok": True, "active": "iro",
+                                                    "profiles": [{"name": "iro"}]}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/profiles")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["active"] == "iro" and data["profiles"][0]["name"] == "iro"
+        assert seen == [True]
+    finally:
+        httpd.shutdown()
+
+
+def t_profile_use_post_passes_name():
+    seen = []
+    ctx = _ctx()
+    ctx["profile_use"] = lambda name: seen.append(name) or {"ok": True,
+                                                            "active": name}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/profile/use", {"name": "erf"})
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True and data["active"] == "erf"
+        assert seen == ["erf"]
+    finally:
+        httpd.shutdown()
+
+
+def t_profile_new_post_passes_name_and_source():
+    seen = []
+    ctx = _ctx()
+    ctx["profile_new"] = lambda name, source=None: (
+        seen.append((name, source)) or {"ok": True, "name": name, "from": source})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/profile/new",
+                                {"name": "gt3", "from": "iro"})
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["name"] == "gt3" and data["from"] == "iro"
+        assert seen == [("gt3", "iro")]
+    finally:
+        httpd.shutdown()
+
+
+def t_profile_env_get_route_wraps_provider():
+    seen = []
+    ctx = _ctx()
+    ctx["profile_env_read"] = lambda: seen.append(True) or {
+        "ok": True, "path": "/x/profile.env",
+        "entries": [{"key": "K", "value": "v"}]}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/profile/env")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["entries"][0]["key"] == "K"
+        assert seen == [True]
+    finally:
+        httpd.shutdown()
+
+
+def t_profile_env_post_passes_entries():
+    seen = []
+    ctx = _ctx()
+    ctx["profile_env_write"] = lambda entries: seen.append(entries) or {
+        "ok": True, "path": "/x/profile.env"}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/profile/env",
+                                {"entries": [{"key": "A", "value": "1"}]})
+        assert code == 200 and json.loads(body)["ok"] is True
+        assert seen == [[{"key": "A", "value": "1"}]]
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_get_route_wraps_provider():
+    seen = []
+    ctx = _ctx()
+    ctx["overlay_read"] = lambda page: seen.append(page) or {
+        "ok": True, "page": page, "active": "iro",
+        "css": "#x{}", "path": "/x/overlay/%s.css" % page}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/overlay?page=hud")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["page"] == "hud" and data["css"] == "#x{}"
+        assert seen == ["hud"]
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_get_route_defaults_to_hud():
+    seen = []
+    ctx = _ctx()
+    ctx["overlay_read"] = lambda page: seen.append(page) or {
+        "ok": True, "page": page, "active": "iro", "css": "", "path": "/x"}
+    httpd, port = _serve(ctx)
+    try:
+        code, _b = _get(port, "/api/overlay")
+        assert code == 200 and seen == ["hud"]
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_post_passes_page_and_content():
+    seen = []
+    ctx = _ctx()
+    ctx["overlay_write"] = lambda page, content: seen.append((page, content)) or {
+        "ok": True, "path": "/x/overlay/%s.css" % page}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/overlay",
+                                {"page": "timer", "content": "#t{}"})
+        assert code == 200 and json.loads(body)["ok"] is True
+        assert seen == [("timer", "#t{}")]
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_post_provider_error_is_400():
+    ctx = _ctx()
+    ctx["overlay_write"] = lambda page, content: {"ok": False,
+                                                  "error": "no active profile or invalid page"}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/overlay",
+                                {"page": "panel", "content": "x"})
+        assert code == 400 and "invalid page" in json.loads(body)["error"]
     finally:
         httpd.shutdown()
 

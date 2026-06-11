@@ -22,8 +22,11 @@ generates both a 1080p and a 720p rendition; the pull side prefers
 ## 1. System topology
 
 Streamers push to their own YouTube channels; the producer station pulls them in, composes
-the show with overlays and Discord audio, and pushes one broadcast to the IRO channel.
-Remote directors drive it from a browser over Tailscale.
+the show with overlays and Discord audio, and pushes one broadcast to the league's channel.
+Remote directors drive it from a browser over Tailscale. One station can serve several
+leagues — each is a **profile** (its own sheet, graphics, overlay CSS and OBS collection);
+a resolver picks the active one (`--profile` > `RACECAST_PROFILE` > `runtime/active-profile`
+pointer > sole profile).
 
 ```mermaid
 flowchart LR
@@ -35,7 +38,7 @@ flowchart LR
 
   subgraph Producer["Producer station"]
     direction TB
-    RELAY["Relay (iro-feeds.py)<br/>yt-dlp resolves live HLS<br/>→ streamlink serves to OBS"]
+    RELAY["Relay (racecast-feeds.py)<br/>yt-dlp resolves live HLS<br/>→ streamlink serves to OBS"]
     OBS["OBS Studio<br/>Media Sources :53001/2/3"]
     HUD["HUD overlay (relay /hud)<br/>+ timer + graphics"]
     DISC["Discord audio<br/>App Audio Capture"]
@@ -43,8 +46,8 @@ flowchart LR
     COMP["Bitfocus Companion :8000"]
   end
 
-  SHEET["Google Sheet<br/>Schedule, POV, Overlay, Configuration tabs"]
-  YT["YouTube — IRO channel"]
+  SHEET["Active profile's Google Sheet<br/>Schedule, POV, Overlay, Configuration tabs"]
+  YT["YouTube — the league's channel"]
   DIR["Remote Director(s)<br/>browser over Tailscale"]
 
   S1 --> RELAY
@@ -61,7 +64,7 @@ flowchart LR
   DIR -->|"web buttons :8000"| COMP
 ```
 
-The producer's only live job: **start and stop** the IRO broadcast. Everything else is
+The producer's only live job: **start and stop** the broadcast. Everything else is
 the director's, done remotely.
 
 ---
@@ -112,8 +115,13 @@ teams, race control) and the **Configuration** tab (team → manufacturer via a
   edits appear with no manual reload),
 - `GET /hud/assets/{flags,brands}/<key>` — bundled flag/brand logos, resolved from text.
 
+The `/hud` and `/timer` pages are restyled **per league**: the relay serves the active
+profile's `profiles/<name>/overlay/{hud,timer}.css` (+ `overlay/fonts/`) on top of the
+shared page, so each league can have its own look without forking the HTML.
+
 The race timer is also relay-served (`/timer`, fixed loopback URL); state: Sheet
-tab `Timer` + `runtime/timer.json`, Director-controlled via `/timer/*` endpoints.
+tab `Timer` + the active profile's `runtime/<profile>/timer.json`, Director-controlled via
+`/timer/*` endpoints.
 
 ---
 

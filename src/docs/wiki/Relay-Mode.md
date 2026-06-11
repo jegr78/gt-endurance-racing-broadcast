@@ -24,7 +24,7 @@ consumer (OBS); that is not a failure.
 - **Unlisted streams → use the watch URL** `https://www.youtube.com/watch?v=VIDEOID`.
   The channel `/live` URL only works for **public** streams. The streamer/director enters
   their watch URL shortly before their stint.
-- Default sheet = the shared HUD sheet (from `IRO_SHEET_ID`). Override with
+- Default sheet = the shared HUD sheet (the active profile's `SHEET_ID`). Override with
   `--sheet-id …` / `--sheet-tab …`.
 
 ## 2. Get YouTube cookies (before each event)
@@ -33,7 +33,7 @@ Against YouTube's *"Sign in to confirm you're not a bot"*. Easiest — auto-expo
 your **logged-in** browser:
 
 ```bash
-iro cookies firefox
+racecast cookies firefox
 # browsers: firefox | chrome | safari | edge | brave   (Firefox recommended)
 ```
 
@@ -52,20 +52,20 @@ iro cookies firefox
 ## 3. Start the relay
 
 ```bash
-iro relay start        # background
-iro relay run          # foreground/debug mode
+racecast relay start        # background
+racecast relay run          # foreground/debug mode
 ```
 
-Stop with `iro relay stop` (or Ctrl+C in foreground mode). For remote
+Stop with `racecast relay stop` (or Ctrl+C in foreground mode). For remote
 directors, bind the control server to the producer's **Tailscale IP** (not `0.0.0.0`) —
 see [Director](Director) and the security note below.
-(Developers running from the repo: python3 src/iro.py works the same everywhere.)
+(Developers running from the repo: python3 src/racecast.py works the same everywhere.)
 
 **Taking over mid-event (multi-part broadcasts):** start the relay at the stint
 that is on air right now —
 
 ```bash
-iro relay start --stint 4   # stint 4 is live: Feed A serves it, Feed B preloads stint 5
+racecast relay start --stint 4   # stint 4 is live: Feed A serves it, Feed B preloads stint 5
 ```
 
 `--stint` puts that stint on Feed A and preloads the next one on Feed B — there
@@ -161,8 +161,8 @@ stream URLs. `--no-panel` disables the served director panel.
 
 ```bash
 # 1. Fill the sheet tab 'Schedule' with watch URLs (unlisted), in stint order.
-iro cookies firefox  # 2. refresh YouTube cookies
-iro relay start      # 3. start the relay (background)
+racecast cookies firefox  # 2. refresh YouTube cookies
+racecast relay start      # 3. start the relay (background)
 # 4. Companion buttons:  Feeds Next -> /next   ·   Feeds Reload -> /reload
 ```
 
