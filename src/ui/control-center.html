@@ -43,8 +43,11 @@
                  color:#0F172A; background:var(--accent); border-radius:6px;
                  padding:6px 7px; }
   .brandname { font-size:14px; font-weight:600; letter-spacing:.01em; }
-  .brandsub { font-size:11px; color:var(--dim); padding:2px 14px 8px; cursor:pointer; }
+  .brandsub { font-size:11px; color:var(--dim); padding:2px 14px 8px; cursor:pointer;
+              display:flex; align-items:center; }
   .brandsub:hover { color:var(--txt); }
+  .pflogo { max-height:24px; max-width:90px; height:auto; width:auto;
+            border-radius:3px; margin-right:6px; vertical-align:middle; }
   .ver { display:block; color:var(--faint); font:11px var(--mono); margin-top:1px; }
   .nav { display:flex; flex-direction:column; gap:3px; }
   .navfoot { margin-top:auto; display:flex; flex-direction:column; gap:3px;
@@ -360,7 +363,7 @@
   <nav class="sidebar">
     <div class="brand"><span class="mark">GT</span>
       <div><div class="brandname">Control Center</div>
-        <div class="brandsub" id="active-profile-badge" title="Active league profile — click to manage" onclick="showView('profile')">—</div>
+        <div class="brandsub" id="active-profile-badge" title="Active league profile — click to manage" onclick="showView('profile')"><img id="active-profile-logo" class="pflogo" alt="" hidden onerror="this.hidden=true"><span id="active-profile-name">—</span></div>
         <span class="ver" id="ver"></span>
         <span class="ver-note" id="ver-note" onclick="checkUpdate(true)" title="Check for updates"></span></div></div>
     <div class="nav">
@@ -1795,6 +1798,21 @@ function showProfileErr(elId, msg) {
   e.hidden = false;
 }
 
+// Header league logo: point the <img> at the server-resolved active-profile
+// logo (cache-bust per profile so a switch reloads it); hide it when the active
+// profile has no servable logo. onerror in the markup hides a broken file.
+function setHeaderLogo(active, hasLogo) {
+  const img = $('active-profile-logo');
+  if (!img) return;
+  if (active && hasLogo) {
+    img.src = '/api/profile/logo?p=' + encodeURIComponent(active);
+    img.hidden = false;
+  } else {
+    img.hidden = true;
+    img.removeAttribute('src');
+  }
+}
+
 async function loadProfiles(force) {
   let d;
   try { d = await (await fetch('/api/profiles', {cache: 'no-store'})).json(); }
@@ -1827,8 +1845,9 @@ async function loadProfiles(force) {
   activeProfile = d.active || null;
   const label = d.active || 'no profile';
   $('profile-active-sub').textContent = label;
-  const badge = $('active-profile-badge');
-  if (badge) badge.textContent = label;
+  const nameEl = $('active-profile-name');
+  if (nameEl) nameEl.textContent = label;
+  setHeaderLogo(d.active, d.logo);
   loadProfileEnv();                       // editor reflects the now-active profile
   loadOverlay();                          // overlay-CSS editor for the active profile
 }
@@ -1942,6 +1961,8 @@ async function saveProfileEnv() {
   b.textContent = 'Saved ✓';
   setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
   loadProfileEnv();                        // reflect the canonical file (masked again)
+  fetch('/api/profiles', {cache: 'no-store'}).then(r => r.json())
+    .then(d => { if (d.ok) setHeaderLogo(d.active, d.logo); }).catch(() => {});
 }
 
 // Overlay-CSS editor — two per-profile CSS files (HUD + Timer), served by the
