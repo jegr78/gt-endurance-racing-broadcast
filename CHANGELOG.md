@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v2.0.0...v2.0.1) (2026-06-11)
+
+
+### Bug Fixes
+
+* profile creation, UI tool detection, doc autolinks ([#45](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/45), [#46](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/46), [#48](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/48)) ([#49](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/49)) ([49496b7](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/49496b7a9a5ed924459b8d26fa34d91d2df0c39b))
+
 ## [2.0.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.2.2...v2.0.0) (2026-06-11)
 
 
