@@ -591,6 +591,14 @@ def t_profile_routing():
     assert m.route(["profile", "bogus"]) == {"kind": "profile", "rest": ["bogus"]}
 
 
+def t_profile_env_vars_filters_empty():
+    rc = m.pcfg.ResolvedConfig(
+        profile="iro", name="IRO", sheet_id="abc",
+        sheet_push_url="", intro_url="https://i", outro_url="")
+    assert m._profile_env_vars(rc) == {
+        "RACECAST_SHEET_ID": "abc", "RACECAST_INTRO_URL": "https://i"}
+
+
 def t_profile_runtime_scoping():
     assert m._profile_runtime("/r", "iro") == os.path.join("/r", "iro")
     assert m._profile_runtime("/r", "erf") == os.path.join("/r", "erf")

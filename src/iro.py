@@ -168,6 +168,32 @@ def _active_profile_name():
 def _runtime_dir():
     return _profile_runtime(_runtime_base_dir(), _active_profile_name())
 
+def _profile_env_vars(rc):
+    """The league values from a ResolvedConfig to push into the child env, as a
+    dict of the non-empty ones. These are exactly what the relay / one-shots /
+    probes read (RACECAST_SHEET_ID etc.)."""
+    pairs = (("RACECAST_SHEET_ID", rc.sheet_id),
+             ("RACECAST_SHEET_PUSH_URL", rc.sheet_push_url),
+             ("RACECAST_INTRO_URL", rc.intro_url),
+             ("RACECAST_OUTRO_URL", rc.outro_url))
+    return {k: v for k, v in pairs if v}
+
+def _apply_active_profile_env():
+    """Resolve the active profile and inject its league values into os.environ so
+    every downstream consumer (relay daemon, one-shots, event probes) inherits
+    them. Tolerant: no profile -> no-op. Returns the profile name or None."""
+    name = _active_profile_name()
+    if not name:
+        return None
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    try:
+        rc = pcfg.resolve_config(root, override=name,
+                                 runtime_root=_runtime_base_dir())
+    except pcfg.ProfileError:
+        return None
+    os.environ.update(_profile_env_vars(rc))
+    return name
+
 def _env_base(frozen, executable, here):
     """Directory whose .env configures this run (mirrors _runtime_base):
     frozen -> next to the binary; repo (src/) -> repo root; package -> here."""
@@ -2205,6 +2231,7 @@ def main(argv=None):
         sys.exit(f"iro: {e}")
     if _profile:
         os.environ["RACECAST_PROFILE"] = _profile   # M3 consumers read this
+    _apply_active_profile_env()   # inject the active profile's sheet config for children
     try:
         action = route(argv)
     except ValueError as e:
