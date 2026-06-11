@@ -191,7 +191,7 @@ def resolve_bind_addresses(bind_arg, tailscale_ip):
     return [bind_arg]
 
 SCHEDULE_TEMPLATE = (
-    "# IRO relay offline fallback schedule — used ONLY if the Google Sheet AND the\n"
+    "# racecast relay offline fallback schedule — used ONLY if the Google Sheet AND the\n"
     "# last-good cache are both unavailable. One entry per stint, in order:\n"
     "#   a YouTube channel ID (UC...) OR a full watch URL (https://www.youtube.com/watch?v=...).\n"
     "# Lines starting with # are ignored. The real schedule lives in the Sheet tab 'Schedule'.\n"
@@ -1887,7 +1887,7 @@ def main():
     # The non-loopback bind (if any) is the address remote directors/tablets use.
     remote_host = next((a for a in bind_addrs if a not in ("127.0.0.1", "localhost")), None)
 
-    print(f"IRO relay running.  Schedule source: {'CSV URL' if args.sheet_csv_url else f'sheet tab “{args.sheet_tab}”'}")
+    print(f"racecast relay running.  Schedule source: {'CSV URL' if args.sheet_csv_url else f'sheet tab “{args.sheet_tab}”'}")
     print(f"  Feed A -> http://127.0.0.1:{ports[0]}   Feed B -> http://127.0.0.1:{ports[1]}")
     if args.stint != 1:
         if relay.A.idx != args.stint - 1:

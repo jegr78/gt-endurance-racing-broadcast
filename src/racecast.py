@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""IRO operator CLI — one entrypoint for every service and setup action.
+"""racecast operator CLI — one entrypoint for every service and setup action.
 
   python3 src/racecast.py relay start        # repo
   python3 racecast.py     relay start        # shipped package

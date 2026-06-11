@@ -5,7 +5,7 @@ Used by src/racecast_ui.py. Tests: tests/test_native_dialog.py."""
 import subprocess
 import sys
 
-TITLE = "IRO Control Center"
+TITLE = "racecast Control Center"
 
 
 def osascript_argv(message):

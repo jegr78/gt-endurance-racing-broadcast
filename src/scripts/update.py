@@ -292,7 +292,7 @@ def main():
     ap = argparse.ArgumentParser(prog="update", add_help=True)
     ap.add_argument("--check", action="store_true", help="report only, change nothing")
     ap.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
-    ap.add_argument("--current", default="dev", help=argparse.SUPPRESS)  # injected by iro
+    ap.add_argument("--current", default="dev", help=argparse.SUPPRESS)  # injected by racecast
     ap.add_argument("--tag", help="install this exact release tag (UI preview/pin path)")
     a = ap.parse_args()
 

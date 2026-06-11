@@ -22,7 +22,7 @@ def ui_port(env):
 
 
 def classify_ping(body):
-    """'ours' when an IRO Control Center answered the ping, else 'foreign'."""
+    """'ours' when a racecast Control Center answered the ping, else 'foreign'."""
     try:
         return "ours" if json.loads(body.decode()).get("app") == APP_ID else "foreign"
     except Exception:

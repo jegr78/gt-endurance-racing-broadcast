@@ -336,7 +336,7 @@ def t_root_serves_the_page():
     try:
         code, body = _get(port, "/")
         assert code == 200
-        assert b"IRO Control Center" in body
+        assert b"racecast Control Center" in body
         assert b"/api/status" in body          # the page talks to our API
     finally:
         httpd.shutdown()

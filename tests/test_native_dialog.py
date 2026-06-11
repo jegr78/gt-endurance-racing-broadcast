@@ -9,7 +9,7 @@ def t_osascript_argv_quotes_and_titles():
     argv = nd.osascript_argv('port 8089 in use "now"')
     assert argv[0] == "osascript"
     joined = " ".join(argv)
-    assert "IRO Control Center" in joined
+    assert "racecast Control Center" in joined
     # double quotes are neutralised so the AppleScript string can't break out
     assert '"now"' not in joined
 
