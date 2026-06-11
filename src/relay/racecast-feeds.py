@@ -229,6 +229,43 @@ def resolve_asset(assets_dir, sub, key):
             return path, ctype
     return None
 
+
+# Per-profile overlay overrides (profiles/<name>/overlay/). Override CSS is read
+# fresh per request (so a Control Center edit applies on the next OBS refresh
+# without a relay restart); fonts reuse the resolve_asset security pattern.
+OVERLAY_PAGES = ("hud", "timer")
+FONT_CTYPES = {"woff2": "font/woff2", "woff": "font/woff",
+               "ttf": "font/ttf", "otf": "font/otf"}
+FONT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+def read_overlay_css(overlay_dir, page):
+    """Bytes of profiles/<name>/overlay/<page>.css, or b'' when the dir is unset,
+    the page is not a known overlay page, or the file is absent/unreadable. Read
+    per request so editor saves apply without a relay restart."""
+    if not overlay_dir or page not in OVERLAY_PAGES:
+        return b""
+    try:
+        with open(os.path.join(overlay_dir, f"{page}.css"), "rb") as fh:
+            return fh.read()
+    except OSError:
+        return b""
+
+def resolve_overlay_font(overlay_dir, name):
+    """Resolve overlay/fonts/<name> to (path, content_type); None if unsafe or
+    missing. Same containment guarantees as resolve_asset (strict name + ext
+    allow-list + realpath inside fonts/ + constant content-type)."""
+    if not overlay_dir or not FONT_NAME_RE.match(name) or "." not in name:
+        return None
+    ext = name.rsplit(".", 1)[1].lower()
+    ctype = FONT_CTYPES.get(ext)
+    if not ctype:
+        return None
+    base = os.path.realpath(os.path.join(overlay_dir, "fonts"))
+    path = os.path.realpath(os.path.join(base, name))
+    if not path.startswith(base + os.sep):
+        return None
+    return (path, ctype) if os.path.exists(path) else None
+
 def default_runtime_dir(here):
     """Where runtime data lives when --runtime-dir is not given.
     Repo layout (src/relay/) -> <repo>/runtime ; distributed package (relay/) -> next to the script.
@@ -1400,7 +1437,7 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
 
 
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
-                 timer_store=None, timer_path=None, setup_ctl=None):
+                 timer_store=None, timer_path=None, setup_ctl=None, overlay_dir=None):
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
             body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
@@ -1418,6 +1455,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Content-Length", str(len(body)))
             # The panel/HUD/timer pages change between releases — never let a
             # browser serve a stale copy (e.g. a panel without the latest JS).
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(body)
+            return None
+        def _send_css(self, body):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/css; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers(); self.wfile.write(body)
             return None
@@ -1453,6 +1497,15 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send(hud_source.data())
                 if len(p) == 4 and p[:2] == ["hud", "assets"]:
                     return self._send_asset(assets_dir, p[2], p[3])
+                if p == ["hud", "override.css"]:
+                    return self._send_css(read_overlay_css(overlay_dir, "hud"))
+                if p == ["timer", "override.css"]:
+                    return self._send_css(read_overlay_css(overlay_dir, "timer"))
+                if len(p) == 3 and p[:2] == ["overlay", "fonts"]:
+                    hit = resolve_overlay_font(overlay_dir, p[2])
+                    if not hit:
+                        return self._send({"error": "font not found", "key": p[2]}, 404)
+                    return self._send_file(hit[0], hit[1])
                 if p[:1] == ["timer"]:
                     if p == ["timer"]:
                         if not timer_path: return self._send({"error": "timer disabled"}, 404)
@@ -1644,6 +1697,9 @@ def main():
                     help="HUD sheet refresh interval in seconds (default 5).")
     ap.add_argument("--no-hud", action="store_true",
                     help="Do not serve the HUD overlay at /hud.")
+    ap.add_argument("--overlay-dir", default=None,
+                    help="profiles/<name>/overlay dir with per-profile hud.css/"
+                         "timer.css/fonts (relay-served at /hud/override.css etc).")
     ap.add_argument("--timer-tab", default="Timer",
                     help="Google-Sheet tab holding the race-timer anchor (default 'Timer').")
     ap.add_argument("--no-timer", action="store_true",
@@ -1804,7 +1860,8 @@ def main():
                          daemon=True).start()
 
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
-                           timer_store, timer_path, setup_ctl)
+                           timer_store, timer_path, setup_ctl,
+                           overlay_dir=args.overlay_dir)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers = []
