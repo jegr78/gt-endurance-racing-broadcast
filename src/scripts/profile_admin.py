@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Profile (league) management commands for the operator CLI: list / show /
-use / new. Pure logic over config.py + the filesystem; iro.py thin-wraps these.
+use / new. Pure logic over config.py + the filesystem; racecast.py thin-wraps these.
 
 config.py owns the READ side (resolve the active profile, load its values).
 This module owns the WRITE side (create a profile directory, set the active
@@ -11,7 +11,7 @@ import os
 import re
 import shutil
 
-import config as cfg   # sibling in src/scripts (sys.path injected by iro.py/tests)
+import config as cfg   # sibling in src/scripts (sys.path injected by racecast.py/tests)
 
 PROFILE_VERBS = ("list", "show", "use", "new")
 _USAGE = ("usage: racecast profile {list | show [<name>] | use <name> | "

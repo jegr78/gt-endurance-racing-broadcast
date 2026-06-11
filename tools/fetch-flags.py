@@ -51,7 +51,7 @@ def _load_relay_helpers():
 
 
 def _get(url, timeout=20):
-    return urlopen(Request(url, headers={"User-Agent": "iro-feeds/1.0"}),
+    return urlopen(Request(url, headers={"User-Agent": "racecast-feeds/1.0"}),
                    timeout=timeout).read()
 
 

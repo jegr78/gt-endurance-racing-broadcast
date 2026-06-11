@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stdlib checks for the Control Center's structured status providers in iro.py.
+"""Stdlib checks for the Control Center's structured status providers in racecast.py.
 Run: python3 tests/test_ui_ops.py"""
 import os, sys
 

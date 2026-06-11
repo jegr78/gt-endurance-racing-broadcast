@@ -484,7 +484,7 @@ def merge_timer_states(local, sheet):
 def post_webhook(url, payload, timeout=10):
     """POST JSON to the Apps-Script sheet-write webhook -> raw response bytes."""
     req = Request(url, data=json.dumps(payload).encode("utf-8"), method="POST",
-                  headers={"User-Agent": "iro-feeds/1.0",
+                  headers={"User-Agent": "racecast-feeds/1.0",
                            "Content-Type": "application/json"})
     with urlopen(req, timeout=timeout) as resp:
         return resp.read()
@@ -565,7 +565,7 @@ class TimerStore:
     # -- sheet read (poller + adopt-if-newer merge) -------------------------
     @staticmethod
     def _fetch(url, timeout=10):
-        req = Request(url, headers={"User-Agent": "iro-feeds/1.0"})
+        req = Request(url, headers={"User-Agent": "racecast-feeds/1.0"})
         with urlopen(req, timeout=timeout) as resp:
             return resp.read().decode("utf-8", "replace")
 
@@ -827,7 +827,7 @@ class ScheduleSource:
         if not self.csv_url:
             return None
         try:
-            req = Request(self.csv_url, headers={"User-Agent": "iro-feeds/1.0"})
+            req = Request(self.csv_url, headers={"User-Agent": "racecast-feeds/1.0"})
             with urlopen(req, timeout=timeout) as resp:
                 text = resp.read().decode("utf-8", "replace")
             rows = self._parse_rows(text)
@@ -942,7 +942,7 @@ class HudSource:
 
     @staticmethod
     def _fetch(url, timeout=10):
-        req = Request(url, headers={"User-Agent": "iro-feeds/1.0"})
+        req = Request(url, headers={"User-Agent": "racecast-feeds/1.0"})
         with urlopen(req, timeout=timeout) as resp:
             return resp.read().decode("utf-8", "replace")
 

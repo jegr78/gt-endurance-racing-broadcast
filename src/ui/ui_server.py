@@ -8,7 +8,7 @@ import json, os, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-APP_ID = "iro-control-center"
+APP_ID = "racecast-control-center"
 DEFAULT_PORT = 8089
 TAIL_LINES = 40          # how much history a log stream starts with
 

@@ -1,6 +1,6 @@
 """First-time setup wizard logic behind `racecast init`.
 
-Pure building blocks wired by iro.py: the ordered step plan, done-detection
+Pure building blocks wired by racecast.py: the ordered step plan, done-detection
 predicates (every probe is injected — tests never touch the system), the gate
 pause (interactive vs non-TTY checkpoint-and-exit), the wizard loop, and the
 closing manual-next-steps text. The wizard only orchestrates the existing
@@ -150,7 +150,7 @@ def export_done(exists):
 
 
 # ---------------------------------------------------------------------------
-# Wizard: gates, loop, output. The step dicts are built by iro.py:
+# Wizard: gates, loop, output. The step dicts are built by racecast.py:
 #   {"key": str, "label": str, "done": () -> str|None, "run": () -> int}
 # ---------------------------------------------------------------------------
 

@@ -159,18 +159,18 @@ def smoke_ui(binary):
             except OSError:
                 if ui.poll() is not None:
                     break
-        if b"iro-control-center" not in body:
+        if b"racecast-control-center" not in body:
             out = ui.stdout.read().decode("utf-8", "replace") if ui.poll() is not None else ""
-            sys.exit(f"smoke iro-ui FAILED: no Control Center ping on :8390 "
+            sys.exit(f"smoke racecast-ui FAILED: no Control Center ping on :8390 "
                      f"(rc={ui.poll()}) out={out!r}")
         # Start a read-only job (preflight) and confirm it spawns + completes —
-        # this proves iro-ui spawns the sibling `iro` binary, not itself.
+        # this proves racecast-ui spawns the sibling `racecast` binary, not itself.
         # snapshot() returns {"id","op","running","exit_code","cancelled"};
         # /api/jobs/<id> returns {"ok": True, **snap}. A job is done when
         # exit_code is not None (running == False); there is no "done" key.
         job = json.loads(_post("/api/op/preflight"))
         if not job.get("ok") or not job.get("job_id"):
-            sys.exit(f"smoke iro-ui FAILED: could not start preflight job ({job!r})")
+            sys.exit(f"smoke racecast-ui FAILED: could not start preflight job ({job!r})")
         jid, snap = job["job_id"], {}
         for _ in range(60):                  # up to ~30 s for preflight to finish
             time.sleep(0.5)
@@ -178,13 +178,13 @@ def smoke_ui(binary):
             if snap.get("exit_code") is not None:
                 break
         if snap.get("exit_code") is None:
-            sys.exit(f"smoke iro-ui FAILED: preflight job never finished ({snap!r})")
+            sys.exit(f"smoke racecast-ui FAILED: preflight job never finished ({snap!r})")
         _post("/api/quit")
         ui.wait(timeout=10)
     finally:
         if ui.poll() is None:
             ui.kill()
-    print("Smoke test OK (iro-ui: ping, sibling-iro job, quit).")
+    print("Smoke test OK (racecast-ui: ping, sibling-racecast job, quit).")
 
 
 def smoke(binary, version):
@@ -239,7 +239,7 @@ def smoke(binary, version):
             except OSError:
                 if ui.poll() is not None:   # crashed before binding
                     break
-        if b"iro-control-center" not in body:
+        if b"racecast-control-center" not in body:
             out = ui.stdout.read().decode("utf-8", "replace") if ui.poll() is not None else ""
             sys.exit(f"smoke ui FAILED: no Control Center ping on :8389 "
                      f"(rc={ui.poll()}) out={out!r}")

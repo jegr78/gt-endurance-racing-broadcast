@@ -4,7 +4,7 @@ These helpers bind Bitfocus Companion's admin/web-buttons server to this machine
 Tailscale IP (plug & play) so a tablet can open http://<tailscale-ip>:<port>/tablet
 over the tailnet, without exposing Companion on the local LAN the way 0.0.0.0 would.
 
-Tailscale detection lives in scripts/tailscale.py; iro.py passes the detected
+Tailscale detection lives in scripts/tailscale.py; racecast.py passes the detected
 IP into desired_bind_ip() — this module holds Companion logic only.
 
 NOTE: this binds *where* Companion listens; it does NOT separate /tablet from the

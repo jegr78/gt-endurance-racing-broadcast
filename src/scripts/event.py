@@ -1,6 +1,6 @@
 """Event-day readiness logic behind `racecast event status|start|stop`.
 
-Pure(-ish) building blocks wired by iro.py — process probes for the GUI apps
+Pure(-ish) building blocks wired by racecast.py — process probes for the GUI apps
 (OBS, Discord), per-OS launch commands, asset-completeness checks against the
 Sheet's Assets tab, and classifiers turning raw facts into preflight Result
 lines. Reuses preflight's Result/report model and install_apps' path
@@ -8,7 +8,7 @@ candidates. Spec: docs/superpowers/specs/2026-06-05-event-readiness-design.md.
 Tests: tests/test_event.py."""
 import csv, io, ntpath, os, shutil, subprocess, sys, time
 
-# Plain sibling imports: scripts/ is on sys.path in repo+package mode (iro.py
+# Plain sibling imports: scripts/ is on sys.path in repo+package mode (racecast.py
 # injects it; standalone tests insert it), and the frozen binary ships these
 # as real frozen modules (hidden-imports in tools/build-binary.py).
 import install_apps
@@ -20,7 +20,7 @@ Result = preflight.Result
 
 # Process image names per app/OS for the running probe. Tailscale is probed
 # via detect_tailscale_ip() (connected beats running) and Companion via the
-# existing iro.py probe — only the plain GUI apps live here.
+# existing racecast.py probe — only the plain GUI apps live here.
 PROCESS_NAMES = {
     "obs": {"darwin": ("OBS",), "win": ("obs64.exe",), "linux": ("obs",)},
     "discord": {"darwin": ("Discord",), "win": ("Discord.exe",), "linux": ("Discord",)},
@@ -45,7 +45,7 @@ def parse_probe(platform, returncode, stdout, name):
     """Interpret a probe_command() run. Windows tasklist exits 0 even with no
     match — the image name must appear in the output (decode with
     errors='replace'; the names we match are pure ASCII, same OEM-codepage
-    caveat as iro.py's _companion_running)."""
+    caveat as racecast.py's _companion_running)."""
     if platform.startswith("win"):
         return name.lower() in (stdout or "").lower()
     return returncode == 0
