@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stdlib checks for the Control Center HTTP server (real server on an
 ephemeral port — no fixed ports, CI-safe). Run: python3 tests/test_ui_server.py"""
-import json, os, sys, tempfile, threading, time, urllib.error, urllib.request
+import json, os, re, sys, tempfile, threading, time, urllib.error, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -37,6 +37,7 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
     page = os.path.join(ROOT, "src", "ui", "control-center.html")
     return {"version": "test",
             "page_path": page,
+            "favicon_path": os.path.join(ROOT, "src", "assets", "app-icon.svg"),
             "status": lambda: {"relay": {"alive": False}},
             "ops": {"echo": ["echo-args"]},
             "build_argv": lambda name, params=None: ["echo-args"],
@@ -559,6 +560,28 @@ def t_preflight_route_provider_error_is_500():
     try:
         code, body = _get(port, "/api/preflight")
         assert code == 500 and "gather down" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_favicon_served_as_svg():
+    # #57: the Control Center serves a real favicon (the racecast "rc" mark)
+    # instead of the old empty data: URI placeholder.
+    httpd, port = _serve(_ctx())
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/favicon.svg")
+        with _urlopen(req, timeout=5) as r:
+            body = r.read()
+            assert r.status == 200
+            assert r.headers.get("Content-Type") == "image/svg+xml"
+            assert body.startswith(b"<svg") and b">rc<" in body
+            # Guard the exact regression that a bytes-only check missed: an XML
+            # comment must not contain "--", or the browser silently drops the
+            # favicon as malformed. (stdlib XML parsers carry an XXE/entity
+            # surface and the project is stdlib-only, so check the invariant
+            # directly rather than parsing.)
+            for comment in re.findall(rb"<!--.*?-->", body, re.DOTALL):
+                assert b"--" not in comment[4:-3], "XML comment contains '--'"
     finally:
         httpd.shutdown()
 

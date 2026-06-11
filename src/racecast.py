@@ -2657,6 +2657,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
     ctx = {
         "version": version(),
         "page_path": resource_path("ui/control-center.html"),
+        "favicon_path": resource_path("assets/app-icon.svg"),
         "status": ui_status_payload,
         "relay_live": relay_live_data,
         "obs_ws": obs_ws_link_data,

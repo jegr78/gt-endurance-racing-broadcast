@@ -74,6 +74,7 @@ def make_handler(ctx):
     init_plan(browser) -> dict (wizard plan: per-step done/kind/op/instruction),
     init_step(key) -> dict (run one non-job wizard step, {ok, done} | {ok: False, error}),
     jobs (ui_jobs.JobManager), log_paths {name: () -> path|None},
+    favicon_path (the brand SVG served at /favicon.svg),
     shutdown() (installed by serve())."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -142,6 +143,8 @@ def make_handler(ctx):
             path = urlparse(self.path).path
             if path == "/":
                 return self._page()
+            if path == "/favicon.svg":          # the racecast "rc" mark (#57)
+                return self._serve_file(ctx["favicon_path"])
             if path == "/api/ping":
                 return self._json({"app": APP_ID, "version": ctx["version"]})
             if path == "/api/status":

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="racecast">
+  <!-- Canonical app/brand mark for the racecast TOOL (not a league): the "rc"
+       monogram, dark ink on accent blue, rounded tile, in the Control Center's
+       accent palette. Single source of truth: served as the Control Center
+       favicon (#57) and rasterized into the binary icons for PyInstaller (#58). -->
+  <rect width="64" height="64" rx="14" fill="#3B82F6"/>
+  <text x="32" y="34" text-anchor="middle" dominant-baseline="central"
+        font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace"
+        font-size="30" font-weight="700" letter-spacing="0.5" fill="#0F172A">rc</text>
+</svg>
