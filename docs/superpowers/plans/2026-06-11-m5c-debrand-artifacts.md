@@ -23,7 +23,7 @@
 
 **OUT of scope — do NOT touch:**
 - `README.md` (`iro-windows.zip`, `IRO_Broadcast_Package` mentions) → **M6**.
-- All `src/docs/**`, wiki, `CLAUDE.md`, the `src/racecast.py:2` "IRO operator CLI" title, the `2026-06-06-iro-init-design.md` spec filename → **M6**.
+- All `src/docs/**`, wiki, `CLAUDE.md`, the `src/racecast.py:2` "IRO operator CLI" title, the `2026-06-06-racecast-init-design.md` spec filename → **M6**.
 - `release-please-config.json` / `.release-please-manifest.json` / `release-please.yml` — **no change needed**: `release-type: simple`, no package-name/component, bare `vX.Y.Z` tags.
 - The league name `IRO Endurance`, internal symbol `_iro_job_executable`, importlib nicknames, env-var examples (already `RACECAST_*`).
 - The `--current` CLI command-name comment `# injected by iro` in update.py — that names the program (already could be `racecast`), low value; **leave it** unless trivially in a line you're already editing (avoid scope creep).

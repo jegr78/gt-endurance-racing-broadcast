@@ -5,7 +5,7 @@ predicates (every probe is injected — tests never touch the system), the gate
 pause (interactive vs non-TTY checkpoint-and-exit), the wizard loop, and the
 closing manual-next-steps text. The wizard only orchestrates the existing
 one-shots; it owns no install/download logic.
-Spec: docs/superpowers/specs/2026-06-06-iro-init-design.md.
+Spec: docs/superpowers/specs/2026-06-06-racecast-init-design.md.
 Tests: tests/test_init.py."""
 
 STEP_ORDER = ("profile", "env", "install-tools", "install-apps", "cookies",

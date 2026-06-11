@@ -2649,7 +2649,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
 def init_cmd(rest):
     """Guided first-time setup: every automatable step in dependency order,
     pausing only at the manual gates. Spec:
-    docs/superpowers/specs/2026-06-06-iro-init-design.md."""
+    docs/superpowers/specs/2026-06-06-racecast-init-design.md."""
     try:
         opts = ins.parse_init_args(rest)
     except ValueError as e:
