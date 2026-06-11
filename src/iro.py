@@ -1849,28 +1849,33 @@ def merge_env_text(original, pairs):
     return "\n".join(out) + "\n"
 
 
-def env_write_data(entries, path=None):
-    """Validate the Settings editor's entries and persist them to .env,
-    preserving comments. Atomic (tmp + os.replace). Writes ONLY the
-    server-resolved path (or the test-supplied `path`), never a client value.
-    Returns {ok:true, path} or {ok:false, error}; never raises."""
+def _write_env_file(path, entries):
+    """Validate `entries`, merge into the file at `path` (preserving comments),
+    write atomically (tmp + os.replace). {ok, path} or {ok:false, error}. Never
+    raises. Shared by the machine .env and profile.env editors."""
     try:
         pairs, err = _validate_env_entries(entries)
         if err:
             return {"ok": False, "error": err}
-        p = path or _env_file()
         original = ""
-        if os.path.exists(p):
-            with open(p, encoding="utf-8") as fh:
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
                 original = fh.read()
         text = merge_env_text(original, pairs)
-        tmp = p + ".tmp"
+        tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
             fh.write(text)
-        os.replace(tmp, p)
-        return {"ok": True, "path": p}
+        os.replace(tmp, path)
+        return {"ok": True, "path": path}
     except Exception as exc:
-        return {"ok": False, "error": f"could not write .env: {exc}"}
+        return {"ok": False, "error": f"could not write {os.path.basename(path)}: {exc}"}
+
+
+def env_write_data(entries, path=None):
+    """Validate the Settings editor's entries and persist them to .env,
+    preserving comments. Atomic. Writes ONLY the server-resolved path (or the
+    test-supplied `path`), never a client value. {ok,path} or {ok:false,error}."""
+    return _write_env_file(path or _env_file(), entries)
 
 
 def _streams_config_path():
