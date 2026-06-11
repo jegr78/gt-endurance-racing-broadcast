@@ -236,7 +236,7 @@ def resolve_asset(assets_dir, sub, key):
 OVERLAY_PAGES = ("hud", "timer")
 FONT_CTYPES = {"woff2": "font/woff2", "woff": "font/woff",
                "ttf": "font/ttf", "otf": "font/otf"}
-FONT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+FONT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 def read_overlay_css(overlay_dir, page):
     """Bytes of profiles/<name>/overlay/<page>.css, or b'' when the dir is unset,
@@ -1449,7 +1449,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             try:
                 with open(path, "rb") as fh: body = fh.read()
             except OSError:
-                return self._send({"error": "panel not found", "looked_for": path}, 404)
+                return self._send({"error": "file not found", "looked_for": path}, 404)
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))

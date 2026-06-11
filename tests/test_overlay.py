@@ -26,6 +26,11 @@ def t_read_overlay_css_present():
         od = _mkoverlay(tmp, hud_css="#stint{left:10px}")
         assert feeds.read_overlay_css(od, "hud") == b"#stint{left:10px}"
 
+def t_read_overlay_css_timer_present():
+    with tempfile.TemporaryDirectory() as tmp:
+        od = _mkoverlay(tmp, timer_css="#clock{font-size:300px}")
+        assert feeds.read_overlay_css(od, "timer") == b"#clock{font-size:300px}"
+
 def t_read_overlay_css_absent_is_empty():
     with tempfile.TemporaryDirectory() as tmp:
         od = _mkoverlay(tmp)  # no hud.css
@@ -55,6 +60,7 @@ def t_resolve_overlay_font_rejects_traversal_and_bad_ext():
         assert feeds.resolve_overlay_font(od, "ok.exe") is None
         assert feeds.resolve_overlay_font(od, "nope.woff2") is None
         assert feeds.resolve_overlay_font(None, "ok.ttf") is None
+        assert feeds.resolve_overlay_font(od, ".woff2") is None
 
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
