@@ -591,6 +591,12 @@ def t_profile_routing():
     assert m.route(["profile", "bogus"]) == {"kind": "profile", "rest": ["bogus"]}
 
 
+def t_profile_runtime_scoping():
+    assert m._profile_runtime("/r", "iro") == os.path.join("/r", "iro")
+    assert m._profile_runtime("/r", "erf") == os.path.join("/r", "erf")
+    assert m._profile_runtime("/r", None) == "/r"
+
+
 def _raises(fn):
     try:
         fn()

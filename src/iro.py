@@ -142,8 +142,31 @@ def _runtime_base(frozen, executable, here):
         return os.path.join(os.path.dirname(here), "runtime")
     return os.path.join(here, "runtime")
 
-def _runtime_dir():
+def _runtime_base_dir():
+    """The un-scoped machine runtime/ dir. The active-profile pointer and the
+    shared cookie jar live here directly; per-league state lives under _runtime_dir()."""
     return _runtime_base(IS_FROZEN, _real_executable(), HERE)
+
+def _profile_runtime(base_runtime, profile_name):
+    """Profile-scoped runtime dir: <base>/<profile> when a profile is active,
+    else the base (fresh machine / no profile yet)."""
+    return os.path.join(base_runtime, profile_name) if profile_name else base_runtime
+
+def _active_profile_name():
+    """The active profile name (tolerant): RACECAST_PROFILE env / the active
+    pointer / the sole profile -- or None if none can be resolved, so commands
+    that do not need a profile still work."""
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    try:
+        return pcfg.resolve_active_profile(
+            pcfg.list_profiles(root),
+            env_value=os.environ.get("RACECAST_PROFILE"),
+            pointer=pcfg.read_active_pointer(_runtime_base_dir()))
+    except pcfg.ProfileError:
+        return None
+
+def _runtime_dir():
+    return _profile_runtime(_runtime_base_dir(), _active_profile_name())
 
 def _env_base(frozen, executable, here):
     """Directory whose .env configures this run (mirrors _runtime_base):
@@ -506,7 +529,7 @@ def profile_cmd(rest):
     except ValueError as e:
         sys.exit(f"iro: {e}")
     root = _env_base(IS_FROZEN, _real_executable(), HERE)
-    runtime_root = _runtime_dir()
+    runtime_root = _runtime_base_dir()   # the active-profile pointer is un-scoped
     active = pcfg.read_active_pointer(runtime_root)
     verb = opts["verb"]
     if verb == "list":
