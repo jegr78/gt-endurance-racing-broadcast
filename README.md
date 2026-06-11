@@ -81,7 +81,10 @@ that profile's graphics/media. **General Settings** holds the machine `.env` and
 cookies.
 
 > **First start:** Windows SmartScreen / macOS Gatekeeper show a one-time warning for
-> unsigned binaries — choose "Run anyway" / right-click → Open.
+> unsigned binaries — choose "Run anyway" / right-click → Open. On macOS, clearing
+> the quarantine once (`xattr -dr com.apple.quarantine racecast racecast-ui.app`)
+> also avoids App Translocation (which can break the Control Center's asset
+> previews). See the setup guide.
 
 ## The CLI (alternative)
 
