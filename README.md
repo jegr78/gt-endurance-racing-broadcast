@@ -57,7 +57,7 @@ Each profile can restyle the relay-served HUD and race timer via
 override the bundled defaults per league and are editable in the Control Center.
 The first override on a profile whose `overlay/` did not exist when the relay
 started needs one `racecast relay restart`; later edits apply live (Apply in OBS).
-See the [Configuration](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Configuration) wiki page.
+See the [HUD overlays](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/HUD-Overlays) wiki page.
 
 ## Get started — the Control Center
 

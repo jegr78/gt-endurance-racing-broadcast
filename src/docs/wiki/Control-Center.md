@@ -120,7 +120,8 @@ mode can't be used. Edit the channel/port list here and start/stop the set.
 
 ![Control Center — Assets](images/cc-assets.png)
 
-Everything that belongs to a **league**, gathered in one view:
+Everything that belongs to a **league**, gathered in one view (the model behind it is in
+[League profiles](Profiles)):
 
 - **Active profile** — a switcher to change the active league (every other view then
   acts on it), and a **New profile** dialog that copies an existing profile (e.g.
@@ -130,9 +131,10 @@ Everything that belongs to a **league**, gathered in one view:
   are **masked** — click the eye to reveal one. Changes apply the next time you (re)start
   the relay.
 - **Overlay CSS** — per-profile CSS for the relay-served **HUD** and **Timer** pages
-  (`profiles/<active>/overlay/`). **Save** writes the file; **Apply in OBS** reloads the
-  browser sources (same as `obs refresh`). The first override on a profile that had no
-  `overlay/` yet needs one `racecast relay restart` to activate; later edits apply live.
+  (`profiles/<active>/overlay/`; see [HUD overlays](HUD-Overlays)). **Save** writes the file;
+  **Apply in OBS** reloads the browser sources (same as `obs refresh`). The first override on
+  a profile that had no `overlay/` yet needs one `racecast relay restart` to activate; later
+  edits apply live.
 - **Assets** — the active profile's broadcast graphics and intro/outro media. Thumbnails
   show which graphics are present; **Download** fetches them from the Sheet's Assets tab;
   **Check vs sheet** compares what's on disk against what the Sheet lists.

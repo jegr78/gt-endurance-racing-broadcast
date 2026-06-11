@@ -7,8 +7,8 @@ you set up the machine, run the show, or direct it remotely.
 channel. One PC pulls those streams in, adds the on-screen graphics and the Discord
 interview audio, and pushes a single, clean broadcast to the league's YouTube channel. A
 **Producer** runs that PC; a **Director** decides what viewers see — from a browser,
-anywhere. One machine can serve several leagues — each is a **profile** with its own
-sheet, graphics and overlay look.
+anywhere. One machine can serve several leagues — each is a [**profile**](Profiles) with its own
+sheet, graphics and [overlay look](HUD-Overlays).
 
 ```mermaid
 flowchart LR
