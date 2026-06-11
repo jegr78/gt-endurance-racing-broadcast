@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>IRO Broadcast — Role Cheat Sheets</title>
+<title>GT Endurance Racing Broadcast — Role Cheat Sheets</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -60,7 +60,7 @@
 <div class="sheet">
 
   <div class="top">
-    <h1>IRO Broadcast — Cheat Sheets</h1>
+    <h1>GT Endurance Racing — Cheat Sheets</h1>
     <span>Print &amp; pin · v4 setup</span>
   </div>
 
@@ -75,7 +75,7 @@
 
         <h3>Settings (set once)</h3>
         <ul>
-          <li>Stream to <span class="k">your own fixed channel</span>, same one every event, set to <span class="k">Unlisted</span>.</li>
+          <li>Stream to <span class="k">your own fixed channel</span>, same one every event, set to <span class="k">Unlisted</span> (the league tells you which channel).</li>
           <li>Latency: <span class="k">Low</span> — <span class="warn">not Ultra-low</span> (unless your line is rock-solid).</li>
           <li>Resolution: <span class="k">1080p target, never below 720p</span>.</li>
           <li>Encoder: <span class="k">hardware</span> (NVENC / QuickSync / AMF). CBR, keyframe <span class="k">2 s</span>.</li>
@@ -108,15 +108,15 @@
         <p class="sub">Set up, then only start &amp; stop the broadcast.</p>
 
         <h3>Before the event</h3>
-        <p class="sub" style="margin:0 0 8px">Easiest in the <span class="k">Control Center</span> (double-click <code>iro-ui</code>); CLI shown below.</p>
+        <p class="sub" style="margin:0 0 8px">Easiest in the <span class="k">Control Center</span> (double-click <code>racecast-ui</code>); CLI shown below.</p>
         <ol>
-          <li>Update: <code>iro update</code>, then <code>iro install-tools --update</code>.</li>
+          <li>Update: <code>racecast update</code>, then <code>racecast install-tools --update</code>.</li>
           <li>Update GPU driver; <span class="k">reboot</span> the PC.</li>
-          <li>Refresh cookies: <code>iro cookies firefox</code> (log into YouTube in Firefox first).</li>
-          <li>Check the machine: <code>iro preflight</code> — fix anything it flags.</li>
-          <li>Bring everything up: <span class="k">iro event start</span> — Tailscale, Discord, relay, OBS, Companion; prints the director URLs to forward.</li>
+          <li>Refresh cookies: <code>racecast cookies firefox</code> (log into YouTube in Firefox first).</li>
+          <li>Check the machine: <code>racecast preflight</code> — fix anything it flags.</li>
+          <li>Bring everything up: <span class="k">racecast event start</span> — Tailscale, Discord, relay, OBS, Companion; prints the director URLs to forward.</li>
           <li>Companion green; a Director confirms access. Test the Discord audio source.</li>
-          <li>Enter the <span class="k">IRO stream key</span> in OBS.</li>
+          <li>Enter the <span class="k">league's stream key</span> in OBS.</li>
         </ol>
 
         <h3>Run</h3>
@@ -137,7 +137,7 @@
         <h3>End</h3>
         <ul>
           <li>■ Stop Streaming.</li>
-          <li>Shut down services: <code>iro event stop</code>.</li>
+          <li>Shut down services: <code>racecast event stop</code>.</li>
         </ul>
       </div>
     </section>
@@ -199,8 +199,8 @@
   <section class="ccband">
     <div class="bar" style="height:9px"></div>
     <div class="body">
-      <p class="role">Control Center <span class="num">iro-ui</span></p>
-      <p class="sub" style="margin:3px 0 0">Run the whole station from your browser. <span class="k">Launch:</span> double-click <code>iro-ui</code> (Linux <code>./iro-ui</code>) → <code>http://127.0.0.1:8089</code>. Every action is also an <code>iro …</code> command.</p>
+      <p class="role">Control Center <span class="num">racecast-ui</span></p>
+      <p class="sub" style="margin:3px 0 0">Run the whole station from your browser. <span class="k">Launch:</span> double-click <code>racecast-ui</code> (Linux <code>./racecast-ui</code>) → <code>http://127.0.0.1:8089</code>. Every action is also a <code>racecast …</code> command.</p>
       <div class="vmap">
         <div><span class="vn">Home</span> — status; Start/Stop event</div>
         <div><span class="vn">Setup</span> — first-time wizard</div>
