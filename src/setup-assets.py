@@ -77,6 +77,15 @@ def localize_discord_audio(collection, platform):
     return None
 
 
+def apply_collection_name(collection, name):
+    """Set the OBS collection's top-level display name to `name` (the active
+    profile's OBS_COLLECTION). Blank/None -> leave the template name untouched.
+    Mutates and returns `collection` (consistent with the other transforms)."""
+    if name:
+        collection["name"] = name
+    return collection
+
+
 def load_dotenv(start):
     """Load KEY=VALUE pairs from a .env at the script dir or the project root
     into os.environ. Real environment variables win (setdefault). No dependency.
@@ -137,6 +146,9 @@ def main():
     ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
                     help="Google Sheet ID injected into the HUD browser source. "
                          "Default: env RACECAST_SHEET_ID (from the active profile).")
+    ap.add_argument("--collection", default=os.environ.get("RACECAST_OBS_COLLECTION"),
+                    help="OBS scene-collection display name written into the import "
+                         "JSON. Default: env RACECAST_OBS_COLLECTION (active profile).")
     a = ap.parse_args()
 
     tpl = a.template
@@ -186,6 +198,7 @@ def main():
 
     localized = replace_tokens(collection, mapping)
     swapped = localize_discord_audio(localized, sys.platform)
+    apply_collection_name(localized, a.collection)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as fh:
         json.dump(localized, fh, ensure_ascii=False, indent=4)
@@ -198,6 +211,8 @@ def main():
         print(f"  Intro/Outro clip dir: {a.media}")
     if GRAPHICS_TOKEN in mapping:
         print(f"  Graphics dir: {a.graphics}")
+    if a.collection:
+        print(f"  OBS collection name: {a.collection}")
     if swapped:
         print(f"  Discord audio source: {swapped}")
     elif discord_variant(sys.platform) is None:

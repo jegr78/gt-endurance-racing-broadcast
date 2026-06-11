@@ -96,6 +96,20 @@ def t_committed_template_carries_the_source():
     assert len(hits) == 1 and hits[0]["id"] == "sck_audio_capture"
 
 
+def t_apply_collection_name_sets_top_level_name():
+    c = {"name": "IRO Endurance", "sources": []}
+    out = sa.apply_collection_name(c, "ERF Endurance")
+    assert out["name"] == "ERF Endurance"
+
+
+def t_apply_collection_name_noop_on_blank():
+    c = {"name": "IRO Endurance", "sources": []}
+    out = sa.apply_collection_name(c, "")
+    assert out["name"] == "IRO Endurance"
+    out2 = sa.apply_collection_name(c, None)
+    assert out2["name"] == "IRO Endurance"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
