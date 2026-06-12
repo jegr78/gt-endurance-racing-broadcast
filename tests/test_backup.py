@@ -151,6 +151,16 @@ def t_list_sorted_newest_first():
     assert [i["label"] for i in items] == ["New", "Old"], items
 
 
+def t_delete_backup():
+    d = tempfile.mkdtemp(); src = _sources(d)
+    ba.create_backup("gone", src, profile="x")
+    p = os.path.join(src["backups"], "gone.zip")
+    assert os.path.exists(p)
+    assert ba.delete_backup(src["backups"], "gone") is True
+    assert not os.path.exists(p)
+    assert ba.delete_backup(src["backups"], "gone") is False   # already gone
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

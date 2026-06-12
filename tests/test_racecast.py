@@ -1085,6 +1085,11 @@ def t_profile_logo_returns_active_servable_path():
         assert gone is None
 
 
+def t_route_backup():
+    assert m.route(["backup", "list"]) == {"kind": "backup", "rest": ["list"]}
+    assert m.route(["backup", "create", "Winter"]) == {"kind": "backup", "rest": ["create", "Winter"]}
+
+
 def _raises(fn):
     try:
         fn()

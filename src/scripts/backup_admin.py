@@ -133,6 +133,18 @@ def create_backup(label, sources, profile, force=False):
     return path
 
 
+def delete_backup(backups_dir, slug):
+    """Remove backups_dir/<slug>.zip. Returns True if a file was removed, False if
+    it was already absent. Raises ValueError on a bad slug."""
+    slug = sanitize_label(slug)
+    path = os.path.join(backups_dir, f"{slug}.zip")
+    try:
+        os.unlink(path)
+        return True
+    except FileNotFoundError:
+        return False
+
+
 def read_manifest(path):
     """The manifest dict from a backup zip, or {} when unreadable."""
     try:
