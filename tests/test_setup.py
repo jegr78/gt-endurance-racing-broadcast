@@ -459,6 +459,18 @@ def t_setup_data_includes_teams():
         m.post_webhook = orig
 
 
+def t_endpoint_setup_team_sets_slot():
+    ctl, hs, orig = _team_ctl([])
+    srv, get, post = _client(ctl)
+    try:
+        r = get("/setup/team/p1/OVO%20eSports")
+        assert r.get("ok") and r.get("slot") == "p1" and r.get("value") == "OVO eSports", r
+        d = get("/setup/data")                       # optimistic echo visible in slot p1
+        assert d["fields"]["p1"] == "OVO eSports", d
+    finally:
+        srv.shutdown(); m.post_webhook = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

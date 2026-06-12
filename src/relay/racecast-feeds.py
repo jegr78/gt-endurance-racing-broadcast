@@ -1714,6 +1714,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if len(p) == 4 and p[1] == "set":
                         return self._send(setup_ctl.set_field(p[2].lower(),
                                                               unquote(p[3])))
+                    if len(p) == 4 and p[1] == "team":
+                        return self._send(setup_ctl.set_team(p[2].lower(),
+                                                             unquote(p[3])))
                     if len(p) == 3 and p[1] == "clear":
                         return self._send(setup_ctl.set_field(p[2].lower(), ""))
                     return self._send({"error": "unknown", "path": self.path}, 404)
