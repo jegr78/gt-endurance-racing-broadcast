@@ -58,8 +58,9 @@ def _set_env_name(env_path, display):
 
 
 def parse_profile_args(rest):
-    """argv after `profile` -> {verb, name, source}. Raises ValueError (with
-    usage text) on an unknown/missing verb, wrong arity, or an unknown flag."""
+    """argv after `profile` -> {verb, name, source, no_assets, out, file, force}.
+    Raises ValueError (with usage text) on an unknown/missing verb, wrong arity,
+    or an unknown flag."""
     if not rest or rest[0] not in PROFILE_VERBS:
         raise ValueError(_USAGE)
     verb, args = rest[0], rest[1:]

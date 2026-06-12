@@ -660,7 +660,7 @@ def route(argv):
 
 
 def profile_cmd(rest):
-    """`racecast profile list|show|use|new` -- manage league profiles. Resolves the
+    """`racecast profile list|show|use|new|export|import` -- manage league profiles. Resolves the
     project root + runtime dir the same way the rest of the CLI does, so it
     sees profiles/ and runtime/active-profile consistently with config.py."""
     try:

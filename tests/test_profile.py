@@ -219,6 +219,16 @@ def t_parse_import_needs_file():
     _raises(lambda: m.parse_profile_args(["import"]))
 
 
+def t_parse_export_rejects_bad_flags():
+    _raises(lambda: m.parse_profile_args(["export", "iro", "--bogus"]))
+    _raises(lambda: m.parse_profile_args(["export", "iro", "--out"]))      # no value
+    _raises(lambda: m.parse_profile_args(["export", "iro", "--out="]))     # empty value
+
+
+def t_parse_import_rejects_bad_flag():
+    _raises(lambda: m.parse_profile_args(["import", "x.zip", "--bogus"]))
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
