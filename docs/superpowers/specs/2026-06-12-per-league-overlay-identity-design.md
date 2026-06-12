@@ -123,18 +123,39 @@ separately, hide `.num` when empty, and run the auto-fit pass after setting text
   (`"teams"`/`"team name"`), so column order stays free.
 - **`parse_config_brands` → `parse_config_roster`:** returns
   `{team_name: {"number": <str>, "brandKey": <key>}}` instead of `{team_name: brand_key}`.
-  When the `Number` column is absent, `number` is derived by the `#NNN` fallback (below).
+
+**Name/number resolution (one rule, maximally compatible):** the team name is **always**
+stripped of a trailing `#NNN` via `split_team_label` (below), so the displayed name never
+carries the number. The number is then resolved with the **`Number` column taking
+precedence** over the embedded token:
+
+```
+name        = split_team_label(raw_name).name          # always stripped
+embedded    = split_team_label(raw_name).number         # "" if none
+number      = Number-column value (if present & non-empty) else embedded
+roster key  = name (the stripped form)
+```
+
+This covers every sheet style with no double display:
+
+| Configuration cell(s) | name | number |
+| --- | --- | --- |
+| `Team Name`=`OVO eSports #111`, `Number`=`111` | `OVO eSports` | `111` (column wins; embedded stripped) |
+| `Team Name`=`OVO eSports #111`, no `Number` col | `OVO eSports` | `111` (embedded fallback) |
+| `Team Name`=`OVO eSports`, `Number`=`111` | `OVO eSports` | `111` |
+| `Team Name`=`OVO eSports`, no `Number` col | `OVO eSports` | `""` |
 
 **Overlay tab (`Teams P1/P2/P3`):** now stores just the **team name** that occupies each
-podium slot (was the full `Name #Number` string). The relay joins it to the roster.
+podium slot (was the full `Name #Number` string). Its value is normalized through
+`split_team_label` before the roster join, so an Overlay cell still carrying the old
+combined `"OVO eSports #111"` string matches the stripped roster key `"OVO eSports"`.
 
-**`#NNN` fallback (backward compat):** a helper `split_team_label(s)` →
-`(name, number)` splits a trailing `#NNN` off a label (`"OVO eSports #111"` →
-`("OVO eSports", "111")`; no `#` → `(s, "")`). Used (a) to normalize an Overlay
-`Teams P1` value that still carries the old combined string, and (b) to derive `Number`
-in `parse_config_roster` when the column is missing. This means a league that has not
-migrated its sheet still renders correctly — name and number are split at read time, just
-not independently editable in the sheet.
+**`split_team_label(s)` helper (backward compat):** splits a **trailing** `#NNN` token off
+a label (`"OVO eSports #111"` → `("OVO eSports", "111")`; no trailing `#` → `(s, "")`;
+a `#` mid-string that is not a trailing number token is left in the name). Applied to both
+the Configuration team-name and the Overlay slot value, so a league that has not migrated
+its sheet still renders correctly — name and number are split at read time, just not
+independently editable in the sheet until it adds the `Number` column.
 
 **`build_hud_data`:** the `teams` array gains `number`:
 
@@ -318,10 +339,12 @@ HudSource refresh
 ## Testing strategy (TDD, stdlib only)
 
 - **Roster parse** (`tests/test_hud.py`): `Number` column → `{number, brandKey}`; missing
-  column → `#NNN` fallback derives the number; brand mapping unchanged; `/hud/data` carries
-  `number`.
+  column → `#NNN` fallback derives the number; **both present → embedded `#NNN` stripped
+  from the name and the `Number` column wins (no double display)**; brand mapping
+  unchanged; `/hud/data` carries `number`; the name is always the stripped form.
 - **`split_team_label`:** `"X #12"` → `("X","12")`, `"X"` → `("X","")`, names containing
-  `#` mid-string handled per the trailing-token rule.
+  `#` mid-string (not a trailing number token) left intact; Overlay slot value normalized
+  to the stripped roster key.
 - **Panel teams** (`tests/test_setup.py`): P1/P2/P3 vocabulary = roster; non-roster value
   rejected; Overlay-tab writeback payload shape; optimistic override targets `teams[i]`.
 - **Backup** (`tests/test_backup.py`): create→list→restore round-trip restores all three
