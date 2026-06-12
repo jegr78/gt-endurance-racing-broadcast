@@ -62,6 +62,32 @@ def t_bootstrap_failed_install_returns_none():
     assert out is None
 
 
+class _Run:
+    """Minimal subprocess.run() result stand-in for the brew-list probe."""
+    def __init__(self, returncode, stdout=""):
+        self.returncode = returncode
+        self.stdout = stdout
+
+
+def t_brew_installed_casks_parses_list():
+    # `brew list --cask -1` prints one token per line; blank lines are ignored.
+    out = _Run(0, "obs\ncompanion\n\ntailscale-app\n")
+    casks = m.brew_installed_casks("/opt/homebrew/bin/brew", run=lambda *a, **k: out)
+    assert casks == {"obs", "companion", "tailscale-app"}
+
+
+def t_brew_installed_casks_nonzero_returns_none():
+    # A non-zero exit means we cannot trust the list -> None (caller keeps the
+    # old best-effort behavior rather than wrongly skipping every upgrade).
+    assert m.brew_installed_casks("brew", run=lambda *a, **k: _Run(1, "")) is None
+
+
+def t_brew_installed_casks_probe_error_returns_none():
+    def boom(*a, **k):
+        raise OSError("no brew")
+    assert m.brew_installed_casks("brew", run=boom) is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
