@@ -366,6 +366,19 @@ def _connect(host, port, password, timeout):
         return None, str(exc) or exc.__class__.__name__
 
 
+def probe(host="127.0.0.1", port=None, password=None, timeout=2.0):
+    """Lightweight OBS reachability check used by the relay's /status: open an
+    obs-websocket session (handshake + auth) and close it at once, touching
+    nothing in OBS. Returns (reachable: bool, note: str) — (False, reason) when
+    OBS is closed/locked/mis-keyed, (True, "") on a full identify. Never raises
+    (same best-effort contract as the other entry points)."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return False, note
+    session.close()
+    return True, ""
+
+
 def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
                         password=None, timeout=2.0):
     """Make OBS drop its connections to the (just killed) relay feed ports by

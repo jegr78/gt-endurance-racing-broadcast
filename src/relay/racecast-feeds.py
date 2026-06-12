@@ -1546,6 +1546,16 @@ class Feed:
         self.stop = True; self._kill_proc()
 
 
+OBS_PROBE_INTERVAL_S = 5.0   # min seconds between background OBS reachability probes
+
+
+def should_probe_obs(last_ts, running, now, interval):
+    """True when status() should kick off a fresh OBS reachability probe: none
+    already in flight, and the previous probe is older than `interval`. Pure so
+    the throttle is unit-testable without a live relay."""
+    return not running and (now - last_ts) >= interval
+
+
 class Relay:
     def __init__(self, source, ports, logdir, cookies=None, pov_source=None,
                  pov_port=None, start_stint=1):
@@ -1555,7 +1565,11 @@ class Relay:
         self.A = Feed("A", ports[0], a_idx, source.get, logdir, cookies)
         self.B = Feed("B", ports[1], b_idx, source.get, logdir, cookies)
         self.feeds = {"A": self.A, "B": self.B}
-        self.obs_note = None          # last OBS-reflection note (None/"" = ok); read by status()
+        self.obs_note = None          # last OBS note (None/"" = ok); read by status()
+        self.obs_reachable = None     # last LIVE reachability probe; None until first /status
+        self._obs_probe_ts = 0.0      # time.time() of the last reachability probe
+        self._obs_probe_running = False
+        self._obs_lock = threading.Lock()
         # POV is a THIRD, independent feed — not part of the A/B index. Starts
         # paused (off) until the Director calls /pov/reload.
         self.pov_source = pov_source
@@ -1573,6 +1587,7 @@ class Relay:
 
     def status(self):
         now = time.time()
+        self._maybe_probe_obs(now)
         sched = self.source.get()
         out = {"schedule_len": len(sched), "cookies": bool(self.cookies),
                "cookies_health": cookie_health(self.cookies, now=now),
@@ -1590,7 +1605,7 @@ class Relay:
                           "state": "stopped" if self.pov.paused else self.pov.phase,
                           "state_age_s": round(now - self.pov.phase_since, 1),
                           "source": self.pov_source.health() if self.pov_source else None}
-        out["obs"] = {"reachable": not self.obs_note, "note": self.obs_note}
+        out["obs"] = {"reachable": self.obs_reachable, "note": self.obs_note}
         return out
 
     def live_feed(self):
@@ -1611,6 +1626,34 @@ class Relay:
             _applied, note = _obs_ws.reflect_feed_state(live, cut)
             self.obs_note = note or None
         threading.Thread(target=run, daemon=True).start()
+
+    def _maybe_probe_obs(self, now):
+        """Kick off a throttled, side-effect-free OBS reachability probe off-thread
+        so /status reflects OBS's CURRENT state, not a value cached from the last
+        handover. Makes the common 'relay started before OBS' case self-heal: the
+        banner clears within one probe interval once OBS is up — no restart, no
+        handover needed. Returns the spawned Thread (or None when throttled /
+        disabled) so callers/tests can join it; status() ignores the return."""
+        if _obs_ws is None:
+            return None
+        with self._obs_lock:
+            if not should_probe_obs(self._obs_probe_ts, self._obs_probe_running,
+                                    now, OBS_PROBE_INTERVAL_S):
+                return None
+            self._obs_probe_running = True
+            self._obs_probe_ts = now          # stamp at launch (one clock: the caller's)
+        t = threading.Thread(target=self._run_obs_probe, daemon=True)
+        t.start()
+        return t
+
+    def _run_obs_probe(self):
+        """Body of the reachability probe (own method so it is testable
+        synchronously). Records the live result; clears the in-flight flag."""
+        reachable, note = _obs_ws.probe()
+        with self._obs_lock:
+            self.obs_reachable = reachable
+            self.obs_note = note or None
+            self._obs_probe_running = False
 
     def next_auto(self):
         self.source.refresh(timeout=6)               # fresh sheet data at handover (bounded wait)
