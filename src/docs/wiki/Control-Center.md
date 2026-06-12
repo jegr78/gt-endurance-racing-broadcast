@@ -59,6 +59,33 @@ and copy the director/tablet links.
 
 > **CLI alternative:** `racecast status`, `racecast event start [--stint N]`, `racecast event stop`.
 
+### Profile
+
+![Control Center — Profile](images/cc-profile.png)
+
+Everything that belongs to a **league**, gathered in one view (the model behind it is in
+[League profiles](Profiles)):
+
+- **Active profile** — a switcher to change the active league (every other view then
+  acts on it), and a **New profile** dialog that copies an existing profile (e.g.
+  `example`) into a new one.
+- **`profile.env` editor** — the active league's config (Sheet ID, push URL,
+  intro/outro, logo, and the OBS scene-collection name `OBS_COLLECTION`). Secret values
+  are **masked** — click the eye to reveal one. Changes apply the next time you (re)start
+  the relay.
+- **Overlay CSS** — per-profile CSS for the relay-served **HUD** and **Timer** pages
+  (`profiles/<active>/overlay/`; see [HUD overlays](HUD-Overlays)). **Save** writes the file;
+  **Apply in OBS** reloads the browser sources (same as `obs refresh`). The first override on
+  a profile that had no `overlay/` yet needs one `racecast relay restart` to activate; later
+  edits apply live.
+- **Assets** — the active profile's broadcast graphics and intro/outro media. Thumbnails
+  show which graphics are present; **Download** fetches them from the Sheet's Assets tab;
+  **Check vs sheet** compares what's on disk against what the Sheet lists.
+
+> **CLI alternative:** `racecast profile list|show|use|new`, `racecast graphics`,
+> `racecast media`. Edit `profiles/<name>/profile.env` and
+> `profiles/<name>/overlay/{hud,timer}.css` in any text editor.
+
 ### Setup
 
 ![Control Center — Setup wizard](images/cc-setup.png)
@@ -86,19 +113,6 @@ apps (OBS, Companion, Tailscale, Discord). Each line is `PASS` / `WARN` / `INFO`
 
 > **CLI alternative:** `racecast preflight`.
 
-### Apps & Tools
-
-![Control Center — Apps](images/cc-apps.png)
-
-**Apps** installs, launches, quits and shows the status of OBS, Companion,
-Tailscale and Discord. **Tools** does the same for the command-line tools
-(`yt-dlp`, `streamlink`, `ffmpeg`, `deno`), with **Install all** / **Update all**.
-
-![Control Center — Tools](images/cc-tools.png)
-
-> **CLI alternative:** `racecast install-apps`, `racecast install-tools` (add `--update` to
-> upgrade), `racecast app launch|quit obs|discord|tailscale`.
-
 ### Relay & Static Streams
 
 ![Control Center — Relay](images/cc-relay.png)
@@ -116,32 +130,18 @@ mode can't be used. Edit the channel/port list here and start/stop the set.
 > **CLI alternative:** `racecast relay start|stop|restart|status|logs`,
 > `racecast streams start|stop`.
 
-### Profile
+### Apps & Tools
 
-![Control Center — Profile](images/cc-profile.png)
+![Control Center — Apps](images/cc-apps.png)
 
-Everything that belongs to a **league**, gathered in one view (the model behind it is in
-[League profiles](Profiles)):
+**Apps** installs, launches, quits and shows the status of OBS, Companion,
+Tailscale and Discord. **Tools** does the same for the command-line tools
+(`yt-dlp`, `streamlink`, `ffmpeg`, `deno`), with **Install all** / **Update all**.
 
-- **Active profile** — a switcher to change the active league (every other view then
-  acts on it), and a **New profile** dialog that copies an existing profile (e.g.
-  `example`) into a new one.
-- **`profile.env` editor** — the active league's config (Sheet ID, push URL,
-  intro/outro, logo, and the OBS scene-collection name `OBS_COLLECTION`). Secret values
-  are **masked** — click the eye to reveal one. Changes apply the next time you (re)start
-  the relay.
-- **Overlay CSS** — per-profile CSS for the relay-served **HUD** and **Timer** pages
-  (`profiles/<active>/overlay/`; see [HUD overlays](HUD-Overlays)). **Save** writes the file;
-  **Apply in OBS** reloads the browser sources (same as `obs refresh`). The first override on
-  a profile that had no `overlay/` yet needs one `racecast relay restart` to activate; later
-  edits apply live.
-- **Assets** — the active profile's broadcast graphics and intro/outro media. Thumbnails
-  show which graphics are present; **Download** fetches them from the Sheet's Assets tab;
-  **Check vs sheet** compares what's on disk against what the Sheet lists.
+![Control Center — Tools](images/cc-tools.png)
 
-> **CLI alternative:** `racecast profile list|show|use|new`, `racecast graphics`,
-> `racecast media`. Edit `profiles/<name>/profile.env` and
-> `profiles/<name>/overlay/{hud,timer}.css` in any text editor.
+> **CLI alternative:** `racecast install-apps`, `racecast install-tools` (add `--update` to
+> upgrade), `racecast app launch|quit obs|discord|tailscale`.
 
 ### General Settings
 
