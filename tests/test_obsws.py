@@ -445,6 +445,41 @@ def t_refresh_browser_inputs_unreachable_is_quiet():
 
 
 # --------------------------------------------------------------------------
+# probe — the side-effect-free reachability check behind /status's obs.reachable
+# --------------------------------------------------------------------------
+def t_probe_unreachable_is_quiet():
+    # Nothing listens here: (False, note), never an exception.
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    free_port = sock.getsockname()[1]
+    sock.close()
+    reachable, note = m.probe(port=free_port, password="x", timeout=0.5)
+    assert reachable is False
+    assert note                                    # human-readable reason
+
+
+def t_probe_end_to_end_against_fake_server():
+    # A full handshake + auth -> reachable, no note, and the probe touches
+    # nothing in OBS (no released feeds, no refreshed sources).
+    state = {"released": [], "refreshed": []}
+    port, srv = _start_fake_obs(state)
+    reachable, note = m.probe(port=port, password="supersecret", timeout=5)
+    assert reachable is True
+    assert note == "", note
+    assert state["released"] == [] and state["refreshed"] == []
+    srv.close()
+
+
+def t_probe_wrong_password_is_not_reachable():
+    state = {"released": []}
+    port, srv = _start_fake_obs(state)
+    reachable, note = m.probe(port=port, password="WRONG", timeout=2)
+    assert reachable is False
+    assert note
+    srv.close()
+
+
+# --------------------------------------------------------------------------
 # get_scene_collection / set_scene_collection — best-effort, like the others
 # --------------------------------------------------------------------------
 def _start_fake_obs(state, password="supersecret"):
