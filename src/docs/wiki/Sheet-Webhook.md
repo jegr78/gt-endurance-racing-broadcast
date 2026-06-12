@@ -20,16 +20,20 @@ machine and the panel's HUD row + URLs section are display-only.
 | `setup` | Setup tab: the cell **below** a header (`Stint`, `Streamer`, `Session`, `Race Control`) — found by text, so the tab layout may move |
 | `schedule` | Schedule tab **physical row N** (the panel sends the CSV line number automatically): URL (col A) + name (col B); row `last+1` appends. **The Schedule tab must not have leading blank rows** — the gviz CSV export maps physical sheet rows to CSV lines 1:1 when the tab starts at row 1. A header row is silently skipped when reading but its physical line number is still used when writing. |
 | `pov` | POV tab cell `A2` |
-| `teams` | Overlay tab: the row whose column-B label is `Teams P<slot>` (slot 1–3); value written to column C |
+| `teams` | Setup tab: the cell **below** the `Team <slot>` header (slot 1–3 → `A6`/`B6`/`C6` in the shipped layout) — found by text, same as the other Setup fields. The Overlay tab only mirrors them read-only |
 
 The relay only sends Setup values that exist in the Configuration tab's
 vocabulary columns — the same lists the sheet's own dropdowns use.
 
 A `teams` write sends `{"action":"teams","slot":1|2|3,"name":"<team>"}`. The
-relay validates the team name against the Configuration tab's roster before
-sending. The script locates the Overlay tab row whose column-B label matches
-`Teams P<slot>` (case-insensitive) and writes the name into column C. The v2
-script responds `{"ok":true,"action":"teams","v":2}`.
+relay validates the panel's choice against the Configuration tab's roster and
+sends the **verbatim** Configuration team label (e.g. `OVO eSports #111`), so the
+Setup cell matches the tab's team dropdown exactly — just like Streamer/Session.
+The script locates the `Team <slot>` header in the **Setup** tab (case-insensitive)
+and writes the name into the cell **below** it (`A6`/`B6`/`C6` in the shipped
+layout). The v2 script responds `{"ok":true,"action":"teams","v":2}`. **Never
+write the Overlay tab** — it mirrors the Setup teams read-only, and writing there
+overwrites the mirror formula (the bug this corrects).
 
 ### Configuration tab — team-name and Number columns
 
@@ -39,9 +43,12 @@ holds the car number. The relay strips a trailing `#NNN` token from the team
 name field and treats the `Number` column as the canonical car number if
 present (it takes precedence over the embedded `#NNN`). This means a row like
 `OVO eSports #111` with a `Number` value of `111` yields team name
-`OVO eSports` and car number `111` without duplication. The Overlay tab's
-`Teams P1`, `Teams P2`, and `Teams P3` rows therefore hold only the bare team
-name; the panel's P1/P2/P3 podium dropdowns are what write those rows.
+`OVO eSports` and car number `111` without duplication. The panel's P1/P2/P3
+podium dropdowns offer the bare team name, but write the **verbatim**
+Configuration label (with the `#NNN` if that is how the column reads) into the
+Setup tab's `Team 1`/`Team 2`/`Team 3` cells — so the value matches the tab's
+own dropdown. The Overlay tab's `Teams P1/P2/P3` rows mirror those Setup cells
+read-only.
 
 ## One-time setup (per sheet)
 
@@ -50,8 +57,7 @@ name; the panel's P1/P2/P3 podium dropdowns are what write those rows.
 
    ```javascript
    const KEY = 'change-me';            // must match the key=... in the URL below
-   const TABS = {setup: 'Setup', schedule: 'Schedule', pov: 'POV', timer: 'Timer',
-                 overlay: 'Overlay'};
+   const TABS = {setup: 'Setup', schedule: 'Schedule', pov: 'POV', timer: 'Timer'};
    const SETUP_FIELDS = ['Stint', 'Streamer', 'Session', 'Race Control'];
    const TIMER_ROWS = {'Race End (UTC)': 1, 'Duration': 2, 'Visible': 3,
                        'Updated (UTC)': 4, 'Remaining': 5};
@@ -129,18 +135,23 @@ name; the panel's P1/P2/P3 podium dropdowns are what write those rows.
    }
 
    function writeTeams(ss, p) {
+     // Teams are Setup-tab fields, exactly like Streamer/Session/Race Control —
+     // the Overlay tab only MIRRORS them read-only (never write there: the relay
+     // would clobber the mirror formula). Each podium slot is the cell BELOW the
+     // 'Team <slot>' header (P1/P2/P3 -> A6/B6/C6 in the shipped layout), located
+     // by text so the layout may move, same as writeSetup.
      const slot = Number(p.slot);
      if (!(slot >= 1 && slot <= 3)) throw 'slot out of range: ' + p.slot;
-     const sheet = tab(ss, TABS.overlay);          // the Overlay tab
+     const sheet = tab(ss, TABS.setup);
      const grid = sheet.getDataRange().getValues();
-     const label = ('teams p' + slot);             // label lives in column B
-     for (let r = 0; r < grid.length; r++) {
-       if (String(grid[r][1]).trim().toLowerCase() === label) {
-         sheet.getRange(r + 1, 3).setNumberFormat('@').setValue(p.name || '');  // value in col C
-         return;
-       }
-     }
-     throw 'label not found in Overlay tab: Teams P' + slot;
+     const header = 'team ' + slot;
+     for (let r = 0; r < grid.length; r++)
+       for (let c = 0; c < grid[r].length; c++)
+         if (String(grid[r][c]).trim().toLowerCase() === header) {
+           sheet.getRange(r + 2, c + 1).setNumberFormat('@').setValue(p.name || '');
+           return;                                  // the value cell sits BELOW the header
+         }
+     throw 'header not found in Setup tab: Team ' + slot;
    }
    ```
 
