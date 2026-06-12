@@ -136,10 +136,10 @@ def t_job_argv_frozen_reinvokes_binary():
 
 def t_ops_registry_routes_in_iro():
     # every registry entry must be a valid racecast invocation (service verb,
-    # oneshot, or export) — route() raises ValueError on anything unknown
+    # oneshot, export, or command group) — route() raises ValueError on anything unknown
     for name, argv in ui_ops.OPS.items():
         action = iro.route(list(argv))
-        assert action["kind"] in ("service", "oneshot", "export"), name
+        assert action["kind"] in ("service", "oneshot", "export", "chat"), name
 
 
 def t_build_argv_plain_and_unknown():
@@ -731,6 +731,12 @@ def t_iro_job_executable_macos_app_finds_sibling_next_to_bundle():
 
 def t_obs_collection_set_op_builds_argv():
     assert ui_ops.build_argv("obs-collection-set") == ["obs", "collection", "set"]
+
+
+# ---------- crew chat ----------
+
+def t_chat_clear_op_builds_argv():
+    assert ui_ops.build_argv("chat-clear") == ["chat", "clear"]
 
 
 def t_obs_collection_set_op_rejects_params():

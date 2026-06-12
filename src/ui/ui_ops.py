@@ -36,6 +36,7 @@ OPS = {
     "install-tools": ["install-tools", "--yes"],
     "install-apps": ["install-apps", "--yes"],
     "update": ["update", "--yes"],   # optional `tag` param installs a preview build
+    "chat-clear": ["chat", "clear"],
 }
 
 # Browsers get-cookies can export from (yt-dlp --cookies-from-browser names).
