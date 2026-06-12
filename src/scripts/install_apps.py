@@ -135,6 +135,21 @@ def app_update_commands(manager, apps, brew_path="brew"):
     return []
 
 
+def partition_brew_updatable(present, managed_casks):
+    """Split `present` apps into (homebrew-managed, installed-elsewhere) by whether
+    their cask token appears in `managed_casks` (installer_common.brew_installed_casks).
+    `brew upgrade --cask` only works on casks brew tracks; an app present on disk
+    but installed manually (or a self-updating cask brew never recorded) is not
+    one, so it is reported and left alone instead of failing the whole upgrade
+    batch (issue #92). managed_casks=None means the probe failed -> treat every
+    present app as managed, preserving the old best-effort behavior."""
+    if managed_casks is None:
+        return list(present), []
+    managed = [a for a in present if BREW_CASKS[a] in managed_casks]
+    elsewhere = [a for a in present if BREW_CASKS[a] not in managed_casks]
+    return managed, elsewhere
+
+
 def apps_update_guide():
     """Per-app Linux update paths (no single manager covers all four)."""
     return ("Linux app updates (manual):\n"
@@ -283,7 +298,19 @@ def main():
     cmds = []
     if a.update:
         present = [x for x in APPS if x not in missing]
-        if present:
+        if present and manager == "brew":
+            # brew can only upgrade casks it tracks. An app present on disk but
+            # installed outside Homebrew makes `brew upgrade --cask` error and
+            # fail the whole batch — skip those with a note instead (issue #92).
+            managed = _common().brew_installed_casks(brew_path)
+            to_update, elsewhere = partition_brew_updatable(present, managed)
+            if to_update:
+                print("Updating Homebrew-managed apps:", ", ".join(to_update))
+                cmds += app_update_commands(manager, to_update, brew_path=brew_path)
+            if elsewhere:
+                print("Not updating (installed outside Homebrew — they self-update "
+                      "or were installed manually):", ", ".join(elsewhere))
+        elif present:
             print("Updating installed apps:", ", ".join(present))
             cmds += app_update_commands(manager, present, brew_path=brew_path)
     cmds += app_install_commands(manager, missing, brew_path=brew_path)

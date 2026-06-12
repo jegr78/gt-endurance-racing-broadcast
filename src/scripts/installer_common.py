@@ -42,6 +42,24 @@ def find_brew(which=shutil.which, exists=os.path.exists):
     return None
 
 
+def brew_installed_casks(brew_path, run=None):
+    """Set of cask tokens Homebrew actually tracks (`brew list --cask -1`), or
+    None when the probe could not run / failed. install-apps uses this to skip
+    `brew upgrade --cask` on apps present on disk but installed OUTSIDE Homebrew:
+    brew errors 'Cask <x> is not installed' and fails the whole upgrade batch
+    otherwise (issue #92). None is the 'cannot tell' signal — the caller then
+    keeps the old best-effort behavior rather than wrongly skipping everything."""
+    run = subprocess.run if run is None else run
+    try:
+        out = run([brew_path, "list", "--cask", "-1"],
+                  capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return {ln.strip() for ln in (out.stdout or "").splitlines() if ln.strip()}
+
+
 def run_remote_script(url, runner):
     """Download url to a temp file (HTTPS, cert-verified) and run it visibly.
     No shell pipes — the operator saw the URL and confirmed beforehand."""

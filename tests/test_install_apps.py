@@ -186,6 +186,29 @@ def t_app_update_commands_apt_is_manual_guide():
         assert word in guide, word
 
 
+def t_partition_brew_updatable_skips_apps_outside_brew():
+    # OBS present on disk but NOT a brew cask (installed manually) -> 'elsewhere'.
+    # brew upgrade --cask obs would error 'Cask obs is not installed' and fail
+    # the whole batch, so it must be skipped, not upgraded (issue #92).
+    managed = {"companion", "tailscale-app", "discord"}   # BREW_CASKS values
+    to_up, elsewhere = m.partition_brew_updatable(
+        ["obs", "companion", "tailscale", "discord"], managed)
+    assert to_up == ["companion", "tailscale", "discord"]
+    assert elsewhere == ["obs"]
+
+
+def t_partition_brew_updatable_probe_failed_keeps_all():
+    # managed_casks=None (the `brew list` probe failed) -> preserve the old
+    # best-effort behavior: attempt every present app, skip nothing.
+    to_up, elsewhere = m.partition_brew_updatable(["obs", "discord"], None)
+    assert to_up == ["obs", "discord"] and elsewhere == []
+
+
+def t_partition_brew_updatable_none_managed():
+    to_up, elsewhere = m.partition_brew_updatable(["obs", "discord"], set())
+    assert to_up == [] and elsewhere == ["obs", "discord"]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
