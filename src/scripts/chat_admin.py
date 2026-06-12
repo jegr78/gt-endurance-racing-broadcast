@@ -41,3 +41,15 @@ def sanitize_message(raw):
         return None
     user = _clean_text(raw.get("user")).strip() or DEFAULT_NAME
     return {"ts": float(raw["ts"]), "user": user[:MAX_NAME], "text": text[:MAX_TEXT]}
+
+
+def validate_payload(payload):
+    """Validate a /chat/data-shaped object for pull/import. Returns the cleaned,
+    ts-sorted, capped message list. A well-formed but empty list is valid. Raises
+    ValueError ONLY on a malformed shape (not a dict, or 'messages' not a list) —
+    individual bad entries are dropped, not fatal."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("messages"), list):
+        raise ValueError("expected an object with a 'messages' list")
+    clean = [m for m in (sanitize_message(x) for x in payload["messages"]) if m]
+    clean.sort(key=lambda m: m["ts"])
+    return clean[-MAX_MESSAGES:]

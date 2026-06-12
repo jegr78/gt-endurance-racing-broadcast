@@ -52,6 +52,43 @@ def t_sanitize_message_rejects_bad_ts():
         assert ca.sanitize_message(bad) is None, bad
 
 
+def t_validate_payload_ok():
+    payload = {"messages": [{"ts": 2.0, "user": "B", "text": "two"},
+                            {"ts": 1.0, "user": "A", "text": "one"}]}
+    msgs = ca.validate_payload(payload)
+    assert [x["ts"] for x in msgs] == [1.0, 2.0]          # sorted by ts
+    assert all(set(x) == {"ts", "user", "text"} for x in msgs)
+
+
+def t_validate_payload_empty_is_valid():
+    assert ca.validate_payload({"messages": []}) == []
+
+
+def t_validate_payload_drops_bad_entries_keeps_good():
+    payload = {"messages": [{"ts": 1.0, "user": "A", "text": "ok"},
+                            {"user": "A", "text": "no ts"},
+                            "garbage"]}
+    msgs = ca.validate_payload(payload)
+    assert len(msgs) == 1 and msgs[0]["text"] == "ok"
+
+
+def t_validate_payload_caps_to_max_messages():
+    payload = {"messages": [{"ts": float(i), "user": "A", "text": str(i)}
+                            for i in range(ca.MAX_MESSAGES + 50)]}
+    msgs = ca.validate_payload(payload)
+    assert len(msgs) == ca.MAX_MESSAGES
+    assert msgs[-1]["text"] == str(ca.MAX_MESSAGES + 49)   # newest kept
+
+
+def t_validate_payload_rejects_malformed_shape():
+    for bad in (None, [], 5, "x", {"messages": 5}, {"messages": {"a": 1}}, {}):
+        try:
+            ca.validate_payload(bad)
+            raise AssertionError(bad)
+        except ValueError:
+            pass
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
