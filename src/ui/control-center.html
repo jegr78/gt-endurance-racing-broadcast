@@ -520,6 +520,8 @@
             <select id="profile-select" aria-label="Active league profile" onchange="useProfile(this.value)"></select>
             <span class="dim grow" id="profile-hint"></span></div>
           <div class="enverr" id="profile-switch-note" hidden></div>
+          <p class="envhint">Export a profile to share the whole league (settings, overlay, and
+            optionally graphics/media) with another producer — they import the zip here.</p>
           <div id="profile-list"></div>
         </section>
 
@@ -1987,9 +1989,12 @@ async function importProfile(input, force) {
   }
   input.value = '';
   if (confirm('Imported "' + d.display + '". Switch to it now?')) {
-    await fetch('/api/profile/use', {method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({name: d.name})});
+    // Best-effort: a failed switch must not stop the list from refreshing.
+    try {
+      await fetch('/api/profile/use', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: d.name})});
+    } catch (e) { /* switch failed; the import still succeeded */ }
   }
   loadProfiles();
 }
