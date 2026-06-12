@@ -68,15 +68,15 @@ CONFIG_CSV = (
 )
 
 
-def t_parse_config_brands():
-    b = m.parse_config_brands(CONFIG_CSV)
-    assert b["OVO eSports #111"] == "porsche", b
-    assert b["Feel Good Racing #303"] == "porsche", b
-    assert b["NWR Motorsport #224"] == "ferrari", b
+def t_parse_config_roster():
+    r = m.parse_config_roster(CONFIG_CSV)
+    assert r["OVO eSports"] == {"number": "111", "brandKey": "porsche"}, r
+    assert r["Feel Good Racing"] == {"number": "303", "brandKey": "porsche"}, r
+    assert r["NWR Motorsport"] == {"number": "224", "brandKey": "ferrari"}, r
 
 
-def t_parse_config_brands_missing_columns_safe():
-    assert m.parse_config_brands("a,b,c\n1,2,3\n") == {}
+def t_parse_config_roster_missing_team_header_safe():
+    assert m.parse_config_roster("a,b,c\n1,2,3\n") == {}
 
 
 # Real sheet uses header "Brand Name" (text), alongside image columns
@@ -89,37 +89,38 @@ CONFIG_CSV_BRANDNAME = (
 )
 
 
-def t_parse_config_brands_accepts_brand_name_header():
-    b = m.parse_config_brands(CONFIG_CSV_BRANDNAME)
-    assert b["OVO eSports #111"] == "porsche", b
-    assert b["Elite Racing Squad #73"] == "bmw", b
-    assert b["Alien Motorsports #999"] == "amg", b
+def t_parse_config_roster_accepts_brand_name_header():
+    r = m.parse_config_roster(CONFIG_CSV_BRANDNAME)
+    assert r["OVO eSports"] == {"number": "111", "brandKey": "porsche"}, r
+    assert r["Elite Racing Squad"] == {"number": "73", "brandKey": "bmw"}, r
+    assert r["Alien Motorsports"] == {"number": "999", "brandKey": "amg"}, r
 
 
-def t_parse_config_brands_ignores_image_columns():
-    # only image columns present -> nothing matched
-    assert m.parse_config_brands("Teams,Brand Logo,Brands\nX #1,,\n") == {}
+def t_parse_config_roster_ignores_image_columns():
+    # team header present, only image brand columns -> brandKey blank, number from #1
+    assert m.parse_config_roster("Teams,Brand Logo,Brands\nX #1,,\n") == {
+        "X": {"number": "1", "brandKey": ""}}
 
 
 def t_build_hud_data():
     overlay = m.parse_overlay(OVERLAY_CSV)
-    brands = m.parse_config_brands(CONFIG_CSV)
-    d = m.build_hud_data(overlay, brands)
+    roster = m.parse_config_roster(CONFIG_CSV)
+    d = m.build_hud_data(overlay, roster)
     assert d["stint"] == "Intro"
     assert d["streamer"] == "JeGr"
     assert d["session"] == "Warmup"
     assert d["round"]["top"] == "Round 4: Nurburgring 24hrs"
     assert d["round"]["country"] == "GERMANY"
     assert d["round"]["flagKey"] == "germany"
-    assert d["teams"][0] == {"name": "OVO eSports #111", "brandKey": "porsche"}
-    assert d["teams"][2] == {"name": "NWR Motorsport #224", "brandKey": "ferrari"}
+    assert d["teams"][0] == {"name": "OVO eSports", "number": "111", "brandKey": "porsche"}
+    assert d["teams"][2] == {"name": "NWR Motorsport", "number": "224", "brandKey": "ferrari"}
     assert d["raceControl"] == ""
 
 
 def t_build_hud_data_unknown_brand_blank():
     overlay = m.parse_overlay(",Teams P1,,,Mystery Team #0,,,,,\n")
     d = m.build_hud_data(overlay, {})
-    assert d["teams"][0] == {"name": "Mystery Team #0", "brandKey": ""}
+    assert d["teams"][0] == {"name": "Mystery Team", "number": "0", "brandKey": ""}
 
 
 def t_hudsource_data_uses_builders():
@@ -273,6 +274,46 @@ def t_split_team_label_mid_string_hash_kept():
     # only a TRAILING "#<digits>" token is split off; a mid-string # stays in the name
     assert m.split_team_label("Team #1 Racing") == ("Team #1 Racing", "")
     assert m.split_team_label("  Spaced #42  ") == ("Spaced", "42")
+
+
+ROSTER_CSV_WITH_NUMBER = (
+    "Teams,Number,Brand Name\n"
+    "OVO eSports,111,Porsche\n"
+    "Feel Good,303,BMW\n")
+
+ROSTER_CSV_EMBEDDED_ONLY = (
+    "Teams,Brand Name\n"
+    "OVO eSports #111,Porsche\n"
+    "Apex Racing #7,Audi\n")
+
+ROSTER_CSV_BOTH = (
+    "Teams,Number,Brand Name\n"
+    "OVO eSports #999,111,Porsche\n")   # embedded #999 must be ignored, column wins
+
+def t_roster_number_column():
+    r = m.parse_config_roster(ROSTER_CSV_WITH_NUMBER)
+    assert r == {"OVO eSports": {"number": "111", "brandKey": "porsche"},
+                 "Feel Good": {"number": "303", "brandKey": "bmw"}}, r
+
+def t_roster_embedded_fallback():
+    r = m.parse_config_roster(ROSTER_CSV_EMBEDDED_ONLY)
+    assert r["OVO eSports"] == {"number": "111", "brandKey": "porsche"}
+    assert r["Apex Racing"] == {"number": "7", "brandKey": "audi"}
+
+def t_roster_column_wins_over_embedded():
+    r = m.parse_config_roster(ROSTER_CSV_BOTH)
+    assert r == {"OVO eSports": {"number": "111", "brandKey": "porsche"}}, r
+
+def t_roster_no_teams_header_is_empty():
+    assert m.parse_config_roster("Foo,Bar\n1,2\n") == {}
+
+def t_build_hud_data_team_number_and_strip():
+    roster = {"OVO eSports": {"number": "111", "brandKey": "porsche"}}
+    overlay = {"teams": ["OVO eSports #999", "Unknown #5", ""]}
+    d = m.build_hud_data(overlay, roster)
+    assert d["teams"][0] == {"name": "OVO eSports", "number": "111", "brandKey": "porsche"}
+    assert d["teams"][1] == {"name": "Unknown", "number": "5", "brandKey": ""}
+    assert d["teams"][2] == {"name": "", "number": "", "brandKey": ""}
 
 
 if __name__ == "__main__":

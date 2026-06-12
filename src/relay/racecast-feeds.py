@@ -375,29 +375,36 @@ def parse_overlay(text):
 # Accepted headers for the team's brand TEXT column (priority order). The sheet's
 # image columns ("Brand Logo", "Brands") are deliberately NOT in this set.
 BRAND_TEXT_HEADERS = ("brand key", "brand name", "brand")
+# Accepted headers locating the team-name and (optional) car-number columns.
+TEAM_NAME_HEADERS = ("teams", "team name")
+NUMBER_HEADERS = ("number",)
 
 
-def parse_config_brands(text):
-    """Configuration tab CSV -> {team_name: brand_key}. Columns are located by
-    header name ('Teams' + one of BRAND_TEXT_HEADERS) so positions can change."""
+def parse_config_roster(text):
+    """Configuration tab CSV -> roster {team_name: {"number": str, "brandKey": str}}.
+    The team name is always stripped of a trailing '#NNN' (split_team_label); the
+    Number column wins over that embedded token, which is only the fallback. Columns
+    are located by header name so positions stay free. A missing team-name header ->
+    {}. A missing Brand/Number column just yields '' for that field."""
     rows = list(csv.reader(io.StringIO(text)))
     if not rows:
         return {}
     header = [(h or "").strip().lower() for h in rows[0]]
-    if "teams" not in header:
+    ti = next((header.index(h) for h in TEAM_NAME_HEADERS if h in header), None)
+    if ti is None:
         return {}
-    ti = header.index("teams")
     bi = next((header.index(h) for h in BRAND_TEXT_HEADERS if h in header), None)
-    if bi is None:
-        return {}
+    ni = next((header.index(h) for h in NUMBER_HEADERS if h in header), None)
     out = {}
     for row in rows[1:]:
-        if len(row) <= max(ti, bi):
+        if len(row) <= ti:
             continue
-        name = (row[ti] or "").strip()
-        brand = asset_key(row[bi])
-        if name and brand:
-            out[name] = brand
+        name, embedded = split_team_label(row[ti])
+        if not name:
+            continue
+        col_num = (row[ni].strip() if ni is not None and len(row) > ni else "")
+        brand = (asset_key(row[bi]) if bi is not None and len(row) > bi else "")
+        out[name] = {"number": col_num or embedded, "brandKey": brand}
     return out
 
 
@@ -410,7 +417,7 @@ VOCAB_COLUMNS = {"stint": "stints", "streamer": "streamers",
 
 def parse_config_vocab(text):
     """Configuration tab CSV -> {field_key: [options]} for the panel
-    dropdowns. Columns located by header name (parse_config_brands precedent);
+    dropdowns. Columns located by header name (parse_config_roster precedent);
     blanks skipped, duplicates dropped, sheet order kept."""
     rows = list(csv.reader(io.StringIO(text)))
     out = {k: [] for k in VOCAB_COLUMNS}
@@ -430,8 +437,20 @@ def parse_config_vocab(text):
     return out
 
 
-def build_hud_data(overlay, brands):
-    """Combine an Overlay map + {team: brand_key} into the /hud/data contract."""
+def team_entry(raw, roster):
+    """One /hud/data team object from an Overlay slot value + the roster. Name is
+    always the stripped form; number/logo come from the roster (Number column
+    precedence already baked in), with the slot's own embedded #NNN as the only
+    fallback when the team is absent from the roster."""
+    name, embedded = split_team_label(raw)
+    info = roster.get(name, {})
+    return {"name": name,
+            "number": info.get("number") or embedded,
+            "brandKey": info.get("brandKey", "")}
+
+
+def build_hud_data(overlay, roster):
+    """Combine an Overlay map + roster {team: {number, brandKey}} into /hud/data."""
     return {
         "stint": overlay.get("stint", ""),
         "streamer": overlay.get("streamer", ""),
@@ -441,8 +460,7 @@ def build_hud_data(overlay, brands):
             "country": overlay.get("country", ""),
             "flagKey": asset_key(overlay.get("country", "")),
         },
-        "teams": [{"name": n, "brandKey": brands.get(n, "")}
-                  for n in overlay.get("teams", ["", "", ""])],
+        "teams": [team_entry(n, roster) for n in overlay.get("teams", ["", "", ""])],
         "raceControl": overlay.get("race_control", ""),
     }
 
@@ -1035,7 +1053,8 @@ class HudSource:
     with last-good caching (mirrors ScheduleSource robustness)."""
     EMPTY = {"stint": "", "streamer": "", "session": "",
              "round": {"top": "", "country": "", "flagKey": ""},
-             "teams": [{"name": "", "brandKey": ""}] * 3, "raceControl": ""}
+             "teams": [{"name": "", "number": "", "brandKey": ""} for _ in range(3)],
+             "raceControl": ""}
 
     def __init__(self, overlay_url, config_url, cache_path):
         self.overlay_url = overlay_url
@@ -1044,6 +1063,7 @@ class HudSource:
         self.lock = threading.Lock()
         self._data = None
         self._vocab = {k: [] for k in VOCAB_COLUMNS}
+        self._roster = {}
         self.overrides = {}   # hud-data key -> (value, expires_ts)
         self.last_ok = None
         self.last_error = None
@@ -1066,15 +1086,16 @@ class HudSource:
         try:
             overlay = parse_overlay(self._fetch(self.overlay_url, timeout))
             config_text = self._fetch(self.config_url, timeout)
-            brands = parse_config_brands(config_text)
+            roster = parse_config_roster(config_text)
             vocab = parse_config_vocab(config_text)
-            data = build_hud_data(overlay, brands)
+            data = build_hud_data(overlay, roster)
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e}"
             return False
         with self.lock:
             self._data = data
             self._vocab = vocab
+            self._roster = roster
             # a sheet poll that already shows the pushed value = confirmation
             self.overrides = {k: (v, exp) for k, (v, exp) in self.overrides.items()
                               if data.get(k) != v}
