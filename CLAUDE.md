@@ -116,7 +116,7 @@ python3 src/racecast.py export companion  # write the Companion button config fo
 python3 src/racecast.py chat clear        # wipe the crew-chat history on the active relay
 python3 src/racecast.py chat pull <ip>    # take over another producer's chat history at handover (relay may be running)
 python3 src/racecast.py chat import <file> # load a previously exported JSON file into the relay
-python3 src/racecast.py chat export       # dump the current chat history to stdout (--out PATH to file)
+python3 src/racecast.py chat export       # write the current chat history to chat-export.json (or --out PATH)
 python3 src/racecast.py --version
 
 # Fetch any missing HUD country flags from the sheet's Configuration tab

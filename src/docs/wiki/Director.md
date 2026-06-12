@@ -138,7 +138,7 @@ the producer's machine.
 - `racecast chat clear` — wipe the history (also available as **Clear chat** in the
   Control Center). There is no HTTP endpoint that clears chat — this is a
   producer-only operation.
-- `racecast chat export` — save the current history to a file (stdout or `--out PATH`).
+- `racecast chat export` — save the current history to `chat-export.json` (or `--out PATH`).
 - `racecast chat pull <tailscale-ip>` — fetch another producer's relay history and
   adopt it locally, writing the file and signalling the relay to reload. This works
   at any time, including while the new producer's relay is already running. Use it at
