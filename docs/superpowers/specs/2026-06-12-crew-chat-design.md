@@ -29,7 +29,7 @@ the relay.
 | Question | Decision |
 |---|---|
 | Identity | Self-declared display name, stored per browser in `localStorage` (`racecast.chat.name`), editable any time, sent as `user` on each message. No identity proof — names are spoofable, which is acceptable inside the trusted tailnet and is documented. Tailscale-derived identity and fixed role dropdowns were rejected (the former breaks for the local producer on `127.0.0.1`; the latter cannot distinguish multiple directors). |
-| Persistence | Messages persist to `runtime/chat.json` (best-effort, like `timer.json`) and are loaded on relay start, so the history survives a relay restart mid-event. |
+| Persistence | Messages persist to `chat.json` in the relay's runtime dir — which is **profile-scoped** (`runtime/<profile>/chat.json`, right next to `timer.json`), so each league keeps its own chat. Best-effort write, loaded on relay start, so the history survives a relay restart mid-event. (Referred to below as `runtime/chat.json` for brevity.) |
 | History size | In-memory ring buffer of the last `MAX_MESSAGES` (200) messages; older messages drop off. |
 | Clearing | Producer-only, via CLI (`racecast chat clear`) and a "Clear chat" button in the Control Center. The panel has **no** clear control — clearing is producer authority. |
 | Unread indication | An unread-count badge on the collapsed/blurred chat section header. No sound (would risk disturbing the producer-machine audio). |
