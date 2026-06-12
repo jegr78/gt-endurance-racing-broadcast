@@ -14,7 +14,7 @@
   racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
   racecast app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
   racecast status                            # aggregate health of all services
-  racecast profile   list | show [<name>] | use <name> | new <name> [--from <source>]
+  racecast profile   list | show [<name>] | use <name> | new <name> [--from <source>] | export <name> [--no-assets] [--out PATH] | import <file> [--force]
   racecast --profile <name> <command>        # run one command against a non-active profile
   racecast chat      clear | pull <ip> [--port N] | import <file> | export [--out PATH]
   racecast backup    {create|list|restore|delete} <label>   # named look snapshots (overlay+graphics+media)
@@ -25,7 +25,7 @@
   racecast update [--check] [--yes] [--tag TAG]   # self-update the binary (--tag installs an exact release)
   racecast --version
 """
-import glob, hashlib, json, os, re, shutil, sys, time, webbrowser
+import glob, hashlib, json, os, re, shutil, sys, tempfile, time, webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Adapters (added in later tasks) import sibling modules from scripts/ at module
@@ -660,7 +660,7 @@ def route(argv):
 
 
 def profile_cmd(rest):
-    """`racecast profile list|show|use|new` -- manage league profiles. Resolves the
+    """`racecast profile list|show|use|new|export|import` -- manage league profiles. Resolves the
     project root + runtime dir the same way the rest of the CLI does, so it
     sees profiles/ and runtime/active-profile consistently with config.py."""
     try:
@@ -684,6 +684,21 @@ def profile_cmd(rest):
         print(f"created profile '{slug}' at {target}")
         print(f"  edit {env_path} (fill in SHEET_ID), then: "
               f"racecast profile use {slug}")
+        return None
+    if verb == "export":
+        res = profile_export_data(opts["name"],
+                                  include_assets=not opts["no_assets"],
+                                  dest=opts["out"] or os.getcwd())
+        if not res.get("ok"):
+            sys.exit(f"racecast: {res['error']}")
+        print(f"exported profile '{opts['name']}' -> {res['path']}")
+        return None
+    if verb == "import":
+        res = profile_import_data(opts["file"], force=opts["force"])
+        if not res.get("ok"):
+            sys.exit(f"racecast: {res['error']}")
+        print(f"imported profile '{res['name']}' ({res['display']})")
+        print(f"  switch to it: racecast profile use {res['name']}")
         return None
     if verb == "use":
         try:
@@ -2361,6 +2376,54 @@ def backup_delete_data(slug):
         return {"ok": False, "error": f"could not delete backup: {exc}"}
 
 
+def profile_export_data(name=None, include_assets=True, dest=None):
+    """Build a portable profile bundle for `name` (default the active profile).
+    {ok, path, slug} or {ok:false, error}. `dest` default is a temp .zip the UI
+    streams then deletes; the CLI passes a directory or an --out path."""
+    try:
+        created_tmp = None
+        import profile_io as pio
+        slug = name or _active_profile_name()
+        if not slug:
+            return {"ok": False, "error": "no profile to export"}
+        root = _env_base(IS_FROZEN, _real_executable(), HERE)
+        profile_dir = os.path.join(root, "profiles", slug)
+        rt = _profile_runtime(_runtime_base_dir(), slug)
+        sources = {"profile_dir": profile_dir,
+                   "graphics": os.path.join(rt, "graphics"),
+                   "media": os.path.join(rt, "media")}
+        if dest is None:
+            fd, dest = tempfile.mkstemp(prefix="profexport-", suffix=".zip")
+            os.close(fd)
+            created_tmp = dest
+        path = pio.export_profile(slug, sources, bool(include_assets), dest)
+        return {"ok": True, "path": path, "slug": pio.slugify(slug)}
+    except Exception as exc:
+        if created_tmp:
+            try:
+                os.unlink(created_tmp)
+            except OSError:  # best-effort temp cleanup
+                pass
+        return {"ok": False, "error": f"could not export profile: {exc}"}
+
+
+def profile_import_data(src_path, force=False):
+    """Import a profile bundle file. {ok, name, display, includes_assets} or
+    {ok:false, error}. Does NOT switch the active profile."""
+    try:
+        import profile_io as pio
+        root = _env_base(IS_FROZEN, _real_executable(), HERE)
+        roots = {"profiles_root": os.path.join(root, "profiles"),
+                 "runtime_root": _runtime_base_dir()}
+        info = pio.import_profile(src_path, roots, force=bool(force))
+        return {"ok": True, **info}
+    except FileExistsError:
+        return {"ok": False,
+                "error": "a profile with that name exists (use force to replace)"}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not import profile: {exc}"}
+
+
 def _streams_config_path():
     return os.path.join(_streams_static_dir(), "streams.json")
 
@@ -2603,7 +2666,7 @@ def _active_obs_collection():
         try:
             return pcfg.resolve_config(root, override=active,
                                        runtime_root=_runtime_base_dir()).obs_collection
-        except pcfg.ProfileError:
+        except pcfg.ProfileError:  # unresolvable profile -> use the default name
             pass
     return obs_ws.EXPECTED_SCENE_COLLECTION
 
@@ -2952,6 +3015,8 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "backup_create": backup_create_data,
         "backup_restore": backup_restore_data,
         "backup_delete": backup_delete_data,
+        "profile_export": profile_export_data,
+        "profile_import": profile_import_data,
         "jobs": jobs_mod.JobManager(
             lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN,
                                              _rc_job_executable(),

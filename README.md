@@ -43,6 +43,8 @@ racecast profile list            # all profiles; marks the active one
 racecast profile show [<name>]   # resolved config for a profile (defaults to active)
 racecast profile use <name>      # set the active profile (writes runtime/active-profile)
 racecast profile new <name> --from example   # copy a profile dir to start a new league
+racecast profile export <name>   # export a whole league profile to a portable zip (share with another producer)
+racecast profile import <file>   # import a profile bundle on this machine (--force to replace)
 racecast --profile <name> <cmd>  # run one command against a non-active profile
 ```
 

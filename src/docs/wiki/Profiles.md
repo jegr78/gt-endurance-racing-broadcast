@@ -115,12 +115,58 @@ racecast obs collection set
 Switching the OBS collection is always an explicit producer action (it rebuilds every
 source) — it is never automatic. See [OBS & scenes](OBS-Setup).
 
+## Onboard a new producer
+
+To hand a league to another producer (or to set up the same league on a second machine),
+use the profile export/import path.
+
+**On the source machine:**
+
+```bash
+racecast profile export <name>              # writes <name>-profile.zip in the current directory
+racecast profile export <name> --no-assets  # omit graphics/media (re-fetchable on the target)
+racecast profile export <name> --out /tmp/my-league.zip   # custom output path
+```
+
+The bundle contains the entire `profiles/<name>/` tree — `profile.env` (including
+`SHEET_PUSH_URL`), overlay CSS, any logo — and, unless `--no-assets`, the runtime
+`graphics/` and `media/` for that profile. Send the zip to the other producer by any
+means (file share, USB drive, etc.).
+
+**On the target machine:**
+
+```bash
+racecast profile import my-league.zip      # extracts into profiles/<slug>/
+racecast profile use <slug>                # make it active (printed at the end of import)
+```
+
+If a profile with the same slug already exists, the import prints an error; add
+`--force` to replace it. After importing, the CLI prints the `racecast profile use
+<slug>` hint — the active profile is **not** switched automatically.
+
+If the bundle was exported without assets (or the graphics/media have since changed),
+re-fetch them on the target machine:
+
+```bash
+racecast graphics    # download broadcast graphics from the sheet
+racecast media       # download Intro/Outro clips
+```
+
+**Control Center alternative:** in the Profile view, click **Import profile** and pick
+the zip file. Each profile row has an **Export** button with an **assets** checkbox
+(checked by default). Re-importing a name that already exists prompts "Replace it?".
+
+![Control Center — Profile view: Import profile button, per-profile Export with an Include-assets checkbox](images/cc-profile.png)
+
 ## The Control Center Profile view
 
 The Control Center's **Profile** view exposes all of the above in one place: a switcher
 for the active league, a **New profile** dialog that copies an existing profile, a
 `profile.env` editor (with masked secrets), the per-league **overlay-CSS** editor (HUD and
-Timer — see [HUD overlays](HUD-Overlays)), and the profile-scoped graphics/media.
+Timer — see [HUD overlays](HUD-Overlays)), and the profile-scoped graphics/media. Each
+profile row has an **Export** button (with an **assets** checkbox) and the card header
+has an **Import profile** button — see [Onboard a new producer](#onboard-a-new-producer)
+above.
 
 > **CLI alternative:** the `racecast profile …` verbs above, plus `racecast graphics` /
 > `racecast media`. Edit `profiles/<name>/profile.env` in any text editor.
