@@ -307,6 +307,13 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"could not read overlay css: {exc}"},
                                       code=500)
+            if path == "/api/backup":
+                try:
+                    return self._json(ctx["backup_list"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not list backups: {exc}"},
+                                      code=500)
             if path == "/api/init/plan":
                 browser = parse_qs(urlparse(self.path).query or "").get(
                     "browser", ["firefox"])[0]
@@ -408,6 +415,43 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"could not write overlay css: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/backup":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["backup_create"](
+                        body.get("label"), body.get("force"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not create backup: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/backup/restore":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["backup_restore"](body.get("slug"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not restore backup: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/backup/delete":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["backup_delete"](body.get("slug"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not delete backup: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
             if path.startswith("/api/init/step/"):

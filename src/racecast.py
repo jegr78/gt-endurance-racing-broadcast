@@ -2305,6 +2305,62 @@ def overlay_write_data(page, content):
         return {"ok": False, "error": f"could not write overlay css: {exc}"}
 
 
+def backup_list_data():
+    """{ok, active, items:[...]} for the Control Center Looks card."""
+    try:
+        import backup_admin as ba
+        active = _active_profile_name()
+        if not active:
+            return {"ok": False, "error": "no active profile"}
+        return {"ok": True, "active": active,
+                "items": ba.list_backups(_backup_sources()["backups"])}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not list backups: {exc}"}
+
+
+def backup_create_data(label, force=False):
+    """Create a named look backup. {ok, path} or {ok:false, error}."""
+    try:
+        import backup_admin as ba
+        if not _active_profile_name():
+            return {"ok": False, "error": "no active profile"}
+        if not isinstance(label, str) or not label.strip():
+            return {"ok": False, "error": "label required"}
+        path = ba.create_backup(label, _backup_sources(),
+                                profile=_active_profile_name(), force=bool(force))
+        return {"ok": True, "path": path}
+    except FileExistsError:
+        return {"ok": False, "error": "a backup with that name exists (use force)"}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not create backup: {exc}"}
+
+
+def backup_restore_data(slug):
+    """Restore a look backup by slug. {ok} or {ok:false, error}."""
+    try:
+        import backup_admin as ba
+        src = _backup_sources()
+        zip_path = os.path.join(src["backups"], f"{ba.sanitize_label(slug)}.zip")
+        ba.restore_backup(zip_path, src)
+        try:
+            _refresh_obs_pages(force=True)
+        except Exception:
+            pass   # OBS refresh is best-effort; the restore already succeeded
+        return {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "error": f"restore failed: {exc} (live look unchanged)"}
+
+
+def backup_delete_data(slug):
+    """Delete a look backup by slug. {ok, removed} or {ok:false, error}."""
+    try:
+        import backup_admin as ba
+        removed = ba.delete_backup(_backup_sources()["backups"], slug)
+        return {"ok": True, "removed": removed}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not delete backup: {exc}"}
+
+
 def _streams_config_path():
     return os.path.join(_streams_static_dir(), "streams.json")
 
@@ -2892,6 +2948,10 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "profile_env_write": profile_env_write_data,
         "overlay_read": overlay_read_data,
         "overlay_write": overlay_write_data,
+        "backup_list": backup_list_data,
+        "backup_create": backup_create_data,
+        "backup_restore": backup_restore_data,
+        "backup_delete": backup_delete_data,
         "jobs": jobs_mod.JobManager(
             lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN,
                                              _rc_job_executable(),
