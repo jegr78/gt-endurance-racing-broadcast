@@ -242,6 +242,54 @@ def t_app_version_windows_dispatch():
                          run=lambda *a, **k: _Proc(0, "1.98.5\n")) == "1.98.5"
 
 
+def t_companion_http_version_reads_sentry_release():
+    # The frontend bundle embeds the release as SENTRY_RELEASE={id:"<ver>+..."};
+    # the shell names the (content-hashed) bundle, picking the modern, not -legacy.
+    shell = ('<script src="/assets/index-CLsR4s7-.js"></script>'
+             '<script src="/assets/index-legacy-B9pHCpUc.js"></script>')
+    head = 'var t;e.SENTRY_RELEASE={id:"4.3.4+9244-stable-c14e5e3334"};more'
+    calls = []
+
+    def fetch(url, range_bytes):
+        calls.append((url, range_bytes))
+        return shell if url.endswith("/") else head
+    assert m.companion_http_version("http://127.0.0.1:8000", fetch=fetch) == "4.3.4"
+    # the modern bundle was fetched with a bounded Range (not the legacy one, not full)
+    assert calls[1][0].endswith("/assets/index-CLsR4s7-.js") and calls[1][1] == 65536
+
+
+def t_companion_http_version_missing_script_or_marker():
+    assert m.companion_http_version(
+        "http://h", fetch=lambda u, r: "<html>no bundle</html>") is None
+
+    def fetch(u, r):
+        return ('<script src="/assets/index-x.js"></script>' if u.endswith("/")
+                else "bundle without the marker")
+    assert m.companion_http_version("http://h", fetch=fetch) is None
+
+
+def t_companion_http_version_unreachable_is_none():
+    def boom(u, r):
+        raise OSError("connection refused")
+    assert m.companion_http_version("http://h", fetch=boom) is None
+
+
+def t_app_version_companion_http_fallback_when_local_missing():
+    # Linux has no local Companion version file -> the running server fills it in.
+    shell = '<script src="/assets/index-abc.js"></script>'
+    head = 'e.SENTRY_RELEASE={id:"4.3.4+1-stable-deadbee"}'
+    fetch = lambda u, r: shell if u.endswith("/") else head
+    assert m.app_version("companion", "linux", companion_fetch=fetch) == "4.3.4"
+    # a present local version is NOT overridden by the HTTP probe (darwin plist wins)
+    plists = {"/Applications/Companion.app/Contents/Info.plist":
+              {"CFBundleShortVersionString": "4.3.4"}}
+
+    def boom(_u, _r):
+        raise AssertionError("HTTP probe must not run when the plist has a version")
+    assert m.app_version("companion", "darwin", exists=lambda p: p in plists,
+                         read_plist=lambda p: plists[p], companion_fetch=boom) == "4.3.4"
+
+
 def t_app_version_linux_dispatch():
     # OBS via dpkg, Discord via build_info.json, Tailscale via the CLI.
     assert m.app_version("obs", "linux",

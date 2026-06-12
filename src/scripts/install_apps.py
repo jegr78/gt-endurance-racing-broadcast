@@ -268,26 +268,70 @@ def _linux_app_version(app, exists, read_text, run):
                     return v
         return dpkg_version("discord", run=run)
     # companion-pi (service install) exposes no stable version file we can rely
-    # on — left unresolved rather than guess a path (see CLAUDE.md: don't invent).
+    # on — the running web server is the source instead (companion_http_version,
+    # tried as a fallback in app_version).
     return None
+
+
+def _http_fetch(url, range_bytes):
+    """GET `url` (optionally only its first `range_bytes`) and return the decoded
+    body. Short timeout; raises on any failure (callers treat that as 'unknown')."""
+    import urllib.request
+    headers = {"Range": f"bytes=0-{range_bytes - 1}"} if range_bytes else {}
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=4) as resp:
+        body = resp.read(range_bytes) if range_bytes else resp.read()
+    return body.decode("utf-8", "replace")
+
+
+def companion_http_version(base_url="http://127.0.0.1:8000", fetch=_http_fetch):
+    """Installed Companion version from its running web server, or None. Companion
+    serves no version REST endpoint, but its built frontend embeds the release as
+    `SENTRY_RELEASE={id:"<ver>+<build>-<channel>-<sha>"}` in the first ~1 KB of
+    its main bundle. Fetch the SPA shell to find the content-hashed bundle name,
+    then a small Range GET of its head to read the marker. This is the only version
+    source for the companion-pi Linux service and for WSL/Docker setups where
+    Companion runs on another host — it works wherever Companion is reachable.
+    `fetch(url, range_bytes)` returns the body (range_bytes=None = whole shell)
+    and raises on failure; the default uses urllib with a short timeout."""
+    import re
+    base = base_url.rstrip("/")
+    try:
+        shell = fetch(base + "/", None)
+        scripts = re.findall(r'src="(/assets/index-[^"]+\.js)"', shell)
+        bundle = next((s for s in scripts if "legacy" not in s), None)
+        if not bundle:
+            return None
+        head = fetch(base + bundle, 65536)
+        marker = re.search(r'SENTRY_RELEASE=\{id:"(\d+\.\d+\.\d+)', head)
+        return marker.group(1) if marker else None
+    except Exception:   # noqa: BLE001 — Companion unreachable / markup changed -> unknown
+        return None
 
 
 def app_version(app, platform=None, *, exists=os.path.exists, read_plist=_read_plist,
                 read_text=_read_text, run=None, listdir=os.listdir, env=None,
-                file_version=windows_file_version):
+                file_version=windows_file_version,
+                companion_url="http://127.0.0.1:8000", companion_fetch=_http_fetch):
     """Best-effort installed version string for `app`, or None. Per platform,
     using only non-launching sources: macOS reads the .app Info.plist; Windows
     reads obs64.exe/Companion.exe file-version metadata, the Discord Squirrel
     folder, and `tailscale version`; Linux uses dpkg-query (OBS), Discord's
-    build_info.json, and `tailscale version`. Anything unavailable -> None, so
-    the surfaces show presence without a version, never an error (issue #91)."""
+    build_info.json, and `tailscale version`. Companion has no local version file
+    on Linux, so when the local probe comes back empty its running web server is
+    queried (companion_http_version). Anything unavailable -> None, so the surfaces
+    show presence without a version, never an error (issue #91)."""
     platform = sys.platform if platform is None else platform
     env = os.environ if env is None else env
     if platform == "darwin":
-        return darwin_app_version(app, exists=exists, read_plist=read_plist)
-    if platform.startswith("win"):
-        return _windows_app_version(app, env, exists, listdir, run, file_version)
-    return _linux_app_version(app, exists, read_text, run)
+        version = darwin_app_version(app, exists=exists, read_plist=read_plist)
+    elif platform.startswith("win"):
+        version = _windows_app_version(app, env, exists, listdir, run, file_version)
+    else:
+        version = _linux_app_version(app, exists, read_text, run)
+    if version is None and app == "companion" and companion_url:
+        version = companion_http_version(companion_url, fetch=companion_fetch)
+    return version
 
 
 def installed_apps_report(apps, version_fn):
