@@ -361,6 +361,31 @@ def t_hud_team_override_echo_and_pending():
     assert hs.team_pending(now=1000.0 + m.OVERRIDE_TTL + 1) == set()
 
 
+def t_hud_team_override_cleared_when_sheet_confirms():
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    hs = m.HudSource("http://overlay", "http://config", _os.path.join(d, "h.json"))
+    config = "Teams,Number,Brand Name\nOVO eSports,111,Porsche\nFeel Good,303,BMW\n"
+    # sheet starts with P1 = OVO eSports
+    state = {"p1": "OVO eSports"}
+    def fetch(url, timeout=10):
+        if url == "http://overlay":
+            return ",Teams P1," + state["p1"] + ",,\n,Teams P2,,,\n,Teams P3,,,\n"
+        return config
+    hs._fetch = fetch
+    assert hs.refresh() is True
+    # director optimistically switches P1 to Feel Good
+    hs.set_team_override(0, hs.resolve_team("Feel Good"), now=1000.0)
+    assert hs.team_pending(now=1001.0) == {0}
+    # the sheet has NOT caught up yet -> a refresh keeps the override pending
+    assert hs.refresh() is True
+    assert hs.team_pending(now=1001.0) == {0}, "override must survive an unconfirmed refresh"
+    # now the sheet shows Feel Good in P1 -> the next refresh confirms & clears it
+    state["p1"] = "Feel Good"
+    assert hs.refresh() is True
+    assert hs.team_pending(now=1001.0) == set(), "confirmed override must be pruned"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
