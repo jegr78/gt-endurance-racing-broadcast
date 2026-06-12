@@ -131,6 +131,80 @@ def t_write_is_atomic_no_partial_temp_left():
         assert set(os.listdir(d)) == {"chat.json"}   # no leftover *.tmp
 
 
+m = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))
+
+
+def _store(tmp):
+    return m.ChatStore(os.path.join(tmp, "chat.json"))
+
+
+def t_chatstore_add_sets_server_ts_ignores_client_ts():
+    with tempfile.TemporaryDirectory() as d:
+        cs = _store(d)
+        r = cs.add(user="Jens", text="hi", now=123.0)
+        assert r["ok"] is True
+        msg = r["message"]
+        assert msg["ts"] == 123.0 and msg["user"] == "Jens" and msg["text"] == "hi"
+        assert cs.data()["messages"] == [msg]
+
+
+def t_chatstore_add_rejects_empty_text():
+    with tempfile.TemporaryDirectory() as d:
+        cs = _store(d)
+        assert "error" in cs.add(user="x", text="   ", now=1.0)
+        assert cs.data()["messages"] == []
+
+
+def t_chatstore_add_caps_and_strips():
+    with tempfile.TemporaryDirectory() as d:
+        cs = _store(d)
+        msg = cs.add(user="n" * 99, text="a\x07b" + "c" * 999, now=1.0)["message"]
+        assert len(msg["user"]) == ca.MAX_NAME and len(msg["text"]) == ca.MAX_TEXT
+        assert "\x07" not in msg["text"]
+
+
+def t_chatstore_ring_buffer_cap():
+    with tempfile.TemporaryDirectory() as d:
+        cs = _store(d)
+        for i in range(ca.MAX_MESSAGES + 30):
+            cs.add(user="A", text=str(i), now=float(i))
+        msgs = cs.data()["messages"]
+        assert len(msgs) == ca.MAX_MESSAGES
+        assert msgs[-1]["text"] == str(ca.MAX_MESSAGES + 29)
+        assert msgs[0]["text"] == str(30)
+
+
+def t_chatstore_persists_and_reloads_from_file():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "chat.json")
+        cs = m.ChatStore(path)
+        cs.add(user="A", text="kept", now=5.0)
+        assert m.ChatStore(path).data()["messages"][0]["text"] == "kept"  # new store loads file
+
+
+def t_chatstore_reload_adopts_external_file_write():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "chat.json")
+        cs = m.ChatStore(path)
+        cs.add(user="A", text="old", now=1.0)
+        ca.write_messages(path, [{"ts": 9.0, "user": "B", "text": "new"}])  # external overwrite
+        r = cs.reload()
+        assert r["ok"] is True and r["count"] == 1
+        assert cs.data()["messages"][0]["text"] == "new"
+
+
+def t_chatstore_reload_corrupt_keeps_current_buffer():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "chat.json")
+        cs = m.ChatStore(path)
+        cs.add(user="A", text="live", now=1.0)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("{broken")
+        r = cs.reload()
+        assert "error" in r
+        assert cs.data()["messages"][0]["text"] == "live"   # buffer untouched
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

@@ -77,6 +77,8 @@ try:
 except Exception:                                # noqa: BLE001 — reflection is optional
     _obs_ws = None
 
+import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
+
 # ---------- Configuration ----------
 # Pipeline: yt-dlp resolves the live HLS URL (passes YouTube's bot-check via
 # cookies + JS-challenge solving) -> streamlink serves that direct URL to OBS
@@ -764,6 +766,54 @@ class TimerStore:
                 "remaining_s": (max(0, int(d["end"] - d["server_now"]))
                                 if d["end"] is not None else d["remaining_s"]),
                 "push": d["sync"]["push"]}
+
+
+class ChatStore:
+    """Crew-chat history: in-memory ring buffer + best-effort JSON file
+    (runtime/<profile>/chat.json), loaded on construction. The relay only ever
+    APPENDS via add() (the one remote write path) or re-reads the file via
+    reload(); clear/import/pull overwrite the file out-of-band (CLI) and call
+    reload(). ts is always the server clock — handover-safe across machines."""
+
+    def __init__(self, path):
+        self.path = path
+        self.lock = threading.Lock()
+        try:
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        except OSError:
+            pass
+        self.messages = chat_admin.load_messages(self.path)
+
+    def add(self, user, text, now=None):
+        now = time.time() if now is None else now
+        msg = chat_admin.sanitize_message({"ts": now, "user": user, "text": text})
+        if msg is None:
+            return {"error": "message must have non-empty text"}
+        with self.lock:
+            self.messages.append(msg)
+            del self.messages[: -chat_admin.MAX_MESSAGES]
+            try:
+                chat_admin.write_messages(self.path, self.messages)
+            except OSError:
+                pass    # best-effort: in-memory append still stands
+        return {"ok": True, "message": msg}
+
+    def data(self):
+        with self.lock:
+            return {"messages": list(self.messages)}
+
+    def reload(self):
+        """Re-read the local file into memory. A corrupt file keeps the current
+        buffer (a bad reload must never wipe live chat)."""
+        try:
+            with open(self.path, encoding="utf-8") as fh:
+                payload = json.load(fh)
+            msgs = chat_admin.validate_payload(payload)
+        except (OSError, ValueError) as e:
+            return {"error": f"reload failed: {type(e).__name__}"}
+        with self.lock:
+            self.messages = msgs
+        return {"ok": True, "count": len(msgs)}
 
 
 def channel_url(entry: str) -> str:
