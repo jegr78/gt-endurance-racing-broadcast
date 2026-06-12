@@ -76,7 +76,7 @@ def write_messages(path, messages):
         try:
             os.unlink(tmp)
         except OSError:
-            pass
+            pass  # cleanup is best-effort; re-raise the original write failure below
         raise
 
 
