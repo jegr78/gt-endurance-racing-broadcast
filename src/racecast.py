@@ -1696,21 +1696,25 @@ def _render_notes_html(md):
         return ""
 
 
-def update_check_data(fetch=None, current=None, platform=None):
+def update_check_data(fetch=None, current=None, platform=None, frozen=None):
     """Check-only view of the self-updater for the Home dashboard: is a newer
     GitHub release out? Thin wrapper over scripts/update.py — the single source
     of truth for the version compare and release lookup (the `racecast update`
     command installs it). Never downloads or replaces anything here. Network
     call; served on demand via /api/update (cached), never from the status poll.
     Never raises; {"ok": False} when offline / rate-limited / the tag is
-    malformed. A 'dev' (unstamped) build reports ok with no update. `fetch`/
-    `current`/`platform` are test seams."""
+    malformed. A non-frozen 'dev' checkout reports ok with no update; a frozen
+    binary with a non-semver version (a preview build, or a local 'dev' build) is
+    a real installable artifact, so — like the CLI — it gets the latest release
+    offered (the `frozen` flag is what tells the two apart; see #70). `fetch`/
+    `current`/`platform`/`frozen` are test seams."""
     import update as upd
+    frozen = IS_FROZEN if frozen is None else frozen
     cur = current or version()
     out = {"ok": True, "current": cur, "latest": None, "update_available": False,
            "notes": "", "notes_html": "",
            "releases_url": f"https://github.com/{upd.REPO}/releases/latest"}
-    if upd.parse_version(cur) is None:        # 'dev'/unstamped — nothing to compare
+    if upd.parse_version(cur) is None and not frozen:   # source checkout — `git pull`
         out["note"] = "development build — update check skipped"
         return out
     try:
@@ -1719,7 +1723,7 @@ def update_check_data(fetch=None, current=None, platform=None):
         out["ok"] = False
         return out
     try:
-        kind, detail, _url = upd.classify(release, platform or sys.platform, cur)
+        kind, detail, _url = upd.classify(release, platform or sys.platform, cur, frozen)
     except Exception:
         out["ok"] = False
         return out
