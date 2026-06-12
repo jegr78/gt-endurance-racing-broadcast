@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for the crew chat. Run: python3 tests/test_chat.py"""
 import importlib.util
+import json
 import os
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -87,6 +89,39 @@ def t_validate_payload_rejects_malformed_shape():
             raise AssertionError(bad)
         except ValueError:
             pass
+
+
+def t_write_then_load_roundtrip():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "chat.json")
+        msgs = [{"ts": 1.0, "user": "A", "text": "one"}]
+        ca.write_messages(path, msgs)
+        assert ca.load_messages(path) == msgs
+
+
+def t_load_missing_or_corrupt_returns_empty():
+    with tempfile.TemporaryDirectory() as d:
+        assert ca.load_messages(os.path.join(d, "nope.json")) == []
+        bad = os.path.join(d, "bad.json")
+        with open(bad, "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        assert ca.load_messages(bad) == []
+
+
+def t_load_sanitizes_hand_edited_file():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "chat.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"messages": [{"ts": 1.0, "user": "A", "text": "hi"},
+                                    {"user": "no ts", "text": "drop"}]}, fh)
+        assert ca.load_messages(path) == [{"ts": 1.0, "user": "A", "text": "hi"}]
+
+
+def t_write_is_atomic_no_partial_temp_left():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "chat.json")
+        ca.write_messages(path, [{"ts": 1.0, "user": "A", "text": "x"}])
+        assert os.listdir(d) == ["chat.json"]   # no leftover *.tmp
 
 
 if __name__ == "__main__":

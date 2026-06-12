@@ -4,6 +4,10 @@ No network, no argv parsing — message sanitization, the pull/import validation
 gate, and an atomic file write/load. Imported by the relay (ChatStore) and the
 `racecast chat` CLI so both agree on the on-disk shape and the size/length caps.
 """
+import json
+import os
+import tempfile
+
 MAX_MESSAGES = 200      # ring-buffer cap (oldest dropped)
 MAX_TEXT = 500          # per-message character cap
 MAX_NAME = 40           # display-name character cap
@@ -53,3 +57,33 @@ def validate_payload(payload):
     clean = [m for m in (sanitize_message(x) for x in payload["messages"]) if m]
     clean.sort(key=lambda m: m["ts"])
     return clean[-MAX_MESSAGES:]
+
+
+def write_messages(path, messages):
+    """Atomically write {"messages": [...]} to path: temp file in the same dir,
+    then os.replace. A crash mid-write never corrupts an existing chat.json."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({"messages": list(messages)}, fh)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def load_messages(path):
+    """Read chat.json -> sanitized, capped message list. Missing/corrupt -> []."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    try:
+        return validate_payload(payload)
+    except ValueError:
+        return []
