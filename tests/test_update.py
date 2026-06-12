@@ -259,6 +259,43 @@ def t_find_asset_url():
     assert m._find_asset_url(rel, "linux") is None
 
 
+# ---------- download integrity verification (#2) ------------------------------
+
+def t_expected_digest_reads_sha256():
+    rel = {"assets": [{"name": "racecast-macos.tar.gz", "digest": "sha256:" + "a" * 64},
+                      {"name": "racecast-windows.zip", "digest": "SHA256:" + "B" * 64}]}
+    assert m.expected_digest(rel, "darwin") == "a" * 64
+    assert m.expected_digest(rel, "win32") == "b" * 64          # case-normalized
+
+
+def t_expected_digest_missing_or_malformed_is_none():
+    base = "racecast-macos.tar.gz"
+    assert m.expected_digest({"assets": [{"name": base}]}, "darwin") is None          # no field
+    assert m.expected_digest({"assets": [{"name": base, "digest": "md5:abc"}]},
+                             "darwin") is None                                        # wrong algo
+    assert m.expected_digest({"assets": [{"name": base, "digest": "sha256:xyz"}]},
+                             "darwin") is None                                        # not 64 hex
+    assert m.expected_digest({"assets": []}, "darwin") is None                        # no asset
+
+
+def t_archive_sha256_matches_hashlib():
+    import hashlib, tempfile, os as _os
+    fd, p = tempfile.mkstemp(); _os.write(fd, b"racecast-bytes"); _os.close(fd)
+    try:
+        assert m.archive_sha256(p) == hashlib.sha256(b"racecast-bytes").hexdigest()
+    finally:
+        _os.unlink(p)
+
+
+def t_download_rejects_non_https():
+    raised = False
+    try:
+        m.download("http://example.com/x.tar.gz", "/tmp/x")     # plain HTTP -> refused
+    except ValueError:
+        raised = True
+    assert raised
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

@@ -363,9 +363,31 @@ def load_dotenv(start):
     return None
 
 
+def _is_stream_url(v: str) -> bool:
+    """True iff `v` is an http(s) URL on a supported streaming host (YouTube or
+    Twitch). The host allow-list blocks SSRF: a tailnet peer (POST /schedule/set,
+    /pov/set) or a sheet editor cannot point a feed at an internal/link-local
+    address (169.254.169.254, localhost, a LAN box) or a file:// path. A
+    userinfo trick (https://youtube.com@evil.com/) resolves to host 'evil.com'
+    and is rejected. Twitch is allowed because leagues occasionally run Twitch
+    feeds/POVs; broader Twitch handling elsewhere is a separate follow-up."""
+    try:
+        p = urlparse(v)
+    except ValueError:
+        return False
+    if p.scheme not in ("http", "https"):
+        return False
+    host = (p.hostname or "").lower()
+    if not host:
+        return False
+    return (host == "youtu.be"
+            or host == "youtube.com" or host.endswith(".youtube.com")
+            or host == "twitch.tv" or host.endswith(".twitch.tv"))
+
+
 def is_channel(v: str) -> bool:
     v = v.strip()
-    return bool(CHANNEL_RE.match(v)) or v.startswith("http://") or v.startswith("https://")
+    return bool(CHANNEL_RE.match(v)) or _is_stream_url(v)
 
 def asset_key(s):
     """Normalize free text (country/brand) to an asset filename stem."""
@@ -933,14 +955,30 @@ def channel_url(entry: str) -> str:
     return f"https://www.youtube.com/channel/{entry}/live"
 
 
+def ytdlp_resolve_cmd(url, cookies, fmt=YTDLP_FORMAT):
+    """Argv for resolving a live URL to an HLS manifest. `--` precedes the URL so
+    a value can never be parsed as a yt-dlp flag (defense in depth on top of the
+    is_channel host allow-list — yt-dlp's --exec etc. would be code execution)."""
+    cmd = ["yt-dlp", "-g", "-f", fmt, "--no-warnings", "--no-playlist"]
+    if cookies:
+        cmd += ["--cookies", cookies]
+    cmd += ["--", url]
+    return cmd
+
+
+def streamlink_serve_cmd(hls, port):
+    """Argv for serving a resolved HLS URL to one OBS client. `--` separates the
+    positional URL/stream from the options so neither can be parsed as a flag."""
+    return (["streamlink", "--player-external-http", "--player-external-http-port", str(port)]
+            + STREAMLINK_SERVE + ["--", hls, "best"])
+
+
 def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
     """Resolve a YouTube live URL to a direct HLS manifest URL via yt-dlp
     (handles cookies + the bot-check). Returns (url, None) on success or
     (None, error_line) — the error line feeds /status so the panel can show
     WHY a feed is stuck connecting (previously it only landed in feed_X.log)."""
-    cmd = ["yt-dlp", "-g", "-f", fmt, "--no-warnings", "--no-playlist", url]
-    if cookies:
-        cmd += ["--cookies", cookies]
+    cmd = ytdlp_resolve_cmd(url, cookies, fmt)
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, errors="replace",
                            timeout=90, **_no_window_kwargs())
@@ -1522,8 +1560,7 @@ class Feed:
             # 2) serve the direct HLS URL via streamlink (no YouTube plugin -> no bot-check)
             with open(self.logfile, "a", encoding="utf-8") as log:
                 log.write(f">> [{self.name}:{self.port}] serving stint {i+1}\n"); log.flush()
-                cmd = ["streamlink", hls, "best", "--player-external-http",
-                       "--player-external-http-port", str(self.port)] + STREAMLINK_SERVE
+                cmd = streamlink_serve_cmd(hls, self.port)
                 try:
                     self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT,
                                                  **_no_window_kwargs())

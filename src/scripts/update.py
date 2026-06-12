@@ -4,7 +4,8 @@ Checks /releases/latest, compares semver tags, downloads the platform archive
 and swaps the running binary (Windows: rename trick — a running exe can be
 renamed but not overwritten). Frozen-only: a repo checkout updates with
 `git pull`. Design: docs/superpowers/specs/2026-06-05-self-update-design.md."""
-import argparse, json, os, shutil, sys, tarfile, tempfile, urllib.error, urllib.request, zipfile
+import argparse, hashlib, json, os, shutil, sys, tarfile, tempfile
+import urllib.error, urllib.parse, urllib.request, zipfile
 
 # Already-released binaries embed the old slug and rely on GitHub's rename
 # redirect; this constant governs future releases.
@@ -172,10 +173,52 @@ def fetch_latest(opener=None):
     return _get_json(API_LATEST, opener)
 
 
+class _HttpsOnlyRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse any redirect that downgrades off HTTPS during an update download —
+    a MITM (or a future API host that 302s to http://) must not strip TLS while
+    the binary is being fetched."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urllib.parse.urlsplit(newurl).scheme != "https":
+            raise urllib.error.URLError("update: refusing non-HTTPS redirect")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_SECURE_OPENER = urllib.request.build_opener(_HttpsOnlyRedirect())
+
+
+def archive_sha256(path):
+    """SHA-256 hex digest of the file at `path` (streamed, constant memory)."""
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def expected_digest(release, platform):
+    """The SHA-256 hex of this platform's asset as GitHub computed it server-side
+    (the release-asset `digest` field, formatted 'sha256:<hex>'), or None for
+    older releases that predate that field. Verified against the download before
+    the binary swap so a corrupted or CDN-tampered asset is rejected."""
+    want = asset_name(platform)
+    for asset in release.get("assets", []):
+        if asset.get("name") != want:
+            continue
+        dig = (asset.get("digest") or "").strip().lower()
+        if dig.startswith("sha256:"):
+            hexpart = dig.split(":", 1)[1]
+            if len(hexpart) == 64 and all(c in "0123456789abcdef" for c in hexpart):
+                return hexpart
+        return None
+    return None
+
+
 def download(url, dst, opener=None):
-    """Fetch `url` to file path `dst` (HTTPS, cert-verified)."""
+    """Fetch `url` to file path `dst` (HTTPS only, cert-verified, no downgrade)."""
+    if urllib.parse.urlsplit(url).scheme != "https":
+        raise ValueError(f"update: refusing non-HTTPS download URL: {url!r}")
     req = urllib.request.Request(url, headers={"User-Agent": "racecast-update"})
-    opener = urllib.request.urlopen if opener is None else opener
+    opener = _SECURE_OPENER.open if opener is None else opener
     resp = opener(req, timeout=120)
     try:
         with open(dst, "wb") as fh:
@@ -251,9 +294,12 @@ def confirmed(answer):
     return answer.strip().lower().startswith("y")
 
 
-def _download_and_swap(url, tag):
+def _download_and_swap(url, tag, digest=None):
     """Download the archive at `url`, swap the running binary, reinstall racecast-ui.
-    Shared by the latest-release flow and the --tag flow. Prints progress."""
+    Shared by the latest-release flow and the --tag flow. Prints progress. When
+    `digest` (GitHub's published SHA-256) is given, the download is verified
+    before anything is extracted or swapped — a mismatch aborts with nothing
+    changed."""
     exe = sys.executable
     # Tempdir NEXT TO the binary so the final swap is an atomic same-filesystem
     # rename (a system tempdir can be another fs -> EXDEV; copy-overwrite of a
@@ -268,6 +314,14 @@ def _download_and_swap(url, tag):
         archive = os.path.join(td, asset_name(sys.platform))
         print("Downloading:", url)
         download(url, archive)
+        if digest:
+            actual = archive_sha256(archive)
+            if actual != digest:
+                sys.exit(f"update: checksum mismatch — expected {digest[:12]}…, got "
+                         f"{actual[:12]}…. Aborted, the binary is unchanged.")
+            print(f"verified sha256 {actual[:12]}…")
+        else:
+            print("note: this release published no checksum — integrity not verified.")
         new = extract_binary(archive, td)
         if not new:
             sys.exit("update: archive did not contain the racecast binary — aborted, nothing changed.")
@@ -328,7 +382,7 @@ def main():
         if not a.yes and not confirmed(input("Download and replace this binary? [y/N] ")):
             print("aborted.")
             return
-        _download_and_swap(url, tag)
+        _download_and_swap(url, tag, expected_digest(release, sys.platform))
         return
 
     try:
@@ -354,7 +408,7 @@ def main():
     if not a.yes and not confirmed(input("Download and replace this binary? [y/N] ")):
         print("aborted.")
         return
-    _download_and_swap(url, tag)
+    _download_and_swap(url, tag, expected_digest(release, sys.platform))
 
 
 if __name__ == "__main__":
