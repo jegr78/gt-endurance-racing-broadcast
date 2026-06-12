@@ -2366,6 +2366,7 @@ def profile_export_data(name=None, include_assets=True, dest=None):
     {ok, path, slug} or {ok:false, error}. `dest` default is a temp .zip the UI
     streams then deletes; the CLI passes a directory or an --out path."""
     try:
+        created_tmp = None
         import profile_io as pio
         slug = name or _active_profile_name()
         if not slug:
@@ -2379,9 +2380,15 @@ def profile_export_data(name=None, include_assets=True, dest=None):
         if dest is None:
             fd, dest = tempfile.mkstemp(prefix="profexport-", suffix=".zip")
             os.close(fd)
+            created_tmp = dest
         path = pio.export_profile(slug, sources, bool(include_assets), dest)
         return {"ok": True, "path": path, "slug": pio.slugify(slug)}
     except Exception as exc:
+        if created_tmp:
+            try:
+                os.unlink(created_tmp)
+            except OSError:
+                pass
         return {"ok": False, "error": f"could not export profile: {exc}"}
 
 
