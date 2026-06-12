@@ -37,11 +37,16 @@
   #round-country { left: 1144px; top: 958px; width: 548px; height: 39px;
     font-size: 26px; }
 
-  /* Team podium row: brand box + name bar (x of name follows the logo) */
-  .team { height: 56px; }
+  /* Team podium row: brand box + number badge + auto-fit name.
+     Name/number are two elements so a per-league override.css can reposition or
+     restyle either independently; --team-name-max/min bound the auto-fit. */
+  .team { height: 56px; --team-name-max: 30px; --team-name-min: 16px; }
   .team img { width: 54px; height: 50px; object-fit: contain; flex-shrink: 0; }
-  .team .name { margin-left: 12px; font-size: 30px; overflow: hidden;
-    text-overflow: ellipsis; }
+  .team .num { margin-left: 10px; flex-shrink: 0; background: #c8202a; color: #fff;
+    font-size: 20px; padding: 2px 9px; border-radius: 3px; }
+  .team .num.empty { display: none; }
+  .team .name { margin-left: 12px; min-width: 0; flex: 1; overflow: hidden;
+    white-space: nowrap; font-size: var(--team-name-max); }
   #team0 { left: 323px; top: 1005px; width: 382px; }
   #team1 { left: 766px; top: 1005px; width: 379px; }
   #team2 { left: 1210px; top: 1005px; width: 380px; }
@@ -61,9 +66,9 @@
   <div id="round-top" class="el white"></div>
   <div id="round-flag" class="el"><img alt=""></div>
   <div id="round-country" class="el white"></div>
-  <div id="team0" class="el team white"><img alt=""><span class="name"></span></div>
-  <div id="team1" class="el team white"><img alt=""><span class="name"></span></div>
-  <div id="team2" class="el team white"><img alt=""><span class="name"></span></div>
+  <div id="team0" class="el team white"><img alt=""><span class="num"></span><span class="name"></span></div>
+  <div id="team1" class="el team white"><img alt=""><span class="num"></span><span class="name"></span></div>
+  <div id="team2" class="el team white"><img alt=""><span class="num"></span><span class="name"></span></div>
   <div id="race-control" class="el white"></div>
 
 <script>
@@ -80,14 +85,31 @@
     if (key) { img.src = `/hud/assets/${sub}/${key}`; el.classList.remove("empty"); }
     else { img.removeAttribute("src"); el.classList.add("empty"); }
   }
+  function fitName(el) {
+    const cs = getComputedStyle(el);
+    const max = parseFloat(cs.getPropertyValue("--team-name-max")) || 30;
+    const min = parseFloat(cs.getPropertyValue("--team-name-min")) || 16;
+    let size = max;
+    el.style.fontSize = size + "px";
+    while (size > min && el.scrollWidth > el.clientWidth) {
+      size -= 1;
+      el.style.fontSize = size + "px";
+    }
+  }
   function setTeam(i, team) {
     const el = document.getElementById("team" + i);
     const name = (team && team.name) || "";
-    el.querySelector(".name").textContent = name;
+    const number = (team && team.number) || "";
+    const numEl = el.querySelector(".num");
+    numEl.textContent = number;
+    numEl.classList.toggle("empty", !number);
+    const nameEl = el.querySelector(".name");
+    nameEl.textContent = name;
     const img = el.querySelector("img");
     if (team && team.brandKey) { img.src = `/hud/assets/brands/${team.brandKey}`; img.style.visibility = "visible"; }
     else img.style.visibility = "hidden";
-    el.classList.toggle("empty", !name);
+    el.classList.toggle("empty", !name && !number);
+    fitName(nameEl);
   }
 
   async function tick() {
