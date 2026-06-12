@@ -4,13 +4,14 @@ Same construction as the relay's control server (ThreadingHTTPServer +
 make_handler closure). v1 binds 127.0.0.1 only; the bind/auth seams for the
 v2 Tailscale+password feature are this module's serve() and _allowed().
 Spec: docs/superpowers/specs/2026-06-07-control-center-design.md."""
-import json, os, threading, time
+import json, os, shutil, tempfile, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 APP_ID = "racecast-control-center"
 DEFAULT_PORT = 8089
 TAIL_LINES = 40          # how much history a log stream starts with
+MAX_IMPORT_BYTES = 2 * 1024 * 1024 * 1024   # 2 GiB — profile bundles include media
 
 
 def ui_port(env):
@@ -73,6 +74,7 @@ def make_handler(ctx):
     env_read() -> dict, env_write(entries) -> dict,
     init_plan(browser) -> dict (wizard plan: per-step done/kind/op/instruction),
     init_step(key) -> dict (run one non-job wizard step, {ok, done} | {ok: False, error}),
+    profile_export(name, assets) -> dict, profile_import(path, force) -> dict,
     jobs (ui_jobs.JobManager), log_paths {name: () -> path|None},
     favicon_path (the brand SVG served at /favicon.svg),
     shutdown() (installed by serve())."""
@@ -136,6 +138,57 @@ def make_handler(ctx):
             self.end_headers()
             self.wfile.write(data)
             return None
+
+        def _download_file(self, full, filename, cleanup=False):
+            """Stream a file back as an attachment. Deletes it after (cleanup)."""
+            try:
+                size = os.path.getsize(full)
+            except OSError:
+                return self._not_found("bundle not found")
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Disposition",
+                                 f'attachment; filename="{filename}"')
+                self.send_header("Content-Length", str(size))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                with open(full, "rb") as fh:
+                    shutil.copyfileobj(fh, self.wfile)
+            finally:
+                if cleanup:
+                    try:
+                        os.unlink(full)
+                    except OSError:  # best-effort temp cleanup
+                        pass
+            return None
+
+        def _body_to_tempfile(self, max_bytes):
+            """Stream the request body to a temp file in chunks. Returns the path,
+            or None when there is no body or it exceeds max_bytes."""
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                return None
+            if length <= 0 or length > max_bytes:
+                return None
+            fd, tmp = tempfile.mkstemp(prefix="upload-", suffix=".zip")
+            remaining = length
+            try:
+                with os.fdopen(fd, "wb") as out:
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(65536, remaining))
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                        remaining -= len(chunk)
+            except OSError:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                return None
+            return tmp
 
         def do_GET(self):
             if not _allowed(self):
@@ -323,6 +376,20 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"init plan failed: {exc}"},
                                       code=500)
+            if path == "/api/profile/export":
+                q = parse_qs(urlparse(self.path).query or "")
+                name = (q.get("name") or [None])[0]
+                assets = (q.get("assets") or ["1"])[0] != "0"
+                try:
+                    result = ctx["profile_export"](name, assets)
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"export failed: {exc}"}, code=500)
+                if not result.get("ok"):
+                    return self._json(result, code=400)
+                return self._download_file(result["path"],
+                                           f"{result['slug']}-profile.zip",
+                                           cleanup=True)
             if path.startswith("/api/jobs/") and path.endswith("/stream"):
                 job_id = path.split("/")[3]
                 return self._stream_job(job_id) if job_id else self._not_found("unknown job")
@@ -462,6 +529,25 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"init step failed: {exc}"},
                                       code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/profile/import":
+                q = parse_qs(urlparse(self.path).query or "")
+                force = (q.get("force") or ["0"])[0] == "1"
+                tmp = self._body_to_tempfile(MAX_IMPORT_BYTES)
+                if tmp is None:
+                    return self._json({"ok": False,
+                                       "error": "upload too large or unreadable"},
+                                      code=413)
+                try:
+                    result = ctx["profile_import"](tmp, force)
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"import failed: {exc}"}, code=500)
+                finally:
+                    try:
+                        os.unlink(tmp)
+                    except OSError:  # best-effort temp cleanup
+                        pass
                 return self._json(result, code=200 if result.get("ok") else 400)
             if path.startswith("/api/op/"):
                 name = path[len("/api/op/"):]

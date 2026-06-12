@@ -33,6 +33,24 @@ def t_sse_frames():
 
 # ---------- live server ----------
 
+def _export_stub(name, assets):
+    fd, p = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    with open(p, "wb") as f:
+        f.write(b"PK\x03\x04stub-zip-bytes")
+    return {"ok": True, "path": p, "slug": (name or "active")}
+
+
+_IMPORTED = {}
+
+
+def _import_stub(path, force):
+    with open(path, "rb") as f:
+        _IMPORTED["bytes"] = f.read()
+    return {"ok": True, "name": "iro-gtec", "display": "IRO GTEC",
+            "includes_assets": True}
+
+
 def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
     page = os.path.join(ROOT, "src", "ui", "control-center.html")
     return {"version": "test",
@@ -120,7 +138,9 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "backup_create": lambda label, force=None: {"ok": True,
                                     "_got": {"label": label, "force": force}},
             "backup_restore": lambda slug: {"ok": True, "slug": slug},
-            "backup_delete": lambda slug: {"ok": True, "removed": True}}
+            "backup_delete": lambda slug: {"ok": True, "removed": True},
+            "profile_export": lambda name=None, assets=True: _export_stub(name, assets),
+            "profile_import": lambda path, force=False: _import_stub(path, force)}
 
 
 def _serve(ctx):
@@ -975,6 +995,34 @@ def t_api_backup_routes():
         assert code == 200 and json.loads(body)["ok"]
         code, body = _post_json(port, "/api/backup/delete", {"slug": "winter"})
         assert code == 200 and json.loads(body)["removed"] is True
+    finally:
+        httpd.shutdown()
+
+
+def t_profile_export_streams_zip():
+    httpd, port = _serve(_ctx())
+    try:
+        r = _urlopen(f"http://127.0.0.1:{port}/api/profile/export?name=iro-gtec")
+        assert r.status == 200
+        assert r.headers.get("Content-Disposition", "").startswith("attachment")
+        body = r.read()
+        assert body.startswith(b"PK")
+    finally:
+        httpd.shutdown()
+
+
+def t_profile_import_accepts_raw_body():
+    httpd, port = _serve(_ctx())
+    try:
+        data = b"PK\x03\x04uploaded"
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/profile/import?force=1",
+            data=data, method="POST")
+        req.add_header("Content-Length", str(len(data)))
+        r = _urlopen(req)
+        out = json.loads(r.read())
+        assert out["ok"] is True and out["name"] == "iro-gtec"
+        assert _IMPORTED["bytes"] == data
     finally:
         httpd.shutdown()
 
