@@ -123,7 +123,7 @@ use the profile export/import path.
 **On the source machine:**
 
 ```bash
-racecast profile export <name>              # writes <name>-profile.zip next to the binary
+racecast profile export <name>              # writes <name>-profile.zip in the current directory
 racecast profile export <name> --no-assets  # omit graphics/media (re-fetchable on the target)
 racecast profile export <name> --out /tmp/my-league.zip   # custom output path
 ```
