@@ -13,6 +13,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 import tempfile
 import zipfile
 
@@ -39,7 +40,8 @@ def _add_tree(zf, src_dir, arc_prefix):
     added = []
     if not src_dir or not os.path.isdir(src_dir):
         return added
-    for root, _dirs, files in os.walk(src_dir):
+    for root, dirs, files in os.walk(src_dir):
+        dirs.sort()
         for fn in sorted(files):
             full = os.path.join(root, fn)
             rel = os.path.relpath(full, src_dir).replace(os.sep, "/")
@@ -47,6 +49,56 @@ def _add_tree(zf, src_dir, arc_prefix):
             zf.write(full, arc)
             added.append(arc)
     return added
+
+
+def _safe_members(zf):
+    """Validate every zip member name: no absolute paths, no '..' traversal, only
+    manifest.json or a known SECTION/ subtree. Returns the member list or raises
+    ValueError. (Defends a restore the same way the relay's asset resolver does.)"""
+    members = zf.namelist()
+    if "manifest.json" not in members:
+        raise ValueError("not a look backup (no manifest.json)")
+    for name in members:
+        if name == "manifest.json":
+            continue
+        norm = name.replace("\\", "/")
+        if norm.startswith("/") or ".." in norm.split("/"):
+            raise ValueError(f"unsafe path in backup: {name!r}")
+        top = norm.split("/", 1)[0]
+        if top not in SECTIONS:
+            raise ValueError(f"unexpected entry in backup: {name!r}")
+    return members
+
+
+def restore_backup(zip_path, sources):
+    """Full-replace the three live look dirs with the snapshot's contents. Atomic
+    per section: extract to a temp dir, validate, then for each section swap the
+    live dir for the extracted one (live-only files are dropped). Raises ValueError
+    on a malformed/unsafe archive BEFORE touching any live dir."""
+    if not os.path.exists(zip_path):
+        raise ValueError(f"backup not found: {zip_path}")
+    tmp = tempfile.mkdtemp(prefix="restore-")
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            _safe_members(zf)                 # raises before any extract
+            zf.extractall(tmp)                # safe: names validated above
+        for sect in SECTIONS:
+            live = sources.get(sect)
+            if not live:
+                continue
+            staged = os.path.join(tmp, sect)
+            os.makedirs(staged, exist_ok=True)   # empty section -> empty live dir
+            parent = os.path.dirname(live)
+            os.makedirs(parent, exist_ok=True)
+            old = live + ".old"
+            if os.path.exists(old):
+                shutil.rmtree(old, ignore_errors=True)
+            if os.path.exists(live):
+                os.replace(live, old)
+            shutil.move(staged, live)
+            shutil.rmtree(old, ignore_errors=True)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def create_backup(label, sources, profile, force=False):

@@ -71,6 +71,86 @@ def t_list_reads_manifests():
     assert all("created" in i and "bytes" in i and i["slug"] for i in items)
 
 
+def t_restore_full_replace():
+    d = tempfile.mkdtemp(); src = _sources(d)
+    ba.create_backup("snap", src, profile="x")
+    # mutate live: extra graphic that must be DROPPED, changed css
+    with open(os.path.join(src["graphics"], "Extra.png"), "wb") as f:
+        f.write(b"X")
+    with open(os.path.join(src["overlay"], "hud.css"), "w") as f:
+        f.write("CHANGED")
+    ba.restore_backup(os.path.join(src["backups"], "snap.zip"), src)
+    with open(os.path.join(src["overlay"], "hud.css")) as f:
+        assert f.read() == "body{}"                                           # restored
+    assert not os.path.exists(os.path.join(src["graphics"], "Extra.png"))     # dropped
+    assert os.path.exists(os.path.join(src["graphics"], "Overlay.png"))
+
+
+def t_restore_rejects_traversal():
+    d = tempfile.mkdtemp(); src = _sources(d)
+    bad = os.path.join(src["backups"], "bad.zip"); os.makedirs(src["backups"], exist_ok=True)
+    with zipfile.ZipFile(bad, "w") as zf:
+        zf.writestr("manifest.json", '{"label":"bad","slug":"bad"}')
+        zf.writestr("overlay/../../escape.txt", "x")
+    try:
+        ba.restore_backup(bad, src)
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+
+
+def t_restore_missing_manifest_rejected():
+    d = tempfile.mkdtemp(); src = _sources(d)
+    bad = os.path.join(src["backups"], "nomani.zip"); os.makedirs(src["backups"], exist_ok=True)
+    with zipfile.ZipFile(bad, "w") as zf:
+        zf.writestr("overlay/hud.css", "x")
+    try:
+        ba.restore_backup(bad, src)
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+
+
+def t_restore_unsafe_archive_leaves_live_untouched():
+    d = tempfile.mkdtemp(); src = _sources(d)
+    # a known-good live state
+    with open(os.path.join(src["overlay"], "hud.css"), "w") as f:
+        f.write("LIVE")
+    bad = os.path.join(src["backups"], "bad2.zip"); os.makedirs(src["backups"], exist_ok=True)
+    with zipfile.ZipFile(bad, "w") as zf:
+        zf.writestr("manifest.json", '{"label":"bad","slug":"bad"}')
+        zf.writestr("/etc/evil.txt", "x")        # absolute path -> rejected
+    try:
+        ba.restore_backup(bad, src)
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+    with open(os.path.join(src["overlay"], "hud.css")) as f:
+        assert f.read() == "LIVE"                                             # untouched
+
+
+def t_list_sorted_newest_first():
+    d = tempfile.mkdtemp(); src = _sources(d)
+    p1 = ba.create_backup("Old", src, profile="x")
+    p2 = ba.create_backup("New", src, profile="x")
+    # force distinct created stamps via the manifest order is hard; instead set mtimes
+    import json as _j, zipfile as _z
+    # rewrite manifests with explicit created times
+    def stamp(path, created):
+        # read, then rewrite the zip's manifest.json with a fixed created
+        with _z.ZipFile(path) as z:
+            data = {n: z.read(n) for n in z.namelist()}
+        man = _j.loads(data["manifest.json"]); man["created"] = created
+        data["manifest.json"] = _j.dumps(man).encode()
+        with _z.ZipFile(path, "w") as z:
+            for n, b in data.items():
+                z.writestr(n, b)
+    stamp(p1, "2026-01-01T00:00:00Z")
+    stamp(p2, "2026-06-01T00:00:00Z")
+    items = ba.list_backups(src["backups"])
+    assert [i["label"] for i in items] == ["New", "Old"], items
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
