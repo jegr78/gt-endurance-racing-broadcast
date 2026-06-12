@@ -334,6 +334,33 @@ def t_hudsource_roster_preserved_on_failure():
     assert hs._roster  # last-good roster preserved, not cleared
 
 
+def _roster_hud():
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    hs = m.HudSource("http://overlay", "http://config",
+                     _os.path.join(d, "hud.cache.json"))
+    overlay = (",Teams P1,OVO eSports,,\n,Teams P2,Feel Good,,\n,Teams P3,,,\n")
+    config = "Teams,Number,Brand Name\nOVO eSports,111,Porsche\nFeel Good,303,BMW\n"
+    hs._fetch = lambda url, timeout=10: overlay if url == "http://overlay" else config
+    hs.refresh()
+    return hs
+
+def t_hud_roster_names_and_resolve():
+    hs = _roster_hud()
+    assert hs.roster_names() == ["OVO eSports", "Feel Good"]
+    assert hs.resolve_team("OVO eSports") == {"name": "OVO eSports", "number": "111", "brandKey": "porsche"}
+    # unknown -> stripped name, blank number/logo (embedded #9 used as fallback number)
+    assert hs.resolve_team("Ghost #9") == {"name": "Ghost", "number": "9", "brandKey": ""}
+
+def t_hud_team_override_echo_and_pending():
+    hs = _roster_hud()
+    entry = hs.resolve_team("Feel Good")
+    hs.set_team_override(0, entry, now=1000.0)
+    assert hs.data(now=1001.0)["teams"][0] == entry      # optimistic echo into slot 0
+    assert hs.team_pending(now=1001.0) == {0}
+    assert hs.team_pending(now=1000.0 + m.OVERRIDE_TTL + 1) == set()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

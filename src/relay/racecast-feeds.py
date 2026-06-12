@@ -1065,6 +1065,7 @@ class HudSource:
         self._vocab = {k: [] for k in VOCAB_COLUMNS}
         self._roster = {}
         self.overrides = {}   # hud-data key -> (value, expires_ts)
+        self.team_overrides = {}   # slot index 0..2 -> (entry_dict, expires_ts)
         self.last_ok = None
         self.last_error = None
         self._load_cache()
@@ -1099,6 +1100,9 @@ class HudSource:
             # a sheet poll that already shows the pushed value = confirmation
             self.overrides = {k: (v, exp) for k, (v, exp) in self.overrides.items()
                               if data.get(k) != v}
+            self.team_overrides = {
+                s: (e, exp) for s, (e, exp) in self.team_overrides.items()
+                if (data["teams"][s] if s < len(data["teams"]) else None) != e}
             self.last_ok = time.time()
             self.last_error = None
         try:
@@ -1126,18 +1130,53 @@ class HudSource:
         with self.lock:
             self.overrides = {k: (v, exp) for k, (v, exp) in self.overrides.items()
                               if exp > now}
+            self.team_overrides = {s: (e, exp) for s, (e, exp) in self.team_overrides.items()
+                                   if exp > now}
             # Always shallow-copy: callers (and /setup/data decoration) must never
             # be able to mutate the canonical dict.
             base = dict(self._data) if self._data is not None else dict(self.EMPTY)
-            if not self.overrides:
-                return base
             out = dict(base)
-            out.update({k: v for k, (v, _exp) in self.overrides.items()})
+            if self.overrides:
+                out.update({k: v for k, (v, _exp) in self.overrides.items()})
+            if self.team_overrides:
+                teams = [dict(t) for t in out.get("teams", [])]
+                while len(teams) < 3:
+                    teams.append({"name": "", "number": "", "brandKey": ""})
+                for s, (e, _exp) in self.team_overrides.items():
+                    if 0 <= s < len(teams):
+                        teams[s] = dict(e)
+                out["teams"] = teams
             return out
 
     def vocab(self):
         with self.lock:
             return {k: list(v) for k, v in self._vocab.items()}
+
+    def roster_names(self):
+        """Team names from the Configuration roster, in sheet order (panel vocab)."""
+        with self.lock:
+            return list(self._roster.keys())
+
+    def resolve_team(self, name):
+        """A /hud/data team entry for a roster name (or a stripped unknown name)."""
+        name, embedded = split_team_label(name)
+        with self.lock:
+            info = self._roster.get(name, {})
+        return {"name": name,
+                "number": info.get("number") or embedded,
+                "brandKey": info.get("brandKey", "")}
+
+    def set_team_override(self, slot, entry, now=None):
+        """Optimistic echo for a panel team write into podium slot 0..2."""
+        now = time.time() if now is None else now
+        with self.lock:
+            self.team_overrides[slot] = (entry, now + OVERRIDE_TTL)
+
+    def team_pending(self, now=None):
+        """Slot indices with an unconfirmed (and unexpired) optimistic team override."""
+        now = time.time() if now is None else now
+        with self.lock:
+            return {s for s, (_e, exp) in self.team_overrides.items() if exp > now}
 
     def health(self):
         with self.lock:
