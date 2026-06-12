@@ -165,7 +165,8 @@ def make_handler(ctx):
 
         def _body_to_tempfile(self, max_bytes):
             """Stream the request body to a temp file in chunks. Returns the path,
-            or None when there is no body or it exceeds max_bytes."""
+            or None when there is no body, it exceeds max_bytes, or the client sent
+            fewer bytes than Content-Length (a truncated upload — never handed on)."""
             try:
                 length = int(self.headers.get("Content-Length") or 0)
             except ValueError:
@@ -183,6 +184,12 @@ def make_handler(ctx):
                         out.write(chunk)
                         remaining -= len(chunk)
             except OSError:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                return None
+            if remaining > 0:                      # client sent a short body
                 try:
                     os.unlink(tmp)
                 except OSError:
