@@ -189,6 +189,24 @@
     .strip{justify-content:flex-start}
     .arow .nm{flex:0 0 64px}
   }
+
+  /* ---------- chat ---------- */
+  details.chat summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;
+    font-family:var(--head);font-weight:700;letter-spacing:.12em;font-size:14px;text-transform:uppercase}
+  details.chat summary::before{content:"";width:6px;height:16px;background:var(--amber);
+    border-radius:2px;box-shadow:0 0 10px var(--amber-glow)}
+  details.chat summary::after{content:"▸";color:var(--muted);margin-left:4px}
+  details.chat[open] summary::after{content:"▾"}
+  .chatlog{max-height:160px;overflow:auto;font-size:12px;line-height:1.4;margin:6px 0;
+           border:1px solid #2a2f3a;border-radius:6px;padding:6px;background:#11141b}
+  .chatlog .m{margin:2px 0;word-break:break-word}
+  .chatlog .who{color:#9ad;font-weight:600;margin-right:4px}
+  .chatlog .t{color:#667;font-size:10px;margin-right:4px}
+  .chatname{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+  .chatname input{flex:0 0 140px}
+  .chatsend{display:flex;gap:6px}
+  .chatsend input{flex:1}
+  .unread{background:#c33;color:#fff;border-radius:9px;padding:0 6px;font-size:11px;margin-left:6px}
 </style>
 </head>
 <body>
@@ -245,6 +263,23 @@
   </section>
 
   <section class="bus"><div class="cap">Audio</div><div class="body" id="audio"></div></section>
+
+  <details class="bus chat" id="chatBox" open>
+    <summary>Chat <span class="unread" id="chatUnread" hidden>0</span></summary>
+    <div class="body">
+      <div class="chatname">
+        <label>You:</label>
+        <input id="chatName" maxlength="40" placeholder="your name">
+      </div>
+      <div id="chatLog" class="chatlog"></div>
+      <div class="chatsend">
+        <input id="chatInput" maxlength="500" placeholder="message the active crew…">
+        <button class="save" id="chatSendBtn">SEND</button>
+      </div>
+      <div class="hint">Seen by everyone on this relay's tailnet. The producer can clear
+        the history from the Control Center or <code>racecast chat clear</code>.</div>
+    </div>
+  </details>
 
   <details class="bus urls" id="urlsBox">
     <summary>URLs · Schedule + POV</summary>
@@ -786,6 +821,76 @@ const SETUP_FIELDS = [
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
+
+/* ---------- Crew chat ---------- */
+const CHAT_NAME_KEY = "racecast.chat.name";
+const CHAT_SEEN_KEY = "racecast.chat.lastSeenTs";
+let chatSeenTs = parseFloat(localStorage.getItem(CHAT_SEEN_KEY) || "0") || 0;
+let chatMaxTs = chatSeenTs;
+try{ $("#chatName").value = localStorage.getItem(CHAT_NAME_KEY) || ""; }catch(e){}
+$("#chatName").addEventListener("change", e=>{
+  try{ localStorage.setItem(CHAT_NAME_KEY, e.target.value.trim()); }catch(_){}
+});
+
+function chatAtBottom(){
+  const el = $("#chatLog");
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+}
+function chatRender(messages){
+  const el = $("#chatLog");
+  const stick = chatAtBottom();
+  el.replaceChildren();
+  for (const msg of messages){
+    const line = document.createElement("div"); line.className = "m";
+    const t = document.createElement("span"); t.className = "t";
+    t.textContent = new Date(msg.ts * 1000).toLocaleTimeString();
+    const who = document.createElement("span"); who.className = "who";
+    who.textContent = msg.user + ":";
+    const body = document.createElement("span"); body.textContent = msg.text;
+    line.append(t, who, body); el.appendChild(line);          // textContent => no HTML injection
+  }
+  if (messages.length) chatMaxTs = messages[messages.length - 1].ts;
+  const open = $("#chatBox").open && document.hasFocus();
+  if (open && stick){ el.scrollTop = el.scrollHeight; chatMarkSeen(); }
+  chatUpdateBadge();
+}
+function chatUpdateBadge(){
+  const unread = chatMaxTs > chatSeenTs;
+  const badge = $("#chatUnread");
+  badge.hidden = !unread;
+  if (unread) badge.textContent = "•";
+}
+function chatMarkSeen(){
+  chatSeenTs = chatMaxTs;
+  try{ localStorage.setItem(CHAT_SEEN_KEY, String(chatSeenTs)); }catch(_){}
+  chatUpdateBadge();
+}
+async function chatSend(){
+  const text = $("#chatInput").value.trim();
+  if (!text) return;
+  const user = ($("#chatName").value.trim()) || "Crew";
+  try{
+    const r = await fetch("/chat/send", {method:"POST", cache:"no-store",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({user, text})});
+    const d = await r.json();
+    if (d.error){ toast("Chat: " + d.error); return; }
+    $("#chatInput").value = "";
+    chatPoll();
+  }catch(e){ toast("Chat send failed — relay unreachable"); }
+}
+async function chatPoll(){
+  try{
+    const r = await fetch("/chat/data", {cache:"no-store"});
+    const d = await r.json();
+    if (!d.error) chatRender(d.messages || []);
+  }catch(e){ /* relay unreachable: leave the last view in place */ }
+}
+$("#chatSendBtn").addEventListener("click", chatSend);
+$("#chatInput").addEventListener("keydown", e=>{ if (e.key === "Enter") chatSend(); });
+$("#chatBox").addEventListener("toggle", ()=>{ if ($("#chatBox").open) chatMarkSeen(); });
+$("#chatLog").addEventListener("scroll", ()=>{ if (chatAtBottom()) chatMarkSeen(); });
+
 SETUP_FIELDS.forEach(([key,label])=>{
   const w = document.createElement("div"); w.className = "fld";
   w.innerHTML = `<label>${label}</label><select data-setup="${key}" disabled></select>`;
@@ -961,6 +1066,7 @@ relayPoll(); timerPoll();
 setInterval(relayPoll, 2000);
 setInterval(timerPoll, 2000);
 setupPoll(); setInterval(setupPoll, 2000);
+chatPoll(); setInterval(chatPoll, 2000);
 setInterval(schedPoll, 2000);
 
 /* ---------- auto-connect to OBS ----------
