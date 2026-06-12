@@ -138,6 +138,10 @@ racecast relay stop           # stop the relay
 racecast obs refresh          # force-reload the relay-served OBS browser sources (HUD/timer)
 racecast obs collection       # check the active OBS scene collection
 racecast obs collection set   # switch OBS to this league's scene collection
+racecast chat clear           # wipe the crew-chat history on the active relay
+racecast chat pull <ip>       # take over another producer's chat history at handover (relay may be running)
+racecast chat import <file>   # load a previously exported JSON file into the relay
+racecast chat export          # dump the current chat history to stdout (--out PATH to file)
 ```
 
 For live debugging, run the relay in the foreground: `racecast relay run`.
