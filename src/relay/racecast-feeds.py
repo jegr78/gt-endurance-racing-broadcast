@@ -781,7 +781,7 @@ class ChatStore:
         try:
             os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         except OSError:
-            pass
+            pass  # best-effort: load_messages() below tolerates a missing/unwritable dir
         self.messages = chat_admin.load_messages(self.path)
 
     def add(self, user, text, now=None):
