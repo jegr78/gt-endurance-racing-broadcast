@@ -2402,7 +2402,7 @@ def profile_export_data(name=None, include_assets=True, dest=None):
         if created_tmp:
             try:
                 os.unlink(created_tmp)
-            except OSError:
+            except OSError:  # best-effort temp cleanup
                 pass
         return {"ok": False, "error": f"could not export profile: {exc}"}
 
@@ -2666,7 +2666,7 @@ def _active_obs_collection():
         try:
             return pcfg.resolve_config(root, override=active,
                                        runtime_root=_runtime_base_dir()).obs_collection
-        except pcfg.ProfileError:
+        except pcfg.ProfileError:  # unresolvable profile -> use the default name
             pass
     return obs_ws.EXPECTED_SCENE_COLLECTION
 

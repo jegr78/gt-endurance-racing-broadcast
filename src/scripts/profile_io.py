@@ -61,7 +61,7 @@ def _read_display(profile_dir):
                 k, v = s.split("=", 1)
                 if k.strip() == "NAME":
                     return v.strip()
-    except OSError:
+    except OSError:  # unreadable profile.env -> fall back to the slug
         pass
     return ""
 

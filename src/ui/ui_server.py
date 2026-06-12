@@ -186,13 +186,13 @@ def make_handler(ctx):
             except OSError:
                 try:
                     os.unlink(tmp)
-                except OSError:
+                except OSError:  # best-effort temp cleanup
                     pass
                 return None
             if remaining > 0:                      # client sent a short body
                 try:
                     os.unlink(tmp)
-                except OSError:
+                except OSError:  # best-effort temp cleanup
                     pass
                 return None
             return tmp
