@@ -1494,7 +1494,8 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
 
 
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
-                 timer_store=None, timer_path=None, setup_ctl=None, overlay_dir=None):
+                 timer_store=None, timer_path=None, setup_ctl=None, overlay_dir=None,
+                 chat_store=None):
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
             body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
@@ -1605,6 +1606,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if len(p) == 3 and p[1] == "clear":
                         return self._send(setup_ctl.set_field(p[2].lower(), ""))
                     return self._send({"error": "unknown", "path": self.path}, 404)
+                if p[:1] == ["chat"]:
+                    if not chat_store:
+                        return self._send({"error": "chat disabled"}, 404)
+                    if p == ["chat", "data"]:
+                        return self._send(chat_store.data())
+                    if p == ["chat", "reload"]:
+                        return self._send(chat_store.reload())
+                    return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["schedule", "data"]:
                     rows = relay.source.get_rows()
                     live = {f.idx: k for k, f in relay.feeds.items()}
@@ -1644,6 +1653,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"error": "body must be JSON"}, 400)
                 if not isinstance(body, dict):
                     return self._send({"error": "body must be a JSON object"}, 400)
+                if p == ["chat", "send"]:
+                    if not chat_store:
+                        return self._send({"error": "chat disabled"}, 404)
+                    return self._send(chat_store.add(
+                        user=body.get("user"), text=body.get("text")))
                 if not setup_ctl:
                     return self._send({"error": "setup control disabled"}, 404)
                 if p == ["schedule", "set"]:
@@ -1902,6 +1916,7 @@ def main():
         if not timer_path:
             print("WARN: timer.html not found — /timer will 404.")
 
+    chat_store = ChatStore(os.path.join(runtime, "chat.json"))
     source = ScheduleSource(csv_url, cache, local)
     source.load_initial(SCHEDULE_TEMPLATE)
     setup_ctl = SetupControl(push_url, hud_source, schedule_source=source) if hud_source else None
@@ -1926,7 +1941,7 @@ def main():
 
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
                            timer_store, timer_path, setup_ctl,
-                           overlay_dir=args.overlay_dir)
+                           overlay_dir=args.overlay_dir, chat_store=chat_store)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers = []
