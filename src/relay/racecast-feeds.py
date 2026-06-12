@@ -1195,6 +1195,9 @@ SETUP_FIELDS = {
     "racecontrol": ("Race Control", "raceControl"),
 }
 
+# Panel team slots: URL segment -> 1-based podium slot (Overlay tab "Teams P<n>").
+TEAM_SLOTS = {"p1": 1, "p2": 2, "p3": 3}
+
 
 class SetupControl:
     """Panel -> sheet writes (spec: panel-sheet-control). Setup fields are
@@ -1249,6 +1252,30 @@ class SetupControl:
         if ok:
             self.hud.refresh()   # confirm now, not at the next poll tick
 
+    # -- team slots (async-optimistic, writes the Overlay tab Teams rows) -------
+    def set_team(self, slot_key, name, now=None):
+        if slot_key not in TEAM_SLOTS:
+            return {"error": f"unknown team slot: {slot_key!r} "
+                             f"(one of {', '.join(sorted(TEAM_SLOTS))})"}
+        if not self.push_url:
+            return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
+                             "in the active profile or .env (wiki: Sheet-Webhook)"}
+        name = (name or "").strip()
+        if name not in self.hud.roster_names():
+            return {"error": f"not in the team roster: {name!r} "
+                             "(add it to the Configuration tab first)"}
+        slot = TEAM_SLOTS[slot_key]
+        self.hud.set_team_override(slot - 1, self.hud.resolve_team(name), now)
+        threading.Thread(target=self._push_team, args=(slot, name),
+                         daemon=True).start()
+        return {"ok": True, "slot": slot_key, "value": name, "pending": True}
+
+    def _push_team(self, slot, name):
+        ok, _err = self._push({"action": "teams", "slot": slot, "name": name},
+                              "teams")
+        if ok:
+            self.hud.refresh()
+
     # -- URL writes (synchronous) --------------------------------------------
     def schedule_set(self, row, url=None, name=None):
         if not self.push_url:
@@ -1297,12 +1324,21 @@ class SetupControl:
     def data(self):
         hud = self.hud.data()
         pending = self.hud.pending()
-        return {"fields": {k: hud.get(hk, "") for k, (_h, hk) in SETUP_FIELDS.items()},
-                "options": self.hud.vocab(),
-                "pending": sorted(k for k, (_h, hk) in SETUP_FIELDS.items()
-                                  if hk in pending),
-                "push": self.push_status,
-                "last_error": self.last_error}
+        team_pending = self.hud.team_pending()
+        teams = hud.get("teams", [])
+        names = self.hud.roster_names()
+        fields = {k: hud.get(hk, "") for k, (_h, hk) in SETUP_FIELDS.items()}
+        options = self.hud.vocab()
+        out_pending = sorted(k for k, (_h, hk) in SETUP_FIELDS.items() if hk in pending)
+        for key, slot in TEAM_SLOTS.items():
+            i = slot - 1
+            fields[key] = teams[i]["name"] if i < len(teams) else ""
+            options[key] = list(names)
+            if i in team_pending:
+                out_pending.append(key)
+        return {"fields": fields, "options": options,
+                "pending": sorted(out_pending),
+                "push": self.push_status, "last_error": self.last_error}
 
 
 class Feed:

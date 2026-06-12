@@ -199,8 +199,11 @@ def t_pov_set_pushes():
 def t_setup_data_shape():
     ctl = m.SetupControl(None, _hs_stub())
     d = ctl.data()
-    assert d["fields"] == {"stint": "Intro", "streamer": "JeGr",
-                           "session": "Warmup", "racecontrol": ""}
+    # Scalar fields are still present and correct (team slots add p1/p2/p3 too).
+    assert d["fields"]["stint"] == "Intro"
+    assert d["fields"]["streamer"] == "JeGr"
+    assert d["fields"]["session"] == "Warmup"
+    assert d["fields"]["racecontrol"] == ""
     assert d["options"]["racecontrol"] == ["Formation Lap", "Final Lap"]
     assert d["pending"] == [] and d["push"] == "disabled"
 
@@ -404,6 +407,56 @@ def t_schedule_set_no_inject_on_push_failure():
     out = ctl.schedule_set(2, "https://www.youtube.com/watch?v=abc", "Ben")
     assert "error" in out
     assert src.get() == ["s1"]                            # nothing injected on failure
+
+
+TEAM_OVERLAY_CSV = (",Teams P1,Old A,,\n,Teams P2,Old B,,\n,Teams P3,,,\n")
+TEAM_CONFIG_CSV = ("Teams,Number,Brand Name\n"
+                   "OVO eSports,111,Porsche\nFeel Good,303,BMW\n")
+
+def _team_ctl(pushes):
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    hs = m.HudSource("http://overlay", "http://config", _os.path.join(d, "h.json"))
+    hs._fetch = lambda url, timeout=10: TEAM_OVERLAY_CSV if url == "http://overlay" else TEAM_CONFIG_CSV
+    hs.refresh()
+    ctl = m.SetupControl("http://push", hs)
+    def fake_post(url, payload, timeout=10):
+        pushes.append(payload)
+        return b'{"ok": true, "action": "teams", "v": 2}'
+    m.post_webhook, orig = fake_post, m.post_webhook
+    return ctl, hs, orig
+
+def t_set_team_validates_vocab():
+    ctl, hs, orig = _team_ctl([])
+    try:
+        assert "error" in ctl.set_team("p1", "Not A Team")   # not in roster
+        assert "error" in ctl.set_team("p9", "OVO eSports")   # bad slot
+    finally:
+        m.post_webhook = orig
+
+def t_set_team_echo_and_push():
+    pushes = []
+    ctl, hs, orig = _team_ctl(pushes)
+    try:
+        r = ctl.set_team("p1", "OVO eSports", now=1000.0)
+        assert r.get("ok") and r.get("pending")
+        assert hs.data(now=1001.0)["teams"][0]["name"] == "OVO eSports"
+        assert hs.data(now=1001.0)["teams"][0]["number"] == "111"
+        ctl._push_team(1, "OVO eSports")                      # thread body, run sync
+        assert pushes[-1] == {"action": "teams", "slot": 1, "name": "OVO eSports"}
+        assert ctl.push_status == "ok"
+    finally:
+        m.post_webhook = orig
+
+def t_setup_data_includes_teams():
+    ctl, hs, orig = _team_ctl([])
+    try:
+        d = ctl.data()
+        assert d["options"]["p1"] == ["OVO eSports", "Feel Good"]
+        assert d["fields"]["p1"] == "Old A" and d["fields"]["p2"] == "Old B"
+        assert "p1" in d["options"] and "p2" in d["options"] and "p3" in d["options"]
+    finally:
+        m.post_webhook = orig
 
 
 if __name__ == "__main__":
