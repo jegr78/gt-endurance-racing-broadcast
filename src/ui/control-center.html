@@ -566,6 +566,25 @@
             (<b>racecast relay restart</b>) to activate it; later edits apply live via <b>Apply in OBS</b>.</p>
         </section>
 
+        <section>
+          <div class="viewhead"><h3>Looks</h3>
+            <span class="sub">named overlay + graphics + media snapshots</span>
+            <span class="spacer"></span>
+            <button onclick="loadBackups()">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button></div>
+          <div class="enverr" id="backup-err" hidden></div>
+          <div class="row">
+            <input id="backup-label" placeholder="Look name (e.g. Winter 2026)"
+                   aria-label="Look backup label" style="flex:1">
+            <button onclick="createBackup()">
+              <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Create backup</button></div>
+          <div id="backup-list"></div>
+          <p class="envhint">A Look backup snapshots the active profile's overlay CSS, graphics and media
+            into a zip. <b>Restore</b> overwrites the current files and reloads OBS browser sources
+            (graphics and media reload on the next scene activation). Backups are stored in
+            <b>runtime/&lt;profile&gt;/backups/</b>.</p>
+        </section>
+
         <div class="viewhead"><h3>Assets</h3>
           <span class="sub">graphics + media for the active profile</span>
           <span class="spacer"></span>
@@ -1851,6 +1870,7 @@ async function loadProfiles(force) {
   setHeaderLogo(d.active, d.logo);
   loadProfileEnv();                       // editor reflects the now-active profile
   loadOverlay();                          // overlay-CSS editor for the active profile
+  loadBackups();                          // Looks card for the active profile
 }
 
 async function useProfile(name) {
@@ -2019,6 +2039,90 @@ async function saveOverlay() {
 // saved CSS change shows. Best-effort — needs the relay up + obs-websocket; the
 // job console surfaces the result.
 function applyOverlay() { op('obs-refresh'); }
+
+// ----- Looks card (named look backups: overlay + graphics + media) -----
+// Loaded with the Profile view (via loadProfiles) and on every profile switch.
+// Errors surface inline on #backup-err, mirroring the overlay-err pattern.
+
+async function loadBackups() {
+  $('backup-err').hidden = true;
+  const list = $('backup-list');
+  list.textContent = '';
+  let d;
+  try { d = await (await fetch('/api/backup', {cache: 'no-store'})).json(); }
+  catch (e) { showProfileErr('backup-err', 'Control Center not reachable.'); return; }
+  if (!d.ok) { showProfileErr('backup-err', d.error || 'could not load backups'); return; }
+  if (!d.items || d.items.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'envhint';
+    empty.textContent = 'No backups yet. Enter a name above and click Create backup.';
+    list.appendChild(empty);
+    return;
+  }
+  d.items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const lbl = document.createElement('span');
+    lbl.className = 'name';
+    lbl.textContent = item.label;
+    const ts = document.createElement('span');
+    ts.className = 'dim grow';
+    ts.textContent = item.created ? item.created.replace('T', ' ').replace('Z', ' UTC') : '';
+    const restore = document.createElement('button');
+    restore.textContent = 'Restore';
+    restore.onclick = () => restoreBackup(item.slug, item.label);
+    const del = document.createElement('button');
+    del.className = 'danger';
+    del.textContent = 'Delete';
+    del.onclick = () => deleteBackup(item.slug, item.label);
+    row.append(lbl, ts, restore, del);
+    list.appendChild(row);
+  });
+}
+
+async function createBackup() {
+  $('backup-err').hidden = true;
+  const label = $('backup-label').value.trim();
+  if (!label) { showProfileErr('backup-err', 'Enter a look name first.'); return; }
+  let d;
+  try {
+    d = await (await fetch('/api/backup', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({label, force: false})})).json();
+  } catch (e) { showProfileErr('backup-err', 'Control Center not reachable.'); return; }
+  if (!d.ok) { showProfileErr('backup-err', d.error || 'could not create backup'); return; }
+  $('backup-label').value = '';
+  loadBackups();
+}
+
+async function restoreBackup(slug, label) {
+  if (!confirm('Restore this look?\n\n"' + label + '"\n\nThis overwrites the current overlay, graphics and media.')) return;
+  $('backup-err').hidden = true;
+  let d;
+  try {
+    d = await (await fetch('/api/backup/restore', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({slug})})).json();
+  } catch (e) { showProfileErr('backup-err', 'Control Center not reachable.'); return; }
+  if (!d.ok) { showProfileErr('backup-err', d.error || 'restore failed'); return; }
+  const note = $('backup-err');
+  note.textContent = 'Restored ✓ — OBS browser sources refreshed; graphics/media reload on the next scene activation.';
+  note.hidden = false;
+  setTimeout(() => { note.hidden = true; }, 4000);
+}
+
+async function deleteBackup(slug, label) {
+  if (!confirm('Delete backup "' + label + '"? This cannot be undone.')) return;
+  $('backup-err').hidden = true;
+  let d;
+  try {
+    d = await (await fetch('/api/backup/delete', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({slug})})).json();
+  } catch (e) { showProfileErr('backup-err', 'Control Center not reachable.'); return; }
+  if (!d.ok) { showProfileErr('backup-err', d.error || 'could not delete backup'); return; }
+  loadBackups();
+}
 
 // ----- Static Streams feed editor (runtime/static/streams.json) -----
 function showStreamsErr(msg) {

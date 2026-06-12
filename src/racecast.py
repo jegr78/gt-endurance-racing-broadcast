@@ -17,6 +17,7 @@
   racecast profile   list | show [<name>] | use <name> | new <name> [--from <source>]
   racecast --profile <name> <command>        # run one command against a non-active profile
   racecast chat      clear | pull <ip> [--port N] | import <file> | export [--out PATH]
+  racecast backup    {create|list|restore|delete} <label>   # named look snapshots (overlay+graphics+media)
   racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
   racecast preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   racecast export companion [--out PATH]     # write the Companion button config
@@ -647,6 +648,8 @@ def route(argv):
         return {"kind": "profile", "rest": rest}
     if cmd == "chat":
         return {"kind": "chat", "rest": rest}
+    if cmd == "backup":
+        return {"kind": "backup", "rest": rest}
     if cmd in ONESHOTS:
         return {"kind": "oneshot", "command": cmd, "rest": rest}
     if cmd == "export":
@@ -798,6 +801,85 @@ def chat_cmd(rest):
         print(f"Pulled {n} messages from {host}." +
               ("" if running else " (relay not running — applies on next start.)"))
         return None
+
+
+BACKUP_VERBS = ("create", "list", "restore", "delete")
+
+
+def _backup_sources():
+    """The four dirs a look backup spans for the active profile."""
+    overlay = _active_overlay_dir()              # profiles/<active>/overlay
+    g_dir, m_dir = _asset_dirs()                 # runtime/<active>/graphics|media
+    return {"overlay": overlay, "graphics": g_dir, "media": m_dir,
+            "backups": os.path.join(_runtime_dir(), "backups")}
+
+
+def backup_cmd(rest):
+    """`racecast backup create|list|restore|delete <label>` — named look snapshots
+    (overlay CSS + graphics + media) for the active profile."""
+    import backup_admin as ba
+    verb = rest[0] if rest else None
+    if verb not in BACKUP_VERBS:
+        sys.exit(f"usage: racecast backup {{{'|'.join(BACKUP_VERBS)}}} [<label>]")
+    args = rest[1:]
+    src = _backup_sources()
+    profile = _active_profile_name() or ""
+
+    if verb == "list":
+        items = ba.list_backups(src["backups"])
+        if not items:
+            print("No backups yet. Create one: racecast backup create <label>")
+            return None
+        for it in items:
+            c = it["counts"]
+            print(f"  {it['label']}  ({it['created']}, {it['bytes']} bytes, "
+                  f"overlay {c.get('overlay',0)} / graphics {c.get('graphics',0)} "
+                  f"/ media {c.get('media',0)})")
+        return None
+
+    if verb == "create":
+        if not args:
+            sys.exit("usage: racecast backup create <label> [--force]")
+        force = "--force" in args
+        label = " ".join(a for a in args if a != "--force").strip()
+        if not label:
+            sys.exit("racecast: backup create needs a label")
+        try:
+            path = ba.create_backup(label, src, profile=profile, force=force)
+        except FileExistsError as e:
+            sys.exit(f"racecast: {e}")
+        except ValueError as e:
+            sys.exit(f"racecast: {e}")
+        print(f"Saved look '{label}' -> {path}")
+        return None
+
+    if verb == "delete":
+        if not args:
+            sys.exit("usage: racecast backup delete <label>")
+        try:
+            removed = ba.delete_backup(src["backups"], args[0])
+        except ValueError as e:
+            sys.exit(f"racecast: {e}")
+        print("Deleted." if removed else "racecast: no such backup.")
+        return None
+
+    # verb == "restore"
+    if not args:
+        sys.exit("usage: racecast backup restore <label>")
+    try:
+        slug = ba.sanitize_label(args[0])
+    except ValueError as e:
+        sys.exit(f"racecast: {e}")
+    zip_path = os.path.join(src["backups"], f"{slug}.zip")
+    try:
+        ba.restore_backup(zip_path, src)
+    except ValueError as e:
+        sys.exit(f"racecast: restore failed — {e} (live look unchanged)")
+    print(f"Restored look '{args[0]}'.")
+    _refresh_obs_pages(force=True)   # best-effort: reload the overlay browser sources
+    print("Note: OBS graphics/media sources reload on the next scene activation "
+          "(or right-click → Refresh).")
+    return None
 
 
 def _tailscale_ip():
@@ -2223,6 +2305,62 @@ def overlay_write_data(page, content):
         return {"ok": False, "error": f"could not write overlay css: {exc}"}
 
 
+def backup_list_data():
+    """{ok, active, items:[...]} for the Control Center Looks card."""
+    try:
+        import backup_admin as ba
+        active = _active_profile_name()
+        if not active:
+            return {"ok": False, "error": "no active profile"}
+        return {"ok": True, "active": active,
+                "items": ba.list_backups(_backup_sources()["backups"])}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not list backups: {exc}"}
+
+
+def backup_create_data(label, force=False):
+    """Create a named look backup. {ok, path} or {ok:false, error}."""
+    try:
+        import backup_admin as ba
+        if not _active_profile_name():
+            return {"ok": False, "error": "no active profile"}
+        if not isinstance(label, str) or not label.strip():
+            return {"ok": False, "error": "label required"}
+        path = ba.create_backup(label, _backup_sources(),
+                                profile=_active_profile_name(), force=bool(force))
+        return {"ok": True, "path": path}
+    except FileExistsError:
+        return {"ok": False, "error": "a backup with that name exists (use force)"}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not create backup: {exc}"}
+
+
+def backup_restore_data(slug):
+    """Restore a look backup by slug. {ok} or {ok:false, error}."""
+    try:
+        import backup_admin as ba
+        src = _backup_sources()
+        zip_path = os.path.join(src["backups"], f"{ba.sanitize_label(slug)}.zip")
+        ba.restore_backup(zip_path, src)
+        try:
+            _refresh_obs_pages(force=True)
+        except Exception:
+            pass   # OBS refresh is best-effort; the restore already succeeded
+        return {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "error": f"restore failed: {exc} (live look unchanged)"}
+
+
+def backup_delete_data(slug):
+    """Delete a look backup by slug. {ok, removed} or {ok:false, error}."""
+    try:
+        import backup_admin as ba
+        removed = ba.delete_backup(_backup_sources()["backups"], slug)
+        return {"ok": True, "removed": removed}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not delete backup: {exc}"}
+
+
 def _streams_config_path():
     return os.path.join(_streams_static_dir(), "streams.json")
 
@@ -2810,6 +2948,10 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "profile_env_write": profile_env_write_data,
         "overlay_read": overlay_read_data,
         "overlay_write": overlay_write_data,
+        "backup_list": backup_list_data,
+        "backup_create": backup_create_data,
+        "backup_restore": backup_restore_data,
+        "backup_delete": backup_delete_data,
         "jobs": jobs_mod.JobManager(
             lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN,
                                              _rc_job_executable(),
@@ -2914,6 +3056,8 @@ def main(argv=None):
         return profile_cmd(action["rest"])
     if action["kind"] == "chat":
         return chat_cmd(action["rest"])
+    if action["kind"] == "backup":
+        return backup_cmd(action["rest"])
     if action["kind"] == "oneshot":
         return oneshot(action["command"], action["rest"])
     if action["kind"] == "aggregate":

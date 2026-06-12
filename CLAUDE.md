@@ -65,6 +65,7 @@ python3 tests/test_install_apps.py      # install-apps decision helpers
 python3 tests/test_init.py           # racecast init wizard logic (plan/skip/gates)
 python3 tests/test_timer.py          # relay race-timer unit checks
 python3 tests/test_chat.py           # crew chat (ChatStore + chat_admin + endpoints)
+python3 tests/test_backup.py         # profile look backups (zip snapshot create/list/restore/delete)
 python3 tests/test_setup.py          # panel sheet-control (webhook payloads, SetupControl, endpoints)
 python3 tests/test_ui_ops.py         # Control Center structured status providers + op registry
 python3 tests/test_ui_jobs.py        # Control Center job manager (child spawn, line buffer)
@@ -117,6 +118,7 @@ python3 src/racecast.py chat clear        # wipe the crew-chat history on the ac
 python3 src/racecast.py chat pull <ip>    # take over another producer's chat history at handover (relay may be running)
 python3 src/racecast.py chat import <file> # load a previously exported JSON file into the relay
 python3 src/racecast.py chat export       # write the current chat history to chat-export.json (or --out PATH)
+python3 src/racecast.py backup create|list|restore|delete <label>  # named look snapshots (overlay+graphics+media) per profile
 python3 src/racecast.py --version
 
 # Fetch any missing HUD country flags from the sheet's Configuration tab

@@ -112,7 +112,15 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
                                           "active": "demo", "css": "",
                                           "path": "/x/overlay/%s.css" % page},
             "overlay_write": lambda page, content: {"ok": True,
-                                                    "path": "/x/overlay/%s.css" % page}}
+                                                    "path": "/x/overlay/%s.css" % page},
+            "backup_list": lambda: {"ok": True, "active": "demo",
+                                    "items": [{"label": "Winter", "slug": "winter",
+                                               "created": "2026-06-12T10:00:00Z",
+                                               "bytes": 10, "counts": {}}]},
+            "backup_create": lambda label, force=None: {"ok": True,
+                                    "_got": {"label": label, "force": force}},
+            "backup_restore": lambda slug: {"ok": True, "slug": slug},
+            "backup_delete": lambda slug: {"ok": True, "removed": True}}
 
 
 def _serve(ctx):
@@ -950,6 +958,23 @@ def t_profile_logo_route_404_when_no_logo():
     try:
         code, _ = _get(port, "/api/profile/logo")
         assert code == 404
+    finally:
+        httpd.shutdown()
+
+
+def t_api_backup_routes():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/backup")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] and data["items"][0]["label"] == "Winter"
+        code, body = _post_json(port, "/api/backup", {"label": "Spring", "force": False})
+        got = json.loads(body)
+        assert code == 200 and got["ok"] and got["_got"] == {"label": "Spring", "force": False}
+        code, body = _post_json(port, "/api/backup/restore", {"slug": "winter"})
+        assert code == 200 and json.loads(body)["ok"]
+        code, body = _post_json(port, "/api/backup/delete", {"slug": "winter"})
+        assert code == 200 and json.loads(body)["removed"] is True
     finally:
         httpd.shutdown()
 

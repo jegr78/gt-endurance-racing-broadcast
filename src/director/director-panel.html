@@ -821,6 +821,7 @@ const SETUP_FIELDS = [
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
+const TEAM_FIELDS = [["p1","P1"], ["p2","P2"], ["p3","P3"]];
 
 /* ---------- Crew chat ---------- */
 const CHAT_NAME_KEY = "racecast.chat.name";
@@ -901,6 +902,23 @@ SETUP_FIELDS.forEach(([key,label])=>{
   b.className = "pill stop"; b.textContent = "CLEAR RC"; b.id = "clearRc";
   b.addEventListener("click", ()=>setupSet("racecontrol",""));
   $("#setupRow").appendChild(b); }
+TEAM_FIELDS.forEach(([key,label])=>{
+  const w = document.createElement("div"); w.className = "fld";
+  w.innerHTML = `<label>${label}</label><select data-team="${key}" disabled></select>`;
+  w.querySelector("select").addEventListener("change", e=>teamSet(key, e.target.value));
+  $("#setupRow").appendChild(w);
+});
+
+async function teamSet(slot, value){
+  if (!value) return;                         // teams are never cleared to empty
+  try{
+    const r = await fetch("/setup/team/" + slot + "/" + encodeURIComponent(value), {cache:"no-store"});
+    const d = await r.json();
+    if (d.error){ log("HUD " + slot + ": " + d.error, "err"); toast("HUD " + slot + ": " + d.error); setupPoll(); return; }
+    log("HUD " + slot + " → " + value);
+    setupPoll();
+  }catch(e){ log("HUD " + slot + " failed (relay reachable?): " + e, "err"); toast("HUD " + slot + " failed — relay unreachable"); }
+}
 
 async function setupSet(field, value){
   const path = value === "" ? "setup/clear/" + field
@@ -929,6 +947,20 @@ async function setupPoll(){
     const sig = JSON.stringify(opts);
     if (sel.dataset.sig !== sig){
       sel.innerHTML = opts.map(o=>`<option value="${escapeHtml(o)}">${o===""?"— none —":escapeHtml(o)}</option>`).join("");
+      sel.dataset.sig = sig;
+    }
+    const cur = d.fields[key] || "";
+    if ([...sel.options].some(o=>o.value===cur)) sel.value = cur;
+    sel.classList.toggle("pending", d.pending.includes(key));
+    sel.disabled = ro;
+  }
+  for (const [key] of TEAM_FIELDS){
+    const sel = document.querySelector(`select[data-team="${key}"]`);
+    if (!sel || sel === document.activeElement) continue;
+    const opts = d.options[key] || [];
+    const sig = JSON.stringify(opts);
+    if (sel.dataset.sig !== sig){
+      sel.innerHTML = opts.map(o=>`<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join("");
       sel.dataset.sig = sig;
     }
     const cur = d.fields[key] || "";

@@ -324,6 +324,21 @@ def asset_key(s):
     s = re.sub(r"\s+", "-", s)
     return re.sub(r"[^a-z0-9-]", "", s)
 
+TEAM_NUMBER_RE = re.compile(r"^(.*?)\s*#(\d+)\s*$")
+
+def split_team_label(s):
+    """Split a team label into (name, number): a TRAILING '#<digits>' token is
+    peeled off ('OVO eSports #111' -> ('OVO eSports', '111')); no trailing number
+    -> (stripped, ''). A '#' that is not a trailing all-digit token stays in the
+    name. Used to strip the embedded number so it never double-displays, and as
+    the backward-compat number source when the Configuration tab has no Number
+    column."""
+    s = (s or "").strip()
+    mtch = TEAM_NUMBER_RE.match(s)
+    if mtch:
+        return mtch.group(1).strip(), mtch.group(2)
+    return s, ""
+
 OVERLAY_LABELS = {
     "stint": "stint", "streamer": "streamer", "session": "session",
     "round top": "round_top", "round bottom": "country",
@@ -360,29 +375,36 @@ def parse_overlay(text):
 # Accepted headers for the team's brand TEXT column (priority order). The sheet's
 # image columns ("Brand Logo", "Brands") are deliberately NOT in this set.
 BRAND_TEXT_HEADERS = ("brand key", "brand name", "brand")
+# Accepted headers locating the team-name and (optional) car-number columns.
+TEAM_NAME_HEADERS = ("teams", "team name")
+NUMBER_HEADERS = ("number",)
 
 
-def parse_config_brands(text):
-    """Configuration tab CSV -> {team_name: brand_key}. Columns are located by
-    header name ('Teams' + one of BRAND_TEXT_HEADERS) so positions can change."""
+def parse_config_roster(text):
+    """Configuration tab CSV -> roster {team_name: {"number": str, "brandKey": str}}.
+    The team name is always stripped of a trailing '#NNN' (split_team_label); the
+    Number column wins over that embedded token, which is only the fallback. Columns
+    are located by header name so positions stay free. A missing team-name header ->
+    {}. A missing Brand/Number column just yields '' for that field."""
     rows = list(csv.reader(io.StringIO(text)))
     if not rows:
         return {}
     header = [(h or "").strip().lower() for h in rows[0]]
-    if "teams" not in header:
+    ti = next((header.index(h) for h in TEAM_NAME_HEADERS if h in header), None)
+    if ti is None:
         return {}
-    ti = header.index("teams")
     bi = next((header.index(h) for h in BRAND_TEXT_HEADERS if h in header), None)
-    if bi is None:
-        return {}
+    ni = next((header.index(h) for h in NUMBER_HEADERS if h in header), None)
     out = {}
     for row in rows[1:]:
-        if len(row) <= max(ti, bi):
+        if len(row) <= ti:
             continue
-        name = (row[ti] or "").strip()
-        brand = asset_key(row[bi])
-        if name and brand:
-            out[name] = brand
+        name, embedded = split_team_label(row[ti])
+        if not name:
+            continue
+        col_num = (row[ni].strip() if ni is not None and len(row) > ni else "")
+        brand = (asset_key(row[bi]) if bi is not None and len(row) > bi else "")
+        out[name] = {"number": col_num or embedded, "brandKey": brand}
     return out
 
 
@@ -395,7 +417,7 @@ VOCAB_COLUMNS = {"stint": "stints", "streamer": "streamers",
 
 def parse_config_vocab(text):
     """Configuration tab CSV -> {field_key: [options]} for the panel
-    dropdowns. Columns located by header name (parse_config_brands precedent);
+    dropdowns. Columns located by header name (parse_config_roster precedent);
     blanks skipped, duplicates dropped, sheet order kept."""
     rows = list(csv.reader(io.StringIO(text)))
     out = {k: [] for k in VOCAB_COLUMNS}
@@ -415,8 +437,20 @@ def parse_config_vocab(text):
     return out
 
 
-def build_hud_data(overlay, brands):
-    """Combine an Overlay map + {team: brand_key} into the /hud/data contract."""
+def team_entry(raw, roster):
+    """One /hud/data team object from an Overlay slot value + the roster. Name is
+    always the stripped form; number/logo come from the roster (Number column
+    precedence already baked in), with the slot's own embedded #NNN as the only
+    fallback when the team is absent from the roster."""
+    name, embedded = split_team_label(raw)
+    info = roster.get(name, {})
+    return {"name": name,
+            "number": info.get("number") or embedded,
+            "brandKey": info.get("brandKey", "")}
+
+
+def build_hud_data(overlay, roster):
+    """Combine an Overlay map + roster {team: {number, brandKey}} into /hud/data."""
     return {
         "stint": overlay.get("stint", ""),
         "streamer": overlay.get("streamer", ""),
@@ -426,8 +460,7 @@ def build_hud_data(overlay, brands):
             "country": overlay.get("country", ""),
             "flagKey": asset_key(overlay.get("country", "")),
         },
-        "teams": [{"name": n, "brandKey": brands.get(n, "")}
-                  for n in overlay.get("teams", ["", "", ""])],
+        "teams": [team_entry(n, roster) for n in overlay.get("teams", ["", "", ""])],
         "raceControl": overlay.get("race_control", ""),
     }
 
@@ -1020,7 +1053,8 @@ class HudSource:
     with last-good caching (mirrors ScheduleSource robustness)."""
     EMPTY = {"stint": "", "streamer": "", "session": "",
              "round": {"top": "", "country": "", "flagKey": ""},
-             "teams": [{"name": "", "brandKey": ""}] * 3, "raceControl": ""}
+             "teams": [{"name": "", "number": "", "brandKey": ""} for _ in range(3)],
+             "raceControl": ""}
 
     def __init__(self, overlay_url, config_url, cache_path):
         self.overlay_url = overlay_url
@@ -1029,7 +1063,9 @@ class HudSource:
         self.lock = threading.Lock()
         self._data = None
         self._vocab = {k: [] for k in VOCAB_COLUMNS}
+        self._roster = {}
         self.overrides = {}   # hud-data key -> (value, expires_ts)
+        self.team_overrides = {}   # slot index 0..2 -> (entry_dict, expires_ts)
         self.last_ok = None
         self.last_error = None
         self._load_cache()
@@ -1051,18 +1087,22 @@ class HudSource:
         try:
             overlay = parse_overlay(self._fetch(self.overlay_url, timeout))
             config_text = self._fetch(self.config_url, timeout)
-            brands = parse_config_brands(config_text)
+            roster = parse_config_roster(config_text)
             vocab = parse_config_vocab(config_text)
-            data = build_hud_data(overlay, brands)
+            data = build_hud_data(overlay, roster)
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e}"
             return False
         with self.lock:
             self._data = data
             self._vocab = vocab
+            self._roster = roster
             # a sheet poll that already shows the pushed value = confirmation
             self.overrides = {k: (v, exp) for k, (v, exp) in self.overrides.items()
                               if data.get(k) != v}
+            self.team_overrides = {
+                s: (e, exp) for s, (e, exp) in self.team_overrides.items()
+                if (data["teams"][s] if s < len(data["teams"]) else None) != e}
             self.last_ok = time.time()
             self.last_error = None
         try:
@@ -1090,18 +1130,53 @@ class HudSource:
         with self.lock:
             self.overrides = {k: (v, exp) for k, (v, exp) in self.overrides.items()
                               if exp > now}
+            self.team_overrides = {s: (e, exp) for s, (e, exp) in self.team_overrides.items()
+                                   if exp > now}
             # Always shallow-copy: callers (and /setup/data decoration) must never
             # be able to mutate the canonical dict.
             base = dict(self._data) if self._data is not None else dict(self.EMPTY)
-            if not self.overrides:
-                return base
             out = dict(base)
-            out.update({k: v for k, (v, _exp) in self.overrides.items()})
+            if self.overrides:
+                out.update({k: v for k, (v, _exp) in self.overrides.items()})
+            if self.team_overrides:
+                teams = [dict(t) for t in out.get("teams", [])]
+                while len(teams) < 3:
+                    teams.append({"name": "", "number": "", "brandKey": ""})
+                for s, (e, _exp) in self.team_overrides.items():
+                    if 0 <= s < len(teams):
+                        teams[s] = dict(e)
+                out["teams"] = teams
             return out
 
     def vocab(self):
         with self.lock:
             return {k: list(v) for k, v in self._vocab.items()}
+
+    def roster_names(self):
+        """Team names from the Configuration roster, in sheet order (panel vocab)."""
+        with self.lock:
+            return list(self._roster.keys())
+
+    def resolve_team(self, name):
+        """A /hud/data team entry for a roster name (or a stripped unknown name)."""
+        name, embedded = split_team_label(name)
+        with self.lock:
+            info = self._roster.get(name, {})
+        return {"name": name,
+                "number": info.get("number") or embedded,
+                "brandKey": info.get("brandKey", "")}
+
+    def set_team_override(self, slot, entry, now=None):
+        """Optimistic echo for a panel team write into podium slot 0..2."""
+        now = time.time() if now is None else now
+        with self.lock:
+            self.team_overrides[slot] = (entry, now + OVERRIDE_TTL)
+
+    def team_pending(self, now=None):
+        """Slot indices with an unconfirmed (and unexpired) optimistic team override."""
+        now = time.time() if now is None else now
+        with self.lock:
+            return {s for s, (_e, exp) in self.team_overrides.items() if exp > now}
 
     def health(self):
         with self.lock:
@@ -1119,6 +1194,9 @@ SETUP_FIELDS = {
     "session": ("Session", "session"),
     "racecontrol": ("Race Control", "raceControl"),
 }
+
+# Panel team slots: URL segment -> 1-based podium slot (Overlay tab "Teams P<n>").
+TEAM_SLOTS = {"p1": 1, "p2": 2, "p3": 3}
 
 
 class SetupControl:
@@ -1174,6 +1252,30 @@ class SetupControl:
         if ok:
             self.hud.refresh()   # confirm now, not at the next poll tick
 
+    # -- team slots (async-optimistic, writes the Overlay tab Teams rows) -------
+    def set_team(self, slot_key, name, now=None):
+        if slot_key not in TEAM_SLOTS:
+            return {"error": f"unknown team slot: {slot_key!r} "
+                             f"(one of {', '.join(sorted(TEAM_SLOTS))})"}
+        if not self.push_url:
+            return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
+                             "in the active profile or .env (wiki: Sheet-Webhook)"}
+        name = (name or "").strip()
+        if name not in self.hud.roster_names():
+            return {"error": f"not in the team roster: {name!r} "
+                             "(add it to the Configuration tab first)"}
+        slot = TEAM_SLOTS[slot_key]
+        self.hud.set_team_override(slot - 1, self.hud.resolve_team(name), now)
+        threading.Thread(target=self._push_team, args=(slot, name),
+                         daemon=True).start()
+        return {"ok": True, "slot": slot_key, "value": name, "pending": True}
+
+    def _push_team(self, slot, name):
+        ok, _err = self._push({"action": "teams", "slot": slot, "name": name},
+                              "teams")
+        if ok:
+            self.hud.refresh()
+
     # -- URL writes (synchronous) --------------------------------------------
     def schedule_set(self, row, url=None, name=None):
         if not self.push_url:
@@ -1222,12 +1324,21 @@ class SetupControl:
     def data(self):
         hud = self.hud.data()
         pending = self.hud.pending()
-        return {"fields": {k: hud.get(hk, "") for k, (_h, hk) in SETUP_FIELDS.items()},
-                "options": self.hud.vocab(),
-                "pending": sorted(k for k, (_h, hk) in SETUP_FIELDS.items()
-                                  if hk in pending),
-                "push": self.push_status,
-                "last_error": self.last_error}
+        team_pending = self.hud.team_pending()
+        teams = hud.get("teams", [])
+        names = self.hud.roster_names()
+        fields = {k: hud.get(hk, "") for k, (_h, hk) in SETUP_FIELDS.items()}
+        options = self.hud.vocab()
+        out_pending = sorted(k for k, (_h, hk) in SETUP_FIELDS.items() if hk in pending)
+        for key, slot in TEAM_SLOTS.items():
+            i = slot - 1
+            fields[key] = teams[i]["name"] if i < len(teams) else ""
+            options[key] = list(names)
+            if i in team_pending:
+                out_pending.append(key)
+        return {"fields": fields, "options": options,
+                "pending": sorted(out_pending),
+                "push": self.push_status, "last_error": self.last_error}
 
 
 class Feed:
@@ -1603,6 +1714,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if len(p) == 4 and p[1] == "set":
                         return self._send(setup_ctl.set_field(p[2].lower(),
                                                               unquote(p[3])))
+                    if len(p) == 4 and p[1] == "team":
+                        return self._send(setup_ctl.set_team(p[2].lower(),
+                                                             unquote(p[3])))
                     if len(p) == 3 and p[1] == "clear":
                         return self._send(setup_ctl.set_field(p[2].lower(), ""))
                     return self._send({"error": "unknown", "path": self.path}, 404)
