@@ -20,9 +20,28 @@ machine and the panel's HUD row + URLs section are display-only.
 | `setup` | Setup tab: the cell **below** a header (`Stint`, `Streamer`, `Session`, `Race Control`) — found by text, so the tab layout may move |
 | `schedule` | Schedule tab **physical row N** (the panel sends the CSV line number automatically): URL (col A) + name (col B); row `last+1` appends. **The Schedule tab must not have leading blank rows** — the gviz CSV export maps physical sheet rows to CSV lines 1:1 when the tab starts at row 1. A header row is silently skipped when reading but its physical line number is still used when writing. |
 | `pov` | POV tab cell `A2` |
+| `teams` | Overlay tab: the row whose column-B label is `Teams P<slot>` (slot 1–3); value written to column C |
 
 The relay only sends Setup values that exist in the Configuration tab's
 vocabulary columns — the same lists the sheet's own dropdowns use.
+
+A `teams` write sends `{"action":"teams","slot":1|2|3,"name":"<team>"}`. The
+relay validates the team name against the Configuration tab's roster before
+sending. The script locates the Overlay tab row whose column-B label matches
+`Teams P<slot>` (case-insensitive) and writes the name into column C. The v2
+script responds `{"ok":true,"action":"teams","v":2}`.
+
+### Configuration tab — team-name and Number columns
+
+The team-name column in the Configuration tab may be headed **`Teams`** or
+**`Team Name`** — the relay accepts either. An optional **`Number`** column
+holds the car number. The relay strips a trailing `#NNN` token from the team
+name field and treats the `Number` column as the canonical car number if
+present (it takes precedence over the embedded `#NNN`). This means a row like
+`OVO eSports #111` with a `Number` value of `111` yields team name
+`OVO eSports` and car number `111` without duplication. The Overlay tab's
+`Teams P1`, `Teams P2`, and `Teams P3` rows therefore hold only the bare team
+name; the panel's P1/P2/P3 podium dropdowns are what write those rows.
 
 ## One-time setup (per sheet)
 
@@ -31,7 +50,8 @@ vocabulary columns — the same lists the sheet's own dropdowns use.
 
    ```javascript
    const KEY = 'change-me';            // must match the key=... in the URL below
-   const TABS = {setup: 'Setup', schedule: 'Schedule', pov: 'POV', timer: 'Timer'};
+   const TABS = {setup: 'Setup', schedule: 'Schedule', pov: 'POV', timer: 'Timer',
+                 overlay: 'Overlay'};
    const SETUP_FIELDS = ['Stint', 'Streamer', 'Session', 'Race Control'];
    const TIMER_ROWS = {'Race End (UTC)': 1, 'Duration': 2, 'Visible': 3,
                        'Updated (UTC)': 4, 'Remaining': 5};
@@ -48,6 +68,7 @@ vocabulary columns — the same lists the sheet's own dropdowns use.
        else if (action === 'setup') writeSetup(ss, p.fields || {});
        else if (action === 'schedule') writeSchedule(ss, p);
        else if (action === 'pov') writePov(ss, p);
+       else if (action === 'teams') writeTeams(ss, p);
        else return out({error: 'unknown action: ' + action});
        return out({ok: true, action: action, v: 2});
      } catch (err) { return out({error: String(err)}); }
@@ -105,6 +126,21 @@ vocabulary columns — the same lists the sheet's own dropdowns use.
 
    function writePov(ss, p) {
      tab(ss, TABS.pov).getRange(2, 1).setNumberFormat('@').setValue(p.url || '');
+   }
+
+   function writeTeams(ss, p) {
+     const slot = Number(p.slot);
+     if (!(slot >= 1 && slot <= 3)) throw 'slot out of range: ' + p.slot;
+     const sheet = tab(ss, TABS.overlay);          // the Overlay tab
+     const grid = sheet.getDataRange().getValues();
+     const label = ('teams p' + slot);             // label lives in column B
+     for (let r = 0; r < grid.length; r++) {
+       if (String(grid[r][1]).trim().toLowerCase() === label) {
+         sheet.getRange(r + 1, 3).setNumberFormat('@').setValue(p.name || '');  // value in col C
+         return;
+       }
+     }
+     throw 'label not found in Overlay tab: Teams P' + slot;
    }
    ```
 
