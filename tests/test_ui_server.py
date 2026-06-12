@@ -1027,6 +1027,49 @@ def t_profile_import_accepts_raw_body():
         httpd.shutdown()
 
 
+# ---------- request_csrf_ok: localhost trust-boundary guard (#1) ----------
+
+def t_csrf_same_origin_loopback_ok():
+    assert us.request_csrf_ok({"Host": "127.0.0.1:8089"})
+    assert us.request_csrf_ok({"Host": "localhost:8089"})
+    assert us.request_csrf_ok({"Host": "127.0.0.1:8089", "Origin": "http://127.0.0.1:8089"})
+    assert us.request_csrf_ok({"Host": "localhost:8089", "Origin": "http://localhost:8089"})
+    assert us.request_csrf_ok({"Host": "[::1]:8089", "Origin": "http://[::1]:8089"})
+    assert us.request_csrf_ok({})                       # non-browser client (no Host/Origin)
+
+
+def t_csrf_foreign_host_blocked():
+    # DNS-rebinding: the browser connected to 127.0.0.1 but sent the attacker's name
+    assert not us.request_csrf_ok({"Host": "evil.example.com:8089"})
+    assert not us.request_csrf_ok({"Host": "attacker.com"})
+
+
+def t_csrf_cross_origin_blocked():
+    # classic CSRF: a foreign page POSTing to the localhost API carries its Origin
+    assert not us.request_csrf_ok({"Host": "127.0.0.1:8089",
+                                   "Origin": "http://evil.example.com"})
+    assert not us.request_csrf_ok({"Host": "127.0.0.1:8089",
+                                   "Referer": "http://evil.example.com/x"})
+    assert not us.request_csrf_ok({"Host": "127.0.0.1:8089",
+                                   "Origin": "https://youtube.com"})
+
+
+def t_csrf_guard_blocks_foreign_host_on_real_server():
+    # integration: a forged Host header is refused with 403 by the live server
+    import http.client
+    httpd, port = _serve(_ctx())
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.putrequest("GET", "/api/status", skip_host=True)
+        conn.putheader("Host", "evil.example.com")
+        conn.endheaders()
+        resp = conn.getresponse()
+        assert resp.status == 403, resp.status
+        conn.close()
+    finally:
+        httpd.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

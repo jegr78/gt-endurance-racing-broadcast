@@ -98,13 +98,27 @@ def fetch_assets_csv(sheet_id, tab, timeout=15):
         return resp.read().decode("utf-8", "replace")
 
 
+def build_download_cmd(url, out_path, cookies=None):
+    """Argv for downloading one clip. `--` precedes the URL so a sheet cell
+    beginning with '-' cannot be parsed as a yt-dlp flag (e.g. --exec, which
+    would be arbitrary command execution). Cookies are inserted before the
+    separator so they stay an option."""
+    cmd = ["yt-dlp", "-f", YTDLP_FORMAT, "--merge-output-format", "mp4",
+           "--no-warnings", "-o", out_path]
+    if cookies and os.path.exists(cookies):
+        cmd += ["--cookies", cookies]
+    cmd += ["--", url]
+    return cmd
+
+
 def download(url, out_path, cookies=None):
     """Download `url` to `out_path` as a single muxed MP4 (audio included).
-    Uses cookies.txt if it exists (YouTube bot-check parity with the relay)."""
-    cmd = ["yt-dlp", "-f", YTDLP_FORMAT, "--merge-output-format", "mp4",
-           "--no-warnings", "-o", out_path, url]
-    if cookies and os.path.exists(cookies):
-        cmd[1:1] = ["--cookies", cookies]
+    Uses cookies.txt if it exists (YouTube bot-check parity with the relay).
+    The URL comes from the (multi-editor, semi-trusted) Sheet Assets tab, so it
+    must be a real http(s) URL — never a file:// path or a flag-like value."""
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise ValueError(f"refusing non-http(s) media URL: {url!r}")
+    cmd = build_download_cmd(url, out_path, cookies)
     subprocess.run(cmd, check=True, timeout=600)
 
 

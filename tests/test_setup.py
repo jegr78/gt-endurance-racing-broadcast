@@ -508,6 +508,51 @@ def t_endpoint_setup_team_sets_slot():
         srv.shutdown(); m.post_webhook = orig
 
 
+# ---------- is_channel host allow-list + argv separators (SSRF/arg-injection #4) ----
+
+def t_is_channel_accepts_youtube_and_twitch():
+    for good in ("https://www.youtube.com/watch?v=abc",
+                 "https://youtu.be/abc",
+                 "http://youtube.com/watch?v=abc",
+                 "https://m.youtube.com/watch?v=abc",
+                 "https://www.twitch.tv/somechannel",
+                 "https://twitch.tv/somechannel",
+                 "UCabcdefghijklmnopqrstuv"):
+        assert m.is_channel(good), good
+
+
+def t_is_channel_rejects_ssrf_and_flags():
+    for bad in ("http://169.254.169.254/latest/meta-data/",
+                "http://localhost:8088/status",
+                "http://127.0.0.1/x",
+                "http://192.168.1.10/x",
+                "file:///etc/passwd",
+                "https://youtube.com.evil.com/x",      # suffix trick
+                "https://youtube.com@evil.com/x",       # userinfo trick -> host is evil.com
+                "--config-location=/tmp/x",             # yt-dlp flag injection
+                "ftp://youtube.com/x",
+                "", "   "):
+        assert not m.is_channel(bad), bad
+
+
+def t_ytdlp_resolve_cmd_separates_url():
+    cmd = m.ytdlp_resolve_cmd("https://youtu.be/AAA", None)
+    assert cmd[-2:] == ["--", "https://youtu.be/AAA"], cmd
+    assert "--cookies" not in cmd
+    cmd2 = m.ytdlp_resolve_cmd("https://youtu.be/AAA", "/c/cookies.txt")
+    assert cmd2[-2:] == ["--", "https://youtu.be/AAA"], cmd2
+    assert cmd2.index("--cookies") < cmd2.index("--")          # cookies stay an option
+    assert cmd2[cmd2.index("--cookies") + 1] == "/c/cookies.txt"
+
+
+def t_streamlink_serve_cmd_separates_url():
+    cmd = m.streamlink_serve_cmd("http://hls.example/x.m3u8", 53001)
+    assert cmd[-3:] == ["--", "http://hls.example/x.m3u8", "best"], cmd
+    assert "--player-external-http-port" in cmd
+    sep = cmd.index("--")
+    assert all(not str(x).startswith("http") for x in cmd[:sep])   # options precede the URL
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

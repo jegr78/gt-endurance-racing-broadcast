@@ -63,6 +63,42 @@ def _allowed(_handler):
     return True
 
 
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _host_label(value):
+    """The hostname part of a 'host[:port]' Host header (handles [::1]:port and
+    a bare ::1); '' when absent."""
+    v = (value or "").strip()
+    if not v:
+        return ""
+    if v.startswith("["):                       # [::1]:8089 / [::1]
+        end = v.find("]")
+        return v[1:end] if end != -1 else v[1:]
+    if v.count(":") == 1:                        # host:port
+        return v.rsplit(":", 1)[0]
+    return v                                     # bare host, or raw IPv6 (::1)
+
+
+def request_csrf_ok(headers):
+    """Reject cross-origin / DNS-rebind requests at the localhost trust boundary.
+    The UI binds 127.0.0.1 only and has no auth, so a malicious web page the
+    operator merely visits must not be able to drive the API (write .env, switch
+    profile, run ops). A foreign Host header (DNS-rebinding away from a loopback
+    name) or a cross-origin Origin/Referer (classic CSRF) is refused. Browsers
+    always attach Origin to cross-origin POSTs; a non-browser client (no Origin)
+    still has to carry a loopback Host. Pure — `headers` is any .get()-able map."""
+    host = _host_label(headers.get("Host"))
+    if host and host not in LOOPBACK_HOSTS:
+        return False
+    origin = headers.get("Origin") or headers.get("Referer")
+    if origin:
+        hostname = urlparse(origin).hostname
+        if hostname is not None and hostname not in LOOPBACK_HOSTS:
+            return False
+    return True
+
+
 def make_handler(ctx):
     """ctx: version, page_path, status() -> dict, relay_live() -> dict,
     obs_ws() -> dict, obs_collection() -> dict, update_check(force) -> dict, streams_read() -> dict,
@@ -200,6 +236,9 @@ def make_handler(ctx):
         def do_GET(self):
             if not _allowed(self):
                 return self._json({"ok": False, "error": "unauthorized"}, code=401)
+            if not request_csrf_ok(self.headers):
+                return self._json({"ok": False, "error": "cross-origin request blocked"},
+                                  code=403)
             path = urlparse(self.path).path
             if path == "/":
                 return self._page()
@@ -412,6 +451,9 @@ def make_handler(ctx):
         def do_POST(self):
             if not _allowed(self):
                 return self._json({"ok": False, "error": "unauthorized"}, code=401)
+            if not request_csrf_ok(self.headers):
+                return self._json({"ok": False, "error": "cross-origin request blocked"},
+                                  code=403)
             path = urlparse(self.path).path
             if path.startswith("/api/jobs/") and path.endswith("/cancel"):
                 job_id = path.split("/")[3]

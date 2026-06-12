@@ -66,6 +66,36 @@ def t_resolve_missing_is_none():
     assert out == {"intro": None}, out
 
 
+# ---------- download argv separator + scheme guard (sheet arg-injection #3) ----
+
+def t_download_cmd_separates_url():
+    cmd = m.build_download_cmd("https://youtu.be/AAA", "/tmp/intro.mp4")
+    assert cmd[-2:] == ["--", "https://youtu.be/AAA"], cmd
+    assert "-o" in cmd and cmd[cmd.index("-o") + 1] == "/tmp/intro.mp4"
+    assert "--cookies" not in cmd
+
+
+def t_download_cmd_cookies_before_separator():
+    import tempfile, os as _os
+    fd, ck = tempfile.mkstemp(); _os.close(fd)
+    try:
+        cmd = m.build_download_cmd("https://youtu.be/AAA", "/tmp/o.mp4", ck)
+        assert cmd[-2:] == ["--", "https://youtu.be/AAA"], cmd
+        assert cmd.index("--cookies") < cmd.index("--")    # cookies stay an option
+    finally:
+        _os.unlink(ck)
+
+
+def t_download_rejects_non_http_url():
+    for bad in ("--exec=evil", "file:///etc/passwd", "ftp://x/y", "-o/tmp/x"):
+        raised = False
+        try:
+            m.download(bad, "/tmp/out.mp4")
+        except ValueError:
+            raised = True
+        assert raised, bad
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
