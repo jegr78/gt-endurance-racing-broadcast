@@ -804,13 +804,16 @@ class ChatStore:
 
     def reload(self):
         """Re-read the local file into memory. A corrupt file keeps the current
-        buffer (a bad reload must never wipe live chat)."""
+        buffer (a bad reload must never wipe live chat). The CLI/UI surface the
+        returned error, so it carries the exception message."""
+        # Read + validate outside the lock: a concurrent add() is safe — it has
+        # already landed in memory and on disk; reload adopts the file as of now.
         try:
             with open(self.path, encoding="utf-8") as fh:
                 payload = json.load(fh)
             msgs = chat_admin.validate_payload(payload)
         except (OSError, ValueError) as e:
-            return {"error": f"reload failed: {type(e).__name__}"}
+            return {"error": f"reload failed: {type(e).__name__}: {e}"}
         with self.lock:
             self.messages = msgs
         return {"ok": True, "count": len(msgs)}
