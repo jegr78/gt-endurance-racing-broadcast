@@ -22,7 +22,8 @@ def _raises(fn, exc=ValueError):
 
 def t_parse_list_takes_no_args():
     assert m.parse_profile_args(["list"]) == {
-        "verb": "list", "name": None, "source": "example"}
+        "verb": "list", "name": None, "source": "example",
+        "no_assets": False, "out": None, "file": None, "force": False}
     _raises(lambda: m.parse_profile_args(["list", "extra"]))
 
 
@@ -34,14 +35,16 @@ def t_parse_show_optional_name():
 
 def t_parse_use_requires_one_name():
     assert m.parse_profile_args(["use", "erf"]) == {
-        "verb": "use", "name": "erf", "source": "example"}
+        "verb": "use", "name": "erf", "source": "example",
+        "no_assets": False, "out": None, "file": None, "force": False}
     _raises(lambda: m.parse_profile_args(["use"]))
     _raises(lambda: m.parse_profile_args(["use", "a", "b"]))
 
 
 def t_parse_new_with_from():
     assert m.parse_profile_args(["new", "erf"]) == {
-        "verb": "new", "name": "erf", "source": "example"}
+        "verb": "new", "name": "erf", "source": "example",
+        "no_assets": False, "out": None, "file": None, "force": False}
     assert m.parse_profile_args(["new", "erf", "--from", "demo"])["source"] == "demo"
     assert m.parse_profile_args(["new", "erf", "--from=demo"])["source"] == "demo"
     _raises(lambda: m.parse_profile_args(["new"]))
@@ -186,6 +189,34 @@ def t_format_profile_show_masks_push_url():
     assert "SHEETID123" in out          # sheet id shown (link-shared, not a secret)
     assert "TOPSECRET" not in out       # push-url secret masked
     assert "(active)" in out
+
+
+def t_parse_export_defaults():
+    o = m.parse_profile_args(["export", "iro-gtec"])
+    assert o["verb"] == "export" and o["name"] == "iro-gtec"
+    assert o["no_assets"] is False and o["out"] is None
+
+
+def t_parse_export_flags():
+    o = m.parse_profile_args(["export", "iro-gtec", "--no-assets", "--out", "/tmp/x.zip"])
+    assert o["no_assets"] is True and o["out"] == "/tmp/x.zip"
+    o2 = m.parse_profile_args(["export", "iro-gtec", "--out=/tmp/y.zip"])
+    assert o2["out"] == "/tmp/y.zip"
+
+
+def t_parse_import():
+    o = m.parse_profile_args(["import", "/tmp/bundle.zip"])
+    assert o["verb"] == "import" and o["file"] == "/tmp/bundle.zip" and o["force"] is False
+    o2 = m.parse_profile_args(["import", "/tmp/bundle.zip", "--force"])
+    assert o2["force"] is True
+
+
+def t_parse_export_needs_name():
+    _raises(lambda: m.parse_profile_args(["export"]))
+
+
+def t_parse_import_needs_file():
+    _raises(lambda: m.parse_profile_args(["import"]))
 
 
 if __name__ == "__main__":

@@ -685,6 +685,21 @@ def profile_cmd(rest):
         print(f"  edit {env_path} (fill in SHEET_ID), then: "
               f"racecast profile use {slug}")
         return None
+    if verb == "export":
+        res = profile_export_data(opts["name"],
+                                  include_assets=not opts["no_assets"],
+                                  dest=opts["out"] or os.getcwd())
+        if not res.get("ok"):
+            sys.exit(f"racecast: {res['error']}")
+        print(f"exported profile '{opts['name']}' -> {res['path']}")
+        return None
+    if verb == "import":
+        res = profile_import_data(opts["file"], force=opts["force"])
+        if not res.get("ok"):
+            sys.exit(f"racecast: {res['error']}")
+        print(f"imported profile '{res['name']}' ({res['display']})")
+        print(f"  switch to it: racecast profile use {res['name']}")
+        return None
     if verb == "use":
         try:
             pa.set_active_profile(root, runtime_root, opts["name"])

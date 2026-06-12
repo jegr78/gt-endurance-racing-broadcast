@@ -13,9 +13,10 @@ import shutil
 
 import config as cfg   # sibling in src/scripts (sys.path injected by racecast.py/tests)
 
-PROFILE_VERBS = ("list", "show", "use", "new")
+PROFILE_VERBS = ("list", "show", "use", "new", "export", "import")
 _USAGE = ("usage: racecast profile {list | show [<name>] | use <name> | "
-          "new <name> [--from <source>]}")
+          "new <name> [--from <source>] | export <name> [--no-assets] [--out PATH] | "
+          "import <file> [--force]}")
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
@@ -62,7 +63,8 @@ def parse_profile_args(rest):
     if not rest or rest[0] not in PROFILE_VERBS:
         raise ValueError(_USAGE)
     verb, args = rest[0], rest[1:]
-    out = {"verb": verb, "name": None, "source": "example"}
+    out = {"verb": verb, "name": None, "source": "example",
+           "no_assets": False, "out": None, "file": None, "force": False}
     if verb == "list":
         if args:
             raise ValueError(_USAGE)
@@ -91,6 +93,37 @@ def parse_profile_args(rest):
                 if not src:
                     raise ValueError("--from requires a profile name")
                 out["source"] = src
+            else:
+                raise ValueError(_USAGE)
+    elif verb == "export":
+        if not args:
+            raise ValueError(_USAGE)
+        out["name"] = args[0]
+        toks = list(args[1:])
+        while toks:
+            t = toks.pop(0)
+            if t == "--no-assets":
+                out["no_assets"] = True
+            elif t == "--out":
+                if not toks:
+                    raise ValueError("--out requires a path")
+                out["out"] = toks.pop(0)
+            elif t.startswith("--out="):
+                val = t.split("=", 1)[1]
+                if not val:
+                    raise ValueError("--out requires a path")
+                out["out"] = val
+            else:
+                raise ValueError(_USAGE)
+    elif verb == "import":
+        if not args:
+            raise ValueError(_USAGE)
+        out["file"] = args[0]
+        toks = list(args[1:])
+        while toks:
+            t = toks.pop(0)
+            if t == "--force":
+                out["force"] = True
             else:
                 raise ValueError(_USAGE)
     return out
