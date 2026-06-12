@@ -290,11 +290,46 @@ def t_apps_status_data_shape():
     assert {a["name"] for a in d["apps"]} >= {"obs", "companion", "tailscale", "discord"}
 
 
+def t_apps_status_data_includes_version():
+    # The Control Center renders a version next to each installed app (issue #91):
+    # present apps carry their probed version, absent apps carry None.
+    d = rc.apps_status_data(present=lambda app: app in ("obs", "discord"),
+                            version=lambda app: "31.0.2" if app == "obs" else None)
+    by = {a["name"]: a for a in d["apps"]}
+    assert by["obs"]["version"] == "31.0.2"
+    assert by["discord"]["installed"] is True and by["discord"]["version"] is None
+    # an app that isn't installed is never version-probed
+    assert by["companion"]["installed"] is False and by["companion"]["version"] is None
+
+
 def t_apps_status_data_error():
     def boom(app):
         raise RuntimeError("probe broke")
     d = rc.apps_status_data(present=boom)
     assert d["ok"] is False and "probe broke" in d["error"]
+
+
+def t_apps_status_data_caches_companion_version(tmp):
+    import json as _json
+    cache = os.path.join(tmp, "companion-version.json")
+    orig = rc._companion_version_cache_path
+    rc._companion_version_cache_path = lambda: cache
+    try:
+        # Companion present + version probed -> shown and written to the cache.
+        d1 = rc.apps_status_data(present=lambda a: a == "companion",
+                                 version=lambda a: "4.3.4")
+        comp1 = {a["name"]: a for a in d1["apps"]}["companion"]
+        assert comp1["version"] == "4.3.4"
+        with open(cache, encoding="utf-8") as fh:
+            assert _json.load(fh)["version"] == "4.3.4"
+        # Companion still present but the probe now fails (server stopped) ->
+        # the last-known version is served from the cache.
+        d2 = rc.apps_status_data(present=lambda a: a == "companion",
+                                 version=lambda a: None)
+        comp2 = {a["name"]: a for a in d2["apps"]}["companion"]
+        assert comp2["version"] == "4.3.4"
+    finally:
+        rc._companion_version_cache_path = orig
 
 
 def t_preflight_data_sections():

@@ -2516,13 +2516,60 @@ def tools_status_data(which=None, version=None):
         return {"ok": False, "error": f"tool check failed: {exc}"}
 
 
-def apps_status_data(present=None):
-    """Per-app install presence (filesystem/PATH probe — instant, no subprocess).
-    Returns {"ok": True, "apps":[...]} or {"ok": False, "error": ...}; never raises."""
+def _companion_version_cache_path():
+    """Machine-wide cache of the last-seen Companion version (companion-version.json
+    next to the cookie jar). Companion has no local version file on Linux/host
+    setups, so the running server is the only source — caching it lets the
+    Control Center still show the last-known version while Companion is stopped."""
+    return os.path.join(_runtime_base_dir(), "companion-version.json")
+
+
+def _read_companion_version_cache(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh).get("version") or None
+    except (OSError, ValueError):
+        return None   # absent/corrupt cache -> simply unknown
+
+
+def _write_companion_version_cache(path, version):
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"version": version}, fh)
+    except OSError:
+        return   # cache is best-effort; never break the apps route over it
+
+
+def apps_status_data(present=None, version=None):
+    """Per-app install presence (+ version when present and probeable). The
+    presence probe is instant (filesystem/PATH); the version probe is best-effort
+    per OS (macOS Info.plist; Windows exe metadata/Squirrel folder; Linux
+    dpkg-query/build_info + `tailscale version`; Companion also via its running
+    web server) and may shell out / make one localhost request on Windows/Linux —
+    fine for this on-demand route, not the status poll. The Companion version is
+    cached so it still shows while Companion is stopped. Returns {"ok": True,
+    "apps":[...]} or {"ok": False, "error": ...}; never raises."""
     try:
         import install_apps as ia
         present = present or (lambda app: ia.app_present(app, sys.platform))
-        apps = [{"name": a, "installed": bool(present(a))} for a in ia.APPS]
+        base_version = version or (lambda app: ia.app_version(app, sys.platform))
+
+        def resolve_version(app):
+            v = base_version(app)
+            if app != "companion":
+                return v
+            cache = _companion_version_cache_path()
+            if v:
+                _write_companion_version_cache(cache, v)
+                return v
+            return _read_companion_version_cache(cache)
+
+        apps = []
+        for a in ia.APPS:
+            installed = bool(present(a))
+            apps.append({"name": a, "installed": installed,
+                         "version": resolve_version(a) if installed else None})
         return {"ok": True, "apps": apps}
     except Exception as exc:
         return {"ok": False, "error": f"app check failed: {exc}"}

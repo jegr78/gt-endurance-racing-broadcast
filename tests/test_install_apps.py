@@ -147,6 +147,168 @@ def t_confirmation_parsing():
     assert not m.confirmed("") and not m.confirmed("n") and not m.confirmed("nein")
 
 
+def t_darwin_app_version_reads_short_version():
+    # The .app's Info.plist carries the human version in CFBundleShortVersionString.
+    plists = {"/Applications/OBS.app/Contents/Info.plist":
+              {"CFBundleShortVersionString": "31.0.2", "CFBundleVersion": "31"}}
+    v = m.darwin_app_version("obs", exists=lambda p: p in plists,
+                             read_plist=lambda p: plists[p])
+    assert v == "31.0.2"
+
+
+def t_darwin_app_version_falls_back_to_bundle_version():
+    plists = {"/Applications/Discord.app/Contents/Info.plist":
+              {"CFBundleVersion": "0.0.350"}}   # no short string
+    assert m.darwin_app_version("discord", exists=lambda p: p in plists,
+                                read_plist=lambda p: plists[p]) == "0.0.350"
+
+
+def t_darwin_app_version_absent_bundle_is_none():
+    assert m.darwin_app_version("obs", exists=lambda p: False,
+                                read_plist=lambda p: {}) is None
+
+
+def t_darwin_app_version_unreadable_plist_is_none():
+    def boom(_p):
+        raise OSError("cannot read")
+    assert m.darwin_app_version("obs", exists=lambda p: True, read_plist=boom) is None
+
+
+def t_app_version_dispatch_darwin():
+    plists = {"/Applications/Companion.app/Contents/Info.plist":
+              {"CFBundleShortVersionString": "3.99.0"}}
+    assert m.app_version("companion", "darwin", exists=lambda p: p in plists,
+                         read_plist=lambda p: plists[p]) == "3.99.0"
+
+
+class _Proc:
+    """subprocess.run() result stand-in for CLI version probes."""
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
+
+
+def t_cli_version_first_nonempty_line():
+    # `tailscale version` prints the number on the first line, details below.
+    out = _Proc(0, "1.98.5\n  tailscale commit: abc\n  other: def\n")
+    assert m.cli_version(["tailscale", "version"], run=lambda *a, **k: out) == "1.98.5"
+
+
+def t_cli_version_nonzero_or_error_is_none():
+    assert m.cli_version(["x", "version"], run=lambda *a, **k: _Proc(1, "")) is None
+
+    def boom(*a, **k):
+        raise OSError("not found")
+    assert m.cli_version(["x", "version"], run=boom) is None
+
+
+def t_dpkg_version_reads_stdout():
+    out = _Proc(0, "1:30.2.3+dfsg-1\n")
+    assert m.dpkg_version("obs-studio", run=lambda *a, **k: out) == "1:30.2.3+dfsg-1"
+    assert m.dpkg_version("absent", run=lambda *a, **k: _Proc(1, "")) is None
+
+
+def t_discord_squirrel_version_picks_highest():
+    # Discord's per-user Windows install keeps a version-named app-X.Y.Z folder.
+    entries = ["app-0.0.300", "app-0.0.394", "Update.exe", "packages"]
+    v = m.discord_squirrel_version(r"C:\Users\x\AppData\Local",
+                                   listdir=lambda p: entries)
+    assert v == "0.0.394"
+    assert m.discord_squirrel_version(r"C:\nope",
+                                      listdir=lambda p: (_ for _ in ()).throw(OSError())) is None
+
+
+def t_build_info_version_reads_json():
+    # Discord ships build_info.json (Linux/macOS) with the installed version.
+    blob = '{"releaseChannel":"stable","version":"0.0.75"}'
+    assert m.build_info_version("/usr/share/discord/resources/build_info.json",
+                                read_text=lambda p: blob) == "0.0.75"
+    assert m.build_info_version("/x", read_text=lambda p: "not json") is None
+
+
+def t_app_version_windows_dispatch():
+    env = {"LOCALAPPDATA": r"C:\Users\x\AppData\Local",
+           "ProgramFiles": r"C:\Program Files"}
+    # OBS: read the exe's file-version metadata (never launch it).
+    obs_exe = r"C:\Program Files\obs-studio\bin\64bit\obs64.exe"
+    v = m.app_version("obs", "win32", env=env, exists=lambda p: p == obs_exe,
+                      file_version=lambda p: "32.1.2.0" if p == obs_exe else None)
+    assert v == "32.1.2.0"
+    # Discord: parse the Squirrel folder.
+    assert m.app_version("discord", "win32", env=env,
+                         listdir=lambda p: ["app-0.0.394"]) == "0.0.394"
+    # Tailscale: a real CLI -> `tailscale version`.
+    ts_exe = r"C:\Program Files\Tailscale\tailscale.exe"
+    assert m.app_version("tailscale", "win32", env=env, exists=lambda p: p == ts_exe,
+                         run=lambda *a, **k: _Proc(0, "1.98.5\n")) == "1.98.5"
+
+
+def t_companion_http_version_reads_sentry_release():
+    # The frontend bundle embeds the release as SENTRY_RELEASE={id:"<ver>+..."};
+    # the shell names the (content-hashed) bundle, picking the modern, not -legacy.
+    shell = ('<script src="/assets/index-CLsR4s7-.js"></script>'
+             '<script src="/assets/index-legacy-B9pHCpUc.js"></script>')
+    head = 'var t;e.SENTRY_RELEASE={id:"4.3.4+9244-stable-c14e5e3334"};more'
+    calls = []
+
+    def fetch(url, range_bytes):
+        calls.append((url, range_bytes))
+        return shell if url.endswith("/") else head
+    assert m.companion_http_version("http://127.0.0.1:8000", fetch=fetch) == "4.3.4"
+    # the modern bundle was fetched with a bounded Range (not the legacy one, not full)
+    assert calls[1][0].endswith("/assets/index-CLsR4s7-.js") and calls[1][1] == 65536
+
+
+def t_companion_http_version_missing_script_or_marker():
+    assert m.companion_http_version(
+        "http://h", fetch=lambda u, r: "<html>no bundle</html>") is None
+
+    def fetch(u, r):
+        return ('<script src="/assets/index-x.js"></script>' if u.endswith("/")
+                else "bundle without the marker")
+    assert m.companion_http_version("http://h", fetch=fetch) is None
+
+
+def t_companion_http_version_unreachable_is_none():
+    def boom(u, r):
+        raise OSError("connection refused")
+    assert m.companion_http_version("http://h", fetch=boom) is None
+
+
+def t_app_version_companion_http_fallback_when_local_missing():
+    # Linux has no local Companion version file -> the running server fills it in.
+    shell = '<script src="/assets/index-abc.js"></script>'
+    head = 'e.SENTRY_RELEASE={id:"4.3.4+1-stable-deadbee"}'
+    fetch = lambda u, r: shell if u.endswith("/") else head
+    assert m.app_version("companion", "linux", companion_fetch=fetch) == "4.3.4"
+    # a present local version is NOT overridden by the HTTP probe (darwin plist wins)
+    plists = {"/Applications/Companion.app/Contents/Info.plist":
+              {"CFBundleShortVersionString": "4.3.4"}}
+
+    def boom(_u, _r):
+        raise AssertionError("HTTP probe must not run when the plist has a version")
+    assert m.app_version("companion", "darwin", exists=lambda p: p in plists,
+                         read_plist=lambda p: plists[p], companion_fetch=boom) == "4.3.4"
+
+
+def t_app_version_linux_dispatch():
+    # OBS via dpkg, Discord via build_info.json, Tailscale via the CLI.
+    assert m.app_version("obs", "linux",
+                         run=lambda *a, **k: _Proc(0, "1:30.2.3\n")) == "1:30.2.3"
+    bi = "/usr/share/discord/resources/build_info.json"
+    assert m.app_version("discord", "linux", exists=lambda p: p == bi,
+                         read_text=lambda p: '{"version":"0.0.75"}') == "0.0.75"
+    assert m.app_version("tailscale", "linux",
+                         run=lambda *a, **k: _Proc(0, "1.98.5\n")) == "1.98.5"
+
+
+def t_installed_apps_report_aligns_and_marks_unknown():
+    lines = m.installed_apps_report(["obs", "discord"],
+                                    lambda a: {"obs": "31.0.2"}.get(a))
+    assert lines[0].startswith("  obs") and "31.0.2" in lines[0]
+    # version probe returned None -> a readable placeholder, never an empty column
+    assert "(version unavailable)" in lines[1] and lines[1].lstrip().startswith("discord")
+
+
 def t_app_install_commands_brew_absolute_path():
     assert m.app_install_commands("brew", ["obs"],
                                   brew_path="/opt/homebrew/bin/brew") == \
