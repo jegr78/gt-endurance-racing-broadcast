@@ -75,6 +75,94 @@ def t_export_rejects_missing_env():
         pass
 
 
+def t_round_trip():
+    d = tempfile.mkdtemp(); sources, _ = _profile(d)
+    bundle = pio.export_profile("iro-gtec", sources, include_assets=True, dest=d)
+    e = tempfile.mkdtemp()
+    roots = {"profiles_root": os.path.join(e, "profiles"),
+             "runtime_root": os.path.join(e, "runtime")}
+    info = pio.import_profile(bundle, roots)
+    assert info["name"] == "iro-gtec"
+    assert info["display"] == "IRO GTEC"
+    assert info["includes_assets"] is True
+    pdir = os.path.join(e, "profiles", "iro-gtec")
+    assert os.path.isfile(os.path.join(pdir, "profile.env"))
+    assert os.path.isfile(os.path.join(pdir, "overlay", "hud.css"))
+    assert os.path.isfile(os.path.join(pdir, "logo.png"))
+    assert os.path.isfile(os.path.join(e, "runtime", "iro-gtec", "graphics", "Overlay.png"))
+    assert os.path.isfile(os.path.join(e, "runtime", "iro-gtec", "media", "Intro.mp4"))
+
+
+def _bundle_with(d, members, manifest=None):
+    """Write a hand-built zip with the given {arcname: bytes} members."""
+    path = os.path.join(d, "bad.zip")
+    with zipfile.ZipFile(path, "w") as z:
+        if manifest is not None:
+            z.writestr("manifest.json", json.dumps(manifest))
+        for arc, data in members.items():
+            z.writestr(arc, data)
+    return path
+
+
+def t_import_rejects_wrong_kind():
+    d = tempfile.mkdtemp()
+    bad = _bundle_with(d, {"profile/profile.env": b"x"},
+                       manifest={"kind": "look-backup", "name": "z"})
+    try:
+        pio.import_profile(bad, {"profiles_root": d, "runtime_root": d})
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+
+
+def t_import_rejects_missing_env():
+    d = tempfile.mkdtemp()
+    bad = _bundle_with(d, {"profile/overlay/hud.css": b"x"},
+                       manifest={"kind": "profile-export", "name": "z"})
+    try:
+        pio.import_profile(bad, {"profiles_root": d, "runtime_root": d})
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+
+
+def t_import_rejects_traversal():
+    d = tempfile.mkdtemp()
+    bad = _bundle_with(d, {"profile/profile.env": b"x", "../evil.txt": b"x"},
+                       manifest={"kind": "profile-export", "name": "z"})
+    try:
+        pio.import_profile(bad, {"profiles_root": d, "runtime_root": d})
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+
+
+def t_import_rejects_foreign_top():
+    d = tempfile.mkdtemp()
+    bad = _bundle_with(d, {"profile/profile.env": b"x", "secrets/x": b"x"},
+                       manifest={"kind": "profile-export", "name": "z"})
+    try:
+        pio.import_profile(bad, {"profiles_root": d, "runtime_root": d})
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+
+
+def t_import_exists_needs_force():
+    d = tempfile.mkdtemp(); sources, _ = _profile(d)
+    bundle = pio.export_profile("iro-gtec", sources, True, d)
+    e = tempfile.mkdtemp()
+    roots = {"profiles_root": os.path.join(e, "profiles"),
+             "runtime_root": os.path.join(e, "runtime")}
+    pio.import_profile(bundle, roots)
+    try:
+        pio.import_profile(bundle, roots)
+        raise AssertionError("expected FileExistsError")
+    except FileExistsError:
+        pass
+    pio.import_profile(bundle, roots, force=True)   # replaces, no raise
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):

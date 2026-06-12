@@ -14,6 +14,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 import tempfile
 import zipfile
 
@@ -101,3 +102,83 @@ def export_profile(name, sources, include_assets, dest):
             pass
         raise
     return path
+
+
+def _read_manifest_from(zf):
+    try:
+        return json.loads(zf.read("manifest.json"))
+    except (KeyError, ValueError) as exc:
+        raise ValueError("bundle has no readable manifest.json") from exc
+
+
+def _safe_members(zf, manifest):
+    """Validate every member: manifest.json, or under profile/ or an ASSET_SECTION,
+    with no absolute path and no '..'. profile/profile.env must be present and the
+    manifest kind must match. Returns the member list or raises ValueError."""
+    if manifest.get("kind") != KIND:
+        raise ValueError("not a profile export (wrong or missing kind)")
+    members = zf.namelist()
+    if "profile/profile.env" not in members:
+        raise ValueError("profile export missing profile/profile.env")
+    allowed_top = ("profile",) + ASSET_SECTIONS
+    for name in members:
+        if name == "manifest.json":
+            continue
+        norm = name.replace("\\", "/")
+        if norm.startswith("/") or ".." in norm.split("/"):
+            raise ValueError(f"unsafe path in bundle: {name!r}")
+        if norm.split("/", 1)[0] not in allowed_top:
+            raise ValueError(f"unexpected entry in bundle: {name!r}")
+    return members
+
+
+def _swap_dir(staged, live):
+    """Replace live with staged atomically-ish via an .old backup."""
+    parent = os.path.dirname(live)
+    os.makedirs(parent, exist_ok=True)
+    old = live + ".old"
+    if os.path.exists(old):
+        shutil.rmtree(old, ignore_errors=True)
+    if os.path.exists(live):
+        os.replace(live, old)
+    shutil.move(staged, live)
+    shutil.rmtree(old, ignore_errors=True)
+
+
+def read_manifest(path):
+    """The manifest dict from a bundle zip, or {} when unreadable. (For UI/list.)"""
+    try:
+        with zipfile.ZipFile(path) as zf:
+            return json.loads(zf.read("manifest.json"))
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile):
+        return {}
+
+
+def import_profile(src_zip, roots, force=False):
+    """Create profiles/<slug>/ (+ runtime/<slug>/graphics|media when present) from a
+    bundle. `roots` = {profiles_root, runtime_root}. Returns {name, display,
+    includes_assets}. Validates the whole archive BEFORE touching any live dir;
+    raises ValueError (malformed/unsafe) or FileExistsError (slug taken, no force)."""
+    if not os.path.exists(src_zip):
+        raise ValueError(f"bundle not found: {src_zip}")
+    tmp = tempfile.mkdtemp(prefix="profimport-")
+    try:
+        with zipfile.ZipFile(src_zip) as zf:
+            manifest = _read_manifest_from(zf)
+            _safe_members(zf, manifest)       # raises before any extract
+            zf.extractall(tmp)                # safe: names validated above
+        slug = slugify(manifest.get("name") or "")
+        if not slug:
+            raise ValueError("bundle manifest has no usable profile name")
+        target = os.path.join(roots["profiles_root"], slug)
+        if os.path.exists(target) and not force:
+            raise FileExistsError(f"profile already exists: {slug} (use force to replace)")
+        _swap_dir(os.path.join(tmp, "profile"), target)
+        for sect in ASSET_SECTIONS:
+            staged = os.path.join(tmp, sect)
+            if os.path.isdir(staged):
+                _swap_dir(staged, os.path.join(roots["runtime_root"], slug, sect))
+        return {"name": slug, "display": manifest.get("display") or slug,
+                "includes_assets": bool(manifest.get("includes_assets"))}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
