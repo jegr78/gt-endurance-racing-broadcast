@@ -1937,7 +1937,7 @@ def profile_new_data(name, source="example", create=None):
         root = _env_base(IS_FROZEN, _real_executable(), HERE)
         target = (create or pa.create_profile)(root, name, source or "example")
         # return the directory slug (what `profile use` / the active pointer need),
-        # which may differ from a typed display name like "IRO GTEC" -> "iro-gtec".
+        # which may differ from a typed display name like "Demo League" -> "demo-league".
         return {"ok": True, "name": os.path.basename(target), "path": target}
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
@@ -2496,7 +2496,7 @@ def _init_profile_run():
     if not pcfg.list_profiles(root):
         while True:
             name = ins.prompt_value(
-                "Name your league profile (e.g. IRO GTEC)", sys.stdin.isatty())
+                "Name your league profile (e.g. Demo League)", sys.stdin.isatty())
             slug = pa.slugify(name)
             if pa.valid_profile_name(slug) and slug != "example":
                 break
@@ -2703,7 +2703,7 @@ def _ui_modules():
     return ui_server, ui_jobs, ui_ops
 
 
-def _iro_job_executable(frozen=IS_FROZEN, executable=None, win=None):
+def _rc_job_executable(frozen=IS_FROZEN, executable=None, win=None):
     """Path to the `racecast` binary that runs Control Center jobs. When the
     server is launched by racecast-ui (a sibling binary), jobs must still invoke
     `racecast`, not racecast-ui. Frozen: the sibling racecast/racecast.exe next
@@ -2808,7 +2808,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "overlay_write": overlay_write_data,
         "jobs": jobs_mod.JobManager(
             lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN,
-                                             _iro_job_executable(),
+                                             _rc_job_executable(),
                                              os.path.join(HERE, "racecast.py")),
             env=_frozen_child_env()),
         "log_paths": {"relay": _relay_log_path,

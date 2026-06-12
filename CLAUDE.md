@@ -51,7 +51,7 @@ python3 tests/test_bind.py           # relay auto dual-bind (localhost + Tailsca
 python3 tests/test_companion.py      # Companion start/stop bind helpers
 python3 tests/test_preflight.py      # preflight classifier unit checks
 python3 tests/test_services.py       # daemon helper (PID/spawn/stop)
-python3 tests/test_iro.py            # racecast CLI routing
+python3 tests/test_racecast.py            # racecast CLI routing
 python3 tests/test_config.py         # profile/config resolver (machine .env + profile.env, active pointer)
 python3 tests/test_profile.py        # profile admin (list/show/use/new --from)
 python3 tests/test_overlay.py        # per-league overlay overrides (hud/timer CSS + fonts serving)

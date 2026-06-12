@@ -24,8 +24,8 @@ def t_feed_argv_repo_uses_python():
 
 
 def t_feed_argv_frozen_reinvokes_binary():
-    argv = start.feed_argv(True, os.path.join("apps", "iro"), "ignored", "UC123", "53001")
-    assert argv == [os.path.join("apps", "iro"), "streams", "run-feed", "UC123", "53001"]
+    argv = start.feed_argv(True, os.path.join("apps", "racecast"), "ignored", "UC123", "53001")
+    assert argv == [os.path.join("apps", "racecast"), "streams", "run-feed", "UC123", "53001"]
 
 
 def t_state_dirs_match():

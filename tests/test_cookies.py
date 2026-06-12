@@ -37,7 +37,7 @@ def t_relay_cookie_hint_delegates_to_get_cookies():
     # The relay's export_cookies() reuses failure_hint from the sibling
     # get-cookies.py — same hints in both flows, one source of truth.
     rspec = importlib.util.spec_from_file_location(
-        "iro_feeds", os.path.join(ROOT, "src", "relay", "racecast-feeds.py"))
+        "racecast_feeds", os.path.join(ROOT, "src", "relay", "racecast-feeds.py"))
     relay = importlib.util.module_from_spec(rspec); rspec.loader.exec_module(relay)
     err = "ERROR: Could not copy Chrome cookie database."
     assert relay._cookie_hint(err, "chrome") == m.failure_hint(err, "chrome")

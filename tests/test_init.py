@@ -188,8 +188,8 @@ def t_manual_next_steps():
 
 
 def t_profile_done():
-    assert m.profile_done("iro", "SHEET123") == "profile 'iro' ready"
-    assert m.profile_done("iro", "") is None
+    assert m.profile_done("demo", "SHEET123") == "profile 'demo' ready"
+    assert m.profile_done("demo", "") is None
     assert m.profile_done(None, "SHEET123") is None
     assert m.profile_done(None, "") is None
 

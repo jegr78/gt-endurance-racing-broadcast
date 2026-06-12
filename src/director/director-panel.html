@@ -418,9 +418,9 @@ function toast(msg){
 
 /* remember connection details locally for convenience */
 try{
-  $("#ip").value   = localStorage.getItem("iro_ip")   || "";
-  $("#port").value = localStorage.getItem("iro_port") || "4455";
-  $("#pw").value   = localStorage.getItem("iro_pw")   || "";
+  $("#ip").value   = localStorage.getItem("rc_ip")   || "";
+  $("#port").value = localStorage.getItem("rc_port") || "4455";
+  $("#pw").value   = localStorage.getItem("rc_pw")   || "";
 }catch(e){}
 
 /* ---------- build the busses ---------- */
@@ -732,7 +732,7 @@ async function relayPoll(){
 $("#connectBtn").addEventListener("click", async ()=>{
   const ip=$("#ip").value.trim(), port=$("#port").value.trim()||"4455", pw=$("#pw").value;
   if(!ip){ log("Enter the Producer's Tailscale IP.", "err"); return; }
-  try{ localStorage.setItem("iro_ip",ip); localStorage.setItem("iro_port",port); localStorage.setItem("iro_pw",pw); }catch(e){}
+  try{ localStorage.setItem("rc_ip",ip); localStorage.setItem("rc_port",port); localStorage.setItem("rc_pw",pw); }catch(e){}
   try{
     await obs.connect(`ws://${ip}:${port}`, pw);
     connected = true; obsLed("ok"); setEnabled(true);

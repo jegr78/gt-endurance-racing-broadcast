@@ -28,7 +28,7 @@ def t_parse_list_takes_no_args():
 
 def t_parse_show_optional_name():
     assert m.parse_profile_args(["show"])["name"] is None
-    assert m.parse_profile_args(["show", "iro"])["name"] == "iro"
+    assert m.parse_profile_args(["show", "demo"])["name"] == "demo"
     _raises(lambda: m.parse_profile_args(["show", "a", "b"]))
 
 
@@ -42,8 +42,8 @@ def t_parse_use_requires_one_name():
 def t_parse_new_with_from():
     assert m.parse_profile_args(["new", "erf"]) == {
         "verb": "new", "name": "erf", "source": "example"}
-    assert m.parse_profile_args(["new", "erf", "--from", "iro"])["source"] == "iro"
-    assert m.parse_profile_args(["new", "erf", "--from=iro"])["source"] == "iro"
+    assert m.parse_profile_args(["new", "erf", "--from", "demo"])["source"] == "demo"
+    assert m.parse_profile_args(["new", "erf", "--from=demo"])["source"] == "demo"
     _raises(lambda: m.parse_profile_args(["new"]))
     _raises(lambda: m.parse_profile_args(["new", "erf", "--bogus"]))
     _raises(lambda: m.parse_profile_args(["new", "erf", "--from"]))    # missing value
@@ -78,7 +78,7 @@ def t_valid_profile_name():
 
 
 def t_slugify_makes_directory_safe_slug():
-    assert m.slugify("IRO GTEC") == "iro-gtec"
+    assert m.slugify("Demo League") == "demo-league"
     assert m.slugify("erf") == "erf"
     assert m.slugify("gt-2026_a") == "gt-2026_a"        # already-valid slugs unchanged
     assert m.slugify("  Hello   World!  ") == "hello-world"
@@ -111,22 +111,22 @@ def t_create_profile_copies_example():
 def t_create_profile_from_other_profile():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot_with_example(td)
-        m.create_profile(root, "iro")
-        with open(os.path.join(root, "profiles", "iro", "profile.env"),
+        m.create_profile(root, "demo")
+        with open(os.path.join(root, "profiles", "demo", "profile.env"),
                   "w", encoding="utf-8") as fh:
-            fh.write("NAME=IRO\nSHEET_ID=abc\n")
-        m.create_profile(root, "erf", source="iro")
+            fh.write("NAME=Demo\nSHEET_ID=abc\n")
+        m.create_profile(root, "erf", source="demo")
         assert m.cfg.parse_profile(root, "erf")["SHEET_ID"] == "abc"
 
 
 def t_create_profile_accepts_spaces_via_slug_and_sets_display_name():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot_with_example(td)
-        target = m.create_profile(root, "IRO GTEC")
-        assert target == os.path.join(root, "profiles", "iro-gtec")   # slugged dir
-        assert m.cfg.list_profiles(root) == ["iro-gtec"]
+        target = m.create_profile(root, "Demo League")
+        assert target == os.path.join(root, "profiles", "demo-league")   # slugged dir
+        assert m.cfg.list_profiles(root) == ["demo-league"]
         # the typed name is preserved as the league display NAME, not the slug
-        assert m.cfg.parse_profile(root, "iro-gtec")["NAME"] == "IRO GTEC"
+        assert m.cfg.parse_profile(root, "demo-league")["NAME"] == "Demo League"
 
 
 def t_create_profile_rejects_unsluggable_existing_and_missing_source():
@@ -157,9 +157,9 @@ def t_set_active_profile_unknown_raises():
 
 
 def t_format_profile_list_marks_active():
-    out = m.format_profile_list(["erf", "iro"], "iro")
+    out = m.format_profile_list(["erf", "demo"], "demo")
     assert "  erf" in out
-    assert "* iro" in out
+    assert "* demo" in out
 
 
 def t_format_profile_list_empty():
@@ -178,11 +178,11 @@ def t_mask_hides_secret_body():
 
 def t_format_profile_show_masks_push_url():
     cfg_obj = m.cfg.ResolvedConfig(
-        profile="iro", name="IRO GTEC", sheet_id="SHEETID123",
+        profile="demo", name="Demo League", sheet_id="SHEETID123",
         sheet_push_url="https://x/exec?key=TOPSECRET",
-        profile_dir="/p/profiles/iro", runtime_dir="/p/runtime/iro")
-    out = m.format_profile_show(cfg_obj, active="iro")
-    assert "IRO GTEC" in out
+        profile_dir="/p/profiles/demo", runtime_dir="/p/runtime/demo")
+    out = m.format_profile_show(cfg_obj, active="demo")
+    assert "Demo League" in out
     assert "SHEETID123" in out          # sheet id shown (link-shared, not a secret)
     assert "TOPSECRET" not in out       # push-url secret masked
     assert "(active)" in out

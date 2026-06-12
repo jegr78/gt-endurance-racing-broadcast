@@ -98,8 +98,8 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
                                                     "done": True,
                                                     "skip_reason": None}),
             "profile_logo": profile_logo or (lambda: None),
-            "profiles": lambda: {"ok": True, "active": "iro",
-                                 "profiles": [{"name": "iro"}, {"name": "erf"}]},
+            "profiles": lambda: {"ok": True, "active": "demo",
+                                 "profiles": [{"name": "demo"}, {"name": "erf"}]},
             "profile_use": lambda name: {"ok": True, "active": name},
             "profile_new": lambda name, source=None: {"ok": True, "name": name,
                                                       "from": source},
@@ -109,7 +109,7 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
                                                   "path": "/x/profile.env",
                                                   "_got": entries},
             "overlay_read": lambda page: {"ok": True, "page": page,
-                                          "active": "iro", "css": "",
+                                          "active": "demo", "css": "",
                                           "path": "/x/overlay/%s.css" % page},
             "overlay_write": lambda page, content: {"ok": True,
                                                     "path": "/x/overlay/%s.css" % page}}
@@ -794,14 +794,14 @@ def t_init_step_route_reports_error_as_400():
 def t_profiles_get_route_wraps_provider():
     seen = []
     ctx = _ctx()
-    ctx["profiles"] = lambda: seen.append(True) or {"ok": True, "active": "iro",
-                                                    "profiles": [{"name": "iro"}]}
+    ctx["profiles"] = lambda: seen.append(True) or {"ok": True, "active": "demo",
+                                                    "profiles": [{"name": "demo"}]}
     httpd, port = _serve(ctx)
     try:
         code, body = _get(port, "/api/profiles")
         data = json.loads(body)
         assert code == 200 and data["ok"] is True
-        assert data["active"] == "iro" and data["profiles"][0]["name"] == "iro"
+        assert data["active"] == "demo" and data["profiles"][0]["name"] == "demo"
         assert seen == [True]
     finally:
         httpd.shutdown()
@@ -830,11 +830,11 @@ def t_profile_new_post_passes_name_and_source():
     httpd, port = _serve(ctx)
     try:
         code, body = _post_json(port, "/api/profile/new",
-                                {"name": "gt3", "from": "iro"})
+                                {"name": "gt3", "from": "demo"})
         data = json.loads(body)
         assert code == 200 and data["ok"] is True
-        assert data["name"] == "gt3" and data["from"] == "iro"
-        assert seen == [("gt3", "iro")]
+        assert data["name"] == "gt3" and data["from"] == "demo"
+        assert seen == [("gt3", "demo")]
     finally:
         httpd.shutdown()
 
@@ -875,7 +875,7 @@ def t_overlay_get_route_wraps_provider():
     seen = []
     ctx = _ctx()
     ctx["overlay_read"] = lambda page: seen.append(page) or {
-        "ok": True, "page": page, "active": "iro",
+        "ok": True, "page": page, "active": "demo",
         "css": "#x{}", "path": "/x/overlay/%s.css" % page}
     httpd, port = _serve(ctx)
     try:
@@ -892,7 +892,7 @@ def t_overlay_get_route_defaults_to_hud():
     seen = []
     ctx = _ctx()
     ctx["overlay_read"] = lambda page: seen.append(page) or {
-        "ok": True, "page": page, "active": "iro", "css": "", "path": "/x"}
+        "ok": True, "page": page, "active": "demo", "css": "", "path": "/x"}
     httpd, port = _serve(ctx)
     try:
         code, _b = _get(port, "/api/overlay")

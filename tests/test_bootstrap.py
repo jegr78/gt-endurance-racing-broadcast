@@ -16,7 +16,7 @@ import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "src"))
-import racecast as iro
+import racecast as rc
 import racecast_ui
 
 
@@ -29,25 +29,25 @@ _BOOTSTRAP_STEPS = ["_force_utf8_io", "ensure_env_file", "ensure_example_profile
 
 def _stub_bootstrap_helpers(monkey, calls):
     """Replace the heavy startup helpers on the racecast module with recorders."""
-    monkey["_real_executable"] = iro._real_executable
-    iro._real_executable = lambda: "/tmp/racecast"
-    monkey["_app_home"] = iro._app_home
-    iro._app_home = lambda exe: "/tmp"
+    monkey["_real_executable"] = rc._real_executable
+    rc._real_executable = lambda: "/tmp/racecast"
+    monkey["_app_home"] = rc._app_home
+    rc._app_home = lambda exe: "/tmp"
     for name in _BOOTSTRAP_STEPS:
-        monkey[name] = getattr(iro, name)
-        setattr(iro, name, (lambda n: lambda *a, **k: calls.append(n))(name))
+        monkey[name] = getattr(rc, name)
+        setattr(rc, name, (lambda n: lambda *a, **k: calls.append(n))(name))
 
 
 def _restore(monkey):
     for name, fn in monkey.items():
-        setattr(iro, name, fn)
+        setattr(rc, name, fn)
 
 
 def t_bootstrap_runs_every_startup_step_in_order():
     monkey, calls = {}, []
     _stub_bootstrap_helpers(monkey, calls)
     try:
-        rest = iro._bootstrap(["status"])
+        rest = rc._bootstrap(["status"])
     finally:
         _restore(monkey)
     assert calls == _BOOTSTRAP_STEPS, f"missing/disordered startup steps: {calls}"
@@ -60,7 +60,7 @@ def t_bootstrap_injects_profile_env_after_path_setup():
     monkey, calls = {}, []
     _stub_bootstrap_helpers(monkey, calls)
     try:
-        iro._bootstrap([])
+        rc._bootstrap([])
     finally:
         _restore(monkey)
     assert "_apply_active_profile_env" in calls
@@ -72,9 +72,9 @@ def t_bootstrap_consumes_profile_flag():
     _stub_bootstrap_helpers(monkey, calls)
     prev = os.environ.pop("RACECAST_PROFILE", None)
     try:
-        rest = iro._bootstrap(["--profile", "iro-gtec", "status"])
+        rest = rc._bootstrap(["--profile", "demo-league", "status"])
         assert rest == ["status"]                       # flag stripped
-        assert os.environ["RACECAST_PROFILE"] == "iro-gtec"
+        assert os.environ["RACECAST_PROFILE"] == "demo-league"
     finally:
         _restore(monkey)
         if prev is None:
@@ -87,7 +87,7 @@ def t_bootstrap_rejects_profile_without_value():
     monkey, calls = {}, []
     _stub_bootstrap_helpers(monkey, calls)
     try:
-        iro._bootstrap(["--profile"])
+        rc._bootstrap(["--profile"])
     except ValueError:
         return
     finally:
@@ -97,28 +97,28 @@ def t_bootstrap_rejects_profile_without_value():
 
 def t_cli_main_delegates_to_bootstrap():
     # racecast.main must route startup through _bootstrap (not its own copy).
-    real_boot, real_route = iro._bootstrap, iro.route
+    real_boot, real_route = rc._bootstrap, rc.route
     seen = {}
-    iro._bootstrap = lambda argv: seen.setdefault("argv", argv) or []
-    iro.route = lambda argv: {"kind": "help"}            # help -> prints + returns
+    rc._bootstrap = lambda argv: seen.setdefault("argv", argv) or []
+    rc.route = lambda argv: {"kind": "help"}            # help -> prints + returns
     try:
-        iro.main(["status"])
+        rc.main(["status"])
     finally:
-        iro._bootstrap, iro.route = real_boot, real_route
+        rc._bootstrap, rc.route = real_boot, real_route
     assert seen.get("argv") == ["status"]
 
 
 def t_ui_launcher_delegates_to_bootstrap():
     # racecast_ui.main must run the SAME _bootstrap, then serve. This is the lock
     # that keeps the windowed launcher from drifting from the CLI again.
-    real_boot, real_run = iro._bootstrap, iro.run_ui
+    real_boot, real_run = rc._bootstrap, rc.run_ui
     seen = {}
-    iro._bootstrap = lambda argv: seen.setdefault("boot", argv) or ["--no-browser"]
-    iro.run_ui = lambda rest, **kw: seen.setdefault("run", rest)
+    rc._bootstrap = lambda argv: seen.setdefault("boot", argv) or ["--no-browser"]
+    rc.run_ui = lambda rest, **kw: seen.setdefault("run", rest)
     try:
         racecast_ui.main(["--no-browser"])
     finally:
-        iro._bootstrap, iro.run_ui = real_boot, real_run
+        rc._bootstrap, rc.run_ui = real_boot, real_run
     assert seen.get("boot") == ["--no-browser"]          # bootstrap ran
     assert seen.get("run") == ["--no-browser"]           # then the server
 

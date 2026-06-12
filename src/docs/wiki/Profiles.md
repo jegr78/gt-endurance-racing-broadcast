@@ -68,8 +68,8 @@ racecast profile new <name> --from example     # copy a profile dir to start a n
 
 `racecast profile new <name>` copies `profiles/example/` (or another profile via
 `--from <src>`) into `profiles/<name>/`. `--from` defaults to `example`. The name you
-type may contain spaces and capitals — e.g. `racecast profile new "IRO GTEC"`: it is
-slugged into the directory name (`profiles/iro-gtec/`) and kept verbatim as the league
+type may contain spaces and capitals — e.g. `racecast profile new "Demo League"`: it is
+slugged into the directory name (`profiles/demo-league/`) and kept verbatim as the league
 display `NAME` in the new `profile.env`. Use that slug for `profile use` / `--profile`.
 
 A global **`--profile <name>`** flag runs a single command against a non-active league
