@@ -16,12 +16,16 @@ DEFAULT_NAME = "Crew"   # fallback when no/blank name is supplied
 
 def _clean_text(value):
     """Strip control characters (keep normal spaces/tabs as one space), collapse
-    nothing else. Returns a str; caller enforces non-empty / length caps."""
+    nothing else. Returns a str; caller enforces non-empty / length caps. Chat
+    messages are single-line (rendered in one row), so every line/paragraph
+    separator is folded to a space — ASCII CR/LF/TAB plus the Unicode line
+    breaks NEL/LS/PS (U+0085/U+2028/U+2029)."""
     if not isinstance(value, str):
         return ""
+    line_breaks = ("\t", "\n", "\r", "\x85", "\u2028", "\u2029")
     out = []
     for ch in value:
-        if ch in ("\t", "\n", "\r"):
+        if ch in line_breaks:
             out.append(" ")
         elif ord(ch) < 0x20 or ord(ch) == 0x7F:
             continue        # drop other control chars

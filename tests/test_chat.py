@@ -40,6 +40,13 @@ def t_sanitize_message_default_name():
     assert msg["user"] == ca.DEFAULT_NAME
 
 
+def t_sanitize_message_folds_unicode_line_separators():
+    # Chat lines are single-row: NEL/LS/PS must collapse to a space, not break.
+    msg = ca.sanitize_message({"ts": 1.0, "user": "a",
+                               "text": "one two three\x85four"})
+    assert msg["text"] == "one two three four"
+
+
 def t_sanitize_message_rejects_empty_text():
     for bad in ({"ts": 1.0, "user": "a", "text": "   "},
                 {"ts": 1.0, "user": "a"},
@@ -121,7 +128,7 @@ def t_write_is_atomic_no_partial_temp_left():
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "chat.json")
         ca.write_messages(path, [{"ts": 1.0, "user": "A", "text": "x"}])
-        assert os.listdir(d) == ["chat.json"]   # no leftover *.tmp
+        assert set(os.listdir(d)) == {"chat.json"}   # no leftover *.tmp
 
 
 if __name__ == "__main__":
