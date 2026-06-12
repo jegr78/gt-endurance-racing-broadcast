@@ -156,7 +156,7 @@ racecast media       # download Intro/Outro clips
 the zip file. Each profile row has an **Export** button with an **assets** checkbox
 (checked by default). Re-importing a name that already exists prompts "Replace it?".
 
-<!-- screenshot: Control Center Profile view — Export button, Include-assets checkbox, Import profile button — regenerate after this UI lands -->
+![Control Center — Profile view: Import profile button, per-profile Export with an Include-assets checkbox](images/cc-profile.png)
 
 ## The Control Center Profile view
 
