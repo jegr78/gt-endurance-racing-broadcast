@@ -205,6 +205,194 @@ def t_chatstore_reload_corrupt_keeps_current_buffer():
         assert cs.data()["messages"][0]["text"] == "live"   # buffer untouched
 
 
+# ---------- endpoint routing (real server, ephemeral port) ----------
+
+def _chat_client(chat_store, setup_ctl=None):
+    """Stand up make_handler over a real ThreadingHTTPServer (127.0.0.1, ephemeral port).
+    Returns (server, get, post) — caller must call srv.shutdown() in a finally block.
+    Mirrors the fixture pattern from tests/test_setup.py exactly.
+    """
+    import json as _json
+    import threading as _t
+    import urllib.error
+    from urllib.request import Request, urlopen
+
+    class _StubFeed:
+        def __init__(self, idx):
+            self.idx = idx
+
+    class _StubSource:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def get_rows(self):
+            return list(self._rows)
+
+        def health(self):
+            return {"count": len(self._rows), "last_ok_age_s": 0.0, "last_error": None}
+
+    class _StubRelay:
+        def __init__(self):
+            self.source = _StubSource([
+                ("https://www.youtube.com/watch?v=a", "Alpha", 2),
+                ("UCLA_DiR1FfKNvjuUpBHmylQ", "Beta", 3),
+            ])
+            self.feeds = {"A": _StubFeed(0), "B": _StubFeed(1)}
+
+        def status(self):
+            return {"schedule_len": 2, "feeds": {}}
+
+    handler = m.make_handler(_StubRelay(), chat_store=chat_store, setup_ctl=setup_ctl)
+    srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    _t.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+
+    def _read(req):
+        try:
+            with urlopen(req, timeout=5) as r:
+                return _json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return _json.loads(e.read())
+
+    def get(path):
+        return _read(base + path)
+
+    def post(path, body):
+        return _read(Request(
+            base + path,
+            data=_json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        ))
+
+    return srv, get, post
+
+
+def t_chat_endpoint_send_and_data():
+    """POST /chat/send returns {ok,message}; message appears in GET /chat/data."""
+    with tempfile.TemporaryDirectory() as d:
+        cs = m.ChatStore(os.path.join(d, "chat.json"))
+        srv, get, post = _chat_client(cs)
+        try:
+            r = post("/chat/send", {"user": "Jens", "text": "hello world"})
+            assert r.get("ok") is True, r
+            msg = r.get("message", {})
+            assert msg.get("user") == "Jens"
+            assert msg.get("text") == "hello world"
+            assert isinstance(msg.get("ts"), float)
+
+            d_resp = get("/chat/data")
+            assert "messages" in d_resp, d_resp
+            messages = d_resp["messages"]
+            assert len(messages) == 1
+            assert messages[0]["user"] == "Jens"
+            assert messages[0]["text"] == "hello world"
+        finally:
+            srv.shutdown()
+
+
+def t_chat_endpoint_data_returns_all_messages():
+    """GET /chat/data returns {"messages": [...]} with all stored messages."""
+    with tempfile.TemporaryDirectory() as d:
+        cs = m.ChatStore(os.path.join(d, "chat.json"))
+        srv, get, post = _chat_client(cs)
+        try:
+            post("/chat/send", {"user": "A", "text": "first"})
+            post("/chat/send", {"user": "B", "text": "second"})
+            d_resp = get("/chat/data")
+            assert "messages" in d_resp, d_resp
+            texts = [m_["text"] for m_ in d_resp["messages"]]
+            assert texts == ["first", "second"], texts
+        finally:
+            srv.shutdown()
+
+
+def t_chat_endpoint_reload_adopts_external_write():
+    """GET /chat/reload returns {ok, count} after chat_admin.write_messages to the same file."""
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "chat.json")
+        cs = m.ChatStore(path)
+        # Seed an initial message via the store.
+        cs.add(user="Old", text="old message", now=1.0)
+
+        srv, get, post = _chat_client(cs)
+        try:
+            # Externally overwrite the file with a new message.
+            ca.write_messages(path, [{"ts": 99.0, "user": "External", "text": "new message"}])
+
+            r = get("/chat/reload")
+            assert r.get("ok") is True, r
+            assert r.get("count") == 1, r
+
+            # The in-memory store should now reflect the externally-written message.
+            d_resp = get("/chat/data")
+            messages = d_resp["messages"]
+            assert len(messages) == 1
+            assert messages[0]["text"] == "new message"
+            assert messages[0]["user"] == "External"
+        finally:
+            srv.shutdown()
+
+
+def t_chat_endpoint_send_works_without_setup_ctl():
+    """POST /chat/send works even when make_handler is built with setup_ctl=None.
+    Critical regression guard: the chat POST branch must sit ABOVE the
+    'if not setup_ctl' guard in do_POST.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        cs = m.ChatStore(os.path.join(d, "chat.json"))
+        # Explicitly pass setup_ctl=None — this is the regression scenario.
+        srv, get, post = _chat_client(cs, setup_ctl=None)
+        try:
+            r = post("/chat/send", {"user": "Crew", "text": "no setup ctl"})
+            assert r.get("ok") is True, r
+            assert r["message"]["text"] == "no setup ctl"
+        finally:
+            srv.shutdown()
+
+
+def t_chat_endpoint_no_destructive_clear():
+    """GET /chat/clear must NOT clear messages (it returns 404, messages survive).
+    Also: POST /chat/clear and POST /chat/import return 404.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        cs = m.ChatStore(os.path.join(d, "chat.json"))
+        srv, get, post = _chat_client(cs)
+        try:
+            # Seed a message.
+            post("/chat/send", {"user": "A", "text": "should survive"})
+
+            # GET /chat/clear: must 404, not clear.
+            r = get("/chat/clear")
+            assert "error" in r, r
+
+            # Messages must still be there.
+            d_resp = get("/chat/data")
+            assert len(d_resp["messages"]) == 1
+            assert d_resp["messages"][0]["text"] == "should survive"
+
+            # POST /chat/clear and POST /chat/import must 404.
+            r_clear = post("/chat/clear", {})
+            assert "error" in r_clear, r_clear
+
+            r_import = post("/chat/import", {"messages": []})
+            assert "error" in r_import, r_import
+        finally:
+            srv.shutdown()
+
+
+def t_chat_endpoint_send_is_post_only():
+    """GET /chat/send must return 404 (send is POST-only)."""
+    with tempfile.TemporaryDirectory() as d:
+        cs = m.ChatStore(os.path.join(d, "chat.json"))
+        srv, get, _ = _chat_client(cs)
+        try:
+            r = get("/chat/send")
+            assert "error" in r, r
+        finally:
+            srv.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
