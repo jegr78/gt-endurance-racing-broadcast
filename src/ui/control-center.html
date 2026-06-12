@@ -507,14 +507,20 @@
         <div class="viewhead"><h2>Profile</h2>
           <span class="sub" id="profile-active-sub">…</span>
           <span class="spacer"></span>
+          <button onclick="document.getElementById('profile-import-file').click()">
+            <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Import profile</button>
+          <input type="file" id="profile-import-file" accept=".zip" hidden
+                 onchange="importProfile(this)">
           <button onclick="loadProfiles(true)">
             <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button></div>
+        <div class="enverr" id="profile-err" hidden></div>
 
         <section>
           <div class="row"><span class="name">Active profile</span>
             <select id="profile-select" aria-label="Active league profile" onchange="useProfile(this.value)"></select>
             <span class="dim grow" id="profile-hint"></span></div>
           <div class="enverr" id="profile-switch-note" hidden></div>
+          <div id="profile-list"></div>
         </section>
 
         <section>
@@ -1876,6 +1882,30 @@ async function loadProfiles(force) {
   const nameEl = $('active-profile-name');
   if (nameEl) nameEl.textContent = label;
   setHeaderLogo(d.active, d.logo);
+  // per-profile export rows
+  const plist = $('profile-list');
+  plist.textContent = '';
+  profiles.forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const lbl = document.createElement('span');
+    lbl.className = 'name';
+    lbl.textContent = p.display || p.name;
+    const slug = document.createElement('span');
+    slug.className = 'dim grow';
+    slug.textContent = p.name;
+    const exAssets = document.createElement('input');
+    exAssets.type = 'checkbox'; exAssets.checked = true;
+    exAssets.id = 'exassets-' + p.name;
+    exAssets.title = 'Include graphics & media';
+    const exLbl = document.createElement('label');
+    exLbl.htmlFor = exAssets.id; exLbl.textContent = 'assets';
+    const exBtn = document.createElement('button');
+    exBtn.textContent = 'Export';
+    exBtn.onclick = () => exportProfile(p.name, exAssets.checked);
+    row.append(lbl, slug, exAssets, exLbl, exBtn);
+    plist.appendChild(row);
+  });
   loadProfileEnv();                       // editor reflects the now-active profile
   loadOverlay();                          // overlay-CSS editor for the active profile
   loadBackups();                          // Looks card for the active profile
@@ -1924,6 +1954,44 @@ async function newProfile() {
   const hint = $('profile-hint');
   hint.hidden = false;
   hint.textContent = "created '" + name + "' — select it above to activate";
+}
+
+function exportProfile(name, assets) {
+  // A plain navigation triggers the browser's download of the streamed zip.
+  const q = 'name=' + encodeURIComponent(name) + (assets ? '' : '&assets=0');
+  window.location = '/api/profile/export?' + q;
+}
+
+async function importProfile(input, force) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  $('profile-err').hidden = true;
+  let d;
+  try {
+    const url = '/api/profile/import' + (force ? '?force=1' : '');
+    d = await (await fetch(url, {method: 'POST', body: file})).json();
+  } catch (e) {
+    showProfileErr('profile-err', 'Control Center not reachable.');
+    input.value = ''; return;
+  }
+  if (!d.ok) {
+    // Name collision -> offer to replace with force=1 (re-uses the same file).
+    if (/exists/i.test(d.error || '') && !force) {
+      if (confirm('A profile with that name exists. Replace it?')) {
+        return importProfile(input, true);
+      }
+      input.value = ''; return;
+    }
+    showProfileErr('profile-err', d.error || 'could not import profile');
+    input.value = ''; return;
+  }
+  input.value = '';
+  if (confirm('Imported "' + d.display + '". Switch to it now?')) {
+    await fetch('/api/profile/use', {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: d.name})});
+  }
+  loadProfiles();
 }
 
 // After a profile switch, the relay/Companion still serve the previous league
