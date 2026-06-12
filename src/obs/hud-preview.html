@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GT Endurance Racing HUD — Preview</title>
+<style>
+  /* HUD design preview. Composites, at the real OBS 1920x1080 canvas size, the
+     three layers an OBS scene stacks so a producer can judge the overlay against
+     real game footage while editing the per-league CSS in the Control Center:
+       1. a Gran Turismo lobby/replay screenshot  (/hud/preview/bg)
+       2. the Overlay.png broadcast frame graphic (/hud/preview/frame)
+       3. the live HUD text + override CSS         (/hud, in an iframe)
+     The whole stage scales uniformly to fit the window. Missing bg/frame degrade
+     gracefully (placeholder backdrop / no frame); the HUD layer carries the CSS
+     you are designing, with live sheet data. */
+  :root { --s: 1; }
+  html, body { margin: 0; height: 100%; background: #06080b; overflow: hidden;
+    font-family: "Saira Condensed", system-ui, sans-serif; color: #cdd6e0; }
+  .bar { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 10;
+    display: flex; align-items: center; gap: 14px; padding: 0 14px;
+    background: rgba(10,13,18,.82); border-bottom: 1px solid #1b222c;
+    font-size: 12px; letter-spacing: .04em; backdrop-filter: blur(4px); }
+  .bar b { font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #ffb000; }
+  .bar .dim { color: #6b7686; }
+  .bar .grow { flex: 1; }
+  .bar button { font: inherit; cursor: pointer; color: #cdd6e0; background: #141921;
+    border: 1px solid #2a3340; border-radius: 8px; padding: 6px 12px; letter-spacing: .08em; }
+  .bar button:hover { border-color: #3aa0ff; }
+
+  .viewport { position: fixed; inset: 40px 0 0 0; overflow: hidden; }
+  /* Fixed broadcast canvas; centered and uniformly scaled to the viewport via
+     --s (set by JS). translate(-50%,-50%) centers the 1920x1080 layout box, then
+     scale shrinks it about its center — reliable for an oversized element. */
+  .stage { position: absolute; top: 50%; left: 50%; width: 1920px; height: 1080px;
+    transform: translate(-50%, -50%) scale(var(--s)); transform-origin: center center;
+    box-shadow: 0 0 0 1px #1b222c, 0 30px 90px rgba(0,0,0,.6); background: #000; }
+  .stage > * { position: absolute; inset: 0; width: 1920px; height: 1080px; border: 0; }
+
+  /* Layer 1: placeholder backdrop, always present, behind the screenshot. */
+  .placeholder { display: grid; place-items: center; text-align: center;
+    background:
+      radial-gradient(1200px 600px at 50% 18%, #16202b 0%, transparent 60%),
+      repeating-linear-gradient(45deg, #0c1117 0 28px, #0a0e13 28px 56px); }
+  .placeholder div { max-width: 60%; }
+  .placeholder .h { font-size: 40px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: #8895a6; }
+  .placeholder .p { margin-top: 14px; font-size: 22px; line-height: 1.5; color: #5c6776;
+    font-family: ui-monospace, monospace; letter-spacing: 0; }
+  .placeholder code { color: #ffb000; }
+
+  /* Layer 1b/2: screenshot + frame; hidden until they load (onerror keeps hidden). */
+  .shot { object-fit: cover; opacity: 0; transition: opacity .2s; }
+  .shot.ok { opacity: 1; }
+  .frame { object-fit: fill; opacity: 0; }
+  .frame.ok { opacity: 1; }
+  /* Layer 3: the real HUD page (transparent), with live data + override CSS. */
+  .hud { background: transparent; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <b>HUD Preview</b>
+    <span class="dim">live sheet data + your override CSS, over a GT backdrop</span>
+    <span class="grow"></span>
+    <label class="dim"><input type="checkbox" id="frameToggle" checked> frame</label>
+    <button id="reload" title="Reload all three layers">Reload ↻</button>
+  </div>
+  <div class="viewport">
+    <div class="stage">
+      <div class="placeholder"><div>
+        <div class="h">No backdrop screenshot</div>
+        <div class="p">Drop a Gran Turismo lobby/replay screenshot at<br>
+          <code>profiles/&lt;active&gt;/overlay/preview-bg.jpg</code><br>to judge the overlay against real footage.</div>
+      </div></div>
+      <img class="shot" id="shot" alt="">
+      <img class="frame" id="frame" alt="">
+      <iframe class="hud" id="hud" title="HUD overlay"></iframe>
+    </div>
+  </div>
+
+<script>
+  // Uniform fit: scale the fixed 1920x1080 stage to the viewport (never upscale
+  // past 1:1 so a large monitor shows the true pixel size).
+  function fit() {
+    const vp = document.querySelector('.viewport').getBoundingClientRect();
+    const s = Math.min(vp.width / 1920, vp.height / 1080, 1);
+    document.documentElement.style.setProperty('--s', s.toFixed(4));
+  }
+  addEventListener('resize', fit);
+
+  // Cache-bust each layer on (re)load so a freshly saved CSS / swapped screenshot
+  // / re-downloaded Overlay.png shows without a manual browser cache clear.
+  function load() {
+    const v = '?t=' + Date.now();
+    const shot = document.getElementById('shot');
+    shot.classList.remove('ok');
+    shot.onload = () => shot.classList.add('ok');     // 404 -> stays hidden -> placeholder shows
+    shot.onerror = () => shot.classList.remove('ok');
+    shot.src = '/hud/preview/bg' + v;
+    const frame = document.getElementById('frame');
+    const on = document.getElementById('frameToggle').checked;
+    frame.classList.remove('ok');
+    frame.onload = () => { if (document.getElementById('frameToggle').checked) frame.classList.add('ok'); };
+    frame.onerror = () => frame.classList.remove('ok');
+    frame.src = on ? ('/hud/preview/frame' + v) : '';
+    document.getElementById('hud').src = '/hud' + v;
+    fit();
+  }
+  document.getElementById('reload').addEventListener('click', load);
+  document.getElementById('frameToggle').addEventListener('change', () => {
+    const frame = document.getElementById('frame');
+    if (document.getElementById('frameToggle').checked) load();
+    else frame.classList.remove('ok');
+  });
+  load();
+</script>
+</body>
+</html>

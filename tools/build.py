@@ -42,6 +42,7 @@ def main():
         cp(f"docs/{f}", f)
     cp("director/director-panel.html", "director-panel.html")
     cp("obs/hud.html", "hud.html")
+    cp("obs/hud-preview.html", "hud-preview.html")
     cp("obs/timer.html", "timer.html")
     cp("setup-assets.py", "setup-assets.py")
     cp("racecast.py", "racecast.py")
@@ -144,6 +145,7 @@ def main():
         "no .sh/.bat shipped": not any(fn.endswith((".sh", ".bat")) for _, _, fs in os.walk(PKG) for fn in fs),
         "preflight shipped": os.path.isfile(os.path.join(PKG, "scripts", "preflight.py")),
         "timer html shipped": os.path.isfile(os.path.join(PKG, "timer.html")),
+        "hud preview shipped": os.path.isfile(os.path.join(PKG, "hud-preview.html")),
         ".env.example shipped": os.path.isfile(os.path.join(PKG, ".env.example")),
         "example profile shipped": os.path.isfile(
             os.path.join(PKG, "profiles", "example", "profile.env")),
