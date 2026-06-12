@@ -309,6 +309,29 @@ def t_apps_status_data_error():
     assert d["ok"] is False and "probe broke" in d["error"]
 
 
+def t_apps_status_data_caches_companion_version(tmp):
+    import json as _json
+    cache = os.path.join(tmp, "companion-version.json")
+    orig = rc._companion_version_cache_path
+    rc._companion_version_cache_path = lambda: cache
+    try:
+        # Companion present + version probed -> shown and written to the cache.
+        d1 = rc.apps_status_data(present=lambda a: a == "companion",
+                                 version=lambda a: "4.3.4")
+        comp1 = {a["name"]: a for a in d1["apps"]}["companion"]
+        assert comp1["version"] == "4.3.4"
+        with open(cache, encoding="utf-8") as fh:
+            assert _json.load(fh)["version"] == "4.3.4"
+        # Companion still present but the probe now fails (server stopped) ->
+        # the last-known version is served from the cache.
+        d2 = rc.apps_status_data(present=lambda a: a == "companion",
+                                 version=lambda a: None)
+        comp2 = {a["name"]: a for a in d2["apps"]}["companion"]
+        assert comp2["version"] == "4.3.4"
+    finally:
+        rc._companion_version_cache_path = orig
+
+
 def t_preflight_data_sections():
     class R:
         def __init__(self, level, name, detail):
