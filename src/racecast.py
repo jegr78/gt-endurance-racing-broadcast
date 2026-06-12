@@ -2518,8 +2518,10 @@ def tools_status_data(which=None, version=None):
 
 def apps_status_data(present=None, version=None):
     """Per-app install presence (+ version when present and probeable). The
-    presence probe is instant (filesystem/PATH); the version probe reads the
-    macOS .app Info.plist (no subprocess) and is None on Windows/Linux. Returns
+    presence probe is instant (filesystem/PATH); the version probe is best-effort
+    per OS (macOS Info.plist; Windows exe metadata/Squirrel folder; Linux
+    dpkg-query/build_info + `tailscale version`) and may shell out on Windows/
+    Linux — fine for this on-demand route, not the status poll. Returns
     {"ok": True, "apps":[...]} or {"ok": False, "error": ...}; never raises."""
     try:
         import install_apps as ia

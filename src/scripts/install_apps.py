@@ -124,15 +124,170 @@ def darwin_app_version(app, exists=os.path.exists, read_plist=_read_plist):
     return None
 
 
-def app_version(app, platform=None, exists=os.path.exists, read_plist=_read_plist):
-    """Best-effort installed version string for `app`, or None. macOS reads the
-    .app bundle's Info.plist; Windows/Linux GUI apps have no uniform version
-    source, so they return None — the surfaces then show presence without a
-    version, never an error (issue #91)."""
+def _read_text(path):
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+
+def _run(argv, run=None, timeout=8):
+    """subprocess.run() wrapper that hides the Windows console window and turns
+    any spawn failure into None. Used only for TRUE CLIs (tailscale, dpkg-query),
+    never GUI app binaries — exec'ing those could pop a window."""
+    run = subprocess.run if run is None else run
+    try:
+        import services
+        nw = services.no_window_kwargs()
+    except Exception:   # noqa: BLE001 — services optional (standalone) / probe is best-effort
+        nw = {}
+    try:
+        return run(argv, capture_output=True, text=True, errors="replace",
+                   timeout=timeout, **nw)
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def cli_version(argv, run=None):
+    """First non-empty stdout line of a CLI's version output (e.g.
+    `tailscale version` -> '1.98.5'), or None on non-zero exit / spawn failure."""
+    out = _run(argv, run=run)
+    if out is None or out.returncode != 0:
+        return None
+    for line in (out.stdout or "").splitlines():
+        line = line.strip()
+        if line:
+            return line
+    return None
+
+
+def dpkg_version(pkg, run=None):
+    """Installed Debian package version via `dpkg-query`, or None when the
+    package is not installed / dpkg is unavailable (Linux)."""
+    out = _run(["dpkg-query", "-W", "-f=${Version}", pkg], run=run)
+    if out is None or out.returncode != 0:
+        return None
+    return (out.stdout or "").strip() or None
+
+
+def build_info_version(path, read_text=_read_text):
+    """`version` from a Discord build_info.json (Linux/macOS), or None."""
+    import json
+    try:
+        data = json.loads(read_text(path))
+    except (OSError, ValueError):
+        return None
+    return data.get("version") or None
+
+
+def _version_key(v):
+    """Sort key for dotted version folders: leading-numeric of each segment."""
+    key = []
+    for chunk in v.split("."):
+        num = ""
+        for ch in chunk:
+            if ch.isdigit():
+                num += ch
+            else:
+                break
+        key.append(int(num) if num else 0)
+    return key
+
+
+def discord_squirrel_version(local_appdata, listdir=os.listdir):
+    """Highest 'app-X.Y.Z' folder version under %LOCALAPPDATA%\\Discord, or None.
+    Discord's per-user Windows install names its version folder this way; reading
+    it needs no subprocess and never launches Discord."""
+    try:
+        entries = listdir(os.path.join(local_appdata, "Discord"))
+    except OSError:
+        return None
+    versions = [n[4:] for n in entries
+                if n.startswith("app-") and n[4:5].isdigit()]
+    return max(versions, key=_version_key) if versions else None
+
+
+def windows_file_version(path):
+    """Numeric FileVersion from a Windows PE binary's VERSIONINFO resource
+    (e.g. obs64.exe -> '32.1.2.0'), or None. Reads metadata only — never
+    executes the binary. No-op (None) off Windows."""
+    try:
+        import ctypes
+        ver = ctypes.windll.version       # AttributeError off Windows -> None
+        size = ver.GetFileVersionInfoSizeW(path, None)
+        if not size:
+            return None
+        buf = ctypes.create_string_buffer(size)
+        if not ver.GetFileVersionInfoW(path, 0, size, buf):
+            return None
+        block = ctypes.c_void_p()
+        length = ctypes.c_uint()
+        if not ver.VerQueryValueW(buf, "\\", ctypes.byref(block),
+                                  ctypes.byref(length)) or not length.value:
+            return None
+        words = ctypes.cast(
+            block, ctypes.POINTER(ctypes.c_uint * (length.value // 4))).contents
+        ms, ls = words[2], words[3]       # dwFileVersionMS, dwFileVersionLS
+        return f"{ms >> 16}.{ms & 0xFFFF}.{ls >> 16}.{ls & 0xFFFF}"
+    except Exception:   # noqa: BLE001 — any API/format hiccup -> no version, never raise
+        return None
+
+
+def _first_existing(paths, exists):
+    for p in paths:
+        if p and not p.startswith("\\") and exists(p):
+            return p
+    return None
+
+
+def _windows_app_version(app, env, exists, listdir, run, file_version):
+    if app == "discord":
+        local = env.get("LOCALAPPDATA", "")
+        return discord_squirrel_version(local, listdir=listdir) if local else None
+    cands = app_path_candidates(app, "win32", env)
+    if app == "tailscale":   # a real CLI — `tailscale version` is safe
+        exe = _first_existing(cands, exists) or "tailscale"
+        return cli_version([exe, "version"], run=run)
+    exe = _first_existing(cands, exists)   # obs64.exe / Companion.exe
+    return file_version(exe) if exe else None
+
+
+# Discord's bundled build_info.json — the .deb (/usr/share) and tarball (/opt).
+_LINUX_DISCORD_BUILD_INFO = ("/usr/share/discord/resources/build_info.json",
+                             "/opt/discord/resources/build_info.json")
+
+
+def _linux_app_version(app, exists, read_text, run):
+    if app == "tailscale":
+        return cli_version(["tailscale", "version"], run=run)
+    if app == "obs":
+        return dpkg_version("obs-studio", run=run)
+    if app == "discord":
+        for bi in _LINUX_DISCORD_BUILD_INFO:
+            if exists(bi):
+                v = build_info_version(bi, read_text=read_text)
+                if v:
+                    return v
+        return dpkg_version("discord", run=run)
+    # companion-pi (service install) exposes no stable version file we can rely
+    # on — left unresolved rather than guess a path (see CLAUDE.md: don't invent).
+    return None
+
+
+def app_version(app, platform=None, *, exists=os.path.exists, read_plist=_read_plist,
+                read_text=_read_text, run=None, listdir=os.listdir, env=None,
+                file_version=windows_file_version):
+    """Best-effort installed version string for `app`, or None. Per platform,
+    using only non-launching sources: macOS reads the .app Info.plist; Windows
+    reads obs64.exe/Companion.exe file-version metadata, the Discord Squirrel
+    folder, and `tailscale version`; Linux uses dpkg-query (OBS), Discord's
+    build_info.json, and `tailscale version`. Anything unavailable -> None, so
+    the surfaces show presence without a version, never an error (issue #91)."""
     platform = sys.platform if platform is None else platform
+    env = os.environ if env is None else env
     if platform == "darwin":
         return darwin_app_version(app, exists=exists, read_plist=read_plist)
-    return None
+    if platform.startswith("win"):
+        return _windows_app_version(app, env, exists, listdir, run, file_version)
+    return _linux_app_version(app, exists, read_text, run)
 
 
 def installed_apps_report(apps, version_fn):

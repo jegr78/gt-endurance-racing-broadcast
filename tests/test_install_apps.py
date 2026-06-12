@@ -174,14 +174,83 @@ def t_darwin_app_version_unreadable_plist_is_none():
     assert m.darwin_app_version("obs", exists=lambda p: True, read_plist=boom) is None
 
 
-def t_app_version_dispatch_darwin_and_others():
+def t_app_version_dispatch_darwin():
     plists = {"/Applications/Companion.app/Contents/Info.plist":
               {"CFBundleShortVersionString": "3.99.0"}}
     assert m.app_version("companion", "darwin", exists=lambda p: p in plists,
                          read_plist=lambda p: plists[p]) == "3.99.0"
-    # Windows/Linux GUI apps have no uniform version source -> None (not an error).
-    assert m.app_version("obs", "win32") is None
-    assert m.app_version("obs", "linux") is None
+
+
+class _Proc:
+    """subprocess.run() result stand-in for CLI version probes."""
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
+
+
+def t_cli_version_first_nonempty_line():
+    # `tailscale version` prints the number on the first line, details below.
+    out = _Proc(0, "1.98.5\n  tailscale commit: abc\n  other: def\n")
+    assert m.cli_version(["tailscale", "version"], run=lambda *a, **k: out) == "1.98.5"
+
+
+def t_cli_version_nonzero_or_error_is_none():
+    assert m.cli_version(["x", "version"], run=lambda *a, **k: _Proc(1, "")) is None
+
+    def boom(*a, **k):
+        raise OSError("not found")
+    assert m.cli_version(["x", "version"], run=boom) is None
+
+
+def t_dpkg_version_reads_stdout():
+    out = _Proc(0, "1:30.2.3+dfsg-1\n")
+    assert m.dpkg_version("obs-studio", run=lambda *a, **k: out) == "1:30.2.3+dfsg-1"
+    assert m.dpkg_version("absent", run=lambda *a, **k: _Proc(1, "")) is None
+
+
+def t_discord_squirrel_version_picks_highest():
+    # Discord's per-user Windows install keeps a version-named app-X.Y.Z folder.
+    entries = ["app-0.0.300", "app-0.0.394", "Update.exe", "packages"]
+    v = m.discord_squirrel_version(r"C:\Users\x\AppData\Local",
+                                   listdir=lambda p: entries)
+    assert v == "0.0.394"
+    assert m.discord_squirrel_version(r"C:\nope",
+                                      listdir=lambda p: (_ for _ in ()).throw(OSError())) is None
+
+
+def t_build_info_version_reads_json():
+    # Discord ships build_info.json (Linux/macOS) with the installed version.
+    blob = '{"releaseChannel":"stable","version":"0.0.75"}'
+    assert m.build_info_version("/usr/share/discord/resources/build_info.json",
+                                read_text=lambda p: blob) == "0.0.75"
+    assert m.build_info_version("/x", read_text=lambda p: "not json") is None
+
+
+def t_app_version_windows_dispatch():
+    env = {"LOCALAPPDATA": r"C:\Users\x\AppData\Local",
+           "ProgramFiles": r"C:\Program Files"}
+    # OBS: read the exe's file-version metadata (never launch it).
+    obs_exe = r"C:\Program Files\obs-studio\bin\64bit\obs64.exe"
+    v = m.app_version("obs", "win32", env=env, exists=lambda p: p == obs_exe,
+                      file_version=lambda p: "32.1.2.0" if p == obs_exe else None)
+    assert v == "32.1.2.0"
+    # Discord: parse the Squirrel folder.
+    assert m.app_version("discord", "win32", env=env,
+                         listdir=lambda p: ["app-0.0.394"]) == "0.0.394"
+    # Tailscale: a real CLI -> `tailscale version`.
+    ts_exe = r"C:\Program Files\Tailscale\tailscale.exe"
+    assert m.app_version("tailscale", "win32", env=env, exists=lambda p: p == ts_exe,
+                         run=lambda *a, **k: _Proc(0, "1.98.5\n")) == "1.98.5"
+
+
+def t_app_version_linux_dispatch():
+    # OBS via dpkg, Discord via build_info.json, Tailscale via the CLI.
+    assert m.app_version("obs", "linux",
+                         run=lambda *a, **k: _Proc(0, "1:30.2.3\n")) == "1:30.2.3"
+    bi = "/usr/share/discord/resources/build_info.json"
+    assert m.app_version("discord", "linux", exists=lambda p: p == bi,
+                         read_text=lambda p: '{"version":"0.0.75"}') == "0.0.75"
+    assert m.app_version("tailscale", "linux",
+                         run=lambda *a, **k: _Proc(0, "1.98.5\n")) == "1.98.5"
 
 
 def t_installed_apps_report_aligns_and_marks_unknown():
