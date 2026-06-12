@@ -37,6 +37,15 @@ no package manager); external runtime deps are `yt-dlp`, `streamlink`, `ffmpeg`,
   no environment-specific values; use fixtures/parameters (Tailscale IPs are
   `100.64.0.0/10` test constants, never this machine's address). Prefer TDD:
   failing test first, then the fix.
+- **Cross-platform paths: the test matrix includes Windows.** A helper that
+  assembles a *fixed-OS* absolute path — e.g. a macOS `/Applications/<App>.app`
+  bundle — must build it with explicit forward slashes (`bundle +
+  "/Contents/Info.plist"`), NOT `os.path.join`. `os.path.join` injects
+  backslashes on the Windows runner, so a unit test that exercises that helper
+  (with a POSIX path pinned in the fixture) passes on macOS/Linux but fails on
+  `windows-latest` — even though production only ever runs the helper on its own
+  OS. Use `os.path.join` only for paths on the *current* machine; never run it on
+  a path you already know belongs to a different OS. (Broke #97's Windows CI.)
 - **Pipeline/permission problems (release-please, tokens, branch protection,
   Actions) are research-first:** map the complete lifecycle and requirement set
   (docs + known issues) before changing anything — one planned fix, not
