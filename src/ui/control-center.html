@@ -554,7 +554,9 @@
             <button id="overlay-save" onclick="saveOverlay()">
               <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button>
             <button id="overlay-apply" onclick="applyOverlay()" title="Reload the relay-served HUD/timer browser sources in OBS (needs the relay up + obs-websocket)">
-              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Apply in OBS</button></div>
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Apply in OBS</button>
+            <button id="overlay-preview" onclick="openHudPreview()" title="Open the HUD design preview in a new tab — live sheet data + your override CSS over a Gran Turismo backdrop (needs the relay running)">
+              <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>Preview ↗</button></div>
           <div class="enverr" id="overlay-err" hidden></div>
           <div class="envpath" id="overlay-path"></div>
           <textarea id="overlayCss" class="css-editor" rows="12" spellcheck="false"
@@ -2045,6 +2047,14 @@ async function saveOverlay() {
 // saved CSS change shows. Best-effort — needs the relay up + obs-websocket; the
 // job console surfaces the result.
 function applyOverlay() { op('obs-refresh'); }
+
+// Open the relay's HUD design preview (/hud/preview) in a new tab. Served by the
+// relay on the fixed loopback (the producer designs locally), so it needs the
+// relay running — if it is down the new tab shows the relay's own error page.
+function openHudPreview() {
+  const port = (lastStatus && lastStatus.relay && lastStatus.relay.port) || 8088;
+  window.open('http://127.0.0.1:' + port + '/hud/preview', '_blank', 'noopener');
+}
 
 // ----- Looks card (named look backups: overlay + graphics + media) -----
 // Loaded with the Profile view (via loadProfiles) and on every profile switch.

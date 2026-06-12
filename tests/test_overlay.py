@@ -72,6 +72,86 @@ def t_resolve_overlay_font_rejects_traversal_and_bad_ext():
         assert feeds.resolve_overlay_font(None, "ok.ttf") is None
         assert feeds.resolve_overlay_font(od, ".woff2") is None
 
+
+# --- resolve_preview_bg: per-profile HUD-preview backdrop (overlay/preview-bg.*) ---
+def t_resolve_preview_bg_present_jpg():
+    with tempfile.TemporaryDirectory() as tmp:
+        od = _mkoverlay(tmp)
+        with open(os.path.join(od, "preview-bg.jpg"), "wb") as f: f.write(b"\xff\xd8\xff")
+        hit = feeds.resolve_preview_bg(od)
+        assert hit is not None and hit[0].endswith("preview-bg.jpg") and hit[1] == "image/jpeg"
+
+
+def t_resolve_preview_bg_ext_precedence_jpg_over_png():
+    with tempfile.TemporaryDirectory() as tmp:
+        od = _mkoverlay(tmp)
+        with open(os.path.join(od, "preview-bg.png"), "wb") as f: f.write(b"\x89PNG")
+        with open(os.path.join(od, "preview-bg.jpg"), "wb") as f: f.write(b"\xff\xd8\xff")
+        assert feeds.resolve_preview_bg(od)[1] == "image/jpeg"   # jpg first in PREVIEW_BG_EXTS
+
+
+def t_resolve_preview_bg_png_when_only_png():
+    with tempfile.TemporaryDirectory() as tmp:
+        od = _mkoverlay(tmp)
+        with open(os.path.join(od, "preview-bg.png"), "wb") as f: f.write(b"\x89PNG")
+        assert feeds.resolve_preview_bg(od)[1] == "image/png"
+
+
+def t_resolve_preview_bg_absent_or_no_dir_is_none():
+    with tempfile.TemporaryDirectory() as tmp:
+        assert feeds.resolve_preview_bg(_mkoverlay(tmp)) is None   # no per-profile, no assets
+    assert feeds.resolve_preview_bg(None) is None
+
+
+def t_resolve_preview_bg_falls_back_to_shared_default():
+    # No per-profile override -> the shipped shared default in assets/ is used.
+    with tempfile.TemporaryDirectory() as tmp:
+        od = _mkoverlay(tmp)                      # no preview-bg here
+        assets = os.path.join(tmp, "assets"); os.makedirs(assets)
+        with open(os.path.join(assets, "preview-bg.jpg"), "wb") as f: f.write(b"\xff\xd8\xff")
+        hit = feeds.resolve_preview_bg(od, assets)
+        assert hit is not None and hit[0].endswith(os.path.join("assets", "preview-bg.jpg"))
+
+
+def t_resolve_preview_bg_profile_overrides_shared_default():
+    with tempfile.TemporaryDirectory() as tmp:
+        od = _mkoverlay(tmp)
+        with open(os.path.join(od, "preview-bg.png"), "wb") as f: f.write(b"\x89PNG")
+        assets = os.path.join(tmp, "assets"); os.makedirs(assets)
+        with open(os.path.join(assets, "preview-bg.jpg"), "wb") as f: f.write(b"\xff\xd8\xff")
+        # per-profile (overlay_dir) wins over the shared default
+        assert feeds.resolve_preview_bg(od, assets)[0].endswith(os.path.join("overlay", "preview-bg.png"))
+
+
+def t_resolve_preview_bg_shared_default_only_when_no_overlay_dir():
+    with tempfile.TemporaryDirectory() as tmp:
+        assets = os.path.join(tmp, "assets"); os.makedirs(assets)
+        with open(os.path.join(assets, "preview-bg.jpg"), "wb") as f: f.write(b"\xff\xd8\xff")
+        assert feeds.resolve_preview_bg(None, assets)[1] == "image/jpeg"
+
+
+def t_resolve_preview_bg_ctypes_are_asset_whitelisted():
+    # The handler re-derives the header via ASSET_CTYPES[hit[1]] — every ctype the
+    # resolver can return must be a key there (else a KeyError at request time).
+    for _ext, ctype in feeds.PREVIEW_BG_EXTS:
+        assert ctype in feeds.ASSET_CTYPES
+
+
+# --- resolve_preview_frame: the Overlay.png broadcast frame from runtime graphics ---
+def t_resolve_preview_frame_present():
+    with tempfile.TemporaryDirectory() as tmp:
+        g = os.path.join(tmp, "graphics"); os.makedirs(g)
+        with open(os.path.join(g, "Overlay.png"), "wb") as f: f.write(b"\x89PNG")
+        hit = feeds.resolve_preview_frame(g)
+        assert hit is not None and hit[1] == "image/png" and "image/png" in feeds.ASSET_CTYPES
+
+
+def t_resolve_preview_frame_absent_or_no_dir_is_none():
+    with tempfile.TemporaryDirectory() as tmp:
+        assert feeds.resolve_preview_frame(os.path.join(tmp, "graphics")) is None
+    assert feeds.resolve_preview_frame(None) is None
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):

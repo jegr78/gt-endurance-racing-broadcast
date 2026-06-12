@@ -289,6 +289,38 @@ def resolve_overlay_font(overlay_dir, name):
         return None
     return (path, ctype) if os.path.exists(path) else None
 
+# HUD design-preview backdrop: a per-league Gran Turismo lobby/replay screenshot
+# at profiles/<name>/overlay/preview-bg.<ext>. Fixed basename (no request input),
+# so the only resolution is the extension fallback — content-type from the
+# ASSET_CTYPES identity map, never a request-derived string.
+PREVIEW_BG_EXTS = (("jpg", "image/jpeg"), ("jpeg", "image/jpeg"),
+                   ("png", "image/png"), ("webp", "image/webp"))
+
+
+def resolve_preview_bg(overlay_dir, assets_dir=None):
+    """Resolve the HUD-preview backdrop to (path, content_type): the per-profile
+    overlay/preview-bg.<ext> when present (a league override), else the shipped
+    shared default assets/preview-bg.<ext>. None only when neither exists. Read
+    per request so a swapped screenshot shows on reload."""
+    for base in (overlay_dir, assets_dir):
+        if not base:
+            continue
+        for ext, ctype in PREVIEW_BG_EXTS:
+            path = os.path.join(base, f"preview-bg.{ext}")
+            if os.path.exists(path):
+                return path, ctype
+    return None
+
+
+def resolve_preview_frame(graphics_dir):
+    """Resolve the broadcast Overlay.png frame (downloaded by get-graphics.py into
+    runtime/<profile>/graphics/) to (path, content_type), or None when absent —
+    the preview then renders the backdrop + HUD text without the frame."""
+    if not graphics_dir:
+        return None
+    path = os.path.join(graphics_dir, "Overlay.png")
+    return (path, "image/png") if os.path.exists(path) else None
+
 def default_runtime_dir(here):
     """Where runtime data lives when --runtime-dir is not given.
     Repo layout (src/relay/) -> <repo>/runtime ; distributed package (relay/) -> next to the script.
@@ -1623,7 +1655,7 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
 
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
                  timer_store=None, timer_path=None, setup_ctl=None, overlay_dir=None,
-                 chat_store=None):
+                 chat_store=None, preview_path=None, graphics_dir=None):
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
             body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
@@ -1692,6 +1724,20 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if not hud_source:
                         return self._send({"error": "hud disabled"}, 404)
                     return self._send(hud_source.data())
+                if p == ["hud", "preview"]:
+                    if not preview_path:
+                        return self._send({"error": "preview disabled"}, 404)
+                    return self._send_file(preview_path, "text/html; charset=utf-8")
+                if p == ["hud", "preview", "bg"]:
+                    hit = resolve_preview_bg(overlay_dir, assets_dir)
+                    if not hit:
+                        return self._send({"error": "no preview backdrop"}, 404)
+                    return self._send_file(hit[0], ASSET_CTYPES[hit[1]])
+                if p == ["hud", "preview", "frame"]:
+                    hit = resolve_preview_frame(graphics_dir)
+                    if not hit:
+                        return self._send({"error": "no overlay frame"}, 404)
+                    return self._send_file(hit[0], ASSET_CTYPES[hit[1]])
                 if len(p) == 4 and p[:2] == ["hud", "assets"]:
                     return self._send_asset(assets_dir, p[2], p[3])
                 if p == ["hud", "override.css"]:
@@ -2006,6 +2052,8 @@ def main():
     # HUD overlay: derived from sheet-id/tab (disabled with a custom CSV URL).
     hud_source = None
     hud_path = None
+    preview_path = None
+    graphics_dir = os.path.join(runtime, "graphics")   # Overlay.png frame for /hud/preview
     assets_dir = os.path.abspath(os.path.join(here, "..", "assets"))
     if not args.no_hud and not args.sheet_csv_url:
         base = f"https://docs.google.com/spreadsheets/d/{args.sheet_id}/gviz/tq?tqx=out:csv&sheet="
@@ -2022,6 +2070,11 @@ def main():
         if not hud_path:
             print("WARN: hud.html not found — /hud will 404 (assets dir: "
                   f"{assets_dir}).")
+        for cand in (os.path.join(here, "hud-preview.html"),
+                     os.path.join(here, "..", "hud-preview.html"),
+                     os.path.join(here, "..", "obs", "hud-preview.html")):
+            if os.path.exists(cand):
+                preview_path = os.path.abspath(cand); break
 
     # One sheet-write webhook powers the race timer AND the panel's
     # Setup/Schedule/POV controls (wiki: Sheet-Webhook).
@@ -2072,7 +2125,8 @@ def main():
 
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
                            timer_store, timer_path, setup_ctl,
-                           overlay_dir=args.overlay_dir, chat_store=chat_store)
+                           overlay_dir=args.overlay_dir, chat_store=chat_store,
+                           preview_path=preview_path, graphics_dir=graphics_dir)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []
