@@ -97,6 +97,8 @@ python3 src/racecast.py profile list      # list league profiles (profiles/<name
 python3 src/racecast.py profile show      # show the active profile's resolved league config (add <name> for another)
 python3 src/racecast.py profile use NAME  # switch the active profile (writes runtime/active-profile)
 python3 src/racecast.py profile new NAME  # scaffold a new league profile (--from SRC copies an existing one)
+python3 src/racecast.py profile export NAME      # export a league profile to a portable zip (--no-assets, --out PATH)
+python3 src/racecast.py profile import FILE       # import a profile bundle (--force to replace an existing one)
 python3 src/racecast.py --profile NAME <command>  # run ONE command against a non-active profile
 python3 src/racecast.py event status      # event-day readiness report (apps + services + assets)
 python3 src/racecast.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later)
@@ -167,8 +169,15 @@ active league's values into child processes as **prefixed** env vars
 `RACECAST_OUTRO_URL`, `RACECAST_OBS_COLLECTION` — see `_profile_env_vars` /
 `_apply_active_profile_env` in `src/racecast.py`), so the relay and the asset
 downloaders read a flat environment and stay profile-agnostic. `racecast profile
-list|show|use|new [--from]` manages profiles; global `--profile NAME` runs one command
-against a non-active profile.
+list|show|use|new|export|import [--from/--no-assets/--out/--force]` manages profiles;
+global `--profile NAME` runs one command against a non-active profile. `racecast
+profile export NAME` packages the entire `profiles/<name>/` tree (including
+`SHEET_PUSH_URL` in `profile.env`) plus the optional runtime `graphics/` and `media/`
+into a single zip that can be imported on another machine with `racecast profile
+import FILE` — this is the onboarding path for handing a league to a new producer.
+This is distinct from `racecast backup …` (`backup_admin.py`), which is a
+profile-internal named snapshot of the overlay CSS + graphics + media only and never
+crosses machines.
 
 A small bounded `load_dotenv()` is **duplicated** in the four self-contained scripts
 that can run standalone — `src/relay/racecast-feeds.py`, `src/setup-assets.py`,
