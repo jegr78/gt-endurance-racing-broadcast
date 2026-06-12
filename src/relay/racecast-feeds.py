@@ -324,6 +324,21 @@ def asset_key(s):
     s = re.sub(r"\s+", "-", s)
     return re.sub(r"[^a-z0-9-]", "", s)
 
+TEAM_NUMBER_RE = re.compile(r"^(.*?)\s*#(\d+)\s*$")
+
+def split_team_label(s):
+    """Split a team label into (name, number): a TRAILING '#<digits>' token is
+    peeled off ('OVO eSports #111' -> ('OVO eSports', '111')); no trailing number
+    -> (stripped, ''). A '#' that is not a trailing all-digit token stays in the
+    name. Used to strip the embedded number so it never double-displays, and as
+    the backward-compat number source when the Configuration tab has no Number
+    column."""
+    s = (s or "").strip()
+    mtch = TEAM_NUMBER_RE.match(s)
+    if mtch:
+        return mtch.group(1).strip(), mtch.group(2)
+    return s, ""
+
 OVERLAY_LABELS = {
     "stint": "stint", "streamer": "streamer", "session": "session",
     "round top": "round_top", "round bottom": "country",

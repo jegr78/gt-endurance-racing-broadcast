@@ -261,6 +261,20 @@ def t_override_survives_unconfirmed_refresh():
     assert hs.pending(now=1001.0) == {"streamer"}
 
 
+def t_split_team_label_trailing_number():
+    assert m.split_team_label("OVO eSports #111") == ("OVO eSports", "111")
+    assert m.split_team_label("Apex Racing #7") == ("Apex Racing", "7")
+
+def t_split_team_label_no_number():
+    assert m.split_team_label("OVO eSports") == ("OVO eSports", "")
+    assert m.split_team_label("") == ("", "")
+
+def t_split_team_label_mid_string_hash_kept():
+    # only a TRAILING "#<digits>" token is split off; a mid-string # stays in the name
+    assert m.split_team_label("Team #1 Racing") == ("Team #1 Racing", "")
+    assert m.split_team_label("  Spaced #42  ") == ("Spaced", "42")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
