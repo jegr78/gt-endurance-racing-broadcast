@@ -14,7 +14,7 @@
   racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
   racecast app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
   racecast status                            # aggregate health of all services
-  racecast profile   list | show [<name>] | use <name> | new <name> [--from <source>]
+  racecast profile   list | show [<name>] | use <name> | new <name> [--from <source>] | export <name> [--no-assets] [--out PATH] | import <file> [--force]
   racecast --profile <name> <command>        # run one command against a non-active profile
   racecast chat      clear | pull <ip> [--port N] | import <file> | export [--out PATH]
   racecast backup    {create|list|restore|delete} <label>   # named look snapshots (overlay+graphics+media)

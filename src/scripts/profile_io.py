@@ -158,7 +158,10 @@ def import_profile(src_zip, roots, force=False):
     """Create profiles/<slug>/ (+ runtime/<slug>/graphics|media when present) from a
     bundle. `roots` = {profiles_root, runtime_root}. Returns {name, display,
     includes_assets}. Validates the whole archive BEFORE touching any live dir;
-    raises ValueError (malformed/unsafe) or FileExistsError (slug taken, no force)."""
+    raises ValueError (malformed/unsafe) or FileExistsError (slug taken, no force).
+    A `force` re-import replaces the profile tree and only the asset sections the
+    bundle carries: a config-only (no-assets) bundle leaves existing
+    runtime/<slug>/graphics|media untouched rather than wiping them."""
     if not os.path.exists(src_zip):
         raise ValueError(f"bundle not found: {src_zip}")
     tmp = tempfile.mkdtemp(prefix="profimport-")
