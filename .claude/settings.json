@@ -10,6 +10,12 @@
             "command": "python3 -c 'import json,sys,subprocess\nd=json.load(sys.stdin)\np=(d.get(\"tool_input\") or {}).get(\"file_path\",\"\")\nif not p.endswith(\".py\"): sys.exit(0)\nr=subprocess.run([\"python3\",\"tools/lint.py\"],capture_output=True,text=True)\nif r.returncode:\n    sys.stderr.write(r.stdout+r.stderr); sys.exit(2)'",
             "timeout": 60,
             "statusMessage": "ruff lint (tools/lint.py)"
+          },
+          {
+            "type": "command",
+            "command": "python3 tools/check_portable.py",
+            "timeout": 10,
+            "statusMessage": "portability guard (no machine paths)"
           }
         ]
       }
