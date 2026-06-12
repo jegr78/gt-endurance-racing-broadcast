@@ -190,6 +190,10 @@
     .arow .nm{flex:0 0 64px}
   }
 
+  /* ---------- two-pane layout: scrolling controls + persistent chat ------- */
+  .panes{display:block}
+  details.chat{display:block}
+
   /* ---------- chat ---------- */
   details.chat summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;
     font-family:var(--head);font-weight:700;letter-spacing:.12em;font-size:14px;text-transform:uppercase}
@@ -202,11 +206,43 @@
   .chatlog .m{margin:2px 0;word-break:break-word}
   .chatlog .who{color:#9ad;font-weight:600;margin-right:4px}
   .chatlog .t{color:#667;font-size:10px;margin-right:4px}
-  .chatname{display:flex;align-items:center;gap:6px;margin-bottom:4px}
-  .chatname input{flex:0 0 140px}
-  .chatsend{display:flex;gap:6px}
-  .chatsend input{flex:1}
+  .chatname{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .chatname label{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+  .chatname input{flex:1;min-width:0;background:#0c0f13;border:1px solid var(--edge);color:var(--ink);
+    font-family:var(--mono);font-size:13px;padding:8px 10px;border-radius:9px;outline:none}
+  .chatname input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(58,160,255,.18)}
+  .chatsend{display:flex;gap:8px;align-items:stretch}
+  .chatsend input{flex:1;min-width:0;background:#0c0f13;border:1px solid var(--edge);color:var(--ink);
+    font-family:var(--mono);font-size:13px;padding:10px 12px;border-radius:9px;outline:none}
+  .chatsend input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(58,160,255,.18)}
+  /* SEND: a real accent button (was an unstyled default button outside .urls) */
+  .chatsend .save{flex:0 0 auto;padding:10px 18px;font-family:var(--head);font-weight:700;
+    letter-spacing:.14em;font-size:13px;text-transform:uppercase;border-radius:9px;cursor:pointer;
+    border:1px solid var(--live);color:#07140c;
+    background:linear-gradient(180deg,#37e07f,#22b85e);
+    box-shadow:0 0 16px var(--live-glow),inset 0 1px 0 rgba(255,255,255,.3);
+    transition:transform .05s ease,filter .15s,box-shadow .15s}
+  .chatsend .save:hover{filter:brightness(1.08)}
+  .chatsend .save:active{transform:translateY(1px) scale(.99)}
+  .chatsend .save:disabled{opacity:.5;cursor:not-allowed;filter:grayscale(.3)}
   .unread{background:#c33;color:#fff;border-radius:9px;padding:0 6px;font-size:11px;margin-left:6px}
+
+  /* Desktop: the chat becomes a persistent right column (YouTube-style), always
+     visible — force the <details> body open and turn the summary into a static
+     caption — while the controls scroll on the left. Narrow screens keep the
+     single-column flow with the chat as a native collapsible <details>. */
+  @media(min-width:900px){
+    .panes{display:grid;grid-template-columns:minmax(0,1fr) clamp(280px,26vw,360px);
+           gap:14px;align-items:start}
+    .mainpane{min-width:0}
+    details.chat#chatBox{position:sticky;top:18px;align-self:start;margin-bottom:0;
+           display:flex;flex-direction:column;height:calc(100vh - 36px)}
+    details.chat#chatBox>summary{cursor:default;pointer-events:none;margin-bottom:8px}
+    details.chat#chatBox>summary::after{display:none}
+    details.chat#chatBox>.body{display:flex !important;flex-direction:column;flex:1;min-height:0}
+    details.chat#chatBox .chatlog{max-height:none;flex:1;min-height:0;margin-top:0}
+    details.chat#chatBox .hint{margin-top:6px}
+  }
 </style>
 </head>
 <body>
@@ -234,6 +270,9 @@
     <span class="pill go" id="connectBtn">Connect</span>
     <span class="pill stop" id="disconnectBtn" style="display:none">Disconnect</span>
   </div>
+
+  <div class="panes">
+  <div class="mainpane">
 
   <section class="bus pgm"><div class="cap">PGM</div><div class="keys" id="pgmBus"></div></section>
 
@@ -264,23 +303,6 @@
 
   <section class="bus"><div class="cap">Audio</div><div class="body" id="audio"></div></section>
 
-  <details class="bus chat" id="chatBox" open>
-    <summary>Chat <span class="unread" id="chatUnread" hidden>0</span></summary>
-    <div class="body">
-      <div class="chatname">
-        <label>You:</label>
-        <input id="chatName" maxlength="40" placeholder="your name">
-      </div>
-      <div id="chatLog" class="chatlog"></div>
-      <div class="chatsend">
-        <input id="chatInput" maxlength="500" placeholder="message the active crew…">
-        <button class="save" id="chatSendBtn">SEND</button>
-      </div>
-      <div class="hint">Seen by everyone on this relay's tailnet. The producer can clear
-        the history from the Control Center or <code>racecast chat clear</code>.</div>
-    </div>
-  </details>
-
   <details class="bus urls" id="urlsBox">
     <summary>URLs · Schedule + POV</summary>
     <div class="body">
@@ -298,6 +320,27 @@
   </details>
 
   <div id="log">Ready. FEEDS + TIMER work relay-only; enter the Producer's Tailscale IP + OBS WebSocket password and Connect for everything else.</div>
+
+  </div><!-- /.mainpane -->
+
+  <details class="bus chat" id="chatBox" open>
+    <summary>Chat <span class="unread" id="chatUnread" hidden>0</span></summary>
+    <div class="body">
+      <div class="chatname">
+        <label>You:</label>
+        <input id="chatName" maxlength="40" placeholder="your name">
+      </div>
+      <div id="chatLog" class="chatlog"></div>
+      <div class="chatsend">
+        <input id="chatInput" maxlength="500" placeholder="message the active crew…">
+        <button class="save" id="chatSendBtn">SEND</button>
+      </div>
+      <div class="hint">Seen by everyone on this relay's tailnet. The producer can clear
+        the history from the Control Center or <code>racecast chat clear</code>.</div>
+    </div>
+  </details>
+
+  </div><!-- /.panes -->
 <div id="toasts"></div>
 </div>
 
