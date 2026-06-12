@@ -2516,13 +2516,20 @@ def tools_status_data(which=None, version=None):
         return {"ok": False, "error": f"tool check failed: {exc}"}
 
 
-def apps_status_data(present=None):
-    """Per-app install presence (filesystem/PATH probe — instant, no subprocess).
-    Returns {"ok": True, "apps":[...]} or {"ok": False, "error": ...}; never raises."""
+def apps_status_data(present=None, version=None):
+    """Per-app install presence (+ version when present and probeable). The
+    presence probe is instant (filesystem/PATH); the version probe reads the
+    macOS .app Info.plist (no subprocess) and is None on Windows/Linux. Returns
+    {"ok": True, "apps":[...]} or {"ok": False, "error": ...}; never raises."""
     try:
         import install_apps as ia
         present = present or (lambda app: ia.app_present(app, sys.platform))
-        apps = [{"name": a, "installed": bool(present(a))} for a in ia.APPS]
+        version = version or (lambda app: ia.app_version(app, sys.platform))
+        apps = []
+        for a in ia.APPS:
+            installed = bool(present(a))
+            apps.append({"name": a, "installed": installed,
+                         "version": version(a) if installed else None})
         return {"ok": True, "apps": apps}
     except Exception as exc:
         return {"ok": False, "error": f"app check failed: {exc}"}

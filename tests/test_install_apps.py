@@ -147,6 +147,51 @@ def t_confirmation_parsing():
     assert not m.confirmed("") and not m.confirmed("n") and not m.confirmed("nein")
 
 
+def t_darwin_app_version_reads_short_version():
+    # The .app's Info.plist carries the human version in CFBundleShortVersionString.
+    plists = {"/Applications/OBS.app/Contents/Info.plist":
+              {"CFBundleShortVersionString": "31.0.2", "CFBundleVersion": "31"}}
+    v = m.darwin_app_version("obs", exists=lambda p: p in plists,
+                             read_plist=lambda p: plists[p])
+    assert v == "31.0.2"
+
+
+def t_darwin_app_version_falls_back_to_bundle_version():
+    plists = {"/Applications/Discord.app/Contents/Info.plist":
+              {"CFBundleVersion": "0.0.350"}}   # no short string
+    assert m.darwin_app_version("discord", exists=lambda p: p in plists,
+                                read_plist=lambda p: plists[p]) == "0.0.350"
+
+
+def t_darwin_app_version_absent_bundle_is_none():
+    assert m.darwin_app_version("obs", exists=lambda p: False,
+                                read_plist=lambda p: {}) is None
+
+
+def t_darwin_app_version_unreadable_plist_is_none():
+    def boom(_p):
+        raise OSError("cannot read")
+    assert m.darwin_app_version("obs", exists=lambda p: True, read_plist=boom) is None
+
+
+def t_app_version_dispatch_darwin_and_others():
+    plists = {"/Applications/Companion.app/Contents/Info.plist":
+              {"CFBundleShortVersionString": "3.99.0"}}
+    assert m.app_version("companion", "darwin", exists=lambda p: p in plists,
+                         read_plist=lambda p: plists[p]) == "3.99.0"
+    # Windows/Linux GUI apps have no uniform version source -> None (not an error).
+    assert m.app_version("obs", "win32") is None
+    assert m.app_version("obs", "linux") is None
+
+
+def t_installed_apps_report_aligns_and_marks_unknown():
+    lines = m.installed_apps_report(["obs", "discord"],
+                                    lambda a: {"obs": "31.0.2"}.get(a))
+    assert lines[0].startswith("  obs") and "31.0.2" in lines[0]
+    # version probe returned None -> a readable placeholder, never an empty column
+    assert "(version unavailable)" in lines[1] and lines[1].lstrip().startswith("discord")
+
+
 def t_app_install_commands_brew_absolute_path():
     assert m.app_install_commands("brew", ["obs"],
                                   brew_path="/opt/homebrew/bin/brew") == \

@@ -290,6 +290,18 @@ def t_apps_status_data_shape():
     assert {a["name"] for a in d["apps"]} >= {"obs", "companion", "tailscale", "discord"}
 
 
+def t_apps_status_data_includes_version():
+    # The Control Center renders a version next to each installed app (issue #91):
+    # present apps carry their probed version, absent apps carry None.
+    d = rc.apps_status_data(present=lambda app: app in ("obs", "discord"),
+                            version=lambda app: "31.0.2" if app == "obs" else None)
+    by = {a["name"]: a for a in d["apps"]}
+    assert by["obs"]["version"] == "31.0.2"
+    assert by["discord"]["installed"] is True and by["discord"]["version"] is None
+    # an app that isn't installed is never version-probed
+    assert by["companion"]["installed"] is False and by["companion"]["version"] is None
+
+
 def t_apps_status_data_error():
     def boom(app):
         raise RuntimeError("probe broke")

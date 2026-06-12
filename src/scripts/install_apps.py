@@ -100,6 +100,50 @@ def app_present(app, platform, env=None, exists=os.path.exists, which=shutil.whi
     return bool(which(app))  # CLI fallback (e.g. tailscale on PATH)
 
 
+def _read_plist(path):
+    import plistlib
+    with open(path, "rb") as fh:
+        return plistlib.load(fh)
+
+
+def darwin_app_version(app, exists=os.path.exists, read_plist=_read_plist):
+    """Installed version of a macOS .app from its bundle Info.plist
+    (CFBundleShortVersionString, then CFBundleVersion), or None when the bundle
+    or the keys are absent / the plist is unreadable. The reader is injected so
+    the logic is unit-tested without a real .app on disk."""
+    for bundle in _DARWIN_APP_PATHS.get(app, ()):
+        plist = os.path.join(bundle, "Contents", "Info.plist")
+        if not exists(plist):
+            continue
+        try:
+            data = read_plist(plist)
+        except Exception:   # noqa: BLE001 — unreadable/corrupt plist -> no version, never raise
+            return None
+        return (data.get("CFBundleShortVersionString")
+                or data.get("CFBundleVersion") or None)
+    return None
+
+
+def app_version(app, platform=None, exists=os.path.exists, read_plist=_read_plist):
+    """Best-effort installed version string for `app`, or None. macOS reads the
+    .app bundle's Info.plist; Windows/Linux GUI apps have no uniform version
+    source, so they return None — the surfaces then show presence without a
+    version, never an error (issue #91)."""
+    platform = sys.platform if platform is None else platform
+    if platform == "darwin":
+        return darwin_app_version(app, exists=exists, read_plist=read_plist)
+    return None
+
+
+def installed_apps_report(apps, version_fn):
+    """Aligned 'name  version' lines for already-installed `apps` (version_fn(app)
+    -> str|None). Apps with no probed version show '(version unavailable)' rather
+    than an empty column (issue #91)."""
+    width = max((len(a) for a in apps), default=0)
+    return [f"  {a.ljust(width)}  {version_fn(a) or '(version unavailable)'}"
+            for a in apps]
+
+
 # Apps whose winget SILENT install is broken: Companion's NSIS installer
 # writes NOTHING without admin yet exits 0, so winget reports success while
 # nothing was installed (seen live). --interactive runs the UI wizard, whose
@@ -251,7 +295,10 @@ def main():
 
     missing = [app for app in APPS if not app_present(app, sys.platform)]
     if not missing and not a.update:
-        print("All apps already installed:", ", ".join(APPS))
+        print("All apps already installed:")
+        for line in installed_apps_report(list(APPS),
+                                          lambda x: app_version(x, sys.platform)):
+            print(line)
         print("  (run `racecast install-apps --update` to upgrade them)")
         return
     if missing:
@@ -303,7 +350,10 @@ def main():
             parts.append("Still missing: " + ", ".join(still))
         sys.exit("\n".join(parts) + "\n" + apps_manual_guide(sys.platform))
     if not missing:
-        print("All apps up to date.")
+        print("All apps up to date:")
+        for line in installed_apps_report(list(APPS),
+                                          lambda x: app_version(x, sys.platform)):
+            print(line)
         return
     print("All apps installed. First-run setup still needed:")
     print("  Tailscale: sign in and join the team's private Tailscale "
