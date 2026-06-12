@@ -467,8 +467,30 @@ def t_update_check_up_to_date():
 
 
 def t_update_check_dev_build_skips():
-    d = rc.update_check_data(fetch=lambda: _release("v9.9.9"), current="dev")
+    # running from source (not frozen) with a non-semver version skips: a repo
+    # checkout cannot self-update (use `git pull`).
+    d = rc.update_check_data(fetch=lambda: _release("v9.9.9"), current="dev",
+                              frozen=False)
     assert d["ok"] and d["update_available"] is False and d["latest"] is None
+
+
+def t_update_check_frozen_preview_offers_latest():
+    # a frozen preview binary has a non-semver version ('preview-main-<sha>') but
+    # IS a real installable artifact -> offer the latest release, matching the
+    # CLI's `racecast update --check`. Regression for #70 (UI showed nothing
+    # while the CLI offered the update).
+    d = rc.update_check_data(fetch=lambda: _release("v0.1.0"),
+                              current="preview-main-4c25fc8", platform="darwin",
+                              frozen=True)
+    assert d["ok"] and d["update_available"] is True and d["latest"] == "v0.1.0"
+
+
+def t_update_check_frozen_dev_offers_latest():
+    # a locally built frozen binary (version 'dev', no --version stamp) likewise
+    # jumps to the latest release rather than being told to `git pull`.
+    d = rc.update_check_data(fetch=lambda: _release("v0.1.0"), current="dev",
+                              platform="darwin", frozen=True)
+    assert d["ok"] and d["update_available"] is True and d["latest"] == "v0.1.0"
 
 
 def t_update_check_offline_is_not_ok():
