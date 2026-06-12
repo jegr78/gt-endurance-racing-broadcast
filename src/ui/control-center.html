@@ -413,6 +413,9 @@
             <button onclick="op('relay-restart', true)">
               <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Restart</button>
             <a class="linkbtn" id="rel-panel-open" target="_blank" rel="noopener" hidden>Open panel ↗</a></div>
+          <div class="row"><span class="name">Crew chat</span>
+            <span class="dim grow"></span>
+            <button class="danger" onclick="op('chat-clear', true)">Clear chat</button></div>
         </section>
         <p class="envhint">The relay reads its <b>schedule and HUD data from the Google Sheet</b> and is configured through <b>Settings</b>: <span class="mono">RACECAST_SHEET_ID</span> (the sheet) and <span class="mono">RACECAST_SHEET_PUSH_URL</span> (write-back for the timer + panel). There are no other local relay settings — tab names, ports and the bind mode use safe defaults.</p>
       </div>
@@ -1329,7 +1332,8 @@ const CONFIRM_TEXT = {
   'relay-stop': 'Stop the relay?',
   'streams-stop': 'Stop all static streams?',
   'event-stop': 'Stop the event? (stops the racecast services; OBS/Discord/Tailscale keep running)',
-  'obs-collection-set': 'Switch OBS to the GT Endurance Racing scene collection? This rebuilds all sources (incl. the relay feeds).'
+  'obs-collection-set': 'Switch OBS to the GT Endurance Racing scene collection? This rebuilds all sources (incl. the relay feeds).',
+  'chat-clear': 'Clear all crew-chat messages? This cannot be undone.'
 };
 
 async function op(name, confirmFirst, params) {

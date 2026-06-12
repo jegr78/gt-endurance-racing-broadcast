@@ -64,6 +64,7 @@ python3 tests/test_install_tools.py     # install-tools decision helpers
 python3 tests/test_install_apps.py      # install-apps decision helpers
 python3 tests/test_init.py           # racecast init wizard logic (plan/skip/gates)
 python3 tests/test_timer.py          # relay race-timer unit checks
+python3 tests/test_chat.py           # crew chat (ChatStore + chat_admin + endpoints)
 python3 tests/test_setup.py          # panel sheet-control (webhook payloads, SetupControl, endpoints)
 python3 tests/test_ui_ops.py         # Control Center structured status providers + op registry
 python3 tests/test_ui_jobs.py        # Control Center job manager (child spawn, line buffer)
@@ -112,6 +113,10 @@ python3 src/racecast.py setup --out runtime/<profile>/GT_Endurance.import.json  
 python3 src/racecast.py install-tools     # install yt-dlp/streamlink/ffmpeg/deno (winget/brew/apt; bootstraps brew on macOS); --update also upgrades installed ones (pre-event)
 python3 src/racecast.py install-apps      # install OBS/Companion/Tailscale/Discord (winget/brew/apt+official installers); --update upgrades installed ones (Linux: prints per-app guide)
 python3 src/racecast.py export companion  # write the Companion button config for import
+python3 src/racecast.py chat clear        # wipe the crew-chat history on the active relay
+python3 src/racecast.py chat pull <ip>    # take over another producer's chat history at handover (relay may be running)
+python3 src/racecast.py chat import <file> # load a previously exported JSON file into the relay
+python3 src/racecast.py chat export       # write the current chat history to chat-export.json (or --out PATH)
 python3 src/racecast.py --version
 
 # Fetch any missing HUD country flags from the sheet's Configuration tab
@@ -281,6 +286,16 @@ Setup fields (Stint label/Streamer/Session/Race Control) are async-optimistic
 writes are synchronous; URL changes never auto-reload a feed. Setup "Stint" =
 HUD display label, NOT the feed stint index. `SetupControl` + endpoints
 `/setup/*`, `/schedule/*`, `/pov/set` (POST). Tests: `tests/test_setup.py`.
+
+The relay also hosts a **crew chat** (`GET /chat/data`, `POST /chat/send`,
+`GET /chat/reload`) — an in-memory ring buffer (200 messages) persisted to
+`runtime/<profile>/chat.json`. The panel polls `/chat/data`; messages render via
+`textContent` (XSS-safe); the unread badge is keyed on server `ts` (handover-safe).
+There is **no destructive HTTP endpoint** — clear/import/pull are producer-only CLI
+actions (`racecast chat clear|pull|import|export`, logic in
+`src/scripts/chat_admin.py`) that write the file and trigger `/chat/reload`. The
+tailnet is the trust boundary (unauthenticated, like the rest of the relay).
+Tests: `tests/test_chat.py`.
 
 ### Unified `racecast` CLI (`src/racecast.py`)
 `src/racecast.py` is the single shipped entrypoint for operators. It resolves the

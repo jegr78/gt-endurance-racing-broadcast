@@ -16,6 +16,7 @@
   racecast status                            # aggregate health of all services
   racecast profile   list | show [<name>] | use <name> | new <name> [--from <source>]
   racecast --profile <name> <command>        # run one command against a non-active profile
+  racecast chat      clear | pull <ip> [--port N] | import <file> | export [--out PATH]
   racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
   racecast preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   racecast export companion [--out PATH]     # write the Companion button config
@@ -34,6 +35,7 @@ import services as sv
 import init_setup as ins
 import config as pcfg    # 'pcfg' (not 'cfg'): avoids F811 clash with local `cfg = json.loads(...)` dicts elsewhere in this file
 import profile_admin as pa
+import chat_admin as ca
 
 # PyInstaller marks the frozen binary with sys.frozen and unpacks bundled data
 # (the whole src/ tree) to sys._MEIPASS. Repo + package mode stay subprocess-based.
@@ -643,6 +645,8 @@ def route(argv):
         return {"kind": "init", "rest": rest}
     if cmd == "profile":
         return {"kind": "profile", "rest": rest}
+    if cmd == "chat":
+        return {"kind": "chat", "rest": rest}
     if cmd in ONESHOTS:
         return {"kind": "oneshot", "command": cmd, "rest": rest}
     if cmd == "export":
@@ -693,6 +697,107 @@ def profile_cmd(rest):
         sys.exit(f"racecast: {e}")
     print(pa.format_profile_show(rcfg, active))
     return None
+
+
+CHAT_VERBS = ("clear", "pull", "import", "export")
+
+
+def _chat_path():
+    return os.path.join(_runtime_dir(), "chat.json")
+
+
+def _chat_reload_if_running():
+    """Best-effort: tell a running local relay to re-read chat.json. A relay
+    that is down is fine — it loads the file on next start."""
+    try:
+        _fetch_relay_page("/chat/reload")
+        return True
+    except Exception:
+        return False
+
+
+def chat_cmd(rest):
+    """`racecast chat clear|pull|import|export` — manage the crew-chat history."""
+    import urllib.request as _u
+    verb = rest[0] if rest else None
+    if verb not in CHAT_VERBS:
+        sys.exit(f"usage: racecast chat {{{'|'.join(CHAT_VERBS)}}}")
+    path = _chat_path()
+    args = rest[1:]
+
+    if verb == "clear":
+        ca.write_messages(path, [])
+        running = _chat_reload_if_running()
+        print("Chat cleared." + ("" if running else
+                                 " (relay not running — applies on next start.)"))
+        return None
+
+    if verb == "export":
+        out = None
+        if args[:1] == ["--out"]:
+            if len(args) < 2:
+                sys.exit("usage: racecast chat export [--out PATH]  (--out requires a value)")
+            out = args[1]
+        try:                                  # prefer the live relay, fall back to the file
+            body = _fetch_relay_page("/chat/data")
+            payload = json.loads(body)
+        except Exception:
+            payload = {"messages": ca.load_messages(path)}
+        out = out or "chat-export.json"
+        msgs = ca.validate_payload(payload)
+        ca.write_messages(out, msgs)
+        print(f"Exported {len(msgs)} messages -> {out}")
+        return None
+
+    if verb == "import":
+        if not args:
+            sys.exit("usage: racecast chat import <file>")
+        try:
+            with open(args[0], encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except FileNotFoundError:
+            sys.exit(f"racecast: file not found: {args[0]}")
+        except (OSError, ValueError) as e:
+            sys.exit(f"racecast: could not read {args[0]}: {e}")
+        try:
+            n = ca.apply_pulled(path, payload)    # validates before writing
+        except ValueError as e:
+            sys.exit(f"racecast: import failed — {e} (local chat unchanged)")
+        running = _chat_reload_if_running()
+        print(f"Imported {n} messages." + ("" if running else " (relay not running.)"))
+        return None
+
+    if verb == "pull":
+        if not args:
+            sys.exit("usage: racecast chat pull <tailscale-ip> [--port N]")
+        host = args[0]
+        port = RELAY_PORT
+        if "--port" in args[1:]:
+            port_idx = args.index("--port", 1)
+            if port_idx + 1 >= len(args):
+                sys.exit("racecast: --port requires an integer value")
+            port_str = args[port_idx + 1]
+            try:
+                port = int(port_str)
+            except ValueError:
+                sys.exit(f"racecast: --port must be an integer, got {port_str!r}")
+        url = f"http://{host}:{port}/chat/data"
+        try:
+            with _u.urlopen(url, timeout=5) as resp:
+                if resp.status != 200:
+                    sys.exit(f"racecast: pull failed — HTTP {resp.status} from {host}")
+                payload = json.loads(resp.read())
+        except Exception as e:
+            sys.exit(f"racecast: pull failed — {type(e).__name__}: {e}"
+                     " (local chat unchanged)")
+        try:
+            n = ca.apply_pulled(path, payload)
+        except ValueError as e:
+            sys.exit(f"racecast: pull failed — {e} (local chat unchanged)")
+        running = _chat_reload_if_running()
+        print(f"Pulled {n} messages from {host}." +
+              ("" if running else " (relay not running — applies on next start.)"))
+        return None
 
 
 def _tailscale_ip():
@@ -2803,6 +2908,8 @@ def main(argv=None):
         return init_cmd(action["rest"])
     if action["kind"] == "profile":
         return profile_cmd(action["rest"])
+    if action["kind"] == "chat":
+        return chat_cmd(action["rest"])
     if action["kind"] == "oneshot":
         return oneshot(action["command"], action["rest"])
     if action["kind"] == "aggregate":

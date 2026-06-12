@@ -117,6 +117,34 @@ of everything after it.
 The URLs section also needs the profile's `SHEET_PUSH_URL` — without it the fields are
 read-only.
 
+## Crew chat
+
+The panel has a collapsible **Crew chat** section — a quick text channel for
+everyone connected to the relay over the tailnet (directors, the producer, anyone
+on the tailnet whose browser has the panel open). It is separate from Discord and
+needs no setup beyond being on the tailnet.
+
+**To use it:** type your name once into the Name field (the browser remembers it),
+write a message, and press Enter or **Send**. Messages from all participants appear
+in the chat box in order. A badge on the section header counts unread messages while
+the section is collapsed — the count is keyed on the server timestamp, so it survives
+a producer handover without re-firing.
+
+Messages are visible to everyone whose browser can reach the relay. The relay holds
+up to 200 messages in memory and persists them to `runtime/<profile>/chat.json` on
+the producer's machine.
+
+**Producer actions** (terminal or Control Center):
+- `racecast chat clear` — wipe the history (also available as **Clear chat** in the
+  Control Center). There is no HTTP endpoint that clears chat — this is a
+  producer-only operation.
+- `racecast chat export` — save the current history to `chat-export.json` (or `--out PATH`).
+- `racecast chat pull <tailscale-ip>` — fetch another producer's relay history and
+  adopt it locally, writing the file and signalling the relay to reload. This works
+  at any time, including while the new producer's relay is already running. Use it at
+  a producer handover to carry the conversation forward.
+- `racecast chat import <file>` — load a previously exported JSON file into the relay.
+
 ## The Companion button board
 
 The same show as big buttons: open

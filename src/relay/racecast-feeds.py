@@ -77,6 +77,8 @@ try:
 except Exception:                                # noqa: BLE001 — reflection is optional
     _obs_ws = None
 
+import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
+
 # ---------- Configuration ----------
 # Pipeline: yt-dlp resolves the live HLS URL (passes YouTube's bot-check via
 # cookies + JS-challenge solving) -> streamlink serves that direct URL to OBS
@@ -766,6 +768,57 @@ class TimerStore:
                 "push": d["sync"]["push"]}
 
 
+class ChatStore:
+    """Crew-chat history: in-memory ring buffer + best-effort JSON file
+    (runtime/<profile>/chat.json), loaded on construction. The relay only ever
+    APPENDS via add() (the one remote write path) or re-reads the file via
+    reload(); clear/import/pull overwrite the file out-of-band (CLI) and call
+    reload(). ts is always the server clock — handover-safe across machines."""
+
+    def __init__(self, path):
+        self.path = path
+        self.lock = threading.Lock()
+        try:
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        except OSError:
+            pass
+        self.messages = chat_admin.load_messages(self.path)
+
+    def add(self, user, text, now=None):
+        now = time.time() if now is None else now
+        msg = chat_admin.sanitize_message({"ts": now, "user": user, "text": text})
+        if msg is None:
+            return {"error": "message must have non-empty text"}
+        with self.lock:
+            self.messages.append(msg)
+            del self.messages[: -chat_admin.MAX_MESSAGES]
+            try:
+                chat_admin.write_messages(self.path, self.messages)
+            except OSError:
+                pass    # best-effort: in-memory append still stands
+        return {"ok": True, "message": msg}
+
+    def data(self):
+        with self.lock:
+            return {"messages": list(self.messages)}
+
+    def reload(self):
+        """Re-read the local file into memory. A corrupt file keeps the current
+        buffer (a bad reload must never wipe live chat). The CLI/UI surface the
+        returned error, so it carries the exception message."""
+        # Read + validate outside the lock: a concurrent add() is safe — it has
+        # already landed in memory and on disk; reload adopts the file as of now.
+        try:
+            with open(self.path, encoding="utf-8") as fh:
+                payload = json.load(fh)
+            msgs = chat_admin.validate_payload(payload)
+        except (OSError, ValueError) as e:
+            return {"error": f"reload failed: {type(e).__name__}: {e}"}
+        with self.lock:
+            self.messages = msgs
+        return {"ok": True, "count": len(msgs)}
+
+
 def channel_url(entry: str) -> str:
     entry = entry.strip()
     if entry.startswith("http://") or entry.startswith("https://"):
@@ -1441,7 +1494,8 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
 
 
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
-                 timer_store=None, timer_path=None, setup_ctl=None, overlay_dir=None):
+                 timer_store=None, timer_path=None, setup_ctl=None, overlay_dir=None,
+                 chat_store=None):
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
             body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
@@ -1552,6 +1606,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if len(p) == 3 and p[1] == "clear":
                         return self._send(setup_ctl.set_field(p[2].lower(), ""))
                     return self._send({"error": "unknown", "path": self.path}, 404)
+                if p[:1] == ["chat"]:
+                    if not chat_store:
+                        return self._send({"error": "chat disabled"}, 404)
+                    if p == ["chat", "data"]:
+                        return self._send(chat_store.data())
+                    if p == ["chat", "reload"]:
+                        return self._send(chat_store.reload())
+                    return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["schedule", "data"]:
                     rows = relay.source.get_rows()
                     live = {f.idx: k for k, f in relay.feeds.items()}
@@ -1591,6 +1653,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"error": "body must be JSON"}, 400)
                 if not isinstance(body, dict):
                     return self._send({"error": "body must be a JSON object"}, 400)
+                if p == ["chat", "send"]:
+                    if not chat_store:
+                        return self._send({"error": "chat disabled"}, 404)
+                    return self._send(chat_store.add(
+                        user=body.get("user"), text=body.get("text")))
                 if not setup_ctl:
                     return self._send({"error": "setup control disabled"}, 404)
                 if p == ["schedule", "set"]:
@@ -1849,6 +1916,7 @@ def main():
         if not timer_path:
             print("WARN: timer.html not found — /timer will 404.")
 
+    chat_store = ChatStore(os.path.join(runtime, "chat.json"))
     source = ScheduleSource(csv_url, cache, local)
     source.load_initial(SCHEDULE_TEMPLATE)
     setup_ctl = SetupControl(push_url, hud_source, schedule_source=source) if hud_source else None
@@ -1873,7 +1941,7 @@ def main():
 
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
                            timer_store, timer_path, setup_ctl,
-                           overlay_dir=args.overlay_dir)
+                           overlay_dir=args.overlay_dir, chat_store=chat_store)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers = []

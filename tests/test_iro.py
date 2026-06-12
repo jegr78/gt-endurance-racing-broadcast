@@ -1093,6 +1093,17 @@ def _raises(fn):
     raise AssertionError("expected ValueError")
 
 
+def t_chat_routing():
+    # verb is passed through in rest; route() does not validate it (chat_cmd does)
+    assert m.route(["chat", "clear"]) == {"kind": "chat", "rest": ["clear"]}
+    assert m.route(["chat", "export", "--out", "/tmp/x.json"]) == {
+        "kind": "chat", "rest": ["export", "--out", "/tmp/x.json"]}
+    assert m.route(["chat", "pull", "100.64.1.2"]) == {
+        "kind": "chat", "rest": ["pull", "100.64.1.2"]}
+    # bare "chat" (no verb) routes correctly; chat_cmd handles the usage error
+    assert m.route(["chat"]) == {"kind": "chat", "rest": []}
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
