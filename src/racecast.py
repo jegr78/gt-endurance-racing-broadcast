@@ -759,7 +759,10 @@ def chat_cmd(rest):
             sys.exit(f"racecast: file not found: {args[0]}")
         except (OSError, ValueError) as e:
             sys.exit(f"racecast: could not read {args[0]}: {e}")
-        n = ca.apply_pulled(path, payload)    # validates before writing
+        try:
+            n = ca.apply_pulled(path, payload)    # validates before writing
+        except ValueError as e:
+            sys.exit(f"racecast: import failed — {e} (local chat unchanged)")
         running = _chat_reload_if_running()
         print(f"Imported {n} messages." + ("" if running else " (relay not running.)"))
         return None
