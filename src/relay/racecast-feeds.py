@@ -192,6 +192,23 @@ def resolve_bind_addresses(bind_arg, tailscale_ip):
         return ["127.0.0.1"]
     return [bind_arg]
 
+_LOOPBACK_ADDRS = frozenset(("127.0.0.1", "localhost"))
+
+
+def loopback_bind_failed(requested, bound):
+    """True when a loopback address was requested but did not bind.
+
+    OBS always reaches the relay on 127.0.0.1, so binding the loopback is
+    mandatory whenever it was requested (the 'auto'/'127.0.0.1' binds). If a
+    stale relay already holds the loopback port, the dual-bind 'auto' path would
+    otherwise bind only the Tailscale IP and run on — a silent split-brain where
+    127.0.0.1 keeps serving the OLD relay (e.g. 'hud disabled') while the new one
+    hides on the tailnet (issue #84). An explicit --bind 0.0.0.0 / specific IP
+    never requested loopback, so this rule does not apply there.
+    """
+    req_loop = _LOOPBACK_ADDRS & set(requested)
+    return bool(req_loop) and not (_LOOPBACK_ADDRS & set(bound))
+
 SCHEDULE_TEMPLATE = (
     "# racecast relay offline fallback schedule — used ONLY if the Google Sheet AND the\n"
     "# last-good cache are both unavailable. One entry per stint, in order:\n"
@@ -2112,16 +2129,24 @@ def main():
                            preview_path=preview_path, graphics_dir=graphics_dir)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
-    servers = []
+    servers, bound_addrs = [], []
     for addr in bind_addrs:
         try:
             servers.append(QuietThreadingHTTPServer((addr, args.http_port), handler))
+            bound_addrs.append(addr)
         except OSError as e:
             print(f"  (warn) could not bind {addr}:{args.http_port} — {e}")
-    if not servers:
-        sys.exit(f"Could not bind the control server on {bind_addrs} port {args.http_port} "
-                 f"— port may already be in use: run 'racecast preflight' or 'racecast status' "
-                 f"to see what holds it.")
+    # The loopback bind is mandatory when requested: OBS always reaches the relay
+    # on 127.0.0.1. If it failed but (e.g.) the Tailscale IP bound, running on
+    # would be a silent split-brain — 127.0.0.1 stays served by the STALE relay
+    # that holds the port (issue #84). Abort loudly instead of half-starting.
+    if not servers or loopback_bind_failed(bind_addrs, bound_addrs):
+        for httpd in servers:
+            httpd.server_close()
+        sys.exit(f"Could not bind the control server on 127.0.0.1 port {args.http_port} "
+                 f"— another relay is probably already running. Stop it first "
+                 f"('racecast relay stop'), then check 'racecast status' / 'racecast preflight' "
+                 f"to see what holds the port.")
 
     def shutdown(*_):
         # IMPORTANT: do NOT call shutdown() from the thread running serve_forever()

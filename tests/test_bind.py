@@ -86,6 +86,37 @@ def t_explicit_address_wins_over_auto_detection():
     assert m.resolve_bind_addresses("0.0.0.0", None) == ["0.0.0.0"]
 
 
+# --- loopback_bind_failed: the loopback bind is MANDATORY when requested. ------
+# OBS always reaches the relay on 127.0.0.1, so a relay that bound only the
+# Tailscale IP (because a STALE relay already holds the loopback port) is a
+# silent split-brain: 127.0.0.1 keeps serving the old relay's pages (e.g.
+# "hud disabled"), while the new relay hides on the tailnet. Treat a failed
+# loopback bind as fatal even when other addresses bound (issue #84).
+def t_loopback_failed_when_requested_but_not_bound():
+    # auto+Tailscale wanted [127.0.0.1, ts]; only the Tailscale IP bound.
+    assert m.loopback_bind_failed(["127.0.0.1", "100.64.10.20"],
+                                  ["100.64.10.20"]) is True
+
+
+def t_loopback_ok_when_loopback_bound():
+    assert m.loopback_bind_failed(["127.0.0.1", "100.64.10.20"],
+                                  ["127.0.0.1", "100.64.10.20"]) is False
+    assert m.loopback_bind_failed(["127.0.0.1"], ["127.0.0.1"]) is False
+
+
+def t_loopback_not_requested_is_never_fatal():
+    # Explicit --bind 0.0.0.0 / a specific IP never asked for loopback, so a
+    # missing 127.0.0.1 is not this rule's concern (0.0.0.0 covers it anyway).
+    assert m.loopback_bind_failed(["0.0.0.0"], ["0.0.0.0"]) is False
+    assert m.loopback_bind_failed(["100.64.10.20"], ["100.64.10.20"]) is False
+    assert m.loopback_bind_failed(["0.0.0.0"], []) is False
+
+
+def t_loopback_localhost_alias_counts():
+    assert m.loopback_bind_failed(["localhost"], []) is True
+    assert m.loopback_bind_failed(["localhost"], ["localhost"]) is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
