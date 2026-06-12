@@ -316,6 +316,24 @@ def t_build_hud_data_team_number_and_strip():
     assert d["teams"][2] == {"name": "", "number": "", "brandKey": ""}
 
 
+def t_parse_config_roster_team_name_header():
+    r = m.parse_config_roster("Team Name,Number,Brand\nOVO eSports,111,Porsche\n")
+    assert r == {"OVO eSports": {"number": "111", "brandKey": "porsche"}}, r
+
+
+def t_hudsource_roster_preserved_on_failure():
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    hs = m.HudSource("http://overlay", "http://config", _os.path.join(d, "hud.cache.json"))
+    hs._fetch = lambda url, timeout=10: OVERLAY_CSV if url == "http://overlay" else CONFIG_CSV
+    assert hs.refresh() is True
+    assert hs._roster  # populated
+    def boom(url, timeout=10): raise OSError("network down")
+    hs._fetch = boom
+    assert hs.refresh() is False
+    assert hs._roster  # last-good roster preserved, not cleared
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
