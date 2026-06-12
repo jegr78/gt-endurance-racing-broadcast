@@ -164,6 +164,119 @@ def t_cookie_health_vanished_file_treated_as_absent():
         assert m.cookie_health(gone) == {"present": False, "age_h": None, "stale": False}
 
 
+# --------------------------------------------------------------------------
+# Live OBS-reachability probe behind /status's obs.reachable
+# --------------------------------------------------------------------------
+def t_should_probe_obs_throttles_and_respects_inflight():
+    # first call (last_ts=0, idle) -> probe
+    assert m.should_probe_obs(0.0, False, 1000.0, 5.0) is True
+    # within the interval -> skip
+    assert m.should_probe_obs(998.0, False, 1000.0, 5.0) is False
+    # interval elapsed -> probe again (>= boundary counts)
+    assert m.should_probe_obs(995.0, False, 1000.0, 5.0) is True
+    # a probe already in flight -> never launch a second
+    assert m.should_probe_obs(0.0, True, 1000.0, 5.0) is False
+
+
+class _FakeObs:
+    """Stand-in for the obs_ws module: probe() returns a canned (reachable, note)."""
+    def __init__(self, reachable, note):
+        self._result = (reachable, note)
+        self.calls = 0
+
+    def probe(self):
+        self.calls += 1
+        return self._result
+
+
+def t_status_obs_field_reports_probed_reachability():
+    # status() surfaces self.obs_reachable verbatim (the probe owns it), and the
+    # default before any probe is None ("unknown" -> panel shows no banner).
+    orig = m._obs_ws
+    m._obs_ws = None                       # disable the live probe for determinism
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
+            assert r.status()["obs"] == {"reachable": None, "note": None}
+            r.obs_reachable = False
+            r.obs_note = "OBS WebSocket not reachable on 127.0.0.1:4455 (OBS not running?)"
+            st = r.status()
+            assert st["obs"]["reachable"] is False
+            assert "not reachable" in st["obs"]["note"]
+            r.obs_reachable = True
+            r.obs_note = None
+            assert r.status()["obs"] == {"reachable": True, "note": None}
+    finally:
+        m._obs_ws = orig
+
+
+def t_run_obs_probe_records_live_result_and_clears_inflight():
+    orig = m._obs_ws
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
+            r._obs_probe_running = True               # as set by _maybe_probe_obs
+            m._obs_ws = _FakeObs(True, "")
+            r._run_obs_probe()
+            assert r.obs_reachable is True
+            assert r.obs_note is None                 # "" normalizes to None
+            assert r._obs_probe_running is False
+            # an unreachable result records the reason and stays False
+            r._obs_probe_running = True
+            m._obs_ws = _FakeObs(False, "OBS not running?")
+            r._run_obs_probe()
+            assert r.obs_reachable is False
+            assert r.obs_note == "OBS not running?"
+            assert r._obs_probe_running is False
+    finally:
+        m._obs_ws = orig
+
+
+def t_maybe_probe_obs_is_noop_without_client():
+    orig = m._obs_ws
+    m._obs_ws = None
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
+            r._maybe_probe_obs(1000.0)
+            assert r.obs_reachable is None
+            assert r._obs_probe_running is False
+    finally:
+        m._obs_ws = orig
+
+
+def t_maybe_probe_obs_throttles_repeat_calls():
+    orig = m._obs_ws
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
+            fake = _FakeObs(True, "")
+            m._obs_ws = fake
+            t = r._maybe_probe_obs(1000.0)
+            assert t is not None; t.join(timeout=2)
+            assert fake.calls == 1
+            # immediate second call within the interval must not re-probe
+            assert r._maybe_probe_obs(1001.0) is None
+            assert fake.calls == 1
+            # past the interval -> a fresh probe runs
+            t = r._maybe_probe_obs(1000.0 + m.OBS_PROBE_INTERVAL_S + 0.1)
+            assert t is not None; t.join(timeout=2)
+            assert fake.calls == 2
+    finally:
+        m._obs_ws = orig
+
+
+def t_maybe_probe_obs_disabled_returns_none_without_client():
+    orig = m._obs_ws
+    m._obs_ws = None
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
+            assert r._maybe_probe_obs(1000.0) is None
+    finally:
+        m._obs_ws = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
