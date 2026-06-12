@@ -826,9 +826,9 @@ function escapeHtml(s){
 const CHAT_NAME_KEY = "racecast.chat.name";
 const CHAT_SEEN_KEY = "racecast.chat.lastSeenTs";
 let chatSeenTs = parseFloat(localStorage.getItem(CHAT_SEEN_KEY) || "0") || 0;
-let chatMaxTs = chatSeenTs;
+let chatMessages = [];
 try{ $("#chatName").value = localStorage.getItem(CHAT_NAME_KEY) || ""; }catch(e){}
-$("#chatName").addEventListener("change", e=>{
+$("#chatName").addEventListener("input", e=>{
   try{ localStorage.setItem(CHAT_NAME_KEY, e.target.value.trim()); }catch(_){}
 });
 
@@ -837,6 +837,7 @@ function chatAtBottom(){
   return el.scrollHeight - el.scrollTop - el.clientHeight < 24;
 }
 function chatRender(messages){
+  chatMessages = messages;
   const el = $("#chatLog");
   const stick = chatAtBottom();
   el.replaceChildren();
@@ -849,19 +850,18 @@ function chatRender(messages){
     const body = document.createElement("span"); body.textContent = msg.text;
     line.append(t, who, body); el.appendChild(line);          // textContent => no HTML injection
   }
-  if (messages.length) chatMaxTs = messages[messages.length - 1].ts;
   const open = $("#chatBox").open && document.hasFocus();
   if (open && stick){ el.scrollTop = el.scrollHeight; chatMarkSeen(); }
-  chatUpdateBadge();
+  else chatUpdateBadge();
 }
 function chatUpdateBadge(){
-  const unread = chatMaxTs > chatSeenTs;
+  const count = chatMessages.filter(m => m.ts > chatSeenTs).length;
   const badge = $("#chatUnread");
-  badge.hidden = !unread;
-  if (unread) badge.textContent = "•";
+  badge.hidden = count === 0;
+  if (count) badge.textContent = String(count);
 }
 function chatMarkSeen(){
-  chatSeenTs = chatMaxTs;
+  chatSeenTs = chatMessages.length ? chatMessages[chatMessages.length - 1].ts : chatSeenTs;
   try{ localStorage.setItem(CHAT_SEEN_KEY, String(chatSeenTs)); }catch(_){}
   chatUpdateBadge();
 }
@@ -889,7 +889,7 @@ async function chatPoll(){
 $("#chatSendBtn").addEventListener("click", chatSend);
 $("#chatInput").addEventListener("keydown", e=>{ if (e.key === "Enter") chatSend(); });
 $("#chatBox").addEventListener("toggle", ()=>{ if ($("#chatBox").open) chatMarkSeen(); });
-$("#chatLog").addEventListener("scroll", ()=>{ if (chatAtBottom()) chatMarkSeen(); });
+$("#chatLog").addEventListener("scroll", ()=>{ if ($("#chatBox").open && chatAtBottom()) chatMarkSeen(); });
 
 SETUP_FIELDS.forEach(([key,label])=>{
   const w = document.createElement("div"); w.className = "fld";
