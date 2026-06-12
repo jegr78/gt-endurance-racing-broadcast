@@ -307,6 +307,22 @@ def t_roster_column_wins_over_embedded():
 def t_roster_no_teams_header_is_empty():
     assert m.parse_config_roster("Foo,Bar\n1,2\n") == {}
 
+
+def t_team_full_labels_keeps_embedded_number():
+    # Embedded #NNN (no Number column) -> verbatim label kept under the bare key.
+    r = m.parse_team_full_labels(ROSTER_CSV_EMBEDDED_ONLY)
+    assert r == {"OVO eSports": "OVO eSports #111", "Apex Racing": "Apex Racing #7"}, r
+
+
+def t_team_full_labels_bare_when_number_is_separate_column():
+    # Bare Teams column + separate Number column -> verbatim label is the bare name.
+    r = m.parse_team_full_labels(ROSTER_CSV_WITH_NUMBER)
+    assert r == {"OVO eSports": "OVO eSports", "Feel Good": "Feel Good"}, r
+
+
+def t_team_full_labels_no_teams_header_is_empty():
+    assert m.parse_team_full_labels("Foo,Bar\n1,2\n") == {}
+
 def t_build_hud_data_team_number_and_strip():
     roster = {"OVO eSports": {"number": "111", "brandKey": "porsche"}}
     overlay = {"teams": ["OVO eSports #999", "Unknown #5", ""]}

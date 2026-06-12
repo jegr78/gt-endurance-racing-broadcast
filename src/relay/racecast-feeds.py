@@ -457,6 +457,31 @@ def parse_config_roster(text):
     return out
 
 
+def parse_team_full_labels(text):
+    """Configuration tab CSV -> {stripped_team_name: verbatim_label}. The verbatim
+    label (e.g. 'OVO eSports #111') is exactly what the Setup tab's team dropdowns
+    list; the panel offers the stripped name (name/number split for the HUD), so
+    the relay maps it back to this verbatim value when writing the Setup cell —
+    keeping teams in lockstep with the dropdown, like the other Setup fields. Same
+    column-location rules as parse_config_roster; first occurrence wins."""
+    rows = list(csv.reader(io.StringIO(text)))
+    if not rows:
+        return {}
+    header = [(h or "").strip().lower() for h in rows[0]]
+    ti = next((header.index(h) for h in TEAM_NAME_HEADERS if h in header), None)
+    if ti is None:
+        return {}
+    out = {}
+    for row in rows[1:]:
+        if len(row) <= ti:
+            continue
+        label = (row[ti] or "").strip()
+        name, _embedded = split_team_label(label)
+        if name:
+            out.setdefault(name, label)
+    return out
+
+
 # Configuration-tab vocabulary columns feeding the panel's Setup dropdowns
 # (strict: the panel offers ONLY these values — spec: panel-sheet-control).
 # Dict KEYS are the API field names used by panel endpoints; VALUES are sheet headers (matched case-insensitively).
@@ -1113,6 +1138,7 @@ class HudSource:
         self._data = None
         self._vocab = {k: [] for k in VOCAB_COLUMNS}
         self._roster = {}
+        self._roster_full = {}   # stripped team name -> verbatim Configuration label
         self.overrides = {}   # hud-data key -> (value, expires_ts)
         self.team_overrides = {}   # slot index 0..2 -> (entry_dict, expires_ts)
         self.last_ok = None
@@ -1137,6 +1163,7 @@ class HudSource:
             overlay = parse_overlay(self._fetch(self.overlay_url, timeout))
             config_text = self._fetch(self.config_url, timeout)
             roster = parse_config_roster(config_text)
+            roster_full = parse_team_full_labels(config_text)
             vocab = parse_config_vocab(config_text)
             data = build_hud_data(overlay, roster)
         except Exception as e:
@@ -1146,6 +1173,7 @@ class HudSource:
             self._data = data
             self._vocab = vocab
             self._roster = roster
+            self._roster_full = roster_full
             # a sheet poll that already shows the pushed value = confirmation
             self.overrides = {k: (v, exp) for k, (v, exp) in self.overrides.items()
                               if data.get(k) != v}
@@ -1215,6 +1243,15 @@ class HudSource:
                 "number": info.get("number") or embedded,
                 "brandKey": info.get("brandKey", "")}
 
+    def full_team_name(self, name):
+        """The verbatim Configuration team label (e.g. 'OVO eSports #111') for a
+        panel-supplied roster name — what the Setup tab dropdown expects. Falls
+        back to the given name when the team is unknown (or the config has no
+        embedded number, in which case the verbatim label IS the bare name)."""
+        bare, _embedded = split_team_label(name)
+        with self.lock:
+            return self._roster_full.get(bare) or (name or "").strip()
+
     def set_team_override(self, slot, entry, now=None):
         """Optimistic echo for a panel team write into podium slot 0..2."""
         now = time.time() if now is None else now
@@ -1244,7 +1281,7 @@ SETUP_FIELDS = {
     "racecontrol": ("Race Control", "raceControl"),
 }
 
-# Panel team slots: URL segment -> 1-based podium slot (Overlay tab "Teams P<n>").
+# Panel team slots: URL segment -> 1-based podium slot (Setup tab "Team <n>" cell).
 TEAM_SLOTS = {"p1": 1, "p2": 2, "p3": 3}
 
 
@@ -1301,7 +1338,8 @@ class SetupControl:
         if ok:
             self.hud.refresh()   # confirm now, not at the next poll tick
 
-    # -- team slots (async-optimistic, writes the Overlay tab Teams rows) -------
+    # -- team slots (async-optimistic, writes the Setup tab team cells A6/B6/C6;
+    #    the Overlay tab only mirrors them read-only) --------------------------
     def set_team(self, slot_key, name, now=None):
         if slot_key not in TEAM_SLOTS:
             return {"error": f"unknown team slot: {slot_key!r} "
@@ -1320,7 +1358,11 @@ class SetupControl:
         return {"ok": True, "slot": slot_key, "value": name, "pending": True}
 
     def _push_team(self, slot, name):
-        ok, _err = self._push({"action": "teams", "slot": slot, "name": name},
+        # Write the verbatim Configuration label (e.g. 'OVO eSports #111') the
+        # Setup dropdown lists, not the panel's stripped vocab name — the Setup
+        # cell then matches the dropdown exactly, like the other fields.
+        full = self.hud.full_team_name(name)
+        ok, _err = self._push({"action": "teams", "slot": slot, "name": full},
                               "teams")
         if ok:
             self.hud.refresh()

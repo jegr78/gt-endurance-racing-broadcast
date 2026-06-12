@@ -448,6 +448,43 @@ def t_set_team_echo_and_push():
     finally:
         m.post_webhook = orig
 
+TEAM_CONFIG_CSV_EMBEDDED = ("Teams,Brand Name\n"
+                            "OVO eSports #111,Porsche\nFeel Good #303,BMW\n")
+
+def _team_ctl_embedded(pushes):
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    hs = m.HudSource("http://overlay", "http://config", _os.path.join(d, "h.json"))
+    hs._fetch = lambda url, timeout=10: (TEAM_OVERLAY_CSV if url == "http://overlay"
+                                         else TEAM_CONFIG_CSV_EMBEDDED)
+    hs.refresh()
+    ctl = m.SetupControl("http://push", hs)
+    def fake_post(url, payload, timeout=10):
+        pushes.append(payload)
+        return b'{"ok": true, "action": "teams", "v": 2}'
+    m.post_webhook, orig = fake_post, m.post_webhook
+    return ctl, hs, orig
+
+def t_push_team_sends_verbatim_label_with_number():
+    # Panel offers the stripped name; the relay writes the verbatim '#NNN' label
+    # the Setup dropdown lists.
+    pushes = []
+    ctl, hs, orig = _team_ctl_embedded(pushes)
+    try:
+        assert hs.full_team_name("OVO eSports") == "OVO eSports #111"
+        ctl._push_team(1, "OVO eSports")
+        assert pushes[-1] == {"action": "teams", "slot": 1, "name": "OVO eSports #111"}
+    finally:
+        m.post_webhook = orig
+
+def t_full_team_name_falls_back_for_unknown_team():
+    ctl, hs, orig = _team_ctl_embedded([])
+    try:
+        # unknown team -> the given name, stripped; never a KeyError
+        assert hs.full_team_name("Mystery Crew") == "Mystery Crew"
+    finally:
+        m.post_webhook = orig
+
 def t_setup_data_includes_teams():
     ctl, hs, orig = _team_ctl([])
     try:
