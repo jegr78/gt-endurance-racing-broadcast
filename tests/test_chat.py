@@ -393,6 +393,39 @@ def t_chat_endpoint_send_is_post_only():
             srv.shutdown()
 
 
+def t_apply_pull_overwrites_on_valid():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "chat.json")
+        ca.write_messages(path, [{"ts": 1.0, "user": "old", "text": "old"}])
+        n = ca.apply_pulled(path, {"messages": [{"ts": 2.0, "user": "new", "text": "new"}]})
+        assert n == 1
+        assert ca.load_messages(path) == [{"ts": 2.0, "user": "new", "text": "new"}]
+
+
+def t_apply_pull_empty_overwrites_to_empty():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "chat.json")
+        ca.write_messages(path, [{"ts": 1.0, "user": "old", "text": "old"}])
+        assert ca.apply_pulled(path, {"messages": []}) == 0
+        assert ca.load_messages(path) == []
+
+
+def t_apply_pull_malformed_leaves_file_untouched():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "chat.json")
+        ca.write_messages(path, [{"ts": 1.0, "user": "old", "text": "old"}])
+        with open(path, "rb") as fh:
+            before = fh.read()
+        for bad in (None, {"messages": 5}, "x", []):
+            try:
+                ca.apply_pulled(path, bad)
+                raise AssertionError(bad)
+            except ValueError:
+                pass
+        with open(path, "rb") as fh:
+            assert fh.read() == before     # byte-for-byte unchanged
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

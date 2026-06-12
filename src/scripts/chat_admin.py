@@ -91,3 +91,12 @@ def load_messages(path):
         return validate_payload(payload)
     except ValueError:
         return []
+
+
+def apply_pulled(path, payload):
+    """Validate payload (raises ValueError on a malformed shape) and ONLY THEN
+    overwrite path. On failure the local file is left untouched. Returns the
+    number of messages written. Used by `racecast chat pull` and `chat import`."""
+    messages = validate_payload(payload)     # raises before any write
+    write_messages(path, messages)
+    return len(messages)
