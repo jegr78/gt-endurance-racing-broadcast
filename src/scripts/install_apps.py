@@ -112,7 +112,9 @@ def darwin_app_version(app, exists=os.path.exists, read_plist=_read_plist):
     or the keys are absent / the plist is unreadable. The reader is injected so
     the logic is unit-tested without a real .app on disk."""
     for bundle in _DARWIN_APP_PATHS.get(app, ()):
-        plist = os.path.join(bundle, "Contents", "Info.plist")
+        # macOS bundle path -> always forward slashes (os.path.join would inject
+        # backslashes when this helper is exercised cross-platform, e.g. in CI).
+        plist = bundle + "/Contents/Info.plist"
         if not exists(plist):
             continue
         try:
