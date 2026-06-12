@@ -3050,7 +3050,7 @@
         "action_sets": {
          "down": [
           {
-           "id": "iro-timer-start",
+           "id": "rc-timer-start",
            "definitionId": "get",
            "connectionId": "BB0jmLMxj_0YwbhwslOiw",
            "options": {
@@ -3110,7 +3110,7 @@
         "action_sets": {
          "down": [
           {
-           "id": "iro-timer-stop",
+           "id": "rc-timer-stop",
            "definitionId": "get",
            "connectionId": "BB0jmLMxj_0YwbhwslOiw",
            "options": {
@@ -3170,7 +3170,7 @@
         "action_sets": {
          "down": [
           {
-           "id": "iro-timer-show",
+           "id": "rc-timer-show",
            "definitionId": "get",
            "connectionId": "BB0jmLMxj_0YwbhwslOiw",
            "options": {
@@ -3230,7 +3230,7 @@
         "action_sets": {
          "down": [
           {
-           "id": "iro-timer-hide",
+           "id": "rc-timer-hide",
            "definitionId": "get",
            "connectionId": "BB0jmLMxj_0YwbhwslOiw",
            "options": {
@@ -3290,7 +3290,7 @@
         "action_sets": {
          "down": [
           {
-           "id": "iro-timer-adjust-60",
+           "id": "rc-timer-adjust-60",
            "definitionId": "get",
            "connectionId": "BB0jmLMxj_0YwbhwslOiw",
            "options": {
@@ -3350,7 +3350,7 @@
         "action_sets": {
          "down": [
           {
-           "id": "iro-timer-adjust--60",
+           "id": "rc-timer-adjust--60",
            "definitionId": "get",
            "connectionId": "BB0jmLMxj_0YwbhwslOiw",
            "options": {
@@ -3410,7 +3410,7 @@
         "action_sets": {
          "down": [
           {
-           "id": "iro-timer-reset",
+           "id": "rc-timer-reset",
            "definitionId": "get",
            "connectionId": "BB0jmLMxj_0YwbhwslOiw",
            "options": {

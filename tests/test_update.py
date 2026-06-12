@@ -80,9 +80,9 @@ def t_swap_plan_posix_inplace():
 
 def t_swap_plan_windows_rename_trick():
     # impl must use ntpath so this is computable when the test runs on macOS/Linux
-    plan = m.swap_plan("win32", r"C:\IRO\racecast.exe", r"C:\tmp\racecast.exe")
-    assert plan == [("rename", r"C:\IRO\racecast.exe", r"C:\IRO\racecast-old.exe"),
-                    ("move", r"C:\tmp\racecast.exe", r"C:\IRO\racecast.exe")]
+    plan = m.swap_plan("win32", r"C:\racecast\racecast.exe", r"C:\tmp\racecast.exe")
+    assert plan == [("rename", r"C:\racecast\racecast.exe", r"C:\racecast\racecast-old.exe"),
+                    ("move", r"C:\tmp\racecast.exe", r"C:\racecast\racecast.exe")]
 
 
 # --- safe_member: archive extraction guard ----------------------------------------

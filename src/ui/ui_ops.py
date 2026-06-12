@@ -108,10 +108,10 @@ def build_argv(name, params=None):
     return argv
 
 
-def job_argv(op_args, frozen, executable, iro_script):
+def job_argv(op_args, frozen, executable, rc_script):
     """argv to run `racecast <op_args...>` as a child process: the frozen binary
     re-invokes itself (same mechanism as the daemon spawns); repo/package mode
     runs racecast.py with this interpreter."""
     if frozen:
         return [executable] + list(op_args)
-    return [executable, iro_script] + list(op_args)
+    return [executable, rc_script] + list(op_args)

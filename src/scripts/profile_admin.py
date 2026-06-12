@@ -28,7 +28,7 @@ def valid_profile_name(name):
 def slugify(name):
     """Turn a free-form league name into a directory-safe slug: lowercase, runs of
     anything outside [a-z0-9_-] collapse to a single '-', and leading/trailing
-    '-'/'_' are trimmed. 'IRO GTEC' -> 'iro-gtec'; an already-valid slug is
+    '-'/'_' are trimmed. 'Demo League' -> 'demo-league'; an already-valid slug is
     unchanged. Returns '' when nothing usable remains. Doubles as path-traversal
     defense ('../etc' -> 'etc')."""
     s = re.sub(r"[^a-z0-9_-]+", "-", (name or "").strip().lower())
@@ -37,7 +37,7 @@ def slugify(name):
 
 def _display_name(name):
     """The league display NAME we store from a typed profile name: trimmed, with
-    internal whitespace runs collapsed to single spaces. 'IRO  GTEC ' -> 'IRO GTEC'."""
+    internal whitespace runs collapsed to single spaces. 'Demo  League ' -> 'Demo League'."""
     return " ".join((name or "").split())
 
 
@@ -122,8 +122,8 @@ def split_profile_flag(argv):
 
 def create_profile(root, name, source="example"):
     """Copy profiles/<source>/ -> profiles/<slug>/ and return the new dir path.
-    The typed `name` may contain spaces/capitals (e.g. "IRO GTEC"): it is slugged
-    for the directory ("iro-gtec") and kept verbatim as the league display NAME in
+    The typed `name` may contain spaces/capitals (e.g. "Demo League"): it is slugged
+    for the directory ("demo-league") and kept verbatim as the league display NAME in
     the new profile.env. Raises ValueError when the name has no sluggable
     characters, the slug is reserved/already exists, or the source is missing."""
     slug = slugify(name)

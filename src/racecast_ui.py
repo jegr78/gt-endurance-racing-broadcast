@@ -4,7 +4,7 @@ binary). Producers double-click it — there is no terminal. It runs the same
 server as `racecast ui` via racecast.run_ui(), but a fatal startup error (port taken /
 bind failure) is shown in a NATIVE dialog instead of being written to a console
 that does not exist. Jobs still spawn the sibling `racecast` binary (see
-racecast._iro_job_executable). Spec: docs/superpowers/specs/2026-06-07-control-center-design.md."""
+racecast._rc_job_executable). Spec: docs/superpowers/specs/2026-06-07-control-center-design.md."""
 import os
 import sys
 

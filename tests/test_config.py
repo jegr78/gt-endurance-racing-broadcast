@@ -39,14 +39,14 @@ def t_parse_env_text_ignores_blanks_comments_and_strips_quotes():
         "# a comment",
         "",
         "SHEET_ID=abc123",
-        '  NAME = "IRO GTEC" ',
+        '  NAME = "Demo League" ',
         "URL='https://x/y?key=z'",   # '=' inside the value is kept
         "noequals",
     ])
     got = m.parse_env_text(text)
     assert got == {
         "SHEET_ID": "abc123",
-        "NAME": "IRO GTEC",
+        "NAME": "Demo League",
         "URL": "https://x/y?key=z",
     }
 
@@ -55,9 +55,9 @@ def t_load_machine_env_reads_dotenv_at_root():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
         with open(os.path.join(root, ".env"), "w", encoding="utf-8") as fh:
-            fh.write("RACECAST_PROFILE=iro\nRACECAST_UI_PORT=8089\n")
+            fh.write("RACECAST_PROFILE=demo\nRACECAST_UI_PORT=8089\n")
         got = m.load_machine_env(root)
-        assert got == {"RACECAST_PROFILE": "iro", "RACECAST_UI_PORT": "8089"}
+        assert got == {"RACECAST_PROFILE": "demo", "RACECAST_UI_PORT": "8089"}
 
 
 def t_load_machine_env_returns_empty_when_no_dotenv():
@@ -77,11 +77,11 @@ def _mkprofile(root, name, body):
 def t_list_profiles_sorted_excludes_example_and_dirs_without_profile_env():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
-        _mkprofile(root, "iro", "SHEET_ID=a\n")
+        _mkprofile(root, "demo", "SHEET_ID=a\n")
         _mkprofile(root, "erf", "SHEET_ID=b\n")
         _mkprofile(root, "example", "SHEET_ID=\n")           # template, excluded
         os.makedirs(os.path.join(root, "profiles", "empty"))  # no profile.env
-        assert m.list_profiles(root) == ["erf", "iro"]
+        assert m.list_profiles(root) == ["demo", "erf"]
 
 
 def t_list_profiles_empty_when_no_profiles_dir():
@@ -93,9 +93,9 @@ def t_list_profiles_empty_when_no_profiles_dir():
 def t_parse_profile_reads_named_profile():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
-        _mkprofile(root, "iro", "NAME=IRO GTEC\nSHEET_ID=abc\n")
-        assert m.parse_profile(root, "iro") == {
-            "NAME": "IRO GTEC", "SHEET_ID": "abc"}
+        _mkprofile(root, "demo", "NAME=Demo League\nSHEET_ID=abc\n")
+        assert m.parse_profile(root, "demo") == {
+            "NAME": "Demo League", "SHEET_ID": "abc"}
 
 
 def t_read_active_pointer_reads_and_strips():
@@ -108,35 +108,35 @@ def t_read_active_pointer_reads_and_strips():
 
 
 def t_resolve_active_profile_precedence_override_beats_env_and_pointer():
-    avail = ["erf", "iro"]
+    avail = ["erf", "demo"]
     assert m.resolve_active_profile(
-        avail, override="iro", env_value="erf", pointer="erf") == "iro"
+        avail, override="demo", env_value="erf", pointer="erf") == "demo"
 
 
 def t_resolve_active_profile_env_beats_pointer():
     assert m.resolve_active_profile(
-        ["erf", "iro"], env_value="erf", pointer="iro") == "erf"
+        ["erf", "demo"], env_value="erf", pointer="demo") == "erf"
 
 
 def t_resolve_active_profile_pointer_used_when_no_override_or_env():
-    assert m.resolve_active_profile(["erf", "iro"], pointer="iro") == "iro"
+    assert m.resolve_active_profile(["erf", "demo"], pointer="demo") == "demo"
 
 
 def t_resolve_active_profile_single_profile_is_implicit():
-    assert m.resolve_active_profile(["iro"]) == "iro"
+    assert m.resolve_active_profile(["demo"]) == "demo"
 
 
 def t_resolve_active_profile_unknown_name_raises():
     try:
-        m.resolve_active_profile(["iro"], override="ghost")
+        m.resolve_active_profile(["demo"], override="ghost")
         raise AssertionError("expected ProfileError")
     except m.ProfileError as e:
-        assert "ghost" in str(e) and "iro" in str(e)
+        assert "ghost" in str(e) and "demo" in str(e)
 
 
 def t_resolve_active_profile_ambiguous_raises():
     try:
-        m.resolve_active_profile(["erf", "iro"])
+        m.resolve_active_profile(["erf", "demo"])
         raise AssertionError("expected ProfileError")
     except m.ProfileError as e:
         assert "--profile" in str(e)
@@ -157,17 +157,17 @@ def t_profile_runtime_dir_is_runtime_slash_name():
 def t_resolve_config_end_to_end_single_profile():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
-        _mkprofile(root, "iro",
-                   "NAME=IRO GTEC\nSHEET_ID=abc\nSHEET_PUSH_URL=https://x?key=y\n")
+        _mkprofile(root, "demo",
+                   "NAME=Demo League\nSHEET_ID=abc\nSHEET_PUSH_URL=https://x?key=y\n")
         cfg = m.resolve_config(root, environ={})
-        assert cfg.profile == "iro"
-        assert cfg.name == "IRO GTEC"
+        assert cfg.profile == "demo"
+        assert cfg.name == "Demo League"
         assert cfg.sheet_id == "abc"
         assert cfg.sheet_push_url == "https://x?key=y"
         assert cfg.intro_url == "" and cfg.outro_url == ""
         assert cfg.logo_path == ""              # no LOGO set
-        assert cfg.profile_dir == os.path.join(root, "profiles", "iro")
-        assert cfg.runtime_dir == os.path.join(root, "runtime", "iro")
+        assert cfg.profile_dir == os.path.join(root, "profiles", "demo")
+        assert cfg.runtime_dir == os.path.join(root, "runtime", "demo")
 
 
 def t_resolve_config_name_defaults_to_profile_when_unset():
@@ -181,7 +181,7 @@ def t_resolve_config_name_defaults_to_profile_when_unset():
 def t_resolve_config_override_selects_among_many():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
-        _mkprofile(root, "iro", "SHEET_ID=a\n")
+        _mkprofile(root, "demo", "SHEET_ID=a\n")
         _mkprofile(root, "erf", "SHEET_ID=b\n")
         cfg = m.resolve_config(root, override="erf", environ={})
         assert cfg.profile == "erf" and cfg.sheet_id == "b"
@@ -190,16 +190,16 @@ def t_resolve_config_override_selects_among_many():
 def t_resolve_config_env_var_selects_among_many():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
-        _mkprofile(root, "iro", "SHEET_ID=a\n")
+        _mkprofile(root, "demo", "SHEET_ID=a\n")
         _mkprofile(root, "erf", "SHEET_ID=b\n")
-        cfg = m.resolve_config(root, environ={"RACECAST_PROFILE": "iro"})
-        assert cfg.profile == "iro"
+        cfg = m.resolve_config(root, environ={"RACECAST_PROFILE": "demo"})
+        assert cfg.profile == "demo"
 
 
 def t_resolve_config_logo_path_resolved_when_file_present():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
-        pdir = _mkprofile(root, "iro", "SHEET_ID=a\nLOGO=logo.png\n")
+        pdir = _mkprofile(root, "demo", "SHEET_ID=a\nLOGO=logo.png\n")
         open(os.path.join(pdir, "logo.png"), "w").close()
         cfg = m.resolve_config(root, environ={})
         assert cfg.logo_path == os.path.join(pdir, "logo.png")
@@ -208,7 +208,7 @@ def t_resolve_config_logo_path_resolved_when_file_present():
 def t_resolve_config_logo_path_blank_when_file_missing():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
-        _mkprofile(root, "iro", "SHEET_ID=a\nLOGO=missing.png\n")
+        _mkprofile(root, "demo", "SHEET_ID=a\nLOGO=missing.png\n")
         cfg = m.resolve_config(root, environ={})
         assert cfg.logo_path == ""
 
@@ -216,10 +216,10 @@ def t_resolve_config_logo_path_blank_when_file_missing():
 def t_resolve_config_obs_collection_from_field():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
-        _mkprofile(root, "iro",
-                   "NAME=IRO GTEC\nSHEET_ID=abc\nOBS_COLLECTION=IRO Broadcast\n")
+        _mkprofile(root, "demo",
+                   "NAME=Demo League\nSHEET_ID=abc\nOBS_COLLECTION=Demo Broadcast\n")
         cfg = m.resolve_config(root, environ={})
-        assert cfg.obs_collection == "IRO Broadcast"
+        assert cfg.obs_collection == "Demo Broadcast"
 
 
 def t_resolve_config_obs_collection_falls_back_to_name():
@@ -243,16 +243,16 @@ def t_resolve_config_obs_collection_falls_back_to_profile_dir_when_no_name():
 def t_resolve_config_obs_collection_default_is_prefixed():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
-        _mkprofile(root, "iro", "NAME=IRO GTEC\nSHEET_ID=x\n")  # no OBS_COLLECTION
+        _mkprofile(root, "demo", "NAME=Demo League\nSHEET_ID=x\n")  # no OBS_COLLECTION
         cfg = m.resolve_config(root, environ={})
-        assert cfg.obs_collection == "GT Endurance Racing — IRO GTEC"
+        assert cfg.obs_collection == "GT Endurance Racing — Demo League"
 
 
 def t_resolve_config_obs_collection_explicit_wins_over_prefix():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
-        _mkprofile(root, "iro",
-                   "NAME=IRO GTEC\nSHEET_ID=x\nOBS_COLLECTION=Custom Name\n")
+        _mkprofile(root, "demo",
+                   "NAME=Demo League\nSHEET_ID=x\nOBS_COLLECTION=Custom Name\n")
         cfg = m.resolve_config(root, environ={})
         assert cfg.obs_collection == "Custom Name"
 

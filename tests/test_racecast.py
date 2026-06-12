@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Stdlib checks for the racecast dispatcher routing. Run: python3 tests/test_iro.py"""
+"""Stdlib checks for the racecast dispatcher routing. Run: python3 tests/test_racecast.py"""
 import importlib.util, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-spec = importlib.util.spec_from_file_location("iro", os.path.join(ROOT, "src", "racecast.py"))
+spec = importlib.util.spec_from_file_location("racecast", os.path.join(ROOT, "src", "racecast.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
 
@@ -112,14 +112,14 @@ def t_untranslocate_app_translocation():
     # both guards must short-circuit BEFORE the (macOS-only) resolver is consulted.
     seen = []
     def resolver(p):
-        seen.append(p); return "/Users/x/IRO/racecast-ui.app/Contents/MacOS/racecast-ui"
+        seen.append(p); return "/Users/x/racecast/racecast-ui.app/Contents/MacOS/racecast-ui"
     tl = "/private/var/folders/pk/T/AppTranslocation/UUID/d/racecast-ui.app/Contents/MacOS/racecast-ui"
     assert m._untranslocate(tl, frozen=False, platform="darwin", resolver=resolver) == tl
     assert m._untranslocate(tl, frozen=True, platform="linux", resolver=resolver) == tl
     assert seen == []
     # frozen + macOS: map the translocated path back to its real on-disk location.
     assert m._untranslocate(tl, frozen=True, platform="darwin", resolver=resolver) == \
-        "/Users/x/IRO/racecast-ui.app/Contents/MacOS/racecast-ui"
+        "/Users/x/racecast/racecast-ui.app/Contents/MacOS/racecast-ui"
     # best-effort: a resolver that fails (None / raises) falls back to the input.
     assert m._untranslocate(tl, frozen=True, platform="darwin",
                             resolver=lambda p: None) == tl
@@ -132,7 +132,7 @@ def t_runtime_base_modes():
     assert m._runtime_base(False, "python3", os.path.join("repo", "src")) == \
         os.path.join("repo", "runtime")
     assert m._runtime_base(False, "python3", "pkg") == os.path.join("pkg", "runtime")
-    assert m._runtime_base(True, os.path.join("apps", "iro"), "ignored") == \
+    assert m._runtime_base(True, os.path.join("apps", "racecast"), "ignored") == \
         os.path.join("apps", "runtime")
 
 
@@ -153,8 +153,8 @@ def t_force_utf8_io_reconfigures_and_is_safe():
 
 
 def t_parse_env_text():
-    text = "# comment\nRACECAST_SHEET_ID=abc\nIRO_TIMER_URL='http://x'\n\nnot a pair\n"
-    assert m.parse_env_text(text) == {"RACECAST_SHEET_ID": "abc", "IRO_TIMER_URL": "http://x"}
+    text = "# comment\nRACECAST_SHEET_ID=abc\nOTHER_TIMER_URL='http://x'\n\nnot a pair\n"
+    assert m.parse_env_text(text) == {"RACECAST_SHEET_ID": "abc", "OTHER_TIMER_URL": "http://x"}
 
 
 def t_ensure_env_file_creates_once():
@@ -312,7 +312,7 @@ def t_relay_daemon_argv():
 def t_oneshot_extra():
     # new signature: (command, rest, runtime_dir, base_dir)
     # --out is always injected now (profile-scoped, not only when frozen)
-    R = os.path.join("x", "runtime", "iro")   # profile runtime
+    R = os.path.join("x", "runtime", "demo")   # profile runtime
     B = os.path.join("x", "runtime")           # base runtime
     assert m._oneshot_extra("preflight", [], R, B) == ["--runtime-dir", B]
     assert m._oneshot_extra("graphics", [], R, B) == \
@@ -425,7 +425,7 @@ def t_update_routes_as_oneshot():
 
 def t_update_oneshot_extra_injects_nothing():
     # update needs no runtime-dir/--out injection; --current is added in oneshot()
-    assert m._oneshot_extra("update", [], "/rt/iro", "/rt") == []
+    assert m._oneshot_extra("update", [], "/rt/demo", "/rt") == []
 
 
 def t_event_routes():
@@ -576,7 +576,7 @@ def t_init_routes_with_rest():
 def t_env_base_per_mode():
     # mirrors _runtime_base: frozen -> next to the binary; repo -> repo root;
     # package -> the package dir itself
-    assert m._env_base(True, "/opt/iro/iro", "/tmp/_MEIxx/src") == "/opt/iro"
+    assert m._env_base(True, "/opt/racecast/racecast", "/tmp/_MEIxx/src") == "/opt/racecast"
     assert m._env_base(False, "", "/repo/src") == "/repo"
     assert m._env_base(False, "", "/pkg") == "/pkg"
 
@@ -655,7 +655,7 @@ def t_profile_routing():
 
 
 def t_oneshot_extra_paths():
-    rd = os.path.join("R", "iro")   # profile runtime
+    rd = os.path.join("R", "demo")   # profile runtime
     base = "R"                       # base runtime (cookies/preflight)
     assert m._oneshot_extra("graphics", [], rd, base) == [
         "--out", os.path.join(rd, "graphics")]
@@ -672,17 +672,17 @@ def t_oneshot_extra_paths():
 
 def t_profile_env_vars_filters_empty():
     rc = m.pcfg.ResolvedConfig(
-        profile="iro", name="IRO", sheet_id="abc",
+        profile="demo", name="Demo", sheet_id="abc",
         sheet_push_url="", intro_url="https://i", outro_url="")
     assert m._profile_env_vars(rc) == {
         "RACECAST_SHEET_ID": "abc", "RACECAST_INTRO_URL": "https://i"}
 
 
 def t_profile_env_vars_includes_obs_collection():
-    rc = m.pcfg.ResolvedConfig(profile="iro", name="IRO GTEC", sheet_id="abc",
-                               obs_collection="IRO Broadcast")
+    rc = m.pcfg.ResolvedConfig(profile="demo", name="Demo League", sheet_id="abc",
+                               obs_collection="Demo Broadcast")
     out = m._profile_env_vars(rc)
-    assert out["RACECAST_OBS_COLLECTION"] == "IRO Broadcast"
+    assert out["RACECAST_OBS_COLLECTION"] == "Demo Broadcast"
 
 
 def t_active_obs_collection_falls_back_to_constant_without_profile():
@@ -703,7 +703,7 @@ def t_active_obs_collection_falls_back_to_constant_without_profile():
 
 
 def t_profile_runtime_scoping():
-    assert m._profile_runtime("/r", "iro") == os.path.join("/r", "iro")
+    assert m._profile_runtime("/r", "demo") == os.path.join("/r", "demo")
     assert m._profile_runtime("/r", "erf") == os.path.join("/r", "erf")
     assert m._profile_runtime("/r", None) == "/r"
 
@@ -712,21 +712,21 @@ def t_profiles_data_reports_active_logo_flag():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
         prof = os.path.join(td, "profiles")
-        os.makedirs(os.path.join(prof, "iro"))
+        os.makedirs(os.path.join(prof, "demo"))
         open(os.path.join(td, ".env.example"), "w").close()
-        with open(os.path.join(prof, "iro", "profile.env"), "w") as fh:
-            fh.write("NAME=IRO GTEC\nLOGO=logo.png\n")
-        with open(os.path.join(prof, "iro", "logo.png"), "wb") as fh:
+        with open(os.path.join(prof, "demo", "profile.env"), "w") as fh:
+            fh.write("NAME=Demo League\nLOGO=logo.png\n")
+        with open(os.path.join(prof, "demo", "logo.png"), "wb") as fh:
             fh.write(b"\x89PNG\r\n\x1a\nFAKE")              # any bytes; isfile is what matters
         os.makedirs(os.path.join(td, "runtime"))
         with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
-            fh.write("iro\n")
+            fh.write("demo\n")
         orig_b, orig_r = m._env_base, m._runtime_base_dir
         m._env_base = lambda *a, **k: td
         m._runtime_base_dir = lambda: os.path.join(td, "runtime")
         try:
             with_logo = m.profiles_data()
-            os.remove(os.path.join(prof, "iro", "logo.png"))   # file gone -> flag false
+            os.remove(os.path.join(prof, "demo", "logo.png"))   # file gone -> flag false
             without_logo = m.profiles_data()
         finally:
             m._env_base, m._runtime_base_dir = orig_b, orig_r
@@ -738,16 +738,16 @@ def t_profiles_data_lists_active_and_available():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
         prof = os.path.join(td, "profiles")
-        os.makedirs(os.path.join(prof, "iro"))
+        os.makedirs(os.path.join(prof, "demo"))
         os.makedirs(os.path.join(prof, "erf"))
         open(os.path.join(td, ".env.example"), "w").close()
-        with open(os.path.join(prof, "iro", "profile.env"), "w") as fh:
-            fh.write("NAME=IRO GTEC\nSHEET_ID=abc\n")
+        with open(os.path.join(prof, "demo", "profile.env"), "w") as fh:
+            fh.write("NAME=Demo League\nSHEET_ID=abc\n")
         with open(os.path.join(prof, "erf", "profile.env"), "w") as fh:
             fh.write("NAME=ERF\n")
         os.makedirs(os.path.join(td, "runtime"))
         with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
-            fh.write("iro\n")
+            fh.write("demo\n")
         orig_b, orig_r = m._env_base, m._runtime_base_dir
         m._env_base = lambda *a, **k: td
         m._runtime_base_dir = lambda: os.path.join(td, "runtime")
@@ -756,17 +756,17 @@ def t_profiles_data_lists_active_and_available():
         finally:
             m._env_base, m._runtime_base_dir = orig_b, orig_r
         assert d["ok"] is True
-        assert d["active"] == "iro"
+        assert d["active"] == "demo"
         names = {p["name"]: p for p in d["profiles"]}
-        assert names["iro"]["display"] == "IRO GTEC"
-        assert names["iro"]["sheet_set"] is True
+        assert names["demo"]["display"] == "Demo League"
+        assert names["demo"]["sheet_set"] is True
         assert names["erf"]["sheet_set"] is False
 
 
 def t_profile_use_data_switches_pointer():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
-        prof = os.path.join(td, "profiles", "iro")
+        prof = os.path.join(td, "profiles", "demo")
         os.makedirs(prof)
         open(os.path.join(td, ".env.example"), "w").close()
         with open(os.path.join(prof, "profile.env"), "w") as fh:
@@ -776,12 +776,12 @@ def t_profile_use_data_switches_pointer():
         m._env_base = lambda *a, **k: td
         m._runtime_base_dir = lambda: os.path.join(td, "runtime")
         try:
-            d = m.profile_use_data("iro")
+            d = m.profile_use_data("demo")
         finally:
             m._env_base, m._runtime_base_dir = orig_b, orig_r
-        assert d == {"ok": True, "active": "iro"}
+        assert d == {"ok": True, "active": "demo"}
         with open(os.path.join(td, "runtime", "active-profile")) as fh:
-            assert fh.read().strip() == "iro"
+            assert fh.read().strip() == "demo"
 
 
 def t_profile_use_data_unknown_is_error():
@@ -828,11 +828,11 @@ def t_profile_new_data_spaced_name_returns_slug():
         orig_b = m._env_base
         m._env_base = lambda *a, **k: td
         try:
-            d = m.profile_new_data("IRO GTEC", "example")
+            d = m.profile_new_data("Demo League", "example")
         finally:
             m._env_base = orig_b
-        assert d["ok"] is True and d["name"] == "iro-gtec"   # slug, switchable via `use`
-        assert os.path.isfile(os.path.join(td, "profiles", "iro-gtec", "profile.env"))
+        assert d["ok"] is True and d["name"] == "demo-league"   # slug, switchable via `use`
+        assert os.path.isfile(os.path.join(td, "profiles", "demo-league", "profile.env"))
 
 
 def t_profile_new_data_bad_name_is_error():
@@ -853,14 +853,14 @@ def t_profile_new_data_bad_name_is_error():
 def t_profile_env_entries_data_reads_active():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
-        prof = os.path.join(td, "profiles", "iro")
+        prof = os.path.join(td, "profiles", "demo")
         os.makedirs(prof)
         open(os.path.join(td, ".env.example"), "w").close()
         with open(os.path.join(prof, "profile.env"), "w") as fh:
-            fh.write("# comment\nSHEET_ID=abc\nNAME=IRO\n")
+            fh.write("# comment\nSHEET_ID=abc\nNAME=Demo\n")
         os.makedirs(os.path.join(td, "runtime"))
         with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
-            fh.write("iro\n")
+            fh.write("demo\n")
         orig_b, orig_r = m._env_base, m._runtime_base_dir
         m._env_base = lambda *a, **k: td
         m._runtime_base_dir = lambda: os.path.join(td, "runtime")
@@ -868,7 +868,7 @@ def t_profile_env_entries_data_reads_active():
             d = m.profile_env_entries_data()
         finally:
             m._env_base, m._runtime_base_dir = orig_b, orig_r
-        assert d["ok"] is True and d["active"] == "iro"
+        assert d["ok"] is True and d["active"] == "demo"
         keys = [e["key"] for e in d["entries"]]
         assert "SHEET_ID" in keys and "NAME" in keys
 
@@ -891,14 +891,14 @@ def t_profile_env_entries_data_no_profile_is_error():
 def t_profile_env_write_data_persists_to_active():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
-        prof = os.path.join(td, "profiles", "iro")
+        prof = os.path.join(td, "profiles", "demo")
         os.makedirs(prof)
         open(os.path.join(td, ".env.example"), "w").close()
         with open(os.path.join(prof, "profile.env"), "w") as fh:
             fh.write("# keep me\nSHEET_ID=old\n")
         os.makedirs(os.path.join(td, "runtime"))
         with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
-            fh.write("iro\n")
+            fh.write("demo\n")
         orig_b, orig_r = m._env_base, m._runtime_base_dir
         m._env_base = lambda *a, **k: td
         m._runtime_base_dir = lambda: os.path.join(td, "runtime")
@@ -934,13 +934,13 @@ def t_profile_env_write_data_no_profile_is_error():
 def t_overlay_read_absent_ok_empty():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
-        prof = os.path.join(td, "profiles", "iro")
+        prof = os.path.join(td, "profiles", "demo")
         os.makedirs(prof)
         open(os.path.join(prof, "profile.env"), "w").close()
         open(os.path.join(td, ".env.example"), "w").close()
         os.makedirs(os.path.join(td, "runtime"))
         with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
-            fh.write("iro\n")
+            fh.write("demo\n")
         orig_b, orig_r = m._env_base, m._runtime_base_dir
         m._env_base = lambda *a, **k: td
         m._runtime_base_dir = lambda: os.path.join(td, "runtime")
@@ -954,13 +954,13 @@ def t_overlay_read_absent_ok_empty():
 def t_overlay_write_then_read_roundtrip():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
-        prof = os.path.join(td, "profiles", "iro")
+        prof = os.path.join(td, "profiles", "demo")
         os.makedirs(prof)
         open(os.path.join(prof, "profile.env"), "w").close()
         open(os.path.join(td, ".env.example"), "w").close()
         os.makedirs(os.path.join(td, "runtime"))
         with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
-            fh.write("iro\n")
+            fh.write("demo\n")
         orig_b, orig_r = m._env_base, m._runtime_base_dir
         m._env_base = lambda *a, **k: td
         m._runtime_base_dir = lambda: os.path.join(td, "runtime")
@@ -971,20 +971,20 @@ def t_overlay_write_then_read_roundtrip():
             m._env_base, m._runtime_base_dir = orig_b, orig_r
         assert w["ok"] is True
         assert d["ok"] is True and d["css"] == "#stint{left:5px}"
-        on_disk = os.path.join(td, "profiles", "iro", "overlay", "hud.css")
+        on_disk = os.path.join(td, "profiles", "demo", "overlay", "hud.css")
         assert os.path.exists(on_disk)
 
 
 def t_overlay_timer_write_then_read_roundtrip():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
-        prof = os.path.join(td, "profiles", "iro")
+        prof = os.path.join(td, "profiles", "demo")
         os.makedirs(prof)
         open(os.path.join(prof, "profile.env"), "w").close()
         open(os.path.join(td, ".env.example"), "w").close()
         os.makedirs(os.path.join(td, "runtime"))
         with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
-            fh.write("iro\n")
+            fh.write("demo\n")
         orig_b, orig_r = m._env_base, m._runtime_base_dir
         m._env_base = lambda *a, **k: td
         m._runtime_base_dir = lambda: os.path.join(td, "runtime")
@@ -996,20 +996,20 @@ def t_overlay_timer_write_then_read_roundtrip():
         assert w["ok"] is True
         assert d["ok"] is True and d["css"] == "#clock{font-size:300px}"
         assert d["page"] == "timer"
-        on_disk = os.path.join(td, "profiles", "iro", "overlay", "timer.css")
+        on_disk = os.path.join(td, "profiles", "demo", "overlay", "timer.css")
         assert os.path.exists(on_disk)
 
 
 def t_overlay_rejects_unknown_page():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
-        prof = os.path.join(td, "profiles", "iro")
+        prof = os.path.join(td, "profiles", "demo")
         os.makedirs(prof)
         open(os.path.join(prof, "profile.env"), "w").close()
         open(os.path.join(td, ".env.example"), "w").close()
         os.makedirs(os.path.join(td, "runtime"))
         with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
-            fh.write("iro\n")
+            fh.write("demo\n")
         orig_b, orig_r = m._env_base, m._runtime_base_dir
         m._env_base = lambda *a, **k: td
         m._runtime_base_dir = lambda: os.path.join(td, "runtime")
@@ -1062,16 +1062,16 @@ def t_profile_logo_returns_active_servable_path():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
         prof = os.path.join(td, "profiles")
-        os.makedirs(os.path.join(prof, "iro"))
+        os.makedirs(os.path.join(prof, "demo"))
         open(os.path.join(td, ".env.example"), "w").close()
-        with open(os.path.join(prof, "iro", "profile.env"), "w") as fh:
-            fh.write("NAME=IRO\nLOGO=logo.svg\n")
-        logo = os.path.join(prof, "iro", "logo.svg")
+        with open(os.path.join(prof, "demo", "profile.env"), "w") as fh:
+            fh.write("NAME=Demo\nLOGO=logo.svg\n")
+        logo = os.path.join(prof, "demo", "logo.svg")
         with open(logo, "wb") as fh:
             fh.write(b"<svg/>")
         os.makedirs(os.path.join(td, "runtime"))
         with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
-            fh.write("iro\n")
+            fh.write("demo\n")
         orig_b, orig_r = m._env_base, m._runtime_base_dir
         m._env_base = lambda *a, **k: td
         m._runtime_base_dir = lambda: os.path.join(td, "runtime")

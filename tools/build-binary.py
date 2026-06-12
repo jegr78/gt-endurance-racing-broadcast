@@ -136,12 +136,12 @@ def main():
     with open(version_file, "w", encoding="utf-8") as fh:
         fh.write(a.version + "\n")
     sep = ";" if os.name == "nt" else ":"
-    iro_bin = build_target(launcher, workdir, version_file, sep,
+    rc_bin = build_target(launcher, workdir, version_file, sep,
                            "racecast.py", "racecast", windowed=False)
     ui_bin = build_target(launcher, workdir, version_file, sep,
                           "racecast_ui.py", "racecast-ui", windowed=True)
     if not a.skip_smoke:
-        smoke(iro_bin, a.version)
+        smoke(rc_bin, a.version)
         smoke_ui(ui_bin)
         # macOS ships the windowed launcher as racecast-ui.app; smoke its INNER
         # executable too. The .app nests the exe 3 levels deep, so sibling-racecast
@@ -157,7 +157,7 @@ def smoke_ui(binary):
     """The windowed launcher must bind, answer the ping with the Control Center
     signature, run a job through the sibling `racecast` binary, and quit. No --version
     check: a windowed Windows build has no stdout. The sibling `racecast` lives next
-    to this binary in dist/bin/, so the job spawn exercises _iro_job_executable."""
+    to this binary in dist/bin/, so the job spawn exercises _rc_job_executable."""
     import json
     import time
     import urllib.request
