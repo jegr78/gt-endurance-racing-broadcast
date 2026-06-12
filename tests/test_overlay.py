@@ -99,8 +99,35 @@ def t_resolve_preview_bg_png_when_only_png():
 
 def t_resolve_preview_bg_absent_or_no_dir_is_none():
     with tempfile.TemporaryDirectory() as tmp:
-        assert feeds.resolve_preview_bg(_mkoverlay(tmp)) is None   # no preview-bg.*
+        assert feeds.resolve_preview_bg(_mkoverlay(tmp)) is None   # no per-profile, no assets
     assert feeds.resolve_preview_bg(None) is None
+
+
+def t_resolve_preview_bg_falls_back_to_shared_default():
+    # No per-profile override -> the shipped shared default in assets/ is used.
+    with tempfile.TemporaryDirectory() as tmp:
+        od = _mkoverlay(tmp)                      # no preview-bg here
+        assets = os.path.join(tmp, "assets"); os.makedirs(assets)
+        with open(os.path.join(assets, "preview-bg.jpg"), "wb") as f: f.write(b"\xff\xd8\xff")
+        hit = feeds.resolve_preview_bg(od, assets)
+        assert hit is not None and hit[0].endswith(os.path.join("assets", "preview-bg.jpg"))
+
+
+def t_resolve_preview_bg_profile_overrides_shared_default():
+    with tempfile.TemporaryDirectory() as tmp:
+        od = _mkoverlay(tmp)
+        with open(os.path.join(od, "preview-bg.png"), "wb") as f: f.write(b"\x89PNG")
+        assets = os.path.join(tmp, "assets"); os.makedirs(assets)
+        with open(os.path.join(assets, "preview-bg.jpg"), "wb") as f: f.write(b"\xff\xd8\xff")
+        # per-profile (overlay_dir) wins over the shared default
+        assert feeds.resolve_preview_bg(od, assets)[0].endswith(os.path.join("overlay", "preview-bg.png"))
+
+
+def t_resolve_preview_bg_shared_default_only_when_no_overlay_dir():
+    with tempfile.TemporaryDirectory() as tmp:
+        assets = os.path.join(tmp, "assets"); os.makedirs(assets)
+        with open(os.path.join(assets, "preview-bg.jpg"), "wb") as f: f.write(b"\xff\xd8\xff")
+        assert feeds.resolve_preview_bg(None, assets)[1] == "image/jpeg"
 
 
 def t_resolve_preview_bg_ctypes_are_asset_whitelisted():

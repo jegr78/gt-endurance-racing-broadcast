@@ -146,6 +146,7 @@ def main():
         "preflight shipped": os.path.isfile(os.path.join(PKG, "scripts", "preflight.py")),
         "timer html shipped": os.path.isfile(os.path.join(PKG, "timer.html")),
         "hud preview shipped": os.path.isfile(os.path.join(PKG, "hud-preview.html")),
+        "preview backdrop shipped": os.path.isfile(os.path.join(PKG, "assets", "preview-bg.jpg")),
         ".env.example shipped": os.path.isfile(os.path.join(PKG, ".env.example")),
         "example profile shipped": os.path.isfile(
             os.path.join(PKG, "profiles", "example", "profile.env")),

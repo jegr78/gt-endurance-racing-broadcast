@@ -280,15 +280,18 @@ PREVIEW_BG_EXTS = (("jpg", "image/jpeg"), ("jpeg", "image/jpeg"),
                    ("png", "image/png"), ("webp", "image/webp"))
 
 
-def resolve_preview_bg(overlay_dir):
-    """Resolve the per-profile preview backdrop to (path, content_type), or None
-    when unset/absent. Read per request so a swapped screenshot shows on reload."""
-    if not overlay_dir:
-        return None
-    for ext, ctype in PREVIEW_BG_EXTS:
-        path = os.path.join(overlay_dir, f"preview-bg.{ext}")
-        if os.path.exists(path):
-            return path, ctype
+def resolve_preview_bg(overlay_dir, assets_dir=None):
+    """Resolve the HUD-preview backdrop to (path, content_type): the per-profile
+    overlay/preview-bg.<ext> when present (a league override), else the shipped
+    shared default assets/preview-bg.<ext>. None only when neither exists. Read
+    per request so a swapped screenshot shows on reload."""
+    for base in (overlay_dir, assets_dir):
+        if not base:
+            continue
+        for ext, ctype in PREVIEW_BG_EXTS:
+            path = os.path.join(base, f"preview-bg.{ext}")
+            if os.path.exists(path):
+                return path, ctype
     return None
 
 
@@ -1709,7 +1712,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send({"error": "preview disabled"}, 404)
                     return self._send_file(preview_path, "text/html; charset=utf-8")
                 if p == ["hud", "preview", "bg"]:
-                    hit = resolve_preview_bg(overlay_dir)
+                    hit = resolve_preview_bg(overlay_dir, assets_dir)
                     if not hit:
                         return self._send({"error": "no preview backdrop"}, 404)
                     return self._send_file(hit[0], ASSET_CTYPES[hit[1]])
