@@ -734,7 +734,9 @@ def chat_cmd(rest):
 
     if verb == "export":
         out = None
-        if args[:1] == ["--out"] and len(args) >= 2:
+        if args[:1] == ["--out"]:
+            if len(args) < 2:
+                sys.exit("usage: racecast chat export [--out PATH]  (--out requires a value)")
             out = args[1]
         try:                                  # prefer the live relay, fall back to the file
             body = _fetch_relay_page("/chat/data")
@@ -742,15 +744,21 @@ def chat_cmd(rest):
         except Exception:
             payload = {"messages": ca.load_messages(path)}
         out = out or "chat-export.json"
-        ca.write_messages(out, ca.validate_payload(payload))
-        print(f"Exported {len(payload.get('messages', []))} messages -> {out}")
+        msgs = ca.validate_payload(payload)
+        ca.write_messages(out, msgs)
+        print(f"Exported {len(msgs)} messages -> {out}")
         return None
 
     if verb == "import":
         if not args:
             sys.exit("usage: racecast chat import <file>")
-        with open(args[0], encoding="utf-8") as fh:
-            payload = json.load(fh)
+        try:
+            with open(args[0], encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except FileNotFoundError:
+            sys.exit(f"racecast: file not found: {args[0]}")
+        except (OSError, ValueError) as e:
+            sys.exit(f"racecast: could not read {args[0]}: {e}")
         n = ca.apply_pulled(path, payload)    # validates before writing
         running = _chat_reload_if_running()
         print(f"Imported {n} messages." + ("" if running else " (relay not running.)"))
@@ -761,8 +769,15 @@ def chat_cmd(rest):
             sys.exit("usage: racecast chat pull <tailscale-ip> [--port N]")
         host = args[0]
         port = RELAY_PORT
-        if args[1:3] and args[1] == "--port":
-            port = int(args[2])
+        if "--port" in args[1:]:
+            port_idx = args.index("--port", 1)
+            if port_idx + 1 >= len(args):
+                sys.exit("racecast: --port requires an integer value")
+            port_str = args[port_idx + 1]
+            try:
+                port = int(port_str)
+            except ValueError:
+                sys.exit(f"racecast: --port must be an integer, got {port_str!r}")
         url = f"http://{host}:{port}/chat/data"
         try:
             with _u.urlopen(url, timeout=5) as resp:

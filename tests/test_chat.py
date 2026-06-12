@@ -426,6 +426,19 @@ def t_apply_pull_malformed_leaves_file_untouched():
             assert fh.read() == before     # byte-for-byte unchanged
 
 
+def t_apply_pull_creates_file_when_absent():
+    """apply_pulled writes the file even when the path did not previously exist."""
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "new-chat.json")
+        assert not os.path.exists(path)
+        payload = {"messages": [{"ts": 5.0, "user": "Alice", "text": "first ever"}]}
+        n = ca.apply_pulled(path, payload)
+        assert n == 1
+        assert os.path.exists(path)
+        loaded = ca.load_messages(path)
+        assert loaded == [{"ts": 5.0, "user": "Alice", "text": "first ever"}]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
