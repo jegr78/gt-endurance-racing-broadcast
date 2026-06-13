@@ -122,7 +122,7 @@ def apps_done(present, apps):
 def cookies_done(level, detail):
     """level/detail from preflight.cookies_status() — PASS means fresh +
     logged-in markers found; anything else (missing/stale/anonymous) runs."""
-    return f"cookies.txt {detail}" if level == "PASS" else None
+    return f"yt-cookies.txt {detail}" if level == "PASS" else None
 
 
 def assets_done(missing, count):

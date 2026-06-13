@@ -9,8 +9,8 @@ The recommended flow for endurance racing: **one commentator per stint**, stream
 ## How it pulls (important)
 
 The relay uses **yt-dlp to resolve** each live HLS URL — this is what passes YouTube's
-bot-check, via `cookies.txt` + deno JS-challenge solving — and **streamlink to serve**
-that direct URL to OBS. So `cookies.txt` and `deno` are both required for reliable pulls.
+bot-check, via `yt-cookies.txt` + deno JS-challenge solving — and **streamlink to serve**
+that direct URL to OBS. So `yt-cookies.txt` and `deno` are both required for reliable pulls.
 Streamlink alone, even with cookies, is blocked by the bot-check.
 
 A running feed is **never** torn off mid-stint. Sheet edits apply on the next `/next`
@@ -44,10 +44,11 @@ racecast cookies firefox
   encrypted (Chrome 127+); use Firefox.
 - macOS **Chrome/Edge**: approve the Keychain prompt. **Safari**: grant your terminal
   **Full Disk Access**. (Firefox needs neither.)
-- Writes `runtime/cookies.txt` (chmod 600), auto-detected and passed to Streamlink.
+- Writes `runtime/yt-cookies.txt` (chmod 600), auto-detected and passed to Streamlink.
   `/status` then shows `"cookies": true`. **Re-run before each event** — cookies rotate.
 - Alternative: let the relay export on start with `--cookies-from-browser firefox`, or
-  drop any Netscape `cookies.txt` next to the relay.
+  drop any Netscape `yt-cookies.txt` next to the relay (a legacy `cookies.txt` is
+  migrated automatically on first use).
 
 ## 3. Start the relay
 

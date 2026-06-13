@@ -113,7 +113,7 @@ def build_download_cmd(url, out_path, cookies=None):
 
 def download(url, out_path, cookies=None):
     """Download `url` to `out_path` as a single muxed MP4 (audio included).
-    Uses cookies.txt if it exists (YouTube bot-check parity with the relay).
+    Uses yt-cookies.txt if it exists (YouTube bot-check parity with the relay).
     The URL comes from the (multi-editor, semi-trusted) Sheet Assets tab, so it
     must be a real http(s) URL — never a file:// path or a flag-like value."""
     if not (url.startswith("http://") or url.startswith("https://")):
@@ -150,9 +150,9 @@ def main():
 
     urls = resolve_urls(which, cli, os.environ, csv_text)
     os.makedirs(a.out, exist_ok=True)
-    # cookies.txt lives in the runtime dir (next to the default media dir),
+    # yt-cookies.txt lives in the runtime dir (next to the default media dir),
     # independent of --out, matching get-cookies.py / racecast-feeds.py.
-    cookies = os.path.join(os.path.dirname(media_dir(here)), "cookies.txt")
+    cookies = os.path.join(os.path.dirname(media_dir(here)), "yt-cookies.txt")
 
     failed = []
     for key in sorted(which):

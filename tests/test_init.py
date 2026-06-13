@@ -92,7 +92,7 @@ def t_apps_done():
 
 
 def t_cookies_done():
-    assert m.cookies_done("PASS", "fresh (2 h old)") == "cookies.txt fresh (2 h old)"
+    assert m.cookies_done("PASS", "fresh (2 h old)") == "yt-cookies.txt fresh (2 h old)"
     assert m.cookies_done("WARN", "14 h old") is None
 
 

@@ -267,7 +267,7 @@ Google-Sheet tab read as CSV (no API key); a running feed is never torn off
 mid-stint — sheet edits apply on the next `/next` (handover) or `/reload`.
 
 Pull pipeline per feed: `yt-dlp -g` resolves the live HLS URL (passing YouTube's
-bot-check via `cookies.txt` + deno JS challenge) → `streamlink --player-external-http`
+bot-check via `yt-cookies.txt` + deno JS challenge) → `streamlink --player-external-http`
 serves that URL to one OBS client. (`curl`-ing the port returns nothing — it serves a
 single consumer; that is not a failure.)
 

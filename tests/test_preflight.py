@@ -110,7 +110,7 @@ def t_resolve_cookies_overrides():
     assert m.resolve_cookies_path("/x/scripts/preflight.py", None,
                                   "/c/cookies.txt") == "/c/cookies.txt"
     assert m.resolve_cookies_path("/x/scripts/preflight.py", "/run",
-                                  None) == os.path.join("/run", "cookies.txt")
+                                  None) == os.path.join("/run", "yt-cookies.txt")
 
 
 def t_cookies_missing():

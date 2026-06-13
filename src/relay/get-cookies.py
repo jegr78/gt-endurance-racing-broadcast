@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export YouTube cookies from a logged-in browser to <runtime>/cookies.txt via yt-dlp
+"""Export YouTube cookies from a logged-in browser to <runtime>/yt-cookies.txt via yt-dlp
 (against YouTube's "Sign in to confirm you're not a bot" check).
 
 Usage: python3 get-cookies.py [browser] [--runtime-dir DIR]
@@ -41,7 +41,7 @@ def main():
     os.makedirs(a.runtime_dir, exist_ok=True)
     try: os.chmod(a.runtime_dir, 0o700)   # runtime holds the cookie jar — keep it private
     except OSError: pass                  # best-effort hardening; never block the export
-    out = os.path.join(a.runtime_dir, "cookies.txt")
+    out = os.path.join(a.runtime_dir, "yt-cookies.txt")
     url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
     print(f"Exporting YouTube cookies from '{a.browser}' ...")
     try:

@@ -209,9 +209,9 @@ COOKIE_MARKERS = ("SAPISID", "__Secure-3PSID", "__Secure-1PSID", "LOGIN_INFO")
 
 
 def resolve_cookies_path(preflight_file, runtime_dir=None, cookies_opt=None):
-    """Locate cookies.txt the way the relay does.
+    """Locate yt-cookies.txt the way the relay does.
 
-    Priority: explicit --cookies, then --runtime-dir/cookies.txt, then the
+    Priority: explicit --cookies, then --runtime-dir/yt-cookies.txt, then the
     first existing candidate (package layout scripts/+relay/, repo layout
     src/scripts/+runtime/, or next to this script). Falls back to the
     package-expected path so the report names a sensible location.
@@ -219,12 +219,12 @@ def resolve_cookies_path(preflight_file, runtime_dir=None, cookies_opt=None):
     if cookies_opt:
         return cookies_opt
     if runtime_dir:
-        return os.path.join(runtime_dir, "cookies.txt")
+        return os.path.join(runtime_dir, "yt-cookies.txt")
     here = os.path.dirname(os.path.abspath(preflight_file))
     candidates = [
-        os.path.join(here, "..", "relay", "cookies.txt"),          # package layout
-        os.path.join(here, "..", "..", "runtime", "cookies.txt"),  # repo layout
-        os.path.join(here, "cookies.txt"),
+        os.path.join(here, "..", "relay", "yt-cookies.txt"),          # package layout
+        os.path.join(here, "..", "..", "runtime", "yt-cookies.txt"),  # repo layout
+        os.path.join(here, "yt-cookies.txt"),
     ]
     for cand in candidates:
         if os.path.isfile(cand):
@@ -235,7 +235,7 @@ def resolve_cookies_path(preflight_file, runtime_dir=None, cookies_opt=None):
 def cookies_status(path, max_age_hours=12, now=None):
     now = time.time() if now is None else now
     if not os.path.isfile(path):
-        return Result(WARN, "cookies.txt",
+        return Result(WARN, "yt-cookies.txt",
                       f"not found at {path} — run `racecast cookies firefox` before the event")
     age_h = (now - os.path.getmtime(path)) / 3600
     try:
@@ -245,12 +245,12 @@ def cookies_status(path, max_age_hours=12, now=None):
         text = ""
     has_login = any(marker in text for marker in COOKIE_MARKERS)
     if age_h > max_age_hours:
-        return Result(WARN, "cookies.txt",
+        return Result(WARN, "yt-cookies.txt",
                       f"{age_h:.0f} h old — cookies rotate; re-run `racecast cookies firefox`")
     if not has_login:
-        return Result(WARN, "cookies.txt",
+        return Result(WARN, "yt-cookies.txt",
                       "present but no logged-in YouTube session markers found")
-    return Result(PASS, "cookies.txt",
+    return Result(PASS, "yt-cookies.txt",
                   f"present, fresh ({age_h:.0f} h old), logged-in markers found")
 
 
@@ -455,9 +455,9 @@ def parse_args(argv):
     ap = argparse.ArgumentParser(
         description="Pre-flight readiness check for the GT Endurance Racing broadcast setup.")
     ap.add_argument("--runtime-dir", default=None,
-                    help="Directory holding cookies.txt (mirrors the relay's --runtime-dir).")
+                    help="Directory holding yt-cookies.txt (mirrors the relay's --runtime-dir).")
     ap.add_argument("--cookies", default=None,
-                    help="Explicit path to cookies.txt (overrides --runtime-dir).")
+                    help="Explicit path to yt-cookies.txt (overrides --runtime-dir).")
     ap.add_argument("--no-color", action="store_true", help="Disable ANSI colors.")
     return ap.parse_args(argv)
 

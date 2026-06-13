@@ -74,5 +74,21 @@ def t_cookies_for():
     assert feeds.cookies_for("twitch", d) == tw
 
 
+def t_migrate_legacy():
+    import tempfile
+    d = tempfile.mkdtemp()
+    # no files: no-op, returns the canonical path
+    assert feeds.migrate_legacy_cookie(d).endswith("yt-cookies.txt")
+    # legacy present, new absent: renamed
+    legacy = os.path.join(d, "cookies.txt")
+    with open(legacy, "w") as f: f.write("x")
+    p = feeds.migrate_legacy_cookie(d)
+    assert p.endswith("yt-cookies.txt") and os.path.isfile(p) and not os.path.isfile(legacy)
+    # both present: legacy left as-is, new wins
+    with open(legacy, "w") as f: f.write("y")
+    p2 = feeds.migrate_legacy_cookie(d)
+    assert os.path.isfile(p2) and os.path.isfile(legacy)
+
+
 if __name__ == "__main__":
-    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); t_ssai_markers(); t_cookies_for(); print("ok")
+    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); t_ssai_markers(); t_cookies_for(); t_migrate_legacy(); print("ok")

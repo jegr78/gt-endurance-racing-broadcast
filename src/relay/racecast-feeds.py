@@ -29,10 +29,11 @@ SCHEDULE SOURCE (Google Sheet, editable remotely by anyone):
   local cache); without a sheet the local schedule.txt is used.
 
 COOKIES (against YouTube's "Sign in to confirm you're not a bot"):
-  Put a cookies.txt (Netscape format, exported from a logged-in YouTube
-  browser, e.g. via the "Get cookies.txt LOCALLY" extension) NEXT TO this
-  script — it is auto-detected and passed to Streamlink (--http-cookies-file).
-  Or pass it explicitly:  --cookies /path/to/cookies.txt
+  Put a yt-cookies.txt (Netscape format, exported from a logged-in YouTube
+  browser via `racecast cookies firefox`) NEXT TO this script — it is
+  auto-detected and passed to Streamlink (--http-cookies-file). A legacy
+  cookies.txt is migrated to yt-cookies.txt automatically on first use.
+  Or pass it explicitly:  --cookies /path/to/yt-cookies.txt
   Always enter UNLISTED streams as a watch URL (https://www.youtube.com/watch?v=…)
   in the schedule — the channel /live URL only works for PUBLIC streams.
 
@@ -1015,6 +1016,18 @@ def cookies_for(platform, cookie_dir):
     legacy = os.path.join(cookie_dir, "cookies.txt")
     return legacy if os.path.isfile(legacy) else None
 
+def migrate_legacy_cookie(cookie_dir):
+    """Rename a legacy cookies.txt to yt-cookies.txt once, if the new name does
+    not yet exist. Returns the canonical yt-cookies.txt path. Best-effort."""
+    new = os.path.join(cookie_dir, "yt-cookies.txt")
+    legacy = os.path.join(cookie_dir, "cookies.txt")
+    if not os.path.isfile(new) and os.path.isfile(legacy):
+        try:
+            os.replace(legacy, new)
+        except OSError:
+            return legacy   # migration failed -> keep using legacy this run
+    return new
+
 def twitch_oauth_from_cookies(path):
     return None        # replaced in the Twitch-auth task
 
@@ -1556,7 +1569,7 @@ class Feed:
         self.port = port
         self.idx = idx
         self.provider = provider          # callable -> current schedule list
-        self.cookies = cookies            # path to cookies.txt (bot-check protection) or None
+        self.cookies = cookies            # path to yt-cookies.txt (bot-check protection) or None
         self.fmt = fmt                    # yt-dlp format string (POV uses a lower cap)
         self.cookie_dir = cookie_dir      # dir holding yt-/twitch-cookies.txt (for per-pull resolve)
         self.paused = False               # when True the feed idles (POV off / stopped)
@@ -2107,7 +2120,7 @@ def _cookie_hint(stderr_text, browser):
 
 
 def export_cookies(browser, out):
-    """Export YouTube cookies from a logged-in browser to a Netscape cookies.txt
+    """Export YouTube cookies from a logged-in browser to a Netscape yt-cookies.txt
     using yt-dlp. Best-effort: returns True on success."""
     url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
     try:
@@ -2151,7 +2164,7 @@ def main():
     ap.add_argument("--schedule", default="schedule.txt", help="Local offline fallback")
     ap.add_argument("--http-port", type=int, default=8088)
     ap.add_argument("--runtime-dir", default=None,
-                    help="Directory for runtime data (cookies.txt, logs/, *.cache.txt). "
+                    help="Directory for runtime data (yt-cookies.txt, logs/, *.cache.txt). "
                          "Default: next to this script (keeps the distributed package "
                          "self-locating). The repo passes its runtime/ folder.")
     ap.add_argument("--bind", default="auto",
@@ -2185,13 +2198,13 @@ def main():
                          "Feed A serves it, Feed B preloads the next one. Default 1.")
     ap.add_argument("--logdir", default="logs")
     ap.add_argument("--cookies", default=None,
-                    help="Path to cookies.txt (Netscape format) for YouTube login — "
+                    help="Path to yt-cookies.txt (Netscape format) for YouTube login — "
                          "bypasses the 'Sign in to confirm you're not a bot' check. "
-                         "Default: cookies.txt next to this script, if present.")
+                         "Default: yt-cookies.txt next to this script, if present.")
     ap.add_argument("--cookies-from-browser", default=None,
                     help="Auto-export YouTube cookies from this browser on startup via "
                          "yt-dlp (e.g. firefox, chrome, safari, edge, brave) and use them. "
-                         "Writes cookies.txt next to this script.")
+                         "Writes yt-cookies.txt next to this script.")
     args = ap.parse_args()
     # line_buffering: show logs immediately. encoding="utf-8": the relay runs as a
     # daemon with stdout piped to a log file, so Python would otherwise use the
@@ -2239,12 +2252,12 @@ def main():
 
     # Optionally auto-export cookies from a logged-in browser first (yt-dlp)
     if args.cookies_from_browser:
-        export_cookies(args.cookies_from_browser, os.path.join(runtime, "cookies.txt"))
+        export_cookies(args.cookies_from_browser, os.path.join(runtime, "yt-cookies.txt"))
 
-    # Cookies: explicit via --cookies, otherwise auto-detect cookies.txt in the runtime dir
+    # Cookies: explicit via --cookies, otherwise auto-detect yt-cookies.txt (+ one-time migration)
     cookies = args.cookies
     if cookies is None:
-        auto = os.path.join(runtime, "cookies.txt")
+        auto = migrate_legacy_cookie(runtime)   # yt-cookies.txt (+ one-time rename)
         cookies = auto if os.path.exists(auto) else None
     elif not os.path.isabs(cookies):
         cookies = os.path.join(runtime, cookies)
@@ -2256,7 +2269,7 @@ def main():
     if cookies:
         _ch = cookie_health(cookies)
         if _ch["stale"]:
-            print(f"WARN: cookies.txt is {_ch['age_h']:.0f} h old — cookies rotate; "
+            print(f"WARN: yt-cookies.txt is {_ch['age_h']:.0f} h old — cookies rotate; "
                   "run 'racecast cookies firefox' before the event.")
 
     # Locate the director panel (shipped in the package root, one level up from relay/)
@@ -2410,7 +2423,7 @@ def main():
             if timer_store.csv_url else "local only")
         print(f"  Race timer (OBS source): http://127.0.0.1:{args.http_port}/timer  "
               f"(tab '{args.timer_tab}', {push}; controls /timer/start | /timer/stop)")
-    print(f"  Cookies (bot-check protection): {'ON — ' + cookies if cookies else 'off (no cookies.txt)'}")
+    print(f"  Cookies (bot-check protection): {'ON — ' + cookies if cookies else 'off (no yt-cookies.txt)'}")
     print(f"  Sheet poll every {args.poll}s.  Ctrl+C to stop.")
     # Serve every bound address; keep the last on the main thread for signals.
     for httpd in servers[:-1]:
