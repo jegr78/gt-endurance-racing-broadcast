@@ -432,17 +432,29 @@ def t_env_write_preserves_comments_and_round_trips(tmp):
     with open(p, "w", encoding="utf-8") as f:
         f.write("# header\nRACECAST_SHEET_ID=old\n\n# port note\nRACECAST_UI_PORT=8089\n")
     res = rc.env_write_data([{"key": "RACECAST_SHEET_ID", "value": "new"},
-                              {"key": "OTHER_NEW", "value": "x"}], path=p)
+                              {"key": "RACECAST_NEW", "value": "x"}], path=p)
     assert res["ok"] is True
     with open(p, encoding="utf-8") as fh:
         text = fh.read()
     assert "# header" in text and "# port note" in text     # comments kept
     assert "RACECAST_SHEET_ID=new" in text                  # updated in place
     assert "RACECAST_UI_PORT" not in text                   # removed
-    assert "OTHER_NEW=x" in text                              # appended
+    assert "RACECAST_NEW=x" in text                          # appended
     back = rc.env_entries_data(path=p)["entries"]
     assert {"key": "RACECAST_SHEET_ID", "value": "new"} in back
-    assert {"key": "OTHER_NEW", "value": "x"} in back
+    assert {"key": "RACECAST_NEW", "value": "x"} in back
+
+
+def t_env_write_rejects_non_racecast_key(tmp):
+    # Defense-in-depth for #1: the machine .env editor only writes RACECAST_*
+    # knobs, so it can't set a process-loader var (LD_PRELOAD / DYLD_INSERT_
+    # LIBRARIES / PATH) that spawned children would inherit. (profile.env, edited
+    # via profile_env_write_data, still accepts un-prefixed league keys.)
+    p = os.path.join(tmp, "machine-reject.env")    # unique: shared tmp dir
+    res = rc.env_write_data([{"key": "RACECAST_SHEET_ID", "value": "ok"},
+                              {"key": "LD_PRELOAD", "value": "/tmp/evil.so"}], path=p)
+    assert res["ok"] is False and "RACECAST_" in res["error"]
+    assert not os.path.exists(p)            # nothing written on rejection
 
 
 def t_env_write_rejects_bad_key(tmp):
@@ -462,9 +474,9 @@ def t_env_write_rejects_duplicate_and_newline(tmp):
 def t_env_write_drops_blank_rows(tmp):
     p = os.path.join(tmp, ".env")
     res = rc.env_write_data([{"key": "", "value": ""},
-                              {"key": "A", "value": "1"}], path=p)
+                              {"key": "RACECAST_A", "value": "1"}], path=p)
     assert res["ok"] is True
-    assert rc.env_entries_data(path=p)["entries"] == [{"key": "A", "value": "1"}]
+    assert rc.env_entries_data(path=p)["entries"] == [{"key": "RACECAST_A", "value": "1"}]
 
 
 # ---------- relay live stats (Home dashboard) ----------
