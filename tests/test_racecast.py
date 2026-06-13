@@ -502,12 +502,14 @@ def t_relay_stop_releases_obs_feeds_after_kill():
     old = (m.sv.read_pid, m.sv.pid_alive, m.sv.stop_pid, m._release_obs_feeds)
     m.sv.read_pid = lambda path: 4242
     m.sv.pid_alive = lambda pid: True
-    m.sv.stop_pid = lambda pid, path: (calls.append("stop_pid"), True)[1]
+    m.sv.stop_pid = lambda pid, path, is_target=None: (
+        calls.append(("stop_pid", is_target)), True)[1]
     m._release_obs_feeds = lambda: calls.append("obs")
     try:
         with contextlib.redirect_stdout(io.StringIO()):
             m.relay_stop([])
-        assert calls == ["stop_pid", "obs"]
+        # the relay stop must verify process identity before killing (#102)
+        assert calls == [("stop_pid", m.sv.pid_is_relay), "obs"]
     finally:
         m.sv.read_pid, m.sv.pid_alive, m.sv.stop_pid, m._release_obs_feeds = old
 
@@ -519,7 +521,7 @@ def t_relay_stop_skips_obs_release_when_kill_failed():
     old = (m.sv.read_pid, m.sv.pid_alive, m.sv.stop_pid, m._release_obs_feeds)
     m.sv.read_pid = lambda path: 4242
     m.sv.pid_alive = lambda pid: True
-    m.sv.stop_pid = lambda pid, path: (calls.append("stop_pid"), False)[1]
+    m.sv.stop_pid = lambda pid, path, is_target=None: (calls.append("stop_pid"), False)[1]
     m._release_obs_feeds = lambda: calls.append("obs")
     try:
         with contextlib.redirect_stdout(io.StringIO()):
