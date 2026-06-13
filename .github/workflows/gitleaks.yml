@@ -17,22 +17,25 @@ jobs:
   gitleaks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           fetch-depth: 0  # full history so the git scan can inspect all commits
 
-      - name: Install gitleaks (latest release)
-        # gh api authenticates with the workflow token — an anonymous curl to
-        # api.github.com shares the runner IP's rate limit and flakes with 403.
+      - name: Install gitleaks (pinned + checksum-verified)
+        # Pin an exact version and verify its sha256 (#100/#9): a compromised
+        # upstream 'latest' release would otherwise run in CI with this job's
+        # token. Bump VER + SHA256 together (from the release's checksums.txt);
+        # the linux_x64 asset name has been stable across 8.x.
         env:
-          GH_TOKEN: ${{ github.token }}
+          VER: "8.30.1"
+          SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
         run: |
           set -euo pipefail
-          tag=$(gh api repos/gitleaks/gitleaks/releases/latest --jq .tag_name)
-          ver="${tag#v}"
-          echo "Installing gitleaks ${ver}"
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/${tag}/gitleaks_${ver}_linux_x64.tar.gz" \
-            | tar -xz gitleaks
+          echo "Installing gitleaks ${VER}"
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz"
+          echo "${SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
           sudo install gitleaks /usr/local/bin/gitleaks
           gitleaks version
 
