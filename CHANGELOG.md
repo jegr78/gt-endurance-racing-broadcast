@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.2.0...v0.3.0) (2026-06-13)
+
+
+### Features
+
+* Twitch parity across relay and static mode ([#105](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/105)) ([13c4c0e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/13c4c0e276dda31242458f7d71971b4be9f32c5e))
+
+
+### Bug Fixes
+
+* **services:** verify process identity before kill ([#118](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/118)) ([a0e360e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/a0e360e2d696a64792d8e56561d7812a8dfa30c4))
+* **ui:** render release notes as plaintext + add CSP ([#117](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/117)) ([85b498d](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/85b498d63cfe9afe8c48324dadfa7f86ecd0e35b))
+* **ui:** restrict machine .env editor to RACECAST_ keys ([#120](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/120)) ([7ccef1f](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/7ccef1f748ece8c5b6c2c86826d8558a91995ba5))
+* **update:** filter tar symlinks + cap decompression ([#116](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/116)) ([b6ac332](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/b6ac33221b6864b1b2817ceeebecb9aeea5f266a))
+
 ## [0.2.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.1.0...v0.2.0) (2026-06-13)
 
 
