@@ -105,5 +105,19 @@ def t_twitch_oauth():
     assert feeds.twitch_oauth_from_cookies(p) is None
 
 
+def _load_getcookies():
+    p = os.path.join(os.path.dirname(__file__), "..", "src", "relay", "get-cookies.py")
+    spec = importlib.util.spec_from_file_location("getck", p)
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+
+
+def t_cookie_target():
+    gc = _load_getcookies()
+    out_yt, url_yt = gc.cookie_target("youtube", "/run")
+    assert out_yt.endswith("yt-cookies.txt") and "youtube.com" in url_yt
+    out_tw, url_tw = gc.cookie_target("twitch", "/run")
+    assert out_tw.endswith("twitch-cookies.txt") and "twitch.tv" in url_tw
+
+
 if __name__ == "__main__":
-    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); t_ssai_markers(); t_cookies_for(); t_migrate_legacy(); t_twitch_oauth(); print("ok")
+    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); t_ssai_markers(); t_cookies_for(); t_migrate_legacy(); t_twitch_oauth(); t_cookie_target(); print("ok")
