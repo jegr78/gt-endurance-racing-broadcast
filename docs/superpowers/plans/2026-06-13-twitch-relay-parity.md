@@ -936,3 +936,36 @@ gh pr create --fill --base main
 | Build-verify | 14 |
 
 **Known-limit / out-of-scope items** (documented, not built): YouTube server-side ad *removal*; Twitch token rotation warning. Covered by Task 13 docs.
+
+---
+
+## Phase 6 — Static-mode Twitch parity (follow-on)
+
+**Why:** Static mode (`racecast streams`, `src/scripts/loopstream.py` + `start-streams.py`) is the dependency-light public fallback. It is hardcoded YouTube-only (`url = youtube.com/channel/<id>/live`). Decisions (settled with the user): **Twitch-only new handling** (static YouTube stays public-direct-streamlink — NO yt-dlp/cookies; only Twitch gains platform detection + low-latency + the relay's Twitch auth); **anti-divergence via duplication + a cross-check test** (the repo idiom, like `detect_tailscale_ip`). Static mode stays public-fallback; the relay remains the unlisted/bot-checked path.
+
+**Single entry point:** `racecast streams run-feed` → `_run_script("scripts/loopstream.py", rest)`, so changing `loopstream.py` covers both repo and frozen feed children.
+
+### Task 15: loopstream.py per-platform serve + Twitch auth + cross-check test
+**Files:** Modify `src/relay/.. NO` — `src/scripts/loopstream.py`; Test: `tests/test_streams.py`.
+- Duplicate from `src/relay/racecast-feeds.py` (with `# keep in sync with racecast-feeds.py` comments): `channel_url`, `platform_of` (+ the `urlparse`-host helper it needs), the `STREAMLINK_TWITCH` constant, and `twitch_oauth_from_cookies`. Add a `default_runtime_dir`-style resolver (mirror `get-cookies.py`) to locate `twitch-cookies.txt` at the shared `runtime/` top level.
+- `main()`: `ch = sys.argv[1]` may be a bare `UC…` id OR a full URL → `url = channel_url(ch)`, `plat = platform_of(url)`. For twitch, read `twitch-cookies.txt` → `twitch_oauth_from_cookies` → token.
+- `streamlink_argv(url, port, platform="youtube", twitch_token=None)`:
+  - youtube: UNCHANGED (quality `1080p60,1080p,720p60,720p`, `--hls-live-edge 4`, retry flags).
+  - twitch: `["streamlink","--player-external-http","--player-external-http-port",port] + STREAMLINK_TWITCH + (["--twitch-api-header", f"Authorization=OAuth {token}"] if token else []) + ["--retry-streams","15","--retry-open","5","--", url, "best"]` (note the `--` hardening + `best`, mirroring the relay's Twitch serve; retry flags are static's own serve harness).
+- **Cross-check test** (`tests/test_streams.py`): import BOTH `loopstream` and `racecast-feeds`; assert `loopstream.STREAMLINK_TWITCH == feeds.STREAMLINK_TWITCH`, `loopstream.platform_of(x) == feeds.platform_of(x)` for sample youtube/twitch/userinfo-trick inputs, and `loopstream.twitch_oauth_from_cookies(f) == feeds.twitch_oauth_from_cookies(f)` for a sample Netscape file. Plus unit tests: youtube argv unchanged; twitch argv has `--twitch-low-latency`/`--hls-live-edge 2`/`--` before url/`best`; twitch argv with token has the `--twitch-api-header`.
+
+### Task 16: start-streams.py channel validation (SSRF parity)
+**Files:** Modify `src/scripts/start-streams.py`; Test: `tests/test_streams.py`.
+- `load_feeds`: validate each `channel` is a bare `UC…` id OR an allowed-host (youtube/twitch) URL (duplicate `is_channel`/`_is_stream_url` host-allowlist from the relay, `# keep in sync`), skip invalid entries with a logged notice (don't spawn a feed at an arbitrary URL — same SSRF boundary the relay enforces via `is_channel`). Cross-check the duplicated `is_channel` against the relay's in the test.
+
+### Task 17: Control Center streams view — accept Twitch URLs
+**Files:** Modify `src/ui/control-center.html` (streams view ~424-446 + `addFeedRow` JS).
+- Column header "YouTube channel ID" → "Channel ID or URL"; the feed-row input placeholder/hint mentions a bare `UC…` id OR a full `youtube.com/watch?v=…` / `twitch.tv/<channel>` URL.
+- `note-warn`: "only with **public** YouTube channels" → "only with **public** YouTube or Twitch channels".
+- `envhint`: add that a full YouTube/Twitch watch URL also works.
+
+### Task 18: Docs — static mode is YouTube + Twitch
+**Files:** `src/scripts/loopstream.py` + `start-streams.py` docstrings ("PUBLIC YouTube channels only" → "public YouTube or Twitch channels"); `CLAUDE.md` static-mode section; any `src/docs/wiki` static-streams mention. Note: static mode = **public** only (no bot-check/unlisted), and gated Twitch needs the same `twitch-cookies.txt`.
+
+### Task 19: Verify + finalize
+Full suite + lint + `tools/build.py`; grep that the duplicated helpers carry `keep in sync` comments; then finish the branch.
