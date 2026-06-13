@@ -167,14 +167,35 @@ def port_reachable(host, port, timeout=0.5):
         sock.close()
 
 
-def tool_version(name):
-    """Return the first line of `<name> --version`, or None if not on PATH."""
-    path = shutil.which(name)
+def no_window_kwargs(os_name=None):
+    """Popen/run kwargs that stop a console child from flashing its own terminal
+    window on Windows. tool_version() is called IN-PROCESS by the Control Center's
+    `tools`/`preflight` status providers, and racecast-ui.exe is a --windowed
+    (console-less) app, so every `<tool> --version` probe otherwise pops a
+    transient terminal — one per tool (issue #23's class, missed for the version
+    probes). CREATE_NO_WINDOW gives the child a hidden console; capture_output
+    keeps the version text either way, so the flag is safe. Empty (no-op) off
+    Windows so the same call site stays cross-platform. Mirrors
+    services.no_window_kwargs — preflight imports nothing from its siblings (its
+    test loads it standalone), so the flag is duplicated here, like the relay's
+    racecast-feeds._no_window_kwargs copy."""
+    os_name = os.name if os_name is None else os_name
+    if os_name == "nt":
+        CREATE_NO_WINDOW = 0x08000000
+        return {"creationflags": CREATE_NO_WINDOW}
+    return {}
+
+
+def tool_version(name, run=subprocess.run, which=shutil.which):
+    """Return the first line of `<name> --version`, or None if not on PATH.
+    `run`/`which` are injectable seams for the unit test."""
+    path = which(name)
     if not path:
         return None
     try:
-        out = subprocess.run([name, "--version"], capture_output=True,
-                             text=True, errors="replace", timeout=10)
+        out = run([name, "--version"], capture_output=True,
+                  text=True, errors="replace", timeout=10,
+                  **no_window_kwargs())
         lines = (out.stdout or out.stderr).strip().splitlines()
         return lines[0] if lines else path
     except Exception:
