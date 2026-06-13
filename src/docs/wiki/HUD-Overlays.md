@@ -58,11 +58,43 @@ exposes these ids:
 
 The race timer (`timer.html`) exposes one id: **`#clock`** (the digits).
 
-## Editing
+## Editing — the visual builder
 
-In the Control Center's **Profile** view, the **Overlay CSS** editor edits the HUD and
-Timer CSS for the active league. **Save** writes the file; **Apply in OBS** reloads the
-browser sources (the same as `racecast obs refresh`).
+In the Control Center's **Profile** view, the **Overlay Builder** lays out the HUD and
+Timer slots visually — no CSS required. Click a slot on the canvas to select it, drag it
+to reposition, drag the corner/edge handles to resize, and set font, color, background
+and alignment in the property panel. **HUD ⇄ Timer** switches the page; **Pop out ↗**
+opens the builder in a larger modal over the Control Center; **Save** writes the files;
+**Apply in OBS** reloads the browser sources (the same as `racecast obs refresh`);
+**Preview ↗** opens the live HUD preview.
+
+![Control Center — Overlay Builder modal: drag/resize the HUD slots on a canvas over the Overlay.png frame, style them in the property panel](images/cc-overlay-builder.png)
+
+The canvas renders the real base page with **sample data** over your league's
+`Overlay.png` frame, so you position against the actual broadcast graphic. The per-slot
+**font** dropdown (and a global body font) offers the league's own uploaded fonts plus the
+machine-wide **font library** (see below); a profile-specific font can also be uploaded
+under **Fonts & advanced CSS**, where **advanced CSS** is a raw escape hatch appended
+verbatim after the generated rules.
+
+### Fonts: a machine-wide library
+
+Free Google Fonts are managed once in **General Settings → Overlay fonts**: pick from a
+curated catalog **or type any Google font family by name** (e.g. *Big Shoulders Display*) —
+the free-text field has **typeahead over the full Google catalog**, and a **Browse Google
+Fonts ↗** button opens the catalog site to look around. Remove ones you no longer need. Each downloaded font shows a live preview in its own
+typeface, and so do the builder's font dropdowns (with a preview swatch). They live in a
+machine-wide library (`runtime/fonts/`) shared across all leagues — no per-league
+re-download. When a league's design **uses** a library font, it is **copied into that
+profile's `overlay/fonts/` on save**, so the overlay renders offline and `profile export`
+stays self-contained. The bold (700) weight is fetched when the family has one, else its
+default face.
+
+How it round-trips: the builder owns a `layout-<page>.json` model and **compiles** it into
+the same `profiles/<name>/overlay/<page>.css` the relay serves — so everything below about
+the cascade still holds. A profile's existing **hand-written** `<page>.css` is imported
+verbatim into the advanced-CSS box the first time you open the builder (nothing is lost),
+and your visual changes compile **above** it.
 
 > **First-override caveat.** The relay only watches a profile's `overlay/` directory when
 > that directory **existed at the moment the relay started** (the relay is launched with
@@ -71,7 +103,9 @@ browser sources (the same as `racecast obs refresh`).
 > After that, later edits apply live via **Apply in OBS** — no restart.
 
 > **CLI alternative:** edit `profiles/<name>/overlay/{hud,timer}.css` in any text editor,
-> drop fonts in `profiles/<name>/overlay/fonts/`, then `racecast obs refresh`.
+> drop fonts in `profiles/<name>/overlay/fonts/`, then `racecast obs refresh`. (Editing the
+> CSS by hand and using the visual builder on the same profile both work — the builder
+> imports your hand-written CSS into its advanced-CSS box, then owns the generated file.)
 
 ## Example `hud.css`
 

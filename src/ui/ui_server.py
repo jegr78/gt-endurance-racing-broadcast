@@ -12,6 +12,7 @@ APP_ID = "racecast-control-center"
 DEFAULT_PORT = 8089
 TAIL_LINES = 40          # how much history a log stream starts with
 MAX_IMPORT_BYTES = 2 * 1024 * 1024 * 1024   # 2 GiB — profile bundles include media
+MAX_FONT_BYTES = 8 * 1024 * 1024            # 8 MiB — an overlay font is tiny
 
 
 def ui_port(env):
@@ -197,6 +198,26 @@ def make_handler(ctx):
                         os.unlink(full)
                     except OSError:  # best-effort temp cleanup
                         pass
+            return None
+
+        def _body_bytes(self, max_bytes):
+            """Raw request body (<= max_bytes), or None when absent/oversized/short."""
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                return None
+            if length <= 0 or length > max_bytes:
+                return None
+            data = self.rfile.read(length)
+            return data if len(data) == length else None
+
+        def _serve_bytes(self, data, ctype):
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
             return None
 
         def _body_to_tempfile(self, max_bytes):
@@ -406,6 +427,55 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"could not read overlay css: {exc}"},
                                       code=500)
+            if path == "/api/overlay/slots":
+                try:
+                    page = (parse_qs(urlparse(self.path).query or "").get(
+                        "page") or ["hud"])[0]
+                    return self._json(ctx["overlay_slots"](page))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not read overlay slots: {exc}"},
+                                      code=500)
+            if path == "/api/overlay/layout":
+                try:
+                    page = (parse_qs(urlparse(self.path).query or "").get(
+                        "page") or ["hud"])[0]
+                    return self._json(ctx["overlay_layout_read"](page))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not read overlay layout: {exc}"},
+                                      code=500)
+            if path == "/api/overlay/fonts":
+                try:
+                    return self._json(ctx["overlay_fonts"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not list overlay fonts: {exc}"},
+                                      code=500)
+            if path == "/api/fonts":
+                try:
+                    return self._json(ctx["machine_fonts"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not list font library: {exc}"},
+                                      code=500)
+            if path == "/api/fonts/catalog":
+                try:
+                    return self._json(ctx["font_catalog"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not load font catalog: {exc}"},
+                                      code=500)
+            if path == "/api/overlay/bg":
+                p = ctx["overlay_bg"]()
+                return self._serve_file(p) if p else self._not_found("no overlay frame")
+            if path.startswith("/api/overlay/font/"):
+                name = unquote(path[len("/api/overlay/font/"):])
+                hit = ctx["overlay_font_serve"](name)
+                if not hit:
+                    return self._not_found("font not found")
+                with open(hit[0], "rb") as fh:
+                    return self._serve_bytes(fh.read(), hit[1])
             if path == "/api/backup":
                 try:
                     return self._json(ctx["backup_list"]())
@@ -531,6 +601,58 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"could not write overlay css: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/overlay/layout":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["overlay_layout_write"](body.get("page"),
+                                                         body.get("layout"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not write overlay layout: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/overlay/fonts":
+                name = (parse_qs(urlparse(self.path).query or "").get(
+                    "name") or [None])[0]
+                data = self._body_bytes(MAX_FONT_BYTES)
+                if data is None:
+                    return self._json({"ok": False,
+                                       "error": "upload too large or unreadable"},
+                                      code=413)
+                try:
+                    result = ctx["overlay_font_upload"](name, data)
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not upload font: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/fonts/download":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["machine_font_download"](body.get("name"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not fetch Google font: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/fonts/delete":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["machine_font_delete"](body.get("name"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not delete font: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
             if path == "/api/backup":

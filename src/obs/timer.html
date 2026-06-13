@@ -18,7 +18,8 @@
 <link rel="stylesheet" href="/timer/override.css">
 </head>
 <body>
-  <div id="clock"></div>
+  <!-- data-edit marks this slot for the Control Center overlay builder (see hud.html). -->
+  <div id="clock" data-edit="Clock"></div>
 <script>
   // Ticks locally against the absolute end anchor; the poll only re-syncs the
   // anchor/visibility (sheet edits, director actions, server clock offset).

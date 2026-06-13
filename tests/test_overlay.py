@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for the per-profile overlay CSS/font helpers.
 Run: python3 tests/test_overlay.py"""
-import importlib.util, os, tempfile
+import importlib.util, os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 spec = importlib.util.spec_from_file_location(
     "feeds", os.path.join(ROOT, "src", "relay", "racecast-feeds.py"))
 feeds = importlib.util.module_from_spec(spec); spec.loader.exec_module(feeds)
+
+sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
+import overlay_build as ob
 
 
 def _mkoverlay(tmp, hud_css=None, timer_css=None, fonts=None):
@@ -150,6 +153,170 @@ def t_resolve_preview_frame_absent_or_no_dir_is_none():
     with tempfile.TemporaryDirectory() as tmp:
         assert feeds.resolve_preview_frame(os.path.join(tmp, "graphics")) is None
     assert feeds.resolve_preview_frame(None) is None
+
+
+# --- overlay_build: the pure WYSIWYG compiler (issue #114) ---
+
+def t_ob_font_constants_match_relay():
+    # Duplicated from the relay and pinned identical (anti-drift, like the
+    # load_dotenv copies). If the relay tightens the whitelist, this must follow.
+    assert ob.FONT_NAME_RE.pattern == feeds.FONT_NAME_RE.pattern
+    assert ob.FONT_CTYPES == feeds.FONT_CTYPES
+    assert set(ob.FONT_EXTS) == set(feeds.FONT_CTYPES.keys())
+
+
+def t_ob_extract_slots_from_real_hud():
+    with open(os.path.join(ROOT, "src", "obs", "hud.html"), encoding="utf-8") as f:
+        slots = ob.extract_slots(f.read())
+    ids = [s["id"] for s in slots]
+    assert ids == ["stint", "session", "streamer", "round-top", "round-flag",
+                   "round-country", "team0", "team1", "team2", "race-control"]
+    by_id = {s["id"]: s for s in slots}
+    assert by_id["stint"]["label"] == "Stint banner"
+    # default props (no data-edit-props) include the text set, not the team-only keys
+    assert "fontSize" in by_id["stint"]["props"]
+    assert "teamNameMax" not in by_id["stint"]["props"]
+    # team slot: restricted set with the auto-fit bounds, no plain fontSize
+    assert by_id["team0"]["props"] == ["left", "top", "width", "height",
+                                       "teamNameMax", "teamNameMin",
+                                       "fontFamily", "color"]
+    # image-only flag slot: position/size only
+    assert by_id["round-flag"]["props"] == ["left", "top", "width", "height"]
+
+
+def t_ob_extract_slots_from_real_timer():
+    with open(os.path.join(ROOT, "src", "obs", "timer.html"), encoding="utf-8") as f:
+        slots = ob.extract_slots(f.read())
+    assert [s["id"] for s in slots] == ["clock"]
+    assert slots[0]["label"] == "Clock"
+
+
+def t_ob_base_style_and_body():
+    html = ('<head><style>#x{left:1px}</style></head>'
+            '<body>\n  <div id="x" data-edit="X"></div>\n<script>1</script></body>')
+    assert ob.base_style(html) == "#x{left:1px}"
+    body = ob.base_body(html)
+    assert '<div id="x"' in body and "<script>" not in body
+
+
+SLOTS = [{"id": "stint", "label": "Stint banner", "props": list(ob.DEFAULT_PROPS)},
+         {"id": "team0", "label": "Team 1",
+          "props": ["left", "top", "width", "height", "teamNameMax",
+                    "teamNameMin", "fontFamily", "color"]}]
+
+
+def t_ob_compile_px_and_text_props():
+    css = ob.compile_overlay_css(
+        {"version": 1, "page": "hud",
+         "slots": {"stint": {"left": 800, "top": 30, "fontSize": 44,
+                             "color": "#fff"}}}, SLOTS)
+    assert "#stint {" in css
+    assert "left: 800px" in css and "top: 30px" in css
+    assert "font-size: 44px" in css and "color: #fff" in css
+
+
+def t_ob_compile_align_maps_to_flex():
+    css = ob.compile_overlay_css(
+        {"slots": {"stint": {"align": "center"}}}, SLOTS)
+    assert "justify-content: center" in css
+    css = ob.compile_overlay_css({"slots": {"stint": {"align": "right"}}}, SLOTS)
+    assert "justify-content: flex-end" in css
+
+
+def t_ob_compile_team_autofit_vars():
+    css = ob.compile_overlay_css(
+        {"slots": {"team0": {"teamNameMax": 34, "teamNameMin": 18}}}, SLOTS)
+    assert "--team-name-max: 34px" in css and "--team-name-min: 18px" in css
+
+
+def t_ob_compile_respects_allowed_props():
+    # fontSize is not in team0's allowed set -> never emitted even if present
+    css = ob.compile_overlay_css({"slots": {"team0": {"fontSize": 50}}}, SLOTS)
+    assert "font-size" not in css
+
+
+def t_ob_compile_unknown_slot_ignored():
+    css = ob.compile_overlay_css({"slots": {"bogus": {"left": 1}}}, SLOTS)
+    assert "bogus" not in css and css.strip() == ""
+
+
+def t_ob_compile_empty_layout_is_empty():
+    assert ob.compile_overlay_css(ob.empty_layout("hud"), SLOTS).strip() == ""
+
+
+def t_ob_compile_fonts_emit_font_face():
+    css = ob.compile_overlay_css(
+        {"slots": {}, "fonts": ["League.woff2"]}, SLOTS)
+    assert '@font-face' in css and 'font-family: "League"' in css
+    assert 'url(/overlay/fonts/League.woff2)' in css
+
+
+def t_ob_compile_rejects_bad_font_name():
+    css = ob.compile_overlay_css(
+        {"slots": {}, "fonts": ["../evil.woff2", "ok.exe", "Good.ttf"]}, SLOTS)
+    assert "evil" not in css and "ok.exe" not in css
+    assert 'font-family: "Good"' in css
+
+
+def t_ob_compile_customcss_last_and_verbatim():
+    css = ob.compile_overlay_css(
+        {"slots": {"stint": {"left": 10}}, "customCss": "/* mine */\n#stint{top:5px}"},
+        SLOTS)
+    assert css.rstrip().endswith("/* mine */\n#stint{top:5px}")
+    assert "left: 10px" in css and css.index("left: 10px") < css.index("/* mine */")
+
+
+def t_ob_compile_sanitizes_value_breakout():
+    # A structured prop value must not be able to close the rule / inject CSS;
+    # the customCss escape hatch is the only verbatim path.
+    css = ob.compile_overlay_css(
+        {"slots": {"stint": {"color": "red; } body{display:none"}}}, SLOTS)
+    assert "display:none" not in css and "body{" not in css
+
+
+def t_ob_migrate_imports_existing_css_into_customcss():
+    layout = ob.migrate_layout("hud", "#stint{left:999px}/* hand-written */")
+    assert layout["page"] == "hud" and layout["slots"] == {}
+    assert layout["customCss"] == "#stint{left:999px}/* hand-written */"
+    # and it compiles back out verbatim
+    css = ob.compile_overlay_css(layout, SLOTS)
+    assert "#stint{left:999px}" in css
+
+
+def t_ob_font_family_is_file_stem():
+    assert ob.font_family("League.woff2") == "League"
+    assert ob.font_family("My-Font.ttf") == "My-Font"
+
+
+def t_ob_google_fonts_curated_list():
+    assert isinstance(ob.GOOGLE_FONTS, tuple) and len(ob.GOOGLE_FONTS) >= 10
+    assert all(isinstance(n, str) and n for n in ob.GOOGLE_FONTS)
+    assert "Oswald" in ob.GOOGLE_FONTS
+
+
+def t_ob_google_font_filename_and_family():
+    # spaces stripped, valid against the font-name whitelist, family = stem
+    fn = ob.google_font_filename("Saira Condensed")
+    assert fn == "SairaCondensed.woff2"
+    assert ob.FONT_NAME_RE.match(fn) and fn.rsplit(".", 1)[1] in ob.FONT_EXTS
+    assert ob.font_family(fn) == "SairaCondensed"
+    assert ob.google_font_filename("Oswald") == "Oswald.woff2"
+
+
+def t_ob_google_font_css_url():
+    u = ob.google_font_css_url("Saira Condensed")
+    assert u.startswith("https://fonts.googleapis.com/css2?family=Saira+Condensed")
+    assert "wght@700" in u
+
+
+def t_ob_is_google_font_name():
+    # valid families (incl. ones outside the curated catalog) pass
+    for ok in ("Oswald", "Exo 2", "Roboto Condensed", "Big Shoulders Display", "A1"):
+        assert ob.is_google_font_name(ok), ok
+    # host/path/injection tricks and junk are rejected -> never fetched
+    for bad in ("", " Oswald", "Oswald ", "../etc/passwd", "Evil/Font", "a@b",
+                "x" * 60, "name\ninjection", None, 5):
+        assert not ob.is_google_font_name(bad), bad
 
 
 if __name__ == "__main__":

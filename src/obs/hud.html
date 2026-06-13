@@ -60,16 +60,20 @@
 <link rel="stylesheet" href="/hud/override.css">
 </head>
 <body>
-  <div id="stint" class="el white"></div>
-  <div id="session" class="el black"></div>
-  <div id="streamer" class="el black"></div>
-  <div id="round-top" class="el white"></div>
-  <div id="round-flag" class="el"><img alt=""></div>
-  <div id="round-country" class="el white"></div>
-  <div id="team0" class="el team white"><img alt=""><span class="num"></span><span class="name"></span></div>
-  <div id="team1" class="el team white"><img alt=""><span class="num"></span><span class="name"></span></div>
-  <div id="team2" class="el team white"><img alt=""><span class="num"></span><span class="name"></span></div>
-  <div id="race-control" class="el white"></div>
+  <!-- data-edit="<label>" marks a slot the Control Center overlay builder can
+       position/style; data-edit-props (comma list) limits which property groups
+       apply (default = all text props). The markup is the single slot source —
+       a new global element becomes editable just by adding these attributes. -->
+  <div id="stint" class="el white" data-edit="Stint banner"></div>
+  <div id="session" class="el black" data-edit="Session"></div>
+  <div id="streamer" class="el black" data-edit="Streamer"></div>
+  <div id="round-top" class="el white" data-edit="Round title"></div>
+  <div id="round-flag" class="el" data-edit="Round flag" data-edit-props="left,top,width,height"><img alt=""></div>
+  <div id="round-country" class="el white" data-edit="Round country"></div>
+  <div id="team0" class="el team white" data-edit="Team 1" data-edit-props="left,top,width,height,teamNameMax,teamNameMin,fontFamily,color"><img alt=""><span class="num"></span><span class="name"></span></div>
+  <div id="team1" class="el team white" data-edit="Team 2" data-edit-props="left,top,width,height,teamNameMax,teamNameMin,fontFamily,color"><img alt=""><span class="num"></span><span class="name"></span></div>
+  <div id="team2" class="el team white" data-edit="Team 3" data-edit-props="left,top,width,height,teamNameMax,teamNameMin,fontFamily,color"><img alt=""><span class="num"></span><span class="name"></span></div>
+  <div id="race-control" class="el white" data-edit="Race control"></div>
 
 <script>
   const POLL_MS = 2500;

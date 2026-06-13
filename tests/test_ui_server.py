@@ -131,6 +131,35 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
                                           "path": "/x/overlay/%s.css" % page},
             "overlay_write": lambda page, content: {"ok": True,
                                                     "path": "/x/overlay/%s.css" % page},
+            "overlay_slots": lambda page: {"ok": True, "page": page,
+                                           "slots": [{"id": "stint",
+                                                      "label": "Stint banner",
+                                                      "props": ["left", "top"]}],
+                                           "css": "#stint{}", "body": "<div></div>",
+                                           "sample": {"stint": "STINT 3"}},
+            "overlay_layout_read": lambda page: {"ok": True, "page": page,
+                                                 "active": "demo", "migrated": False,
+                                                 "layout": {"version": 1, "page": page,
+                                                            "slots": {}, "fonts": [],
+                                                            "customCss": ""}},
+            "overlay_layout_write": lambda page, layout: {
+                "ok": True, "path": "/x/overlay/%s.css" % page,
+                "css": "#stint { left: 10px; }\n", "_got": (page, layout)},
+            "overlay_fonts": lambda: {"ok": True, "active": "demo",
+                                      "fonts": ["League.woff2"],
+                                      "library": ["Oswald.woff2"]},
+            "machine_fonts": lambda: {"ok": True, "fonts": ["Oswald.woff2"],
+                                      "catalog": ["Oswald", "Roboto"]},
+            "font_catalog": lambda: {"ok": True, "source": "google",
+                                     "families": ["Oswald", "Roboto", "Teko"]},
+            "machine_font_download": lambda name: {"ok": bool(name),
+                                                   "name": (name or "") + ".woff2"},
+            "machine_font_delete": lambda name: {"ok": True, "removed": name},
+            "overlay_font_upload": lambda name, data: {"ok": bool(name),
+                                                       "name": name,
+                                                       "_len": len(data)},
+            "overlay_bg": lambda: None,
+            "overlay_font_serve": lambda name: None,
             "backup_list": lambda: {"ok": True, "active": "demo",
                                     "items": [{"label": "Winter", "slug": "winter",
                                                "created": "2026-06-12T10:00:00Z",
@@ -970,6 +999,197 @@ def t_overlay_post_provider_error_is_400():
         assert code == 400 and "invalid page" in json.loads(body)["error"]
     finally:
         httpd.shutdown()
+
+
+def t_overlay_slots_route_passes_page():
+    seen = []
+    ctx = _ctx()
+    base = ctx["overlay_slots"]
+    ctx["overlay_slots"] = lambda page: seen.append(page) or base(page)
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/overlay/slots?page=timer")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True and seen == ["timer"]
+        assert data["slots"][0]["id"] == "stint"
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_layout_get_passes_page():
+    seen = []
+    ctx = _ctx()
+    base = ctx["overlay_layout_read"]
+    ctx["overlay_layout_read"] = lambda page: seen.append(page) or base(page)
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/overlay/layout?page=hud")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True and seen == ["hud"]
+        assert data["layout"]["page"] == "hud"
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_layout_post_passes_page_and_layout():
+    seen = []
+    ctx = _ctx()
+    ctx["overlay_layout_write"] = lambda page, layout: seen.append((page, layout)) or {
+        "ok": True, "path": "/x/overlay/%s.css" % page, "css": "#stint{}"}
+    httpd, port = _serve(ctx)
+    try:
+        layout = {"version": 1, "page": "hud", "slots": {"stint": {"left": 10}}}
+        code, body = _post_json(port, "/api/overlay/layout",
+                                {"page": "hud", "layout": layout})
+        assert code == 200 and json.loads(body)["ok"] is True
+        assert seen == [("hud", layout)]
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_layout_post_provider_error_is_400():
+    ctx = _ctx()
+    ctx["overlay_layout_write"] = lambda page, layout: {"ok": False,
+                                                        "error": "layout page mismatch"}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/overlay/layout",
+                                {"page": "hud", "layout": {"page": "timer"}})
+        assert code == 400 and "mismatch" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_fonts_list_route():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/overlay/fonts")
+        data = json.loads(body)
+        assert code == 200 and data["fonts"] == ["League.woff2"]
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_font_upload_passes_name_and_bytes():
+    seen = []
+    ctx = _ctx()
+    ctx["overlay_font_upload"] = lambda name, data: seen.append((name, data)) or {
+        "ok": True, "name": name}
+    httpd, port = _serve(ctx)
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/overlay/fonts?name=League.woff2",
+            method="POST", data=b"OTTOfontbytes",
+            headers={"Content-Type": "font/woff2"})
+        with _urlopen(req, timeout=5) as r:
+            assert r.status == 200
+        assert seen == [("League.woff2", b"OTTOfontbytes")]
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_font_upload_empty_body_is_413():
+    httpd, port = _serve(_ctx())
+    try:
+        code, _ = _post(port, "/api/overlay/fonts?name=League.woff2")
+        assert code == 413
+    finally:
+        httpd.shutdown()
+
+
+def t_font_library_list_route():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/fonts")
+        data = json.loads(body)
+        assert code == 200 and "Oswald" in data["catalog"]
+        assert "Oswald.woff2" in data["fonts"]
+    finally:
+        httpd.shutdown()
+
+
+def t_font_catalog_route():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/fonts/catalog")
+        data = json.loads(body)
+        assert code == 200 and data["source"] == "google"
+        assert "Teko" in data["families"]
+    finally:
+        httpd.shutdown()
+
+
+def t_font_download_route_passes_name():
+    seen = []
+    ctx = _ctx()
+    ctx["machine_font_download"] = lambda name: seen.append(name) or {
+        "ok": True, "name": name + ".woff2"}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/fonts/download", {"name": "Oswald"})
+        assert code == 200 and json.loads(body)["ok"] is True
+        assert seen == ["Oswald"]
+    finally:
+        httpd.shutdown()
+
+
+def t_font_delete_route_passes_name():
+    seen = []
+    ctx = _ctx()
+    ctx["machine_font_delete"] = lambda name: seen.append(name) or {
+        "ok": True, "removed": name}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/fonts/delete", {"name": "Oswald.woff2"})
+        assert code == 200 and json.loads(body)["ok"] is True
+        assert seen == ["Oswald.woff2"]
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_fonts_list_includes_library():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/overlay/fonts")
+        data = json.loads(body)
+        assert code == 200 and "Oswald.woff2" in data["library"]
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_bg_missing_is_404():
+    httpd, port = _serve(_ctx())            # overlay_bg stub returns None
+    try:
+        code, _ = _get(port, "/api/overlay/bg")
+        assert code == 404
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_font_serve_missing_is_404():
+    httpd, port = _serve(_ctx())            # overlay_font_serve stub returns None
+    try:
+        code, _ = _get(port, "/api/overlay/font/Nope.woff2")
+        assert code == 404
+    finally:
+        httpd.shutdown()
+
+
+def t_overlay_font_serve_returns_bytes_and_type():
+    import tempfile
+    ctx = _ctx()
+    fd, fpath = tempfile.mkstemp(suffix=".woff2")
+    os.write(fd, b"FONTDATA"); os.close(fd)
+    ctx["overlay_font_serve"] = lambda name: (fpath, "font/woff2")
+    httpd, port = _serve(ctx)
+    try:
+        with _urlopen(f"http://127.0.0.1:{port}/api/overlay/font/X.woff2") as r:
+            assert r.status == 200
+            assert r.headers["Content-Type"] == "font/woff2"
+            assert r.read() == b"FONTDATA"
+    finally:
+        httpd.shutdown()
+        os.unlink(fpath)
 
 
 def t_profile_logo_route_serves_image_with_type():

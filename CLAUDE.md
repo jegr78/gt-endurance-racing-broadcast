@@ -254,10 +254,18 @@ runtime dir; switching profiles points the CLI at a different one.
   when the file is absent). The CLI passes `--overlay-dir profiles/<active>/overlay`
   whenever that dir exists (`_overlay_relay_args` in `src/racecast.py`). The two
   override.css are part of `OBS_PAGE_PATHS`, so editing them advances the refresh hash
-  and OBS reloads automatically. Editable in the Control Center; the **first** override
-  on a profile whose `overlay/` did not exist when the relay started needs one
+  and OBS reloads automatically. Editable in the Control Center — a **visual overlay
+  builder** (issue #114): the slots' `data-edit` markers in `hud.html`/`timer.html`
+  are the single slot source, a pure compiler (`src/scripts/overlay_build.py`,
+  `compile_overlay_css`) turns a `layout-<page>.json` the builder owns into the
+  generated `<page>.css`, and a hand-written `<page>.css` is migrated verbatim into the
+  layout's `customCss` (the pro escape hatch, appended last) on first use — so the
+  relay serves the generated file unchanged. Spec:
+  `docs/superpowers/specs/2026-06-13-visual-overlay-builder-design.md`. The **first**
+  override on a profile whose `overlay/` did not exist when the relay started needs one
   `racecast relay restart` (the `--overlay-dir` flag is decided at launch), but later
-  edits apply live. Tests: `tests/test_overlay.py`.
+  edits apply live. Tests: `tests/test_overlay.py` (compiler + slot extraction +
+  migration), `tests/test_ui_server.py` + `tests/test_racecast.py` (routes + data layer).
 
 ### The relay (`src/relay/racecast-feeds.py`) — the heart
 A 2-feed "ping-pong": **Feed A** (port 53001) serves odd stints, **Feed B** (53002)
@@ -362,11 +370,18 @@ environment before dispatching to:
 `racecast ui` serves a local web app (`src/ui/ui_server.py`, port 8089 /
 `RACECAST_UI_PORT`) for dashboard, service control and logs. Two settings surfaces:
 - **Profile view** — switch the active profile, create a new one (new-profile dialog,
-  optionally `--from` an existing one), edit the active league's `profile.env`, edit the
-  per-league **overlay CSS** (`hud.css`/`timer.css`), and download profile-scoped
-  graphics/media. Routes: `/api/profiles`, `/api/profile/{use,new,env}`, `/api/overlay`.
-- **General Settings** — machine-wide knobs: the `.env` editor (`RACECAST_*` vars) and
-  cookie refresh.
+  optionally `--from` an existing one), edit the active league's `profile.env`, style the
+  per-league overlays in the **visual overlay builder** (drag/resize the HUD/Timer slots
+  on a same-origin Shadow-DOM canvas over `Overlay.png`, with a fonts uploader and an
+  advanced-CSS escape hatch), and download profile-scoped graphics/media. Routes:
+  `/api/profiles`, `/api/profile/{use,new,env}`, `/api/overlay`,
+  `/api/overlay/{slots,layout,fonts,bg,font/<name>}`.
+- **General Settings** — machine-wide knobs: the `.env` editor (`RACECAST_*` vars),
+  cookie refresh, and the **overlay font library** (curated free Google Fonts downloaded
+  once into `runtime/fonts/`, shared across leagues; routes `/api/fonts`,
+  `/api/fonts/{download,delete}`). A font a league's design uses is copied into that
+  profile's `overlay/fonts/` on save (`_materialize_overlay_fonts`), so `profile export`
+  stays self-contained; the relay/canvas serve it locally (no broadcast-time CDN).
 
 `tools/` is maintainer-only (build, tokenize, sync) and is not shipped to producers.
 
