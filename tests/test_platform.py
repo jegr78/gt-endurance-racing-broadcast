@@ -54,7 +54,6 @@ def t_ssai_markers():
 
 
 def t_cookies_for():
-    import tempfile
     d = tempfile.mkdtemp()
     # nothing present -> None for both
     assert feeds.cookies_for("youtube", d) is None
@@ -75,7 +74,6 @@ def t_cookies_for():
 
 
 def t_migrate_legacy():
-    import tempfile
     d = tempfile.mkdtemp()
     # no files: no-op, returns the canonical path
     assert feeds.migrate_legacy_cookie(d).endswith("yt-cookies.txt")
