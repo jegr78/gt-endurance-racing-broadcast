@@ -53,5 +53,26 @@ def t_ssai_markers():
     assert feeds.manifest_has_ssai_markers(None) is False
 
 
+def t_cookies_for():
+    import tempfile
+    d = tempfile.mkdtemp()
+    # nothing present -> None for both
+    assert feeds.cookies_for("youtube", d) is None
+    assert feeds.cookies_for("twitch", d) is None
+    assert feeds.cookies_for("youtube", None) is None
+    # legacy cookies.txt is still picked up for youtube
+    legacy = os.path.join(d, "cookies.txt")
+    with open(legacy, "w") as f: f.write("x")
+    assert feeds.cookies_for("youtube", d) == legacy
+    # new yt-cookies.txt wins over legacy
+    new = os.path.join(d, "yt-cookies.txt")
+    with open(new, "w") as f: f.write("x")
+    assert feeds.cookies_for("youtube", d) == new
+    # twitch file
+    tw = os.path.join(d, "twitch-cookies.txt")
+    with open(tw, "w") as f: f.write("x")
+    assert feeds.cookies_for("twitch", d) == tw
+
+
 if __name__ == "__main__":
-    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); t_ssai_markers(); print("ok")
+    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); t_ssai_markers(); t_cookies_for(); print("ok")

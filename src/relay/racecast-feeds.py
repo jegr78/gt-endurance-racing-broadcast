@@ -1000,7 +1000,20 @@ def ssai_warning(hls_url, logfile):
 
 # --- Temporary stubs: replaced by real implementations in later tasks of this feature ---
 def cookies_for(platform, cookie_dir):
-    return None        # replaced in the cookies_for task
+    """Resolve the cookie file for a platform inside the shared cookie dir.
+    YouTube prefers yt-cookies.txt and falls back to the legacy cookies.txt;
+    Twitch uses twitch-cookies.txt. Returns an existing path or None (public).
+    Pure (no migration side effects — see migrate_legacy_cookie)."""
+    if not cookie_dir:
+        return None
+    if platform == "twitch":
+        p = os.path.join(cookie_dir, "twitch-cookies.txt")
+        return p if os.path.isfile(p) else None
+    p = os.path.join(cookie_dir, "yt-cookies.txt")
+    if os.path.isfile(p):
+        return p
+    legacy = os.path.join(cookie_dir, "cookies.txt")
+    return legacy if os.path.isfile(legacy) else None
 
 def twitch_oauth_from_cookies(path):
     return None        # replaced in the Twitch-auth task
