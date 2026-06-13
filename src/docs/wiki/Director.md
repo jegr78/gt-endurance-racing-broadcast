@@ -101,18 +101,28 @@ either way — they never need the webhook.) See [Sheet-Webhook](Sheet-Webhook).
 ## Director panel — URLs section
 
 Below the main rows the panel has a collapsible **URLs** section. It shows the
-Schedule tab entries (one per stint: name + stream URL; rows currently
-assigned to a live feed are marked A or B) and the POV URL field.
+Schedule tab entries (one per stint: **Streamer** + **Stint** label dropdowns +
+stream URL; rows currently assigned to a live feed are marked A or B) and the
+POV URL field. The Streamer and Stint dropdowns draw from the **same**
+Configuration vocabulary as the HUD row dropdowns, so a row's values can never
+drift out of vocab.
 
 Saving a change writes it to the sheet only — **no feed reconnects
 automatically**. A new stream URL takes effect at the next **RELOAD A/B** /
 **NEXT** for that feed (POV: **POV RELOAD**), exactly as if the sheet had been
 edited directly.
 
-Each row also has a **CLEAR** button: it empties the row's name + URL in the
-sheet (after a confirmation). The row itself stays and can be refilled later —
-rows are never deleted, because removing a row would shift the stint numbering
-of everything after it.
+**Handover auto-fills the HUD.** When a stint goes on air via **NEXT** (or a
+**FEEDS → STINT** takeover), the relay sets the HUD's **Streamer** and **Stint
+label** from that Schedule row automatically — no manual HUD-row change per
+stint. The HUD-row dropdowns remain available as a live correction; the next
+handover re-asserts the schedule's values. A row whose Streamer/Stint is blank
+or not in the Configuration vocab simply leaves the HUD field unchanged.
+
+Each row also has a **CLEAR** button: it empties the row's Streamer + Stint +
+URL in the sheet (after a confirmation). The row itself stays and can be
+refilled later — rows are never deleted, because removing a row would shift the
+stint numbering of everything after it.
 
 The URLs section also needs the profile's `SHEET_PUSH_URL` — without it the fields are
 read-only.

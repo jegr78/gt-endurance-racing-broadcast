@@ -317,7 +317,9 @@
         (<code>youtube.com/watch?v=…</code> or <code>twitch.tv/&lt;channel&gt;</code>).
         Saves write the Google Sheet only — a feed picks the new URL up
         on RELOAD A/B / NEXT (rows marked <b>A</b>/<b>B</b> are live now); the POV URL
-        applies on POV RELOAD. Names/URLs can still be edited in the Sheet directly.</div>
+        applies on POV RELOAD. Each row's <b>Streamer</b> and <b>Stint</b> label
+        (Configuration vocab) become the HUD's STREAMER/STINT when that row goes
+        on air. Streamer/Stint/URL can still be edited in the Sheet directly.</div>
     </div>
   </details>
 
@@ -858,12 +860,19 @@ async function timerPoll(){
 }
 
 /* ---------- HUD row (sheet-backed dropdowns; relay-only) ----------
-   The "STINT" here is the HUD display LABEL (Setup tab) — unrelated to the
-   feed stint index handled by NEXT / FEEDS → STINT in the FEEDS row. */
+   The "STINT" here is the HUD display LABEL (Setup tab). On a handover
+   (NEXT / FEEDS → STINT) the relay now drives this label and the STREAMER
+   from the Schedule row that just went on air — the Schedule's per-row Stint
+   and Streamer dropdowns share this same Configuration vocabulary, so the
+   on-air stint sets the HUD label automatically. These manual dropdowns stay
+   as a live-correction override; the next handover re-asserts the schedule. */
 const SETUP_FIELDS = [
   ["stint","STINT LABEL"], ["streamer","STREAMER"],
   ["session","SESSION"], ["racecontrol","RACE CONTROL"],
 ];
+// Configuration vocab for the Schedule editor's Streamer/Stint dropdowns,
+// cached from /setup/data (the same lists the Setup dropdowns use).
+let schedOptions = {streamer: [], stint: []};
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
@@ -985,6 +994,7 @@ async function setupPoll(){
     d = await r.json();
   }catch(e){ $("#setupInfo").textContent = "HUD: relay not reachable."; return; }
   if (d.error){ $("#setupInfo").textContent = "HUD: " + d.error; return; }
+  schedOptions = {streamer: d.options.streamer || [], stint: d.options.stint || []};
   const ro = d.push === "disabled";
   for (const [key] of SETUP_FIELDS){
     const sel = document.querySelector(`select[data-setup="${key}"]`);
@@ -1032,23 +1042,42 @@ function rowBusy(tr){
          tr.contains(document.activeElement) ||
          Date.now() - Number(tr.dataset.saved||0) < SAVE_GUARD_MS;
 }
+// Fill a Schedule-editor dropdown from a vocab list, preserving an open menu
+// and a just-picked value (cur=null leaves the current selection untouched).
+function fillSchedSelect(sel, opts, cur){
+  if (!sel || sel === document.activeElement) return;
+  const full = [""].concat(opts || []);
+  const sig = JSON.stringify(full);
+  if (sel.dataset.sig !== sig){
+    sel.innerHTML = full.map(o=>`<option value="${escapeHtml(o)}">${o===""?"— none —":escapeHtml(o)}</option>`).join("");
+    sel.dataset.sig = sig;
+  }
+  if (cur != null && [...sel.options].some(o=>o.value===cur)) sel.value = cur;
+}
 function schedRow(i){
   let tr = document.querySelector(`#schedBody tr[data-row="${i}"]`);
   if (tr) return tr;
   tr = document.createElement("tr"); tr.dataset.row = i;
   tr.innerHTML = `<td class="rn">${i}<span class="livebadge"></span></td>
-    <td style="width:24%"><input class="nm" placeholder="name"></td>
+    <td style="width:22%"><select class="nm" title="Streamer (Configuration vocab)"></select></td>
+    <td style="width:18%"><select class="st" title="Stint label (Configuration vocab)"></select></td>
     <td><input class="u" placeholder="youtube.com/watch?v=… · twitch.tv/<channel> · UC…"></td>
     <td class="act"><button class="save">SAVE</button><button class="clear">CLEAR</button></td>`;
-  tr.querySelectorAll("input").forEach(inp=>inp.addEventListener("input", ()=>tr.dataset.dirty = 1));
+  fillSchedSelect(tr.querySelector(".nm"), schedOptions.streamer, "");
+  fillSchedSelect(tr.querySelector(".st"), schedOptions.stint, "");
+  tr.querySelectorAll("input,select").forEach(inp=>{
+    inp.addEventListener("input", ()=>tr.dataset.dirty = 1);
+    inp.addEventListener("change", ()=>tr.dataset.dirty = 1);
+  });
   tr.querySelector(".save").addEventListener("click", ()=>schedSave(tr, i));
   tr.querySelector(".clear").addEventListener("click", ()=>{
     // Clears name + URL in the sheet (the row itself stays — deleting rows
     // would shift the stint indices of everything after it).
     const live = tr.querySelector(".livebadge").textContent;
-    if (!confirm("Clear schedule row " + i + " (name + URL) in the sheet?" +
+    if (!confirm("Clear schedule row " + i + " (streamer + stint + URL) in the sheet?" +
                  (live ? ` Feed ${live} keeps playing until RELOAD ${live} / NEXT.` : ""))) return;
-    tr.querySelector(".nm").value = ""; tr.querySelector(".u").value = "";
+    tr.querySelector(".nm").value = ""; tr.querySelector(".st").value = "";
+    tr.querySelector(".u").value = "";
     schedSave(tr, i);
   });
   $("#schedBody").appendChild(tr);
@@ -1064,7 +1093,8 @@ async function schedSave(tr, row){
     const r = await fetch("/schedule/set", {method:"POST", cache:"no-store",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({row: sheetRow, url: tr.querySelector(".u").value.trim(),
-                            name: tr.querySelector(".nm").value.trim()})});
+                            name: tr.querySelector(".nm").value.trim(),
+                            stint: tr.querySelector(".st").value.trim()})});
     const d = await r.json();
     if (d.error){ log("Schedule row " + row + ": " + d.error, "err"); toast("Schedule row " + row + ": " + d.error); btn.textContent = "RETRY"; return; }
     delete tr.dataset.dirty; tr.dataset.saved = Date.now();
@@ -1122,8 +1152,12 @@ async function schedPoll(){
       // Stamp the physical sheet row so schedSave and schedAdd use it.
       tr.dataset.sheetRow = row.sheetRow;
       tr.querySelector(".livebadge").textContent = row.live || "";
-      if (rowBusy(tr)) return;
-      tr.querySelector(".nm").value = row.name;
+      const busy = rowBusy(tr);
+      // Keep the dropdown options fresh always; only adopt the sheet's saved
+      // selection when the row isn't being edited (cur=null leaves it alone).
+      fillSchedSelect(tr.querySelector(".nm"), schedOptions.streamer, busy ? null : (row.name || ""));
+      fillSchedSelect(tr.querySelector(".st"), schedOptions.stint, busy ? null : (row.stint || ""));
+      if (busy) return;
       tr.querySelector(".u").value = row.url;
     });
   }catch(e){}

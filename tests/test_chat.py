@@ -234,8 +234,8 @@ def _chat_client(chat_store, setup_ctl=None):
     class _StubRelay:
         def __init__(self):
             self.source = _StubSource([
-                ("https://www.youtube.com/watch?v=a", "Alpha", 2),
-                ("UCLA_DiR1FfKNvjuUpBHmylQ", "Beta", 3),
+                ("https://www.youtube.com/watch?v=a", "Alpha", "", 2),
+                ("UCLA_DiR1FfKNvjuUpBHmylQ", "Beta", "", 3),
             ])
             self.feeds = {"A": _StubFeed(0), "B": _StubFeed(1)}
 

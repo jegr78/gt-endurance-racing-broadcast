@@ -115,7 +115,7 @@ so the Stream Deck and the panel share one muscle memory:
 | **GFX** | graphics toggles (HUD, Standings, Schedule, results, weather, covers) |
 | **TIMER** | the race timer (see [Race Timer](Race-Timer)) |
 | **AUDIO** | per-input dB sliders, 0 dB reset and mutes |
-| **URLs** | collapsible editor for the Schedule tab (per-stint name + URL, rows live on a feed are marked A/B) and the POV URL — saves write the Sheet only; feeds pick changes up on RELOAD/NEXT |
+| **URLs** | collapsible editor for the Schedule tab (per-stint Streamer + Stint label dropdowns + URL, rows live on a feed are marked A/B) and the POV URL — saves write the Sheet only; feeds pick changes up on RELOAD/NEXT. On handover the on-air row's Streamer + Stint label auto-fill the HUD |
 
 The status strip at the top shows what is on air, which stint each feed
 carries, the POV state and the race timer. **FEEDS, TIMER, HUD and URLs
@@ -145,10 +145,12 @@ flowchart LR
 At each change the director: cuts to **Splitscreen** (the combo sets **Race Control** to
 *Driver Swaps* with it), then presses **Feeds Next** — the relay hands the feed over and
 cuts the program back to **Stint** on the incoming feed for you (no **STINT A/B** press
-needed), **clearing Race Control** with the cut — and updates the **Stint** and
-**Streamer** cells.
-The panel's **HUD row** provides the same Stint / Streamer / Race Control dropdowns
-directly — editing the sheet and using the panel are equivalent.
+needed), **clearing Race Control** with the cut — and sets the HUD's **Stint**
+label and **Streamer** from the on-air **Schedule row** automatically (sourced
+from the Configuration vocab; a blank or off-vocab row leaves the field as-is).
+The panel's **HUD row** still provides the Stint / Streamer / Race Control dropdowns
+directly as a live correction — editing the sheet and using the panel are equivalent,
+and the next handover re-asserts the schedule's values.
 Full step-by-step: [Director guide](Director#at-a-driver-change). (Why two feeds:
 [Relay — how the feeds work](Relay-Mode).)
 

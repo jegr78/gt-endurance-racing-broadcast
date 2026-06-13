@@ -50,9 +50,9 @@ SCHED_CSV = ('"https://www.youtube.com/watch?v=abc",Matt\n'
 
 def t_parse_rows_url_and_name():
     rows = m.ScheduleSource._parse_rows(SCHED_CSV)
-    assert rows == [("https://www.youtube.com/watch?v=abc", "Matt", 1),
-                    ("UCLA_DiR1FfKNvjuUpBHmylQ", "NASA", 2),
-                    ("UCoMdktPbSTixAyNGwb-UYkQ", "", 3)], rows
+    assert rows == [("https://www.youtube.com/watch?v=abc", "Matt", "", 1),
+                    ("UCLA_DiR1FfKNvjuUpBHmylQ", "NASA", "", 2),
+                    ("UCoMdktPbSTixAyNGwb-UYkQ", "", "", 3)], rows
 
 
 def t_parse_rows_empty_is_none():
@@ -73,22 +73,41 @@ def t_schedule_source_get_rows():
     assert s.refresh() is True
     assert s.get() == ["https://www.youtube.com/watch?v=abc",
                        "UCLA_DiR1FfKNvjuUpBHmylQ", "UCoMdktPbSTixAyNGwb-UYkQ"]
-    assert s.get_rows()[1] == ("UCLA_DiR1FfKNvjuUpBHmylQ", "NASA", 2)
+    assert s.get_rows()[1] == ("UCLA_DiR1FfKNvjuUpBHmylQ", "NASA", "", 2)
 
 
 def t_parse_rows_url_not_first_column():
     text = "Commentator,Channel\nMatt,UCaaaaaaaaaaaaaaaaaaaaaa\nNASA,UCbbbbbbbbbbbbbbbbbbbbbb\n"
     rows = m.ScheduleSource._parse_rows(text)
-    assert rows == [("UCaaaaaaaaaaaaaaaaaaaaaa", "", 2),
-                    ("UCbbbbbbbbbbbbbbbbbbbbbb", "", 3)], rows
+    assert rows == [("UCaaaaaaaaaaaaaaaaaaaaaa", "", "", 2),
+                    ("UCbbbbbbbbbbbbbbbbbbbbbb", "", "", 3)], rows
 
 
 def t_parse_rows_with_header_line():
-    # Header row fails is_channel -> skipped; physical line numbers preserved.
+    # No 'URL' header -> positional fallback; the header row fails is_channel and
+    # is skipped, physical line numbers preserved, no stint label.
     text = "Channel,Name\nUCaaaaaaaaaaaaaaaaaaaaa1,Alpha\nUCbbbbbbbbbbbbbbbbbbbbb2,Beta\n"
     rows = m.ScheduleSource._parse_rows(text)
-    assert rows == [("UCaaaaaaaaaaaaaaaaaaaaa1", "Alpha", 2),
-                    ("UCbbbbbbbbbbbbbbbbbbbbb2", "Beta", 3)], rows
+    assert rows == [("UCaaaaaaaaaaaaaaaaaaaaa1", "Alpha", "", 2),
+                    ("UCbbbbbbbbbbbbbbbbbbbbb2", "Beta", "", 3)], rows
+
+
+def t_parse_rows_header_mode_reads_stint():
+    # A recognized 'URL' header opts into header mode: URL/Streamer/Stint located
+    # by name (in any order), the per-stint label read, line numbers physical.
+    text = ("Stint,URL,Streamer\n"
+            "Opening,UCaaaaaaaaaaaaaaaaaaaaa1,JeGr\n"
+            "Closing,UCbbbbbbbbbbbbbbbbbbbbb2,GT45\n")
+    rows = m.ScheduleSource._parse_rows(text)
+    assert rows == [("UCaaaaaaaaaaaaaaaaaaaaa1", "JeGr", "Opening", 2),
+                    ("UCbbbbbbbbbbbbbbbbbbbbb2", "GT45", "Closing", 3)], rows
+
+
+def t_parse_rows_header_mode_missing_stint_column():
+    # Header mode with only URL + Streamer -> stint label is "" (column absent).
+    text = "URL,Streamer\nUCaaaaaaaaaaaaaaaaaaaaa1,JeGr\n"
+    rows = m.ScheduleSource._parse_rows(text)
+    assert rows == [("UCaaaaaaaaaaaaaaaaaaaaa1", "JeGr", "", 2)], rows
 
 
 # ---------- SetupControl ----------
@@ -176,10 +195,29 @@ def t_schedule_set_validates_and_pushes():
         assert "error" in ctl.schedule_set("x", url="https://youtu.be/a")
         assert "error" in ctl.schedule_set(0, url="https://youtu.be/a")
         assert "error" in ctl.schedule_set(1, url="not a url")
-        r = ctl.schedule_set(2, url="https://www.youtube.com/watch?v=x", name="Matt")
+        r = ctl.schedule_set(2, url="https://www.youtube.com/watch?v=x", name="JeGr")
         assert r.get("ok"), r
         assert pushes[-1] == {"action": "schedule", "row": 2,
-                              "url": "https://www.youtube.com/watch?v=x", "name": "Matt"}
+                              "url": "https://www.youtube.com/watch?v=x", "name": "JeGr"}
+    finally:
+        m.post_webhook = orig
+
+
+def t_schedule_set_validates_streamer_and_stint_vocab():
+    # Streamer + Stint are vocabulary-constrained, like the Setup fields:
+    # an off-vocab value is rejected before any webhook call (no free text).
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    try:
+        assert "error" in ctl.schedule_set(2, name="Nobody")          # not a streamer
+        assert "error" in ctl.schedule_set(2, stint="Made Up Stint")   # not a stint
+        assert pushes == []                                            # rejected pre-push
+        r = ctl.schedule_set(2, url="https://www.youtube.com/watch?v=x",
+                             name="GT45", stint="Stint 2")
+        assert r.get("ok"), r
+        assert pushes[-1] == {"action": "schedule", "row": 2,
+                              "url": "https://www.youtube.com/watch?v=x",
+                              "name": "GT45", "stint": "Stint 2"}
     finally:
         m.post_webhook = orig
 
@@ -241,7 +279,7 @@ def t_push_failure_keeps_override_until_ttl():
 
 # ---------- endpoint routing (real server, ephemeral port) ----------
 
-def _client(setup_ctl, next_result=None):
+def _client(setup_ctl, next_result=None, rows=None, live_idx=0):
     import json as _json, threading as _t, urllib.error
     from urllib.request import urlopen, Request
 
@@ -257,11 +295,15 @@ def _client(setup_ctl, next_result=None):
     class _StubRelay:
         def __init__(self):
             # Simulate a header at line 1: physical sheet rows are 2 and 3.
-            self.source = _StubSource([("https://www.youtube.com/watch?v=a", "Alpha", 2),
-                                       ("UCLA_DiR1FfKNvjuUpBHmylQ", "Beta", 3)])
+            self.source = _StubSource(rows if rows is not None else
+                                      [("https://www.youtube.com/watch?v=a", "Alpha", "", 2),
+                                       ("UCLA_DiR1FfKNvjuUpBHmylQ", "Beta", "", 3)])
             self.feeds = {"A": _StubFeed(0), "B": _StubFeed(1)}
         def status(self): return {"schedule_len": 2, "feeds": {}}
         def next_auto(self): return dict(next_result or {"obs_cut": False})
+        def set_stint(self, n): return self.status()
+        def live_schedule_row(self):
+            return m.live_schedule_row(self.source.get_rows(), live_idx)
 
     handler = m.make_handler(_StubRelay(), setup_ctl=setup_ctl)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -343,6 +385,66 @@ def t_next_handover_keeps_racecontrol_without_cut():
         srv.shutdown(); m.post_webhook = orig
 
 
+def t_next_handover_writes_schedule_streamer_and_stint_on_cut():
+    # On a real cut the HUD follows the on-air stint's Streamer + Stint label
+    # from the Schedule (issue #112), via the async-optimistic set_field path.
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    live = [("https://www.youtube.com/watch?v=a", "GT45", "Stint 2", 2)]
+    srv, get, post = _client(ctl, next_result={"obs_cut": True}, rows=live, live_idx=0)
+    try:
+        r = get("/next")
+        assert r.get("obs_cut") is True
+        assert hs.data()["streamer"] == "GT45"     # optimistic echo from the schedule row
+        assert hs.data()["stint"] == "Stint 2"
+    finally:
+        srv.shutdown(); m.post_webhook = orig
+
+
+def t_next_handover_skips_off_vocab_schedule_values():
+    # A schedule streamer/stint outside the Configuration vocab is rejected by
+    # set_field and silently skipped — the HUD keeps its prior value, no crash.
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    assert hs.data()["streamer"] == "JeGr"          # baseline from OVERLAY_CSV
+    live = [("https://www.youtube.com/watch?v=a", "Nobody", "Made Up", 2)]
+    srv, get, post = _client(ctl, next_result={"obs_cut": True}, rows=live, live_idx=0)
+    try:
+        assert get("/next").get("obs_cut") is True
+        assert hs.data()["streamer"] == "JeGr"      # unchanged: off-vocab skipped
+    finally:
+        srv.shutdown(); m.post_webhook = orig
+
+
+def t_next_handover_no_write_without_cut():
+    # No real cut -> no schedule-driven HUD write (the new feed isn't on air yet).
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    live = [("https://www.youtube.com/watch?v=a", "GT45", "Stint 2", 2)]
+    srv, get, post = _client(ctl, next_result={"obs_cut": False}, rows=live, live_idx=0)
+    try:
+        assert get("/next").get("obs_cut") is False
+        assert hs.data()["streamer"] == "JeGr"      # untouched
+        assert hs.data()["stint"] == "Intro"
+    finally:
+        srv.shutdown(); m.post_webhook = orig
+
+
+def t_set_stint_writes_schedule_streamer_and_stint():
+    # Producer takeover (/set/stint) puts a fresh stint on air -> same auto-write
+    # as /next, unconditionally (the director picks the scene).
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    live = [("https://www.youtube.com/watch?v=a", "GT45", "Stint 2", 2)]
+    srv, get, post = _client(ctl, rows=live, live_idx=0)
+    try:
+        get("/set/stint/1")
+        assert hs.data()["streamer"] == "GT45"
+        assert hs.data()["stint"] == "Stint 2"
+    finally:
+        srv.shutdown(); m.post_webhook = orig
+
+
 def t_endpoints_schedule_data_marks_live():
     ctl = m.SetupControl(None, _hs_stub())
     srv, get, post = _client(ctl)
@@ -350,7 +452,7 @@ def t_endpoints_schedule_data_marks_live():
         d = get("/schedule/data")
         assert d["rows"][0] == {"row": 1, "sheetRow": 2,
                                 "url": "https://www.youtube.com/watch?v=a",
-                                "name": "Alpha", "live": "A"}
+                                "name": "Alpha", "stint": "", "live": "A"}
         assert d["rows"][1]["live"] == "B"
         assert d["rows"][1]["sheetRow"] == 3
     finally:
@@ -362,9 +464,11 @@ def t_endpoints_post_writes():
     ctl, hs, orig = _ctl(pushes)
     srv, get, post = _client(ctl)
     try:
-        r = post("/schedule/set", {"row": 1, "url": "https://youtu.be/x", "name": "N"})
+        r = post("/schedule/set", {"row": 1, "url": "https://youtu.be/x",
+                                   "name": "JeGr", "stint": "Stint 1"})
         assert r.get("ok"), r
         assert pushes[-1]["action"] == "schedule"
+        assert pushes[-1]["stint"] == "Stint 1"
         r = post("/pov/set", {"url": "https://youtu.be/p"})
         assert r.get("ok"), r
         assert pushes[-1]["action"] == "pov"
@@ -393,16 +497,16 @@ def t_endpoints_post_rejects_bad_json():
 def t_inject_row_adds_link_before_poll():
     s = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_x.cache"),
                          local_fallback=None)
-    s.items = ["s1"]; s.rows = [("s1", "Ann", 1)]
-    assert s.inject_row(2, "https://www.youtube.com/watch?v=abc", "Ben") is True
+    s.items = ["s1"]; s.rows = [("s1", "Ann", "", 1)]
+    assert s.inject_row(2, "https://www.youtube.com/watch?v=abc", "Ben", "Stint 2") is True
     assert s.get() == ["s1", "https://www.youtube.com/watch?v=abc"]
-    assert s.get_rows()[1] == ("https://www.youtube.com/watch?v=abc", "Ben", 2)
+    assert s.get_rows()[1] == ("https://www.youtube.com/watch?v=abc", "Ben", "Stint 2", 2)
 
 
 def t_inject_row_replaces_same_physical_row():
     s = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_x.cache"),
                          local_fallback=None)
-    s.items = ["s1", "old"]; s.rows = [("s1", "Ann", 1), ("old", "X", 2)]
+    s.items = ["s1", "old"]; s.rows = [("s1", "Ann", "", 1), ("old", "X", "", 2)]
     s.inject_row(2, "UC1234567890123456789012", "New")
     assert s.get() == ["s1", "UC1234567890123456789012"]
 
@@ -410,7 +514,7 @@ def t_inject_row_replaces_same_physical_row():
 def t_inject_row_rejects_empty_or_bad_url():
     s = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_x.cache"),
                          local_fallback=None)
-    s.items = ["s1"]; s.rows = [("s1", "Ann", 1)]
+    s.items = ["s1"]; s.rows = [("s1", "Ann", "", 1)]
     assert s.inject_row(2, "", "Ben") is False
     assert s.inject_row(2, "not-a-channel", "Ben") is False
     assert s.get() == ["s1"]
@@ -419,7 +523,7 @@ def t_inject_row_rejects_empty_or_bad_url():
 def t_schedule_set_injects_on_success():
     src = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_y.cache"),
                            local_fallback=None)
-    src.items = ["s1"]; src.rows = [("s1", "Ann", 1)]
+    src.items = ["s1"]; src.rows = [("s1", "Ann", "", 1)]
     ctl = m.SetupControl(push_url="https://example.test/push", hud_source=None,
                          schedule_source=src)
     ctl._push = lambda payload, expected: (True, "")     # stub the webhook
@@ -431,7 +535,7 @@ def t_schedule_set_injects_on_success():
 def t_schedule_set_no_inject_on_push_failure():
     src = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_z.cache"),
                            local_fallback=None)
-    src.items = ["s1"]; src.rows = [("s1", "Ann", 1)]
+    src.items = ["s1"]; src.rows = [("s1", "Ann", "", 1)]
     ctl = m.SetupControl(push_url="https://example.test/push", hud_source=None,
                          schedule_source=src)
     ctl._push = lambda payload, expected: (False, "boom")
