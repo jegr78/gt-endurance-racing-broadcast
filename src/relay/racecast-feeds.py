@@ -1609,7 +1609,7 @@ class Feed:
                 try:
                     self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT,
                                                  **_no_window_kwargs())
-                    if serve_platform != "youtube":
+                    if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
                         self.last_error = None
                     self._set_phase("serving")
                     self.proc.wait()
