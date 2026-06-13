@@ -389,6 +389,19 @@ def is_channel(v: str) -> bool:
     v = v.strip()
     return bool(CHANNEL_RE.match(v)) or _is_stream_url(v)
 
+def platform_of(url):
+    """Which streaming platform a (possibly bare-ID-wrapped) URL targets.
+    Host-based, reusing the userinfo-safe parse from _is_stream_url. Anything
+    that is not a Twitch host (including bare UC ids, which channel_url wraps
+    into a youtube.com URL) is treated as YouTube -- the default path."""
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        host = ""
+    if host == "twitch.tv" or host.endswith(".twitch.tv"):
+        return "twitch"
+    return "youtube"
+
 def asset_key(s):
     """Normalize free text (country/brand) to an asset filename stem."""
     s = (s or "").strip().lower()
