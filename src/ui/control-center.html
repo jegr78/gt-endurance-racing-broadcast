@@ -430,11 +430,11 @@
             <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start all</button>
           <button class="danger" onclick="op('streams-stop', true)">
             <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>Stop all</button></div>
-        <div class="note-warn"><b>Fallback only.</b> The <b>relay</b> is the normal way to serve the commentator feeds (unlisted streams, automatic per-stint handover). Use Static Streams <b>only when the relay isn't working</b> — and only with <b>public</b> YouTube channels.</div>
+        <div class="note-warn"><b>Fallback only.</b> The <b>relay</b> is the normal way to serve the commentator feeds (unlisted streams, automatic per-stint handover). Use Static Streams <b>only when the relay isn't working</b> — and only with <b>public</b> YouTube or Twitch channels.</div>
         <div class="enverr" id="streams-err" hidden></div>
         <div class="envpath" id="streams-path"></div>
         <section>
-          <div class="envhead"><span class="fl">Label</span><span class="fc">YouTube channel ID</span><span class="fp">Port</span></div>
+          <div class="envhead"><span class="fl">Label</span><span class="fc">Channel ID or URL</span><span class="fp">Port</span></div>
           <div id="feedrows"></div>
           <div class="addrow"><button onclick="addFeedRow()">
             <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add feed</button>
@@ -443,7 +443,7 @@
           <button onclick="loadStreams(true)">
             <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button></div>
         </section>
-        <p class="envhint">One streamlink server per row, served on its <b>Port</b> (must match the OBS media source). Saved to <span class="mono">runtime/static/streams.json</span> — <b>Save, then Start all</b> to apply. A channel ID looks like <span class="mono">UCxxxxxxxxxxxxxxxxxxxxxx</span> (from the channel's URL).</p>
+        <p class="envhint">One streamlink server per row, served on its <b>Port</b> (must match the OBS media source). Saved to <span class="mono">runtime/static/streams.json</span> — <b>Save, then Start all</b> to apply. A channel can be a YouTube channel ID (<span class="mono">UCxxxxxxxxxxxxxxxxxxxxxx</span>) or a full watch URL (<span class="mono">youtube.com/watch?v=…</span> or <span class="mono">twitch.tv/&lt;channel&gt;</span>).</p>
       </div>
 
       <!-- ===== Home ===== -->
@@ -2242,8 +2242,8 @@ function feedRow(label, channel, port) {
   };
   const l = mk('fl', label, 'label');
   l.setAttribute('aria-label', 'Feed label');
-  const c = mk('fc', channel, 'UC… channel ID');
-  c.setAttribute('aria-label', 'YouTube channel ID');
+  const c = mk('fc', channel, 'UC… or youtube.com/watch?v=… or twitch.tv/<channel>');
+  c.setAttribute('aria-label', 'Channel ID or URL');
   const p = mk('fp', port, 'port');
   p.inputMode = 'numeric';
   p.setAttribute('aria-label', 'Port');
