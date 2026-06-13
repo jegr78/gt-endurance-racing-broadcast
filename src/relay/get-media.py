@@ -152,7 +152,9 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     # yt-cookies.txt lives in the runtime dir (next to the default media dir),
     # independent of --out, matching get-cookies.py / racecast-feeds.py.
-    cookies = os.path.join(os.path.dirname(media_dir(here)), "yt-cookies.txt")
+    # Fall back to legacy cookies.txt on not-yet-migrated installs (read-only).
+    _ck = os.path.join(os.path.dirname(media_dir(here)), "yt-cookies.txt")
+    cookies = _ck if os.path.exists(_ck) else os.path.join(os.path.dirname(media_dir(here)), "cookies.txt")
 
     failed = []
     for key in sorted(which):

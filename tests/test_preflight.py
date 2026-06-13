@@ -113,6 +113,26 @@ def t_resolve_cookies_overrides():
                                   None) == os.path.join("/run", "yt-cookies.txt")
 
 
+def t_resolve_cookies_legacy_fallback():
+    """runtime-dir with only cookies.txt (not yet migrated) resolves to it."""
+    with tempfile.TemporaryDirectory() as d:
+        legacy = os.path.join(d, "cookies.txt")
+        open(legacy, "w").close()
+        result = m.resolve_cookies_path("/x/scripts/preflight.py", d, None)
+        assert result == legacy, f"expected legacy fallback, got {result!r}"
+
+
+def t_resolve_cookies_prefers_yt_over_legacy():
+    """runtime-dir with both yt-cookies.txt and cookies.txt resolves to yt-cookies.txt."""
+    with tempfile.TemporaryDirectory() as d:
+        yt_ck = os.path.join(d, "yt-cookies.txt")
+        legacy = os.path.join(d, "cookies.txt")
+        open(yt_ck, "w").close()
+        open(legacy, "w").close()
+        result = m.resolve_cookies_path("/x/scripts/preflight.py", d, None)
+        assert result == yt_ck, f"expected yt-cookies.txt preferred, got {result!r}"
+
+
 def t_cookies_missing():
     with tempfile.TemporaryDirectory() as d:
         r = m.cookies_status(os.path.join(d, "nope.txt"))

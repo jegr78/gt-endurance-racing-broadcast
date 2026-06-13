@@ -219,14 +219,28 @@ def resolve_cookies_path(preflight_file, runtime_dir=None, cookies_opt=None):
     if cookies_opt:
         return cookies_opt
     if runtime_dir:
-        return os.path.join(runtime_dir, "yt-cookies.txt")
+        yt_ck = os.path.join(runtime_dir, "yt-cookies.txt")
+        if os.path.isfile(yt_ck):
+            return yt_ck
+        legacy = os.path.join(runtime_dir, "cookies.txt")
+        if os.path.isfile(legacy):
+            return legacy
+        return yt_ck  # neither exists: report the canonical name
     here = os.path.dirname(os.path.abspath(preflight_file))
     candidates = [
         os.path.join(here, "..", "relay", "yt-cookies.txt"),          # package layout
         os.path.join(here, "..", "..", "runtime", "yt-cookies.txt"),  # repo layout
         os.path.join(here, "yt-cookies.txt"),
     ]
+    legacy_candidates = [
+        os.path.join(here, "..", "relay", "cookies.txt"),
+        os.path.join(here, "..", "..", "runtime", "cookies.txt"),
+        os.path.join(here, "cookies.txt"),
+    ]
     for cand in candidates:
+        if os.path.isfile(cand):
+            return os.path.abspath(cand)
+    for cand in legacy_candidates:
         if os.path.isfile(cand):
             return os.path.abspath(cand)
     return os.path.abspath(candidates[0])
