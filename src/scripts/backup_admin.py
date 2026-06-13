@@ -18,6 +18,11 @@ import tempfile
 import zipfile
 
 SECTIONS = ("overlay", "graphics", "media")   # zip top-level dirs, in order
+# Defense-in-depth (#99): reject a decompression-bomb archive before extraction.
+# A look snapshot is overlay CSS + graphics + the Intro/Outro clips, so 1 GiB /
+# 50k members sits far above any legitimate backup.
+MAX_BUNDLE_BYTES = 1024 * 1024 * 1024
+MAX_BUNDLE_MEMBERS = 50_000
 
 
 def sanitize_label(label):
@@ -56,6 +61,10 @@ def _safe_members(zf):
     manifest.json or a known SECTION/ subtree. Returns the member list or raises
     ValueError. (Defends a restore the same way the relay's asset resolver does.)"""
     members = zf.namelist()
+    if len(members) > MAX_BUNDLE_MEMBERS:
+        raise ValueError(f"backup has too many members (> {MAX_BUNDLE_MEMBERS})")
+    if sum(i.file_size for i in zf.infolist()) > MAX_BUNDLE_BYTES:
+        raise ValueError(f"backup decompresses past {MAX_BUNDLE_BYTES} bytes")
     if "manifest.json" not in members:
         raise ValueError("not a look backup (no manifest.json)")
     for name in members:

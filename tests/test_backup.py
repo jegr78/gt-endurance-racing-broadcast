@@ -99,6 +99,43 @@ def t_restore_rejects_traversal():
         pass
 
 
+def t_restore_rejects_decompression_bomb_bytes():
+    """Defense-in-depth (#99): a backup whose members decompress past the cap is
+    rejected BEFORE extraction."""
+    d = tempfile.mkdtemp(); src = _sources(d)
+    bad = os.path.join(src["backups"], "bomb.zip"); os.makedirs(src["backups"], exist_ok=True)
+    with zipfile.ZipFile(bad, "w") as zf:
+        zf.writestr("manifest.json", '{"label":"b","slug":"b"}')
+        zf.writestr("overlay/hud.css", "x" * 1000)
+    orig = ba.MAX_BUNDLE_BYTES
+    ba.MAX_BUNDLE_BYTES = 100
+    try:
+        ba.restore_backup(bad, src)
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+    finally:
+        ba.MAX_BUNDLE_BYTES = orig
+
+
+def t_restore_rejects_too_many_members():
+    d = tempfile.mkdtemp(); src = _sources(d)
+    bad = os.path.join(src["backups"], "many.zip"); os.makedirs(src["backups"], exist_ok=True)
+    with zipfile.ZipFile(bad, "w") as zf:
+        zf.writestr("manifest.json", '{"label":"b","slug":"b"}')
+        for i in range(20):
+            zf.writestr(f"overlay/f{i}.css", "x")
+    orig = ba.MAX_BUNDLE_MEMBERS
+    ba.MAX_BUNDLE_MEMBERS = 5
+    try:
+        ba.restore_backup(bad, src)
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+    finally:
+        ba.MAX_BUNDLE_MEMBERS = orig
+
+
 def t_restore_missing_manifest_rejected():
     d = tempfile.mkdtemp(); src = _sources(d)
     bad = os.path.join(src["backups"], "nomani.zip"); os.makedirs(src["backups"], exist_ok=True)

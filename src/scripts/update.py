@@ -168,6 +168,40 @@ def safe_member(name):
     return ".." not in name.replace("\\", "/").split("/")
 
 
+# Defense-in-depth caps for archive extraction (#99): a malicious or corrupt
+# release asset must not exhaust disk via a decompression bomb. The update
+# archive is one onefile binary (+ the macOS .app wrapper) + .env.example, so a
+# few hundred MB and a few thousand members sit comfortably above any real build.
+MAX_EXTRACT_BYTES = 600 * 1024 * 1024
+MAX_EXTRACT_MEMBERS = 10_000
+
+
+def _check_extract_budget(sizes):
+    """Raise ValueError if the archive's member count or total decompressed size
+    (an iterable of per-member byte sizes; None counts as 0) exceeds the caps.
+    Run BEFORE extractall so a bomb is rejected without writing anything."""
+    count = 0
+    total = 0
+    for s in sizes:
+        count += 1
+        if count > MAX_EXTRACT_MEMBERS:
+            raise ValueError(f"archive has too many members (> {MAX_EXTRACT_MEMBERS})")
+        total += s or 0
+        if total > MAX_EXTRACT_BYTES:
+            raise ValueError(f"archive decompresses past {MAX_EXTRACT_BYTES} bytes")
+
+
+def _tar_extractall(tf, dest_dir, members):
+    """extractall with the stdlib 'data' filter when the interpreter supports it
+    (Python >=3.12 / recent 3.8-3.11 patch releases) so any symlink/hardlink
+    member can't redirect a write outside dest_dir. `members` already excludes
+    link/device entries, so the fallback path is safe on older interpreters."""
+    if hasattr(tarfile, "data_filter"):
+        tf.extractall(dest_dir, members=members, filter="data")
+    else:
+        tf.extractall(dest_dir, members=members)
+
+
 def fetch_latest(opener=None):
     """GET the latest-release JSON. `opener(request, timeout)` is injectable for tests."""
     return _get_json(API_LATEST, opener)
@@ -234,12 +268,18 @@ def extract_binary(archive, dest_dir):
     guard and return the path of the contained racecast binary, or None."""
     if archive.endswith(".zip"):
         with zipfile.ZipFile(archive) as zf:
-            names = [n for n in zf.namelist() if safe_member(n)]
-            zf.extractall(dest_dir, members=names)
+            infos = [i for i in zf.infolist() if safe_member(i.filename)]
+            _check_extract_budget(i.file_size for i in infos)
+            zf.extractall(dest_dir, members=[i.filename for i in infos])
     else:
         with tarfile.open(archive, "r:gz") as tf:
-            members = [mem for mem in tf.getmembers() if safe_member(mem.name)]
-            tf.extractall(dest_dir, members=members)
+            # Drop symlink/hardlink/device members outright: only regular files
+            # and dirs belong in a release archive, and a recreated symlink could
+            # let a following member escape dest_dir on pre-3.12 interpreters.
+            members = [mem for mem in tf.getmembers()
+                       if safe_member(mem.name) and (mem.isfile() or mem.isdir())]
+            _check_extract_budget(mem.size for mem in members)
+            _tar_extractall(tf, dest_dir, members)
     for name in ("racecast.exe", "racecast"):
         path = os.path.join(dest_dir, name)
         if os.path.isfile(path):
