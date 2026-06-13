@@ -1122,6 +1122,18 @@ def t_chat_routing():
     assert m.route(["chat"]) == {"kind": "chat", "rest": []}
 
 
+def t_cookies_twitch_routing():
+    # "twitch" as the first token selects the Twitch export
+    args = m._cookies_oneshot_args(["twitch", "firefox"])
+    assert "--platform" in args and args[args.index("--platform") + 1] == "twitch"
+    assert "firefox" in args
+    # no leading "twitch" -> YouTube flow unchanged (no --platform injected)
+    args2 = m._cookies_oneshot_args(["firefox"])
+    assert "--platform" not in args2 and "firefox" in args2
+    # empty list is unchanged
+    assert m._cookies_oneshot_args([]) == []
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

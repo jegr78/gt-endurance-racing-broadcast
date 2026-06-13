@@ -19,7 +19,7 @@
   racecast chat      clear | pull <ip> [--port N] | import <file> | export [--out PATH]
   racecast backup    {create|list|restore|delete} <label>   # named look snapshots (overlay+graphics+media)
   racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
-  racecast preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
+  racecast preflight | cookies [twitch] [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   racecast export companion [--out PATH]     # write the Companion button config
   racecast init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
   racecast update [--check] [--yes] [--tag TAG]   # self-update the binary (--tag installs an exact release)
@@ -1758,6 +1758,15 @@ ONESHOT_MAP = {
 RUNTIME_DIR_ONESHOTS = ("preflight", "cookies")
 
 
+def _cookies_oneshot_args(rest):
+    """Translate `cookies` subcommand args. A leading 'twitch' selects the Twitch
+    export (--platform twitch); anything else is the YouTube browser as before."""
+    rest = list(rest)
+    if rest and rest[0] == "twitch":
+        return ["--platform", "twitch"] + rest[1:]
+    return rest
+
+
 def _oneshot_code(command, rest):
     """Run a one-shot and return its exit code (the seam `racecast init` uses to
     chain steps — oneshot() below keeps the exit-the-CLI behavior)."""
@@ -1768,6 +1777,8 @@ def _oneshot_code(command, rest):
         # in (real environment wins, same semantics as the scripts' load_dotenv).
         for key, val in _read_env_file().items():
             os.environ.setdefault(key, val)
+    if command == "cookies":
+        rest = _cookies_oneshot_args(rest)
     extra = _oneshot_extra(command, rest, _runtime_dir(), _runtime_base_dir())
     if command == "update" and "--current" not in rest:
         extra += ["--current", version()]
