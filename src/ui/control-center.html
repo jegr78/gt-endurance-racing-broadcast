@@ -324,24 +324,8 @@
   .updnotes { max-height:50vh; overflow:auto; font-size:13px; line-height:1.55;
               border:1px solid var(--line); border-radius:6px; padding:10px 13px;
               margin:10px 0; }
-  .updnotes.plain { white-space:pre-wrap; }     /* plaintext fallback */
-  /* rendered-markdown elements scoped to the dialog (mdrender output) */
-  .updnotes h1, .updnotes h2, .updnotes h3, .updnotes h4 {
-              font-size:1.05em; margin:1em 0 .4em; color:var(--txt); }
-  .updnotes h1:first-child, .updnotes h2:first-child { margin-top:0; }
-  .updnotes p { margin:.5em 0; }
-  .updnotes ul, .updnotes ol { margin:.4em 0; padding-left:1.4em; }
-  .updnotes li { margin:.15em 0; }
-  .updnotes a { color:var(--accent); }
-  .updnotes code { background:var(--card2); border:1px solid var(--line);
-              border-radius:4px; padding:.05em .35em; font-size:.92em; }
-  .updnotes pre { background:#0B1120; border:1px solid var(--line); border-radius:8px;
-              padding:10px 12px; overflow:auto; }
-  .updnotes pre code { background:none; border:0; padding:0; }
-  .updnotes blockquote { margin:.5em 0; padding:.2em .8em; color:var(--dim);
-              border-left:3px solid var(--accent); }
-  .updnotes table { border-collapse:collapse; margin:.6em 0; font-size:.95em; }
-  .updnotes th, .updnotes td { border:1px solid var(--line); padding:4px 8px; }
+  /* release notes are GitHub-authored (untrusted) -> always plaintext (#101) */
+  .updnotes.plain { white-space:pre-wrap; }
   .updwarn { color: #FCD34D; background: rgba(245,158,11,.1);
            border: 1px solid rgba(245,158,11,.32); border-radius: 8px; padding: 9px 13px; }
   .updactions { display:flex; align-items:center; gap:10px; }
@@ -1052,7 +1036,7 @@ async function loadPreviews() {
       btn.textContent = 'Install';
       btn.className = 'primary';
       btn.onclick = () => openUpdModal({title: p.title || p.tag, notes: p.notes,
-                                        notesHtml: p.notes_html, tag: p.tag});
+                                        tag: p.tag});
     } else {
       btn.textContent = 'building…';
       btn.disabled = true;
@@ -1081,16 +1065,13 @@ function servicesRunning() {
 }
 
 function openUpdModal(opts) {
-  // opts: {title, notes, notesHtml, releasesUrl, tag}
+  // opts: {title, notes, releasesUrl, tag}
   $('updtitle').textContent = opts.title || 'Update';
   const nb = $('updnotes');
-  if (opts.notesHtml) {                  // server-rendered, sanitised by mdrender
-    nb.classList.remove('plain');
-    nb.innerHTML = opts.notesHtml;
-  } else {                               // fallback: raw markdown as safe plaintext
-    nb.classList.add('plain');
-    nb.textContent = opts.notes || '(no release notes)';
-  }
+  // Release notes are GitHub-authored (untrusted): always render as plaintext
+  // via textContent, never innerHTML (#101).
+  nb.classList.add('plain');
+  nb.textContent = opts.notes || '(no release notes)';
   const gh = $('updgh');
   if (opts.releasesUrl) { gh.hidden = false; gh.href = opts.releasesUrl; }
   else gh.hidden = true;
@@ -1127,7 +1108,7 @@ async function checkUpdate(force) {
     b.href = d.releases_url;          // middle-/cmd-click still opens GitHub in a tab
     b.onclick = (e) => { e.preventDefault();   // left-click opens the notes dialog
       openUpdModal({title: 'Update → ' + d.latest, notes: d.notes,
-                    notesHtml: d.notes_html, releasesUrl: d.releases_url}); };
+                    releasesUrl: d.releases_url}); };
     b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 19V5"/>' +
                   '<path d="m5 12 7-7 7 7"/></svg>Update → ' + d.latest;
     b.title = 'A newer release (' + d.latest + ') is available — click for notes and to install';
