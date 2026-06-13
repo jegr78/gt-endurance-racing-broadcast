@@ -107,7 +107,7 @@ so the Stream Deck and the panel share one muscle memory:
 | Bus | What it does |
 |---|---|
 | **PGM** | one-press program switches (scene + feed visibility + mutes), identical to the Companion macros — STINT A/B, SPLIT, INTERVIEW, STANDBY, INTRO, OUTRO, RED FLAG. SPLIT also sets Race Control to *Driver Swaps*, STINT A/B clear it, and RED FLAG toggles the Standby Cover together with the *Red Flag* message ([Director guide](Director#the-companion-button-board)); these Race Control writes need the sheet-write webhook |
-| **FEEDS** | relay control: NEXT (driver change), feed reloads, POV reload/stop, FEEDS → STINT… |
+| **FEEDS** | relay control: NEXT (driver change — cuts back to Stint and clears Race Control with the cut), feed reloads, POV reload/stop, FEEDS → STINT… |
 | **HUD** | the Sheet's Setup-tab dropdowns (Stint HUD label, Streamer, Session, Race Control) — changes show on the HUD immediately and are written to the Sheet ([Director guide](Director)) |
 | **SCN·VIS** | raw scene switches and feed visibility toggles |
 | **GFX** | graphics toggles (HUD, Standings, Schedule, results, weather, covers) |
@@ -141,9 +141,10 @@ flowchart LR
 ```
 
 At each change the director: cuts to **Splitscreen** (the combo sets **Race Control** to
-*Driver Swaps* with it), presses **Feeds Next**, updates the **Stint** and **Streamer**
-cells, then cuts back with **STINT A** / **STINT B** (the incoming feed) — which also
-clears **Race Control**.
+*Driver Swaps* with it), then presses **Feeds Next** — the relay hands the feed over and
+cuts the program back to **Stint** on the incoming feed for you (no **STINT A/B** press
+needed), **clearing Race Control** with the cut — and updates the **Stint** and
+**Streamer** cells.
 The panel's **HUD row** provides the same Stint / Streamer / Race Control dropdowns
 directly — editing the sheet and using the panel are equivalent.
 Full step-by-step: [Director guide](Director#at-a-driver-change). (Why two feeds:

@@ -241,7 +241,7 @@ def t_push_failure_keeps_override_until_ttl():
 
 # ---------- endpoint routing (real server, ephemeral port) ----------
 
-def _client(setup_ctl):
+def _client(setup_ctl, next_result=None):
     import json as _json, threading as _t, urllib.error
     from urllib.request import urlopen, Request
 
@@ -261,6 +261,7 @@ def _client(setup_ctl):
                                        ("UCLA_DiR1FfKNvjuUpBHmylQ", "Beta", 3)])
             self.feeds = {"A": _StubFeed(0), "B": _StubFeed(1)}
         def status(self): return {"schedule_len": 2, "feeds": {}}
+        def next_auto(self): return dict(next_result or {"obs_cut": False})
 
     handler = m.make_handler(_StubRelay(), setup_ctl=setup_ctl)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -308,6 +309,36 @@ def t_endpoints_setup_set_urlencoded_value():
     try:
         r = get("/setup/set/racecontrol/Formation%20Lap")
         assert r.get("ok") and r["value"] == "Formation Lap", r
+    finally:
+        srv.shutdown(); m.post_webhook = orig
+
+
+def t_next_handover_clears_racecontrol_on_cut():
+    # One-button handover: /next cuts OBS back to Stint, so no STINT macro press
+    # follows -> the relay must clear Race Control itself (mirrors rc:"").
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    srv, get, post = _client(ctl, next_result={"obs_cut": True})
+    try:
+        assert get("/setup/set/racecontrol/Formation%20Lap").get("ok")
+        assert hs.data()["raceControl"] == "Formation Lap"   # set before the handover
+        r = get("/next")
+        assert r.get("obs_cut") is True
+        assert hs.data()["raceControl"] == ""                # handover cleared it
+    finally:
+        srv.shutdown(); m.post_webhook = orig
+
+
+def t_next_handover_keeps_racecontrol_without_cut():
+    # No real cut (incoming feed not yet serving) -> leave Race Control untouched.
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    srv, get, post = _client(ctl, next_result={"obs_cut": False})
+    try:
+        assert get("/setup/set/racecontrol/Formation%20Lap").get("ok")
+        r = get("/next")
+        assert r.get("obs_cut") is False
+        assert hs.data()["raceControl"] == "Formation Lap"   # untouched
     finally:
         srv.shutdown(); m.post_webhook = orig
 
