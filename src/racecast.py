@@ -2234,10 +2234,28 @@ def _write_env_file(path, entries):
         return {"ok": False, "error": f"could not write {os.path.basename(path)}: {exc}"}
 
 
+MACHINE_ENV_PREFIX = "RACECAST_"
+
+
 def env_write_data(entries, path=None):
-    """Validate the Settings editor's entries and persist them to .env,
-    preserving comments. Atomic. Writes ONLY the server-resolved path (or the
-    test-supplied `path`), never a client value. {ok,path} or {ok:false,error}."""
+    """Validate the Settings editor's entries and persist them to the machine
+    .env, preserving comments. Atomic. Writes ONLY the server-resolved path (or
+    the test-supplied `path`), never a client value. {ok,path} or {ok:false,error}.
+
+    Machine .env keys are restricted to the RACECAST_ prefix (defense-in-depth
+    for #1): the file is documented to hold only RACECAST_* knobs, so the editor
+    must not write a process-loader var (LD_PRELOAD / DYLD_INSERT_LIBRARIES /
+    PATH) that spawned children would inherit. The shared validator runs first so
+    a malformed key still reports the precise syntax error; the profile.env
+    editor (un-prefixed league keys) goes through profile_env_write_data and is
+    unaffected."""
+    pairs, err = _validate_env_entries(entries)
+    if err:
+        return {"ok": False, "error": err}
+    foreign = [k for k, _ in pairs if not k.startswith(MACHINE_ENV_PREFIX)]
+    if foreign:
+        return {"ok": False, "error": (f"machine .env keys must start with "
+                                       f"{MACHINE_ENV_PREFIX}: {foreign[0]!r} is not allowed")}
     return _write_env_file(path or _env_file(), entries)
 
 
