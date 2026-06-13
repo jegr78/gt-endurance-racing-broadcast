@@ -148,6 +148,39 @@ def t_import_rejects_foreign_top():
         pass
 
 
+def t_import_rejects_decompression_bomb_bytes():
+    """Defense-in-depth (#99): a bundle whose members decompress past the cap is
+    rejected BEFORE extraction."""
+    d = tempfile.mkdtemp()
+    bad = _bundle_with(d, {"profile/profile.env": b"x" * 1000},
+                       manifest={"kind": "profile-export", "name": "z"})
+    orig = pio.MAX_BUNDLE_BYTES
+    pio.MAX_BUNDLE_BYTES = 100
+    try:
+        pio.import_profile(bad, {"profiles_root": d, "runtime_root": d})
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+    finally:
+        pio.MAX_BUNDLE_BYTES = orig
+
+
+def t_import_rejects_too_many_members():
+    d = tempfile.mkdtemp()
+    members = {f"profile/f{i}": b"x" for i in range(20)}
+    members["profile/profile.env"] = b"x"
+    bad = _bundle_with(d, members, manifest={"kind": "profile-export", "name": "z"})
+    orig = pio.MAX_BUNDLE_MEMBERS
+    pio.MAX_BUNDLE_MEMBERS = 5
+    try:
+        pio.import_profile(bad, {"profiles_root": d, "runtime_root": d})
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+    finally:
+        pio.MAX_BUNDLE_MEMBERS = orig
+
+
 def t_import_exists_needs_force():
     d = tempfile.mkdtemp(); sources, _ = _profile(d)
     bundle = pio.export_profile("iro-gtec", sources, True, d)

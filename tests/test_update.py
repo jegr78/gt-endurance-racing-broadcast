@@ -345,6 +345,83 @@ def t_download_rejects_non_https():
     assert raised
 
 
+# --- extraction hardening (#99): symlink members + decompression caps ---------
+def _raises_value_error(fn):
+    try:
+        fn()
+    except ValueError:
+        return True
+    return False
+
+
+def t_check_extract_budget_ok():
+    m._check_extract_budget([10, 20, 30])           # well under caps -> no raise
+
+
+def t_check_extract_budget_member_cap():
+    over = [1] * (m.MAX_EXTRACT_MEMBERS + 1)
+    assert _raises_value_error(lambda: m._check_extract_budget(over))
+
+
+def t_check_extract_budget_byte_cap():
+    assert _raises_value_error(
+        lambda: m._check_extract_budget([m.MAX_EXTRACT_BYTES + 1]))
+
+
+def t_check_extract_budget_tolerates_none_sizes():
+    m._check_extract_budget([None, None, 5])        # tar dirs report size 0/None
+
+
+def t_extract_binary_drops_tar_symlink_member():
+    """A tar symlink member must never be recreated (it could let a following
+    member escape dest_dir on pre-3.12 interpreters). Regular files still extract."""
+    import io, tarfile, tempfile, os as _os
+    d = tempfile.mkdtemp()
+    arch = _os.path.join(d, "racecast-linux.tar.gz")
+    payload = b"#!/bin/sh\n"
+    with tarfile.open(arch, "w:gz") as tf:
+        ti = tarfile.TarInfo("racecast"); ti.size = len(payload)
+        tf.addfile(ti, io.BytesIO(payload))
+        link = tarfile.TarInfo("evil"); link.type = tarfile.SYMTYPE
+        link.linkname = "../../escape-target"
+        tf.addfile(link)
+    out = _os.path.join(d, "out")
+    path = m.extract_binary(arch, out)
+    assert path == _os.path.join(out, "racecast")
+    assert _os.path.isfile(_os.path.join(out, "racecast"))
+    assert not _os.path.lexists(_os.path.join(out, "evil"))   # link member dropped
+
+
+def t_extract_binary_enforces_byte_cap_tar():
+    import io, tarfile, tempfile, os as _os
+    d = tempfile.mkdtemp()
+    arch = _os.path.join(d, "racecast-linux.tar.gz")
+    payload = b"x" * 1000
+    with tarfile.open(arch, "w:gz") as tf:
+        ti = tarfile.TarInfo("racecast"); ti.size = len(payload)
+        tf.addfile(ti, io.BytesIO(payload))
+    orig = m.MAX_EXTRACT_BYTES
+    m.MAX_EXTRACT_BYTES = 100
+    try:
+        assert _raises_value_error(lambda: m.extract_binary(arch, _os.path.join(d, "out")))
+    finally:
+        m.MAX_EXTRACT_BYTES = orig
+
+
+def t_extract_binary_enforces_byte_cap_zip():
+    import tempfile, zipfile, os as _os
+    d = tempfile.mkdtemp()
+    arch = _os.path.join(d, "racecast-windows.zip")
+    with zipfile.ZipFile(arch, "w") as zf:
+        zf.writestr("racecast.exe", b"y" * 1000)
+    orig = m.MAX_EXTRACT_BYTES
+    m.MAX_EXTRACT_BYTES = 100
+    try:
+        assert _raises_value_error(lambda: m.extract_binary(arch, _os.path.join(d, "out")))
+    finally:
+        m.MAX_EXTRACT_BYTES = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

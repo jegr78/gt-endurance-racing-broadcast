@@ -22,6 +22,11 @@ KIND = "profile-export"
 SCHEMA = 1
 ASSET_SECTIONS = ("graphics", "media")   # top-level subtrees beside profile/
 _SLUG_RE = re.compile(r"[^a-z0-9_-]+")
+# Defense-in-depth (#99): reject a decompression-bomb bundle before extraction.
+# A real profile is a handful of CSS/PNG files + the two Intro/Outro clips, so
+# 1 GiB / 50k members is far above any legitimate league export.
+MAX_BUNDLE_BYTES = 1024 * 1024 * 1024
+MAX_BUNDLE_MEMBERS = 50_000
 
 
 def slugify(name):
@@ -118,6 +123,10 @@ def _safe_members(zf, manifest):
     if manifest.get("kind") != KIND:
         raise ValueError("not a profile export (wrong or missing kind)")
     members = zf.namelist()
+    if len(members) > MAX_BUNDLE_MEMBERS:
+        raise ValueError(f"bundle has too many members (> {MAX_BUNDLE_MEMBERS})")
+    if sum(i.file_size for i in zf.infolist()) > MAX_BUNDLE_BYTES:
+        raise ValueError(f"bundle decompresses past {MAX_BUNDLE_BYTES} bytes")
     if "profile/profile.env" not in members:
         raise ValueError("profile export missing profile/profile.env")
     allowed_top = ("profile",) + ASSET_SECTIONS
