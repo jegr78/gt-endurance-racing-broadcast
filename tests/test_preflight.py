@@ -74,6 +74,38 @@ def t_tool_version_missing():
     assert m.tool_version("definitely-not-a-real-tool-xyz") is None
 
 
+def t_no_window_kwargs_per_os():
+    # CREATE_NO_WINDOW only on Windows; a no-op (empty kwargs) everywhere else so
+    # the same call site stays cross-platform (mirrors services.no_window_kwargs).
+    assert m.no_window_kwargs("nt") == {"creationflags": 0x08000000}
+    assert m.no_window_kwargs("posix") == {}
+    assert m.no_window_kwargs("java") == {}
+
+
+def t_tool_version_hides_console_window():
+    # tool_version() runs in-process inside the console-less racecast-ui.exe
+    # (the `tools`/`preflight` status providers), so its `<tool> --version` probe
+    # MUST carry CREATE_NO_WINDOW or it flashes a terminal per tool on Windows
+    # (issue #23's class, missed for the --version probes). capture_output keeps
+    # the version text, so the flag is safe.
+    captured = {}
+
+    def fake_run(argv, **kw):
+        captured["argv"], captured["kw"] = argv, kw
+        return _Result("ffmpeg version 6.0\nbuilt with…", "")
+
+    out = m.tool_version("ffmpeg", run=fake_run, which=lambda n: "/x/ffmpeg")
+    assert out == "ffmpeg version 6.0"
+    assert captured["argv"] == ["ffmpeg", "--version"]
+    for k, v in m.no_window_kwargs().items():   # whatever this OS resolves to
+        assert captured["kw"].get(k) == v
+
+
+class _Result:
+    def __init__(self, stdout, stderr):
+        self.stdout, self.stderr = stdout, stderr
+
+
 def t_resolve_cookies_overrides():
     assert m.resolve_cookies_path("/x/scripts/preflight.py", None,
                                   "/c/cookies.txt") == "/c/cookies.txt"

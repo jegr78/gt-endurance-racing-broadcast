@@ -15,6 +15,7 @@ def _load(name, rel):
 
 start = _load("start_streams", os.path.join("src", "scripts", "start-streams.py"))
 stop = _load("stop_streams", os.path.join("src", "scripts", "stop-streams.py"))
+loop = _load("loopstream", os.path.join("src", "scripts", "loopstream.py"))
 
 
 def t_feed_argv_repo_uses_python():
@@ -86,6 +87,37 @@ def t_load_feeds_skips_incomplete_and_bad_json():
         with open(p, "w") as fh:
             fh.write("not json")                            # malformed -> FEEDS
         assert start.load_feeds(d) == start.FEEDS
+
+
+def t_loop_no_window_kwargs_per_os():
+    # A static feed runs DETACHED (no console — start_streams' spawn_kwargs), so
+    # its streamlink child would otherwise pop a PERSISTENT terminal window on
+    # Windows. CREATE_NO_WINDOW only on Windows; no-op elsewhere.
+    assert loop.no_window_kwargs("nt") == {"creationflags": 0x08000000}
+    assert loop.no_window_kwargs("posix") == {}
+    assert loop.no_window_kwargs("java") == {}
+
+
+def t_loop_streamlink_argv_serves_the_port():
+    argv = loop.streamlink_argv("https://www.youtube.com/channel/UC9/live", "53005")
+    assert argv[0] == "streamlink"
+    assert "https://www.youtube.com/channel/UC9/live" in argv
+    assert "--player-external-http-port" in argv and "53005" in argv
+
+
+def t_loop_serve_once_passes_no_window():
+    # The feed's stdout is redirected to a log by start_streams, so the flag
+    # suppresses the window without losing logged output.
+    captured = {}
+
+    def fake_call(argv, **kw):
+        captured["argv"], captured["kw"] = argv, kw
+        return 0
+
+    assert loop.serve_once("https://x/live", "53005", call=fake_call) == 0
+    assert captured["argv"][0] == "streamlink"
+    for k, v in loop.no_window_kwargs().items():
+        assert captured["kw"].get(k) == v
 
 
 if __name__ == "__main__":
