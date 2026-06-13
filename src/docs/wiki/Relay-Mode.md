@@ -8,10 +8,19 @@ The recommended flow for endurance racing: **one commentator per stint**, stream
 
 ## How it pulls (important)
 
-The relay uses **yt-dlp to resolve** each live HLS URL — this is what passes YouTube's
-bot-check, via `yt-cookies.txt` + deno JS-challenge solving — and **streamlink to serve**
-that direct URL to OBS. So `yt-cookies.txt` and `deno` are both required for reliable pulls.
-Streamlink alone, even with cookies, is blocked by the bot-check.
+The relay supports **YouTube and Twitch** feeds (and anything else Streamlink can serve).
+
+**YouTube feeds:** the relay uses **yt-dlp to resolve** each live HLS URL — this is what
+passes YouTube's bot-check, via `yt-cookies.txt` + deno JS-challenge solving — and
+**streamlink to serve** that direct URL to OBS. So `yt-cookies.txt` and `deno` are both
+required for reliable YouTube pulls. Streamlink alone, even with cookies, is blocked by
+the bot-check.
+
+**Twitch feeds:** the relay routes those directly through Streamlink's native Twitch
+plugin (no yt-dlp hop). Low-latency mode is enabled automatically; ad filtering is
+handled by Streamlink's current built-in behavior. Public Twitch channels need no
+cookies; gated (subscriber/follower-only) channels need `twitch-cookies.txt`
+(see [§2 below](#2-producer-accounts-and-cookies-before-each-event)).
 
 A running feed is **never** torn off mid-stint. Sheet edits apply on the next `/next`
 (handover) or `/reload`. Curling a feed port returns nothing — each port serves a single
@@ -21,13 +30,18 @@ consumer (OBS); that is not a failure.
 
 - One column holds the entries **in stint order**; other columns (stint number / name)
   are ignored. Editable remotely by anyone with sheet access.
-- **Unlisted streams → use the watch URL** `https://www.youtube.com/watch?v=VIDEOID`.
-  The channel `/live` URL only works for **public** streams. The streamer/director enters
-  their watch URL shortly before their stint.
+- **Enter full watch URLs** for each stint:
+  - YouTube: `https://www.youtube.com/watch?v=VIDEOID` — **unlisted streams must use
+    this form**; the channel `/live` URL only works for public streams. A bare
+    `UC…` channel ID is also accepted as a shorthand for YouTube streams.
+  - Twitch: `https://www.twitch.tv/<channel>` — there is no bare-ID short form for Twitch.
+- The streamer/director enters their watch URL shortly before their stint.
 - Default sheet = the shared HUD sheet (the active profile's `SHEET_ID`). Override with
   `--sheet-id …` / `--sheet-tab …`.
 
-## 2. Get YouTube cookies (before each event)
+## 2. Producer accounts and cookies (before each event)
+
+### YouTube login (required)
 
 Against YouTube's *"Sign in to confirm you're not a bot"*. Easiest — auto-export from
 your **logged-in** browser:
@@ -44,11 +58,50 @@ racecast cookies firefox
   encrypted (Chrome 127+); use Firefox.
 - macOS **Chrome/Edge**: approve the Keychain prompt. **Safari**: grant your terminal
   **Full Disk Access**. (Firefox needs neither.)
-- Writes `runtime/yt-cookies.txt` (chmod 600), auto-detected and passed to Streamlink.
+- Writes `runtime/yt-cookies.txt` (chmod 600), auto-detected and passed to yt-dlp.
   `/status` then shows `"cookies": true`. **Re-run before each event** — cookies rotate.
 - Alternative: let the relay export on start with `--cookies-from-browser firefox`, or
   drop any Netscape `yt-cookies.txt` next to the relay (a legacy `cookies.txt` is
   migrated automatically on first use).
+
+### Twitch login (optional)
+
+Only needed for **gated** (subscriber/follower-only) Twitch streams. Public Twitch
+channels work without any cookies. If any stint uses a gated Twitch feed, export the
+producer's Twitch session before the event:
+
+```bash
+racecast cookies twitch firefox
+# browsers: firefox | chrome | safari | edge | brave   (Firefox recommended)
+```
+
+- You must be **logged into Twitch** in that browser (not YouTube — a separate session).
+- Writes `runtime/twitch-cookies.txt` (chmod 600), auto-detected by the relay for
+  Twitch feeds. `/status` shows the per-platform cookie state.
+- **Re-run before each event** alongside the YouTube refresh.
+
+### Summary: which accounts the producer needs
+
+| Account | When needed | Cookie file |
+|---|---|---|
+| **YouTube** (logged in) | Always — needed for the bot-check on any YouTube feed | `yt-cookies.txt` |
+| **Twitch** (logged in) | Only if any stint uses a gated (sub/follower-only) Twitch feed | `twitch-cookies.txt` |
+
+The cookies are shared across all leagues on the machine and live at the top-level
+`runtime/` directory (not per-profile).
+
+### Known limits
+
+- **YouTube server-side ads (DAI/SSAI):** if the streamer's channel serves server-side
+  inserted ads, the relay detects the ad marker in the stream and reports it in
+  `/status` (field `"ssai": true`). The relay cannot remove them — there is no
+  reliable skip mechanism. The clean solution is an ad-free source: league-owned,
+  unlisted, unmonetized stint streams have no server-side ads.
+- **Twitch ad filtering:** handled automatically by Streamlink's current built-in
+  behavior. Coverage depends on Streamlink's version and Twitch's current serving
+  method.
+- **Twitch URL form:** always use the full `twitch.tv/<channel>` URL in the schedule.
+  There is no bare-ID short form for Twitch (unlike YouTube's bare `UC…` channel ID).
 
 ## 3. Start the relay
 
@@ -161,9 +214,10 @@ stream URLs. `--no-panel` disables the served director panel.
 ## Quickstart
 
 ```bash
-# 1. Fill the sheet tab 'Schedule' with watch URLs (unlisted), in stint order.
-racecast cookies firefox  # 2. refresh YouTube cookies
-racecast relay start      # 3. start the relay (background)
+# 1. Fill the sheet tab 'Schedule' with watch URLs (YouTube or Twitch), in stint order.
+racecast cookies firefox         # 2a. refresh YouTube cookies (required)
+racecast cookies twitch firefox  # 2b. refresh Twitch cookies (only if any gated Twitch feed)
+racecast relay start             # 3. start the relay (background)
 # 4. Companion buttons:  Feeds Next -> /next   ·   Feeds Reload -> /reload
 ```
 

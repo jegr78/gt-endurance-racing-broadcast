@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A self-contained broadcast-production toolkit (**GT Endurance Racing Broadcast**) for
 sim-racing endurance leagues, run on a producer's machine (Windows, macOS, or Linux).
-The core is a **relay** that pulls one commentator YouTube stream per race stint and
-serves it to OBS; around it sit an OBS scene collection, a Stream Deck (Companion)
+The core is a **relay** that pulls one commentator YouTube or Twitch stream per race stint
+and serves it to OBS; around it sit an OBS scene collection, a Stream Deck (Companion)
 button config, and operator docs. It is **multi-profile**: one install hosts several
 leagues, each as a `profiles/<name>/` directory (league config + optional per-league
 overlay CSS); the active profile is switchable. Pure Python + stdlib (no framework,
@@ -118,7 +118,8 @@ python3 src/racecast.py obs collection    # check the active OBS scene collectio
 python3 src/racecast.py init              # guided first-time setup: .env gate, profile select, install-tools/-apps, cookies, graphics, media, setup, export companion, preflight — with skip-detection (--browser NAME, --skip-installs, --force)
 python3 src/racecast.py update            # self-update the binary from GitHub Releases (--tag TAG installs an exact release; UI previews use this)
 python3 src/racecast.py preflight         # hardware/tool check
-python3 src/racecast.py cookies firefox   # refresh YouTube cookies before an event (Firefox recommended; Windows Chrome/Edge exports are blocked by app-bound encryption)
+python3 src/racecast.py cookies firefox          # refresh YouTube cookies before an event (Firefox recommended; Windows Chrome/Edge exports are blocked by app-bound encryption)
+python3 src/racecast.py cookies twitch firefox   # refresh Twitch cookies (only needed for gated sub/follower-only Twitch feeds)
 python3 src/racecast.py graphics          # download broadcast graphics -> runtime/<profile>/graphics/
 python3 src/racecast.py media             # download Intro/Outro clips -> runtime/<profile>/media/
 python3 src/racecast.py setup --out runtime/<profile>/GT_Endurance.import.json   # localize OBS collection
@@ -266,10 +267,12 @@ commentator stream, so OBS media sources never change URL. A 3rd **POV** feed
 Google-Sheet tab read as CSV (no API key); a running feed is never torn off
 mid-stint — sheet edits apply on the next `/next` (handover) or `/reload`.
 
-Pull pipeline per feed: `yt-dlp -g` resolves the live HLS URL (passing YouTube's
-bot-check via `yt-cookies.txt` + deno JS challenge) → `streamlink --player-external-http`
-serves that URL to one OBS client. (`curl`-ing the port returns nothing — it serves a
-single consumer; that is not a failure.)
+Pull pipeline per feed: **YouTube** — `yt-dlp -g` resolves the live HLS URL (passing
+YouTube's bot-check via `yt-cookies.txt` + deno JS challenge) → `streamlink
+--player-external-http` serves that URL to one OBS client. **Twitch** — routed directly
+through Streamlink's Twitch plugin (no yt-dlp hop); gated feeds optionally use
+`twitch-cookies.txt`. (`curl`-ing a feed port returns nothing — it serves a single
+consumer; that is not a failure.)
 
 Control is an **unauthenticated** `ThreadingHTTPServer` on port `8088` exposing GET
 endpoints (`/next`, `/reload`, `/set/A/<n>`, `/pov/reload`, `/timer/*`, `/status`,

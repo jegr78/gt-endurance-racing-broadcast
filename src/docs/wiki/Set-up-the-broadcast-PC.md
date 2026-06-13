@@ -10,7 +10,8 @@ Do this **once** per machine — about 30 minutes. When you're done, go to
 
 - A reasonably modern PC — **macOS, Windows, or Linux**. 16 GB RAM works but is tight, so
   reboot before events; 32 GB is comfortable. A wired internet connection.
-- A **YouTube login** (for cookies) and the **shared Google Sheet** link from the team.
+- A **YouTube login** (for cookies — always required) and, if any stint uses a gated
+  Twitch feed, a **Twitch login** too. Plus the **shared Google Sheet** link from the team.
 
 ## The easy way — the Control Center
 
@@ -109,8 +110,9 @@ Then use `python3 src/racecast.py …` wherever the docs say `racecast …`, and
 
 The Control Center's **Setup** view, and the `racecast init` command, both walk through
 the automatable steps on this page in order — they create or select your league
-profile, install the tools and apps, export YouTube cookies, download graphics and
-media, build the OBS import collection, and write the Companion button config:
+profile, install the tools and apps, export YouTube cookies (and optionally Twitch
+cookies), download graphics and media, build the OBS import collection, and write the
+Companion button config:
 
 ```
 racecast init      # the CLI equivalent of the Control Center's Setup view
@@ -121,7 +123,7 @@ for the things only you can do: creating/selecting a league profile and filling 
 its `SHEET_ID`, and — when cookies are
 missing or stale — logging into YouTube in Firefox (cookie details and the
 before-each-event refresh:
-[Relay — how the feeds work](Relay-Mode#2-get-youtube-cookies-before-each-event)).
+[Relay — how the feeds work](Relay-Mode#2-producer-accounts-and-cookies-before-each-event)).
 At the end it prints the remaining manual steps (importing the OBS collection
 and the Companion config, signing in to Tailscale) — those are described in
 detail in the sections below, and letting Companion control OBS (section 7)
@@ -174,10 +176,10 @@ racecast install-tools
 ```
 
 Installs `streamlink`, `yt-dlp`, `ffmpeg` and `deno` — they pull each
-commentator's stream into OBS and pass YouTube's bot check. Afterwards **open a
-new terminal** ([how?](#never-used-a-terminal)) — installers update the PATH for
-new shells only (`racecast preflight`
-confirms everything is found).
+commentator's stream (YouTube or Twitch) into OBS and pass YouTube's bot check.
+Afterwards **open a new terminal** ([how?](#never-used-a-terminal)) — installers
+update the PATH for new shells only (`racecast preflight` confirms everything is
+found).
 
 > `deno` is required — without it feeds fail with *"Sign in to confirm you're not a bot."*
 > Details: [Relay — how the feeds work](Relay-Mode).

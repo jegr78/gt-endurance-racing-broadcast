@@ -28,14 +28,21 @@ SCHEDULE SOURCE (Google Sheet, editable remotely by anyone):
   If the sheet is unreachable, the last working list is kept (last-good +
   local cache); without a sheet the local schedule.txt is used.
 
-COOKIES (against YouTube's "Sign in to confirm you're not a bot"):
-  Put a yt-cookies.txt (Netscape format, exported from a logged-in YouTube
-  browser via `racecast cookies firefox`) NEXT TO this script — it is
-  auto-detected and passed to Streamlink (--http-cookies-file). A legacy
-  cookies.txt is migrated to yt-cookies.txt automatically on first use.
-  Or pass it explicitly:  --cookies /path/to/yt-cookies.txt
-  Always enter UNLISTED streams as a watch URL (https://www.youtube.com/watch?v=…)
-  in the schedule — the channel /live URL only works for PUBLIC streams.
+COOKIES:
+  YouTube (required for unlisted/private streams): put a yt-cookies.txt
+  (Netscape format, exported from a logged-in YouTube browser via
+  `racecast cookies firefox`) next to this script — it is auto-detected
+  and passed to yt-dlp. A legacy cookies.txt is migrated automatically.
+  Or pass it explicitly: --cookies /path/to/yt-cookies.txt
+  Twitch (optional): gated/follower-only feeds use twitch-cookies.txt
+  (exported via `racecast cookies twitch firefox`); public Twitch streams
+  need no cookies at all. The relay picks it up automatically for Twitch feeds.
+
+SCHEDULE ENTRIES — use a full watch URL for each stint:
+  YouTube: https://www.youtube.com/watch?v=VIDEOID  (bare UC… channel IDs
+    also work as a shorthand for YouTube public /live streams; unlisted streams
+    MUST use the full watch URL — the channel /live URL only works for public).
+  Twitch:  https://www.twitch.tv/<channel>  (no bare-ID short form for Twitch).
 
 Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   GET /status          -> state of both feeds + source/sheet health (JSON)
@@ -2215,7 +2222,9 @@ def main():
     ap.add_argument("--cookies", default=None,
                     help="Path to yt-cookies.txt (Netscape format) for YouTube login — "
                          "bypasses the 'Sign in to confirm you're not a bot' check. "
-                         "Default: yt-cookies.txt next to this script, if present.")
+                         "Default: yt-cookies.txt next to this script, if present. "
+                         "Twitch feeds use twitch-cookies.txt (picked up automatically "
+                         "from the same directory — no separate flag needed).")
     ap.add_argument("--cookies-from-browser", default=None,
                     help="Auto-export YouTube cookies from this browser on startup via "
                          "yt-dlp (e.g. firefox, chrome, safari, edge, brave) and use them. "

@@ -60,7 +60,9 @@ the Control Center; the CLI alternative is in italics.
    *CLI: `racecast install-tools --update`* (manual: `brew upgrade streamlink yt-dlp` on
    macOS/Linux · `winget upgrade yt-dlp.yt-dlp Streamlink.Streamlink` on Windows).
 5. **Assets → Cookies → Refresh** (pick the browser; log into YouTube in it first).
-   *CLI: `racecast cookies firefox`.*
+   If any stint uses a gated Twitch feed, also refresh the Twitch login:
+   *CLI: `racecast cookies firefox` (YouTube, required) and
+   `racecast cookies twitch firefox` (Twitch, if needed).*
 6. **Refresh the intro/outro clips** (only if their URLs changed): **Assets →
    Media → Download** — pulls the URLs from the Sheet **Assets** tab into the active
    profile's `runtime/<profile>/media/intro.mp4` / `outro.mp4`. *CLI: `racecast media`.*

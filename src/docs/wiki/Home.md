@@ -4,8 +4,8 @@ This wiki is for everyone who runs the **GT Endurance Racing** sim-racing broadc
 you set up the machine, run the show, or direct it remotely.
 
 **In one picture:** each stint has a commentator streaming the race on their own YouTube
-channel. One PC pulls those streams in, adds the on-screen graphics and the Discord
-interview audio, and pushes a single, clean broadcast to the league's YouTube channel. A
+or Twitch channel. One PC pulls those streams in, adds the on-screen graphics and the
+Discord interview audio, and pushes a single, clean broadcast to the league's YouTube channel. A
 **Producer** runs that PC; a **Director** decides what viewers see — from a browser,
 anywhere. One machine can serve several leagues — each is a [**profile**](Profiles) with its own
 sheet, graphics and [overlay look](HUD-Overlays).
@@ -43,7 +43,7 @@ flowchart LR
 
 | Term | Meaning |
 |---|---|
-| **The relay** | the small server on the producer's PC that pulls each commentator's YouTube stream and hands it to OBS — [Relay — how the feeds work](Relay-Mode) |
+| **The relay** | the small server on the producer's PC that pulls each commentator's YouTube or Twitch stream and hands it to OBS — [Relay — how the feeds work](Relay-Mode) |
 | **Feed A / Feed B** | the two fixed slots the relay serves; they take turns so the picture never drops at a driver change — [Relay-Mode](Relay-Mode) |
 | **Stint** | one commentator's stretch of the race; the schedule is a numbered list of stints — [Run an event](Run-an-event) |
 | **NEXT / handover** | the driver-change moment: the off-air feed advances to the next stint's stream — [Director guide](Director) |
@@ -53,7 +53,7 @@ flowchart LR
 | **Companion** | Bitfocus Companion, the big-buttons board (browser or Stream Deck), the panel's sibling — [Companion](Companion) |
 | **Tailscale** | the private-network app that makes the producer's PC reachable for remote directors — [Director setup](Director-Setup) |
 | **The Sheet** | the shared Google Sheet that drives the schedule, the HUD and the downloadable assets — [Configuration & secrets](Configuration) |
-| **Cookies** | the exported YouTube login the relay needs to pass YouTube's bot check — [Relay-Mode](Relay-Mode) |
+| **Cookies** | the exported YouTube login the relay needs to pass YouTube's bot check (required); optionally also Twitch for gated feeds — [Relay-Mode](Relay-Mode) |
 | **Preflight** | `racecast preflight`, the machine check that names the exact fix for anything missing — [Set up the broadcast PC](Set-up-the-broadcast-PC) |
 | **POV** | the optional driver picture-in-picture feed — [Director guide](Director) |
 
