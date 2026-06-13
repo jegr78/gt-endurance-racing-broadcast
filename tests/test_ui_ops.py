@@ -261,6 +261,20 @@ def t_assets_status_data_error():
     assert d["ok"] is False and "no sheet" in d["error"]
 
 
+def t_assets_status_data_refreshes_active_profile_env():
+    # Same staleness as preflight: the sheet-driven asset check reads
+    # RACECAST_SHEET_ID, so a profile changed while the Control Center runs must
+    # be re-injected before _asset_state fetches the sheet.
+    order = []
+    def refresh():
+        order.append("refresh")
+    def state(ev):
+        order.append("state")
+        return ("g", "m", [], [])
+    rc.assets_status_data(state=state, refresh_env=refresh)
+    assert order == ["refresh", "state"]       # env refreshed before the fetch
+
+
 # ---------- tools / apps / preflight readiness ----------
 
 def t_tools_status_data_mixed():
@@ -350,6 +364,24 @@ def t_preflight_data_error():
         raise RuntimeError("no preflight")
     d = rc.preflight_data(gather=boom)
     assert d["ok"] is False and "no preflight" in d["error"]
+
+
+def t_preflight_data_refreshes_active_profile_env():
+    # The Control Center holds os.environ for the life of the process, but the
+    # active profile can change underneath it (a `racecast profile import`/`use`
+    # from the CLI, or the in-UI import/switch). preflight_data must re-inject the
+    # active profile's league env BEFORE the sheet probe, else it reads a stale
+    # (often empty) RACECAST_SHEET_ID and warns "not set" even though SHEET_ID is
+    # configured. The refresh must happen before gather() reads the environment.
+    order = []
+    def refresh():
+        order.append("refresh")
+    def gather():
+        order.append("gather")
+        return [("Sheet", [])]
+    d = rc.preflight_data(gather=gather, refresh_env=refresh)
+    assert d["ok"] is True
+    assert order == ["refresh", "gather"]      # env refreshed first, then probed
 
 
 def t_assets_files_data_lists(tmp):
