@@ -2078,10 +2078,13 @@ def cookies_status_data(status=None):
         return {"level": "WARN", "detail": f"check failed: {exc}"}
 
 
-def assets_status_data(state=None):
+def assets_status_data(state=None, refresh_env=None):
     """Sheet-driven graphics/media readiness (network: sheet fetch, takes
-    seconds — served on demand via /api/assets, never from the status poll)."""
+    seconds — served on demand via /api/assets, never from the status poll).
+    Re-injects the active profile's league env first (RACECAST_SHEET_ID etc.) so a
+    profile changed while the Control Center runs is reflected — see preflight_data."""
     try:
+        (refresh_env or _apply_active_profile_env)()
         ev = _event_modules()[0]
         g_dir, m_dir, missing_g, missing_m = (state or _asset_state)(ev)
     except Exception as exc:
@@ -2575,12 +2578,20 @@ def apps_status_data(present=None, version=None):
         return {"ok": False, "error": f"app check failed: {exc}"}
 
 
-def preflight_data(gather=None):
+def preflight_data(gather=None, refresh_env=None):
     """Full preflight checklist as structured sections (on-demand: runs hardware
     probes, per-tool version calls, and a Google-Sheet fetch when configured —
     can take several seconds). Returns {"ok": True, "sections":[{"title","results":
-    [{"level","name","detail"}]}]} or {"ok": False, "error": ...}; never raises."""
+    [{"level","name","detail"}]}]} or {"ok": False, "error": ...}; never raises.
+
+    Re-injects the active profile's league env first: the Control Center process
+    holds os.environ for its whole lifetime, but the active profile can change
+    underneath it (a `racecast profile import`/`use` from the CLI, or the in-UI
+    import/switch). Without this refresh the sheet probe reads the RACECAST_SHEET_ID
+    captured at UI startup — empty on a fresh install whose profile was imported
+    afterwards — and warns "not set" though SHEET_ID is configured."""
     try:
+        (refresh_env or _apply_active_profile_env)()
         pf = _event_modules()[1]
         run = gather or (lambda: pf.gather(resource_path("scripts/preflight.py"),
                                            _runtime_base_dir()))
