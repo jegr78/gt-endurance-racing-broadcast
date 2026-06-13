@@ -164,6 +164,10 @@ def t_loop_crosscheck_relay():
     with open(p, "w") as f:
         f.write(".twitch.tv\tTRUE\t/\tTRUE\t0\tauth-token\tdeadbeef\n")
     assert loop.twitch_oauth_from_cookies(p) == feeds_x.twitch_oauth_from_cookies(p) == "deadbeef"
+    import inspect
+    for fn in ("platform_of", "twitch_oauth_from_cookies", "channel_url"):
+        assert inspect.getsource(getattr(loop, fn)) == inspect.getsource(getattr(feeds_x, fn)), \
+            f"{fn} drifted between loopstream and racecast-feeds"
 
 
 if __name__ == "__main__":

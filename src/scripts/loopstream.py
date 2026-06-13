@@ -42,7 +42,9 @@ def channel_url(entry: str) -> str:
 # keep in sync with src/relay/racecast-feeds.py
 def platform_of(url):
     """Which streaming platform a (possibly bare-ID-wrapped) URL targets.
-    Host-based; anything that is not a Twitch host is treated as YouTube."""
+    Host-based, reusing the userinfo-safe parse from _is_stream_url. Anything
+    that is not a Twitch host (including bare UC ids, which channel_url wraps
+    into a youtube.com URL) is treated as YouTube -- the default path."""
     try:
         host = (urlparse(url).hostname or "").lower()
     except ValueError:
@@ -54,7 +56,9 @@ def platform_of(url):
 
 # keep in sync with src/relay/racecast-feeds.py
 def twitch_oauth_from_cookies(path):
-    """Extract the Twitch `auth-token` value from a Netscape cookies file. None on any error."""
+    """Extract the Twitch `auth-token` value from a Netscape cookies file, for
+    Streamlink's --twitch-api-header. Returns the token or None (public/no auth).
+    Pure-ish (reads a file); any error -> None."""
     if not path or not os.path.isfile(path):
         return None
     try:
