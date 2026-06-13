@@ -79,8 +79,13 @@ def t_set_index_allows_one_past_end_for_idle():
 
 
 class _StubSource:
-    def __init__(self, items): self._items = list(items)
+    def __init__(self, items, rows=None):
+        self._items = list(items)
+        # rows parallel to items: (url, streamer, stint, line). Default: bare.
+        self._rows = list(rows) if rows is not None else [
+            (u, "", "", i + 1) for i, u in enumerate(items)]
     def get(self): return list(self._items)
+    def get_rows(self): return list(self._rows)
     def refresh(self, timeout=6): return True
     def health(self): return {"count": len(self._items), "last_ok_age_s": 0, "last_error": None}
     def add(self, url): self._items.append(url)
@@ -135,6 +140,29 @@ def t_set_stint_reflects_live_feed_without_cut():
     r.set_stint(3)                              # stint 3 on air -> A=2, B=3, live=A
     assert (r.A.idx, r.B.idx) == (2, 3)
     assert calls == [("A", False)]
+
+
+def t_live_schedule_row_pure():
+    rows = [("https://youtu.be/a", "JeGr", "Stint 1", 1),
+            ("https://youtu.be/b", "GT45", "Stint 2", 2)]
+    assert m.live_schedule_row(rows, 0) == {"streamer": "JeGr", "stint": "Stint 1"}
+    assert m.live_schedule_row(rows, 1) == {"streamer": "GT45", "stint": "Stint 2"}
+    assert m.live_schedule_row(rows, 2) is None        # idles past the end
+    assert m.live_schedule_row(rows, -1) is None       # never wraps to the last row
+    assert m.live_schedule_row([], 0) is None
+    assert m.live_schedule_row(rows, None) is None
+
+
+def t_relay_live_schedule_row_tracks_on_air_feed():
+    rows = [("s1", "JeGr", "Stint 1", 1), ("s2", "GT45", "Stint 2", 2),
+            ("s3", "Ann", "Stint 3", 3), ("s4", "Ben", "Stint 4", 4)]
+    r = m.Relay(_StubSource(["s1", "s2", "s3", "s4"], rows), (53001, 53002), HERE)
+    r._reflect = lambda live, cut: None
+    assert r.live_feed() == "A"                        # A on stint 1
+    assert r.live_schedule_row() == {"streamer": "JeGr", "stint": "Stint 1"}
+    r.next_auto()                                      # B (stint 2) now on air
+    assert r.live_feed() == "B"
+    assert r.live_schedule_row() == {"streamer": "GT45", "stint": "Stint 2"}
 
 
 def t_next_past_end_is_idle_no_cut():

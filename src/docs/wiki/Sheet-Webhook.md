@@ -18,7 +18,7 @@ machine and the panel's HUD row + URLs section are display-only.
 |---|---|
 | `timer` | Timer tab (race-timer state — see [Race-Timer](Race-Timer)) |
 | `setup` | Setup tab: the cell **below** a header (`Stint`, `Streamer`, `Session`, `Race Control`) — found by text, so the tab layout may move |
-| `schedule` | Schedule tab **physical row N** (the panel sends the CSV line number automatically): URL (col A) + name (col B); row `last+1` appends. **The Schedule tab must not have leading blank rows** — the gviz CSV export maps physical sheet rows to CSV lines 1:1 when the tab starts at row 1. A header row is silently skipped when reading but its physical line number is still used when writing. |
+| `schedule` | Schedule tab **physical row N** (the panel sends the CSV line number automatically): URL + Streamer + Stint label, located by the `URL`/`Streamer`/`Stint` headers in row 1 (falls back to fixed cols A/B with no header row); row `last+1` appends. The Stint cell is only written when a `Stint` header exists. **The Schedule tab must not have leading blank rows** — the gviz CSV export maps physical sheet rows to CSV lines 1:1 when the tab starts at row 1. A header row is silently skipped when reading but its physical line number is still used when writing. |
 | `pov` | POV tab cell `A2` |
 | `teams` | Setup tab: the cell **below** the `Team <slot>` header (slot 1–3 → `A6`/`B6`/`C6` in the shipped layout) — found by text, same as the other Setup fields. The Overlay tab only mirrors them read-only |
 
@@ -76,7 +76,7 @@ read-only.
        else if (action === 'pov') writePov(ss, p);
        else if (action === 'teams') writeTeams(ss, p);
        else return out({error: 'unknown action: ' + action});
-       return out({ok: true, action: action, v: 2});
+       return out({ok: true, action: action, v: 3});
      } catch (err) { return out({error: String(err)}); }
    }
 
@@ -122,12 +122,27 @@ read-only.
    }
 
    function writeSchedule(ss, p) {
+     // Header-aware: locate URL/Streamer/Stint columns by header text in row 1
+     // (case-insensitive), same approach as writeSetup/writeTeams. Falls back to
+     // fixed cols A/B when there is no header row (back-compat). The Stint cell
+     // is written only when a 'Stint' header exists.
      const sheet = tab(ss, TABS.schedule);
      const row = Number(p.row);
      const last = sheet.getLastRow();
      if (!row || row < 1 || row > last + 1) throw 'row out of range: ' + p.row;
-     if ('url' in p) sheet.getRange(row, 1).setNumberFormat('@').setValue(p.url);
-     if ('name' in p) sheet.getRange(row, 2).setNumberFormat('@').setValue(p.name);
+     const lastCol = sheet.getLastColumn();
+     const header = lastCol >= 1 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+     const colOf = (name) => {
+       for (let c = 0; c < header.length; c++)
+         if (String(header[c]).trim().toLowerCase() === name) return c + 1;
+       return 0;
+     };
+     const urlCol = colOf('url') || 1;
+     const nameCol = colOf('streamer') || 2;
+     const stintCol = colOf('stint');
+     if ('url' in p) sheet.getRange(row, urlCol).setNumberFormat('@').setValue(p.url);
+     if ('name' in p) sheet.getRange(row, nameCol).setNumberFormat('@').setValue(p.name);
+     if ('stint' in p && stintCol) sheet.getRange(row, stintCol).setNumberFormat('@').setValue(p.stint);
    }
 
    function writePov(ss, p) {
@@ -174,6 +189,12 @@ instead creates a NEW URL and every `profile.env` must be updated.)
 
 The relay detects an outdated (v1, timer-only) script: panel writes then
 report *"webhook script outdated — redeploy"* instead of failing silently.
+
+The current script is **v3** (adds the Schedule `Stint` column). The relay does
+not enforce the version, so a still-deployed v2 script degrades gracefully:
+Schedule-row **Stint** edits silently don't persist, but everything else —
+including the handover HUD update, which writes the Setup tab via the `setup`
+action, not `schedule` — keeps working. Redeploy to enable Stint write-back.
 
 ## Security
 

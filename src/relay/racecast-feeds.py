@@ -475,6 +475,14 @@ BRAND_TEXT_HEADERS = ("brand key", "brand name", "brand")
 TEAM_NAME_HEADERS = ("teams", "team name")
 NUMBER_HEADERS = ("number",)
 
+# Schedule tab headers (matched case-insensitively, like the Configuration ones).
+# When the URL header is present the columns are located by name (so they may
+# move and the Stint label is read); otherwise the parser falls back to the
+# positional auto-detect that needs no header row (back-compat).
+SCHEDULE_URL_HEADERS = ("url",)
+SCHEDULE_STREAMER_HEADERS = ("streamer",)
+SCHEDULE_STINT_HEADERS = ("stint",)
+
 
 def parse_config_roster(text):
     """Configuration tab CSV -> roster {team_name: {"number": str, "brandKey": str}}.
@@ -1131,6 +1139,19 @@ def stint_start_indices(stint, schedule_len):
     return a, a + 1
 
 
+def live_schedule_row(rows, live_idx):
+    """The {"streamer", "stint"} for the schedule row a feed at 0-based
+    *live_idx* is serving, or None when the index has no row (the feed idles
+    past the end). Pure so the handover auto-write is unit-testable without a
+    running relay (like stint_start_indices). *rows* are ScheduleSource
+    4-tuples (url, streamer, stint, line), parallel to the items list a feed
+    indexes into."""
+    if live_idx is None or not (0 <= live_idx < len(rows)):
+        return None
+    _url, streamer, stint, _line = rows[live_idx]
+    return {"streamer": streamer, "stint": stint}
+
+
 class ScheduleSource:
     """Reads the schedule from the Google Sheet (CSV) with last-good + fallback."""
     def __init__(self, csv_url, cache_path, local_fallback):
@@ -1145,16 +1166,36 @@ class ScheduleSource:
 
     @staticmethod
     def _parse_rows(text):
-        """CSV -> [(url, name, line)] rows where *line* is the 1-based CSV line
-        index of each accepted row (== physical sheet row when the Schedule tab
-        starts at sheet row 1 with no leading blank rows — gviz export maps
-        1:1).  Header rows or any row whose URL cell fails is_channel() are
-        silently skipped; their line numbers are NOT remapped.  The URL column
-        is auto-detected (most cells matching is_channel); the name is the
-        cell right of it."""
+        """CSV -> [(url, name, stint, line)] rows where *line* is the 1-based CSV
+        line index of each accepted row (== physical sheet row when the Schedule
+        tab starts at sheet row 1 with no leading blank rows — gviz export maps
+        1:1).  Any row whose URL cell fails is_channel() (including a header row)
+        is silently skipped; their line numbers are NOT remapped.
+
+        Two layouts are supported:
+        - **Header mode** (opt-in): if row 1 carries a recognized `URL` header,
+          the URL/Streamer/Stint columns are located by header text (so they may
+          move and the per-stint *stint* label is read).
+        - **Positional fallback** (no header row): the URL column is auto-detected
+          (most cells matching is_channel) and the streamer is the cell right of
+          it; no stint label exists in this layout."""
         rows = list(csv.reader(io.StringIO(text)))
         if not rows:
             return None
+        header = [(h or "").strip().lower() for h in rows[0]]
+        url_i = next((header.index(h) for h in SCHEDULE_URL_HEADERS if h in header), None)
+        if url_i is not None:
+            name_i = next((header.index(h) for h in SCHEDULE_STREAMER_HEADERS if h in header), None)
+            stint_i = next((header.index(h) for h in SCHEDULE_STINT_HEADERS if h in header), None)
+            out = [(r[url_i].strip(),
+                    (r[name_i].strip() if name_i is not None and len(r) > name_i else ""),
+                    (r[stint_i].strip() if stint_i is not None and len(r) > stint_i else ""),
+                    line)
+                   for line, r in enumerate(rows, 1)
+                   if len(r) > url_i and is_channel(r[url_i])]
+            return out or None
+        # Positional fallback: detect the URL column, streamer is the cell to its
+        # right, no stint label.
         ncols = max((len(r) for r in rows), default=0)
         best_col, best_cnt = None, 0
         for c in range(ncols):
@@ -1165,6 +1206,7 @@ class ScheduleSource:
             return None
         out = [(r[best_col].strip(),
                 (r[best_col + 1].strip() if len(r) > best_col + 1 else ""),
+                "",
                 line)
                for line, r in enumerate(rows, 1)
                if len(r) > best_col and is_channel(r[best_col])]
@@ -1174,7 +1216,7 @@ class ScheduleSource:
     def _parse_csv(text):
         """URL-only wrapper around _parse_rows; kept for the URL-list callers/tests."""
         rows = ScheduleSource._parse_rows(text)
-        return [u for u, _n, _l in rows] if rows else None
+        return [u for u, _n, _s, _l in rows] if rows else None
 
     def fetch(self, timeout=15):
         if not self.csv_url:
@@ -1198,12 +1240,12 @@ class ScheduleSource:
         if rows:
             with self.lock:
                 self.rows = rows
-                self.items = [u for u, _n, _l in rows]
+                self.items = [u for u, _n, _s, _l in rows]
                 self.last_ok = time.time()
                 self.last_error = None
             try:
                 with open(self.cache_path, "w", encoding="utf-8") as fh:
-                    fh.write("\n".join(u for u, _n, _l in rows) + "\n")
+                    fh.write("\n".join(u for u, _n, _s, _l in rows) + "\n")
             except Exception:
                 pass  # cache write is best-effort; the in-memory schedule is current
             return True
@@ -1222,7 +1264,7 @@ class ScheduleSource:
                 if items:
                     with self.lock:
                         self.items = items
-                        self.rows = [(u, "", i + 1) for i, u in enumerate(items)]
+                        self.rows = [(u, "", "", i + 1) for i, u in enumerate(items)]
                     print(f"WARN: sheet unreachable ({self.last_error}). "
                           f"Using {label}: {len(items)} stints.")
                     return
@@ -1247,7 +1289,7 @@ class ScheduleSource:
         with self.lock:
             return list(self.rows)
 
-    def inject_row(self, physical_row, url, name=""):
+    def inject_row(self, physical_row, url, name="", stint=""):
         """Optimistically merge a panel schedule write into the in-memory
         schedule so an idling feed adopts it before the next poll. Keyed by
         physical sheet row (matches _parse_rows line numbers); the next poll
@@ -1256,11 +1298,11 @@ class ScheduleSource:
         if not is_channel(url):
             return False
         with self.lock:
-            rows = [r for r in self.rows if r[2] != physical_row]
-            rows.append((url, (name or "").strip(), physical_row))
-            rows.sort(key=lambda r: r[2])
+            rows = [r for r in self.rows if r[3] != physical_row]
+            rows.append((url, (name or "").strip(), (stint or "").strip(), physical_row))
+            rows.sort(key=lambda r: r[3])
             self.rows = rows
-            self.items = [u for u, _n, _l in rows]
+            self.items = [u for u, _n, _s, _l in rows]
         return True
 
     def health(self):
@@ -1520,7 +1562,7 @@ class SetupControl:
             self.hud.refresh()
 
     # -- URL writes (synchronous) --------------------------------------------
-    def schedule_set(self, row, url=None, name=None):
+    def schedule_set(self, row, url=None, name=None, stint=None):
         if not self.push_url:
             return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
                              "in the active profile or .env (wiki: Sheet-Webhook)"}
@@ -1532,24 +1574,49 @@ class SetupControl:
             return {"error": "row must be a number (1-based)"}
         if row < 1:
             return {"error": "row must be >= 1"}
-        if url is None and name is None:
-            return {"error": "nothing to write (provide url and/or name)"}
+        if url is None and name is None and stint is None:
+            return {"error": "nothing to write (provide url, name and/or stint)"}
         if url is not None and not isinstance(url, str):
             return {"error": "url must be a string"}
         if name is not None and not isinstance(name, str):
             return {"error": "name must be a string"}
+        if stint is not None and not isinstance(stint, str):
+            return {"error": "stint must be a string"}
         payload = {"action": "schedule", "row": row}
         if url is not None:
             url = url.strip()
             if url and not is_channel(url):
                 return {"error": "url must be a watch URL or UC… channel ID"}
             payload["url"] = url
+        # Streamer + Stint are vocabulary-constrained, like the Setup fields:
+        # a value picked in the Schedule editor must exist in the Configuration
+        # tab so the handover auto-write can never produce one set_field rejects.
         if name is not None:
-            payload["name"] = name.strip()
+            name = name.strip()
+            err = self._reject_off_vocab("streamer", name)
+            if err:
+                return err
+            payload["name"] = name
+        if stint is not None:
+            stint = stint.strip()
+            err = self._reject_off_vocab("stint", stint)
+            if err:
+                return err
+            payload["stint"] = stint
         ok, err = self._push(payload, "schedule")
         if ok and self.schedule_source is not None and url:
-            self.schedule_source.inject_row(row, url, payload.get("name", ""))
+            self.schedule_source.inject_row(row, url, payload.get("name", ""),
+                                            payload.get("stint", ""))
         return {"ok": True, "row": row} if ok else {"error": err}
+
+    def _reject_off_vocab(self, key, value):
+        """An error dict when a non-empty value is outside the Configuration
+        vocabulary for *key*, else None. Mirrors set_field's strictness; a no-op
+        when no HUD source is wired (the vocab is then unknown)."""
+        if value and self.hud is not None and value not in self.hud.vocab().get(key, []):
+            return {"error": f"not in the Configuration {key} vocabulary: {value!r} "
+                             "(add it to the Configuration tab first)"}
+        return None
 
     def pov_set(self, url):
         if not self.push_url:
@@ -1777,6 +1844,13 @@ class Relay:
         """Which feed will be on air after the next /next: the one NOT advanced."""
         return "B" if self.live_feed() == "A" else "A"
 
+    def live_schedule_row(self):
+        """{"streamer", "stint"} for the stint the on-air feed is serving now, or
+        None when it idles past the schedule end. Drives the handover HUD
+        auto-write (issue #112)."""
+        return live_schedule_row(self.source.get_rows(),
+                                 self.feeds[self.live_feed()].idx)
+
     def _reflect(self, live, cut):
         """Push the on-air feed (A/B) into OBS off-thread; never blocks the HTTP
         response, never raises. Records the note for /status."""
@@ -1874,6 +1948,21 @@ class Relay:
     def shutdown(self):
         for f in self.feeds.values(): f.shutdown()
         if self.pov: self.pov.shutdown()
+
+
+def _push_live_schedule(relay, setup_ctl):
+    """On a handover, auto-write the on-air stint's Streamer + Stint label from
+    the Schedule into the HUD (issue #112), reusing the existing async-optimistic
+    set_field path so the Sheet stays the source of truth. Best-effort: a value
+    not in the Configuration vocabulary is rejected by set_field and skipped,
+    like every other panel write; an empty cell leaves the field untouched."""
+    row = relay.live_schedule_row()
+    if not row:
+        return
+    if row.get("streamer"):
+        setup_ctl.set_field("streamer", row["streamer"])
+    if row.get("stint"):
+        setup_ctl.set_field("stint", row["stint"])
 
 
 def _benign_client_disconnect(exc):
@@ -2041,9 +2130,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     rows = relay.source.get_rows()
                     live = {f.idx: k for k, f in relay.feeds.items()}
                     return self._send({"rows": [{"row": i + 1, "sheetRow": line,
-                                                 "url": u, "name": n,
+                                                 "url": u, "name": n, "stint": st,
                                                  "live": live.get(i)}
-                                                for i, (u, n, line) in enumerate(rows)],
+                                                for i, (u, n, st, line) in enumerate(rows)],
                                        "source": relay.source.health()})
                 if p == ["next"]:
                     result = relay.next_auto()
@@ -2053,6 +2142,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     # happened. Best-effort: set_field no-ops without the webhook.
                     if result.get("obs_cut") and setup_ctl:
                         setup_ctl.set_field("racecontrol", "")
+                        # Auto-follow the on-air stint's Streamer + Stint label
+                        # from the Schedule (issue #112), gated on a real cut so
+                        # the HUD never names the next stint while the previous
+                        # feed is still showing.
+                        _push_live_schedule(relay, setup_ctl)
                     return self._send(result)
                 if p == ["reload"]:                     return self._send(relay.reload())
                 if p == ["pov", "reload"]:              return self._send(relay.pov_reload())
@@ -2060,7 +2154,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if len(p)==2 and p[0]=="next":          return self._ok(relay.advance(p[1], +2))
                 if len(p)==2 and p[0]=="prev":          return self._ok(relay.advance(p[1], -2))
                 if len(p)==2 and p[0]=="reload":        return self._ok(relay.reload(p[1]))
-                if len(p)==3 and p[:2]==["set","stint"]: return self._send(relay.set_stint(int(p[2])))
+                if len(p)==3 and p[:2]==["set","stint"]:
+                    res = relay.set_stint(int(p[2]))
+                    # Producer takeover puts a fresh stint on air -> same HUD
+                    # auto-write as /next (issue #112). No obs_cut gate here: the
+                    # director picks the scene, the HUD reflects the takeover stint.
+                    if setup_ctl:
+                        _push_live_schedule(relay, setup_ctl)
+                    return self._send(res)
                 if len(p)==3 and p[0]=="set":           return self._ok(relay.set_index(p[1], int(p[2])))
                 return self._send({"error":"unknown","path":self.path}, 404)
             except ConnectionError:
@@ -2093,7 +2194,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"error": "setup control disabled"}, 404)
                 if p == ["schedule", "set"]:
                     return self._send(setup_ctl.schedule_set(
-                        body.get("row"), body.get("url"), body.get("name")))
+                        body.get("row"), body.get("url"), body.get("name"),
+                        body.get("stint")))
                 if p == ["pov", "set"]:
                     return self._send(setup_ctl.pov_set(body.get("url")))
                 return self._send({"error": "unknown", "path": self.path}, 404)

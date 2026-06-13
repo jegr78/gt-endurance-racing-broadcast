@@ -97,12 +97,12 @@ def t_set_phase_updates_since_only_on_change():
 def _mk_relay(td, items, cookies=None, pov_items=None):
     src = m.ScheduleSource(None, os.path.join(td, "cache.txt"), None)
     src.items = list(items)
-    src.rows = [(u, "", i + 1) for i, u in enumerate(items)]
+    src.rows = [(u, "", "", i + 1) for i, u in enumerate(items)]
     pov_src = None
     if pov_items is not None:
         pov_src = m.ScheduleSource(None, os.path.join(td, "pov-cache.txt"), None)
         pov_src.items = list(pov_items)
-        pov_src.rows = [(u, "", i + 1) for i, u in enumerate(pov_items)]
+        pov_src.rows = [(u, "", "", i + 1) for i, u in enumerate(pov_items)]
     return m.Relay(src, [53001, 53002], td, cookies,
                    pov_source=pov_src, pov_port=53003 if pov_src else None)
 
