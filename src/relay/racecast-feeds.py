@@ -1678,6 +1678,7 @@ class Relay:
             ch, i = f.current_channel()
             out["feeds"][k] = {"port": f.port, "index": i, "stint": i + 1,
                                "channel": ch,
+                               "platform": platform_of(channel_url(ch)) if ch else None,
                                "state": "stopped" if f.paused else f.phase,
                                "state_age_s": round(now - f.phase_since, 1),
                                "last_error": f.last_error}
