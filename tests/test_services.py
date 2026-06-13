@@ -49,7 +49,13 @@ def t_start_detached_then_stop(tmp):
 
 def t_spawn_kwargs_per_os():
     assert sv.spawn_kwargs("posix") == {"start_new_session": True}
-    assert sv.spawn_kwargs("nt") == {"creationflags": 0x00000008 | 0x00000200}
+    # Windows daemon spawn: CREATE_NO_WINDOW (0x08000000), NOT DETACHED_PROCESS.
+    # A frozen onefile relay is a two-process tree (bootloader -> app); under
+    # DETACHED_PROCESS the bootloader has NO console, so the inner app process is
+    # given a fresh VISIBLE console that stays open for the whole event. A hidden
+    # console (CREATE_NO_WINDOW) is inherited by the inner process instead.
+    # CREATE_NEW_PROCESS_GROUP keeps Ctrl+C isolation; the child still outlives us.
+    assert sv.spawn_kwargs("nt") == {"creationflags": 0x08000000 | 0x00000200}
     assert sv.spawn_kwargs("java") == {}
 
 
