@@ -119,5 +119,43 @@ def t_cookie_target():
     assert out_tw.endswith("twitch-cookies.txt") and "twitch.tv" in url_tw
 
 
+def t_failure_hint_twitch_no_profile():
+    gc = _load_getcookies()
+    hint = gc.failure_hint("could not find firefox cookies database", "firefox", "twitch")
+    assert "firefox" in hint.lower() and "installed" in hint.lower()
+
+
+def t_failure_hint_twitch_generic_mentions_twitch():
+    gc = _load_getcookies()
+    hint = gc.failure_hint("something else", "firefox", "twitch")
+    assert "Twitch" in hint and "logged in" in hint.lower()
+
+
+def t_failure_hint_twitch_decrypt_suggests_twitch_command():
+    gc = _load_getcookies()
+    hint = gc.failure_hint("ERROR: Failed to decrypt with DPAPI", "chrome", "twitch")
+    assert "Twitch" in hint
+    assert "racecast cookies twitch firefox" in hint
+
+
+def t_failure_hint_youtube_decrypt_keeps_original_command():
+    gc = _load_getcookies()
+    hint = gc.failure_hint("ERROR: Failed to decrypt with DPAPI", "chrome", "youtube")
+    assert "YouTube" in hint
+    assert "racecast cookies firefox" in hint
+    assert "twitch" not in hint.lower()
+
+
+def t_failure_hint_default_platform_is_youtube():
+    # Two-arg call (as used by racecast-feeds._cookie_hint) must still mention YouTube.
+    gc = _load_getcookies()
+    hint = gc.failure_hint("", "brave")
+    assert "YouTube" in hint
+
+
 if __name__ == "__main__":
-    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); t_ssai_markers(); t_cookies_for(); t_migrate_legacy(); t_twitch_oauth(); t_cookie_target(); print("ok")
+    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); t_ssai_markers(); t_cookies_for(); t_migrate_legacy(); t_twitch_oauth(); t_cookie_target()
+    t_failure_hint_twitch_no_profile(); t_failure_hint_twitch_generic_mentions_twitch()
+    t_failure_hint_twitch_decrypt_suggests_twitch_command(); t_failure_hint_youtube_decrypt_keeps_original_command()
+    t_failure_hint_default_platform_is_youtube()
+    print("ok")

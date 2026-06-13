@@ -27,8 +27,10 @@ def cookie_target(platform, runtime_dir):
     return os.path.join(runtime_dir, "yt-cookies.txt"), "https://www.youtube.com/watch?v=jNQXAC9IVRw"
 
 
-def failure_hint(stderr_text, browser):
+def failure_hint(stderr_text, browser, platform="youtube"):
     """Actionable hint for a failed yt-dlp cookie export (pure, from stderr)."""
+    service = "Twitch" if platform == "twitch" else "YouTube"
+    refresh = "racecast cookies twitch firefox" if platform == "twitch" else "racecast cookies firefox"
     s = (stderr_text or "").lower()
     if "could not copy" in s and "cookie database" in s:
         # Chromium locks its cookie DB while running (yt-dlp issue #7271).
@@ -39,8 +41,8 @@ def failure_hint(stderr_text, browser):
         return f"no {browser} profile found — is {browser} installed on this machine?"
     if "decrypt" in s or "dpapi" in s:
         return (f"{browser}'s cookie encryption blocked the export — log into "
-                f"YouTube in Firefox and run: racecast cookies firefox")
-    return f"is {browser} installed and logged in to YouTube?"
+                f"{service} in Firefox and run: {refresh}")
+    return f"is {browser} installed and logged in to {service}?"
 
 
 def main():
@@ -85,7 +87,7 @@ def main():
         for line in [l for l in err.splitlines() if l.strip()][-3:]:
             print(line, file=sys.stderr)   # the real yt-dlp reason, not a guess
         sys.exit(f"FAILED to export from '{a.browser}' — "
-                 + failure_hint(err, a.browser))
+                 + failure_hint(err, a.browser, a.platform))
 
 
 if __name__ == "__main__":
