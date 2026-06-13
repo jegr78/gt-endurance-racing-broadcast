@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.2.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.1.0...v0.2.0) (2026-06-13)
+
+
+### Features
+
+* **chat:** crew chat in the director panel ([#72](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/72)) ([8806c44](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/8806c44d4d01eed602adda0c6558decc63b97b8e))
+* **hud:** HUD design preview — overlay over a GT backdrop ([#85](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/85)) ([#90](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/90)) ([8253989](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/82539894e8ad73d182359dd7ae2ca9a2326c7b5c))
+* **install-apps:** show installed app versions (CLI + Control Center) ([#97](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/97)) ([2c8c189](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/2c8c189a61ea8423c38f6668c9d58f88293f0acb))
+* **panel:** persistent right-column chat on desktop + styled Send ([#82](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/82)) ([#89](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/89)) ([c79c471](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c79c471df23c25a3d1da38e44df8f8715c608c00))
+* per-league overlay identity — team name/number split + panel Top-3 ([#80](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/80)) and look backup/restore ([#81](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/81)) ([#86](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/86)) ([61b2529](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/61b25298c2f56e9c0c50c03339898e711da62e46))
+* **profile:** export/import a whole league profile (producer onboarding) ([#93](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/93)) ([800903c](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/800903c537d2ad8c1b80b4a7e68d2220e600126c))
+
+
+### Bug Fixes
+
+* **install-apps:** don't fail --update on apps installed outside Homebrew ([#96](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/96)) ([e6d0174](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e6d0174243f8f97d328aa4d56c04e5ea3988c9e0)), closes [#92](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/92)
+* **panel:** write Top-3 teams to the Setup tab, not the Overlay tab ([#95](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/95)) ([7c749ae](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/7c749aeaff290c57a0fc5e4a3d0db0422bfe4922))
+* **relay:** clear Race Control on the /next handover cut ([#107](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/107)) ([89ebb35](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/89ebb35a48f50f8ecd61f9bbe1d23aeb3a3e3cbc))
+* **relay:** live OBS-reachability probe in /status (no stale 'OBS NOT REACHABLE' banner) ([#94](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/94)) ([ec7031e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/ec7031ed08da98670e1a6c6eba7e1ca79f80d24b))
+* **relay:** make the loopback bind mandatory — no silent split-brain ([#84](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/84)) ([#87](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/87)) ([d8fe085](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/d8fe08523e72d335a29e86e4e41cdb5b6b964c35))
+* **relay:** no visible console window when starting the daemon on Windows ([#110](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/110)) ([e77442f](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e77442f27e3436d64f99695002137d27c614532a))
+* **security:** close CSRF→RCE, update integrity, SSRF + arg-injection (review [#1](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/1)–[#4](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/4)) ([#106](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/106)) ([befefbd](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/befefbd6d8c8cde564e4a8aaeabfb326652d0556))
+* **security:** document the two best-effort empty-except blocks (CodeQL) ([#79](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/79)) ([a58cc13](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/a58cc137290dafe6d982d17cdcad6cf1fc2757cb))
+* **ui:** offer updates on frozen preview/dev builds in the Control Center ([#75](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/75)) ([69a5f6f](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/69a5f6f583aa7bd68aa53f7f82779d99985f4a07))
+* **ui:** open the Director panel on the Tailscale host when available ([#83](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/83)) ([#88](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/88)) ([db0418e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/db0418ed9276f71317800733f721595042416583))
+* **ui:** refresh active-profile env in Control Center preflight/asset checks ([#108](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/108)) ([b47ce33](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/b47ce33e7cf6b461337c1af75bb07cdf958436f9))
+* **ui:** suppress Windows console flash from in-process probes ([#109](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/109)) ([95e5329](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/95e5329cb41ce4fa7d4228d1a3b7eb1adbb4558c))
+* **update:** self-update can replace the running Control Center on Windows ([#111](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/111)) ([32e001a](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/32e001a7b708d5ccec41cae8779dd65addafb7aa))
+
 ## 0.1.0 (2026-06-11)
 
 
