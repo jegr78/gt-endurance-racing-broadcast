@@ -14,13 +14,24 @@ def read_pid(pid_path):
 
 
 def spawn_kwargs(os_name):
-    """Popen kwargs that detach the child from our session/console per OS."""
+    """Popen kwargs that launch a background daemon detached from our console per OS.
+
+    Windows: CREATE_NO_WINDOW, NOT DETACHED_PROCESS. The frozen onefile relay is a
+    two-process tree — the PyInstaller bootloader spawns the real app as a child.
+    Under DETACHED_PROCESS the bootloader has NO console, so when it starts the
+    inner app Windows allocates a FRESH, VISIBLE console for it that stays open for
+    the entire event (the relay never exits). CREATE_NO_WINDOW instead gives the
+    bootloader a HIDDEN console that the inner process inherits — no window. The
+    daemon still outlives us (Windows processes are independent) and
+    CREATE_NEW_PROCESS_GROUP keeps it from catching the parent terminal's Ctrl+C.
+    Mirrors no_window_kwargs' flag; kept separate because daemons also need the
+    process-group isolation that one-shot probes do not."""
     if os_name == "posix":
         return {"start_new_session": True}
     if os_name == "nt":
-        DETACHED_PROCESS = 0x00000008
+        CREATE_NO_WINDOW = 0x08000000
         CREATE_NEW_PROCESS_GROUP = 0x00000200
-        return {"creationflags": DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP}
+        return {"creationflags": CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP}
     return {}
 
 
