@@ -1140,7 +1140,7 @@ def relay_stop(rest):
             os.remove(_relay_pid_path())
         print("relay is not running.")
         return
-    if sv.stop_pid(pid, _relay_pid_path()):
+    if sv.stop_pid(pid, _relay_pid_path(), is_target=sv.pid_is_relay):
         print("relay stopped.")
         _release_obs_feeds()                # AFTER the kill — see docstring
     else:
