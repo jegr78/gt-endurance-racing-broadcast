@@ -1050,6 +1050,214 @@ def t_overlay_no_profile_is_error():
             m._env_base, m._runtime_base_dir = orig_b, orig_r
 
 
+def _mk_active_profile(td):
+    """Temp profile 'demo' + active pointer; returns the patched (env_base,
+    runtime_base) restorers' originals via a tuple. Mirrors the overlay tests."""
+    prof = os.path.join(td, "profiles", "demo")
+    os.makedirs(prof)
+    open(os.path.join(prof, "profile.env"), "w").close()
+    open(os.path.join(td, ".env.example"), "w").close()
+    os.makedirs(os.path.join(td, "runtime"))
+    with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
+        fh.write("demo\n")
+    orig = (m._env_base, m._runtime_base_dir)
+    m._env_base = lambda *a, **k: td
+    m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+    return orig
+
+
+def t_overlay_layout_write_compiles_and_persists():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        try:
+            w = m.overlay_layout_write_data(
+                "hud", {"page": "hud",
+                        "slots": {"stint": {"left": 800, "top": 30, "fontSize": 44}}})
+            r = m.overlay_layout_read_data("hud")
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert w["ok"] is True and "left: 800px" in w["css"] and "font-size: 44px" in w["css"]
+        od = os.path.join(td, "profiles", "demo", "overlay")
+        assert os.path.exists(os.path.join(od, "hud.css"))
+        assert os.path.exists(os.path.join(od, "layout-hud.json"))
+        # relay serves the generated hud.css verbatim -> the compiled CSS is on disk
+        with open(os.path.join(od, "hud.css"), encoding="utf-8") as fh:
+            assert "left: 800px" in fh.read()
+        assert r["ok"] and r["migrated"] is False
+        assert r["layout"]["slots"]["stint"]["left"] == 800
+
+
+def t_overlay_layout_read_migrates_handwritten_css():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        od = os.path.join(td, "profiles", "demo", "overlay")
+        os.makedirs(od)
+        with open(os.path.join(od, "hud.css"), "w", encoding="utf-8") as fh:
+            fh.write("#stint{left:999px}/* mine */")
+        try:
+            r = m.overlay_layout_read_data("hud")    # no layout-hud.json yet
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert r["ok"] and r["migrated"] is True
+        assert r["layout"]["customCss"] == "#stint{left:999px}/* mine */"
+        assert r["layout"]["slots"] == {}
+
+
+def t_overlay_layout_write_rejects_unknown_page():
+    assert m.overlay_layout_write_data("panel", {"page": "panel"})["ok"] is False
+
+
+def t_overlay_slots_data_from_real_hud():
+    r = m.overlay_slots_data("hud")
+    assert r["ok"] is True
+    assert any(s["id"] == "stint" for s in r["slots"])
+    assert "#stint" in r["css"] and r["sample"]["stint"]
+
+
+def t_overlay_fonts_upload_then_list_and_serve():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        try:
+            up = m.overlay_font_upload_data("League.woff2", b"OTTOfontbytes")
+            bad = m.overlay_font_upload_data("../evil.woff2", b"x")
+            badext = m.overlay_font_upload_data("League.exe", b"x")
+            listing = m.overlay_fonts_list_data()
+            served = m.overlay_font_serve("League.woff2")
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert up["ok"] is True and up["name"] == "League.woff2"
+        assert bad["ok"] is False and badext["ok"] is False
+        assert listing["ok"] and listing["fonts"] == ["League.woff2"]
+        assert served and served[1] == "font/woff2"
+        assert os.path.basename(served[0]) == "League.woff2"
+
+
+def t_machine_font_download_into_library():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        css = ('@font-face{font-family:Oswald;'
+               'src:url(https://fonts.gstatic.com/s/oswald/v1/x.woff2) format("woff2")}')
+        try:
+            d = m.machine_font_download_data(
+                "Oswald", css_fetch=lambda u: css, bin_fetch=lambda u: b"WOFF2DATA")
+            lib = m.machine_fonts_list_data()
+            ov = m.overlay_fonts_list_data()
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert d["ok"] is True and d["name"] == "Oswald.woff2"
+        # lands in the machine-wide library, NOT the profile, until used
+        assert os.path.exists(os.path.join(td, "runtime", "fonts", "Oswald.woff2"))
+        assert "Oswald.woff2" in lib["fonts"] and "Oswald" in lib["catalog"]
+        assert "Oswald.woff2" in ov["library"] and "Oswald.woff2" not in ov["fonts"]
+
+
+def t_machine_font_download_rejects_unsafe_name():
+    # SSRF gate: a name with path/host tricks is rejected before any fetch.
+    hit = {"n": 0}
+    d = m.machine_font_download_data(
+        "../etc/passwd", css_fetch=lambda u: hit.__setitem__("n", 1) or "x",
+        bin_fetch=lambda u: b"x")
+    assert d["ok"] is False and "invalid" in d["error"] and hit["n"] == 0
+
+
+def t_machine_font_download_allows_uncurated_name():
+    # Any syntactically valid family (not just the catalog) is fetchable.
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        try:
+            d = m.machine_font_download_data(
+                "Big Shoulders Display",
+                css_fetch=lambda u: "url(https://fonts.gstatic.com/x.woff2)",
+                bin_fetch=lambda u: b"DATA")
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert d["ok"] is True and d["name"] == "BigShouldersDisplay.woff2"
+
+
+def t_machine_font_download_no_woff2_is_error():
+    d = m.machine_font_download_data(
+        "Oswald", css_fetch=lambda u: "/* nothing */", bin_fetch=lambda u: b"")
+    assert d["ok"] is False
+
+
+def t_machine_font_delete_removes_from_library():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        try:
+            m.machine_font_download_data(
+                "Oswald", css_fetch=lambda u: "url(https://fonts.gstatic.com/x.woff2)",
+                bin_fetch=lambda u: b"DATA")
+            before = m.machine_fonts_list_data()["fonts"]
+            d = m.machine_font_delete_data("Oswald.woff2")
+            after = m.machine_fonts_list_data()["fonts"]
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert "Oswald.woff2" in before and d["ok"] is True
+        assert "Oswald.woff2" not in after
+
+
+def t_google_font_catalog_parses_metadata():
+    meta = ('{"familyMetadataList":[{"family":"Oswald"},{"family":"Big Shoulders Display"},'
+            '{"family":"Bad/Name"},{"family":"Roboto"}]}')
+    d = m.google_font_catalog_data(fetch=lambda: meta)
+    assert d["ok"] is True and d["source"] == "google"
+    assert "Oswald" in d["families"] and "Big Shoulders Display" in d["families"]
+    assert "Bad/Name" not in d["families"]                 # unfetchable names filtered out
+    assert d["families"] == sorted(d["families"])          # sorted for the typeahead
+
+
+def t_google_font_catalog_falls_back_to_curated():
+    def boom():
+        raise OSError("offline")
+    d = m.google_font_catalog_data(fetch=boom)
+    assert d["ok"] is True and d["source"] == "curated"
+    assert d["families"] == list(m.ob.GOOGLE_FONTS)
+
+
+def t_overlay_save_copies_referenced_library_font_into_profile():
+    # Copy-on-save: a design that references a library font copies it into the
+    # profile (portable export) and emits its @font-face in the generated CSS.
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        try:
+            m.machine_font_download_data(
+                "Oswald", css_fetch=lambda u: "url(https://fonts.gstatic.com/x.woff2)",
+                bin_fetch=lambda u: b"DATA")
+            w = m.overlay_layout_write_data(
+                "hud", {"page": "hud",
+                        "slots": {"stint": {"fontFamily": "Oswald"}}})
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert w["ok"] is True
+        copied = os.path.join(td, "profiles", "demo", "overlay", "fonts", "Oswald.woff2")
+        assert os.path.exists(copied)                 # copied into the profile
+        assert "@font-face" in w["css"] and 'font-family: "Oswald"' in w["css"]
+        assert 'url(/overlay/fonts/Oswald.woff2)' in w["css"]
+
+
+def t_overlay_bg_path_present_and_absent():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        try:
+            assert m.overlay_bg_path() is None         # no Overlay.png yet
+            g = os.path.join(td, "runtime", "demo", "graphics")
+            os.makedirs(g)
+            with open(os.path.join(g, "Overlay.png"), "wb") as fh:
+                fh.write(b"\x89PNG")
+            hit = m.overlay_bg_path()
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert hit and hit.endswith("Overlay.png")
+
+
 def t_obs_page_paths_include_overrides():
     assert m.OBS_PAGE_PATHS == ("/hud", "/timer", "/hud/override.css", "/timer/override.css")
 

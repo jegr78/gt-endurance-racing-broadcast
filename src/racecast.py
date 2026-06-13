@@ -38,6 +38,7 @@ import init_setup as ins
 import config as pcfg    # 'pcfg' (not 'cfg'): avoids F811 clash with local `cfg = json.loads(...)` dicts elsewhere in this file
 import profile_admin as pa
 import chat_admin as ca
+import overlay_build as ob
 
 # PyInstaller marks the frozen binary with sys.frozen and unpacks bundled data
 # (the whole src/ tree) to sys._MEIPASS. Repo + package mode stay subprocess-based.
@@ -2358,6 +2359,352 @@ def overlay_write_data(page, content):
         return {"ok": False, "error": f"could not write overlay css: {exc}"}
 
 
+# --- Visual overlay builder (issue #114): layout model -> generated override.css.
+# The builder OWNS <page>.css (generated); layout-<page>.json is the source of
+# truth. The relay serves the generated CSS unchanged, so no relay change. ---
+
+def _atomic_write_text(path, text):
+    """Write text to path via tmp+os.replace (mirrors overlay_write_data)."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+
+
+def _overlay_base_html(page):
+    """Text of the base overlay page (src/obs/<page>.html), or '' on error."""
+    if page not in ("hud", "timer"):
+        return ""
+    try:
+        with open(resource_path(f"obs/{page}.html"), encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def _overlay_layout_path(page):
+    """(active, abs path to overlay/layout-<page>.json) or (None, None)."""
+    active, css_path = _active_profile_overlay_path(page)
+    if not active:
+        return None, None
+    return active, os.path.join(os.path.dirname(css_path), f"layout-{page}.json")
+
+
+def overlay_slots_data(page):
+    """The base page's editable slots + base <style> + slot markup + sample data,
+    so the Control Center renders a same-origin WYSIWYG canvas.
+    {ok, page, slots, css, body, sample} or {ok:false, error}."""
+    try:
+        if page not in ("hud", "timer"):
+            return {"ok": False, "error": "invalid page"}
+        html = _overlay_base_html(page)
+        if not html:
+            return {"ok": False, "error": "base page not bundled"}
+        return {"ok": True, "page": page, "slots": ob.extract_slots(html),
+                "css": ob.base_style(html), "body": ob.base_body(html),
+                "sample": ob.SAMPLE.get(page, {})}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not read overlay slots: {exc}"}
+
+
+def overlay_layout_read_data(page):
+    """The active profile's layout-<page>.json for the builder. First use of a
+    profile with a hand-written <page>.css and no layout imports that CSS verbatim
+    into customCss (migration — never reverse-parsed).
+    {ok, page, active, layout, migrated} or {ok:false, error}."""
+    try:
+        active, lpath = _overlay_layout_path(page)
+        if not active:
+            return {"ok": False, "error": "no active profile or invalid page"}
+        if os.path.exists(lpath):
+            with open(lpath, encoding="utf-8") as fh:
+                layout = json.load(fh)
+            return {"ok": True, "page": page, "active": active,
+                    "layout": layout, "migrated": False}
+        _, css_path = _active_profile_overlay_path(page)
+        existing = ""
+        if os.path.exists(css_path):
+            with open(css_path, encoding="utf-8") as fh:
+                existing = fh.read()
+        migrated = bool(existing.strip())
+        layout = (ob.migrate_layout(page, existing) if migrated
+                  else ob.empty_layout(page))
+        return {"ok": True, "page": page, "active": active,
+                "layout": layout, "migrated": migrated}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not read overlay layout: {exc}"}
+
+
+def _validate_layout(layout, page):
+    """Structural gate before compile: (ok, error)."""
+    if not isinstance(layout, dict):
+        return False, "layout must be an object"
+    if layout.get("page") not in (page, None):
+        return False, "layout page mismatch"
+    if not isinstance(layout.get("slots", {}), dict):
+        return False, "slots must be an object"
+    if not isinstance(layout.get("fonts", []), list):
+        return False, "fonts must be a list"
+    if not isinstance(layout.get("customCss", ""), str):
+        return False, "customCss must be a string"
+    return True, None
+
+
+def _materialize_overlay_fonts(layout):
+    """Copy fonts the layout references (slot fontFamily + bodyFont) from the
+    machine library into the active profile's overlay/fonts/ when not already
+    there, then return the authoritative profile font filename list. Library
+    fonts are .woff2; profile uploads keep their own extension and are left as-is."""
+    fdir = _overlay_fonts_dir()
+    if not fdir:
+        return _list_fonts(fdir)
+    present_stems = {f.rsplit(".", 1)[0] for f in _list_fonts(fdir)}
+    referenced = set()
+    for ov in (layout.get("slots") or {}).values():
+        if isinstance(ov, dict) and ov.get("fontFamily"):
+            referenced.add(ov["fontFamily"])
+    if layout.get("bodyFont"):
+        referenced.add(layout["bodyFont"])
+    lib = _machine_fonts_dir()
+    for stem in referenced:
+        if stem in present_stems:
+            continue
+        src = _font_path(lib, stem + ".woff2")
+        if src:
+            os.makedirs(fdir, exist_ok=True)
+            shutil.copy2(src, os.path.join(fdir, stem + ".woff2"))
+    return _list_fonts(fdir)
+
+
+def overlay_layout_write_data(page, layout):
+    """Validate + compile the layout to <page>.css and persist layout-<page>.json
+    and <page>.css atomically. The slot list comes from the base page (never the
+    client) and the compiler drops unknown slots/props, so only customCss is
+    verbatim. {ok, path, css} or {ok:false, error}."""
+    try:
+        active, lpath = _overlay_layout_path(page)
+        if not active:
+            return {"ok": False, "error": "no active profile or invalid page"}
+        ok, err = _validate_layout(layout, page)
+        if not ok:
+            return {"ok": False, "error": err}
+        layout = dict(layout)
+        layout["version"], layout["page"] = 1, page
+        # Copy-on-save: any font the design references that lives in the machine
+        # library (not yet in the profile) is copied into overlay/fonts/, so the
+        # relay serves it and `profile export` stays self-contained. layout.fonts
+        # is then made authoritative from the profile dir (client value advisory).
+        layout["fonts"] = _materialize_overlay_fonts(layout)
+        slots = ob.extract_slots(_overlay_base_html(page))
+        css = ob.compile_overlay_css(layout, slots)
+        _, css_path = _active_profile_overlay_path(page)
+        os.makedirs(os.path.dirname(lpath), exist_ok=True)
+        _atomic_write_text(lpath, json.dumps(layout, indent=2))
+        _atomic_write_text(css_path, css)
+        return {"ok": True, "path": css_path, "css": css}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not write overlay layout: {exc}"}
+
+
+def _overlay_fonts_dir():
+    od = _active_overlay_dir()
+    return os.path.join(od, "fonts") if od else None
+
+
+def _machine_fonts_dir():
+    """Machine-wide overlay font library (runtime/fonts/), shared across profiles.
+    Managed in General Settings; the builder copies what a design uses into the
+    profile on save (so exports stay self-contained)."""
+    return os.path.join(_runtime_base_dir(), "fonts")
+
+
+def _font_name_ok(name):
+    """True for a safe overlay font filename (whitelisted name + extension)."""
+    return (isinstance(name, str) and bool(ob.FONT_NAME_RE.match(name))
+            and "." in name and name.rsplit(".", 1)[1].lower() in ob.FONT_EXTS)
+
+
+def _list_fonts(dirpath):
+    """Sorted valid font filenames in dirpath (empty when absent)."""
+    out = []
+    if dirpath and os.path.isdir(dirpath):
+        for n in sorted(os.listdir(dirpath)):
+            if _font_name_ok(n):
+                out.append(n)
+    return out
+
+
+def _font_path(dirpath, name):
+    """Resolve an existing font to a contained path, or None when unsafe/missing."""
+    if not dirpath or not _font_name_ok(name):
+        return None
+    base = os.path.realpath(dirpath)
+    # Containment its own statement so CodeQL recognizes the traversal barrier.
+    path = os.path.realpath(os.path.join(base, name))
+    if not path.startswith(base + os.sep) or not os.path.isfile(path):
+        return None
+    return path
+
+
+def _write_font(dirpath, name, data):
+    """Validate + atomically write a font into dirpath. (ok, name|error)."""
+    if not _font_name_ok(name):
+        return False, "invalid font name"
+    if not isinstance(data, (bytes, bytearray)) or not data:
+        return False, "empty font data"
+    os.makedirs(dirpath, exist_ok=True)
+    base = os.path.realpath(dirpath)
+    path = os.path.realpath(os.path.join(base, name))
+    if not path.startswith(base + os.sep):
+        return False, "invalid font name"
+    with open(path + ".tmp", "wb") as fh:
+        fh.write(data)
+    os.replace(path + ".tmp", path)
+    return True, name
+
+
+def overlay_fonts_list_data():
+    """Fonts the builder can pick: the active profile's own overlay/fonts/ plus
+    the machine-wide library. {ok, active, fonts, library} or {ok:false, error}."""
+    try:
+        active = _active_profile_name()
+        if not active:
+            return {"ok": False, "error": "no active profile"}
+        return {"ok": True, "active": active,
+                "fonts": _list_fonts(_overlay_fonts_dir()),
+                "library": _list_fonts(_machine_fonts_dir())}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not list fonts: {exc}"}
+
+
+def overlay_font_upload_data(name, data):
+    """Persist an uploaded font into the active profile's overlay/fonts/ after
+    whitelist validation. {ok, name} or {ok:false, error}."""
+    try:
+        if not _active_profile_name():
+            return {"ok": False, "error": "no active profile"}
+        ok, res = _write_font(_overlay_fonts_dir(), name, data)
+        return {"ok": True, "name": res} if ok else {"ok": False, "error": res}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not upload font: {exc}"}
+
+
+def overlay_bg_path():
+    """The active profile's Overlay.png (canvas background), or None if absent."""
+    g_dir, _ = _asset_dirs()
+    path = os.path.join(g_dir, "Overlay.png")
+    return path if os.path.isfile(path) else None
+
+
+def overlay_font_serve(name):
+    """(path, content_type) for an overlay font the canvas references: the active
+    profile's overlay/fonts/ first, then the machine library (so a builder can
+    preview a library font before it is copied into the profile on save). None
+    when unsafe/missing."""
+    if not _font_name_ok(name):
+        return None
+    path = _font_path(_overlay_fonts_dir(), name) or _font_path(_machine_fonts_dir(), name)
+    if not path:
+        return None
+    return path, ob.FONT_CTYPES[name.rsplit(".", 1)[1].lower()]
+
+
+# A modern-browser UA so Google's css2 endpoint serves woff2 (not legacy ttf).
+_GOOGLE_FONT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/120.0.0.0 Safari/537.36")
+
+
+def _http_get(url, headers=None, binary=False, timeout=15):
+    import urllib.request
+    req = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(req, timeout=timeout) as r:   # noqa: S310 (fixed Google hosts, allow-listed name)
+        data = r.read()
+    return data if binary else data.decode("utf-8", "replace")
+
+
+def machine_fonts_list_data():
+    """The machine-wide font library + the curated catalog available to add.
+    Machine-scoped (no active profile needed). {ok, fonts, catalog}."""
+    try:
+        return {"ok": True, "fonts": _list_fonts(_machine_fonts_dir()),
+                "catalog": list(ob.GOOGLE_FONTS)}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not list fonts: {exc}"}
+
+
+def machine_font_download_data(name, css_fetch=None, bin_fetch=None):
+    """Self-host a Google font (curated or any typed family) into the machine-wide
+    library (runtime/fonts/). {ok, name} or {ok:false, error}. SSRF-safe: `name`
+    must match ob.GOOGLE_FONT_NAME_RE (letters/digits/spaces only), the css host is
+    the fixed googleapis endpoint, and the downloaded woff2 must be on gstatic. The
+    fetchers are injectable for tests."""
+    try:
+        if not ob.is_google_font_name(name):
+            return {"ok": False, "error": "invalid font name"}
+        css_fetch = css_fetch or (lambda u: _http_get(
+            u, headers={"User-Agent": _GOOGLE_FONT_UA}))
+        bin_fetch = bin_fetch or (lambda u: _http_get(u, binary=True))
+        # Try the bold weight first, then fall back to the family's default face
+        # (display fonts without a 700 weight 400 a `:wght@700` request).
+        m = None
+        for url in (ob.google_font_css_url(name),
+                    ob.google_font_css_url(name, weight=None)):
+            try:
+                css = css_fetch(url)
+            except Exception:                     # a 400 for a missing weight, etc.
+                continue
+            # The woff2 must live on the fixed Google CDN host (defense in depth).
+            m = re.search(r"url\((https://fonts\.gstatic\.com/[^)]+\.woff2)\)", css or "")
+            if m:
+                break
+        if not m:
+            return {"ok": False, "error": "no woff2 in Google CSS (unknown font?)"}
+        data = bin_fetch(m.group(1))
+        if not data:
+            return {"ok": False, "error": "empty font download"}
+        ok, res = _write_font(_machine_fonts_dir(), ob.google_font_filename(name), data)
+        return {"ok": True, "name": res} if ok else {"ok": False, "error": res}
+    except Exception as exc:
+        return {"ok": False, "error": f"google font download failed: {exc}"}
+
+
+def machine_font_delete_data(name):
+    """Remove a font from the machine-wide library. {ok, removed} or {ok:false, error}."""
+    try:
+        path = _font_path(_machine_fonts_dir(), name)
+        if not path:
+            return {"ok": False, "error": "font not found"}
+        os.remove(path)
+        return {"ok": True, "removed": name}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not delete font: {exc}"}
+
+
+# Keyless full Google-fonts family list (the metadata endpoint the fonts.google.com
+# site itself uses — no API key, so no secret to manage). Powers the Settings
+# free-text typeahead; cached by the caller and falling back to the curated list.
+_GOOGLE_FONTS_METADATA_URL = "https://fonts.google.com/metadata/fonts"
+
+
+def google_font_catalog_data(fetch=None):
+    """All Google font family names for the typeahead, via the keyless metadata
+    endpoint. Falls back to the curated catalog on any failure (so the datalist is
+    never empty). {ok, families:[...], source:"google"|"curated"}. `fetch` injectable."""
+    try:
+        fetch = fetch or (lambda: _http_get(
+            _GOOGLE_FONTS_METADATA_URL, headers={"User-Agent": _GOOGLE_FONT_UA}))
+        raw = fetch()
+        data = json.loads(raw.lstrip(")]}'\n ") if isinstance(raw, str) else raw)
+        fams = sorted({f["family"] for f in data.get("familyMetadataList", [])
+                       if isinstance(f, dict) and ob.is_google_font_name(f.get("family", ""))})
+        if fams:
+            return {"ok": True, "families": fams, "source": "google"}
+    except Exception:  # network/parse failure -> the curated list still works
+        pass
+    return {"ok": True, "families": list(ob.GOOGLE_FONTS), "source": "curated"}
+
+
 def backup_list_data():
     """{ok, active, items:[...]} for the Control Center Looks card."""
     try:
@@ -3070,6 +3417,18 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
             return fresh
         return _prev["data"] or fresh
 
+    # The Google-fonts catalog is a ~2.6 MB fetch -> cache the name list for a day.
+    _fontcat = {"at": 0.0, "data": None}
+
+    def font_catalog_cached():
+        now = time.time()
+        if _fontcat["data"] is not None and now - _fontcat["at"] <= 86400:
+            return _fontcat["data"]
+        fresh = google_font_catalog_data()
+        if fresh.get("source") == "google":
+            _fontcat["data"], _fontcat["at"] = fresh, now
+        return _fontcat["data"] or fresh
+
     ctx = {
         "version": version(),
         "page_path": resource_path("ui/control-center.html"),
@@ -3104,6 +3463,17 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "profile_env_write": profile_env_write_data,
         "overlay_read": overlay_read_data,
         "overlay_write": overlay_write_data,
+        "overlay_slots": overlay_slots_data,
+        "overlay_layout_read": overlay_layout_read_data,
+        "overlay_layout_write": overlay_layout_write_data,
+        "overlay_fonts": overlay_fonts_list_data,
+        "overlay_font_upload": overlay_font_upload_data,
+        "overlay_bg": overlay_bg_path,
+        "overlay_font_serve": overlay_font_serve,
+        "machine_fonts": machine_fonts_list_data,
+        "font_catalog": font_catalog_cached,
+        "machine_font_download": machine_font_download_data,
+        "machine_font_delete": machine_font_delete_data,
         "backup_list": backup_list_data,
         "backup_create": backup_create_data,
         "backup_restore": backup_restore_data,
