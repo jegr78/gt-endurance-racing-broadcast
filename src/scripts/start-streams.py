@@ -2,8 +2,9 @@
 """Launch one streamlink server per channel (static/public mode), backgrounded,
 each with a log + PID file so stop-streams.py can shut them down.
 Feeds come from <state-dir>/streams.json (managed by the Control Center) when
-present, else the built-in FEEDS default below — (CHANNEL_ID, PORT). Ports must
-match the OBS media sources.
+present, else the built-in FEEDS default below — (CHANNEL_ID_or_URL, PORT). Each
+channel may be a YouTube channel ID (UC…) or a full youtube.com / twitch.tv URL.
+Ports must match the OBS media sources.
 NOTE: PUBLIC channels only. The real unlisted flow is the relay (`racecast relay start`).
 """
 import argparse, json, os, re, shutil, subprocess, sys
@@ -96,8 +97,10 @@ STREAMS_CONFIG = "streams.json"
 def load_feeds(state_dir):
     """Feeds to serve: <state_dir>/streams.json (Control Center-managed) when it
     exists and parses, else the built-in FEEDS default. Returns a list of
-    (channel, port) string pairs; entries missing a channel or port are skipped,
-    and a malformed/empty file falls back to FEEDS so a bad edit never serves
+    (channel, port) string pairs; entries missing a channel or port are skipped;
+    entries with an invalid channel (neither a UC… id nor an allowed
+    youtube/twitch-host URL) are logged to stderr and skipped (SSRF-validation
+    gate); a malformed/empty file falls back to FEEDS so a bad edit never serves
     nothing."""
     path = os.path.join(state_dir, STREAMS_CONFIG)
     try:

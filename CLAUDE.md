@@ -392,12 +392,19 @@ against a ref. Its tags are `preview-*` (never `v*`), so it never triggers
 on close.
 
 ### Static mode (`src/scripts/`) — the simpler alternative
-`loopstream.py` keeps one streamlink server alive for one public channel; `start-streams.py`
-/ `stop-streams.py` manage a set of them with PID/log files under `runtime/static/`. This
-is the fallback for public streams; the real unlisted-stream flow is the relay. Invoke via
-`racecast streams start/stop` — `start-streams.py`/`stop-streams.py` are logic modules, not
-the operator entrypoint. `stop-streams.py` validates a PID actually belongs to a feed
-process before killing.
+`loopstream.py` keeps one streamlink server alive for one public channel (YouTube or
+Twitch); `start-streams.py` / `stop-streams.py` manage a set of them with PID/log files
+under `runtime/static/`. This is the fallback for **public** channels only — no yt-dlp
+bot-check, no unlisted streams; the real unlisted-stream flow is the relay. YouTube is
+served via Streamlink's direct HLS path; Twitch is served via Streamlink's Twitch plugin
+(low-latency, same flags as the relay — `STREAMLINK_TWITCH` is **duplicated from
+`racecast-feeds.py` and pinned byte-identical by a `getsource` cross-check in
+`tests/test_streams.py`** to prevent drift). Gated Twitch feeds use the same machine-level
+`twitch-cookies.txt` as the relay. Each feed entry may be a YouTube channel ID (UC…) or
+a full `youtube.com`/`twitch.tv` URL; invalid channels are rejected at load time by
+`is_channel()` (SSRF guard). Invoke via `racecast streams start/stop` —
+`start-streams.py`/`stop-streams.py` are logic modules, not the operator entrypoint.
+`stop-streams.py` validates a PID actually belongs to a feed process before killing.
 
 ### Companion remote-access helpers (`src/scripts/`)
 `companion_common.py` (tests `tests/test_companion.py`) contains the pure logic that binds
