@@ -571,28 +571,32 @@ def t_update_check_includes_release_notes():
     rel = {"tag_name": "v9.9.9", "body": "## What's new\n- stuff",
            "assets": [{"name": "racecast-macos.tar.gz", "browser_download_url": "https://x/m"}]}
     d = rc.update_check_data(fetch=lambda: rel, current="v1.0.0", platform="darwin")
+    # Release notes are GitHub-authored (untrusted) and shown as PLAINTEXT in the
+    # dialog (#101): the raw body is returned verbatim, no rendered-HTML field.
     assert d["ok"] and d["notes"] == "## What's new\n- stuff"
-    # notes_html is the rendered (and HTML-escaped) form for the dialog
-    assert "<h2>What's new</h2>" in d["notes_html"]
-    assert "<li>stuff</li>" in d["notes_html"]
+    assert "notes_html" not in d
 
 
-def t_update_check_notes_html_is_xss_safe():
+def t_update_check_notes_carry_no_rendered_html():
+    # An untrusted body must never be turned into HTML server-side (the client
+    # renders it via textContent), so a script/javascript-link body is returned
+    # verbatim as plaintext with no notes_html field to inject.
     rel = {"tag_name": "v9.9.9",
            "body": "[x](javascript:alert(1)) <script>alert(2)</script>",
            "assets": [{"name": "racecast-macos.tar.gz", "browser_download_url": "https://x/m"}]}
     d = rc.update_check_data(fetch=lambda: rel, current="v1.0.0", platform="darwin")
-    assert "javascript:" not in d["notes_html"]
-    assert "<script>" not in d["notes_html"]
+    assert "notes_html" not in d
+    assert d["notes"] == "[x](javascript:alert(1)) <script>alert(2)</script>"
 
 
-def t_preview_list_data_renders_notes_html():
+def t_preview_list_data_notes_are_plaintext():
     releases = [{"tag_name": "preview-pr-7", "prerelease": True, "name": "P7",
                  "target_commitish": "abc1234", "body": "**bold**",
                  "assets": [{"name": "racecast-macos.tar.gz",
                              "browser_download_url": "https://x/p7"}]}]
     d = rc.preview_list_data(fetch=lambda: releases, platform="darwin")
-    assert "<strong>bold</strong>" in d["previews"][0]["notes_html"]
+    assert d["previews"][0]["notes"] == "**bold**"
+    assert "notes_html" not in d["previews"][0]
 
 
 def t_preview_list_data_ok():

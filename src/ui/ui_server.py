@@ -631,6 +631,16 @@ def make_handler(ctx):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
+            # Defense-in-depth (#101): the page is fully self-contained (inline
+            # CSS/JS, same-origin assets), so a strict-ish CSP costs nothing and
+            # contains any future XSS — blocks external/object script loads and
+            # <base> hijacking. 'unsafe-inline' is required by the inline app code.
+            self.send_header(
+                "Content-Security-Policy",
+                "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+                "media-src 'self'; object-src 'none'; base-uri 'none'; "
+                "form-action 'none'")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)

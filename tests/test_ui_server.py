@@ -443,6 +443,21 @@ def t_root_serves_the_page():
         httpd.shutdown()
 
 
+def t_page_sets_csp_header():
+    # The served page carries a Content-Security-Policy (defense-in-depth for any
+    # future XSS; the page is fully self-contained so 'self' + inline is enough).
+    httpd, port = _serve(_ctx())
+    try:
+        with _urlopen(f"http://127.0.0.1:{port}/", timeout=5) as r:
+            csp = r.headers.get("Content-Security-Policy")
+        assert csp, "expected a Content-Security-Policy header"
+        assert "object-src 'none'" in csp
+        assert "base-uri 'none'" in csp
+        assert "script-src" in csp
+    finally:
+        httpd.shutdown()
+
+
 def t_probe_instance_classifies():
     ours = json.dumps({"app": us.APP_ID}).encode()
     assert us.probe_instance("h", 1, fetch=lambda h, p: ours) == "ours"
