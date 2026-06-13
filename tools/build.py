@@ -11,6 +11,21 @@ DIST = os.path.join(ROOT, "dist")
 PKG = os.path.join(DIST, "GT_Racecast_Package")
 
 
+# The SHEET_PUSH_URL (an Apps Script webhook) is the one league secret most
+# likely to leak into a committed artifact (e.g. the OBS json). The verify
+# allowlist below is per-pattern, so it would miss this *class*; catch the two
+# shapes — a /macros/.../exec endpoint and a ?key= query — explicitly (#103).
+# Scanned only against secret-free artifacts (OBS template / relay / companion),
+# never the docs, which legitimately document the webhook URL format.
+_APPSCRIPT_SECRET_RE = re.compile(r"/macros/|/exec\b|[?&]key=", re.IGNORECASE)
+
+
+def has_appscript_secret(text):
+    """True iff `text` contains an Apps Script webhook URL pattern (/macros/ or
+    /exec endpoint, or a ?key= query)."""
+    return bool(_APPSCRIPT_SECRET_RE.search(text or ""))
+
+
 def blank_pass(o):
     if isinstance(o, dict):
         for k, v in o.items():
@@ -137,6 +152,10 @@ def main():
         # collection legitimately has no __RACECAST_SHEET__ token — just assert no raw
         # sheet URL ever leaks in.
         "obs no raw sheet url": not re.search(r"/spreadsheets/d/[A-Za-z0-9_-]{20,}/", tpl),
+        # No Apps Script SHEET_PUSH_URL leaked into the secret-free artifacts (#103).
+        "obs no apps-script webhook": not has_appscript_secret(tpl),
+        "relay no apps-script webhook": not has_appscript_secret(relay),
+        "companion no apps-script webhook": not has_appscript_secret(blob),
         "obs timer is relay-served": "http://127.0.0.1:8088/timer" in tpl
             and "__RACECAST_TIMER__" not in tpl and "stagetimer" not in tpl,
         "relay timer endpoint": "/timer/data" in relay,
