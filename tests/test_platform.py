@@ -114,9 +114,12 @@ def _load_getcookies():
 def t_cookie_target():
     gc = _load_getcookies()
     out_yt, url_yt = gc.cookie_target("youtube", "/run")
-    assert out_yt.endswith("yt-cookies.txt") and "youtube.com" in url_yt
+    # exact URL match (not a substring check — avoids py/incomplete-url-substring-sanitization)
+    assert out_yt.endswith("yt-cookies.txt")
+    assert url_yt == "https://www.youtube.com/watch?v=jNQXAC9IVRw"
     out_tw, url_tw = gc.cookie_target("twitch", "/run")
-    assert out_tw.endswith("twitch-cookies.txt") and "twitch.tv" in url_tw
+    assert out_tw.endswith("twitch-cookies.txt")
+    assert url_tw == "https://www.twitch.tv"
 
 
 def t_failure_hint_twitch_no_profile():
