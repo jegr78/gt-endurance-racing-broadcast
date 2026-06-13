@@ -1006,7 +1006,7 @@ def ssai_warning(hls_url, logfile):
     return None
 
 
-# --- Temporary stubs: replaced by real implementations in later tasks of this feature ---
+# --- Per-platform cookie / ad-detection helpers (used by the Feed pull loop) ---
 def cookies_for(platform, cookie_dir):
     """Resolve the cookie file for a platform inside the shared cookie dir.
     YouTube prefers yt-cookies.txt and falls back to the legacy cookies.txt;
@@ -1668,7 +1668,7 @@ class Feed:
 
             if plat == "twitch":
                 token = twitch_oauth_from_cookies(
-                    cookies_for("twitch", self.cookie_dir))      # real impls land in later tasks
+                    cookies_for("twitch", self.cookie_dir))      # None for public Twitch (no auth file)
                 target, serve_platform = url, "twitch"           # no yt-dlp hop
             else:
                 hls, err = resolve_hls(url, self.cookies, self.logfile, self.fmt)
