@@ -19,7 +19,7 @@
   racecast chat      clear | pull <ip> [--port N] | import <file> | export [--out PATH]
   racecast backup    {create|list|restore|delete} <label>   # named look snapshots (overlay+graphics+media)
   racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
-  racecast preflight | cookies [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
+  racecast preflight | cookies [twitch] [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   racecast export companion [--out PATH]     # write the Companion button config
   racecast init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
   racecast update [--check] [--yes] [--tag TAG]   # self-update the binary (--tag installs an exact release)
@@ -467,7 +467,7 @@ def _oneshot_extra(command, rest, runtime_dir, base_dir):
     under runtime/<profile>/ in every run mode -- those are baked into the OBS
     collection as absolute paths. The machine-level one-shots that take
     --runtime-dir (preflight, cookies) get the un-scoped BASE runtime, so the
-    shared cookie jar stays at runtime/cookies.txt. The user's own --out wins."""
+    shared cookie jar stays at runtime/yt-cookies.txt. The user's own --out wins."""
     extra = []
     if command in RUNTIME_DIR_ONESHOTS:
         extra += ["--runtime-dir", base_dir]
@@ -493,9 +493,17 @@ def _relay_log_path():
     return os.path.join(_runtime_dir(), "logs", "relay.console.log")
 
 def _cookies_path():
-    """The YouTube cookie jar -- SHARED across leagues (a machine-level login),
-    so it lives at the un-scoped runtime/ root, never under a profile dir."""
-    return os.path.join(_runtime_base_dir(), "cookies.txt")
+    """The YouTube cookie jar -- SHARED across leagues, at the un-scoped runtime/
+    root. Canonical name is yt-cookies.txt; a legacy cookies.txt is migrated once."""
+    base = _runtime_base_dir()
+    new = os.path.join(base, "yt-cookies.txt")
+    legacy = os.path.join(base, "cookies.txt")
+    if not os.path.isfile(new) and os.path.isfile(legacy):
+        try:
+            os.replace(legacy, new)
+        except OSError:
+            return legacy   # migration failed -> keep using legacy this run
+    return new
 
 def _active_overlay_dir():
     """profiles/<active>/overlay for the active profile, or None when no profile
@@ -1750,6 +1758,15 @@ ONESHOT_MAP = {
 RUNTIME_DIR_ONESHOTS = ("preflight", "cookies")
 
 
+def _cookies_oneshot_args(rest):
+    """Translate `cookies` subcommand args. A leading 'twitch' selects the Twitch
+    export (--platform twitch); anything else is the YouTube browser as before."""
+    rest = list(rest)
+    if rest and rest[0] == "twitch":
+        return ["--platform", "twitch"] + rest[1:]
+    return rest
+
+
 def _oneshot_code(command, rest):
     """Run a one-shot and return its exit code (the seam `racecast init` uses to
     chain steps — oneshot() below keeps the exit-the-CLI behavior)."""
@@ -1760,6 +1777,8 @@ def _oneshot_code(command, rest):
         # in (real environment wins, same semantics as the scripts' load_dotenv).
         for key, val in _read_env_file().items():
             os.environ.setdefault(key, val)
+    if command == "cookies":
+        rest = _cookies_oneshot_args(rest)
     extra = _oneshot_extra(command, rest, _runtime_dir(), _runtime_base_dir())
     if command == "update" and "--current" not in rest:
         extra += ["--current", version()]

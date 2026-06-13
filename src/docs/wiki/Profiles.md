@@ -52,8 +52,9 @@ Two kinds of config live in two different places — keep them straight:
   active league), and `RACECAST_UI_PASSWORD` (reserved, not yet read). These apply to the
   machine regardless of which league is active.
 
-Some state is **shared across leagues** and lives at the machine level: the YouTube
-**cookies** and the `runtime/active-profile` pointer (which league is current).
+Some state is **shared across leagues** and lives at the machine level: the **cookies**
+(`yt-cookies.txt` for YouTube, `twitch-cookies.txt` for gated Twitch feeds) and the
+`runtime/active-profile` pointer (which league is current).
 **Per-league** state — downloaded graphics, intro/outro media, the localized OBS import —
 lives under `runtime/<name>/`.
 

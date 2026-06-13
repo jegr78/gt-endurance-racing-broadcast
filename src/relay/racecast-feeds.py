@@ -28,13 +28,21 @@ SCHEDULE SOURCE (Google Sheet, editable remotely by anyone):
   If the sheet is unreachable, the last working list is kept (last-good +
   local cache); without a sheet the local schedule.txt is used.
 
-COOKIES (against YouTube's "Sign in to confirm you're not a bot"):
-  Put a cookies.txt (Netscape format, exported from a logged-in YouTube
-  browser, e.g. via the "Get cookies.txt LOCALLY" extension) NEXT TO this
-  script — it is auto-detected and passed to Streamlink (--http-cookies-file).
-  Or pass it explicitly:  --cookies /path/to/cookies.txt
-  Always enter UNLISTED streams as a watch URL (https://www.youtube.com/watch?v=…)
-  in the schedule — the channel /live URL only works for PUBLIC streams.
+COOKIES:
+  YouTube (required for unlisted/private streams): put a yt-cookies.txt
+  (Netscape format, exported from a logged-in YouTube browser via
+  `racecast cookies firefox`) next to this script — it is auto-detected
+  and passed to yt-dlp. A legacy cookies.txt is migrated automatically.
+  Or pass it explicitly: --cookies /path/to/yt-cookies.txt
+  Twitch (optional): gated/follower-only feeds use twitch-cookies.txt
+  (exported via `racecast cookies twitch firefox`); public Twitch streams
+  need no cookies at all. The relay picks it up automatically for Twitch feeds.
+
+SCHEDULE ENTRIES — use a full watch URL for each stint:
+  YouTube: https://www.youtube.com/watch?v=VIDEOID  (bare UC… channel IDs
+    also work as a shorthand for YouTube public /live streams; unlisted streams
+    MUST use the full watch URL — the channel /live URL only works for public).
+  Twitch:  https://www.twitch.tv/<channel>  (no bare-ID short form for Twitch).
 
 Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   GET /status          -> state of both feeds + source/sheet health (JSON)
@@ -86,6 +94,10 @@ import chat_admin  # required (ChatStore); src/scripts is on sys.path via the bl
 YTDLP_FORMAT = "b[height<=1080]/b"   # prefer <=1080p, auto-fall back to lower
 YTDLP_FORMAT_POV = "b[height<=720]/b"  # driver-POV is shown small (PiP) -> cap at 720p
 STREAMLINK_SERVE = ["--ringbuffer-size", "64M", "--hls-live-edge", "4"]
+# Twitch is served DIRECTLY by Streamlink's twitch plugin (no yt-dlp hop), so its
+# plugin options apply: low-latency prefetch + a tighter live edge. Ad filtering is
+# automatic in current Streamlink (the old --twitch-disable-ads is deprecated).
+STREAMLINK_TWITCH = ["--ringbuffer-size", "64M", "--hls-live-edge", "2", "--twitch-low-latency"]
 RESOLVE_RETRY = 15  # seconds between yt-dlp resolve attempts while a stint isn't live
 COOKIE_MAX_AGE_H = 12   # keep in sync with preflight.py cookies_status(max_age_hours)
 RETRY_SLEEP = 10    # seconds after a stream ends / manifest expires before re-resolving
@@ -388,6 +400,19 @@ def _is_stream_url(v: str) -> bool:
 def is_channel(v: str) -> bool:
     v = v.strip()
     return bool(CHANNEL_RE.match(v)) or _is_stream_url(v)
+
+def platform_of(url):
+    """Which streaming platform a (possibly bare-ID-wrapped) URL targets.
+    Host-based, reusing the userinfo-safe parse from _is_stream_url. Anything
+    that is not a Twitch host (including bare UC ids, which channel_url wraps
+    into a youtube.com URL) is treated as YouTube -- the default path."""
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        host = ""
+    if host == "twitch.tv" or host.endswith(".twitch.tv"):
+        return "twitch"
+    return "youtube"
 
 def asset_key(s):
     """Normalize free text (country/brand) to an asset filename stem."""
@@ -948,6 +973,87 @@ class ChatStore:
         return {"ok": True, "count": len(msgs)}
 
 
+# HLS tags that signal server-side ad insertion (SCTE-35 splice cues or an
+# ad-classed date-range). Their PRESENCE in a YouTube manifest means the source
+# is stitching ads we cannot reliably strip — we warn, never skip.
+_SSAI_RE = re.compile(r"#EXT-X-(?:CUE-OUT|SCTE35|DATERANGE:[^\n]*(?:CLASS=\"[^\"]*ad|SCTE35-OUT))",
+                      re.IGNORECASE)
+
+
+def manifest_has_ssai_markers(text):
+    """True iff an HLS playlist body carries server-side-ad-insertion markers.
+    Pure + best-effort: empty/None -> False."""
+    return bool(text) and bool(_SSAI_RE.search(text))
+
+
+def ssai_warning(hls_url, logfile):
+    """Fetch the resolved manifest once and, if it carries SSAI markers, return a
+    short warning string for /status (else None). Best-effort: any network/parse
+    failure returns None so the feed is never blocked by the probe."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen(hls_url, timeout=10) as r:   # noqa: S310 (https HLS only)
+            body = r.read(65536).decode("utf-8", errors="replace")
+    except Exception:
+        return None   # probe is a bonus signal; never fail the resolve on it
+    if manifest_has_ssai_markers(body):
+        try:
+            with open(logfile, "a", encoding="utf-8") as log:
+                log.write("   WARN: source manifest carries server-side ads (cannot strip)\n")
+        except Exception:
+            pass  # logging best-effort
+        return "source has server-side ads (not a clean broadcast feed)"
+    return None
+
+
+# --- Per-platform cookie / ad-detection helpers (used by the Feed pull loop) ---
+def cookies_for(platform, cookie_dir):
+    """Resolve the cookie file for a platform inside the shared cookie dir.
+    YouTube prefers yt-cookies.txt and falls back to the legacy cookies.txt;
+    Twitch uses twitch-cookies.txt. Returns an existing path or None (public).
+    Pure (no migration side effects — see migrate_legacy_cookie)."""
+    if not cookie_dir:
+        return None
+    if platform == "twitch":
+        p = os.path.join(cookie_dir, "twitch-cookies.txt")
+        return p if os.path.isfile(p) else None
+    p = os.path.join(cookie_dir, "yt-cookies.txt")
+    if os.path.isfile(p):
+        return p
+    legacy = os.path.join(cookie_dir, "cookies.txt")
+    return legacy if os.path.isfile(legacy) else None
+
+def migrate_legacy_cookie(cookie_dir):
+    """Rename a legacy cookies.txt to yt-cookies.txt once, if the new name does
+    not yet exist. Returns the canonical yt-cookies.txt path. Best-effort."""
+    new = os.path.join(cookie_dir, "yt-cookies.txt")
+    legacy = os.path.join(cookie_dir, "cookies.txt")
+    if not os.path.isfile(new) and os.path.isfile(legacy):
+        try:
+            os.replace(legacy, new)
+        except OSError:
+            return legacy   # migration failed -> keep using legacy this run
+    return new
+
+def twitch_oauth_from_cookies(path):
+    """Extract the Twitch `auth-token` value from a Netscape cookies file, for
+    Streamlink's --twitch-api-header. Returns the token or None (public/no auth).
+    Pure-ish (reads a file); any error -> None."""
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if line.startswith("#") or "\t" not in line:
+                    continue
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) >= 7 and parts[5] == "auth-token" and parts[6]:
+                    return parts[6]
+    except OSError:
+        return None
+    return None
+
+
 def channel_url(entry: str) -> str:
     entry = entry.strip()
     if entry.startswith("http://") or entry.startswith("https://"):
@@ -966,11 +1072,19 @@ def ytdlp_resolve_cmd(url, cookies, fmt=YTDLP_FORMAT):
     return cmd
 
 
-def streamlink_serve_cmd(hls, port):
-    """Argv for serving a resolved HLS URL to one OBS client. `--` separates the
-    positional URL/stream from the options so neither can be parsed as a flag."""
-    return (["streamlink", "--player-external-http", "--player-external-http-port", str(port)]
-            + STREAMLINK_SERVE + ["--", hls, "best"])
+def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None):
+    """Argv for serving a stream to one OBS client. YouTube gets a resolved HLS
+    URL (generic plugin); Twitch gets the twitch.tv URL itself so the Twitch
+    plugin handles resolution, automatic ad-filtering and low-latency. `--`
+    separates the positional URL/stream so neither can be parsed as a flag."""
+    base = ["streamlink", "--player-external-http", "--player-external-http-port", str(port)]
+    if platform == "twitch":
+        base += STREAMLINK_TWITCH
+        if twitch_token:
+            base += ["--twitch-api-header", f"Authorization=OAuth {twitch_token}"]
+    else:
+        base += STREAMLINK_SERVE
+    return base + ["--", target, "best"]
 
 
 def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
@@ -1471,13 +1585,15 @@ class SetupControl:
 
 
 class Feed:
-    def __init__(self, name, port, idx, provider, logdir, cookies=None, fmt=YTDLP_FORMAT):
+    def __init__(self, name, port, idx, provider, logdir, cookies=None, fmt=YTDLP_FORMAT,
+                 cookie_dir=None):
         self.name = name
         self.port = port
         self.idx = idx
         self.provider = provider          # callable -> current schedule list
-        self.cookies = cookies            # path to cookies.txt (bot-check protection) or None
+        self.cookies = cookies            # path to yt-cookies.txt (bot-check protection) or None
         self.fmt = fmt                    # yt-dlp format string (POV uses a lower cap)
+        self.cookie_dir = cookie_dir      # dir holding yt-/twitch-cookies.txt (for per-pull resolve)
         self.paused = False               # when True the feed idles (POV off / stopped)
         self.lock = threading.Lock()
         self.proc = None
@@ -1546,38 +1662,44 @@ class Feed:
                 time.sleep(3); continue
             self._set_phase("connecting")
             url = channel_url(ch)
+            plat = platform_of(url)
             with open(self.logfile, "a", encoding="utf-8") as log:
-                log.write(f"\n>> [{self.name}:{self.port}] stint {i+1} -> resolving {url}\n"); log.flush()
-            # 1) resolve the live HLS URL via yt-dlp (cookies + bot-check handling)
-            hls, err = resolve_hls(url, self.cookies, self.logfile, self.fmt)
-            if self.stop: break
-            if self.advance.is_set():
-                self.advance.clear(); continue
-            if not hls:
-                self.last_error = err       # surfaced via /status (panel health line)
-                time.sleep(RESOLVE_RETRY)   # not live yet / could not resolve -> poll again
-                continue
-            # 2) serve the direct HLS URL via streamlink (no YouTube plugin -> no bot-check)
+                log.write(f"\n>> [{self.name}:{self.port}] stint {i+1} ({plat}) -> {url}\n"); log.flush()
+
+            if plat == "twitch":
+                token = twitch_oauth_from_cookies(
+                    cookies_for("twitch", self.cookie_dir))      # None for public Twitch (no auth file)
+                target, serve_platform = url, "twitch"           # no yt-dlp hop
+            else:
+                hls, err = resolve_hls(url, self.cookies, self.logfile, self.fmt)
+                if self.stop: break
+                if self.advance.is_set():
+                    self.advance.clear(); continue
+                if not hls:
+                    self.last_error = err
+                    time.sleep(RESOLVE_RETRY); continue
+                self.last_error = ssai_warning(hls, self.logfile)  # warn, never block
+                token, target, serve_platform = None, hls, "youtube"
+
             with open(self.logfile, "a", encoding="utf-8") as log:
-                log.write(f">> [{self.name}:{self.port}] serving stint {i+1}\n"); log.flush()
-                cmd = streamlink_serve_cmd(hls, self.port)
+                log.write(f">> [{self.name}:{self.port}] serving stint {i+1} ({serve_platform})\n"); log.flush()
+                cmd = streamlink_serve_cmd(target, self.port, serve_platform, token)
                 try:
                     self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT,
                                                  **_no_window_kwargs())
-                    self.last_error = None
+                    if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
+                        self.last_error = None
                     self._set_phase("serving")
                     self.proc.wait()
                 except FileNotFoundError:
-                    # Startup checks for streamlink; reaching here means it vanished mid-run.
                     log.write(f">> [{self.name}] streamlink not found on PATH — retrying\n"); log.flush()
                     self.proc = None
                     time.sleep(RETRY_SLEEP); continue
-            self._set_phase("connecting")   # child gone -> we are reconnecting
-            if self.stop:
-                break
+            self._set_phase("connecting")
+            if self.stop: break
             if self.advance.is_set():
                 self.advance.clear(); continue
-            time.sleep(RETRY_SLEEP)   # stream ended / manifest expired -> re-resolve
+            time.sleep(RETRY_SLEEP)
 
     def shutdown(self):
         self.stop = True; self._kill_proc()
@@ -1595,12 +1717,13 @@ def should_probe_obs(last_ts, running, now, interval):
 
 class Relay:
     def __init__(self, source, ports, logdir, cookies=None, pov_source=None,
-                 pov_port=None, start_stint=1):
+                 pov_port=None, start_stint=1, cookie_dir=None):
         self.source = source
         self.cookies = cookies
+        self.cookie_dir = cookie_dir
         a_idx, b_idx = stint_start_indices(start_stint, len(source.get()))
-        self.A = Feed("A", ports[0], a_idx, source.get, logdir, cookies)
-        self.B = Feed("B", ports[1], b_idx, source.get, logdir, cookies)
+        self.A = Feed("A", ports[0], a_idx, source.get, logdir, cookies, cookie_dir=cookie_dir)
+        self.B = Feed("B", ports[1], b_idx, source.get, logdir, cookies, cookie_dir=cookie_dir)
         self.feeds = {"A": self.A, "B": self.B}
         self.obs_note = None          # last OBS note (None/"" = ok); read by status()
         self.obs_reachable = None     # last LIVE reachability probe; None until first /status
@@ -1613,7 +1736,7 @@ class Relay:
         self.pov = None
         if pov_source is not None and pov_port is not None:
             self.pov = Feed("POV", pov_port, 0, pov_source.get, logdir, cookies,
-                            fmt=YTDLP_FORMAT_POV)
+                            fmt=YTDLP_FORMAT_POV, cookie_dir=cookie_dir)
             self.pov.paused = True
 
     def start(self):
@@ -1633,6 +1756,7 @@ class Relay:
             ch, i = f.current_channel()
             out["feeds"][k] = {"port": f.port, "index": i, "stint": i + 1,
                                "channel": ch,
+                               "platform": platform_of(channel_url(ch)) if ch else None,
                                "state": "stopped" if f.paused else f.phase,
                                "state_age_s": round(now - f.phase_since, 1),
                                "last_error": f.last_error}
@@ -2018,7 +2142,7 @@ def _cookie_hint(stderr_text, browser):
 
 
 def export_cookies(browser, out):
-    """Export YouTube cookies from a logged-in browser to a Netscape cookies.txt
+    """Export YouTube cookies from a logged-in browser to a Netscape yt-cookies.txt
     using yt-dlp. Best-effort: returns True on success."""
     url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
     try:
@@ -2062,7 +2186,7 @@ def main():
     ap.add_argument("--schedule", default="schedule.txt", help="Local offline fallback")
     ap.add_argument("--http-port", type=int, default=8088)
     ap.add_argument("--runtime-dir", default=None,
-                    help="Directory for runtime data (cookies.txt, logs/, *.cache.txt). "
+                    help="Directory for runtime data (yt-cookies.txt, logs/, *.cache.txt). "
                          "Default: next to this script (keeps the distributed package "
                          "self-locating). The repo passes its runtime/ folder.")
     ap.add_argument("--bind", default="auto",
@@ -2096,13 +2220,15 @@ def main():
                          "Feed A serves it, Feed B preloads the next one. Default 1.")
     ap.add_argument("--logdir", default="logs")
     ap.add_argument("--cookies", default=None,
-                    help="Path to cookies.txt (Netscape format) for YouTube login — "
+                    help="Path to yt-cookies.txt (Netscape format) for YouTube login — "
                          "bypasses the 'Sign in to confirm you're not a bot' check. "
-                         "Default: cookies.txt next to this script, if present.")
+                         "Default: yt-cookies.txt next to this script, if present. "
+                         "Twitch feeds use twitch-cookies.txt (picked up automatically "
+                         "from the same directory — no separate flag needed).")
     ap.add_argument("--cookies-from-browser", default=None,
                     help="Auto-export YouTube cookies from this browser on startup via "
                          "yt-dlp (e.g. firefox, chrome, safari, edge, brave) and use them. "
-                         "Writes cookies.txt next to this script.")
+                         "Writes yt-cookies.txt next to this script.")
     args = ap.parse_args()
     # line_buffering: show logs immediately. encoding="utf-8": the relay runs as a
     # daemon with stdout piped to a log file, so Python would otherwise use the
@@ -2150,12 +2276,12 @@ def main():
 
     # Optionally auto-export cookies from a logged-in browser first (yt-dlp)
     if args.cookies_from_browser:
-        export_cookies(args.cookies_from_browser, os.path.join(runtime, "cookies.txt"))
+        export_cookies(args.cookies_from_browser, os.path.join(runtime, "yt-cookies.txt"))
 
-    # Cookies: explicit via --cookies, otherwise auto-detect cookies.txt in the runtime dir
+    # Cookies: explicit via --cookies, otherwise auto-detect yt-cookies.txt (+ one-time migration)
     cookies = args.cookies
     if cookies is None:
-        auto = os.path.join(runtime, "cookies.txt")
+        auto = migrate_legacy_cookie(runtime)   # yt-cookies.txt (+ one-time rename)
         cookies = auto if os.path.exists(auto) else None
     elif not os.path.isabs(cookies):
         cookies = os.path.join(runtime, cookies)
@@ -2167,7 +2293,7 @@ def main():
     if cookies:
         _ch = cookie_health(cookies)
         if _ch["stale"]:
-            print(f"WARN: cookies.txt is {_ch['age_h']:.0f} h old — cookies rotate; "
+            print(f"WARN: yt-cookies.txt is {_ch['age_h']:.0f} h old — cookies rotate; "
                   "run 'racecast cookies firefox' before the event.")
 
     # Locate the director panel (shipped in the package root, one level up from relay/)
@@ -2240,7 +2366,8 @@ def main():
 
     relay = Relay(source, ports, logdir, cookies,
                   pov_source=pov_source, pov_port=args.pov_port,
-                  start_stint=args.stint)
+                  start_stint=args.stint,
+                  cookie_dir=(os.path.dirname(cookies) if cookies else runtime))
     relay.start()
     relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
 
@@ -2320,7 +2447,7 @@ def main():
             if timer_store.csv_url else "local only")
         print(f"  Race timer (OBS source): http://127.0.0.1:{args.http_port}/timer  "
               f"(tab '{args.timer_tab}', {push}; controls /timer/start | /timer/stop)")
-    print(f"  Cookies (bot-check protection): {'ON — ' + cookies if cookies else 'off (no cookies.txt)'}")
+    print(f"  Cookies (bot-check protection): {'ON — ' + cookies if cookies else 'off (no yt-cookies.txt)'}")
     print(f"  Sheet poll every {args.poll}s.  Ctrl+C to stop.")
     # Serve every bound address; keep the last on the main thread for signals.
     for httpd in servers[:-1]:

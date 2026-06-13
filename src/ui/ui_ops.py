@@ -28,6 +28,7 @@ OPS = {
     "event-start": ["event", "start"],
     "event-stop": ["event", "stop"],
     "cookies": ["cookies"],
+    "cookies-twitch": ["cookies", "twitch"],
     "graphics": ["graphics"],
     "media": ["media"],
     "setup": ["setup"],
@@ -82,6 +83,7 @@ def _tag_arg(value):
 # accept no parameters at all.
 PARAMS = {
     "cookies": {"browser": _browser_arg},
+    "cookies-twitch": {"browser": _browser_arg},
     "event-start": {"stint": _stint_arg},
     "install-tools": {"update": _update_flag},
     "install-apps": {"update": _update_flag},

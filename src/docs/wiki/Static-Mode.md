@@ -2,17 +2,19 @@
 
 > Technical reference — the public-stream fallback.
 
-The simpler fallback: one Streamlink server per **public** / fixed channel, each on its
-own fixed port. Use this only when every feed is a public channel with a permanent live
-URL. For the typical endurance flow (one commentator per stint, unlisted streams), use
-[Relay Mode](Relay-Mode) instead.
+The simpler fallback: one Streamlink server per **public** / fixed channel (YouTube or
+Twitch), each on its own fixed port. Use this only when every feed is a public channel
+with a permanent live URL. For the typical endurance flow (one commentator per stint,
+unlisted streams), use [Relay Mode](Relay-Mode) instead.
 
 ## How it differs from the relay
 
 - **Relay:** two feeds walk a stint schedule, pulls unlisted watch URLs via yt-dlp +
-  cookies, controlled live over HTTP.
-- **Static:** one long-lived Streamlink server per channel, fed by that channel's
-  permanent `…/channel/<ID>/live` URL. No schedule, no handover logic.
+  cookies, controlled live over HTTP. Supports YouTube and Twitch.
+- **Static:** one long-lived Streamlink server per channel — YouTube via Streamlink's
+  direct HLS path, Twitch via Streamlink's Twitch plugin (same low-latency flags as the
+  relay). No schedule, no handover logic. **Public channels only** — no yt-dlp bot-check,
+  no unlisted streams.
 
 Each channel gets its own fixed local port and a loop so it auto-recovers and waits for
 the channel to go live. Idle channels (streamer not live yet) use almost no bandwidth —
@@ -20,22 +22,26 @@ they just poll.
 
 ## Configure the channels
 
-Put each streamer's channel ID and port into the `FEEDS` list in
-`src/scripts/start-streams.py`:
+Put each streamer's channel and port into the `FEEDS` list in
+`src/scripts/start-streams.py`. Each entry may be a YouTube channel ID (`UC…`) or a
+full `youtube.com` / `twitch.tv` URL:
 
 ```python
 FEEDS = [
-    ("UCxxxxxxxxxxxxxxxxxxxxxx", 53001),   # Feed A
-    ("UCyyyyyyyyyyyyyyyyyyyyyy", 53002),   # Feed B
+    ("UCxxxxxxxxxxxxxxxxxxxxxx", 53001),               # Feed A — YouTube channel ID
+    ("https://www.twitch.tv/somestreamer", 53002),     # Feed B — Twitch URL
     # one entry per channel, incrementing the port
 ]
 ```
 
 Ports must match the OBS media sources Feed A / Feed B (`http://127.0.0.1:<port>`).
 
-To find a channel's ID: open the channel → the `UC…` string in
+To find a YouTube channel's ID: open the channel → the `UC…` string in
 `youtube.com/channel/UC…`, or the owner reads it in YouTube Studio → Settings → Channel →
-Advanced.
+Advanced. For Twitch, use the full `https://www.twitch.tv/<channel>` URL.
+
+Entries with an invalid channel (not a UC… id and not a `youtube.com`/`twitch.tv` URL)
+are rejected at load time and logged to stderr — they never reach Streamlink.
 
 ## Start / stop
 
@@ -50,18 +56,25 @@ won't touch live relay feeds.
 
 ## The Streamlink flags (what they do)
 
-The quality selector and buffering flags used per feed:
+**YouTube** feeds use:
 
 - `1080p60,1080p,720p60,720p` — prefer 1080p, never drop below 720p.
 - `--player-external-http --player-external-http-port <port>` — serve at
   `http://127.0.0.1:<port>` for OBS.
 - `--ringbuffer-size 64M` — the memory buffer that absorbs network hiccups.
-- `--hls-live-edge 6` — stay several segments behind live for a healthy cushion.
+- `--hls-live-edge 4` — stay a few segments behind live for a healthy cushion.
 - `--retry-streams 15 --retry-open 5` — poll cheaply until the channel goes live, then
   connect automatically.
 
-For **Twitch** channels add `--twitch-disable-ads` and use the Twitch URL; everything
-else is identical.
+**Twitch** feeds use a separate flag set (mirrored from the relay, kept in sync by a
+cross-check test):
+
+- `--ringbuffer-size 64M --hls-live-edge 2 --twitch-low-latency` — low-latency Twitch
+  delivery with a compact buffer.
+- `--retry-streams 15 --retry-open 5` — same polling recovery as YouTube.
+- Optionally `--twitch-api-header Authorization=OAuth <token>` when
+  `runtime/twitch-cookies.txt` contains an `auth-token` — for gated (sub/follower-only)
+  Twitch channels. Leave the file absent for fully public Twitch streams.
 
 ## yt-dlp fallback (only if Streamlink caps below 1080p)
 

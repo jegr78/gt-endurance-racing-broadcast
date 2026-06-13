@@ -112,7 +112,7 @@
         <ol>
           <li>Update: <code>racecast update</code>, then <code>racecast install-tools --update</code>.</li>
           <li>Update GPU driver; <span class="k">reboot</span> the PC.</li>
-          <li>Refresh cookies: <code>racecast cookies firefox</code> (log into YouTube in Firefox first).</li>
+          <li>Refresh cookies: <code>racecast cookies firefox</code> (log into YouTube in Firefox first). If any stint uses a gated Twitch feed, also run <code>racecast cookies twitch firefox</code>.</li>
           <li>Check the machine: <code>racecast preflight</code> — fix anything it flags.</li>
           <li>Bring everything up: <span class="k">racecast event start</span> — Tailscale, Discord, relay, OBS, Companion; prints the director URLs to forward.</li>
           <li>Companion green; a Director confirms access. Test the Discord audio source.</li>

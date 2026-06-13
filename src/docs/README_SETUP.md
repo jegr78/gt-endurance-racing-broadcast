@@ -34,9 +34,10 @@ Each league lives in its own profile (`profiles/<name>/`). Switch leagues with
 
 On event day:
 
-    racecast cookies firefox    # refresh YouTube cookies (log into YouTube in Firefox first)
-    racecast event start        # bring everything up; prints the director URLs
-    racecast event stop         # after the broadcast
+    racecast cookies firefox          # refresh YouTube cookies (log into YouTube in Firefox first)
+    racecast cookies twitch firefox   # refresh Twitch cookies (only if any stint uses a gated Twitch feed)
+    racecast event start              # bring everything up; prints the director URLs
+    racecast event stop               # after the broadcast
 
 `racecast preflight` checks this machine any time and names the exact fix for
 anything missing.

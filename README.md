@@ -113,7 +113,8 @@ racecast export companion  # write the Companion button config -> runtime/raceca
 
 ### One-time / pre-event setup
 ```
-racecast cookies firefox   # refresh YouTube cookies before each event (log into YouTube in Firefox first)
+racecast cookies firefox          # refresh YouTube cookies before each event (log into YouTube in Firefox first)
+racecast cookies twitch firefox   # refresh Twitch cookies (only if any stint uses a gated Twitch feed)
 racecast media             # download the active profile's Intro/Outro clips -> runtime/<profile>/media/
 racecast graphics          # download the active profile's broadcast graphics -> runtime/<profile>/graphics/
 racecast setup --out runtime/GT_Endurance.import.json   # localize OBS assets + inject the profile's Sheet ID

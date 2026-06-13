@@ -851,6 +851,12 @@ def t_obs_collection_data_failure_is_not_ok():
     assert d == {"ok": False, "note": "OBS not reachable"}
 
 
+def t_cookies_twitch_op():
+    assert "cookies-twitch" in ui_ops.OPS
+    argv = ui_ops.build_argv("cookies-twitch", {"browser": "firefox"})
+    assert argv == ["cookies", "twitch", "firefox"]
+
+
 if __name__ == "__main__":
     import inspect, tempfile
     with tempfile.TemporaryDirectory() as tmp:

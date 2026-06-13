@@ -310,10 +310,12 @@
       <button class="add" id="schedAdd">+ ADD ROW</button>
       <table><tbody>
         <tr><td class="rn">POV</td>
-            <td><input id="povUrl" placeholder="https://www.youtube.com/watch?v=… or UC…"></td>
+            <td><input id="povUrl" placeholder="youtube.com/watch?v=… · twitch.tv/<channel> · UC…"></td>
             <td class="act"><button class="save" id="povSave">SAVE</button></td></tr>
       </tbody></table>
-      <div class="hint">Saves write the Google Sheet only — a feed picks the new URL up
+      <div class="hint">YouTube or Twitch — enter a full watch URL
+        (<code>youtube.com/watch?v=…</code> or <code>twitch.tv/&lt;channel&gt;</code>).
+        Saves write the Google Sheet only — a feed picks the new URL up
         on RELOAD A/B / NEXT (rows marked <b>A</b>/<b>B</b> are live now); the POV URL
         applies on POV RELOAD. Names/URLs can still be edited in the Sheet directly.</div>
     </div>
@@ -713,11 +715,12 @@ function fmtDur(s){
   return (h ? h + ":" + String(mi).padStart(2,"0") : String(mi)) + ":" + String(sec).padStart(2,"0");
 }
 function healthLine(name, f){
+  const tag = f.platform ? ` [${f.platform === "twitch" ? "TW" : "YT"}]` : "";
   const what = f.stint ? "stint " + f.stint : "the POV stream";
   if (f.state === "serving")
-    return `${name} · serving ${what} (since ${fmtDur(f.state_age_s)})`;
+    return `${name}${tag} · serving ${what} (since ${fmtDur(f.state_age_s)})`;
   if (f.state === "connecting"){
-    let s = `${name} · connecting to ${what} for ${fmtDur(f.state_age_s)}`;
+    let s = `${name}${tag} · connecting to ${what} for ${fmtDur(f.state_age_s)}`;
     if (f.state_age_s > 30){
       s += " — stream may not be live yet";
       if (f.last_error) s += " (" + escapeHtml(f.last_error) + ")";
@@ -1035,7 +1038,7 @@ function schedRow(i){
   tr = document.createElement("tr"); tr.dataset.row = i;
   tr.innerHTML = `<td class="rn">${i}<span class="livebadge"></span></td>
     <td style="width:24%"><input class="nm" placeholder="name"></td>
-    <td><input class="u" placeholder="https://www.youtube.com/watch?v=… or UC…"></td>
+    <td><input class="u" placeholder="youtube.com/watch?v=… · twitch.tv/<channel> · UC…"></td>
     <td class="act"><button class="save">SAVE</button><button class="clear">CLEAR</button></td>`;
   tr.querySelectorAll("input").forEach(inp=>inp.addEventListener("input", ()=>tr.dataset.dirty = 1));
   tr.querySelector(".save").addEventListener("click", ()=>schedSave(tr, i));

@@ -49,8 +49,9 @@ Each stint's commentator streams the race on **their own channel**. Hand them th
   720p30 ≈ 3000 kbps. Audio 128–160 kbps AAC.
 - **Encoder:** hardware (NVENC / QuickSync / AMF). **No personal overlays** — graphics are
   added centrally.
-- **Send your watch link** before your stint (`https://www.youtube.com/watch?v=…`) for the
-  schedule.
+- **Send your watch link** before your stint for the schedule:
+  YouTube: `https://www.youtube.com/watch?v=…` ·
+  Twitch: `https://www.twitch.tv/<your-channel>`
 
 ## Event sizes
 
