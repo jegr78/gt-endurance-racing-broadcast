@@ -8,7 +8,7 @@ The recommended flow for endurance racing: **one commentator per stint**, stream
 
 ## How it pulls (important)
 
-The relay supports **YouTube and Twitch** feeds (and anything else Streamlink can serve).
+The relay supports **YouTube and Twitch** feeds (YouTube via yt-dlp, Twitch direct via Streamlink).
 
 **YouTube feeds:** the relay uses **yt-dlp to resolve** each live HLS URL — this is what
 passes YouTube's bot-check, via `yt-cookies.txt` + deno JS-challenge solving — and
@@ -77,7 +77,7 @@ racecast cookies twitch firefox
 
 - You must be **logged into Twitch** in that browser (not YouTube — a separate session).
 - Writes `runtime/twitch-cookies.txt` (chmod 600), auto-detected by the relay for
-  Twitch feeds. `/status` shows the per-platform cookie state.
+  Twitch feeds. The `/status` `cookies` field shows whether the YouTube cookie jar is loaded.
 - **Re-run before each event** alongside the YouTube refresh.
 
 ### Summary: which accounts the producer needs
@@ -94,9 +94,9 @@ The cookies are shared across all leagues on the machine and live at the top-lev
 
 - **YouTube server-side ads (DAI/SSAI):** if the streamer's channel serves server-side
   inserted ads, the relay detects the ad marker in the stream and reports it in
-  `/status` (field `"ssai": true`). The relay cannot remove them — there is no
-  reliable skip mechanism. The clean solution is an ad-free source: league-owned,
-  unlisted, unmonetized stint streams have no server-side ads.
+  `/status` (surfaced as the feed's `last_error` in `/status`, and shown on the director panel).
+  The relay cannot remove them — there is no reliable skip mechanism. The clean solution
+  is an ad-free source: league-owned, unlisted, unmonetized stint streams have no server-side ads.
 - **Twitch ad filtering:** handled automatically by Streamlink's current built-in
   behavior. Coverage depends on Streamlink's version and Twitch's current serving
   method.
