@@ -16,6 +16,7 @@ def _load(name, rel):
 start = _load("start_streams", os.path.join("src", "scripts", "start-streams.py"))
 stop = _load("stop_streams", os.path.join("src", "scripts", "stop-streams.py"))
 loop = _load("loopstream", os.path.join("src", "scripts", "loopstream.py"))
+feeds_x = _load("feeds_x", os.path.join("src", "relay", "racecast-feeds.py"))
 
 
 def t_feed_argv_repo_uses_python():
@@ -118,6 +119,51 @@ def t_loop_serve_once_passes_no_window():
     assert captured["argv"][0] == "streamlink"
     for k, v in loop.no_window_kwargs().items():
         assert captured["kw"].get(k) == v
+
+
+def t_loop_youtube_argv_unchanged():
+    argv = loop.streamlink_argv("https://www.youtube.com/channel/UC123/live", "53001")
+    assert "--twitch-low-latency" not in argv
+    assert "1080p60,1080p,720p60,720p" in argv          # static's YouTube quality preserved
+    assert "--hls-live-edge" in argv and argv[argv.index("--hls-live-edge")+1] == "4"
+
+
+def t_loop_twitch_argv():
+    argv = loop.streamlink_argv("https://www.twitch.tv/chan", "53002", platform="twitch")
+    assert "--twitch-low-latency" in argv
+    assert argv[argv.index("--hls-live-edge")+1] == "2"
+    assert "--twitch-disable-ads" not in argv
+    assert argv[-2:] == ["https://www.twitch.tv/chan", "best"]
+    assert "--" in argv and argv.index("--") < argv.index("https://www.twitch.tv/chan")
+
+
+def t_loop_twitch_argv_token():
+    argv = loop.streamlink_argv("https://www.twitch.tv/chan", "53002",
+                                platform="twitch", twitch_token="abc123")
+    i = argv.index("--twitch-api-header")
+    assert argv[i+1] == "Authorization=OAuth abc123"
+    assert i < argv.index("--")
+
+
+def t_loop_channel_url_and_platform():
+    assert loop.channel_url("UC123").startswith("https://www.youtube.com/channel/UC123/live")
+    assert loop.channel_url("https://www.twitch.tv/x") == "https://www.twitch.tv/x"
+    assert loop.platform_of("https://www.twitch.tv/x") == "twitch"
+    assert loop.platform_of("UCabc") == "youtube"   # bare id -> no scheme -> host empty -> youtube
+
+
+def t_loop_crosscheck_relay():
+    # anti-divergence: the duplicated Twitch bits must equal the relay's
+    assert loop.STREAMLINK_TWITCH == feeds_x.STREAMLINK_TWITCH
+    for u in ["https://www.youtube.com/watch?v=a", "https://youtu.be/a",
+              "https://www.twitch.tv/c", "https://m.twitch.tv/c", "https://twitch.tv@evil.com/"]:
+        assert loop.platform_of(u) == feeds_x.platform_of(u)
+    import tempfile
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, "twitch-cookies.txt")
+    with open(p, "w") as f:
+        f.write(".twitch.tv\tTRUE\t/\tTRUE\t0\tauth-token\tdeadbeef\n")
+    assert loop.twitch_oauth_from_cookies(p) == feeds_x.twitch_oauth_from_cookies(p) == "deadbeef"
 
 
 if __name__ == "__main__":
