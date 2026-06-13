@@ -110,7 +110,7 @@ python3 src/racecast.py profile export NAME      # export a league profile to a 
 python3 src/racecast.py profile import FILE       # import a profile bundle (--force to replace an existing one)
 python3 src/racecast.py --profile NAME <command>  # run ONE command against a non-active profile
 python3 src/racecast.py event status      # event-day readiness report (apps + services + assets)
-python3 src/racecast.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later)
+python3 src/racecast.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later); --qualifying = qualifying mode (Feed A serves the Qualifying tab; switch live via /mode/race|/mode/qualifying or the panel)
 python3 src/racecast.py event stop        # stop racecast services; GUI apps keep running
 python3 src/racecast.py tailscale up|down|status  # connect/disconnect/inspect Tailscale (event start connects automatically)
 python3 src/racecast.py obs refresh       # force-reload the relay-served OBS browser sources (HUD/timer)
@@ -266,6 +266,16 @@ commentator stream, so OBS media sources never change URL. A 3rd **POV** feed
 (53003) is an optional driver picture-in-picture, paused at start. The schedule is a
 Google-Sheet tab read as CSV (no API key); a running feed is never torn off
 mid-stint — sheet edits apply on the next `/next` (handover) or `/reload`.
+**Qualifying mode** (issue #124): a second `ScheduleSource` reads a separate
+`Qualifying` tab (same URL/Streamer/Stint structure); `Relay.mode` ∈
+{race, qualifying} and `self.source` is a property returning the active one, so
+every path (status/next/reload/set_stint/handover) is mode-aware. Qualifying is a
+single stream → it lands on Feed A (B idles). Switch at launch (`--qualifying` /
+`racecast event start --qualifying`) or live via `/mode/race`|`/mode/qualifying`
+(`set_mode`, re-points feeds like a takeover); the panel has a Qualifying section
+(mode toggle + a one-row editor writing the Qualifying tab via the `schedule`
+webhook action with `tab:"Qualifying"`). On switch the HUD Streamer/Stint follow
+the qualifying row (the issue #112 path).
 
 Pull pipeline per feed: **YouTube** — `yt-dlp -g` resolves the live HLS URL (passing
 YouTube's bot-check via `yt-cookies.txt` + deno JS challenge) → `streamlink

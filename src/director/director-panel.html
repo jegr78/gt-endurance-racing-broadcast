@@ -323,6 +323,30 @@
     </div>
   </details>
 
+  <details class="bus qualifying" id="qualBox">
+    <summary>Qualifying <span class="livebadge" id="qualModeBadge"></span></summary>
+    <div class="body">
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <button class="k" id="qualOn">QUALIFYING MODE</button>
+        <button class="k" id="qualOff">RACE MODE</button>
+      </div>
+      <table><tbody>
+        <tr id="qualRow">
+          <td class="rn">Q<span class="livebadge" id="qualLive"></span></td>
+          <td style="width:22%"><select class="nm" id="qualNm" title="Streamer (Configuration vocab)"></select></td>
+          <td style="width:18%"><select class="st" id="qualSt" title="Stint label (Configuration vocab)"></select></td>
+          <td><input class="u" id="qualUrl" placeholder="youtube.com/watch?v=… · twitch.tv/<channel> · UC…"></td>
+          <td class="act"><button class="save" id="qualSave">SAVE</button><button class="clear" id="qualClear">CLEAR</button></td>
+        </tr>
+      </tbody></table>
+      <div class="hint" id="qualInfo">Qualifying: one stream, served on <b>Feed A</b>.
+        <b>QUALIFYING MODE</b> switches the relay's active schedule to the
+        Qualifying tab (interrupts a running pull — use between sessions);
+        <b>RACE MODE</b> switches back. On switch the HUD STREAMER/STINT follow
+        this row. Edits write the <b>Qualifying</b> tab in the Sheet.</div>
+    </div>
+  </details>
+
   <div id="log">Ready. FEEDS + TIMER work relay-only; enter the Producer's Tailscale IP + OBS WebSocket password and Connect for everything else.</div>
 
   </div><!-- /.mainpane -->
@@ -753,6 +777,8 @@ async function relayPoll(){
     } else { $("#stPov").className = "st"; $("#stPov").innerHTML = "POV <b>—</b>"; }
     const lines = [healthLine("A", d.feeds.A), healthLine("B", d.feeds.B)];
     if (d.pov && d.pov.state !== "stopped") lines.push(healthLine("POV", d.pov));
+    if (d.mode === "qualifying")
+      lines.unshift('<span class="warnline">QUALIFYING MODE — Feed A serves the Qualifying tab (race schedule paused)</span>');
     $("#feedHealth").innerHTML = lines.filter(Boolean).join("<br>");
     const ck = d.cookies_health;
     if (ck && ck.stale)
@@ -1172,6 +1198,78 @@ async function schedPoll(){
 }
 $("#urlsBox").addEventListener("toggle", ()=>schedPoll());
 
+/* ---------- Qualifying (issue #124): separate tab, one stream on Feed A ---- */
+let qualAvailable = false;
+function qualRowBusy(){
+  const tr = $("#qualRow");
+  return tr.dataset.dirty || tr.contains(document.activeElement) ||
+         Date.now() - Number(tr.dataset.saved||0) < SAVE_GUARD_MS;
+}
+async function qualSave(){
+  const btn = $("#qualSave");
+  btn.disabled = true; btn.textContent = "…"; btn.classList.remove("ok");
+  const sheetRow = Number($("#qualRow").dataset.sheetRow || 2);   // first data row under the header
+  try{
+    const r = await fetch("/qualifying/set", {method:"POST", cache:"no-store",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({row: sheetRow, url: $("#qualUrl").value.trim(),
+                            name: $("#qualNm").value.trim(), stint: $("#qualSt").value.trim()})});
+    const d = await r.json();
+    if (d.error){ log("Qualifying: " + d.error, "err"); toast("Qualifying: " + d.error); btn.textContent = "RETRY"; return; }
+    delete $("#qualRow").dataset.dirty; $("#qualRow").dataset.saved = Date.now();
+    btn.textContent = "SAVED ✓"; btn.classList.add("ok");
+    log("Qualifying row saved — feed picks it up on RELOAD A / NEXT (or on QUALIFYING MODE).");
+  }catch(e){ log("Qualifying save failed: " + e, "err"); toast("Qualifying save failed"); btn.textContent = "RETRY"; }
+  finally{
+    btn.disabled = false;
+    setTimeout(()=>{ if (btn.textContent === "SAVED ✓"){ btn.textContent = "SAVE"; btn.classList.remove("ok"); } }, 4000);
+  }
+}
+$("#qualSave").addEventListener("click", qualSave);
+$("#qualClear").addEventListener("click", ()=>{
+  if (!confirm("Clear the qualifying row (streamer + stint + URL) in the sheet?")) return;
+  $("#qualNm").value = ""; $("#qualSt").value = ""; $("#qualUrl").value = "";
+  qualSave();
+});
+$("#qualRow").querySelectorAll("input,select").forEach(el=>{
+  el.addEventListener("input", ()=>$("#qualRow").dataset.dirty = 1);
+  el.addEventListener("change", ()=>$("#qualRow").dataset.dirty = 1);
+});
+$("#qualOn").addEventListener("click", async ()=>{
+  if (!confirm("Switch the relay to QUALIFYING MODE? Feed A serves the Qualifying tab — this interrupts a running race pull (use between sessions).")) return;
+  await relayCall("mode/qualifying"); qualPoll();
+});
+$("#qualOff").addEventListener("click", async ()=>{
+  if (!confirm("Switch the relay back to RACE MODE? Feeds re-point to the race schedule (interrupts a running pull).")) return;
+  await relayCall("mode/race"); qualPoll();
+});
+async function qualPoll(){
+  if (!$("#qualBox").open) return;   // closed section -> no traffic
+  try{
+    const r = await fetch("/qualifying/data", {cache:"no-store"});
+    const d = await r.json();
+    if (d.error) return;
+    qualAvailable = !!d.available;
+    const qualifying = d.mode === "qualifying";
+    $("#qualModeBadge").textContent = qualifying ? "ON AIR" : "";
+    $("#qualOn").disabled = !qualAvailable || qualifying;
+    $("#qualOff").disabled = !qualAvailable || !qualifying;
+    ["qualNm","qualSt","qualUrl","qualSave","qualClear"].forEach(id=>$("#"+id).disabled = !qualAvailable);
+    if (!qualAvailable){
+      $("#qualInfo").textContent = "Qualifying tab not available (no 'Qualifying' tab in the sheet, or --no-qualifying / custom CSV URL).";
+      return;
+    }
+    const row = (d.rows && d.rows[0]) || null;
+    $("#qualLive").textContent = row && row.live ? row.live : "";
+    const busy = qualRowBusy();
+    fillSchedSelect($("#qualNm"), schedOptions.streamer, busy ? null : (row ? (row.name||"") : ""));
+    fillSchedSelect($("#qualSt"), schedOptions.stint, busy ? null : (row ? (row.stint||"") : ""));
+    if (row) $("#qualRow").dataset.sheetRow = row.sheetRow;
+    if (!busy && row) $("#qualUrl").value = row.url || "";
+  }catch(e){}
+}
+$("#qualBox").addEventListener("toggle", ()=>qualPoll());
+
 /* ---------- boot ---------- */
 renderAir({});
 relayPoll(); timerPoll();
@@ -1180,6 +1278,7 @@ setInterval(timerPoll, 2000);
 setupPoll(); setInterval(setupPoll, 2000);
 chatPoll(); setInterval(chatPoll, 2000);
 setInterval(schedPoll, 2000);
+setInterval(qualPoll, 2000);
 
 /* ---------- auto-connect to OBS ----------
    Connection details may arrive in the URL fragment (the Control Center's

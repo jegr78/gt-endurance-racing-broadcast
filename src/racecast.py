@@ -9,6 +9,7 @@
   racecast streams   start|stop|restart|status|logs
   racecast event     status|start|stop      # event-day readiness: check / bring-up / wind-down
   racecast event start --stint N             # takeover: stint N is on air now — the relay starts there
+  racecast event start --qualifying          # bring up in qualifying mode (Feed A serves the Qualifying tab)
   racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
   racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
   racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
@@ -1428,6 +1429,14 @@ def _stint_args(rest):
     return []
 
 
+def _qualifying_args(rest):
+    """['--qualifying'] when the flag is present in argv, else [] — forwarded to
+    the relay launch so 'event start --qualifying' brings the stack up in
+    qualifying mode (Feed A serves the Qualifying tab). Switch live afterwards via
+    the panel / /mode endpoints."""
+    return ["--qualifying"] if "--qualifying" in rest else []
+
+
 def _event_modules():
     """event/preflight are plain sibling modules of services (scripts/ is on
     sys.path; frozen: hidden-imports in tools/build-binary.py)."""
@@ -1663,8 +1672,10 @@ def event_start(rest):
     else:
         _event_launch(ev, "discord")
     # 3. Relay (before OBS — see docstring). A takeover bring-up forwards
-    # --stint so the feeds start at the stint that is on air right now.
-    relay_start(_stint_args(rest))
+    # --stint so the feeds start at the stint that is on air right now;
+    # --qualifying brings the stack up in qualifying mode (Feed A on the
+    # Qualifying tab).
+    relay_start(_stint_args(rest) + _qualifying_args(rest))
     # 4. OBS
     if ev.app_running("obs"):
         print("obs: already running.")

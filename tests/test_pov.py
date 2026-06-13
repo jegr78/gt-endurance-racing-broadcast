@@ -165,6 +165,67 @@ def t_relay_live_schedule_row_tracks_on_air_feed():
     assert r.live_schedule_row() == {"streamer": "GT45", "stint": "Stint 2"}
 
 
+def _relay_q(items, qual_items, qual_rows=None, mode="race"):
+    race = _StubSource(items)
+    qual = _StubSource(qual_items, qual_rows)
+    r = m.Relay(race, (53001, 53002), HERE, qual_source=qual, mode=mode)
+    r._reflect = lambda live, cut: None
+    return r
+
+
+def t_default_mode_is_race():
+    r = _relay_q(["s1", "s2"], ["q1"])
+    assert r.mode == "race"
+    assert r.source is r.race_source
+    assert r.A.current_channel() == ("s1", 0)
+
+
+def t_start_in_qualifying_mode():
+    r = _relay_q(["s1", "s2"], ["q1"], mode="qualifying")
+    assert r.mode == "qualifying"
+    assert r.source is r.qual_source
+    assert r.A.current_channel() == ("q1", 0)       # single qualifying stream on Feed A
+    assert r.B.current_channel() == (None, 1)       # Feed B idles (one stream only)
+
+
+def t_set_mode_switches_active_source_and_feeds():
+    qrows = [("q1", "GT45", "Qualifying", 2)]
+    r = _relay_q(["s1", "s2", "s3"], ["q1"], qual_rows=qrows)
+    assert r.A.current_channel() == ("s1", 0)
+    out = r.set_mode("qualifying")
+    assert out["mode"] == "qualifying"
+    assert r.source is r.qual_source
+    assert (r.A.idx, r.B.idx) == (0, 1)             # stint 1: A serves q1, B idles
+    assert r.A.current_channel() == ("q1", 0)
+    assert r.live_schedule_row() == {"streamer": "GT45", "stint": "Qualifying"}
+    r.set_mode("race")                              # back to the race schedule
+    assert r.mode == "race" and r.source is r.race_source
+    assert (r.A.idx, r.B.idx) == (0, 1)
+    assert r.A.current_channel() == ("s1", 0)
+
+
+def t_set_mode_qualifying_unavailable_without_source():
+    r = _relay(["s1", "s2"])                        # no qual_source
+    assert r.qual_source is None
+    out = r.set_mode("qualifying")
+    assert "error" in out and r.mode == "race"      # stays race
+
+
+def t_set_mode_rejects_unknown():
+    r = _relay_q(["s1"], ["q1"])
+    assert "error" in r.set_mode("warmup")
+    assert r.mode == "race"
+
+
+def t_status_reports_mode_and_qualifying():
+    r = _relay_q(["s1", "s2"], ["q1"])
+    st = r.status()
+    assert st["mode"] == "race"
+    assert st["qualifying"]["active"] is False
+    r.set_mode("qualifying")
+    assert r.status()["qualifying"]["active"] is True
+
+
 def t_next_past_end_is_idle_no_cut():
     r = _relay(["s1", "s2"])
     r.feeds["B"].phase = "serving"

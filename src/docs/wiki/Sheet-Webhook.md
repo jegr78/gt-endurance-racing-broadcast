@@ -18,7 +18,7 @@ machine and the panel's HUD row + URLs section are display-only.
 |---|---|
 | `timer` | Timer tab (race-timer state — see [Race-Timer](Race-Timer)) |
 | `setup` | Setup tab: the cell **below** a header (`Stint`, `Streamer`, `Session`, `Race Control`) — found by text, so the tab layout may move |
-| `schedule` | Schedule tab **physical row N** (the panel sends the CSV line number automatically): URL + Streamer + Stint label, located by the `URL`/`Streamer`/`Stint` headers in row 1 (falls back to fixed cols A/B with no header row); row `last+1` appends. The Stint cell is only written when a `Stint` header exists. **The Schedule tab must not have leading blank rows** — the gviz CSV export maps physical sheet rows to CSV lines 1:1 when the tab starts at row 1. A header row is silently skipped when reading but its physical line number is still used when writing. |
+| `schedule` | **Schedule** tab (or the **Qualifying** tab when the payload carries `"tab":"Qualifying"`), **physical row N** (the panel sends the CSV line number automatically): URL + Streamer + Stint label, located by the `URL`/`Streamer`/`Stint` headers in row 1 (falls back to fixed cols A/B with no header row); row `last+1` appends. The Stint cell is only written when a `Stint` header exists. The Qualifying tab has the **same structure** as the Schedule tab. **Neither tab may have leading blank rows** — the gviz CSV export maps physical sheet rows to CSV lines 1:1 when the tab starts at row 1. A header row is silently skipped when reading but its physical line number is still used when writing. |
 | `pov` | POV tab cell `A2` |
 | `teams` | Setup tab: the cell **below** the `Team <slot>` header (slot 1–3 → `A6`/`B6`/`C6` in the shipped layout) — found by text, same as the other Setup fields. The Overlay tab only mirrors them read-only |
 
@@ -57,7 +57,8 @@ read-only.
 
    ```javascript
    const KEY = 'change-me';            // must match the key=... in the URL below
-   const TABS = {setup: 'Setup', schedule: 'Schedule', pov: 'POV', timer: 'Timer'};
+   const TABS = {setup: 'Setup', schedule: 'Schedule', qualifying: 'Qualifying',
+                 pov: 'POV', timer: 'Timer'};
    const SETUP_FIELDS = ['Stint', 'Streamer', 'Session', 'Race Control'];
    const TIMER_ROWS = {'Race End (UTC)': 1, 'Duration': 2, 'Visible': 3,
                        'Updated (UTC)': 4, 'Remaining': 5};
@@ -76,7 +77,7 @@ read-only.
        else if (action === 'pov') writePov(ss, p);
        else if (action === 'teams') writeTeams(ss, p);
        else return out({error: 'unknown action: ' + action});
-       return out({ok: true, action: action, v: 3});
+       return out({ok: true, action: action, v: 4});
      } catch (err) { return out({error: String(err)}); }
    }
 
@@ -125,8 +126,11 @@ read-only.
      // Header-aware: locate URL/Streamer/Stint columns by header text in row 1
      // (case-insensitive), same approach as writeSetup/writeTeams. Falls back to
      // fixed cols A/B when there is no header row (back-compat). The Stint cell
-     // is written only when a 'Stint' header exists.
-     const sheet = tab(ss, TABS.schedule);
+     // is written only when a 'Stint' header exists. p.tab selects the target
+     // tab (Schedule by default, or Qualifying) — restricted to those two so a
+     // stray value can never address an arbitrary sheet.
+     const target = p.tab === TABS.qualifying ? TABS.qualifying : TABS.schedule;
+     const sheet = tab(ss, target);
      const row = Number(p.row);
      const last = sheet.getLastRow();
      if (!row || row < 1 || row > last + 1) throw 'row out of range: ' + p.row;
@@ -190,11 +194,14 @@ instead creates a NEW URL and every `profile.env` must be updated.)
 The relay detects an outdated (v1, timer-only) script: panel writes then
 report *"webhook script outdated — redeploy"* instead of failing silently.
 
-The current script is **v3** (adds the Schedule `Stint` column). The relay does
-not enforce the version, so a still-deployed v2 script degrades gracefully:
-Schedule-row **Stint** edits silently don't persist, but everything else —
-including the handover HUD update, which writes the Setup tab via the `setup`
-action, not `schedule` — keeps working. Redeploy to enable Stint write-back.
+The current script is **v4** (v3 added the Schedule `Stint` column; v4 lets the
+`schedule` action target the **Qualifying** tab via `"tab":"Qualifying"`). The
+relay does not enforce the version, so an older script degrades gracefully: a v2
+script ignores Stint write-back, and a v2/v3 script ignores the `tab` field and
+writes the **Schedule** tab — so qualifying-row edits would land on the race
+Schedule until you redeploy. The handover HUD update (Setup tab via the `setup`
+action) and serving the qualifying stream read-only both keep working regardless.
+Add a **Qualifying** tab (same columns as Schedule) and redeploy to enable it.
 
 ## Security
 

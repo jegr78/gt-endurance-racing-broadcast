@@ -279,7 +279,7 @@ def t_push_failure_keeps_override_until_ttl():
 
 # ---------- endpoint routing (real server, ephemeral port) ----------
 
-def _client(setup_ctl, next_result=None, rows=None, live_idx=0):
+def _client(setup_ctl, next_result=None, rows=None, live_idx=0, qual_rows=None):
     import json as _json, threading as _t, urllib.error
     from urllib.request import urlopen, Request
 
@@ -295,13 +295,26 @@ def _client(setup_ctl, next_result=None, rows=None, live_idx=0):
     class _StubRelay:
         def __init__(self):
             # Simulate a header at line 1: physical sheet rows are 2 and 3.
-            self.source = _StubSource(rows if rows is not None else
-                                      [("https://www.youtube.com/watch?v=a", "Alpha", "", 2),
-                                       ("UCLA_DiR1FfKNvjuUpBHmylQ", "Beta", "", 3)])
+            self.race_source = _StubSource(rows if rows is not None else
+                                           [("https://www.youtube.com/watch?v=a", "Alpha", "", 2),
+                                            ("UCLA_DiR1FfKNvjuUpBHmylQ", "Beta", "", 3)])
+            self.qual_source = _StubSource(qual_rows) if qual_rows is not None else None
+            self.mode = "race"
             self.feeds = {"A": _StubFeed(0), "B": _StubFeed(1)}
-        def status(self): return {"schedule_len": 2, "feeds": {}}
+        @property
+        def source(self):
+            return (self.qual_source if (self.mode == "qualifying" and self.qual_source)
+                    else self.race_source)
+        def status(self): return {"schedule_len": 2, "mode": self.mode, "feeds": {}}
         def next_auto(self): return dict(next_result or {"obs_cut": False})
         def set_stint(self, n): return self.status()
+        def set_mode(self, mode):
+            if mode not in ("race", "qualifying"):
+                return {"error": f"unknown mode: {mode!r}"}
+            if mode == "qualifying" and not self.qual_source:
+                return {"error": "qualifying disabled"}
+            self.mode = mode
+            return self.status()
         def live_schedule_row(self):
             return m.live_schedule_row(self.source.get_rows(), live_idx)
 
@@ -445,6 +458,71 @@ def t_set_stint_writes_schedule_streamer_and_stint():
         srv.shutdown(); m.post_webhook = orig
 
 
+def t_endpoints_qualifying_data():
+    ctl = m.SetupControl(None, _hs_stub())
+    qrows = [("https://www.youtube.com/watch?v=q", "GT45", "Stint 2", 2)]
+    srv, get, post = _client(ctl, qual_rows=qrows)
+    try:
+        d = get("/qualifying/data")
+        assert d["available"] is True and d["mode"] == "race"
+        assert d["rows"][0] == {"row": 1, "sheetRow": 2,
+                                "url": "https://www.youtube.com/watch?v=q",
+                                "name": "GT45", "stint": "Stint 2", "live": None}
+    finally:
+        srv.shutdown()
+
+
+def t_endpoints_qualifying_data_unavailable():
+    ctl = m.SetupControl(None, _hs_stub())
+    srv, get, post = _client(ctl)                 # no qual_rows -> qual_source None
+    try:
+        d = get("/qualifying/data")
+        assert d["available"] is False and d["rows"] == []
+    finally:
+        srv.shutdown()
+
+
+def t_endpoint_mode_switch_writes_qualifying_hud():
+    # GET /mode/qualifying switches the active schedule and auto-fills the HUD
+    # Streamer/Stint from the now-on-air qualifying row (issue #112 path).
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    qrows = [("https://www.youtube.com/watch?v=q", "GT45", "Stint 2", 2)]
+    srv, get, post = _client(ctl, qual_rows=qrows, live_idx=0)
+    try:
+        r = get("/mode/qualifying")
+        assert r.get("mode") == "qualifying"
+        assert hs.data()["streamer"] == "GT45"
+        assert hs.data()["stint"] == "Stint 2"
+        assert get("/mode/race").get("mode") == "race"
+    finally:
+        srv.shutdown(); m.post_webhook = orig
+
+
+def t_endpoint_mode_qualifying_unavailable():
+    ctl = m.SetupControl(None, _hs_stub())
+    srv, get, post = _client(ctl)                 # no qual_source
+    try:
+        assert "error" in get("/mode/qualifying")
+        assert "error" in get("/mode/bogus")
+    finally:
+        srv.shutdown()
+
+
+def t_endpoints_qualifying_set_post():
+    pushes = []
+    ctl, qsrc, ssrc, orig = _qctl(pushes)
+    srv, get, post = _client(ctl, qual_rows=[])
+    try:
+        r = post("/qualifying/set", {"row": 2, "url": "https://youtu.be/q",
+                                     "name": "JeGr", "stint": "Stint 1"})
+        assert r.get("ok"), r
+        assert pushes[-1]["tab"] == "Qualifying"
+        assert pushes[-1]["stint"] == "Stint 1"
+    finally:
+        srv.shutdown(); m.post_webhook = orig
+
+
 def t_endpoints_schedule_data_marks_live():
     ctl = m.SetupControl(None, _hs_stub())
     srv, get, post = _client(ctl)
@@ -542,6 +620,66 @@ def t_schedule_set_no_inject_on_push_failure():
     out = ctl.schedule_set(2, "https://www.youtube.com/watch?v=abc", "Ben")
     assert "error" in out
     assert src.get() == ["s1"]                            # nothing injected on failure
+
+
+# ---------- qualifying (issue #124): separate tab, own source, Feed A ----------
+
+def _qctl(pushes):
+    """A SetupControl wired with BOTH a race schedule source and a qualifying
+    source, plus the vocab HUD stub."""
+    hs = _hs_stub()
+    qsrc = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_q.cache"),
+                            local_fallback=None)
+    qsrc.items = []; qsrc.rows = []
+    ssrc = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_s.cache"),
+                            local_fallback=None)
+    ssrc.items = []; ssrc.rows = []
+    ctl = m.SetupControl("http://push", hs, schedule_source=ssrc, qual_source=qsrc)
+    def fake_post(url, payload, timeout=10):
+        pushes.append(payload)
+        return b'{"ok": true, "action": "schedule", "v": 4}'
+    m.post_webhook, orig = fake_post, m.post_webhook
+    return ctl, qsrc, ssrc, orig
+
+
+def t_qualifying_set_targets_qualifying_tab_and_injects_qual_source():
+    pushes = []
+    ctl, qsrc, ssrc, orig = _qctl(pushes)
+    try:
+        r = ctl.qualifying_set(2, url="https://www.youtube.com/watch?v=q",
+                               name="GT45", stint="Stint 2")
+        assert r.get("ok"), r
+        # webhook payload carries the Qualifying tab target + the schedule action
+        assert pushes[-1] == {"action": "schedule", "row": 2, "tab": "Qualifying",
+                              "url": "https://www.youtube.com/watch?v=q",
+                              "name": "GT45", "stint": "Stint 2"}
+        # optimistic echo lands in the qualifying source, NOT the race schedule
+        assert qsrc.get() == ["https://www.youtube.com/watch?v=q"]
+        assert ssrc.get() == []
+    finally:
+        m.post_webhook = orig
+
+
+def t_qualifying_set_validates_vocab():
+    pushes = []
+    ctl, qsrc, ssrc, orig = _qctl(pushes)
+    try:
+        assert "error" in ctl.qualifying_set(2, name="Nobody")          # off-vocab streamer
+        assert "error" in ctl.qualifying_set(2, stint="Made Up")         # off-vocab stint
+        assert pushes == []
+    finally:
+        m.post_webhook = orig
+
+
+def t_schedule_set_has_no_tab_key():
+    # The race schedule_set must NOT carry a tab (writes the default Schedule tab).
+    pushes = []
+    ctl, qsrc, ssrc, orig = _qctl(pushes)
+    try:
+        ctl.schedule_set(2, url="https://www.youtube.com/watch?v=x", name="JeGr")
+        assert "tab" not in pushes[-1]
+    finally:
+        m.post_webhook = orig
 
 
 TEAM_OVERLAY_CSV = (",Teams P1,Old A,,\n,Teams P2,Old B,,\n,Teams P3,,,\n")

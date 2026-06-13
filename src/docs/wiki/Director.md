@@ -127,6 +127,29 @@ stint numbering of everything after it.
 The URLs section also needs the profile's `SHEET_PUSH_URL` — without it the fields are
 read-only.
 
+## Director panel — Qualifying
+
+Qualifying usually runs on its own day and is a **single stream**. The panel has
+a separate collapsible **Qualifying** section, kept apart from the race Schedule:
+
+- **QUALIFYING MODE / RACE MODE** buttons switch the relay's *active schedule*.
+  In qualifying mode the relay serves the **Qualifying** sheet tab on **Feed A**
+  (Feed B idles — there is only one stream), so OBS needs no scene change. The
+  switch re-points the feeds (it interrupts a running pull, so it is a
+  between-session action, like the FEEDS → STINT takeover) and, on switch, the
+  HUD's Streamer + Stint label follow the qualifying row — same mechanism as a
+  race handover.
+- A single editor row (**Streamer** + **Stint** dropdowns from the Configuration
+  vocab + stream **URL**) writes the **Qualifying** tab. CLEAR empties the row.
+
+The relay can also be brought up directly in qualifying mode with
+`racecast event start --qualifying` (or `racecast relay start --qualifying`).
+The Qualifying section needs the profile's `SHEET_PUSH_URL` for editing; serving
+and mode-switching work read-only. If the sheet has no **Qualifying** tab the
+section reports it and the controls are disabled. See
+[Sheet-Webhook](Sheet-Webhook) for the one-time Apps Script redeploy that enables
+qualifying write-back.
+
 ## Crew chat
 
 The panel has a collapsible **Crew chat** section — a quick text channel for
