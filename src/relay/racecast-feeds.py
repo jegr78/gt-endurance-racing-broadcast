@@ -1921,7 +1921,15 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                                  "live": live.get(i)}
                                                 for i, (u, n, line) in enumerate(rows)],
                                        "source": relay.source.health()})
-                if p == ["next"]:                       return self._send(relay.next_auto())
+                if p == ["next"]:
+                    result = relay.next_auto()
+                    # One-button handover: next_auto cuts OBS back to the Stint
+                    # scene itself, so no STINT macro press follows to clear Race
+                    # Control. Mirror that macro's rc:"" here when a real cut
+                    # happened. Best-effort: set_field no-ops without the webhook.
+                    if result.get("obs_cut") and setup_ctl:
+                        setup_ctl.set_field("racecontrol", "")
+                    return self._send(result)
                 if p == ["reload"]:                     return self._send(relay.reload())
                 if p == ["pov", "reload"]:              return self._send(relay.pov_reload())
                 if p == ["pov", "stop"]:                return self._send(relay.pov_stop())
