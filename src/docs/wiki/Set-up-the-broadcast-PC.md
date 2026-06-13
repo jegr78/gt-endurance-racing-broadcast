@@ -9,9 +9,60 @@ Do this **once** per machine — about 30 minutes. When you're done, go to
 ## What you need
 
 - A reasonably modern PC — **macOS, Windows, or Linux**. 16 GB RAM works but is tight, so
-  reboot before events; 32 GB is comfortable. A wired internet connection.
+  reboot before events; 32 GB is comfortable. A **wired** internet connection of at least
+  **25 Mbps down / 10 Mbps up** (50 / 20 recommended), measured under load — see
+  [Internet — bandwidth and wiring](#internet--bandwidth-and-wiring) below for why the
+  download side matters as much as the upload.
 - A **YouTube login** (for cookies — always required) and, if any stint uses a gated
   Twitch feed, a **Twitch login** too. Plus the **shared Google Sheet** link from the team.
+
+## Internet — bandwidth and wiring
+
+Unlike a typical single-source stream, this station pulls **down** as much as it pushes
+**up**, on the same line at the same time: the relay pulls 2–3 live commentator feeds in
+while OBS sends one clean program out. **Download matters as much as upload.**
+
+**Download — the relay pulling feeds in**
+
+- **Feed A** (on-air commentator pull, 1080p): ~5–6 Mbps
+- **Feed B** (pre-rolled during a handover): ~5–6 Mbps — both feeds run together around
+  each driver change, which is the worst case
+- **POV** (optional driver picture-in-picture pull): ~3–6 Mbps
+- Discord interview audio in + Sheet / Tailscale control: < 0.5 Mbps (negligible)
+- **Buffer-ahead bursts:** a fresh pull (e.g. Feed B just before **NEXT**) can momentarily
+  spike to ~1.5–2× its steady rate for a few seconds
+
+**Upload — one clean broadcast out to the league channel**
+
+- **Program → YouTube:** 1080p30 ≈ 6 Mbps, 1080p60 ≈ 9 Mbps (CBR, 2 s keyframe). YouTube's
+  recommended range for 1080p60 is 4,500–9,000 Kbps (up to ~12,000 if the line allows).
+- Discord audio out + director panel / Companion / Tailscale: < 0.5 Mbps — the panel is
+  state JSON, not video.
+
+### Minimum vs. recommended (sustained, measured under load)
+
+|                          | Minimum                                              | Recommended                              |
+| ------------------------ | ---------------------------------------------------- | ---------------------------------------- |
+| **Download**             | **25 Mbps**                                          | **50 Mbps**                              |
+| **Upload**               | **10 Mbps**                                          | **20 Mbps**                              |
+| Program target supported | 1080p30 @ ~6 Mbps                                    | 1080p60 @ 9 Mbps                         |
+| Feeds carried cleanly    | Feed A + Feed B @ 1080p; POV may need 720p / capping | A + B + POV @ 1080p, with burst headroom |
+| Headroom                 | program ≈ 60–70% of upload                           | program ≈ ~45% of upload                 |
+
+These are sized for the **handover** worst case: pulling a fresh (bursting) Feed B
+alongside Feed A and an optional POV *down* while pushing the program *up*, all in the
+same few seconds.
+
+### Levers if your line is tight
+
+- **Cap the relay pull quality** (streamlink / yt-dlp format) to 720p to fit the Minimum
+  tier, or to absorb a commentator running heavy 1080p60.
+- **Wired only.** A Wi-Fi jitter spike at a driver change — pulling a new stream *and*
+  pushing the program at once — is the classic failure. Ethernet removes it.
+- **Measure under combined load**, not an idle speedtest: with all feeds + the program
+  running, sustained upload should stay ≤ ~70% of the line's real capacity.
+- **The director's line is separate and light** — a browser panel over Tailscale plus
+  watching the public broadcast — and is not part of these numbers.
 
 ## The easy way — the Control Center
 
