@@ -1140,7 +1140,7 @@ def relay_stop(rest):
             os.remove(_relay_pid_path())
         print("relay is not running.")
         return
-    if sv.stop_pid(pid, _relay_pid_path()):
+    if sv.stop_pid(pid, _relay_pid_path(), is_target=sv.pid_is_relay):
         print("relay stopped.")
         _release_obs_feeds()                # AFTER the kill — see docstring
     else:
@@ -1799,23 +1799,6 @@ def version():
         return "dev"
 
 
-def _render_notes_html(md):
-    """Render release-notes Markdown to sanitized HTML for the update dialog.
-    Best-effort: returns "" if the renderer is unavailable (the UI then falls
-    back to plaintext). mdrender escapes both text and link hrefs, so notes
-    authored in a PR are safe to inject as HTML."""
-    if not md:
-        return ""
-    try:
-        ui_dir = resource_path("ui")
-        if ui_dir not in sys.path:
-            sys.path.insert(0, ui_dir)
-        import mdrender
-        return mdrender.render(md)
-    except Exception:
-        return ""
-
-
 def update_check_data(fetch=None, current=None, platform=None, frozen=None):
     """Check-only view of the self-updater for the Home dashboard: is a newer
     GitHub release out? Thin wrapper over scripts/update.py — the single source
@@ -1832,7 +1815,7 @@ def update_check_data(fetch=None, current=None, platform=None, frozen=None):
     frozen = IS_FROZEN if frozen is None else frozen
     cur = current or version()
     out = {"ok": True, "current": cur, "latest": None, "update_available": False,
-           "notes": "", "notes_html": "",
+           "notes": "",
            "releases_url": f"https://github.com/{upd.REPO}/releases/latest"}
     if upd.parse_version(cur) is None and not frozen:   # source checkout — `git pull`
         out["note"] = "development build — update check skipped"
@@ -1852,8 +1835,9 @@ def update_check_data(fetch=None, current=None, platform=None, frozen=None):
         return out
     out["latest"] = detail                    # tag for up-to-date / update / building
     out["update_available"] = kind in ("update", "building")
+    # Release notes are GitHub-authored (untrusted); the dialog renders them as
+    # plaintext (#101), so return the raw body and never pre-render HTML here.
     out["notes"] = release.get("body") or ""
-    out["notes_html"] = _render_notes_html(out["notes"])
     return out
 
 
@@ -1874,8 +1858,7 @@ def preview_list_data(fetch=None, platform=None):
     except Exception:
         out["ok"] = False
         return out
-    for row in rows:
-        row["notes_html"] = _render_notes_html(row.get("notes", ""))
+    # Preview notes are untrusted; the Help view shows them as plaintext (#101).
     out["previews"] = rows
     return out
 

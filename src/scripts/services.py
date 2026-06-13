@@ -141,6 +141,47 @@ def _reap_zombie(pid):
         pass  # already reaped / gone — nothing to do
 
 
+def looks_like_relay(probe_output, windows=False):
+    """True iff a ps/tasklist probe line describes our relay daemon: the frozen
+    binary running `relay run`, or python running racecast-feeds.py. Guards a
+    stale/recycled PID file from making stop_pid signal an unrelated process —
+    mirrors stop-streams.py's looks_like_feed. On Windows tasklist returns only
+    the image name (no argv), so we accept the binary and the python host."""
+    text = probe_output.lower()
+    if "racecast-feeds" in text:              # repo mode: python racecast-feeds.py
+        return True
+    if "relay" in text and "run" in text:     # frozen: racecast relay run
+        return True
+    if windows:
+        return "racecast.exe" in text or "python" in text
+    return False
+
+
+def _pid_cmdline(pid):
+    """Lowercase-able process text for `pid`: the full command line on POSIX, the
+    tasklist CSV (image name only) on Windows. '' when the probe fails / PID gone."""
+    if os.name == "nt":
+        try:
+            return subprocess.check_output(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV"],
+                stderr=subprocess.DEVNULL, text=True, errors="replace",
+                **no_window_kwargs())
+        except (subprocess.SubprocessError, OSError):
+            return ""
+    try:
+        return subprocess.check_output(
+            ["ps", "-p", str(pid), "-o", "command="],
+            stderr=subprocess.DEVNULL, text=True, errors="replace")
+    except (subprocess.SubprocessError, OSError):
+        return ""
+
+
+def pid_is_relay(pid):
+    """True only if `pid` is actually our relay daemon. Guards stop_pid against a
+    stale/recycled PID file the same way stop-streams.py's pid_is_feed does."""
+    return looks_like_relay(_pid_cmdline(pid), windows=(os.name == "nt"))
+
+
 def _signal_stop(pid, force):
     cmd = stop_commands(os.name, pid, force)
     if cmd is not None:
@@ -152,9 +193,19 @@ def _signal_stop(pid, force):
         pass  # process already exited between the alive-check and the kill
 
 
-def stop_pid(pid, pid_path=None, timeout=10):
-    """Graceful stop, wait up to timeout, then force; remove pid_path. True if gone."""
+def stop_pid(pid, pid_path=None, timeout=10, is_target=None):
+    """Graceful stop, wait up to timeout, then force; remove pid_path. True if gone.
+
+    `is_target(pid) -> bool`, when given, verifies the live PID is really our
+    process before signalling it: a stale/recycled PID file naming an unrelated
+    process is dropped (pid file removed, reported gone) without ever killing the
+    impostor. Without it, behaviour is unchanged."""
     if pid_alive(pid):
+        if is_target is not None and not is_target(pid):
+            # Recycled/foreign PID — our daemon is already gone; never kill it.
+            if pid_path and os.path.exists(pid_path):
+                os.remove(pid_path)
+            return True
         _signal_stop(pid, force=False)
         for _ in range(timeout * 2):
             _reap_zombie(pid)
