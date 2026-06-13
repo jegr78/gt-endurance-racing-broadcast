@@ -285,21 +285,25 @@ def ensure_example_profile(exe_dir, frozen=None, bundled=None):
 
 
 def cleanup_old_binary(exe_dir, frozen=None, platform=None):
-    """Best-effort removal of the racecast-old.exe that `racecast update` leaves behind on
-    Windows (a running exe can only be renamed, not deleted, during the swap).
-    Returns True iff the leftover existed and was removed."""
+    """Best-effort removal of the *-old.exe leftovers that `racecast update` leaves
+    behind on Windows (a running exe can only be renamed, not deleted, during the
+    swap): racecast-old.exe for the CLI itself, plus racecast-ui-old.exe when the
+    running Control Center was renamed aside so the new launcher could land.
+    Returns True iff at least one leftover existed and was removed."""
     frozen = IS_FROZEN if frozen is None else frozen
     platform = sys.platform if platform is None else platform
     if not frozen or not platform.startswith("win"):
         return False
-    old = os.path.join(exe_dir, "racecast-old.exe")
-    try:
-        if os.path.exists(old):
-            os.remove(old)
-            return True
-    except OSError:
-        pass  # still locked by a lingering process — retried on the next run
-    return False
+    removed = False
+    for leftover in ("racecast-old.exe", "racecast-ui-old.exe"):
+        old = os.path.join(exe_dir, leftover)
+        try:
+            if os.path.exists(old):
+                os.remove(old)
+                removed = True
+        except OSError:
+            pass  # still locked by a lingering process — retried on the next run
+    return removed
 
 
 def _force_utf8_io(streams=None):

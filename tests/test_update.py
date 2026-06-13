@@ -159,6 +159,55 @@ def t_install_ui_missing_returns_none():
         assert os.listdir(tgt) == []
 
 
+def t_ui_old_path_naming():
+    assert m.ui_old_path(r"C:\racecast\racecast-ui.exe") == r"C:\racecast\racecast-ui-old.exe"
+
+
+def t_install_ui_renames_locked_running_exe_aside_on_windows():
+    # The GUI launcher is RUNNING when it self-updates (the Control Center fires
+    # the update), so on Windows racecast-ui.exe is locked against deletion.
+    # install_ui must rename it aside (racecast-ui-old.exe) instead of failing —
+    # the same trick swap_plan uses for racecast-old.exe; cleanup_old_binary
+    # removes it on the next launch. (Previously the locked remove raised and the
+    # caller swallowed it best-effort, so the UI was never updated — issue: the
+    # in-app preview/update silently left the old racecast-ui.exe in place.)
+    import tempfile
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+        _write(os.path.join(src, "racecast-ui.exe"), "new")
+        _write(os.path.join(tgt, "racecast-ui.exe"), "old")
+
+        def locked_remove(_path):
+            raise PermissionError("in use by a running process")
+
+        dst = m.install_ui(src, tgt, "win32", remove=locked_remove)
+        assert dst == os.path.join(tgt, "racecast-ui.exe")
+        with open(dst, encoding="utf-8") as fh:
+            assert fh.read() == "new"                       # new UI is in place
+        aside = os.path.join(tgt, "racecast-ui-old.exe")
+        assert os.path.exists(aside)                        # old one renamed, not deleted
+        with open(aside, encoding="utf-8") as fh:
+            assert fh.read() == "old"
+
+
+def t_install_ui_non_windows_remove_failure_propagates():
+    # POSIX can unlink a running binary, so a remove failure there is a real
+    # error — don't paper over it with a Windows-only rename.
+    import tempfile
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as tgt:
+        _write(os.path.join(src, "racecast-ui"), "new")
+        _write(os.path.join(tgt, "racecast-ui"), "old")
+
+        def boom(_path):
+            raise OSError("real failure")
+
+        raised = False
+        try:
+            m.install_ui(src, tgt, "linux", remove=boom)
+        except OSError:
+            raised = True
+        assert raised, "expected the OSError to propagate on non-Windows"
+
+
 # --- classify_tag: install exactly one named release (no semver compare) -------
 TAGREL = {"tag_name": "preview-pr-42",
           "assets": [{"name": "racecast-macos.tar.gz", "browser_download_url": "https://x/m"},
