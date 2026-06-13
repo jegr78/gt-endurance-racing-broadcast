@@ -71,9 +71,10 @@ def t_load_feeds_reads_config():
     import json, tempfile
     with tempfile.TemporaryDirectory() as d:
         with open(os.path.join(d, "streams.json"), "w") as fh:
-            json.dump([{"label": "X", "channel": "UC9", "port": "53005"},
-                       {"channel": "UC8", "port": "53006"}], fh)
-        assert start.load_feeds(d) == [("UC9", "53005"), ("UC8", "53006")]
+            json.dump([{"label": "X", "channel": "UCNye-wNBqNL5ZzHSJj3l8Bg", "port": "53005"},
+                       {"channel": "UCknLrEdhRCp1aegoMqRaCZg", "port": "53006"}], fh)
+        assert start.load_feeds(d) == [("UCNye-wNBqNL5ZzHSJj3l8Bg", "53005"),
+                                       ("UCknLrEdhRCp1aegoMqRaCZg", "53006")]
 
 
 def t_load_feeds_skips_incomplete_and_bad_json():
@@ -81,10 +82,10 @@ def t_load_feeds_skips_incomplete_and_bad_json():
     with tempfile.TemporaryDirectory() as d:
         p = os.path.join(d, "streams.json")
         with open(p, "w") as fh:
-            json.dump([{"channel": "UC9", "port": ""},      # no port -> skip
-                       {"channel": "", "port": "53006"},    # no channel -> skip
-                       {"channel": "UC7", "port": "53007"}], fh)
-        assert start.load_feeds(d) == [("UC7", "53007")]
+            json.dump([{"channel": "UCNye-wNBqNL5ZzHSJj3l8Bg", "port": ""},  # no port -> skip
+                       {"channel": "", "port": "53006"},                      # no channel -> skip
+                       {"channel": "UCknLrEdhRCp1aegoMqRaCZg", "port": "53007"}], fh)
+        assert start.load_feeds(d) == [("UCknLrEdhRCp1aegoMqRaCZg", "53007")]
         with open(p, "w") as fh:
             fh.write("not json")                            # malformed -> FEEDS
         assert start.load_feeds(d) == start.FEEDS
@@ -168,6 +169,37 @@ def t_loop_crosscheck_relay():
     for fn in ("platform_of", "twitch_oauth_from_cookies", "channel_url"):
         assert inspect.getsource(getattr(loop, fn)) == inspect.getsource(getattr(feeds_x, fn)), \
             f"{fn} drifted between loopstream and racecast-feeds"
+
+
+def t_start_is_channel_accepts_ids_and_allowed_urls():
+    assert start.is_channel("UCNye-wNBqNL5ZzHSJj3l8Bg") is True
+    assert start.is_channel("https://www.youtube.com/watch?v=abc") is True
+    assert start.is_channel("https://www.twitch.tv/chan") is True
+    assert start.is_channel("https://evil.com/x") is False
+    assert start.is_channel("https://twitch.tv@evil.com/") is False   # userinfo trick
+    assert start.is_channel("file:///etc/passwd") is False
+
+
+def t_start_load_feeds_skips_invalid(tmp=None):
+    import tempfile, json, os as _os
+    d = tempfile.mkdtemp()
+    with open(_os.path.join(d, "streams.json"), "w") as f:
+        json.dump([{"channel": "UCNye-wNBqNL5ZzHSJj3l8Bg", "port": "53001"},
+                   {"channel": "https://www.twitch.tv/chan", "port": "53002"},
+                   {"channel": "https://evil.com/x", "port": "53003"}], f)
+    feeds = start.load_feeds(d)
+    chans = [c for c, p in feeds]
+    assert "https://www.twitch.tv/chan" in chans
+    assert "UCNye-wNBqNL5ZzHSJj3l8Bg" in chans
+    assert "https://evil.com/x" not in chans          # SSRF host not allowed -> skipped
+
+
+def t_start_crosscheck_is_channel_vs_relay():
+    import inspect
+    for fn in ("is_channel", "_is_stream_url"):
+        assert inspect.getsource(getattr(start, fn)) == inspect.getsource(getattr(feeds_x, fn)), \
+            f"{fn} drifted between start-streams and racecast-feeds"
+    assert start.CHANNEL_RE.pattern == feeds_x.CHANNEL_RE.pattern
 
 
 if __name__ == "__main__":

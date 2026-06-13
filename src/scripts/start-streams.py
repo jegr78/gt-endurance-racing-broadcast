@@ -6,7 +6,8 @@ present, else the built-in FEEDS default below — (CHANNEL_ID, PORT). Ports mus
 match the OBS media sources.
 NOTE: PUBLIC channels only. The real unlisted flow is the relay (`racecast relay start`).
 """
-import argparse, json, os, shutil, subprocess, sys
+import argparse, json, os, re, shutil, subprocess, sys
+from urllib.parse import urlparse
 
 
 def state_dir(here):
@@ -48,6 +49,39 @@ def _spawn_kwargs():
     return mod.spawn_kwargs(os.name)
 
 
+# keep in sync with src/relay/racecast-feeds.py
+CHANNEL_RE = re.compile(r"^UC[A-Za-z0-9_\-]{20,}$")
+
+
+# keep in sync with src/relay/racecast-feeds.py
+def _is_stream_url(v: str) -> bool:
+    """True iff `v` is an http(s) URL on a supported streaming host (YouTube or
+    Twitch). The host allow-list blocks SSRF: a tailnet peer (POST /schedule/set,
+    /pov/set) or a sheet editor cannot point a feed at an internal/link-local
+    address (169.254.169.254, localhost, a LAN box) or a file:// path. A
+    userinfo trick (https://youtube.com@evil.com/) resolves to host 'evil.com'
+    and is rejected. Twitch is allowed because leagues occasionally run Twitch
+    feeds/POVs; broader Twitch handling elsewhere is a separate follow-up."""
+    try:
+        p = urlparse(v)
+    except ValueError:
+        return False
+    if p.scheme not in ("http", "https"):
+        return False
+    host = (p.hostname or "").lower()
+    if not host:
+        return False
+    return (host == "youtu.be"
+            or host == "youtube.com" or host.endswith(".youtube.com")
+            or host == "twitch.tv" or host.endswith(".twitch.tv"))
+
+
+# keep in sync with src/relay/racecast-feeds.py
+def is_channel(v: str) -> bool:
+    v = v.strip()
+    return bool(CHANNEL_RE.match(v)) or _is_stream_url(v)
+
+
 # ---- channels ----  (CHANNEL_ID, PORT)
 FEEDS = [
     ("UCNye-wNBqNL5ZzHSJj3l8Bg", "53001"),   # Feed A - TEST: Al Jazeera English (24/7)
@@ -72,8 +106,13 @@ def load_feeds(state_dir):
         feeds = []
         for e in data:
             ch, port = str(e.get("channel", "")).strip(), str(e.get("port", "")).strip()
-            if ch and port:
-                feeds.append((ch, port))
+            if not (ch and port):
+                continue
+            if not is_channel(ch):
+                print(f"WARN: skipping feed with invalid channel {ch!r} "
+                      f"(use a YouTube channel ID or a youtube/twitch URL)", file=sys.stderr)
+                continue
+            feeds.append((ch, port))
         return feeds or FEEDS
     except (OSError, ValueError, AttributeError, TypeError):
         return FEEDS
