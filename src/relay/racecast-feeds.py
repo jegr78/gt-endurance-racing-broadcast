@@ -86,6 +86,10 @@ import chat_admin  # required (ChatStore); src/scripts is on sys.path via the bl
 YTDLP_FORMAT = "b[height<=1080]/b"   # prefer <=1080p, auto-fall back to lower
 YTDLP_FORMAT_POV = "b[height<=720]/b"  # driver-POV is shown small (PiP) -> cap at 720p
 STREAMLINK_SERVE = ["--ringbuffer-size", "64M", "--hls-live-edge", "4"]
+# Twitch is served DIRECTLY by Streamlink's twitch plugin (no yt-dlp hop), so its
+# plugin options apply: low-latency prefetch + a tighter live edge. Ad filtering is
+# automatic in current Streamlink (the old --twitch-disable-ads is deprecated).
+STREAMLINK_TWITCH = ["--ringbuffer-size", "64M", "--hls-live-edge", "2", "--twitch-low-latency"]
 RESOLVE_RETRY = 15  # seconds between yt-dlp resolve attempts while a stint isn't live
 COOKIE_MAX_AGE_H = 12   # keep in sync with preflight.py cookies_status(max_age_hours)
 RETRY_SLEEP = 10    # seconds after a stream ends / manifest expires before re-resolving
@@ -979,11 +983,19 @@ def ytdlp_resolve_cmd(url, cookies, fmt=YTDLP_FORMAT):
     return cmd
 
 
-def streamlink_serve_cmd(hls, port):
-    """Argv for serving a resolved HLS URL to one OBS client. `--` separates the
-    positional URL/stream from the options so neither can be parsed as a flag."""
-    return (["streamlink", "--player-external-http", "--player-external-http-port", str(port)]
-            + STREAMLINK_SERVE + ["--", hls, "best"])
+def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None):
+    """Argv for serving a stream to one OBS client. YouTube gets a resolved HLS
+    URL (generic plugin); Twitch gets the twitch.tv URL itself so the Twitch
+    plugin handles resolution, automatic ad-filtering and low-latency. `--`
+    separates the positional URL/stream so neither can be parsed as a flag."""
+    base = ["streamlink", "--player-external-http", "--player-external-http-port", str(port)]
+    if platform == "twitch":
+        base += STREAMLINK_TWITCH
+        if twitch_token:
+            base += ["--twitch-api-header", f"Authorization=OAuth {twitch_token}"]
+    else:
+        base += STREAMLINK_SERVE
+    return base + ["--", target, "best"]
 
 
 def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):

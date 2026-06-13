@@ -19,5 +19,28 @@ def t_platform_of():
     assert feeds.platform_of("https://twitch.tv@evil.com/") == "youtube"
 
 
+def t_serve_cmd_youtube():
+    cmd = feeds.streamlink_serve_cmd("https://hls.example/x.m3u8", 53001)
+    assert "--twitch-low-latency" not in cmd
+    assert cmd[-2:] == ["https://hls.example/x.m3u8", "best"]
+    assert "--" in cmd and cmd.index("--") < cmd.index("https://hls.example/x.m3u8")
+
+
+def t_serve_cmd_twitch():
+    cmd = feeds.streamlink_serve_cmd("https://www.twitch.tv/chan", 53002, platform="twitch")
+    assert "--twitch-low-latency" in cmd
+    assert "--twitch-disable-ads" not in cmd            # deprecated; ads filtered automatically
+    assert cmd[cmd.index("--hls-live-edge") + 1] == "2"  # tighter than the default 4
+    assert cmd[-2:] == ["https://www.twitch.tv/chan", "best"]
+
+
+def t_serve_cmd_twitch_token():
+    cmd = feeds.streamlink_serve_cmd("https://www.twitch.tv/chan", 53002,
+                                     platform="twitch", twitch_token="abc123")
+    i = cmd.index("--twitch-api-header")
+    assert cmd[i + 1] == "Authorization=OAuth abc123"
+    assert i < cmd.index("--")                          # header is an option, before the URL
+
+
 if __name__ == "__main__":
-    t_platform_of(); print("ok")
+    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); print("ok")
