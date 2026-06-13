@@ -1029,7 +1029,22 @@ def migrate_legacy_cookie(cookie_dir):
     return new
 
 def twitch_oauth_from_cookies(path):
-    return None        # replaced in the Twitch-auth task
+    """Extract the Twitch `auth-token` value from a Netscape cookies file, for
+    Streamlink's --twitch-api-header. Returns the token or None (public/no auth).
+    Pure-ish (reads a file); any error -> None."""
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if line.startswith("#") or "\t" not in line:
+                    continue
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) >= 7 and parts[5] == "auth-token" and parts[6]:
+                    return parts[6]
+    except OSError:
+        return None
+    return None
 
 
 def channel_url(entry: str) -> str:

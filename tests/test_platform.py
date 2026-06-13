@@ -1,5 +1,5 @@
 # tests/test_platform.py
-import os, sys
+import os, sys, tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "relay"))
 import importlib.util
 spec = importlib.util.spec_from_file_location(
@@ -90,5 +90,22 @@ def t_migrate_legacy():
     assert os.path.isfile(p2) and os.path.isfile(legacy)
 
 
+def t_twitch_oauth():
+    assert feeds.twitch_oauth_from_cookies(None) is None
+    assert feeds.twitch_oauth_from_cookies("/no/such/file") is None
+    d = tempfile.mkdtemp(); p = os.path.join(d, "twitch-cookies.txt")
+    # Netscape format: domain \t flag \t path \t secure \t expiry \t name \t value
+    with open(p, "w") as f:
+        f.write(
+            "# Netscape HTTP Cookie File\n"
+            ".twitch.tv\tTRUE\t/\tTRUE\t0\tauth-token\tdeadbeefcafe0123\n"
+            ".twitch.tv\tTRUE\t/\tTRUE\t0\tother\tnope\n")
+    assert feeds.twitch_oauth_from_cookies(p) == "deadbeefcafe0123"
+    # file without auth-token -> None
+    with open(p, "w") as f:
+        f.write(".twitch.tv\tTRUE\t/\tTRUE\t0\tother\tnope\n")
+    assert feeds.twitch_oauth_from_cookies(p) is None
+
+
 if __name__ == "__main__":
-    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); t_ssai_markers(); t_cookies_for(); t_migrate_legacy(); print("ok")
+    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); t_ssai_markers(); t_cookies_for(); t_migrate_legacy(); t_twitch_oauth(); print("ok")
