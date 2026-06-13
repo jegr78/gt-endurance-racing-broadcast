@@ -47,6 +47,44 @@ def t_start_detached_then_stop(tmp):
     assert not os.path.exists(pidf)   # pid file removed on stop
 
 
+def t_looks_like_relay():
+    # frozen binary running `relay run`
+    assert sv.looks_like_relay("/opt/racecast/racecast relay run --runtime /x")
+    # repo mode: python running the relay script
+    assert sv.looks_like_relay("python3 /a/src/relay/racecast-feeds.py --runtime /x")
+    # Windows tasklist gives only the image name (no argv)
+    assert sv.looks_like_relay('"racecast.exe","1234","Console"', windows=True)
+    assert sv.looks_like_relay('"python.exe","1234","Console"', windows=True)
+    # unrelated processes must NOT match
+    assert not sv.looks_like_relay("/usr/bin/vim notes.txt")
+    assert not sv.looks_like_relay('"notepad.exe","1234","Console"', windows=True)
+    assert not sv.looks_like_relay("")
+
+
+def t_stop_pid_skips_foreign_pid(tmp):
+    # A stale/recycled PID file naming an unrelated live process must NOT be
+    # killed: stop_pid drops the pid file and reports gone without signalling.
+    pidf = os.path.join(tmp, "relay.pid")
+    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+    pid = sv.start_detached(argv, os.path.join(tmp, "l.log"), pidf)
+    try:
+        assert sv.pid_alive(pid) is True
+        assert sv.stop_pid(pid, pidf, timeout=5, is_target=lambda _p: False) is True
+        assert sv.pid_alive(pid) is True          # NOT killed — it wasn't ours
+        assert not os.path.exists(pidf)           # stale pid file cleared
+    finally:
+        sv.stop_pid(pid, pidf, timeout=5)         # real cleanup
+
+
+def t_stop_pid_kills_verified_target(tmp):
+    pidf = os.path.join(tmp, "relay2.pid")
+    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+    pid = sv.start_detached(argv, os.path.join(tmp, "l2.log"), pidf)
+    assert sv.pid_alive(pid) is True
+    assert sv.stop_pid(pid, pidf, timeout=5, is_target=lambda _p: True) is True
+    assert sv.pid_alive(pid) is False
+
+
 def t_spawn_kwargs_per_os():
     assert sv.spawn_kwargs("posix") == {"start_new_session": True}
     # Windows daemon spawn: CREATE_NO_WINDOW (0x08000000), NOT DETACHED_PROCESS.
