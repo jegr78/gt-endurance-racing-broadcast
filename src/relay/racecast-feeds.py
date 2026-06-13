@@ -965,10 +965,40 @@ class ChatStore:
         return {"ok": True, "count": len(msgs)}
 
 
-# --- Temporary stubs: replaced by real implementations in later tasks of this feature ---
-def ssai_warning(hls_url, logfile):
-    return None        # replaced in the SSAI-detection task
+# HLS tags that signal server-side ad insertion (SCTE-35 splice cues or an
+# ad-classed date-range). Their PRESENCE in a YouTube manifest means the source
+# is stitching ads we cannot reliably strip — we warn, never skip.
+_SSAI_RE = re.compile(r"#EXT-X-(?:CUE-OUT|SCTE35|DATERANGE:[^\n]*(?:CLASS=\"[^\"]*ad|SCTE35-OUT))",
+                      re.IGNORECASE)
 
+
+def manifest_has_ssai_markers(text):
+    """True iff an HLS playlist body carries server-side-ad-insertion markers.
+    Pure + best-effort: empty/None -> False."""
+    return bool(text) and bool(_SSAI_RE.search(text))
+
+
+def ssai_warning(hls_url, logfile):
+    """Fetch the resolved manifest once and, if it carries SSAI markers, return a
+    short warning string for /status (else None). Best-effort: any network/parse
+    failure returns None so the feed is never blocked by the probe."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen(hls_url, timeout=10) as r:   # noqa: S310 (https HLS only)
+            body = r.read(65536).decode("utf-8", errors="replace")
+    except Exception:
+        return None   # probe is a bonus signal; never fail the resolve on it
+    if manifest_has_ssai_markers(body):
+        try:
+            with open(logfile, "a", encoding="utf-8") as log:
+                log.write("   WARN: source manifest carries server-side ads (cannot strip)\n")
+        except Exception:
+            pass  # logging best-effort
+        return "source has server-side ads (not a clean broadcast feed)"
+    return None
+
+
+# --- Temporary stubs: replaced by real implementations in later tasks of this feature ---
 def cookies_for(platform, cookie_dir):
     return None        # replaced in the cookies_for task
 

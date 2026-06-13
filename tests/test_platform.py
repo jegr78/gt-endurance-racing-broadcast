@@ -42,5 +42,16 @@ def t_serve_cmd_twitch_token():
     assert i < cmd.index("--")                          # header is an option, before the URL
 
 
+def t_ssai_markers():
+    clean = "#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:2.0,\nseg0.ts\n#EXTINF:2.0,\nseg1.ts\n"
+    assert feeds.manifest_has_ssai_markers(clean) is False
+    cue = clean + "#EXT-X-CUE-OUT:30.0\n#EXTINF:2.0,\nad0.ts\n"
+    assert feeds.manifest_has_ssai_markers(cue) is True
+    daterange = clean + '#EXT-X-DATERANGE:ID="ad1",CLASS="twitch-stitched-ad",START-DATE="..."\n'
+    assert feeds.manifest_has_ssai_markers(daterange) is True
+    assert feeds.manifest_has_ssai_markers("") is False
+    assert feeds.manifest_has_ssai_markers(None) is False
+
+
 if __name__ == "__main__":
-    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); print("ok")
+    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); t_ssai_markers(); print("ok")
