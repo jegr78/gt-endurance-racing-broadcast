@@ -694,7 +694,7 @@
             <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button>
           <button id="env-save" onclick="saveSettings()">
             <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button></div>
-        <div class="viewhead"><h3>Cookies</h3><span class="sub">YouTube login — shared across all leagues</span></div>
+        <div class="viewhead"><h3>Cookies</h3><span class="sub">YouTube login (required) + Twitch login (optional) — shared across all leagues</span></div>
         <section>
           <div class="row"><span class="name">Cookies</span>
             <span class="badge" id="b-cookies"><span class="dot"></span><span>…</span></span>
@@ -708,6 +708,17 @@
             </select>
             <button onclick="op('cookies', false, {browser: $('browser').value})">
               <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button></div>
+          <div class="row"><span class="name">Twitch login (optional)</span>
+            <span class="dim grow">only needed for sub-/follower-only Twitch feeds</span>
+            <select id="browser-tw" aria-label="Browser to export Twitch cookies from">
+              <option value="firefox" selected>firefox</option>
+              <option value="chrome">chrome</option>
+              <option value="edge">edge</option>
+              <option value="brave">brave</option>
+              <option value="safari">safari</option>
+            </select>
+            <button onclick="op('cookies-twitch', false, {browser: $('browser-tw').value})">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh Twitch login</button></div>
         </section>
         <div class="enverr" id="env-err" hidden></div>
         <div class="envpath" id="env-path"></div>
