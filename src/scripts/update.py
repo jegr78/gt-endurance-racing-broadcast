@@ -257,12 +257,37 @@ def ui_asset_name(platform):
     return "racecast-ui"
 
 
-def install_ui(src_dir, target_dir, platform):
+def ui_old_path(dst):
+    """Where a locked, running racecast-ui.exe is renamed aside during an update —
+    mirrors the main binary's racecast-old.exe (racecast-ui.exe ->
+    racecast-ui-old.exe). cleanup_old_binary removes it on the next launch."""
+    base, ext = os.path.splitext(dst)
+    return base + "-old" + ext
+
+
+def _vacate_ui(dst, platform, remove):
+    """Free `dst` for the incoming racecast-ui. On Windows the GUI launcher is
+    almost always RUNNING when it self-updates — the Control Center fires the
+    update — and a running .exe is locked against deletion. It CAN still be renamed
+    aside (the same trick swap_plan uses for racecast-old.exe), so the new launcher
+    lands and cleanup_old_binary sweeps the leftover next launch. Elsewhere a plain
+    remove suffices: POSIX unlinks a running binary, the live process keeps its
+    inode — so a failure there is a real error and must propagate."""
+    try:
+        remove(dst)
+    except OSError:
+        if not platform.startswith("win"):
+            raise
+        os.replace(dst, ui_old_path(dst))   # rename the locked running exe aside
+
+
+def install_ui(src_dir, target_dir, platform, remove=os.remove):
     """Place the extracted racecast-ui artifact next to the racecast binary, replacing any
     existing one. The archive ships racecast + racecast-ui together, so the GUI launcher
     travels with every update. Returns the install path, or None when the archive
     carried no racecast-ui (pre-1.2 releases). Best-effort: the caller treats an OSError
-    as non-fatal — the racecast swap has already succeeded by then."""
+    as non-fatal — the racecast swap has already succeeded by then. `remove` is an
+    injectable seam for the unit test."""
     name = ui_asset_name(platform)
     src = os.path.join(src_dir, name)
     if not os.path.exists(src):
@@ -271,7 +296,7 @@ def install_ui(src_dir, target_dir, platform):
     if os.path.isdir(dst) and not os.path.islink(dst):
         shutil.rmtree(dst)          # macOS .app is a directory bundle
     elif os.path.lexists(dst):
-        os.remove(dst)
+        _vacate_ui(dst, platform, remove)
     shutil.move(src, dst)
     if not platform.startswith("win") and os.path.isfile(dst):
         os.chmod(dst, os.stat(dst).st_mode | 0o755)
@@ -340,8 +365,10 @@ def _download_and_swap(url, tag, digest=None):
     print(f"updated to {tag} — restart racecast to use it.")
     if ui_path:
         print(f"installed {os.path.basename(ui_path)} next to racecast.")
+        print("If the Control Center is open, fully quit and relaunch it to load "
+              "the new version (the running one is still the old build).")
     if sys.platform.startswith("win"):
-        print("(the old binary was kept as racecast-old.exe and is removed on the next start)")
+        print("(old binaries are kept as *-old.exe and removed on the next start)")
 
 
 def main():

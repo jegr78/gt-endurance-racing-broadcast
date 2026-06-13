@@ -193,6 +193,19 @@ def t_cleanup_old_binary():
         assert m.cleanup_old_binary(d, frozen=True, platform="win32") is False
 
 
+def t_cleanup_old_binary_also_removes_ui():
+    # install_ui renames a locked, running racecast-ui.exe aside to
+    # racecast-ui-old.exe during a self-update; cleanup must sweep that too, not
+    # only the main binary's racecast-old.exe.
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        ui_old = os.path.join(d, "racecast-ui-old.exe")
+        with open(ui_old, "wb") as fh:
+            fh.write(b"x")
+        assert m.cleanup_old_binary(d, frozen=True, platform="win32") is True
+        assert not os.path.exists(ui_old)
+
+
 def t_ensure_example_profile_seeds_once():
     import tempfile
     with tempfile.TemporaryDirectory() as d:
