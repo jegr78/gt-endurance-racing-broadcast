@@ -965,6 +965,17 @@ class ChatStore:
         return {"ok": True, "count": len(msgs)}
 
 
+# --- Temporary stubs: replaced by real implementations in later tasks of this feature ---
+def ssai_warning(hls_url, logfile):
+    return None        # replaced in the SSAI-detection task
+
+def cookies_for(platform, cookie_dir):
+    return None        # replaced in the cookies_for task
+
+def twitch_oauth_from_cookies(path):
+    return None        # replaced in the Twitch-auth task
+
+
 def channel_url(entry: str) -> str:
     entry = entry.strip()
     if entry.startswith("http://") or entry.startswith("https://"):
@@ -1496,13 +1507,15 @@ class SetupControl:
 
 
 class Feed:
-    def __init__(self, name, port, idx, provider, logdir, cookies=None, fmt=YTDLP_FORMAT):
+    def __init__(self, name, port, idx, provider, logdir, cookies=None, fmt=YTDLP_FORMAT,
+                 cookie_dir=None):
         self.name = name
         self.port = port
         self.idx = idx
         self.provider = provider          # callable -> current schedule list
         self.cookies = cookies            # path to cookies.txt (bot-check protection) or None
         self.fmt = fmt                    # yt-dlp format string (POV uses a lower cap)
+        self.cookie_dir = cookie_dir      # dir holding yt-/twitch-cookies.txt (for per-pull resolve)
         self.paused = False               # when True the feed idles (POV off / stopped)
         self.lock = threading.Lock()
         self.proc = None
@@ -1571,38 +1584,44 @@ class Feed:
                 time.sleep(3); continue
             self._set_phase("connecting")
             url = channel_url(ch)
+            plat = platform_of(url)
             with open(self.logfile, "a", encoding="utf-8") as log:
-                log.write(f"\n>> [{self.name}:{self.port}] stint {i+1} -> resolving {url}\n"); log.flush()
-            # 1) resolve the live HLS URL via yt-dlp (cookies + bot-check handling)
-            hls, err = resolve_hls(url, self.cookies, self.logfile, self.fmt)
-            if self.stop: break
-            if self.advance.is_set():
-                self.advance.clear(); continue
-            if not hls:
-                self.last_error = err       # surfaced via /status (panel health line)
-                time.sleep(RESOLVE_RETRY)   # not live yet / could not resolve -> poll again
-                continue
-            # 2) serve the direct HLS URL via streamlink (no YouTube plugin -> no bot-check)
+                log.write(f"\n>> [{self.name}:{self.port}] stint {i+1} ({plat}) -> {url}\n"); log.flush()
+
+            if plat == "twitch":
+                token = twitch_oauth_from_cookies(
+                    cookies_for("twitch", self.cookie_dir))      # real impls land in later tasks
+                target, serve_platform = url, "twitch"           # no yt-dlp hop
+            else:
+                hls, err = resolve_hls(url, self.cookies, self.logfile, self.fmt)
+                if self.stop: break
+                if self.advance.is_set():
+                    self.advance.clear(); continue
+                if not hls:
+                    self.last_error = err
+                    time.sleep(RESOLVE_RETRY); continue
+                self.last_error = ssai_warning(hls, self.logfile)  # warn, never block
+                token, target, serve_platform = None, hls, "youtube"
+
             with open(self.logfile, "a", encoding="utf-8") as log:
-                log.write(f">> [{self.name}:{self.port}] serving stint {i+1}\n"); log.flush()
-                cmd = streamlink_serve_cmd(hls, self.port)
+                log.write(f">> [{self.name}:{self.port}] serving stint {i+1} ({serve_platform})\n"); log.flush()
+                cmd = streamlink_serve_cmd(target, self.port, serve_platform, token)
                 try:
                     self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT,
                                                  **_no_window_kwargs())
-                    self.last_error = None
+                    if serve_platform != "youtube":
+                        self.last_error = None
                     self._set_phase("serving")
                     self.proc.wait()
                 except FileNotFoundError:
-                    # Startup checks for streamlink; reaching here means it vanished mid-run.
                     log.write(f">> [{self.name}] streamlink not found on PATH — retrying\n"); log.flush()
                     self.proc = None
                     time.sleep(RETRY_SLEEP); continue
-            self._set_phase("connecting")   # child gone -> we are reconnecting
-            if self.stop:
-                break
+            self._set_phase("connecting")
+            if self.stop: break
             if self.advance.is_set():
                 self.advance.clear(); continue
-            time.sleep(RETRY_SLEEP)   # stream ended / manifest expired -> re-resolve
+            time.sleep(RETRY_SLEEP)
 
     def shutdown(self):
         self.stop = True; self._kill_proc()
@@ -1620,12 +1639,13 @@ def should_probe_obs(last_ts, running, now, interval):
 
 class Relay:
     def __init__(self, source, ports, logdir, cookies=None, pov_source=None,
-                 pov_port=None, start_stint=1):
+                 pov_port=None, start_stint=1, cookie_dir=None):
         self.source = source
         self.cookies = cookies
+        self.cookie_dir = cookie_dir
         a_idx, b_idx = stint_start_indices(start_stint, len(source.get()))
-        self.A = Feed("A", ports[0], a_idx, source.get, logdir, cookies)
-        self.B = Feed("B", ports[1], b_idx, source.get, logdir, cookies)
+        self.A = Feed("A", ports[0], a_idx, source.get, logdir, cookies, cookie_dir=cookie_dir)
+        self.B = Feed("B", ports[1], b_idx, source.get, logdir, cookies, cookie_dir=cookie_dir)
         self.feeds = {"A": self.A, "B": self.B}
         self.obs_note = None          # last OBS note (None/"" = ok); read by status()
         self.obs_reachable = None     # last LIVE reachability probe; None until first /status
@@ -1638,7 +1658,7 @@ class Relay:
         self.pov = None
         if pov_source is not None and pov_port is not None:
             self.pov = Feed("POV", pov_port, 0, pov_source.get, logdir, cookies,
-                            fmt=YTDLP_FORMAT_POV)
+                            fmt=YTDLP_FORMAT_POV, cookie_dir=cookie_dir)
             self.pov.paused = True
 
     def start(self):
@@ -2265,7 +2285,8 @@ def main():
 
     relay = Relay(source, ports, logdir, cookies,
                   pov_source=pov_source, pov_port=args.pov_port,
-                  start_stint=args.stint)
+                  start_stint=args.stint,
+                  cookie_dir=(os.path.dirname(cookies) if cookies else runtime))
     relay.start()
     relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
 
