@@ -105,6 +105,10 @@ RETRY_SLEEP = 10    # seconds after a stream ends / manifest expires before re-r
 # from the active profile). Override per-run with --sheet-id.
 DEFAULT_SHEET_TAB = "Schedule"
 DEFAULT_POV_TAB = "POV"
+# Qualifying runs on its own day from a separate tab with the SAME structure as
+# the Schedule tab (URL/Streamer/Stint). It is a single stream served on Feed A;
+# the relay switches its active schedule between race and qualifying (issue #124).
+DEFAULT_QUALIFYING_TAB = "Qualifying"
 
 # ---------- Network bind resolution (auto dual-bind: localhost + Tailscale) ----
 # OBS always reaches the control/HUD server on 127.0.0.1 (a fixed, machine-
@@ -1486,10 +1490,11 @@ class SetupControl:
     and answering after the webhook confirm removes the save-vs-RELOAD race).
     The sheet stays authoritative throughout."""
 
-    def __init__(self, push_url, hud_source, schedule_source=None):
+    def __init__(self, push_url, hud_source, schedule_source=None, qual_source=None):
         self.push_url = push_url
         self.hud = hud_source
         self.schedule_source = schedule_source
+        self.qual_source = qual_source
         self.push_status = "disabled" if not push_url else "never"
         self.last_error = None
 
@@ -1563,6 +1568,20 @@ class SetupControl:
 
     # -- URL writes (synchronous) --------------------------------------------
     def schedule_set(self, row, url=None, name=None, stint=None):
+        """Write a race Schedule row (the default tab)."""
+        return self._schedule_write(row, url, name, stint,
+                                    tab=None, inject_source=self.schedule_source)
+
+    def qualifying_set(self, row, url=None, name=None, stint=None):
+        """Write the qualifying row — same payload, but targeting the Qualifying
+        tab (issue #124) and echoing into the qualifying source. Kept separate so
+        the race schedule is never touched by a qualifying edit and vice versa."""
+        return self._schedule_write(row, url, name, stint,
+                                    tab=DEFAULT_QUALIFYING_TAB,
+                                    inject_source=self.qual_source)
+
+    def _schedule_write(self, row, url=None, name=None, stint=None,
+                        tab=None, inject_source=None):
         if not self.push_url:
             return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
                              "in the active profile or .env (wiki: Sheet-Webhook)"}
@@ -1583,6 +1602,8 @@ class SetupControl:
         if stint is not None and not isinstance(stint, str):
             return {"error": "stint must be a string"}
         payload = {"action": "schedule", "row": row}
+        if tab:
+            payload["tab"] = tab        # webhook writes this tab (default: Schedule)
         if url is not None:
             url = url.strip()
             if url and not is_channel(url):
@@ -1604,9 +1625,9 @@ class SetupControl:
                 return err
             payload["stint"] = stint
         ok, err = self._push(payload, "schedule")
-        if ok and self.schedule_source is not None and url:
-            self.schedule_source.inject_row(row, url, payload.get("name", ""),
-                                            payload.get("stint", ""))
+        if ok and inject_source is not None and url:
+            inject_source.inject_row(row, url, payload.get("name", ""),
+                                     payload.get("stint", ""))
         return {"ok": True, "row": row} if ok else {"error": err}
 
     def _reject_off_vocab(self, key, value):
@@ -1784,13 +1805,22 @@ def should_probe_obs(last_ts, running, now, interval):
 
 class Relay:
     def __init__(self, source, ports, logdir, cookies=None, pov_source=None,
-                 pov_port=None, start_stint=1, cookie_dir=None):
-        self.source = source
+                 pov_port=None, start_stint=1, cookie_dir=None,
+                 qual_source=None, mode="race"):
+        self.race_source = source
+        self.qual_source = qual_source
+        # Active schedule is race by default; qualifying only when a qual source
+        # exists. self.source (property below) returns whichever is active, so
+        # every existing call site (status/next/reload/set_stint/handler) becomes
+        # mode-aware for free.
+        self.mode = "qualifying" if (mode == "qualifying" and qual_source) else "race"
         self.cookies = cookies
         self.cookie_dir = cookie_dir
-        a_idx, b_idx = stint_start_indices(start_stint, len(source.get()))
-        self.A = Feed("A", ports[0], a_idx, source.get, logdir, cookies, cookie_dir=cookie_dir)
-        self.B = Feed("B", ports[1], b_idx, source.get, logdir, cookies, cookie_dir=cookie_dir)
+        a_idx, b_idx = stint_start_indices(start_stint, len(self.active_source().get()))
+        # Feeds read the ACTIVE source via active_items, so a /mode switch re-points
+        # both feeds without rebuilding them (the OBS Feed A/B sources never change).
+        self.A = Feed("A", ports[0], a_idx, self.active_items, logdir, cookies, cookie_dir=cookie_dir)
+        self.B = Feed("B", ports[1], b_idx, self.active_items, logdir, cookies, cookie_dir=cookie_dir)
         self.feeds = {"A": self.A, "B": self.B}
         self.obs_note = None          # last OBS note (None/"" = ok); read by status()
         self.obs_reachable = None     # last LIVE reachability probe; None until first /status
@@ -1806,6 +1836,21 @@ class Relay:
                             fmt=YTDLP_FORMAT_POV, cookie_dir=cookie_dir)
             self.pov.paused = True
 
+    def active_source(self):
+        """The schedule the A/B feeds currently serve: qualifying when in
+        qualifying mode (and a qual source exists), else the race schedule."""
+        return self.qual_source if (self.mode == "qualifying" and self.qual_source) else self.race_source
+
+    def active_items(self):
+        """Feed provider: the active schedule's URL list (mode-aware)."""
+        return self.active_source().get()
+
+    @property
+    def source(self):
+        """The active ScheduleSource. A property so status/next/reload/set_stint
+        and the /schedule + handover paths all follow the current mode."""
+        return self.active_source()
+
     def start(self):
         for f in self.feeds.values():
             threading.Thread(target=f.run, daemon=True).start()
@@ -1818,7 +1863,10 @@ class Relay:
         sched = self.source.get()
         out = {"schedule_len": len(sched), "cookies": bool(self.cookies),
                "cookies_health": cookie_health(self.cookies, now=now),
-               "source": self.source.health(), "feeds": {}}
+               "mode": self.mode, "source": self.source.health(), "feeds": {}}
+        if self.qual_source:
+            out["qualifying"] = {"active": self.mode == "qualifying",
+                                 "source": self.qual_source.health()}
         for k, f in self.feeds.items():
             ch, i = f.current_channel()
             out["feeds"][k] = {"port": f.port, "index": i, "stint": i + 1,
@@ -1920,6 +1968,25 @@ class Relay:
         self.A.set_index(a_idx)
         self.B.set_index(b_idx)
         self._reflect(self.live_feed(), cut=False)   # set visibility/audio; director picks the scene
+        return self.status()
+
+    def set_mode(self, mode):
+        """Switch the active schedule between 'race' and 'qualifying'. Re-points
+        both feeds to the new schedule's stint 1 — for a single-stream qualifying
+        Feed A serves the one row and Feed B idles — and sets Feed-A visibility/
+        audio (cut=False; the director picks the scene). Tears a running pull off
+        its stream like set_stint: an explicit between-session action, not for
+        mid-program use. No-op-with-error when qualifying is unavailable."""
+        if mode not in ("race", "qualifying"):
+            return {"error": f"unknown mode: {mode!r} (one of race, qualifying)"}
+        if mode == "qualifying" and not self.qual_source:
+            return {"error": "qualifying disabled (no Qualifying tab, or --no-qualifying)"}
+        self.mode = mode
+        self.active_source().refresh(timeout=6)        # fresh rows for the schedule we switch to
+        a_idx, b_idx = stint_start_indices(1, len(self.active_source().get()))
+        self.A.set_index(a_idx)
+        self.B.set_index(b_idx)
+        self._reflect(self.live_feed(), cut=False)
         return self.status()
 
     def reload(self, which=None):
@@ -2134,6 +2201,26 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                                  "live": live.get(i)}
                                                 for i, (u, n, st, line) in enumerate(rows)],
                                        "source": relay.source.health()})
+                if p == ["qualifying", "data"]:
+                    qs = relay.qual_source
+                    if not qs:
+                        return self._send({"available": False, "mode": relay.mode,
+                                           "rows": []})
+                    qrows = qs.get_rows()
+                    live = {f.idx: k for k, f in relay.feeds.items()} if relay.mode == "qualifying" else {}
+                    return self._send({"available": True, "mode": relay.mode,
+                                       "rows": [{"row": i + 1, "sheetRow": line,
+                                                 "url": u, "name": n, "stint": st,
+                                                 "live": live.get(i)}
+                                                for i, (u, n, st, line) in enumerate(qrows)],
+                                       "source": qs.health()})
+                if len(p) == 2 and p[0] == "mode":
+                    res = relay.set_mode(p[1].lower())
+                    # On a successful switch the new schedule's stint is on air ->
+                    # auto-fill the HUD Streamer/Stint from it (issue #112 path).
+                    if setup_ctl and "error" not in res:
+                        _push_live_schedule(relay, setup_ctl)
+                    return self._send(res)
                 if p == ["next"]:
                     result = relay.next_auto()
                     # One-button handover: next_auto cuts OBS back to the Stint
@@ -2194,6 +2281,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"error": "setup control disabled"}, 404)
                 if p == ["schedule", "set"]:
                     return self._send(setup_ctl.schedule_set(
+                        body.get("row"), body.get("url"), body.get("name"),
+                        body.get("stint")))
+                if p == ["qualifying", "set"]:
+                    return self._send(setup_ctl.qualifying_set(
                         body.get("row"), body.get("url"), body.get("name"),
                         body.get("stint")))
                 if p == ["pov", "set"]:
@@ -2284,6 +2375,16 @@ def main():
                     help="Local port for the driver-POV PiP feed (OBS 'Feed POV').")
     ap.add_argument("--no-pov", action="store_true",
                     help="Disable the driver-POV PiP feed entirely.")
+    ap.add_argument("--qualifying-tab", default=DEFAULT_QUALIFYING_TAB,
+                    help="Google-Sheet tab for the qualifying schedule (same "
+                         "URL/Streamer/Stint structure as the race Schedule tab; "
+                         "default 'Qualifying'). One stream, served on Feed A.")
+    ap.add_argument("--qualifying", action="store_true",
+                    help="Start in QUALIFYING mode: serve the qualifying tab on "
+                         "Feed A instead of the race schedule (different-day "
+                         "qualifying). Switch live via /mode/race | /mode/qualifying.")
+    ap.add_argument("--no-qualifying", action="store_true",
+                    help="Do not build the qualifying schedule source at all.")
     ap.add_argument("--poll", type=int, default=30, help="Sheet poll interval (seconds)")
     ap.add_argument("--schedule", default="schedule.txt", help="Local offline fallback")
     ap.add_argument("--http-port", type=int, default=8088)
@@ -2376,6 +2477,17 @@ def main():
         pov_source = ScheduleSource(pov_csv_url, pov_cache, None)
         pov_source.refresh()   # non-fatal: empty cell / unreachable = POV simply off
 
+    # Qualifying source: own sheet tab, same parser/structure as the race
+    # schedule. Like POV it is derivable only from sheet-id/tab (a custom
+    # --sheet-csv-url disables it). Single stream -> served on Feed A.
+    qual_source = None
+    if not args.no_qualifying and not args.sheet_csv_url:
+        qual_csv_url = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
+                        f"/gviz/tq?tqx=out:csv&sheet={quote(args.qualifying_tab)}")
+        qual_cache = os.path.join(runtime, "qualifying.cache.txt")
+        qual_source = ScheduleSource(qual_csv_url, qual_cache, None)
+        qual_source.refresh()   # non-fatal: empty/unreachable = qualifying mode just idles
+
     # Optionally auto-export cookies from a logged-in browser first (yt-dlp)
     if args.cookies_from_browser:
         export_cookies(args.cookies_from_browser, os.path.join(runtime, "yt-cookies.txt"))
@@ -2461,7 +2573,8 @@ def main():
     chat_store = ChatStore(os.path.join(runtime, "chat.json"))
     source = ScheduleSource(csv_url, cache, local)
     source.load_initial(SCHEDULE_TEMPLATE)
-    setup_ctl = SetupControl(push_url, hud_source, schedule_source=source) if hud_source else None
+    setup_ctl = (SetupControl(push_url, hud_source, schedule_source=source,
+                              qual_source=qual_source) if hud_source else None)
     if len(source.get()) < 2:
         print("INFO: schedule has fewer than 2 stints — Feed B idles on the empty next "
               "slot (black) until that stint's link is added; Feed A keeps serving stint 1.")
@@ -2469,12 +2582,22 @@ def main():
     relay = Relay(source, ports, logdir, cookies,
                   pov_source=pov_source, pov_port=args.pov_port,
                   start_stint=args.stint,
-                  cookie_dir=(os.path.dirname(cookies) if cookies else runtime))
+                  cookie_dir=(os.path.dirname(cookies) if cookies else runtime),
+                  qual_source=qual_source,
+                  mode=("qualifying" if args.qualifying else "race"))
     relay.start()
     relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
+    # Launching straight into qualifying mode: seed the HUD Streamer/Stint from
+    # the qualifying row now (the /mode switch does this live; the launch path
+    # should match so the HUD isn't stale until the first action). Best-effort.
+    if relay.mode == "qualifying" and setup_ctl:
+        _push_live_schedule(relay, setup_ctl)
 
     stop_evt = threading.Event()
     threading.Thread(target=poller, args=(source, args.poll, stop_evt), daemon=True).start()
+    if qual_source:
+        threading.Thread(target=poller, args=(qual_source, args.poll, stop_evt),
+                         daemon=True).start()
     if hud_source:
         threading.Thread(target=poller, args=(hud_source, args.hud_poll, stop_evt),
                          daemon=True).start()
@@ -2520,6 +2643,10 @@ def main():
     remote_host = next((a for a in bind_addrs if a not in ("127.0.0.1", "localhost")), None)
 
     print(f"racecast relay running.  Schedule source: {'CSV URL' if args.sheet_csv_url else f'sheet tab “{args.sheet_tab}”'}")
+    if relay.qual_source:
+        _qmode = "QUALIFYING (live)" if relay.mode == "qualifying" else "race"
+        print(f"  Qualifying tab '{args.qualifying_tab}' available — mode: {_qmode}  "
+              f"(switch: /mode/qualifying | /mode/race)")
     print(f"  Feed A -> http://127.0.0.1:{ports[0]}   Feed B -> http://127.0.0.1:{ports[1]}")
     if args.stint != 1:
         if relay.A.idx != args.stint - 1:
