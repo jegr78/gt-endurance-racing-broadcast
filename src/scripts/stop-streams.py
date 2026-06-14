@@ -83,7 +83,7 @@ def kill_tree(pid):
         try:
             os.kill(pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
-            pass
+            pass  # leader already gone / not ours — nothing left to signal
         return
     try:
         os.killpg(pgid, signal.SIGTERM)
@@ -99,7 +99,7 @@ def kill_tree(pid):
         try:
             os.killpg(pgid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
-            pass
+            pass  # group already reaped between the grace poll and the kill
 
 
 def state_dir(here):

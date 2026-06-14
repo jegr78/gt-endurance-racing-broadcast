@@ -106,7 +106,7 @@ def t_kill_tree_reaps_grandchild_session():
                 if txt:
                     gc_pid = int(txt); break
             except (OSError, ValueError):
-                pass
+                pass  # stamp not written yet / partial — the retry loop reads it next tick
             time.sleep(0.05)
         assert gc_pid is not None, "grandchild never started"
         ppid = int(subprocess.check_output(["ps", "-o", "ppid=", "-p", str(gc_pid)]).strip())
@@ -127,7 +127,7 @@ def t_kill_tree_reaps_grandchild_session():
                 try:
                     os.kill(pid, signal.SIGKILL)
                 except (ProcessLookupError, PermissionError):
-                    pass
+                    pass  # best-effort teardown — process already gone
         if leader:
             try:
                 leader.wait(timeout=2)
