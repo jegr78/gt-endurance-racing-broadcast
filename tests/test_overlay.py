@@ -391,6 +391,31 @@ def t_ob_sample_has_clock_in_hud_only():
     assert "timer" not in ob.SAMPLE      # timer page is merged into hud
 
 
+import json as _json
+
+def t_obs_collection_has_no_timer_source():
+    with open(os.path.join(ROOT, "src", "obs", "GT_Endurance.json"), encoding="utf-8") as f:
+        col = _json.load(f)
+    blob = _json.dumps(col)
+    assert "HUD Race Timer" not in blob, "the separate timer source must be removed"
+    assert "8088/timer" not in blob, "no scene item should point at the /timer page"
+    assert "8088/hud" in blob   # the HUD page source remains
+
+def t_obs_hud_overlay_above_feed_pov():
+    # In every scene/group that has both, HUD Overlay must render in FRONT of
+    # Feed POV (OBS index 0 = front), so the HUD's #pov frame draws over the video.
+    with open(os.path.join(ROOT, "src", "obs", "GT_Endurance.json"), encoding="utf-8") as f:
+        col = _json.load(f)
+    def items_of(src):
+        return (src.get("settings") or {}).get("items") or []
+    for src in col.get("sources", []):
+        if src.get("id") not in ("scene", "group"):
+            continue
+        names = [it.get("name") for it in items_of(src)]
+        if "HUD Overlay" in names and "Feed POV" in names:
+            assert names.index("HUD Overlay") < names.index("Feed POV"), src.get("name")
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
