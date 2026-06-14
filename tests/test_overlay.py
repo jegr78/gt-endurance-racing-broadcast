@@ -372,6 +372,11 @@ def t_ob_compile_border_props_respect_allowed():
     assert "border-style" not in css
 
 
+def t_ob_sample_has_clock_in_hud_only():
+    assert ob.SAMPLE["hud"].get("clock") == "1:23:45"
+    assert "timer" not in ob.SAMPLE      # timer page is merged into hud
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):

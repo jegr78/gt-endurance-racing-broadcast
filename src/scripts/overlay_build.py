@@ -54,8 +54,8 @@ SAMPLE = {
         "team2-num": "23", "team2-name": "Apex Racing",
         "team3-num": "99", "team3-name": "Night Shift Motorsport",
         "race-control": "FCY — Full Course Yellow",
+        "clock": "1:23:45",
     },
-    "timer": {"clock": "1:23:45"},
 }
 
 
