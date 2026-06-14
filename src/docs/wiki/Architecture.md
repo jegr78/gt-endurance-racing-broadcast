@@ -104,7 +104,7 @@ A running feed is **never** torn off mid-stint. Sheet edits apply on the next `/
 
 ### The HUD overlay
 
-The lower-third HUD is **one** relay-served page, not a pile of OBS browser sources.
+The lower-third HUD is **one** relay-served page.
 The relay reads the **Overlay** tab (live values: streamer, session, round, top-3
 teams, race control) and the **Configuration** tab (team → manufacturer via a
 `Brand Name` column) as gviz CSV, and serves:
@@ -127,10 +127,11 @@ tab `Timer` + the active profile's `runtime/<profile>/timer.json`, Director-cont
 
 ## 3. Control flow
 
-The director never touches the producer machine directly. Companion talks to OBS over
-its WebSocket and to the relay over plain HTTP GETs. The **director panel** is an
-alternative control surface with the same action set (organized as mixer-bus rows);
-it talks to OBS directly, so it needs the OBS WebSocket password once per device.
+The director never touches the producer machine directly. The **director panel** is the
+primary control surface (organized as mixer-bus rows); it talks to OBS directly over the
+WebSocket, so it needs the OBS WebSocket password once per device. Companion offers the
+same action set as a hardware-style button board — it talks to OBS over its WebSocket and
+to the relay over plain HTTP GETs.
 
 ```mermaid
 flowchart LR
@@ -141,7 +142,7 @@ flowchart LR
 
   GH -->|"HTTP GET"| EP["Relay control server :8088<br/>/next  /reload  /set/A/n<br/>/pov/reload  /pov/stop  /pov/toggle  /timer/*  /status  /panel"]
   OM -->|"WebSocket"| WS["OBS WebSocket :4455"]
-  PANEL["Director panel (backup)<br/>served at /panel"] -->|"WebSocket, direct"| WS
+  PANEL["Director panel<br/>served at /panel"] -->|"WebSocket, direct"| WS
 
   DIR["Director browser<br/>over Tailscale"] -->|":8000/tablet"| Companion
 ```

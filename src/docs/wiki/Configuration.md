@@ -141,9 +141,8 @@ So `setup-assets.py`:
 (The HUD overlay and race timer need no injection — both are served by the relay;
 the profile's `SHEET_ID` is read by the relay, not the collection.)
 
-> `__RACECAST_ASSETS__` is retired from the OBS collection. `src/assets/` now holds **only**
-> the bundled HUD `flags/` + `brands/` logos — these stay committed and are served by the
-> relay HUD, not by the OBS collection.
+> `src/assets/` holds **only** the bundled HUD `flags/` + `brands/` logos — they stay
+> committed and are served by the relay HUD, not by the OBS collection.
 
 You can override the sheet per-run without touching the profile: `--sheet-id <ID>`.
 

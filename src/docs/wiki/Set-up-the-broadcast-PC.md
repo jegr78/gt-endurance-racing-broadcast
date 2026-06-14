@@ -122,7 +122,6 @@ step 4).
 
 **You should now see:** the version number printed in the terminal, and a new
 `.env` file next to the binary.
-<!-- screenshot: terminal open in the racecast folder with ./racecast --version output -->
 
 > **One-time OS warning** (the binaries are unsigned — there is no Apple/Windows
 > code-signing certificate, so the OS flags the download):
@@ -278,7 +277,6 @@ run) holds just optional switches and needs nothing here. Full detail:
 
 **You should now see:** `profiles/myleague/profile.env` containing a filled `SHEET_ID=…` line,
 and `racecast profile show` listing it as the active league.
-<!-- screenshot: profile.env open in an editor with SHEET_ID filled (value blurred) -->
 
 ## 5 — Import the OBS scenes
 
@@ -309,8 +307,6 @@ Discord windowed. Step-by-step (incl. Discord audio):
 
 **You should now see:** OBS switched to the imported collection — the scene
 list includes Standby / BRB, Stint, Splitscreen, Interview, Intro and Outro.
-<!-- screenshot: OBS Scene Collection -> Import dialog with runtime/GT_Endurance.import.json selected -->
-<!-- screenshot: OBS after the import - scene list visible, Standby scene active -->
 
 ## 6 — Import the Companion buttons
 
@@ -338,8 +334,6 @@ racecast companion restart    # binds Companion to this machine's Tailscale IP
 only.) Details: [Companion](Companion).
 
 **You should now see:** the broadcast buttons in Companion's admin **Buttons** tab.
-<!-- screenshot: Companion launcher with the Launch GUI button -->
-<!-- screenshot: Companion Import/Export -> Import dialog showing the Reset/Replace choices -->
 
 ## 7 — Let Companion control OBS
 
@@ -347,19 +341,20 @@ only.) Details: [Companion](Companion).
 
 In OBS: **Tools → WebSocket Server Settings →** enable it (port `4455`), turn on
 authentication, set a password — and enter the **same** password in Companion's OBS
-connection.
+connection. (OBS's own walkthrough: the
+[Remote Control Guide](https://obsproject.com/kb/remote-control-guide).)
 
 **You should now see:** the OBS connection **green** under Companion →
 **Connections**.
-<!-- screenshot: Companion Connections tab with the OBS connection green -->
-<!-- screenshot: OBS WebSocket Server Settings dialog (enabled, port 4455, authentication on) -->
 
 ## 8 — Connect remote directors (Tailscale)
 
 *Takes ~5 minutes.*
 
 Open Tailscale, sign in (free account — this owns your private network), then note this
-machine's IP (`100.x.y.z`) from the Tailscale menu. Invite each director (free, up to 6
+machine's IP (`100.x.y.z`) from the Tailscale menu
+([how Tailscale assigns IPs](https://tailscale.com/kb/1033/ip-and-dns-addresses)). Invite
+each director (free, up to 6
 people) at [login.tailscale.com](https://login.tailscale.com/admin/users); they install
 Tailscale and sign in too. A director can then open `http://100.x.y.z:8000/tablet` to drive
 the show. More: [Director setup](Director-Setup) (the page to send your directors) and the [Director guide](Director).
@@ -367,7 +362,6 @@ the show. More: [Director setup](Director-Setup) (the page to send your director
 **You should now see:** this machine's `100.x.y.z` address in the Tailscale
 menu, and your invitation(s) showing in the Tailscale admin console
 (directors appear once they accept).
-<!-- screenshot: Tailscale menu showing this machine's 100.x.y.z IP -->
 
 ## 9 — Pre-flight check
 
@@ -383,4 +377,3 @@ Fix anything it flags. Then you're ready → [Run an event](Run-an-event).
 
 **You should now see:** every check green — or only warnings you understand
 (e.g. Companion not running yet).
-<!-- screenshot: racecast preflight output with everything green -->
