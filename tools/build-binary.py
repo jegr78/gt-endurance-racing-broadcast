@@ -81,6 +81,7 @@ def build_target(launcher, workdir, version_file, sep, entry, name, windowed):
            "--paths", os.path.join(SRC, "scripts"),
            "--hidden-import", "services", "--hidden-import", "companion_common",
            "--hidden-import", "event", "--hidden-import", "preflight",
+           "--hidden-import", "speedtest",
            "--hidden-import", "install_apps", "--hidden-import", "obs_ws",
            "--hidden-import", "tailscale", "--hidden-import", "init_setup",
            "--hidden-import", "native_dialog",

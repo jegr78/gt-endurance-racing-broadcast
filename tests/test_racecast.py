@@ -1407,6 +1407,18 @@ def t_overlay_asset_serve_resolves_and_guards():
     assert m.overlay_asset_serve("flags", "Bel/gium") is None
 
 
+def t_route_speedtest_is_oneshot():
+    assert m.route(["speedtest"]) == {"kind": "oneshot", "command": "speedtest", "rest": []}
+    assert m.route(["speedtest", "--json"]) == \
+        {"kind": "oneshot", "command": "speedtest", "rest": ["--json"]}
+
+
+def t_speedtest_is_a_runtime_dir_oneshot():
+    # It must receive --runtime-dir <base> so history lands at the machine-level runtime.
+    assert "speedtest" in m.RUNTIME_DIR_ONESHOTS
+    assert m.ONESHOT_MAP["speedtest"] == "scripts/speedtest.py"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
