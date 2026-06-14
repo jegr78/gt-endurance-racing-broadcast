@@ -188,9 +188,9 @@ def _hs_stub():
     return hs
 
 
-def _ctl(pushes, response=b'{"ok": true, "action": "%s", "v": 2}'):
+def _ctl(pushes, response=b'{"ok": true, "action": "%s", "v": 2}', pov_source=None):
     hs = _hs_stub()
-    ctl = m.SetupControl("http://push", hs)
+    ctl = m.SetupControl("http://push", hs, pov_source=pov_source)
     def fake_post(url, payload, timeout=10):
         pushes.append(payload)
         return response % payload["action"].encode() if b"%s" in response else response
@@ -289,6 +289,43 @@ def t_pov_set_pushes():
         r = ctl.pov_set("https://www.youtube.com/watch?v=p")
         assert r.get("ok"), r
         assert pushes[-1] == {"action": "pov", "url": "https://www.youtube.com/watch?v=p"}
+    finally:
+        m.post_webhook = orig
+
+
+class _RefreshSpy:
+    """Minimal pov_source stub: records refresh() calls."""
+    def __init__(self):
+        self.refreshed = 0
+    def refresh(self, timeout=15):     # match ScheduleSource.refresh's default
+        self.refreshed += 1
+        return True
+
+
+def t_pov_set_with_name_pushes_clamped_and_refreshes():
+    pushes = []
+    spy = _RefreshSpy()
+    ctl, hs, orig = _ctl(pushes, pov_source=spy)
+    try:
+        r = ctl.pov_set("https://www.youtube.com/watch?v=p", "A Very Long Driver Name Here")
+        assert r.get("ok"), r
+        assert pushes[-1] == {"action": "pov",
+                              "url": "https://www.youtube.com/watch?v=p",
+                              "name": "A Very Long Driver N"}    # clamped to 20 chars
+        assert len(pushes[-1]["name"]) == 20
+        assert spy.refreshed == 1                                 # name applied immediately
+    finally:
+        m.post_webhook = orig
+
+
+def t_pov_set_empty_name_clears():
+    pushes = []
+    spy = _RefreshSpy()
+    ctl, hs, orig = _ctl(pushes, pov_source=spy)
+    try:
+        r = ctl.pov_set("https://www.youtube.com/watch?v=p", "")
+        assert r.get("ok"), r
+        assert pushes[-1]["name"] == ""                           # explicit clear
     finally:
         m.post_webhook = orig
 

@@ -1514,11 +1514,13 @@ class SetupControl:
     and answering after the webhook confirm removes the save-vs-RELOAD race).
     The sheet stays authoritative throughout."""
 
-    def __init__(self, push_url, hud_source, schedule_source=None, qual_source=None):
+    def __init__(self, push_url, hud_source, schedule_source=None, qual_source=None,
+                 pov_source=None):
         self.push_url = push_url
         self.hud = hud_source
         self.schedule_source = schedule_source
         self.qual_source = qual_source
+        self.pov_source = pov_source
         self.push_status = "disabled" if not push_url else "never"
         self.last_error = None
 
@@ -1663,7 +1665,7 @@ class SetupControl:
                              "(add it to the Configuration tab first)"}
         return None
 
-    def pov_set(self, url):
+    def pov_set(self, url, name=None):
         if not self.push_url:
             return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
                              "in the active profile or .env (wiki: Sheet-Webhook)"}
@@ -1672,7 +1674,12 @@ class SetupControl:
         url = (url or "").strip()
         if url and not is_channel(url):
             return {"error": "url must be a watch URL or UC… channel ID"}
-        ok, err = self._push({"action": "pov", "url": url}, "pov")
+        payload = {"action": "pov", "url": url}
+        if name is not None:        # omitted -> leave the Sheet cell; "" -> explicit clear
+            payload["name"] = (name or "")[:20]
+        ok, err = self._push(payload, "pov")
+        if ok and self.pov_source is not None:
+            self.pov_source.refresh()    # name (and stored url) live immediately
         return {"ok": True} if ok else {"error": err}
 
     # -- panel poll ------------------------------------------------------------
@@ -2352,7 +2359,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         body.get("row"), body.get("url"), body.get("name"),
                         body.get("stint")))
                 if p == ["pov", "set"]:
-                    return self._send(setup_ctl.pov_set(body.get("url")))
+                    return self._send(setup_ctl.pov_set(body.get("url"),
+                                                        body.get("name")))
                 return self._send({"error": "unknown", "path": self.path}, 404)
             except ConnectionError:
                 return None              # client hung up mid-response — benign (issue #25)
@@ -2639,7 +2647,8 @@ def main():
     source = ScheduleSource(csv_url, cache, local)
     source.load_initial(SCHEDULE_TEMPLATE)
     setup_ctl = (SetupControl(push_url, hud_source, schedule_source=source,
-                              qual_source=qual_source) if hud_source else None)
+                              qual_source=qual_source, pov_source=pov_source)
+                 if hud_source else None)
     if len(source.get()) < 2:
         print("INFO: schedule has fewer than 2 stints — Feed B idles on the empty next "
               "slot (black) until that stint's link is added; Feed A keeps serving stint 1.")
