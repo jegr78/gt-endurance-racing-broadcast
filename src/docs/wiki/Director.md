@@ -312,8 +312,9 @@ the chain **a few minutes before** you want it on air:
 
 1. **Order it early:** ask the driver to start their (unlisted) live stream and send you
    the watch URL — roughly **5 minutes ahead** is comfortable.
-2. **Schedule it:** paste the watch URL into the shared sheet, tab **POV**, cell **A2**
-   (panel: the POV field in the **URLs** section does the same).
+2. **Schedule it:** paste the watch URL into the shared sheet, tab **POV** (row 2) —
+   or use the POV row in the panel's **URLs** section, which also has a **name** field
+   (free text, ≤20) for the on-screen POV label; one SAVE writes both URL and name.
 3. **Pull it:** press **POV Reload**. The relay re-reads the cell and starts pulling.
    Resolving a live stream takes ~10–30 seconds; if the driver is **not live yet**, the
    relay simply keeps retrying every 15 seconds until they are — no harm, but nothing to
@@ -324,9 +325,11 @@ the chain **a few minutes before** you want it on air:
    the PiP would be black.) No panel open?
    `http://<producer-tailscale-ip>:8088/status` shows the same: the `pov`
    block must say `"state": "serving"`.
-5. **Show it:** press **POV Toggle** — allow a couple of seconds for OBS to connect the
-   first time. Audio is muted by default; **MUTE POV** / **VOL POV …** (page 2) if you
-   want it audible.
+5. **Show it:** press **POV Toggle** — a relay action (panel and Companion both call the
+   relay, not OBS directly): the relay shows/hides the PiP in OBS and the whole HUD POV
+   box (frame + name) follows it. Allow a couple of seconds for OBS to connect the first
+   time. Audio is muted by default; **MUTE POV** / **VOL POV …** (page 2) if you want it
+   audible.
 6. **Done:** **POV Toggle** to hide, then **POV Stop** (frees the pull / bandwidth).
 
 Two rules: **Reload before Toggle**, and **hide + POV Stop when done**. The PiP lives only
