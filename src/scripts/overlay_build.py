@@ -5,7 +5,7 @@ already serves at /<page>/override.css. No I/O, no dependencies — unit-tested 
 tests/test_overlay.py. Spec: docs/superpowers/specs/2026-06-13-visual-overlay-builder-design.md.
 
 The editable slots are NOT hardcoded here: extract_slots() reads the data-edit
-markers from the base page (src/obs/hud.html / timer.html), so the markup stays
+markers from the base page (src/obs/hud.html), so the markup stays
 the single source of truth — a new marked element becomes editable automatically.
 """
 import re

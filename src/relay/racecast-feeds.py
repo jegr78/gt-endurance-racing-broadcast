@@ -2440,7 +2440,7 @@ def main():
                     help="Do not serve the HUD overlay at /hud.")
     ap.add_argument("--overlay-dir", default=None,
                     help="profiles/<name>/overlay dir with per-profile hud.css/"
-                         "timer.css/fonts (relay-served at /hud/override.css etc).")
+                         "fonts (relay-served at /hud/override.css etc).")
     ap.add_argument("--timer-tab", default="Timer",
                     help="Google-Sheet tab holding the race-timer anchor (default 'Timer').")
     ap.add_argument("--no-timer", action="store_true",
