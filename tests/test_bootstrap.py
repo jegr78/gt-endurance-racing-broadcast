@@ -23,8 +23,8 @@ import racecast_ui
 # Every side-effecting startup helper _bootstrap is expected to call, in order.
 # The list IS the contract: drop one and the windowed launcher silently skips it.
 _BOOTSTRAP_STEPS = ["_force_utf8_io", "ensure_env_file", "ensure_example_profile",
-                    "cleanup_old_binary", "_load_env_frozen", "_ensure_ssl_certs",
-                    "_ensure_tool_path", "_apply_active_profile_env"]
+                    "ensure_bundled_fonts", "cleanup_old_binary", "_load_env_frozen",
+                    "_ensure_ssl_certs", "_ensure_tool_path", "_apply_active_profile_env"]
 
 
 def _stub_bootstrap_helpers(monkey, calls):

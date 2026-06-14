@@ -1,6 +1,7 @@
 runtime/
 dist/
 incoming/
+fonts.zip
 # league profiles are machine-local; only the example template ships
 profiles/*
 !profiles/example/

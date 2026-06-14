@@ -39,6 +39,7 @@ import config as pcfg    # 'pcfg' (not 'cfg'): avoids F811 clash with local `cfg
 import profile_admin as pa
 import chat_admin as ca
 import overlay_build as ob
+import fonts_bundle as fb
 
 # PyInstaller marks the frozen binary with sys.frozen and unpacks bundled data
 # (the whole src/ tree) to sys._MEIPASS. Repo + package mode stay subprocess-based.
@@ -284,6 +285,38 @@ def ensure_example_profile(exe_dir, frozen=None, bundled=None):
     print("seeded profiles/example next to the binary (league template for "
           "`racecast profile new`).", file=sys.stderr)
     return True
+
+
+def _bundled_fonts_zip():
+    """Path of the fonts.zip carrying the curated overlay-font set: bundled inside
+    the frozen binary (_MEIPASS/fonts.zip) or at the repo root in dev. None when
+    absent (e.g. a dev who never ran tools/fetch-fonts.py)."""
+    if IS_FROZEN:
+        p = os.path.join(getattr(sys, "_MEIPASS", ""), "fonts.zip")
+    else:
+        p = os.path.join(os.path.dirname(HERE), "fonts.zip")
+    return p if os.path.isfile(p) else None
+
+
+def ensure_bundled_fonts():
+    """Seed the machine-wide overlay font library (runtime/fonts/) from the bundled
+    fonts.zip on start, so every install has the curated baseline set without a
+    manual download. Stamp-gated + only-if-absent + zip-slip-safe (see
+    fonts_bundle.extract_bundled); fully best-effort. Returns True iff anything was
+    extracted."""
+    zip_path = _bundled_fonts_zip()
+    if not zip_path:
+        return False
+    try:
+        res = fb.extract_bundled(zip_path, _machine_fonts_dir())
+    except Exception as exc:
+        print(f"warning: could not seed bundled fonts ({exc}).", file=sys.stderr)
+        return False
+    if res.get("extracted"):
+        print(f"seeded {len(res['extracted'])} overlay font(s) into runtime/fonts/.",
+              file=sys.stderr)
+        return True
+    return False
 
 
 def cleanup_old_binary(exe_dir, frozen=None, platform=None):
@@ -2624,11 +2657,11 @@ def _http_get(url, headers=None, binary=False, timeout=15):
 
 
 def machine_fonts_list_data():
-    """The machine-wide font library + the curated catalog available to add.
-    Machine-scoped (no active profile needed). {ok, fonts, catalog}."""
+    """The machine-wide font library (runtime/fonts/), pre-seeded from the bundled
+    curated set and extendable via the Settings typeahead. Machine-scoped (no active
+    profile needed). {ok, fonts}."""
     try:
-        return {"ok": True, "fonts": _list_fonts(_machine_fonts_dir()),
-                "catalog": list(ob.GOOGLE_FONTS)}
+        return {"ok": True, "fonts": _list_fonts(_machine_fonts_dir())}
     except Exception as exc:
         return {"ok": False, "error": f"could not list fonts: {exc}"}
 
@@ -3541,6 +3574,7 @@ def _bootstrap(argv):
     home = _app_home(_real_executable())   # plain CLI binary: == dirname(exe)
     ensure_env_file(home)
     ensure_example_profile(home)   # seed profiles/example so `profile new` works (#45)
+    ensure_bundled_fonts()         # seed runtime/fonts/ from the bundled curated set
     cleanup_old_binary(home)
     _load_env_frozen()
     _ensure_ssl_certs()

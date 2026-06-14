@@ -1151,7 +1151,7 @@ def t_machine_font_download_into_library():
         assert d["ok"] is True and d["name"] == "Oswald.woff2"
         # lands in the machine-wide library, NOT the profile, until used
         assert os.path.exists(os.path.join(td, "runtime", "fonts", "Oswald.woff2"))
-        assert "Oswald.woff2" in lib["fonts"] and "Oswald" in lib["catalog"]
+        assert "Oswald.woff2" in lib["fonts"] and "catalog" not in lib
         assert "Oswald.woff2" in ov["library"] and "Oswald.woff2" not in ov["fonts"]
 
 

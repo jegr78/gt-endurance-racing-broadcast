@@ -377,9 +377,14 @@ environment before dispatching to:
   `/api/profiles`, `/api/profile/{use,new,env}`, `/api/overlay`,
   `/api/overlay/{slots,layout,fonts,bg,font/<name>}`.
 - **General Settings** — machine-wide knobs: the `.env` editor (`RACECAST_*` vars),
-  cookie refresh, and the **overlay font library** (curated free Google Fonts downloaded
-  once into `runtime/fonts/`, shared across leagues; routes `/api/fonts`,
-  `/api/fonts/{download,delete}`). A font a league's design uses is copied into that
+  cookie refresh, and the **overlay font library** (`runtime/fonts/`, shared across
+  leagues). A curated baseline set (`overlay_build.GOOGLE_FONTS`) is downloaded at build
+  time into `fonts.zip`, bundled INTO each binary, and extracted into `runtime/fonts/` on
+  first start by `ensure_bundled_fonts()` (stamp-gated, only-if-absent, zip-slip-safe — so
+  every install has fonts without a manual download, and `racecast update` refreshes the
+  set). Operators add further families by name via the Settings typeahead (routes
+  `/api/fonts`, `/api/fonts/{catalog,download,delete}`); `tools/fetch-fonts.py` is the
+  maintainer tool that builds the zip. A font a league's design uses is copied into that
   profile's `overlay/fonts/` on save (`_materialize_overlay_fonts`), so `profile export`
   stays self-contained; the relay/canvas serve it locally (no broadcast-time CDN).
 
