@@ -1934,6 +1934,20 @@ class Relay:
                 "next_active": self.mode != "qualifying",
                 "mode": self.mode}
 
+    def pov_active(self):
+        """True when the POV picture-in-picture feed is live (started, not
+        paused). Drives the HUD: the whole POV box — frame and name — shows
+        only while the POV is on air."""
+        return bool(self.pov and not self.pov.paused)
+
+    def pov_name(self):
+        """The POV name from the POV tab's one data row (the 'name' column),
+        or '' when there is no POV source / row."""
+        if not self.pov_source:
+            return ""
+        rows = self.pov_source.get_rows()
+        return rows[0][1] if rows else ""
+
     def live_schedule_row(self):
         """{"streamer", "stint"} for the stint the on-air feed is serving now, or
         None when it idles past the schedule end. Drives the handover HUD

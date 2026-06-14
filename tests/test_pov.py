@@ -271,6 +271,27 @@ def t_splitscreen_state_hides_next_in_qualifying():
     assert st == {"current": "A", "next_active": False, "mode": "qualifying"}
 
 
+def t_pov_active_tracks_feed_paused():
+    r = _relay(["s1", "s2"])
+    assert r.pov is None
+    assert r.pov_active() is False                 # no POV feed wired
+    r.pov = m.Feed("POV", 53003, 0, lambda: ["https://youtu.be/p"], HERE)
+    r.pov.paused = True
+    assert r.pov_active() is False                  # off
+    r.pov.paused = False
+    assert r.pov_active() is True                   # live
+
+
+def t_pov_name_reads_pov_source_row():
+    r = _relay(["s1", "s2"])
+    assert r.pov_name() == ""                        # no pov_source
+    r.pov_source = _StubSource(["https://youtu.be/p"],
+                               rows=[("https://youtu.be/p", "JeGr", "", 2)])
+    assert r.pov_name() == "JeGr"
+    r.pov_source = _StubSource([], rows=[])          # source but no row
+    assert r.pov_name() == ""
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
