@@ -62,6 +62,45 @@ def t_parse_result_rejects_garbage():
         raise AssertionError(f"expected ValueError for {bad!r}")
 
 
+def _rec(ts, dl=30.0, ul=12.0):
+    return {"ts": ts, "download_mbps": dl, "upload_mbps": ul, "ping_ms": 10.0,
+            "jitter_ms": 1.0, "packet_loss": 0.0, "server": "S", "isp": "I",
+            "result_url": None}
+
+
+def t_history_roundtrip_and_latest(tmp=None):
+    import tempfile
+    d = tempfile.mkdtemp()
+    assert m.load_latest(d) is None
+    assert m.load_history(d) == []
+    m.append_record(_rec(100), d)
+    m.append_record(_rec(200), d)
+    assert m.load_latest(d)["ts"] == 200            # newest
+    hist = m.load_history(d)
+    assert [r["ts"] for r in hist] == [200, 100]    # newest-first for the UI
+
+
+def t_history_trims_to_limit():
+    import tempfile
+    d = tempfile.mkdtemp()
+    for ts in range(1, 15):                          # 14 runs
+        m.append_record(_rec(ts), d)
+    hist = m.load_history(d)
+    assert len(hist) == m.HISTORY_LIMIT == 10
+    assert hist[0]["ts"] == 14 and hist[-1]["ts"] == 5   # only the last 10 kept
+
+
+def t_history_skips_corrupt_lines():
+    import tempfile
+    d = tempfile.mkdtemp()
+    with open(m.history_path(d), "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(_rec(1)) + "\n")
+        fh.write("{ not json\n")                      # corrupt line ignored
+        fh.write(json.dumps(_rec(2)) + "\n")
+    assert [r["ts"] for r in m.load_history(d)] == [2, 1]
+    assert m.load_latest(d)["ts"] == 2
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

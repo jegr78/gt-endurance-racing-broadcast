@@ -71,3 +71,49 @@ def parse_result(json_text, now):
         "isp": data.get("isp") or "",
         "result_url": result.get("url") or None,
     }
+
+
+def history_path(runtime_dir):
+    return os.path.join(runtime_dir, HISTORY_NAME)
+
+
+def _read_all(runtime_dir):
+    """All valid records in file (chronological) order. Tolerates a missing file
+    and skips individual corrupt lines so one bad write can't lose the history."""
+    out = []
+    try:
+        with open(history_path(runtime_dir), encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    out.append(json.loads(line))
+                except ValueError:
+                    continue   # skip a corrupt line, keep the rest
+    except FileNotFoundError:
+        return []
+    return out
+
+
+def load_history(runtime_dir, limit=HISTORY_LIMIT):
+    """Up to `limit` recent records, NEWEST-FIRST (for the Control Center table)."""
+    recent = _read_all(runtime_dir)[-limit:]
+    recent.reverse()
+    return recent
+
+
+def load_latest(runtime_dir):
+    """The most recent record, or None when nothing has been measured yet."""
+    recs = _read_all(runtime_dir)
+    return recs[-1] if recs else None
+
+
+def append_record(record, runtime_dir):
+    """Append one record and rewrite the file trimmed to the last HISTORY_LIMIT."""
+    os.makedirs(runtime_dir, exist_ok=True)
+    kept = (_read_all(runtime_dir) + [record])[-HISTORY_LIMIT:]
+    with open(history_path(runtime_dir), "w", encoding="utf-8") as fh:
+        for rec in kept:
+            fh.write(json.dumps(rec) + "\n")
+    return record
