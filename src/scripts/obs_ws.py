@@ -37,6 +37,7 @@ DEFAULT_PORT = 4455
 RELAY_PORTS = (53001, 53002, 53003)
 
 STINT_SCENE = "Stint"                       # single-cam scene holding both feeds
+POV_SOURCE = "Feed POV"                      # the Stint-scene driver-POV PiP scene item
 FEED_SOURCES = {"A": "Feed A", "B": "Feed B"}   # scene-item name == audio input name
 
 # The scene collection the broadcast assumes. Mirrors the "name" field of
@@ -477,6 +478,29 @@ def reflect_feed_state(live, do_cut, scene=STINT_SCENE, sources=None,
         return applied, ""
     except Exception as exc:                         # noqa: BLE001 — best-effort contract
         return applied, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
+def set_scene_item_enabled(scene, source, enabled, host="127.0.0.1", port=None,
+                           password=None, timeout=2.0):
+    """Enable/disable a scene item (best effort). Returns (ok, note); (False,
+    reason) on any failure — OBS closed, wrong password, item missing — NEVER an
+    exception (same contract as release_feed_inputs/get_scene_collection)."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return False, note
+    try:
+        sid = session.request("GetSceneItemId",
+                              {"sceneName": scene, "sourceName": source}).get("sceneItemId")
+        if sid is None:
+            return False, f"scene item '{source}' not found in scene '{scene}'"
+        session.request("SetSceneItemEnabled",
+                        {"sceneName": scene, "sceneItemId": sid,
+                         "sceneItemEnabled": bool(enabled)})
+        return True, ""
+    except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        return False, str(exc) or exc.__class__.__name__
     finally:
         session.close()
 

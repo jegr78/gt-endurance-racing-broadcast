@@ -373,6 +373,14 @@ def _fake_obs_server(server_sock, password, state):
             assert rdata["overlay"] is True
             state["released"].append(rdata["inputName"])
             resp = {}
+        elif rtype == "GetSceneItemId":
+            state.setdefault("get_item_id", []).append(
+                (rdata["sceneName"], rdata["sourceName"]))
+            resp = {"sceneItemId": 7}
+        elif rtype == "SetSceneItemEnabled":
+            state.setdefault("set_enabled", []).append(
+                (rdata["sceneName"], rdata["sceneItemId"], rdata["sceneItemEnabled"]))
+            resp = {}
         else:
             resp = {}
         _srv_send_json(conn, {"op": 7, "d": {
@@ -477,6 +485,37 @@ def t_probe_wrong_password_is_not_reachable():
     assert reachable is False
     assert note
     srv.close()
+
+
+# --------------------------------------------------------------------------
+# set_scene_item_enabled — relay-driven POV PiP show/hide (#130)
+# --------------------------------------------------------------------------
+def t_set_scene_item_enabled_end_to_end_against_fake_server():
+    server_sock = socket.socket()
+    server_sock.bind(("127.0.0.1", 0))
+    server_sock.listen(1)
+    port = server_sock.getsockname()[1]
+    state = {"released": [], "set_enabled": []}
+    thread = threading.Thread(target=_fake_obs_server,
+                              args=(server_sock, "supersecret", state), daemon=True)
+    thread.start()
+    ok, note = m.set_scene_item_enabled("Stint", "Feed POV", True,
+                                        port=port, password="supersecret", timeout=5)
+    assert ok is True, note
+    assert note == ""
+    assert state["set_enabled"] == [("Stint", 7, True)]
+    server_sock.close()
+
+
+def t_set_scene_item_enabled_unreachable_is_quiet():
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    free_port = sock.getsockname()[1]
+    sock.close()
+    ok, note = m.set_scene_item_enabled("Stint", "Feed POV", False,
+                                        port=free_port, password="x", timeout=0.5)
+    assert ok is False
+    assert note
 
 
 # --------------------------------------------------------------------------
