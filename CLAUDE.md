@@ -117,6 +117,7 @@ python3 src/racecast.py obs refresh       # force-reload the relay-served OBS br
 python3 src/racecast.py obs collection    # check the active OBS scene collection (add `set` to switch to the active profile's collection)
 python3 src/racecast.py init              # guided first-time setup: .env gate, profile select, install-tools/-apps, cookies, graphics, media, setup, export companion, preflight — with skip-detection (--browser NAME, --skip-installs, --force)
 python3 src/racecast.py update            # self-update the binary from GitHub Releases (--tag TAG installs an exact release; UI previews use this)
+python3 src/racecast.py freeport          # free a stuck feed port (default 53001-53003); kills an orphaned holder so a feed can bind. Refuses a running relay/streams (would cut a live feed) unless --force. Cross-platform port→PID (lsof/ss/fuser/netstat) in src/scripts/ports.py; per-process kill (not the session-group kill of #133's stop path). Also a Control Center action (free-ports op) + a `relay start` warning when a feed port is already bound.
 python3 src/racecast.py preflight         # hardware/tool check
 python3 src/racecast.py cookies firefox          # refresh YouTube cookies before an event (Firefox recommended; Windows Chrome/Edge exports are blocked by app-bound encryption)
 python3 src/racecast.py cookies twitch firefox   # refresh Twitch cookies (only needed for gated sub/follower-only Twitch feeds)

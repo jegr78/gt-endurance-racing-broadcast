@@ -1344,6 +1344,37 @@ def t_cookies_twitch_routing():
     assert m._cookies_oneshot_args([]) == []
 
 
+def t_freeport_route():
+    assert m.route(["freeport"]) == {"kind": "freeport", "rest": []}
+    assert m.route(["freeport", "53001", "--force"]) == \
+        {"kind": "freeport", "rest": ["53001", "--force"]}
+
+
+def t_freeport_parse_args_defaults_and_flags():
+    assert m.parse_freeport_args([]) == ([53001, 53002, 53003], False)
+    assert m.parse_freeport_args(["53001"]) == ([53001], False)
+    assert m.parse_freeport_args(["53002", "--force"]) == ([53002], True)
+    assert m.parse_freeport_args(["-f", "53003"]) == ([53003], True)
+
+
+def t_freeport_parse_args_rejects_bad_tokens():
+    _raises(lambda: m.parse_freeport_args(["nope"]))
+    _raises(lambda: m.parse_freeport_args(["70000"]))      # out of range
+    _raises(lambda: m.parse_freeport_args(["--what"]))
+
+
+def t_freeport_owner_running_relay_owns_feed_and_control_ports():
+    assert m.freeport_owner(53001, relay_alive=True, static_alive_ports=set()) == "relay"
+    assert m.freeport_owner(m.RELAY_PORT, relay_alive=True, static_alive_ports=set()) == "relay"
+    # relay down -> not owned by the relay
+    assert m.freeport_owner(53001, relay_alive=False, static_alive_ports=set()) is None
+
+
+def t_freeport_owner_static_feed():
+    assert m.freeport_owner(53002, relay_alive=False, static_alive_ports={53002}) == "streams"
+    assert m.freeport_owner(53003, relay_alive=False, static_alive_ports={53002}) is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

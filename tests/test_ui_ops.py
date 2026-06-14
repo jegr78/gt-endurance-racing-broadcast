@@ -139,7 +139,7 @@ def t_ops_registry_routes_in_rc():
     # oneshot, export, or command group) — route() raises ValueError on anything unknown
     for name, argv in ui_ops.OPS.items():
         action = rc.route(list(argv))
-        assert action["kind"] in ("service", "oneshot", "export", "chat"), name
+        assert action["kind"] in ("service", "oneshot", "export", "chat", "freeport"), name
 
 
 def t_build_argv_plain_and_unknown():

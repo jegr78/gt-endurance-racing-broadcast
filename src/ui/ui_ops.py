@@ -27,6 +27,7 @@ OPS = {
     "obs-collection-set": ["obs", "collection", "set"],
     "event-start": ["event", "start"],
     "event-stop": ["event", "stop"],
+    "free-ports": ["freeport"],   # kill orphaned holders of the feed ports (53001-53003)
     "cookies": ["cookies"],
     "cookies-twitch": ["cookies", "twitch"],
     "graphics": ["graphics"],

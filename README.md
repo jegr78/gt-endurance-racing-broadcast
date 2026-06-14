@@ -138,6 +138,7 @@ racecast relay status         # health + tailnet URL
 racecast companion start      # bind Companion to Tailscale, start it
 racecast status               # all services at a glance
 racecast relay stop           # stop the relay
+racecast freeport             # free a stuck feed port (53001-53003) — kills an orphaned holder so a feed can bind (refuses a running relay/streams)
 racecast obs refresh          # force-reload the relay-served OBS browser sources (HUD/timer)
 racecast obs collection       # check the active OBS scene collection
 racecast obs collection set   # switch OBS to this league's scene collection
