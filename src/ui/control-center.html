@@ -1803,8 +1803,9 @@ async function loadSpeedtest() {
     const age = ageH < 1 ? 'just now' : ageH < 24 ? ageH + ' h ago' : Math.round(ageH/24) + ' d ago';
     el.textContent = '↓' + latest.download_mbps + ' ↑' + latest.upload_mbps + ' Mbps · ' + age
       + (latest.server ? ' · ' + latest.server : '');
-    const ok = latest.download_mbps >= 50 && latest.upload_mbps >= 20;
-    const min = latest.download_mbps >= 25 && latest.upload_mbps >= 10;
+    const T = d.thresholds || {rec_down: 50, rec_up: 20, min_down: 25, min_up: 10};
+    const ok = latest.download_mbps >= T.rec_down && latest.upload_mbps >= T.rec_up;
+    const min = latest.download_mbps >= T.min_down && latest.upload_mbps >= T.min_up;
     badge.hidden = false;
     badge.className = 'badge ' + (ok ? 'on' : min ? 'warn' : 'fail');
     badge.querySelector('span:last-child').textContent = ok ? 'OK' : min ? 'min' : 'low';

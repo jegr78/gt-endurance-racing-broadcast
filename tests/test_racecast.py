@@ -1440,6 +1440,9 @@ def t_speedtest_data_shape():
     assert out["ok"] is True
     assert out["latest"]["download_mbps"] == 50.0
     assert len(out["history"]) == 1
+    # thresholds travel with the response so the UI badge can't drift from them
+    assert out["thresholds"] == {"min_down": 25.0, "min_up": 10.0,
+                                 "rec_down": 50.0, "rec_up": 20.0}
 
 
 if __name__ == "__main__":

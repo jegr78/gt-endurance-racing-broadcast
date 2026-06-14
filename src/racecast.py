@@ -3155,7 +3155,12 @@ def speedtest_data(base_dir=None):
     try:
         import speedtest as st  # noqa: PLC0415 — lazy to mirror preflight_data pattern
         base = base_dir or _runtime_base_dir()
-        return {"ok": True, "latest": st.load_latest(base), "history": st.load_history(base)}
+        # Ship the thresholds so the UI badge never drifts from the documented
+        # constants (single source: speedtest.py mirrors the wiki table).
+        thresholds = {"min_down": st.MIN_DOWN_MBPS, "min_up": st.MIN_UP_MBPS,
+                      "rec_down": st.REC_DOWN_MBPS, "rec_up": st.REC_UP_MBPS}
+        return {"ok": True, "latest": st.load_latest(base),
+                "history": st.load_history(base), "thresholds": thresholds}
     except Exception as exc:  # never let a failed speedtest read surface to the UI as a crash
         return {"ok": False, "error": f"speedtest read failed: {exc}"}
 

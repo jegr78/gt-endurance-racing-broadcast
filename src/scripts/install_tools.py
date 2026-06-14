@@ -237,7 +237,7 @@ def main():
     if manager == "apt" and "deno" in missing:
         print("NOTE: deno is not packaged for apt — install it manually:")
         print("  https://docs.deno.com/runtime/getting_started/installation/")
-    if manager == "apt":
+    if manager == "apt" and speedtest_missing:
         print("NOTE: the Ookla speedtest CLI is not in apt — install it manually if you")
         print("      want `racecast speedtest`:  https://www.speedtest.net/apps/cli")
     if manager == "winget":
