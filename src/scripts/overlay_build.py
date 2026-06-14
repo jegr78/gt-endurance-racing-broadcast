@@ -22,10 +22,11 @@ FONT_EXTS = tuple(FONT_CTYPES)
 # canvas applies the same standard properties inline, so nothing drifts.
 _PX_PROPS = {
     "left": "left", "top": "top", "width": "width", "height": "height",
-    "fontSize": "font-size",
+    "fontSize": "font-size", "borderWidth": "border-width",
     "teamNameMax": "--team-name-max", "teamNameMin": "--team-name-min",
 }
-_TEXT_PROPS = {"color": "color", "background": "background"}
+_TEXT_PROPS = {"color": "color", "background": "background",
+               "borderColor": "border-color", "borderStyle": "border-style"}
 _ALIGN = {"left": "flex-start", "center": "center", "right": "flex-end"}
 
 # The default property set offered for a text slot (no data-edit-props attr).
@@ -33,9 +34,9 @@ DEFAULT_PROPS = ("left", "top", "width", "height", "fontSize",
                  "fontFamily", "color", "background", "align")
 
 # Stable emit order within a slot rule (independent of dict insertion order).
-PROP_ORDER = ("left", "top", "width", "height", "fontSize",
+PROP_ORDER = ("left", "top", "width", "height", "fontSize", "borderWidth",
               "teamNameMax", "teamNameMin", "fontFamily", "color",
-              "background", "align")
+              "background", "borderColor", "borderStyle", "align")
 
 # A structured value must never close the rule or inject extra CSS; the only
 # verbatim path is customCss. Reject anything carrying CSS-structural characters.

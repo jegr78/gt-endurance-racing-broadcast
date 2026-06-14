@@ -343,6 +343,35 @@ def t_ob_is_google_font_name():
         assert not ob.is_google_font_name(bad), bad
 
 
+POVSLOTS = [{"id": "pov", "label": "POV box",
+             "props": ["left", "top", "width", "height",
+                       "background", "borderStyle", "borderColor", "borderWidth"]}]
+
+
+def t_ob_compile_pov_border_and_background():
+    css = ob.compile_overlay_css(
+        {"slots": {"pov": {"background": "#0b0f1a", "borderStyle": "solid",
+                           "borderColor": "#ff2a2a", "borderWidth": 4}}}, POVSLOTS)
+    assert "#pov {" in css
+    assert "background: #0b0f1a" in css
+    assert "border-style: solid" in css
+    assert "border-color: #ff2a2a" in css
+    assert "border-width: 4px" in css
+
+
+def t_ob_compile_border_width_is_px_gated():
+    # borderWidth is numeric-only (px), like the other geometry props
+    css = ob.compile_overlay_css({"slots": {"pov": {"borderWidth": "4; }#x{a:b"}}}, POVSLOTS)
+    assert "border-width" not in css
+
+
+def t_ob_compile_border_props_respect_allowed():
+    # a text slot that does NOT allow border props must not emit them
+    slots = [{"id": "stint", "label": "S", "props": list(ob.DEFAULT_PROPS)}]
+    css = ob.compile_overlay_css({"slots": {"stint": {"borderStyle": "solid"}}}, slots)
+    assert "border-style" not in css
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
