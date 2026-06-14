@@ -19,7 +19,7 @@ machine and the panel's HUD row + URLs section are display-only.
 | `timer` | Timer tab (race-timer state — see [Race-Timer](Race-Timer)) |
 | `setup` | Setup tab: the cell **below** a header (`Stint`, `Streamer`, `Session`, `Race Control`) — found by text, so the tab layout may move |
 | `schedule` | **Schedule** tab (or the **Qualifying** tab when the payload carries `"tab":"Qualifying"`), **physical row N** (the panel sends the CSV line number automatically): URL + Streamer + Stint label, located by the `URL`/`Streamer`/`Stint` headers in row 1 (falls back to fixed cols A/B with no header row); row `last+1` appends. The Stint cell is only written when a `Stint` header exists. The Qualifying tab has the **same structure** as the Schedule tab. **Neither tab may have leading blank rows** — the gviz CSV export maps physical sheet rows to CSV lines 1:1 when the tab starts at row 1. A header row is silently skipped when reading but its physical line number is still used when writing. |
-| `pov` | POV tab cell `A2` |
+| `pov` | POV tab **row 2**: the `url` and/or `name` cell, located by header text (so the columns may move) |
 | `teams` | Setup tab: the cell **below** the `Team <slot>` header (slot 1–3 → `A6`/`B6`/`C6` in the shipped layout) — found by text, same as the other Setup fields. The Overlay tab only mirrors them read-only |
 
 The relay only sends Setup values that exist in the Configuration tab's
@@ -77,7 +77,7 @@ read-only.
        else if (action === 'pov') writePov(ss, p);
        else if (action === 'teams') writeTeams(ss, p);
        else return out({error: 'unknown action: ' + action});
-       return out({ok: true, action: action, v: 4});
+       return out({ok: true, action: action, v: 5});
      } catch (err) { return out({error: String(err)}); }
    }
 
@@ -150,7 +150,16 @@ read-only.
    }
 
    function writePov(ss, p) {
-     tab(ss, TABS.pov).getRange(2, 1).setNumberFormat('@').setValue(p.url || '');
+     const sheet = tab(ss, TABS.pov);
+     const lastCol = Math.max(1, sheet.getLastColumn());
+     const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+     const colOf = (name) => {
+       for (let c = 0; c < header.length; c++)
+         if (String(header[c]).trim().toLowerCase() === name) return c + 1;
+       return 0;
+     };
+     if ('url' in p)  sheet.getRange(2, colOf('url')  || 1).setNumberFormat('@').setValue(p.url  || '');
+     if ('name' in p) sheet.getRange(2, colOf('name') || 2).setNumberFormat('@').setValue(p.name || '');
    }
 
    function writeTeams(ss, p) {
