@@ -28,6 +28,35 @@ WINGET_IDS = {"yt-dlp": "yt-dlp.yt-dlp", "streamlink": "Streamlink.Streamlink",
 APT_PACKAGES = {"yt-dlp": "yt-dlp", "streamlink": "streamlink", "ffmpeg": "ffmpeg"}
 # deno ships no apt package — Linux users get a pointer in manual_guide().
 
+# The Ookla speedtest CLI is an OPTIONAL, opt-in tool (used only by
+# `racecast speedtest`). It is deliberately NOT in TOOLS so its absence never
+# turns the preflight tool-chain into a FAIL. Its install is non-uniform across
+# OSes (mac needs a tap; Linux needs Ookla's own apt repo), so it has its own
+# builders instead of the shared install_commands() dicts.
+SPEEDTEST_WINGET_ID = "Ookla.Speedtest.CLI"
+SPEEDTEST_BREW_TAP = "teamookla/speedtest"
+SPEEDTEST_BREW_FORMULA = "speedtest"
+SPEEDTEST_BIN_NAME = "speedtest"
+
+
+def speedtest_install_commands(manager, brew_path="brew"):
+    if manager == "winget":
+        return [["winget", "install", "--id", SPEEDTEST_WINGET_ID, "-e",
+                 "--accept-package-agreements", "--accept-source-agreements"]]
+    if manager == "brew":
+        return [[brew_path, "tap", SPEEDTEST_BREW_TAP],
+                [brew_path, "install", SPEEDTEST_BREW_FORMULA]]
+    return []   # apt: Ookla needs its own repo -> manual_guide()
+
+
+def speedtest_update_commands(manager, brew_path="brew"):
+    if manager == "winget":
+        return [["winget", "upgrade", "--id", SPEEDTEST_WINGET_ID, "-e",
+                 "--accept-package-agreements", "--accept-source-agreements"]]
+    if manager == "brew":
+        return [[brew_path, "upgrade", SPEEDTEST_BREW_FORMULA]]
+    return []
+
 
 def pick_manager(platform, which=shutil.which):
     """Package manager for this platform, or None (-> manual guide)."""
@@ -102,11 +131,15 @@ def update_commands(manager, tools, brew_path="brew"):
 def manual_guide(platform):
     if platform.startswith("win"):
         return ("Install manually with winget (one per line):\n"
-                + "\n".join(f"  winget install --id {WINGET_IDS[t]} -e" for t in TOOLS))
+                + "\n".join(f"  winget install --id {WINGET_IDS[t]} -e" for t in TOOLS)
+                + f"\n  winget install --id {SPEEDTEST_WINGET_ID} -e   # optional: bandwidth speed test")
     if platform == "darwin":
-        return "Install manually:  brew install yt-dlp streamlink ffmpeg deno"
+        return ("Install manually:  brew install yt-dlp streamlink ffmpeg deno\n"
+                "  optional bandwidth speed test:  brew tap teamookla/speedtest && brew install speedtest")
     return ("Install manually:  sudo apt-get install -y yt-dlp streamlink ffmpeg\n"
             "deno has no apt package — see https://docs.deno.com/runtime/getting_started/installation/\n"
+            "optional bandwidth speed test (Ookla speedtest CLI) — needs Ookla's apt repo:\n"
+            "  see https://www.speedtest.net/apps/cli\n"
             "NOTE: apt's yt-dlp lags upstream; for a current build: pip install -U yt-dlp")
 
 
@@ -187,6 +220,11 @@ def main():
             print("Updating installed tools:", ", ".join(present))
             cmds += update_commands(manager, present, brew_path=brew or "brew")
     cmds += install_commands(manager, missing, brew_path=brew or "brew")
+    # Optional Ookla speedtest CLI (opt-in feature; best-effort, never blocks the core tools).
+    if shutil.which(SPEEDTEST_BIN_NAME) is None:
+        cmds += speedtest_install_commands(manager, brew_path=brew or "brew")
+    elif a.update:
+        cmds += speedtest_update_commands(manager, brew_path=brew or "brew")
 
     failed = []
     for cmd in cmds:
@@ -196,6 +234,9 @@ def main():
     if manager == "apt" and "deno" in missing:
         print("NOTE: deno is not packaged for apt — install it manually:")
         print("  https://docs.deno.com/runtime/getting_started/installation/")
+    if manager == "apt":
+        print("NOTE: the Ookla speedtest CLI is not in apt — install it manually if you")
+        print("      want `racecast speedtest`:  https://www.speedtest.net/apps/cli")
     if manager == "winget":
         # The installs just changed the registry PATH — re-read it for the check.
         still = missing_tools(which=_which_with_fresh_path(windows_fresh_path()))

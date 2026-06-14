@@ -85,6 +85,28 @@ def t_update_commands_apt_only_upgrade_skips_deno():
     assert m.update_commands("apt", ["deno"]) == []
 
 
+def t_speedtest_install_commands_per_manager():
+    win = m.speedtest_install_commands("winget")
+    assert win == [["winget", "install", "--id", "Ookla.Speedtest.CLI", "-e",
+                    "--accept-package-agreements", "--accept-source-agreements"]]
+    brew = m.speedtest_install_commands("brew", brew_path="/opt/homebrew/bin/brew")
+    assert brew == [["/opt/homebrew/bin/brew", "tap", "teamookla/speedtest"],
+                    ["/opt/homebrew/bin/brew", "install", "speedtest"]]
+    assert m.speedtest_install_commands("apt") == []     # Ookla needs its own repo -> manual
+
+
+def t_speedtest_update_commands_per_manager():
+    assert m.speedtest_update_commands("winget")[0][:3] == ["winget", "upgrade", "--id"]
+    assert m.speedtest_update_commands("brew", brew_path="b") == [["b", "upgrade", "speedtest"]]
+    assert m.speedtest_update_commands("apt") == []
+
+
+def t_manual_guide_mentions_speedtest():
+    assert "Ookla.Speedtest.CLI" in m.manual_guide("win32")
+    assert "teamookla/speedtest" in m.manual_guide("darwin")
+    assert "speedtest" in m.manual_guide("linux")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
