@@ -304,7 +304,6 @@ def director_urls(ts_ip, companion_port=8000, relay_port=8088):
 
 GO_LIVE_REMINDER = Result(
     INFO, "HUD overlay",
-    "Before going LIVE: refresh the HUD overlay and HUD Race Timer browser "
-    "sources in OBS once (right-click the source -> Refresh) — the HUD's "
-    "auto-refresh is not fully reliable, and the timer page only picks up "
-    "relay updates on a refresh.")
+    "Before going LIVE: refresh the HUD overlay browser source in OBS once "
+    "(right-click the source -> Refresh) — the HUD (which now includes the "
+    "race timer) auto-refreshes, but that is not fully reliable.")
