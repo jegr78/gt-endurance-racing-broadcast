@@ -2554,19 +2554,17 @@ def overlay_layout_read_data(page):
         # Fold a legacy timer.css into the HUD layout's customCss so a
         # league's timer styling is not silently dropped after the timer→HUD merge.
         # A comment-only scaffold is ignored.
-        if page == "hud":
-            _, css_path2 = _active_profile_overlay_path("hud")
-            if css_path2:
-                timer_css = os.path.join(os.path.dirname(css_path2), "timer.css")
-                if os.path.exists(timer_css):
-                    with open(timer_css, encoding="utf-8") as fh:
-                        legacy = fh.read()
-                    cur = layout.get("customCss") or ""
-                    if _css_has_rules(legacy) and legacy.strip() not in cur:
-                        layout["customCss"] = (cur + ("\n" if cur else "")
-                                               + "/* merged from legacy timer.css */\n"
-                                               + legacy)
-                        result["migrated"] = True
+        if page == "hud" and lpath:
+            timer_css = os.path.join(os.path.dirname(lpath), "timer.css")
+            if os.path.exists(timer_css):
+                with open(timer_css, encoding="utf-8") as fh:
+                    legacy = fh.read()
+                cur = layout.get("customCss") or ""
+                if _css_has_rules(legacy) and legacy.strip() not in cur:
+                    layout["customCss"] = (cur + ("\n" if cur else "")
+                                           + "/* merged from legacy timer.css */\n"
+                                           + legacy)
+                    result["migrated"] = True
         return result
     except Exception as exc:
         return {"ok": False, "error": f"could not read overlay layout: {exc}"}

@@ -1094,10 +1094,13 @@ def t_overlay_layout_folds_legacy_timer_css():
             fh.write("#clock { color: #f4f4f4; }")
         try:
             d = m.overlay_layout_read_data("hud")
+            # Idempotency: re-reading must not accumulate another copy of the timer CSS.
+            d2 = m.overlay_layout_read_data("hud")
         finally:
             m._env_base, m._runtime_base_dir = orig
         assert d["ok"] is True
         assert "#clock { color: #f4f4f4; }" in (d["layout"].get("customCss") or "")
+        assert (d2["layout"].get("customCss") or "").count("#clock") == 1
 
 
 def t_overlay_layout_ignores_comment_only_timer_css():
