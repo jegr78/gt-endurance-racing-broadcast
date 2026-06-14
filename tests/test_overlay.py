@@ -170,13 +170,13 @@ def t_ob_extract_slots_from_real_hud():
         slots = ob.extract_slots(f.read())
     ids = [s["id"] for s in slots]
     # Each team is three independent slots (logo / number / name; issue #136),
-    # plus the POV placeholder box (issue #141) at the end.
+    # plus the POV placeholder box (issue #141) and the merged clock slot.
     assert ids == ["stint", "session", "streamer", "round-top", "round-flag",
                    "round-country",
                    "team1-logo", "team1-num", "team1-name",
                    "team2-logo", "team2-num", "team2-name",
                    "team3-logo", "team3-num", "team3-name",
-                   "race-control", "pov"]
+                   "race-control", "pov", "clock"]
     by_id = {s["id"]: s for s in slots}
     assert by_id["stint"]["label"] == "Stint banner"
     # default props (no data-edit-props) include the text set, not the team-only keys
@@ -189,30 +189,43 @@ def t_ob_extract_slots_from_real_hud():
     # team number slot: badge text size/color/background, no auto-fit bounds
     assert by_id["team1-num"]["props"] == ["left", "top", "fontSize",
                                            "fontFamily", "color", "background"]
-    # image slots (logo, flag, POV box): position/size only
+    # image slots (logo, flag): position/size only
     assert by_id["team1-logo"]["props"] == ["left", "top", "width", "height"]
     assert by_id["round-flag"]["props"] == ["left", "top", "width", "height"]
-    assert by_id["pov"]["props"] == ["left", "top", "width", "height"]
+    # POV box: position/size + border/background props (issue #141)
+    assert by_id["pov"]["props"] == ["left", "top", "width", "height",
+                                     "background", "borderStyle",
+                                     "borderColor", "borderWidth"]
     assert by_id["pov"]["label"] == "POV box"
 
 
-def t_ob_extract_slots_from_real_timer():
-    with open(os.path.join(ROOT, "src", "obs", "timer.html"), encoding="utf-8") as f:
+def t_ob_hud_has_clock_slot():
+    with open(os.path.join(ROOT, "src", "obs", "hud.html"), encoding="utf-8") as f:
         slots = ob.extract_slots(f.read())
-    assert [s["id"] for s in slots] == ["clock"]
-    assert slots[0]["label"] == "Clock"
-    # the clock is a finite, positionable slot -> position props are offered
-    assert "left" in slots[0]["props"] and "top" in slots[0]["props"]
+    ids = [s["id"] for s in slots]
+    assert "clock" in ids
+    clock = next(s for s in slots if s["id"] == "clock")
+    assert clock["label"] == "Clock"
+    assert "left" in clock["props"] and "fontSize" in clock["props"]
 
-
-def t_timer_clock_base_is_finite_positionable():
-    # Regression for #135: the clock must NOT be a full-canvas, centered box
-    # (dragging that moves nothing visibly). It hugs its digits so position works.
-    with open(os.path.join(ROOT, "src", "obs", "timer.html"), encoding="utf-8") as f:
+def t_ob_hud_clock_base_is_finite_positionable():
+    # Regression for #135 carried into the merged page: the clock hugs its digits,
+    # it is not a full-canvas centered box (dragging that moves nothing visibly).
+    with open(os.path.join(ROOT, "src", "obs", "hud.html"), encoding="utf-8") as f:
         style = ob.base_style(f.read())
     clock_rule = re.search(r"#clock\s*\{[^}]*\}", style).group(0)
     assert "1920px" not in clock_rule, "clock must not span the full canvas width"
-    assert "justify-content: center" not in clock_rule, "clock must not re-center full-width"
+
+def t_ob_hud_pov_has_border_props_and_obs_position():
+    with open(os.path.join(ROOT, "src", "obs", "hud.html"), encoding="utf-8") as f:
+        html = f.read()
+    pov = next(s for s in ob.extract_slots(html) if s["id"] == "pov")
+    for p in ("background", "borderStyle", "borderColor", "borderWidth"):
+        assert p in pov["props"], p
+    pov_rule = re.search(r"#pov\s*\{[^}]*\}", ob.base_style(html)).group(0)
+    # aligned to the OBS Feed POV box (pos 1496,644 bounds 384x216)
+    assert "1496px" in pov_rule and "644px" in pov_rule
+    assert "384px" in pov_rule and "216px" in pov_rule
 
 
 def t_ob_base_style_and_body():
