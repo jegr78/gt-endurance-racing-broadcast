@@ -570,7 +570,8 @@ RELAY_PORT = 8088
 # The relay-served pages OBS renders as browser sources (panel is tablet-only).
 # The override.css is hashed too, so a per-profile CSS edit advances the
 # staleness gate and triggers an OBS browser-source refresh.
-OBS_PAGE_PATHS = ("/hud", "/hud/override.css")
+OBS_PAGE_PATHS = ("/hud", "/hud/override.css",
+                  "/splitscreen", "/splitscreen/override.css")
 
 
 def _fetch_relay_page(path):
