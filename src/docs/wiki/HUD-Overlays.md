@@ -79,16 +79,14 @@ verbatim after the generated rules.
 
 ### Fonts: a machine-wide library
 
-Free Google Fonts are managed once in **General Settings → Overlay fonts**: pick from a
-curated catalog **or type any Google font family by name** (e.g. *Big Shoulders Display*) —
-the free-text field has **typeahead over the full Google catalog**, and a **Browse Google
-Fonts ↗** button opens the catalog site to look around. Remove ones you no longer need. Each downloaded font shows a live preview in its own
-typeface, and so do the builder's font dropdowns (with a preview swatch). They live in a
+A curated set of broadcast-friendly Google Fonts **ships with every install** and is
+offered in the Overlay Builder's font pickers — no download step. To use a family that
+is not in the set, type its name in **General Settings → Overlay fonts** (or open the
+**Browse Google Fonts** link to find the exact name); it is self-hosted once into the
 machine-wide library (`runtime/fonts/`) shared across all leagues — no per-league
-re-download. When a league's design **uses** a library font, it is **copied into that
-profile's `overlay/fonts/` on save**, so the overlay renders offline and `profile export`
-stays self-contained. The bold (700) weight is fetched when the family has one, else its
-default face.
+re-download. When a league's design uses a font, it is copied into that league's
+`overlay/fonts/` on save, so the overlay works offline and **profile export** stays
+self-contained.
 
 How it round-trips: the builder owns a `layout-<page>.json` model and **compiles** it into
 the same `profiles/<name>/overlay/<page>.css` the relay serves — so everything below about
