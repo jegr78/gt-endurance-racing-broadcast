@@ -24,6 +24,17 @@ def _mkoverlay(tmp, hud_css=None, timer_css=None, fonts=None):
         with open(os.path.join(od, "fonts", name), "wb") as f: f.write(data)
     return od
 
+def t_splitscreen_page_wires_data_and_override():
+    import os
+    path = os.path.join(ROOT, "src", "obs", "splitscreen.html")
+    assert os.path.exists(path), "src/obs/splitscreen.html missing"
+    with open(path, encoding="utf-8") as fh:
+        html = fh.read()
+    assert "/splitscreen/data" in html          # polls the relay state
+    assert "/splitscreen/override.css" in html  # per-league override link
+    assert 'id="split-left"' in html and 'id="split-right"' in html
+
+
 def t_splitscreen_is_an_overlay_page():
     assert "splitscreen" in feeds.OVERLAY_PAGES
 

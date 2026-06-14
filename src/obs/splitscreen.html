@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Splitscreen labels</title>
+<style>
+  /* Transparent overlay for the OBS Splitscreen scene. Feed A is the left
+     half (x 0..960), Feed B the right (x 960..1920); both feeds are a 960x540
+     band with their top edge at y=270. Each label sits at the top-right of its
+     own feed, flush-right, overhanging slightly above the feed's top edge. */
+  html,body{margin:0;width:1920px;height:1080px;background:transparent;overflow:hidden}
+  .split-label{position:absolute;top:256px;            /* 270 - 14 overhang */
+    background:rgba(38,44,52,.92);border:1px solid #4a5560;border-radius:7px;
+    padding:6px 12px;color:#fff;font:600 22px/1.1 'IBM Plex Mono',ui-monospace,monospace;
+    letter-spacing:.12em;text-transform:uppercase;box-shadow:0 4px 14px rgba(0,0,0,.5);
+    white-space:nowrap}
+  #split-left{right:960px}    /* flush to the centre seam */
+  #split-right{right:0}       /* flush to the screen edge */
+  .split-label[hidden]{display:none}
+</style>
+<link rel="stylesheet" href="/splitscreen/override.css">
+</head>
+<body>
+  <div id="split-left" class="split-label" hidden></div>
+  <div id="split-right" class="split-label" hidden></div>
+<script>
+  // Feed A renders on the left box, Feed B on the right. The relay reports which
+  // feed is on air; that box reads CURRENT, the other NEXT. NEXT hides when the
+  // other feed is inactive (qualifying mode). Server-driven only — no reloads.
+  var L = document.getElementById('split-left');
+  var R = document.getElementById('split-right');
+  async function tick(){
+    try{
+      var s = await (await fetch('/splitscreen/data', {cache:'no-store'})).json();
+      var leftIsCurrent = s.current === 'A';
+      L.textContent = leftIsCurrent ? 'Current' : 'Next';
+      R.textContent = leftIsCurrent ? 'Next' : 'Current';
+      // Hide whichever box would read NEXT when next_active is false.
+      L.hidden = (!leftIsCurrent && !s.next_active);
+      R.hidden = ( leftIsCurrent && !s.next_active);
+    }catch(e){ /* keep last-good labels on a transient relay hiccup */ }
+  }
+  tick(); setInterval(tick, 2500);
+</script>
+</body>
+</html>
