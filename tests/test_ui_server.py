@@ -148,8 +148,7 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "overlay_fonts": lambda: {"ok": True, "active": "demo",
                                       "fonts": ["League.woff2"],
                                       "library": ["Oswald.woff2"]},
-            "machine_fonts": lambda: {"ok": True, "fonts": ["Oswald.woff2"],
-                                      "catalog": ["Oswald", "Roboto"]},
+            "machine_fonts": lambda: {"ok": True, "fonts": ["Oswald.woff2"]},
             "font_catalog": lambda: {"ok": True, "source": "google",
                                      "families": ["Oswald", "Roboto", "Teko"]},
             "machine_font_download": lambda name: {"ok": bool(name),
@@ -1102,7 +1101,7 @@ def t_font_library_list_route():
     try:
         code, body = _get(port, "/api/fonts")
         data = json.loads(body)
-        assert code == 200 and "Oswald" in data["catalog"]
+        assert code == 200 and "catalog" not in data
         assert "Oswald.woff2" in data["fonts"]
     finally:
         httpd.shutdown()

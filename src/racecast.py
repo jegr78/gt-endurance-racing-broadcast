@@ -2657,11 +2657,11 @@ def _http_get(url, headers=None, binary=False, timeout=15):
 
 
 def machine_fonts_list_data():
-    """The machine-wide font library + the curated catalog available to add.
-    Machine-scoped (no active profile needed). {ok, fonts, catalog}."""
+    """The machine-wide font library (runtime/fonts/), pre-seeded from the bundled
+    curated set and extendable via the Settings typeahead. Machine-scoped (no active
+    profile needed). {ok, fonts}."""
     try:
-        return {"ok": True, "fonts": _list_fonts(_machine_fonts_dir()),
-                "catalog": list(ob.GOOGLE_FONTS)}
+        return {"ok": True, "fonts": _list_fonts(_machine_fonts_dir())}
     except Exception as exc:
         return {"ok": False, "error": f"could not list fonts: {exc}"}
 
