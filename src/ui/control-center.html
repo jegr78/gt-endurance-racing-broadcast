@@ -1806,7 +1806,7 @@ async function loadSpeedtest() {
     const ok = latest.download_mbps >= 50 && latest.upload_mbps >= 20;
     const min = latest.download_mbps >= 25 && latest.upload_mbps >= 10;
     badge.hidden = false;
-    badge.className = 'badge ' + (ok ? 'ok' : min ? 'warn' : 'bad');
+    badge.className = 'badge ' + (ok ? 'on' : min ? 'warn' : 'fail');
     badge.querySelector('span:last-child').textContent = ok ? 'OK' : min ? 'min' : 'low';
   }
   const rows = (d.history || []).map(r => {

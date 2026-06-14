@@ -662,6 +662,19 @@ def t_api_speedtest_route():
         httpd.shutdown()
 
 
+def t_api_speedtest_route_provider_error_is_500():
+    ctx = _ctx()
+    def boom():
+        raise RuntimeError("history unreadable")
+    ctx["speedtest"] = boom
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/speedtest")
+        assert code == 500 and "history unreadable" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
 def t_favicon_served_as_svg():
     # #57: the Control Center serves a real favicon (the racecast "rc" mark)
     # instead of the old empty data: URI placeholder.
