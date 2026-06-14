@@ -29,10 +29,11 @@ def t_read_overlay_css_present():
         od = _mkoverlay(tmp, hud_css="#stint{left:10px}")
         assert feeds.read_overlay_css(od, "hud") == b"#stint{left:10px}"
 
-def t_read_overlay_css_timer_present():
+def t_read_overlay_css_timer_is_now_unknown():
+    # the timer page is merged into the HUD — "timer" is no longer an overlay page
     with tempfile.TemporaryDirectory() as tmp:
-        od = _mkoverlay(tmp, timer_css="#clock{font-size:300px}")
-        assert feeds.read_overlay_css(od, "timer") == b"#clock{font-size:300px}"
+        od = _mkoverlay(tmp, hud_css="#stint{left:10px}")
+        assert feeds.read_overlay_css(od, "timer") == b""
 
 def t_read_overlay_css_absent_is_empty():
     with tempfile.TemporaryDirectory() as tmp:

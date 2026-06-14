@@ -57,7 +57,6 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   GET /reload/A | /B    -> reconnect only Feed A or B
   GET /pov/reload      -> re-read the POV sheet cell & (re)connect the POV PiP feed
   GET /pov/stop        -> stop the POV PiP pull (close port 53003, free bandwidth)
-  GET /timer           -> race-timer browser-source page (OBS 'HUD Race Timer')
   GET /timer/data      -> timer state JSON (anchor, mode, sync health)
   GET /timer/start | /timer/stop | /timer/reset | /timer/show | /timer/hide
                           (start resumes a paused timer; stop = pause;
@@ -282,7 +281,7 @@ def resolve_asset(assets_dir, sub, key):
 # Per-profile overlay overrides (profiles/<name>/overlay/). Override CSS is read
 # fresh per request (so a Control Center edit applies on the next OBS refresh
 # without a relay restart); fonts reuse the resolve_asset security pattern.
-OVERLAY_PAGES = ("hud", "timer")
+OVERLAY_PAGES = ("hud",)
 FONT_CTYPES = {"woff2": "font/woff2", "woff": "font/woff",
                "ttf": "font/ttf", "otf": "font/otf"}
 # Identity whitelist (same role as ASSET_CTYPES): the handler re-derives the
@@ -2090,7 +2089,7 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
 
 
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
-                 timer_store=None, timer_path=None, setup_ctl=None, overlay_dir=None,
+                 timer_store=None, setup_ctl=None, overlay_dir=None,
                  chat_store=None, preview_path=None, graphics_dir=None):
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
@@ -2178,14 +2177,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send_asset(assets_dir, p[2], p[3])
                 if p == ["hud", "override.css"]:
                     return self._send_css(read_overlay_css(overlay_dir, "hud"))
-                if p == ["timer", "override.css"]:
-                    return self._send_css(read_overlay_css(overlay_dir, "timer"))
                 if len(p) == 3 and p[:2] == ["overlay", "fonts"]:
                     return self._send_font(overlay_dir, p[2])
                 if p[:1] == ["timer"]:
-                    if p == ["timer"]:
-                        if not timer_path: return self._send({"error": "timer disabled"}, 404)
-                        return self._send_file(timer_path, "text/html; charset=utf-8")
                     if not timer_store:
                         return self._send({"error": "timer disabled"}, 404)
                     if p == ["timer", "data"]:   return self._send(timer_store.data())
@@ -2450,7 +2444,8 @@ def main():
     ap.add_argument("--timer-tab", default="Timer",
                     help="Google-Sheet tab holding the race-timer anchor (default 'Timer').")
     ap.add_argument("--no-timer", action="store_true",
-                    help="Do not serve the race timer at /timer.")
+                    help="Do not run the race timer (the HUD clock stays blank; "
+                         "/timer/data and the /timer controls are disabled).")
     ap.add_argument("--ports", default="53001,53002")
     ap.add_argument("--stint", type=int, default=1,
                     help="1-based stint that is ON AIR right now (producer takeover): "
@@ -2587,7 +2582,6 @@ def main():
     # Race timer: local file always; sheet sync derived from sheet-id/tab
     # (custom --sheet-csv-url -> local-only); push via RACECAST_SHEET_PUSH_URL.
     timer_store = None
-    timer_path = None
     if not args.no_timer:
         timer_csv = None
         if not args.sheet_csv_url:
@@ -2596,13 +2590,6 @@ def main():
         timer_store = TimerStore(timer_csv, push_url,
                                  os.path.join(runtime, "timer.json"))
         timer_store.refresh()   # non-fatal: adopt a newer sheet anchor on startup
-        for cand in (os.path.join(here, "timer.html"),
-                     os.path.join(here, "..", "timer.html"),
-                     os.path.join(here, "..", "obs", "timer.html")):
-            if os.path.exists(cand):
-                timer_path = os.path.abspath(cand); break
-        if not timer_path:
-            print("WARN: timer.html not found — /timer will 404.")
 
     chat_store = ChatStore(os.path.join(runtime, "chat.json"))
     source = ScheduleSource(csv_url, cache, local)
@@ -2640,7 +2627,7 @@ def main():
                          daemon=True).start()
 
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
-                           timer_store, timer_path, setup_ctl,
+                           timer_store, setup_ctl,
                            overlay_dir=args.overlay_dir, chat_store=chat_store,
                            preview_path=preview_path, graphics_dir=graphics_dir)
     bind_addrs = resolve_bind_addresses(
@@ -2704,12 +2691,14 @@ def main():
     if setup_ctl:
         mode = "writes ON" if push_url else "read-only (set RACECAST_SHEET_PUSH_URL)"
         print(f"  Panel sheet controls (/setup /schedule /pov/set): {mode}")
-    if timer_store and timer_path:
+    if timer_store:
         push = "sheet+push" if timer_store.push_url else (
             "sheet read-only (set RACECAST_SHEET_PUSH_URL for handover sync)"
             if timer_store.csv_url else "local only")
-        print(f"  Race timer (OBS source): http://127.0.0.1:{args.http_port}/timer  "
-              f"(tab '{args.timer_tab}', {push}; controls /timer/start | /timer/stop)")
+        print(f"  HUD overlay incl. race timer (OBS source): "
+              f"http://127.0.0.1:{args.http_port}/hud")
+        print(f"  Timer controls: /timer/start | /timer/stop | /timer/reset "
+              f"(tab '{args.timer_tab}', {push})")
     print(f"  Cookies (bot-check protection): {'ON — ' + cookies if cookies else 'off (no yt-cookies.txt)'}")
     print(f"  Sheet poll every {args.poll}s.  Ctrl+C to stop.")
     # Serve every bound address; keep the last on the main thread for signals.
