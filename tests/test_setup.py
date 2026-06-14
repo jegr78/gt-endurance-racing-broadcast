@@ -826,6 +826,27 @@ def t_streamlink_serve_cmd_separates_url():
     assert all(not str(x).startswith("http") for x in cmd[:sep])   # options precede the URL
 
 
+def _panel_details_classes(html, box_id):
+    import re
+    tag = re.search(rf'<details[^>]*\bid="{box_id}"[^>]*>', html)
+    assert tag, f"panel section {box_id} not found"
+    cls = re.search(r'\bclass="([^"]*)"', tag.group(0))
+    return cls.group(1).split() if cls else []
+
+
+def t_panel_qualifying_section_is_styled():
+    """#134: the Qualifying section has the same summary+body+table structure as the
+    Schedule section, so it must carry the same 'urls' styling hook — without it the
+    table/inputs/selects/buttons fall back to unstyled browser defaults. Guards the
+    fix against regressing back to a bare `bus qualifying`."""
+    with open(os.path.join(ROOT, "src", "director", "director-panel.html"),
+              encoding="utf-8") as fh:
+        html = fh.read()
+    assert "urls" in _panel_details_classes(html, "urlsBox")        # schedule (reference)
+    assert "urls" in _panel_details_classes(html, "qualBox"), \
+        "Qualifying <details> is missing the 'urls' styling hook -> renders unstyled (#134)"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
