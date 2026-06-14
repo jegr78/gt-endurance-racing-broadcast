@@ -418,7 +418,7 @@ const CONFIG = {
   vis: [
     {label:"FEED A", scene:"Stint", source:"Feed A"},
     {label:"FEED B", scene:"Stint", source:"Feed B"},
-    {label:"POV",    scene:"Stint", source:"Feed POV"},
+    {label:"POV",    scene:"Stint", source:"Feed POV", relay:"pov"},
   ],
   graphics: [
     {label:"HUD",           scene:"Stint",       source:"HUD"},
@@ -512,6 +512,7 @@ function mkKey(label, tag, onClick, obsManaged){
   return b;
 }
 const macroKeys = [], sceneKeys = {}, toggleKeys = [];
+let povVisBtn = null;                 // the relay-driven POV visibility button (#130)
 
 CONFIG.macros.forEach(m=>{
   const b = mkKey(m.label, "program", ()=>runMacro(m), true);
@@ -566,8 +567,10 @@ CONFIG.scenes.forEach(name=>{
 });
 { const s = document.createElement("div"); s.className = "sep"; $("#scnBus").appendChild(s); }
 CONFIG.vis.forEach(item=>{
-  const b = mkKey(item.label, item.scene, ()=>toggleSource(item, b), true);
+  const b = mkKey(item.label, item.scene,
+                  ()=> item.relay ? relayCall("pov/toggle") : toggleSource(item, b), true);
   b._item = item; toggleKeys.push(b); $("#scnBus").appendChild(b);
+  if (item.relay === "pov") povVisBtn = b;
 });
 
 CONFIG.graphics.forEach(item=>{
@@ -671,6 +674,7 @@ async function refresh(){
 
     const visState = {};
     for(const b of toggleKeys){
+      if (b._item.relay) continue;        // relay-driven (POV): lit from /status, not OBS
       try{
         const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:b._item.scene, sourceName:b._item.source});
         const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:b._item.scene, sceneItemId});
@@ -783,6 +787,7 @@ async function relayPoll(){
       $("#stPov").className = "st" + (cls ? " " + cls : "");
       $("#stPov").innerHTML = "POV <b>" + (txt || "—") + "</b>";
     } else { $("#stPov").className = "st"; $("#stPov").innerHTML = "POV <b>—</b>"; }
+    if (povVisBtn) povVisBtn.classList.toggle("on", !!(d.pov && d.pov.shown));
     const lines = [healthLine("A", d.feeds.A), healthLine("B", d.feeds.B)];
     if (d.pov && d.pov.state !== "stopped") lines.push(healthLine("POV", d.pov));
     if (d.mode === "qualifying")
