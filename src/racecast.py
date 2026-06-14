@@ -20,6 +20,7 @@
   racecast chat      clear | pull <ip> [--port N] | import <file> | export [--out PATH]
   racecast backup    {create|list|restore|delete} <label>   # named look snapshots (overlay+graphics+media)
   racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
+  racecast freeport [PORT...] [--force]       # free a stuck feed port (default 53001-53003); kills orphaned holders, refuses a running relay/streams
   racecast preflight | cookies [twitch] [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   racecast export companion [--out PATH]     # write the Companion button config
   racecast init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
@@ -40,6 +41,7 @@ import profile_admin as pa
 import chat_admin as ca
 import overlay_build as ob
 import fonts_bundle as fb
+import ports as pt
 
 # PyInstaller marks the frozen binary with sys.frozen and unpacks bundled data
 # (the whole src/ tree) to sys._MEIPASS. Repo + package mode stay subprocess-based.
@@ -689,6 +691,8 @@ def route(argv):
         return {"kind": "service", "command": "app", "verb": verb, "rest": rest[1:]}
     if cmd == "ui":
         return {"kind": "ui", "rest": rest}
+    if cmd == "freeport":
+        return {"kind": "freeport", "rest": rest}
     if cmd == "init":
         return {"kind": "init", "rest": rest}
     if cmd == "profile":
@@ -1022,6 +1026,13 @@ def relay_start(rest):
                   f"running relay open http://127.0.0.1:{RELAY_PORT}/set/stint/{stint[1]}")
         relay_status([])
         return None
+    # No relay running, yet a feed port already LISTENS -> an orphan (e.g. a leaked
+    # static-streams streamlink) will block that feed from binding. Warn + point at
+    # the recovery action rather than letting Feed A loop silently in "connecting".
+    busy = [p for p in pt.FEED_PORTS if pt.pids_on_port(p)]
+    if busy:
+        print(f"WARNING: feed port(s) {', '.join(map(str, busy))} already in use — "
+              f"that feed may fail to bind. Free them first: racecast freeport")
     argv = _relay_daemon_argv(rest, IS_FROZEN)
     newpid = sv.start_detached(argv, _relay_log_path(), _relay_pid_path(),
                                env=_frozen_child_env())
@@ -1762,6 +1773,76 @@ def event_stop(rest):
     if glob.glob(os.path.join(_streams_static_dir(), "feed_*.pid")):
         streams_stop([])
     print("OBS/Discord/Tailscale keep running — quit them manually if needed.")
+
+
+def _relay_is_alive():
+    """True when the relay daemon is up (its PID file names a live process)."""
+    pid = sv.read_pid(_relay_pid_path())
+    return bool(pid and sv.pid_alive(pid))
+
+
+def parse_freeport_args(rest, default_ports=pt.FEED_PORTS):
+    """`freeport [PORT...] [--force]` -> (ports, force). No ports given = the three
+    feed ports. Raises ValueError on a bad option or a non-port token."""
+    force = False
+    chosen = []
+    for arg in rest:
+        if arg in ("--force", "-f"):
+            force = True
+        elif arg.startswith("-"):
+            raise ValueError(f"unknown option: {arg}")
+        elif not arg.isdigit() or not (1 <= int(arg) <= 65535):
+            raise ValueError(f"not a valid port: {arg}")
+        else:
+            chosen.append(int(arg))
+    return (chosen or list(default_ports), force)
+
+
+def freeport_owner(port, relay_alive, static_alive_ports):
+    """Which RUNNING racecast service legitimately owns `port` right now (so freeing
+    it would cut a live feed): 'relay' (it binds the feed ports + control port),
+    'streams' (a tracked static feed is alive on it), or None (orphan/foreign)."""
+    if relay_alive and (port in pt.FEED_PORTS or port == RELAY_PORT):
+        return "relay"
+    if port in static_alive_ports:
+        return "streams"
+    return None
+
+
+def freeport_cmd(rest):
+    """Free stuck feed ports: kill whatever LISTENS on each, unless a running relay
+    or static-streams owns it (then refuse — stop that service, or --force). Default
+    targets 53001-53003. Exit 1 if any port was refused, else 0."""
+    try:
+        chosen, force = parse_freeport_args(rest)
+    except ValueError as exc:
+        sys.exit(f"racecast: {exc}")
+    relay_alive = _relay_is_alive()
+    static_alive = {int(f["label"]) for f in streams_status_data()
+                    if f["alive"] and str(f["label"]).isdigit()}
+    refused = False
+    for port in chosen:
+        pids = pt.pids_on_port(port)
+        owner = freeport_owner(port, relay_alive, static_alive)
+        action, found = pt.decide_free(pids, owned=bool(owner), force=force)
+        shown = ", ".join(str(p) for p in found)
+        if action == "clear":
+            print(f"port {port}: already free")
+        elif action == "refuse":
+            refused = True
+            who = "relay" if owner == "relay" else "static streams"
+            stop = "racecast relay stop" if owner == "relay" else "racecast streams stop"
+            print(f"port {port}: held by the running {who} (PID {shown}) — "
+                  f"{stop}, or re-run with --force")
+        else:
+            for pid in found:
+                pt.kill_pid(pid)
+            left = pt.pids_on_port(port)
+            if left:
+                print(f"port {port}: STILL in use after kill (PID {', '.join(map(str, left))})")
+            else:
+                print(f"port {port}: freed (was PID {shown})")
+    raise SystemExit(1 if refused else 0)
 
 
 DISPATCH = {
@@ -3612,6 +3693,8 @@ def main(argv=None):
         return fn(action["rest"])
     if action["kind"] == "ui":
         return ui_cmd(action["rest"])
+    if action["kind"] == "freeport":
+        return freeport_cmd(action["rest"])
     if action["kind"] == "init":
         return init_cmd(action["rest"])
     if action["kind"] == "profile":
