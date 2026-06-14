@@ -6,7 +6,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
 import speedtest as m   # noqa: E402
-import preflight as pf  # noqa: E402,F401  (used in Task 3 classify tests)
+import preflight as pf  # noqa: E402
 
 # A captured `speedtest --format=json` payload (clean round numbers):
 #   download.bandwidth 6_000_000 B/s -> 48.0 Mbps ; upload 2_750_000 -> 22.0 Mbps

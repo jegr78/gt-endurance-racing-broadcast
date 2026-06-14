@@ -11,12 +11,13 @@ Control Center button. Pure Python 3 standard library (the `speedtest` binary is
 the only external dependency, installed via `racecast install-tools`).
 """
 import json
-import os          # noqa: F401  (used in Tasks 2-4: history_path, makedirs, path helpers)
-import shutil      # noqa: F401  (used in Task 4: shutil.which injected into run())
-import subprocess  # noqa: F401  (used in Task 4: default runner in run())
-import time        # noqa: F401  (used in Task 4: main() stamps time.time())
+import os
+import shutil
+import subprocess
+import tempfile
+import time
 
-from preflight import PASS, WARN, INFO, Result   # noqa: F401  (used in Tasks 3-4: classify/render)
+from preflight import PASS, WARN, INFO, Result
 
 SPEEDTEST_BIN = "speedtest"
 # Thresholds mirror src/docs/wiki/Set-up-the-broadcast-PC.md (the single source).
@@ -110,12 +111,21 @@ def load_latest(runtime_dir):
 
 
 def append_record(record, runtime_dir):
-    """Append one record and rewrite the file trimmed to the last HISTORY_LIMIT."""
+    """Append one record and rewrite the file trimmed to the last HISTORY_LIMIT.
+    Writes to a temp file and os.replace()s it in — the atomic-rewrite pattern the
+    rest of the project uses (chat_admin/backup_admin/profile_io) so a crash
+    mid-write can't truncate the history."""
     os.makedirs(runtime_dir, exist_ok=True)
     kept = (_read_all(runtime_dir) + [record])[-HISTORY_LIMIT:]
-    with open(history_path(runtime_dir), "w", encoding="utf-8") as fh:
-        for rec in kept:
-            fh.write(json.dumps(rec) + "\n")
+    fd, tmp = tempfile.mkstemp(dir=runtime_dir, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            for rec in kept:
+                fh.write(json.dumps(rec) + "\n")
+        os.replace(tmp, history_path(runtime_dir))
+    except BaseException:   # never leave a temp file behind on any failure
+        os.unlink(tmp)
+        raise
     return record
 
 
@@ -184,9 +194,9 @@ def run(now, runtime_dir, runner=subprocess.run, which=shutil.which):
             "Ookla speedtest CLI not found — run `racecast install-tools` "
             "(or install it manually).")
     proc = runner(run_argv(), capture_output=True, text=True)
-    out = (getattr(proc, "stdout", "") or "").strip()
-    if getattr(proc, "returncode", 1) != 0 or not out:
-        err = (getattr(proc, "stderr", "") or "").strip() or "no output"
+    out = (proc.stdout or "").strip()
+    if proc.returncode != 0 or not out:
+        err = (proc.stderr or "").strip() or "no output"
         raise SpeedtestFailed(f"speedtest did not complete (no internet?): {err}")
     record = parse_result(out, now)
     append_record(record, runtime_dir)
