@@ -117,6 +117,7 @@ class _StubSource:
 def _relay(items):
     r = m.Relay(_StubSource(items), (53001, 53002), HERE)
     r._reflect = lambda live, cut: None        # isolate index logic from OBS I/O
+    r._reflect_pov = lambda shown: None        # isolate POV toggle from OBS I/O
     return r
 
 
@@ -271,15 +272,15 @@ def t_splitscreen_state_hides_next_in_qualifying():
     assert st == {"current": "A", "next_active": False, "mode": "qualifying"}
 
 
-def t_pov_active_tracks_feed_paused():
+def t_pov_active_tracks_pov_shown():
     r = _relay(["s1", "s2"])
-    assert r.pov is None
-    assert r.pov_active() is False                 # no POV feed wired
-    r.pov = m.Feed("POV", 53003, 0, lambda: ["https://youtu.be/p"], HERE)
-    r.pov.paused = True
-    assert r.pov_active() is False                  # off
-    r.pov.paused = False
-    assert r.pov_active() is True                   # live
+    assert r.pov_active() is False               # pov_shown defaults False
+    assert r.set_pov_shown(True) == {"shown": True}
+    assert r.pov_active() is True
+    assert r.pov_toggle() == {"shown": False}    # flips back
+    assert r.pov_active() is False
+    assert r.pov_toggle() == {"shown": True}     # and forward again
+    assert r.pov_active() is True
 
 
 def t_pov_name_reads_pov_source_row():

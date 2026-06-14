@@ -1871,6 +1871,7 @@ class Relay:
         # paused (off) until the Director calls /pov/reload.
         self.pov_source = pov_source
         self.pov = None
+        self.pov_shown = False          # relay-driven PiP visibility (drives the HUD box)
         if pov_source is not None and pov_port is not None:
             self.pov = Feed("POV", pov_port, 0, pov_source.get, logdir, cookies,
                             fmt=YTDLP_FORMAT_POV, cookie_dir=cookie_dir)
@@ -1919,6 +1920,7 @@ class Relay:
             raw = (self.pov_source.get()[:1] or [None])[0] if self.pov_source else None
             out["pov"] = {"port": self.pov.port, "url": raw,
                           "name": self.pov_name(),
+                          "shown": self.pov_shown,
                           "state": "stopped" if self.pov.paused else self.pov.phase,
                           "state_age_s": round(now - self.pov.phase_since, 1),
                           "source": self.pov_source.health() if self.pov_source else None}
@@ -1943,10 +1945,10 @@ class Relay:
                 "mode": self.mode}
 
     def pov_active(self):
-        """True when the POV picture-in-picture feed is live (started, not
-        paused). Drives the HUD: the whole POV box — frame and name — shows
-        only while the POV is on air."""
-        return bool(self.pov and not self.pov.paused)
+        """True when the POV PiP is shown on screen (relay-driven, reflected to
+        OBS by /pov/toggle|show|hide). Drives the HUD: the whole POV box — frame
+        and name — shows only while the PiP is on air."""
+        return self.pov_shown
 
     def pov_name(self):
         """The POV name from the POV tab's one data row (the 'name' column),
@@ -1955,6 +1957,29 @@ class Relay:
             return ""
         rows = self.pov_source.get_rows()
         return rows[0][1] if rows else ""
+
+    def set_pov_shown(self, shown):
+        """Show/hide the POV PiP on screen: record the relay state (drives the
+        HUD box) and reflect it into OBS best-effort. Returns the new state."""
+        self.pov_shown = bool(shown)
+        self._reflect_pov(self.pov_shown)
+        return {"shown": self.pov_shown}
+
+    def pov_toggle(self):
+        return self.set_pov_shown(not self.pov_shown)
+
+    def _reflect_pov(self, shown):
+        """Enable/disable the OBS 'Feed POV' scene item off-thread; never blocks
+        the HTTP response, never raises. Records the note for /status (mirrors
+        _reflect)."""
+        if _obs_ws is None:
+            return
+
+        def run():
+            _ok, note = _obs_ws.set_scene_item_enabled(
+                _obs_ws.STINT_SCENE, _obs_ws.POV_SOURCE, shown)
+            self.obs_note = note or None
+        threading.Thread(target=run, daemon=True).start()
 
     def live_schedule_row(self):
         """{"streamer", "stint"} for the stint the on-air feed is serving now, or
@@ -2309,6 +2334,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["reload"]:                     return self._send(relay.reload())
                 if p == ["pov", "reload"]:              return self._send(relay.pov_reload())
                 if p == ["pov", "stop"]:                return self._send(relay.pov_stop())
+                if p == ["pov", "toggle"]:              return self._send(relay.pov_toggle())
+                if p == ["pov", "show"]:                return self._send(relay.set_pov_shown(True))
+                if p == ["pov", "hide"]:                return self._send(relay.set_pov_shown(False))
                 if len(p)==2 and p[0]=="next":          return self._ok(relay.advance(p[1], +2))
                 if len(p)==2 and p[0]=="prev":          return self._ok(relay.advance(p[1], -2))
                 if len(p)==2 and p[0]=="reload":        return self._ok(relay.reload(p[1]))
