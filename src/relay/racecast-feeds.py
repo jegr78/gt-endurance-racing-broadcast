@@ -1911,6 +1911,7 @@ class Relay:
         if self.pov:
             raw = (self.pov_source.get()[:1] or [None])[0] if self.pov_source else None
             out["pov"] = {"port": self.pov.port, "url": raw,
+                          "name": self.pov_name(),
                           "state": "stopped" if self.pov.paused else self.pov.phase,
                           "state_age_s": round(now - self.pov.phase_since, 1),
                           "source": self.pov_source.health() if self.pov_source else None}
@@ -2182,7 +2183,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["hud", "data"]:
                     if not hud_source:
                         return self._send({"error": "hud disabled"}, 404)
-                    return self._send(hud_source.data())
+                    data = hud_source.data()           # already a shallow copy
+                    data["povActive"] = relay.pov_active()
+                    data["povName"] = relay.pov_name()
+                    return self._send(data)
                 if p == ["hud", "preview"]:
                     if not preview_path:
                         return self._send({"error": "preview disabled"}, 404)
