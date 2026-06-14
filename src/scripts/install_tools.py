@@ -192,7 +192,10 @@ def main():
     a = ap.parse_args()
 
     missing = missing_tools(which=_which_with_fresh_path(windows_fresh_path()))
-    if not missing and not a.update:
+    # The optional Ookla speedtest CLI is provisioned here too — so a setup whose
+    # core tools are already present can still get it by running install-tools.
+    speedtest_missing = shutil.which(SPEEDTEST_BIN_NAME) is None
+    if not missing and not speedtest_missing and not a.update:
         print("All external tools already installed:", ", ".join(TOOLS))
         print("  (run `racecast install-tools --update` to upgrade them)")
         _note_new_terminal()
