@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.3.0...v0.4.0) (2026-06-14)
+
+
+### Features
+
+* **fonts:** bundle curated overlay fonts into builds, auto-seed on start ([#132](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/132)) ([bc2a916](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/bc2a91655364e7f5b29bfd4bed6876c140868f51))
+* **overlay:** editable timer position, split team slots, slot picker, POV box ([#146](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/146)) ([dbeef73](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/dbeef7368f4e5181cf40cc2fb34d8b63a9be6e5d))
+* **overlay:** merge race timer into HUD, POV frame, property prefill ([#153](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/153)) ([ed27bbf](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/ed27bbfa360926d783b580873e3d81e94f65a160))
+* **relay:** qualifying mode — separate tab served on Feed A ([#127](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/127)) ([02263ee](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/02263ee46448abf2942217b49edb87f4d91cf388)), closes [#124](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/124)
+* **relay:** schedule-driven HUD stint & streamer on handover ([#125](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/125)) ([cc4695b](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/cc4695b370bafbab9cbc83d0ba1f941db20867b3)), closes [#112](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/112)
+* **relay:** show pre-planned stints (blank URL) in the Director Panel ([#148](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/148)) ([e7da64d](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e7da64df86f4e011e687812b98655ffd07efbfe4)), closes [#137](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/137)
+* **streams:** add a freeport recovery action for the feed ports ([#142](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/142)) ([9c9a038](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/9c9a0384b00bfdc6d88c8c8c87c5d97dcbd3d860))
+* **ui:** visual overlay builder for league overlays ([#114](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/114)) ([#128](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/128)) ([cf05ebf](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/cf05ebf164aa11ffddc034f9f9d19476b44c85b1))
+
+
+### Bug Fixes
+
+* **lint:** enforce CodeQL py/empty-except locally; comment 5 silent swallows ([#150](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/150)) ([2f97cea](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/2f97cea1062c09f4e3b8185288cafa9d50ba18bd))
+* **panel:** style the Qualifying section like the Schedule section ([#144](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/144)) ([4475729](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/4475729e574e465a21de8072fe035547b3461436)), closes [#134](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/134)
+* **relay:** surface an immediate feed bind failure into /status last_error ([#147](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/147)) ([1f106de](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/1f106de9fc2dabeab6fc478e371a46d9d98c0b85)), closes [#143](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/143)
+* **ui:** font library rows show one self-rendered preview, no overlap ([#149](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/149)) ([e84a3ed](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e84a3ed19e123f7d3d2c2da34073d5fd0f2cb0fc)), closes [#145](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/145)
+
 ## [0.3.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.2.0...v0.3.0) (2026-06-13)
 
 
