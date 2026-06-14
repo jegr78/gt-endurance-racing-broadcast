@@ -110,6 +110,48 @@ def t_parse_rows_header_mode_missing_stint_column():
     assert rows == [("UCaaaaaaaaaaaaaaaaaaaaa1", "JeGr", "", 2)], rows
 
 
+def t_parse_rows_header_mode_keeps_planned_stints_without_url():
+    # #137: in header mode a pre-planned stint (Stint label and/or Streamer set,
+    # URL still blank) is a REAL stint slot — kept with an empty URL (feed idles
+    # until filled) so the panel shows all planned stints, not just URL-bearing ones.
+    text = ("Stint,URL,Streamer\n"
+            "Opening,UCaaaaaaaaaaaaaaaaaaaaa1,JeGr\n"   # live: has URL
+            "Mid,,GT45\n"                                # planned: stint + streamer, no URL
+            "Closing,,\n"                                # planned: stint label only
+            ",,\n")                                      # spacer: nothing -> dropped
+    rows = m.ScheduleSource._parse_rows(text)
+    assert rows == [("UCaaaaaaaaaaaaaaaaaaaaa1", "JeGr", "Opening", 2),
+                    ("", "GT45", "Mid", 3),
+                    ("", "", "Closing", 4)], rows
+
+
+def t_parse_rows_header_mode_planned_streamer_only():
+    # A row with only a Streamer (no stint label, no URL) still counts as a stint.
+    text = "URL,Streamer,Stint\n,JeGr,\n"
+    rows = m.ScheduleSource._parse_rows(text)
+    assert rows == [("", "JeGr", "", 2)], rows
+
+
+def t_parse_rows_header_mode_drops_invalid_url_keeps_planned():
+    # A non-channel URL on an otherwise-planned row is treated as not-yet-filled
+    # (url -> ""), so the feed never tries to serve junk but the row still shows.
+    text = "Stint,URL,Streamer\nMid,not-a-url,GT45\n"
+    rows = m.ScheduleSource._parse_rows(text)
+    assert rows == [("", "GT45", "Mid", 2)], rows
+
+
+def t_items_idle_on_planned_rows_without_url():
+    # The feed URL list stays parallel to the rows: a planned (URL-less) stint is
+    # an empty slot, so the feed idles on it instead of breaking the indexing.
+    import tempfile, os as _os
+    text = "Stint,URL,Streamer\nOpening,UCaaaaaaaaaaaaaaaaaaaaa1,JeGr\nMid,,GT45\n"
+    s = m.ScheduleSource("http://sched",
+                         _os.path.join(tempfile.mkdtemp(), "cache.txt"), None)
+    s.fetch = lambda timeout=15: m.ScheduleSource._parse_rows(text)
+    assert s.refresh() is True
+    assert s.get() == ["UCaaaaaaaaaaaaaaaaaaaaa1", ""]   # planned stint = idle slot
+
+
 # ---------- SetupControl ----------
 
 OVERLAY_CSV = (",Stint,Intro,,,,,,,\n,Streamer,JeGr,,,,,,,\n"
