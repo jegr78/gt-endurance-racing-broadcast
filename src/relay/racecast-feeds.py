@@ -497,7 +497,7 @@ NUMBER_HEADERS = ("number",)
 # move and the Stint label is read); otherwise the parser falls back to the
 # positional auto-detect that needs no header row (back-compat).
 SCHEDULE_URL_HEADERS = ("url",)
-SCHEDULE_STREAMER_HEADERS = ("streamer",)
+SCHEDULE_STREAMER_HEADERS = ("streamer", "name")  # "name" = the POV tab's column
 SCHEDULE_STINT_HEADERS = ("stint",)
 
 

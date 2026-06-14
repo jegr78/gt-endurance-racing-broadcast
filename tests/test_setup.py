@@ -132,6 +132,23 @@ def t_parse_rows_header_mode_planned_streamer_only():
     assert rows == [("", "JeGr", "", 2)], rows
 
 
+def t_parse_rows_reads_name_header_for_pov_tab():
+    # The POV tab uses a 'name' column (no 'streamer'); header mode reads it into
+    # the row's name field so the relay can surface the POV name.
+    text = "url,name\nhttps://www.youtube.com/watch?v=p,JeGr\n"
+    rows = m.ScheduleSource._parse_rows(text)
+    assert rows == [("https://www.youtube.com/watch?v=p", "JeGr", "", 2)], rows
+
+
+def t_parse_rows_streamer_still_wins_over_name():
+    # Additive change must not regress the Schedule tab: when both 'streamer' and
+    # 'name' headers exist, 'streamer' is the one read (first match wins).
+    text = ("url,streamer,name\n"
+            "https://www.youtube.com/watch?v=p,RealStreamer,SomethingElse\n")
+    rows = m.ScheduleSource._parse_rows(text)
+    assert rows == [("https://www.youtube.com/watch?v=p", "RealStreamer", "", 2)], rows
+
+
 def t_parse_rows_header_mode_drops_invalid_url_keeps_planned():
     # A non-channel URL on an otherwise-planned row is treated as not-yet-filled
     # (url -> ""), so the feed never tries to serve junk but the row still shows.
