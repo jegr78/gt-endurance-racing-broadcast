@@ -9,8 +9,12 @@
      to fine-tune live (same model as hud.html). */
   html, body { margin: 0; width: 1920px; height: 1080px;
     background: transparent; overflow: hidden; }
-  #clock { position: absolute; left: 0; top: 217px; width: 1920px; height: 678px;
-    display: flex; align-items: center; justify-content: center;
+  /* A finite box that hugs the digits (width auto) so the overlay builder can
+     drag/resize it meaningfully (issue #135). left:110px reproduces the old
+     centered position (~1700px-wide digits used to start there). Set an explicit
+     width + justify-content via the builder to re-center if desired. */
+  #clock { position: absolute; left: 110px; top: 217px; height: 678px;
+    display: flex; align-items: center; white-space: nowrap;
     font-family: "SF Mono", "Cascadia Mono", "Consolas", "Menlo", monospace;
     font-weight: 700; font-size: 420px; color: #ffffff;
     text-shadow: 0 4px 12px rgba(0,0,0,.6); font-variant-numeric: tabular-nums; }

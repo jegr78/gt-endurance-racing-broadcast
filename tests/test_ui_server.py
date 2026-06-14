@@ -471,6 +471,20 @@ def t_root_serves_the_page():
         httpd.shutdown()
 
 
+def t_overlay_view_has_slot_picker():
+    # Regression for #140: a "jump to slot" dropdown wired to the editor selection,
+    # populated from the page's slot list, so operators don't hunt on the canvas.
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/")
+        assert code == 200
+        assert b'id="ov-slotpick"' in body
+        assert b"ovPopulateSlotPicker" in body   # populated on load
+        assert b"ovSelect(" in body              # selecting jumps to the slot
+    finally:
+        httpd.shutdown()
+
+
 def t_page_sets_csp_header():
     # The served page carries a Content-Security-Policy (defense-in-depth for any
     # future XSS; the page is fully self-contained so 'self' + inline is enough).
