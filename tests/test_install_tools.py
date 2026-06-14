@@ -140,7 +140,9 @@ def t_install_speedtest_binary_verifies_and_extracts(tmp=None):
     assert path == os.path.join(d, "speedtest")
     with open(path, "rb") as fh:
         assert fh.read() == b"#!/bin/echo speedtest\n"
-    assert os.access(path, os.X_OK)              # chmod +x
+    if os.name != "nt":                          # the +x bit is POSIX-only
+        import stat
+        assert os.stat(path).st_mode & stat.S_IXUSR
 
 
 def t_install_speedtest_binary_rejects_bad_checksum():

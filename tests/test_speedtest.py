@@ -111,7 +111,9 @@ def t_find_binary_falls_back_to_managed_dir():
     d = tempfile.mkdtemp()
     bindir = m.managed_bin_dir(d)
     _os.makedirs(bindir)
-    binpath = _os.path.join(bindir, "speedtest")
+    # find_binary looks for speedtest.exe on Windows, speedtest elsewhere.
+    name = "speedtest.exe" if _os.name == "nt" else "speedtest"
+    binpath = _os.path.join(bindir, name)
     with open(binpath, "w") as fh:
         fh.write("x")
     assert m.find_binary(d, which=lambda n: None) == binpath
