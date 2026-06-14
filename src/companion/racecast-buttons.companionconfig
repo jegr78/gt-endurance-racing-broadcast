@@ -2062,27 +2062,29 @@
          "down": [
           {
            "id": "HOXg-i5_eBYX0LoK4e9lr",
-           "definitionId": "toggle_scene_item",
-           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
            "options": {
-            "scene": {
-             "value": "Stint",
+            "url": {
+             "value": "http://127.0.0.1:8088/pov/toggle",
              "isExpression": false
             },
-            "all": {
-             "value": false,
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
              "isExpression": false
             },
-            "source": {
-             "value": "Feed POV",
-             "isExpression": false
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
             },
-            "visible": {
-             "value": "toggle",
+            "statusCodeVariable": {
              "isExpression": false
             }
            },
-           "upgradeIndex": 8,
+           "upgradeIndex": 1,
            "type": "action"
           }
          ],

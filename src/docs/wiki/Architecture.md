@@ -80,7 +80,7 @@ URL. A third **POV** feed is an optional driver picture-in-picture.
 ```mermaid
 flowchart TB
   SCH["Google Sheet — tab 'Schedule'<br/>one watch URL per stint, in order"]
-  POVT["Google Sheet — tab 'POV'<br/>cell A2 = driver watch URL"]
+  POVT["Google Sheet — tab 'POV'<br/>url + name (row 2)"]
 
   SCH --> A
   SCH --> B
@@ -139,7 +139,7 @@ flowchart LR
     OM["OBS Studio module"]
   end
 
-  GH -->|"HTTP GET"| EP["Relay control server :8088<br/>/next  /reload  /set/A/n<br/>/pov/reload  /pov/stop  /timer/*  /status  /panel"]
+  GH -->|"HTTP GET"| EP["Relay control server :8088<br/>/next  /reload  /set/A/n<br/>/pov/reload  /pov/stop  /pov/toggle  /timer/*  /status  /panel"]
   OM -->|"WebSocket"| WS["OBS WebSocket :4455"]
   PANEL["Director panel (backup)<br/>served at /panel"] -->|"WebSocket, direct"| WS
 

@@ -194,13 +194,14 @@ def t_ob_extract_slots_from_real_hud():
         slots = ob.extract_slots(f.read())
     ids = [s["id"] for s in slots]
     # Each team is three independent slots (logo / number / name; issue #136),
-    # plus the POV placeholder box (issue #141) and the merged clock slot.
+    # plus the POV placeholder box (issue #141), the POV name label (issue #130),
+    # and the merged clock slot.
     assert ids == ["stint", "session", "streamer", "round-top", "round-flag",
                    "round-country",
                    "team1-logo", "team1-num", "team1-name",
                    "team2-logo", "team2-num", "team2-name",
                    "team3-logo", "team3-num", "team3-name",
-                   "race-control", "pov", "clock"]
+                   "race-control", "pov", "pov-name", "clock"]
     by_id = {s["id"]: s for s in slots}
     assert by_id["stint"]["label"] == "Stint banner"
     # default props (no data-edit-props) include the text set, not the team-only keys

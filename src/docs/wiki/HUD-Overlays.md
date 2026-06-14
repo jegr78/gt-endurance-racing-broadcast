@@ -54,6 +54,10 @@ exposes these ids:
 | `#race-control` | the race-control line |
 | `#clock` | the race-timer digits (merged into the HUD) |
 | `#pov` | the POV picture-in-picture frame (position + background/border) |
+| `#pov-name` | the POV on-screen name label (free text from the POV tab's `name` column) |
+
+The POV box (frame + name) is shown only while the POV PiP is toggled on (driven by the
+relay's `pov_shown`, via `/hud/data` `povActive`).
 
 ## Editing — the visual builder
 

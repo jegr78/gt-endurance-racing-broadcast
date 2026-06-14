@@ -132,6 +132,23 @@ def t_parse_rows_header_mode_planned_streamer_only():
     assert rows == [("", "JeGr", "", 2)], rows
 
 
+def t_parse_rows_reads_name_header_for_pov_tab():
+    # The POV tab uses a 'name' column (no 'streamer'); header mode reads it into
+    # the row's name field so the relay can surface the POV name.
+    text = "url,name\nhttps://www.youtube.com/watch?v=p,JeGr\n"
+    rows = m.ScheduleSource._parse_rows(text)
+    assert rows == [("https://www.youtube.com/watch?v=p", "JeGr", "", 2)], rows
+
+
+def t_parse_rows_streamer_still_wins_over_name():
+    # Additive change must not regress the Schedule tab: when both 'streamer' and
+    # 'name' headers exist, 'streamer' is the one read (first match wins).
+    text = ("url,streamer,name\n"
+            "https://www.youtube.com/watch?v=p,RealStreamer,SomethingElse\n")
+    rows = m.ScheduleSource._parse_rows(text)
+    assert rows == [("https://www.youtube.com/watch?v=p", "RealStreamer", "", 2)], rows
+
+
 def t_parse_rows_header_mode_drops_invalid_url_keeps_planned():
     # A non-channel URL on an otherwise-planned row is treated as not-yet-filled
     # (url -> ""), so the feed never tries to serve junk but the row still shows.
@@ -171,9 +188,9 @@ def _hs_stub():
     return hs
 
 
-def _ctl(pushes, response=b'{"ok": true, "action": "%s", "v": 2}'):
+def _ctl(pushes, response=b'{"ok": true, "action": "%s", "v": 2}', pov_source=None):
     hs = _hs_stub()
-    ctl = m.SetupControl("http://push", hs)
+    ctl = m.SetupControl("http://push", hs, pov_source=pov_source)
     def fake_post(url, payload, timeout=10):
         pushes.append(payload)
         return response % payload["action"].encode() if b"%s" in response else response
@@ -272,6 +289,43 @@ def t_pov_set_pushes():
         r = ctl.pov_set("https://www.youtube.com/watch?v=p")
         assert r.get("ok"), r
         assert pushes[-1] == {"action": "pov", "url": "https://www.youtube.com/watch?v=p"}
+    finally:
+        m.post_webhook = orig
+
+
+class _RefreshSpy:
+    """Minimal pov_source stub: records refresh() calls."""
+    def __init__(self):
+        self.refreshed = 0
+    def refresh(self, timeout=15):     # match ScheduleSource.refresh's default
+        self.refreshed += 1
+        return True
+
+
+def t_pov_set_with_name_pushes_clamped_and_refreshes():
+    pushes = []
+    spy = _RefreshSpy()
+    ctl, hs, orig = _ctl(pushes, pov_source=spy)
+    try:
+        r = ctl.pov_set("https://www.youtube.com/watch?v=p", "A Very Long Driver Name Here")
+        assert r.get("ok"), r
+        assert pushes[-1] == {"action": "pov",
+                              "url": "https://www.youtube.com/watch?v=p",
+                              "name": "A Very Long Driver N"}    # clamped to 20 chars
+        assert len(pushes[-1]["name"]) == 20
+        assert spy.refreshed == 1                                 # name applied immediately
+    finally:
+        m.post_webhook = orig
+
+
+def t_pov_set_empty_name_clears():
+    pushes = []
+    spy = _RefreshSpy()
+    ctl, hs, orig = _ctl(pushes, pov_source=spy)
+    try:
+        r = ctl.pov_set("https://www.youtube.com/watch?v=p", "")
+        assert r.get("ok"), r
+        assert pushes[-1]["name"] == ""                           # explicit clear
     finally:
         m.post_webhook = orig
 

@@ -117,6 +117,7 @@ class _StubSource:
 def _relay(items):
     r = m.Relay(_StubSource(items), (53001, 53002), HERE)
     r._reflect = lambda live, cut: None        # isolate index logic from OBS I/O
+    r._reflect_pov = lambda shown: None        # isolate POV toggle from OBS I/O
     return r
 
 
@@ -269,6 +270,40 @@ def t_splitscreen_state_hides_next_in_qualifying():
     r = _relay_q(["s1", "s2"], ["q1"], mode="qualifying")
     st = r.splitscreen_state()
     assert st == {"current": "A", "next_active": False, "mode": "qualifying"}
+
+
+def t_pov_active_tracks_pov_shown():
+    r = _relay(["s1", "s2"])
+    assert r.pov_active() is False               # pov_shown defaults False
+    assert r.set_pov_shown(True) == {"shown": True}
+    assert r.pov_active() is True
+    assert r.pov_toggle() == {"shown": False}    # flips back
+    assert r.pov_active() is False
+    assert r.pov_toggle() == {"shown": True}     # and forward again
+    assert r.pov_active() is True
+
+
+def t_pov_name_reads_pov_source_row():
+    r = _relay(["s1", "s2"])
+    assert r.pov_name() == ""                        # no pov_source
+    r.pov_source = _StubSource(["https://youtu.be/p"],
+                               rows=[("https://youtu.be/p", "JeGr", "", 2)])
+    assert r.pov_name() == "JeGr"
+    r.pov_source = _StubSource([], rows=[])          # source but no row
+    assert r.pov_name() == ""
+
+
+def t_hud_page_has_pov_name_slot_and_gating():
+    import os as _os
+    path = _os.path.join(ROOT, "src", "obs", "hud.html")
+    with open(path, encoding="utf-8") as fh:
+        html = fh.read()
+    # The name slot exists and is a builder slot (data-edit marker).
+    assert 'id="pov-name"' in html
+    assert 'data-edit="POV name"' in html
+    # tick() hides the whole POV box (frame) when the POV feed is off.
+    assert "povActive" in html
+    assert 'getElementById("pov").classList.toggle("empty"' in html
 
 
 if __name__ == "__main__":

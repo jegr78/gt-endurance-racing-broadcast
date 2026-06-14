@@ -182,10 +182,13 @@ feed in the **Stint** scene. Pulled by a third relay feed on port **53003** (cap
 720p), independent of the A/B ping-pong.
 
 1. **Schedule it:** put the driver's live **watch URL** into the Google Sheet tab
-   **`POV`**, cell **A2** (A1 = header `url`). Empty cell = POV off.
+   **`POV`** (row 2). The tab has two columns, `url` and `name`; `name` is a free-text
+   on-screen label for the box (≤20 chars, optional). Empty `url` = POV off.
 2. **Pull it:** press **POV Reload** → the relay resolves + serves it on 53003 (still
    hidden). `/status` shows the `pov` block (`state: serving`).
-3. **Show it:** press **POV Toggle** → the PiP appears bottom-right in Stint.
+3. **Show it:** press **POV Toggle** — a **relay action** (`/pov/toggle`): the relay
+   flips its `pov_shown` state, shows/hides the `Feed POV` PiP in OBS (best-effort),
+   and the HUD POV box (frame + name) follows it on screen.
 4. **Audio:** muted by default; **MUTE POV** toggles mute, **VOL POV UP / VOL POV DOWN** adjust
    volume (use briefly).
 5. **Done:** **POV Toggle** to hide, then **POV Stop** (frees the pull / bandwidth).

@@ -497,7 +497,7 @@ NUMBER_HEADERS = ("number",)
 # move and the Stint label is read); otherwise the parser falls back to the
 # positional auto-detect that needs no header row (back-compat).
 SCHEDULE_URL_HEADERS = ("url",)
-SCHEDULE_STREAMER_HEADERS = ("streamer",)
+SCHEDULE_STREAMER_HEADERS = ("streamer", "name")  # "name" = the POV tab's column
 SCHEDULE_STINT_HEADERS = ("stint",)
 
 
@@ -1514,11 +1514,13 @@ class SetupControl:
     and answering after the webhook confirm removes the save-vs-RELOAD race).
     The sheet stays authoritative throughout."""
 
-    def __init__(self, push_url, hud_source, schedule_source=None, qual_source=None):
+    def __init__(self, push_url, hud_source, schedule_source=None, qual_source=None,
+                 pov_source=None):
         self.push_url = push_url
         self.hud = hud_source
         self.schedule_source = schedule_source
         self.qual_source = qual_source
+        self.pov_source = pov_source
         self.push_status = "disabled" if not push_url else "never"
         self.last_error = None
 
@@ -1663,7 +1665,7 @@ class SetupControl:
                              "(add it to the Configuration tab first)"}
         return None
 
-    def pov_set(self, url):
+    def pov_set(self, url, name=None):
         if not self.push_url:
             return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
                              "in the active profile or .env (wiki: Sheet-Webhook)"}
@@ -1672,7 +1674,12 @@ class SetupControl:
         url = (url or "").strip()
         if url and not is_channel(url):
             return {"error": "url must be a watch URL or UC… channel ID"}
-        ok, err = self._push({"action": "pov", "url": url}, "pov")
+        payload = {"action": "pov", "url": url}
+        if name is not None:        # omitted -> leave the Sheet cell; "" -> explicit clear
+            payload["name"] = (name or "")[:20]
+        ok, err = self._push(payload, "pov")
+        if ok and self.pov_source is not None:
+            self.pov_source.refresh()    # name (and stored url) live immediately
         return {"ok": True} if ok else {"error": err}
 
     # -- panel poll ------------------------------------------------------------
@@ -1864,6 +1871,7 @@ class Relay:
         # paused (off) until the Director calls /pov/reload.
         self.pov_source = pov_source
         self.pov = None
+        self.pov_shown = False          # relay-driven PiP visibility (drives the HUD box)
         if pov_source is not None and pov_port is not None:
             self.pov = Feed("POV", pov_port, 0, pov_source.get, logdir, cookies,
                             fmt=YTDLP_FORMAT_POV, cookie_dir=cookie_dir)
@@ -1911,6 +1919,8 @@ class Relay:
         if self.pov:
             raw = (self.pov_source.get()[:1] or [None])[0] if self.pov_source else None
             out["pov"] = {"port": self.pov.port, "url": raw,
+                          "name": self.pov_name(),
+                          "shown": self.pov_shown,
                           "state": "stopped" if self.pov.paused else self.pov.phase,
                           "state_age_s": round(now - self.pov.phase_since, 1),
                           "source": self.pov_source.health() if self.pov_source else None}
@@ -1933,6 +1943,43 @@ class Relay:
         return {"current": self.live_feed(),
                 "next_active": self.mode != "qualifying",
                 "mode": self.mode}
+
+    def pov_active(self):
+        """True when the POV PiP is shown on screen (relay-driven, reflected to
+        OBS by /pov/toggle|show|hide). Drives the HUD: the whole POV box — frame
+        and name — shows only while the PiP is on air."""
+        return self.pov_shown
+
+    def pov_name(self):
+        """The POV name from the POV tab's one data row (the 'name' column),
+        or '' when there is no POV source / row."""
+        if not self.pov_source:
+            return ""
+        rows = self.pov_source.get_rows()
+        return rows[0][1] if rows else ""
+
+    def set_pov_shown(self, shown):
+        """Show/hide the POV PiP on screen: record the relay state (drives the
+        HUD box) and reflect it into OBS best-effort. Returns the new state."""
+        self.pov_shown = bool(shown)
+        self._reflect_pov(self.pov_shown)
+        return {"shown": self.pov_shown}
+
+    def pov_toggle(self):
+        return self.set_pov_shown(not self.pov_shown)
+
+    def _reflect_pov(self, shown):
+        """Enable/disable the OBS 'Feed POV' scene item off-thread; never blocks
+        the HTTP response, never raises. Records the note for /status (mirrors
+        _reflect)."""
+        if _obs_ws is None:
+            return
+
+        def run():
+            _ok, note = _obs_ws.set_scene_item_enabled(
+                _obs_ws.STINT_SCENE, _obs_ws.POV_SOURCE, shown)
+            self.obs_note = note or None
+        threading.Thread(target=run, daemon=True).start()
 
     def live_schedule_row(self):
         """{"streamer", "stint"} for the stint the on-air feed is serving now, or
@@ -2168,7 +2215,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["hud", "data"]:
                     if not hud_source:
                         return self._send({"error": "hud disabled"}, 404)
-                    return self._send(hud_source.data())
+                    data = hud_source.data()           # already a shallow copy
+                    data["povActive"] = relay.pov_active()
+                    data["povName"] = relay.pov_name()
+                    return self._send(data)
                 if p == ["hud", "preview"]:
                     if not preview_path:
                         return self._send({"error": "preview disabled"}, 404)
@@ -2284,6 +2334,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["reload"]:                     return self._send(relay.reload())
                 if p == ["pov", "reload"]:              return self._send(relay.pov_reload())
                 if p == ["pov", "stop"]:                return self._send(relay.pov_stop())
+                if p == ["pov", "toggle"]:              return self._send(relay.pov_toggle())
+                if p == ["pov", "show"]:                return self._send(relay.set_pov_shown(True))
+                if p == ["pov", "hide"]:                return self._send(relay.set_pov_shown(False))
                 if len(p)==2 and p[0]=="next":          return self._ok(relay.advance(p[1], +2))
                 if len(p)==2 and p[0]=="prev":          return self._ok(relay.advance(p[1], -2))
                 if len(p)==2 and p[0]=="reload":        return self._ok(relay.reload(p[1]))
@@ -2334,7 +2387,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         body.get("row"), body.get("url"), body.get("name"),
                         body.get("stint")))
                 if p == ["pov", "set"]:
-                    return self._send(setup_ctl.pov_set(body.get("url")))
+                    return self._send(setup_ctl.pov_set(body.get("url"),
+                                                        body.get("name")))
                 return self._send({"error": "unknown", "path": self.path}, 404)
             except ConnectionError:
                 return None              # client hung up mid-response — benign (issue #25)
@@ -2621,7 +2675,8 @@ def main():
     source = ScheduleSource(csv_url, cache, local)
     source.load_initial(SCHEDULE_TEMPLATE)
     setup_ctl = (SetupControl(push_url, hud_source, schedule_source=source,
-                              qual_source=qual_source) if hud_source else None)
+                              qual_source=qual_source, pov_source=pov_source)
+                 if hud_source else None)
     if len(source.get()) < 2:
         print("INFO: schedule has fewer than 2 stints — Feed B idles on the empty next "
               "slot (black) until that stint's link is added; Feed A keeps serving stint 1.")
@@ -2705,7 +2760,7 @@ def main():
     print(f"  Controls: http://127.0.0.1:{args.http_port}/status | /next | /reload")
     if relay.pov:
         print(f"  Driver-POV PiP -> http://127.0.0.1:{args.pov_port}  "
-              f"(sheet tab '{args.pov_tab}' A2; control /pov/reload | /pov/stop)")
+              f"(sheet tab '{args.pov_tab}' url+name; control /pov/reload | /pov/stop | /pov/toggle)")
     if panel_path:
         print(f"  Director panel (local): http://127.0.0.1:{args.http_port}/panel")
         if remote_host:
