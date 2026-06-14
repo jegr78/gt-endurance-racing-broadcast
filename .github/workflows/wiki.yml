@@ -1,0 +1,59 @@
+name: Publish Wiki
+
+# Manual mirror of src/docs/wiki/ to the GitHub wiki repo (the same thing
+# `python3 tools/sync-wiki.py` does locally). Dispatch-only by design: pushing to
+# the public wiki is a deliberate maintainer action, not a side effect of a merge.
+#
+# Auth: the wiki shares the repo's permissions, so the built-in GITHUB_TOKEN with
+# `contents: write` can push to <repo>.wiki.git -- no PAT needed (unlike
+# release-please, whose tag pushes must trigger other workflows). The token is
+# passed via the script's --remote flag because actions/checkout's auth header is
+# repo-local and would not carry over to the fresh wiki clone sync-wiki.py makes.
+#
+# Prerequisite: the wiki repo must already exist. GitHub creates it only after the
+# FIRST page is saved via the repo's Wiki tab -- a one-time UI bootstrap a workflow
+# cannot do. The script's link check (run_link_check) gates every run automatically.
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Preview changes without committing/pushing"
+        type: boolean
+        default: false
+      message:
+        description: "Commit message"
+        type: string
+        default: "Sync wiki from src/docs/wiki"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: "3.12"
+
+      - name: Configure git identity for the wiki commit
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Publish wiki
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          MSG: ${{ inputs.message }}
+        run: |
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.wiki.git"
+          args=(--remote "$remote" -m "$MSG")
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          python tools/sync-wiki.py "${args[@]}"
