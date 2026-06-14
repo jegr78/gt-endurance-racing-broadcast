@@ -154,6 +154,13 @@
   .urls input{width:100%;background:#0c0f13;border:1px solid var(--edge);color:var(--ink);
     font-family:var(--mono);font-size:12px;padding:7px 9px;border-radius:8px;outline:none}
   .urls input:focus{border-color:var(--blue)}
+  /* schedule + qualifying Streamer/Stint dropdowns: match the HUD section's
+     `.fld select` look (the `.st` selects would otherwise inherit the status-pill
+     style; the `.nm` selects would be bare browser defaults). See #152. */
+  .urls select{display:block;width:100%;background:#0c0f13;border:1px solid var(--edge);color:var(--ink);
+    font-family:var(--mono);font-size:12px;padding:7px 9px;border-radius:8px;outline:none}
+  .urls select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(58,160,255,.18)}
+  .urls select:disabled{opacity:.45}
   .urls td.act{width:84px}
   .urls .save,.urls .add{padding:7px 10px;font-size:11px;letter-spacing:.1em;border-radius:8px;
     border:1px solid var(--edge);background:#141921;color:var(--muted);cursor:pointer;width:100%}
