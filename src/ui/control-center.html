@@ -786,11 +786,6 @@
           <div class="enverr" id="font-err" hidden></div>
           <div class="row">
             <span class="name">Add font</span>
-            <select id="font-catalog" aria-label="Google font to add" style="flex:1"></select>
-            <button id="font-add" onclick="downloadLibFont()">
-              <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download</button></div>
-          <div class="row">
-            <span class="name">Other font</span>
             <input id="font-custom" style="flex:1" aria-label="Any Google font family name"
                    list="font-catalog-all" autocomplete="off"
                    placeholder="Type any Google font family, e.g. Big Shoulders Display"
@@ -799,10 +794,10 @@
             <button id="font-custom-add" onclick="downloadCustomFont()">
               <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
           <div id="font-lib-list"></div>
-          <p class="envhint">Free Google Fonts, downloaded once into <b>runtime/fonts/</b> and offered in the
-            Overlay Builder's font pickers. When a league's design uses one, it is copied into that
-            league's <b>overlay/fonts/</b> on save, so the overlay works offline and
-            <b>profile export</b> stays self-contained. Fetched from Google Fonts.</p>
+          <p class="envhint">A curated set of free Google Fonts ships with every install and is offered in the
+            Overlay Builder's font pickers. Add any other family by name above — it is downloaded once into
+            <b>runtime/fonts/</b>. When a league's design uses a font, it is copied into that league's
+            <b>overlay/fonts/</b> on save, so the overlay works offline and <b>profile export</b> stays self-contained.</p>
         </section>
         <div class="enverr" id="env-err" hidden></div>
         <div class="envpath" id="env-path"></div>
@@ -1941,18 +1936,6 @@ async function loadFontLibrary() {
   try { d = await (await fetch('/api/fonts', {cache: 'no-store'})).json(); }
   catch (e) { showFontErr('Control Center not reachable.'); return; }
   if (!d.ok) { showFontErr(d.error || 'could not list font library'); return; }
-  const have = (d.fonts || []).map(n => n.replace(/[^A-Za-z0-9]/g, '').toLowerCase());
-  const sel = $('font-catalog'); sel.textContent = '';
-  const pending = (d.catalog || []).filter(
-    n => have.indexOf(n.replace(/[^A-Za-z0-9]/g, '').toLowerCase()) < 0);
-  if (!pending.length) {
-    const o = document.createElement('option');
-    o.value = ''; o.textContent = 'All catalog fonts downloaded'; sel.appendChild(o);
-  }
-  pending.forEach(n => {
-    const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o);
-  });
-  $('font-add').disabled = !pending.length;
   ovInjectDocFonts(d.fonts || []);             // so each row can preview in its own font
   const list = $('font-lib-list'); list.textContent = '';
   if (!d.fonts || !d.fonts.length) {
@@ -1991,23 +1974,6 @@ async function downloadCustomFont() {
     return;
   }
   $('font-custom').value = '';
-  loadFontLibrary();
-}
-
-async function downloadLibFont() {
-  const name = $('font-catalog').value;
-  if (!name) return;
-  $('font-err').hidden = true;
-  const b = $('font-add'); b.disabled = true;
-  const orig = b.innerHTML; b.textContent = 'Downloading…';
-  let d;
-  try {
-    d = await (await fetch('/api/fonts/download', {method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name})})).json();
-  } catch (e) { showFontErr('Control Center not reachable.'); }
-  b.innerHTML = orig; b.disabled = false;
-  if (d && !d.ok) { showFontErr(d.error || 'download failed'); return; }
   loadFontLibrary();
 }
 
