@@ -1193,10 +1193,15 @@ class ScheduleSource:
         Two layouts are supported:
         - **Header mode** (opt-in): if row 1 carries a recognized `URL` header,
           the URL/Streamer/Stint columns are located by header text (so they may
-          move and the per-stint *stint* label is read).
+          move and the per-stint *stint* label is read). A row counts as a
+          (planned) stint when it has a channel URL OR a Stint label OR a
+          Streamer — a pre-planned stint whose URL is still blank is kept with an
+          empty URL so the panel shows all stints and the feed idles on it until
+          the URL is filled (issue #137). A non-channel URL is treated as
+          not-yet-filled (url -> "") so the feed never serves junk.
         - **Positional fallback** (no header row): the URL column is auto-detected
           (most cells matching is_channel) and the streamer is the cell right of
-          it; no stint label exists in this layout."""
+          it; no stint label exists in this layout (URL-bearing rows only)."""
         rows = list(csv.reader(io.StringIO(text)))
         if not rows:
             return None
@@ -1205,12 +1210,18 @@ class ScheduleSource:
         if url_i is not None:
             name_i = next((header.index(h) for h in SCHEDULE_STREAMER_HEADERS if h in header), None)
             stint_i = next((header.index(h) for h in SCHEDULE_STINT_HEADERS if h in header), None)
-            out = [(r[url_i].strip(),
-                    (r[name_i].strip() if name_i is not None and len(r) > name_i else ""),
-                    (r[stint_i].strip() if stint_i is not None and len(r) > stint_i else ""),
-                    line)
-                   for line, r in enumerate(rows, 1)
-                   if len(r) > url_i and is_channel(r[url_i])]
+            out = []
+            for line, r in enumerate(rows, 1):
+                if line == 1:
+                    continue                       # the header row itself
+                url = r[url_i].strip() if len(r) > url_i else ""
+                name = r[name_i].strip() if name_i is not None and len(r) > name_i else ""
+                stint = r[stint_i].strip() if stint_i is not None and len(r) > stint_i else ""
+                if not is_channel(url):
+                    if not (name or stint):
+                        continue                   # blank/spacer row -> not a stint
+                    url = ""                        # planned stint, URL not yet provided
+                out.append((url, name, stint, line))
             return out or None
         # Positional fallback: detect the URL column, streamer is the cell to its
         # right, no stint label.
