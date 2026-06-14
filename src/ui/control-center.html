@@ -269,6 +269,9 @@
   .seg { display:inline-flex; gap:6px; }
   .seg button.on { border-color:var(--accent); background:#283352;
                    color:var(--txt); }
+  .ov-slotpick { background:#232C42; color:var(--txt);
+                 border:1px solid var(--line); border-radius:8px;
+                 padding:6px 8px; font:12px var(--mono); max-width:180px; }
   textarea.css-editor { width:100%; box-sizing:border-box; resize:vertical;
                    background:#232C42; color:var(--txt);
                    border:1px solid var(--line); border-radius:8px;
@@ -602,6 +605,8 @@
               <button id="overlay-tab-hud" class="on" onclick="setOverlayPage('hud')">HUD</button>
               <button id="overlay-tab-timer" onclick="setOverlayPage('timer')">Timer</button>
             </div>
+            <select id="ov-slotpick" class="ov-slotpick" onchange="if(this.value)ovSelect(this.value)"
+              title="Jump to a slot" aria-label="Jump to slot"></select>
             <button id="overlay-save" onclick="saveOverlay()">
               <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button>
             <button id="overlay-apply" onclick="applyOverlay()" title="Reload the relay-served HUD/timer browser sources in OBS (needs the relay up + obs-websocket)">
@@ -2280,7 +2285,7 @@ const OV_PX = new Set(['left', 'top', 'width', 'height', 'fontSize',
 const OV_ALIGN = {left: 'flex-start', center: 'center', right: 'flex-end'};
 const OV_SHADOW_CSS =
   'img:not([src]){display:none!important}' +
-  '[data-edit]{cursor:move}' +
+  '[data-edit]{cursor:move;outline:1px dashed rgba(120,170,255,.35);outline-offset:-1px}' +
   '.ov-selbox{position:absolute;outline:3px solid #3B82F6;pointer-events:none;z-index:50}' +
   '.ov-handle{position:absolute;width:26px;height:26px;background:#3B82F6;' +
   'border:4px solid #fff;border-radius:50%;box-sizing:border-box;pointer-events:auto}' +
@@ -2327,7 +2332,26 @@ async function loadOverlay() {
   $('ov-stage').parentElement.style.backgroundImage = "url('/api/overlay/bg?t=" + Date.now() + "')";
   ovBuildCanvas();
   ovRenderPanel();
+  ovPopulateSlotPicker();
   ovRefreshFontUI();
+}
+
+// Populate the "jump to slot" dropdown (issue #140) from the page's slot list,
+// so an operator can select a hard-to-click slot by name instead of hunting on
+// the canvas. Selection stays in sync with canvas clicks via ovSelect().
+function ovPopulateSlotPicker() {
+  const sp = $('ov-slotpick');
+  if (!sp) return;
+  sp.textContent = '';
+  const def = document.createElement('option');
+  def.value = ''; def.textContent = 'Jump to slot…';
+  sp.appendChild(def);
+  (ovState.slots || []).forEach(s => {
+    const o = document.createElement('option');
+    o.value = s.id; o.textContent = s.label;
+    sp.appendChild(o);
+  });
+  sp.value = ovState.sel || '';
 }
 
 function ovFontFaceCss() {
@@ -2387,14 +2411,8 @@ function ovFillSample() {
   ovState.slots.forEach(s => {
     const el = ovState.shadow.getElementById(s.id);
     if (!el) return;
-    const v = sd[s.id];
-    if (v && typeof v === 'object') {                 // team slot {num, name}
-      const num = el.querySelector('.num'), name = el.querySelector('.name');
-      if (num) num.textContent = v.num || '';
-      if (name) name.textContent = v.name || '';
-    } else if (typeof v === 'string' && !el.querySelector('img')) {
-      el.textContent = v;
-    }
+    const v = sd[s.id];                               // scalar text, or absent (image/placeholder slot)
+    if (typeof v === 'string' && !el.querySelector('img')) el.textContent = v;
     el.classList.remove('empty');
   });
 }
@@ -2466,6 +2484,8 @@ function ovPositionSel() {
 
 function ovSelect(id) {
   ovState.sel = id;
+  const sp = $('ov-slotpick');
+  if (sp) sp.value = id || '';
   ovPositionSel();
   ovRenderPanel();
 }

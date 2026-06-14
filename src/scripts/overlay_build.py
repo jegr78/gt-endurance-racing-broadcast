@@ -42,15 +42,16 @@ PROP_ORDER = ("left", "top", "width", "height", "fontSize",
 _UNSAFE_VALUE = re.compile(r"[;{}<>]|/\*|\*/")
 
 # Sample content for the same-origin builder canvas (so the operator positions
-# slots against realistic text). Team slots carry {num, name}; the rest plain text.
+# slots against realistic text). Each team is three slots now (logo/number/name,
+# issue #136): the number + name carry text; the logo is an image (no sample text).
 SAMPLE = {
     "hud": {
         "stint": "STINT 3", "session": "Race",
         "streamer": "twitch.tv/commentary",
         "round-top": "Round 4", "round-country": "Belgium",
-        "team0": {"num": "7", "name": "Team Redline"},
-        "team1": {"num": "23", "name": "Apex Racing"},
-        "team2": {"num": "99", "name": "Night Shift Motorsport"},
+        "team1-num": "7", "team1-name": "Team Redline",
+        "team2-num": "23", "team2-name": "Apex Racing",
+        "team3-num": "99", "team3-name": "Night Shift Motorsport",
         "race-control": "FCY — Full Course Yellow",
     },
     "timer": {"clock": "1:23:45"},

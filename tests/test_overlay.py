@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for the per-profile overlay CSS/font helpers.
 Run: python3 tests/test_overlay.py"""
-import importlib.util, os, sys, tempfile
+import importlib.util, os, re, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -169,19 +169,31 @@ def t_ob_extract_slots_from_real_hud():
     with open(os.path.join(ROOT, "src", "obs", "hud.html"), encoding="utf-8") as f:
         slots = ob.extract_slots(f.read())
     ids = [s["id"] for s in slots]
+    # Each team is three independent slots (logo / number / name; issue #136),
+    # plus the POV placeholder box (issue #141) at the end.
     assert ids == ["stint", "session", "streamer", "round-top", "round-flag",
-                   "round-country", "team0", "team1", "team2", "race-control"]
+                   "round-country",
+                   "team1-logo", "team1-num", "team1-name",
+                   "team2-logo", "team2-num", "team2-name",
+                   "team3-logo", "team3-num", "team3-name",
+                   "race-control", "pov"]
     by_id = {s["id"]: s for s in slots}
     assert by_id["stint"]["label"] == "Stint banner"
     # default props (no data-edit-props) include the text set, not the team-only keys
     assert "fontSize" in by_id["stint"]["props"]
     assert "teamNameMax" not in by_id["stint"]["props"]
-    # team slot: restricted set with the auto-fit bounds, no plain fontSize
-    assert by_id["team0"]["props"] == ["left", "top", "width", "height",
-                                       "teamNameMax", "teamNameMin",
-                                       "fontFamily", "color"]
-    # image-only flag slot: position/size only
+    # team name slot: restricted set with the auto-fit bounds, no plain fontSize
+    assert by_id["team1-name"]["props"] == ["left", "top", "width", "height",
+                                            "teamNameMax", "teamNameMin",
+                                            "fontFamily", "color"]
+    # team number slot: badge text size/color/background, no auto-fit bounds
+    assert by_id["team1-num"]["props"] == ["left", "top", "fontSize",
+                                           "fontFamily", "color", "background"]
+    # image slots (logo, flag, POV box): position/size only
+    assert by_id["team1-logo"]["props"] == ["left", "top", "width", "height"]
     assert by_id["round-flag"]["props"] == ["left", "top", "width", "height"]
+    assert by_id["pov"]["props"] == ["left", "top", "width", "height"]
+    assert by_id["pov"]["label"] == "POV box"
 
 
 def t_ob_extract_slots_from_real_timer():
@@ -189,6 +201,18 @@ def t_ob_extract_slots_from_real_timer():
         slots = ob.extract_slots(f.read())
     assert [s["id"] for s in slots] == ["clock"]
     assert slots[0]["label"] == "Clock"
+    # the clock is a finite, positionable slot -> position props are offered
+    assert "left" in slots[0]["props"] and "top" in slots[0]["props"]
+
+
+def t_timer_clock_base_is_finite_positionable():
+    # Regression for #135: the clock must NOT be a full-canvas, centered box
+    # (dragging that moves nothing visibly). It hugs its digits so position works.
+    with open(os.path.join(ROOT, "src", "obs", "timer.html"), encoding="utf-8") as f:
+        style = ob.base_style(f.read())
+    clock_rule = re.search(r"#clock\s*\{[^}]*\}", style).group(0)
+    assert "1920px" not in clock_rule, "clock must not span the full canvas width"
+    assert "justify-content: center" not in clock_rule, "clock must not re-center full-width"
 
 
 def t_ob_base_style_and_body():

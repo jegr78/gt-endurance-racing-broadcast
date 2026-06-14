@@ -37,19 +37,30 @@
   #round-country { left: 1144px; top: 958px; width: 548px; height: 39px;
     font-size: 26px; }
 
-  /* Team podium row: brand box + number badge + auto-fit name.
-     Name/number are two elements so a per-league override.css can reposition or
-     restyle either independently; --team-name-max/min bound the auto-fit. */
-  .team { height: 56px; --team-name-max: 30px; --team-name-min: 16px; }
-  .team img { width: 54px; height: 50px; object-fit: contain; flex-shrink: 0; }
-  .team .num { margin-left: 10px; flex-shrink: 0; background: #c8202a; color: #fff;
+  /* Team podium row: each car is THREE independently positionable slots —
+     brand logo, number badge, auto-fit name (issue #136). The overlay builder
+     can place/restyle each on its own; --team-name-max/min bound the auto-fit. */
+  .team-logo { height: 50px; width: 54px; }
+  .team-logo img { width: 100%; height: 100%; object-fit: contain; }
+  .team-num { height: 56px; background: #c8202a; color: #fff;
     font-size: 20px; padding: 2px 9px; border-radius: 3px; }
-  .team .num.empty { display: none; }
-  .team .name { margin-left: 12px; min-width: 0; flex: 1; overflow: hidden;
-    white-space: nowrap; font-size: var(--team-name-max); }
-  #team0 { left: 323px; top: 1005px; width: 382px; }
-  #team1 { left: 766px; top: 1005px; width: 379px; }
-  #team2 { left: 1210px; top: 1005px; width: 380px; }
+  .team-name { height: 56px; --team-name-max: 30px; --team-name-min: 16px;
+    overflow: hidden; white-space: nowrap; font-size: var(--team-name-max); }
+  /* Defaults reproduce the old single-row look: logo, then badge, then name. */
+  #team1-logo { left: 323px; top: 1008px; }
+  #team1-num  { left: 387px; top: 1005px; }
+  #team1-name { left: 455px; top: 1005px; width: 250px; }
+  #team2-logo { left: 766px; top: 1008px; }
+  #team2-num  { left: 830px; top: 1005px; }
+  #team2-name { left: 898px; top: 1005px; width: 247px; }
+  #team3-logo { left: 1210px; top: 1008px; }
+  #team3-num  { left: 1274px; top: 1005px; }
+  #team3-name { left: 1342px; top: 1005px; width: 248px; }
+
+  /* POV picture-in-picture placeholder (issue #141): a transparent guide box so
+     the operator can position/size the POV area on the same canvas. It draws
+     nothing on air — the actual POV is an OBS media source positioned in OBS. */
+  #pov { left: 40px; top: 560px; width: 480px; height: 270px; }
 
   /* Race control banner (status line, hidden when empty). Gray band flush
      with the lower-third block of the Overlay.png frame: x 264..1593 and
@@ -70,10 +81,17 @@
   <div id="round-top" class="el white" data-edit="Round title"></div>
   <div id="round-flag" class="el" data-edit="Round flag" data-edit-props="left,top,width,height"><img alt=""></div>
   <div id="round-country" class="el white" data-edit="Round country"></div>
-  <div id="team0" class="el team white" data-edit="Team 1" data-edit-props="left,top,width,height,teamNameMax,teamNameMin,fontFamily,color"><img alt=""><span class="num"></span><span class="name"></span></div>
-  <div id="team1" class="el team white" data-edit="Team 2" data-edit-props="left,top,width,height,teamNameMax,teamNameMin,fontFamily,color"><img alt=""><span class="num"></span><span class="name"></span></div>
-  <div id="team2" class="el team white" data-edit="Team 3" data-edit-props="left,top,width,height,teamNameMax,teamNameMin,fontFamily,color"><img alt=""><span class="num"></span><span class="name"></span></div>
+  <div id="team1-logo" class="el team-logo" data-edit="Team 1 logo" data-edit-props="left,top,width,height"><img alt=""></div>
+  <div id="team1-num" class="el team-num white" data-edit="Team 1 number" data-edit-props="left,top,fontSize,fontFamily,color,background"></div>
+  <div id="team1-name" class="el team-name white" data-edit="Team 1 name" data-edit-props="left,top,width,height,teamNameMax,teamNameMin,fontFamily,color"></div>
+  <div id="team2-logo" class="el team-logo" data-edit="Team 2 logo" data-edit-props="left,top,width,height"><img alt=""></div>
+  <div id="team2-num" class="el team-num white" data-edit="Team 2 number" data-edit-props="left,top,fontSize,fontFamily,color,background"></div>
+  <div id="team2-name" class="el team-name white" data-edit="Team 2 name" data-edit-props="left,top,width,height,teamNameMax,teamNameMin,fontFamily,color"></div>
+  <div id="team3-logo" class="el team-logo" data-edit="Team 3 logo" data-edit-props="left,top,width,height"><img alt=""></div>
+  <div id="team3-num" class="el team-num white" data-edit="Team 3 number" data-edit-props="left,top,fontSize,fontFamily,color,background"></div>
+  <div id="team3-name" class="el team-name white" data-edit="Team 3 name" data-edit-props="left,top,width,height,teamNameMax,teamNameMin,fontFamily,color"></div>
   <div id="race-control" class="el white" data-edit="Race control"></div>
+  <div id="pov" class="el" data-edit="POV box" data-edit-props="left,top,width,height"></div>
 
 <script>
   const POLL_MS = 2500;
@@ -101,18 +119,19 @@
     }
   }
   function setTeam(i, team) {
-    const el = document.getElementById("team" + i);
+    const n = i + 1;                 // slot ids are 1-based (team1..team3)
     const name = (team && team.name) || "";
     const number = (team && team.number) || "";
-    const numEl = el.querySelector(".num");
+    const numEl = document.getElementById("team" + n + "-num");
     numEl.textContent = number;
     numEl.classList.toggle("empty", !number);
-    const nameEl = el.querySelector(".name");
+    const nameEl = document.getElementById("team" + n + "-name");
     nameEl.textContent = name;
-    const img = el.querySelector("img");
-    if (team && team.brandKey) { img.src = `/hud/assets/brands/${team.brandKey}`; img.style.visibility = "visible"; }
-    else img.style.visibility = "hidden";
-    el.classList.toggle("empty", !name && !number);
+    nameEl.classList.toggle("empty", !name);
+    const logoEl = document.getElementById("team" + n + "-logo");
+    const img = logoEl.querySelector("img");
+    if (team && team.brandKey) { img.src = `/hud/assets/brands/${team.brandKey}`; logoEl.classList.remove("empty"); }
+    else { img.removeAttribute("src"); logoEl.classList.add("empty"); }
     fitName(nameEl);
   }
 
