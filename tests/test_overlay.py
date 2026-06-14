@@ -24,6 +24,18 @@ def _mkoverlay(tmp, hud_css=None, timer_css=None, fonts=None):
         with open(os.path.join(od, "fonts", name), "wb") as f: f.write(data)
     return od
 
+def t_splitscreen_is_an_overlay_page():
+    assert "splitscreen" in feeds.OVERLAY_PAGES
+
+
+def t_read_overlay_css_splitscreen_present():
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as od:
+        with open(os.path.join(od, "splitscreen.css"), "w") as fh:
+            fh.write("#split-left{color:#fff}")
+        assert feeds.read_overlay_css(od, "splitscreen") == b"#split-left{color:#fff}"
+
+
 def t_read_overlay_css_present():
     with tempfile.TemporaryDirectory() as tmp:
         od = _mkoverlay(tmp, hud_css="#stint{left:10px}")

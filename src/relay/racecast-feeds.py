@@ -281,7 +281,7 @@ def resolve_asset(assets_dir, sub, key):
 # Per-profile overlay overrides (profiles/<name>/overlay/). Override CSS is read
 # fresh per request (so a Control Center edit applies on the next OBS refresh
 # without a relay restart); fonts reuse the resolve_asset security pattern.
-OVERLAY_PAGES = ("hud",)
+OVERLAY_PAGES = ("hud", "splitscreen")
 FONT_CTYPES = {"woff2": "font/woff2", "woff": "font/woff",
                "ttf": "font/ttf", "otf": "font/otf"}
 # Identity whitelist (same role as ASSET_CTYPES): the handler re-derives the
