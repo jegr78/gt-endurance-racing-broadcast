@@ -2621,8 +2621,9 @@ function ovSelectField(prop, label, opts, ov) {
 // cascade ground-truth from base hud.html). Numbers for geometry/size, hex for
 // colors. Used to PRE-FILL the panel so the operator always sees real values.
 function ovRgbToHex(v) {
-  const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(v || '');
+  const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/.exec(v || '');
   if (!m) return (v && v[0] === '#') ? v : '';
+  if (m[4] !== undefined && parseFloat(m[4]) === 0) return '';   // transparent -> unset
   return '#' + [1, 2, 3].map(i => (+m[i]).toString(16).padStart(2, '0')).join('');
 }
 function ovBaseValues(id) {
