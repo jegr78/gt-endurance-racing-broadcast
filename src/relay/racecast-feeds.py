@@ -2099,7 +2099,8 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
 
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
                  timer_store=None, setup_ctl=None, overlay_dir=None,
-                 chat_store=None, preview_path=None, graphics_dir=None):
+                 chat_store=None, preview_path=None, graphics_dir=None,
+                 splitscreen_path=None):
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
             body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
@@ -2186,6 +2187,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send_asset(assets_dir, p[2], p[3])
                 if p == ["hud", "override.css"]:
                     return self._send_css(read_overlay_css(overlay_dir, "hud"))
+                if p == ["splitscreen"]:
+                    if not splitscreen_path:
+                        return self._send({"error": "splitscreen page not found"}, 404)
+                    return self._send_file(splitscreen_path, "text/html; charset=utf-8")
+                if p == ["splitscreen", "data"]:
+                    return self._send(relay.splitscreen_state())
+                if p == ["splitscreen", "override.css"]:
+                    return self._send_css(read_overlay_css(overlay_dir, "splitscreen"))
                 if len(p) == 3 and p[:2] == ["overlay", "fonts"]:
                     return self._send_font(overlay_dir, p[2])
                 if p[:1] == ["timer"]:
@@ -2563,6 +2572,14 @@ def main():
     preview_path = None
     graphics_dir = os.path.join(runtime, "graphics")   # Overlay.png frame for /hud/preview
     assets_dir = os.path.abspath(os.path.join(here, "..", "assets"))
+    splitscreen_path = None
+    for cand in (os.path.join(here, "splitscreen.html"),
+                 os.path.join(here, "..", "splitscreen.html"),
+                 os.path.join(here, "..", "obs", "splitscreen.html")):
+        if os.path.exists(cand):
+            splitscreen_path = os.path.abspath(cand); break
+    if not splitscreen_path:
+        print("WARN: splitscreen.html not found — /splitscreen will 404.")
     if not args.no_hud and not args.sheet_csv_url:
         base = f"https://docs.google.com/spreadsheets/d/{args.sheet_id}/gviz/tq?tqx=out:csv&sheet="
         overlay_url = base + quote(args.overlay_tab)
@@ -2638,7 +2655,8 @@ def main():
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
                            timer_store, setup_ctl,
                            overlay_dir=args.overlay_dir, chat_store=chat_store,
-                           preview_path=preview_path, graphics_dir=graphics_dir)
+                           preview_path=preview_path, graphics_dir=graphics_dir,
+                           splitscreen_path=splitscreen_path)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []
