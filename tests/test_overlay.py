@@ -464,6 +464,27 @@ def t_ob_sample_has_flag_and_brand_images():
                                            h[tid]["brand"] + ".png")), tid
 
 
+def t_splitscreen_labels_source_in_collection_splitscreen_scene_only():
+    import os, json
+    with open(os.path.join(ROOT, "src", "obs", "GT_Endurance.json"),
+              encoding="utf-8") as fh:
+        d = json.load(fh)
+    srcs = [s for s in d.get("sources", []) if s.get("name") == "Splitscreen Labels"]
+    assert len(srcs) == 1, "exactly one Splitscreen Labels source expected"
+    src = srcs[0]
+    assert src.get("id") == "browser_source"
+    assert src["settings"]["url"] == "http://127.0.0.1:8088/splitscreen"
+    uuid = src["uuid"]
+    def has_item(scene_name):
+        for s in d["sources"]:
+            if s.get("name") == scene_name and s.get("id") == "scene":
+                return any(it.get("source_uuid") == uuid
+                           for it in s["settings"]["items"])
+        return False
+    assert has_item("Splitscreen")
+    assert not has_item("Stint")
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
