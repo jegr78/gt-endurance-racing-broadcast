@@ -44,7 +44,10 @@ _UNSAFE_VALUE = re.compile(r"[;{}<>]|/\*|\*/")
 
 # Sample content for the same-origin builder canvas (so the operator positions
 # slots against realistic text). Each team is three slots now (logo/number/name,
-# issue #136): the number + name carry text; the logo is an image (no sample text).
+# issue #136): the number + name carry text; the logo is an image. Image slots
+# (the round flag + each team logo) carry a {"flag"/"brand": key} entry so the
+# offline canvas previews them from bundled src/assets/ (served by the Control
+# Center at /api/overlay/asset/{flags,brands}/<key>).
 SAMPLE = {
     "hud": {
         "stint": "STINT 3", "session": "Race",
@@ -55,6 +58,10 @@ SAMPLE = {
         "team3-num": "99", "team3-name": "Night Shift Motorsport",
         "race-control": "FCY — Full Course Yellow",
         "clock": "1:23:45",
+        "round-flag": {"flag": "belgium"},
+        "team1-logo": {"brand": "bmw"},
+        "team2-logo": {"brand": "porsche"},
+        "team3-logo": {"brand": "ferrari"},
     },
 }
 

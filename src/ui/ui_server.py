@@ -476,6 +476,14 @@ def make_handler(ctx):
                     return self._not_found("font not found")
                 with open(hit[0], "rb") as fh:
                     return self._serve_bytes(fh.read(), hit[1])
+            if path.startswith("/api/overlay/asset/"):
+                rest = path[len("/api/overlay/asset/"):].split("/", 1)
+                hit = (ctx["overlay_asset_serve"](rest[0], unquote(rest[1]))
+                       if len(rest) == 2 else None)
+                if not hit:
+                    return self._not_found("asset not found")
+                with open(hit[0], "rb") as fh:
+                    return self._serve_bytes(fh.read(), hit[1])
             if path == "/api/backup":
                 try:
                     return self._json(ctx["backup_list"]())

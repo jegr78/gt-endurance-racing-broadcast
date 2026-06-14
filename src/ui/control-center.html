@@ -2406,8 +2406,15 @@ function ovFillSample() {
   ovState.slots.forEach(s => {
     const el = ovState.shadow.getElementById(s.id);
     if (!el) return;
-    const v = sd[s.id];                               // scalar text, or absent (image/placeholder slot)
-    if (typeof v === 'string' && !el.querySelector('img')) el.textContent = v;
+    const v = sd[s.id];               // string (text), {flag|brand} (image), or absent
+    const img = el.querySelector('img');
+    if (img && v && typeof v === 'object') {
+      const sub = v.flag ? 'flags' : (v.brand ? 'brands' : null);
+      const key = v.flag || v.brand;
+      if (sub && key) img.src = '/api/overlay/asset/' + sub + '/' + encodeURIComponent(key);
+    } else if (typeof v === 'string' && !img) {
+      el.textContent = v;
+    }
     el.classList.remove('empty');
   });
 }
@@ -2631,12 +2638,20 @@ function ovBaseValues(id) {
   if (!el) return {};
   const cs = getComputedStyle(el);
   const px = n => Math.round(parseFloat(n) || 0);
-  return {
+  const v = {
     left: px(cs.left), top: px(cs.top), width: px(cs.width), height: px(cs.height),
-    fontSize: px(cs.fontSize), borderWidth: px(cs.borderWidth),
+    fontSize: px(cs.fontSize),
     color: ovRgbToHex(cs.color), background: ovRgbToHex(cs.backgroundColor),
-    borderColor: ovRgbToHex(cs.borderColor),
   };
+  // Border + background are OPTIONS (e.g. the POV box): only surface a border
+  // when the base actually draws one, so an untouched box stays clean (no border
+  // pinned on save). The transparent-background case is already dropped above.
+  if (cs.borderStyle !== 'none' && px(cs.borderWidth) > 0) {
+    v.borderStyle = cs.borderStyle;
+    v.borderWidth = px(cs.borderWidth);
+    v.borderColor = ovRgbToHex(cs.borderColor);
+  }
+  return v;
 }
 
 function ovRenderPanel() {

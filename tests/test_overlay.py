@@ -423,6 +423,24 @@ def t_obs_hud_overlay_renders_in_front():
             assert hud > names.index("Feed POV"), src.get("name")  # frame above PiP
 
 
+def t_ob_sample_has_flag_and_brand_images():
+    # The offline builder canvas must preview the image slots too (issue: flags +
+    # brand logos were blank without a relay). Sample carries a flag key for the
+    # round flag and a brand key for each team logo, resolvable to bundled assets.
+    h = ob.SAMPLE["hud"]
+    flag = h.get("round-flag", {})
+    assert isinstance(flag, dict) and flag.get("flag")
+    for tid in ("team1-logo", "team2-logo", "team3-logo"):
+        ent = h.get(tid, {})
+        assert isinstance(ent, dict) and ent.get("brand"), tid
+    # the sample keys must point at files that actually ship in src/assets/
+    assert os.path.exists(os.path.join(ROOT, "src", "assets", "flags",
+                                       flag["flag"] + ".svg"))
+    for tid in ("team1-logo", "team2-logo", "team3-logo"):
+        assert os.path.exists(os.path.join(ROOT, "src", "assets", "brands",
+                                           h[tid]["brand"] + ".png")), tid
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):

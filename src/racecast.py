@@ -2744,6 +2744,32 @@ def overlay_font_serve(name):
     return path, ob.FONT_CTYPES[name.rsplit(".", 1)[1].lower()]
 
 
+# Bundled HUD asset resolution for the offline builder canvas (flags + brand
+# logos). Mirrors the relay's resolve_asset: strict key + subdir whitelist +
+# realpath containment so a request value can never escape src/assets/.
+_OV_ASSET_EXTS = (("png", "image/png"), ("svg", "image/svg+xml"),
+                  ("jpg", "image/jpeg"), ("jpeg", "image/jpeg"),
+                  ("webp", "image/webp"))
+_OV_ASSET_KEY_RE = re.compile(r"^[a-z0-9-]+$")
+
+
+def overlay_asset_serve(sub, key):
+    """(path, content_type) for a bundled HUD asset the builder canvas previews
+    offline: src/assets/flags/<key>.<ext> or src/assets/brands/<key>.<ext> (tries
+    known image extensions in order). None when the subdir/key is unsafe or no
+    file matches — never raises on a bad request."""
+    if sub not in ("flags", "brands") or not _OV_ASSET_KEY_RE.match(key or ""):
+        return None
+    base = os.path.realpath(resource_path(os.path.join("assets", sub)))
+    for ext, ctype in _OV_ASSET_EXTS:
+        path = os.path.realpath(os.path.join(base, f"{key}.{ext}"))
+        if not path.startswith(base + os.sep):
+            return None
+        if os.path.exists(path):
+            return path, ctype
+    return None
+
+
 # A modern-browser UA so Google's css2 endpoint serves woff2 (not legacy ttf).
 _GOOGLE_FONT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                    "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -3605,6 +3631,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "overlay_font_upload": overlay_font_upload_data,
         "overlay_bg": overlay_bg_path,
         "overlay_font_serve": overlay_font_serve,
+        "overlay_asset_serve": overlay_asset_serve,
         "machine_fonts": machine_fonts_list_data,
         "font_catalog": font_catalog_cached,
         "machine_font_download": machine_font_download_data,

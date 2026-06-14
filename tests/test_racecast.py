@@ -1393,6 +1393,19 @@ def t_freeport_owner_static_feed():
     assert m.freeport_owner(53003, relay_alive=False, static_alive_ports={53002}) is None
 
 
+def t_overlay_asset_serve_resolves_and_guards():
+    # The builder canvas previews bundled HUD flags/brands offline (no relay).
+    flag = m.overlay_asset_serve("flags", "belgium")
+    assert flag and os.path.exists(flag[0]) and flag[1] == "image/svg+xml"
+    brand = m.overlay_asset_serve("brands", "bmw")
+    assert brand and os.path.exists(brand[0]) and brand[1] == "image/png"
+    # strict key + subdir whitelist -> traversal / unknown sub / missing -> None
+    assert m.overlay_asset_serve("flags", "../config") is None
+    assert m.overlay_asset_serve("evil", "bmw") is None
+    assert m.overlay_asset_serve("brands", "definitely-not-a-brand") is None
+    assert m.overlay_asset_serve("flags", "Bel/gium") is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
