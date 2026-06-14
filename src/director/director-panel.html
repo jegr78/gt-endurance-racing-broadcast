@@ -317,6 +317,7 @@
       <button class="add" id="schedAdd">+ ADD ROW</button>
       <table><tbody>
         <tr><td class="rn">POV</td>
+            <td><input id="povName" maxlength="20" placeholder="name (max 20)"></td>
             <td><input id="povUrl" placeholder="youtube.com/watch?v=… · twitch.tv/<channel> · UC…"></td>
             <td class="act"><button class="save" id="povSave">SAVE</button></td></tr>
       </tbody></table>
@@ -1160,12 +1161,14 @@ $("#povSave").addEventListener("click", async ()=>{
   try{
     const r = await fetch("/pov/set", {method:"POST", cache:"no-store",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({url: $("#povUrl").value.trim()})});
+      body: JSON.stringify({url: $("#povUrl").value.trim(),
+                            name: $("#povName").value.trim()})});
     const d = await r.json();
     if (d.error){ log("POV URL: " + d.error, "err"); toast("POV URL: " + d.error); btn.textContent = "RETRY"; return; }
     delete $("#povUrl").dataset.dirty; $("#povUrl").dataset.saved = Date.now();
+    delete $("#povName").dataset.dirty; $("#povName").dataset.saved = Date.now();
     btn.textContent = "SAVED ✓"; btn.classList.add("ok");
-    log("POV URL saved — applies on POV RELOAD.");
+    log("POV name + URL saved — name applies now, URL on POV RELOAD.");
   }catch(e){ log("POV save failed: " + e, "err"); toast("POV URL save failed"); btn.textContent = "RETRY"; }
   finally{
     btn.disabled = false;
@@ -1173,6 +1176,7 @@ $("#povSave").addEventListener("click", async ()=>{
   }
 });
 $("#povUrl").addEventListener("input", ()=>$("#povUrl").dataset.dirty = 1);
+$("#povName").addEventListener("input", ()=>$("#povName").dataset.dirty = 1);
 
 async function schedPoll(){
   if (!$("#urlsBox").open) return;   // closed section -> no traffic
@@ -1201,6 +1205,10 @@ async function schedPoll(){
     if (d.pov && !inp.dataset.dirty && inp !== document.activeElement &&
         Date.now() - Number(inp.dataset.saved||0) > SAVE_GUARD_MS)
       inp.value = d.pov.url || "";
+    const ninp = $("#povName");
+    if (d.pov && !ninp.dataset.dirty && ninp !== document.activeElement &&
+        Date.now() - Number(ninp.dataset.saved||0) > SAVE_GUARD_MS)
+      ninp.value = d.pov.name || "";
   }catch(e){}
 }
 $("#urlsBox").addEventListener("toggle", ()=>schedPoll());
