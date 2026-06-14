@@ -3064,10 +3064,11 @@ def tools_status_data(which=None, version=None):
         # finder (PATH or the managed bin dir) and never gates readiness.
         import speedtest as st
         st_bin = st.find_binary(_runtime_base_dir(), which)
-        # Version is best-effort via the shared provider (resolves on PATH); a
-        # managed-dir install still shows installed even without a version string.
+        # Probe the resolved binary BY PATH (tool_version's which() accepts an
+        # absolute path), so a managed-dir install — which is not on PATH — still
+        # reports its version, like the PATH-installed tools above.
         tools.append({"name": "speedtest", "installed": bool(st_bin),
-                      "version": version("speedtest") if st_bin else None})
+                      "version": version(st_bin) if st_bin else None})
         return {"ok": True, "tools": tools}
     except Exception as exc:
         return {"ok": False, "error": f"tool check failed: {exc}"}
