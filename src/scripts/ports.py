@@ -134,4 +134,4 @@ def kill_pid(pid, *, os_name=None, call=None, kill=None, sleep=None, alive=None)
         try:
             kill(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
-            pass
+            pass  # exited between the poll and the kill, or not ours to signal
