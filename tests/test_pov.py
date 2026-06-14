@@ -59,6 +59,29 @@ def t_feed_has_fmt_attr():
     assert f.fmt == "b[height<=720]/b"
 
 
+def t_feed_fast_exit_error_flags_immediate_bind_failure():
+    # #143: streamlink that dies almost instantly with a non-zero code = a failed
+    # --player-external-http bind (orphan holds the port). Surface it as last_error.
+    msg = m.feed_fast_exit_error(0.2, 1)
+    assert msg and "port in use" in msg
+
+
+def t_feed_fast_exit_error_ignores_clean_and_long_exits():
+    # The normal serving path must NEVER set a spurious error.
+    assert m.feed_fast_exit_error(0.2, 0) is None       # clean exit (stream ended)
+    assert m.feed_fast_exit_error(0.2, None) is None    # never finished / unknown rc
+    assert m.feed_fast_exit_error(120.0, 1) is None     # served a while, then died
+    assert m.feed_fast_exit_error(None, 1) is None      # no timing available
+
+
+def t_status_surfaces_feed_last_error():
+    # Once Feed.last_error is set, /status (per-feed payload) shows it so the panel
+    # stops displaying a silent 'connecting' (the #133 mystery).
+    r = _relay(["a", "b"])
+    r.A.last_error = m.feed_fast_exit_error(0.2, 1)
+    assert r.status()["feeds"]["A"]["last_error"] == "feed exited immediately — port in use? see feed log"
+
+
 def t_current_channel_idles_past_end():
     # idx beyond the schedule -> idle (None), NOT a clamp onto the last stint
     f = m.Feed("B", 53002, 1, lambda: ["https://youtu.be/only"], HERE)

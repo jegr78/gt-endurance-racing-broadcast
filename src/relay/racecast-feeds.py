@@ -101,6 +101,20 @@ STREAMLINK_TWITCH = ["--ringbuffer-size", "64M", "--hls-live-edge", "2", "--twit
 RESOLVE_RETRY = 15  # seconds between yt-dlp resolve attempts while a stint isn't live
 COOKIE_MAX_AGE_H = 12   # keep in sync with preflight.py cookies_status(max_age_hours)
 RETRY_SLEEP = 10    # seconds after a stream ends / manifest expires before re-resolving
+FEED_FAST_EXIT_S = 3.0  # a serve proc dying faster than this (non-zero) = a bind/launch failure, not a stint
+
+
+def feed_fast_exit_error(elapsed_s, returncode, fast_exit_s=FEED_FAST_EXIT_S):
+    """A short last_error when a feed's streamlink exited almost immediately with a
+    non-zero code — almost always a failed --player-external-http bind (an orphan
+    still holds the port; the #133 case). Returns None for a clean (rc 0), unknown
+    (rc None), or long-lived exit, so the normal serving path never sets a spurious
+    error. Pure → unit-tested in tests/test_pov.py (issue #143)."""
+    if returncode in (0, None):
+        return None
+    if elapsed_s is None or elapsed_s >= fast_exit_s:
+        return None
+    return "feed exited immediately — port in use? see feed log"
 # Sheet ID is NOT hardcoded — it comes from RACECAST_SHEET_ID (injected by the CLI
 # from the active profile). Override per-run with --sheet-id.
 DEFAULT_SHEET_TAB = "Schedule"
@@ -1778,7 +1792,10 @@ class Feed:
                     if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
                         self.last_error = None
                     self._set_phase("serving")
+                    serve_started = time.monotonic()
                     self.proc.wait()
+                    serve_elapsed = time.monotonic() - serve_started
+                    serve_rc = self.proc.returncode
                 except FileNotFoundError:
                     log.write(f">> [{self.name}] streamlink not found on PATH — retrying\n"); log.flush()
                     self.proc = None
@@ -1787,6 +1804,12 @@ class Feed:
             if self.stop: break
             if self.advance.is_set():
                 self.advance.clear(); continue
+            # #143: an unexpected, near-instant non-zero exit (not a stop/handover,
+            # both handled above) means streamlink couldn't bind its port — surface
+            # it so /status + the panel stop showing a silent 'connecting'.
+            err = feed_fast_exit_error(serve_elapsed, serve_rc)
+            if err:
+                self.last_error = err
             time.sleep(RETRY_SLEEP)
 
     def shutdown(self):
