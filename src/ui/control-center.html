@@ -604,10 +604,6 @@
             <span class="sub">drag &amp; style the HUD + Timer slots</span><span class="spacer"></span>
             <button id="overlay-popout" onclick="openBuilderModal()" title="Open the builder in a larger pop-out modal for more room to work">
               <svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Pop out ↗</button>
-            <div class="seg" role="group" aria-label="Overlay page">
-              <button id="overlay-tab-hud" class="on" onclick="setOverlayPage('hud')">HUD</button>
-              <button id="overlay-tab-timer" onclick="setOverlayPage('timer')">Timer</button>
-            </div>
             <select id="ov-slotpick" class="ov-slotpick" onchange="if(this.value)ovSelect(this.value)"
               title="Jump to a slot" aria-label="Jump to slot"></select>
             <button id="overlay-save" onclick="saveOverlay()">
@@ -2282,10 +2278,11 @@ const ovState = {page: 'hud', slots: [], sample: {}, baseCss: '', body: '',
 
 // prop -> CSS property; mirrors src/scripts/overlay_build.py (the canonical map).
 const OV_CSSNAME = {left: 'left', top: 'top', width: 'width', height: 'height',
-  fontSize: 'font-size', teamNameMax: '--team-name-max',
+  fontSize: 'font-size', borderWidth: 'border-width', teamNameMax: '--team-name-max',
   teamNameMin: '--team-name-min', color: 'color', background: 'background',
+  borderColor: 'border-color', borderStyle: 'border-style',
   fontFamily: 'font-family', align: 'justify-content'};
-const OV_PX = new Set(['left', 'top', 'width', 'height', 'fontSize',
+const OV_PX = new Set(['left', 'top', 'width', 'height', 'fontSize', 'borderWidth',
                        'teamNameMax', 'teamNameMin']);
 const OV_ALIGN = {left: 'flex-start', center: 'center', right: 'flex-end'};
 const OV_SHADOW_CSS =
@@ -2297,13 +2294,6 @@ const OV_SHADOW_CSS =
   '.ov-h-se{right:-13px;bottom:-13px;cursor:nwse-resize}' +
   '.ov-h-e{right:-13px;top:50%;transform:translateY(-50%);cursor:ew-resize}' +
   '.ov-h-s{bottom:-13px;left:50%;transform:translateX(-50%);cursor:ns-resize}';
-
-function setOverlayPage(p) {
-  overlayPage = p;
-  $('overlay-tab-hud').classList.toggle('on', p === 'hud');
-  $('overlay-tab-timer').classList.toggle('on', p === 'timer');
-  loadOverlay();
-}
 
 async function loadOverlay() {
   $('overlay-err').hidden = true;
@@ -2416,8 +2406,15 @@ function ovFillSample() {
   ovState.slots.forEach(s => {
     const el = ovState.shadow.getElementById(s.id);
     if (!el) return;
-    const v = sd[s.id];                               // scalar text, or absent (image/placeholder slot)
-    if (typeof v === 'string' && !el.querySelector('img')) el.textContent = v;
+    const v = sd[s.id];               // string (text), {flag|brand} (image), or absent
+    const img = el.querySelector('img');
+    if (img && v && typeof v === 'object') {
+      const sub = v.flag ? 'flags' : (v.brand ? 'brands' : null);
+      const key = v.flag || v.brand;
+      if (sub && key) img.src = '/api/overlay/asset/' + sub + '/' + encodeURIComponent(key);
+    } else if (typeof v === 'string' && !img) {
+      el.textContent = v;
+    }
     el.classList.remove('empty');
   });
 }
@@ -2627,6 +2624,36 @@ function ovSelectField(prop, label, opts, ov) {
   return wrap;
 }
 
+// Effective base values for a slot, read from the rendered canvas element (the
+// cascade ground-truth from base hud.html). Numbers for geometry/size, hex for
+// colors. Used to PRE-FILL the panel so the operator always sees real values.
+function ovRgbToHex(v) {
+  const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/.exec(v || '');
+  if (!m) return (v && v[0] === '#') ? v : '';
+  if (m[4] !== undefined && parseFloat(m[4]) === 0) return '';   // transparent -> unset
+  return '#' + [1, 2, 3].map(i => (+m[i]).toString(16).padStart(2, '0')).join('');
+}
+function ovBaseValues(id) {
+  const el = ovState.shadow && ovState.shadow.getElementById(id);
+  if (!el) return {};
+  const cs = getComputedStyle(el);
+  const px = n => Math.round(parseFloat(n) || 0);
+  const v = {
+    left: px(cs.left), top: px(cs.top), width: px(cs.width), height: px(cs.height),
+    fontSize: px(cs.fontSize),
+    color: ovRgbToHex(cs.color), background: ovRgbToHex(cs.backgroundColor),
+  };
+  // Border + background are OPTIONS (e.g. the POV box): only surface a border
+  // when the base actually draws one, so an untouched box stays clean (no border
+  // pinned on save). The transparent-background case is already dropped above.
+  if (cs.borderStyle !== 'none' && px(cs.borderWidth) > 0) {
+    v.borderStyle = cs.borderStyle;
+    v.borderWidth = px(cs.borderWidth);
+    v.borderColor = ovRgbToHex(cs.borderColor);
+  }
+  return v;
+}
+
 function ovRenderPanel() {
   const panel = $('ov-panel');
   panel.textContent = '';
@@ -2641,23 +2668,25 @@ function ovRenderPanel() {
     return;
   }
   const ov = (ovState.layout.slots && ovState.layout.slots[id]) || {};
+  const base = ovBaseValues(id);
+  const view = Object.assign({}, base, ov);   // override wins; base fills the rest
   const props = meta.props || [];
   const has = p => props.includes(p);
   const h = document.createElement('h4'); h.textContent = meta.label; panel.appendChild(h);
   const grid = () => { const g = document.createElement('div'); g.className = 'ovgrid2'; return g; };
   if (has('left') || has('top')) {
     const g = grid();
-    if (has('left')) g.appendChild(ovNumField('left', 'Left (px)', ov));
-    if (has('top')) g.appendChild(ovNumField('top', 'Top (px)', ov));
+    if (has('left')) g.appendChild(ovNumField('left', 'Left (px)', view));
+    if (has('top')) g.appendChild(ovNumField('top', 'Top (px)', view));
     panel.appendChild(g);
   }
   if (has('width') || has('height')) {
     const g = grid();
-    if (has('width')) g.appendChild(ovNumField('width', 'Width (px)', ov));
-    if (has('height')) g.appendChild(ovNumField('height', 'Height (px)', ov));
+    if (has('width')) g.appendChild(ovNumField('width', 'Width (px)', view));
+    if (has('height')) g.appendChild(ovNumField('height', 'Height (px)', view));
     panel.appendChild(g);
   }
-  if (has('fontSize')) panel.appendChild(ovNumField('fontSize', 'Font size (px)', ov));
+  if (has('fontSize')) panel.appendChild(ovNumField('fontSize', 'Font size (px)', view));
   if (has('teamNameMax') || has('teamNameMin')) {
     const g = grid();
     if (has('teamNameMax')) g.appendChild(ovNumField('teamNameMax', 'Name max (px)', ov));
@@ -2680,8 +2709,15 @@ function ovRenderPanel() {
     wrap.appendChild(s); wrap.appendChild(prev);
     panel.appendChild(wrap);
   }
-  if (has('color')) panel.appendChild(ovColorField('color', 'Text color', ov));
-  if (has('background')) panel.appendChild(ovColorField('background', 'Background', ov));
+  if (has('color')) panel.appendChild(ovColorField('color', 'Text color', view));
+  if (has('background')) panel.appendChild(ovColorField('background', 'Background', view));
+  if (has('borderWidth')) panel.appendChild(ovNumField('borderWidth', 'Border width (px)', view));
+  if (has('borderStyle')) {
+    panel.appendChild(ovSelectField('borderStyle', 'Border style',
+      [{v: '', t: '— none —'}, {v: 'solid', t: 'Solid'},
+       {v: 'dashed', t: 'Dashed'}, {v: 'dotted', t: 'Dotted'}], view));
+  }
+  if (has('borderColor')) panel.appendChild(ovColorField('borderColor', 'Border color', view));
   if (has('align')) {
     panel.appendChild(ovSelectField('align', 'Text align',
       [{v: '', t: '— default —'}, {v: 'left', t: 'Left'},
@@ -2750,8 +2786,22 @@ async function saveOverlay() {
   const b = $('overlay-save');
   if (!ovState.layout) return;
   b.disabled = true;
+  // Save-all: persist each slot's full effective values (base + edits), so the
+  // generated CSS fully pins the look (the producer chose this over diff-only).
+  const fullSlots = {};
+  (ovState.slots || []).forEach(s => {
+    const base = ovBaseValues(s.id);
+    const ov = (ovState.layout.slots && ovState.layout.slots[s.id]) || {};
+    const allowed = new Set(s.props || []);
+    const merged = {};
+    (s.props || []).forEach(p => {
+      const v = (ov[p] !== undefined) ? ov[p] : base[p];
+      if (v !== undefined && v !== '' && allowed.has(p)) merged[p] = v;
+    });
+    if (Object.keys(merged).length) fullSlots[s.id] = merged;
+  });
   const layout = Object.assign({}, ovState.layout, {
-    version: 1, page: overlayPage, fonts: ovState.fonts.slice(),
+    version: 1, page: 'hud', slots: fullSlots, fonts: ovState.fonts.slice(),
     customCss: $('overlayCss').value});
   let d;
   try {

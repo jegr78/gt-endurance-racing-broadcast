@@ -50,6 +50,20 @@ no package manager); external runtime deps are `yt-dlp`, `streamlink`, `ffmpeg`,
   Actions) are research-first:** map the complete lifecycle and requirement set
   (docs + known issues) before changing anything — one planned fix, not
   symptom-per-loop trial and error.
+- **Changed a UI surface? Refresh its wiki screenshot in the SAME change.** This
+  is the step that keeps getting forgotten. Any visible change to the **Control
+  Center** (`src/ui/`), the **Director Panel** (`/panel`), or the **Companion /
+  Tablet buttons** means the matching image under `src/docs/wiki/images/` is now
+  stale and MUST be regenerated and committed alongside the code — never as a
+  "later" follow-up. Surface → image: Control Center views → `cc-<view>.png`
+  (e.g. the overlay builder → `cc-overlay-builder.png`); Director Panel →
+  `director-panel.png`; Companion pages → `companion-page<N>-*.png`. How to
+  recapture: Companion buttons via the **`companion-screenshots`** skill;
+  Control Center / Director Panel by driving a running instance with the
+  Playwright MCP and taking an **element** screenshot of the relevant card/modal
+  (e.g. `#ov-modal .ovmodal-card`) so the framing matches the existing images —
+  not a full-window grab. Publishing the wiki itself stays a separate
+  `tools/sync-wiki.py` step, but the image must already be committed in the repo.
 
 ## Commands
 

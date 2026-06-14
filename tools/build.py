@@ -58,7 +58,6 @@ def main():
     cp("director/director-panel.html", "director-panel.html")
     cp("obs/hud.html", "hud.html")
     cp("obs/hud-preview.html", "hud-preview.html")
-    cp("obs/timer.html", "timer.html")
     cp("setup-assets.py", "setup-assets.py")
     cp("racecast.py", "racecast.py")
     cp("racecast_ui.py", "racecast_ui.py")   # windowed Control Center launcher (racecast-ui)
@@ -143,6 +142,8 @@ def main():
     with open(os.path.join(PKG, "companion", "racecast-buttons.companionconfig"), encoding="utf-8") as fh:
         written = json.load(fh)
     blob = json.dumps(written)
+    with open(os.path.join(PKG, "hud.html"), encoding="utf-8") as fh:
+        hud = fh.read()
     checks = {
         "companion pov buttons": "pov/reload" in blob,
         "companion password empty": not has_pw(written),
@@ -156,14 +157,12 @@ def main():
         "obs no apps-script webhook": not has_appscript_secret(tpl),
         "relay no apps-script webhook": not has_appscript_secret(relay),
         "companion no apps-script webhook": not has_appscript_secret(blob),
-        "obs timer is relay-served": "http://127.0.0.1:8088/timer" in tpl
-            and "__RACECAST_TIMER__" not in tpl and "stagetimer" not in tpl,
         "relay timer endpoint": "/timer/data" in relay,
         "obs media tokenized": "__RACECAST_MEDIA__/" in tpl,
         "relay pov endpoint": "pov/reload" in relay,
         "no .sh/.bat shipped": not any(fn.endswith((".sh", ".bat")) for _, _, fs in os.walk(PKG) for fn in fs),
         "preflight shipped": os.path.isfile(os.path.join(PKG, "scripts", "preflight.py")),
-        "timer html shipped": os.path.isfile(os.path.join(PKG, "timer.html")),
+        "hud serves the clock": '<div id="clock"' in hud,
         "hud preview shipped": os.path.isfile(os.path.join(PKG, "hud-preview.html")),
         "preview backdrop shipped": os.path.isfile(os.path.join(PKG, "assets", "preview-bg.jpg")),
         ".env.example shipped": os.path.isfile(os.path.join(PKG, ".env.example")),

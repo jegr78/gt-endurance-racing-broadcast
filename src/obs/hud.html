@@ -57,10 +57,19 @@
   #team3-num  { left: 1274px; top: 1005px; }
   #team3-name { left: 1342px; top: 1005px; width: 248px; }
 
-  /* POV picture-in-picture placeholder (issue #141): a transparent guide box so
-     the operator can position/size the POV area on the same canvas. It draws
-     nothing on air — the actual POV is an OBS media source positioned in OBS. */
-  #pov { left: 40px; top: 560px; width: 480px; height: 270px; }
+  /* POV picture-in-picture frame (issue #141): aligned to the OBS "Feed POV"
+     scene item (pos 1496,644, bounds 384x216). Transparent by default — set a
+     background/border in the overlay builder to frame the PiP on air. */
+  #pov { left: 1496px; top: 644px; width: 384px; height: 216px; }
+
+  /* Race-timer clock, merged in from the old separate timer source. Sits at the
+     top band at the clock's true on-air size/position (was OBS crop y[217..895]
+     + scale 0.0854 + pos 880,98). Tune live via the builder. */
+  #clock { left: 889px; top: 98px; height: 58px;
+    display: flex; align-items: center; white-space: nowrap;
+    font-family: "SF Mono", "Cascadia Mono", "Consolas", "Menlo", monospace;
+    font-weight: 700; font-size: 36px; color: #ffffff;
+    text-shadow: 0 2px 6px rgba(0,0,0,.6); font-variant-numeric: tabular-nums; }
 
   /* Race control banner (status line, hidden when empty). Gray band flush
      with the lower-third block of the Overlay.png frame: x 264..1593 and
@@ -91,10 +100,40 @@
   <div id="team3-num" class="el team-num white" data-edit="Team 3 number" data-edit-props="left,top,fontSize,fontFamily,color,background"></div>
   <div id="team3-name" class="el team-name white" data-edit="Team 3 name" data-edit-props="left,top,width,height,teamNameMax,teamNameMin,fontFamily,color"></div>
   <div id="race-control" class="el white" data-edit="Race control"></div>
-  <div id="pov" class="el" data-edit="POV box" data-edit-props="left,top,width,height"></div>
+  <div id="pov" class="el" data-edit="POV box" data-edit-props="left,top,width,height,background,borderStyle,borderColor,borderWidth"></div>
+  <div id="clock" class="el white" data-edit="Clock"></div>
 
 <script>
   const POLL_MS = 2500;
+  const TIMER_POLL_MS = 2000, TIMER_TICK_MS = 250;
+  let timerState = null, clockOffset = 0;   // serverNow - clientNow at last poll
+
+  function fmtClock(s) {
+    s = Math.max(0, Math.ceil(s));
+    const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return `${h}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}`;
+  }
+  function renderClock() {
+    const el = document.getElementById("clock");
+    if (!timerState || !timerState.visible) { el.textContent = ""; el.classList.add("empty"); return; }
+    let text;
+    if (timerState.end === null) {
+      const s = (timerState.remaining_s ?? null) !== null ? timerState.remaining_s : timerState.duration_s;
+      text = fmtClock(s);
+    } else {
+      const remaining = timerState.end - (Date.now() / 1000 + clockOffset);
+      text = remaining > 0 ? fmtClock(remaining) : "";
+    }
+    el.textContent = text;
+    el.classList.toggle("empty", !text);
+  }
+  async function pollClock() {
+    try {
+      const r = await fetch("/timer/data", { cache: "no-store" });
+      const d = await r.json();
+      if (!d.error) { timerState = d; clockOffset = d.server_now - Date.now() / 1000; }
+    } catch (e) { /* keep last good state on transient errors */ }
+  }
 
   function setText(id, value) {
     const el = document.getElementById(id);
@@ -151,6 +190,9 @@
   }
   tick();
   setInterval(tick, POLL_MS);
+  pollClock();
+  setInterval(pollClock, TIMER_POLL_MS);
+  setInterval(renderClock, TIMER_TICK_MS);
 </script>
 </body>
 </html>

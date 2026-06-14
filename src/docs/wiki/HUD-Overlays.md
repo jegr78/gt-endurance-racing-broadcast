@@ -1,11 +1,11 @@
 # HUD overlays
 
-> Operator reference for restyling the on-screen HUD and race timer per league.
+> Operator reference for restyling the on-screen HUD (including the race timer) per league.
 > Profiles in general are covered in [League profiles](Profiles).
 
-The relay serves the lower-third **HUD** and the **race timer** as two shared pages — the
-same `hud.html` / `timer.html` for every league. A league can **restyle** them — reposition
-elements, change fonts and colors — **without forking** those pages, by shipping a small CSS
+The relay serves the lower-third **HUD** — which **includes the race timer** — as one
+shared page, the same `hud.html` for every league. A league can **restyle** it — reposition
+elements, change fonts and colors — **without forking** the page, by shipping a small CSS
 override (and optional fonts) in its profile.
 
 ## Where it lives
@@ -13,23 +13,20 @@ override (and optional fonts) in its profile.
 A league's overlay styling sits in its profile folder:
 
 ```
-profiles/<name>/overlay/hud.css      # restyle the lower-third HUD
-profiles/<name>/overlay/timer.css    # restyle the race timer
+profiles/<name>/overlay/hud.css      # restyle the HUD (incl. the race timer)
 profiles/<name>/overlay/fonts/       # optional custom font files
 ```
 
-`profiles/example/overlay/` ships as a commented template. Both CSS files are **optional**:
+`profiles/example/overlay/` ships as a commented template. `hud.css` is **optional**:
 an empty or missing file means the base look is used unchanged.
 
 ## How it works
 
-The base `hud.html` and `timer.html` stay shared. The relay serves the active league's CSS
-files at fixed paths:
+The base `hud.html` stays shared. The relay serves the active league's CSS at a fixed path:
 
 - **`/hud/override.css`** ← `profiles/<name>/overlay/hud.css`
-- **`/timer/override.css`** ← `profiles/<name>/overlay/timer.css`
 
-Each base page links its override **last** in `<head>`, so any rule in the league CSS
+The base page links its override **last** in `<head>`, so any rule in the league CSS
 **wins the cascade** over the page's own styles. The CSS is read **per request**, so editor
 saves apply without restarting the relay (with one first-time caveat below).
 
@@ -55,17 +52,19 @@ exposes these ids:
 | `#round-country` | the round country text |
 | `#team0` `#team1` `#team2` | the three team rows (each holds a logo image + a `.name` span) |
 | `#race-control` | the race-control line |
-
-The race timer (`timer.html`) exposes one id: **`#clock`** (the digits).
+| `#clock` | the race-timer digits (merged into the HUD) |
+| `#pov` | the POV picture-in-picture frame (position + background/border) |
 
 ## Editing — the visual builder
 
-In the Control Center's **Profile** view, the **Overlay Builder** lays out the HUD and
-Timer slots visually — no CSS required. Click a slot on the canvas to select it, drag it
-to reposition, drag the corner/edge handles to resize, and set font, color, background
-and alignment in the property panel. **HUD ⇄ Timer** switches the page; **Pop out ↗**
+In the Control Center's **Profile** view, the **Overlay Builder** lays out every HUD slot
+visually on one canvas — the lower third, the **race timer** clock and the **POV** frame
+together — no CSS required. Click a slot to select it, drag it to reposition, drag the
+corner/edge handles to resize, and set position, font, color, background (and, for the POV
+box, border style/color/width) in the property panel. The fields **pre-fill** with each
+slot's current template values, so you always see real numbers to adjust from. **Pop out ↗**
 opens the builder in a larger modal over the Control Center; **Save** writes the files;
-**Apply in OBS** reloads the browser sources (the same as `racecast obs refresh`);
+**Apply in OBS** reloads the browser source (the same as `racecast obs refresh`);
 **Preview ↗** opens the live HUD preview.
 
 ![Control Center — Overlay Builder modal: drag/resize the HUD slots on a canvas over the Overlay.png frame, style them in the property panel](images/cc-overlay-builder.png)
@@ -100,7 +99,7 @@ and your visual changes compile **above** it.
 > whose `overlay/` did not exist yet needs **one `racecast relay restart`** to activate.
 > After that, later edits apply live via **Apply in OBS** — no restart.
 
-> **CLI alternative:** edit `profiles/<name>/overlay/{hud,timer}.css` in any text editor,
+> **CLI alternative:** edit `profiles/<name>/overlay/hud.css` in any text editor,
 > drop fonts in `profiles/<name>/overlay/fonts/`, then `racecast obs refresh`. (Editing the
 > CSS by hand and using the visual builder on the same profile both work — the builder
 > imports your hand-written CSS into its advanced-CSS box, then owns the generated file.)

@@ -5,7 +5,7 @@ already serves at /<page>/override.css. No I/O, no dependencies — unit-tested 
 tests/test_overlay.py. Spec: docs/superpowers/specs/2026-06-13-visual-overlay-builder-design.md.
 
 The editable slots are NOT hardcoded here: extract_slots() reads the data-edit
-markers from the base page (src/obs/hud.html / timer.html), so the markup stays
+markers from the base page (src/obs/hud.html), so the markup stays
 the single source of truth — a new marked element becomes editable automatically.
 """
 import re
@@ -22,10 +22,11 @@ FONT_EXTS = tuple(FONT_CTYPES)
 # canvas applies the same standard properties inline, so nothing drifts.
 _PX_PROPS = {
     "left": "left", "top": "top", "width": "width", "height": "height",
-    "fontSize": "font-size",
+    "fontSize": "font-size", "borderWidth": "border-width",
     "teamNameMax": "--team-name-max", "teamNameMin": "--team-name-min",
 }
-_TEXT_PROPS = {"color": "color", "background": "background"}
+_TEXT_PROPS = {"color": "color", "background": "background",
+               "borderColor": "border-color", "borderStyle": "border-style"}
 _ALIGN = {"left": "flex-start", "center": "center", "right": "flex-end"}
 
 # The default property set offered for a text slot (no data-edit-props attr).
@@ -33,9 +34,9 @@ DEFAULT_PROPS = ("left", "top", "width", "height", "fontSize",
                  "fontFamily", "color", "background", "align")
 
 # Stable emit order within a slot rule (independent of dict insertion order).
-PROP_ORDER = ("left", "top", "width", "height", "fontSize",
+PROP_ORDER = ("left", "top", "width", "height", "fontSize", "borderWidth",
               "teamNameMax", "teamNameMin", "fontFamily", "color",
-              "background", "align")
+              "background", "borderColor", "borderStyle", "align")
 
 # A structured value must never close the rule or inject extra CSS; the only
 # verbatim path is customCss. Reject anything carrying CSS-structural characters.
@@ -43,7 +44,10 @@ _UNSAFE_VALUE = re.compile(r"[;{}<>]|/\*|\*/")
 
 # Sample content for the same-origin builder canvas (so the operator positions
 # slots against realistic text). Each team is three slots now (logo/number/name,
-# issue #136): the number + name carry text; the logo is an image (no sample text).
+# issue #136): the number + name carry text; the logo is an image. Image slots
+# (the round flag + each team logo) carry a {"flag"/"brand": key} entry so the
+# offline canvas previews them from bundled src/assets/ (served by the Control
+# Center at /api/overlay/asset/{flags,brands}/<key>).
 SAMPLE = {
     "hud": {
         "stint": "STINT 3", "session": "Race",
@@ -53,8 +57,12 @@ SAMPLE = {
         "team2-num": "23", "team2-name": "Apex Racing",
         "team3-num": "99", "team3-name": "Night Shift Motorsport",
         "race-control": "FCY — Full Course Yellow",
+        "clock": "1:23:45",
+        "round-flag": {"flag": "belgium"},
+        "team1-logo": {"brand": "bmw"},
+        "team2-logo": {"brand": "porsche"},
+        "team3-logo": {"brand": "ferrari"},
     },
-    "timer": {"clock": "1:23:45"},
 }
 
 

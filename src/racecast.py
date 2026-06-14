@@ -11,7 +11,7 @@
   racecast event start --stint N             # takeover: stint N is on air now — the relay starts there
   racecast event start --qualifying          # bring up in qualifying mode (Feed A serves the Qualifying tab)
   racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
-  racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
+  racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD incl. timer)
   racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
   racecast app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
   racecast status                            # aggregate health of all services
@@ -568,9 +568,9 @@ def _relay_runtime_args():
 RELAY_PORT = 8088
 
 # The relay-served pages OBS renders as browser sources (panel is tablet-only).
-# The two override.css are hashed too, so a per-profile CSS edit advances the
+# The override.css is hashed too, so a per-profile CSS edit advances the
 # staleness gate and triggers an OBS browser-source refresh.
-OBS_PAGE_PATHS = ("/hud", "/timer", "/hud/override.css", "/timer/override.css")
+OBS_PAGE_PATHS = ("/hud", "/hud/override.css")
 
 
 def _fetch_relay_page(path):
@@ -583,7 +583,7 @@ def served_pages_hash(fetch=None, paths=OBS_PAGE_PATHS):
     """SHA-256 over the page bytes the relay actually serves to OBS. Hashing
     what OBS would load (not the files on disk) means a still-running OLD
     relay can never advance the staleness gate past pages OBS has not seen.
-    None when any page cannot be fetched (relay down, --no-hud/--no-timer)."""
+    None when any page cannot be fetched (relay down, --no-hud)."""
     fetch = fetch or _fetch_relay_page
     h = hashlib.sha256()
     for path in paths:
@@ -1045,7 +1045,7 @@ def _obs_pages_hash_path():
 
 
 def _refresh_obs_pages(force=False, wait=0):
-    """Refresh the relay-served OBS browser sources (HUD + race timer) when
+    """Refresh the relay-served OBS browser sources (HUD, which includes the race timer) when
     the pages changed since the last successful refresh — replaces the manual
     right-click → 'Refresh cache of current page' (OBS's CEF caches the page
     JS until then; a producer updating the package must never go on air with
@@ -1059,7 +1059,7 @@ def _refresh_obs_pages(force=False, wait=0):
     served = served_pages_hash()
     decision = refresh_decision(served, read_pages_hash(_obs_pages_hash_path()), force)
     if decision == "skip-no-pages":
-        print("obs: page refresh skipped — could not read /hud + /timer from the relay.")
+        print("obs: page refresh skipped — could not read /hud from the relay.")
         return
     if decision == "skip-unchanged":
         return                              # unchanged pages -> no on-air flicker
@@ -2427,7 +2427,7 @@ def _active_profile_overlay_path(page):
     """(active, abs path to overlay/<page>.css) for the active profile, or
     (None, None) when no profile resolves or `page` is not an overlay page.
     Server-resolved; never a client path. Mirrors _active_profile_env_strict."""
-    if page not in ("hud", "timer"):
+    if page != "hud":
         return None, None
     active = _active_profile_name()
     if not active:
@@ -2487,7 +2487,7 @@ def _atomic_write_text(path, text):
 
 def _overlay_base_html(page):
     """Text of the base overlay page (src/obs/<page>.html), or '' on error."""
-    if page not in ("hud", "timer"):
+    if page != "hud":
         return ""
     try:
         with open(resource_path(f"obs/{page}.html"), encoding="utf-8") as fh:
@@ -2504,12 +2504,17 @@ def _overlay_layout_path(page):
     return active, os.path.join(os.path.dirname(css_path), f"layout-{page}.json")
 
 
+def _css_has_rules(text):
+    """True if `text` has real CSS once comments + whitespace are stripped."""
+    return bool(re.sub(r"/\*.*?\*/", "", text or "", flags=re.S).strip())
+
+
 def overlay_slots_data(page):
     """The base page's editable slots + base <style> + slot markup + sample data,
     so the Control Center renders a same-origin WYSIWYG canvas.
     {ok, page, slots, css, body, sample} or {ok:false, error}."""
     try:
-        if page not in ("hud", "timer"):
+        if page != "hud":
             return {"ok": False, "error": "invalid page"}
         html = _overlay_base_html(page)
         if not html:
@@ -2533,18 +2538,34 @@ def overlay_layout_read_data(page):
         if os.path.exists(lpath):
             with open(lpath, encoding="utf-8") as fh:
                 layout = json.load(fh)
-            return {"ok": True, "page": page, "active": active,
-                    "layout": layout, "migrated": False}
-        _, css_path = _active_profile_overlay_path(page)
-        existing = ""
-        if os.path.exists(css_path):
-            with open(css_path, encoding="utf-8") as fh:
-                existing = fh.read()
-        migrated = bool(existing.strip())
-        layout = (ob.migrate_layout(page, existing) if migrated
-                  else ob.empty_layout(page))
-        return {"ok": True, "page": page, "active": active,
-                "layout": layout, "migrated": migrated}
+            result = {"ok": True, "page": page, "active": active,
+                      "layout": layout, "migrated": False}
+        else:
+            _, css_path = _active_profile_overlay_path(page)
+            existing = ""
+            if os.path.exists(css_path):
+                with open(css_path, encoding="utf-8") as fh:
+                    existing = fh.read()
+            migrated = bool(existing.strip())
+            layout = (ob.migrate_layout(page, existing) if migrated
+                      else ob.empty_layout(page))
+            result = {"ok": True, "page": page, "active": active,
+                      "layout": layout, "migrated": migrated}
+        # Fold a legacy timer.css into the HUD layout's customCss so a
+        # league's timer styling is not silently dropped after the timer→HUD merge.
+        # A comment-only scaffold is ignored.
+        if page == "hud" and lpath:
+            timer_css = os.path.join(os.path.dirname(lpath), "timer.css")
+            if os.path.exists(timer_css):
+                with open(timer_css, encoding="utf-8") as fh:
+                    legacy = fh.read()
+                cur = layout.get("customCss") or ""
+                if _css_has_rules(legacy) and legacy.strip() not in cur:
+                    layout["customCss"] = (cur + ("\n" if cur else "")
+                                           + "/* merged from legacy timer.css */\n"
+                                           + legacy)
+                    result["migrated"] = True
+        return result
     except Exception as exc:
         return {"ok": False, "error": f"could not read overlay layout: {exc}"}
 
@@ -2721,6 +2742,32 @@ def overlay_font_serve(name):
     if not path:
         return None
     return path, ob.FONT_CTYPES[name.rsplit(".", 1)[1].lower()]
+
+
+# Bundled HUD asset resolution for the offline builder canvas (flags + brand
+# logos). Mirrors the relay's resolve_asset: strict key + subdir whitelist +
+# realpath containment so a request value can never escape src/assets/.
+_OV_ASSET_EXTS = (("png", "image/png"), ("svg", "image/svg+xml"),
+                  ("jpg", "image/jpeg"), ("jpeg", "image/jpeg"),
+                  ("webp", "image/webp"))
+_OV_ASSET_KEY_RE = re.compile(r"^[a-z0-9-]+$")
+
+
+def overlay_asset_serve(sub, key):
+    """(path, content_type) for a bundled HUD asset the builder canvas previews
+    offline: src/assets/flags/<key>.<ext> or src/assets/brands/<key>.<ext> (tries
+    known image extensions in order). None when the subdir/key is unsafe or no
+    file matches — never raises on a bad request."""
+    if sub not in ("flags", "brands") or not _OV_ASSET_KEY_RE.match(key or ""):
+        return None
+    base = os.path.realpath(resource_path(os.path.join("assets", sub)))
+    for ext, ctype in _OV_ASSET_EXTS:
+        path = os.path.realpath(os.path.join(base, f"{key}.{ext}"))
+        if not path.startswith(base + os.sep):
+            return None
+        if os.path.exists(path):
+            return path, ctype
+    return None
 
 
 # A modern-browser UA so Google's css2 endpoint serves woff2 (not legacy ttf).
@@ -3584,6 +3631,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "overlay_font_upload": overlay_font_upload_data,
         "overlay_bg": overlay_bg_path,
         "overlay_font_serve": overlay_font_serve,
+        "overlay_asset_serve": overlay_asset_serve,
         "machine_fonts": machine_fonts_list_data,
         "font_catalog": font_catalog_cached,
         "machine_font_download": machine_font_download_data,

@@ -607,15 +607,14 @@ def t_refresh_decision():
 
 def t_served_pages_hash_concatenates_in_order():
     import hashlib
-    pages = {"/hud": b"HUD", "/timer": b"TIMER",
-             "/hud/override.css": b"HC", "/timer/override.css": b"TC"}
-    expected = hashlib.sha256(b"HUDTIMERHCTC").hexdigest()
+    pages = {"/hud": b"HUD", "/hud/override.css": b"CSS"}
+    expected = hashlib.sha256(b"HUD" + b"CSS").hexdigest()
     assert m.served_pages_hash(fetch=lambda p: pages[p]) == expected
 
 
 def t_served_pages_hash_none_when_any_fetch_fails():
     def fetch(path):
-        if path == "/timer":
+        if path == "/hud":
             raise OSError("connection refused")
         return b"HUD"
     assert m.served_pages_hash(fetch=fetch) is None
@@ -990,31 +989,6 @@ def t_overlay_write_then_read_roundtrip():
         assert os.path.exists(on_disk)
 
 
-def t_overlay_timer_write_then_read_roundtrip():
-    import tempfile
-    with tempfile.TemporaryDirectory() as td:
-        prof = os.path.join(td, "profiles", "demo")
-        os.makedirs(prof)
-        open(os.path.join(prof, "profile.env"), "w").close()
-        open(os.path.join(td, ".env.example"), "w").close()
-        os.makedirs(os.path.join(td, "runtime"))
-        with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
-            fh.write("demo\n")
-        orig_b, orig_r = m._env_base, m._runtime_base_dir
-        m._env_base = lambda *a, **k: td
-        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
-        try:
-            w = m.overlay_write_data("timer", "#clock{font-size:300px}")
-            d = m.overlay_read_data("timer")
-        finally:
-            m._env_base, m._runtime_base_dir = orig_b, orig_r
-        assert w["ok"] is True
-        assert d["ok"] is True and d["css"] == "#clock{font-size:300px}"
-        assert d["page"] == "timer"
-        on_disk = os.path.join(td, "profiles", "demo", "overlay", "timer.css")
-        assert os.path.exists(on_disk)
-
-
 def t_overlay_rejects_unknown_page():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
@@ -1029,6 +1003,7 @@ def t_overlay_rejects_unknown_page():
         m._env_base = lambda *a, **k: td
         m._runtime_base_dir = lambda: os.path.join(td, "runtime")
         try:
+            assert m.overlay_write_data("timer", "x")["ok"] is False
             assert m.overlay_write_data("panel", "x")["ok"] is False
             assert m.overlay_read_data("../etc")["ok"] is False
         finally:
@@ -1103,6 +1078,49 @@ def t_overlay_layout_read_migrates_handwritten_css():
         assert r["ok"] and r["migrated"] is True
         assert r["layout"]["customCss"] == "#stint{left:999px}/* mine */"
         assert r["layout"]["slots"] == {}
+
+
+def t_overlay_layout_folds_legacy_timer_css():
+    import tempfile, json as _json
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        od = os.path.join(td, "profiles", "demo", "overlay")
+        os.makedirs(od)
+        # Write a layout-hud.json so migration path is skipped (we test the fold path)
+        with open(os.path.join(od, "layout-hud.json"), "w", encoding="utf-8") as fh:
+            _json.dump({"page": "hud", "slots": {}, "fonts": [], "customCss": ""}, fh)
+        # Write a real timer.css with actual CSS rules
+        with open(os.path.join(od, "timer.css"), "w", encoding="utf-8") as fh:
+            fh.write("#clock { color: #f4f4f4; }")
+        try:
+            d = m.overlay_layout_read_data("hud")
+            # Idempotency: re-reading must not accumulate another copy of the timer CSS.
+            d2 = m.overlay_layout_read_data("hud")
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert d["ok"] is True
+        assert "#clock { color: #f4f4f4; }" in (d["layout"].get("customCss") or "")
+        assert (d2["layout"].get("customCss") or "").count("#clock") == 1
+
+
+def t_overlay_layout_ignores_comment_only_timer_css():
+    import tempfile, json as _json
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        od = os.path.join(td, "profiles", "demo", "overlay")
+        os.makedirs(od)
+        # Write a layout-hud.json
+        with open(os.path.join(od, "layout-hud.json"), "w", encoding="utf-8") as fh:
+            _json.dump({"page": "hud", "slots": {}, "fonts": [], "customCss": ""}, fh)
+        # Write a comment-only timer.css (default scaffold — no real rules)
+        with open(os.path.join(od, "timer.css"), "w", encoding="utf-8") as fh:
+            fh.write("/* just the template, no rules */\n")
+        try:
+            d = m.overlay_layout_read_data("hud")
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert d["ok"] is True
+        assert "template" not in (d["layout"].get("customCss") or "")
 
 
 def t_overlay_layout_write_rejects_unknown_page():
@@ -1259,7 +1277,7 @@ def t_overlay_bg_path_present_and_absent():
 
 
 def t_obs_page_paths_include_overrides():
-    assert m.OBS_PAGE_PATHS == ("/hud", "/timer", "/hud/override.css", "/timer/override.css")
+    assert m.OBS_PAGE_PATHS == ("/hud", "/hud/override.css")
 
 
 def t_relay_runtime_args_adds_overlay_when_dir_exists():
@@ -1373,6 +1391,19 @@ def t_freeport_owner_running_relay_owns_feed_and_control_ports():
 def t_freeport_owner_static_feed():
     assert m.freeport_owner(53002, relay_alive=False, static_alive_ports={53002}) == "streams"
     assert m.freeport_owner(53003, relay_alive=False, static_alive_ports={53002}) is None
+
+
+def t_overlay_asset_serve_resolves_and_guards():
+    # The builder canvas previews bundled HUD flags/brands offline (no relay).
+    flag = m.overlay_asset_serve("flags", "belgium")
+    assert flag and os.path.exists(flag[0]) and flag[1] == "image/svg+xml"
+    brand = m.overlay_asset_serve("brands", "bmw")
+    assert brand and os.path.exists(brand[0]) and brand[1] == "image/png"
+    # strict key + subdir whitelist -> traversal / unknown sub / missing -> None
+    assert m.overlay_asset_serve("flags", "../config") is None
+    assert m.overlay_asset_serve("evil", "bmw") is None
+    assert m.overlay_asset_serve("brands", "definitely-not-a-brand") is None
+    assert m.overlay_asset_serve("flags", "Bel/gium") is None
 
 
 if __name__ == "__main__":
