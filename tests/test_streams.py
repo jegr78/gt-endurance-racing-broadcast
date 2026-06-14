@@ -61,6 +61,81 @@ def t_feed_process_matchers():
     assert not stop.looks_like_feed('"notepad.exe","123",...', windows=True)
 
 
+def t_kill_tree_reaps_grandchild_session():
+    """#133: a static feed is spawned as a session leader (services.spawn_kwargs ->
+    start_new_session=True). In the frozen binary the tree is
+    bootloader(leader) -> app-child -> streamlink, so streamlink is a GRANDCHILD.
+    kill_tree must reap the whole process GROUP, not just direct children, or the
+    grandchild orphans (PPID 1) and keeps its port — which blocked the relay's
+    Feed A. POSIX-only: Windows `taskkill /T` already kills the tree."""
+    import sys, time, tempfile, subprocess, signal, shutil
+    if os.name == "nt":
+        return
+
+    def alive(pid):
+        try:
+            os.kill(pid, 0); return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+
+    d = tempfile.mkdtemp()
+    leader = None
+    gc_pid = None
+    try:
+        tree = os.path.join(d, "tree.py")
+        stamp = os.path.join(d, "gc.pid")
+        # Recursive tree: depth>0 re-spawns itself one level deeper; depth 0 is the
+        # grandchild — it records its PID and sleeps. depth 2 => leader/child/grandchild.
+        with open(tree, "w") as f:
+            f.write("import os, sys, subprocess, time\n"
+                    "depth = int(sys.argv[1]); stamp = sys.argv[2]\n"
+                    "if depth > 0:\n"
+                    "    subprocess.run([sys.executable, sys.argv[0], str(depth - 1), stamp])\n"
+                    "else:\n"
+                    "    open(stamp, 'w').write(str(os.getpid()))\n"
+                    "    time.sleep(30)\n")
+        # start_new_session mirrors services.spawn_kwargs('posix'): the leader is its
+        # own session/group leader, exactly like a spawned static feed.
+        leader = subprocess.Popen([sys.executable, tree, "2", stamp], start_new_session=True)
+        for _ in range(200):                       # up to ~10 s for the grandchild to start
+            try:
+                with open(stamp) as fh:
+                    txt = fh.read().strip()
+                if txt:
+                    gc_pid = int(txt); break
+            except (OSError, ValueError):
+                pass
+            time.sleep(0.05)
+        assert gc_pid is not None, "grandchild never started"
+        ppid = int(subprocess.check_output(["ps", "-o", "ppid=", "-p", str(gc_pid)]).strip())
+        assert ppid != leader.pid, "setup error: grandchild is a direct child of the leader"
+        assert alive(gc_pid)
+
+        stop.kill_tree(leader.pid)
+
+        for _ in range(200):                       # up to ~10 s for the group to die
+            if not alive(gc_pid):
+                break
+            time.sleep(0.05)
+        assert not alive(gc_pid), \
+            "grandchild survived kill_tree — only direct children were reaped (#133)"
+    finally:
+        for pid in (gc_pid, leader.pid if leader else None):
+            if pid:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+        if leader:
+            try:
+                leader.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass  # best-effort reap of the test's own child
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def t_load_feeds_falls_back_to_builtin():
     import tempfile
     with tempfile.TemporaryDirectory() as d:

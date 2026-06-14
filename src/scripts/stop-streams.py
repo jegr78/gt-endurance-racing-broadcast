@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stop every streamlink server started by start-streams.py (Mac/Linux + Windows)."""
-import argparse, glob, os, signal, subprocess
+import argparse, glob, os, signal, subprocess, time
 
 
 def looks_like_feed(probe_output, windows=False):
@@ -45,16 +45,61 @@ def pid_is_feed(pid):
     return looks_like_feed(cmd)
 
 
+def _proc_alive(pid):
+    """True if `pid` still exists (POSIX). signal 0 is an existence probe — it
+    sends nothing. PermissionError means the PID is live but not ours, so alive."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
 def kill_tree(pid):
+    """Terminate a feed process AND every descendant.
+
+    Static feeds are spawned as session leaders (services.spawn_kwargs ->
+    start_new_session=True), so the whole tree shares ONE process group whose id
+    is `pid`. Signalling the GROUP reaps grandchildren too — essential for the
+    frozen binary, where the tree is bootloader(pid) -> app-child -> streamlink:
+    a direct-children-only kill (`pkill -P pid`) orphaned streamlink, which kept
+    its port bound and blocked the relay's Feed A (#133). Best-effort throughout;
+    pid_is_feed() vetted `pid` before we get here."""
     if os.name == "nt":
+        # taskkill /T already walks and kills the whole tree.
         subprocess.call(["taskkill", "/PID", str(pid), "/T", "/F"],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    else:
-        subprocess.call(["pkill", "-P", str(pid)], stderr=subprocess.DEVNULL)  # children first
+        return
+    try:
+        pgid = os.getpgid(pid)
+    except (ProcessLookupError, PermissionError):
+        return  # already gone
+    if pgid != pid:
+        # Not the session leader we expect (feeds always are). Fall back to the
+        # narrower kill rather than risk signalling an unrelated process group.
+        subprocess.call(["pkill", "-P", str(pid)], stderr=subprocess.DEVNULL)
         try:
             os.kill(pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
-            pass  # already gone or not ours — pid_is_feed() vetted it before
+            pass
+        return
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return
+    # Escalate to SIGKILL on the group if the leader is still up after a grace
+    # period (a wedged streamlink that ignores SIGTERM would otherwise hold its port).
+    for _ in range(25):                  # ~2.5 s grace
+        if not _proc_alive(pid):
+            break
+        time.sleep(0.1)
+    if _proc_alive(pid):
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
 
 
 def state_dir(here):
