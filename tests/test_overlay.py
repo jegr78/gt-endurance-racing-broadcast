@@ -401,9 +401,11 @@ def t_obs_collection_has_no_timer_source():
     assert "8088/timer" not in blob, "no scene item should point at the /timer page"
     assert "8088/hud" in blob   # the HUD page source remains
 
-def t_obs_hud_overlay_above_feed_pov():
-    # In every scene/group that has both, HUD Overlay must render in FRONT of
-    # Feed POV (OBS index 0 = front), so the HUD's #pov frame draws over the video.
+def t_obs_hud_overlay_renders_in_front():
+    # OBS scene items: HIGHER index = front-most (verified by the base collection,
+    # where HUD Overlay (text) sits AFTER the Overlay PNG frame so the text draws
+    # on top of it). The HUD Overlay source must therefore render in FRONT of both
+    # the Overlay frame AND Feed POV, so its #pov border frames the POV video.
     with open(os.path.join(ROOT, "src", "obs", "GT_Endurance.json"), encoding="utf-8") as f:
         col = _json.load(f)
     def items_of(src):
@@ -412,8 +414,13 @@ def t_obs_hud_overlay_above_feed_pov():
         if src.get("id") not in ("scene", "group"):
             continue
         names = [it.get("name") for it in items_of(src)]
-        if "HUD Overlay" in names and "Feed POV" in names:
-            assert names.index("HUD Overlay") < names.index("Feed POV"), src.get("name")
+        hud = names.index("HUD Overlay") if "HUD Overlay" in names else None
+        if hud is None:
+            continue
+        if "Overlay" in names:
+            assert hud > names.index("Overlay"), src.get("name")  # text above frame
+        if "Feed POV" in names:
+            assert hud > names.index("Feed POV"), src.get("name")  # frame above PiP
 
 
 if __name__ == "__main__":

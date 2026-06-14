@@ -62,11 +62,15 @@ second coordinate system, no transform math, no `420px→0.0854` hack.
 - **Remove** the `HUD Race Timer` browser source (source def + its scene items
   in `Stint` and `Splitscreen`). The clock is now part of the `/hud` page served
   by the `HUD Overlay` source.
-- **Reorder** so `HUD Overlay` composites **above** `Feed POV` in every scene
-  that contains both. Required so the POV frame drawn by the HUD page (below)
-  renders over the video edges instead of being hidden behind the POV media
-  source. The `#pov` box keeps a transparent center, so the video still shows
-  through; only the border/background frame it.
+- **No reorder needed.** OBS scene-item arrays are ordered low→high = back→front
+  (verified against the base collection: `HUD Overlay` text sits at a *higher*
+  index than the `Overlay` PNG frame so the text draws on top). In the base
+  collection `HUD Overlay` already sits in front of `Feed POV` (index 6 vs 3 in
+  the `Stint` scene), so the POV frame the HUD page draws already renders over the
+  video. We therefore only remove the timer source and leave z-order untouched.
+  The `#pov` box keeps a transparent center, so the video still shows through;
+  only the border/background frame it. (Guarded by
+  `t_obs_hud_overlay_renders_in_front`.)
 - Re-tokenize with `tools/tokenize-obs.py` if image basenames/URLs shifted; the
   build verify step must still pass (no secrets, tokens intact).
 
