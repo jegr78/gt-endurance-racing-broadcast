@@ -2509,7 +2509,7 @@ def overlay_slots_data(page):
     so the Control Center renders a same-origin WYSIWYG canvas.
     {ok, page, slots, css, body, sample} or {ok:false, error}."""
     try:
-        if page not in ("hud", "timer"):
+        if page != "hud":
             return {"ok": False, "error": "invalid page"}
         html = _overlay_base_html(page)
         if not html:
