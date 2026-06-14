@@ -107,7 +107,7 @@ def make_handler(ctx):
     docs_content(key) -> (ctype, bytes)|None, ops {name: argv},
     build_argv(name, params) -> argv (raises ValueError), assets() -> dict,
     asset_files() -> dict, asset_roots() -> {kind: dir} (resolved live per call),
-    tools() -> dict, apps() -> dict, preflight() -> dict,
+    tools() -> dict, apps() -> dict, preflight() -> dict, speedtest() -> dict,
     env_read() -> dict, env_write(entries) -> dict,
     init_plan(browser) -> dict (wizard plan: per-step done/kind/op/instruction),
     init_step(key) -> dict (run one non-job wizard step, {ok, done} | {ok: False, error}),
@@ -326,6 +326,13 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"preflight check failed: {exc}"},
+                                      code=500)
+            if path == "/api/speedtest":
+                try:
+                    return self._json(ctx["speedtest"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"speedtest read failed: {exc}"},
                                       code=500)
             if path == "/api/relay-live":
                 try:

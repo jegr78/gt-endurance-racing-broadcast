@@ -168,7 +168,8 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "backup_restore": lambda slug: {"ok": True, "slug": slug},
             "backup_delete": lambda slug: {"ok": True, "removed": True},
             "profile_export": lambda name=None, assets=True: _export_stub(name, assets),
-            "profile_import": lambda path, force=False: _import_stub(path, force)}
+            "profile_import": lambda path, force=False: _import_stub(path, force),
+            "speedtest": lambda: {"ok": True, "latest": None, "history": []}}
 
 
 def _serve(ctx):
@@ -645,6 +646,18 @@ def t_preflight_route_provider_error_is_500():
     try:
         code, body = _get(port, "/api/preflight")
         assert code == 500 and "gather down" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_api_speedtest_route():
+    ctx = _ctx()
+    ctx["speedtest"] = lambda: {"ok": True, "latest": None, "history": []}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/speedtest")
+        data = json.loads(body)
+        assert code == 200 and data == {"ok": True, "latest": None, "history": []}
     finally:
         httpd.shutdown()
 

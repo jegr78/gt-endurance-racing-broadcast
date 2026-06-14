@@ -34,6 +34,7 @@ OPS = {
     "media": ["media"],
     "setup": ["setup"],
     "preflight": ["preflight"],
+    "speedtest": ["speedtest"],
     "export-companion": ["export", "companion"],
     "install-tools": ["install-tools", "--yes"],
     "install-apps": ["install-apps", "--yes"],

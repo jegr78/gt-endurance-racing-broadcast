@@ -1419,6 +1419,29 @@ def t_speedtest_is_a_runtime_dir_oneshot():
     assert m.ONESHOT_MAP["speedtest"] == "scripts/speedtest.py"
 
 
+def t_speedtest_op_registered():
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "ui"))
+    import ui_ops
+    assert ui_ops.OPS["speedtest"] == ["speedtest"]
+
+
+def t_speedtest_data_shape():
+    import tempfile
+    d = tempfile.mkdtemp()
+    # seed one record through the speedtest module the provider reads
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "scripts"))
+    import speedtest as st
+    st.append_record({"ts": 1, "download_mbps": 50.0, "upload_mbps": 20.0,
+                      "ping_ms": 9.0, "jitter_ms": 1.0, "packet_loss": 0.0,
+                      "server": "S", "isp": "I", "result_url": None}, d)
+    out = m.speedtest_data(base_dir=d)
+    assert out["ok"] is True
+    assert out["latest"]["download_mbps"] == 50.0
+    assert len(out["history"]) == 1
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

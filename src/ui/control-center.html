@@ -746,6 +746,20 @@
           <span class="spacer"></span>
           <button id="pf-run" onclick="runPreflight()">
             <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Run</button></div>
+        <section id="pf-speedtest">
+          <div class="row">
+            <span class="name">Bandwidth speed test</span>
+            <span class="badge" id="st-badge" hidden><span class="dot"></span><span></span></span>
+            <span class="dim grow" id="st-latest">not measured yet</span>
+            <button id="st-run" onclick="runSpeedtest()">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Run speed test</button>
+          </div>
+          <div id="st-history" class="dim"></div>
+          <p class="envhint">Runs the <b>Ookla speedtest CLI</b> (install via <b>install-tools</b>).
+            It measures the line <b>idle</b> — a capability check; the true under-load picture is OBS's
+            live stats while streaming. Ookla is closed-source and each run sends its result to Ookla
+            (like a speedtest.net run in a browser).</p>
+        </section>
         <div id="pf-body">
           <section><div class="row"><span class="dim">Not run yet — press Run.</span></div></section>
         </div>
@@ -941,6 +955,7 @@ function showView(name) {
   if (name === 'profile' && !profilesLoaded) { profilesLoaded = true; loadProfiles(); }
   if (name === 'profile' && !assetsLoaded) { assetsLoaded = true; fetchAssetFiles(); }
   if (name === 'preflight' && !preflightRun) { preflightRun = true; runPreflight(); }
+  if (name === 'preflight') loadSpeedtest();
   if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
   if (name === 'streams' && !streamsLoaded) { streamsLoaded = true; loadStreams(); }
   if (name === 'help' && !docsLoaded) { docsLoaded = true; fetchDocs(); }
@@ -1773,6 +1788,39 @@ async function fetchSetup() {
   renderItemList('toollist', 'd-tools', d.tools, 'tools');
   renderItemList('applist', 'd-apps', d.apps, 'apps');
   if (lastStatus) updateAppStatus(lastStatus);   // fill running badges right away
+}
+
+// ----- Bandwidth speed test card (/api/speedtest, refreshed after each run) -----
+async function loadSpeedtest() {
+  let d;
+  try { d = await (await fetch('/api/speedtest', {cache: 'no-store'})).json(); }
+  catch (e) { return; }
+  if (!d || !d.ok) return;
+  const latest = d.latest, el = $('st-latest'), badge = $('st-badge');
+  if (!latest) { el.textContent = 'not measured yet'; badge.hidden = true; }
+  else {
+    const ageH = Math.round((Date.now()/1000 - latest.ts) / 3600);
+    const age = ageH < 1 ? 'just now' : ageH < 24 ? ageH + ' h ago' : Math.round(ageH/24) + ' d ago';
+    el.textContent = '↓' + latest.download_mbps + ' ↑' + latest.upload_mbps + ' Mbps · ' + age
+      + (latest.server ? ' · ' + latest.server : '');
+    const ok = latest.download_mbps >= 50 && latest.upload_mbps >= 20;
+    const min = latest.download_mbps >= 25 && latest.upload_mbps >= 10;
+    badge.hidden = false;
+    badge.className = 'badge ' + (ok ? 'ok' : min ? 'warn' : 'bad');
+    badge.querySelector('span:last-child').textContent = ok ? 'OK' : min ? 'min' : 'low';
+  }
+  const rows = (d.history || []).map(r => {
+    const t = new Date(r.ts * 1000).toLocaleString();
+    return '<div class="row"><span class="mono grow">' + t + '</span>'
+      + '<span class="mono">↓' + r.download_mbps + '</span> <span class="mono">↑' + r.upload_mbps + '</span>'
+      + '<span class="mono">' + (r.ping_ms != null ? r.ping_ms : '–') + ' ms</span></div>';
+  }).join('');
+  $('st-history').innerHTML = rows;
+}
+
+async function runSpeedtest() {
+  await op('speedtest', false);   // streams the Ookla output into the console job
+  loadSpeedtest();
 }
 
 // ----- Preflight checklist (on-demand /api/preflight) -----

@@ -3149,6 +3149,17 @@ def preflight_data(gather=None, refresh_env=None):
         return {"ok": False, "error": f"preflight failed: {exc}"}
 
 
+def speedtest_data(base_dir=None):
+    """Latest + recent speed-test history for the Control Center Preflight view.
+    Read-only (the *run* goes through the `speedtest` op/job). Never raises."""
+    try:
+        import speedtest as st  # noqa: PLC0415 — lazy to mirror preflight_data pattern
+        base = base_dir or _runtime_base_dir()
+        return {"ok": True, "latest": st.load_latest(base), "history": st.load_history(base)}
+    except Exception as exc:  # never let a failed speedtest read surface to the UI as a crash
+        return {"ok": False, "error": f"speedtest read failed: {exc}"}
+
+
 # Bundled operator docs the Control Center's Help page can open (allowlist —
 # only these keys map to a file, so the HTTP layer can serve nothing else).
 DOCS_FILES = {
@@ -3616,6 +3627,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "tools": tools_status_data,
         "apps": apps_status_data,
         "preflight": preflight_data,
+        "speedtest": speedtest_data,
         "env_read": env_entries_data,
         "env_write": env_write_data,
         "profiles": profiles_data,
