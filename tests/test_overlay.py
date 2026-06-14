@@ -24,6 +24,29 @@ def _mkoverlay(tmp, hud_css=None, timer_css=None, fonts=None):
         with open(os.path.join(od, "fonts", name), "wb") as f: f.write(data)
     return od
 
+def t_splitscreen_page_wires_data_and_override():
+    import os
+    path = os.path.join(ROOT, "src", "obs", "splitscreen.html")
+    assert os.path.exists(path), "src/obs/splitscreen.html missing"
+    with open(path, encoding="utf-8") as fh:
+        html = fh.read()
+    assert "/splitscreen/data" in html          # polls the relay state
+    assert "/splitscreen/override.css" in html  # per-league override link
+    assert 'id="split-left"' in html and 'id="split-right"' in html
+
+
+def t_splitscreen_is_an_overlay_page():
+    assert "splitscreen" in feeds.OVERLAY_PAGES
+
+
+def t_read_overlay_css_splitscreen_present():
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as od:
+        with open(os.path.join(od, "splitscreen.css"), "w") as fh:
+            fh.write("#split-left{color:#fff}")
+        assert feeds.read_overlay_css(od, "splitscreen") == b"#split-left{color:#fff}"
+
+
 def t_read_overlay_css_present():
     with tempfile.TemporaryDirectory() as tmp:
         od = _mkoverlay(tmp, hud_css="#stint{left:10px}")
@@ -439,6 +462,27 @@ def t_ob_sample_has_flag_and_brand_images():
     for tid in ("team1-logo", "team2-logo", "team3-logo"):
         assert os.path.exists(os.path.join(ROOT, "src", "assets", "brands",
                                            h[tid]["brand"] + ".png")), tid
+
+
+def t_splitscreen_labels_source_in_collection_splitscreen_scene_only():
+    import os, json
+    with open(os.path.join(ROOT, "src", "obs", "GT_Endurance.json"),
+              encoding="utf-8") as fh:
+        d = json.load(fh)
+    srcs = [s for s in d.get("sources", []) if s.get("name") == "Splitscreen Labels"]
+    assert len(srcs) == 1, "exactly one Splitscreen Labels source expected"
+    src = srcs[0]
+    assert src.get("id") == "browser_source"
+    assert src["settings"]["url"] == "http://127.0.0.1:8088/splitscreen"
+    uuid = src["uuid"]
+    def has_item(scene_name):
+        for s in d["sources"]:
+            if s.get("name") == scene_name and s.get("id") == "scene":
+                return any(it.get("source_uuid") == uuid
+                           for it in s["settings"]["items"])
+        return False
+    assert has_item("Splitscreen")
+    assert not has_item("Stint")
 
 
 if __name__ == "__main__":

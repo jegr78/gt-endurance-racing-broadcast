@@ -607,8 +607,8 @@ def t_refresh_decision():
 
 def t_served_pages_hash_concatenates_in_order():
     import hashlib
-    pages = {"/hud": b"HUD", "/hud/override.css": b"CSS"}
-    expected = hashlib.sha256(b"HUD" + b"CSS").hexdigest()
+    pages = {p: p.encode() for p in m.OBS_PAGE_PATHS}
+    expected = hashlib.sha256(b"".join(pages[p] for p in m.OBS_PAGE_PATHS)).hexdigest()
     assert m.served_pages_hash(fetch=lambda p: pages[p]) == expected
 
 
@@ -1277,7 +1277,8 @@ def t_overlay_bg_path_present_and_absent():
 
 
 def t_obs_page_paths_include_overrides():
-    assert m.OBS_PAGE_PATHS == ("/hud", "/hud/override.css")
+    assert m.OBS_PAGE_PATHS == ("/hud", "/hud/override.css",
+                                "/splitscreen", "/splitscreen/override.css")
 
 
 def t_relay_runtime_args_adds_overlay_when_dir_exists():
