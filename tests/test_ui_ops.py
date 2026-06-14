@@ -289,6 +289,17 @@ def t_tools_status_data_mixed():
     assert {t["name"] for t in d["tools"]} >= {"yt-dlp", "streamlink", "ffmpeg", "deno"}
 
 
+def t_tools_status_data_includes_speedtest():
+    # speedtest is a first-class row in the overview; present when on PATH.
+    d = rc.tools_status_data(
+        which=lambda n: "/usr/bin/speedtest" if n == "speedtest" else None,
+        version=lambda n: n + " 1.2.0")
+    by = {t["name"]: t for t in d["tools"]}
+    assert "speedtest" in by
+    assert by["speedtest"]["installed"] is True
+    assert by["speedtest"]["version"] == "speedtest 1.2.0"
+
+
 def t_tools_status_data_error():
     def boom(n):
         raise RuntimeError("which broke")

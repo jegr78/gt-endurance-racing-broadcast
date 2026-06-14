@@ -29,17 +29,35 @@ HISTORY_NAME = "speedtest-history.jsonl"
 
 
 class SpeedtestUnavailable(RuntimeError):
-    """The Ookla speedtest CLI is not on PATH."""
+    """The Ookla speedtest CLI could not be found (PATH or the managed bin dir)."""
 
 
 class SpeedtestFailed(RuntimeError):
     """The speedtest CLI ran but did not produce a usable result."""
 
 
-def run_argv():
+def managed_bin_dir(runtime_dir):
+    """Where install-tools drops the direct-downloaded Ookla binary on
+    macOS/Linux (Windows installs it via winget, onto PATH)."""
+    return os.path.join(runtime_dir, "bin")
+
+
+def find_binary(runtime_dir, which=shutil.which):
+    """Resolve the speedtest binary. PATH first (winget / brew / manual installs),
+    then the racecast-managed bin dir (the mac/Linux direct-download install).
+    Returns the path, or None when it is installed nowhere."""
+    hit = which(SPEEDTEST_BIN)
+    if hit:
+        return hit
+    name = SPEEDTEST_BIN + (".exe" if os.name == "nt" else "")
+    cand = os.path.join(managed_bin_dir(runtime_dir), name)
+    return cand if os.path.isfile(cand) else None
+
+
+def run_argv(binary=SPEEDTEST_BIN):
     """argv for one measurement. The --accept-* flags are passed on EVERY run so
     the CLI's interactive first-run license/GDPR prompt never blocks us."""
-    return [SPEEDTEST_BIN, "--format=json", "--accept-license", "--accept-gdpr"]
+    return [binary, "--format=json", "--accept-license", "--accept-gdpr"]
 
 
 def _mbps(bandwidth_bytes_per_sec):
@@ -189,11 +207,12 @@ def default_runtime_dir(here):
 def run(now, runtime_dir, runner=subprocess.run, which=shutil.which):
     """Run one measurement, append it to the history, and return the record.
     Raises SpeedtestUnavailable (binary missing) or SpeedtestFailed (run error)."""
-    if which(SPEEDTEST_BIN) is None:
+    binary = find_binary(runtime_dir, which)
+    if binary is None:
         raise SpeedtestUnavailable(
             "Ookla speedtest CLI not found — run `racecast install-tools` "
             "(or install it manually).")
-    proc = runner(run_argv(), capture_output=True, text=True)
+    proc = runner(run_argv(binary), capture_output=True, text=True)
     out = (proc.stdout or "").strip()
     if proc.returncode != 0 or not out:
         err = (proc.stderr or "").strip() or "no output"

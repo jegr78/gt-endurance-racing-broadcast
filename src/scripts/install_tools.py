@@ -28,34 +28,96 @@ WINGET_IDS = {"yt-dlp": "yt-dlp.yt-dlp", "streamlink": "Streamlink.Streamlink",
 APT_PACKAGES = {"yt-dlp": "yt-dlp", "streamlink": "streamlink", "ffmpeg": "ffmpeg"}
 # deno ships no apt package — Linux users get a pointer in manual_guide().
 
-# The Ookla speedtest CLI is an OPTIONAL, opt-in tool (used only by
-# `racecast speedtest`). It is deliberately NOT in TOOLS so its absence never
-# turns the preflight tool-chain into a FAIL. Its install is non-uniform across
-# OSes (mac needs a tap; Linux needs Ookla's own apt repo), so it has its own
-# builders instead of the shared install_commands() dicts.
+# The Ookla speedtest CLI (used by `racecast speedtest`). It is a first-class
+# tool the producer installs via `install-tools` / the Control Center "Install
+# all" button, but it is kept OUT of the TOOLS tuple so its absence never turns
+# the preflight tool-chain into a FAIL (a bandwidth check is advisory).
+#
+# Install is HYBRID (decided after Homebrew 6.x began refusing the teamookla
+# third-party tap as "untrusted"):
+#   * Windows  -> winget (Ookla.Speedtest.CLI, first-party).
+#   * mac/Linux -> direct download of Ookla's official CLI tarball, version-pinned
+#                  and SHA-256-verified, extracted into the racecast-managed bin
+#                  dir (no brew tap / apt repo, no trust bypass).
 SPEEDTEST_WINGET_ID = "Ookla.Speedtest.CLI"
-SPEEDTEST_BREW_TAP = "teamookla/speedtest"
-SPEEDTEST_BREW_FORMULA = "speedtest"
 SPEEDTEST_BIN_NAME = "speedtest"
+SPEEDTEST_VERSION = "1.2.0"
+SPEEDTEST_URL_TMPL = "https://install.speedtest.net/app/cli/ookla-speedtest-{ver}-{tag}.tgz"
+# tag -> sha256 of the official v1.2.0 tarball (verified by download; the macOS +
+# linux-x86_64 values match the canonical teamookla Homebrew formula).
+SPEEDTEST_DOWNLOADS = {
+    "macosx-universal": "c9f8192149ebc88f8699998cecab1ce144144045907ece6f53cf50877f4de66f",
+    "linux-x86_64":     "5690596c54ff9bed63fa3732f818a05dbc2db19ad36ed68f21ca5f64d5cfeeb7",
+    "linux-aarch64":    "3953d231da3783e2bf8904b6dd72767c5c6e533e163d3742fd0437affa431bd3",
+}
 
 
-def speedtest_install_commands(manager, brew_path="brew"):
+def speedtest_asset_tag(platform, machine):
+    """Map (sys.platform, platform.machine()) -> a SPEEDTEST_DOWNLOADS tag, or
+    None for Windows (winget handles it) and unsupported arches. Pure."""
+    if platform == "darwin":
+        return "macosx-universal"   # universal binary covers Intel + Apple Silicon
+    if platform.startswith("linux"):
+        m = (machine or "").lower()
+        if m in ("x86_64", "amd64"):
+            return "linux-x86_64"
+        if m in ("aarch64", "arm64"):
+            return "linux-aarch64"
+    return None
+
+
+def speedtest_download_url(tag, ver=SPEEDTEST_VERSION):
+    return SPEEDTEST_URL_TMPL.format(ver=ver, tag=tag)
+
+
+def speedtest_install_commands(manager):
+    """Package-manager commands to install speedtest (Windows winget only). On
+    mac/Linux the install is a direct download — see install_speedtest_binary()."""
     if manager == "winget":
         return [["winget", "install", "--id", SPEEDTEST_WINGET_ID, "-e",
                  "--accept-package-agreements", "--accept-source-agreements"]]
-    if manager == "brew":
-        return [[brew_path, "tap", SPEEDTEST_BREW_TAP],
-                [brew_path, "install", SPEEDTEST_BREW_FORMULA]]
-    return []   # apt: Ookla needs its own repo -> manual_guide()
+    return []
 
 
-def speedtest_update_commands(manager, brew_path="brew"):
+def speedtest_update_commands(manager):
     if manager == "winget":
         return [["winget", "upgrade", "--id", SPEEDTEST_WINGET_ID, "-e",
                  "--accept-package-agreements", "--accept-source-agreements"]]
-    if manager == "brew":
-        return [[brew_path, "upgrade", SPEEDTEST_BREW_FORMULA]]
     return []
+
+
+def install_speedtest_binary(dest_dir, tag, opener=None, downloads=None):
+    """Download Ookla's CLI tarball for `tag`, verify its SHA-256 against the
+    pinned value, extract just the `speedtest` binary into dest_dir, and make it
+    executable. Returns the binary path. Raises on a checksum mismatch or an
+    unexpected archive layout. Pure-ish: `opener` (url -> bytes) is injectable for
+    tests; defaults to a stdlib HTTPS GET."""
+    import hashlib
+    import io
+    import tarfile
+    downloads = downloads or SPEEDTEST_DOWNLOADS
+    want = downloads[tag]
+    if opener is None:
+        import urllib.request
+        def opener(url):
+            with urllib.request.urlopen(url, timeout=60) as resp:  # nosec - pinned Ookla host, checksum-verified
+                return resp.read()
+    blob = opener(speedtest_download_url(tag))
+    got = hashlib.sha256(blob).hexdigest()
+    if got != want:
+        raise RuntimeError(
+            f"speedtest download checksum mismatch for {tag}: {got} != {want}")
+    os.makedirs(dest_dir, exist_ok=True)
+    binpath = os.path.join(dest_dir, SPEEDTEST_BIN_NAME)
+    with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tf:
+        member = tf.getmember(SPEEDTEST_BIN_NAME)   # KeyError if the layout ever changes
+        if not member.isfile():
+            raise RuntimeError("unexpected speedtest archive layout")
+        src = tf.extractfile(member)
+        with open(binpath, "wb") as out:
+            shutil.copyfileobj(src, out)
+    os.chmod(binpath, 0o755)
+    return binpath
 
 
 def pick_manager(platform, which=shutil.which):
@@ -132,14 +194,15 @@ def manual_guide(platform):
     if platform.startswith("win"):
         return ("Install manually with winget (one per line):\n"
                 + "\n".join(f"  winget install --id {WINGET_IDS[t]} -e" for t in TOOLS)
-                + f"\n  winget install --id {SPEEDTEST_WINGET_ID} -e   # optional: bandwidth speed test")
+                + f"\n  winget install --id {SPEEDTEST_WINGET_ID} -e   # bandwidth speed test")
     if platform == "darwin":
         return ("Install manually:  brew install yt-dlp streamlink ffmpeg deno\n"
-                "  optional bandwidth speed test:  brew tap teamookla/speedtest && brew install speedtest")
+                "  bandwidth speed test (Ookla CLI): download the macOS build from\n"
+                "  https://www.speedtest.net/apps/cli and put `speedtest` on your PATH")
     return ("Install manually:  sudo apt-get install -y yt-dlp streamlink ffmpeg\n"
             "deno has no apt package — see https://docs.deno.com/runtime/getting_started/installation/\n"
-            "optional bandwidth speed test (Ookla speedtest CLI) — needs Ookla's apt repo:\n"
-            "  see https://www.speedtest.net/apps/cli\n"
+            "bandwidth speed test (Ookla CLI): download the Linux build from\n"
+            "  https://www.speedtest.net/apps/cli and put `speedtest` on your PATH\n"
             "NOTE: apt's yt-dlp lags upstream; for a current build: pip install -U yt-dlp")
 
 
@@ -189,14 +252,23 @@ def main():
     ap.add_argument("--update", action="store_true",
                     help="also upgrade the already-installed tools to their "
                          "latest versions (recommended before every event)")
+    ap.add_argument("--runtime-dir", default=None,
+                    help="base runtime dir for the managed speedtest binary "
+                         "(default: the project runtime dir)")
     a = ap.parse_args()
 
+    import platform as _platform
+    import speedtest as st
+    runtime_dir = a.runtime_dir or st.default_runtime_dir(
+        os.path.dirname(os.path.abspath(__file__)))
+
     missing = missing_tools(which=_which_with_fresh_path(windows_fresh_path()))
-    # The optional Ookla speedtest CLI is provisioned here too — so a setup whose
-    # core tools are already present can still get it by running install-tools.
-    speedtest_missing = shutil.which(SPEEDTEST_BIN_NAME) is None
+    # speedtest is provisioned here too — a setup whose core tools are already
+    # present can still get it. find_binary() looks on PATH (winget) AND in the
+    # managed bin dir (the mac/Linux direct download).
+    speedtest_missing = st.find_binary(runtime_dir) is None
     if not missing and not speedtest_missing and not a.update:
-        print("All external tools already installed:", ", ".join(TOOLS))
+        print("All external tools already installed:", ", ".join(TOOLS) + ", speedtest")
         print("  (run `racecast install-tools --update` to upgrade them)")
         _note_new_terminal()
         return
@@ -223,23 +295,39 @@ def main():
             print("Updating installed tools:", ", ".join(present))
             cmds += update_commands(manager, present, brew_path=brew or "brew")
     cmds += install_commands(manager, missing, brew_path=brew or "brew")
-    # Optional Ookla speedtest CLI (opt-in feature; best-effort, never blocks the core tools).
-    if shutil.which(SPEEDTEST_BIN_NAME) is None:
-        cmds += speedtest_install_commands(manager, brew_path=brew or "brew")
-    elif a.update:
-        cmds += speedtest_update_commands(manager, brew_path=brew or "brew")
+    # speedtest on Windows is a winget package; mac/Linux is a direct download
+    # (handled after the command loop). Best-effort, never blocks the core tools.
+    if manager == "winget":
+        if speedtest_missing:
+            cmds += speedtest_install_commands("winget")
+        elif a.update:
+            cmds += speedtest_update_commands("winget")
 
     failed = []
     for cmd in cmds:
         print("Running:", " ".join(cmd))
         if not _common().install_exit_ok(manager, subprocess.call(cmd)):
             failed.append(" ".join(cmd))
+
+    # speedtest direct download (macOS/Linux) — a pinned, SHA-256-verified Ookla
+    # binary extracted into the managed bin dir. Windows got it via winget above.
+    if manager != "winget" and (speedtest_missing or a.update):
+        tag = speedtest_asset_tag(sys.platform, _platform.machine())
+        if tag is None:
+            print("NOTE: no prebuilt Ookla speedtest CLI for this OS/arch — see")
+            print("      https://www.speedtest.net/apps/cli")
+        else:
+            dest = st.managed_bin_dir(runtime_dir)
+            print(f"Installing Ookla speedtest CLI v{SPEEDTEST_VERSION} -> {dest} ...")
+            try:
+                install_speedtest_binary(dest, tag)
+                print("  speedtest installed.")
+            except Exception as exc:   # network/checksum/extract — report, don't crash
+                failed.append(f"speedtest download ({exc})")
+
     if manager == "apt" and "deno" in missing:
         print("NOTE: deno is not packaged for apt — install it manually:")
         print("  https://docs.deno.com/runtime/getting_started/installation/")
-    if manager == "apt" and speedtest_missing:
-        print("NOTE: the Ookla speedtest CLI is not in apt — install it manually if you")
-        print("      want `racecast speedtest`:  https://www.speedtest.net/apps/cli")
     if manager == "winget":
         # The installs just changed the registry PATH — re-read it for the check.
         still = missing_tools(which=_which_with_fresh_path(windows_fresh_path()))

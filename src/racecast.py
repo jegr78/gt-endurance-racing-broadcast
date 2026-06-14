@@ -1882,8 +1882,9 @@ ONESHOT_MAP = {
 
 # Forward --runtime-dir only to one-shot scripts whose argparse defines it.
 # Verified against each script: preflight.py + get-cookies.py accept it; get-graphics.py
-# and get-media.py (they use --out) and setup-assets.py do not.
-RUNTIME_DIR_ONESHOTS = ("preflight", "speedtest", "cookies")
+# and get-media.py (they use --out) and setup-assets.py do not. install-tools takes it
+# for the machine-level managed speedtest bin dir (<runtime>/bin).
+RUNTIME_DIR_ONESHOTS = ("preflight", "speedtest", "cookies", "install-tools")
 
 
 def _cookies_oneshot_args(rest):
@@ -3059,6 +3060,14 @@ def tools_status_data(which=None, version=None):
             present = bool(which(name))
             tools.append({"name": name, "installed": present,
                           "version": version(name) if present else None})
+        # speedtest is a first-class tool in the overview, but resolved via its own
+        # finder (PATH or the managed bin dir) and never gates readiness.
+        import speedtest as st
+        st_bin = st.find_binary(_runtime_base_dir(), which)
+        # Version is best-effort via the shared provider (resolves on PATH); a
+        # managed-dir install still shows installed even without a version string.
+        tools.append({"name": "speedtest", "installed": bool(st_bin),
+                      "version": version("speedtest") if st_bin else None})
         return {"ok": True, "tools": tools}
     except Exception as exc:
         return {"ok": False, "error": f"tool check failed: {exc}"}

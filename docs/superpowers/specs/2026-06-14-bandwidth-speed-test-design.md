@@ -1,7 +1,44 @@
 # Bandwidth speed test (opt-in) + preflight indicator
 
+> **Revision 2026-06-15 (after hands-on testing — install path):** The original
+> install design (§ "Decision 1": Ookla via winget/brew-tap/apt) failed in real
+> testing on macOS: current Homebrew (6.0.1) refuses third-party taps as
+> "untrusted" (`HOMEBREW_REQUIRE_TAP_TRUST`), so `brew tap teamookla/speedtest`
+> no longer installs out of the box — and that affects *every* producer, not one
+> machine. The producer also found that the tool was **invisible** in the Control
+> Center Tools overview (we had kept it out of `TOOLS`). Decision, agreed with the
+> producer: speedtest is a **first-class, out-of-the-box tool**.
+>
+> - **Install = hybrid.** Windows keeps **winget** (`Ookla.Speedtest.CLI`,
+>   first-party, easy `winget upgrade`). macOS + Linux switch to a **direct
+>   download** of Ookla's official CLI tarball, **version-pinned + SHA-256
+>   verified**, extracted into a racecast-managed bin dir. One trust-free
+>   mechanism, works on Linux too (resolves [[linux-install-deferred]] for this
+>   tool), no supply-chain trust bypass in the installer.
+>   - Pinned: **v1.2.0**. `macosx-universal`
+>     `c9f8192149ebc88f8699998cecab1ce144144045907ece6f53cf50877f4de66f`;
+>     `linux-x86_64`
+>     `5690596c54ff9bed63fa3732f818a05dbc2db19ad36ed68f21ca5f64d5cfeeb7`;
+>     `linux-aarch64`
+>     `3953d231da3783e2bf8904b6dd72767c5c6e533e163d3742fd0437affa431bd3`.
+>     URL scheme `https://install.speedtest.net/app/cli/ookla-speedtest-<ver>-<tag>.tgz`;
+>     each tarball holds the `speedtest` binary (+ `.md`/`.5` we ignore).
+>   - **Managed bin dir** `<runtime-base>/bin/speedtest`. A single resolver
+>     `speedtest.find_binary(runtime_dir, which)` checks PATH first (winget/manual
+>     installs), then the managed dir — used by `run()`, the Tools overview, and
+>     preflight. Updates on mac/Linux = bump the pinned version in a racecast
+>     release; `install-tools --update` re-pulls it.
+> - **Visibility.** speedtest now shows in the Control Center **Tools overview**
+>   as its own row and is installed by **"Install all"** — but it stays **out of
+>   the readiness `TOOLS`/`REQUIRED_TOOLS` tuples**, so its absence still never
+>   FAILs preflight (the no-FAIL invariant from Decision 4 holds).
+>
+> This supersedes §3 ("install-tools learns Ookla") and plan Task 7 below; the
+> rest of the design (module, CLI, preflight indicator, UI card, history, docs)
+> is unchanged. See [[speedtest-must-be-first-class]].
+
 **Date:** 2026-06-14
-**Status:** Approved — ready for implementation
+**Status:** Approved — ready for implementation (install path revised 2026-06-15)
 **Issue:** #131 (UI & CLI: Bandwidth speed test option)
 **Area:** new module (`src/scripts/speedtest.py`), preflight
 (`src/scripts/preflight.py`), CLI (`src/racecast.py`), install-tools

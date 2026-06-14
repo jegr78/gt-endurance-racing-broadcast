@@ -67,10 +67,11 @@ minimum, or when the measurement is older than `RACECAST_SPEEDTEST_MAX_AGE_DAYS`
 so treat it as a *capability* check; the true under-load picture is OBS's live
 stats while streaming.
 
-The speed test uses the **Ookla Speedtest CLI** (`racecast install-tools` installs
-it on Windows/macOS; on Linux see <https://www.speedtest.net/apps/cli>). Ookla is
-closed-source and each run sends its result to Ookla — the same data egress as
-running speedtest.net in a browser.
+The speed test uses the **Ookla Speedtest CLI**, installed out-of-the-box by
+`racecast install-tools` (and the Control Center's **Install all** button) on all
+three platforms — winget on Windows, a pinned + checksum-verified direct download
+on macOS and Linux. Ookla is closed-source and each run sends its result to Ookla
+— the same data egress as running speedtest.net in a browser.
 
 ### Levers if your line is tight
 

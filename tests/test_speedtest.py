@@ -101,6 +101,32 @@ def t_history_skips_corrupt_lines():
     assert m.load_latest(d)["ts"] == 2
 
 
+def t_find_binary_prefers_path():
+    assert m.find_binary("/any", which=lambda n: "/usr/bin/speedtest") == "/usr/bin/speedtest"
+
+
+def t_find_binary_falls_back_to_managed_dir():
+    import os as _os
+    import tempfile
+    d = tempfile.mkdtemp()
+    bindir = m.managed_bin_dir(d)
+    _os.makedirs(bindir)
+    binpath = _os.path.join(bindir, "speedtest")
+    with open(binpath, "w") as fh:
+        fh.write("x")
+    assert m.find_binary(d, which=lambda n: None) == binpath
+
+
+def t_find_binary_none_when_nowhere():
+    import tempfile
+    assert m.find_binary(tempfile.mkdtemp(), which=lambda n: None) is None
+
+
+def t_run_argv_accepts_explicit_binary():
+    assert m.run_argv("/opt/x/speedtest")[0] == "/opt/x/speedtest"
+    assert m.run_argv()[0] == "speedtest"   # default unchanged
+
+
 NOW = 1_000_000           # fixed clock
 DAY = 86_400
 
