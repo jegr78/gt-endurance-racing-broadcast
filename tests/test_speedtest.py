@@ -101,6 +101,49 @@ def t_history_skips_corrupt_lines():
     assert m.load_latest(d)["ts"] == 2
 
 
+NOW = 1_000_000           # fixed clock
+DAY = 86_400
+
+
+def t_classify_none_is_info():
+    r = m.classify(None, now=NOW)
+    assert r.level == pf.INFO and r.name == "bandwidth"
+    assert "racecast speedtest" in r.detail
+
+
+def t_classify_below_minimum_is_warn():
+    r = m.classify(_rec(NOW, dl=20.0, ul=8.0), now=NOW)
+    assert r.level == pf.WARN and "minimum" in r.detail
+
+
+def t_classify_worse_side_governs():
+    # download fine, upload below minimum -> WARN
+    r = m.classify(_rec(NOW, dl=80.0, ul=8.0), now=NOW)
+    assert r.level == pf.WARN
+
+
+def t_classify_between_min_and_recommended_is_warn():
+    r = m.classify(_rec(NOW, dl=48.0, ul=22.0), now=NOW)
+    assert r.level == pf.WARN and "recommended" in r.detail
+
+
+def t_classify_at_or_above_recommended_is_pass():
+    r = m.classify(_rec(NOW, dl=55.0, ul=25.0), now=NOW)
+    assert r.level == pf.PASS
+
+
+def t_classify_stale_is_warn_regardless_of_value():
+    old = _rec(NOW - 10 * DAY, dl=200.0, ul=100.0)   # great numbers, but 10 days old
+    r = m.classify(old, now=NOW, max_age_days=7)
+    assert r.level == pf.WARN and "stale" in r.detail
+
+
+def t_default_runtime_dir_repo_layout():
+    repo = os.path.join("X", "src", "scripts")
+    assert m.default_runtime_dir(repo) == os.path.join("X", "runtime")
+    assert m.default_runtime_dir("/some/dist/scripts") == "/some/dist/scripts"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

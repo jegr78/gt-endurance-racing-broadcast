@@ -117,3 +117,60 @@ def append_record(record, runtime_dir):
         for rec in kept:
             fh.write(json.dumps(rec) + "\n")
     return record
+
+
+def _fmt_age(age_days):
+    if age_days < 1 / 24:
+        return "just now"
+    if age_days < 1:
+        return f"{int(age_days * 24)} h ago"
+    return f"{int(age_days)} d ago"
+
+
+def _summary(record, age_days):
+    parts = [f"↓{record.get('download_mbps', 0.0):.1f} "
+             f"↑{record.get('upload_mbps', 0.0):.1f} Mbps",
+             f"measured {_fmt_age(age_days)}"]
+    if record.get("server"):
+        parts.append(record["server"])
+    if record.get("isp"):
+        parts.append(record["isp"])
+    return " · ".join(parts)
+
+
+def classify(record, now, max_age_days=DEFAULT_MAX_AGE_DAYS):
+    """Latest record -> a preflight.Result. Below-minimum and stale both WARN
+    (never FAIL); the worse of download/upload governs the level."""
+    if not record:
+        return Result(INFO, "bandwidth",
+                      "not measured yet — run `racecast speedtest` "
+                      "(or the Control Center's Speed test button)")
+    dl = record.get("download_mbps", 0.0)
+    ul = record.get("upload_mbps", 0.0)
+    age = max(0.0, (now - record.get("ts", now)) / 86_400.0)
+    where = _summary(record, age)
+    if age > max_age_days:
+        return Result(WARN, "bandwidth",
+                      f"{where} — stale (older than {int(max_age_days)} d); "
+                      "re-measure before the event")
+    if dl < MIN_DOWN_MBPS or ul < MIN_UP_MBPS:
+        return Result(WARN, "bandwidth",
+                      f"{where} — below the {MIN_DOWN_MBPS:.0f}/{MIN_UP_MBPS:.0f} "
+                      "Mbps minimum")
+    if dl < REC_DOWN_MBPS or ul < REC_UP_MBPS:
+        return Result(WARN, "bandwidth",
+                      f"{where} — meets the minimum, below the "
+                      f"{REC_DOWN_MBPS:.0f}/{REC_UP_MBPS:.0f} Mbps recommended")
+    return Result(PASS, "bandwidth",
+                  f"{where} — meets the recommended "
+                  f"{REC_DOWN_MBPS:.0f}/{REC_UP_MBPS:.0f} Mbps")
+
+
+def default_runtime_dir(here):
+    """Match the relay/get-cookies helper: repo layout (src/scripts/) ->
+    <repo>/runtime ; distributed package (scripts/) -> here. Only used for a
+    standalone `python3 speedtest.py` run; the CLI passes --runtime-dir."""
+    if os.path.basename(here) == "scripts" and \
+            os.path.basename(os.path.dirname(here)) == "src":
+        return os.path.join(os.path.dirname(os.path.dirname(here)), "runtime")
+    return here
