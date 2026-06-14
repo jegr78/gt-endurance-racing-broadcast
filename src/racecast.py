@@ -568,7 +568,7 @@ def _relay_runtime_args():
 RELAY_PORT = 8088
 
 # The relay-served pages OBS renders as browser sources (panel is tablet-only).
-# The two override.css are hashed too, so a per-profile CSS edit advances the
+# The override.css is hashed too, so a per-profile CSS edit advances the
 # staleness gate and triggers an OBS browser-source refresh.
 OBS_PAGE_PATHS = ("/hud", "/hud/override.css")
 
@@ -1045,7 +1045,7 @@ def _obs_pages_hash_path():
 
 
 def _refresh_obs_pages(force=False, wait=0):
-    """Refresh the relay-served OBS browser sources (HUD + race timer) when
+    """Refresh the relay-served OBS browser sources (HUD, which includes the race timer) when
     the pages changed since the last successful refresh — replaces the manual
     right-click → 'Refresh cache of current page' (OBS's CEF caches the page
     JS until then; a producer updating the package must never go on air with
