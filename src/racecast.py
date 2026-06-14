@@ -11,7 +11,7 @@
   racecast event start --stint N             # takeover: stint N is on air now — the relay starts there
   racecast event start --qualifying          # bring up in qualifying mode (Feed A serves the Qualifying tab)
   racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
-  racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD/timer)
+  racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD incl. timer)
   racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
   racecast app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
   racecast status                            # aggregate health of all services
@@ -570,7 +570,7 @@ RELAY_PORT = 8088
 # The relay-served pages OBS renders as browser sources (panel is tablet-only).
 # The two override.css are hashed too, so a per-profile CSS edit advances the
 # staleness gate and triggers an OBS browser-source refresh.
-OBS_PAGE_PATHS = ("/hud", "/timer", "/hud/override.css", "/timer/override.css")
+OBS_PAGE_PATHS = ("/hud", "/hud/override.css")
 
 
 def _fetch_relay_page(path):
@@ -583,7 +583,7 @@ def served_pages_hash(fetch=None, paths=OBS_PAGE_PATHS):
     """SHA-256 over the page bytes the relay actually serves to OBS. Hashing
     what OBS would load (not the files on disk) means a still-running OLD
     relay can never advance the staleness gate past pages OBS has not seen.
-    None when any page cannot be fetched (relay down, --no-hud/--no-timer)."""
+    None when any page cannot be fetched (relay down, --no-hud)."""
     fetch = fetch or _fetch_relay_page
     h = hashlib.sha256()
     for path in paths:
@@ -1059,7 +1059,7 @@ def _refresh_obs_pages(force=False, wait=0):
     served = served_pages_hash()
     decision = refresh_decision(served, read_pages_hash(_obs_pages_hash_path()), force)
     if decision == "skip-no-pages":
-        print("obs: page refresh skipped — could not read /hud + /timer from the relay.")
+        print("obs: page refresh skipped — could not read /hud from the relay.")
         return
     if decision == "skip-unchanged":
         return                              # unchanged pages -> no on-air flicker
@@ -2427,7 +2427,7 @@ def _active_profile_overlay_path(page):
     """(active, abs path to overlay/<page>.css) for the active profile, or
     (None, None) when no profile resolves or `page` is not an overlay page.
     Server-resolved; never a client path. Mirrors _active_profile_env_strict."""
-    if page not in ("hud", "timer"):
+    if page != "hud":
         return None, None
     active = _active_profile_name()
     if not active:
@@ -2487,7 +2487,7 @@ def _atomic_write_text(path, text):
 
 def _overlay_base_html(page):
     """Text of the base overlay page (src/obs/<page>.html), or '' on error."""
-    if page not in ("hud", "timer"):
+    if page != "hud":
         return ""
     try:
         with open(resource_path(f"obs/{page}.html"), encoding="utf-8") as fh:
