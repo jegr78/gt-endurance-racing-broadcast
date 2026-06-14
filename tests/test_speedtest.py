@@ -144,6 +144,51 @@ def t_default_runtime_dir_repo_layout():
     assert m.default_runtime_dir("/some/dist/scripts") == "/some/dist/scripts"
 
 
+def t_run_raises_when_binary_missing():
+    try:
+        m.run(now=NOW, runtime_dir="/tmp/nope", which=lambda n: None)
+    except m.SpeedtestUnavailable as exc:
+        assert "install-tools" in str(exc)
+        return
+    raise AssertionError("expected SpeedtestUnavailable")
+
+
+def t_run_parses_and_appends(tmp=None):
+    import tempfile
+    d = tempfile.mkdtemp()
+
+    class _Proc:
+        returncode = 0
+        stdout = OOKLA_JSON
+        stderr = ""
+
+    rec = m.run(now=NOW, runtime_dir=d,
+                runner=lambda *a, **k: _Proc(), which=lambda n: "/usr/bin/speedtest")
+    assert rec["download_mbps"] == 48.0
+    assert m.load_latest(d)["ts"] == NOW           # persisted
+
+
+def t_run_raises_on_nonzero_exit():
+    class _Proc:
+        returncode = 1
+        stdout = ""
+        stderr = "Configuration - Could not retrieve"
+    try:
+        m.run(now=NOW, runtime_dir="/tmp/x",
+              runner=lambda *a, **k: _Proc(), which=lambda n: "/usr/bin/speedtest")
+    except m.SpeedtestFailed:
+        return
+    raise AssertionError("expected SpeedtestFailed")
+
+
+def t_render_contains_key_lines():
+    rec = m.parse_result(OOKLA_JSON, now=NOW)
+    text = m.render(rec, now=NOW)
+    assert "Download  48.0 Mbps" in text
+    assert "Upload    22.0 Mbps" in text
+    assert "speedtest.net/result" in text
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

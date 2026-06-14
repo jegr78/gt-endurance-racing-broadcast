@@ -174,3 +174,76 @@ def default_runtime_dir(here):
             os.path.basename(os.path.dirname(here)) == "src":
         return os.path.join(os.path.dirname(os.path.dirname(here)), "runtime")
     return here
+
+
+def run(now, runtime_dir, runner=subprocess.run, which=shutil.which):
+    """Run one measurement, append it to the history, and return the record.
+    Raises SpeedtestUnavailable (binary missing) or SpeedtestFailed (run error)."""
+    if which(SPEEDTEST_BIN) is None:
+        raise SpeedtestUnavailable(
+            "Ookla speedtest CLI not found — run `racecast install-tools` "
+            "(or install it manually).")
+    proc = runner(run_argv(), capture_output=True, text=True)
+    out = (getattr(proc, "stdout", "") or "").strip()
+    if getattr(proc, "returncode", 1) != 0 or not out:
+        err = (getattr(proc, "stderr", "") or "").strip() or "no output"
+        raise SpeedtestFailed(f"speedtest did not complete (no internet?): {err}")
+    record = parse_result(out, now)
+    append_record(record, runtime_dir)
+    return record
+
+
+def render(record, now):
+    """Human-readable summary for the CLI."""
+    c = classify(record, now)
+    lines = ["Bandwidth speed test (Ookla)",
+             f"  Download  {record['download_mbps']:.1f} Mbps   "
+             f"(min {MIN_DOWN_MBPS:.0f} / rec {REC_DOWN_MBPS:.0f})",
+             f"  Upload    {record['upload_mbps']:.1f} Mbps   "
+             f"(min {MIN_UP_MBPS:.0f} / rec {REC_UP_MBPS:.0f})"]
+    if record.get("ping_ms") is not None:
+        extra = f"  Ping      {record['ping_ms']:.0f} ms"
+        if record.get("jitter_ms") is not None:
+            extra += f" · jitter {record['jitter_ms']:.0f} ms"
+        if record.get("packet_loss") is not None:
+            extra += f" · loss {record['packet_loss']:.0f}%"
+        lines.append(extra)
+    if record.get("server"):
+        lines.append(f"  Server    {record['server']}")
+    if record.get("isp"):
+        lines.append(f"  ISP       {record['isp']}")
+    if record.get("result_url"):
+        lines.append(f"  Result    {record['result_url']}")
+    lines.append(f"  => {c.level}: {c.detail}")
+    return "\n".join(lines)
+
+
+def main(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(
+        prog="speedtest",
+        description="Opt-in Ookla bandwidth speed test; logs the result locally.")
+    ap.add_argument("--runtime-dir", default=None,
+                    help="Directory holding speedtest-history.jsonl "
+                         "(default: the project runtime dir).")
+    ap.add_argument("--json", action="store_true",
+                    help="Print the stored record as JSON instead of a summary.")
+    a = ap.parse_args(argv)
+    runtime_dir = a.runtime_dir or default_runtime_dir(
+        os.path.dirname(os.path.abspath(__file__)))
+    print("Running Ookla speed test — this takes ~20–30 s…")
+    try:
+        rec = run(time.time(), runtime_dir)
+    except SpeedtestUnavailable as exc:
+        print(str(exc))
+        return 2
+    except SpeedtestFailed as exc:
+        print(str(exc))
+        return 1
+    print(json.dumps(rec, indent=2) if a.json else render(rec, time.time()))
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())
