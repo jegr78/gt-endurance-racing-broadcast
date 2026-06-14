@@ -1925,6 +1925,15 @@ class Relay:
         """Which feed will be on air after the next /next: the one NOT advanced."""
         return "B" if self.live_feed() == "A" else "A"
 
+    def splitscreen_state(self):
+        """State for the /splitscreen overlay. Feed A is always the Splitscreen
+        scene's left half, Feed B the right; the overlay labels the on-air feed
+        CURRENT and the other NEXT. In qualifying mode only Feed A is used, so
+        NEXT is hidden (next_active False)."""
+        return {"current": self.live_feed(),
+                "next_active": self.mode != "qualifying",
+                "mode": self.mode}
+
     def live_schedule_row(self):
         """{"streamer", "stint"} for the stint the on-air feed is serving now, or
         None when it idles past the schedule end. Drives the handover HUD

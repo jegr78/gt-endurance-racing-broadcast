@@ -258,6 +258,19 @@ def t_next_past_end_is_idle_no_cut():
     assert out["obs_cut"] is False              # incoming feed idle -> no cut, no crash
 
 
+def t_splitscreen_state_maps_live_feed_to_current():
+    r = _relay(["s1", "s2", "s3", "s4"])
+    assert r.splitscreen_state() == {"current": "A", "next_active": True, "mode": "race"}
+    r.next_auto()                                  # B becomes the on-air feed
+    assert r.splitscreen_state()["current"] == "B"
+
+
+def t_splitscreen_state_hides_next_in_qualifying():
+    r = _relay_q(["s1", "s2"], ["q1"], mode="qualifying")
+    st = r.splitscreen_state()
+    assert st == {"current": "A", "next_active": False, "mode": "qualifying"}
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
