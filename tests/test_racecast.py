@@ -1080,6 +1080,46 @@ def t_overlay_layout_read_migrates_handwritten_css():
         assert r["layout"]["slots"] == {}
 
 
+def t_overlay_layout_folds_legacy_timer_css():
+    import tempfile, json as _json
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        od = os.path.join(td, "profiles", "demo", "overlay")
+        os.makedirs(od)
+        # Write a layout-hud.json so migration path is skipped (we test the fold path)
+        with open(os.path.join(od, "layout-hud.json"), "w", encoding="utf-8") as fh:
+            _json.dump({"page": "hud", "slots": {}, "fonts": [], "customCss": ""}, fh)
+        # Write a real timer.css with actual CSS rules
+        with open(os.path.join(od, "timer.css"), "w", encoding="utf-8") as fh:
+            fh.write("#clock { color: #f4f4f4; }")
+        try:
+            d = m.overlay_layout_read_data("hud")
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert d["ok"] is True
+        assert "#clock { color: #f4f4f4; }" in (d["layout"].get("customCss") or "")
+
+
+def t_overlay_layout_ignores_comment_only_timer_css():
+    import tempfile, json as _json
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        od = os.path.join(td, "profiles", "demo", "overlay")
+        os.makedirs(od)
+        # Write a layout-hud.json
+        with open(os.path.join(od, "layout-hud.json"), "w", encoding="utf-8") as fh:
+            _json.dump({"page": "hud", "slots": {}, "fonts": [], "customCss": ""}, fh)
+        # Write a comment-only timer.css (default scaffold — no real rules)
+        with open(os.path.join(od, "timer.css"), "w", encoding="utf-8") as fh:
+            fh.write("/* just the template, no rules */\n")
+        try:
+            d = m.overlay_layout_read_data("hud")
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert d["ok"] is True
+        assert "template" not in (d["layout"].get("customCss") or "")
+
+
 def t_overlay_layout_write_rejects_unknown_page():
     assert m.overlay_layout_write_data("panel", {"page": "panel"})["ok"] is False
 

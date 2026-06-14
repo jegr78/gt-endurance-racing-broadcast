@@ -2504,6 +2504,11 @@ def _overlay_layout_path(page):
     return active, os.path.join(os.path.dirname(css_path), f"layout-{page}.json")
 
 
+def _css_has_rules(text):
+    """True if `text` has real CSS once comments + whitespace are stripped."""
+    return bool(re.sub(r"/\*.*?\*/", "", text or "", flags=re.S).strip())
+
+
 def overlay_slots_data(page):
     """The base page's editable slots + base <style> + slot markup + sample data,
     so the Control Center renders a same-origin WYSIWYG canvas.
@@ -2533,18 +2538,36 @@ def overlay_layout_read_data(page):
         if os.path.exists(lpath):
             with open(lpath, encoding="utf-8") as fh:
                 layout = json.load(fh)
-            return {"ok": True, "page": page, "active": active,
-                    "layout": layout, "migrated": False}
-        _, css_path = _active_profile_overlay_path(page)
-        existing = ""
-        if os.path.exists(css_path):
-            with open(css_path, encoding="utf-8") as fh:
-                existing = fh.read()
-        migrated = bool(existing.strip())
-        layout = (ob.migrate_layout(page, existing) if migrated
-                  else ob.empty_layout(page))
-        return {"ok": True, "page": page, "active": active,
-                "layout": layout, "migrated": migrated}
+            result = {"ok": True, "page": page, "active": active,
+                      "layout": layout, "migrated": False}
+        else:
+            _, css_path = _active_profile_overlay_path(page)
+            existing = ""
+            if os.path.exists(css_path):
+                with open(css_path, encoding="utf-8") as fh:
+                    existing = fh.read()
+            migrated = bool(existing.strip())
+            layout = (ob.migrate_layout(page, existing) if migrated
+                      else ob.empty_layout(page))
+            result = {"ok": True, "page": page, "active": active,
+                      "layout": layout, "migrated": migrated}
+        # Fold a legacy timer.css into the HUD layout's customCss so a
+        # league's timer styling is not silently dropped after the timer→HUD merge.
+        # A comment-only scaffold is ignored.
+        if page == "hud":
+            _, css_path2 = _active_profile_overlay_path("hud")
+            if css_path2:
+                timer_css = os.path.join(os.path.dirname(css_path2), "timer.css")
+                if os.path.exists(timer_css):
+                    with open(timer_css, encoding="utf-8") as fh:
+                        legacy = fh.read()
+                    cur = layout.get("customCss") or ""
+                    if _css_has_rules(legacy) and legacy.strip() not in cur:
+                        layout["customCss"] = (cur + ("\n" if cur else "")
+                                               + "/* merged from legacy timer.css */\n"
+                                               + legacy)
+                        result["migrated"] = True
+        return result
     except Exception as exc:
         return {"ok": False, "error": f"could not read overlay layout: {exc}"}
 
