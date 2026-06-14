@@ -111,6 +111,12 @@ def build_target(launcher, workdir, version_file, sep, entry, name, windowed):
     # + .env.example, and `racecast update` swaps just the binary). See issue #45.
     cmd += ["--add-data",
             f"{os.path.join(ROOT, 'profiles', 'example')}{sep}profiles/example"]
+    # fonts.zip carries the curated overlay-font set; racecast.ensure_bundled_fonts()
+    # extracts it into runtime/fonts/ on first start. Bundled to the _MEIPASS root,
+    # so it travels INSIDE the binary and survives `racecast update` (binary-only swap).
+    fonts_zip = os.path.join(ROOT, "fonts.zip")
+    if os.path.isfile(fonts_zip):
+        cmd += ["--add-data", f"{fonts_zip}{sep}."]
     cmd.append(os.path.join(SRC, entry))
     print("Running:", " ".join(cmd), flush=True)
     if subprocess.call(cmd) != 0:
@@ -136,6 +142,12 @@ def main():
     with open(version_file, "w", encoding="utf-8") as fh:
         fh.write(a.version + "\n")
     sep = ";" if os.name == "nt" else ":"
+    fonts_zip = os.path.join(ROOT, "fonts.zip")
+    if not os.path.isfile(fonts_zip):
+        print("fonts.zip missing — fetching the curated overlay-font set…", flush=True)
+        if subprocess.call([sys.executable, os.path.join(ROOT, "tools", "fetch-fonts.py"),
+                            "--version", a.version]) != 0:
+            sys.exit("fetch-fonts failed (network?) — cannot bundle overlay fonts.")
     rc_bin = build_target(launcher, workdir, version_file, sep,
                            "racecast.py", "racecast", windowed=False)
     ui_bin = build_target(launcher, workdir, version_file, sep,
