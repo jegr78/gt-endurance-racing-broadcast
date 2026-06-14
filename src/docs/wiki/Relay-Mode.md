@@ -177,33 +177,24 @@ flag with `python3 tools/fetch-flags.py` (fetches only what is missing). Flags:
 
 ## Driver-POV PiP (optional)
 
-Show an ad-hoc driver POV as a small picture-in-picture (bottom-right) over the active
-feed in the **Stint** scene. Pulled by a third relay feed on port **53003** (capped at
-720p), independent of the A/B ping-pong.
+A third relay feed on port **53003** (capped at 720p), independent of the A/B ping-pong,
+serves an ad-hoc driver POV as a small picture-in-picture (bottom-right) over the active
+feed in the **Stint** scene. The driver's live **watch URL** comes from the Google Sheet
+tab **`POV`** (row 2; columns `url` and `name`, where `name` is an optional on-screen
+label ≤20 chars — empty `url` = POV off), set there directly or from the panel's POV row.
 
-1. **Schedule it:** put the driver's live **watch URL** into the Google Sheet tab
-   **`POV`** (row 2). The tab has two columns, `url` and `name`; `name` is a free-text
-   on-screen label for the box (≤20 chars, optional). Empty `url` = POV off.
-2. **Pull it:** press **POV Reload** → the relay resolves + serves it on 53003 (still
-   hidden). `/status` shows the `pov` block (`state: serving`).
-3. **Show it:** press **POV Toggle** — a **relay action** (`/pov/toggle`): the relay
-   flips its `pov_shown` state, shows/hides the `Feed POV` PiP in OBS (best-effort),
-   and the HUD POV box (frame + name) follows it on screen.
-4. **Audio:** muted by default; **MUTE POV** toggles mute, **VOL POV UP / VOL POV DOWN** adjust
-   volume (use briefly).
-5. **Done:** **POV Toggle** to hide, then **POV Stop** (frees the pull / bandwidth).
+The relay resolves and serves it on **POV Reload** (`/pov/reload`); `/status` reports the
+`pov` block (`state: connecting` while resolving or waiting for the driver, `serving`
+once ready). **POV Toggle** (`/pov/toggle`) is a **relay action**: it flips the relay's
+`pov_shown` state, shows/hides the `Feed POV` PiP in OBS (best-effort), and the HUD POV
+box (frame + name) follows it. The PiP lives only in the Stint scene, so switching to
+Splitscreen/Interview/Standby auto-hides and auto-silences it; audio is muted by default.
 
-> **Lead time:** the PiP is not instant. After **POV Reload** the relay needs ~10–30 s
-> to resolve and start serving a live stream — and while the driver is **not live yet**
-> it just retries every 15 s (`/status` shows `state: connecting`). Only press
-> **POV Toggle** once `/status` reports `state: serving`; OBS then takes a few more
-> seconds to connect on first show. Plan roughly **5 minutes** from "driver starts
-> streaming" to "PiP on air". Operator walkthrough:
-> [Director guide](Director#showing-a-driver-pov-plan-ahead).
-
-Two rules: **Reload before Toggle (show)**, and **hide + POV Stop when done**. The PiP
-lives only in the Stint scene, so switching to Splitscreen/Interview/Standby auto-hides
-and auto-silences it.
+**Lead time:** the PiP is not instant — plan roughly **5 minutes** from "driver starts
+streaming" to "PiP on air" (resolve ~10–30 s, plus the 15 s retry loop while the driver
+isn't live yet, plus OBS connecting on first show). The operator walkthrough — including
+the order of the button presses — is in the
+[Director guide](Director#showing-a-driver-pov-plan-ahead).
 
 ---
 

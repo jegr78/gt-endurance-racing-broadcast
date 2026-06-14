@@ -9,8 +9,11 @@ about 5 minutes. From there you have two ways to drive the show:
 
 ## Panel or Companion buttons?
 
-Both control the same broadcast — which one your crew uses is a team call,
-not a rule. The practical differences:
+Both control the same broadcast. The **director panel** is the primary surface —
+one page with every control, plus the Schedule/POV/chat editors, live status and
+health warnings; the **Companion buttons** are a hardware-style alternative (the
+same layout a Stream Deck uses) for those who prefer large physical buttons. The
+practical differences:
 
 | | Director panel (`…:8088/panel`) | Companion buttons (`…:8000/tablet`) |
 |---|---|---|
@@ -24,11 +27,13 @@ Open `http://<producer-tailscale-ip>:8088/panel`. The page is organized as
 horizontal busses; the Stream Deck pages and the panel share one muscle
 memory:
 
+![The director panel — the whole show on one page: the PGM, FEEDS, HUD, SCN·VIS, GFX, TIMER and AUDIO busses, a status strip, and the collapsible URLs / Qualifying / Chat sections](images/director-panel.png)
+
 | Bus | What's on it |
 |---|---|
 | **PGM** | one-press program looks — `STINT A/B`, `SPLIT`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO`, `RED FLAG` (same behavior as the Companion combos below) |
 | **FEEDS** | `NEXT` (the handover), per-feed reloads, POV reload/stop, `FEEDS → STINT…` |
-| **HUD** | the sheet's Setup-tab dropdowns — Stint label, Streamer, Session, Race Control |
+| **HUD** | the Stint label, Streamer, Session and Race Control dropdowns — they update the HUD live and write back to the Setup tab |
 | **SCN·VIS** | raw scene switches and feed visibility toggles |
 | **GFX** | graphics toggles (HUD, standings, schedule, results, weather, covers) |
 | **TIMER** | the race timer ([Race Timer](Race-Timer)) |
@@ -91,8 +96,9 @@ added there are picked up automatically without changing the panel.
 
 Each change takes effect on the HUD immediately and is written to the sheet's
 Setup tab in the background. An amber outline on the dropdown means the write
-is pending; the HUD status line shows the sync state. Editing the sheet
-dropdowns directly works exactly as before — the two methods are equivalent.
+is pending; the HUD status line shows the sync state. The panel is the primary
+way to set these fields; editing the Setup-tab dropdowns in the sheet directly
+is an equivalent fallback when you don't have the panel open.
 
 The panel HUD row needs the sheet-write webhook (the profile's `SHEET_PUSH_URL`);
 without it the panel dropdowns are read-only. (The sheet's own dropdowns work
@@ -107,10 +113,11 @@ POV URL field. The Streamer and Stint dropdowns draw from the **same**
 Configuration vocabulary as the HUD row dropdowns, so a row's values can never
 drift out of vocab.
 
-Saving a change writes it to the sheet only — **no feed reconnects
+Saving a change writes it to the sheet — **no feed reconnects
 automatically**. A new stream URL takes effect at the next **RELOAD A/B** /
-**NEXT** for that feed (POV: **POV RELOAD**), exactly as if the sheet had been
-edited directly.
+**NEXT** for that feed (POV: **POV RELOAD**). Editing the Schedule tab in the
+sheet directly has the same effect and is the fallback when you don't have the
+panel open.
 
 **Handover auto-fills the HUD.** When a stint goes on air via **NEXT** (or a
 **FEEDS → STINT** takeover), the relay sets the HUD's **Streamer** and **Stint
@@ -192,7 +199,7 @@ flips between them. Everything below is a single tap.
 | **Combos** | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO` — one press sets a whole look (the scene **and** the right feeds and audio). `SPLIT` also sets **Race Control → *Driver Swaps***; `STINT A` / `STINT B` **clear Race Control** on the way back — unconditionally, whatever it currently shows — as does the `Feeds Next` handover when it cuts the program back to **Stint**. `INTRO` / `OUTRO` cut to the looping intro/outro clip (with its own audio) and mute the live feeds; they light while on air. `RED FLAG` is a toggle: first press shows the Standby Cover in the Stint scene **and** sets Race Control to *Red Flag - Race Suspended*; second press hides the cover and clears Race Control. It lights red while the cover is up |
 | **Scenes + relay** | `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Next` (the handover), `Feeds Reload`, `Feeds Status` |
 | **Feeds & reloads** | `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Feed A Reload` (reconnect only Feed A → `/reload/A`), `Feed B Reload` (→ `/reload/B`), `POV Reload`, `POV Stop` |
-| **Graphics & weather** | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle` (incident cover — see [The race](#through-the-broadcast-scene--sheet-cues)), `Weather Race (1) Toggle`, `Weather Race (2) Toggle`, `Weather Quali Toggle` — the three weather buttons are full-screen Stint overlays, each an independent toggle like Standings/Results |
+| **Graphics & weather** | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle` (incident cover — see [The race](#through-the-broadcast-scene--hud-cues)), `Weather Race (1) Toggle`, `Weather Race (2) Toggle`, `Weather Quali Toggle` — the three weather buttons are full-screen Stint overlays, each an independent toggle like Standings/Results |
 
 ![Companion page 1 — show control: combos, scene switches, feeds & reloads, graphics & weather](images/companion-page1-show-control.png)
 
@@ -217,16 +224,17 @@ flips between them. Everything below is a single tap.
 
 How the board is imported and built: [Companion](Companion).
 
-## Through the broadcast (scene + sheet cues)
+## Through the broadcast (scene + HUD cues)
 
 The steps below name the Companion buttons; the panel has the same controls —
 the combos sit on the **PGM** bus and **Feeds Next** is **NEXT** in the FEEDS
 bus.
 
 As director you drive two things: the **scenes** (Companion or panel) and
-three **HUD fields in the shared sheet** — **Stint**, **Session**, and **Race
-Control**. Each is a dropdown: pick the listed value, or clear the cell to
-show nothing. The whole run, in order:
+three **HUD fields** — **Stint**, **Session**, and **Race Control** — from the
+panel's **HUD** bus (Companion carries the same dropdowns; editing the sheet's
+Setup tab directly is the fallback). Each is a dropdown: pick the listed value,
+or clear it to show nothing. The whole run, in order:
 
 **At go-live (intro)**
 - The producer starts streaming on **Standby**. Press **INTRO** to play the looping intro
@@ -235,10 +243,10 @@ show nothing. The whole run, in order:
   video scene** — separate from the **Stint → Intro** HUD label below.
 
 **Before the start**
-- Sheet: **Stint → Intro**, **Session → Warmup**.
+- HUD: **Stint → Intro**, **Session → Warmup**.
 
 **Formation lap** — the race always begins with a manual formation lap.
-- Sheet: **Race Control → Formation Lap**. Set it **after** the cut: the combos write
+- HUD: **Race Control → Formation Lap**. Set it **after** the cut: the combos write
   Race Control too (**SPLIT** stamps *Driver Swaps*, **STINT A/B** and the **Feeds Next**
   handover clear it), so a combo or handover afterwards would wipe the *Formation Lap*
   message.
@@ -263,10 +271,10 @@ show nothing. The whole run, in order:
   webhook ([Sheet-Webhook](Sheet-Webhook)) — without it only the cover toggles.
 
 **Final lap** — once you're in the last stint and the leader starts the final lap:
-- Sheet: **Race Control → Final Lap**. **Clear it** as soon as the race finishes.
+- HUD: **Race Control → Final Lap**. **Clear it** as soon as the race finishes.
 
 **After the race — interviews**
-- Sheet: **Stint → Moderator**, **Session → Interviews** — set these **before** you cut.
+- HUD: **Stint → Moderator**, **Session → Interviews** — set these **before** you cut.
 - Confirm the producer has joined Discord (see [Interviews](#interviews) below), then cut to
   the **Interview** scene.
 
@@ -279,26 +287,25 @@ show nothing. The whole run, in order:
 
 ## At a driver change
 
-Every ~2 hours the commentator changes. You do this from your browser — the
-buttons (Companion or panel) **and** the shared Google Sheet.
+Every ~2 hours the commentator changes. You do this from your browser with the
+buttons (Companion or panel).
 
 1. Cut to **Splitscreen** with the **SPLIT** combo (covers the handover window) — it also
    sets **Race Control → Driver Swaps** for you, so viewers see it on the overlay.
 2. Press **NEXT** once. The relay hands the feed over, shows the new commentator
    in the **Stint** scene, switches the audio, and cuts the program to **Stint** —
-   you do not pick Feed A or Feed B. (Update the sheet for the new commentator —
-   set the **Stint** and **Streamer** entries, panel: the HUD bus dropdowns — and the
-   one-press cut clears Race Control for you.)
+   you do not pick Feed A or Feed B. The handover also sets the HUD **Stint** and
+   **Streamer** from the on-air Schedule row and the one-press cut clears Race
+   Control for you; correct either from the panel's **HUD** bus if needed.
 
-You start a race with only the first stint's link in the **Schedule** sheet and add
-each next link ~20–30 min before its swap (panel **Schedule** rows or the sheet
-directly). Until a link is present the off-air feed shows a black tile in the split;
-it goes live on its own once the link is in.
+You start a race with only the first stint's link in the **Schedule** tab and add
+each next link ~20–30 min before its swap — from the panel's **URLs** section (or
+the sheet directly as a fallback). Until a link is present the off-air feed shows a
+black tile in the split; it goes live on its own once the link is in.
 
-The relay also handles the audio (it mutes the off-air feed, unmutes the on-air one),
-so **MUTE A / MUTE B** are no longer part of the normal flow. **STINT A / STINT B**,
-**MUTE A / MUTE B** and **Feed A/B Toggle** stay on the panel and Stream Deck as a
-**break-glass fallback** only: if the panel shows **OBS NOT REACHABLE**, NEXT can't
+The relay also handles the audio (it mutes the off-air feed, unmutes the on-air one).
+**STINT A / STINT B**, **MUTE A / MUTE B** and **Feed A/B Toggle** are a
+**break-glass fallback**: if the panel shows **OBS NOT REACHABLE**, NEXT can't
 auto-cut — then use **STINT A / STINT B** (and, if needed, the manual FEED/MUTE
 buttons) to cut by hand; `/status` shows which feed is live.
 

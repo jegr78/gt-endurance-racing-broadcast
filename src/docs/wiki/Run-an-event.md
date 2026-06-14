@@ -91,7 +91,6 @@ audio. When the field is ready they cut into the race look (**STINT A** / **Spli
 
 **You should now see:** OBS sitting on **Standby** with the stream running —
 the **Start Streaming** button now reads **Stop Streaming**.
-<!-- screenshot: OBS on Standby with the stream running (button reads Stop Streaming) -->
 
 ## The director panel (remote control)
 
@@ -110,12 +109,12 @@ so the Stream Deck and the panel share one muscle memory:
 |---|---|
 | **PGM** | one-press program switches (scene + feed visibility + mutes), identical to the Companion macros — STINT A/B, SPLIT, INTERVIEW, STANDBY, INTRO, OUTRO, RED FLAG. SPLIT also sets Race Control to *Driver Swaps*, STINT A/B clear it, and RED FLAG toggles the Standby Cover together with the *Red Flag* message ([Director guide](Director#the-companion-button-board)); these Race Control writes need the sheet-write webhook |
 | **FEEDS** | relay control: NEXT (driver change — cuts back to Stint and clears Race Control with the cut), feed reloads, POV reload/stop, FEEDS → STINT… |
-| **HUD** | the Sheet's Setup-tab dropdowns (Stint HUD label, Streamer, Session, Race Control) — changes show on the HUD immediately and are written to the Sheet ([Director guide](Director)) |
+| **HUD** | the Stint HUD label, Streamer, Session and Race Control dropdowns — changes show on the HUD immediately and are written back to the Setup tab ([Director guide](Director)) |
 | **SCN·VIS** | raw scene switches and feed visibility toggles |
 | **GFX** | graphics toggles (HUD, Standings, Schedule, results, weather, covers) |
 | **TIMER** | the race timer (see [Race Timer](Race-Timer)) |
 | **AUDIO** | per-input dB sliders, 0 dB reset and mutes |
-| **URLs** | collapsible editor for the Schedule tab (per-stint Streamer + Stint label dropdowns + URL, rows live on a feed are marked A/B) and the POV URL — saves write the Sheet only; feeds pick changes up on RELOAD/NEXT. On handover the on-air row's Streamer + Stint label auto-fill the HUD |
+| **URLs** | collapsible editor for the Schedule rows (per-stint Streamer + Stint label dropdowns + URL, rows live on a feed are marked A/B) and the POV URL — saves write the sheet; feeds pick changes up on RELOAD/NEXT. On handover the on-air row's Streamer + Stint label auto-fill the HUD |
 | **Qualifying** | collapsible section for the single qualifying stream (different day): **QUALIFYING / RACE MODE** switches the relay's active schedule (Qualifying tab served on Feed A), plus a one-row Streamer/Stint/URL editor writing the Qualifying tab. Or bring the stack up in that mode with `racecast event start --qualifying` ([Director guide](Director#director-panel--qualifying)) |
 
 The status strip at the top shows what is on air, which stint each feed
@@ -149,9 +148,9 @@ cuts the program back to **Stint** on the incoming feed for you (no **STINT A/B*
 needed), **clearing Race Control** with the cut — and sets the HUD's **Stint**
 label and **Streamer** from the on-air **Schedule row** automatically (sourced
 from the Configuration vocab; a blank or off-vocab row leaves the field as-is).
-The panel's **HUD row** still provides the Stint / Streamer / Race Control dropdowns
-directly as a live correction — editing the sheet and using the panel are equivalent,
-and the next handover re-asserts the schedule's values.
+The panel's **HUD row** provides the Stint / Streamer / Race Control dropdowns
+as a live correction (the next handover re-asserts the schedule's values); editing
+the sheet's Setup tab directly is the equivalent fallback.
 Full step-by-step: [Director guide](Director#at-a-driver-change). (Why two feeds:
 [Relay — how the feeds work](Relay-Mode).)
 

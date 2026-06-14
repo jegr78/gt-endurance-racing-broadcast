@@ -87,7 +87,7 @@ The lower-third HUD (streamer, session, round, flag, top-3 teams, race control) 
 
 - **The relay must be running** for the HUD to render (it serves `/hud`). See
   [Relay Mode](Relay-Mode).
-- **Content is still edited centrally in the sheet** — no manual reloads: the page polls
+- **Content comes from the shared sheet** — no manual reloads: the page polls
   the relay every ~2.5 s, and the relay refreshes the sheet every `--hud-poll` seconds
   (default 5). Live values come from the **Overlay** tab; the **Configuration** tab maps
   each team to its manufacturer via a **`Brand Name`** text column (header may also be
