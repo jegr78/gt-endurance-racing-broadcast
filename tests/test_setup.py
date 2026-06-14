@@ -889,6 +889,30 @@ def t_panel_qualifying_section_is_styled():
         "Qualifying <details> is missing the 'urls' styling hook -> renders unstyled (#134)"
 
 
+def t_panel_schedule_qualifying_selects_are_styled():
+    """#152: the Streamer/Stint <select> dropdowns in the Schedule and Qualifying
+    tables must carry the same dark dropdown styling as the HUD section's `.fld
+    select`. Without a dedicated rule the `.nm` selects fall back to bare browser
+    defaults and the `.st` selects even inherit the unrelated status-pill (`.st`)
+    look. Guard a `.urls select` rule that matches the HUD dropdown style."""
+    import re
+    with open(os.path.join(ROOT, "src", "director", "director-panel.html"),
+              encoding="utf-8") as fh:
+        html = fh.read()
+    style = re.search(r"<style>(.*?)</style>", html, re.S)
+    assert style, "panel <style> block not found"
+    css = style.group(1)
+    rule = re.search(r"\.urls\s+select\s*\{([^}]*)\}", css)
+    assert rule, ".urls select rule missing -> schedule/qualifying dropdowns unstyled (#152)"
+    body = rule.group(1)
+    # mirror the HUD dropdown look (.fld select): dark fill + edge border + mono font
+    assert "background" in body and "border" in body and "font-family" in body, \
+        ".urls select rule must set background/border/font-family like .fld select (#152)"
+    # focus affordance, matching the HUD dropdowns
+    assert re.search(r"\.urls\s+select:focus\s*\{", css), \
+        ".urls select:focus rule missing -> no focus affordance like the HUD dropdowns (#152)"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
