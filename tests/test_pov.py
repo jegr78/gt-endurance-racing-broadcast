@@ -292,6 +292,19 @@ def t_pov_name_reads_pov_source_row():
     assert r.pov_name() == ""
 
 
+def t_hud_page_has_pov_name_slot_and_gating():
+    import os as _os
+    path = _os.path.join(ROOT, "src", "obs", "hud.html")
+    with open(path, encoding="utf-8") as fh:
+        html = fh.read()
+    # The name slot exists and is a builder slot (data-edit marker).
+    assert 'id="pov-name"' in html
+    assert 'data-edit="POV name"' in html
+    # tick() hides the whole POV box (frame) when the POV feed is off.
+    assert "povActive" in html
+    assert 'getElementById("pov").classList.toggle("empty"' in html
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

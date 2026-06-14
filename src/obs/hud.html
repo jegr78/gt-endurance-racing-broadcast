@@ -62,6 +62,16 @@
      background/border in the overlay builder to frame the PiP on air. */
   #pov { left: 1496px; top: 644px; width: 384px; height: 216px; }
 
+  /* POV name label — top-right of the POV frame, splitscreen-label look (#130).
+     A normal builder box (left/top/width/height + text props); grey-pill look is
+     the default fill. Shown only while the POV feed is on air (see tick()). */
+  #pov-name { left: 1592px; top: 618px; width: 288px; height: 38px;
+    justify-content: flex-end;
+    background: rgba(38,44,52,.92); border: 1px solid #4a5560; border-radius: 7px;
+    padding: 0 12px; color: #fff;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-weight: 600; font-size: 22px; letter-spacing: .04em; }
+
   /* Race-timer clock, merged in from the old separate timer source. Sits at the
      top band at the clock's true on-air size/position (was OBS crop y[217..895]
      + scale 0.0854 + pos 880,98). Tune live via the builder. */
@@ -101,6 +111,7 @@
   <div id="team3-name" class="el team-name white" data-edit="Team 3 name" data-edit-props="left,top,width,height,teamNameMax,teamNameMin,fontFamily,color"></div>
   <div id="race-control" class="el white" data-edit="Race control"></div>
   <div id="pov" class="el" data-edit="POV box" data-edit-props="left,top,width,height,background,borderStyle,borderColor,borderWidth"></div>
+  <div id="pov-name" class="el" data-edit="POV name" data-edit-props="left,top,width,height,fontSize,fontFamily,color,background,borderStyle,borderColor,borderWidth,align"></div>
   <div id="clock" class="el white" data-edit="Clock"></div>
 
 <script>
@@ -186,6 +197,9 @@
       setImg("round-flag", d.round && d.round.flagKey, "flags");
       (d.teams || []).forEach((t, i) => { if (i < 3) setTeam(i, t); });
       setText("race-control", d.raceControl);
+      const povOn = !!d.povActive;
+      document.getElementById("pov").classList.toggle("empty", !povOn);
+      setText("pov-name", povOn ? (d.povName || "") : "");
     } catch (e) { /* keep last good frame on transient errors */ }
   }
   tick();
