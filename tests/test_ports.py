@@ -115,6 +115,8 @@ def t_decide_free_kills_orphan():
 # ---- kill_pid (injected seams; no real processes) -------------------------
 
 def t_kill_pid_posix_term_then_kill():
+    if os.name == "nt":
+        return  # SIGKILL is POSIX-only; the nt branch (taskkill) is covered separately
     killed = []
     calls = []
     state = {"alive": True}
@@ -132,6 +134,8 @@ def t_kill_pid_posix_term_then_kill():
 
 
 def t_kill_pid_posix_no_kill_signal_when_term_works():
+    if os.name == "nt":
+        return  # references signal.SIGKILL (POSIX-only)
     killed = []
     ports.kill_pid(4321, os_name="posix", call=lambda *a, **k: None,
                    kill=lambda p, s: killed.append((p, s)),
