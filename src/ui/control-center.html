@@ -312,7 +312,10 @@
   /* Live font preview swatch (renders sample text in the selected family). */
   .ovfontprev { margin-top:5px; font-size:22px; line-height:1.2; color:var(--txt);
              min-height:26px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .fontprev { font-size:20px; }   /* per-row preview in the Settings library list */
+  /* per-row preview in the Settings library list: clip to one tidy line so a
+     tall/wide display face can't bleed into the neighbouring row (issue #145) */
+  .fontprev { font-size:20px; line-height:1.5; overflow:hidden;
+              white-space:nowrap; text-overflow:ellipsis; }
   /* Pop-out modal: the editor + property panel laid over the Control Center. The
      real #overlay-section is moved into .ovmodal-body (no duplicated DOM/JS); in
      this mode the page toolbar's pop-out button and the advanced/hint blocks hide
@@ -1956,13 +1959,15 @@ async function loadFontLibrary() {
   d.fonts.forEach(name => {
     const stem = name.replace(/\.[^.]+$/, '');
     const row = document.createElement('div'); row.className = 'row';
-    const lbl = document.createElement('span'); lbl.className = 'name';
-    lbl.textContent = stem;
+    // One column: the family name rendered IN its own font (issue #145) — no
+    // separate plain-text name column to overlap it. The plain name stays
+    // available on hover for hard-to-read display faces.
     const prev = document.createElement('span'); prev.className = 'fontprev grow';
     prev.textContent = stem; prev.style.fontFamily = '"' + stem + '"';   // live preview
+    prev.title = stem;
     const del = document.createElement('button'); del.className = 'danger';
     del.textContent = 'Remove'; del.onclick = () => deleteLibFont(name);
-    row.append(lbl, prev, del); list.appendChild(row);
+    row.append(prev, del); list.appendChild(row);
   });
 }
 
