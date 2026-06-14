@@ -2760,7 +2760,7 @@ def main():
     print(f"  Controls: http://127.0.0.1:{args.http_port}/status | /next | /reload")
     if relay.pov:
         print(f"  Driver-POV PiP -> http://127.0.0.1:{args.pov_port}  "
-              f"(sheet tab '{args.pov_tab}' A2; control /pov/reload | /pov/stop)")
+              f"(sheet tab '{args.pov_tab}' url+name; control /pov/reload | /pov/stop | /pov/toggle)")
     if panel_path:
         print(f"  Director panel (local): http://127.0.0.1:{args.http_port}/panel")
         if remote_host:
