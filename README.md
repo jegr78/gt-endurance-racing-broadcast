@@ -132,6 +132,7 @@ racecast event stop           # stop relay/Companion/streams — OBS & friends k
 racecast tailscale up         # connect Tailscale (event start does this automatically)
 racecast tailscale down       # disconnect Tailscale after the event
 racecast preflight            # check tools/hardware
+racecast speedtest            # opt-in Ookla bandwidth test; logs locally, preflight warns vs 25/10 Mbps
 racecast relay start          # start the relay (background)
 racecast relay logs -f        # watch it live
 racecast relay status         # health + tailnet URL
