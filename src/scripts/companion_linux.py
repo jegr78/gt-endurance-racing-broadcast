@@ -16,7 +16,7 @@ command sequence is testable without root.
 This module ships NO shell-script file — bind_helper_content() is a string
 written to /usr/local/sbin at enable_control() time on the target machine.
 """
-import ipaddress
+import ipaddress, os, shutil, subprocess, sys
 
 UNIT = "companion"
 DROPIN_DIR = "/etc/systemd/system/companion.service.d"
@@ -89,3 +89,35 @@ def sudoers_dropin_content(user, systemctl_path):
         "# the bind helper) + stop of the Companion service for the operator.\n"
         f"{user} ALL=(root) NOPASSWD: {HELPER_PATH}, {systemctl_path} stop {UNIT}\n"
     )
+
+
+def control_commands(unit):
+    """Start/quit/running argv for the companion-pi systemd service. `start` is a
+    template — the caller appends the validated bind IP (see racecast
+    companion_start). `running`/`quit` are complete."""
+    return {
+        "start": ["sudo", "-n", HELPER_PATH],
+        "quit": ["sudo", "-n", "systemctl", "stop", unit],
+        "running": ["systemctl", "is-active", unit],
+    }
+
+
+def detect_unit(platform=None, which=None, run=None, exists=None):
+    """The companion-pi systemd unit name on this Linux host, or None. None for
+    Windows/macOS, for hosts without systemd, and for WSL/Docker/manual installs
+    where no local companion.service exists (Companion is on the host)."""
+    platform = sys.platform if platform is None else platform
+    which = shutil.which if which is None else which
+    run = subprocess.run if run is None else run
+    exists = os.path.exists if exists is None else exists
+    if platform.startswith("win") or platform == "darwin":
+        return None
+    if not which("systemctl"):
+        return None
+    try:
+        if run(["systemctl", "cat", UNIT], capture_output=True,
+               text=True).returncode == 0:
+            return UNIT
+    except Exception:    # noqa: BLE001 — systemctl missing/odd -> fall through to file check
+        pass
+    return UNIT if exists(SERVICE_UNIT_FILE) else None

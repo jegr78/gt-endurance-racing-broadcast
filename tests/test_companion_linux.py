@@ -78,6 +78,48 @@ def t_helper_ipv6_branch_requires_colon():
     assert ":[0-9A-Fa-f:]" in c             # a colon is now required in the IPv6 branch
 
 
+# --- control_commands --------------------------------------------------------
+def t_control_commands_shape():
+    c = cl.control_commands("companion")
+    assert c["start"] == ["sudo", "-n", cl.HELPER_PATH]      # caller appends the ip
+    assert c["quit"] == ["sudo", "-n", "systemctl", "stop", "companion"]
+    assert c["running"] == ["systemctl", "is-active", "companion"]
+
+
+# --- detect_unit -------------------------------------------------------------
+def t_detect_unit_none_on_windows_or_macos():
+    assert cl.detect_unit(platform="win32") is None
+    assert cl.detect_unit(platform="darwin") is None
+
+
+def t_detect_unit_none_without_systemctl():
+    assert cl.detect_unit(platform="linux", which=lambda n: None) is None
+
+
+def t_detect_unit_via_systemctl_cat():
+    class P:
+        returncode = 0
+    got = cl.detect_unit(platform="linux", which=lambda n: "/usr/bin/" + n,
+                         run=lambda *a, **k: P(), exists=lambda p: False)
+    assert got == "companion"
+
+
+def t_detect_unit_via_unit_file_when_cat_fails():
+    class P:
+        returncode = 1
+    got = cl.detect_unit(platform="linux", which=lambda n: "/usr/bin/" + n,
+                         run=lambda *a, **k: P(),
+                         exists=lambda p: p == cl.SERVICE_UNIT_FILE)
+    assert got == "companion"
+
+
+def t_detect_unit_none_when_absent():
+    class P:
+        returncode = 1
+    assert cl.detect_unit(platform="linux", which=lambda n: "/usr/bin/" + n,
+                          run=lambda *a, **k: P(), exists=lambda p: False) is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
