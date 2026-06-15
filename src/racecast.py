@@ -5,7 +5,7 @@
   python3 racecast.py     relay start        # shipped package
 
   racecast relay     start|stop|restart|status|logs|run|open-panel|open-hud|open-status
-  racecast companion start|stop|restart|status|logs|open-tablet|open-admin
+  racecast companion start|stop|restart|status|logs|enable-control|open-tablet|open-admin
   racecast streams   start|stop|restart|status|logs
   racecast event     status|start|stop      # event-day readiness: check / bring-up / wind-down
   racecast event start --stint N             # takeover: stint N is on air now — the relay starts there
@@ -647,7 +647,7 @@ SERVICE_VERBS = ("start", "stop", "restart", "status", "logs")
 # Per-service verbs beyond the common set (relay foreground + browser-open shortcuts).
 EXTRA_VERBS = {
     "relay": ("run", "open-panel", "open-hud", "open-status"),
-    "companion": ("open-tablet", "open-admin"),
+    "companion": ("open-tablet", "open-admin", "enable-control"),
 }
 # Internal verbs: routed but never advertised (frozen feed children use run-feed).
 HIDDEN_VERBS = {"streams": ("run-feed",)}
@@ -1226,15 +1226,22 @@ def _companion():
     return cc
 
 def _companion_cmds(cc):
-    exe = cc.find_companion_exe() if sys.platform.startswith("win") else None
-    return cc.companion_control_commands(sys.platform, exe)
+    if sys.platform.startswith("win"):
+        return cc.companion_control_commands(sys.platform, cc.find_companion_exe())
+    if sys.platform == "darwin":
+        return cc.companion_control_commands(sys.platform)
+    import companion_linux as cl
+    unit = cl.detect_unit()
+    return cl.control_commands(unit) if unit else None
 
 def _companion_unsupported_msg():
     if sys.platform.startswith("win"):
         return ("companion: Companion.exe not found. Set RACECAST_COMPANION_EXE in .env "
                 "to its full path and retry.")
-    return ("companion: automated control supports Windows and macOS. On Linux "
-            "(WSL/Docker), run and bind Companion on the host instead.")
+    if sys.platform == "darwin":
+        return "companion: Companion control is unavailable on this macOS setup."
+    return ("companion: no companion.service found (WSL/host or manual install) — "
+            "run and bind Companion yourself.")
 
 def _companion_running(cc):
     cmds = _companion_cmds(cc)
@@ -1247,8 +1254,42 @@ def _companion_running(cc):
                            errors="replace", **sv.no_window_kwargs())
     return cc.parse_running(sys.platform, probe.returncode, probe.stdout or "")
 
+def _companion_start_linux(cc, cl, unit, rest):
+    """Linux companion-pi: set the bind via the root helper, which restarts the
+    service. No config.json editing (headless ignores it; the bind is the
+    --admin-address flag injected via the systemd drop-in)."""
+    if not os.path.exists(cl.HELPER_PATH):
+        sys.exit("companion: control not set up yet — run `racecast companion "
+                 "enable-control` once (installs the systemd bind helper + sudoers).")
+    bind_arg = rest[0] if rest else "auto"
+    ts = _tailscale_ip()
+    ip = cc.desired_bind_ip(bind_arg, ts)
+    if bind_arg == "auto" and not ts:
+        print("companion: no Tailscale IP — binding 127.0.0.1 (this machine only).")
+    if subprocess.run(["sudo", "-n", cl.HELPER_PATH, ip]).returncode != 0:
+        sys.exit("companion: passwordless start failed. Run `racecast companion "
+                 "enable-control`, or start manually: `sudo systemctl start companion`.")
+    print(f"companion: started, admin/tablet bound to {ip}:8000.")
+    print("  Admin GUI shares this port — restrict who reaches it with a Tailscale ACL.")
+
+
+def _companion_stop_linux(cc, cl, unit):
+    if not _companion_running(cc):
+        print("companion is not running.")
+        return
+    if subprocess.run(["sudo", "-n", "systemctl", "stop", unit]).returncode != 0:
+        sys.exit("companion: passwordless stop failed. Run `racecast companion "
+                 "enable-control`, or stop manually: `sudo systemctl stop companion`.")
+    print("companion stopped.")
+
+
 def companion_start(rest):
     cc = _companion()
+    import companion_linux as cl
+    if not sys.platform.startswith("win") and sys.platform != "darwin":
+        unit = cl.detect_unit()
+        if unit:
+            return _companion_start_linux(cc, cl, unit, rest)
     cmds = _companion_cmds(cc)
     if cmds is None:
         sys.exit(_companion_unsupported_msg())
@@ -1296,9 +1337,15 @@ def companion_start(rest):
     host = desired if desired != "0.0.0.0" else (ts or "<this-machine-ip>")
     print(f"Companion buttons (tablet): http://{host}:{port}/tablet")
     print("  Admin GUI shares this port — restrict who reaches it with a Tailscale ACL.")
+    return None
 
 def companion_stop(rest):
     cc = _companion()
+    import companion_linux as cl
+    if not sys.platform.startswith("win") and sys.platform != "darwin":
+        unit = cl.detect_unit()
+        if unit:
+            return _companion_stop_linux(cc, cl, unit)
     cmds = _companion_cmds(cc)
     if cmds is None:
         sys.exit(_companion_unsupported_msg())
@@ -1315,10 +1362,18 @@ def companion_stop(rest):
     hint = ("taskkill /F /IM Companion.exe" if sys.platform.startswith("win")
             else "pkill -f Companion")
     print(f"companion may still be running. Force-quit: {hint}")
+    return None
 
 def companion_restart(rest):
     companion_stop([])
     companion_start(rest)
+
+
+def companion_enable_control(rest):
+    import companion_linux as cl
+
+    raise SystemExit(cl.enable_control())
+
 
 def companion_status_payload(supported, running, cfg, why=""):
     """Pure: shape the companion status dict from probed facts."""
@@ -1891,6 +1946,7 @@ DISPATCH = {
     ("companion", "logs"): companion_logs,
     ("companion", "open-tablet"): companion_open_tablet,
     ("companion", "open-admin"): companion_open_admin,
+    ("companion", "enable-control"): companion_enable_control,
     ("streams", "start"): streams_start, ("streams", "stop"): streams_stop,
     ("streams", "restart"): streams_restart, ("streams", "status"): streams_status,
     ("streams", "logs"): streams_logs, ("streams", "run-feed"): streams_run_feed,

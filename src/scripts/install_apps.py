@@ -470,6 +470,12 @@ def linux_install_steps(apps, which=shutil.which, machine=None):
     return steps
 
 
+def should_enable_companion_control(installed, failed):
+    """True iff Companion was just installed on Linux without a failed step, so
+    `racecast companion enable-control` should run to wire up the Start/Stop button."""
+    return "companion" in installed and not failed
+
+
 def confirmed(answer):
     return _common().confirmed(answer)
 
@@ -524,6 +530,14 @@ def _install_linux(missing, assume_yes):
         print("Tailscale installed? Finish with:  sudo tailscale up")
     if "companion" in missing:
         print("Companion: this is the headless/service install (companion-pi).")
+    if should_enable_companion_control(missing, failed):
+        print("Enabling passwordless Companion start/stop (systemd bind helper + sudoers)…")
+        try:
+            import companion_linux as cl
+            cl.enable_control()
+        except Exception as exc:                      # noqa: BLE001
+            print(f"  ! enable-control skipped: {exc} "
+                  "(run `racecast companion enable-control` later).")
     if failed:
         print("\nThese steps failed — re-run `racecast install-apps` to retry them:")
         for f in failed:

@@ -82,8 +82,8 @@ def find_companion_exe(env=None, exists=os.path.exists):
 
 def companion_control_commands(platform, exe=None):
     """Start/quit/running argv per platform. Windows needs the discovered exe.
-    Linux returns None by design: in the WSL/Docker scenario Companion runs on
-    the HOST — local automation would target the wrong machine."""
+    Returns None for Linux here — native-Linux companion-pi control lives in
+    companion_linux.py (systemd); this module stays Windows/macOS only."""
     if platform == "darwin":
         return {
             "start": ["open", "-a", "Companion"],

@@ -1512,6 +1512,167 @@ def t_speedtest_data_shape():
                                  "rec_down": 50.0, "rec_up": 20.0}
 
 
+def t_companion_cmds_linux_uses_systemd_when_unit_present():
+    import companion_linux as cl
+    orig_platform = m.sys.platform
+    orig_detect = cl.detect_unit
+    try:
+        m.sys.platform = "linux"
+        cl.detect_unit = lambda *a, **k: "companion"
+        cmds = m._companion_cmds(m._companion())
+        assert cmds["running"] == ["systemctl", "is-active", "companion"]
+    finally:
+        m.sys.platform = orig_platform
+        cl.detect_unit = orig_detect
+
+
+def t_companion_cmds_linux_none_without_unit():
+    import companion_linux as cl
+    orig_platform = m.sys.platform
+    orig_detect = cl.detect_unit
+    try:
+        m.sys.platform = "linux"
+        cl.detect_unit = lambda *a, **k: None
+        assert m._companion_cmds(m._companion()) is None
+    finally:
+        m.sys.platform = orig_platform
+        cl.detect_unit = orig_detect
+
+
+def t_unsupported_msg_linux_is_no_service_wording():
+    orig = m.sys.platform
+    try:
+        m.sys.platform = "linux"
+        msg = m._companion_unsupported_msg()
+        assert "no companion.service" in msg.lower()
+    finally:
+        m.sys.platform = orig
+
+
+def _linux_companion_env(detect="companion", ts="100.64.1.2", run_calls=None):
+    """Monkeypatch racecast for the Linux companion_start/stop branch. Returns
+    (teardown, cl). `run_calls` collects argv passed to subprocess.run."""
+    import companion_linux as cl
+    saved = {
+        "platform": m.sys.platform, "detect": cl.detect_unit,
+        "ts": m._tailscale_ip, "run": m.subprocess.run,
+        "running": m._companion_running,
+    }
+    m.sys.platform = "linux"
+    cl.detect_unit = lambda *a, **k: detect
+    m._tailscale_ip = lambda: ts
+    m._companion_running = lambda cc: False
+
+    class P:
+        returncode = 0
+    def fake_run(argv, **kw):
+        if run_calls is not None:
+            run_calls.append(argv)
+        return P()
+    m.subprocess.run = fake_run
+
+    def teardown():
+        m.sys.platform = saved["platform"]
+        cl.detect_unit = saved["detect"]
+        m._tailscale_ip = saved["ts"]
+        m.subprocess.run = saved["run"]
+        m._companion_running = saved["running"]
+    return teardown, cl
+
+
+def t_companion_start_linux_calls_helper_with_tailscale_ip():
+    calls = []
+    teardown, cl = _linux_companion_env(ts="100.64.1.2", run_calls=calls)
+    orig_exists = m.os.path.exists
+    try:
+        m.os.path.exists = lambda p: True   # helper present (enable-control done)
+        m.companion_start(["auto"])
+    finally:
+        m.os.path.exists = orig_exists
+        teardown()
+    assert ["sudo", "-n", cl.HELPER_PATH, "100.64.1.2"] in calls
+
+
+def t_companion_start_linux_falls_back_to_localhost_without_tailscale():
+    calls = []
+    teardown, cl = _linux_companion_env(ts=None, run_calls=calls)
+    orig_exists = m.os.path.exists
+    try:
+        m.os.path.exists = lambda p: True
+        m.companion_start(["auto"])
+    finally:
+        m.os.path.exists = orig_exists
+        teardown()
+    assert ["sudo", "-n", cl.HELPER_PATH, "127.0.0.1"] in calls
+
+
+def t_companion_start_linux_guides_when_not_enabled():
+    calls = []
+    teardown, cl = _linux_companion_env(run_calls=calls)
+    orig_exists = m.os.path.exists
+    raised = False
+    try:
+        m.os.path.exists = lambda p: False  # helper absent -> enable-control needed
+        try:
+            m.companion_start(["auto"])
+        except SystemExit:
+            raised = True
+    finally:
+        m.os.path.exists = orig_exists
+        teardown()
+    assert not any(cl.HELPER_PATH in " ".join(c) for c in calls)
+    assert raised
+
+
+def t_companion_stop_linux_runs_systemctl_stop():
+    calls = []
+    teardown, cl = _linux_companion_env(run_calls=calls)
+    try:
+        m._companion_running = lambda cc: True
+        m.companion_stop([])
+    finally:
+        teardown()
+    assert ["sudo", "-n", "systemctl", "stop", "companion"] in calls
+
+
+def t_companion_enable_control_routes():
+    assert m.route(["companion", "enable-control"])["verb"] == "enable-control"
+
+
+def t_companion_enable_control_is_dispatchable():
+    assert ("companion", "enable-control") in m.DISPATCH
+
+
+def t_function_local_peer_imports_are_frozen():
+    """Every peer module racecast.py imports INSIDE a function (lazy import) must be
+    declared as a PyInstaller --hidden-import in tools/build-binary.py. PyInstaller's
+    static scan misses function-local imports, so a missing one makes the frozen
+    binary raise ModuleNotFoundError at runtime — and binary-smoke won't catch a
+    lazily-imported, error-swallowed path (this is how companion_linux slipped)."""
+    import ast
+    src_dir = os.path.join(ROOT, "src")
+    scripts_dir = os.path.join(src_dir, "scripts")
+
+    def is_peer(name):
+        return (os.path.exists(os.path.join(scripts_dir, name + ".py"))
+                or os.path.exists(os.path.join(src_dir, name + ".py")))
+
+    with open(os.path.join(src_dir, "racecast.py"), encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    local_imports = set()
+    for fn in ast.walk(tree):
+        if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for node in ast.walk(fn):
+                if isinstance(node, ast.Import):
+                    local_imports |= {a.name for a in node.names if is_peer(a.name)}
+
+    with open(os.path.join(ROOT, "tools", "build-binary.py"), encoding="utf-8") as fh:
+        build_src = fh.read()
+    missing = sorted(m for m in local_imports if f'"{m}"' not in build_src)
+    assert not missing, ("peer modules imported function-locally in racecast.py but "
+                         f"not --hidden-import in tools/build-binary.py: {missing}")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
