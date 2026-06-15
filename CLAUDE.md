@@ -142,6 +142,7 @@ python3 src/racecast.py media             # download Intro/Outro clips -> runtim
 python3 src/racecast.py setup --out runtime/<profile>/GT_Endurance.import.json   # localize OBS collection
 python3 src/racecast.py install-tools     # install yt-dlp/streamlink/ffmpeg/deno (winget/brew/apt — Linux apt runs via sudo; deno has no apt pkg so it's a pinned, SHA-256-verified GitHub-release download into runtime/bin, which racecast adds to PATH; bootstraps brew on macOS); --update also upgrades installed ones (pre-event)
 python3 src/racecast.py install-apps      # install OBS/Companion/Tailscale/Discord (winget/brew/apt+official installers); --update upgrades installed ones (Linux: prints per-app guide)
+python3 src/racecast.py obs-browser       # Linux only: build & install OBS's Browser Source plugin (obs-browser + CEF) from source — the distro/PPA ships none on aarch64, and the relay HUD/timer need a Browser Source. Pins CEF per OBS version (see obs_browser_linux.py); --yes skips the prompt. On no-GPU/VM hosts also disable OBS Browser Source Hardware Acceleration.
 python3 src/racecast.py export companion  # write the Companion button config for import
 python3 src/racecast.py chat clear        # wipe the crew-chat history on the active relay
 python3 src/racecast.py chat pull <ip>    # take over another producer's chat history at handover (relay may be running)

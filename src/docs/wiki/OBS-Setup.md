@@ -76,6 +76,16 @@ and the shared Google Sheet. They are left in the scene and toggled by the direc
 Companion — no screen-share, no extra latency. All relay-served sources (`/hud`,
 `/timer`) use fixed loopback URLs — no per-machine editing needed.
 
+> **ARM64 Linux: no Browser Source out of the box.** Ubuntu's `obs-studio` package is
+> built **without** the Browser Source (no CEF), and there is no prebuilt OBS-with-browser
+> for `aarch64` anywhere (the OBS PPA is amd64-only, Flathub has no aarch64 build, no arm64
+> snap). If OBS shows **no "Browser" source type**, run **`racecast obs-browser`** once — it
+> builds and installs the plugin from source against your distro's OBS (downloads ~340 MB of
+> CEF and compiles for several minutes). On a host without a GPU (a VM / headless / no DRM
+> render node) also disable **OBS → Settings → Advanced → Browser Source Hardware
+> Acceleration**, or CEF's GPU subprocess crashes. x86-64 Linux gets the Browser Source from
+> the OBS PPA via `racecast install-apps`, so this step is ARM64-only.
+
 > The HUD and graphics pull from **shared** production resources (the sheet) — changes
 > affect everyone. The sheet must stay shared.
 

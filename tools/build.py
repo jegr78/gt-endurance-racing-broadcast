@@ -109,6 +109,9 @@ def main():
     os.makedirs(os.path.join(PKG, "obs"))
     shutil.copy2(os.path.join(SRC, "obs", "GT_Endurance.json"),
                  os.path.join(PKG, "obs", "GT_Endurance.template.json"))
+    # obs-browser source-build wrapper CMakeLists (used by `racecast obs-browser`
+    # on Linux to compile the Browser Source plugin against the distro libobs).
+    cp("obs/obs-browser-build", "obs/obs-browser-build")
 
     # drop any stray __pycache__ from copied trees
     for root, dirs, _ in os.walk(PKG):
