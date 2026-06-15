@@ -514,6 +514,45 @@ def t_splitscreen_labels_source_in_collection_splitscreen_scene_only():
     assert not has_item("Stint")
 
 
+SK = [{"id": "x", "label": "X", "props": list(ob.KIND_TEXT)}]
+
+
+def _css_x(over):
+    return ob.compile_overlay_css({"slots": {"x": over}}, SK)
+
+
+def t_ob_compile_px_extras():
+    css = _css_x({"padding": 6, "borderRadius": 4, "letterSpacing": 2})
+    assert "padding: 6px" in css
+    assert "border-radius: 4px" in css
+    assert "letter-spacing: 2px" in css
+
+
+def t_ob_compile_opacity_and_line_height():
+    css = _css_x({"opacity": 0.5, "lineHeight": 1.2})
+    assert "opacity: 0.5" in css and "line-height: 1.2" in css
+    # out-of-range / non-number dropped
+    assert "opacity" not in _css_x({"opacity": 2})
+    assert "opacity" not in _css_x({"opacity": "x"})
+    assert "line-height" not in _css_x({"lineHeight": 0})
+
+
+def t_ob_compile_rotation():
+    assert "transform: rotate(15deg)" in _css_x({"rotation": 15})
+    assert "transform: rotate(-8deg)" in _css_x({"rotation": -8})
+    assert "transform" not in _css_x({"rotation": 999})
+    assert "transform" not in _css_x({"rotation": "x"})
+
+
+def t_ob_compile_valign_and_text_transform():
+    assert "align-items: center" in _css_x({"valign": "middle"})
+    assert "align-items: flex-end" in _css_x({"valign": "bottom"})
+    assert "text-transform: uppercase" in _css_x({"textTransform": "uppercase"})
+    # unknown enum values dropped (no injection)
+    assert "align-items" not in _css_x({"valign": "sideways"})
+    assert "text-transform" not in _css_x({"textTransform": "evil; }"})
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):

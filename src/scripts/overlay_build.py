@@ -24,27 +24,35 @@ _PX_PROPS = {
     "left": "left", "top": "top", "width": "width", "height": "height",
     "fontSize": "font-size", "borderWidth": "border-width",
     "teamNameMax": "--team-name-max", "teamNameMin": "--team-name-min",
+    "padding": "padding", "borderRadius": "border-radius",
+    "letterSpacing": "letter-spacing",
 }
 _TEXT_PROPS = {"color": "color", "background": "background",
                "borderColor": "border-color", "borderStyle": "border-style"}
 _ALIGN = {"left": "flex-start", "center": "center", "right": "flex-end"}
+_VALIGN = {"top": "flex-start", "middle": "center", "bottom": "flex-end"}
+_TEXT_TRANSFORM = {"none": "none", "uppercase": "uppercase",
+                   "lowercase": "lowercase", "capitalize": "capitalize"}
 
 # The default property set offered for a text slot (no data-edit-props attr).
 DEFAULT_PROPS = ("left", "top", "width", "height", "fontSize",
                  "fontFamily", "color", "background", "align")
 
 # Stable emit order within a slot rule (independent of dict insertion order).
-PROP_ORDER = ("left", "top", "width", "height", "fontSize", "borderWidth",
+PROP_ORDER = ("left", "top", "width", "height", "padding",
+              "fontSize", "lineHeight", "letterSpacing",
+              "borderWidth", "borderRadius",
               "teamNameMax", "teamNameMin", "fontFamily", "color",
-              "background", "borderColor", "borderStyle", "align")
+              "background", "borderColor", "borderStyle",
+              "align", "valign", "textTransform", "opacity",
+              "rotation", "textShadow")
 
 # Slot kinds (standard properties for all slots; spec
 # docs/superpowers/specs/2026-06-15-overlay-builder-standard-properties-design.md).
-# The single source for
-# which properties a slot offers — extract_slots derives slot["props"] from the
-# element's data-edit-kind, replacing hand-curated per-element whitelists. text
-# is a strict superset of box (box = container/image: position, size, fill,
-# border, opacity, rotation; text adds the type properties).
+# The single source for which properties a slot offers — extract_slots derives
+# slot["props"] from the element's data-edit-kind, replacing hand-curated
+# per-element whitelists. text is a strict superset of box (box = container/image:
+# position, size, fill, border, opacity, rotation; text adds the type properties).
 KIND_BOX = ("left", "top", "width", "height", "padding",
             "background", "borderWidth", "borderStyle", "borderColor",
             "borderRadius", "opacity", "rotation")
@@ -214,6 +222,27 @@ def _declaration(prop, value):
     if prop == "align":
         mapped = _ALIGN.get(value) if isinstance(value, str) else None
         return f"justify-content: {mapped}" if mapped else None
+    if prop == "valign":
+        mapped = _VALIGN.get(value) if isinstance(value, str) else None
+        return f"align-items: {mapped}" if mapped else None
+    if prop == "textTransform":
+        mapped = _TEXT_TRANSFORM.get(value) if isinstance(value, str) else None
+        return f"text-transform: {mapped}" if mapped else None
+    if prop == "opacity":
+        if not isinstance(value, (int, float)) or not 0 <= value <= 1:
+            return None
+        num = int(value) if float(value).is_integer() else value
+        return f"opacity: {num}"
+    if prop == "lineHeight":
+        if not isinstance(value, (int, float)) or not 0 < value <= 5:
+            return None
+        num = int(value) if float(value).is_integer() else value
+        return f"line-height: {num}"
+    if prop == "rotation":
+        if not isinstance(value, (int, float)) or not -360 <= value <= 360:
+            return None
+        num = int(value) if float(value).is_integer() else value
+        return f"transform: rotate({num}deg)"
     return None
 
 
