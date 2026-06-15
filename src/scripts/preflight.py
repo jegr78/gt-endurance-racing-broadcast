@@ -20,6 +20,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
@@ -277,28 +278,55 @@ SHEET_TAB = "Schedule"   # keep in sync with the relay's DEFAULT_SHEET_TAB
 
 
 def fetch_sheet_csv(sheet_id, tab=SHEET_TAB, timeout=10):
-    """Network probe, kept apart from the pure classifier:
-    ("ok", body_text) or ("error", message)."""
+    """Network probe, kept apart from the pure classifier. Returns (kind, payload):
+    ('ok', body) | ('network', why) for a timeout/connection error (NOT a sharing
+    problem) | ('forbidden', why) for 401/403 | ('not_found', why) for 404 |
+    ('error', why) for anything else."""
     url = (f"https://docs.google.com/spreadsheets/d/{sheet_id}"
            f"/gviz/tq?tqx=out:csv&sheet={quote(tab)}")
     try:
         req = Request(url, headers={"User-Agent": "racecast-preflight/1.0"})
         with urlopen(req, timeout=timeout) as resp:
             return "ok", resp.read().decode("utf-8", "replace")
-    except Exception as exc:  # noqa: BLE001 — any network failure is the same FAIL
+    except HTTPError as exc:
+        if exc.code in (401, 403):
+            return "forbidden", f"HTTP {exc.code}"
+        if exc.code == 404:
+            return "not_found", f"HTTP {exc.code}"
+        return "error", f"HTTP {exc.code}"
+    except TimeoutError:
+        return "network", "the read operation timed out"
+    except URLError as exc:                  # DNS failure, connection refused, no route…
+        reason = getattr(exc, "reason", exc)
+        if isinstance(reason, TimeoutError):
+            return "network", "the read operation timed out"
+        return "network", f"{reason}"
+    except Exception as exc:  # noqa: BLE001 — anything else is a generic read failure
         return "error", f"{type(exc).__name__}: {exc}"
 
 
 def classify_sheet(sheet_id, outcome=None, payload=""):
     """Pure classifier over the fetch outcome. An HTML body is Google's
-    sign-in page — the classic 'sheet not shared' case."""
+    sign-in page — the classic 'sheet not shared' case. A timeout/connection
+    error is a NETWORK problem (WARN), not a sharing one — don't conflate them."""
     if not sheet_id:
         return Result(WARN, "Google Sheet",
                       "RACECAST_SHEET_ID not set — set SHEET_ID in the active profile")
+    if outcome == "network":
+        return Result(WARN, "Google Sheet",
+                      f"could not reach Google Sheets ({payload}) — slow or no "
+                      f"network; retry. Sharing is fine if it loaded before.")
+    if outcome == "forbidden":
+        return Result(FAIL, "Google Sheet",
+                      f"access denied ({payload}) — check sharing: Share -> "
+                      f"'Anyone with the link: Viewer'")
+    if outcome == "not_found":
+        return Result(FAIL, "Google Sheet",
+                      f"not found ({payload}) — wrong Sheet ID in the active profile?")
     if outcome == "error":
         return Result(FAIL, "Google Sheet",
-                      f"not readable ({payload}) — check sharing: Share -> "
-                      f"'Anyone with the link: Viewer' (or no network)")
+                      f"not readable ({payload}) — check sharing "
+                      f"('Anyone with the link: Viewer') or your network")
     head = (payload or "").lstrip("﻿ \t\r\n")[:200].lower()
     if head.startswith("<!doctype") or head.startswith("<html"):
         return Result(FAIL, "Google Sheet",

@@ -194,10 +194,60 @@ def t_classify_sheet_no_id_warns():
     assert "RACECAST_SHEET_ID" in r.detail
 
 
-def t_classify_sheet_fetch_error_fails_with_sharing_hint():
-    r = m.classify_sheet("SHEET_ID", "error", "URLError: timed out")
+def t_classify_sheet_generic_error_fails_with_sharing_and_network_hint():
+    r = m.classify_sheet("SHEET_ID", "error", "ValueError: boom")
+    assert r.level == "FAIL"
+    assert "Anyone with the link" in r.detail and "network" in r.detail
+
+
+def t_classify_sheet_network_warns_without_sharing_blame():
+    # Regression: a timeout is a NETWORK problem, not a sharing one — don't tell
+    # the operator to fix sharing that was never broken.
+    r = m.classify_sheet("SHEET_ID", "network", "the read operation timed out")
+    assert r.level == "WARN"
+    assert "Anyone with the link" not in r.detail
+    assert "network" in r.detail.lower()
+
+
+def t_classify_sheet_forbidden_fails_with_sharing_hint():
+    r = m.classify_sheet("SHEET_ID", "forbidden", "HTTP 403")
     assert r.level == "FAIL"
     assert "Anyone with the link" in r.detail
+
+
+def t_classify_sheet_not_found_fails_with_wrong_id_hint():
+    r = m.classify_sheet("SHEET_ID", "not_found", "HTTP 404")
+    assert r.level == "FAIL"
+    assert "Sheet ID" in r.detail
+
+
+def t_fetch_sheet_csv_timeout_maps_to_network():
+    # The exact user-reported failure: urlopen raises TimeoutError. It must become
+    # a 'network' outcome (WARN, no sharing blame), not the generic sharing FAIL.
+    def boom(*a, **k):
+        raise TimeoutError("The read operation timed out")
+    orig = m.urlopen
+    m.urlopen = boom
+    try:
+        kind, payload = m.fetch_sheet_csv("SHEET_ID")
+    finally:
+        m.urlopen = orig
+    assert kind == "network"
+    assert m.classify_sheet("SHEET_ID", kind, payload).level == "WARN"
+
+
+def t_fetch_sheet_csv_http_403_maps_to_forbidden():
+    import urllib.error
+
+    def boom(*a, **k):
+        raise urllib.error.HTTPError("u", 403, "Forbidden", {}, None)
+    orig = m.urlopen
+    m.urlopen = boom
+    try:
+        kind, _payload = m.fetch_sheet_csv("SHEET_ID")
+    finally:
+        m.urlopen = orig
+    assert kind == "forbidden"
 
 
 def t_classify_sheet_html_body_is_signin_page():
