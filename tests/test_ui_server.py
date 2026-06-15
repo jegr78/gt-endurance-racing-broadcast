@@ -486,6 +486,26 @@ def t_overlay_view_has_slot_picker():
         httpd.shutdown()
 
 
+def t_load_profiles_refreshes_asset_gallery():
+    # Regression for #162: a profile switch / fresh import reloads the profile list
+    # (loadProfiles) but the graphics/media gallery + count badges were loaded once
+    # at startup and never again, so an imported league's assets — present on disk
+    # and correctly served by /api/assets/files — never showed in the Control Center.
+    # loadProfiles must re-pull the gallery, like it does the profile.env/overlay/Looks.
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/")
+        assert code == 200
+        text = body.decode("utf-8")
+        start = text.index("function loadProfiles(")
+        # the function body ends at the next top-level `async function ` declaration
+        end = text.index("\nasync function ", start)
+        assert "fetchAssetFiles(" in text[start:end], \
+            "loadProfiles must refresh the asset gallery so a profile switch/import updates it"
+    finally:
+        httpd.shutdown()
+
+
 def t_page_sets_csp_header():
     # The served page carries a Content-Security-Policy (defense-in-depth for any
     # future XSS; the page is fully self-contained so 'self' + inline is enough).
