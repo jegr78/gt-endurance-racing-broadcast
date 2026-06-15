@@ -16,9 +16,6 @@ def _load(name, *rel):
 
 dw = _load("discord_web", "src", "scripts", "discord_web.py")
 
-NONE = lambda app=None: False  # noqa: E731
-
-
 def t_use_web_override_wins():
     # 1/true/on -> web even on a non-Linux platform; 0/off -> never web even on Linux.
     for val in ("1", "true", "on", "YES"):
@@ -71,6 +68,10 @@ def t_detect_running_browser_matches_first_hit():
         run=lambda argv, **kw: R(0 if argv[-1] == "firefox" else 1)) == "Firefox"
     # nothing running -> None
     assert dw.detect_running_browser(run=lambda argv, **kw: R(1)) is None
+    # a probe that raises (e.g. pgrep missing) is skipped -> None
+    def boom(argv, **kw):
+        raise OSError("pgrep not found")
+    assert dw.detect_running_browser(run=boom) is None
 
 
 if __name__ == "__main__":

@@ -18,6 +18,9 @@ import sys
 _LINUX_DISCORD_PATHS = ("/usr/share/discord", "/usr/bin/discord")
 # Browser process name -> the pipewire_audio_application_capture TargetName to
 # emit, tried in order when auto-detecting a running browser.
+# `pgrep -x` matches exact names, so e.g. "firefox-esr" is NOT matched here —
+# but that's fine: resolve_browser() falls back to DEFAULT_BROWSER = "Firefox",
+# which is the correct PipeWire TargetName for Firefox-ESR too.
 _BROWSER_PROBES = (("firefox", "Firefox"), ("chromium", "Chromium"),
                    ("chrome", "Google Chrome"))
 DEFAULT_BROWSER = "Firefox"
@@ -54,7 +57,8 @@ def use_web(platform, env, native_installed_fn=native_installed):
 
 def detect_running_browser(run=subprocess.run):
     """The TargetName of a running browser (Firefox/Chromium/Chrome), or None.
-    Best-effort `pgrep -x`; any failure -> None."""
+    Best-effort `pgrep -x`; a probe that errors is skipped; returns None if no
+    probe matches."""
     for proc, target in _BROWSER_PROBES:
         try:
             out = run(["pgrep", "-x", proc], capture_output=True, text=True,
