@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Stdlib checks for the static-streams helpers. Run: python3 tests/test_streams.py"""
-import importlib.util, os
+import importlib.util, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+# loopstream.py imports its sibling `services` (external_tool_env); in production
+# scripts/ is always sys.path[0] for these modules, so mirror that for the loader.
+sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
 
 
 def _load(name, rel):

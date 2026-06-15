@@ -10,6 +10,8 @@ NOTE: PUBLIC channels only. The real (unlisted) flow is the relay (`racecast rel
 import os, subprocess, sys, time
 from urllib.parse import urlparse
 
+from services import external_tool_env  # de-PyInstaller the env for spawned streamlink
+
 
 # keep in sync with src/relay/racecast-feeds.py
 STREAMLINK_TWITCH = ["--ringbuffer-size", "64M", "--hls-live-edge", "2", "--twitch-low-latency"]
@@ -29,36 +31,6 @@ def no_window_kwargs(os_name=None):
         CREATE_NO_WINDOW = 0x08000000
         return {"creationflags": CREATE_NO_WINDOW}
     return {}
-
-
-# Duplicated from scripts/services.py (this standalone feed imports nothing from
-# its siblings); tests/test_services.py cross-checks the copies stay identical.
-def external_tool_env(frozen=None, environ=None):
-    """Environment for spawning an EXTERNAL native tool (yt-dlp, streamlink,
-    ffmpeg, deno, the tailscale CLI) from a possibly PyInstaller-frozen process.
-
-    The onefile bootloader prepends its private _MEIPASS extraction dir to
-    LD_LIBRARY_PATH (DYLD_LIBRARY_PATH on macOS) so the BUNDLED interpreter finds
-    its own shared libs. An external tool that links the SYSTEM libraries — e.g.
-    yt-dlp/streamlink running under the system Python, whose _ssl needs the system
-    libcrypto — then mis-loads our older bundled libcrypto and dies with
-    "version `OPENSSL_x.y.z' not found" (seen on ARM64 Linux with a system
-    Python 3.14). PyInstaller stashes the pre-launch value in <VAR>_ORIG; restore
-    it, or drop the var entirely when there was none, so the child sees the real
-    system library path. Returns None when not frozen — the caller then inherits
-    os.environ unchanged, leaving dev/source runs (which may set LD_LIBRARY_PATH
-    legitimately) untouched."""
-    frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
-    if not frozen:
-        return None
-    env = dict(os.environ if environ is None else environ)
-    for var in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
-        orig = env.get(var + "_ORIG")
-        if orig is not None:
-            env[var] = orig
-        else:
-            env.pop(var, None)
-    return env
 
 
 # keep in sync with src/relay/racecast-feeds.py
