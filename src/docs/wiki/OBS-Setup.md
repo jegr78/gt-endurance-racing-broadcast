@@ -129,8 +129,19 @@ for the importing OS — no manual source-switching needed.
   title works — window titles don't matter. Don't *also* capture Discord via desktop
   audio, or you'll double it.
 - **Linux:** requires the
-  [PipeWire Audio Capture plugin](https://obsproject.com/forum/resources/pipewire-audio-capture.1458/)
-  (untested). Install the plugin before importing the collection.
+  [PipeWire Audio Capture plugin](https://obsproject.com/forum/resources/pipewire-audio-capture.1458/).
+  Install the plugin before importing the collection. `racecast setup` sets the capture
+  target automatically — see below for the ARM64 / no-native-Discord variant.
+- **Linux without native Discord (e.g. ARM64):** the official Discord `.deb` is amd64-only,
+  so there is no native client to capture. `racecast setup` detects this and points the
+  **Discord Audio Capture** source at the browser instead — it stays a PipeWire Application
+  Capture source (so the panel/Companion mute &amp; volume controls are unchanged), only its
+  target becomes the browser. Open **Discord-web** (<https://discord.com/app>) in that
+  browser, join the **Interviews** voice channel before race end, and keep the tab playing.
+  Override the auto-detection with `RACECAST_DISCORD_WEB` (`1`/`0`) and the captured
+  browser with `RACECAST_DISCORD_WEB_BROWSER` (e.g. `Chromium`) in `.env`. The PipeWire
+  capture grabs *all* audio from that browser, so use a browser/profile dedicated to the
+  interview if other tabs make sound.
 - **Switched production machine or OS?** Re-run `racecast setup` and re-import the collection.
 
 ## 6. Stream key

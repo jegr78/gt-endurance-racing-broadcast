@@ -82,6 +82,7 @@ python3 tests/test_streams.py       # static-streams helpers (frozen feed spawn)
 python3 tests/test_event.py          # event readiness helpers (probes/launch/assets)
 python3 tests/test_tailscale.py      # Tailscale detection/control helpers
 python3 tests/test_obsws.py          # minimal obs-websocket client (feed release on stop, page refresh on start)
+python3 tests/test_discord_web.py    # Discord-web/browser capture decision (native-vs-web, browser target)
 python3 tests/test_installer_common.py  # shared installer helpers (brew bootstrap)
 python3 tests/test_install_tools.py     # install-tools decision helpers
 python3 tests/test_install_apps.py      # install-apps decision helpers
