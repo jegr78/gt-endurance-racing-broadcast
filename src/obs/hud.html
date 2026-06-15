@@ -90,29 +90,28 @@
 <link rel="stylesheet" href="/hud/override.css">
 </head>
 <body>
-  <!-- data-edit="<label>" marks a slot the Control Center overlay builder can
-       position/style; data-edit-props (comma list) limits which property groups
-       apply (default = all text props). The markup is the single slot source —
-       a new global element becomes editable just by adding these attributes. -->
-  <div id="stint" class="el white" data-edit="Stint banner"></div>
-  <div id="session" class="el black" data-edit="Session"></div>
-  <div id="streamer" class="el black" data-edit="Streamer"></div>
-  <div id="round-top" class="el white" data-edit="Round title"></div>
-  <div id="round-flag" class="el" data-edit="Round flag" data-edit-props="left,top,width,height"><img alt=""></div>
-  <div id="round-country" class="el white" data-edit="Round country"></div>
-  <div id="team1-logo" class="el team-logo" data-edit="Team 1 logo" data-edit-props="left,top,width,height"><img alt=""></div>
-  <div id="team1-num" class="el team-num white" data-edit="Team 1 number" data-edit-props="left,top,fontSize,fontFamily,color,background"></div>
-  <div id="team1-name" class="el team-name white" data-edit="Team 1 name" data-edit-props="left,top,width,height,teamNameMax,teamNameMin,fontFamily,color"></div>
-  <div id="team2-logo" class="el team-logo" data-edit="Team 2 logo" data-edit-props="left,top,width,height"><img alt=""></div>
-  <div id="team2-num" class="el team-num white" data-edit="Team 2 number" data-edit-props="left,top,fontSize,fontFamily,color,background"></div>
-  <div id="team2-name" class="el team-name white" data-edit="Team 2 name" data-edit-props="left,top,width,height,teamNameMax,teamNameMin,fontFamily,color"></div>
-  <div id="team3-logo" class="el team-logo" data-edit="Team 3 logo" data-edit-props="left,top,width,height"><img alt=""></div>
-  <div id="team3-num" class="el team-num white" data-edit="Team 3 number" data-edit-props="left,top,fontSize,fontFamily,color,background"></div>
-  <div id="team3-name" class="el team-name white" data-edit="Team 3 name" data-edit-props="left,top,width,height,teamNameMax,teamNameMin,fontFamily,color"></div>
-  <div id="race-control" class="el white" data-edit="Race control"></div>
-  <div id="pov" class="el" data-edit="POV box" data-edit-props="left,top,width,height,background,borderStyle,borderColor,borderWidth"></div>
-  <div id="pov-name" class="el" data-edit="POV name" data-edit-props="left,top,width,height,fontSize,fontFamily,color,background,borderStyle,borderColor,borderWidth,align"></div>
-  <div id="clock" class="el white" data-edit="Clock"></div>
+  <!-- data-edit="<label>" marks a builder slot; data-edit-kind="text|box" sets
+       its property set (KIND_PROPS in overlay_build.py — the single source).
+       data-edit-props adds slot-specific extras (e.g. team-name auto-fit). -->
+  <div id="stint" class="el white" data-edit="Stint banner" data-edit-kind="text"></div>
+  <div id="session" class="el black" data-edit="Session" data-edit-kind="text"></div>
+  <div id="streamer" class="el black" data-edit="Streamer" data-edit-kind="text"></div>
+  <div id="round-top" class="el white" data-edit="Round title" data-edit-kind="text"></div>
+  <div id="round-flag" class="el" data-edit="Round flag" data-edit-kind="box"><img alt=""></div>
+  <div id="round-country" class="el white" data-edit="Round country" data-edit-kind="text"></div>
+  <div id="team1-logo" class="el team-logo" data-edit="Team 1 logo" data-edit-kind="box"><img alt=""></div>
+  <div id="team1-num" class="el team-num white" data-edit="Team 1 number" data-edit-kind="text"></div>
+  <div id="team1-name" class="el team-name white" data-edit="Team 1 name" data-edit-kind="text" data-edit-props="teamNameMax,teamNameMin"></div>
+  <div id="team2-logo" class="el team-logo" data-edit="Team 2 logo" data-edit-kind="box"><img alt=""></div>
+  <div id="team2-num" class="el team-num white" data-edit="Team 2 number" data-edit-kind="text"></div>
+  <div id="team2-name" class="el team-name white" data-edit="Team 2 name" data-edit-kind="text" data-edit-props="teamNameMax,teamNameMin"></div>
+  <div id="team3-logo" class="el team-logo" data-edit="Team 3 logo" data-edit-kind="box"><img alt=""></div>
+  <div id="team3-num" class="el team-num white" data-edit="Team 3 number" data-edit-kind="text"></div>
+  <div id="team3-name" class="el team-name white" data-edit="Team 3 name" data-edit-kind="text" data-edit-props="teamNameMax,teamNameMin"></div>
+  <div id="race-control" class="el white" data-edit="Race control" data-edit-kind="text"></div>
+  <div id="pov" class="el" data-edit="POV box" data-edit-kind="box"></div>
+  <div id="pov-name" class="el" data-edit="POV name" data-edit-kind="text"></div>
+  <div id="clock" class="el white" data-edit="Clock" data-edit-kind="text"></div>
 
 <script>
   const POLL_MS = 2500;

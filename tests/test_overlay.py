@@ -235,21 +235,21 @@ def t_ob_extract_slots_from_real_hud():
     # default props (no data-edit-props) include the text set, not the team-only keys
     assert "fontSize" in by_id["stint"]["props"]
     assert "teamNameMax" not in by_id["stint"]["props"]
-    # team name slot: restricted set with the auto-fit bounds, no plain fontSize
-    assert by_id["team1-name"]["props"] == ["left", "top", "width", "height",
-                                            "teamNameMax", "teamNameMin",
-                                            "fontFamily", "color"]
-    # team number slot: badge text size/color/background, no auto-fit bounds
-    assert by_id["team1-num"]["props"] == ["left", "top", "fontSize",
-                                           "fontFamily", "color", "background"]
-    # image slots (logo, flag): position/size only
-    assert by_id["team1-logo"]["props"] == ["left", "top", "width", "height"]
-    assert by_id["round-flag"]["props"] == ["left", "top", "width", "height"]
-    # POV box: position/size + border/background props (issue #141)
-    assert by_id["pov"]["props"] == ["left", "top", "width", "height",
-                                     "background", "borderStyle",
-                                     "borderColor", "borderWidth"]
+    # team name slot: the text kind + the auto-fit extras (issue #136)
+    assert by_id["team1-name"]["props"] == list(ob.KIND_TEXT) + [
+        "teamNameMax", "teamNameMin"]
+    # team number slot: the full text kind (standard props for all slots)
+    assert by_id["team1-num"]["props"] == list(ob.KIND_TEXT)
+    # image slots (logo, flag) are the box kind: no text properties
+    assert by_id["team1-logo"]["props"] == list(ob.KIND_BOX)
+    assert by_id["round-flag"]["props"] == list(ob.KIND_BOX)
+    # POV box: the box kind (still carries background/border via the kind)
+    assert by_id["pov"]["props"] == list(ob.KIND_BOX)
+    for p in ("background", "borderStyle", "borderColor", "borderWidth"):
+        assert p in by_id["pov"]["props"], p
     assert by_id["pov"]["label"] == "POV box"
+    # POV name label is a text slot (its old hand-curated set is now the kind)
+    assert by_id["pov-name"]["props"] == list(ob.KIND_TEXT)
 
 
 def t_ob_hud_has_clock_slot():
