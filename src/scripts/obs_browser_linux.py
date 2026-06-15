@@ -120,8 +120,10 @@ def obs_plugins_dir(arch):
 
 
 def browser_plugin_installed(plugins_dir, exists=os.path.exists):
-    """True iff obs-browser.so is present in the OBS plugins dir."""
-    return exists(os.path.join(plugins_dir, "obs-browser.so"))
+    """True iff obs-browser.so is present in the OBS plugins dir. plugins_dir is a
+    fixed-OS Linux path, so join with an explicit '/': os.path.join would inject a
+    backslash on the Windows test runner (CLAUDE.md cross-platform rule)."""
+    return exists(plugins_dir.rstrip("/") + "/obs-browser.so")
 
 
 def install_hint(machine, obs_present, browser_present):

@@ -550,6 +550,8 @@ def _obs_browser_notice():
     """On a supported Linux arch where OBS is installed but its Browser Source
     plugin is missing (the distro/PPA ships none on aarch64), point at the
     source-build command — the relay HUD/timer overlays need a Browser Source."""
+    if not sys.platform.startswith("linux"):
+        return
     import platform
     try:
         import obs_browser_linux as obl

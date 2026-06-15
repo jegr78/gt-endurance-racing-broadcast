@@ -93,6 +93,21 @@ def t_browser_plugin_installed():
                                       exists=lambda p: False) is False
 
 
+def t_browser_plugin_installed_uses_forward_slash():
+    # the OBS plugins dir is a fixed-OS Linux path — the lookup must use '/',
+    # never os.path.join (which injects '\\' on the Windows CI runner). Capture
+    # the exact path queried so this regression is caught on any OS, not just Windows.
+    seen = []
+    m.browser_plugin_installed("/usr/lib/aarch64-linux-gnu/obs-plugins",
+                               exists=lambda p: seen.append(p) or False)
+    assert seen == ["/usr/lib/aarch64-linux-gnu/obs-plugins/obs-browser.so"]
+    # a trailing slash on the dir must not double up
+    seen.clear()
+    m.browser_plugin_installed("/usr/lib/aarch64-linux-gnu/obs-plugins/",
+                               exists=lambda p: seen.append(p) or False)
+    assert seen == ["/usr/lib/aarch64-linux-gnu/obs-plugins/obs-browser.so"]
+
+
 # --- the install-apps pointer --------------------------------------------
 def t_install_hint_only_when_missing_on_supported_arch():
     # OBS present, browser missing, supported arch -> a pointer is shown
