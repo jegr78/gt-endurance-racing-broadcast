@@ -8,6 +8,12 @@ Usage: python3 setup-assets.py [--out PATH] [--assets DIR] [--template FILE]
 """
 import argparse, json, os, re, sys
 
+# Load the sibling decision helper (scripts/ sits next to this script in both
+# the repo and the package). setup-assets stays config.py-free, but discord_web
+# is a tiny pure stdlib helper — importing it does not pull in the heavy resolver.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
+import discord_web  # noqa: E402
+
 ASSETS_TOKEN = "__RACECAST_ASSETS__"
 SHEET_TOKEN = "__RACECAST_SHEET__"
 MEDIA_TOKEN = "__RACECAST_MEDIA__"
@@ -49,22 +55,28 @@ DISCORD_AUDIO_VARIANTS = {
 }
 
 
-def discord_variant(platform):
-    """(source id, settings) for this platform, or None when unknown."""
+def discord_variant(platform, web=False, browser="Firefox"):
+    """(source id, settings) for this platform, or None when unknown.
+    On Linux with web=True, target the browser running Discord-web instead of a
+    native Discord process — same pipewire source type, only TargetName differs,
+    so the panel/Companion mute & volume bindings stay intact."""
     if platform.startswith("win"):
         return DISCORD_AUDIO_VARIANTS["win"]
     if platform == "darwin":
         return DISCORD_AUDIO_VARIANTS["darwin"]
     if platform.startswith("linux"):
+        if web:
+            return ("pipewire_audio_application_capture",
+                    {"TargetName": browser, "MatchPriorty": 0})
         return DISCORD_AUDIO_VARIANTS["linux"]
     return None
 
 
-def localize_discord_audio(collection, platform):
+def localize_discord_audio(collection, platform, web=False, browser="Firefox"):
     """Swap the Discord audio source to this platform's variant, in place.
     Returns the new source id, or None (source absent / unknown platform —
     never fails, same contract as the missing-graphics warnings)."""
-    variant = discord_variant(platform)
+    variant = discord_variant(platform, web=web, browser=browser)
     if variant is None:
         return None
     src_id, settings = variant
@@ -197,7 +209,10 @@ def main():
                   "until then).")
 
     localized = replace_tokens(collection, mapping)
-    swapped = localize_discord_audio(localized, sys.platform)
+    web = discord_web.use_web(sys.platform, os.environ)
+    browser = discord_web.resolve_browser(os.environ,
+                                          discord_web.detect_running_browser())
+    swapped = localize_discord_audio(localized, sys.platform, web=web, browser=browser)
     apply_collection_name(localized, a.collection)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as fh:
@@ -215,6 +230,9 @@ def main():
         print(f"  OBS collection name: {a.collection}")
     if swapped:
         print(f"  Discord audio source: {swapped}")
+        if web:
+            print(f"  Discord interview audio: capturing browser '{browser}' "
+                  "(Discord-web) — open it and join the voice channel manually")
     elif discord_variant(sys.platform) is None:
         print(f"  NOTE: no Discord audio variant for {sys.platform} — macOS form kept.")
     else:

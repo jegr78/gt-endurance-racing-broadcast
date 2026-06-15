@@ -54,6 +54,31 @@ def t_localize_linux_uses_pipewire_plugin():
     assert c["sources"][0]["settings"] == {"TargetName": "Discord", "MatchPriorty": 0}
 
 
+def t_variant_linux_web_targets_browser():
+    src_id, settings = sa.discord_variant("linux", web=True, browser="Firefox")
+    assert src_id == "pipewire_audio_application_capture"
+    assert settings == {"TargetName": "Firefox", "MatchPriorty": 0}
+    # web flag only affects Linux; macOS/Windows ignore it.
+    assert sa.discord_variant("darwin", web=True)[0] == "sck_audio_capture"
+    assert sa.discord_variant("win32", web=True)[0] == "wasapi_process_output_capture"
+
+
+def t_localize_linux_web_swaps_targetname():
+    c = coll()
+    assert sa.localize_discord_audio(c, "linux", web=True, browser="Chromium") \
+        == "pipewire_audio_application_capture"
+    s = c["sources"][0]
+    assert s["id"] == s["versioned_id"] == "pipewire_audio_application_capture"
+    assert s["settings"] == {"TargetName": "Chromium", "MatchPriorty": 0}
+
+
+def t_localize_linux_web_default_off_is_native():
+    # web defaults False -> the existing native behaviour is unchanged.
+    c = coll()
+    sa.localize_discord_audio(c, "linux")
+    assert c["sources"][0]["settings"] == {"TargetName": "Discord", "MatchPriorty": 0}
+
+
 def t_localize_idempotent_and_darwin_noop():
     c = coll()
     sa.localize_discord_audio(c, "win32")
