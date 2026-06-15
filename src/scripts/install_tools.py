@@ -116,7 +116,7 @@ def install_speedtest_binary(dest_dir, tag, opener=None, downloads=None):
         src = tf.extractfile(member)
         with open(binpath, "wb") as out:
             shutil.copyfileobj(src, out)
-    os.chmod(binpath, 0o755)
+    os.chmod(binpath, 0o700)   # owner rwx only — racecast runs the binary as the producer
     return binpath
 
 

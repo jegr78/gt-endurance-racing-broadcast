@@ -16,8 +16,14 @@ import shutil
 import subprocess
 import tempfile
 import time
+from collections import namedtuple
 
-from preflight import PASS, WARN, INFO, Result
+# Level constants + a Result shape compatible with preflight.Result (same
+# .level/.name/.detail fields, identical level strings). Defined locally rather
+# than imported from preflight so this module does NOT depend on preflight —
+# preflight imports US (lazily, in gather()); importing it back would be a cycle.
+PASS, WARN, INFO = "PASS", "WARN", "INFO"
+Result = namedtuple("Result", ("level", "name", "detail"))
 
 SPEEDTEST_BIN = "speedtest"
 # Thresholds mirror src/docs/wiki/Set-up-the-broadcast-PC.md (the single source).
