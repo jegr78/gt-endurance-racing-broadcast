@@ -1226,15 +1226,22 @@ def _companion():
     return cc
 
 def _companion_cmds(cc):
-    exe = cc.find_companion_exe() if sys.platform.startswith("win") else None
-    return cc.companion_control_commands(sys.platform, exe)
+    if sys.platform.startswith("win"):
+        return cc.companion_control_commands(sys.platform, cc.find_companion_exe())
+    if sys.platform == "darwin":
+        return cc.companion_control_commands(sys.platform)
+    import companion_linux as cl
+    unit = cl.detect_unit()
+    return cl.control_commands(unit) if unit else None
 
 def _companion_unsupported_msg():
     if sys.platform.startswith("win"):
         return ("companion: Companion.exe not found. Set RACECAST_COMPANION_EXE in .env "
                 "to its full path and retry.")
-    return ("companion: automated control supports Windows and macOS. On Linux "
-            "(WSL/Docker), run and bind Companion on the host instead.")
+    if sys.platform == "darwin":
+        return "companion: Companion control is unavailable on this macOS setup."
+    return ("companion: no companion.service found (WSL/host or manual install) — "
+            "run and bind Companion yourself.")
 
 def _companion_running(cc):
     cmds = _companion_cmds(cc)

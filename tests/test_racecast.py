@@ -1512,6 +1512,43 @@ def t_speedtest_data_shape():
                                  "rec_down": 50.0, "rec_up": 20.0}
 
 
+def t_companion_cmds_linux_uses_systemd_when_unit_present():
+    import companion_linux as cl
+    orig_platform = m.sys.platform
+    orig_detect = cl.detect_unit
+    try:
+        m.sys.platform = "linux"
+        cl.detect_unit = lambda *a, **k: "companion"
+        cmds = m._companion_cmds(m._companion())
+        assert cmds["running"] == ["systemctl", "is-active", "companion"]
+    finally:
+        m.sys.platform = orig_platform
+        cl.detect_unit = orig_detect
+
+
+def t_companion_cmds_linux_none_without_unit():
+    import companion_linux as cl
+    orig_platform = m.sys.platform
+    orig_detect = cl.detect_unit
+    try:
+        m.sys.platform = "linux"
+        cl.detect_unit = lambda *a, **k: None
+        assert m._companion_cmds(m._companion()) is None
+    finally:
+        m.sys.platform = orig_platform
+        cl.detect_unit = orig_detect
+
+
+def t_unsupported_msg_linux_is_no_service_wording():
+    orig = m.sys.platform
+    try:
+        m.sys.platform = "linux"
+        msg = m._companion_unsupported_msg()
+        assert "no companion.service" in msg.lower()
+    finally:
+        m.sys.platform = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
