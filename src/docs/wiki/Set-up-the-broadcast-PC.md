@@ -376,16 +376,38 @@ connection. (OBS's own walkthrough: the
 
 *Takes ~5 minutes.*
 
-Open Tailscale, sign in (free account — this owns your private network), then note this
-machine's IP (`100.x.y.z`) from the Tailscale menu
-([how Tailscale assigns IPs](https://tailscale.com/kb/1033/ip-and-dns-addresses)). Invite
-each director (free, up to 6
-people) at [login.tailscale.com](https://login.tailscale.com/admin/users); they install
-Tailscale and sign in too. A director can then open `http://100.x.y.z:8000/tablet` to drive
-the show. More: [Director setup](Director-Setup) (the page to send your directors) and the [Director guide](Director).
+**macOS / Windows:** open the Tailscale app, sign in (free account — this owns your
+private network), then note this machine's IP (`100.x.y.z`) from the Tailscale menu
+([how Tailscale assigns IPs](https://tailscale.com/kb/1033/ip-and-dns-addresses)).
 
-**You should now see:** this machine's `100.x.y.z` address in the Tailscale
-menu, and your invitation(s) showing in the Tailscale admin console
+**Linux: there is no Tailscale app** — it runs as a background service and you sign in
+from a terminal. This trips people up, so the two one-time commands are:
+
+```bash
+sudo tailscale up
+```
+This prints a `https://login.tailscale.com/…` URL. **Open it in a browser**, sign in, and
+approve this machine. (The Control Center can't do this step for you — it's an interactive
+browser login that needs root, which a background button can't drive.)
+
+```bash
+sudo tailscale set --operator=$USER
+```
+Run this **once** so that `tailscale up` / `down` — and the Control Center's
+**Connect / Disconnect** buttons — work **without** `sudo` afterwards. Without it you get
+`Access denied: prefs write access denied`. (On macOS/Windows the app handles this; only
+Linux needs the operator step.)
+
+Then find this machine's IP with `tailscale ip -4` (or `racecast tailscale status`).
+
+**Then, on any OS:** invite each director (free, up to 6 people) at
+[login.tailscale.com](https://login.tailscale.com/admin/users); they install Tailscale and
+sign in too. A director can then open `http://100.x.y.z:8000/tablet` to drive the show.
+More: [Director setup](Director-Setup) (the page to send your directors) and the
+[Director guide](Director).
+
+**You should now see:** this machine's `100.x.y.z` address (`tailscale ip -4` on Linux, the
+Tailscale menu on macOS/Windows), and your invitation(s) in the Tailscale admin console
 (directors appear once they accept).
 
 ## 9 — Pre-flight check

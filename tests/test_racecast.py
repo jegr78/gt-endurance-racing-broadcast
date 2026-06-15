@@ -90,6 +90,21 @@ def t_tailscale_login_hint_desktop_uses_the_gui_app():
         assert m._tailscale_login_hint(plat) == "open the Tailscale app and sign in"
 
 
+def t_tailscale_operator_hint_linux_points_to_one_time_operator_fix():
+    # `tailscale up/down` need root on Linux ("prefs write access denied"); the
+    # durable fix that makes the Control Center buttons work without sudo is the
+    # one-time `tailscale set --operator`.
+    hint = m._tailscale_operator_hint("down", "linux")
+    assert "--operator=$USER" in hint
+    assert "sudo tailscale down" in hint        # immediate workaround for this verb
+    assert "sudo tailscale up" in m._tailscale_operator_hint("up", "linux")
+
+
+def t_tailscale_operator_hint_empty_off_linux():
+    for plat in ("darwin", "win32"):
+        assert m._tailscale_operator_hint("up", plat) == ""
+
+
 def t_obs_refresh_route():
     assert m.route(["obs", "refresh"]) == \
         {"kind": "service", "command": "obs", "verb": "refresh", "rest": []}
