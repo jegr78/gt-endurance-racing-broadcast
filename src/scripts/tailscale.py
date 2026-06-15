@@ -69,6 +69,7 @@ def tailscale_backend(timeout=3):
         try:
             out = subprocess.run([binary, "status", "--json"], capture_output=True,
                                  text=True, errors="replace", timeout=timeout,
+                                 env=services.external_tool_env(),
                                  **services.no_window_kwargs())
         except (OSError, subprocess.SubprocessError):
             continue
@@ -106,6 +107,7 @@ def _run_verb(binary, verb, timeout):
     try:
         out = subprocess.run([binary, verb], capture_output=True, text=True,
                              errors="replace", timeout=timeout,
+                             env=services.external_tool_env(),
                              **services.no_window_kwargs())
     except subprocess.TimeoutExpired:
         return False, f"timed out after {timeout}s"

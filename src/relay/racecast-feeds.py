@@ -184,6 +184,36 @@ def _no_window_kwargs(os_name=None):
     return {}
 
 
+# Duplicated from scripts/services.py (the standalone relay imports nothing from
+# scripts/); tests/test_services.py cross-checks the copies stay identical.
+def external_tool_env(frozen=None, environ=None):
+    """Environment for spawning an EXTERNAL native tool (yt-dlp, streamlink,
+    ffmpeg, deno, the tailscale CLI) from a possibly PyInstaller-frozen process.
+
+    The onefile bootloader prepends its private _MEIPASS extraction dir to
+    LD_LIBRARY_PATH (DYLD_LIBRARY_PATH on macOS) so the BUNDLED interpreter finds
+    its own shared libs. An external tool that links the SYSTEM libraries — e.g.
+    yt-dlp/streamlink running under the system Python, whose _ssl needs the system
+    libcrypto — then mis-loads our older bundled libcrypto and dies with
+    "version `OPENSSL_x.y.z' not found" (seen on ARM64 Linux with a system
+    Python 3.14). PyInstaller stashes the pre-launch value in <VAR>_ORIG; restore
+    it, or drop the var entirely when there was none, so the child sees the real
+    system library path. Returns None when not frozen — the caller then inherits
+    os.environ unchanged, leaving dev/source runs (which may set LD_LIBRARY_PATH
+    legitimately) untouched."""
+    frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
+    if not frozen:
+        return None
+    env = dict(os.environ if environ is None else environ)
+    for var in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
+        orig = env.get(var + "_ORIG")
+        if orig is not None:
+            env[var] = orig
+        else:
+            env.pop(var, None)
+    return env
+
+
 def detect_tailscale_ip():
     """This machine's connected Tailscale IPv4 via the CLI, or None if the
     Tailscale backend is unavailable, stopped, or logged out.
@@ -196,7 +226,7 @@ def detect_tailscale_ip():
         try:
             out = subprocess.run([binary, "status", "--json"], capture_output=True,
                                  text=True, errors="replace", timeout=3,
-                                 **_no_window_kwargs())
+                                 env=external_tool_env(), **_no_window_kwargs())
         except (OSError, subprocess.SubprocessError):
             continue
         ip = parse_tailscale_status(out.stdout)
@@ -1120,7 +1150,7 @@ def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
     cmd = ytdlp_resolve_cmd(url, cookies, fmt)
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, errors="replace",
-                           timeout=90, **_no_window_kwargs())
+                           timeout=90, env=external_tool_env(), **_no_window_kwargs())
     except FileNotFoundError:
         # Startup checks for yt-dlp; reaching here means it vanished mid-run.
         try:
@@ -1805,7 +1835,7 @@ class Feed:
                 cmd = streamlink_serve_cmd(target, self.port, serve_platform, token)
                 try:
                     self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT,
-                                                 **_no_window_kwargs())
+                                                 env=external_tool_env(), **_no_window_kwargs())
                     if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
                         self.last_error = None
                     self._set_phase("serving")
@@ -2442,7 +2472,7 @@ def export_cookies(browser, out):
         proc = subprocess.run(["yt-dlp", "--cookies-from-browser", browser, "--cookies", out,
                                "--skip-download", "--no-warnings", url],
                               timeout=90, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                              **_no_window_kwargs())
+                              env=external_tool_env(), **_no_window_kwargs())
     except FileNotFoundError:
         print("WARN: yt-dlp not found — cannot auto-export cookies."); return False
     except subprocess.TimeoutExpired:
