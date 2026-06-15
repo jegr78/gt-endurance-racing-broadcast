@@ -1095,6 +1095,10 @@ def app_launch_cmd(rest):
     ev = _event_modules()[0]
     cmd = ev.launch_command(name, sys.platform)
     if cmd is None:
+        if name == "tailscale" and sys.platform.startswith("linux"):
+            sys.exit("app: Tailscale on Linux has no GUI app to launch — it runs as "
+                     "a daemon. Connect with `racecast tailscale up` (first time: "
+                     f"{_tailscale_login_hint()}).")
         sys.exit(f"app: cannot launch {name} on this system — is it installed?")
     argv, cwd = cmd
     try:
@@ -1613,6 +1617,18 @@ def _event_launch(ev, app):
     return True
 
 
+def _tailscale_login_hint(platform=None):
+    """How to complete a first-time Tailscale sign-in, per OS. Linux has no GUI
+    app: the one-time auth is `sudo tailscale up`, which prints a
+    https://login.tailscale.com/… URL to open in a browser. macOS/Windows have
+    the GUI app that drives the login."""
+    platform = sys.platform if platform is None else platform
+    if platform.startswith("linux"):
+        return ("run `sudo tailscale up` in a terminal, then open the printed "
+                "https://login.tailscale.com/… URL in a browser to sign in")
+    return "open the Tailscale app and sign in"
+
+
 def _tailscale_connect(ev=None):
     """Best-effort connect: argument-less `tailscale up` keeps all settings
     ("the opposite of tailscale down"). Launches the app first when no backend
@@ -1635,7 +1651,7 @@ def _tailscale_connect(ev=None):
         print(f"tailscale: already connected ({ip or 'no IPv4 yet'}).")
         return ip
     if action == "needs-login":
-        print("tailscale: logged out — open the Tailscale app and sign in.")
+        print(f"tailscale: logged out — {_tailscale_login_hint()}.")
         return None
     if action == "launch-app":  # the backend never came up
         print("tailscale: not running — start the Tailscale app manually.")
@@ -1680,7 +1696,7 @@ def tailscale_status_cmd(_rest):
     elif state == "Running":
         print(f"Tailscale: connected ({ip or 'no IPv4 yet'}).")
     elif state in ("NeedsLogin", "NeedsMachineAuth"):
-        print(f"Tailscale: {state} — open the Tailscale app and sign in.")
+        print(f"Tailscale: {state} — {_tailscale_login_hint()}.")
     else:
         print(f"Tailscale: {state} — run `racecast tailscale up` to connect.")
 
@@ -2196,6 +2212,7 @@ def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None,
     in assets_status_data() behind the on-demand /api/assets.
     apps_running: OBS/Discord running-state used by the Event overview."""
     return {"version": version(),
+            "os": sys.platform,            # lets the UI hide OS-inapplicable app actions
             "relay": (relay or relay_status_data)(),
             "companion": (companion or companion_status_data)(),
             "streams": (streams or streams_status_data)(),

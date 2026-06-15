@@ -1616,13 +1616,27 @@ const APP_ACTION = {
   companion: [{label: 'Start', op: 'companion-start'},
               {label: 'Stop', op: 'companion-stop', danger: true, confirm: true},
               {label: 'Export config', op: 'export-companion'}],
-  tailscale: [{label: 'Start', op: 'tailscale-start', title: 'Launch the Tailscale app'},
+  tailscale: [{label: 'Start', op: 'tailscale-start', title: 'Launch the Tailscale app',
+               guiApp: true},
               {label: 'Stop', op: 'tailscale-stop', danger: true, confirm: true,
-               title: 'Quit the Tailscale app'},
-              {label: 'Connect', op: 'tailscale-up', title: 'tailscale up — bring the tunnel up'},
+               title: 'Quit the Tailscale app', guiApp: true},
+              {label: 'Connect', op: 'tailscale-up',
+               title: 'tailscale up — bring the tunnel up (first login on Linux: '
+                    + 'run `sudo tailscale up` in a terminal, then open the printed URL)'},
               {label: 'Disconnect', op: 'tailscale-down', danger: true, confirm: true,
                title: 'tailscale down — drop the tunnel'}]
 };
+
+// Linux Tailscale has no GUI app — only the daemon + `tailscale up/down`. Drop the
+// GUI-only Start/Stop there (they can't launch/quit anything); keep Connect/Disconnect.
+function appActions(name) {
+  const acts = APP_ACTION[name];
+  if (!acts) return acts;
+  if (name === 'tailscale' && (lastStatus && (lastStatus.os || '').indexOf('linux') === 0)) {
+    return acts.filter(a => !a.guiApp);
+  }
+  return acts;
+}
 
 function itemRow(key, installed, version, actions, withStatus) {
   const d = document.createElement('div');
@@ -1663,7 +1677,7 @@ function renderItemList(containerId, summaryId, items, kind) {
   const list = items[kind];
   const have = list.filter(x => x.installed).length;
   list.forEach(x => c.appendChild(itemRow(x.name, x.installed, x.version,
-                                  kind === 'apps' ? APP_ACTION[x.name] : null,
+                                  kind === 'apps' ? appActions(x.name) : null,
                                   kind === 'apps')));
   $(summaryId).textContent =
     have === list.length ? 'all ' + list.length + ' installed'

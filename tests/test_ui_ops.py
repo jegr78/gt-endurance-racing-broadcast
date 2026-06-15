@@ -94,7 +94,8 @@ def t_ui_status_payload_shape():
         streams=lambda: [], tailscale=lambda: None,
         cookies=lambda: {"level": "WARN", "detail": "x"},
         apps_running=lambda: {"obs": False, "discord": False})
-    assert payload == {"version": rc.version(), "relay": {"alive": False},
+    assert payload == {"version": rc.version(), "os": rc.sys.platform,
+                       "relay": {"alive": False},
                        "companion": {"running": False}, "streams": [],
                        "tailscale_ip": None,
                        "cookies": {"level": "WARN", "detail": "x"},
