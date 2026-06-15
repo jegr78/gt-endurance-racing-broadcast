@@ -65,7 +65,8 @@ See the [HUD overlays](https://github.com/jegr78/gt-endurance-racing-broadcast/w
 
 Download the latest release for your platform from
 [**GitHub Releases**](https://github.com/jegr78/gt-endurance-racing-broadcast/releases/latest)
-(`racecast-windows.zip` / `racecast-macos.tar.gz` / `racecast-linux.tar.gz`) and
+(`racecast-windows.zip` / `racecast-macos.tar.gz` / `racecast-linux.tar.gz`, plus
+`racecast-linux-arm64.tar.gz` for ARM64 Linux) and
 extract it into **its own folder**. The archive holds two binaries side by side:
 **`racecast`** (the CLI) and **`racecast-ui`** (the Control Center).
 

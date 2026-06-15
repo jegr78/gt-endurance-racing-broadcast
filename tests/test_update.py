@@ -24,7 +24,11 @@ def t_parse_version_bad():
 def t_asset_name_per_platform():
     assert m.asset_name("win32") == "racecast-windows.zip"
     assert m.asset_name("darwin") == "racecast-macos.tar.gz"
-    assert m.asset_name("linux") == "racecast-linux.tar.gz"
+    # Linux splits by arch (explicit machine -> host-independent in CI and on ARM):
+    assert m.asset_name("linux", "x86_64") == "racecast-linux.tar.gz"
+    assert m.asset_name("linux", "amd64") == "racecast-linux.tar.gz"
+    assert m.asset_name("linux", "aarch64") == "racecast-linux-arm64.tar.gz"
+    assert m.asset_name("linux", "arm64") == "racecast-linux-arm64.tar.gz"
 
 
 # --- classify: the whole decision in one pure function --------------------------

@@ -136,6 +136,12 @@ jobs:
             binary: racecast
             built_ui: dist/bin/racecast-ui
             binary_ui: racecast-ui
+          - os: ubuntu-24.04-arm        # GitHub-hosted ARM64 Linux runner
+            asset: racecast-linux-arm64.tar.gz
+            built: dist/bin/racecast
+            binary: racecast
+            built_ui: dist/bin/racecast-ui
+            binary_ui: racecast-ui
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
@@ -190,7 +196,8 @@ jobs:
 
           - **Windows:** $BASE/racecast-windows.zip
           - **macOS:** $BASE/racecast-macos.tar.gz
-          - **Linux:** $BASE/racecast-linux.tar.gz
+          - **Linux (x86-64):** $BASE/racecast-linux.tar.gz
+          - **Linux (ARM64):** $BASE/racecast-linux-arm64.tar.gz
 
           Rebuilt automatically on every push to this PR. \`racecast --version\` prints \`$VERSION\`.
           EOF
