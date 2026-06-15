@@ -73,6 +73,23 @@ def t_tailscale_bad_verb_raises():
     _raises(lambda: m.route(["tailscale", "restart"]))
 
 
+def t_tailscale_login_hint_linux_points_to_cli_not_a_gui_app():
+    # Linux has no Tailscale GUI app — the first sign-in is `sudo tailscale up`
+    # + the printed browser URL, NOT "open the app". Regression for the misleading
+    # "open the Tailscale app and sign in" on Linux. (Whole-string equality, not a
+    # substring `in` check — the latter trips CodeQL's URL-sanitization query.)
+    hint = m._tailscale_login_hint("linux")
+    assert hint == ("run `sudo tailscale up` in a terminal, then open the printed "
+                    "https://login.tailscale.com/… URL in a browser to sign in")
+    assert "sudo tailscale up" in hint        # the actual command to run (not a URL)
+    assert "app" not in hint.lower()          # never tells Linux users to "open the app"
+
+
+def t_tailscale_login_hint_desktop_uses_the_gui_app():
+    for plat in ("darwin", "win32"):
+        assert m._tailscale_login_hint(plat) == "open the Tailscale app and sign in"
+
+
 def t_obs_refresh_route():
     assert m.route(["obs", "refresh"]) == \
         {"kind": "service", "command": "obs", "verb": "refresh", "rest": []}

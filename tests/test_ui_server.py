@@ -472,6 +472,24 @@ def t_root_serves_the_page():
         httpd.shutdown()
 
 
+def t_apps_view_hides_tailscale_gui_buttons_on_linux():
+    # Linux Tailscale has no GUI app — the apps view must drop the GUI-only
+    # Start/Stop there (via appActions, gated on lastStatus.os) and render via
+    # appActions, not the raw APP_ACTION map. Guards the misleading-launch fix.
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/")
+        assert code == 200
+        text = body.decode("utf-8")
+        assert "function appActions(" in text
+        assert "guiApp" in text                       # Start/Stop tagged GUI-only
+        assert "appActions(x.name)" in text           # render path uses the filter
+        # the filter keys off the OS the status payload now reports
+        assert "lastStatus.os" in text
+    finally:
+        httpd.shutdown()
+
+
 def t_overlay_view_has_slot_picker():
     # Regression for #140: a "jump to slot" dropdown wired to the editor selection,
     # populated from the page's slot list, so operators don't hunt on the canvas.
