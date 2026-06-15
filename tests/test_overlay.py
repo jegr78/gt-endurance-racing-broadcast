@@ -553,6 +553,20 @@ def t_ob_compile_valign_and_text_transform():
     assert "text-transform" not in _css_x({"textTransform": "evil; }"})
 
 
+def t_ob_compile_text_shadow():
+    css = _css_x({"textShadow": {"x": 0, "y": 2, "blur": 4, "color": "#000000"}})
+    assert "text-shadow: 0px 2px 4px #000000" in css
+    # all-zero offsets/blur -> invisible -> omitted
+    assert "text-shadow" not in _css_x(
+        {"textShadow": {"x": 0, "y": 0, "blur": 0, "color": "#000000"}})
+    # missing/!str color dropped; non-dict dropped
+    assert "text-shadow" not in _css_x({"textShadow": {"x": 1, "y": 1, "blur": 1}})
+    assert "text-shadow" not in _css_x({"textShadow": "0 2px 4px red"})
+    # color cannot inject (the _UNSAFE_VALUE gate via _safe_value)
+    assert "text-shadow" not in _css_x(
+        {"textShadow": {"x": 1, "y": 1, "blur": 1, "color": "red; } body{x:1"}})
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):

@@ -205,8 +205,29 @@ def _safe_value(value):
     return None
 
 
+def _text_shadow_decl(value):
+    """One 'text-shadow: Xpx Ypx Bpx COLOR' from a {x,y,blur,color} dict, or None.
+    Each part is validated individually (offsets/blur numbers, color via the
+    _safe_value gate) so no value can inject CSS. Omitted when the color is
+    absent/unsafe or the shadow is fully invisible (x, y and blur all 0)."""
+    if not isinstance(value, dict):
+        return None
+    nums = []
+    for k in ("x", "y", "blur"):
+        n = value.get(k, 0)
+        if isinstance(n, bool) or not isinstance(n, (int, float)):
+            return None
+        nums.append(int(n) if float(n).is_integer() else n)
+    color = _safe_value(value.get("color"))
+    if not isinstance(color, str) or nums == [0, 0, 0]:
+        return None
+    return f"text-shadow: {nums[0]}px {nums[1]}px {nums[2]}px {color}"
+
+
 def _declaration(prop, value):
     """CSS 'name: value' for one (prop, value), or None when unsupported/unsafe."""
+    if prop == "textShadow":
+        return _text_shadow_decl(value)
     value = _safe_value(value)
     if value is None:
         return None
