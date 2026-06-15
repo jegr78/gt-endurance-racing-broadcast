@@ -1602,9 +1602,11 @@ def _asset_state(ev):
 def _event_sections(ev, pf):
     """Gather all event-day facts and classify them into report sections."""
     # Apps
+    import discord_web
     obs_running = ev.app_running("obs")
+    discord_web_mode = discord_web.use_web(sys.platform, os.environ)
     apps = [ev.classify_app("obs", obs_running),
-            ev.classify_app("discord", ev.app_running("discord")),
+            ev.classify_app("discord", ev.app_running("discord"), web=discord_web_mode),
             ev.classify_tailscale(_tailscale_ip())]
     # Scene-collection line — only probe obs-websocket when OBS is actually up
     # (no point paying the connect timeout otherwise). Best effort: a broken

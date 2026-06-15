@@ -139,6 +139,10 @@ def t_classify_app_levels():
     assert r.level == "FAIL" and r.name == "OBS"
     r = m.classify_app("discord", False)
     assert r.level == "WARN" and "interview audio" in r.detail
+    # Web-variant host: no native Discord process; report an informational note.
+    rw = m.classify_app("discord", False, web=True)
+    assert rw.level == "INFO" and rw.name == "Discord"
+    assert "Discord-web" in rw.detail and "browser" in rw.detail
 
 
 def t_classify_tailscale():
