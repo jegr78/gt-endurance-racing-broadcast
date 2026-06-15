@@ -1254,8 +1254,42 @@ def _companion_running(cc):
                            errors="replace", **sv.no_window_kwargs())
     return cc.parse_running(sys.platform, probe.returncode, probe.stdout or "")
 
+def _companion_start_linux(cc, cl, unit, rest):
+    """Linux companion-pi: set the bind via the root helper, which restarts the
+    service. No config.json editing (headless ignores it; the bind is the
+    --admin-address flag injected via the systemd drop-in)."""
+    if not os.path.exists(cl.HELPER_PATH):
+        sys.exit("companion: control not set up yet — run `racecast companion "
+                 "enable-control` once (installs the systemd bind helper + sudoers).")
+    bind_arg = rest[0] if rest else "auto"
+    ts = _tailscale_ip()
+    ip = cc.desired_bind_ip(bind_arg, ts)
+    if bind_arg == "auto" and not ts:
+        print("companion: no Tailscale IP — binding 127.0.0.1 (this machine only).")
+    if subprocess.run(["sudo", "-n", cl.HELPER_PATH, ip]).returncode != 0:
+        sys.exit("companion: passwordless start failed. Run `racecast companion "
+                 "enable-control`, or start manually: `sudo systemctl start companion`.")
+    print(f"companion: started, admin/tablet bound to {ip}:8000.")
+    print("  Admin GUI shares this port — restrict who reaches it with a Tailscale ACL.")
+
+
+def _companion_stop_linux(cc, cl, unit):
+    if not _companion_running(cc):
+        print("companion is not running.")
+        return
+    if subprocess.run(["sudo", "-n", "systemctl", "stop", unit]).returncode != 0:
+        sys.exit("companion: passwordless stop failed. Run `racecast companion "
+                 "enable-control`, or stop manually: `sudo systemctl stop companion`.")
+    print("companion stopped.")
+
+
 def companion_start(rest):
     cc = _companion()
+    import companion_linux as cl
+    if not sys.platform.startswith("win") and sys.platform != "darwin":
+        unit = cl.detect_unit()
+        if unit:
+            return _companion_start_linux(cc, cl, unit, rest)
     cmds = _companion_cmds(cc)
     if cmds is None:
         sys.exit(_companion_unsupported_msg())
@@ -1303,9 +1337,15 @@ def companion_start(rest):
     host = desired if desired != "0.0.0.0" else (ts or "<this-machine-ip>")
     print(f"Companion buttons (tablet): http://{host}:{port}/tablet")
     print("  Admin GUI shares this port — restrict who reaches it with a Tailscale ACL.")
+    return None
 
 def companion_stop(rest):
     cc = _companion()
+    import companion_linux as cl
+    if not sys.platform.startswith("win") and sys.platform != "darwin":
+        unit = cl.detect_unit()
+        if unit:
+            return _companion_stop_linux(cc, cl, unit)
     cmds = _companion_cmds(cc)
     if cmds is None:
         sys.exit(_companion_unsupported_msg())
@@ -1322,6 +1362,7 @@ def companion_stop(rest):
     hint = ("taskkill /F /IM Companion.exe" if sys.platform.startswith("win")
             else "pkill -f Companion")
     print(f"companion may still be running. Force-quit: {hint}")
+    return None
 
 def companion_restart(rest):
     companion_stop([])

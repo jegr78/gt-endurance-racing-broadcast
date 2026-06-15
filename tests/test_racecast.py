@@ -1549,6 +1549,92 @@ def t_unsupported_msg_linux_is_no_service_wording():
         m.sys.platform = orig
 
 
+def _linux_companion_env(detect="companion", ts="100.64.1.2", run_calls=None):
+    """Monkeypatch racecast for the Linux companion_start/stop branch. Returns
+    (teardown, cl). `run_calls` collects argv passed to subprocess.run."""
+    import companion_linux as cl
+    saved = {
+        "platform": m.sys.platform, "detect": cl.detect_unit,
+        "ts": m._tailscale_ip, "run": m.subprocess.run,
+        "running": m._companion_running,
+    }
+    m.sys.platform = "linux"
+    cl.detect_unit = lambda *a, **k: detect
+    m._tailscale_ip = lambda: ts
+    m._companion_running = lambda cc: False
+
+    class P:
+        returncode = 0
+    def fake_run(argv, **kw):
+        if run_calls is not None:
+            run_calls.append(argv)
+        return P()
+    m.subprocess.run = fake_run
+
+    def teardown():
+        m.sys.platform = saved["platform"]
+        cl.detect_unit = saved["detect"]
+        m._tailscale_ip = saved["ts"]
+        m.subprocess.run = saved["run"]
+        m._companion_running = saved["running"]
+    return teardown, cl
+
+
+def t_companion_start_linux_calls_helper_with_tailscale_ip():
+    calls = []
+    teardown, cl = _linux_companion_env(ts="100.64.1.2", run_calls=calls)
+    orig_exists = m.os.path.exists
+    try:
+        m.os.path.exists = lambda p: True   # helper present (enable-control done)
+        m.companion_start(["auto"])
+    finally:
+        m.os.path.exists = orig_exists
+        teardown()
+    assert ["sudo", "-n", cl.HELPER_PATH, "100.64.1.2"] in calls
+
+
+def t_companion_start_linux_falls_back_to_localhost_without_tailscale():
+    calls = []
+    teardown, cl = _linux_companion_env(ts=None, run_calls=calls)
+    orig_exists = m.os.path.exists
+    try:
+        m.os.path.exists = lambda p: True
+        m.companion_start(["auto"])
+    finally:
+        m.os.path.exists = orig_exists
+        teardown()
+    assert ["sudo", "-n", cl.HELPER_PATH, "127.0.0.1"] in calls
+
+
+def t_companion_start_linux_guides_when_not_enabled():
+    calls = []
+    teardown, cl = _linux_companion_env(run_calls=calls)
+    orig_exists = m.os.path.exists
+    raised = False
+    try:
+        m.os.path.exists = lambda p: False  # helper absent -> enable-control needed
+        try:
+            m.companion_start(["auto"])
+        except SystemExit:
+            raised = True
+    finally:
+        m.os.path.exists = orig_exists
+        teardown()
+    assert not any(cl.HELPER_PATH in " ".join(c) for c in calls)
+    assert raised
+
+
+def t_companion_stop_linux_runs_systemctl_stop():
+    calls = []
+    teardown, cl = _linux_companion_env(run_calls=calls)
+    try:
+        m._companion_running = lambda cc: True
+        m.companion_stop([])
+    finally:
+        teardown()
+    assert ["sudo", "-n", "systemctl", "stop", "companion"] in calls
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
