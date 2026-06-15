@@ -2157,6 +2157,7 @@ async function loadProfiles(force) {
   loadProfileEnv();                       // editor reflects the now-active profile
   loadOverlay();                          // overlay-CSS editor for the active profile
   loadBackups();                          // Looks card for the active profile
+  fetchAssetFiles();                      // graphics/media gallery for the active profile
 }
 
 async function useProfile(name) {
