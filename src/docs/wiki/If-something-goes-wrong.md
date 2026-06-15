@@ -30,6 +30,8 @@ most setup problems (tools, ports, cookies) before they bite you live.
 |---------|-----|
 | First triage | Director-side checks (Tailscale app, right URL, panel password) are on [Director setup → If you cannot connect](Director-Setup#if-you-cannot-connect) — have the director run through those while you check below. |
 | Director can't reach the buttons | Run `racecast tailscale status` — the process icon alone says nothing about being connected; the backend must be `Running`. If it shows `Stopped`, run `racecast tailscale up` first. Then check: Tailscale connected on both machines? Companion running with **GUI Interface = All Interfaces**? Using the **Tailscale** address (`100.x.y.z`), not a local one? |
+| **Linux:** Connect says `Access denied: prefs write access denied` | `tailscale up`/`down` need root. Run **once**: `sudo tailscale set --operator=$USER` — afterwards the Control Center Connect/Disconnect buttons work without `sudo`. |
+| **Linux:** status says `NeedsLogin` / Connect says *logged out* | There's no Tailscale app to "open" on Linux — sign in from a terminal: `sudo tailscale up`, then open the printed `https://login.tailscale.com/…` URL in a browser (one-time). See [Set up the broadcast PC → step 8](Set-up-the-broadcast-PC#8--connect-remote-directors-tailscale). |
 | Buttons load but OBS shows disconnected | OBS open with the WebSocket server on (port `4455`) and the **same password** entered in Companion? |
 
 ## No Discord audio (interviews)

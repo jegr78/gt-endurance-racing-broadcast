@@ -20,12 +20,20 @@ direct from a normal browser; the only thing to install is the Tailscale app.
 | iPad / iPhone | App Store → "Tailscale" |
 | Android | Play Store → "Tailscale" |
 | Windows / macOS | <https://tailscale.com/download> |
-| Linux | your distribution's package, or <https://tailscale.com/download/linux> — connecting may need `sudo tailscale up` in a terminal |
+| Linux | your distribution's package, or <https://tailscale.com/download/linux> (see the Linux note below) |
+
+**Linux has no Tailscale app** — it runs as a background service you control from a
+terminal. Sign in once with `sudo tailscale up`, which prints a
+`https://login.tailscale.com/…` URL to **open in a browser** and sign in. Then run
+`sudo tailscale set --operator=$USER` once so you can connect/disconnect later without
+`sudo`. Check the connection with `tailscale status` (there's no app window to show
+"Connected").
 
 ## Step 2 — Accept the invite
 
 Open the invite link from your producer and sign in (your own account). You
-are done when the Tailscale app shows **Connected**.
+are done when the Tailscale app shows **Connected** (on Linux: `tailscale status`
+reports your `100.x.y.z` address).
 
 ## Step 3 — Bookmark your two pages
 

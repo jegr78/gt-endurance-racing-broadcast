@@ -1629,6 +1629,19 @@ def _tailscale_login_hint(platform=None):
     return "open the Tailscale app and sign in"
 
 
+def _tailscale_operator_hint(verb, platform=None):
+    """Suffix for a failed Linux `tailscale up/down`: those need root to write
+    prefs ("Access denied: prefs write access denied"). The one-time fix that
+    ALSO makes the Control Center Connect/Disconnect buttons work without sudo is
+    `sudo tailscale set --operator=$USER`. Empty off Linux (no suffix needed)."""
+    platform = sys.platform if platform is None else platform
+    if not platform.startswith("linux"):
+        return ""
+    return (f" — Linux needs root for this. One-time fix so up/down (and the "
+            f"Control Center buttons) work WITHOUT sudo: `sudo tailscale set "
+            f"--operator=$USER`. Or run `sudo tailscale {verb}` now.")
+
+
 def _tailscale_connect(ev=None):
     """Best-effort connect: argument-less `tailscale up` keeps all settings
     ("the opposite of tailscale down"). Launches the app first when no backend
@@ -1658,8 +1671,7 @@ def _tailscale_connect(ev=None):
         return None
     ok, detail = ts.tailscale_up(binary)
     if not ok:
-        hint = " (try `sudo tailscale up`)" if sys.platform.startswith("linux") else ""
-        print(f"tailscale: `up` failed: {detail}{hint}")
+        print(f"tailscale: `up` failed: {detail}{_tailscale_operator_hint('up')}")
         return None
     for _ in range(20):  # ~10 s for the tailnet to come up
         ip = ts.detect_tailscale_ip()
@@ -1683,8 +1695,7 @@ def tailscale_down_cmd(_rest):
         return
     ok, detail = ts.tailscale_down(binary)
     if not ok:
-        hint = " (try `sudo tailscale down`)" if sys.platform.startswith("linux") else ""
-        sys.exit(f"tailscale: `down` failed: {detail}{hint}")
+        sys.exit(f"tailscale: `down` failed: {detail}{_tailscale_operator_hint('down')}")
     print("tailscale: disconnected.")
 
 
