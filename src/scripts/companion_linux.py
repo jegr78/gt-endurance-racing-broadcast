@@ -16,7 +16,7 @@ command sequence is testable without root.
 This module ships NO shell-script file — bind_helper_content() is a string
 written to /usr/local/sbin at enable_control() time on the target machine.
 """
-import ipaddress, os, shutil, subprocess, sys
+import ipaddress, os, shutil, subprocess, sys, tempfile, getpass
 
 UNIT = "companion"
 DROPIN_DIR = "/etc/systemd/system/companion.service.d"
@@ -129,3 +129,83 @@ def detect_unit(platform=None, which=None, run=None, exists=None):
     except Exception:    # noqa: BLE001 — systemctl missing/odd -> fall through to file check
         pass
     return UNIT if exists(SERVICE_UNIT_FILE) else None
+
+def _default_read_text(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _default_write_temp(content):
+    fd, path = tempfile.mkstemp(prefix="racecast-companion-")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(content)
+    return path
+
+
+def _install_file(run, write_temp, content, dest, mode):
+    """Stage `content` to a temp file and place it at `dest` (root) with `mode`."""
+    tmp = write_temp(content)
+    return run(["sudo", "install", "-m", mode, "-o", "root", "-g", "root", tmp, dest])
+
+
+def enable_control(platform=None, run=None, which=None, getuser=None,
+                   read_text=None, write_temp=None, exists=None, log=print):
+    """Idempotently install the systemd bind drop-in, the root bind helper, and a
+    visudo-validated NOPASSWD sudoers rule, then validate the service still starts
+    (rolling back the drop-in if not). Returns 0 on success, non-zero otherwise.
+
+    All privileged actions run through `run(argv)`; file staging via `write_temp`.
+    These seams keep the command sequence unit-testable without root."""
+    platform = sys.platform if platform is None else platform
+    run = subprocess.run if run is None else run
+    which = shutil.which if which is None else which
+    getuser = getpass.getuser if getuser is None else getuser
+    read_text = _default_read_text if read_text is None else read_text
+    write_temp = _default_write_temp if write_temp is None else write_temp
+    exists = os.path.exists if exists is None else exists
+
+    unit = detect_unit(platform=platform, which=which, run=run, exists=exists)
+    if not unit:
+        log("companion enable-control: no companion.service found on this Linux host "
+            "(WSL/host or manual install) — nothing to enable.")
+        return 1
+    if exists(LEGACY_2X_DIR):
+        log("companion enable-control: companion-pi 2.x layout detected "
+            f"({LEGACY_2X_DIR}); unsupported. Update Companion to 3.x first.")
+        return 1
+
+    user = getuser()
+    systemctl = which("systemctl") or "/usr/bin/systemctl"
+    if is_enabled(read_text, user, systemctl):
+        log("companion enable-control: already enabled.")
+        return 0
+
+    # Validate the sudoers content before touching anything live.
+    sudoers = sudoers_dropin_content(user, systemctl)
+    tmp_sudoers = write_temp(sudoers)
+    if run(["sudo", "visudo", "-cf", tmp_sudoers]).returncode != 0:
+        log("companion enable-control: sudoers validation failed; aborting (no changes).")
+        return 1
+
+    run(["sudo", "mkdir", "-p", DROPIN_DIR])
+    _install_file(run, write_temp, bind_helper_content(), HELPER_PATH, "0755")
+    _install_file(run, write_temp, bind_dropin_content(), DROPIN_CONF, "0644")
+    _install_file(run, write_temp, sudoers, SUDOERS_PATH, "0440")
+    run(["sudo", "systemctl", "daemon-reload"])
+
+    # Validate: apply a safe local bind and confirm the unit comes up.
+    run(["sudo", "-n", HELPER_PATH, "127.0.0.1"])
+    if run(["systemctl", "is-active", unit], capture_output=True,
+           text=True).returncode != 0:
+        log("companion enable-control: service did not start with the new drop-in; "
+            "rolling back.")
+        run(["sudo", "rm", "-f", DROPIN_CONF])
+        run(["sudo", "systemctl", "daemon-reload"])
+        run(["sudo", "systemctl", "restart", unit])
+        return 1
+
+    log("companion enable-control: enabled. Start/Stop now works without a password.")
+    return 0

@@ -147,6 +147,92 @@ def t_is_enabled_false_when_sudoers_user_differs():
     assert cl.is_enabled(_reader_for(files), "jegr", "/usr/bin/systemctl") is False
 
 
+# --- enable_control ----------------------------------------------------------
+class _FakeRun:
+    """Records argv and returns a scripted returncode per matched command."""
+    def __init__(self, rc_for=None):
+        self.calls = []
+        self.rc_for = rc_for or {}
+    def __call__(self, argv, **kw):
+        self.calls.append(argv)
+        rc = 0
+        for needle, code in self.rc_for.items():
+            if needle in " ".join(argv):
+                rc = code
+        class P:
+            returncode = rc
+            stdout = ""
+            stderr = ""
+        return P()
+
+
+def _cmds(fake):
+    return [" ".join(c) for c in fake.calls]
+
+
+def t_enable_control_unsupported_returns_nonzero():
+    run = _FakeRun()
+    rc = cl.enable_control(platform="darwin", run=run, which=lambda n: "/usr/bin/" + n,
+                           getuser=lambda: "jegr", read_text=lambda p: None,
+                           write_temp=lambda c: "/tmp/x", log=lambda *a: None)
+    assert rc != 0
+    assert run.calls == []          # nothing privileged attempted off Linux
+
+
+def t_enable_control_already_enabled_is_noop():
+    files = {
+        cl.DROPIN_CONF: cl.bind_dropin_content(),
+        cl.HELPER_PATH: cl.bind_helper_content(),
+        cl.SUDOERS_PATH: cl.sudoers_dropin_content("jegr", "/usr/bin/systemctl"),
+    }
+    run = _FakeRun()
+    rc = cl.enable_control(platform="linux", run=run, which=lambda n: "/usr/bin/" + n,
+                           getuser=lambda: "jegr", read_text=lambda p: files.get(p),
+                           write_temp=lambda c: "/tmp/x", exists=lambda p: False,
+                           log=lambda *a: None)
+    assert rc == 0
+    # detect_unit may probe systemctl, but NO install/visudo/daemon-reload writes:
+    assert not any("install" in c or "visudo" in c for c in _cmds(run))
+
+
+def t_enable_control_happy_path_installs_and_validates():
+    run = _FakeRun()    # all rc 0 incl. systemctl is-active -> active
+    rc = cl.enable_control(platform="linux", run=run, which=lambda n: "/usr/bin/" + n,
+                           getuser=lambda: "jegr", read_text=lambda p: None,
+                           write_temp=lambda c: "/tmp/stage", exists=lambda p: False,
+                           log=lambda *a: None)
+    cmds = _cmds(run)
+    assert any("visudo -cf" in c for c in cmds)                       # validate sudoers
+    assert any("install" in c and cl.HELPER_PATH in c for c in cmds)  # helper placed
+    assert any("install" in c and cl.DROPIN_CONF in c for c in cmds)  # drop-in placed
+    assert any("install" in c and cl.SUDOERS_PATH in c for c in cmds) # sudoers placed
+    assert any("daemon-reload" in c for c in cmds)
+    assert any("is-active" in c for c in cmds)                        # post-install probe
+    assert rc == 0
+
+
+def t_enable_control_rolls_back_when_service_fails_to_start():
+    # is-active returns non-zero -> validation fails -> rollback
+    run = _FakeRun(rc_for={"is-active": 3})
+    rc = cl.enable_control(platform="linux", run=run, which=lambda n: "/usr/bin/" + n,
+                           getuser=lambda: "jegr", read_text=lambda p: None,
+                           write_temp=lambda c: "/tmp/stage", exists=lambda p: False,
+                           log=lambda *a: None)
+    cmds = _cmds(run)
+    assert any("rm" in c and cl.DROPIN_CONF in c for c in cmds)   # drop-in removed
+    assert rc != 0
+
+
+def t_enable_control_refuses_2x_layout():
+    run = _FakeRun()
+    rc = cl.enable_control(platform="linux", run=run, which=lambda n: "/usr/bin/" + n,
+                           getuser=lambda: "jegr", read_text=lambda p: None,
+                           write_temp=lambda c: "/tmp/x",
+                           exists=lambda p: p == cl.LEGACY_2X_DIR, log=lambda *a: None)
+    assert rc != 0
+    assert not any("install" in c for c in _cmds(run))
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
