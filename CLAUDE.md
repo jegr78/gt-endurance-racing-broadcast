@@ -139,7 +139,7 @@ python3 src/racecast.py cookies twitch firefox   # refresh Twitch cookies (only 
 python3 src/racecast.py graphics          # download broadcast graphics -> runtime/<profile>/graphics/
 python3 src/racecast.py media             # download Intro/Outro clips -> runtime/<profile>/media/
 python3 src/racecast.py setup --out runtime/<profile>/GT_Endurance.import.json   # localize OBS collection
-python3 src/racecast.py install-tools     # install yt-dlp/streamlink/ffmpeg/deno (winget/brew/apt; bootstraps brew on macOS); --update also upgrades installed ones (pre-event)
+python3 src/racecast.py install-tools     # install yt-dlp/streamlink/ffmpeg/deno (winget/brew/apt — Linux apt runs via sudo; deno has no apt pkg so it's a pinned, SHA-256-verified GitHub-release download into runtime/bin, which racecast adds to PATH; bootstraps brew on macOS); --update also upgrades installed ones (pre-event)
 python3 src/racecast.py install-apps      # install OBS/Companion/Tailscale/Discord (winget/brew/apt+official installers); --update upgrades installed ones (Linux: prints per-app guide)
 python3 src/racecast.py export companion  # write the Companion button config for import
 python3 src/racecast.py chat clear        # wipe the crew-chat history on the active relay

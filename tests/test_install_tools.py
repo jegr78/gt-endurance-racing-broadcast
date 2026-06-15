@@ -165,6 +165,81 @@ def t_manual_guide_mentions_speedtest():
     assert "teamookla" not in m.manual_guide("darwin")   # no longer the brew-tap path
 
 
+def t_install_commands_apt_sudo_prefix():
+    # default (no sudo) stays byte-identical — keeps the existing apt tests valid
+    assert m.install_commands("apt", ["yt-dlp"]) == [["apt-get", "install", "-y", "yt-dlp"]]
+    # sudo=True prepends sudo (Linux non-root) — mirrors installer_common.install_remote_deb
+    assert m.install_commands("apt", ["yt-dlp", "ffmpeg"], sudo=True) == \
+        [["sudo", "apt-get", "install", "-y", "yt-dlp", "ffmpeg"]]
+    # sudo only affects apt, never winget/brew
+    assert m.install_commands("brew", ["ffmpeg"], sudo=True) == [["brew", "install", "ffmpeg"]]
+    assert m.install_commands("winget", ["deno"], sudo=True)[0][0] == "winget"
+    # nothing to install -> no command even with sudo
+    assert m.install_commands("apt", ["deno"], sudo=True) == []   # deno has no apt pkg
+
+
+def t_update_commands_apt_sudo_prefix():
+    assert m.update_commands("apt", ["yt-dlp"], sudo=True) == \
+        [["sudo", "apt-get", "install", "-y", "--only-upgrade", "yt-dlp"]]
+    assert m.update_commands("apt", ["yt-dlp"]) == \
+        [["apt-get", "install", "-y", "--only-upgrade", "yt-dlp"]]
+
+
+def t_deno_asset_tag_per_os_arch():
+    assert m.deno_asset_tag("linux", "x86_64") == "x86_64-unknown-linux-gnu"
+    assert m.deno_asset_tag("linux", "amd64") == "x86_64-unknown-linux-gnu"
+    assert m.deno_asset_tag("linux", "aarch64") == "aarch64-unknown-linux-gnu"
+    assert m.deno_asset_tag("linux", "arm64") == "aarch64-unknown-linux-gnu"
+    assert m.deno_asset_tag("darwin", "arm64") is None     # brew handles macOS
+    assert m.deno_asset_tag("win32", "AMD64") is None      # winget handles Windows
+    assert m.deno_asset_tag("linux", "ppc64") is None      # unsupported arch
+
+
+def t_deno_download_url():
+    url = m.deno_download_url("x86_64-unknown-linux-gnu")
+    assert url == ("https://github.com/denoland/deno/releases/download/"
+                   f"v{m.DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip")
+
+
+def _fake_deno_zip(binary_bytes=b"#!/bin/echo deno\n"):
+    """Build an in-memory .zip holding a single top-level `deno` member —
+    matches the layout of deno's official linux release archive."""
+    import io, zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("deno", binary_bytes)
+    return buf.getvalue()
+
+
+def t_install_deno_binary_verifies_and_extracts():
+    import hashlib, tempfile
+    blob = _fake_deno_zip()
+    sha = hashlib.sha256(blob).hexdigest()
+    d = tempfile.mkdtemp()
+    path = m.install_deno_binary(
+        d, "x86_64-unknown-linux-gnu", opener=lambda url: blob,
+        downloads={"x86_64-unknown-linux-gnu": sha})
+    assert path == os.path.join(d, "deno")
+    with open(path, "rb") as fh:
+        assert fh.read() == b"#!/bin/echo deno\n"
+    if os.name != "nt":                          # the +x bit is POSIX-only
+        import stat
+        assert os.stat(path).st_mode & stat.S_IXUSR
+
+
+def t_install_deno_binary_rejects_bad_checksum():
+    import tempfile
+    blob = _fake_deno_zip()
+    try:
+        m.install_deno_binary(
+            tempfile.mkdtemp(), "x86_64-unknown-linux-gnu",
+            opener=lambda url: blob, downloads={"x86_64-unknown-linux-gnu": "deadbeef"})
+    except RuntimeError as exc:
+        assert "checksum mismatch" in str(exc)
+        return
+    raise AssertionError("expected a checksum-mismatch RuntimeError")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
