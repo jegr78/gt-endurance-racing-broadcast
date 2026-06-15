@@ -76,15 +76,22 @@ def build_target(launcher, workdir, version_file, sep, entry, name, windowed):
            "--distpath", os.path.join(ROOT, "dist", "bin"),
            "--workpath", os.path.join(workdir, "build", name),
            "--specpath", workdir,
-           # services/companion_common/event (+ its imports preflight,
-           # install_apps)/tailscale are real frozen modules (racecast.py imports them)
+           # services/companion_common/companion_linux/event (+ its imports
+           # preflight, install_apps)/tailscale are real frozen modules
+           # (racecast.py imports them, several only function-locally — PyInstaller's
+           # static scan misses those, so they MUST be listed here or the frozen
+           # binary raises ModuleNotFoundError at runtime). Guarded by
+           # tests/test_racecast.py::t_function_local_peer_imports_are_frozen.
            "--paths", os.path.join(SRC, "scripts"),
            "--hidden-import", "services", "--hidden-import", "companion_common",
+           "--hidden-import", "companion_linux",
            "--hidden-import", "event", "--hidden-import", "preflight",
            "--hidden-import", "speedtest",
            "--hidden-import", "install_apps", "--hidden-import", "obs_ws",
            "--hidden-import", "tailscale", "--hidden-import", "init_setup",
            "--hidden-import", "native_dialog",
+           "--hidden-import", "backup_admin", "--hidden-import", "profile_io",
+           "--hidden-import", "install_tools", "--hidden-import", "update",
            "--add-data", f"{version_file}{sep}src"]
     cmd += _icon_arg()      # the racecast "rc" app icon (.icns/.ico), #58
     if windowed:

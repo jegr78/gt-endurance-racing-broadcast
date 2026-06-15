@@ -1643,6 +1643,36 @@ def t_companion_enable_control_is_dispatchable():
     assert ("companion", "enable-control") in m.DISPATCH
 
 
+def t_function_local_peer_imports_are_frozen():
+    """Every peer module racecast.py imports INSIDE a function (lazy import) must be
+    declared as a PyInstaller --hidden-import in tools/build-binary.py. PyInstaller's
+    static scan misses function-local imports, so a missing one makes the frozen
+    binary raise ModuleNotFoundError at runtime — and binary-smoke won't catch a
+    lazily-imported, error-swallowed path (this is how companion_linux slipped)."""
+    import ast
+    src_dir = os.path.join(ROOT, "src")
+    scripts_dir = os.path.join(src_dir, "scripts")
+
+    def is_peer(name):
+        return (os.path.exists(os.path.join(scripts_dir, name + ".py"))
+                or os.path.exists(os.path.join(src_dir, name + ".py")))
+
+    with open(os.path.join(src_dir, "racecast.py"), encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    local_imports = set()
+    for fn in ast.walk(tree):
+        if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for node in ast.walk(fn):
+                if isinstance(node, ast.Import):
+                    local_imports |= {a.name for a in node.names if is_peer(a.name)}
+
+    with open(os.path.join(ROOT, "tools", "build-binary.py"), encoding="utf-8") as fh:
+        build_src = fh.read()
+    missing = sorted(m for m in local_imports if f'"{m}"' not in build_src)
+    assert not missing, ("peer modules imported function-locally in racecast.py but "
+                         f"not --hidden-import in tools/build-binary.py: {missing}")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
