@@ -189,6 +189,34 @@ def t_ob_font_constants_match_relay():
     assert set(ob.FONT_EXTS) == set(feeds.FONT_CTYPES.keys())
 
 
+def t_ob_kind_props_constants():
+    # Two kinds; text is a strict superset of box.
+    assert set(ob.KIND_PROPS) == {"text", "box"}
+    assert set(ob.KIND_BOX).issubset(set(ob.KIND_TEXT))
+    # box has no text-only props
+    for p in ("fontSize", "color", "align", "valign", "textTransform",
+              "lineHeight", "letterSpacing", "textShadow", "fontFamily"):
+        assert p not in ob.KIND_BOX
+    # both kinds carry the shared box props
+    for p in ("left", "top", "width", "height", "padding", "background",
+              "borderRadius", "opacity", "rotation"):
+        assert p in ob.KIND_BOX
+
+
+def t_ob_extract_slots_kind_derives_props():
+    html = ('<div id="a" data-edit="A" data-edit-kind="text"></div>'
+            '<div id="b" data-edit="B" data-edit-kind="box"></div>'
+            '<div id="c" data-edit="C" data-edit-kind="text" '
+            'data-edit-props="teamNameMax,teamNameMin"></div>'
+            '<div id="d" data-edit="D" data-edit-props="left,top"></div>')
+    by = {s["id"]: s for s in ob.extract_slots(html)}
+    assert by["a"]["props"] == list(ob.KIND_TEXT)
+    assert by["b"]["props"] == list(ob.KIND_BOX)
+    # extras are appended after the kind set, de-duplicated
+    assert by["c"]["props"] == list(ob.KIND_TEXT) + ["teamNameMax", "teamNameMin"]
+    # no kind + explicit props -> the explicit list (back-compat fallback)
+    assert by["d"]["props"] == ["left", "top"]
+
 def t_ob_extract_slots_from_real_hud():
     with open(os.path.join(ROOT, "src", "obs", "hud.html"), encoding="utf-8") as f:
         slots = ob.extract_slots(f.read())

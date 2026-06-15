@@ -38,6 +38,21 @@ PROP_ORDER = ("left", "top", "width", "height", "fontSize", "borderWidth",
               "teamNameMax", "teamNameMin", "fontFamily", "color",
               "background", "borderColor", "borderStyle", "align")
 
+# Slot kinds (standard properties for all slots; spec
+# docs/superpowers/specs/2026-06-15-overlay-builder-standard-properties-design.md).
+# The single source for
+# which properties a slot offers — extract_slots derives slot["props"] from the
+# element's data-edit-kind, replacing hand-curated per-element whitelists. text
+# is a strict superset of box (box = container/image: position, size, fill,
+# border, opacity, rotation; text adds the type properties).
+KIND_BOX = ("left", "top", "width", "height", "padding",
+            "background", "borderWidth", "borderStyle", "borderColor",
+            "borderRadius", "opacity", "rotation")
+KIND_TEXT = KIND_BOX + ("fontSize", "lineHeight", "letterSpacing",
+                        "fontFamily", "color", "align", "valign",
+                        "textTransform", "textShadow")
+KIND_PROPS = {"text": KIND_TEXT, "box": KIND_BOX}
+
 # A structured value must never close the rule or inject extra CSS; the only
 # verbatim path is customCss. Reject anything carrying CSS-structural characters.
 _UNSAFE_VALUE = re.compile(r"[;{}<>]|/\*|\*/")
@@ -131,9 +146,11 @@ def migrate_layout(page, existing_css):
 
 def extract_slots(html):
     """Editable slots from a base page's data-edit markers, in document order.
-    Each: {id, label, props}. props = the data-edit-props comma list, or the
-    default text-slot set when the attribute is absent. The markup is the single
-    source of truth — no hardcoded slot list to drift."""
+    Each: {id, label, props}. props = the KIND_PROPS set for the element's
+    data-edit-kind (with any data-edit-props appended as extras), the explicit
+    data-edit-props comma list when no kind is given (back-compat), or
+    DEFAULT_PROPS as the fallback. The markup is the single source of truth —
+    no hardcoded slot list to drift."""
     slots = []
     for tag in re.finditer(r"<[^>]*\bdata-edit=\"[^\"]*\"[^>]*>", html):
         text = tag.group(0)
@@ -141,9 +158,14 @@ def extract_slots(html):
         if not mid:
             continue
         label = re.search(r"\bdata-edit=\"([^\"]*)\"", text).group(1)
+        mk = re.search(r"\bdata-edit-kind=\"([^\"]*)\"", text)
         mp = re.search(r"\bdata-edit-props=\"([^\"]*)\"", text)
-        if mp:
-            props = [p.strip() for p in mp.group(1).split(",") if p.strip()]
+        extras = [p.strip() for p in mp.group(1).split(",") if p.strip()] if mp else []
+        if mk and mk.group(1) in KIND_PROPS:
+            props = list(KIND_PROPS[mk.group(1)])
+            props += [p for p in extras if p not in props]   # extras appended, de-duped
+        elif extras:
+            props = extras                                   # back-compat: explicit list
         else:
             props = list(DEFAULT_PROPS)
         slots.append({"id": mid.group(1), "label": label, "props": props})
