@@ -5,7 +5,7 @@
   python3 racecast.py     relay start        # shipped package
 
   racecast relay     start|stop|restart|status|logs|run|open-panel|open-hud|open-status
-  racecast companion start|stop|restart|status|logs|open-tablet|open-admin
+  racecast companion start|stop|restart|status|logs|enable-control|open-tablet|open-admin
   racecast streams   start|stop|restart|status|logs
   racecast event     status|start|stop      # event-day readiness: check / bring-up / wind-down
   racecast event start --stint N             # takeover: stint N is on air now — the relay starts there
@@ -647,7 +647,7 @@ SERVICE_VERBS = ("start", "stop", "restart", "status", "logs")
 # Per-service verbs beyond the common set (relay foreground + browser-open shortcuts).
 EXTRA_VERBS = {
     "relay": ("run", "open-panel", "open-hud", "open-status"),
-    "companion": ("open-tablet", "open-admin"),
+    "companion": ("open-tablet", "open-admin", "enable-control"),
 }
 # Internal verbs: routed but never advertised (frozen feed children use run-feed).
 HIDDEN_VERBS = {"streams": ("run-feed",)}
@@ -1368,6 +1368,13 @@ def companion_restart(rest):
     companion_stop([])
     companion_start(rest)
 
+
+def companion_enable_control(rest):
+    import companion_linux as cl
+
+    raise SystemExit(cl.enable_control())
+
+
 def companion_status_payload(supported, running, cfg, why=""):
     """Pure: shape the companion status dict from probed facts."""
     url = None
@@ -1939,6 +1946,7 @@ DISPATCH = {
     ("companion", "logs"): companion_logs,
     ("companion", "open-tablet"): companion_open_tablet,
     ("companion", "open-admin"): companion_open_admin,
+    ("companion", "enable-control"): companion_enable_control,
     ("streams", "start"): streams_start, ("streams", "stop"): streams_stop,
     ("streams", "restart"): streams_restart, ("streams", "status"): streams_status,
     ("streams", "logs"): streams_logs, ("streams", "run-feed"): streams_run_feed,

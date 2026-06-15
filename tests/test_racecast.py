@@ -1635,6 +1635,14 @@ def t_companion_stop_linux_runs_systemctl_stop():
     assert ["sudo", "-n", "systemctl", "stop", "companion"] in calls
 
 
+def t_companion_enable_control_routes():
+    assert m.route(["companion", "enable-control"])["verb"] == "enable-control"
+
+
+def t_companion_enable_control_is_dispatchable():
+    assert ("companion", "enable-control") in m.DISPATCH
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
