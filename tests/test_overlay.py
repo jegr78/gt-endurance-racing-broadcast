@@ -189,6 +189,34 @@ def t_ob_font_constants_match_relay():
     assert set(ob.FONT_EXTS) == set(feeds.FONT_CTYPES.keys())
 
 
+def t_ob_kind_props_constants():
+    # Two kinds; text is a strict superset of box.
+    assert set(ob.KIND_PROPS) == {"text", "box"}
+    assert set(ob.KIND_BOX).issubset(set(ob.KIND_TEXT))
+    # box has no text-only props
+    for p in ("fontSize", "color", "align", "valign", "textTransform",
+              "lineHeight", "letterSpacing", "textShadow", "fontFamily"):
+        assert p not in ob.KIND_BOX
+    # both kinds carry the shared box props
+    for p in ("left", "top", "width", "height", "padding", "background",
+              "borderRadius", "opacity", "rotation"):
+        assert p in ob.KIND_BOX
+
+
+def t_ob_extract_slots_kind_derives_props():
+    html = ('<div id="a" data-edit="A" data-edit-kind="text"></div>'
+            '<div id="b" data-edit="B" data-edit-kind="box"></div>'
+            '<div id="c" data-edit="C" data-edit-kind="text" '
+            'data-edit-props="teamNameMax,teamNameMin"></div>'
+            '<div id="d" data-edit="D" data-edit-props="left,top"></div>')
+    by = {s["id"]: s for s in ob.extract_slots(html)}
+    assert by["a"]["props"] == list(ob.KIND_TEXT)
+    assert by["b"]["props"] == list(ob.KIND_BOX)
+    # extras are appended after the kind set, de-duplicated
+    assert by["c"]["props"] == list(ob.KIND_TEXT) + ["teamNameMax", "teamNameMin"]
+    # no kind + explicit props -> the explicit list (back-compat fallback)
+    assert by["d"]["props"] == ["left", "top"]
+
 def t_ob_extract_slots_from_real_hud():
     with open(os.path.join(ROOT, "src", "obs", "hud.html"), encoding="utf-8") as f:
         slots = ob.extract_slots(f.read())
@@ -207,21 +235,21 @@ def t_ob_extract_slots_from_real_hud():
     # default props (no data-edit-props) include the text set, not the team-only keys
     assert "fontSize" in by_id["stint"]["props"]
     assert "teamNameMax" not in by_id["stint"]["props"]
-    # team name slot: restricted set with the auto-fit bounds, no plain fontSize
-    assert by_id["team1-name"]["props"] == ["left", "top", "width", "height",
-                                            "teamNameMax", "teamNameMin",
-                                            "fontFamily", "color"]
-    # team number slot: badge text size/color/background, no auto-fit bounds
-    assert by_id["team1-num"]["props"] == ["left", "top", "fontSize",
-                                           "fontFamily", "color", "background"]
-    # image slots (logo, flag): position/size only
-    assert by_id["team1-logo"]["props"] == ["left", "top", "width", "height"]
-    assert by_id["round-flag"]["props"] == ["left", "top", "width", "height"]
-    # POV box: position/size + border/background props (issue #141)
-    assert by_id["pov"]["props"] == ["left", "top", "width", "height",
-                                     "background", "borderStyle",
-                                     "borderColor", "borderWidth"]
+    # team name slot: the text kind + the auto-fit extras (issue #136)
+    assert by_id["team1-name"]["props"] == list(ob.KIND_TEXT) + [
+        "teamNameMax", "teamNameMin"]
+    # team number slot: the full text kind (standard props for all slots)
+    assert by_id["team1-num"]["props"] == list(ob.KIND_TEXT)
+    # image slots (logo, flag) are the box kind: no text properties
+    assert by_id["team1-logo"]["props"] == list(ob.KIND_BOX)
+    assert by_id["round-flag"]["props"] == list(ob.KIND_BOX)
+    # POV box: the box kind (still carries background/border via the kind)
+    assert by_id["pov"]["props"] == list(ob.KIND_BOX)
+    for p in ("background", "borderStyle", "borderColor", "borderWidth"):
+        assert p in by_id["pov"]["props"], p
     assert by_id["pov"]["label"] == "POV box"
+    # POV name label is a text slot (its old hand-curated set is now the kind)
+    assert by_id["pov-name"]["props"] == list(ob.KIND_TEXT)
 
 
 def t_ob_hud_has_clock_slot():
@@ -484,6 +512,59 @@ def t_splitscreen_labels_source_in_collection_splitscreen_scene_only():
         return False
     assert has_item("Splitscreen")
     assert not has_item("Stint")
+
+
+SK = [{"id": "x", "label": "X", "props": list(ob.KIND_TEXT)}]
+
+
+def _css_x(over):
+    return ob.compile_overlay_css({"slots": {"x": over}}, SK)
+
+
+def t_ob_compile_px_extras():
+    css = _css_x({"padding": 6, "borderRadius": 4, "letterSpacing": 2})
+    assert "padding: 6px" in css
+    assert "border-radius: 4px" in css
+    assert "letter-spacing: 2px" in css
+
+
+def t_ob_compile_opacity_and_line_height():
+    css = _css_x({"opacity": 0.5, "lineHeight": 1.2})
+    assert "opacity: 0.5" in css and "line-height: 1.2" in css
+    # out-of-range / non-number dropped
+    assert "opacity" not in _css_x({"opacity": 2})
+    assert "opacity" not in _css_x({"opacity": "x"})
+    assert "line-height" not in _css_x({"lineHeight": 0})
+
+
+def t_ob_compile_rotation():
+    assert "transform: rotate(15deg)" in _css_x({"rotation": 15})
+    assert "transform: rotate(-8deg)" in _css_x({"rotation": -8})
+    assert "transform" not in _css_x({"rotation": 999})
+    assert "transform" not in _css_x({"rotation": "x"})
+
+
+def t_ob_compile_valign_and_text_transform():
+    assert "align-items: center" in _css_x({"valign": "middle"})
+    assert "align-items: flex-end" in _css_x({"valign": "bottom"})
+    assert "text-transform: uppercase" in _css_x({"textTransform": "uppercase"})
+    # unknown enum values dropped (no injection)
+    assert "align-items" not in _css_x({"valign": "sideways"})
+    assert "text-transform" not in _css_x({"textTransform": "evil; }"})
+
+
+def t_ob_compile_text_shadow():
+    css = _css_x({"textShadow": {"x": 0, "y": 2, "blur": 4, "color": "#000000"}})
+    assert "text-shadow: 0px 2px 4px #000000" in css
+    # all-zero offsets/blur -> invisible -> omitted
+    assert "text-shadow" not in _css_x(
+        {"textShadow": {"x": 0, "y": 0, "blur": 0, "color": "#000000"}})
+    # missing/!str color dropped; non-dict dropped
+    assert "text-shadow" not in _css_x({"textShadow": {"x": 1, "y": 1, "blur": 1}})
+    assert "text-shadow" not in _css_x({"textShadow": "0 2px 4px red"})
+    # color cannot inject (the _UNSAFE_VALUE gate via _safe_value)
+    assert "text-shadow" not in _css_x(
+        {"textShadow": {"x": 1, "y": 1, "blur": 1, "color": "red; } body{x:1"}})
 
 
 if __name__ == "__main__":
