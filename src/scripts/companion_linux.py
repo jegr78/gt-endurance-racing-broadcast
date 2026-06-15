@@ -102,6 +102,14 @@ def control_commands(unit):
     }
 
 
+def is_enabled(read_text, user, systemctl_path):
+    """True iff the drop-in, helper, and sudoers files already match the expected
+    content for `user`. `read_text(path)` returns the file's text or None."""
+    return (read_text(DROPIN_CONF) == bind_dropin_content()
+            and read_text(HELPER_PATH) == bind_helper_content()
+            and read_text(SUDOERS_PATH) == sudoers_dropin_content(user, systemctl_path))
+
+
 def detect_unit(platform=None, which=None, run=None, exists=None):
     """The companion-pi systemd unit name on this Linux host, or None. None for
     Windows/macOS, for hosts without systemd, and for WSL/Docker/manual installs

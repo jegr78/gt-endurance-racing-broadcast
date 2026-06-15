@@ -120,6 +120,33 @@ def t_detect_unit_none_when_absent():
                           run=lambda *a, **k: P(), exists=lambda p: False) is None
 
 
+# --- is_enabled (idempotency) ------------------------------------------------
+def _reader_for(files):
+    return lambda path: files.get(path)
+
+
+def t_is_enabled_true_when_all_match():
+    files = {
+        cl.DROPIN_CONF: cl.bind_dropin_content(),
+        cl.HELPER_PATH: cl.bind_helper_content(),
+        cl.SUDOERS_PATH: cl.sudoers_dropin_content("jegr", "/usr/bin/systemctl"),
+    }
+    assert cl.is_enabled(_reader_for(files), "jegr", "/usr/bin/systemctl") is True
+
+
+def t_is_enabled_false_when_missing():
+    assert cl.is_enabled(_reader_for({}), "jegr", "/usr/bin/systemctl") is False
+
+
+def t_is_enabled_false_when_sudoers_user_differs():
+    files = {
+        cl.DROPIN_CONF: cl.bind_dropin_content(),
+        cl.HELPER_PATH: cl.bind_helper_content(),
+        cl.SUDOERS_PATH: cl.sudoers_dropin_content("other", "/usr/bin/systemctl"),
+    }
+    assert cl.is_enabled(_reader_for(files), "jegr", "/usr/bin/systemctl") is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
