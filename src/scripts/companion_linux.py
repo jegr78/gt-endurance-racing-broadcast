@@ -73,8 +73,8 @@ def bind_helper_content():
         "set -euo pipefail\n"
         'ip="${1:-}"\n'
         'if ! printf "%s" "$ip" | grep -Eq '
-        "'^([0-9]{1,3}\\.){3}[0-9]{1,3}$|^[0-9A-Fa-f:]+$'; then\n"
-        '  echo "racecast-companion-bind: invalid ip: $ip" >&2\n'
+        "'^([0-9]{1,3}\\.){3}[0-9]{1,3}$|^[0-9A-Fa-f:]*:[0-9A-Fa-f:]*$'; then\n"
+        '  printf "racecast-companion-bind: invalid ip: %s\\n" "$ip" >&2\n'
         "  exit 2\n"
         "fi\n"
         f'printf "RACECAST_ADMIN_ADDRESS=%s\\n" "$ip" > {BIND_ENV}\n'

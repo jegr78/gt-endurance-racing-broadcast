@@ -66,6 +66,16 @@ def t_helper_validates_and_restarts():
     assert "systemctl restart companion" in c
     assert cl.BIND_ENV in c
     assert "exit 2" in c                             # rejects a bad ip argument
+    assert "set -euo pipefail" in c
+    assert "grep -Eq" in c
+
+
+def t_helper_ipv6_branch_requires_colon():
+    # The bash IPv6 alternative must require at least one ':' so colon-less hex
+    # (e.g. "deadbeef") is rejected, matching the Python ipaddress check.
+    c = cl.bind_helper_content()
+    assert "[0-9A-Fa-f:]+$" not in c        # the loose pattern must be gone
+    assert ":[0-9A-Fa-f:]" in c             # a colon is now required in the IPv6 branch
 
 
 if __name__ == "__main__":
