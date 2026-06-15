@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for preflight.py. Run: python3 tests/test_preflight.py"""
-import importlib.util, os, socket, tempfile, time
+import importlib.util, os, socket, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+# preflight.py imports its sibling `services` (external_tool_env); in production
+# scripts/ is always on sys.path for it, so mirror that for the loader.
+sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
 spec = importlib.util.spec_from_file_location(
     "preflight", os.path.join(ROOT, "src", "scripts", "preflight.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)

@@ -52,10 +52,8 @@ def no_window_kwargs(os_name=None):
     return {}
 
 
-# NOTE: kept byte-identical with the copies duplicated into the standalone relay
-# scripts (relay/racecast-feeds.py, relay/get-cookies.py, relay/get-media.py) —
-# those import nothing from scripts/. tests/test_services.py cross-checks the
-# bodies (same pattern as STREAMLINK_TWITCH / detect_tailscale_ip).
+# The single source of truth — every spawn site imports this (relay scripts add
+# src/scripts to sys.path; scripts/ siblings import it directly). No duplication.
 def external_tool_env(frozen=None, environ=None):
     """Environment for spawning an EXTERNAL native tool (yt-dlp, streamlink,
     ffmpeg, deno, the tailscale CLI) from a possibly PyInstaller-frozen process.
@@ -66,19 +64,32 @@ def external_tool_env(frozen=None, environ=None):
     yt-dlp/streamlink running under the system Python, whose _ssl needs the system
     libcrypto — then mis-loads our older bundled libcrypto and dies with
     "version `OPENSSL_x.y.z' not found" (seen on ARM64 Linux with a system
-    Python 3.14). PyInstaller stashes the pre-launch value in <VAR>_ORIG; restore
-    it, or drop the var entirely when there was none, so the child sees the real
-    system library path. Returns None when not frozen — the caller then inherits
-    os.environ unchanged, leaving dev/source runs (which may set LD_LIBRARY_PATH
-    legitimately) untouched."""
+    Python 3.14). Strip every PyInstaller extraction dir from the path — this
+    process's _MEIPASS AND any parent's: a frozen Control Center that re-invokes
+    the frozen binary leaves the PARENT's _MEIPASS on the child's LD_LIBRARY_PATH,
+    and the bootloader's <VAR>_ORIG points at THAT, so merely restoring _ORIG is
+    not enough (it reintroduces a bundled libcrypto). Keep any genuinely external
+    entries; drop the var when nothing remains. Returns None when not frozen — the
+    caller then inherits os.environ unchanged, leaving dev/source runs untouched."""
     frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
     if not frozen:
         return None
     env = dict(os.environ if environ is None else environ)
+    meipass = getattr(sys, "_MEIPASS", "")
+    meipass = os.path.normpath(meipass) if meipass else ""
     for var in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
-        orig = env.get(var + "_ORIG")
-        if orig is not None:
-            env[var] = orig
+        if var not in env:
+            continue
+        kept = []
+        for part in env[var].split(os.pathsep):
+            norm = os.path.normpath(part) if part else ""
+            if not part or os.path.basename(norm).startswith("_MEI"):
+                continue
+            if meipass and norm == meipass:
+                continue
+            kept.append(part)
+        if kept:
+            env[var] = os.pathsep.join(kept)
         else:
             env.pop(var, None)
     return env
