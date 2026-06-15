@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Stdlib checks for install_apps decision helpers. Run: python3 tests/test_install_apps.py"""
-import importlib.util, os, re
+import importlib.util, os, re, sys
 from urllib.parse import urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+# install_apps -> installer_common imports the sibling `services` (external_tool_env);
+# in production scripts/ is always on sys.path, so mirror that for the loader.
+sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
 spec = importlib.util.spec_from_file_location(
     "install_apps", os.path.join(ROOT, "src", "scripts", "install_apps.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
@@ -136,10 +139,21 @@ def t_linux_plan_scripts():
     ]
 
 
-def t_linux_plan_discord_deb():
-    steps = m.linux_install_steps(["discord"], which=lambda n: "/usr/bin/" + n)
+def t_linux_plan_discord_deb_on_amd64():
+    steps = m.linux_install_steps(["discord"], which=lambda n: "/usr/bin/" + n,
+                                  machine="x86_64")
     assert steps == [("deb", m.DISCORD_DEB)]
     assert m.DISCORD_DEB.startswith("https://discord.com/")
+
+
+def t_linux_plan_discord_note_on_arm64():
+    # Discord has no native ARM64 Linux .deb — the amd64 one is unsatisfiable, so
+    # emit an informational note instead of a futile (scary-erroring) deb step.
+    for arch in ("aarch64", "arm64", "armv7l"):
+        steps = m.linux_install_steps(["discord"], which=lambda n: "/usr/bin/" + n,
+                                      machine=arch)
+        assert steps == [("note", m.DISCORD_NO_ARM64_NOTE)], arch
+        assert all(s[0] != "deb" for s in steps)
 
 
 def t_confirmation_parsing():

@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Stdlib checks for shared installer helpers. Run: python3 tests/test_installer_common.py"""
-import importlib.util, os
+import importlib.util, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+# installer_common imports its sibling `services` (external_tool_env); in
+# production scripts/ is always on sys.path, so mirror that for the loader.
+sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
 spec = importlib.util.spec_from_file_location(
     "installer_common", os.path.join(ROOT, "src", "scripts", "installer_common.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
@@ -101,7 +104,7 @@ class _FakeResp:
 
 def _capture_request(fn_name, *args):
     """Run installer_common.<fn_name> with urlopen + subprocess.call stubbed,
-    returning (return_code, captured Request, captured argv)."""
+    returning (return_code, captured Request, captured argv, captured call kwargs)."""
     import urllib.request
     captured = {}
 
@@ -111,33 +114,38 @@ def _capture_request(fn_name, *args):
 
     orig_open, orig_call = urllib.request.urlopen, m.subprocess.call
     urllib.request.urlopen = fake_urlopen
-    m.subprocess.call = lambda cmd: (captured.__setitem__("cmd", cmd), 0)[1]
+    m.subprocess.call = lambda cmd, **kw: (captured.update(cmd=cmd, call_kw=kw), 0)[1]
     try:
         rc = getattr(m, fn_name)(*args)
     finally:
         urllib.request.urlopen, m.subprocess.call = orig_open, orig_call
-    return rc, captured.get("req"), captured.get("cmd")
+    return rc, captured.get("req"), captured.get("cmd"), captured.get("call_kw", {})
 
 
 def t_install_remote_deb_sends_user_agent():
     # Discord's /api/download returns HTTP 403 to the default python-urllib
     # User-Agent; the vendor .deb fetch must carry a real one (any non-urllib UA
     # works). Regression for install-apps failing on Linux.
-    rc, req, cmd = _capture_request(
+    rc, req, cmd, call_kw = _capture_request(
         "install_remote_deb", "https://discord.com/api/download?platform=linux&format=deb")
     assert rc == 0
     ua = req.get_header("User-agent")               # None if header absent
     assert ua and "urllib" not in ua.lower()
     assert cmd[:3] == ["sudo", "apt-get", "install"]
+    assert "env" in call_kw                          # de-PyInstaller'd env passed through
 
 
-def t_run_remote_script_sends_user_agent():
-    rc, req, cmd = _capture_request(
+def t_run_remote_script_passes_clean_env_and_user_agent():
+    # The spawned script (e.g. tailscale's install.sh -> curl) must NOT inherit a
+    # frozen binary's _MEIPASS on LD_LIBRARY_PATH (curl else loads our bundled
+    # libssl: "OPENSSL_x.y.z not found"). It also fetches with a real UA.
+    rc, req, cmd, call_kw = _capture_request(
         "run_remote_script", "https://tailscale.com/install.sh", ["sh"])
     assert rc == 0
     ua = req.get_header("User-agent")
     assert ua and "urllib" not in ua.lower()
     assert cmd[0] == "sh"
+    assert "env" in call_kw                          # external_tool_env() is wired in
 
 
 if __name__ == "__main__":
