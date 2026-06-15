@@ -432,18 +432,25 @@ def augment_path(current, candidates, exists=os.path.isdir):
 
 
 def _ensure_tool_path():
-    """Frozen on macOS: a binary launched from Finder/Dock (how producers run the
-    preview build) inherits a truncated PATH (/usr/bin:/bin:/usr/sbin:/sbin) that
-    omits Homebrew — so shutil.which() can't find yt-dlp/streamlink/ffmpeg/deno
-    even though `racecast install-tools` put them there, and both preflight AND the
-    relay's pulls report them missing (issue #38). Prepend the Homebrew bin dirs
-    that exist; in-process preflight and spawned children inherit the fixed PATH.
-    Binary-relative paths (settings/assets) never went through PATH, which is why
-    those already work. A terminal launch already has the full PATH, so this only
-    ever adds genuinely-missing dirs."""
-    if not IS_FROZEN or sys.platform != "darwin":
-        return
-    new = augment_path(os.environ.get("PATH", ""), TOOL_PATH_DIRS)
+    """Prepend the tool dirs `racecast install-tools` writes to but that aren't on
+    this process's PATH, so preflight AND the spawned relay resolve them.
+
+    Two sources:
+    * The racecast-managed bin dir (runtime/bin) — where install-tools drops the
+      direct-download tools (deno on Linux, the Ookla speedtest CLI on mac/Linux);
+      it is NEVER on the user's shell PATH, so add it on every platform.
+    * Frozen on macOS only: a binary launched from Finder/Dock inherits a truncated
+      PATH (/usr/bin:/bin:/usr/sbin:/sbin) that omits Homebrew, so the brew-installed
+      yt-dlp/streamlink/ffmpeg/deno look missing (issue #38) — prepend the Homebrew
+      bin dirs too.
+
+    Both only ever add genuinely-missing dirs that exist on disk (augment_path),
+    so a terminal launch with a full PATH is left untouched. Binary-relative paths
+    (settings/assets) never went through PATH, which is why those already work."""
+    candidates = [os.path.join(_runtime_base_dir(), "bin")]  # == speedtest.managed_bin_dir
+    if IS_FROZEN and sys.platform == "darwin":
+        candidates += list(TOOL_PATH_DIRS)
+    new = augment_path(os.environ.get("PATH", ""), candidates)
     if new:
         os.environ["PATH"] = new
 

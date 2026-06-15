@@ -296,6 +296,41 @@ def t_augment_path():
                           exists=ex({"/opt/homebrew/bin"})) == "/opt/homebrew/bin"
 
 
+def t_ensure_tool_path_adds_managed_bin():
+    """install-tools drops direct-download tools (deno on Linux, the Ookla
+    speedtest CLI on mac/Linux) into runtime/bin — never on the user's shell
+    PATH. _ensure_tool_path() must prepend it so preflight + the spawned relay
+    resolve them."""
+    import tempfile
+    td = tempfile.mkdtemp()
+    binr = os.path.join(td, "runtime", "bin")
+    os.makedirs(binr)
+    orig_rt, orig_path = m._runtime_base_dir, os.environ.get("PATH", "")
+    m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+    try:
+        os.environ["PATH"] = os.path.join("/usr", "bin")
+        m._ensure_tool_path()
+        parts = os.environ["PATH"].split(os.pathsep)
+        assert parts[0] == binr            # prepended ahead of the old PATH
+    finally:
+        m._runtime_base_dir = orig_rt
+        os.environ["PATH"] = orig_path
+
+
+def t_ensure_tool_path_noop_when_bin_absent():
+    import tempfile
+    td = tempfile.mkdtemp()                # runtime/bin does NOT exist here
+    orig_rt, orig_path = m._runtime_base_dir, os.environ.get("PATH", "")
+    m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+    try:
+        os.environ["PATH"] = os.path.join("/usr", "bin")
+        m._ensure_tool_path()
+        assert os.environ["PATH"] == os.path.join("/usr", "bin")   # unchanged
+    finally:
+        m._runtime_base_dir = orig_rt
+        os.environ["PATH"] = orig_path
+
+
 def t_script_invocation_repo():
     import sys as _sys
     kind, argv, _ = m._script_invocation("scripts/preflight.py", ["--quick"], False)
