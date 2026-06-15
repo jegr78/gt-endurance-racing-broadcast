@@ -375,6 +375,17 @@ def fmt_result(result, color):
     return f"  [{tag}] {result.name}: {result.detail}"
 
 
+def _speedtest_max_age():
+    """Staleness window in days for the stored speed-test result.
+    RACECAST_SPEEDTEST_MAX_AGE_DAYS overrides; bad/non-positive -> 7."""
+    raw = os.environ.get("RACECAST_SPEEDTEST_MAX_AGE_DAYS", "")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return 7.0
+    return value if value > 0 else 7.0
+
+
 def gather(preflight_file, runtime_dir=None, cookies_opt=None):
     """Run every check and return a list of (section_title, [Result])."""
     hardware = [
@@ -429,10 +440,18 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
         sheet = [classify_sheet(sheet_id, outcome, payload)]
     else:
         sheet = [classify_sheet(None)]
-    network = [Result(INFO, "bandwidth",
+    advisory = Result(INFO, "bandwidth",
                       "OBS pushes the program to YouTube WHILE the relay pulls up to "
                       "3 live feeds. Use a wired connection with stable upload headroom "
-                      "above your OBS bitrate.")]
+                      "above your OBS bitrate.")
+    try:
+        import speedtest as st          # lazy: avoids an import cycle (st imports Result from us)
+        st_dir = runtime_dir or st.default_runtime_dir(
+            os.path.dirname(os.path.abspath(preflight_file)))
+        network = [st.classify(st.load_latest(st_dir), time.time(), _speedtest_max_age()),
+                   advisory]
+    except Exception:   # never let the speed-test read break the report
+        network = [advisory]
     return [
         ("Hardware", hardware),
         ("Tool chain", tools),

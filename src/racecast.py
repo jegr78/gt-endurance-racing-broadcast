@@ -21,7 +21,7 @@
   racecast backup    {create|list|restore|delete} <label>   # named look snapshots (overlay+graphics+media)
   racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
   racecast freeport [PORT...] [--force]       # free a stuck feed port (default 53001-53003); kills orphaned holders, refuses a running relay/streams
-  racecast preflight | cookies [twitch] [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
+  racecast preflight | speedtest [--json] | cookies [twitch] [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   racecast export companion [--out PATH]     # write the Companion button config
   racecast init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
   racecast update [--check] [--yes] [--tag TAG]   # self-update the binary (--tag installs an exact release)
@@ -644,7 +644,7 @@ EXTRA_VERBS = {
 }
 # Internal verbs: routed but never advertised (frozen feed children use run-feed).
 HIDDEN_VERBS = {"streams": ("run-feed",)}
-ONESHOTS = ("preflight", "cookies", "graphics", "media", "setup", "install-tools", "install-apps", "update")
+ONESHOTS = ("preflight", "speedtest", "cookies", "graphics", "media", "setup", "install-tools", "install-apps", "update")
 EVENT_VERBS = ("status", "start", "stop")
 TAILSCALE_VERBS = ("up", "down", "status")
 OBS_VERBS = ("refresh", "collection")
@@ -1870,6 +1870,7 @@ DISPATCH = {
 
 ONESHOT_MAP = {
     "preflight":     "scripts/preflight.py",
+    "speedtest":     "scripts/speedtest.py",
     "cookies":       "relay/get-cookies.py",
     "graphics":      "relay/get-graphics.py",
     "media":         "relay/get-media.py",
@@ -1881,8 +1882,9 @@ ONESHOT_MAP = {
 
 # Forward --runtime-dir only to one-shot scripts whose argparse defines it.
 # Verified against each script: preflight.py + get-cookies.py accept it; get-graphics.py
-# and get-media.py (they use --out) and setup-assets.py do not.
-RUNTIME_DIR_ONESHOTS = ("preflight", "cookies")
+# and get-media.py (they use --out) and setup-assets.py do not. install-tools takes it
+# for the machine-level managed speedtest bin dir (<runtime>/bin).
+RUNTIME_DIR_ONESHOTS = ("preflight", "speedtest", "cookies", "install-tools")
 
 
 def _cookies_oneshot_args(rest):
@@ -3058,6 +3060,15 @@ def tools_status_data(which=None, version=None):
             present = bool(which(name))
             tools.append({"name": name, "installed": present,
                           "version": version(name) if present else None})
+        # speedtest is a first-class tool in the overview, but resolved via its own
+        # finder (PATH or the managed bin dir) and never gates readiness.
+        import speedtest as st
+        st_bin = st.find_binary(_runtime_base_dir(), which)
+        # Probe the resolved binary BY PATH (tool_version's which() accepts an
+        # absolute path), so a managed-dir install — which is not on PATH — still
+        # reports its version, like the PATH-installed tools above.
+        tools.append({"name": "speedtest", "installed": bool(st_bin),
+                      "version": version(st_bin) if st_bin else None})
         return {"ok": True, "tools": tools}
     except Exception as exc:
         return {"ok": False, "error": f"tool check failed: {exc}"}
@@ -3146,6 +3157,22 @@ def preflight_data(gather=None, refresh_env=None):
         return {"ok": True, "sections": sections}
     except Exception as exc:
         return {"ok": False, "error": f"preflight failed: {exc}"}
+
+
+def speedtest_data(base_dir=None):
+    """Latest + recent speed-test history for the Control Center Preflight view.
+    Read-only (the *run* goes through the `speedtest` op/job). Never raises."""
+    try:
+        import speedtest as st  # noqa: PLC0415 — lazy to mirror preflight_data pattern
+        base = base_dir or _runtime_base_dir()
+        # Ship the thresholds so the UI badge never drifts from the documented
+        # constants (single source: speedtest.py mirrors the wiki table).
+        thresholds = {"min_down": st.MIN_DOWN_MBPS, "min_up": st.MIN_UP_MBPS,
+                      "rec_down": st.REC_DOWN_MBPS, "rec_up": st.REC_UP_MBPS}
+        return {"ok": True, "latest": st.load_latest(base),
+                "history": st.load_history(base), "thresholds": thresholds}
+    except Exception as exc:  # never let a failed speedtest read surface to the UI as a crash
+        return {"ok": False, "error": f"speedtest read failed: {exc}"}
 
 
 # Bundled operator docs the Control Center's Help page can open (allowlist —
@@ -3615,6 +3642,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "tools": tools_status_data,
         "apps": apps_status_data,
         "preflight": preflight_data,
+        "speedtest": speedtest_data,
         "env_read": env_entries_data,
         "env_write": env_write_data,
         "profiles": profiles_data,

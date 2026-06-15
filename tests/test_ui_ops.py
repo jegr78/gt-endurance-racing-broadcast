@@ -289,6 +289,25 @@ def t_tools_status_data_mixed():
     assert {t["name"] for t in d["tools"]} >= {"yt-dlp", "streamlink", "ffmpeg", "deno"}
 
 
+def t_tools_status_data_includes_speedtest():
+    # speedtest is a first-class row; version is probed by the RESOLVED path so a
+    # managed-dir install (not on PATH) still reports it.
+    seen = {}
+
+    def ver(path):
+        seen["path"] = path
+        return "Speedtest by Ookla 1.2.0"
+
+    d = rc.tools_status_data(
+        which=lambda n: "/runtime/bin/speedtest" if n == "speedtest" else None,
+        version=ver)
+    by = {t["name"]: t for t in d["tools"]}
+    assert "speedtest" in by
+    assert by["speedtest"]["installed"] is True
+    assert by["speedtest"]["version"] == "Speedtest by Ookla 1.2.0"
+    assert seen["path"] == "/runtime/bin/speedtest"   # probed by path, not by name
+
+
 def t_tools_status_data_error():
     def boom(n):
         raise RuntimeError("which broke")

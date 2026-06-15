@@ -217,6 +217,28 @@ def t_classify_sheet_bom_prefixed_html_still_detected():
     assert "sign-in" in r.detail
 
 
+def t_speedtest_max_age_env(monkeypatch=None):
+    import os
+    os.environ.pop("RACECAST_SPEEDTEST_MAX_AGE_DAYS", None)
+    assert m._speedtest_max_age() == 7.0                 # default
+    os.environ["RACECAST_SPEEDTEST_MAX_AGE_DAYS"] = "3"
+    assert m._speedtest_max_age() == 3.0
+    os.environ["RACECAST_SPEEDTEST_MAX_AGE_DAYS"] = "junk"
+    assert m._speedtest_max_age() == 7.0                 # bad value -> default
+    os.environ["RACECAST_SPEEDTEST_MAX_AGE_DAYS"] = "-1"
+    assert m._speedtest_max_age() == 7.0                 # non-positive -> default
+    os.environ.pop("RACECAST_SPEEDTEST_MAX_AGE_DAYS", None)
+
+
+def t_network_section_has_bandwidth_and_advisory():
+    import tempfile
+    sections = dict(m.gather(m.__file__, runtime_dir=tempfile.mkdtemp()))
+    net = sections["Network"]
+    # first entry is the measured/INFO bandwidth result, advisory remains last
+    assert net[0].name == "bandwidth"
+    assert any("wired connection" in r.detail for r in net)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

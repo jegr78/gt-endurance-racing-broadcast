@@ -85,6 +85,86 @@ def t_update_commands_apt_only_upgrade_skips_deno():
     assert m.update_commands("apt", ["deno"]) == []
 
 
+def t_speedtest_install_commands_winget_only():
+    # Windows installs via winget; mac/Linux are a direct download, not a command.
+    win = m.speedtest_install_commands("winget")
+    assert win == [["winget", "install", "--id", "Ookla.Speedtest.CLI", "-e",
+                    "--accept-package-agreements", "--accept-source-agreements"]]
+    assert m.speedtest_install_commands("brew") == []
+    assert m.speedtest_install_commands("apt") == []
+
+
+def t_speedtest_update_commands_winget_only():
+    assert m.speedtest_update_commands("winget")[0][:3] == ["winget", "upgrade", "--id"]
+    assert m.speedtest_update_commands("brew") == []
+    assert m.speedtest_update_commands("apt") == []
+
+
+def t_speedtest_asset_tag_per_os_arch():
+    assert m.speedtest_asset_tag("darwin", "arm64") == "macosx-universal"
+    assert m.speedtest_asset_tag("darwin", "x86_64") == "macosx-universal"
+    assert m.speedtest_asset_tag("linux", "x86_64") == "linux-x86_64"
+    assert m.speedtest_asset_tag("linux", "amd64") == "linux-x86_64"
+    assert m.speedtest_asset_tag("linux", "aarch64") == "linux-aarch64"
+    assert m.speedtest_asset_tag("linux", "arm64") == "linux-aarch64"
+    assert m.speedtest_asset_tag("win32", "AMD64") is None     # winget handles Windows
+    assert m.speedtest_asset_tag("linux", "ppc64") is None     # unsupported arch
+
+
+def t_speedtest_download_url():
+    url = m.speedtest_download_url("linux-x86_64")
+    assert url == ("https://install.speedtest.net/app/cli/"
+                   "ookla-speedtest-1.2.0-linux-x86_64.tgz")
+
+
+def _fake_tgz(binary_bytes=b"#!/bin/echo speedtest\n"):
+    """Build an in-memory .tgz holding a `speedtest` member (+ a noise file)."""
+    import io, tarfile
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        for name, data in (("speedtest", binary_bytes), ("speedtest.md", b"# doc\n")):
+            ti = tarfile.TarInfo(name)
+            ti.size = len(data)
+            ti.mtime = 0   # deterministic (Date.now()-free)
+            tf.addfile(ti, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def t_install_speedtest_binary_verifies_and_extracts(tmp=None):
+    import hashlib, tempfile
+    blob = _fake_tgz()
+    sha = hashlib.sha256(blob).hexdigest()
+    d = tempfile.mkdtemp()
+    path = m.install_speedtest_binary(
+        d, "linux-x86_64", opener=lambda url: blob, downloads={"linux-x86_64": sha})
+    assert path == os.path.join(d, "speedtest")
+    with open(path, "rb") as fh:
+        assert fh.read() == b"#!/bin/echo speedtest\n"
+    if os.name != "nt":                          # the +x bit is POSIX-only
+        import stat
+        assert os.stat(path).st_mode & stat.S_IXUSR
+
+
+def t_install_speedtest_binary_rejects_bad_checksum():
+    import tempfile
+    blob = _fake_tgz()
+    try:
+        m.install_speedtest_binary(
+            tempfile.mkdtemp(), "linux-x86_64",
+            opener=lambda url: blob, downloads={"linux-x86_64": "deadbeef"})
+    except RuntimeError as exc:
+        assert "checksum mismatch" in str(exc)
+        return
+    raise AssertionError("expected a checksum-mismatch RuntimeError")
+
+
+def t_manual_guide_mentions_speedtest():
+    assert "Ookla.Speedtest.CLI" in m.manual_guide("win32")
+    assert "speedtest.net/apps/cli" in m.manual_guide("darwin")
+    assert "speedtest.net/apps/cli" in m.manual_guide("linux")
+    assert "teamookla" not in m.manual_guide("darwin")   # no longer the brew-tap path
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

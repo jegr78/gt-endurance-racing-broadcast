@@ -53,6 +53,26 @@ These are sized for the **handover** worst case: pulling a fresh (bursting) Feed
 alongside Feed A and an optional POV *down* while pushing the program *up*, all in the
 same few seconds.
 
+### Measuring your line
+
+Run an opt-in speed test and let preflight check it against the table above:
+
+- **CLI:** `racecast speedtest` (add `--json` for machine-readable output).
+- **Control Center:** Preflight view → **Run speed test**.
+
+Each run is logged locally (the last 10 are kept). `racecast preflight` reads the
+latest result and **warns** when download/upload is below the **25 / 10 Mbps**
+minimum, or when the measurement is older than `RACECAST_SPEEDTEST_MAX_AGE_DAYS`
+(default 7) — it never hard-blocks readiness. The test measures the line **idle**,
+so treat it as a *capability* check; the true under-load picture is OBS's live
+stats while streaming.
+
+The speed test uses the **Ookla Speedtest CLI**, installed out-of-the-box by
+`racecast install-tools` (and the Control Center's **Install all** button) on all
+three platforms — winget on Windows, a pinned + checksum-verified direct download
+on macOS and Linux. Ookla is closed-source and each run sends its result to Ookla
+— the same data egress as running speedtest.net in a browser.
+
 ### Levers if your line is tight
 
 - **Cap the relay pull quality** (streamlink / yt-dlp format) to 720p to fit the Minimum
