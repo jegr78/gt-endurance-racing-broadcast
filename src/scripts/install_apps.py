@@ -483,19 +483,31 @@ def _install_linux(missing, assume_yes):
         return 0
     failed = []
     for step in steps:
-        if step[0] == "run":
-            print("Running:", " ".join(step[1]))
-            rc = subprocess.call(step[1])
-        elif step[0] == "deb":
-            rc = _common().install_remote_deb(step[1])
-        else:
-            rc = _run_remote_script(step[1], step[2])
+        label = " ".join(step[1]) if step[0] == "run" else step[1]  # argv vs URL
+        try:
+            if step[0] == "run":
+                print("Running:", label)
+                rc = subprocess.call(step[1])
+            elif step[0] == "deb":
+                rc = _common().install_remote_deb(step[1])
+            else:
+                rc = _run_remote_script(step[1], step[2])
+        except Exception as exc:                      # noqa: BLE001
+            # A download/timeout/HTTP error on ONE vendor (e.g. Discord's CDN)
+            # must not abort the remaining apps or crash with a traceback — the
+            # other installs already ran. Record it and carry on.
+            print(f"  ! step failed: {exc}")
+            rc = 1
         if rc != 0:
-            failed.append(step[1])  # argv for 'run' steps, URL for 'script'/'deb' steps
+            failed.append(label)
     if "tailscale" in missing:
         print("Tailscale installed? Finish with:  sudo tailscale up")
     if "companion" in missing:
         print("Companion: this is the headless/service install (companion-pi).")
+    if failed:
+        print("\nThese steps failed — re-run `racecast install-apps` to retry them:")
+        for f in failed:
+            print("  -", f)
     return 1 if failed else 0
 
 
