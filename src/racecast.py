@@ -1289,7 +1289,8 @@ def companion_start(rest):
     if not sys.platform.startswith("win") and sys.platform != "darwin":
         unit = cl.detect_unit()
         if unit:
-            return _companion_start_linux(cc, cl, unit, rest)
+            _companion_start_linux(cc, cl, unit, rest)
+            return
     cmds = _companion_cmds(cc)
     if cmds is None:
         sys.exit(_companion_unsupported_msg())
@@ -1337,7 +1338,7 @@ def companion_start(rest):
     host = desired if desired != "0.0.0.0" else (ts or "<this-machine-ip>")
     print(f"Companion buttons (tablet): http://{host}:{port}/tablet")
     print("  Admin GUI shares this port — restrict who reaches it with a Tailscale ACL.")
-    return None
+    return
 
 def companion_stop(rest):
     cc = _companion()
@@ -1345,7 +1346,8 @@ def companion_stop(rest):
     if not sys.platform.startswith("win") and sys.platform != "darwin":
         unit = cl.detect_unit()
         if unit:
-            return _companion_stop_linux(cc, cl, unit)
+            _companion_stop_linux(cc, cl, unit)
+            return
     cmds = _companion_cmds(cc)
     if cmds is None:
         sys.exit(_companion_unsupported_msg())
@@ -1362,7 +1364,7 @@ def companion_stop(rest):
     hint = ("taskkill /F /IM Companion.exe" if sys.platform.startswith("win")
             else "pkill -f Companion")
     print(f"companion may still be running. Force-quit: {hint}")
-    return None
+    return
 
 def companion_restart(rest):
     companion_stop([])
