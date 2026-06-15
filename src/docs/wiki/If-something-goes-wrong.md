@@ -21,6 +21,8 @@ most setup problems (tools, ports, cookies) before they bite you live.
 | Problem | Fix |
 |---------|-----|
 | HUD is blank in OBS | The relay draws the HUD — make sure it's running (`racecast relay start`). |
+| **ARM64 Linux:** OBS has **no "Browser" source type** (can't add the HUD at all) | The distro OBS ships without it and no prebuilt one exists for `aarch64`. Run **`racecast obs-browser`** once to build & install it. [Details](OBS-Setup). |
+| **ARM64 Linux / VM:** Browser Source stays black or OBS crashes on it | No-GPU host — CEF's GPU subprocess can't open a DRM render node. Turn off **OBS → Settings → Advanced → Browser Source Hardware Acceleration**. |
 | HUD text isn't updating | It updates within a few seconds. Check you're editing the **Overlay** tab of the sheet and that the sheet is still shared. |
 | A flag or team logo is missing | The image file's name must match the text in the sheet (lowercase, spaces become `-`). Run `python3 tools/fetch-flags.py` to fetch any missing flags. Full detail: [OBS & scenes](OBS-Setup). |
 

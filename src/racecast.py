@@ -22,6 +22,7 @@
   racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
   racecast freeport [PORT...] [--force]       # free a stuck feed port (default 53001-53003); kills orphaned holders, refuses a running relay/streams
   racecast preflight | speedtest [--json] | cookies [twitch] [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
+  racecast obs-browser [--yes]               # Linux/ARM64: build & install OBS's Browser Source plugin from source (needed for the relay HUD)
   racecast export companion [--out PATH]     # write the Companion button config
   racecast init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
   racecast update [--check] [--yes] [--tag TAG]   # self-update the binary (--tag installs an exact release)
@@ -651,7 +652,7 @@ EXTRA_VERBS = {
 }
 # Internal verbs: routed but never advertised (frozen feed children use run-feed).
 HIDDEN_VERBS = {"streams": ("run-feed",)}
-ONESHOTS = ("preflight", "speedtest", "cookies", "graphics", "media", "setup", "install-tools", "install-apps", "update")
+ONESHOTS = ("preflight", "speedtest", "cookies", "graphics", "media", "setup", "install-tools", "install-apps", "obs-browser", "update")
 EVENT_VERBS = ("status", "start", "stop")
 TAILSCALE_VERBS = ("up", "down", "status")
 OBS_VERBS = ("refresh", "collection")
@@ -1969,6 +1970,7 @@ ONESHOT_MAP = {
     "setup":         "setup-assets.py",
     "install-tools": "scripts/install_tools.py",
     "install-apps":  "scripts/install_apps.py",
+    "obs-browser":   "scripts/obs_browser_linux.py",
     "update":        "scripts/update.py",
 }
 

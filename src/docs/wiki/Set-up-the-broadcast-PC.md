@@ -228,6 +228,13 @@ Linux (it lists the steps and asks before running them).
 > **UAC prompt** and click through it (its silent install reports success without
 > installing anything). The other apps install silently.
 
+> **ARM64 Linux (Raspberry Pi & co.):** the distro OBS has **no Browser Source**, which the
+> relay HUD/timer overlays need, and no prebuilt one exists for `aarch64`. After
+> `install-apps` you'll see a one-line pointer — run **`racecast obs-browser`** once to build
+> and install it from source (downloads ~340 MB of CEF, compiles for a few minutes). See
+> [OBS Setup](OBS-Setup) §4. On a no-GPU host also turn off Browser Source Hardware
+> Acceleration. This is ARM64-only; x86-64 Linux gets the Browser Source from the OBS PPA.
+
 <details>
 <summary>Alternative: install them manually</summary>
 

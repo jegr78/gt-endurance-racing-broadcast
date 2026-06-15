@@ -108,6 +108,7 @@ Or run the steps individually:
 racecast profile new <name> --from example   # create the league, then fill its SHEET_ID
 racecast install-tools     # installs yt-dlp/streamlink/ffmpeg/deno (offers Homebrew setup on a fresh Mac)
 racecast install-apps      # optional: installs OBS, Companion, Tailscale
+racecast obs-browser       # ARM64 Linux only: build & install OBS's Browser Source plugin (the relay HUD needs it; no prebuilt exists for aarch64)
 racecast preflight         # verify the machine is ready
 racecast export companion  # write the Companion button config -> runtime/racecast-buttons.companionconfig
 ```

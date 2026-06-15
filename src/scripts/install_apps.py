@@ -538,11 +538,33 @@ def _install_linux(missing, assume_yes):
         except Exception as exc:                      # noqa: BLE001
             print(f"  ! enable-control skipped: {exc} "
                   "(run `racecast companion enable-control` later).")
+    _obs_browser_notice()
     if failed:
         print("\nThese steps failed — re-run `racecast install-apps` to retry them:")
         for f in failed:
             print("  -", f)
     return 1 if failed else 0
+
+
+def _obs_browser_notice():
+    """On a supported Linux arch where OBS is installed but its Browser Source
+    plugin is missing (the distro/PPA ships none on aarch64), point at the
+    source-build command — the relay HUD/timer overlays need a Browser Source."""
+    if not sys.platform.startswith("linux"):
+        return
+    import platform
+    try:
+        import obs_browser_linux as obl
+        hint = obl.install_hint(
+            platform.machine(),
+            obs_present=app_present("obs", sys.platform),
+            browser_present=obl.browser_plugin_installed(
+                obl.obs_plugins_dir(obl.normalize_arch(platform.machine()) or "x86_64")),
+        )
+    except Exception:                                  # noqa: BLE001
+        hint = None
+    if hint:
+        print("\n" + hint)
 
 
 def main():
