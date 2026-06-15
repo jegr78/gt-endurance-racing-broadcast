@@ -364,12 +364,19 @@ def _install_apps_module(here):
     return mod
 
 
-def apps_section(present):
-    """Classify each producer app given `present(app) -> bool`."""
+def apps_section(present, web=False):
+    """Classify each producer app given `present(app) -> bool`. On a web-variant
+    host (no native Discord — e.g. ARM64 Linux) a missing Discord client is
+    informational: interview audio comes from Discord-web in a browser."""
     results = []
     for app, pretty, miss_level, consequence in APP_CHECKS:
         if present(app):
             results.append(Result(PASS, pretty, "installed"))
+        elif app == "discord" and web:
+            results.append(Result(INFO, pretty,
+                                  "native client not installed — interview audio via "
+                                  "Discord-web in the browser (open it and join the "
+                                  "voice channel manually)"))
         else:
             results.append(Result(miss_level, pretty,
                                   f"not installed — {consequence}; run `racecast install-apps`"))
@@ -434,8 +441,10 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
                  else Result(FAIL, "python3", f"{py} — need 3.8+"))
     here = os.path.dirname(os.path.abspath(preflight_file))
     try:
+        import discord_web
         ia = _install_apps_module(here)
-        apps = apps_section(lambda app: ia.app_present(app, sys.platform))
+        web = discord_web.use_web(sys.platform, os.environ)
+        apps = apps_section(lambda app: ia.app_present(app, sys.platform), web=web)
     except Exception as exc:  # never let a probe break the report
         apps = [Result(WARN, "applications", f"check failed: {exc}")]
     ports = []

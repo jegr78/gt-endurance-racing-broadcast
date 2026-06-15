@@ -183,6 +183,16 @@ def t_apps_section_levels():
     assert "racecast install-apps" in by["Discord"].detail
 
 
+def t_apps_section_web_discord_is_info():
+    # Web-variant host: native Discord absent is informational, not a WARN.
+    rs = m.apps_section(lambda app: False, web=True)
+    disc = [r for r in rs if r.name == "Discord"][0]
+    assert disc.level == "INFO" and "Discord-web" in disc.detail
+    # The other apps still WARN/FAIL as before when absent.
+    obs = [r for r in rs if r.name == "OBS Studio"][0]
+    assert obs.level == "FAIL"
+
+
 def t_install_apps_module_loads():
     ia = m._install_apps_module(os.path.join(ROOT, "src", "scripts"))
     assert callable(ia.app_present)
