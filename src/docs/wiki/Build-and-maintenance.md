@@ -30,9 +30,11 @@ standing PR that collects every `feat:`/`fix:` commit since the last release,
 with the computed next version and changelog. When an event approaches and
 `main` is in a good state, **merge that PR** — this creates the `vX.Y.Z` tag,
 the GitHub release with notes, and kicks off the binary build that uploads
-`racecast-windows.zip` / `racecast-macos.tar.gz` / `racecast-linux.tar.gz` (each contains
+`racecast-windows.zip` / `racecast-macos.tar.gz` / `racecast-linux.tar.gz` /
+`racecast-linux-arm64.tar.gz` (each contains
 the `racecast` + `racecast-ui` binaries plus `.env.example`; on first run the binary
-copies it to `.env`).
+copies it to `.env`). The two Linux archives come from the x86-64 (`ubuntu-latest`)
+and ARM64 (`ubuntu-24.04-arm`) runners in the build matrix.
 No Release PR open = nothing release-worthy happened (`docs:`/`ci:` commits
 don't count). The binaries are unsigned — operators see a one-time
 SmartScreen/Gatekeeper warning (documented on the setup page).

@@ -126,7 +126,12 @@ Download the archive for your OS from the
 |---|---|
 | Windows | `racecast-windows.zip` |
 | macOS | `racecast-macos.tar.gz` |
-| Linux | `racecast-linux.tar.gz` |
+| Linux (x86-64) | `racecast-linux.tar.gz` |
+| Linux (ARM64) | `racecast-linux-arm64.tar.gz` |
+
+On Linux, run `uname -m` if unsure: `x86_64` → the plain archive, `aarch64` →
+the ARM64 archive. (A mismatch shows `cannot execute binary file: Exec format
+error`.)
 
 Extract it into a folder of its own (e.g. `Documents/Racecast/`) — the tool keeps its
 working files (`.env`, `profiles/`, `runtime/`) next to the binary. Open a terminal **in

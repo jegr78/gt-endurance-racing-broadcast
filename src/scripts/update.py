@@ -4,7 +4,7 @@ Checks /releases/latest, compares semver tags, downloads the platform archive
 and swaps the running binary (Windows: rename trick — a running exe can be
 renamed but not overwritten). Frozen-only: a repo checkout updates with
 `git pull`. Design: docs/superpowers/specs/2026-06-05-self-update-design.md."""
-import argparse, hashlib, json, os, shutil, sys, tarfile, tempfile
+import argparse, hashlib, json, os, platform as _platform, shutil, sys, tarfile, tempfile
 import urllib.error, urllib.parse, urllib.request, zipfile
 
 # Already-released binaries embed the old slug and rely on GitHub's rename
@@ -23,12 +23,18 @@ def parse_version(tag):
     return tuple(int(p) for p in parts)
 
 
-def asset_name(platform):
-    """The release asset for a sys.platform value (mirrors release.yml's matrix)."""
+def asset_name(platform, machine=None):
+    """The release asset for a sys.platform value (mirrors release.yml's matrix).
+    Linux ships separate x86-64 and ARM64 archives; `machine`
+    (platform.machine(), defaulting to this host's) selects between them — so a
+    self-updating ARM64 binary fetches the ARM64 archive, not the x86-64 one."""
     if platform.startswith("win"):
         return "racecast-windows.zip"
     if platform == "darwin":
         return "racecast-macos.tar.gz"
+    machine = _platform.machine() if machine is None else machine
+    if machine.lower() in ("aarch64", "arm64"):
+        return "racecast-linux-arm64.tar.gz"
     return "racecast-linux.tar.gz"
 
 

@@ -422,9 +422,13 @@ Companion.exe discovery + `RACECAST_COMPANION_EXE` override in `.env`; Linux Com
 control is manual by design — in WSL/Docker setups Companion runs on the host).
 Releases: merge the standing **release-please** Release PR (or push a `v*` tag manually
 — both work) — `.github/workflows/release.yml` tests, builds, smoke-tests and uploads
-`racecast-windows.zip` / `racecast-macos.tar.gz` / `racecast-linux.tar.gz` (each
-contains the `racecast` binary + `.env.example`; on first run the frozen binary copies
-it to `.env` — see `ensure_env_file`). release-please tags via GITHUB_TOKEN, which cannot
+`racecast-windows.zip` / `racecast-macos.tar.gz` / `racecast-linux.tar.gz` /
+`racecast-linux-arm64.tar.gz` (each contains the `racecast` binary + `.env.example`;
+on first run the frozen binary copies it to `.env` — see `ensure_env_file`). The two
+Linux archives are built natively on the `ubuntu-latest` (x86-64) and
+`ubuntu-24.04-arm` (ARM64) matrix runners; `update.asset_name()` picks the right one
+per `platform.machine()` so a self-updating ARM64 binary never fetches the x86-64
+archive. release-please tags via GITHUB_TOKEN, which cannot
 trigger on-tag workflows, so `release-please.yml` dispatches `release.yml`
 explicitly. `ci.yml` runs the suite on all
 three OSes for every PR. Unsigned binaries: SmartScreen/Gatekeeper show a
