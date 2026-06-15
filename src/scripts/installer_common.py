@@ -10,6 +10,19 @@ import os, shutil, subprocess
 BREW_PATHS = ("/opt/homebrew/bin/brew", "/usr/local/bin/brew")
 BREW_INSTALLER = "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
 
+# Some vendor download endpoints (e.g. Discord's /api/download) reject the default
+# python-urllib User-Agent with HTTP 403; send a real one like every other racecast
+# fetch. Any non-urllib UA works (verified: this and curl both 200, bare urllib 403).
+INSTALLER_UA = "racecast-installer/1.0"
+
+
+def _fetch(url, timeout):
+    """GET `url` over cert-verified HTTPS with a real User-Agent, returning the body."""
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": INSTALLER_UA})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
 
 def confirmed(answer):
     """True iff the operator's reply means yes."""
@@ -63,10 +76,9 @@ def brew_installed_casks(brew_path, run=None):
 def run_remote_script(url, runner):
     """Download url to a temp file (HTTPS, cert-verified) and run it visibly.
     No shell pipes — the operator saw the URL and confirmed beforehand."""
-    import tempfile, urllib.request
+    import tempfile
     print("Downloading:", url)
-    with urllib.request.urlopen(url, timeout=30) as resp:
-        body = resp.read()
+    body = _fetch(url, timeout=30)
     # delete=False: the file must outlive the handle so the runner can read it.
     with tempfile.NamedTemporaryFile(delete=False, suffix=".sh") as tmp:
         tmp.write(body)
@@ -82,10 +94,9 @@ def install_remote_deb(url):
     """Download a vendor .deb (HTTPS, cert-verified) to a temp file and install
     it visibly with apt-get — no shell pipes, the operator saw the URL and
     confirmed beforehand. World-readable so apt's sandboxed fetcher can read it."""
-    import tempfile, urllib.request
+    import tempfile
     print("Downloading:", url)
-    with urllib.request.urlopen(url, timeout=60) as resp:
-        body = resp.read()
+    body = _fetch(url, timeout=60)
     # delete=False: the file must outlive the handle so apt-get can read it.
     with tempfile.NamedTemporaryFile(delete=False, suffix=".deb") as tmp:
         tmp.write(body)

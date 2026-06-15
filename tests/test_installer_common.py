@@ -88,6 +88,58 @@ def t_brew_installed_casks_probe_error_returns_none():
     assert m.brew_installed_casks("brew", run=boom) is None
 
 
+class _FakeResp:
+    def __init__(self, body=b"x"):
+        self._body = body
+    def __enter__(self):
+        return self
+    def __exit__(self, *a):
+        return False
+    def read(self):
+        return self._body
+
+
+def _capture_request(fn_name, *args):
+    """Run installer_common.<fn_name> with urlopen + subprocess.call stubbed,
+    returning (return_code, captured Request, captured argv)."""
+    import urllib.request
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["req"] = req
+        return _FakeResp(b"vendor-bytes")
+
+    orig_open, orig_call = urllib.request.urlopen, m.subprocess.call
+    urllib.request.urlopen = fake_urlopen
+    m.subprocess.call = lambda cmd: (captured.__setitem__("cmd", cmd), 0)[1]
+    try:
+        rc = getattr(m, fn_name)(*args)
+    finally:
+        urllib.request.urlopen, m.subprocess.call = orig_open, orig_call
+    return rc, captured.get("req"), captured.get("cmd")
+
+
+def t_install_remote_deb_sends_user_agent():
+    # Discord's /api/download returns HTTP 403 to the default python-urllib
+    # User-Agent; the vendor .deb fetch must carry a real one (any non-urllib UA
+    # works). Regression for install-apps failing on Linux.
+    rc, req, cmd = _capture_request(
+        "install_remote_deb", "https://discord.com/api/download?platform=linux&format=deb")
+    assert rc == 0
+    ua = req.get_header("User-agent")               # None if header absent
+    assert ua and "urllib" not in ua.lower()
+    assert cmd[:3] == ["sudo", "apt-get", "install"]
+
+
+def t_run_remote_script_sends_user_agent():
+    rc, req, cmd = _capture_request(
+        "run_remote_script", "https://tailscale.com/install.sh", ["sh"])
+    assert rc == 0
+    ua = req.get_header("User-agent")
+    assert ua and "urllib" not in ua.lower()
+    assert cmd[0] == "sh"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
