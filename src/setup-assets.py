@@ -210,8 +210,11 @@ def main():
 
     localized = replace_tokens(collection, mapping)
     web = discord_web.use_web(sys.platform, os.environ)
-    browser = discord_web.resolve_browser(os.environ,
-                                          discord_web.detect_running_browser())
+    # Only probe for a running browser when the web variant is actually in play —
+    # detect_running_browser() spawns pgrep subprocesses we'd otherwise discard on
+    # every macOS/Windows/native-Linux setup.
+    browser = discord_web.resolve_browser(
+        os.environ, discord_web.detect_running_browser() if web else None)
     swapped = localize_discord_audio(localized, sys.platform, web=web, browser=browser)
     apply_collection_name(localized, a.collection)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
