@@ -4,6 +4,8 @@ Loaded by both via importlib from the sibling path — works in repo mode, the
 test loaders, and the frozen binary (scripts ship as data under _MEIPASS)."""
 import os, shutil, subprocess
 
+from services import external_tool_env  # de-PyInstaller the env for spawned installers
+
 # Standard Homebrew locations: Apple Silicon, then Intel. A fresh bootstrap is
 # NOT on the current process PATH (shellenv only runs in new shells), so brew
 # must be invoked via the absolute path find_brew() returns.
@@ -85,7 +87,10 @@ def run_remote_script(url, runner):
     try:
         cmd = runner + [tmp.name]
         print("Running:", " ".join(cmd))
-        return subprocess.call(cmd)
+        # env: a frozen binary's _MEIPASS must not leak onto the spawned script's
+        # LD_LIBRARY_PATH — e.g. tailscale's install.sh runs curl, which else loads
+        # our bundled libssl and dies ("OPENSSL_x.y.z not found"). See services.py.
+        return subprocess.call(cmd, env=external_tool_env())
     finally:
         os.unlink(tmp.name)
 
@@ -104,7 +109,9 @@ def install_remote_deb(url):
         os.chmod(tmp.name, 0o644)
         cmd = ["sudo", "apt-get", "install", "-y", tmp.name]
         print("Running:", " ".join(cmd))
-        return subprocess.call(cmd)
+        # sudo resets LD_LIBRARY_PATH itself, but pass the de-PyInstaller'd env too
+        # for consistency with run_remote_script (harmless under sudo).
+        return subprocess.call(cmd, env=external_tool_env())
     finally:
         os.unlink(tmp.name)
 

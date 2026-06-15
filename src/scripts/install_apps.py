@@ -72,6 +72,14 @@ COMPANION_INSTALLER = \
     "https://raw.githubusercontent.com/bitfocus/companion-pi/main/install.sh"  # needs root
 # Discord's official Linux .deb (the snap is community-maintained, not Discord Inc.)
 DISCORD_DEB = "https://discord.com/api/download?platform=linux&format=deb"
+# Discord ships an amd64 .deb only (verified June 2026: both the stable and canary
+# Linux .deb report Architecture: amd64; the download API ignores an arch param).
+# Discord's native ARM64 push so far is Windows-on-ARM, not Linux. On arm64 the
+# amd64 .deb is unsatisfiable (its amd64 deps aren't installable), so skip it.
+DISCORD_NO_ARM64_NOTE = (
+    "Discord: no official ARM64 Linux .deb (stable and canary are amd64-only) — "
+    "skipping. Use the web app (https://discord.com/app) or a browser.")
+AMD64_MACHINES = ("x86_64", "amd64")
 
 
 def _expand_windows(path, env):
@@ -434,12 +442,16 @@ def apps_manual_guide(platform):
     return "\n".join(lines)
 
 
-def linux_install_steps(apps, which=shutil.which):
+def linux_install_steps(apps, which=shutil.which, machine=None):
     """Ordered (kind, ...) steps to install `apps` on an apt-based distro.
     ('run', argv) executes argv; ('script', url, runner) downloads url and runs
     it with runner + [path]; ('deb', url) downloads url and installs it with
-    apt-get. OBS uses the official PPA when add-apt-repository exists (Ubuntu),
-    else plain apt (Debian ships obs-studio)."""
+    apt-get; ('note', text) just prints text (an app we can't auto-install here).
+    OBS uses the official PPA when add-apt-repository exists (Ubuntu), else plain
+    apt (Debian ships obs-studio). `machine` defaults to this host's arch."""
+    if machine is None:
+        import platform as _pf
+        machine = _pf.machine()
     steps = []
     if "obs" in apps:
         if which("add-apt-repository"):
@@ -451,7 +463,10 @@ def linux_install_steps(apps, which=shutil.which):
     if "companion" in apps:
         steps.append(("script", COMPANION_INSTALLER, ["sudo", "bash"]))
     if "discord" in apps:
-        steps.append(("deb", DISCORD_DEB))
+        if (machine or "").lower() in AMD64_MACHINES:
+            steps.append(("deb", DISCORD_DEB))
+        else:
+            steps.append(("note", DISCORD_NO_ARM64_NOTE))   # no arm64 .deb exists
     return steps
 
 
@@ -476,6 +491,8 @@ def _install_linux(missing, assume_yes):
             print("  $", " ".join(step[1]))
         elif step[0] == "deb":
             print("  $ sudo apt-get install -y <downloaded .deb>   #", step[1])
+        elif step[0] == "note":
+            print("  #", step[1])
         else:
             print("  $", " ".join(step[2]), "<", step[1])
     if not assume_yes and not confirmed(input("Proceed? [y/N] ")):
@@ -483,6 +500,9 @@ def _install_linux(missing, assume_yes):
         return 0
     failed = []
     for step in steps:
+        if step[0] == "note":          # informational only — not an install, not a failure
+            print(step[1])
+            continue
         label = " ".join(step[1]) if step[0] == "run" else step[1]  # argv vs URL
         try:
             if step[0] == "run":
