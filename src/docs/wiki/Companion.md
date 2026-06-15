@@ -11,8 +11,10 @@ Install it first per [Set up the broadcast PC](Set-up-the-broadcast-PC).
 
 ## Import the button board
 
-1. Start Companion: `racecast companion start` (Windows/macOS — the first run just
-   launches Companion; Linux: start it manually). In the launcher press **Launch GUI**.
+1. Start Companion: `racecast companion start` (Windows/macOS: the first run just
+   launches Companion; native Linux with the companion-pi systemd service: works after a
+   one-time `racecast companion enable-control` — `install-apps` runs this automatically;
+   other Linux setups: start it manually). In the launcher press **Launch GUI**.
 2. In the admin: **Import/Export → Import** → the file `racecast export companion` writes
    (the active profile's `runtime/<profile>/racecast-buttons.companionconfig`). The import dialog offers two paths:
    - **First import on a fresh machine:** confirm **"Replace current
@@ -23,8 +25,8 @@ Install it first per [Set up the broadcast PC](Set-up-the-broadcast-PC).
      Companion's settings, **including the stored OBS WebSocket password**;
      nothing needs re-typing.
 3. Bind the board to the tailnet: `racecast companion restart` — sets Companion's bind
-   address to this machine's Tailscale IP. (Linux: set the launcher's **GUI
-   Interface** to the Tailscale IP manually.)
+   address to this machine's Tailscale IP. (Other Linux setups without the companion-pi
+   systemd service: set the launcher's **GUI Interface** to the Tailscale IP manually.)
 
 > ⚠️ **"Replace current configuration"** replaces the **entire** Companion
 > configuration on this station. Fine for a fresh/dedicated producer station;

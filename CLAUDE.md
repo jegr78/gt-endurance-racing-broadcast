@@ -110,6 +110,7 @@ python3 src/racecast.py relay start       # start the relay in the background
 python3 src/racecast.py relay stop        # stop it
 python3 src/racecast.py relay logs -f     # tail the relay log
 python3 src/racecast.py relay run         # foreground/debug mode
+python3 src/racecast.py companion enable-control  # Linux only: one-time setup (systemd drop-in + root helper + sudoers rule)
 python3 src/racecast.py companion start   # bind Companion to Tailscale IP and start it
 python3 src/racecast.py companion stop
 python3 src/racecast.py streams start     # static/public-stream mode
@@ -363,7 +364,8 @@ environment before dispatching to:
   status/logs for both. `racecast relay run` is the foreground/debug mode (no daemon).
 - **Companion adapter** (over `src/scripts/companion_common.py`) — `racecast companion
   start/stop/restart/status/logs` wraps the Companion bind logic (Windows + macOS
-  automated; Linux manual by design).
+  automated; native Linux companion-pi systemd service controlled; other Linux setups
+  — WSL/Docker/manual AppImage — are manual).
 - **One-shot wrappers** — `racecast preflight`, `racecast cookies`, `racecast graphics`,
   `racecast media`, `racecast setup` delegate to the corresponding `src/` modules
   without needing to remember individual script paths.
@@ -418,8 +420,9 @@ child extracts its own bundle and outlives the parent. `runtime/`, `profiles/` a
 `.env` live next to the binary — keep it in its own folder.
 `services.py`/`companion_common.py` carry the per-OS process control (Windows: ctypes
 PID probe — `os.kill(pid, 0)` would TERMINATE the target there — taskkill/tasklist,
-Companion.exe discovery + `RACECAST_COMPANION_EXE` override in `.env`; Linux Companion
-control is manual by design — in WSL/Docker setups Companion runs on the host).
+Companion.exe discovery + `RACECAST_COMPANION_EXE` override in `.env`; native Linux:
+companion-pi systemd service via `companion_linux.py`; other Linux setups — WSL/Docker/
+manual AppImage — remain manual, matching the pre-existing guidance).
 Releases: merge the standing **release-please** Release PR (or push a `v*` tag manually
 — both work) — `.github/workflows/release.yml` tests, builds, smoke-tests and uploads
 `racecast-windows.zip` / `racecast-macos.tar.gz` / `racecast-linux.tar.gz` /
@@ -465,8 +468,17 @@ the relay's `--bind auto`, and likewise **not** the LAN. It auto-detects the Tai
 is stopped, with a `.racecast-bak` backup — sets `bind_ip` in Companion's `config.json`
 (`~/Library/Application Support/companion/config.json` on macOS; the GUI launcher reads
 it as `--admin-address`). Windows + macOS automated (Windows: Companion.exe discovery +
-`RACECAST_COMPANION_EXE` override in `.env`); Linux manual by design — in WSL/Docker setups
-Companion runs on the host. Invoke via `racecast companion start/stop`. **Important:**
+`RACECAST_COMPANION_EXE` override in `.env`); native Linux: companion-pi **systemd
+service**, controlled by `companion_linux.py` — `racecast companion start/stop` invoke
+`systemctl` via a root bind helper that pins `--admin-address` to the Tailscale IP, or
+`127.0.0.1` when the tailnet is down (never `0.0.0.0`, matching the relay's `--bind
+auto` rule). This requires a one-time `racecast companion enable-control` (installs a
+systemd `ExecStart` drop-in, the `/usr/local/sbin/racecast-companion-bind` root helper,
+and a visudo-validated NOPASSWD sudoers rule); `install-apps` runs it automatically
+after a Linux Companion install. Re-run `enable-control` after a structural
+`sudo companion-update` that changes the node launch line. Other Linux setups
+(WSL/Docker on the host, manual AppImage) keep the manual path. Tests:
+`tests/test_companion_linux.py`. Invoke via `racecast companion start/stop`. **Important:**
 binding only controls *where* Companion listens — Companion serves `/tablet` and the admin
 GUI on one port + one shared socket API (its admin password is a casual deterrent, not a
 boundary), so isolating the admin from directors is a **Tailscale-ACL** job (restrict who

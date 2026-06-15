@@ -355,8 +355,10 @@ Finally bind the board to the tailnet:
 racecast companion restart    # binds Companion to this machine's Tailscale IP
 ```
 
-(Linux: start and bind Companion manually — automated control is Windows/macOS
-only.) Details: [Companion](Companion).
+(Linux with the companion-pi systemd service: `racecast companion start/stop` work
+after a one-time `racecast companion enable-control` — `install-apps` runs this
+automatically. WSL/Docker/manual AppImage installs: start and bind Companion manually.)
+Details: [Companion](Companion).
 
 **You should now see:** the broadcast buttons in Companion's admin **Buttons** tab.
 

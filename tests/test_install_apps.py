@@ -385,6 +385,13 @@ def t_partition_brew_updatable_none_managed():
     assert to_up == [] and elsewhere == ["obs", "discord"]
 
 
+def t_should_enable_companion_control_only_on_companion_linux():
+    # pure decision: companion present in the just-installed set, no failed steps
+    assert m.should_enable_companion_control(["companion"], failed=[]) is True
+    assert m.should_enable_companion_control(["obs"], failed=[]) is False
+    assert m.should_enable_companion_control(["companion"], failed=["companion ..."]) is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

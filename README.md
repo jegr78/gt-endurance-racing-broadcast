@@ -137,6 +137,7 @@ racecast speedtest            # opt-in Ookla bandwidth test; logs locally, prefl
 racecast relay start          # start the relay (background)
 racecast relay logs -f        # watch it live
 racecast relay status         # health + tailnet URL
+racecast companion enable-control  # Linux only: one-time setup so companion start/stop can control the companion-pi systemd service without a password
 racecast companion start      # bind Companion to Tailscale, start it
 racecast status               # all services at a glance
 racecast relay stop           # stop the relay
