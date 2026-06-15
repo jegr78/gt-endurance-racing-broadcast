@@ -195,6 +195,10 @@ def t_loop_serve_once_passes_no_window():
     assert captured["argv"][0] == "streamlink"
     for k, v in loop.no_window_kwargs().items():
         assert captured["kw"].get(k) == v
+    # streamlink is spawned with a sanitized env so a frozen binary's bundled
+    # libs don't leak into the system-linked tool (the OPENSSL_3.3.0 crash).
+    assert "env" in captured["kw"]
+    assert captured["kw"]["env"] == loop.external_tool_env()
 
 
 def t_loop_youtube_argv_unchanged():

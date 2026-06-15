@@ -99,6 +99,10 @@ def t_tool_version_hides_console_window():
     assert captured["argv"] == ["ffmpeg", "--version"]
     for k, v in m.no_window_kwargs().items():   # whatever this OS resolves to
         assert captured["kw"].get(k) == v
+    # the probe carries a sanitized env so a frozen binary's bundled libs don't
+    # leak into the system-linked tool (the OPENSSL_3.3.0 / libcrypto crash).
+    assert "env" in captured["kw"]
+    assert captured["kw"]["env"] == m.external_tool_env()
 
 
 class _Result:

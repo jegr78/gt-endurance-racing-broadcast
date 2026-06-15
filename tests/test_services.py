@@ -1,11 +1,22 @@
 #!/usr/bin/env python3
 """Stdlib checks for the spawned-service daemon helper. Run: python3 tests/test_services.py"""
-import os, sys, tempfile
+import ast, os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
 import services as sv
+
+
+def _fn_source(rel_path, name):
+    """Exact source text of the top-level function `name` in a repo file, or
+    None — so a cross-check can prove duplicated copies stay byte-identical."""
+    with open(os.path.join(ROOT, rel_path), encoding="utf-8") as fh:
+        src = fh.read()
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return ast.get_source_segment(src, node)
+    return None
 
 
 def t_read_pid_valid(tmp):
@@ -103,6 +114,59 @@ def t_no_window_kwargs_per_os():
     assert sv.no_window_kwargs("nt") == {"creationflags": 0x08000000}
     assert sv.no_window_kwargs("posix") == {}
     assert sv.no_window_kwargs("java") == {}
+
+
+def t_external_tool_env_not_frozen_inherits():
+    # Not frozen -> None, so the caller passes no env= and the child inherits
+    # os.environ unchanged (a dev box may set LD_LIBRARY_PATH legitimately).
+    assert sv.external_tool_env(frozen=False, environ={"LD_LIBRARY_PATH": "/x"}) is None
+
+
+def t_external_tool_env_restores_original_ld_path():
+    # Frozen: the bootloader put _MEIPASS on LD_LIBRARY_PATH and stashed the real
+    # value in LD_LIBRARY_PATH_ORIG -> restore the real one so a system-linked
+    # yt-dlp/streamlink finds the system libcrypto (the OPENSSL_3.3.0 crash).
+    env = sv.external_tool_env(frozen=True, environ={
+        "LD_LIBRARY_PATH": "/tmp/_MEIabc:/usr/lib",
+        "LD_LIBRARY_PATH_ORIG": "/usr/lib",
+        "PATH": "/usr/bin"})
+    assert env["LD_LIBRARY_PATH"] == "/usr/lib"
+    assert "LD_LIBRARY_PATH_ORIG" in env      # untouched; we only fix the live var
+    assert env["PATH"] == "/usr/bin"          # everything else carried through
+
+
+def t_external_tool_env_drops_var_when_no_original():
+    # Frozen with no _ORIG means LD_LIBRARY_PATH was unset before launch -> remove
+    # the bootloader's injected value entirely (PyInstaller's documented fix).
+    env = sv.external_tool_env(frozen=True, environ={
+        "LD_LIBRARY_PATH": "/tmp/_MEIabc",
+        "DYLD_LIBRARY_PATH": "/tmp/_MEIabc",
+        "PATH": "/usr/bin"})
+    assert "LD_LIBRARY_PATH" not in env
+    assert "DYLD_LIBRARY_PATH" not in env
+    assert env["PATH"] == "/usr/bin"
+
+
+def t_external_tool_env_does_not_mutate_input():
+    src = {"LD_LIBRARY_PATH": "/tmp/_MEIabc", "LD_LIBRARY_PATH_ORIG": "/usr/lib"}
+    sv.external_tool_env(frozen=True, environ=src)
+    assert src["LD_LIBRARY_PATH"] == "/tmp/_MEIabc"   # caller's dict is untouched
+
+
+def t_external_tool_env_copies_are_byte_identical():
+    # external_tool_env() is duplicated into every standalone script that spawns
+    # an external tool but imports nothing from scripts/ (relay/get-cookies.py,
+    # relay/get-media.py, relay/racecast-feeds.py, scripts/loopstream.py,
+    # scripts/preflight.py). They MUST stay identical to the canonical copy in
+    # services.py — same guarantee as STREAMLINK_TWITCH / detect_tailscale_ip.
+    canonical = _fn_source("src/scripts/services.py", "external_tool_env")
+    assert canonical, "canonical external_tool_env not found in services.py"
+    copies = ("src/relay/get-cookies.py", "src/relay/get-media.py",
+              "src/relay/racecast-feeds.py", "src/scripts/loopstream.py",
+              "src/scripts/preflight.py")
+    for rel in copies:
+        assert _fn_source(rel, "external_tool_env") == canonical, \
+            f"{rel}: external_tool_env drifted from services.py — keep them identical"
 
 
 def t_stop_commands_per_os():
