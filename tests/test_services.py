@@ -126,9 +126,11 @@ def t_external_tool_env_strips_nested_and_parent_meipass():
     # binary, so the child's LD_LIBRARY_PATH carries BOTH _MEIPASS dirs and the
     # bootloader's _ORIG points at the PARENT's _MEIPASS. Restoring _ORIG would
     # reintroduce a bundled libcrypto; stripping every _MEI* dir keeps only the
-    # genuinely-external entry.
+    # genuinely-external entry. Build the path with os.pathsep so the test matches
+    # the splitter on every OS (the code is POSIX-only in practice, but CI runs it
+    # on the Windows runner too).
     env = sv.external_tool_env(frozen=True, environ={
-        "LD_LIBRARY_PATH": "/tmp/_MEIchild:/tmp/_MEIparent:/usr/lib",
+        "LD_LIBRARY_PATH": os.pathsep.join(["/tmp/_MEIchild", "/tmp/_MEIparent", "/usr/lib"]),
         "LD_LIBRARY_PATH_ORIG": "/tmp/_MEIparent",   # the trap _ORIG falls into
         "PATH": "/usr/bin"})
     assert env["LD_LIBRARY_PATH"] == "/usr/lib"      # both _MEI dirs gone
@@ -142,7 +144,7 @@ def t_external_tool_env_strips_active_meipass_by_identity():
     sys._MEIPASS = "/opt/bundle/run123"
     try:
         env = sv.external_tool_env(frozen=True, environ={
-            "LD_LIBRARY_PATH": "/opt/bundle/run123:/usr/lib"})
+            "LD_LIBRARY_PATH": os.pathsep.join(["/opt/bundle/run123", "/usr/lib"])})
         assert env["LD_LIBRARY_PATH"] == "/usr/lib"
     finally:
         if saved is None:
@@ -154,7 +156,7 @@ def t_external_tool_env_strips_active_meipass_by_identity():
 def t_external_tool_env_drops_var_when_only_meipass():
     env = sv.external_tool_env(frozen=True, environ={
         "LD_LIBRARY_PATH": "/tmp/_MEIabc",
-        "DYLD_LIBRARY_PATH": "/tmp/_MEIabc:/tmp/_MEIxyz",
+        "DYLD_LIBRARY_PATH": os.pathsep.join(["/tmp/_MEIabc", "/tmp/_MEIxyz"]),
         "PATH": "/usr/bin"})
     assert "LD_LIBRARY_PATH" not in env
     assert "DYLD_LIBRARY_PATH" not in env
