@@ -2342,13 +2342,19 @@ const ovState = {page: 'hud', slots: [], sample: {}, baseCss: '', body: '',
 
 // prop -> CSS property; mirrors src/scripts/overlay_build.py (the canonical map).
 const OV_CSSNAME = {left: 'left', top: 'top', width: 'width', height: 'height',
-  fontSize: 'font-size', borderWidth: 'border-width', teamNameMax: '--team-name-max',
+  padding: 'padding', fontSize: 'font-size', lineHeight: 'line-height',
+  letterSpacing: 'letter-spacing', borderWidth: 'border-width',
+  borderRadius: 'border-radius', teamNameMax: '--team-name-max',
   teamNameMin: '--team-name-min', color: 'color', background: 'background',
   borderColor: 'border-color', borderStyle: 'border-style',
-  fontFamily: 'font-family', align: 'justify-content'};
-const OV_PX = new Set(['left', 'top', 'width', 'height', 'fontSize', 'borderWidth',
+  fontFamily: 'font-family', align: 'justify-content', valign: 'align-items',
+  textTransform: 'text-transform', opacity: 'opacity',
+  rotation: 'transform'};
+const OV_PX = new Set(['left', 'top', 'width', 'height', 'padding', 'fontSize',
+                       'letterSpacing', 'borderWidth', 'borderRadius',
                        'teamNameMax', 'teamNameMin']);
 const OV_ALIGN = {left: 'flex-start', center: 'center', right: 'flex-end'};
+const OV_VALIGN = {top: 'flex-start', middle: 'center', bottom: 'flex-end'};
 const OV_SHADOW_CSS =
   'img:not([src]){display:none!important}' +
   '[data-edit]{cursor:move;outline:1px dashed rgba(120,170,255,.35);outline-offset:-1px}' +
@@ -2487,6 +2493,15 @@ function ovApplyProp(el, prop, value) {
   if (!el) return;
   const name = OV_CSSNAME[prop];
   const nameEl = el.querySelector ? el.querySelector('.name') : null;
+  // textShadow is a compound prop (not in OV_CSSNAME): handle it — set AND clear
+  // — before the generic unset path, which would no-op on removeProperty(undefined)
+  // and leave a stale shadow on the canvas.
+  if (prop === 'textShadow') {
+    el.style.textShadow = (value && value.color)
+      ? ((value.x || 0) + 'px ' + (value.y || 0) + 'px ' + (value.blur || 0) + 'px ' + value.color)
+      : '';
+    return;
+  }
   if (value === undefined || value === null || value === '') {
     el.style.removeProperty(name);
     if (prop === 'teamNameMax' && nameEl) nameEl.style.removeProperty('font-size');
@@ -2499,6 +2514,10 @@ function ovApplyProp(el, prop, value) {
     el.style.fontFamily = '"' + value + '"';
   } else if (prop === 'align') {
     el.style.justifyContent = OV_ALIGN[value] || '';
+  } else if (prop === 'valign') {
+    el.style.alignItems = OV_VALIGN[value] || '';
+  } else if (prop === 'rotation') {
+    el.style.transform = 'rotate(' + value + 'deg)';
   } else {
     el.style.setProperty(name, value);
   }
@@ -2509,6 +2528,7 @@ function ovStyleSlot(id) {
   if (!el) return;
   const ov = (ovState.layout.slots && ovState.layout.slots[id]) || {};
   Object.keys(OV_CSSNAME).forEach(p => ovApplyProp(el, p, ov[p]));
+  ovApplyProp(el, 'textShadow', ov.textShadow);
 }
 
 function ovSetProp(id, prop, value) {
@@ -2688,6 +2708,43 @@ function ovSelectField(prop, label, opts, ov) {
   return wrap;
 }
 
+function ovSetShadow(id, key, raw) {
+  if (!ovState.layout.slots) ovState.layout.slots = {};
+  const slot = ovState.layout.slots[id] || (ovState.layout.slots[id] = {});
+  const s = Object.assign({x: 0, y: 0, blur: 0, color: ''}, slot.textShadow || {});
+  s[key] = (key === 'color') ? raw : (raw === '' ? 0 : Number(raw));
+  if (!s.color && !s.x && !s.y && !s.blur) delete slot.textShadow;
+  else slot.textShadow = s;
+  ovApplyProp(ovState.shadow.getElementById(id), 'textShadow', slot.textShadow);
+  ovPositionSel();
+}
+
+// Compound text-shadow editor (offset X/Y, blur, color). Deliberately does NOT
+// register in ovState.fields — textShadow is written via ovSetShadow (not the
+// scalar ovSetProp path), and ovRenderPanel rebuilds these inputs on every slot
+// change, so there is no external value to sync back.
+function ovShadowField(ov) {
+  const s = ov.textShadow || {};
+  const wrap = document.createElement('div');
+  const l = document.createElement('label'); l.textContent = 'Text shadow';
+  wrap.appendChild(l);
+  const row = document.createElement('div'); row.className = 'ovgrid2';
+  const numIn = (key, ph, val) => {
+    const i = document.createElement('input'); i.type = 'number';
+    i.placeholder = ph; i.value = (val !== undefined ? val : '');
+    i.oninput = () => ovSetShadow(ovState.sel, key, i.value);
+    return i;
+  };
+  row.append(numIn('x', 'Offset X', s.x), numIn('y', 'Offset Y', s.y),
+             numIn('blur', 'Blur', s.blur));
+  const c = document.createElement('input'); c.type = 'color';
+  if (/^#[0-9a-fA-F]{6}$/.test(s.color || '')) c.value = s.color;
+  c.oninput = () => ovSetShadow(ovState.sel, 'color', c.value);
+  row.appendChild(c);
+  wrap.appendChild(row);
+  return wrap;
+}
+
 // Effective base values for a slot, read from the rendered canvas element (the
 // cascade ground-truth from base hud.html). Numbers for geometry/size, hex for
 // colors. Used to PRE-FILL the panel so the operator always sees real values.
@@ -2744,13 +2801,20 @@ function ovRenderPanel() {
     if (has('top')) g.appendChild(ovNumField('top', 'Top (px)', view));
     panel.appendChild(g);
   }
-  if (has('width') || has('height')) {
+  if (has('width') || has('height') || has('padding')) {
     const g = grid();
     if (has('width')) g.appendChild(ovNumField('width', 'Width (px)', view));
     if (has('height')) g.appendChild(ovNumField('height', 'Height (px)', view));
+    if (has('padding')) g.appendChild(ovNumField('padding', 'Padding (px)', view));
     panel.appendChild(g);
   }
   if (has('fontSize')) panel.appendChild(ovNumField('fontSize', 'Font size (px)', view));
+  if (has('lineHeight') || has('letterSpacing')) {
+    const g = grid();
+    if (has('lineHeight')) g.appendChild(ovNumField('lineHeight', 'Line height', view));
+    if (has('letterSpacing')) g.appendChild(ovNumField('letterSpacing', 'Letter spacing (px)', view));
+    panel.appendChild(g);
+  }
   if (has('teamNameMax') || has('teamNameMin')) {
     const g = grid();
     if (has('teamNameMax')) g.appendChild(ovNumField('teamNameMax', 'Name max (px)', ov));
@@ -2776,6 +2840,7 @@ function ovRenderPanel() {
   if (has('color')) panel.appendChild(ovColorField('color', 'Text color', view));
   if (has('background')) panel.appendChild(ovColorField('background', 'Background', view));
   if (has('borderWidth')) panel.appendChild(ovNumField('borderWidth', 'Border width (px)', view));
+  if (has('borderRadius')) panel.appendChild(ovNumField('borderRadius', 'Corner radius (px)', view));
   if (has('borderStyle')) {
     panel.appendChild(ovSelectField('borderStyle', 'Border style',
       [{v: '', t: '— none —'}, {v: 'solid', t: 'Solid'},
@@ -2787,6 +2852,25 @@ function ovRenderPanel() {
       [{v: '', t: '— default —'}, {v: 'left', t: 'Left'},
        {v: 'center', t: 'Center'}, {v: 'right', t: 'Right'}], ov));
   }
+  if (has('valign')) {
+    panel.appendChild(ovSelectField('valign', 'Vertical align',
+      [{v: '', t: '— default —'}, {v: 'top', t: 'Top'},
+       {v: 'middle', t: 'Middle'}, {v: 'bottom', t: 'Bottom'}], ov));
+  }
+  if (has('textTransform')) {
+    panel.appendChild(ovSelectField('textTransform', 'Text transform',
+      [{v: '', t: '— none —'}, {v: 'uppercase', t: 'UPPERCASE'},
+       {v: 'lowercase', t: 'lowercase'}, {v: 'capitalize', t: 'Capitalize'}], ov));
+  }
+  if (has('opacity')) {
+    panel.appendChild(ovNumField('opacity', 'Opacity (0–1)', view));
+    Object.assign(ovState.fields.opacity, {min: 0, max: 1, step: 0.05});
+  }
+  if (has('rotation')) {
+    panel.appendChild(ovNumField('rotation', 'Rotation (°)', view));
+    Object.assign(ovState.fields.rotation, {min: -360, max: 360, step: 1});
+  }
+  if (has('textShadow')) panel.appendChild(ovShadowField(ov));
   const reset = document.createElement('button');
   reset.style.marginTop = '12px';
   reset.textContent = 'Reset slot';
