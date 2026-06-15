@@ -130,6 +130,7 @@ def detect_unit(platform=None, which=None, run=None, exists=None):
         pass
     return UNIT if exists(SERVICE_UNIT_FILE) else None
 
+
 def _default_read_text(path):
     try:
         with open(path, encoding="utf-8") as fh:
@@ -148,7 +149,13 @@ def _default_write_temp(content):
 def _install_file(run, write_temp, content, dest, mode):
     """Stage `content` to a temp file and place it at `dest` (root) with `mode`."""
     tmp = write_temp(content)
-    return run(["sudo", "install", "-m", mode, "-o", "root", "-g", "root", tmp, dest])
+    try:
+        return run(["sudo", "install", "-m", mode, "-o", "root", "-g", "root", tmp, dest])
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass  # already gone or never existed (fake path in tests)
 
 
 def enable_control(platform=None, run=None, which=None, getuser=None,
@@ -186,7 +193,14 @@ def enable_control(platform=None, run=None, which=None, getuser=None,
     # Validate the sudoers content before touching anything live.
     sudoers = sudoers_dropin_content(user, systemctl)
     tmp_sudoers = write_temp(sudoers)
-    if run(["sudo", "visudo", "-cf", tmp_sudoers]).returncode != 0:
+    try:
+        visudo_rc = run(["sudo", "visudo", "-cf", tmp_sudoers]).returncode
+    finally:
+        try:
+            os.unlink(tmp_sudoers)
+        except OSError:
+            pass  # already gone or never existed (fake path in tests)
+    if visudo_rc != 0:
         log("companion enable-control: sudoers validation failed; aborting (no changes).")
         return 1
 
@@ -202,7 +216,7 @@ def enable_control(platform=None, run=None, which=None, getuser=None,
            text=True).returncode != 0:
         log("companion enable-control: service did not start with the new drop-in; "
             "rolling back.")
-        run(["sudo", "rm", "-f", DROPIN_CONF])
+        run(["sudo", "rm", "-f", DROPIN_CONF, HELPER_PATH, SUDOERS_PATH])
         run(["sudo", "systemctl", "daemon-reload"])
         run(["sudo", "systemctl", "restart", unit])
         return 1

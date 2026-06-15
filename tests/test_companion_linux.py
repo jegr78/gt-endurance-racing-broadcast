@@ -220,7 +220,23 @@ def t_enable_control_rolls_back_when_service_fails_to_start():
                            log=lambda *a: None)
     cmds = _cmds(run)
     assert any("rm" in c and cl.DROPIN_CONF in c for c in cmds)   # drop-in removed
+    assert any("rm" in c and cl.HELPER_PATH in c and cl.SUDOERS_PATH in c for c in cmds)
+    assert any("daemon-reload" in c for c in cmds)
+    assert any("restart companion" in c for c in cmds)
     assert rc != 0
+
+
+def t_enable_control_visudo_failure_aborts_with_no_installs():
+    run = _FakeRun(rc_for={"visudo": 1})
+    rc = cl.enable_control(platform="linux", run=run, which=lambda n: "/usr/bin/" + n,
+                           getuser=lambda: "jegr", read_text=lambda p: None,
+                           write_temp=lambda c: "/tmp/x", exists=lambda p: False,
+                           log=lambda *a: None)
+    cmds = _cmds(run)
+    assert rc != 0
+    assert any("visudo" in c for c in cmds)
+    assert not any("install" in c for c in cmds)
+    assert not any("daemon-reload" in c for c in cmds)
 
 
 def t_enable_control_refuses_2x_layout():
