@@ -210,7 +210,38 @@ Flags: `--browser NAME` (cookie export browser, default `firefox`),
 The sections below remain the full reference — use them when a single step
 needs repeating or debugging.
 
-## 2 — Install the apps
+## 2 — Install the command-line tools
+
+*Takes ~5 minutes.*
+
+```bash
+racecast install-tools
+```
+
+Installs `streamlink`, `yt-dlp`, `ffmpeg` and `deno` — they pull each
+commentator's stream (YouTube or Twitch) into OBS and pass YouTube's bot check.
+Afterwards **open a new terminal** ([how?](#never-used-a-terminal)) — installers
+update the PATH for new shells only (`racecast preflight` confirms everything is
+found).
+
+> `deno` is required — without it feeds fail with *"Sign in to confirm you're not a bot."*
+> Details: [Relay — how the feeds work](Relay-Mode).
+
+<details>
+<summary>Alternative: install them manually</summary>
+
+- **macOS:** `brew install streamlink yt-dlp ffmpeg deno` (Homebrew first if needed: [brew.sh](https://brew.sh))
+- **Windows:** `winget install yt-dlp.yt-dlp Streamlink.Streamlink Gyan.FFmpeg DenoLand.Deno`
+- **Linux:** `brew install streamlink yt-dlp ffmpeg deno`, or your distro's packages
+  (`apt`/`dnf`) plus `pip install -U streamlink yt-dlp`
+
+Check them: `streamlink --version`, `yt-dlp --version`, `ffmpeg -version`, `deno --version`.
+</details>
+
+**You should now see:** in a **new** terminal, `streamlink --version`,
+`yt-dlp --version`, `ffmpeg -version` and `deno --version` each print a version.
+
+## 3 — Install the apps
 
 *Takes ~5–10 minutes (downloads).*
 
@@ -248,37 +279,6 @@ Linux (it lists the steps and asks before running them).
 
 **You should now see:** OBS Studio, Companion, Tailscale and Discord in your
 applications / Start menu.
-
-## 3 — Install the command-line tools
-
-*Takes ~5 minutes.*
-
-```bash
-racecast install-tools
-```
-
-Installs `streamlink`, `yt-dlp`, `ffmpeg` and `deno` — they pull each
-commentator's stream (YouTube or Twitch) into OBS and pass YouTube's bot check.
-Afterwards **open a new terminal** ([how?](#never-used-a-terminal)) — installers
-update the PATH for new shells only (`racecast preflight` confirms everything is
-found).
-
-> `deno` is required — without it feeds fail with *"Sign in to confirm you're not a bot."*
-> Details: [Relay — how the feeds work](Relay-Mode).
-
-<details>
-<summary>Alternative: install them manually</summary>
-
-- **macOS:** `brew install streamlink yt-dlp ffmpeg deno` (Homebrew first if needed: [brew.sh](https://brew.sh))
-- **Windows:** `winget install yt-dlp.yt-dlp Streamlink.Streamlink Gyan.FFmpeg DenoLand.Deno`
-- **Linux:** `brew install streamlink yt-dlp ffmpeg deno`, or your distro's packages
-  (`apt`/`dnf`) plus `pip install -U streamlink yt-dlp`
-
-Check them: `streamlink --version`, `yt-dlp --version`, `ffmpeg -version`, `deno --version`.
-</details>
-
-**You should now see:** in a **new** terminal, `streamlink --version`,
-`yt-dlp --version`, `ffmpeg -version` and `deno --version` each print a version.
 
 ## 4 — Create your league profile (secrets)
 
