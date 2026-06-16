@@ -112,9 +112,9 @@ testing.
   cache-busting `?ts=` every ~1.5 s) above a row of **Feed A / Feed B / POV**
   tiles, each with a `↻` button. Clicking sets that tile's `img.src =
   /preview/feed/<X>?ts=…` and shows a spinner/disabled state until it loads.
-- The on-air feed tile is highlighted; tile labels (streamer/stint) reuse the
-  existing `/status` `live` block the panel already polls — **no new data
-  endpoint**.
+- The on-air feed tile is highlighted; the panel derives the on-air feed from
+  the `/status` `feeds` block it already polls (lower stint index = on air,
+  mirroring the relay's `live_feed()`) — **no new data endpoint**.
 - Hiding the section clears the program interval → no further requests.
 
 No changes to the OBS scene collection, profiles, or config. `ffmpeg` is already

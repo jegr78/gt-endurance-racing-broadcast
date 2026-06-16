@@ -807,7 +807,8 @@ async function relayPoll(){
     const r = await fetch("/status", {cache:"no-store"});
     const d = await r.json();
     relayLed(true); clearBanner("relay");
-    pvMarkOnAir(d.live && d.live.feed);
+    // On-air feed = the lower stint index (mirrors the relay's live_feed()).
+    pvMarkOnAir(d.feeds ? (d.feeds.A.index <= d.feeds.B.index ? "A" : "B") : null);
     // Aggregate health pill (relay heartbeat). Version-skew safe: an older relay
     // without d.health shows '—'.
     const HP = {green:["OK","ok"], yellow:["DEGRADED","warn"], red:["CRITICAL","air"]};
