@@ -291,6 +291,17 @@ def classify_env(sheet_id, push_url):
     return Result(PASS, ".env", "RACECAST_SHEET_ID and RACECAST_SHEET_PUSH_URL set")
 
 
+def gate_blockers(results):
+    """The FAIL-level Results among `racecast event start`'s *static*
+    preconditions — the ones bringing services up cannot fix (.env/SHEET_ID,
+    graphics, cookies). Returned list aborts bring-up unless `--force` is given;
+    WARN/INFO are advisory and never block. Pure: the caller supplies the
+    already-classified Results (the launchable services — relay/OBS/Companion/
+    Tailscale — are deliberately NOT among them; event start is what launches
+    those, so they would always fail a pre-launch gate)."""
+    return [r for r in results if r.level == FAIL]
+
+
 def director_urls(ts_ip, companion_port=8000, relay_port=8088):
     """Printable 'Share with your directors' block for `racecast event start`.
     Pure: the caller supplies the detected Tailscale IP (or None) and

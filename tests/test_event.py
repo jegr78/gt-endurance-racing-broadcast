@@ -334,6 +334,23 @@ def t_classify_scene_collection_overlap_prefers_switch_over_manual():
     assert "manually" not in r.detail
 
 
+def t_gate_blockers_keeps_only_fails():
+    # The pre-flight gate blocks event-start bring-up only on FAIL-level static
+    # preconditions; PASS/WARN/INFO are advisory and must never block.
+    results = [
+        m.Result(m.PASS, ".env", "ok"),
+        m.Result(m.WARN, "Media", "missing intro.mp4"),
+        m.Result(m.FAIL, ".env", "missing RACECAST_SHEET_ID"),
+        m.Result(m.FAIL, "Graphics", "missing Standby.png"),
+        m.Result(m.INFO, "note", "fyi"),
+    ]
+    blockers = m.gate_blockers(results)
+    assert [r.name for r in blockers] == [".env", "Graphics"]
+    # nothing FAIL -> empty list (gate is open)
+    assert m.gate_blockers([m.Result(m.PASS, "x", ""), m.Result(m.WARN, "y", "")]) == []
+    assert m.gate_blockers([]) == []
+
+
 def _raises(fn, exc=ValueError):
     try:
         fn()
