@@ -1443,6 +1443,47 @@ def _raises(fn):
     raise AssertionError("expected ValueError")
 
 
+def t_event_start_gate_blocks_without_force():
+    # A static-precondition FAIL aborts bring-up (exit 1) BEFORE any service is
+    # launched, when --force is absent.
+    ev = m._event_modules()[0]
+    orig = m._event_gate_results
+    m._event_gate_results = lambda e, p: [ev.Result(ev.FAIL, ".env", "missing RACECAST_SHEET_ID")]
+    try:
+        try:
+            m.event_start([])
+            raise AssertionError("expected SystemExit")
+        except SystemExit as e:
+            assert e.code == 1
+    finally:
+        m._event_gate_results = orig
+
+
+def t_event_start_force_skips_gate():
+    # --force bypasses the gate even with a FAIL present: event_start proceeds to
+    # step 1 (_tailscale_connect), which we stub to prove the gate was skipped.
+    ev = m._event_modules()[0]
+    orig_gate, orig_ts = m._event_gate_results, m._tailscale_connect
+
+    class _Reached(Exception):
+        pass
+
+    m._event_gate_results = lambda e, p: [ev.Result(ev.FAIL, ".env", "x")]
+    def _boom(_ev):
+        raise _Reached()
+    m._tailscale_connect = _boom
+    try:
+        try:
+            m.event_start(["--force"])
+            raise AssertionError("expected to reach _tailscale_connect")
+        except _Reached:
+            pass                                # got past the gate
+        except SystemExit:
+            raise AssertionError("--force should have skipped the gate") from None
+    finally:
+        m._event_gate_results, m._tailscale_connect = orig_gate, orig_ts
+
+
 def t_chat_routing():
     # verb is passed through in rest; route() does not validate it (chat_cmd does)
     assert m.route(["chat", "clear"]) == {"kind": "chat", "rest": ["clear"]}
