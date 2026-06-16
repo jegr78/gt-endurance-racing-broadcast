@@ -165,6 +165,7 @@ def t_resolve_config_end_to_end_single_profile():
         assert cfg.sheet_id == "abc"
         assert cfg.sheet_push_url == "https://x?key=y"
         assert cfg.intro_url == "" and cfg.outro_url == ""
+        assert cfg.discord_webhook_url == ""    # no DISCORD_WEBHOOK_URL set
         assert cfg.logo_path == ""              # no LOGO set
         assert cfg.profile_dir == os.path.join(root, "profiles", "demo")
         assert cfg.runtime_dir == os.path.join(root, "runtime", "demo")
@@ -211,6 +212,16 @@ def t_resolve_config_logo_path_blank_when_file_missing():
         _mkprofile(root, "demo", "SHEET_ID=a\nLOGO=missing.png\n")
         cfg = m.resolve_config(root, environ={})
         assert cfg.logo_path == ""
+
+
+def t_resolve_config_discord_webhook_from_field():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo",
+                   "NAME=Demo\nSHEET_ID=abc\n"
+                   "DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/1/tok\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.discord_webhook_url == "https://discord.com/api/webhooks/1/tok"
 
 
 def t_resolve_config_obs_collection_from_field():

@@ -802,6 +802,16 @@ def t_profile_env_vars_includes_obs_collection():
     assert out["RACECAST_OBS_COLLECTION"] == "Demo Broadcast"
 
 
+def t_profile_env_vars_includes_discord_webhook():
+    rc = m.pcfg.ResolvedConfig(profile="demo", name="Demo", sheet_id="abc",
+                               discord_webhook_url="https://discord.com/api/webhooks/1/x")
+    assert m._profile_env_vars(rc)["RACECAST_DISCORD_WEBHOOK_URL"] == \
+        "https://discord.com/api/webhooks/1/x"
+    # empty -> filtered out (push disabled)
+    rc2 = m.pcfg.ResolvedConfig(profile="demo", name="Demo", sheet_id="abc")
+    assert "RACECAST_DISCORD_WEBHOOK_URL" not in m._profile_env_vars(rc2)
+
+
 def t_active_obs_collection_falls_back_to_constant_without_profile():
     import tempfile
     import obs_ws

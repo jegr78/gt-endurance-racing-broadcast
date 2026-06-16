@@ -259,6 +259,7 @@
   <header>
     <div class="brand">Director Console<small>GT ENDURANCE RACING BROADCAST</small></div>
     <div class="strip">
+      <span class="st" id="stHealth" title="">HEALTH <b>—</b></span>
       <span class="st air" id="stAir">ON AIR <b>—</b></span>
       <span class="st" id="stA">A <b>—</b></span>
       <span class="st" id="stB">B <b>—</b></span>
@@ -782,6 +783,14 @@ async function relayPoll(){
     const r = await fetch("/status", {cache:"no-store"});
     const d = await r.json();
     relayLed(true); clearBanner("relay");
+    // Aggregate health pill (relay heartbeat). Version-skew safe: an older relay
+    // without d.health shows '—'.
+    const HP = {green:["OK","ok"], yellow:["DEGRADED","warn"], red:["CRITICAL","air"]};
+    const [htxt, hcls] = HP[d.health && d.health.level] || ["—", ""];
+    $("#stHealth").className = "st" + (hcls ? " " + hcls : "");
+    $("#stHealth").innerHTML = "HEALTH <b>" + htxt + "</b>";
+    $("#stHealth").title = (d.health && d.health.reasons && d.health.reasons.length)
+      ? d.health.reasons.join(" · ") : "all systems green";
     const n = d.schedule_len;
     statePill($("#stA"), "A", "S" + d.feeds.A.stint, n, d.feeds.A.state, d.feeds.A.down);
     statePill($("#stB"), "B", "S" + d.feeds.B.stint, n, d.feeds.B.state, d.feeds.B.down);
@@ -824,9 +833,10 @@ async function relayPoll(){
     relayLed(false);
     setBanner("relay", "red", "RELAY UNREACHABLE — feed & timer buttons will not work");
     // cookies banner intentionally persists: last-known state, can't improve while relay is down
-    for (const [sel, label] of [["#stA","A"],["#stB","B"],["#stPov","POV"]]){
+    for (const [sel, label] of [["#stHealth","HEALTH"],["#stA","A"],["#stB","B"],["#stPov","POV"]]){
       $(sel).className = "st"; $(sel).innerHTML = label + " <b>—</b>";
     }
+    $("#stHealth").title = "relay unreachable";
     $("#feedHealth").innerHTML = "";
   }
 }
