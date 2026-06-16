@@ -188,6 +188,7 @@ def _profile_env_vars(rc):
              ("RACECAST_SHEET_PUSH_URL", rc.sheet_push_url),
              ("RACECAST_INTRO_URL", rc.intro_url),
              ("RACECAST_OUTRO_URL", rc.outro_url),
+             ("RACECAST_DISCORD_WEBHOOK_URL", rc.discord_webhook_url),
              ("RACECAST_OBS_COLLECTION", rc.obs_collection))
     return {k: v for k, v in pairs if v}
 
@@ -2217,15 +2218,16 @@ def relay_live_data(fetch=None, started=None):
         f = (status.get("feeds") or {}).get(name)
         if isinstance(f, dict):
             feeds.append({"feed": name, "stint": f.get("stint"),
-                          "state": f.get("state")})
+                          "state": f.get("state"), "down": bool(f.get("down"))})
     t = timer if isinstance(timer, dict) else {}
     try:
         get = started or (lambda: os.path.getmtime(_relay_pid_path()))
         uptime = max(0, int(time.time() - get()))
     except Exception:
         uptime = None
+    health = status.get("health") if isinstance(status.get("health"), dict) else None
     return {"ok": True, "schedule_len": status.get("schedule_len"),
-            "uptime_s": uptime, "feeds": feeds,
+            "uptime_s": uptime, "feeds": feeds, "health": health,
             "timer": {"mode": t.get("mode"), "visible": t.get("visible"),
                       "remaining_s": t.get("remaining_s"),
                       "duration_s": t.get("duration_s"),

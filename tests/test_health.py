@@ -277,6 +277,112 @@ def t_maybe_probe_obs_disabled_returns_none_without_client():
         m._obs_ws = orig
 
 
+# --------------------------------------------------------------------------
+# Aggregate health (live heartbeat) — pure evaluation, transition, payload
+# --------------------------------------------------------------------------
+def _facts(**kw):
+    base = {"feeds_down": [], "feeds_connecting_long": [], "cookies_stale": False,
+            "obs_reachable": True, "tailscale_present": True}
+    base.update(kw)
+    return base
+
+
+def t_aggregate_health_green_when_all_ok():
+    h = m.aggregate_health(_facts())
+    assert h["level"] == "green" and h["reasons"] == []
+
+
+def t_aggregate_health_red_on_feed_down():
+    h = m.aggregate_health(_facts(feeds_down=["A"]))
+    assert h["level"] == "red"
+    assert any("Feed A" in r and "down" in r.lower() for r in h["reasons"])
+
+
+def t_aggregate_health_yellow_causes():
+    # each non-feed-down problem is yellow on its own
+    assert m.aggregate_health(_facts(obs_reachable=False))["level"] == "yellow"
+    assert m.aggregate_health(_facts(cookies_stale=True))["level"] == "yellow"
+    assert m.aggregate_health(_facts(tailscale_present=False))["level"] == "yellow"
+    assert m.aggregate_health(_facts(feeds_connecting_long=["B"]))["level"] == "yellow"
+
+
+def t_aggregate_health_obs_unknown_is_not_yellow():
+    # obs_reachable None = not probed yet -> must not raise a false alarm
+    assert m.aggregate_health(_facts(obs_reachable=None))["level"] == "green"
+
+
+def t_aggregate_health_red_lists_underlying_yellows():
+    h = m.aggregate_health(_facts(feeds_down=["A"], cookies_stale=True))
+    assert h["level"] == "red"
+    assert any("Feed A" in r for r in h["reasons"])
+    assert any("cookie" in r.lower() for r in h["reasons"])
+
+
+def t_health_should_notify_transitions_only():
+    # first tick: announce only a non-green baseline
+    assert m.health_should_notify(None, "green") is False
+    assert m.health_should_notify(None, "red") is True
+    # no change -> silent (anti-spam over a multi-hour race)
+    assert m.health_should_notify("red", "red") is False
+    assert m.health_should_notify("green", "green") is False
+    # any change -> notify (degrade AND recover)
+    assert m.health_should_notify("green", "yellow") is True
+    assert m.health_should_notify("red", "green") is True
+    assert m.health_should_notify("yellow", "red") is True
+
+
+def t_discord_health_payload_shape_and_color():
+    red = m.discord_health_payload("red", ["Feed A down"], prev_level="green")
+    emb = red["embeds"][0]
+    assert emb["color"] == m.HEALTH_COLORS["red"]
+    assert "Feed A down" in emb["description"]
+    # recovery wording when returning to green
+    ok = m.discord_health_payload("green", [], prev_level="red")
+    assert ok["embeds"][0]["color"] == m.HEALTH_COLORS["green"]
+    assert "recover" in (ok["embeds"][0]["title"] + ok["embeds"][0]["description"]).lower()
+
+
+def t_status_includes_health():
+    orig = m.detect_tailscale_ip
+    m.detect_tailscale_ip = lambda: "100.64.0.9"     # present -> no false yellow in CI
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
+            r.obs_reachable = True
+            h = r.status()["health"]
+            assert h["level"] == "green" and h["reasons"] == [] and "since_s" in h
+            r.A.dropped = True                        # lost a live feed -> red
+            assert r.status()["health"]["level"] == "red"
+    finally:
+        m.detect_tailscale_ip = orig
+
+
+def t_status_refresh_does_not_consume_notification_baseline():
+    # /status refreshes the DISPLAYED level every 2 s but must never advance the
+    # webhook baseline — else the 30 s heartbeat would miss the transition.
+    orig = m.detect_tailscale_ip
+    m.detect_tailscale_ip = lambda: "100.64.0.9"
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
+            r.obs_reachable = True
+            r.A.dropped = True
+            r.status(); r.status()
+            assert r.health_level == "red"            # display followed the drop
+            assert r._notified_level is None          # baseline untouched by /status
+            assert m.health_should_notify(r._notified_level, r.health_level) is True
+    finally:
+        m.detect_tailscale_ip = orig
+
+
+def t_send_health_webhook_noop_without_url():
+    # No URL configured -> push disabled, never raises (health display still works).
+    with tempfile.TemporaryDirectory() as td:
+        r = _mk_relay(td, ["https://youtu.be/a"])
+        assert r.discord_webhook_url is None
+        r._send_health_webhook("red", ["Feed A down"], None)   # must not raise
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

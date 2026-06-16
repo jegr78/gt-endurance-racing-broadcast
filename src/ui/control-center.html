@@ -529,6 +529,9 @@
             <span class="dim grow" id="hd-streams"></span></div>
         </section>
         <section id="home-live">
+          <div class="row"><span class="name">Health</span>
+            <span class="badge" id="h-health"><span class="dot"></span><span>…</span></span>
+            <span class="dim grow" id="hd-health">start the relay for live stats</span></div>
           <div class="row"><span class="name">Race timer</span>
             <span class="badge" id="h-timer"><span class="dot"></span><span>…</span></span>
             <span class="dim grow" id="hd-timer"></span></div>
@@ -1036,6 +1039,10 @@ function updateHome(s) {
     const tb = $('h-timer');
     tb.classList.remove('on');
     tb.lastElementChild.textContent = '—';
+    const hb = $('h-health');
+    hb.classList.remove('on', 'warn', 'fail');
+    hb.lastElementChild.textContent = '—';
+    $('hd-health').textContent = relayUp ? 'relay control not responding' : 'relay stopped';
     $('hd-timer').textContent = relayUp ? 'relay control not responding' : 'relay stopped';
     $('hd-feeds').textContent = 'start the relay for live stats';
   }
@@ -1079,6 +1086,17 @@ async function fetchRelayLive() {
     (f.state ? ' (' + f.state + ')' : ''));
   if (d.uptime_s != null) parts.push('relay up ' + fmtDur(d.uptime_s));
   $('hd-feeds').textContent = parts.length ? parts.join('     ') : 'no feeds';
+  // Aggregate health badge (relay heartbeat). Absent on an older relay -> '…'.
+  const HB = {green: ['on', 'OK'], yellow: ['warn', 'DEGRADED'], red: ['fail', 'CRITICAL']};
+  const hb = $('h-health');
+  hb.classList.remove('on', 'warn', 'fail');
+  const hlevel = d.health && d.health.level;
+  const [hcls, htxt] = HB[hlevel] || [null, '…'];
+  if (hcls) hb.classList.add(hcls);
+  hb.lastElementChild.textContent = htxt;
+  $('hd-health').textContent = (d.health && d.health.reasons && d.health.reasons.length)
+    ? d.health.reasons.join(' · ')
+    : (hlevel === 'green' ? 'all systems green' : '');
   liveTimer = {t: d.timer || {}, at: Date.now() / 1000};
   renderTimer();
 }

@@ -506,16 +506,19 @@ def t_relay_live_data_safe_subset():
     # must surface ONLY the stint + state (screenshot/share safe).
     def fetch(url):
         if url.endswith("/status"):
-            return {"schedule_len": 12, "feeds": {
-                "A": {"stint": 3, "state": "serving", "channel": "secret-handle",
-                      "index": 2, "port": 53001},
-                "B": {"stint": 4, "state": "serving", "channel": "other"}}}
+            return {"schedule_len": 12,
+                    "health": {"level": "red", "reasons": ["Feed A down"], "since_s": 8.0},
+                    "feeds": {
+                        "A": {"stint": 3, "state": "connecting", "channel": "secret-handle",
+                              "index": 2, "port": 53001, "down": True},
+                        "B": {"stint": 4, "state": "serving", "channel": "other"}}}
         return {"mode": "running", "visible": True, "end": 1000.0,
                 "server_now": 940.0, "remaining_s": None, "duration_s": 3600}
     d = rc.relay_live_data(fetch=fetch, started=lambda: 100.0)
     assert d["ok"] is True and d["schedule_len"] == 12
-    assert d["feeds"] == [{"feed": "A", "stint": 3, "state": "serving"},
-                          {"feed": "B", "stint": 4, "state": "serving"}]
+    assert d["feeds"] == [{"feed": "A", "stint": 3, "state": "connecting", "down": True},
+                          {"feed": "B", "stint": 4, "state": "serving", "down": False}]
+    assert d["health"] == {"level": "red", "reasons": ["Feed A down"], "since_s": 8.0}
     blob = repr(d)
     assert "channel" not in blob and "secret-handle" not in blob
     assert d["timer"]["mode"] == "running" and d["timer"]["end"] == 1000.0

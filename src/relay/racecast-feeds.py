@@ -124,6 +124,67 @@ def serve_exit_is_drop(stopped, advancing):
     feed-down alert so it fires on a real loss, not on every normal handover.
     Pure → unit-tested in tests/test_pov.py."""
     return not stopped and not advancing
+
+
+# ---------- Live health heartbeat (aggregate status + Discord alerts) --------
+# Spec: docs/superpowers/specs/2026-06-16-live-heartbeat-design.md
+HEARTBEAT_INTERVAL_S = 30        # how often the relay re-evaluates health
+HEALTH_CONNECTING_S = 45         # a feed connecting longer than this (not down) = yellow
+HEALTH_COLORS = {                # Discord embed sidebar colour per level
+    "green": 0x2ECC71, "yellow": 0xF1C40F, "red": 0xE74C3C}
+_HEALTH_LABEL = {"green": "OK", "yellow": "DEGRADED", "red": "CRITICAL"}
+
+
+def aggregate_health(facts):
+    """Roll up the relay's live facts into one level + human reasons. Pure →
+    unit-tested. `facts` keys: feeds_down (list of feed names with a lost live
+    serve), feeds_connecting_long (list connecting past HEALTH_CONNECTING_S, not
+    down), cookies_stale (bool), obs_reachable (True/False/None — None = not yet
+    probed, never an alarm), tailscale_present (bool).
+
+    red  = any feed down (a live picture was lost).
+    yellow = OBS WebSocket unreachable · cookies stale · Tailscale down · a feed
+             stuck connecting. A red result still lists the yellow issues under it.
+    green = none of the above."""
+    reasons, yellow = [], []
+    for name in facts.get("feeds_down") or []:
+        reasons.append(f"Feed {name} down — lost the live stream")
+    if facts.get("obs_reachable") is False:
+        yellow.append("OBS WebSocket unreachable — no auto-cut")
+    if facts.get("cookies_stale"):
+        yellow.append("YouTube cookies stale — handovers may fail")
+    if not facts.get("tailscale_present", True):
+        yellow.append("Tailscale not connected — directors cannot reach the panel")
+    for name in facts.get("feeds_connecting_long") or []:
+        yellow.append(f"Feed {name} stuck connecting")
+    reasons.extend(yellow)
+    level = "red" if facts.get("feeds_down") else ("yellow" if yellow else "green")
+    return {"level": level, "reasons": reasons}
+
+
+def health_should_notify(prev, cur):
+    """Whether a heartbeat tick should push to Discord. Fire only on a level
+    CHANGE (degradation and recovery alike) so a multi-hour race is not spammed;
+    on the first tick (prev None) announce only a non-green baseline. Pure."""
+    if prev is None:
+        return cur != "green"
+    return prev != cur
+
+
+def discord_health_payload(level, reasons, prev_level=None):
+    """Discord webhook JSON for a health transition. Pure → unit-tested. A return
+    to green reads as a recovery; otherwise it announces the degraded state and
+    lists the reasons."""
+    if level == "green":
+        title = "✅ Broadcast health recovered — all systems green"
+        desc = "Recovered from a previous issue." if prev_level and prev_level != "green" \
+            else "All systems green."
+    else:
+        title = f"⚠️ Broadcast health: {_HEALTH_LABEL[level]}"
+        desc = "\n".join(f"• {r}" for r in reasons) or _HEALTH_LABEL[level]
+    return {"username": "GT Racecast",
+            "embeds": [{"title": title, "description": desc,
+                        "color": HEALTH_COLORS[level]}]}
 # Sheet ID is NOT hardcoded — it comes from RACECAST_SHEET_ID (injected by the CLI
 # from the active profile). Override per-run with --sheet-id.
 DEFAULT_SHEET_TAB = "Schedule"
@@ -1868,7 +1929,7 @@ def should_probe_obs(last_ts, running, now, interval):
 class Relay:
     def __init__(self, source, ports, logdir, cookies=None, pov_source=None,
                  pov_port=None, start_stint=1, cookie_dir=None,
-                 qual_source=None, mode="race"):
+                 qual_source=None, mode="race", discord_webhook_url=None):
         self.race_source = source
         self.qual_source = qual_source
         # Active schedule is race by default; qualifying only when a qual source
@@ -1898,6 +1959,17 @@ class Relay:
             self.pov = Feed("POV", pov_port, 0, pov_source.get, logdir, cookies,
                             fmt=YTDLP_FORMAT_POV, cookie_dir=cookie_dir)
             self.pov.paused = True
+        # Live health heartbeat: displayed level (refreshed on every /status and
+        # every tick) + the notification baseline (advanced ONLY by the heartbeat
+        # tick so a 2 s /status refresh never "consumes" a transition before the
+        # tick can push it). Discord push fires on level changes only.
+        self.discord_webhook_url = discord_webhook_url
+        self.health_level = None
+        self.health_reasons = []
+        self.health_since = time.time()
+        self._notified_level = None
+        self._health_lock = threading.Lock()
+        self._hb_stop = threading.Event()
 
     def active_source(self):
         """The schedule the A/B feeds currently serve: qualifying when in
@@ -1919,6 +1991,66 @@ class Relay:
             threading.Thread(target=f.run, daemon=True).start()
         if self.pov:
             threading.Thread(target=self.pov.run, daemon=True).start()
+        threading.Thread(target=self._heartbeat_loop, daemon=True).start()
+
+    def _health_facts(self, now):
+        """Gather the raw facts aggregate_health() rolls up. Mirrors what
+        status() exposes so the pill and the webhook agree. Best-effort: a flaky
+        tailscale probe must never raise (default present -> no false alarm)."""
+        feeds_down, connecting_long = [], []
+        live = list(self.feeds.items()) + ([("POV", self.pov)] if self.pov else [])
+        for name, f in live:
+            if f.paused:
+                continue
+            if f.dropped:
+                feeds_down.append(name)
+            elif f.phase == "connecting" and (now - f.phase_since) > HEALTH_CONNECTING_S:
+                connecting_long.append(name)
+        try:
+            ts_present = detect_tailscale_ip() is not None
+        except Exception:                                # noqa: BLE001 — best effort
+            ts_present = True
+        return {"feeds_down": feeds_down, "feeds_connecting_long": connecting_long,
+                "cookies_stale": cookie_health(self.cookies, now=now)["stale"],
+                "obs_reachable": self.obs_reachable, "tailscale_present": ts_present}
+
+    def _refresh_health(self, now):
+        """Recompute + store the DISPLAYED health (level/reasons/since). Does NOT
+        touch the notification baseline, so /status can refresh it every 2 s
+        without stealing a transition from the heartbeat tick."""
+        h = aggregate_health(self._health_facts(now))
+        with self._health_lock:
+            if h["level"] != self.health_level:
+                self.health_level = h["level"]
+                self.health_since = now
+            self.health_reasons = h["reasons"]
+        return h
+
+    def _send_health_webhook(self, level, reasons, prev):
+        """POST a Discord health alert. Fully best-effort: no URL or any failure
+        logs one line and returns — never breaks the heartbeat."""
+        url = self.discord_webhook_url
+        if not url:
+            return
+        try:
+            data = json.dumps(discord_health_payload(level, reasons, prev)).encode()
+            req = Request(url, data=data, method="POST",
+                          headers={"Content-Type": "application/json"})
+            urlopen(req, timeout=5).read()   # noqa: S310 — operator-configured webhook
+        except Exception as e:                # noqa: BLE001 — best effort
+            print(f"WARN: Discord health webhook failed: {type(e).__name__}: {e}")
+
+    def _heartbeat_loop(self):
+        """Background tick: refresh health and push to Discord on a level change
+        only (degradation and recovery). Daemon thread; stops with the process."""
+        while not self._hb_stop.is_set():
+            now = time.time()
+            self._maybe_probe_obs(now)
+            level = self._refresh_health(now)["level"]
+            if health_should_notify(self._notified_level, level):
+                self._send_health_webhook(level, self.health_reasons, self._notified_level)
+                self._notified_level = level
+            self._hb_stop.wait(HEARTBEAT_INTERVAL_S)
 
     def status(self):
         now = time.time()
@@ -1949,6 +2081,9 @@ class Relay:
                           "down": self.pov.dropped and not self.pov.paused,
                           "source": self.pov_source.health() if self.pov_source else None}
         out["obs"] = {"reachable": self.obs_reachable, "note": self.obs_note}
+        self._refresh_health(now)            # keep the displayed level fresh (2 s poll)
+        out["health"] = {"level": self.health_level, "reasons": self.health_reasons,
+                         "since_s": round(now - self.health_since, 1)}
         return out
 
     def live_feed(self):
@@ -2710,7 +2845,8 @@ def main():
                   start_stint=args.stint,
                   cookie_dir=(os.path.dirname(cookies) if cookies else runtime),
                   qual_source=qual_source,
-                  mode=("qualifying" if args.qualifying else "race"))
+                  mode=("qualifying" if args.qualifying else "race"),
+                  discord_webhook_url=os.environ.get("RACECAST_DISCORD_WEBHOOK_URL"))
     relay.start()
     relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
     # Launching straight into qualifying mode: seed the HUD Streamer/Stint from
