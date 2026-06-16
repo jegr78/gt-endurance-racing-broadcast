@@ -1183,6 +1183,41 @@ def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None):
     return base + ["--", target, "best"]
 
 
+PREVIEW_FEEDS = ("A", "B", "POV")        # tiles the Director Panel can request
+
+
+def preview_source(target, live, pov_active, feed_ports):
+    """Pure: how to source a feed preview tile.
+
+    target      'A' | 'B' | 'POV'
+    live        the on-air feed ('A' | 'B') from Relay.live_feed()
+    pov_active  Relay.pov_active()
+    feed_ports  {'A': 53001, 'B': 53002, 'POV': 53003}
+
+    Returns ('obs', source_name) | ('grab', port) | ('placeholder', reason).
+    The on-air feed and the active POV are decoding in OBS, so screenshot the
+    source directly; an off-air feed is not decoding (and its port is free of
+    OBS), so grab one frame from its loopback port; a paused POV / absent port
+    has nothing to show."""
+    if target == "POV":
+        return ("obs", "Feed POV") if pov_active else ("placeholder", "pov off")
+    if target in ("A", "B"):
+        if target == live:
+            return ("obs", "Feed " + target)
+        port = feed_ports.get(target)
+        return ("grab", port) if port else ("placeholder", "feed off")
+    return ("placeholder", "unknown feed")
+
+
+def feed_grab_cmd(port, width=480):
+    """ffmpeg: grab ONE frame from a feed's loopback HTTP server and emit a
+    scaled JPEG on stdout. Pinned byte-for-byte by tests/test_pov.py."""
+    return ["ffmpeg", "-nostdin", "-loglevel", "error",
+            "-i", "http://127.0.0.1:%d" % port,
+            "-frames:v", "1", "-vf", "scale=%d:-2" % width,
+            "-f", "mjpeg", "pipe:1"]
+
+
 def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
     """Resolve a YouTube live URL to a direct HLS manifest URL via yt-dlp
     (handles cookies + the bot-check). Returns (url, None) on success or

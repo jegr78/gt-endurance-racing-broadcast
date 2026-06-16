@@ -45,6 +45,40 @@ def t_pov_format_constant():
     assert m.YTDLP_FORMAT_POV == "b[height<=720]/b"
 
 
+def t_preview_source_onair_uses_obs():
+    ports = {"A": 53001, "B": 53002}
+    assert m.preview_source("A", "A", False, ports) == ("obs", "Feed A")
+    assert m.preview_source("B", "B", False, ports) == ("obs", "Feed B")
+
+
+def t_preview_source_offair_grabs_port():
+    ports = {"A": 53001, "B": 53002}
+    assert m.preview_source("B", "A", False, ports) == ("grab", 53002)
+    assert m.preview_source("A", "B", False, ports) == ("grab", 53001)
+
+
+def t_preview_source_pov_active_vs_paused():
+    ports = {"A": 53001, "B": 53002, "POV": 53003}
+    assert m.preview_source("POV", "A", True, ports) == ("obs", "Feed POV")
+    assert m.preview_source("POV", "A", False, ports) == ("placeholder", "pov off")
+
+
+def t_preview_source_missing_port_is_placeholder():
+    assert m.preview_source("B", "A", False, {"A": 53001}) == ("placeholder", "feed off")
+
+
+def t_preview_source_unknown_target_is_placeholder():
+    assert m.preview_source("X", "A", False, {"A": 53001}) == ("placeholder", "unknown feed")
+
+
+def t_feed_grab_cmd_pinned():
+    assert m.feed_grab_cmd(53002, 480) == [
+        "ffmpeg", "-nostdin", "-loglevel", "error",
+        "-i", "http://127.0.0.1:53002",
+        "-frames:v", "1", "-vf", "scale=480:-2",
+        "-f", "mjpeg", "pipe:1"]
+
+
 def t_feed_paused_returns_none():
     f = m.Feed("POV", 53003, 0, lambda: ["https://youtu.be/x"], HERE)
     f.paused = True
