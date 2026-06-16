@@ -2093,8 +2093,12 @@ class Relay:
             return
         try:
             data = json.dumps(discord_health_payload(level, reasons, prev)).encode()
+            # Discord is behind Cloudflare, which 403s the default urllib
+            # "Python-urllib/x.y" User-Agent — without an explicit UA the alert
+            # silently never arrives. Match the UA the rest of the relay sends.
             req = Request(url, data=data, method="POST",
-                          headers={"Content-Type": "application/json"})
+                          headers={"Content-Type": "application/json",
+                                   "User-Agent": "racecast-feeds/1.0"})
             urlopen(req, timeout=5).read()   # noqa: S310 — operator-configured webhook
         except Exception as e:                # noqa: BLE001 — best effort
             print(f"WARN: Discord health webhook failed: {type(e).__name__}: {e}")

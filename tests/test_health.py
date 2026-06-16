@@ -417,6 +417,32 @@ def t_send_health_webhook_noop_without_url():
         r._send_health_webhook("red", ["Feed A down"], None)   # must not raise
 
 
+def t_send_health_webhook_sets_user_agent():
+    # Discord sits behind Cloudflare, which 403s the default "Python-urllib/x.y"
+    # User-Agent -> the POST silently never arrives. The request MUST carry an
+    # explicit User-Agent (the rest of the relay already does). Regression guard.
+    with tempfile.TemporaryDirectory() as td:
+        r = _mk_relay(td, ["https://youtu.be/a"])
+        r.discord_webhook_url = "https://discord.test/api/webhooks/1/abc"
+        captured = {}
+
+        class _Resp:
+            def read(self): return b""
+
+        def fake_urlopen(req, timeout=None):
+            captured["req"] = req
+            return _Resp()
+
+        orig = m.urlopen
+        m.urlopen = fake_urlopen
+        try:
+            r._send_health_webhook("red", ["Feed A down"], None)
+        finally:
+            m.urlopen = orig
+        ua = captured["req"].get_header("User-agent")
+        assert ua and "racecast" in ua.lower(), ua
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
