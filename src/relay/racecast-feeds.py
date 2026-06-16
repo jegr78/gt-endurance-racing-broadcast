@@ -1218,6 +1218,23 @@ def feed_grab_cmd(port, width=480):
             "-f", "mjpeg", "pipe:1"]
 
 
+def grab_feed_frame(port, width=480, timeout=8.0):
+    """Run feed_grab_cmd and return the JPEG bytes, or None on any failure /
+    timeout. Best effort — never raises; the grab subprocess is killed on
+    timeout so a stuck upstream can't hang a relay worker thread."""
+    try:
+        proc = subprocess.run(
+            feed_grab_cmd(port, width),
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            timeout=timeout, env=external_tool_env(),
+            **_no_window_kwargs(os.name))
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if proc.returncode != 0 or not proc.stdout:
+        return None
+    return proc.stdout
+
+
 def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
     """Resolve a YouTube live URL to a direct HLS manifest URL via yt-dlp
     (handles cookies + the bot-check). Returns (url, None) on success or
@@ -2376,6 +2393,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Cache-Control", "no-store")
             self.end_headers(); self.wfile.write(body)
             return None
+        def _send_jpeg(self, body):
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(body)
+            return None
         def _send_asset(self, assets_dir, sub, key):
             hit = resolve_asset(assets_dir, sub, key)
             if not hit:
@@ -2438,6 +2462,39 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send_asset(assets_dir, p[2], p[3])
                 if p == ["hud", "override.css"]:
                     return self._send_css(read_overlay_css(overlay_dir, "hud"))
+                if p == ["preview", "program"]:
+                    if _obs_ws is None:
+                        return self._send({"error": "obs unavailable"}, 503)
+                    data, note = _obs_ws.get_program_screenshot(width=640)
+                    if data is None:
+                        return self._send({"error": "preview unavailable",
+                                           "note": note}, 503)
+                    return self._send_jpeg(data)
+                if len(p) == 3 and p[:2] == ["preview", "feed"]:
+                    target = p[2].upper()
+                    if target not in PREVIEW_FEEDS:
+                        return self._send({"error": "unknown feed", "feed": p[2]}, 404)
+                    ports = {k: f.port for k, f in relay.feeds.items()}
+                    if relay.pov:
+                        ports["POV"] = relay.pov.port
+                    kind, ref = preview_source(target, relay.live_feed(),
+                                               relay.pov_active(), ports)
+                    if kind == "placeholder":
+                        return self._send({"error": "preview unavailable",
+                                           "note": ref}, 503)
+                    if kind == "obs":
+                        if _obs_ws is None:
+                            return self._send({"error": "obs unavailable"}, 503)
+                        data, note = _obs_ws.get_source_screenshot(ref, width=480)
+                        if data is None:
+                            return self._send({"error": "preview unavailable",
+                                               "note": note}, 503)
+                        return self._send_jpeg(data)
+                    data = grab_feed_frame(ref, width=480)   # kind == "grab"
+                    if data is None:
+                        return self._send({"error": "preview unavailable",
+                                           "note": "grab failed"}, 503)
+                    return self._send_jpeg(data)
                 if p == ["splitscreen"]:
                     if not splitscreen_path:
                         return self._send({"error": "splitscreen page not found"}, 404)

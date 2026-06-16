@@ -1,12 +1,29 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for the POV additions. Run: python3 tests/test_pov.py"""
 import importlib.util, os
+import threading, urllib.request, urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 spec = importlib.util.spec_from_file_location(
     "irofeeds", os.path.join(ROOT, "src", "relay", "racecast-feeds.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+
+class _FakeSource:
+    def __init__(self, items): self.items = list(items)
+    def get(self): return self.items
+    def refresh(self, timeout=None): pass
+    def health(self): return {"ok": True}
+
+
+_URLS8 = [f"https://www.youtube.com/watch?v=stint{i}" for i in range(1, 9)]
+
+
+def _serve(relay):
+    srv = m.ThreadingHTTPServer(("127.0.0.1", 0), m.make_handler(relay))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
 
 
 def t_benign_client_disconnect_classifies_aborts():
@@ -377,6 +394,123 @@ def t_hud_page_has_pov_name_slot_and_gating():
     # tick() hides the whole POV box (frame) when the POV feed is off.
     assert "povActive" in html
     assert 'getElementById("pov").classList.toggle("empty"' in html
+
+
+def t_preview_program_endpoint_serves_jpeg():
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], HERE)
+
+    class FakeObs:
+        def get_program_screenshot(self, **kw): return (b"\xff\xd8PGM\xff\xd9", "")
+        def get_source_screenshot(self, *a, **kw): return (None, "n/a")
+
+    old = m._obs_ws; m._obs_ws = FakeObs(); srv = _serve(r)
+    try:
+        port = srv.server_address[1]
+        resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/preview/program", timeout=5)
+        body = resp.read()
+        assert resp.headers["Content-Type"] == "image/jpeg"
+        assert resp.headers["Cache-Control"] == "no-store"
+        assert body == b"\xff\xd8PGM\xff\xd9"
+    finally:
+        srv.shutdown(); m._obs_ws = old
+
+
+def t_preview_program_503_when_obs_down():
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], HERE)
+    old = m._obs_ws; m._obs_ws = None; srv = _serve(r)
+    try:
+        port = srv.server_address[1]
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/preview/program", timeout=5)
+            raise AssertionError("expected HTTP 503")
+        except urllib.error.HTTPError as e:
+            assert e.code == 503
+    finally:
+        srv.shutdown(); m._obs_ws = old
+
+
+def t_preview_feed_onair_uses_obs_not_grab():
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], HERE)   # A on air (idx 0)
+
+    class FakeObs:
+        def get_source_screenshot(self, name, **kw):
+            self.name = name; return (b"\xff\xd8ONAIR\xff\xd9", "")
+
+    fo = FakeObs(); old = m._obs_ws; m._obs_ws = fo
+    old_grab = m.grab_feed_frame
+    def _boom(*a, **k): raise AssertionError("grab used for on-air feed")
+    m.grab_feed_frame = _boom; srv = _serve(r)
+    try:
+        port = srv.server_address[1]
+        body = urllib.request.urlopen(f"http://127.0.0.1:{port}/preview/feed/A", timeout=5).read()
+        assert body == b"\xff\xd8ONAIR\xff\xd9" and fo.name == "Feed A"
+    finally:
+        srv.shutdown(); m._obs_ws = old; m.grab_feed_frame = old_grab
+
+
+def t_preview_feed_offair_uses_grab_not_obs():
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], HERE)   # B off air (idx 1)
+    calls = {}
+    def fake_grab(port, width=480, timeout=8.0):
+        calls["port"] = port; calls["width"] = width; return b"\xff\xd8GRB\xff\xd9"
+
+    class FakeObs:
+        def get_source_screenshot(self, *a, **k): raise AssertionError("obs used for off-air grab")
+
+    old = m._obs_ws; m._obs_ws = FakeObs()
+    old_grab = m.grab_feed_frame; m.grab_feed_frame = fake_grab; srv = _serve(r)
+    try:
+        port = srv.server_address[1]
+        body = urllib.request.urlopen(f"http://127.0.0.1:{port}/preview/feed/B", timeout=5).read()
+        assert body == b"\xff\xd8GRB\xff\xd9"
+        assert calls["port"] == 53002 and calls["width"] == 480
+    finally:
+        srv.shutdown(); m._obs_ws = old; m.grab_feed_frame = old_grab
+
+
+def t_preview_feed_pov_paused_is_503():
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], HERE)   # no POV configured
+    srv = _serve(r)
+    try:
+        port = srv.server_address[1]
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/preview/feed/POV", timeout=5)
+            raise AssertionError("expected HTTP 503")
+        except urllib.error.HTTPError as e:
+            assert e.code == 503
+    finally:
+        srv.shutdown()
+
+
+def t_preview_feed_unknown_is_404():
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], HERE)
+    srv = _serve(r)
+    try:
+        port = srv.server_address[1]
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/preview/feed/Z", timeout=5)
+            raise AssertionError("expected HTTP 404")
+        except urllib.error.HTTPError as e:
+            assert e.code == 404
+    finally:
+        srv.shutdown()
+
+
+def t_preview_feed_grab_failure_is_503():
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], HERE)   # B off air
+    class FakeObs:
+        def get_source_screenshot(self, *a, **k): return (None, "x")
+    old = m._obs_ws; m._obs_ws = FakeObs()
+    old_grab = m.grab_feed_frame; m.grab_feed_frame = lambda *a, **k: None; srv = _serve(r)
+    try:
+        port = srv.server_address[1]
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/preview/feed/B", timeout=5)
+            raise AssertionError("expected HTTP 503")
+        except urllib.error.HTTPError as e:
+            assert e.code == 503
+    finally:
+        srv.shutdown(); m._obs_ws = old; m.grab_feed_frame = old_grab
 
 
 if __name__ == "__main__":
