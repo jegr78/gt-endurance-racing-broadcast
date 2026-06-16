@@ -251,6 +251,12 @@
     details.chat#chatBox .chatlog{max-height:none;flex:1;min-height:0;margin-top:0}
     details.chat#chatBox .hint{margin-top:6px}
   }
+  .preview .pvbody{margin-top:6px}
+  .pvprog img,.pvtile img{width:100%;display:block;background:#000;border-radius:6px;min-height:54px}
+  .pvfeeds{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px}
+  .pvlabel{font-size:11px;opacity:.85;margin-top:2px;display:flex;justify-content:space-between;align-items:center;gap:6px}
+  .pvtile.onair{outline:2px solid #4ade80;border-radius:6px}
+  .pvrefresh{padding:0 8px}
 </style>
 </head>
 <body>
@@ -284,6 +290,24 @@
   <div class="mainpane">
 
   <section class="bus pgm"><div class="cap">PGM</div><div class="keys" id="pgmBus"></div></section>
+
+  <section class="bus preview" id="previewSec">
+    <div class="cap">Live Preview <button class="k" id="pvToggle">SHOW</button></div>
+    <div class="pvbody" id="pvBody" hidden>
+      <div class="pvprog">
+        <img id="pvProgram" alt="Program output">
+        <div class="pvlabel" id="pvProgramLabel"><span>PROGRAM</span></div>
+      </div>
+      <div class="pvfeeds">
+        <div class="pvtile" data-feed="A"><img alt="Feed A">
+          <div class="pvlabel"><span>FEED A</span><button class="k pvrefresh">↻</button></div></div>
+        <div class="pvtile" data-feed="B"><img alt="Feed B">
+          <div class="pvlabel"><span>FEED B</span><button class="k pvrefresh">↻</button></div></div>
+        <div class="pvtile" data-feed="POV"><img alt="POV">
+          <div class="pvlabel"><span>POV</span><button class="k pvrefresh">↻</button></div></div>
+      </div>
+    </div>
+  </section>
 
   <section class="bus"><div class="cap">Feeds</div>
     <div class="body">
@@ -783,6 +807,7 @@ async function relayPoll(){
     const r = await fetch("/status", {cache:"no-store"});
     const d = await r.json();
     relayLed(true); clearBanner("relay");
+    pvMarkOnAir(d.live && d.live.feed);
     // Aggregate health pill (relay heartbeat). Version-skew safe: an older relay
     // without d.health shows '—'.
     const HP = {green:["OK","ok"], yellow:["DEGRADED","warn"], red:["CRITICAL","air"]};
@@ -1315,6 +1340,47 @@ async function qualPoll(){
   }catch(e){}
 }
 $("#qualBox").addEventListener("toggle", ()=>qualPoll());
+
+// ---- Live Preview ---------------------------------------------------------
+const PV_KEY = "rc_preview_open";
+let pvTimer = null;
+function pvSetProgram(){
+  const img = $("#pvProgram");
+  img.onerror = () => { img.removeAttribute("src"); img.alt = "OBS nicht erreichbar"; };
+  img.src = "/preview/program?ts=" + Date.now();
+}
+function pvStart(){
+  $("#pvBody").hidden = false; $("#pvToggle").textContent = "HIDE";
+  pvSetProgram(); pvTimer = setInterval(pvSetProgram, 1500);
+}
+function pvStop(){
+  $("#pvBody").hidden = true; $("#pvToggle").textContent = "SHOW";
+  if(pvTimer){ clearInterval(pvTimer); pvTimer = null; }
+}
+$("#pvToggle").onclick = () => {
+  const opening = $("#pvBody").hidden;
+  if(opening){ pvStart(); } else { pvStop(); }
+  try{ localStorage.setItem(PV_KEY, opening ? "1" : "0"); }catch(e){}
+};
+function pvGrabFeed(tile){
+  const feed = tile.dataset.feed, img = tile.querySelector("img"),
+        btn = tile.querySelector(".pvrefresh");
+  btn.disabled = true; btn.textContent = "…";
+  const done = () => { btn.disabled = false; btn.textContent = "↻"; };
+  img.onload = done;
+  img.onerror = () => { img.removeAttribute("src"); img.alt = feed + " nicht verfügbar"; done(); };
+  img.src = "/preview/feed/" + feed + "?ts=" + Date.now();
+}
+document.querySelectorAll(".pvtile .pvrefresh").forEach(btn => {
+  btn.onclick = () => pvGrabFeed(btn.closest(".pvtile"));
+});
+function pvMarkOnAir(feed){
+  document.querySelectorAll(".pvtile").forEach(
+    t => t.classList.toggle("onair", t.dataset.feed === feed));
+  const lbl = $("#pvProgramLabel");
+  if(lbl) lbl.firstElementChild.textContent = feed ? ("PROGRAM (Feed " + feed + " on air)") : "PROGRAM";
+}
+if((localStorage.getItem(PV_KEY) || "0") === "1"){ pvStart(); }
 
 /* ---------- boot ---------- */
 renderAir({});
