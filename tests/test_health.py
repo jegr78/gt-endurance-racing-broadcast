@@ -361,6 +361,16 @@ def t_discord_health_payload_shape_and_color():
     assert "recover" in (ok["embeds"][0]["title"] + ok["embeds"][0]["description"]).lower()
 
 
+def t_discord_health_payload_pings_here_on_every_level():
+    # @here must live in top-level `content` (Discord ignores mentions inside
+    # embeds) and allowed_mentions must permit it — so a health change pings the
+    # crew even if the panel pill is missed. Fires on degraded AND recovery.
+    for level, prev in (("red", "green"), ("yellow", "green"), ("green", "red")):
+        p = m.discord_health_payload(level, ["x"], prev_level=prev)
+        assert p["content"] == "@here"
+        assert "everyone" in p["allowed_mentions"]["parse"]
+
+
 def t_status_includes_health():
     orig = m.detect_tailscale_ip
     m.detect_tailscale_ip = lambda: "100.64.0.9"     # present -> no false yellow in CI
