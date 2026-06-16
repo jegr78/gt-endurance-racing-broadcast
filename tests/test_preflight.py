@@ -198,6 +198,49 @@ def t_install_apps_module_loads():
     assert callable(ia.app_present)
 
 
+def t_classify_pipewire_audio_non_linux_skipped():
+    # Only Linux uses the PipeWire Application Capture plugin for Discord audio.
+    assert m.classify_pipewire_audio("darwin", present=False) is None
+    assert m.classify_pipewire_audio("win32", present=True) is None
+
+
+def t_classify_pipewire_audio_linux_present_passes():
+    assert m.classify_pipewire_audio("linux", present=True).level == "PASS"
+
+
+def t_classify_pipewire_audio_linux_absent_warns():
+    r = m.classify_pipewire_audio("linux", present=False)
+    assert r.level == "WARN"
+    assert "pipewire" in r.detail.lower()        # names the plugin to install
+
+
+def t_pipewire_audio_candidates_cover_user_and_distro_paths():
+    cands = m.pipewire_audio_candidates("/home/op", "aarch64")
+    # per-user manual install (dimtpap release tarball layout)
+    assert any("/home/op/.config/obs-studio/plugins/linux-pipewire-audio" in c
+               for c in cands)
+    # distro multiarch path for this arch
+    assert any("aarch64-linux-gnu/obs-plugins/linux-pipewire-audio.so" in c
+               for c in cands)
+    # x86_64 maps to its own multiarch dir
+    x = m.pipewire_audio_candidates("/home/op", "x86_64")
+    assert any("x86_64-linux-gnu/obs-plugins/linux-pipewire-audio.so" in c for c in x)
+
+
+def t_pipewire_audio_present_uses_exists_over_candidates():
+    cands = ["/a/linux-pipewire-audio.so", "/b/linux-pipewire-audio.so"]
+    assert m.pipewire_audio_present(cands, exists=lambda p: p == "/b/linux-pipewire-audio.so")
+    assert not m.pipewire_audio_present(cands, exists=lambda p: False)
+
+
+def t_gather_linux_includes_pipewire_audio_check():
+    # On Linux the Applications section carries the plugin result.
+    if not sys.platform.startswith("linux"):
+        return
+    sections = dict(m.gather(m.__file__, runtime_dir=tempfile.mkdtemp()))
+    assert any("PipeWire" in r.name for r in sections["Applications"])
+
+
 def t_classify_sheet_no_id_warns():
     r = m.classify_sheet(None)
     assert r.level == "WARN"

@@ -383,6 +383,47 @@ def apps_section(present, web=False):
     return results
 
 
+# The Discord audio source uses the obs-pipewire-audio-capture plugin on Linux
+# (pipewire_audio_application_capture — for native Discord AND the Discord-web
+# fallback). It is NOT part of OBS core, so it must be installed separately on
+# every Linux box, any architecture. Detect its .so in the known plugin dirs.
+PIPEWIRE_AUDIO_SO = "linux-pipewire-audio.so"
+_MULTIARCH = {"x86_64": "x86_64-linux-gnu", "amd64": "x86_64-linux-gnu",
+              "aarch64": "aarch64-linux-gnu", "arm64": "aarch64-linux-gnu"}
+
+
+def pipewire_audio_candidates(home, machine):
+    """Known filesystem locations of the obs-pipewire-audio-capture plugin .so on
+    Linux (pure — builds path strings only): the per-user manual install (dimtpap
+    release-tarball layout) plus the common distro/package plugin dirs."""
+    user = os.path.join(home, ".config", "obs-studio", "plugins", "linux-pipewire-audio")
+    cands = [os.path.join(user, "bin", "64bit", PIPEWIRE_AUDIO_SO),
+             os.path.join(user, "bin", PIPEWIRE_AUDIO_SO)]
+    multiarch = _MULTIARCH.get((machine or "").lower())
+    for lib in ("/usr/lib", "/usr/local/lib", "/usr/lib64"):
+        cands.append(os.path.join(lib, "obs-plugins", PIPEWIRE_AUDIO_SO))
+        if multiarch:
+            cands.append(os.path.join(lib, multiarch, "obs-plugins", PIPEWIRE_AUDIO_SO))
+    return cands
+
+
+def pipewire_audio_present(candidates, exists=os.path.exists):
+    return any(exists(p) for p in candidates)
+
+
+def classify_pipewire_audio(platform_name, present):
+    """Linux-only OBS-plugin gate (None on macOS/Windows — they use their own
+    native Discord capture source)."""
+    if not platform_name.startswith("linux"):
+        return None
+    if present:
+        return Result(PASS, "OBS PipeWire audio plugin", "installed")
+    return Result(WARN, "OBS PipeWire audio plugin",
+                  "not found — the obs-pipewire-audio-capture plugin backs the Discord "
+                  "audio source on Linux; without it interview audio can't capture. "
+                  "Install it (see the OBS Setup wiki).")
+
+
 # --------------------------------------------------------------------------
 # Reporter / CLI / orchestration
 # --------------------------------------------------------------------------
@@ -447,6 +488,14 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
         apps = apps_section(lambda app: ia.app_present(app, sys.platform), web=web)
     except Exception as exc:  # never let a probe break the report
         apps = [Result(WARN, "applications", f"check failed: {exc}")]
+    if sys.platform.startswith("linux"):   # OBS PipeWire audio plugin (Discord audio source)
+        try:
+            pw = classify_pipewire_audio(sys.platform, pipewire_audio_present(
+                pipewire_audio_candidates(os.path.expanduser("~"), os.uname().machine)))
+            if pw is not None:
+                apps.append(pw)
+        except Exception:
+            pass  # never let the plugin probe break the report
     ports = []
     for port in FEED_PORTS:
         # "In use" is normal once the relay/feeds are running (e.g. after event
