@@ -42,8 +42,11 @@ def graphics_dir(base):
 # tools/tokenize-obs.py folds any variant back (keep the two ends in sync).
 # Windows "priority" 2 = WINDOW_PRIORITY_EXE (obs window-helpers.h) — match
 # any Discord.exe window, never the volatile channel-name window title.
-# Linux needs the obs-pipewire-audio-capture plugin (untested, see docs);
-# "MatchPriorty" (sic) is the plugin's actual settings key, 0 = binary name.
+# Linux needs the obs-pipewire-audio-capture plugin (not in OBS core — install it
+# on every Linux box, see docs). "MatchPriorty" (sic) is the plugin's actual settings
+# key; it only orders the UI list — the plugin matches TargetName case-INsensitively
+# against the node's binary/app-name/node-name (astrcmpi), so "Discord"/"Firefox" hit
+# regardless of case. Verified: Firefox capture confirmed on ARM64 Linux (PR #179).
 DISCORD_AUDIO_UUID = "0085d4f3-bf43-4aef-9fe4-28cfd3270c7d"
 DISCORD_AUDIO_VARIANTS = {
     "darwin": ("sck_audio_capture",
