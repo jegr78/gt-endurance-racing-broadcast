@@ -62,7 +62,12 @@ no package manager); external runtime deps are `yt-dlp`, `streamlink`, `ffmpeg`,
   Control Center / Director Panel by driving a running instance with the
   Playwright MCP and taking an **element** screenshot of the relevant card/modal
   (e.g. `#ov-modal .ovmodal-card`) so the framing matches the existing images —
-  not a full-window grab. Publishing the wiki itself stays a separate
+  not a full-window grab. **Always capture Control Center screenshots from a local
+  dev build** (run `racecast ui` straight from `src/`, no `VERSION` file stamped) so
+  every `cc-*.png` shows the same "dev build" version badge. A real version baked into
+  one shot goes stale at the next release and breaks uniformity — the dev-build state
+  is the only fully reproducible one. If you refresh a single `cc-*.png`, still use the
+  dev build so it matches the rest. Publishing the wiki itself stays a separate
   `tools/sync-wiki.py` step, but the image must already be committed in the repo.
 
 ## Commands
@@ -131,6 +136,7 @@ python3 src/racecast.py event stop        # stop racecast services; GUI apps kee
 python3 src/racecast.py tailscale up|down|status  # connect/disconnect/inspect Tailscale (event start connects automatically)
 python3 src/racecast.py obs refresh       # force-reload the relay-served OBS browser sources (HUD/timer)
 python3 src/racecast.py obs collection    # check the active OBS scene collection (add `set` to switch to the active profile's collection)
+python3 src/racecast.py sheet open        # open the active league's Google Sheet in the browser (built from its SHEET_ID); `sheet url` prints the link. Also an "Open Sheet ↗" button in the Control Center Profile view.
 python3 src/racecast.py init              # guided first-time setup: .env gate, profile select, install-tools/-apps, cookies, graphics, media, setup, export companion, preflight — with skip-detection (--browser NAME, --skip-installs, --force)
 python3 src/racecast.py update            # self-update the binary from GitHub Releases (--tag TAG installs an exact release; UI previews use this)
 python3 src/racecast.py freeport          # free a stuck feed port (default 53001-53003); kills an orphaned holder so a feed can bind. Refuses a running relay/streams (would cut a live feed) unless --force. Cross-platform port→PID (lsof/ss/fuser/netstat) in src/scripts/ports.py; per-process kill (not the session-group kill of #133's stop path). Also a Control Center action (free-ports op) + a `relay start` warning when a feed port is already bound.

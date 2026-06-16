@@ -307,6 +307,11 @@ run) holds just optional switches and needs nothing here. Full detail:
 > **In the Control Center:** the **Profile** view switches leagues, copies a new profile,
 > and edits `profile.env` with masked values; **General Settings** edits the machine `.env`.
 
+Once `SHEET_ID` is filled in you no longer need to keep the raw link around — open the
+sheet straight from the tool: **Open Sheet ↗** in the Profile view, or `racecast sheet open`
+(`racecast sheet url` just prints it). Both build the link from the active profile's
+`SHEET_ID`.
+
 **You should now see:** `profiles/myleague/profile.env` containing a filled `SHEET_ID=…` line,
 and `racecast profile show` listing it as the active league.
 

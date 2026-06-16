@@ -166,6 +166,16 @@ def profile_runtime_dir(root, name):
     return os.path.join(root, "runtime", name)
 
 
+def sheet_edit_url(sheet_id):
+    """The human-readable Google-Sheet edit URL for a profile's SHEET_ID, or ''
+    when no id is set. Deterministic counterpart to the CSV-export URLs the relay
+    and asset downloaders build from the same id. Pure."""
+    sheet_id = (sheet_id or "").strip()
+    if not sheet_id:
+        return ""
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
+
+
 def resolve_config(root, *, override=None, runtime_root=None, environ=None):
     """Machine .env + active profile -> ResolvedConfig. `root` is the project
     root; `runtime_root` defaults to <root>/runtime; `environ` defaults to

@@ -71,8 +71,9 @@ Everything that belongs to a **league**, gathered in one view (the model behind 
   `example`) into a new one.
 - **`profile.env` editor** — the active league's config (Sheet ID, push URL,
   intro/outro, logo, and the OBS scene-collection name `OBS_COLLECTION`). Secret values
-  are **masked** — click the eye to reveal one. Changes apply the next time you (re)start
-  the relay.
+  are **masked** — click the eye to reveal one. **Open Sheet ↗** opens this league's Google
+  Sheet (built from `SHEET_ID`) in a new tab — no need to keep the raw link around. Changes
+  apply the next time you (re)start the relay.
 - **Overlay CSS** — per-profile CSS for the relay-served **HUD** and **Timer** pages
   (`profiles/<active>/overlay/`; see [HUD overlays](HUD-Overlays)). **Save** writes the file;
   **Apply in OBS** reloads the browser sources (same as `obs refresh`). The first override on
@@ -83,8 +84,9 @@ Everything that belongs to a **league**, gathered in one view (the model behind 
   **Check vs sheet** compares what's on disk against what the Sheet lists.
 
 > **CLI alternative:** `racecast profile list|show|use|new`, `racecast graphics`,
-> `racecast media`. Edit `profiles/<name>/profile.env` and
-> `profiles/<name>/overlay/{hud,timer}.css` in any text editor.
+> `racecast media`, `racecast sheet open` (or `sheet url`). Edit
+> `profiles/<name>/profile.env` and `profiles/<name>/overlay/{hud,timer}.css` in any
+> text editor.
 
 ### Setup
 
