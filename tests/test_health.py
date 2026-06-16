@@ -124,6 +124,25 @@ def t_status_reports_feed_state_age_and_error():
         assert st["cookies"] is False
 
 
+def t_status_live_and_league_block():
+    # Takeover reads the on-air feed/stint + league key from /status so producer B
+    # never has to guess.
+    with tempfile.TemporaryDirectory() as td:
+        r = _mk_relay(td, ["a", "b", "c", "d"])   # A idx0/stint1, B idx1/stint2
+        r.sheet_id = "SHEET123"
+        st = r.status()
+        assert st["live"] == {"feed": "A", "stint": 1, "mode": "race"}
+        assert st["league"] == {"sheet_id": "SHEET123"}
+        r.A.idx = 2                               # after a handover B is on air
+        assert r.status()["live"] == {"feed": "B", "stint": 2, "mode": "race"}
+
+
+def t_status_league_sheet_id_none_when_unset():
+    with tempfile.TemporaryDirectory() as td:
+        r = _mk_relay(td, ["a", "b"])
+        assert r.status()["league"] == {"sheet_id": None}
+
+
 def t_status_cookies_health_no_cookies():
     with tempfile.TemporaryDirectory() as td:
         r = _mk_relay(td, ["https://youtu.be/a"])
@@ -348,6 +367,11 @@ def t_status_includes_health():
     try:
         with tempfile.TemporaryDirectory() as td:
             r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
+            # status() kicks off a throttled async OBS probe; on a loaded CI runner
+            # it can finish and overwrite obs_reachable=False before status() reads
+            # the health facts, flipping green->yellow. Disable it so the assertion
+            # reflects the value we set, not a probe race (flaky macos-3.12, #189 CI).
+            r._maybe_probe_obs = lambda now: None
             r.obs_reachable = True
             h = r.status()["health"]
             assert h["level"] == "green" and h["reasons"] == [] and "since_s" in h

@@ -1494,6 +1494,131 @@ def t_event_start_force_skips_gate():
         m._event_gate_results, m._tailscale_connect = orig_gate, orig_ts
 
 
+def t_takeover_plan_relay_reachable_race():
+    st = {"live": {"feed": "A", "stint": 5, "mode": "race"}}
+    p = m.takeover_plan(st)
+    assert p == {"stint": 5, "qualifying": False, "source": "relay"}
+
+
+def t_takeover_plan_relay_reachable_qualifying():
+    st = {"live": {"feed": "A", "stint": 1, "mode": "qualifying"}}
+    assert m.takeover_plan(st)["qualifying"] is True
+
+
+def t_takeover_plan_override_beats_relay():
+    st = {"live": {"feed": "A", "stint": 5, "mode": "race"}}
+    p = m.takeover_plan(st, stint_override=8)
+    assert p == {"stint": 8, "qualifying": False, "source": "override"}
+
+
+def t_takeover_plan_qualifying_flag_forces_mode():
+    st = {"live": {"feed": "A", "stint": 5, "mode": "race"}}
+    assert m.takeover_plan(st, qualifying_flag=True)["qualifying"] is True
+    # override + flag
+    assert m.takeover_plan(None, stint_override=3, qualifying_flag=True) == {
+        "stint": 3, "qualifying": True, "source": "override"}
+
+
+def t_takeover_plan_unreachable_no_override_is_sheet_none():
+    assert m.takeover_plan(None) == {"stint": None, "qualifying": False, "source": "sheet"}
+    # a status dict from an older relay without a live block also yields None
+    assert m.takeover_plan({"feeds": {}})["stint"] is None
+
+
+def t_league_guard():
+    # same league -> allowed
+    assert m.league_guard("SHEET1", "SHEET1", force=False) is None
+    # mismatch -> blocked with a message naming both
+    msg = m.league_guard("SHEETA", "SHEETB", force=False)
+    assert msg and "SHEETA" in msg and "SHEETB" in msg
+    # --force overrides
+    assert m.league_guard("SHEETA", "SHEETB", force=True) is None
+    # unknown id (older relay / unset) -> cannot verify, allow
+    assert m.league_guard(None, "SHEETB", force=False) is None
+    assert m.league_guard("SHEETA", "", force=False) is None
+
+
+def t_event_takeover_routing():
+    r = m.route(["event", "takeover", "100.64.1.2", "--stint", "5"])
+    assert r["verb"] == "takeover" and r["rest"] == ["100.64.1.2", "--stint", "5"]
+
+
+def _with_env(**kv):
+    """Set env keys (None deletes), return a restore callable."""
+    saved = dict(os.environ)
+    for k, v in kv.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    return lambda: (os.environ.clear(), os.environ.update(saved))
+
+
+def t_event_takeover_blocks_league_mismatch():
+    orig = m._relay_fetch_json
+    restore = _with_env(RACECAST_SHEET_ID="SHEET_B")
+    m._relay_fetch_json = lambda url, timeout=3: {
+        "league": {"sheet_id": "SHEET_A"}, "live": {"feed": "A", "stint": 3, "mode": "race"}}
+    try:
+        try:
+            m.event_takeover(["100.64.1.2"])
+            raise AssertionError("expected SystemExit")
+        except SystemExit as e:
+            assert "league mismatch" in str(e.code)
+    finally:
+        m._relay_fetch_json = orig
+        restore()
+
+
+def t_event_takeover_unreachable_without_stint_errors():
+    orig = m._relay_fetch_json
+    restore = _with_env(RACECAST_SHEET_ID=None, RACECAST_SHEET_PUSH_URL="x")
+    def _boom(url, timeout=3):
+        raise OSError("refused")
+    m._relay_fetch_json = _boom
+    try:
+        try:
+            m.event_takeover(["100.64.1.2"])
+            raise AssertionError("expected SystemExit")
+        except SystemExit as e:
+            assert "--stint" in str(e.code)
+    finally:
+        m._relay_fetch_json = orig
+        restore()
+
+
+def t_event_takeover_success_calls_event_start():
+    orig_fetch, orig_es, orig_chat = m._relay_fetch_json, m.event_start, m.chat_cmd
+    restore = _with_env(RACECAST_SHEET_ID="S", RACECAST_SHEET_PUSH_URL="https://push")
+    m._relay_fetch_json = lambda url, timeout=3: {
+        "league": {"sheet_id": "S"}, "live": {"feed": "B", "stint": 7, "mode": "race"}}
+    m.chat_cmd = lambda rest: None
+    captured = {}
+    m.event_start = lambda a: captured.__setitem__("args", a)
+    try:
+        m.event_takeover(["100.64.1.2"])
+        assert captured["args"] == ["--stint", "7"]
+    finally:
+        m._relay_fetch_json, m.event_start, m.chat_cmd = orig_fetch, orig_es, orig_chat
+        restore()
+
+
+def t_event_takeover_qualifying_and_override_forwarded():
+    orig_fetch, orig_es, orig_chat = m._relay_fetch_json, m.event_start, m.chat_cmd
+    restore = _with_env(RACECAST_SHEET_ID="S", RACECAST_SHEET_PUSH_URL="https://push")
+    m._relay_fetch_json = lambda url, timeout=3: {
+        "league": {"sheet_id": "S"}, "live": {"feed": "A", "stint": 2, "mode": "race"}}
+    m.chat_cmd = lambda rest: None
+    captured = {}
+    m.event_start = lambda a: captured.__setitem__("args", a)
+    try:
+        m.event_takeover(["100.64.1.2", "--stint", "9", "--qualifying"])
+        assert captured["args"] == ["--stint", "9", "--qualifying"]   # override wins, mode forced
+    finally:
+        m._relay_fetch_json, m.event_start, m.chat_cmd = orig_fetch, orig_es, orig_chat
+        restore()
+
+
 def t_chat_routing():
     # verb is passed through in rest; route() does not validate it (chat_cmd does)
     assert m.route(["chat", "clear"]) == {"kind": "chat", "rest": ["clear"]}

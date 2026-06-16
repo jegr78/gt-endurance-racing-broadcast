@@ -78,6 +78,30 @@ def t_plan_no_backend_launches_app():
     assert ts.plan_tailscale_up(None) == "launch-app"
 
 
+# --- parse_tailscale_peers: tailnet device list for the takeover dropdown ----
+def t_parse_peers_extracts_hostname_ip_online_os():
+    data = {"Peer": {
+        "k1": {"HostName": "producer-b", "TailscaleIPs": ["100.64.0.5", "fd7a::1"],
+               "Online": True, "OS": "macOS"},
+        "k2": {"HostName": "tablet", "TailscaleIPs": ["100.64.0.9"],
+               "Online": False, "OS": "iOS"},
+        "k3": {"HostName": "no-cgnat", "TailscaleIPs": ["fd7a::2"],
+               "Online": True, "OS": "linux"},          # no CGNAT IPv4 -> skipped
+    }}
+    peers = ts.parse_tailscale_peers(json.dumps(data))
+    assert {"hostname": "producer-b", "ip": "100.64.0.5", "online": True, "os": "macOS"} in peers
+    assert {"hostname": "tablet", "ip": "100.64.0.9", "online": False, "os": "iOS"} in peers
+    assert all(p["hostname"] != "no-cgnat" for p in peers)
+    assert len(peers) == 2
+
+
+def t_parse_peers_garbage_and_empty():
+    assert ts.parse_tailscale_peers("not json") == []
+    assert ts.parse_tailscale_peers(json.dumps({})) == []           # no Peer map
+    assert ts.parse_tailscale_peers(json.dumps({"Peer": {}})) == []
+    assert ts.parse_tailscale_peers(json.dumps({"Peer": None})) == []
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

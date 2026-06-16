@@ -79,6 +79,8 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
                                    "feeds": [{"feed": "A", "stint": 3,
                                               "state": "serving"}],
                                    "timer": {"mode": "running"}},
+            "tailscale_peers": lambda: [
+                {"hostname": "producer-b", "ip": "100.64.0.5", "online": True, "os": "macOS"}],
             "obs_ws": lambda: {"ok": True, "ip": "127.0.0.1", "port": 4455,
                                "password": "pw", "auth_required": True},
             "obs_collection": lambda: {"ok": True, "current": "Other",
@@ -295,6 +297,18 @@ def t_relay_live_route_wraps_provider():
         data = json.loads(body)
         assert code == 200 and data["ok"] is True
         assert data["feeds"][0]["stint"] == 3 and data["timer"]["mode"] == "running"
+    finally:
+        httpd.shutdown()
+
+
+def t_tailscale_peers_route_wraps_provider():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/tailscale-peers")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["peers"][0] == {"hostname": "producer-b", "ip": "100.64.0.5",
+                                    "online": True, "os": "macOS"}
     finally:
         httpd.shutdown()
 

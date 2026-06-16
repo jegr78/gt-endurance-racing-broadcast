@@ -27,6 +27,7 @@ OPS = {
     "obs-collection-set": ["obs", "collection", "set"],
     "event-start": ["event", "start"],
     "event-stop": ["event", "stop"],
+    "event-takeover": ["event", "takeover"],   # ip (+ optional stint) appended via PARAMS
     "free-ports": ["freeport"],   # kill orphaned holders of the feed ports (53001-53003)
     "cookies": ["cookies"],
     "cookies-twitch": ["cookies", "twitch"],
@@ -59,6 +60,18 @@ def _stint_arg(value):
     return ["--stint", s]
 
 
+# A Tailscale IP or MagicDNS host for the takeover target. Charset-locked so the
+# value (from the device dropdown, or manual entry) can never inject argv tokens.
+_HOST_RE = re.compile(r"^[A-Za-z0-9.\-]{1,253}\Z")
+
+
+def _ip_arg(value):
+    s = str(value)
+    if not _HOST_RE.match(s):
+        raise ValueError("invalid host/IP")
+    return [s]
+
+
 def _update_flag(value):
     return ["--update"] if value else []
 
@@ -87,6 +100,7 @@ PARAMS = {
     "cookies": {"browser": _browser_arg},
     "cookies-twitch": {"browser": _browser_arg},
     "event-start": {"stint": _stint_arg},
+    "event-takeover": {"ip": _ip_arg, "stint": _stint_arg},   # order: ip (positional) then --stint
     "install-tools": {"update": _update_flag},
     "install-apps": {"update": _update_flag},
     "update": {"tag": _tag_arg},

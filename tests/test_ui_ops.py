@@ -174,6 +174,20 @@ def t_build_argv_event_stint():
             pass
 
 
+def t_build_argv_event_takeover():
+    assert ui_ops.build_argv("event-takeover", {"ip": "100.64.1.2"}) == \
+        ["event", "takeover", "100.64.1.2"]
+    # ip then --stint (order matters: ip is positional)
+    assert ui_ops.build_argv("event-takeover", {"ip": "host-b", "stint": "6"}) == \
+        ["event", "takeover", "host-b", "--stint", "6"]
+    for bad in ("1.2.3.4; rm -rf /", "a b", "$(x)", "ip|cmd"):
+        try:
+            ui_ops.build_argv("event-takeover", {"ip": bad})
+            raise AssertionError(f"invalid host accepted: {bad}")
+        except ValueError:
+            pass
+
+
 def t_build_argv_update_flag():
     assert ui_ops.build_argv("install-tools", {"update": True}) == \
         ["install-tools", "--yes", "--update"]
