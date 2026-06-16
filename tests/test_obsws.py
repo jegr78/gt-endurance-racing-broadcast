@@ -250,6 +250,28 @@ def t_release_feed_inputs_unreachable_is_quiet():
     assert note                                    # human-readable reason
 
 
+# --------------------------------------------------------------------------
+# Screenshot request shape + data-URI decode (pure)
+# --------------------------------------------------------------------------
+def t_screenshot_request_data_shape():
+    d = m.screenshot_request_data("Feed A", width=480, fmt="jpg", quality=55)
+    assert d == {"sourceName": "Feed A", "imageFormat": "jpg",
+                 "imageWidth": 480, "imageCompressionQuality": 55}
+
+
+def t_parse_screenshot_data_uri_valid():
+    raw = b"\xff\xd8\xff\xd9"
+    uri = "data:image/jpg;base64," + base64.b64encode(raw).decode()
+    assert m.parse_screenshot_data_uri(uri) == raw
+
+
+def t_parse_screenshot_data_uri_rejects_garbage():
+    assert m.parse_screenshot_data_uri("not a data uri") is None
+    assert m.parse_screenshot_data_uri("data:image/jpg;base64,@@@@") is None
+    assert m.parse_screenshot_data_uri(None) is None
+    assert m.parse_screenshot_data_uri(12345) is None
+
+
 # ---- fake obs-websocket v5 server (loopback, one connection) --------------
 def _srv_recv_frame(conn):
     """Read one masked client frame; return (opcode, payload)."""

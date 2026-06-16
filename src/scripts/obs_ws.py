@@ -231,6 +231,29 @@ def browser_input_names(inputs, get_settings, needle="127.0.0.1:8088"):
 
 
 # --------------------------------------------------------------------------
+# Source screenshots (GetSourceScreenshot) — pure helpers, unit-tested
+# --------------------------------------------------------------------------
+def screenshot_request_data(source_name, width=640, fmt="jpg", quality=60):
+    """requestData for GetSourceScreenshot: a scaled still of a source/scene."""
+    return {"sourceName": source_name, "imageFormat": fmt,
+            "imageWidth": int(width), "imageCompressionQuality": int(quality)}
+
+
+def parse_screenshot_data_uri(data_uri):
+    """Decode a GetSourceScreenshot 'imageData' value
+    (data:image/<fmt>;base64,<payload>) to raw bytes; None on a malformed URI."""
+    if not isinstance(data_uri, str):
+        return None
+    head, sep, payload = data_uri.partition(",")
+    if not sep or not head.startswith("data:") or "base64" not in head:
+        return None
+    try:
+        return base64.b64decode(payload, validate=True)   # binascii.Error subclasses ValueError
+    except ValueError:
+        return None
+
+
+# --------------------------------------------------------------------------
 # Password / port discovery from OBS's own obs-websocket config
 # --------------------------------------------------------------------------
 def obs_config_path(platform, env, home):
