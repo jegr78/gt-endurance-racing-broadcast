@@ -174,7 +174,10 @@ def health_should_notify(prev, cur):
 def discord_health_payload(level, reasons, prev_level=None):
     """Discord webhook JSON for a health transition. Pure → unit-tested. A return
     to green reads as a recovery; otherwise it announces the degraded state and
-    lists the reasons."""
+    lists the reasons. Every health change (degraded AND recovery) carries an
+    @here ping so the crew is pulled in even if the panel pill goes unnoticed —
+    the mention MUST sit in top-level `content` with allowed_mentions permitting
+    it, because Discord ignores mentions inside an embed."""
     if level == "green":
         title = "✅ Broadcast health recovered — all systems green"
         desc = "Recovered from a previous issue." if prev_level and prev_level != "green" \
@@ -183,6 +186,8 @@ def discord_health_payload(level, reasons, prev_level=None):
         title = f"⚠️ Broadcast health: {_HEALTH_LABEL[level]}"
         desc = "\n".join(f"• {r}" for r in reasons) or _HEALTH_LABEL[level]
     return {"username": "GT Racecast",
+            "content": "@here",
+            "allowed_mentions": {"parse": ["everyone"]},
             "embeds": [{"title": title, "description": desc,
                         "color": HEALTH_COLORS[level]}]}
 # Sheet ID is NOT hardcoded — it comes from RACECAST_SHEET_ID (injected by the CLI
