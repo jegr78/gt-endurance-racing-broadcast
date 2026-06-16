@@ -373,6 +373,13 @@ def _fake_obs_server(server_sock, password, state):
             kind = rdata.get("inputKind")
             resp = {"inputs": [i for i in inputs
                                if not kind or i["inputKind"] == kind]}
+        elif rtype == "GetCurrentProgramScene":
+            resp = {"currentProgramSceneName": state.get("program_scene", "Stint"),
+                    "sceneName": state.get("program_scene", "Stint")}
+        elif rtype == "GetSourceScreenshot":
+            state.setdefault("shot_requests", []).append(rdata)
+            raw = state.get("shot_bytes", b"\xff\xd8\xff\xd9")
+            resp = {"imageData": "data:image/jpg;base64," + base64.b64encode(raw).decode()}
         elif rtype == "PressInputPropertiesButton":
             # The refresh presses OBS's own 'Refresh cache of current page'
             # button — never anything else. Answer a wrong button with a
@@ -635,6 +642,41 @@ def t_set_scene_collection_unreachable_is_quiet():
     ok, note = m.set_scene_collection(port=free_port, password="x", timeout=0.5)
     assert ok is False
     assert note
+
+
+# --------------------------------------------------------------------------
+# get_source_screenshot / get_program_screenshot — best-effort fetchers
+# --------------------------------------------------------------------------
+def t_get_source_screenshot_returns_bytes():
+    state = {"shot_bytes": b"\xff\xd8hello\xff\xd9"}
+    srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(1)
+    port = srv.getsockname()[1]
+    threading.Thread(target=_fake_obs_server, args=(srv, "pw", state), daemon=True).start()
+    data, note = m.get_source_screenshot("Feed A", width=320, host="127.0.0.1",
+                                         port=port, password="pw", timeout=5)
+    srv.close()
+    assert note == "" and data == b"\xff\xd8hello\xff\xd9"
+    assert state["shot_requests"][0]["sourceName"] == "Feed A"
+    assert state["shot_requests"][0]["imageWidth"] == 320
+
+
+def t_get_program_screenshot_uses_current_scene():
+    state = {"program_scene": "Stint", "shot_bytes": b"\xff\xd8PGM\xff\xd9"}
+    srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(1)
+    port = srv.getsockname()[1]
+    threading.Thread(target=_fake_obs_server, args=(srv, "pw", state), daemon=True).start()
+    data, note = m.get_program_screenshot(width=640, host="127.0.0.1",
+                                          port=port, password="pw", timeout=5)
+    srv.close()
+    assert note == "" and data == b"\xff\xd8PGM\xff\xd9"
+    assert state["shot_requests"][0]["sourceName"] == "Stint"
+
+
+def t_get_source_screenshot_unreachable_is_quiet():
+    sock = socket.socket(); sock.bind(("127.0.0.1", 0))
+    free = sock.getsockname()[1]; sock.close()
+    data, note = m.get_source_screenshot("Feed A", port=free, password="x", timeout=0.5)
+    assert data is None and note
 
 
 # --------------------------------------------------------------------------

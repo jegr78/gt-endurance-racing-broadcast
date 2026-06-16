@@ -470,6 +470,54 @@ def refresh_browser_inputs(needle="127.0.0.1:8088", host="127.0.0.1", port=None,
         session.close()
 
 
+def get_source_screenshot(source_name, width=640, fmt="jpg", quality=60,
+                          host="127.0.0.1", port=None, password=None, timeout=2.0):
+    """A scaled screenshot of an OBS source/scene as raw JPEG bytes.
+    Returns (bytes, "") or (None, note). Best effort — never raises (same
+    contract as release_feed_inputs/get_scene_collection)."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return None, note
+    try:
+        resp = session.request(
+            "GetSourceScreenshot",
+            screenshot_request_data(source_name, width, fmt, quality))
+        data = parse_screenshot_data_uri(resp.get("imageData"))
+        if data is None:
+            return None, "OBS returned no image data"
+        return data, ""
+    except Exception as exc:                          # noqa: BLE001 — best-effort contract
+        return None, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
+def get_program_screenshot(width=640, fmt="jpg", quality=60,
+                           host="127.0.0.1", port=None, password=None, timeout=2.0):
+    """Screenshot the current OBS program scene (what viewers see) as raw JPEG
+    bytes. Resolves the active scene name, then screenshots it on the same
+    session. Returns (bytes, "") or (None, note). Best effort — never raises."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return None, note
+    try:
+        cur = session.request("GetCurrentProgramScene", {})
+        scene = cur.get("currentProgramSceneName") or cur.get("sceneName")
+        if not scene:
+            return None, "OBS returned no program scene"
+        resp = session.request(
+            "GetSourceScreenshot",
+            screenshot_request_data(scene, width, fmt, quality))
+        data = parse_screenshot_data_uri(resp.get("imageData"))
+        if data is None:
+            return None, "OBS returned no image data"
+        return data, ""
+    except Exception as exc:                          # noqa: BLE001 — best-effort contract
+        return None, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
 def reflect_feed_state(live, do_cut, scene=STINT_SCENE, sources=None,
                        host="127.0.0.1", port=None, password=None, timeout=2.0):
     """Reflect which feed (A/B) is on air into OBS: show/hide the Stint-scene
