@@ -10,6 +10,7 @@
   racecast event     status|start|stop      # event-day readiness: check / bring-up / wind-down
   racecast event start --stint N             # takeover: stint N is on air now — the relay starts there
   racecast event start --qualifying          # bring up in qualifying mode (Feed A serves the Qualifying tab)
+  racecast event start --force               # skip the pre-flight gate (start despite missing SHEET_ID/graphics)
   racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
   racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD incl. timer)
   racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
@@ -1691,6 +1692,27 @@ def event_status(rest):
     raise SystemExit(pf.report(_event_sections(ev, pf), color))
 
 
+def _event_gate_results(ev, pf):
+    """The static preconditions `racecast event start` cannot fix by launching
+    services: the active league's .env/SHEET_ID, the broadcast graphics/media,
+    and the YouTube cookies. (Relay/OBS/Companion/Tailscale are exactly what
+    event start brings up, so they are deliberately excluded — gating on them
+    would abort every bring-up.) Mirrors the classifiers used in
+    _event_sections so the gate and the readiness report agree."""
+    results = [ev.classify_env(os.environ.get("RACECAST_SHEET_ID"),
+                               os.environ.get("RACECAST_SHEET_PUSH_URL")),
+               pf.cookies_status(_cookies_path())]
+    try:
+        g_dir, m_dir, missing_g, missing_m = _asset_state(ev)
+        results += [ev.classify_assets("Graphics", missing_g, ev.local_count(g_dir),
+                                       ev.FAIL, "run `racecast graphics`"),
+                    ev.classify_assets("Media", missing_m, ev.local_count(m_dir),
+                                       ev.WARN, "run `racecast media`")]
+    except Exception as exc:                          # noqa: BLE001 — best effort
+        results.append(ev.Result(ev.WARN, "Graphics/Media", f"check failed: {exc}"))
+    return results
+
+
 def _event_launch(ev, app):
     """Best-effort GUI-app launch: report and continue on every failure path.
     Returns True iff a launch was actually attempted."""
@@ -1841,6 +1863,20 @@ def event_start(rest):
     bind needs its IP), relay before OBS (the HUD browser source then connects
     against a live relay on OBS's first load). Every step is best effort."""
     ev, pf = _event_modules()
+    # 0. Pre-flight gate — refuse to bring the stack up when a static
+    # precondition is broken (missing SHEET_ID, missing graphics): those never
+    # self-heal and would otherwise surface as black sources / unresolved feeds
+    # mid-broadcast. WARNs (stale cookies, missing media) do not block. `--force`
+    # skips the gate for a deliberate degraded start.
+    if "--force" not in rest:
+        blockers = ev.gate_blockers(_event_gate_results(ev, pf))
+        if blockers:
+            color = pf.enable_color("--no-color" in rest)
+            print("Pre-flight gate: cannot start the event — these must be fixed "
+                  "first (or re-run with --force to start anyway):")
+            for r in blockers:
+                print(pf.fmt_result(r, color))
+            raise SystemExit(1)
     # 1. Tailscale — connect a stopped backend; launch the app when needed.
     if _tailscale_connect(ev) is None:
         print("tailscale: continuing local-only (OBS keeps working).")

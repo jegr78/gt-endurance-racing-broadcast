@@ -51,7 +51,25 @@ Each stint's commentator streams the race on **their own channel**. Hand them th
   added centrally.
 - **Send your watch link** before your stint for the schedule:
   YouTube: `https://www.youtube.com/watch?v=…` ·
-  Twitch: `https://www.twitch.tv/<your-channel>`
+  Twitch: `https://www.twitch.tv/<your-channel>`. Post it in the crew **Discord** channel —
+  the producer/director enters it into the sheet.
+
+### Streaming straight from a PlayStation (no PC)
+
+You can broadcast directly from the console — the relay pulls it the same way:
+
+- **PS5:** 1080p60 to YouTube or Twitch, and you can pick **Unlisted** right on the
+  console. This meets the targets above on its own.
+- **PS4:** **PS4 Pro** can reach 1080p; the **base PS4** tops out at **720p** — still fine
+  (never below 720p). Unlisted works here too.
+- **Latency — set it up once, beforehand.** The console has **no latency control**, so the
+  PS default (Normal, 15–60 s) is too slow for handover. Fix it ahead of the event on the
+  channel itself, *not* at stream time:
+  - **YouTube:** YouTube Studio → Settings → set stream latency to **Low**.
+  - **Twitch:** Creator Dashboard → Stream → keep **Low Latency** mode on (it is the
+    default).
+- **No CBR/keyframe/encoder knobs** on the console — that is handled for you; just set the
+  resolution and the privacy/latency above.
 
 ## Event sizes
 
