@@ -1251,8 +1251,13 @@ def _companion_running(cc):
     # errors="replace": tasklist writes OEM-codepage console output (e.g. German
     # "ausgeführt" = 0x81), which is NOT decodable as the ANSI codepage Python
     # uses for text=True. The matched token (Companion.exe) is pure ASCII.
+    # env=external_tool_env(): on Linux cmds["running"] is a bare `systemctl
+    # is-active` (no sudo to reset the env), so the frozen binary must not leak
+    # its _MEIPASS onto LD_LIBRARY_PATH — else systemctl loads our bundled
+    # libcrypto, exits non-zero, and Companion is misreported as stopped.
     probe = subprocess.run(cmds["running"], capture_output=True, text=True,
-                           errors="replace", **sv.no_window_kwargs())
+                           errors="replace", env=sv.external_tool_env(),
+                           **sv.no_window_kwargs())
     return cc.parse_running(sys.platform, probe.returncode, probe.stdout or "")
 
 def _companion_start_linux(cc, cl, unit, rest):

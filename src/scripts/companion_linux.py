@@ -18,6 +18,8 @@ written to /usr/local/sbin at enable_control() time on the target machine.
 """
 import ipaddress, os, shutil, subprocess, sys, tempfile, getpass
 
+from services import external_tool_env  # de-PyInstaller the env for bare systemctl spawns
+
 UNIT = "companion"
 DROPIN_DIR = "/etc/systemd/system/companion.service.d"
 DROPIN_CONF = DROPIN_DIR + "/racecast-bind.conf"
@@ -116,7 +118,7 @@ def detect_unit(platform=None, which=None, run=None, exists=None):
     where no local companion.service exists (Companion is on the host)."""
     platform = sys.platform if platform is None else platform
     which = shutil.which if which is None else which
-    run = subprocess.run if run is None else run
+    run = _default_run if run is None else run
     exists = os.path.exists if exists is None else exists
     if platform.startswith("win") or platform == "darwin":
         return None
@@ -129,6 +131,19 @@ def detect_unit(platform=None, which=None, run=None, exists=None):
     except Exception:    # noqa: BLE001 — systemctl missing/odd -> fall through to file check
         pass
     return UNIT if exists(SERVICE_UNIT_FILE) else None
+
+
+def _default_run(argv, **kwargs):
+    """subprocess.run with the PyInstaller _MEIPASS scrubbed off LD_LIBRARY_PATH
+    (external_tool_env). The frozen binary makes bare `systemctl` calls (cat,
+    is-active) that are NOT wrapped in sudo, so — unlike the sudo'd writes, where
+    sudo resets the env itself — they inherit our bundled libcrypto and die with
+    "OPENSSL_x.y.z not found". That made is-active exit non-zero, so enable-control
+    rolled back a service that had actually started, and `companion status`
+    reported a false "stopped". external_tool_env() is None off the frozen binary,
+    so dev/source runs inherit os.environ unchanged."""
+    kwargs.setdefault("env", external_tool_env())
+    return subprocess.run(argv, **kwargs)
 
 
 def _default_read_text(path):
@@ -167,7 +182,7 @@ def enable_control(platform=None, run=None, which=None, getuser=None,
     All privileged actions run through `run(argv)`; file staging via `write_temp`.
     These seams keep the command sequence unit-testable without root."""
     platform = sys.platform if platform is None else platform
-    run = subprocess.run if run is None else run
+    run = _default_run if run is None else run
     which = shutil.which if which is None else which
     getuser = getpass.getuser if getuser is None else getuser
     read_text = _default_read_text if read_text is None else read_text

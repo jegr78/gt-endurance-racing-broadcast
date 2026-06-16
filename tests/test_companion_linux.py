@@ -239,6 +239,60 @@ def t_enable_control_visudo_failure_aborts_with_no_installs():
     assert not any("daemon-reload" in c for c in cmds)
 
 
+# --- frozen-binary env scrubbing for the bare `systemctl` calls --------------
+# The default run must hand subprocess.run the de-PyInstaller'd env: under the
+# frozen binary a bare `systemctl` (is-active / cat — the non-sudo ones) would
+# otherwise inherit _MEIPASS on LD_LIBRARY_PATH, load our bundled libcrypto, and
+# exit non-zero ("OPENSSL_x.y.z not found"), so enable-control rolls back a
+# service that actually started and `companion status` reports a false "stopped".
+class _RecordingSub:
+    def __init__(self):
+        self.calls = []
+    def run(self, argv, **kw):
+        self.calls.append((argv, kw.get("env", "MISSING")))
+        class P:
+            returncode = 0
+            stdout = ""
+        return P()
+
+
+def _with_default_run(env_value, body):
+    rec = _RecordingSub()
+    orig_sub, orig_env = cl.subprocess, cl.external_tool_env
+    cl.subprocess = rec
+    cl.external_tool_env = lambda: env_value
+    try:
+        body()
+    finally:
+        cl.subprocess, cl.external_tool_env = orig_sub, orig_env
+    return rec
+
+
+def t_default_run_passes_scrubbed_env_when_frozen():
+    scrubbed = {"LD_LIBRARY_PATH": "/usr/lib/aarch64-linux-gnu"}
+    rec = _with_default_run(
+        scrubbed,
+        lambda: cl._default_run(["systemctl", "is-active", "companion"]))
+    assert rec.calls[0][0] == ["systemctl", "is-active", "companion"]
+    assert rec.calls[0][1] == scrubbed
+
+
+def t_default_run_env_none_when_not_frozen():
+    # external_tool_env() returns None off the frozen binary -> inherit os.environ.
+    rec = _with_default_run(
+        None, lambda: cl._default_run(["systemctl", "cat", "companion"]))
+    assert rec.calls[0][1] is None
+
+
+def t_default_run_keeps_caller_kwargs():
+    rec = _with_default_run(
+        {"X": "1"},
+        lambda: cl._default_run(["systemctl", "is-active", "companion"],
+                                capture_output=True, text=True))
+    # env injected without dropping the caller's kwargs (recorded env present).
+    assert rec.calls[0][1] == {"X": "1"}
+
+
 def t_enable_control_refuses_2x_layout():
     run = _FakeRun()
     rc = cl.enable_control(platform="linux", run=run, which=lambda n: "/usr/bin/" + n,
