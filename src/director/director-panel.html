@@ -252,10 +252,18 @@
     details.chat#chatBox .hint{margin-top:6px}
   }
   .preview .pvbody{margin-top:6px}
-  .pvprog img,.pvtile img{width:100%;display:block;background:#000;border-radius:6px;min-height:54px}
+  .pvframe{position:relative;width:100%;min-height:60px;display:flex;align-items:center;justify-content:center;
+    background:#0c0f14;border:1px solid #1e2630;border-radius:6px;overflow:hidden}
+  .pvframe img{width:100%;display:none;border-radius:6px}   /* shown only once a frame loads */
+  .pvframe.loaded img{display:block}
+  .pvframe.loaded .pvph{display:none}
+  .pvph{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;
+    color:#5d6b7c;font-size:11px;letter-spacing:.02em;text-align:center}
+  .pvph svg{width:26px;height:26px;opacity:.6}
+  .pvph.err{color:#c98a8a}
   .pvfeeds{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px}
   .pvlabel{font-size:11px;opacity:.85;margin-top:2px;display:flex;justify-content:space-between;align-items:center;gap:6px}
-  .pvtile.onair{outline:2px solid #4ade80;border-radius:6px}
+  .pvtile.onair .pvframe{outline:2px solid #4ade80;outline-offset:-1px}
   .pvrefresh{padding:0 8px}
 </style>
 </head>
@@ -295,15 +303,24 @@
     <div class="cap">Live Preview <button class="k" id="pvToggle">SHOW</button></div>
     <div class="pvbody" id="pvBody" hidden>
       <div class="pvprog">
-        <img id="pvProgram" alt="Program output">
+        <div class="pvframe" id="pvProgramFrame">
+          <img id="pvProgram" alt="Program output">
+          <div class="pvph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="12" rx="2"></rect><path d="M10 8.5l4.5 2.5-4.5 2.5z" fill="currentColor" stroke="none"></path><path d="M8.5 20h7"></path><path d="M12 16.5V20"></path></svg><span class="pvphtxt">Program loading …</span></div>
+        </div>
         <div class="pvlabel" id="pvProgramLabel"><span>PROGRAM</span></div>
       </div>
       <div class="pvfeeds">
-        <div class="pvtile" data-feed="A"><img alt="Feed A">
+        <div class="pvtile" data-feed="A">
+          <div class="pvframe"><img alt="Feed A">
+            <div class="pvph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="12" rx="2"></rect><path d="M10 8.5l4.5 2.5-4.5 2.5z" fill="currentColor" stroke="none"></path><path d="M8.5 20h7"></path><path d="M12 16.5V20"></path></svg><span class="pvphtxt">Load still</span></div></div>
           <div class="pvlabel"><span>FEED A</span><button class="k pvrefresh">↻</button></div></div>
-        <div class="pvtile" data-feed="B"><img alt="Feed B">
+        <div class="pvtile" data-feed="B">
+          <div class="pvframe"><img alt="Feed B">
+            <div class="pvph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="12" rx="2"></rect><path d="M10 8.5l4.5 2.5-4.5 2.5z" fill="currentColor" stroke="none"></path><path d="M8.5 20h7"></path><path d="M12 16.5V20"></path></svg><span class="pvphtxt">Load still</span></div></div>
           <div class="pvlabel"><span>FEED B</span><button class="k pvrefresh">↻</button></div></div>
-        <div class="pvtile" data-feed="POV"><img alt="POV">
+        <div class="pvtile" data-feed="POV">
+          <div class="pvframe"><img alt="POV">
+            <div class="pvph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="12" rx="2"></rect><path d="M10 8.5l4.5 2.5-4.5 2.5z" fill="currentColor" stroke="none"></path><path d="M8.5 20h7"></path><path d="M12 16.5V20"></path></svg><span class="pvphtxt">Load still</span></div></div>
           <div class="pvlabel"><span>POV</span><button class="k pvrefresh">↻</button></div></div>
       </div>
     </div>
@@ -1346,8 +1363,12 @@ $("#qualBox").addEventListener("toggle", ()=>qualPoll());
 const PV_KEY = "rc_preview_open";
 let pvTimer = null;
 function pvSetProgram(){
-  const img = $("#pvProgram");
-  img.onerror = () => { img.removeAttribute("src"); img.alt = "OBS nicht erreichbar"; };
+  const frame = $("#pvProgramFrame"), img = $("#pvProgram");
+  const ph = frame.querySelector(".pvph"), txt = ph.querySelector(".pvphtxt");
+  // Keep the current frame visible while the next one loads (no flicker on poll).
+  img.onload = () => { ph.classList.remove("err"); frame.classList.add("loaded"); };
+  img.onerror = () => { img.removeAttribute("src");
+    frame.classList.remove("loaded"); ph.classList.add("err"); txt.textContent = "OBS unreachable"; };
   img.src = "/preview/program?ts=" + Date.now();
 }
 function pvStart(){
@@ -1364,12 +1385,16 @@ $("#pvToggle").onclick = () => {
   try{ localStorage.setItem(PV_KEY, opening ? "1" : "0"); }catch(e){}
 };
 function pvGrabFeed(tile){
-  const feed = tile.dataset.feed, img = tile.querySelector("img"),
-        btn = tile.querySelector(".pvrefresh");
+  const feed = tile.dataset.feed, frame = tile.querySelector(".pvframe"),
+        img = frame.querySelector("img"), ph = frame.querySelector(".pvph"),
+        txt = ph.querySelector(".pvphtxt"), btn = tile.querySelector(".pvrefresh");
   btn.disabled = true; btn.textContent = "…";
+  // Show the stand-in while grabbing, never a broken image.
+  frame.classList.remove("loaded"); ph.classList.remove("err"); txt.textContent = "Loading …";
   const done = () => { btn.disabled = false; btn.textContent = "↻"; };
-  img.onload = done;
-  img.onerror = () => { img.removeAttribute("src"); img.alt = feed + " nicht verfügbar"; done(); };
+  img.onload = () => { frame.classList.add("loaded"); done(); };
+  img.onerror = () => { img.removeAttribute("src");
+    frame.classList.remove("loaded"); ph.classList.add("err"); txt.textContent = "Unavailable"; done(); };
   img.src = "/preview/feed/" + feed + "?ts=" + Date.now();
 }
 document.querySelectorAll(".pvtile .pvrefresh").forEach(btn => {
