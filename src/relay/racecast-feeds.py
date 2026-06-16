@@ -115,6 +115,15 @@ def feed_fast_exit_error(elapsed_s, returncode, fast_exit_s=FEED_FAST_EXIT_S):
     if elapsed_s is None or elapsed_s >= fast_exit_s:
         return None
     return "feed exited immediately — port in use? see feed log"
+
+
+def serve_exit_is_drop(stopped, advancing):
+    """A serving feed's streamlink process exited. It is an unexpected DROP — the
+    live picture was lost — UNLESS the exit was intentional: a relay shutdown
+    (`stopped`) or a director handover/reload (`advancing`). Drives the panel's
+    feed-down alert so it fires on a real loss, not on every normal handover.
+    Pure → unit-tested in tests/test_pov.py."""
+    return not stopped and not advancing
 # Sheet ID is NOT hardcoded — it comes from RACECAST_SHEET_ID (injected by the CLI
 # from the active profile). Override per-run with --sheet-id.
 DEFAULT_SHEET_TAB = "Schedule"
@@ -1728,6 +1737,11 @@ class Feed:
         self.phase = "idle"
         self.phase_since = time.time()
         self.last_error = None
+        # True after a live serve was lost unexpectedly (not a stop/handover) and
+        # not yet recovered or acknowledged — surfaced as feeds.<X>.down in
+        # /status so the panel/Companion can raise a distinct alarm. Cleared on
+        # recovery (re-serving) and on director intervention (reload/reposition).
+        self.dropped = False
 
     def current_channel(self):
         if self.paused:
@@ -1766,11 +1780,13 @@ class Feed:
             if new_idx == self.idx:
                 return False
             self.idx = new_idx
+        self.dropped = False              # director repositioned -> alarm acknowledged
         self.advance.set(); self._kill_proc()
         return True
 
     def reload(self):
         """Reconnect to the (possibly changed) channel at the CURRENT index."""
+        self.dropped = False              # director intervened -> alarm acknowledged
         self.advance.set(); self._kill_proc()
         return True
 
@@ -1810,6 +1826,7 @@ class Feed:
                     if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
                         self.last_error = None
                     self._set_phase("serving")
+                    self.dropped = False          # live picture -> any prior alarm clears
                     serve_started = time.monotonic()
                     self.proc.wait()
                     serve_elapsed = time.monotonic() - serve_started
@@ -1819,6 +1836,10 @@ class Feed:
                     self.proc = None
                     time.sleep(RETRY_SLEEP); continue
             self._set_phase("connecting")
+            # A serving process just exited: flag an unexpected loss (DROP) so the
+            # panel/Companion alarm fires — but not on an intentional stop or a
+            # handover/reload (both handled just below).
+            self.dropped = serve_exit_is_drop(self.stop, self.advance.is_set())
             if self.stop: break
             if self.advance.is_set():
                 self.advance.clear(); continue
@@ -1916,6 +1937,7 @@ class Relay:
                                "platform": platform_of(channel_url(ch)) if ch else None,
                                "state": "stopped" if f.paused else f.phase,
                                "state_age_s": round(now - f.phase_since, 1),
+                               "down": f.dropped and not f.paused,
                                "last_error": f.last_error}
         if self.pov:
             raw = (self.pov_source.get()[:1] or [None])[0] if self.pov_source else None
@@ -1924,6 +1946,7 @@ class Relay:
                           "shown": self.pov_shown,
                           "state": "stopped" if self.pov.paused else self.pov.phase,
                           "state_age_s": round(now - self.pov.phase_since, 1),
+                          "down": self.pov.dropped and not self.pov.paused,
                           "source": self.pov_source.health() if self.pov_source else None}
         out["obs"] = {"reachable": self.obs_reachable, "note": self.obs_note}
         return out

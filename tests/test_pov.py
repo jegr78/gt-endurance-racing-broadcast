@@ -82,6 +82,45 @@ def t_status_surfaces_feed_last_error():
     assert r.status()["feeds"]["A"]["last_error"] == "feed exited immediately — port in use? see feed log"
 
 
+def t_serve_exit_is_drop():
+    # A serving feed's process exited. It's an unexpected DROP (lost live picture)
+    # only when the exit was NOT intentional — not a relay stop, not a handover/
+    # reload (advance). This keeps the panel alert off during normal handovers.
+    assert m.serve_exit_is_drop(stopped=False, advancing=False) is True
+    assert m.serve_exit_is_drop(stopped=True, advancing=False) is False   # relay stopping
+    assert m.serve_exit_is_drop(stopped=False, advancing=True) is False   # handover/reload
+    assert m.serve_exit_is_drop(stopped=True, advancing=True) is False
+
+
+def t_feed_starts_not_dropped():
+    f = m.Feed("A", 53001, 0, lambda: ["a"], HERE)
+    assert f.dropped is False
+
+
+def t_status_surfaces_feed_down():
+    # Once a feed is marked dropped, /status flags it down so the panel can raise
+    # a distinct alarm; a paused/stopped feed is never 'down' (intentional).
+    r = _relay(["a", "b"])
+    assert r.status()["feeds"]["A"]["down"] is False
+    r.A.dropped = True
+    assert r.status()["feeds"]["A"]["down"] is True
+    assert r.status()["feeds"]["B"]["down"] is False
+    r.A.paused = True                          # paused beats dropped -> not an alarm
+    assert r.status()["feeds"]["A"]["down"] is False
+
+
+def t_reload_and_set_index_clear_dropped():
+    # Director intervention (reload / reposition) acknowledges the drop: the alarm
+    # clears, and re-fires only if the feed drops again.
+    f = m.Feed("A", 53001, 0, lambda: ["a", "b"], HERE)
+    f.dropped = True
+    f.reload()
+    assert f.dropped is False
+    f.dropped = True
+    f.set_index(1)
+    assert f.dropped is False
+
+
 def t_current_channel_idles_past_end():
     # idx beyond the schedule -> idle (None), NOT a clamp onto the last stint
     f = m.Feed("B", 53002, 1, lambda: ["https://youtu.be/only"], HERE)

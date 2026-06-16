@@ -127,6 +127,7 @@
   .hint{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5}
   #feedHealth{min-height:0}
   #feedHealth .warnline{color:#ffd361}
+  #feedHealth .downline{color:#ff8080;font-weight:600}
 
   /* ---------- setup dropdowns (sheet-backed) ---------- */
   .setrow{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
@@ -755,6 +756,8 @@ function fmtDur(s){
 function healthLine(name, f){
   const tag = f.platform ? ` [${f.platform === "twitch" ? "TW" : "YT"}]` : "";
   const what = f.stint ? "stint " + f.stint : "the POV stream";
+  if (f.down)                       // lost a live serve — louder than 'connecting'
+    return `<span class="downline">${name}${tag} · DOWN — lost ${what}; RELOAD it or cut to the other feed/Standby</span>`;
   if (f.state === "serving")
     return `${name}${tag} · serving ${what} (since ${fmtDur(f.state_age_s)})`;
   if (f.state === "connecting"){
@@ -768,8 +771,9 @@ function healthLine(name, f){
   }
   return "";
 }
-function statePill(el, label, stint, n, state){
-  const [txt, cls] = FEED_STATE[state] || ["", ""];
+function statePill(el, label, stint, n, state, down){
+  let [txt, cls] = FEED_STATE[state] || ["", ""];
+  if (down){ txt = "DOWN"; cls = "air"; }     // lost live serve -> red pill
   el.className = "st" + (cls ? " " + cls : "");
   el.innerHTML = label + " <b>" + stint + "</b>" + (n ? "/" + n : "") + (txt ? " · " + txt : "");
 }
@@ -779,11 +783,12 @@ async function relayPoll(){
     const d = await r.json();
     relayLed(true); clearBanner("relay");
     const n = d.schedule_len;
-    statePill($("#stA"), "A", "S" + d.feeds.A.stint, n, d.feeds.A.state);
-    statePill($("#stB"), "B", "S" + d.feeds.B.stint, n, d.feeds.B.state);
+    statePill($("#stA"), "A", "S" + d.feeds.A.stint, n, d.feeds.A.state, d.feeds.A.down);
+    statePill($("#stB"), "B", "S" + d.feeds.B.stint, n, d.feeds.B.state, d.feeds.B.down);
     if (d.pov){
       const ps = d.pov.state || "";                       // guard: version-skewed relay
-      const [txt, cls] = FEED_STATE[ps] || [ps.toUpperCase(), ""];
+      let [txt, cls] = FEED_STATE[ps] || [ps.toUpperCase(), ""];
+      if (d.pov.down){ txt = "DOWN"; cls = "air"; }
       $("#stPov").className = "st" + (cls ? " " + cls : "");
       $("#stPov").innerHTML = "POV <b>" + (txt || "—") + "</b>";
     } else { $("#stPov").className = "st"; $("#stPov").innerHTML = "POV <b>—</b>"; }
@@ -793,6 +798,17 @@ async function relayPoll(){
     if (d.mode === "qualifying")
       lines.unshift('<span class="warnline">QUALIFYING MODE — Feed A serves the Qualifying tab (race schedule paused)</span>');
     $("#feedHealth").innerHTML = lines.filter(Boolean).join("<br>");
+    // Feed-down alarm: a feed that was live and dropped unexpectedly (not a
+    // handover). Distinct red banner so the director acts (RELOAD or cut away).
+    const downNames = [];
+    if (d.feeds.A.down) downNames.push("A");
+    if (d.feeds.B.down) downNames.push("B");
+    if (d.pov && d.pov.down) downNames.push("POV");
+    if (downNames.length)
+      setBanner("feeddown", "red",
+        "FEED " + downNames.join(" + ") + " DOWN — lost the live stream · " +
+        "RELOAD it or cut to the other feed/Standby");
+    else clearBanner("feeddown");
     const ck = d.cookies_health;
     if (ck && ck.stale)
       setBanner("cookies", "amber",
