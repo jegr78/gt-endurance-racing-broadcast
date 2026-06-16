@@ -46,6 +46,7 @@ racecast profile new <name> --from example   # copy a profile dir to start a new
 racecast profile export <name>   # export a whole league profile to a portable zip (share with another producer)
 racecast profile import <file>   # import a profile bundle on this machine (--force to replace)
 racecast --profile <name> <cmd>  # run one command against a non-active profile
+racecast sheet open              # open the active league's Google Sheet (built from SHEET_ID); `sheet url` prints it
 ```
 
 Active-profile precedence: `--profile` > `RACECAST_PROFILE` (in `.env`) >

@@ -257,6 +257,22 @@ def t_resolve_config_obs_collection_explicit_wins_over_prefix():
         assert cfg.obs_collection == "Custom Name"
 
 
+def t_sheet_edit_url_builds_edit_link():
+    assert m.sheet_edit_url("ABC123") == \
+        "https://docs.google.com/spreadsheets/d/ABC123/edit"
+
+
+def t_sheet_edit_url_strips_whitespace():
+    assert m.sheet_edit_url("  ABC123  ") == \
+        "https://docs.google.com/spreadsheets/d/ABC123/edit"
+
+
+def t_sheet_edit_url_empty_when_unset():
+    assert m.sheet_edit_url("") == ""
+    assert m.sheet_edit_url(None) == ""
+    assert m.sheet_edit_url("   ") == ""
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

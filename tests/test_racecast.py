@@ -115,6 +115,42 @@ def t_obs_bad_verb_raises():
     _raises(lambda: m.route(["obs", "bogus"]))
 
 
+def t_sheet_routes():
+    for verb in ("url", "open"):
+        assert m.route(["sheet", verb]) == \
+            {"kind": "service", "command": "sheet", "verb": verb, "rest": []}
+
+
+def t_sheet_bad_verb_raises():
+    _raises(lambda: m.route(["sheet"]))
+    _raises(lambda: m.route(["sheet", "bogus"]))
+
+
+def t_sheet_url_cmd_exits_without_sheet_id():
+    old = m._active_sheet_url
+    m._active_sheet_url = lambda: ""
+    try:
+        try:
+            m.sheet_url_cmd([])
+            raise AssertionError("expected SystemExit")
+        except SystemExit as e:
+            assert "no SHEET_ID" in str(e.code)
+    finally:
+        m._active_sheet_url = old
+
+
+def t_sheet_url_cmd_prints_url(capsys=None):
+    old_url, old_open = m._active_sheet_url, m._open_url
+    opened = []
+    m._active_sheet_url = lambda: "https://docs.google.com/spreadsheets/d/X/edit"
+    m._open_url = lambda u: opened.append(u)
+    try:
+        m.sheet_open_cmd([])
+        assert opened == ["https://docs.google.com/spreadsheets/d/X/edit"]
+    finally:
+        m._active_sheet_url, m._open_url = old_url, old_open
+
+
 def t_obs_refresh_cmd_exits_when_relay_down():
     old = m._relay_http_ok
     m._relay_http_ok = lambda: False

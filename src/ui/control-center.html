@@ -586,6 +586,8 @@
         <section>
           <div class="viewhead"><h3>League config</h3>
             <span class="sub">profile.env</span><span class="spacer"></span>
+            <button id="penv-opensheet" onclick="openActiveSheet()" title="Open this league's Google Sheet (built from SHEET_ID) in a new tab">
+              <svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Open Sheet ↗</button>
             <button onclick="loadProfileEnv(true)">
               <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button>
             <button id="penv-save" onclick="saveProfileEnv()">
@@ -596,7 +598,7 @@
           <div id="penvrows"></div>
           <div class="addrow"><button onclick="addProfileEnvRow()">
             <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add entry</button></div>
-          <p class="envhint">League config for the <b>active profile</b> — Sheet ID, push URL, intro/outro, logo, and the OBS scene-collection name (<b>OBS_COLLECTION</b>). Stored in <b>profiles/&lt;active&gt;/profile.env</b>. Values are masked; click the eye to reveal. Changes apply when you next (re)start the relay.</p>
+          <p class="envhint">League config for the <b>active profile</b> — Sheet ID, push URL, intro/outro, logo, and the OBS scene-collection name (<b>OBS_COLLECTION</b>). Stored in <b>profiles/&lt;active&gt;/profile.env</b>. Values are masked; click the eye to reveal. <b>Open Sheet ↗</b> opens this league's Google Sheet (built from <b>SHEET_ID</b>) in a new tab. Changes apply when you next (re)start the relay.</p>
         </section>
 
         <section id="overlay-section">
@@ -2307,6 +2309,18 @@ async function loadProfileEnv(force) {
 }
 
 function addProfileEnvRow() { addEnvEditorRow('penvrows'); }
+
+// Open the active league's Google Sheet in a new tab. The URL is derived from
+// the SHEET_ID currently in the editor (so unsaved edits are honoured too) —
+// same construction as `racecast sheet open`. SHEET_ID is not a secret.
+function openActiveSheet() {
+  $('penv-err').hidden = true;
+  const row = collectEnvEditor('penvrows').find(e => e.key.trim() === 'SHEET_ID');
+  const id = ((row && row.value) || '').trim();
+  if (!id) { showProfileErr('penv-err', 'No SHEET_ID set — fill it in below, then Save.'); return; }
+  window.open('https://docs.google.com/spreadsheets/d/' + encodeURIComponent(id) + '/edit',
+              '_blank', 'noopener');
+}
 
 async function saveProfileEnv() {
   if (!confirm('Save these settings to the active profile.env?')) return;

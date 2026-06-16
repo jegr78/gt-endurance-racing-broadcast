@@ -13,6 +13,7 @@
   racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
   racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD incl. timer)
   racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
+  racecast sheet     url | open              # print / open the active league's Google Sheet (built from its SHEET_ID)
   racecast app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
   racecast status                            # aggregate health of all services
   racecast profile   list | show [<name>] | use <name> | new <name> [--from <source>] | export <name> [--no-assets] [--out PATH] | import <file> [--force]
@@ -656,6 +657,7 @@ ONESHOTS = ("preflight", "speedtest", "cookies", "graphics", "media", "setup", "
 EVENT_VERBS = ("status", "start", "stop")
 TAILSCALE_VERBS = ("up", "down", "status")
 OBS_VERBS = ("refresh", "collection")
+SHEET_VERBS = ("url", "open")           # active league's Google Sheet (from SHEET_ID)
 APP_VERBS = ("launch", "quit")          # GUI app control for the Control Center
 APP_CONTROLLED = ("obs", "discord", "tailscale")   # GUI apps racecast can launch + quit
 
@@ -693,6 +695,11 @@ def route(argv):
         if verb not in OBS_VERBS:
             raise ValueError(f"usage: racecast obs {{{'|'.join(OBS_VERBS)}}}")
         return {"kind": "service", "command": "obs", "verb": verb, "rest": rest[1:]}
+    if cmd == "sheet":
+        verb = rest[0] if rest else None
+        if verb not in SHEET_VERBS:
+            raise ValueError(f"usage: racecast sheet {{{'|'.join(SHEET_VERBS)}}}")
+        return {"kind": "service", "command": "sheet", "verb": verb, "rest": rest[1:]}
     if cmd == "app":
         verb = rest[0] if rest else None
         if verb not in APP_VERBS:
@@ -1171,6 +1178,32 @@ def obs_collection_cmd(rest):
                  f"from '{status['expected']}'; switch manually in OBS.")
     sys.exit(f"obs: '{status['expected']}' collection not found in OBS — import it "
              f"with `racecast setup`.")
+
+
+def _active_sheet_url():
+    """The active league's Google-Sheet edit URL, or '' when no profile resolves
+    or its SHEET_ID is unset. Tolerant: any resolution failure -> ''."""
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    sheet_id = _active_sheet_id(root, _runtime_base_dir(), _active_profile_name())
+    return pcfg.sheet_edit_url(sheet_id)
+
+
+def _sheet_url_or_exit():
+    url = _active_sheet_url()
+    if not url:
+        sys.exit("sheet: no SHEET_ID set for the active profile — set it in "
+                 "profiles/<name>/profile.env (racecast profile show).")
+    return url
+
+
+def sheet_url_cmd(_rest):
+    """Print the active league's Google-Sheet edit URL (built from SHEET_ID)."""
+    print(_sheet_url_or_exit())
+
+
+def sheet_open_cmd(_rest):
+    """Open the active league's Google Sheet in the default browser."""
+    _open_url(_sheet_url_or_exit())
 
 
 def _release_obs_feeds():
@@ -1960,6 +1993,7 @@ DISPATCH = {
     ("tailscale", "up"): tailscale_up_cmd, ("tailscale", "down"): tailscale_down_cmd,
     ("tailscale", "status"): tailscale_status_cmd,
     ("obs", "refresh"): obs_refresh_cmd, ("obs", "collection"): obs_collection_cmd,
+    ("sheet", "url"): sheet_url_cmd, ("sheet", "open"): sheet_open_cmd,
     ("app", "launch"): app_launch_cmd, ("app", "quit"): app_quit_cmd,
 }
 
