@@ -216,6 +216,9 @@ def t_classify_pipewire_audio_linux_absent_warns():
 
 def t_pipewire_audio_candidates_cover_user_and_distro_paths():
     cands = m.pipewire_audio_candidates("/home/op", "aarch64")
+    # fixed Linux paths must stay forward-slash on every OS (incl. the Windows
+    # runner) — os.path.join would inject backslashes here (CLAUDE.md / #97).
+    assert all("\\" not in c for c in cands)
     # per-user manual install (dimtpap release tarball layout)
     assert any("/home/op/.config/obs-studio/plugins/linux-pipewire-audio" in c
                for c in cands)

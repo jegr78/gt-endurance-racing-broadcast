@@ -395,15 +395,18 @@ _MULTIARCH = {"x86_64": "x86_64-linux-gnu", "amd64": "x86_64-linux-gnu",
 def pipewire_audio_candidates(home, machine):
     """Known filesystem locations of the obs-pipewire-audio-capture plugin .so on
     Linux (pure — builds path strings only): the per-user manual install (dimtpap
-    release-tarball layout) plus the common distro/package plugin dirs."""
-    user = os.path.join(home, ".config", "obs-studio", "plugins", "linux-pipewire-audio")
-    cands = [os.path.join(user, "bin", "64bit", PIPEWIRE_AUDIO_SO),
-             os.path.join(user, "bin", PIPEWIRE_AUDIO_SO)]
+    release-tarball layout) plus the common distro/package plugin dirs.
+
+    These are fixed Linux (POSIX) paths, so build them with explicit forward
+    slashes — never os.path.join, which injects backslashes on the Windows test
+    runner and makes a passing-on-Linux test fail there (see CLAUDE.md / #97)."""
+    user = home.replace("\\", "/").rstrip("/") + "/.config/obs-studio/plugins/linux-pipewire-audio"
+    cands = [f"{user}/bin/64bit/{PIPEWIRE_AUDIO_SO}", f"{user}/bin/{PIPEWIRE_AUDIO_SO}"]
     multiarch = _MULTIARCH.get((machine or "").lower())
     for lib in ("/usr/lib", "/usr/local/lib", "/usr/lib64"):
-        cands.append(os.path.join(lib, "obs-plugins", PIPEWIRE_AUDIO_SO))
+        cands.append(f"{lib}/obs-plugins/{PIPEWIRE_AUDIO_SO}")
         if multiarch:
-            cands.append(os.path.join(lib, multiarch, "obs-plugins", PIPEWIRE_AUDIO_SO))
+            cands.append(f"{lib}/{multiarch}/obs-plugins/{PIPEWIRE_AUDIO_SO}")
     return cands
 
 
