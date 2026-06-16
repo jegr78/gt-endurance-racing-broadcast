@@ -367,6 +367,11 @@ def t_status_includes_health():
     try:
         with tempfile.TemporaryDirectory() as td:
             r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
+            # status() kicks off a throttled async OBS probe; on a loaded CI runner
+            # it can finish and overwrite obs_reachable=False before status() reads
+            # the health facts, flipping green->yellow. Disable it so the assertion
+            # reflects the value we set, not a probe race (flaky macos-3.12, #189 CI).
+            r._maybe_probe_obs = lambda now: None
             r.obs_reachable = True
             h = r.status()["health"]
             assert h["level"] == "green" and h["reasons"] == [] and "since_s" in h
