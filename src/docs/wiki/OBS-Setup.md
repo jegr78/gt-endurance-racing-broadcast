@@ -128,9 +128,26 @@ for the importing OS — no manual source-switching needed.
 - **Windows:** `Application Audio Capture`, bound to `Discord.exe`. Any Discord window
   title works — window titles don't matter. Don't *also* capture Discord via desktop
   audio, or you'll double it.
-- **Linux:** requires the
-  [PipeWire Audio Capture plugin](https://obsproject.com/forum/resources/pipewire-audio-capture.1458/)
-  (untested). Install the plugin before importing the collection.
+- **Linux (any architecture):** the capture uses the
+  [PipeWire Audio Capture plugin](https://obsproject.com/forum/resources/pipewire-audio-capture.1458/),
+  which is **not** part of OBS core — it must be present before importing the collection.
+  Install it the way your distribution / OBS build expects (packaging varies per distro);
+  the upstream method is to extract the latest `linux-pipewire-audio-*.tar.gz` from the
+  plugin's releases into `~/.config/obs-studio/plugins/` and restart OBS. Sandboxed OBS
+  builds (Flatpak / Snap) need extra steps for the plugin to reach PipeWire. This applies
+  whether Discord runs natively (amd64) or via the browser (the no-native variant below).
+  `racecast setup` then sets the capture target automatically.
+- **Linux without native Discord (e.g. ARM64):** the official Discord `.deb` is amd64-only,
+  so there is no native client to capture. `racecast setup` detects this and points the
+  **Discord Audio Capture** source at the browser instead — it stays a PipeWire Application
+  Capture source (so the panel/Companion mute &amp; volume controls are unchanged), only its
+  target becomes the browser. Open **Discord-web** (<https://discord.com/app>) in that
+  browser, join the **Interviews** voice channel before race end, and keep the tab playing.
+  Override the auto-detection with `RACECAST_DISCORD_WEB` (`1`/`0`) and the captured
+  browser with `RACECAST_DISCORD_WEB_BROWSER` (e.g. `Chromium`) in `.env`. The PipeWire
+  capture grabs *all* audio from that browser, so use a browser/profile dedicated to the
+  interview if other tabs make sound. As always, confirm the level meter moves in OBS's
+  Audio Mixer before going live.
 - **Switched production machine or OS?** Re-run `racecast setup` and re-import the collection.
 
 ## 6. Stream key

@@ -8,6 +8,12 @@ Usage: python3 setup-assets.py [--out PATH] [--assets DIR] [--template FILE]
 """
 import argparse, json, os, re, sys
 
+# Load the sibling decision helper (scripts/ sits next to this script in both
+# the repo and the package). setup-assets stays config.py-free, but discord_web
+# is a tiny pure stdlib helper — importing it does not pull in the heavy resolver.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
+import discord_web  # noqa: E402
+
 ASSETS_TOKEN = "__RACECAST_ASSETS__"
 SHEET_TOKEN = "__RACECAST_SHEET__"
 MEDIA_TOKEN = "__RACECAST_MEDIA__"
@@ -36,8 +42,11 @@ def graphics_dir(base):
 # tools/tokenize-obs.py folds any variant back (keep the two ends in sync).
 # Windows "priority" 2 = WINDOW_PRIORITY_EXE (obs window-helpers.h) — match
 # any Discord.exe window, never the volatile channel-name window title.
-# Linux needs the obs-pipewire-audio-capture plugin (untested, see docs);
-# "MatchPriorty" (sic) is the plugin's actual settings key, 0 = binary name.
+# Linux needs the obs-pipewire-audio-capture plugin (not in OBS core — install it
+# on every Linux box, see docs). "MatchPriorty" (sic) is the plugin's actual settings
+# key; it only orders the UI list — the plugin matches TargetName case-INsensitively
+# against the node's binary/app-name/node-name (astrcmpi), so "Discord"/"Firefox" hit
+# regardless of case. Verified: Firefox capture confirmed on ARM64 Linux (PR #179).
 DISCORD_AUDIO_UUID = "0085d4f3-bf43-4aef-9fe4-28cfd3270c7d"
 DISCORD_AUDIO_VARIANTS = {
     "darwin": ("sck_audio_capture",
@@ -49,22 +58,28 @@ DISCORD_AUDIO_VARIANTS = {
 }
 
 
-def discord_variant(platform):
-    """(source id, settings) for this platform, or None when unknown."""
+def discord_variant(platform, web=False, browser="Firefox"):
+    """(source id, settings) for this platform, or None when unknown.
+    On Linux with web=True, target the browser running Discord-web instead of a
+    native Discord process — same pipewire source type, only TargetName differs,
+    so the panel/Companion mute & volume bindings stay intact."""
     if platform.startswith("win"):
         return DISCORD_AUDIO_VARIANTS["win"]
     if platform == "darwin":
         return DISCORD_AUDIO_VARIANTS["darwin"]
     if platform.startswith("linux"):
+        if web:
+            return ("pipewire_audio_application_capture",
+                    {"TargetName": browser, "MatchPriorty": 0})
         return DISCORD_AUDIO_VARIANTS["linux"]
     return None
 
 
-def localize_discord_audio(collection, platform):
+def localize_discord_audio(collection, platform, web=False, browser="Firefox"):
     """Swap the Discord audio source to this platform's variant, in place.
     Returns the new source id, or None (source absent / unknown platform —
     never fails, same contract as the missing-graphics warnings)."""
-    variant = discord_variant(platform)
+    variant = discord_variant(platform, web=web, browser=browser)
     if variant is None:
         return None
     src_id, settings = variant
@@ -197,7 +212,13 @@ def main():
                   "until then).")
 
     localized = replace_tokens(collection, mapping)
-    swapped = localize_discord_audio(localized, sys.platform)
+    web = discord_web.use_web(sys.platform, os.environ)
+    # Only probe for a running browser when the web variant is actually in play —
+    # detect_running_browser() spawns pgrep subprocesses we'd otherwise discard on
+    # every macOS/Windows/native-Linux setup.
+    browser = discord_web.resolve_browser(
+        os.environ, discord_web.detect_running_browser() if web else None)
+    swapped = localize_discord_audio(localized, sys.platform, web=web, browser=browser)
     apply_collection_name(localized, a.collection)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as fh:
@@ -215,6 +236,9 @@ def main():
         print(f"  OBS collection name: {a.collection}")
     if swapped:
         print(f"  Discord audio source: {swapped}")
+        if web:
+            print(f"  Discord interview audio: capturing browser '{browser}' "
+                  "(Discord-web) — open it and join the voice channel manually")
     elif discord_variant(sys.platform) is None:
         print(f"  NOTE: no Discord audio variant for {sys.platform} — macOS form kept.")
     else:

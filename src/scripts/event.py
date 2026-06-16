@@ -197,11 +197,18 @@ def required_media(gm, rows):
     return [f"{k}.mp4" for k in keys]
 
 
-def classify_app(app, running):
-    """OBS is broadcast-critical (FAIL); Discord only carries interview audio."""
+def classify_app(app, running, web=False):
+    """OBS is broadcast-critical (FAIL); Discord only carries interview audio.
+    On a web-variant host (no native Discord — e.g. ARM64 Linux) interview audio
+    comes from Discord-web in a browser, so report an informational note instead
+    of a 'Discord not running' warning."""
     if app == "obs":
         return (Result(PASS, "OBS", "running") if running else
                 Result(FAIL, "OBS", "not running — launch OBS (or `racecast event start`)"))
+    if app == "discord" and web:
+        return Result(INFO, "Discord",
+                      "interview audio via Discord-web in the browser — open it "
+                      "and join the voice channel manually")
     return (Result(PASS, "Discord", "running") if running else
             Result(WARN, "Discord", "not running — interview audio unavailable; launch Discord"))
 
