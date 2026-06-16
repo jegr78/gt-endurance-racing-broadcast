@@ -1929,9 +1929,11 @@ def should_probe_obs(last_ts, running, now, interval):
 class Relay:
     def __init__(self, source, ports, logdir, cookies=None, pov_source=None,
                  pov_port=None, start_stint=1, cookie_dir=None,
-                 qual_source=None, mode="race", discord_webhook_url=None):
+                 qual_source=None, mode="race", discord_webhook_url=None,
+                 sheet_id=None):
         self.race_source = source
         self.qual_source = qual_source
+        self.sheet_id = sheet_id          # league identity, surfaced in /status for takeover
         # Active schedule is race by default; qualifying only when a qual source
         # exists. self.source (property below) returns whichever is active, so
         # every existing call site (status/next/reload/set_stint/handler) becomes
@@ -2081,6 +2083,11 @@ class Relay:
                           "down": self.pov.dropped and not self.pov.paused,
                           "source": self.pov_source.health() if self.pov_source else None}
         out["obs"] = {"reachable": self.obs_reachable, "note": self.obs_note}
+        # On-air feed/stint + league identity for producer takeover (#takeover):
+        # the on-air feed is the lower-index one (live_feed), its stint = idx+1.
+        live = self.live_feed()
+        out["live"] = {"feed": live, "stint": self.feeds[live].idx + 1, "mode": self.mode}
+        out["league"] = {"sheet_id": self.sheet_id}
         self._refresh_health(now)            # keep the displayed level fresh (2 s poll)
         out["health"] = {"level": self.health_level, "reasons": self.health_reasons,
                          "since_s": round(now - self.health_since, 1)}
@@ -2846,7 +2853,8 @@ def main():
                   cookie_dir=(os.path.dirname(cookies) if cookies else runtime),
                   qual_source=qual_source,
                   mode=("qualifying" if args.qualifying else "race"),
-                  discord_webhook_url=os.environ.get("RACECAST_DISCORD_WEBHOOK_URL"))
+                  discord_webhook_url=os.environ.get("RACECAST_DISCORD_WEBHOOK_URL"),
+                  sheet_id=args.sheet_id)
     relay.start()
     relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
     # Launching straight into qualifying mode: seed the HUD Streamer/Stint from

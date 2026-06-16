@@ -11,6 +11,7 @@
   racecast event start --stint N             # takeover: stint N is on air now — the relay starts there
   racecast event start --qualifying          # bring up in qualifying mode (Feed A serves the Qualifying tab)
   racecast event start --force               # skip the pre-flight gate (start despite missing SHEET_ID/graphics)
+  racecast event takeover <A-ip> [--stint N]  # take over from another producer: read A's on-air stint+league, pull chat, bring up at that stint
   racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
   racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD incl. timer)
   racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
@@ -656,7 +657,7 @@ EXTRA_VERBS = {
 # Internal verbs: routed but never advertised (frozen feed children use run-feed).
 HIDDEN_VERBS = {"streams": ("run-feed",)}
 ONESHOTS = ("preflight", "speedtest", "cookies", "graphics", "media", "setup", "install-tools", "install-apps", "obs-browser", "update")
-EVENT_VERBS = ("status", "start", "stop")
+EVENT_VERBS = ("status", "start", "stop", "takeover")
 TAILSCALE_VERBS = ("up", "down", "status")
 OBS_VERBS = ("refresh", "collection")
 SHEET_VERBS = ("url", "open")           # active league's Google Sheet (from SHEET_ID)
@@ -972,6 +973,15 @@ def _tailscale_ip():
         return tailscale.detect_tailscale_ip()
     except Exception:
         return None
+
+
+def _tailscale_peers():
+    """Tailnet peers for the Control Center takeover dropdown ([] best-effort)."""
+    try:
+        import tailscale
+        return tailscale.tailscale_peers()
+    except Exception:
+        return []
 
 def _relay_http_ok():
     """True iff the relay control server answers on localhost."""
@@ -1693,6 +1703,36 @@ def event_status(rest):
     raise SystemExit(pf.report(_event_sections(ev, pf), color))
 
 
+def takeover_plan(status, stint_override=None, qualifying_flag=False):
+    """Derive event-start params for a producer takeover from A's /status (a dict,
+    or None when A was unreachable) plus operator overrides. Pure. Returns
+    {stint, qualifying, source}: --stint always wins (source 'override'); else A's
+    live block (source 'relay'); else — no override and A unreachable / an older
+    relay without a live block — stint is None (source 'sheet') and the CLI asks
+    for --stint rather than silently starting at stint 1 mid-race. --qualifying
+    forces qualifying regardless of A."""
+    if stint_override is not None:
+        return {"stint": stint_override, "qualifying": bool(qualifying_flag),
+                "source": "override"}
+    live = status.get("live") if isinstance(status, dict) else None
+    if isinstance(live, dict) and live.get("stint") is not None:
+        return {"stint": live["stint"],
+                "qualifying": bool(qualifying_flag) or live.get("mode") == "qualifying",
+                "source": "relay"}
+    return {"stint": None, "qualifying": bool(qualifying_flag), "source": "sheet"}
+
+
+def league_guard(a_sheet_id, b_sheet_id, force):
+    """Block a takeover into the wrong league: a message when both league ids
+    (SHEET_ID) are known, differ, and not force; else None (match, forced, or one
+    id unknown -> cannot verify, allow). Pure."""
+    if force or not a_sheet_id or not b_sheet_id or a_sheet_id == b_sheet_id:
+        return None
+    return (f"league mismatch: producer A is league {a_sheet_id}, but your active "
+            f"profile is league {b_sheet_id} — wrong profile? re-run with --force "
+            f"to take over anyway")
+
+
 def _event_gate_results(ev, pf):
     """The static preconditions `racecast event start` cannot fix by launching
     services: the active league's .env/SHEET_ID, the broadcast graphics/media,
@@ -1945,6 +1985,77 @@ def event_stop(rest):
     print("OBS/Discord/Tailscale keep running — quit them manually if needed.")
 
 
+def _takeover_port(args):
+    """--port N from a takeover arg list, default RELAY_PORT."""
+    if "--port" in args:
+        i = args.index("--port")
+        if i + 1 >= len(args):
+            sys.exit("racecast: --port requires an integer value")
+        try:
+            return int(args[i + 1])
+        except ValueError:
+            sys.exit(f"racecast: --port must be an integer, got {args[i + 1]!r}")
+    return RELAY_PORT
+
+
+def event_takeover(rest):
+    """`racecast event takeover <A-ip> [--stint N] [--qualifying] [--port N] [--force]`
+    — take the broadcast over from another producer (A) in one step: read A's
+    on-air stint + league from /status, refuse a wrong-league takeover (unless
+    --force), warn if the timer will not carry, pull A's chat, then bring the
+    stack up at that stint via `event start`. The broadcast-output switch (stream
+    key) stays a crew procedure."""
+    if not rest or rest[0].startswith("-"):
+        sys.exit("usage: racecast event takeover <A-tailscale-ip> [--stint N] "
+                 "[--qualifying] [--port N] [--force]")
+    host, args = rest[0], rest[1:]
+    force = "--force" in args
+    qualifying_flag = "--qualifying" in args
+    port = _takeover_port(args)
+    stint_tokens = _stint_args(args)        # validates 1-based int (sys.exit on bad)
+    stint_override = int(stint_tokens[1]) if stint_tokens else None
+
+    status = None
+    try:
+        fetched = _relay_fetch_json(f"http://{host}:{port}/status")
+        status = fetched if isinstance(fetched, dict) else None
+    except Exception:
+        status = None
+
+    a_sheet = (status.get("league") or {}).get("sheet_id") if status else None
+    block = league_guard(a_sheet, os.environ.get("RACECAST_SHEET_ID"), force)
+    if block:
+        sys.exit(f"racecast: {block}")
+    if status is None:
+        print(f"note: producer A at {host}:{port} not reachable — relying on "
+              f"--stint and the shared sheet.")
+    elif not a_sheet:
+        print("note: could not verify A's league (older relay?) — proceeding.")
+
+    if not os.environ.get("RACECAST_SHEET_PUSH_URL"):
+        print("WARNING: no SHEET_PUSH_URL in the active profile — the race timer "
+              "will NOT carry over from producer A. Set it for handover-safe timing.")
+
+    plan = takeover_plan(status, stint_override, qualifying_flag)
+    if plan["stint"] is None:
+        sys.exit("racecast: producer A is unreachable and no --stint was given — "
+                 "read the on-air stint off A's panel and re-run with --stint N.")
+
+    try:                                    # best-effort: a chat failure must not abort
+        chat_cmd(["pull", host, "--port", str(port)])
+    except SystemExit:
+        print("note: chat pull failed — continuing takeover.")
+
+    print(f"Taking over at stint {plan['stint']} (from A's "
+          f"{plan['source']})" + (" — qualifying mode" if plan["qualifying"] else "") + ".")
+    print("When ready, switch the broadcast output (stream key) to this machine "
+          "per your crew procedure.\n")
+    es_args = ["--stint", str(plan["stint"])]
+    if plan["qualifying"]:
+        es_args.append("--qualifying")
+    event_start(es_args)                    # pre-flight gate + bring-up; exits with readiness code
+
+
 def _relay_is_alive():
     """True when the relay daemon is up (its PID file names a live process)."""
     pid = sv.read_pid(_relay_pid_path())
@@ -2031,7 +2142,7 @@ DISPATCH = {
     ("streams", "restart"): streams_restart, ("streams", "status"): streams_status,
     ("streams", "logs"): streams_logs, ("streams", "run-feed"): streams_run_feed,
     ("event", "status"): event_status, ("event", "start"): event_start,
-    ("event", "stop"): event_stop,
+    ("event", "stop"): event_stop, ("event", "takeover"): event_takeover,
     ("tailscale", "up"): tailscale_up_cmd, ("tailscale", "down"): tailscale_down_cmd,
     ("tailscale", "status"): tailscale_status_cmd,
     ("obs", "refresh"): obs_refresh_cmd, ("obs", "collection"): obs_collection_cmd,
@@ -3798,6 +3909,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "favicon_path": resource_path("assets/app-icon.svg"),
         "status": ui_status_payload,
         "relay_live": relay_live_data,
+        "tailscale_peers": _tailscale_peers,
         "obs_ws": obs_ws_link_data,
         "obs_collection": obs_collection_data,
         "update_check": update_check_cached,

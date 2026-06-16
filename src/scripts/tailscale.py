@@ -85,6 +85,48 @@ def detect_tailscale_ip():
     return tailscale_backend()[2]
 
 
+def parse_tailscale_peers(output):
+    """Tailnet peers from `tailscale status --json`: a list of
+    {hostname, ip, online, os}, one per peer that has a CGNAT IPv4 (peers without
+    one are skipped — nothing to connect to). `[]` on unparseable/empty output.
+    Pure → unit-tested. Used to offer a device dropdown for the takeover IP."""
+    try:
+        data = json.loads(output)
+    except ValueError:
+        return []
+    peers_map = data.get("Peer") if isinstance(data, dict) else None
+    if not isinstance(peers_map, dict):
+        return []
+    peers = []
+    for peer in peers_map.values():
+        if not isinstance(peer, dict):
+            continue
+        ip = next((str(x) for x in (peer.get("TailscaleIPs") or [])
+                   if _in_cgnat(str(x))), None)
+        if not ip:
+            continue
+        peers.append({"hostname": peer.get("HostName") or "", "ip": ip,
+                      "online": bool(peer.get("Online")), "os": peer.get("OS") or ""})
+    return peers
+
+
+def tailscale_peers(timeout=3):
+    """Live tailnet peer list via the CLI (same discovery as tailscale_backend),
+    or [] on any failure (CLI missing / tailnet down)."""
+    for binary in _TAILSCALE_BINS:
+        try:
+            out = subprocess.run([binary, "status", "--json"], capture_output=True,
+                                 text=True, errors="replace", timeout=timeout,
+                                 env=services.external_tool_env(),
+                                 **services.no_window_kwargs())
+        except (OSError, subprocess.SubprocessError):
+            continue
+        peers = parse_tailscale_peers(out.stdout)
+        if peers or out.returncode == 0:
+            return peers
+    return []
+
+
 def plan_tailscale_up(state):
     """Decision for an `up` request given a BackendState:
     connected   : Running — nothing to do.

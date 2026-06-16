@@ -341,6 +341,13 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"relay stats failed: {exc}"},
                                       code=500)
+            if path == "/api/tailscale-peers":
+                try:
+                    return self._json({"ok": True, "peers": ctx["tailscale_peers"]()})
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"tailscale peers failed: {exc}"},
+                                      code=500)
             if path == "/api/obs-ws":
                 try:
                     return self._json(ctx["obs_ws"]())
