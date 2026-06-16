@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.7.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.6.0...v0.7.0) (2026-06-16)
+
+
+### Features
+
+* **event:** one-command producer takeover ([#189](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/189)) ([594f5cb](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/594f5cb4c38a0e723493cd17f759e1ee52a49ef1))
+* **event:** pre-flight gate before event start bring-up ([#185](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/185)) ([32e8431](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/32e8431fcd4c88e1f0047ef1b4cb2395e6bda68d))
+* **panel:** add a "D" favicon to the director panel ([#194](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/194)) ([8527f2e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/8527f2e311dcaf549bd520c5ee3e185a3ab663fd))
+* **panel:** live preview multiview in the director panel ([#190](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/190)) ([0e3bed4](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/0e3bed42a6e9323f9b7644ec77862589ce4e069d))
+* **relay:** [@here-ping](https://github.com/here-ping) the crew on every Discord health change ([#196](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/196)) ([af37e2b](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/af37e2bb321ed4dbf9668b318bd68112baedddc0))
+* **relay:** feed-down alert when a live feed drops unexpectedly ([#186](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/186)) ([ab05810](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/ab058108fce2c207668dac1ee46373b4bb6a148b))
+* **relay:** live health heartbeat with Discord alerts ([#188](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/188)) ([0011833](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/0011833362074eb9645aa9502922e360cafe44f9))
+
+
+### Bug Fixes
+
+* **relay:** send a User-Agent so Discord health alerts are not 403'd ([#195](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/195)) ([e3fbed5](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e3fbed579bee44fc40711c2a66e3521bd5dd4865))
+
 ## [0.6.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.5.0...v0.6.0) (2026-06-16)
 
 
