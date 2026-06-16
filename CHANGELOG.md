@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.5.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.4.0...v0.5.0) (2026-06-16)
+
+
+### Features
+
+* bandwidth speed test option (CLI + Control Center) — closes [#131](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/131) ([#160](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/160)) ([1290787](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/1290787a0feeb881dab1d91f2b3d9367de6420d6))
+* **companion:** control the companion-pi systemd service on native Linux ([#174](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/174)) ([bd3a843](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/bd3a8430ba79e654141d28f1e9d64ae01726a4a5))
+* **install-tools:** sudo apt + auto-install deno on Linux ([#163](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/163)) ([4916402](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/491640224bc306cd82a024a804d1c8a09fae1af1))
+* **obs-browser:** build & install the Browser Source plugin from source on Linux ([#177](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/177)) ([6d40604](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/6d40604114901e72ae5cce96b25cbab41849ed82))
+* **obs:** Discord-web browser audio fallback for Linux without native Discord ([#179](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/179)) ([3837f1d](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/3837f1d339c85208c3ac0a4b9eb03dc8bcf93c88))
+* **overlay:** label splitscreen feeds CURRENT/NEXT ([#129](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/129)) ([#156](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/156)) ([615b9b5](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/615b9b51935c84d2cf049e9a1696edde91225b9c))
+* **overlay:** POV box name + relay-driven PiP toggle ([#158](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/158)) ([a2e46ab](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/a2e46ab4fd3d4af84e00a5a5aa17dce88b270880))
+* **overlay:** standard properties for all builder slots ([#176](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/176)) ([1def62b](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/1def62b486e7ed9c4d2617517e0361f7af743558))
+* **release:** build ARM64 Linux binaries ([#161](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/161)) ([fe2b828](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/fe2b828c081ef7dabf5ccef59f3ffc082f12ff77))
+
+
+### Bug Fixes
+
+* **frozen:** sanitize subprocess env for external tools (LD_LIBRARY_PATH leak) ([#165](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/165)) ([497c3a2](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/497c3a2431d0ba746807b228f11f7b3af8246fa2))
+* **frozen:** strip all _MEIPASS dirs from the external-tool spawn path ([#166](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/166)) ([1252e78](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/1252e78b19e4dcbe49944246e422bd804cc77673))
+* **install-apps:** clean env for vendor scripts + skip Discord on ARM64 Linux ([#168](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/168)) ([01d616e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/01d616e569d2c58b919218a78809f2206aee5f86))
+* **install-apps:** send a real User-Agent for vendor downloads (Discord 403) ([#167](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/167)) ([8e7eaeb](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/8e7eaebfa91dfd96294fe06a411cd62772974df0))
+* **panel:** style schedule + qualifying streamer dropdowns like the HUD section ([#154](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/154)) ([444d235](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/444d2356bd6c149adaf46b698d841e2bc8875954)), closes [#152](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/152)
+* **preflight:** don't blame Sheet sharing for a network timeout ([#169](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/169)) ([0f88f2f](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/0f88f2ff83d42bf2f240a16e5203ad1d06d044d8))
+* **racecast:** consistent returns in companion_start/stop (py/mixed-returns) ([#178](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/178)) ([f36ca2e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/f36ca2e1c1a00f23adc111851456d2ed2ccf5ef7))
+* **tailscale:** correct Linux UX — no GUI app, first login is `sudo tailscale up` ([#170](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/170)) ([e1c66f1](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e1c66f1bf2eefd7b5fa38f15591214385a8ce066))
+* **tailscale:** Linux operator hint + document the Linux first-login ([#171](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/171)) ([d3cdb06](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/d3cdb06e7af8007734a2891f3d3c5a4a592e2b36))
+* **ui:** refresh asset gallery on profile switch/import ([#164](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/164)) ([6c23129](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/6c2312945aec75f238efd328c8b3819208d09b39)), closes [#162](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/162)
+
 ## [0.4.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.3.0...v0.4.0) (2026-06-14)
 
 
