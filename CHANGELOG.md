@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.5.0...v0.6.0) (2026-06-16)
+
+
+### Features
+
+* **profile:** open the league Google Sheet from CLI + Control Center ([#183](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/183)) ([8153469](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/8153469df21046b363037d609faa4029c9636f62))
+
+
+### Bug Fixes
+
+* **companion:** scrub _MEIPASS off LD_LIBRARY_PATH for bare systemctl in frozen binary ([#180](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/180)) ([9b274cc](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/9b274ccf9fb5a17239c944658eeff7831e01e7b5))
+
 ## [0.5.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.4.0...v0.5.0) (2026-06-16)
 
 
