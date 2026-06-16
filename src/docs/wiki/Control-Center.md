@@ -162,8 +162,8 @@ Machine-wide (not league) configuration:
 ![Control Center — Logs](images/cc-logs.png)
 
 Live tail of the relay, Companion and static-stream logs — pick a source from the
-dropdown. The example above shows the relay reporting it couldn't reach its Google
-Sheet (a misconfigured-sheet state).
+dropdown. The example above shows a healthy relay startup: the schedule loaded from
+the Google Sheet and both feeds bound, with the HUD and Director-panel URLs listed.
 
 > **CLI alternative:** `racecast relay logs -f` (and `companion` / `streams`).
 
