@@ -964,7 +964,25 @@ def _cockpit_token(args):
 
 
 def _cockpit_pull_versions(args):
-    sys.exit("cockpit pull-versions: implemented in a later task")
+    """`racecast cockpit pull-versions <ip> [--port N]` — fetch producer A's
+    cockpit-versions over the tailnet and adopt them locally (takeover). Mirrors
+    `chat pull`: tailnet trust, best-effort."""
+    if not args or args[0].startswith("-"):
+        sys.exit("usage: racecast cockpit pull-versions <A-tailscale-ip> [--port N]")
+    host = args[0]
+    port = _takeover_port(args[1:])
+    try:
+        payload = _relay_fetch_json(f"http://{host}:{port}/cockpit/versions")
+    except Exception as exc:
+        sys.exit(f"racecast: could not fetch cockpit versions from {host}:{port} "
+                 f"({type(exc).__name__})")
+    if not isinstance(payload, dict):
+        sys.exit(f"racecast: bad cockpit versions response from {host}:{port}")
+    try:
+        count = cpadm.apply_pulled(_cockpit_versions_path(), payload)
+    except ValueError as exc:
+        sys.exit(f"racecast: bad cockpit versions payload: {exc}")
+    print(f"pulled {count} cockpit version record(s) from {host}.")
 
 
 def cockpit_cmd(rest):
@@ -2198,6 +2216,11 @@ def event_takeover(rest):
         chat_cmd(["pull", host, "--port", str(port)])
     except SystemExit:
         print("note: chat pull failed — continuing takeover.")
+
+    try:                                    # best-effort: cockpit pull must not abort
+        cockpit_cmd(["pull-versions", host, "--port", str(port)])
+    except SystemExit:
+        print("note: cockpit-versions pull failed — continuing takeover.")
 
     print(f"Taking over at stint {plan['stint']} (from A's "
           f"{plan['source']})" + (" — qualifying mode" if plan["qualifying"] else "") + ".")

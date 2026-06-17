@@ -334,6 +334,18 @@ def t_cockpit_chat_requires_auth():
             srv.shutdown()
 
 
+def t_versions_endpoint_roundtrip():
+    with tempfile.TemporaryDirectory() as d:
+        vp = os.path.join(d, "cockpit-versions.json")
+        cad.write_versions(vp, {"alpha": 3})
+        srv, get, _post = _cockpit_client(versions_path=vp)
+        try:
+            code, _h, body = get("/cockpit/versions")
+            assert code == 200 and json.loads(body)["versions"] == {"alpha": 3}
+        finally:
+            srv.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

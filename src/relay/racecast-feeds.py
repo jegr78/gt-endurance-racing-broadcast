@@ -2679,6 +2679,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         if not chat_store:
                             return self._send({"error": "chat disabled"}, 404)
                         return self._send(chat_store.data())
+                    if p == ["cockpit", "versions"]:
+                        # Producer-only, tailnet-reachable (NOT funnelled): carries
+                        # only opaque version integers, like `chat pull`. No token.
+                        if not cockpit_versions_path:
+                            return self._send({"versions": {}})
+                        return self._send({"versions":
+                            cockpit_admin.load_versions(cockpit_versions_path)})
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["schedule", "data"]:
                     rows = relay.source.get_rows()
