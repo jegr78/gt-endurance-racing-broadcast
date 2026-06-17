@@ -2887,6 +2887,74 @@ def profile_env_write_data(entries):
     return _write_env_file(path, entries)
 
 
+def _cockpit_roster_safe():
+    """_cockpit_roster() that returns [] instead of raising when the relay is
+    down (the Control Center status poll must never 500)."""
+    try:
+        return _cockpit_roster()
+    except Exception:
+        return []
+
+
+def cockpit_status_data():
+    """Cockpit state for the Control Center: machine-local enabled flag, per-league
+    secret presence, and the per-commentator links. Reads on-disk truth so a
+    toggle reflects without a Control Center restart. {ok, ...}; never raises."""
+    try:
+        menv = {}
+        epath = _env_file()
+        if os.path.exists(epath):
+            with open(epath, encoding="utf-8") as fh:
+                menv = parse_env_text(fh.read())
+        enabled = menv.get("RACECAST_COCKPIT_ENABLED", "").strip().lower() in (
+            "1", "true", "yes", "on")
+        secret = ""
+        _active, ppath = _active_profile_env_strict()
+        if ppath and os.path.exists(ppath):
+            with open(ppath, encoding="utf-8") as fh:
+                secret = parse_env_text(fh.read()).get("COCKPIT_SECRET", "")
+        links = []
+        if secret:
+            host = _tailscale_ip() or ""
+            versions = cpadm.load_versions(_cockpit_versions_path())
+            for name in _cockpit_roster_safe():
+                key = cpa.streamer_key(name)
+                tok = cpa.mint_token(secret, key, cpadm.current_version(versions, key))
+                links.append({
+                    "name": name,
+                    "tailnet": f"http://{host}:{RELAY_PORT}/cockpit?t={tok}" if host else "",
+                    "funnel": f"https://<magicdns-host>/cockpit?t={tok}"})
+        return {"ok": True, "enabled": enabled, "has_secret": bool(secret), "links": links}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def cockpit_set_enabled_data(enabled):
+    """Toggle the machine-local master switch (+ generate a secret on first
+    enable), via the same path as the CLI. {ok} or {ok:false,error}."""
+    try:
+        cockpit_cmd(["enable" if enabled else "disable"])
+        return {"ok": True}
+    except SystemExit as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def cockpit_funnel_data(on):
+    try:
+        _cockpit_funnel(["on" if on else "off"])
+        return {"ok": True}
+    except SystemExit as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def cockpit_revoke_data(streamer):
+    try:
+        _cockpit_token(["revoke", streamer])
+        return {"ok": True}
+    except SystemExit as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 def _active_profile_overlay_path(page):
     """(active, abs path to overlay/<page>.css) for the active profile, or
     (None, None) when no profile resolves or `page` is not an overlay page.
@@ -4113,6 +4181,10 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "profile_new": profile_new_data,
         "profile_env_read": profile_env_entries_data,
         "profile_env_write": profile_env_write_data,
+        "cockpit_status": cockpit_status_data,
+        "cockpit_set_enabled": cockpit_set_enabled_data,
+        "cockpit_funnel": cockpit_funnel_data,
+        "cockpit_revoke": cockpit_revoke_data,
         "overlay_read": overlay_read_data,
         "overlay_write": overlay_write_data,
         "overlay_slots": overlay_slots_data,

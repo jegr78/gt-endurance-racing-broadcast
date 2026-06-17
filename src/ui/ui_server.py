@@ -432,6 +432,13 @@ def make_handler(ctx):
             if path == "/api/profile/logo":
                 p = ctx["profile_logo"]()
                 return self._serve_file(p) if p else self._not_found("no logo")
+            if path == "/api/cockpit/status":
+                try:
+                    return self._json(ctx["cockpit_status"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"cockpit status failed: {exc}"},
+                                      code=500)
             if path == "/api/overlay":
                 try:
                     page = (parse_qs(urlparse(self.path).query or "").get(
@@ -612,6 +619,27 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"could not write profile .env: {exc}"},
                                       code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/cockpit/enabled":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                result = ctx["cockpit_set_enabled"](bool(body.get("enabled")))
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/cockpit/funnel":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                result = ctx["cockpit_funnel"](bool(body.get("on")))
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/cockpit/revoke":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                result = ctx["cockpit_revoke"](body.get("streamer") or "")
                 return self._json(result, code=200 if result.get("ok") else 400)
             if path == "/api/overlay":
                 body = self._body_json()
