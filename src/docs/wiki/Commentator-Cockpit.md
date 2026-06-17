@@ -66,6 +66,33 @@ At <https://login.tailscale.com/admin>:
    Scope `target` as tightly as you like (a specific tag or device instead of
    `autogroup:member`).
 
+### Automate the tailnet setup — `racecast cockpit setup-funnel`
+
+Steps 1–2 can be done from the producer machine instead of clicking through the admin
+console, using a **Tailscale OAuth client**:
+
+1. Create an OAuth client at <https://login.tailscale.com/admin/settings/oauth> with
+   **write** access to **DNS** and the **Policy file (ACL)**.
+2. Put it in `.env`:
+   ```
+   RACECAST_TS_OAUTH_CLIENT_ID=...
+   RACECAST_TS_OAUTH_CLIENT_SECRET=...
+   ```
+3. Run it:
+   ```bash
+   racecast cockpit setup-funnel            # dry-run: shows what it would change
+   racecast cockpit setup-funnel --apply    # enable MagicDNS + add the funnel nodeAttr
+   ```
+
+`--apply` enables MagicDNS (a safe single preference) and appends the `funnel`
+nodeAttr to the policy. Because the API returns the policy as plain JSON, the write
+**reformats your ACL and drops HuJSON comments** — so it **backs up the current
+policy** to `runtime/ts-acl-backup-<ts>.json` first and uses an `If-Match` ETag to
+avoid clobbering a concurrent edit. **HTTPS Certificates** has no API; enable it once
+on the DNS page (the command reminds you). The OAuth secret can rewrite the tailnet
+policy — keep it in `.env` (gitignored), never commit it. Scope `--target` to a tag
+instead of the default `autogroup:member` if you want a tighter grant.
+
 Then, on the producer machine:
 
 ```bash

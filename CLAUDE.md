@@ -160,6 +160,7 @@ python3 src/racecast.py cockpit enable     # talent Commentator Cockpit: generat
 python3 src/racecast.py cockpit disable    # stop serving /cockpit on this machine
 python3 src/racecast.py cockpit links      # print per-commentator cockpit links (roster = the active schedule's streamers); --post puts them in crew chat
 python3 src/racecast.py cockpit funnel on|off  # public ingress for ONLY /cockpit via Tailscale Funnel (needs MagicDNS+HTTPS+funnel nodeAttr)
+python3 src/racecast.py cockpit setup-funnel    # automate the one-time tailnet prereqs (MagicDNS + funnel nodeAttr) via a Tailscale OAuth client; --apply to perform (dry-run default)
 python3 src/racecast.py cockpit token revoke <streamer>  # rotate one commentator's link (bumps their version)
 python3 src/racecast.py --version
 

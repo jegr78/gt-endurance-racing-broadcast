@@ -895,7 +895,8 @@ def chat_cmd(rest):
         return None
 
 
-COCKPIT_VERBS = ("enable", "disable", "funnel", "links", "token", "pull-versions")
+COCKPIT_VERBS = ("enable", "disable", "funnel", "setup-funnel", "links", "token",
+                 "pull-versions")
 
 
 def _cockpit_versions_path():
@@ -1088,6 +1089,8 @@ def cockpit_cmd(rest):
 
     if verb == "funnel":
         return _cockpit_funnel(args)
+    if verb == "setup-funnel":
+        return _cockpit_setup_funnel(args)
     if verb == "token":
         return _cockpit_token(args)
     if verb == "pull-versions":
@@ -2939,6 +2942,92 @@ def profile_env_write_data(entries):
     if not active:
         return {"ok": False, "error": "no active profile — create or select one first"}
     return _write_env_file(path, entries)
+
+
+def _machine_env_value(name):
+    """A machine .env value (real env wins, then the .env file). '' when unset."""
+    v = os.environ.get(name)
+    if v:
+        return v
+    path = _env_file()
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as fh:
+            return parse_env_text(fh.read()).get(name, "")
+    return ""
+
+
+def _ts_api_err(exc):
+    """Compact message for a Tailscale API failure, including the HTTP error body."""
+    import urllib.error
+    if isinstance(exc, urllib.error.HTTPError):
+        try:
+            detail = exc.read().decode("utf-8", "replace").strip()[:300]
+        except Exception:
+            detail = ""
+        return f"HTTP {exc.code} {detail}".strip()
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _cockpit_setup_funnel(args):
+    """`racecast cockpit setup-funnel [--apply] [--target T]` — automate the
+    one-time tailnet prerequisites via the Tailscale Admin API (OAuth client):
+    enable MagicDNS + add the 'funnel' nodeAttr. Dry-run unless --apply. HTTPS
+    certificate enablement has no API — we print the manual reminder."""
+    import funnel_setup as fset
+    cid = _machine_env_value("RACECAST_TS_OAUTH_CLIENT_ID")
+    csec = _machine_env_value("RACECAST_TS_OAUTH_CLIENT_SECRET")
+    if not cid or not csec:
+        sys.exit(
+            "racecast: no Tailscale OAuth client configured.\n"
+            "Create one at https://login.tailscale.com/admin/settings/oauth with "
+            "WRITE access to DNS and the Policy file (ACL), then set in .env:\n"
+            "  RACECAST_TS_OAUTH_CLIENT_ID=...\n  RACECAST_TS_OAUTH_CLIENT_SECRET=...")
+    apply = "--apply" in args
+    target = fset.DEFAULT_TARGET
+    if "--target" in args:
+        i = args.index("--target")
+        if i + 1 < len(args):
+            target = args[i + 1]
+    try:
+        token = fset.fetch_token(cid, csec)
+        prefs = fset.get_dns_prefs(token)
+        acl, etag = fset.get_acl(token)
+    except (OSError, ValueError, KeyError) as exc:
+        sys.exit(f"racecast: Tailscale API error: {_ts_api_err(exc)}")
+    plan = fset.setup_plan(prefs, acl)
+    if not plan:
+        print("Funnel prerequisites already satisfied: MagicDNS on, 'funnel' nodeAttr "
+              "present.\nReminder: also enable HTTPS Certificates (DNS page) — no API "
+              "for that.\nThen: racecast cockpit funnel on")
+        return None
+    print("Funnel setup — changes needed:")
+    for step in plan:
+        print(f"  - {step}")
+    if not apply:
+        print("\n(dry-run) re-run with --apply to perform these via the Tailscale API.")
+        print("Note: applying the nodeAttr rewrites the policy via the API, which "
+              "drops HuJSON comments — the current policy is backed up first.")
+        return None
+    try:
+        if not fset.magicdns_enabled(prefs):
+            fset.enable_magicdns(token)
+            print("  ✓ MagicDNS enabled")
+        if not fset.acl_has_funnel(acl):
+            backup = os.path.join(_runtime_base_dir(),
+                                  f"ts-acl-backup-{int(time.time())}.json")
+            with open(backup, "w", encoding="utf-8") as fh:
+                json.dump(acl, fh, indent=2)
+            new_acl, _changed = fset.add_funnel_nodeattr(acl, target=target)
+            fset.put_acl(token, new_acl, etag)
+            print(f"  ✓ 'funnel' nodeAttr added (target {target}); "
+                  f"previous policy saved to {backup}")
+    except (OSError, ValueError, KeyError) as exc:
+        sys.exit(f"racecast: Tailscale API write failed: {_ts_api_err(exc)}\n"
+                 "(MagicDNS may have applied; the policy was not changed if the ACL "
+                 "step failed. Re-run, or finish in the admin console.)")
+    print("\nDone. Reminder: enable HTTPS Certificates in the admin console (DNS "
+          "page) if not already.\nThen: racecast cockpit funnel on")
+    return None
 
 
 def _cockpit_funnel_auto_enabled():
