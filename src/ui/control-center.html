@@ -860,9 +860,13 @@
             turn the Funnel on below.</p>
         </section>
         <section>
-          <div class="viewhead"><h3>Public access (Tailscale Funnel)</h3></div>
+          <div class="viewhead"><h3>Public access (Tailscale Funnel)</h3>
+            <span class="spacer"></span>
+            <span id="cp-funnel-state" class="badge"><span class="dot"></span><span id="cp-funnel-state-txt">—</span></span></div>
           <button id="cp-funnel-on" onclick="cockpitFunnel(true)">Funnel ON (public)</button>
           <button id="cp-funnel-off" onclick="cockpitFunnel(false)">Funnel OFF</button>
+          <label class="cprow"><input type="checkbox" id="cp-funnel-auto" onchange="toggleFunnelAuto()">
+            Auto-enable on event start</label>
           <p class="sub">Exposes only <code>/cockpit</code> publicly. Needs MagicDNS + HTTPS
             + the <code>funnel</code> nodeAttr in the tailnet policy (one-time admin step).</p>
         </section>
@@ -2187,6 +2191,14 @@ async function loadCockpit() {
   if (!d.ok) { showProfileErr('cp-err', d.error || 'cockpit status failed'); return; }
   $('cp-err').hidden = true;
   $('cp-enabled').checked = !!d.enabled;
+  // Funnel state pill + controls
+  const pill = $('cp-funnel-state'), txt = $('cp-funnel-state-txt');
+  pill.classList.remove('on', 'warn', 'fail');
+  if (!d.funnel_capable) { pill.classList.add('warn'); txt.textContent = 'not authorized'; }
+  else if (d.funnel_on) { pill.classList.add('on'); txt.textContent = 'ON (public)'; }
+  else { txt.textContent = 'OFF'; }
+  $('cp-funnel-on').disabled = !d.funnel_capable;
+  $('cp-funnel-auto').checked = !!d.funnel_auto;
   const c = $('cp-links');
   c.textContent = '';
   if (!d.has_secret) {
@@ -2226,6 +2238,14 @@ async function cockpitFunnel(on) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({on})})).json();
   if (!r.ok) showProfileErr('cp-err', r.error || 'funnel command failed');
+  loadCockpit();   // refresh the ON/OFF state pill
+}
+async function toggleFunnelAuto() {
+  $('cp-err').hidden = true;
+  const r = await (await fetch('/api/cockpit/funnel-auto', {method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({auto: $('cp-funnel-auto').checked})})).json();
+  if (!r.ok) showProfileErr('cp-err', r.error || 'could not save the setting');
 }
 async function revokeCockpit(streamer) {
   if (!confirm('Revoke ' + streamer + "'s current link?")) return;

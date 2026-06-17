@@ -2174,6 +2174,15 @@ def event_start(rest):
     print("\nWaiting for the launched services to come up (max 60 s)…")
     for name, up in sorted(ev.wait_until_up(probes).items()):
         print(f"  {name}: {'up' if up else 'still not up — see the report below'}")
+    # Cockpit Funnel (opt-in via RACECAST_COCKPIT_FUNNEL): publish /cockpit
+    # publicly once the relay is up. Best-effort — a funnel failure (e.g. missing
+    # nodeAttr) must never abort the event; print one concise line.
+    if _cockpit_funnel_auto_enabled():
+        try:
+            _cockpit_funnel(["on"])
+        except SystemExit as exc:
+            msg = exc.code if isinstance(exc.code, str) else "failed"
+            print("cockpit funnel: skipped — " + msg.splitlines()[0])
     # OBS may not have been running when relay_start's refresh hook fired
     # (event start launches OBS AFTER the relay) — retry now that both sides
     # are up. Hash-gated: a no-op when the first hook already delivered.
@@ -2932,6 +2941,21 @@ def profile_env_write_data(entries):
     return _write_env_file(path, entries)
 
 
+def _cockpit_funnel_auto_enabled():
+    """Opt-in: bring the public cockpit Funnel up on `event start`. Requires the
+    machine flag RACECAST_COCKPIT_FUNNEL AND the cockpit actually usable (enabled
+    + a league secret) — reads on-disk truth via cockpit_status_data()."""
+    epath = _env_file()
+    if not os.path.exists(epath):
+        return False
+    with open(epath, encoding="utf-8") as fh:
+        flag = parse_env_text(fh.read()).get("RACECAST_COCKPIT_FUNNEL", "")
+    if flag.strip().lower() not in ("1", "true", "yes", "on"):
+        return False
+    st = cockpit_status_data()
+    return bool(st.get("ok") and st.get("enabled") and st.get("has_secret"))
+
+
 def _cockpit_roster_safe():
     """_cockpit_roster() that returns [] instead of raising when the relay is
     down (the Control Center status poll must never 500)."""
@@ -2953,6 +2977,8 @@ def cockpit_status_data():
                 menv = parse_env_text(fh.read())
         enabled = menv.get("RACECAST_COCKPIT_ENABLED", "").strip().lower() in (
             "1", "true", "yes", "on")
+        funnel_auto = menv.get("RACECAST_COCKPIT_FUNNEL", "").strip().lower() in (
+            "1", "true", "yes", "on")
         secret = ""
         _active, ppath = _active_profile_env_strict()
         if ppath and os.path.exists(ppath):
@@ -2971,7 +2997,27 @@ def cockpit_status_data():
                     "tailnet": f"http://{host}:{RELAY_PORT}/cockpit?t={tok}" if host else "",
                     "funnel": (f"https://{magic}/cockpit?t={tok}" if magic
                                else f"https://<magicdns-host>/cockpit?t={tok}")})
-        return {"ok": True, "enabled": enabled, "has_secret": bool(secret), "links": links}
+        funnel_on = funnel_capable = False
+        try:
+            import tailscale as ts
+            funnel_capable = ts.funnel_capable()
+            funnel_on = ts.funnel_on() if funnel_capable else False
+        except Exception:
+            pass  # best-effort: tailnet down / CLI missing -> report both False
+        return {"ok": True, "enabled": enabled, "has_secret": bool(secret),
+                "funnel_auto": funnel_auto, "funnel_capable": funnel_capable,
+                "funnel_on": funnel_on, "links": links}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def cockpit_set_funnel_auto_data(auto):
+    """Persist the opt-in 'bring the public Funnel up on event start' flag
+    (machine-local RACECAST_COCKPIT_FUNNEL). {ok}|{ok:false,error}."""
+    try:
+        res = _set_env_key(_env_file(), "RACECAST_COCKPIT_FUNNEL",
+                           "true" if auto else "false")
+        return {"ok": True} if res.get("ok") else res
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -4231,6 +4277,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "cockpit_status": cockpit_status_data,
         "cockpit_set_enabled": cockpit_set_enabled_data,
         "cockpit_funnel": cockpit_funnel_data,
+        "cockpit_set_funnel_auto": cockpit_set_funnel_auto_data,
         "cockpit_revoke": cockpit_revoke_data,
         "overlay_read": overlay_read_data,
         "overlay_write": overlay_write_data,

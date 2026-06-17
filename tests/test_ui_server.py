@@ -172,10 +172,13 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "profile_export": lambda name=None, assets=True: _export_stub(name, assets),
             "profile_import": lambda path, force=False: _import_stub(path, force),
             "cockpit_status": lambda: {"ok": True, "enabled": True, "has_secret": True,
+                                       "funnel_auto": False, "funnel_capable": True,
+                                       "funnel_on": False,
                                        "links": [{"name": "Alpha", "tailnet": "",
                                                   "funnel": "https://h/cockpit?t=x"}]},
             "cockpit_set_enabled": lambda enabled: {"ok": True, "_got": enabled},
             "cockpit_funnel": lambda on: {"ok": True, "_got": on},
+            "cockpit_set_funnel_auto": lambda auto: {"ok": True, "_got": auto},
             "cockpit_revoke": lambda streamer: {"ok": True, "_got": streamer},
             "speedtest": lambda: {"ok": True, "latest": None, "history": []}}
 

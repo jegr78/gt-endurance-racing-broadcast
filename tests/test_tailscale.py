@@ -102,6 +102,15 @@ def t_parse_peers_garbage_and_empty():
     assert ts.parse_tailscale_peers(json.dumps({"Peer": None})) == []
 
 
+def t_parse_funnel_serving():
+    on = ("https://rig.tail1234.ts.net (Funnel on)\n"
+          "|-- /cockpit proxy http://127.0.0.1:8088/cockpit\n")
+    assert ts.parse_funnel_serving(on, "/cockpit") is True
+    assert ts.parse_funnel_serving(on, "/panel") is False      # different path
+    assert ts.parse_funnel_serving("No serve config", "/cockpit") is False
+    assert ts.parse_funnel_serving("", "/cockpit") is False
+
+
 def t_parse_funnel_capable():
     cap = "https://tailscale.com/cap/funnel"
     assert ts.parse_funnel_capable(json.dumps({"Self": {"CapMap": {cap: []}}})) is True

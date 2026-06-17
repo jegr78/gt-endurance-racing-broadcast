@@ -634,6 +634,13 @@ def make_handler(ctx):
                                       code=400)
                 result = ctx["cockpit_funnel"](bool(body.get("on")))
                 return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/cockpit/funnel-auto":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                result = ctx["cockpit_set_funnel_auto"](bool(body.get("auto")))
+                return self._json(result, code=200 if result.get("ok") else 400)
             if path == "/api/cockpit/revoke":
                 body = self._body_json()
                 if body is None:
