@@ -2441,6 +2441,22 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Cache-Control", "no-store")
             self.end_headers(); self.wfile.write(body)
             return None
+        def _send_html_with_cookie(self, path, token):
+            """Serve the cockpit HTML and set the rc_cockpit auth cookie so all
+            sub-requests authenticate without the token staying in the URL bar."""
+            try:
+                with open(path, "rb") as fh: body = fh.read()
+            except OSError:
+                return self._send({"error": "cockpit page not found"}, 404)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Set-Cookie",
+                             f"{cockpit_auth.COOKIE_NAME}={token}; Path=/cockpit; "
+                             "HttpOnly; Secure; SameSite=Lax")
+            self.end_headers(); self.wfile.write(body)
+            return None
         def _send_jpeg(self, body):
             self.send_response(200)
             self.send_header("Content-Type", "image/jpeg")
@@ -2623,6 +2639,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p[:1] == ["cockpit"]:
                     if not self._cockpit_active():
                         return self._send({"error": "cockpit disabled"}, 404)
+                    if p == ["cockpit"]:
+                        me = self._cockpit_auth()
+                        if me is None:
+                            return None
+                        if not cockpit_page_path:
+                            return self._send({"error": "cockpit page not found"}, 404)
+                        return self._send_html_with_cookie(cockpit_page_path,
+                                                           self._cockpit_token())
                     if p == ["cockpit", "data"]:
                         me = self._cockpit_auth()
                         if me is None:
@@ -2633,6 +2657,22 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         tally.update({"me": me, "mode": relay.mode,
                                       "program_available": _obs_ws is not None})
                         return self._send(tally)
+                    if p == ["cockpit", "program"]:
+                        if self._cockpit_auth() is None:
+                            return None
+                        if _obs_ws is None:
+                            return self._send({"error": "obs unavailable"}, 503)
+                        data, note = _obs_ws.get_program_screenshot(width=640)
+                        if data is None:
+                            return self._send({"error": "preview unavailable",
+                                               "note": note}, 503)
+                        return self._send_jpeg(data)
+                    if p == ["cockpit", "timer"]:
+                        if self._cockpit_auth() is None:
+                            return None
+                        if not timer_store:
+                            return self._send({"error": "timer disabled"}, 404)
+                        return self._send(timer_store.data())
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["schedule", "data"]:
                     rows = relay.source.get_rows()

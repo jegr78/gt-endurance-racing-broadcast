@@ -260,6 +260,50 @@ def t_data_authed_tally():
         srv.shutdown()
 
 
+def t_page_sets_cookie_and_serves_html():
+    with tempfile.TemporaryDirectory() as d:
+        page = os.path.join(d, "cockpit.html")
+        with open(page, "w") as fh:
+            fh.write("<!doctype html><title>cockpit</title>")
+        srv, get, _post = _cockpit_client(page_path=page)
+        try:
+            tok = ca.mint_token("sek", "alpha-racing")
+            code, headers, body = get("/cockpit?t=" + tok)
+            assert code == 200, code
+            assert b"cockpit" in body
+            setc = headers.get("Set-Cookie", "")
+            assert "rc_cockpit=" in setc and "HttpOnly" in setc and "SameSite=Lax" in setc
+        finally:
+            srv.shutdown()
+
+
+def t_page_bad_token_401_no_cookie():
+    with tempfile.TemporaryDirectory() as d:
+        page = os.path.join(d, "cockpit.html")
+        open(page, "w").close()
+        srv, get, _post = _cockpit_client(page_path=page)
+        try:
+            code, headers, _b = get("/cockpit?t=bogus")
+            assert code == 401, code
+            assert "rc_cockpit=" not in (headers.get("Set-Cookie") or "")
+        finally:
+            srv.shutdown()
+
+
+def t_timer_authed():
+    class _Timer:
+        def data(self):
+            return {"running": False, "remaining": "1:00:00"}
+    srv, get, _post = _cockpit_client(timer_store=_Timer())
+    try:
+        tok = ca.mint_token("sek", "alpha-racing")
+        code, _h, body = get("/cockpit/timer", cookie="rc_cockpit=" + tok)
+        assert code == 200, code
+        assert json.loads(body)["remaining"] == "1:00:00"
+    finally:
+        srv.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
