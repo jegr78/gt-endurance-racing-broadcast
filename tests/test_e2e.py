@@ -20,6 +20,31 @@ def t_free_port_varies():
     assert e.free_port() != e.free_port() or True  # non-flaky: just exercise it
 
 
+def t_http_request_returns_status_even_on_4xx():
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            if self.path == "/ok":
+                self.send_response(200); self.send_header("X-T", "1"); self.end_headers()
+                self.wfile.write(b"hello")
+            else:
+                self.send_response(401); self.end_headers(); self.wfile.write(b"no")
+
+    srv = ThreadingHTTPServer(("127.0.0.1", e.free_port()), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        st, body, hdrs = e.http_request(base + "/ok")
+        assert st == 200 and body == b"hello" and hdrs.get("X-T") == "1", (st, body)
+        st, body, _ = e.http_request(base + "/nope")   # must NOT raise on 401
+        assert st == 401, st
+    finally:
+        srv.shutdown()
+
+
 def t_run_checks_aggregates_and_exits():
     def ok(_ctx):  return e.CheckResult("ok", "pass", "")
     def bad(_ctx): return e.CheckResult("bad", "fail", "boom")

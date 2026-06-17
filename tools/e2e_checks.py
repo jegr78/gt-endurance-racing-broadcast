@@ -7,8 +7,23 @@ import collections
 import csv as _csv
 import io as _io
 import socket
+import urllib.error
+import urllib.request
 
 CheckResult = collections.namedtuple("CheckResult", "name status message")
+
+
+def http_request(url, method="GET", headers=None, data=None, timeout=10):
+    """GET/POST returning (status, body_bytes, headers_dict) WITHOUT raising on
+    4xx/5xx (urllib raises HTTPError there; we read it as a normal response so
+    auth-gating checks can assert 401/404)."""
+    req = urllib.request.Request(url, method=method, data=data,
+                                 headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 loopback
+            return resp.status, resp.read(), dict(resp.headers)
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read(), dict(exc.headers or {})
 # status in {"pass", "fail", "skip"}
 
 
