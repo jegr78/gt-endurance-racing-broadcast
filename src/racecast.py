@@ -929,7 +929,23 @@ def _post_chat_message(text):
 
 
 def _cockpit_funnel(args):
-    sys.exit("cockpit funnel: implemented in a later task")
+    """`racecast cockpit funnel on|off` — public ingress for ONLY /cockpit via
+    Tailscale Funnel. Requires MagicDNS + HTTPS + the 'funnel' nodeAttr (one-time
+    tailnet-admin step); funnel() surfaces the verbatim error if missing."""
+    import tailscale as ts
+    if not args or args[0] not in ("on", "off"):
+        sys.exit("usage: racecast cockpit funnel {on|off}")
+    enable = args[0] == "on"
+    binary, _state, _ip = ts.tailscale_backend()
+    if not binary:
+        sys.exit("racecast: Tailscale CLI not found / backend not running.")
+    ok, detail = ts.funnel(binary, path="/cockpit", target_port=RELAY_PORT,
+                           enable=enable)
+    if not ok:
+        sys.exit(f"racecast: funnel {'on' if enable else 'off'} failed: {detail}\n"
+                 "Hint: enable MagicDNS + HTTPS and add the 'funnel' nodeAttr in the "
+                 "tailnet policy (one-time admin step).")
+    print(f"cockpit funnel {'enabled' if enable else 'disabled'}. {detail}".strip())
 
 
 def _cockpit_token(args):
