@@ -83,6 +83,19 @@ def t_verify_token_version_check():
     assert ca.verify_token(SECRET, tok_v2, {"alpha": 2}) == "alpha"
 
 
+def t_safe_cookie_token_allowlist():
+    # A real minted token passes through unchanged.
+    tok = ca.mint_token(SECRET, "alpha-racing", version=2)
+    assert ca.safe_cookie_token(tok) == tok
+    # CR/LF (response splitting), ';' (cookie attribute injection), spaces and the
+    # empty/None inputs all collapse to "" so nothing unsafe reaches Set-Cookie.
+    assert ca.safe_cookie_token("a.1.deadbeef\r\nSet-Cookie: evil=1") == ""
+    assert ca.safe_cookie_token("a.1.x; HttpOnly=no") == ""
+    assert ca.safe_cookie_token("a b") == ""
+    assert ca.safe_cookie_token("") == ""
+    assert ca.safe_cookie_token(None) == ""
+
+
 def t_rate_limiter_fixed_window():
     rl = ca.RateLimiter(limit=2, window_s=60)
     assert rl.allow("ip", now=0) is True

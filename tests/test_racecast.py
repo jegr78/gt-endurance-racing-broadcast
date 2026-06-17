@@ -1651,7 +1651,7 @@ def t_set_env_key_preserves_other_keys():
         assert got["COCKPIT_SECRET"] == "deadbeef"    # added
         assert "# header comment" in text             # comments preserved
         # updating an existing key keeps the others too
-        res = m._set_env_key(p, "SHEET_ID", "newid")
+        m._set_env_key(p, "SHEET_ID", "newid")
         with open(p, encoding="utf-8") as fh:
             got = m.parse_env_text(fh.read())
         assert got["SHEET_ID"] == "newid" and got["NAME"] == "Demo"

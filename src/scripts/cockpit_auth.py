@@ -19,6 +19,9 @@ from http.cookies import SimpleCookie
 
 COOKIE_NAME = "rc_cockpit"
 _KEY_RE = re.compile(r"[a-z0-9-]+")
+# A minted token is "<streamer_key>.<version>.<sig>" — streamer_key is [a-z0-9-],
+# version is digits, sig is hex — so the whole token can only ever be [A-Za-z0-9._-].
+_TOKEN_RE = re.compile(r"[A-Za-z0-9._-]+")
 
 
 def streamer_key(s):
@@ -70,6 +73,16 @@ def secret_matches(presented, secret):
     secret. Gates the producer-only /cockpit/versions takeover pull (#191), which
     is reachable via Funnel and therefore must authenticate."""
     return hmac.compare_digest(presented or "", secret or "")
+
+
+def safe_cookie_token(token):
+    """Return *token* iff it is structurally a cookie-safe token string — only the
+    characters a minted token can contain ([A-Za-z0-9._-]) — else "". A barrier
+    against HTTP response splitting / cookie injection (CWE-113/CWE-20): the value
+    written to the Set-Cookie header is never raw request input, even though it has
+    already passed verify_token(). The allowlist excludes CR/LF, ';', whitespace and
+    every other header-control character. Pure."""
+    return token if token and _TOKEN_RE.fullmatch(token) else ""
 
 
 def parse_cookie_token(cookie_header):

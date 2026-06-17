@@ -977,6 +977,7 @@ def _cockpit_funnel(args):
                  "Hint: enable MagicDNS + HTTPS and add the 'funnel' nodeAttr in the "
                  "tailnet policy (one-time admin step).")
     print(f"cockpit funnel {'enabled' if enable else 'disabled'}. {detail}".strip())
+    return None
 
 
 def _cockpit_token(args):
@@ -992,6 +993,7 @@ def _cockpit_token(args):
     new_ver = cpadm.bump_version(_cockpit_versions_path(), key)
     print(f"revoked '{args[1]}' (key {key}) -> version {new_ver}. "
           "Re-issue with 'racecast cockpit links'.")
+    return None
 
 
 def _cockpit_pull_versions(args):
@@ -1022,6 +1024,7 @@ def _cockpit_pull_versions(args):
     except ValueError as exc:
         sys.exit(f"racecast: bad cockpit versions payload: {exc}")
     print(f"pulled {count} cockpit version record(s) from {host}.")
+    return None
 
 
 def cockpit_cmd(rest):
