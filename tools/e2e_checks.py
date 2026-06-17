@@ -6,6 +6,7 @@ a relay; the heavy end-to-end run lives in tools/e2e.py."""
 import collections
 import csv as _csv
 import io as _io
+import json as _json
 import socket
 import urllib.error
 import urllib.request
@@ -94,8 +95,6 @@ def free_port():
 # ---------------------------------------------------------------------------
 # Check context + individual HTTP check callables
 # ---------------------------------------------------------------------------
-import json as _json  # noqa: E402 — placed here so the import and its uses are one block
-
 Ctx = collections.namedtuple(
     "Ctx", "relay_url disabled_relay_url ui_url token streamer_key expect")
 
