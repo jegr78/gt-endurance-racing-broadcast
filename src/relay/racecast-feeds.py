@@ -1401,6 +1401,21 @@ def cockpit_submission_payload(entry, pending_count):
                         "footer": {"text": f"{pending_count} pending"}}]}
 
 
+def cockpit_approval_payload(entry):
+    """Discord webhook JSON announcing that the director APPROVED a stream-link
+    submission (follow-up to #193). Deliberately carries NO @here ping — it is a
+    heads-up that the link is now scheduled, not a call to action — so there is no
+    top-level `content` and mentions are suppressed. Pure → unit-tested; the caller
+    no-ops when no webhook is configured."""
+    desc = (f"**{entry['streamer_name']}**'s stream link for stint "
+            f"**{entry['target_stint']}** was approved by the director.\n"
+            f"{entry['proposed_url']}")
+    return {"username": "GT Racecast",
+            "allowed_mentions": {"parse": []},
+            "embeds": [{"title": "✅ Stream link approved",
+                        "description": desc, "color": 0x16A34A}]}
+
+
 class SubmissionStore:
     """Thread-safe wrapper around cockpit_submissions (issue #193): serializes the
     read-modify-write of the pending JSON across request threads, holds the file
@@ -2657,23 +2672,30 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     self._send({"error": "unauthorized"}, 401)
                 return None
             return me
-        def _notify_submission(self, entry, pending_count):
-            """Best-effort Discord @here ping on a new pending submission (#193);
-            a natural no-op when no webhook is configured. Mirrors the health
-            webhook's fire-and-forget posting."""
+        def _post_discord(self, payload, what):
+            """Best-effort fire-and-forget POST of a Discord webhook payload; a
+            natural no-op when no webhook is configured. Mirrors the health
+            webhook's posting. *what* names the event for the failure log."""
             url = getattr(relay, "discord_webhook_url", None)
             if not url:
                 return
             try:
-                data = json.dumps(
-                    cockpit_submission_payload(entry, pending_count)).encode()
+                data = json.dumps(payload).encode()
                 req = Request(url, data=data, method="POST",
                               headers={"Content-Type": "application/json",
                                        "User-Agent": "racecast-feeds/1.0"})
                 urlopen(req, timeout=5).read()
             except Exception as e:
-                print(f"WARN: Discord submission webhook failed: "
+                print(f"WARN: Discord {what} webhook failed: "
                       f"{type(e).__name__}: {e}")
+        def _notify_submission(self, entry, pending_count):
+            """Best-effort Discord @here ping on a new pending submission (#193)."""
+            self._post_discord(cockpit_submission_payload(entry, pending_count),
+                               "submission")
+        def _notify_approval(self, entry):
+            """Best-effort Discord heads-up (no @here ping) once the director
+            approves a submission and the link is scheduled (#193 follow-up)."""
+            self._post_discord(cockpit_approval_payload(entry), "approval")
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
             try:
@@ -3044,6 +3066,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         if res.get("error"):
                             return self._send(res)
                         submission_store.pop(entry["id"], "approve")
+                        # Heads-up to the crew that the link is now scheduled —
+                        # deliberately no @here ping (no-op without a webhook).
+                        self._notify_approval(entry)
                         return self._send({"ok": True, "id": entry["id"], **res})
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if not setup_ctl:
