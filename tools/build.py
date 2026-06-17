@@ -59,6 +59,7 @@ def main():
     cp("obs/hud.html", "hud.html")
     cp("obs/hud-preview.html", "hud-preview.html")
     cp("obs/splitscreen.html", "splitscreen.html")
+    cp("cockpit/cockpit.html", "cockpit.html")
     cp("setup-assets.py", "setup-assets.py")
     cp("racecast.py", "racecast.py")
     cp("racecast_ui.py", "racecast_ui.py")   # windowed Control Center launcher (racecast-ui)
@@ -169,6 +170,7 @@ def main():
         "hud serves the clock": '<div id="clock"' in hud,
         "hud preview shipped": os.path.isfile(os.path.join(PKG, "hud-preview.html")),
         "splitscreen page shipped": os.path.isfile(os.path.join(PKG, "splitscreen.html")),
+        "cockpit page shipped": os.path.isfile(os.path.join(PKG, "cockpit.html")),
         "preview backdrop shipped": os.path.isfile(os.path.join(PKG, "assets", "preview-bg.jpg")),
         ".env.example shipped": os.path.isfile(os.path.join(PKG, ".env.example")),
         "example profile shipped": os.path.isfile(

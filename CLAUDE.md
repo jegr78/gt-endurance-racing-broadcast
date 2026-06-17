@@ -156,6 +156,11 @@ python3 src/racecast.py chat pull <ip>    # take over another producer's chat hi
 python3 src/racecast.py chat import <file> # load a previously exported JSON file into the relay
 python3 src/racecast.py chat export       # write the current chat history to chat-export.json (or --out PATH)
 python3 src/racecast.py backup create|list|restore|delete <label>  # named look snapshots (overlay+graphics+media) per profile
+python3 src/racecast.py cockpit enable     # talent Commentator Cockpit: generate a per-league secret + turn it on for this machine (#191)
+python3 src/racecast.py cockpit disable    # stop serving /cockpit on this machine
+python3 src/racecast.py cockpit links      # print per-commentator cockpit links (roster = the active schedule's streamers); --post puts them in crew chat
+python3 src/racecast.py cockpit funnel on|off  # public ingress for ONLY /cockpit via Tailscale Funnel (needs MagicDNS+HTTPS+funnel nodeAttr)
+python3 src/racecast.py cockpit token revoke <streamer>  # rotate one commentator's link (bumps their version)
 python3 src/racecast.py --version
 
 # Fetch any missing HUD country flags from the sheet's Configuration tab
@@ -362,6 +367,25 @@ actions (`racecast chat clear|pull|import|export`, logic in
 `src/scripts/chat_admin.py`) that write the file and trigger `/chat/reload`. The
 tailnet is the trust boundary (unauthenticated, like the rest of the relay).
 Tests: `tests/test_chat.py`.
+
+The relay also serves a **talent-facing Commentator Cockpit** (issue #191) under an
+auth-gated `/cockpit/*` namespace: a live program monitor (reusing
+`get_program_screenshot`), an "ON AIR / UP NEXT" tally (`cockpit_tally`, derived from the
+on-air feed + the live schedule via `asset_key`-normalised streamer names), the embedded
+crew chat (identity forced to the token's streamer), and a read-only timer. It is exposed
+**publicly via Tailscale Funnel**, which maps **only** the `/cockpit` path prefix to
+`127.0.0.1:8088` — the rest of the relay stays tailnet/loopback-only and is **never**
+funnelled (the security boundary). Funnel passes no Tailscale identity, so auth is 100%
+server-side: a per-commentator token `<streamer_key>.<version>.<sig>` signed with a
+**per-league** `COCKPIT_SECRET` (`profiles/<name>/profile.env`, auto-generated on
+`racecast cockpit enable`, travels with `profile export`); revocation bumps a streamer's
+version in `runtime/<profile>/cockpit-versions.json`. `/cockpit/*` is live only when BOTH
+that secret AND the **machine-local** `RACECAST_COCKPIT_ENABLED` flag (`.env`) are set —
+otherwise every `/cockpit/*` path 404s (like chat/timer when disabled). The token rides in
+the `…/cockpit?t=` link once, then an `HttpOnly; Secure; SameSite=Lax` `rc_cockpit` cookie.
+Auth core: `src/scripts/cockpit_auth.py`; revocation store: `src/scripts/cockpit_admin.py`;
+talent page: `src/cockpit/cockpit.html`; CLI: `racecast cockpit …`; takeover pulls A's
+versions over the tailnet (like `chat pull`). Tests: `tests/test_cockpit.py`.
 
 ### Unified `racecast` CLI (`src/racecast.py`)
 `src/racecast.py` is the single shipped entrypoint for operators. It resolves the
