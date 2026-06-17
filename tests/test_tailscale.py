@@ -133,8 +133,12 @@ def t_funnel_args():
     on = ts.funnel_args(path="/cockpit", target_port=8088, enable=True)
     assert on == ["funnel", "--bg", "--set-path=/cockpit",
                   "http://127.0.0.1:8088/cockpit"]
+    # Teardown ignores path/port and resets the funnel config wholesale: the
+    # path-specific `--set-path=… off` form silently failed with "handler does
+    # not exist" (#200). `funnel reset` is the only form Tailscale verifiably
+    # tears down across the versions we target.
     off = ts.funnel_args(path="/cockpit", target_port=8088, enable=False)
-    assert off == ["funnel", "--set-path=/cockpit", "off"]
+    assert off == ["funnel", "reset"]
 
 
 if __name__ == "__main__":
