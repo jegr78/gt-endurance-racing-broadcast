@@ -15,6 +15,7 @@ def _load(name, rel):
 
 
 ca = _load("cockpit_auth", ("src", "scripts", "cockpit_auth.py"))
+m = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))
 
 SECRET = "test-secret-do-not-ship"
 
@@ -52,8 +53,32 @@ def t_verify_rejects_wrong_secret():
 
 def t_verify_rejects_malformed():
     for bad in ("", "a.b", "a.b.c.d", "alpha.notint.deadbeef" + "0" * 24,
-                "BADKEY.1." + "0" * 32, "a." * 0 + "alpha-racing.1.short"):
+                "BADKEY.1." + "0" * 32, "alpha-racing.1.short"):
         assert ca.verify_token(SECRET, bad) is None, bad
+
+
+def t_streamer_key_matches_asset_key():
+    """cockpit_auth.streamer_key must behave identically to relay asset_key()."""
+    for s in ("Alpha Racing", "  Beta!#1 ", "Ümlaut x", "a-b_c d", "", "  "):
+        assert ca.streamer_key(s) == m.asset_key(s), s
+
+
+def t_verify_token_version_check():
+    tok_v1 = ca.mint_token(SECRET, "alpha", version=1)
+    assert ca.verify_token(SECRET, tok_v1, {"alpha": 1}) == "alpha"
+    assert ca.verify_token(SECRET, tok_v1, {"alpha": 2}) is None   # stale version
+    assert ca.verify_token(SECRET, tok_v1, {}) == "alpha"          # default 1
+    tok_v2 = ca.mint_token(SECRET, "alpha", version=2)
+    assert ca.verify_token(SECRET, tok_v2, {"alpha": 2}) == "alpha"
+
+
+def t_rate_limiter_fixed_window():
+    rl = ca.RateLimiter(limit=2, window_s=60)
+    assert rl.allow("ip", now=0) is True
+    assert rl.allow("ip", now=1) is True
+    assert rl.allow("ip", now=2) is False      # 3rd hit in window -> blocked
+    assert rl.allow("other", now=2) is True    # counter is per-key
+    assert rl.allow("ip", now=61) is True       # window reset
 
 
 if __name__ == "__main__":

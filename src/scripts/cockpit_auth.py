@@ -21,9 +21,9 @@ _KEY_RE = re.compile(r"[a-z0-9-]+")
 
 
 def streamer_key(s):
-    """Normalize a streamer name to a URL-safe key. DUPLICATE of
-    racecast-feeds.asset_key() — pinned byte-identical by a cross-check test in
-    tests/test_cockpit.py (same idiom as STREAMLINK_TWITCH). Keep them in sync."""
+    """Normalize a streamer name to a URL-safe key. Behaviorally pinned to
+    racecast-feeds.asset_key() by a cross-check test in tests/test_cockpit.py
+    (t_streamer_key_matches_asset_key) — keep the two in sync."""
     s = (s or "").strip().lower()
     s = re.sub(r"\s+", "-", s)
     return re.sub(r"[^a-z0-9-]", "", s)
