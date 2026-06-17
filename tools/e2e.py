@@ -112,22 +112,27 @@ def _playwright_available():
         return False
 
 
-def _render_pill(ctx, name, selector, what):
+def _render_pill(ctx, name, selector, what, headed=False, slowmo=0):
     """Load the auth'd cockpit page in Chromium and assert *selector* renders
     (is attached + visible). Returns a CheckResult. Only ever called when
     _playwright_available() is True — all Playwright usage is behind that gate,
-    so this body is dead code in a browserless environment (incl. CI)."""
+    so this body is dead code in a browserless environment (incl. CI). With
+    *headed* the browser is a VISIBLE window (local debugging / a visual run);
+    *slowmo* (ms) slows each action so the run is watchable. When headed, hold
+    the rendered page briefly so it's actually seen before the browser closes."""
     from playwright.sync_api import sync_playwright  # noqa: PLC0415 — optional, lazy
     url = ctx.relay_url + "/cockpit?t=" + ctx.token
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch()
+            browser = pw.chromium.launch(headless=not headed, slow_mo=slowmo)
             try:
                 page = browser.new_page()
                 page.goto(url, wait_until="domcontentloaded")
                 # The page polls /cockpit/data, then fills the pill in. Wait for
                 # the element to be attached + visible (a short, bounded wait).
                 page.wait_for_selector(selector, state="visible", timeout=10000)
+                if headed:
+                    page.wait_for_timeout(2500)   # let a human see the rendered pill
             finally:
                 browser.close()
     except Exception as exc:  # noqa: BLE001 — a render failure is a check failure
@@ -135,27 +140,28 @@ def _render_pill(ctx, name, selector, what):
     return E.CheckResult(name, "pass", "")
 
 
-def render_tally_pill(ctx):
+def render_tally_pill(ctx, headed=False, slowmo=0):
     """The ON-AIR / UP-NEXT tally pill (#tally) renders on the cockpit page."""
-    return _render_pill(ctx, "render_tally_pill", "#tally", "tally pill")
+    return _render_pill(ctx, "render_tally_pill", "#tally", "tally pill", headed, slowmo)
 
 
-def render_funnel_pill(ctx):
+def render_funnel_pill(ctx, headed=False, slowmo=0):
     """The funnel-delivered identity pill (#who) renders on the cockpit page —
     it confirms the Funnel/token auth resolved a streamer (the page only shows
     this once /cockpit/data authenticates the session that Funnel delivered)."""
-    return _render_pill(ctx, "render_funnel_pill", "#who", "funnel-state pill")
+    return _render_pill(ctx, "render_funnel_pill", "#who", "funnel-state pill", headed, slowmo)
 
 
 RENDERED_CHECKS = [render_tally_pill, render_funnel_pill]
 
 
-def run_rendered_checks(ctx):
+def run_rendered_checks(ctx, headed=False, slowmo=0):
     """Run the gated Playwright rendered checks for *ctx*. Returns a list of
     CheckResults to APPEND after the API results. When Playwright/browser is
     unavailable, every rendered check is reported as SKIP (via
     classify_capability) — so a browserless run (incl. CI) never fails here and
-    the exit code is decided by the API checks alone."""
+    the exit code is decided by the API checks alone. *headed*/*slowmo* drive a
+    visible, watchable browser (local only)."""
     available = _playwright_available()
     results = []
     for fn in RENDERED_CHECKS:
@@ -164,8 +170,11 @@ def run_rendered_checks(ctx):
             results.append(skipped)
             continue
         # Browser is available: run the real rendered check (local-only path).
-        sub, _ = E.run_checks([fn], ctx)
-        results.extend(sub)
+        try:
+            results.append(fn(ctx, headed=headed, slowmo=slowmo))
+        except Exception as exc:  # noqa: BLE001 — a crashing check is a failure
+            results.append(E.CheckResult(fn.__name__, "fail",
+                                         f"{type(exc).__name__}: {exc}"))
     return results
 
 
@@ -187,6 +196,20 @@ def _stub_tools_bin(tmp):
             fh.write("#!/bin/sh\nexit 0\n")
         os.chmod(p, 0o700)   # owner-only: the harness spawns the relay as this user
     return bindir
+
+
+def _print_live_urls(relay_url, ui_url, token):
+    """With --keep the spawned relay + Control Center are left running (they were
+    started in their own session, so they outlive this process). Print the live
+    surfaces so they can be opened in a browser for a visual walk-through."""
+    print("\n--- live services (left up by --keep — open these in a browser) ---")
+    print(f"  relay status (JSON): {relay_url}/status")
+    print(f"  director panel:      {relay_url}/panel")
+    print(f"  lower-third HUD:     {relay_url}/hud")
+    print(f"  commentator cockpit: {relay_url}/cockpit?t={token}")
+    print(f"  Control Center:      {ui_url}/")
+    print("  (stop them with:  pkill -f 'racecast.py relay run' ; "
+          "pkill -f 'racecast.py ui')")
 
 
 def run_synthetic(args):
@@ -274,11 +297,15 @@ def run_synthetic(args):
             # results. A browserless run (incl. CI, which omits --playwright)
             # yields SKIPs that don't touch the exit code; only an actual
             # rendered FAIL (browser present) can bump it.
-            rendered = run_rendered_checks(ctx)
+            rendered = run_rendered_checks(ctx, headed=args.headed, slowmo=args.slowmo)
             results = results + rendered
             if any(r.status == "fail" for r in rendered):
                 code = 1
         print(E.summarize(results))
+        if args.keep:
+            _print_live_urls(relay_url, ui_url, token)
+            print("  NOTE: synthetic schedule was served in-process — it stops "
+                  "when this command exits, so the relay keeps only its cached schedule.")
         return code
     finally:
         if not args.keep:
@@ -379,11 +406,14 @@ def run_real_league(args):
                     token=token, streamer_key=key, own_stint=None, expect={})
         results, code = E.run_checks(E.REAL_LEAGUE_CHECKS, ctx)
         if args.playwright:
-            rendered = run_rendered_checks(ctx)  # gated; SKIP without a browser
+            # gated; SKIP without a browser. --headed -> visible window.
+            rendered = run_rendered_checks(ctx, headed=args.headed, slowmo=args.slowmo)
             results = results + rendered
             if any(r.status == "fail" for r in rendered):
                 code = 1
         print(E.summarize(results))
+        if args.keep:
+            _print_live_urls(relay_url, ui_url, token)
         return code
     finally:
         if not args.keep:
@@ -400,9 +430,16 @@ def main(argv=None):
                     help="drive the copied real-league dev build (local only, never CI)")
     ap.add_argument("--playwright", action="store_true",
                     help="also run gated rendered checks (skip if unavailable)")
+    ap.add_argument("--headed", action="store_true",
+                    help="run the --playwright rendered checks in a VISIBLE browser "
+                         "window (local only; a visual walk-through of the cockpit page)")
+    ap.add_argument("--slowmo", type=int, default=0, metavar="MS",
+                    help="slow each Playwright action by MS ms so a --headed run is watchable")
     ap.add_argument("--timeout", type=float, default=30.0,
                     help="per-service readiness timeout (s)")
-    ap.add_argument("--keep", action="store_true", help="skip teardown (debug)")
+    ap.add_argument("--keep", action="store_true",
+                    help="skip teardown: leave relay + Control Center running and print "
+                         "their URLs (open them in a browser)")
     args = ap.parse_args(argv)
     if args.real_league:
         return run_real_league(args)
