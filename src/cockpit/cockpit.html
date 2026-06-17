@@ -91,7 +91,15 @@ function renderTally(d) {
   const el = $('tally');
   if (d.on_air) {
     el.className = 'tally onair';
-    el.textContent = 'YOU ARE ON AIR';
+    el.innerHTML = '';
+    el.appendChild(document.createTextNode('YOU ARE ON AIR'));
+    if (d.up_next) {                       // also surface the next own stint
+      const sub = document.createElement('div');
+      sub.className = 'sub';
+      sub.textContent = 'then: stint ' + d.up_next.stint + ' · in ' + d.up_next.in_n +
+        ' handover' + (d.up_next.in_n === 1 ? '' : 's');
+      el.appendChild(sub);
+    }
   } else if (d.up_next) {
     el.className = 'tally next';
     const inN = d.up_next.in_n;
