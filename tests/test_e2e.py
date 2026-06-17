@@ -20,6 +20,57 @@ def t_free_port_varies():
     assert e.free_port() != e.free_port() or True  # non-flaky: just exercise it
 
 
+def _stub_relay():
+    import json, threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    state = {"token": "good"}
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def _send(self, code, body=b"", ctype="application/json", extra=None):
+            self.send_response(code); self.send_header("Content-Type", ctype)
+            for k, v in (extra or {}).items(): self.send_header(k, v)
+            self.end_headers(); self.wfile.write(body)
+        def _authed(self):
+            return ("t=" in (self.path or "")) or \
+                   ("rc_cockpit=" + state["token"]) in (self.headers.get("Cookie") or "")
+        def do_GET(self):
+            p = self.path.split("?")[0]
+            if p == "/status":
+                self._send(200, json.dumps({"schedule_len": 2, "mode": "race",
+                    "feeds": {"A": {"port": 1}, "B": {"port": 2}},
+                    "live": {"feed": "A", "stint": 1, "mode": "race"}}).encode())
+            elif p == "/cockpit/data":
+                if not self._authed(): return self._send(401, b'{"error":"auth"}')
+                self._send(200, json.dumps({"tally": {"on_air": True,
+                    "up_next": {"stint": "Stint 2", "in_n": 1}, "scheduled": True}}).encode())
+            elif p == "/cockpit":
+                if not self._authed(): return self._send(401, b"no")
+                self._send(200, b"<html>cockpit</html>", "text/html",
+                           {"Set-Cookie": "rc_cockpit=good; HttpOnly"})
+            else:
+                self._send(404, b"nope")
+            return None
+    srv = ThreadingHTTPServer(("127.0.0.1", e.free_port()), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f"http://127.0.0.1:{srv.server_address[1]}"
+
+
+def t_check_status_and_auth_gating():
+    srv, url = _stub_relay()
+    try:
+        Ctx = e.Ctx
+        ctx = Ctx(relay_url=url, disabled_relay_url=url + "/missing", ui_url=None,
+                  token="good", streamer_key="alice",
+                  expect={"schedule_len": 2, "live_stint": 1})
+        assert e.check_status_ok(ctx).status == "pass"
+        assert e.check_cockpit_requires_token(ctx).status == "pass"
+        assert e.check_cockpit_accepts_token(ctx).status == "pass"
+        assert e.check_cockpit_tally(ctx).status == "pass"
+    finally:
+        srv.shutdown()
+
+
 def t_http_request_returns_status_even_on_4xx():
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer

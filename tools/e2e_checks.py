@@ -89,3 +89,70 @@ def free_port():
         return s.getsockname()[1]
     finally:
         s.close()
+
+
+# ---------------------------------------------------------------------------
+# Check context + individual HTTP check callables
+# ---------------------------------------------------------------------------
+import json as _json  # noqa: E402 — placed here so the import and its uses are one block
+
+Ctx = collections.namedtuple(
+    "Ctx", "relay_url disabled_relay_url ui_url token streamer_key expect")
+
+
+def _get_json(url, headers=None):
+    st, body, _ = http_request(url, headers=headers)
+    return st, (_json.loads(body or b"null"))
+
+
+def check_status_ok(ctx):
+    st, data = _get_json(ctx.relay_url + "/status")
+    if st != 200:
+        return CheckResult("status_ok", "fail", f"/status HTTP {st}")
+    if data.get("schedule_len") != ctx.expect["schedule_len"]:
+        return CheckResult("status_ok", "fail",
+                           f"schedule_len={data.get('schedule_len')}")
+    if data.get("live", {}).get("stint") != ctx.expect["live_stint"]:
+        return CheckResult("status_ok", "fail", f"live={data.get('live')}")
+    return CheckResult("status_ok", "pass", "")
+
+
+def check_cockpit_requires_token(ctx):
+    st, _, _ = http_request(ctx.relay_url + "/cockpit/data")
+    if st != 401:
+        return CheckResult("cockpit_requires_token", "fail",
+                           f"expected 401, got {st}")
+    return CheckResult("cockpit_requires_token", "pass", "")
+
+
+def check_cockpit_accepts_token(ctx):
+    url = f"{ctx.relay_url}/cockpit?t={ctx.token}"
+    st, _, hdrs = http_request(url)
+    if st != 200:
+        return CheckResult("cockpit_accepts_token", "fail", f"HTTP {st}")
+    if "rc_cockpit=" not in (hdrs.get("Set-Cookie") or ""):
+        return CheckResult("cockpit_accepts_token", "fail", "no rc_cockpit cookie")
+    return CheckResult("cockpit_accepts_token", "pass", "")
+
+
+def check_cockpit_tally(ctx):
+    st, data = _get_json(f"{ctx.relay_url}/cockpit/data?t={ctx.token}")
+    if st != 200:
+        return CheckResult("cockpit_tally", "fail", f"HTTP {st}")
+    tally = data.get("tally") or {}
+    up = tally.get("up_next") or {}
+    # Regression guard for #191: the stint label must not double-print "stint".
+    label = str(up.get("stint", ""))
+    if label.lower().count("stint") > 1:
+        return CheckResult("cockpit_tally", "fail", f"double stint: {label!r}")
+    if "on_air" not in tally or "scheduled" not in tally:
+        return CheckResult("cockpit_tally", "fail", f"tally shape: {tally}")
+    return CheckResult("cockpit_tally", "pass", "")
+
+
+def check_cockpit_404_when_disabled(ctx):
+    st, _, _ = http_request(ctx.disabled_relay_url + "/cockpit/data")
+    if st != 404:
+        return CheckResult("cockpit_404_when_disabled", "fail",
+                           f"expected 404, got {st}")
+    return CheckResult("cockpit_404_when_disabled", "pass", "")
