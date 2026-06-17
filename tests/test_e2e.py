@@ -327,6 +327,53 @@ def t_set_env_key_preserves_other_keys():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _import_e2e():
+    import importlib
+    if "e2e" in sys.modules:
+        return sys.modules["e2e"]
+    return importlib.import_module("e2e")
+
+
+def t_rendered_checks_skip_without_browser():
+    # GATE test, NOT a browser test: when Playwright is unavailable, the gated
+    # dispatch must yield SKIP results (one per rendered check) and never try to
+    # launch a browser. We force unavailability instead of probing the host.
+    driver = _import_e2e()
+    saved = driver._playwright_available
+    driver._playwright_available = lambda: False
+    try:
+        ctx = e.Ctx(relay_url="http://127.0.0.1:1", disabled_relay_url=None,
+                    ui_url=None, token="tok", streamer_key="alice", expect={})
+        rendered = driver.run_rendered_checks(ctx)
+        assert len(rendered) == len(driver.RENDERED_CHECKS), rendered
+        assert all(r.status == "skip" for r in rendered), rendered
+        names = {r.name for r in rendered}
+        assert names == {"render_tally_pill", "render_funnel_pill"}, names
+    finally:
+        driver._playwright_available = saved
+
+
+def t_rendered_skip_does_not_change_exit_code():
+    # The overall exit code is governed by the API checks: appending SKIP
+    # rendered results must keep a green run green (and a red run red).
+    driver = _import_e2e()
+    saved = driver._playwright_available
+    driver._playwright_available = lambda: False
+    try:
+        ctx = e.Ctx(relay_url="http://127.0.0.1:1", disabled_relay_url=None,
+                    ui_url=None, token="tok", streamer_key="alice", expect={})
+        rendered = driver.run_rendered_checks(ctx)
+        # API all pass -> combined stays 0 even with the SKIP rows appended.
+        api_results, code = e.run_checks(
+            [lambda _c: e.CheckResult("ok", "pass", "")], ctx)
+        combined = api_results + rendered
+        bumped = 1 if any(r.status == "fail" for r in rendered) else code
+        assert bumped == 0, (code, rendered)
+        assert {r.status for r in combined} == {"pass", "skip"}, combined
+    finally:
+        driver._playwright_available = saved
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

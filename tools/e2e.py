@@ -82,6 +82,93 @@ SCHEDULE_ROWS = [
 ]
 
 
+# --- Optional Playwright rendered checks (gated, never run in CI) ----------------
+#
+# These load the cockpit page in a real browser and assert that its state pills
+# actually render — the one thing the stdlib HTTP checks can't see (they only
+# fetch the JSON the page polls). They are STRICTLY optional: the repo is
+# stdlib-only with no package manager for what CI runs, so Playwright is NEVER a
+# hard dependency. The browser path below is exercised ONLY when a developer has
+# `playwright` (and a browser) installed locally; CI runs tools/e2e.py WITHOUT
+# --playwright, so these always skip there. When Playwright is unavailable the
+# whole block degrades to clean SKIP results via E.classify_capability — never a
+# failure — and the exit code stays governed by the API checks alone.
+
+def _playwright_available():
+    """True iff Playwright's sync API imports AND a Chromium browser launches.
+    Guarded so importing/running this module without Playwright never errors:
+    a missing package, a missing browser binary, or any launch failure all read
+    as 'unavailable' (-> the rendered checks SKIP)."""
+    try:
+        from playwright.sync_api import sync_playwright  # noqa: PLC0415 — optional, lazy
+    except Exception:
+        return False
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            browser.close()
+        return True
+    except Exception:
+        return False
+
+
+def _render_pill(ctx, name, selector, what):
+    """Load the auth'd cockpit page in Chromium and assert *selector* renders
+    (is attached + visible). Returns a CheckResult. Only ever called when
+    _playwright_available() is True — all Playwright usage is behind that gate,
+    so this body is dead code in a browserless environment (incl. CI)."""
+    from playwright.sync_api import sync_playwright  # noqa: PLC0415 — optional, lazy
+    url = ctx.relay_url + "/cockpit?t=" + ctx.token
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            try:
+                page = browser.new_page()
+                page.goto(url, wait_until="domcontentloaded")
+                # The page polls /cockpit/data, then fills the pill in. Wait for
+                # the element to be attached + visible (a short, bounded wait).
+                page.wait_for_selector(selector, state="visible", timeout=10000)
+            finally:
+                browser.close()
+    except Exception as exc:  # noqa: BLE001 — a render failure is a check failure
+        return E.CheckResult(name, "fail", f"{what}: {type(exc).__name__}: {exc}")
+    return E.CheckResult(name, "pass", "")
+
+
+def render_tally_pill(ctx):
+    """The ON-AIR / UP-NEXT tally pill (#tally) renders on the cockpit page."""
+    return _render_pill(ctx, "render_tally_pill", "#tally", "tally pill")
+
+
+def render_funnel_pill(ctx):
+    """The funnel-delivered identity pill (#who) renders on the cockpit page —
+    it confirms the Funnel/token auth resolved a streamer (the page only shows
+    this once /cockpit/data authenticates the session that Funnel delivered)."""
+    return _render_pill(ctx, "render_funnel_pill", "#who", "funnel-state pill")
+
+
+RENDERED_CHECKS = [render_tally_pill, render_funnel_pill]
+
+
+def run_rendered_checks(ctx):
+    """Run the gated Playwright rendered checks for *ctx*. Returns a list of
+    CheckResults to APPEND after the API results. When Playwright/browser is
+    unavailable, every rendered check is reported as SKIP (via
+    classify_capability) — so a browserless run (incl. CI) never fails here and
+    the exit code is decided by the API checks alone."""
+    available = _playwright_available()
+    results = []
+    for fn in RENDERED_CHECKS:
+        skipped = E.classify_capability(available, fn.__name__)
+        if skipped is not None:
+            results.append(skipped)
+            continue
+        # Browser is available: run the real rendered check (local-only path).
+        sub, _ = E.run_checks([fn], ctx)
+        results.extend(sub)
+    return results
+
+
 def run_synthetic(args):
     tmp = tempfile.mkdtemp(prefix="racecast-e2e-")
     procs, servers = [], []
@@ -156,6 +243,15 @@ def run_synthetic(args):
                     token=token, streamer_key=key, own_stint="Stint 1",
                     expect={"schedule_len": 2, "live_stint": 1})
         results, code = E.run_checks(E.SYNTHETIC_CHECKS, ctx)
+        if args.playwright:
+            # Optional, gated: append the rendered-check results AFTER the API
+            # results. A browserless run (incl. CI, which omits --playwright)
+            # yields SKIPs that don't touch the exit code; only an actual
+            # rendered FAIL (browser present) can bump it.
+            rendered = run_rendered_checks(ctx)
+            results = results + rendered
+            if any(r.status == "fail" for r in rendered):
+                code = 1
         print(E.summarize(results))
         return code
     finally:
@@ -256,6 +352,11 @@ def run_real_league(args):
         ctx = E.Ctx(relay_url=relay_url, disabled_relay_url=relay_url, ui_url=ui_url,
                     token=token, streamer_key=key, own_stint=None, expect={})
         results, code = E.run_checks(E.REAL_LEAGUE_CHECKS, ctx)
+        if args.playwright:
+            rendered = run_rendered_checks(ctx)  # gated; SKIP without a browser
+            results = results + rendered
+            if any(r.status == "fail" for r in rendered):
+                code = 1
         print(E.summarize(results))
         return code
     finally:
