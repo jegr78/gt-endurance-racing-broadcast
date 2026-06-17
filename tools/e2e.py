@@ -169,6 +169,26 @@ def run_rendered_checks(ctx):
     return results
 
 
+def _stub_tools_bin(tmp):
+    """A bin dir of no-op stubs for the external tools the relay checks at
+    startup. The relay hard-exits if `yt-dlp`/`streamlink` are not on PATH
+    (racecast-feeds.py), and `ffmpeg`/`deno` are invoked by a feed pull. The
+    synthetic schedule's URLs are fake, so no real stream is ever pulled; these
+    stubs just let the startup tool-check pass and make feed threads fail
+    instantly (no network) on a clean machine / CI runner where the real tools
+    aren't installed. Prepended to PATH so the run is deterministic even on a dev
+    box that HAS the real tools. POSIX-only — the heavy synthetic run targets the
+    Linux CI job (real-league mode uses the operator's real PATH, no stubs)."""
+    bindir = os.path.join(tmp, "bin")
+    os.makedirs(bindir, exist_ok=True)
+    for name in ("yt-dlp", "streamlink", "ffmpeg", "deno"):
+        p = os.path.join(bindir, name)
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write("#!/bin/sh\nexit 0\n")
+        os.chmod(p, 0o755)
+    return bindir
+
+
 def run_synthetic(args):
     tmp = tempfile.mkdtemp(prefix="racecast-e2e-")
     procs, servers = [], []
@@ -195,6 +215,10 @@ def run_synthetic(args):
         relay_runtime = os.path.join(tmp, "runtime")
         os.makedirs(relay_runtime, exist_ok=True)
 
+        # Stub the external stream tools so the relay's startup tool-check passes
+        # on a clean machine / CI runner (the fake schedule URLs are never pulled).
+        stub_bin = _stub_tools_bin(tmp)
+
         # 2. schedule CSV server
         csv_srv, csv_url = _csv_server(E.build_schedule_csv(SCHEDULE_ROWS))
         servers.append(csv_srv)
@@ -204,6 +228,7 @@ def run_synthetic(args):
         env = dict(os.environ)
         env.update(RACECAST_COCKPIT_SECRET=secret, RACECAST_COCKPIT_ENABLED="1",
                    RACECAST_PROFILE="e2e")
+        env["PATH"] = stub_bin + os.pathsep + env.get("PATH", "")
         relay_log = os.path.join(tmp, "relay.log")
         relay = _spawn([sys.executable, os.path.join(ROOT, "src", "racecast.py"),
                         "relay", "run", "--bind", "127.0.0.1",
@@ -217,6 +242,7 @@ def run_synthetic(args):
         # 4. disabled relay (no RACECAST_COCKPIT_ENABLED) -> /cockpit/* 404
         dis_port = E.free_port()
         env2 = dict(os.environ); env2.update(RACECAST_PROFILE="e2e")
+        env2["PATH"] = stub_bin + os.pathsep + env2.get("PATH", "")
         dis_log = os.path.join(tmp, "relay-disabled.log")
         dis = _spawn([sys.executable, os.path.join(ROOT, "src", "racecast.py"),
                       "relay", "run", "--bind", "127.0.0.1",
