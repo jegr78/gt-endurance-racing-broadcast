@@ -96,7 +96,9 @@ def free_port():
 # Check context + individual HTTP check callables
 # ---------------------------------------------------------------------------
 Ctx = collections.namedtuple(
-    "Ctx", "relay_url disabled_relay_url ui_url token streamer_key expect")
+    "Ctx",
+    "relay_url disabled_relay_url ui_url token streamer_key expect own_stint")
+Ctx.__new__.__defaults__ = (None,)  # own_stint optional (stub-relay unit tests)
 
 
 def _get_json(url, headers=None):
@@ -135,17 +137,20 @@ def check_cockpit_accepts_token(ctx):
 
 
 def check_cockpit_tally(ctx):
+    # /cockpit/data serves the cockpit_tally() fields FLAT at the top level
+    # (on_air/up_next/scheduled), merged with me/mode/my_stints/… — not nested
+    # under a "tally" key. Read whichever the server gives (real = flat).
     st, data = _get_json(f"{ctx.relay_url}/cockpit/data?t={ctx.token}")
     if st != 200:
         return CheckResult("cockpit_tally", "fail", f"HTTP {st}")
-    tally = data.get("tally") or {}
-    up = tally.get("up_next") or {}
-    # Regression guard for #191: the stint label must not double-print "stint".
-    label = str(up.get("stint", ""))
-    if label.lower().count("stint") > 1:
-        return CheckResult("cockpit_tally", "fail", f"double stint: {label!r}")
+    tally = data.get("tally") if isinstance(data.get("tally"), dict) else data
     if "on_air" not in tally or "scheduled" not in tally:
         return CheckResult("cockpit_tally", "fail", f"tally shape: {tally}")
+    up = tally.get("up_next") or {}
+    # Regression guard for #191: the stint label must not double-print "stint".
+    label = str(up.get("stint", "")) if isinstance(up, dict) else ""
+    if label.lower().count("stint") > 1:
+        return CheckResult("cockpit_tally", "fail", f"double stint: {label!r}")
     return CheckResult("cockpit_tally", "pass", "")
 
 
@@ -155,3 +160,97 @@ def check_cockpit_404_when_disabled(ctx):
         return CheckResult("cockpit_404_when_disabled", "fail",
                            f"expected 404, got {st}")
     return CheckResult("cockpit_404_when_disabled", "pass", "")
+
+
+def check_cockpit_timer_renders(ctx):
+    """#191 regression: /cockpit/timer must serve real timer fields so the page
+    renders a clock, not the literal '—' placeholder. The page falls back to '—'
+    only when the JSON is absent / not visible / carries no duration, so assert a
+    200 with visible=True and a numeric remaining_s OR duration_s OR end."""
+    st, data = _get_json(f"{ctx.relay_url}/cockpit/timer?t={ctx.token}")
+    if st != 200:
+        return CheckResult("cockpit_timer_renders", "fail", f"HTTP {st}")
+    if data.get("error"):
+        return CheckResult("cockpit_timer_renders", "fail", f"error: {data['error']}")
+    if not data.get("visible"):
+        return CheckResult("cockpit_timer_renders", "fail",
+                           f"not visible (page would show '—'): {data}")
+    nums = [data.get("remaining_s"), data.get("duration_s"), data.get("end")]
+    if not any(isinstance(v, (int, float)) for v in nums):
+        return CheckResult("cockpit_timer_renders", "fail",
+                           f"no renderable timer value: {data}")
+    return CheckResult("cockpit_timer_renders", "pass", "")
+
+
+def check_chat_round_trip(ctx):
+    """POST /chat/send {user,text} then GET /chat/data must echo the message back
+    (the relay's in-memory ring buffer)."""
+    marker = "e2e-chat-ping"
+    payload = _json.dumps({"user": "e2e", "text": marker}).encode()
+    st, body, _ = http_request(ctx.relay_url + "/chat/send", method="POST",
+                               headers={"Content-Type": "application/json"},
+                               data=payload)
+    if st != 200:
+        return CheckResult("chat_round_trip", "fail", f"send HTTP {st}: {body[:120]!r}")
+    sent = _json.loads(body or b"null") or {}
+    if not sent.get("ok"):
+        return CheckResult("chat_round_trip", "fail", f"send rejected: {sent}")
+    st, data = _get_json(ctx.relay_url + "/chat/data")
+    if st != 200:
+        return CheckResult("chat_round_trip", "fail", f"data HTTP {st}")
+    texts = [m.get("text") for m in (data.get("messages") or [])]
+    if marker not in texts:
+        return CheckResult("chat_round_trip", "fail",
+                           f"sent message not in /chat/data ({len(texts)} msgs)")
+    return CheckResult("chat_round_trip", "pass", "")
+
+
+def check_submission_pending(ctx):
+    """#193: an own-row POST /cockpit/submit (token-auth) lands as PENDING (never
+    auto-published) and the director's tailnet-only /submissions lists it."""
+    url = "https://www.youtube.com/watch?v=e2eee2eee2e"
+    payload = _json.dumps({"url": url, "stint": ctx.own_stint}).encode()
+    st, body, _ = http_request(
+        f"{ctx.relay_url}/cockpit/submit?t={ctx.token}", method="POST",
+        headers={"Content-Type": "application/json"}, data=payload)
+    if st != 200:
+        return CheckResult("submission_pending", "fail",
+                           f"submit HTTP {st}: {body[:160]!r}")
+    res = _json.loads(body or b"null") or {}
+    if not res.get("ok") or not res.get("id"):
+        return CheckResult("submission_pending", "fail", f"submit shape: {res}")
+    sub_id = res["id"]
+    st, data = _get_json(ctx.relay_url + "/submissions")
+    if st != 200:
+        return CheckResult("submission_pending", "fail", f"/submissions HTTP {st}")
+    pending = data.get("pending") or []
+    if not any(e.get("id") == sub_id for e in pending):
+        return CheckResult("submission_pending", "fail",
+                           f"submission {sub_id} not pending ({len(pending)} entries)")
+    return CheckResult("submission_pending", "pass", "")
+
+
+def check_cc_api_cockpit(ctx):
+    """Control Center /api/cockpit/status responds 200 with sane JSON
+    (ok flag + a links list)."""
+    if not ctx.ui_url:
+        return CheckResult("cc_api_cockpit", "skip", "no ui_url")
+    st, data = _get_json(ctx.ui_url + "/api/cockpit/status")
+    if st != 200:
+        return CheckResult("cc_api_cockpit", "fail", f"HTTP {st}")
+    if "ok" not in data or not isinstance(data.get("links"), list):
+        return CheckResult("cc_api_cockpit", "fail", f"shape: {data}")
+    return CheckResult("cc_api_cockpit", "pass", "")
+
+
+SYNTHETIC_CHECKS = [
+    check_status_ok,
+    check_cockpit_requires_token,
+    check_cockpit_accepts_token,
+    check_cockpit_404_when_disabled,
+    check_cockpit_tally,
+    check_cockpit_timer_renders,
+    check_chat_round_trip,
+    check_submission_pending,
+    check_cc_api_cockpit,
+]

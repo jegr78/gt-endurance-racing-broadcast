@@ -71,6 +71,130 @@ def t_check_status_and_auth_gating():
         srv.shutdown()
 
 
+def _stub_relay2():
+    """A stub that mirrors the REAL relay's flat /cockpit/data shape (tally fields
+    at the top level) plus /cockpit/timer, /chat/* round-trip and
+    /cockpit/submit -> /submissions. Token-gated like the real relay."""
+    import json, threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    chat = []          # mutable closure state — the round-trip target
+    pending = []
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def _authed(self): return "t=" in (self.path or "")
+        def _send(self, code, obj):
+            body = json.dumps(obj).encode()
+            self.send_response(code); self.send_header("Content-Type", "application/json")
+            self.end_headers(); self.wfile.write(body)
+        def do_GET(self):
+            p = self.path.split("?")[0]
+            if p == "/cockpit/data":
+                if not self._authed(): return self._send(401, {"error": "auth"})
+                # flat (real shape): tally fields merged at top level
+                return self._send(200, {"on_air": True, "up_next": None,
+                                        "scheduled": True, "me": "alice"})
+            if p == "/cockpit/timer":
+                if not self._authed(): return self._send(401, {"error": "auth"})
+                return self._send(200, {"visible": True, "end": None,
+                                        "duration_s": 21600, "remaining_s": None,
+                                        "mode": "prestart"})
+            if p == "/chat/data":
+                return self._send(200, {"messages": list(chat)})
+            if p == "/submissions":
+                return self._send(200, {"pending": list(pending)})
+            return self._send(404, {"error": "nope"})
+        def do_POST(self):
+            p = self.path.split("?")[0]
+            length = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(length) or b"{}")
+            if p == "/chat/send":
+                msg = {"ts": 1.0, "user": body.get("user"), "text": body.get("text")}
+                chat.append(msg)
+                return self._send(200, {"ok": True, "message": msg})
+            if p == "/cockpit/submit":
+                if not self._authed(): return self._send(401, {"error": "auth"})
+                entry = {"id": "sub-1", "target_stint": body.get("stint")}
+                pending.append(entry)
+                return self._send(200, {"ok": True, "id": "sub-1",
+                                        "stint": body.get("stint")})
+            return self._send(404, {"error": "nope"})
+    srv = ThreadingHTTPServer(("127.0.0.1", e.free_port()), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f"http://127.0.0.1:{srv.server_address[1]}"
+
+
+def t_check_cockpit_tally_reads_flat_shape():
+    srv, url = _stub_relay2()
+    try:
+        ctx = e.Ctx(relay_url=url, disabled_relay_url=url, ui_url=None,
+                    token="good", streamer_key="alice",
+                    expect={"schedule_len": 2, "live_stint": 1})
+        assert e.check_cockpit_tally(ctx).status == "pass"
+    finally:
+        srv.shutdown()
+
+
+def t_check_cockpit_timer_renders():
+    srv, url = _stub_relay2()
+    try:
+        ctx = e.Ctx(relay_url=url, disabled_relay_url=url, ui_url=None,
+                    token="good", streamer_key="alice", expect={})
+        assert e.check_cockpit_timer_renders(ctx).status == "pass"
+    finally:
+        srv.shutdown()
+
+
+def t_check_chat_round_trip():
+    srv, url = _stub_relay2()
+    try:
+        ctx = e.Ctx(relay_url=url, disabled_relay_url=url, ui_url=None,
+                    token="good", streamer_key="alice", expect={})
+        assert e.check_chat_round_trip(ctx).status == "pass"
+    finally:
+        srv.shutdown()
+
+
+def t_check_submission_pending():
+    srv, url = _stub_relay2()
+    try:
+        ctx = e.Ctx(relay_url=url, disabled_relay_url=url, ui_url=None,
+                    token="good", streamer_key="alice", own_stint="Stint 1",
+                    expect={})
+        assert e.check_submission_pending(ctx).status == "pass"
+    finally:
+        srv.shutdown()
+
+
+def t_check_cc_api_cockpit():
+    import json, threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            if self.path == "/api/cockpit/status":
+                body = json.dumps({"ok": True, "enabled": False,
+                                   "links": []}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers(); self.wfile.write(body)
+            else:
+                self.send_response(404); self.end_headers()
+    srv = ThreadingHTTPServer(("127.0.0.1", e.free_port()), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        ui = f"http://127.0.0.1:{srv.server_address[1]}"
+        ctx = e.Ctx(relay_url=None, disabled_relay_url=None, ui_url=ui,
+                    token="good", streamer_key="alice", expect={})
+        assert e.check_cc_api_cockpit(ctx).status == "pass"
+        # No ui_url -> skip, never crash.
+        ctx2 = ctx._replace(ui_url=None)
+        assert e.check_cc_api_cockpit(ctx2).status == "skip"
+    finally:
+        srv.shutdown()
+
+
 def t_http_request_returns_status_even_on_4xx():
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
