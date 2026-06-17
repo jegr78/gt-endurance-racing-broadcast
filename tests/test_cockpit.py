@@ -118,6 +118,42 @@ def t_apply_pulled_validates():
                 pass  # expected: bad payload rejected before any write
 
 
+def _rows():
+    # ScheduleSource 4-tuples: (url, streamer, stint, line)
+    return [("u0", "Alpha Racing", "S1", 2),
+            ("u1", "Beta", "S2", 3),
+            ("u2", "Alpha Racing", "S3", 4),
+            ("u3", "Gamma", "S4", 5)]
+
+
+def t_tally_on_air():
+    t = m.cockpit_tally(_rows(), 0, "alpha-racing")
+    assert t["on_air"] is True
+    assert t["up_next"] == {"stint": "S3", "in_n": 2}
+    assert t["scheduled"] is True
+
+
+def t_tally_up_next_only():
+    t = m.cockpit_tally(_rows(), 0, "beta")
+    assert t["on_air"] is False
+    assert t["up_next"] == {"stint": "S2", "in_n": 1}
+
+
+def t_tally_not_upcoming():
+    t = m.cockpit_tally(_rows(), 2, "beta")     # Beta already passed
+    assert t["on_air"] is False and t["up_next"] is None and t["scheduled"] is True
+
+
+def t_tally_not_scheduled():
+    t = m.cockpit_tally(_rows(), 0, "nobody")
+    assert t == {"on_air": False, "up_next": None, "scheduled": False}
+
+
+def t_display_name_maps_key_to_name():
+    assert m.cockpit_display_name(_rows(), "alpha-racing") == "Alpha Racing"
+    assert m.cockpit_display_name(_rows(), "nobody") == "nobody"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

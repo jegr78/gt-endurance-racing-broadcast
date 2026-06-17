@@ -1297,6 +1297,36 @@ def live_schedule_row(rows, live_idx):
     return {"streamer": streamer, "stint": stint}
 
 
+def cockpit_tally(rows, live_idx, me_key):
+    """Talent tally for a commentator identified by *me_key* (a streamer_key).
+    Pure — unit-testable without a running relay. *rows* are ScheduleSource
+    4-tuples (url, streamer, stint, line); *live_idx* is the on-air feed's index.
+      on_air   = the on-air row's streamer normalizes to me_key
+      up_next  = the nearest FUTURE row that is me ->
+                 {"stint": <stint label>, "in_n": <handovers away>}, else None
+      scheduled= me appears anywhere in the schedule"""
+    cur = live_schedule_row(rows, live_idx)
+    on_air = bool(cur and asset_key(cur["streamer"]) == me_key)
+    up_next = None
+    if live_idx is not None:
+        for j in range(live_idx + 1, len(rows)):
+            _url, streamer, stint, _line = rows[j]
+            if asset_key(streamer) == me_key:
+                up_next = {"stint": stint, "in_n": j - live_idx}
+                break
+    scheduled = any(asset_key(r[1]) == me_key for r in rows)
+    return {"on_air": on_air, "up_next": up_next, "scheduled": scheduled}
+
+
+def cockpit_display_name(rows, me_key):
+    """The display streamer name whose asset_key == me_key (first match), so chat
+    messages are attributed to a human-readable name. Falls back to me_key."""
+    for _url, streamer, _stint, _line in rows:
+        if asset_key(streamer) == me_key:
+            return streamer
+    return me_key
+
+
 class ScheduleSource:
     """Reads the schedule from the Google Sheet (CSV) with last-good + fallback."""
     def __init__(self, csv_url, cache_path, local_fallback):
