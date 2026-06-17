@@ -81,9 +81,8 @@ enable prompt). Pass `--force` to skip the pre-check.
 > outside the tailnet that `https://<magicdns-host>/status` and `/panel` are **not**
 > reachable — only `/cockpit` should be.
 
-The Funnel host is the **active producer's** MagicDNS name. On a
-[producer handover](Producer-Handover) it changes, so re-run `racecast cockpit links`
-on the new machine and re-share.
+The Funnel host is the **active producer's** MagicDNS name. On a producer handover
+it changes, so re-run `racecast cockpit links` on the new machine and re-share.
 
 ## Revoking / rotating a link
 
