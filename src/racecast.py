@@ -43,6 +43,8 @@ import init_setup as ins
 import config as pcfg    # 'pcfg' (not 'cfg'): avoids F811 clash with local `cfg = json.loads(...)` dicts elsewhere in this file
 import profile_admin as pa
 import chat_admin as ca
+import cockpit_auth as cpa
+import cockpit_admin as cpadm
 import overlay_build as ob
 import fonts_bundle as fb
 import ports as pt
@@ -719,6 +721,10 @@ def route(argv):
         return {"kind": "profile", "rest": rest}
     if cmd == "chat":
         return {"kind": "chat", "rest": rest}
+    if cmd == "cockpit":
+        if not rest or rest[0] not in COCKPIT_VERBS:
+            raise ValueError(f"usage: racecast cockpit {{{'|'.join(COCKPIT_VERBS)}}}")
+        return {"kind": "cockpit", "rest": rest}
     if cmd == "backup":
         return {"kind": "backup", "rest": rest}
     if cmd in ONESHOTS:
@@ -887,6 +893,125 @@ def chat_cmd(rest):
         print(f"Pulled {n} messages from {host}." +
               ("" if running else " (relay not running — applies on next start.)"))
         return None
+
+
+COCKPIT_VERBS = ("enable", "disable", "funnel", "links", "token", "pull-versions")
+
+
+def _cockpit_versions_path():
+    """runtime/<active-profile>/cockpit-versions.json — same dir the relay reads,
+    matching _chat_path()."""
+    return os.path.join(_runtime_dir(), "cockpit-versions.json")
+
+
+def _cockpit_roster():
+    """Distinct streamer names from the active schedule (first-seen order), read
+    from the running relay's /schedule/data. Raises on an unreachable relay."""
+    data = _relay_fetch_json(f"http://127.0.0.1:{RELAY_PORT}/schedule/data")
+    seen, roster = set(), []
+    for row in (data or {}).get("rows", []):
+        name = (row.get("name") or "").strip()
+        key = cpa.streamer_key(name)
+        if key and key not in seen:
+            seen.add(key)
+            roster.append(name)
+    return roster
+
+
+def _post_chat_message(text):
+    """Best-effort POST of one crew-chat message to the local relay."""
+    import urllib.request
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{RELAY_PORT}/chat/send",
+        data=json.dumps({"user": "Producer", "text": text}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+    urllib.request.urlopen(req, timeout=3).read()
+
+
+def _cockpit_funnel(args):
+    sys.exit("cockpit funnel: implemented in a later task")
+
+
+def _cockpit_token(args):
+    sys.exit("cockpit token: implemented in a later task")
+
+
+def _cockpit_pull_versions(args):
+    sys.exit("cockpit pull-versions: implemented in a later task")
+
+
+def cockpit_cmd(rest):
+    """`racecast cockpit enable|disable|funnel|links|token|pull-versions` —
+    manage the talent Commentator Cockpit (issue #191)."""
+    import secrets
+    verb, args = rest[0], rest[1:]
+
+    if verb == "enable":
+        active, ppath = _active_profile_env_strict()
+        if not active:
+            sys.exit("racecast: no active profile — create or select one first.")
+        existing = ""
+        if os.path.exists(ppath):
+            with open(ppath, encoding="utf-8") as fh:
+                existing = parse_env_text(fh.read()).get("COCKPIT_SECRET", "")
+        if not existing:
+            res = _write_env_file(ppath, [{"key": "COCKPIT_SECRET",
+                                           "value": secrets.token_hex(32)}])
+            if not res.get("ok"):
+                sys.exit(f"racecast: {res['error']}")
+            print(f"generated COCKPIT_SECRET in {ppath}")
+        res = _write_env_file(_env_file(), [{"key": "RACECAST_COCKPIT_ENABLED",
+                                             "value": "true"}])
+        if not res.get("ok"):
+            sys.exit(f"racecast: {res['error']}")
+        print("cockpit enabled — restart the relay, then 'racecast cockpit links'.")
+        return None
+
+    if verb == "disable":
+        res = _write_env_file(_env_file(), [{"key": "RACECAST_COCKPIT_ENABLED",
+                                             "value": "false"}])
+        if not res.get("ok"):
+            sys.exit(f"racecast: {res['error']}")
+        print("cockpit disabled — restart the relay to stop serving /cockpit.")
+        return None
+
+    if verb == "links":
+        _apply_active_profile_env()
+        secret = os.environ.get("RACECAST_COCKPIT_SECRET")
+        if not secret:
+            sys.exit("racecast: no COCKPIT_SECRET — run 'racecast cockpit enable' first.")
+        try:
+            roster = _cockpit_roster()
+        except Exception:
+            sys.exit("racecast: could not read the schedule (is the relay running?).")
+        if not roster:
+            sys.exit("racecast: no streamers in the schedule (is the relay running?).")
+        host = _tailscale_ip() or "<tailscale-ip>"
+        versions = cpadm.load_versions(_cockpit_versions_path())
+        post = "--post" in args
+        lines = []
+        for name in roster:
+            key = cpa.streamer_key(name)
+            tok = cpa.mint_token(secret, key, cpadm.current_version(versions, key))
+            url = f"https://<your-magicdns-host>/cockpit?t={tok}"   # Funnel host
+            lan = f"http://{host}:{RELAY_PORT}/cockpit?t={tok}"      # tailnet fallback
+            print(f"{name}:\n  funnel:  {url}\n  tailnet: {lan}")
+            lines.append(f"{name}: {url}")
+        if post:
+            try:
+                _post_chat_message("Cockpit links:\n" + "\n".join(lines))
+                print("posted links into crew chat.")
+            except Exception:
+                print("note: could not post to crew chat (relay not running?).")
+        return None
+
+    if verb == "funnel":
+        return _cockpit_funnel(args)
+    if verb == "token":
+        return _cockpit_token(args)
+    if verb == "pull-versions":
+        return _cockpit_pull_versions(args)
+    sys.exit(f"usage: racecast cockpit {{{'|'.join(COCKPIT_VERBS)}}}")
 
 
 BACKUP_VERBS = ("create", "list", "restore", "delete")
@@ -4065,6 +4190,8 @@ def main(argv=None):
         return profile_cmd(action["rest"])
     if action["kind"] == "chat":
         return chat_cmd(action["rest"])
+    if action["kind"] == "cockpit":
+        return cockpit_cmd(action["rest"])
     if action["kind"] == "backup":
         return backup_cmd(action["rest"])
     if action["kind"] == "oneshot":

@@ -1630,6 +1630,20 @@ def t_chat_routing():
     assert m.route(["chat"]) == {"kind": "chat", "rest": []}
 
 
+def t_route_cockpit():
+    assert m.route(["cockpit", "links"]) == {"kind": "cockpit", "rest": ["links"]}
+    assert m.route(["cockpit", "enable"]) == {"kind": "cockpit", "rest": ["enable"]}
+    assert m.route(["cockpit", "token", "revoke", "Alpha"]) == {
+        "kind": "cockpit", "rest": ["token", "revoke", "Alpha"]}
+    # cockpit validates the verb at route() time (unlike chat)
+    for bad in (["cockpit"], ["cockpit", "bogus"]):
+        try:
+            m.route(bad)
+            raise AssertionError(bad)
+        except ValueError:
+            pass
+
+
 def t_cookies_twitch_routing():
     # "twitch" as the first token selects the Twitch export
     args = m._cookies_oneshot_args(["twitch", "firefox"])
