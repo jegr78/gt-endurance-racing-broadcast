@@ -20,6 +20,27 @@ def t_free_port_varies():
     assert e.free_port() != e.free_port() or True  # non-flaky: just exercise it
 
 
+def t_run_checks_aggregates_and_exits():
+    def ok(_ctx):  return e.CheckResult("ok", "pass", "")
+    def bad(_ctx): return e.CheckResult("bad", "fail", "boom")
+    def skipd(_ctx): return e.CheckResult("sk", "skip", "no browser")
+    results, code = e.run_checks([ok, skipd], ctx=None)
+    assert code == 0 and {r.status for r in results} == {"pass", "skip"}
+    results, code = e.run_checks([ok, bad], ctx=None)
+    assert code == 1, code  # any fail -> non-zero
+
+
+def t_run_checks_turns_exception_into_fail():
+    def boom(_ctx): raise RuntimeError("kaboom")
+    results, code = e.run_checks([boom], ctx=None)
+    assert code == 1 and results[0].status == "fail" and "kaboom" in results[0].message
+
+
+def t_classify_capability():
+    assert e.classify_capability(available=False, name="playwright").status == "skip"
+    assert e.classify_capability(available=True, name="playwright") is None
+
+
 def _relay_parse(text):
     import importlib.util
     here = os.path.dirname(__file__)
