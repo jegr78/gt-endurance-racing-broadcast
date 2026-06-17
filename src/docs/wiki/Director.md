@@ -57,6 +57,19 @@ been connecting for more than ~30 seconds the line turns amber and warns
 the exact error from the producer's machine is appended when there is one.
 The POV feed joins the line while it is connecting or serving.
 
+### Event title
+
+The header subtitle shows the **event title** — a free-text label for this
+round, e.g. `GTEC - 2026 - Round 4 - Nürburgring 24h`. It is the same title
+shown in the [Commentator Cockpit](Commentator-Cockpit) and on every Discord
+message, so the whole crew sees one consistent name. Click the **✎** next to it
+to edit it live (Enter saves, Esc cancels); the change applies immediately and
+is remembered across a relay restart. The producer can also preset it with
+`racecast event start --title "…"` or the league's `EVENT_TITLE` default. It is
+**producer-side runtime state** — it is never written to the Google Sheet (see
+[Sheet-Webhook](Sheet-Webhook)). Leave it blank and the header keeps its static
+text.
+
 ### Warning banners
 
 Ongoing problems show as banners directly under the header — they appear

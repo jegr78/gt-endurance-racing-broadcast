@@ -361,6 +361,16 @@ def t_discord_health_payload_shape_and_color():
     assert "recover" in (ok["embeds"][0]["title"] + ok["embeds"][0]["description"]).lower()
 
 
+def t_discord_health_payload_event_title_footer():
+    # A non-empty event title (#207) rides along as the embed footer; empty -> no
+    # footer at all (the embed is byte-for-byte the pre-#207 shape).
+    with_title = m.discord_health_payload("red", ["Feed A down"], prev_level="green",
+                                          event_title="GTEC - Round 4")
+    assert with_title["embeds"][0]["footer"] == {"text": "GTEC - Round 4"}
+    without = m.discord_health_payload("red", ["Feed A down"], prev_level="green")
+    assert "footer" not in without["embeds"][0]
+
+
 def t_discord_health_payload_pings_here_on_every_level():
     # @here must live in top-level `content` (Discord ignores mentions inside
     # embeds) and allowed_mentions must permit it — so a health change pings the

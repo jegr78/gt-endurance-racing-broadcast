@@ -157,6 +157,7 @@ class ResolvedConfig:
     discord_webhook_url: str = ""  # league Discord webhook for live health alerts (optional)
     obs_collection: str = ""     # OBS scene-collection name; falls back to NAME
     cockpit_secret: str = ""     # per-league HMAC secret for the talent cockpit (#191)
+    event_title: str = ""        # optional free-text event title (Panel/Cockpit/Discord, #207)
     logo_path: str = ""          # absolute path, or "" if unset/missing
     profile_dir: str = ""
     runtime_dir: str = ""
@@ -210,6 +211,7 @@ def resolve_config(root, *, override=None, runtime_root=None, environ=None):
         discord_webhook_url=prof.get("DISCORD_WEBHOOK_URL", ""),
         obs_collection=prof.get("OBS_COLLECTION") or f"{PRODUCT_COLLECTION_PREFIX} — {resolved_name}",
         cockpit_secret=prof.get("COCKPIT_SECRET", ""),
+        event_title=prof.get("EVENT_TITLE", ""),
         logo_path=logo_path,
         profile_dir=pdir,
         runtime_dir=profile_runtime_dir(root, name),

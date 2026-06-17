@@ -579,6 +579,28 @@ def t_stint_args_rejects_garbage():
             pass
 
 
+def t_title_args_extraction():
+    # event_start forwards --title (free text) to the relay as --event-title (#207)
+    assert m._title_args([]) == []
+    assert m._title_args(["--qualifying"]) == []
+    assert m._title_args(["--title", "Round 4"]) == ["--event-title", "Round 4"]
+    assert m._title_args(["--title=Round 5 — Spa"]) == ["--event-title", "Round 5 — Spa"]
+    assert m._title_args(["--stint", "3", "--title", "GTEC R4"]) == \
+        ["--event-title", "GTEC R4"]
+    assert m._title_args(["--title="]) == ["--event-title", ""]   # explicit clear
+    # bare --title followed by another flag is NOT consumed as the value
+    assert m._title_args(["--title", "--qualifying"]) == []
+
+
+def t_takeover_event_title_extracts():
+    # A's on-air title is adopted at takeover; missing/bad -> None (leave local alone)
+    assert m._takeover_event_title({"event_title": "Round 4"}) == "Round 4"
+    assert m._takeover_event_title({"event_title": ""}) == ""        # clear to match A
+    assert m._takeover_event_title({"live": {}}) is None             # older relay (no field)
+    assert m._takeover_event_title(None) is None                     # A unreachable
+    assert m._takeover_event_title({"event_title": 5}) is None       # bad type ignored
+
+
 def t_relay_start_warns_when_running_and_stint_ignored():
     # already-running + --stint: must tell the operator the flag was ignored
     import io, contextlib
@@ -800,6 +822,15 @@ def t_profile_env_vars_includes_obs_collection():
                                obs_collection="Demo Broadcast")
     out = m._profile_env_vars(rc)
     assert out["RACECAST_OBS_COLLECTION"] == "Demo Broadcast"
+
+
+def t_profile_env_vars_includes_event_title():
+    rc = m.pcfg.ResolvedConfig(profile="demo", name="Demo", sheet_id="abc",
+                               event_title="GTEC - Round 4")
+    assert m._profile_env_vars(rc)["RACECAST_EVENT_TITLE"] == "GTEC - Round 4"
+    # empty -> filtered out (relay falls back to event.json / no title)
+    rc2 = m.pcfg.ResolvedConfig(profile="demo", name="Demo", sheet_id="abc")
+    assert "RACECAST_EVENT_TITLE" not in m._profile_env_vars(rc2)
 
 
 def t_profile_env_vars_includes_discord_webhook():
@@ -1617,6 +1648,31 @@ def t_event_takeover_qualifying_and_override_forwarded():
     finally:
         m._relay_fetch_json, m.event_start, m.chat_cmd = orig_fetch, orig_es, orig_chat
         restore()
+
+
+def t_event_takeover_pulls_event_title():
+    # Takeover adopts producer A's on-air event title (#207), persisting it to
+    # event.json BEFORE bring-up so the new relay loads it (mirrors the chat pull).
+    import json as _json, tempfile
+    orig_fetch, orig_es, orig_chat = m._relay_fetch_json, m.event_start, m.chat_cmd
+    orig_path = m._event_title_path
+    restore = _with_env(RACECAST_SHEET_ID="S", RACECAST_SHEET_PUSH_URL="https://push")
+    m._relay_fetch_json = lambda url, timeout=3: {
+        "league": {"sheet_id": "S"}, "live": {"feed": "A", "stint": 3, "mode": "race"},
+        "event_title": "GTEC - Round 4 - Nürburgring"}
+    m.chat_cmd = lambda rest: None
+    m.event_start = lambda a: None
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "event.json")
+        m._event_title_path = lambda: path
+        try:
+            m.event_takeover(["100.64.1.2"])
+            with open(path, encoding="utf-8") as fh:
+                assert _json.load(fh) == {"title": "GTEC - Round 4 - Nürburgring"}
+        finally:
+            (m._relay_fetch_json, m.event_start, m.chat_cmd,
+             m._event_title_path) = orig_fetch, orig_es, orig_chat, orig_path
+            restore()
 
 
 def t_chat_routing():

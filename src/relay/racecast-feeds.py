@@ -174,13 +174,14 @@ def health_should_notify(prev, cur):
     return prev != cur
 
 
-def discord_health_payload(level, reasons, prev_level=None):
+def discord_health_payload(level, reasons, prev_level=None, event_title=""):
     """Discord webhook JSON for a health transition. Pure → unit-tested. A return
     to green reads as a recovery; otherwise it announces the degraded state and
     lists the reasons. Every health change (degraded AND recovery) carries an
     @here ping so the crew is pulled in even if the panel pill goes unnoticed —
     the mention MUST sit in top-level `content` with allowed_mentions permitting
-    it, because Discord ignores mentions inside an embed."""
+    it, because Discord ignores mentions inside an embed. A non-empty event_title
+    (#207) is shown as the embed footer; empty -> the embed is unchanged."""
     if level == "green":
         title = "✅ Broadcast health recovered — all systems green"
         desc = "Recovered from a previous issue." if prev_level and prev_level != "green" \
@@ -188,11 +189,13 @@ def discord_health_payload(level, reasons, prev_level=None):
     else:
         title = f"⚠️ Broadcast health: {_HEALTH_LABEL[level]}"
         desc = "\n".join(f"• {r}" for r in reasons) or _HEALTH_LABEL[level]
+    embed = {"title": title, "description": desc, "color": HEALTH_COLORS[level]}
+    if event_title:
+        embed["footer"] = {"text": event_title}
     return {"username": "GT Racecast",
             "content": "@here",
             "allowed_mentions": {"parse": ["everyone"]},
-            "embeds": [{"title": title, "description": desc,
-                        "color": HEALTH_COLORS[level]}]}
+            "embeds": [embed]}
 # Sheet ID is NOT hardcoded — it comes from RACECAST_SHEET_ID (injected by the CLI
 # from the active profile). Override per-run with --sheet-id.
 DEFAULT_SHEET_TAB = "Schedule"
@@ -809,6 +812,70 @@ def check_webhook_response(body, expected_action=None):
     return True, None
 
 
+EVENT_TITLE_MAX = 120
+
+
+def sanitize_event_title(raw):
+    """Normalize a free-text event title (#207): coerce non-strings to "", drop
+    control chars (a title is one line — newlines/tabs/etc. are removed), trim, and
+    cap at EVENT_TITLE_MAX chars. Pure → unit-tested. This is normalization only:
+    every surface renders the title via textContent (Cockpit) / a text node
+    (Panel), so it is never interpreted as HTML."""
+    if not isinstance(raw, str):
+        return ""
+    cleaned = "".join(ch for ch in raw if ord(ch) >= 32)
+    return cleaned.strip()[:EVENT_TITLE_MAX].strip()
+
+
+class EventTitleStore:
+    """Free-text event title (#207), persisted to runtime/<profile>/event.json so it
+    survives a relay restart and rides along at a producer takeover (pulled like
+    chat). Mirrors TimerStore's local-file layer but with NO sheet sync: the title
+    is producer-side event state, deliberately never written to the Sheet. Startup
+    precedence: event.json (if present, even when blank) > the EVENT_TITLE default
+    (from profile.env) > empty."""
+
+    def __init__(self, path, default=""):
+        self.path = path
+        self.lock = threading.Lock()
+        self.title = sanitize_event_title(default)
+        try:
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        except OSError:
+            pass  # fresh layout; _save_file degrades per-write if the dir is missing
+        self._load_file()
+
+    def _load_file(self):
+        try:
+            with open(self.path, encoding="utf-8") as fh:
+                saved = json.load(fh)
+        except (OSError, ValueError):
+            return  # no/corrupt file -> keep the default
+        if isinstance(saved, dict) and isinstance(saved.get("title"), str):
+            self.title = sanitize_event_title(saved["title"])
+
+    def _save_file(self):
+        try:
+            with open(self.path, "w", encoding="utf-8") as fh:
+                json.dump({"title": self.title}, fh)
+        except OSError:
+            pass  # best-effort, same contract as the timer/schedule caches
+
+    def get(self):
+        with self.lock:
+            return self.title
+
+    def set(self, raw):
+        """Validate + store + persist a new title; returns the stored value."""
+        with self.lock:
+            self.title = sanitize_event_title(raw)
+            self._save_file()
+            return self.title
+
+    def data(self):
+        return {"title": self.get()}
+
+
 class TimerStore:
     """Race-timer state with three layers (spec §3): in-memory + local JSON
     file (restart-safe) + Sheet tab via CSV poll / Apps-Script webhook push
@@ -1385,11 +1452,20 @@ def own_submission_target(rows, me_key, stint=None, row=None):
                   "streamer_name": streamer, "prev_url": (url or "").strip()}
 
 
-def cockpit_submission_payload(entry, pending_count):
+def _event_footer(event_title, suffix=""):
+    """Discord embed footer text combining the optional event title (#207) and an
+    optional suffix (e.g. a pending count). Returns the joined text, or "" when both
+    are empty (caller then omits the footer)."""
+    parts = [p for p in (event_title, suffix) if p]
+    return " · ".join(parts)
+
+
+def cockpit_submission_payload(entry, pending_count, event_title=""):
     """Discord webhook JSON announcing a new pending stream submission (issue
     #193), mirroring discord_health_payload: the @here mention sits in top-level
     `content` (Discord ignores mentions inside an embed). Pure → unit-tested; the
-    caller no-ops when no webhook is configured."""
+    caller no-ops when no webhook is configured. A non-empty event_title (#207) is
+    prefixed onto the footer (which already carries the pending count)."""
     desc = (f"**{entry['streamer_name']}** proposed a stream link for stint "
             f"**{entry['target_stint']}**.\n{entry['proposed_url']}\n\n"
             f"Approve or reject it in the Director Panel · Pending stream submissions.")
@@ -1398,22 +1474,27 @@ def cockpit_submission_payload(entry, pending_count):
             "allowed_mentions": {"parse": ["everyone"]},
             "embeds": [{"title": "📥 New stream-link submission",
                         "description": desc, "color": 0x1D4ED8,
-                        "footer": {"text": f"{pending_count} pending"}}]}
+                        "footer": {"text": _event_footer(event_title,
+                                                         f"{pending_count} pending")}}]}
 
 
-def cockpit_approval_payload(entry):
+def cockpit_approval_payload(entry, event_title=""):
     """Discord webhook JSON announcing that the director APPROVED a stream-link
     submission (follow-up to #193). Deliberately carries NO @here ping — it is a
     heads-up that the link is now scheduled, not a call to action — so there is no
     top-level `content` and mentions are suppressed. Pure → unit-tested; the caller
-    no-ops when no webhook is configured."""
+    no-ops when no webhook is configured. A non-empty event_title (#207) is shown as
+    the embed footer; empty -> no footer (unchanged)."""
     desc = (f"**{entry['streamer_name']}**'s stream link for stint "
             f"**{entry['target_stint']}** was approved by the director.\n"
             f"{entry['proposed_url']}")
+    embed = {"title": "✅ Stream link approved",
+             "description": desc, "color": 0x16A34A}
+    if event_title:
+        embed["footer"] = {"text": event_title}
     return {"username": "GT Racecast",
             "allowed_mentions": {"parse": []},
-            "embeds": [{"title": "✅ Stream link approved",
-                        "description": desc, "color": 0x16A34A}]}
+            "embeds": [embed]}
 
 
 class SubmissionStore:
@@ -2158,10 +2239,11 @@ class Relay:
     def __init__(self, source, ports, logdir, cookies=None, pov_source=None,
                  pov_port=None, start_stint=1, cookie_dir=None,
                  qual_source=None, mode="race", discord_webhook_url=None,
-                 sheet_id=None):
+                 sheet_id=None, event_title_store=None):
         self.race_source = source
         self.qual_source = qual_source
         self.sheet_id = sheet_id          # league identity, surfaced in /status for takeover
+        self.event_title_store = event_title_store   # free-text event title for Discord footers (#207)
         # Active schedule is race by default; qualifying only when a qual source
         # exists. self.source (property below) returns whichever is active, so
         # every existing call site (status/next/reload/set_stint/handler) becomes
@@ -2263,7 +2345,9 @@ class Relay:
         if not url:
             return
         try:
-            data = json.dumps(discord_health_payload(level, reasons, prev)).encode()
+            event_title = self.event_title_store.get() if self.event_title_store else ""
+            data = json.dumps(discord_health_payload(level, reasons, prev,
+                                                     event_title)).encode()
             # Discord is behind Cloudflare, which 403s the default urllib
             # "Python-urllib/x.y" User-Agent — without an explicit UA the alert
             # silently never arrives. Match the UA the rest of the relay sends.
@@ -2547,7 +2631,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  chat_store=None, preview_path=None, graphics_dir=None,
                  splitscreen_path=None, cockpit_page_path=None, cockpit_secret=None,
                  cockpit_enabled=False, cockpit_versions_path=None,
-                 submission_store=None):
+                 submission_store=None, event_store=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -2688,20 +2772,26 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             except Exception as e:
                 print(f"WARN: Discord {what} webhook failed: "
                       f"{type(e).__name__}: {e}")
+        def _event_title(self):
+            """The current event title (#207) for Discord footers, or ""."""
+            return event_store.get() if event_store else ""
         def _notify_submission(self, entry, pending_count):
             """Best-effort Discord @here ping on a new pending submission (#193)."""
-            self._post_discord(cockpit_submission_payload(entry, pending_count),
-                               "submission")
+            self._post_discord(
+                cockpit_submission_payload(entry, pending_count, self._event_title()),
+                "submission")
         def _notify_approval(self, entry):
             """Best-effort Discord heads-up (no @here ping) once the director
             approves a submission and the link is scheduled (#193 follow-up)."""
-            self._post_discord(cockpit_approval_payload(entry), "approval")
+            self._post_discord(
+                cockpit_approval_payload(entry, self._event_title()), "approval")
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
             try:
                 if not p or p == ["status"]:
                     base = relay.status()
                     if timer_store: base["timer"] = timer_store.summary()
+                    base["event_title"] = event_store.get() if event_store else ""
                     return self._send(base)
                 if p == ["panel"]:
                     if not panel_path: return self._send({"error":"panel disabled"}, 404)
@@ -2847,6 +2937,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                       if submission_store else [])
                         tally.update({"me": me, "mode": relay.mode,
                                       "program_available": _obs_ws is not None,
+                                      # read-only event title for the talent header (#207)
+                                      "event_title": event_store.get() if event_store else "",
                                       # own stints for the link-submission picker
                                       # (#193); empty -> the cockpit hides the form.
                                       "submit_enabled": submission_store is not None,
@@ -3071,6 +3163,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         self._notify_approval(entry)
                         return self._send({"ok": True, "id": entry["id"], **res})
                     return self._send({"error": "unknown", "path": self.path}, 404)
+                if p == ["event", "title"]:
+                    # Director live-edit of the free-text event title (#207). Tailnet
+                    # trust boundary like the rest of the panel; persisted to
+                    # event.json so it survives a restart and a takeover pull.
+                    if not event_store:
+                        return self._send({"error": "event title disabled"}, 404)
+                    title = event_store.set(body.get("title"))
+                    return self._send({"ok": True, "title": title})
                 if not setup_ctl:
                     return self._send({"error": "setup control disabled"}, 404)
                 if p == ["schedule", "set"]:
@@ -3217,6 +3317,12 @@ def main():
     ap.add_argument("--stint", type=int, default=1,
                     help="1-based stint that is ON AIR right now (producer takeover): "
                          "Feed A serves it, Feed B preloads the next one. Default 1.")
+    ap.add_argument("--event-title", default=None,
+                    help="Free-text event title shown in the Director Panel, the "
+                         "Commentator Cockpit and Discord messages (#207). When given, "
+                         "it is written to runtime event.json (overriding any saved/"
+                         "EVENT_TITLE default); omit to keep the persisted title or fall "
+                         "back to RACECAST_EVENT_TITLE.")
     ap.add_argument("--logdir", default="logs")
     ap.add_argument("--cookies", default=None,
                     help="Path to yt-cookies.txt (Netscape format) for YouTube login — "
@@ -3373,6 +3479,14 @@ def main():
         timer_store.refresh()   # non-fatal: adopt a newer sheet anchor on startup
 
     chat_store = ChatStore(os.path.join(runtime, "chat.json"))
+    # Free-text event title (#207): persisted runtime state (event.json), seeded
+    # from the EVENT_TITLE default (profile.env). An explicit --event-title wins and
+    # is persisted, so it survives a restart; a takeover instead pulls A's title
+    # into event.json before this runs.
+    event_store = EventTitleStore(os.path.join(runtime, "event.json"),
+                                  default=os.environ.get("RACECAST_EVENT_TITLE", ""))
+    if args.event_title is not None:
+        event_store.set(args.event_title)
     source = ScheduleSource(csv_url, cache, local)
     source.load_initial(SCHEDULE_TEMPLATE)
     setup_ctl = (SetupControl(push_url, hud_source, schedule_source=source,
@@ -3389,7 +3503,8 @@ def main():
                   qual_source=qual_source,
                   mode=("qualifying" if args.qualifying else "race"),
                   discord_webhook_url=os.environ.get("RACECAST_DISCORD_WEBHOOK_URL"),
-                  sheet_id=args.sheet_id)
+                  sheet_id=args.sheet_id,
+                  event_title_store=event_store)
     relay.start()
     relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
     # Launching straight into qualifying mode: seed the HUD Streamer/Stint from
@@ -3431,7 +3546,8 @@ def main():
                            cockpit_secret=cockpit_secret,
                            cockpit_enabled=cockpit_enabled,
                            cockpit_versions_path=cockpit_versions_path,
-                           submission_store=submission_store)
+                           submission_store=submission_store,
+                           event_store=event_store)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []
@@ -3487,6 +3603,9 @@ def main():
             print(f"    remote (tailnet):      http://{remote_host}:{args.http_port}/panel")
         elif args.bind == "auto":
             print("    (no Tailscale IP found — local only; start Tailscale for remote access)")
+    if event_store.get():
+        print(f"  Event title: “{event_store.get()}”  (panel/cockpit/Discord; "
+              f"edit live in the Director Panel)")
     if cockpit_secret and cockpit_enabled:
         if cockpit_page_path:
             print("  Commentator cockpit: /cockpit (auth) — links via 'racecast cockpit links'")

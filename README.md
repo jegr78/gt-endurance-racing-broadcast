@@ -130,6 +130,7 @@ racecast setup --out runtime/GT_Endurance.import.json   # localize OBS assets + 
 ```
 racecast event start          # bring everything up: Tailscale, Discord, relay, OBS, Companion
 racecast event start --stint 4 # take over mid-event (12h/24h): stint 4 is on air now
+racecast event start --title "GTEC - 2026 - Round 4 - Nürburgring 24h"  # set the event title (Panel/Cockpit/Discord); also editable live in the Panel
 racecast event status         # event-day readiness report (apps, services, cookies, graphics, media, config)
 racecast event stop           # stop relay/Companion/streams — OBS & friends keep running
 racecast tailscale up         # connect Tailscale (event start does this automatically)

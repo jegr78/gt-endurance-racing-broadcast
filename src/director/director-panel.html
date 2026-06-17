@@ -45,7 +45,10 @@
     box-shadow:0 12px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.03);
   }
   .brand{font-family:var(--head);font-weight:700;letter-spacing:.16em;font-size:24px;text-transform:uppercase}
-  .brand small{color:var(--amber);display:block;font-size:10px;letter-spacing:.32em;margin-top:-2px}
+  .brand small{color:var(--amber);display:flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.32em;margin-top:-2px}
+  .brand-edit{background:none;border:0;color:var(--amber);opacity:.5;cursor:pointer;font-size:11px;padding:0 2px;line-height:1}
+  .brand-edit:hover{opacity:1}
+  #brandSubInput{font:inherit;letter-spacing:.16em;text-transform:none;color:#e7edf3;background:#0c0f13;border:1px solid var(--edge);border-radius:5px;padding:2px 6px;min-width:340px;max-width:60vw}
   .strip{display:flex;gap:8px;flex-wrap:wrap;align-items:center;flex:1;justify-content:center}
   .st{display:inline-flex;align-items:center;gap:6px;background:#0c0f13;border:1px solid var(--edge);
     border-radius:8px;padding:6px 10px;font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;white-space:nowrap}
@@ -273,7 +276,7 @@
 <div class="wrap">
 
   <header>
-    <div class="brand">Director Console<small>GT ENDURANCE RACING BROADCAST</small></div>
+    <div class="brand">Director Console<small id="brandSub"><span id="brandSubText">GT ENDURANCE RACING BROADCAST</span><button id="brandSubEdit" class="brand-edit" title="Edit the event title">✎</button><input id="brandSubInput" maxlength="120" placeholder="Event title (e.g. GTEC - 2026 - Round 4 - Nürburgring 24h)" hidden></small></div>
     <div class="strip">
       <span class="st" id="stHealth" title="">HEALTH <b>—</b></span>
       <span class="st air" id="stAir">ON AIR <b>—</b></span>
@@ -834,11 +837,52 @@ function statePill(el, label, stint, n, state, down){
   el.className = "st" + (cls ? " " + cls : "");
   el.innerHTML = label + " <b>" + stint + "</b>" + (n ? "/" + n : "") + (txt ? " · " + txt : "");
 }
+/* ---------- event title (#207) — header display + inline editor ---------- */
+const BRAND_SUB_STATIC = "GT ENDURANCE RACING BROADCAST";
+let eventTitle = "", editingTitle = false;
+function renderEventTitle(title){
+  eventTitle = (title || "").trim();
+  document.title = eventTitle ? (eventTitle + " · Director Console")
+                              : "GT Endurance Racing · Director Console";
+  if (editingTitle) return;                 // don't yank an open editor (mirrors setupPoll)
+  $("#brandSubText").textContent = eventTitle || BRAND_SUB_STATIC;   // textContent: XSS-safe
+}
+function startEditTitle(){
+  editingTitle = true;
+  const inp = $("#brandSubInput");
+  inp.value = eventTitle;
+  $("#brandSubText").hidden = true; $("#brandSubEdit").hidden = true;
+  inp.hidden = false; inp.focus(); inp.select();
+}
+function stopEditTitle(){                    // restore the display (Esc / blur / post-save)
+  editingTitle = false;
+  $("#brandSubInput").hidden = true;
+  $("#brandSubText").hidden = false; $("#brandSubEdit").hidden = false;
+  renderEventTitle(eventTitle);
+}
+async function saveEventTitle(value){
+  try{
+    const r = await fetch("/event/title", {method:"POST", cache:"no-store",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({title: value})});
+    const d = await r.json();
+    if (d.error){ log("Event title: " + d.error, "err"); toast("Event title: " + d.error); return; }
+    eventTitle = d.title || "";
+    log("Event title → " + (eventTitle || "(cleared)"));
+  }catch(e){ log("Event title failed (relay reachable?): " + e, "err"); toast("Event title failed — relay unreachable"); }
+}
+$("#brandSubEdit").addEventListener("click", startEditTitle);
+$("#brandSubInput").addEventListener("keydown", async (e)=>{
+  if (e.key === "Enter"){ e.preventDefault(); await saveEventTitle(e.target.value); stopEditTitle(); }
+  else if (e.key === "Escape"){ stopEditTitle(); }
+});
+$("#brandSubInput").addEventListener("blur", ()=>{ if (editingTitle) stopEditTitle(); });
+
 async function relayPoll(){
   try{
     const r = await fetch("/status", {cache:"no-store"});
     const d = await r.json();
     relayLed(true); clearBanner("relay");
+    renderEventTitle(d.event_title);          // header subtitle + tab title (#207)
     // On-air feed = the lower stint index (mirrors the relay's live_feed()).
     pvMarkOnAir(d.feeds ? (d.feeds.A.index <= d.feeds.B.index ? "A" : "B") : null);
     // Aggregate health pill (relay heartbeat). Version-skew safe: an older relay

@@ -184,6 +184,21 @@ def t_approval_payload_has_no_ping():
     assert "Alpha Racing" in body and "S3" in body and "u-new" in body
 
 
+def t_payloads_carry_event_title():
+    # A non-empty event title (#207) appears in both submission + approval embeds;
+    # the submission footer keeps its pending count alongside the title. Empty ->
+    # the pre-#207 shape is unchanged (submission keeps a count-only footer,
+    # approval has no footer).
+    e = {"streamer_name": "Alpha Racing", "target_stint": "S3", "proposed_url": "u-new"}
+    sub = m.cockpit_submission_payload(e, pending_count=2, event_title="GTEC - Round 4")
+    assert sub["embeds"][0]["footer"]["text"] == "GTEC - Round 4 · 2 pending"
+    sub0 = m.cockpit_submission_payload(e, pending_count=2)
+    assert sub0["embeds"][0]["footer"]["text"] == "2 pending"
+    app = m.cockpit_approval_payload(e, event_title="GTEC - Round 4")
+    assert app["embeds"][0]["footer"] == {"text": "GTEC - Round 4"}
+    assert "footer" not in m.cockpit_approval_payload(e)["embeds"][0]
+
+
 # ---- live HTTP surface ------------------------------------------------------
 
 def _client(secret=SECRET, enabled=True, rows=None, live_idx=0,

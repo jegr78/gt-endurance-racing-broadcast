@@ -240,6 +240,23 @@ def t_resolve_config_cockpit_secret_blank_when_absent():
         assert cfg.cockpit_secret == ""
 
 
+def t_resolve_config_event_title_from_field():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo", "NAME=Demo\nSHEET_ID=abc\n"
+                   "EVENT_TITLE=GTEC - 2026 - Round 4 - Nürburgring 24h\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.event_title == "GTEC - 2026 - Round 4 - Nürburgring 24h"
+
+
+def t_resolve_config_event_title_blank_when_absent():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo", "NAME=Demo\nSHEET_ID=abc\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.event_title == ""
+
+
 def t_resolve_config_obs_collection_from_field():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)

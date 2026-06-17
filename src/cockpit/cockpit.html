@@ -11,6 +11,8 @@
   header { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: #14171c; }
   header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .02em; }
   #who { opacity: .7; font-size: 13px; }
+  #eventTitle { font-size: 13px; font-weight: 600; color: #ffb454; }
+  #eventTitle:not(:empty)::before { content: "· "; opacity: .5; font-weight: 400; }
   .wrap { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; padding: 12px; }
   @media (max-width: 820px) { .wrap { grid-template-columns: 1fr; } }
   .card { background: #14171c; border: 1px solid #232830; border-radius: 10px; overflow: hidden; }
@@ -57,6 +59,7 @@
 <body>
 <header>
   <h1>Commentator Cockpit</h1>
+  <span id="eventTitle"></span>
   <span id="who"></span>
 </header>
 
@@ -116,6 +119,10 @@ async function j(path) {
 
 // --- Tally ---
 function renderTally(d) {
+  // Read-only event title for talent (#207). textContent -> XSS-safe, like #who.
+  const title = (d.event_title || '').trim();
+  $('eventTitle').textContent = title;
+  document.title = title ? (title + ' · Commentator Cockpit') : 'Commentator Cockpit';
   $('who').textContent = d.me ? '· ' + d.me + (d.mode === 'qualifying' ? ' · QUALI' : '') : '';
   const el = $('tally');
   if (d.on_air) {
