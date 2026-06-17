@@ -100,6 +100,7 @@ python3 tests/test_setup.py          # panel sheet-control (webhook payloads, Se
 python3 tests/test_ui_ops.py         # Control Center structured status providers + op registry
 python3 tests/test_ui_jobs.py        # Control Center job manager (child spawn, line buffer)
 python3 tests/test_ui_server.py      # Control Center HTTP server (routes, SSE, quit)
+python3 tests/test_e2e.py            # e2e-harness pure pieces (free-port, CSV builder, check registry, gates)
 python3 tools/run-tests.py           # the whole suite (exactly what CI runs)
 python3 tools/lint.py                # ruff lint (= the CI lint job); --fix auto-corrects.
                                      # Rules mirror the CodeQL alert classes — see ruff.toml.
@@ -111,6 +112,11 @@ python3 -c "import sys; sys.path.insert(0,'tests'); import test_pov as t; t.t_po
 python3 tools/build.py               # -> dist/GT_Racecast_Package/ + .zip
 # Standalone binary (maintainer; CI builds all three OSes on tags v*)
 python3 tools/build-binary.py        # -> dist/bin/racecast + dist/bin/racecast-ui (+ smoke test)
+
+# End-to-end / regression harness (maintainer; stands up relay + Control Center, asserts the live HTTP surface)
+python3 tools/e2e.py                  # synthetic mode: self-contained, no real Sheet/cookies/OBS — the CI `e2e` job runs this
+python3 tools/e2e.py --real-league NAME   # local-only: drive the copied real-league dev build (refuses under CI)
+python3 tools/e2e.py --playwright [--headed] [--shots DIR]  # optional rendered checks / visible browser / MCP-free screenshot tour
 
 # Unified operator CLI (the producer's main entrypoint)
 python3 src/racecast.py relay start       # start the relay in the background
@@ -491,6 +497,46 @@ real release — triggered by the `preview` label on a PR or by `workflow_dispat
 against a ref. Its tags are `preview-*` (never `v*`), so it never triggers
 `release.yml` or release-please; `preview-cleanup.yml` deletes a PR's pre-release
 on close.
+
+### End-to-end / regression harness (`tools/e2e.py` + `tools/e2e_checks.py`)
+The integration **outer loop** (issue #199): it stands up the relay + Control Center
+from `src/` as owned subprocesses and asserts the **live HTTP surface** — the class of
+bug the unit suite (pure functions) can't catch. Maintainer-only (`tools/`, not shipped).
+`tools/e2e_checks.py` is the pure, import-testable assertion core (free-port,
+synthetic-CSV builder, tolerant `http_request`, the `CheckResult`/`run_checks` registry,
+the `check_*` callables, `SYNTHETIC_CHECKS`/`REAL_LEAGUE_CHECKS`), unit-tested in
+`tests/test_e2e.py`; `tools/e2e.py` owns process lifecycle (spawn, readiness-poll,
+guaranteed `finally` teardown — no leaked relays/UI even on failure). Two modes:
+- **Synthetic** (`tools/e2e.py`, the default, **CI-runnable**): an ephemeral temp profile +
+  an in-process CSV schedule server via `--sheet-csv-url`; spawns an enabled relay + a
+  cockpit-disabled relay + the Control Center on free `127.0.0.1` ports; runs 10 checks.
+  No real Sheet/cookies/OBS/Tailscale. Because the relay **hard-exits at startup without
+  `yt-dlp`/`streamlink` on PATH** (`racecast-feeds.py`), synthetic mode writes **no-op
+  stubs** for `yt-dlp`/`streamlink`/`ffmpeg`/`deno` into the temp dir and prepends them
+  to the relay's PATH (the fake schedule URLs are never pulled). The dedicated **`e2e`
+  CI job** (`.github/workflows/ci.yml`, ubuntu) runs exactly this; the matrix `test` job
+  already runs `tests/test_e2e.py` via `run-tests.py`.
+- **Real-league** (`--real-league NAME`, **local only — refuses under CI**): drives the
+  copied real-league dev build (real Sheet/cookies/`COCKPIT_SECRET`), minting a token for
+  a real streamer pulled live from `/schedule/data`. Runs a **non-mutating** subset
+  (`REAL_LEAGUE_CHECKS`): it **excludes** `check_submission_pending` (a `POST
+  /cockpit/submit` could ping the league's real Discord webhook) and
+  `check_cockpit_404_when_disabled` (needs a second relay); `check_chat_round_trip` is
+  included (the crew chat is relay-local).
+
+The checks regression-guard the four #191 cockpit bugs (env-clobber via the real
+`racecast._set_env_key`, timer `—`, double-"stint" tally, flat `/cockpit/data` shape)
+and the #193 own-row submission. Optional **rendered checks** (`--playwright`) use the
+Playwright **Python library** (not the MCP) and SKIP when unavailable (CI omits the
+flag). Visual helpers, all local-only: `--headed`/`--slowmo` (visible browser),
+`--keep` (leave the services up + print the live URLs incl. the cockpit token), and
+`--shots DIR` (write a screenshot of each surface — a reproducible, MCP-free tour;
+the Control Center shot shows the machine's Tailscale IP, so it is a **local artifact,
+never committed**). The local real-league run (copy the deployed instance's
+profile/runtime/cookies in, enable cockpit on the copy, set up a Playwright venv, run,
+tear down) is captured in the **`racecast-e2e`** skill, which builds on the
+**`racecast-local-uat`** skill's data copy-in. Spec/plan:
+`docs/superpowers/{specs,plans}/2026-06-17-e2e-regression-harness*.md`.
 
 ### Static mode (`src/scripts/`) — the simpler alternative
 `loopstream.py` keeps one streamlink server alive for one public channel (YouTube or
