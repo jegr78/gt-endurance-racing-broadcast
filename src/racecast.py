@@ -949,7 +949,18 @@ def _cockpit_funnel(args):
 
 
 def _cockpit_token(args):
-    sys.exit("cockpit token: implemented in a later task")
+    """`racecast cockpit token revoke <streamer>` — bump that streamer's version
+    so their current link stops validating; re-issue with 'racecast cockpit links'.
+    The relay reads cockpit-versions.json per request, so the bump is immediate —
+    no relay reload needed."""
+    if len(args) < 2 or args[0] != "revoke":
+        sys.exit("usage: racecast cockpit token revoke <streamer-name>")
+    key = cpa.streamer_key(args[1])
+    if not key:
+        sys.exit("racecast: empty streamer name.")
+    new_ver = cpadm.bump_version(_cockpit_versions_path(), key)
+    print(f"revoked '{args[1]}' (key {key}) -> version {new_ver}. "
+          "Re-issue with 'racecast cockpit links'.")
 
 
 def _cockpit_pull_versions(args):
