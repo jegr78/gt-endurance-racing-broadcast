@@ -2408,9 +2408,15 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  chat_store=None, preview_path=None, graphics_dir=None,
                  splitscreen_path=None, cockpit_page_path=None, cockpit_secret=None,
                  cockpit_enabled=False, cockpit_versions_path=None):
-    # Shared across all H instances (one limiter per relay): cap cockpit auth
-    # failures and chat sends per client so the public Funnel ingress (#191)
-    # cannot be brute-forced or flooded.
+    # Shared across all H instances (one limiter per relay). The CHAT limiter is
+    # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
+    # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
+    # the single proxy address — so it is a COARSE GLOBAL cap on failed cockpit
+    # auths, not a per-client control. That is acceptable: valid tokens never reach
+    # this limiter (only the failure branch does, so legit talent is never locked
+    # out), and the 128-bit HMAC signature makes brute force infeasible regardless
+    # — this is pure defense-in-depth. X-Forwarded-For is deliberately NOT trusted
+    # for the key (spoofable over the public ingress, which would weaken it).
     _cockpit_authfail_rl = cockpit_auth.RateLimiter(limit=20, window_s=60)
     _cockpit_chat_rl = cockpit_auth.RateLimiter(limit=10, window_s=60)
 
