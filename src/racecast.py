@@ -2970,17 +2970,21 @@ def _ts_api_err(exc):
 
 def _cockpit_setup_funnel(args):
     """`racecast cockpit setup-funnel [--apply] [--target T]` — automate the
-    one-time tailnet prerequisites via the Tailscale Admin API (OAuth client):
-    enable MagicDNS + add the 'funnel' nodeAttr. Dry-run unless --apply. HTTPS
-    certificate enablement has no API — we print the manual reminder."""
+    one-time tailnet prerequisites via the Tailscale Admin API: enable MagicDNS +
+    add the 'funnel' nodeAttr. Auth via a direct API access token
+    (RACECAST_TS_API_KEY) or an OAuth client (RACECAST_TS_OAUTH_CLIENT_ID/SECRET).
+    Dry-run unless --apply. HTTPS certificate enablement has no API — reminder only."""
     import funnel_setup as fset
+    api_key = _machine_env_value("RACECAST_TS_API_KEY")
     cid = _machine_env_value("RACECAST_TS_OAUTH_CLIENT_ID")
     csec = _machine_env_value("RACECAST_TS_OAUTH_CLIENT_SECRET")
-    if not cid or not csec:
+    if not api_key and not (cid and csec):
         sys.exit(
-            "racecast: no Tailscale OAuth client configured.\n"
-            "Create one at https://login.tailscale.com/admin/settings/oauth with "
-            "WRITE access to DNS and the Policy file (ACL), then set in .env:\n"
+            "racecast: no Tailscale API credential configured.\n"
+            "Easiest — Admin console -> Settings -> Keys -> 'API access tokens' -> "
+            "Generate access token, then set in .env:\n"
+            "  RACECAST_TS_API_KEY=tskey-api-...\n"
+            "Or a scopable OAuth client (same Keys page, WRITE on DNS + Policy file):\n"
             "  RACECAST_TS_OAUTH_CLIENT_ID=...\n  RACECAST_TS_OAUTH_CLIENT_SECRET=...")
     apply = "--apply" in args
     target = fset.DEFAULT_TARGET
@@ -2989,7 +2993,7 @@ def _cockpit_setup_funnel(args):
         if i + 1 < len(args):
             target = args[i + 1]
     try:
-        token = fset.fetch_token(cid, csec)
+        token = api_key or fset.fetch_token(cid, csec)   # direct token or OAuth exchange
         prefs = fset.get_dns_prefs(token)
         acl, etag = fset.get_acl(token)
     except (OSError, ValueError, KeyError) as exc:

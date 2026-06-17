@@ -69,32 +69,42 @@ At <https://login.tailscale.com/admin>:
 ### Automate the tailnet setup — `racecast cockpit setup-funnel`
 
 Steps 1–2 can be done from the producer machine instead of clicking through the admin
-console, using a **Tailscale OAuth client**.
+console, using a **Tailscale API access token** (or an OAuth client).
 
-#### Get the OAuth client (the "admin token")
+#### Get the API credential (the "admin token")
 
-You need to be a tailnet **Owner / Admin / Network-admin** to create one.
+You need to be a tailnet **Owner / Admin / Network-admin**. Both options live on the
+Admin console **Settings → Keys** page.
 
-1. Open **<https://login.tailscale.com/admin/settings/oauth>** (Admin console →
-   **Settings → OAuth clients**).
-2. Click **Generate OAuth client…**.
-3. Give it a description (e.g. `racecast cockpit funnel setup`).
-4. Grant **two write scopes** (tick the **Write** box next to each):
-   - **DNS** — to enable MagicDNS.
-   - **Policy file** (sometimes shown as **ACLs**) — to add the `funnel` nodeAttr.
-   Leave everything else unchecked. (If a scope asks you to pick **tags**, that's only
-   for device scopes — DNS and Policy file don't need a tag.)
-5. Click **Generate client**. Tailscale shows a **Client ID** and a **Client secret**
-   (the secret starts with `tskey-client-…` and is shown **once** — copy it now).
-6. Put both in your machine `.env` (next to the binary / repo root — gitignored):
+**Easiest — an API access token:**
+
+1. Open **<https://login.tailscale.com/admin/settings/keys>** (Admin console →
+   **Settings → Keys**).
+2. Under **API access tokens**, click **Generate access token…**, add a description
+   (e.g. `racecast funnel setup`), and generate. It shows a `tskey-api-…` value
+   **once** — copy it.
+3. Put it in your machine `.env` (next to the binary / repo root — gitignored):
    ```
-   RACECAST_TS_OAUTH_CLIENT_ID=<the client id>
-   RACECAST_TS_OAUTH_CLIENT_SECRET=tskey-client-...
+   RACECAST_TS_API_KEY=tskey-api-...
    ```
 
-> The secret can rewrite your tailnet policy — treat it like a password. It lives only
-> in `.env` (never committed). You can revoke it anytime on the same admin page; it is
-> only needed while running `setup-funnel`, not during a broadcast.
+`setup-funnel` is a **one-off**: MagicDNS and the `funnel` nodeAttr stay in the policy
+afterwards, so you only need the token for that single run. **Generate it, run
+setup-funnel, then revoke it and clear the `.env` line** — don't keep it around. The
+token's ≤90-day expiry is therefore a non-issue (you're not renewing anything). It
+has full account access while it exists, so treat it like a password.
+
+**Alternative — a scopable OAuth client** (least-privilege, doesn't expire): further
+down the same **Keys** page, under **OAuth clients**, generate one with **Write**
+access to **DNS** and the **Policy file (ACL)** only, then set instead:
+```
+RACECAST_TS_OAUTH_CLIENT_ID=<id>
+RACECAST_TS_OAUTH_CLIENT_SECRET=tskey-client-...
+```
+
+> Either credential can rewrite your tailnet policy — treat it like a password, keep
+> it only in `.env` (never committed), and it is only needed while running
+> `setup-funnel`, never during a broadcast.
 
 #### Run it
 
