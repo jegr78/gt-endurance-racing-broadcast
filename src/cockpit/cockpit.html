@@ -123,14 +123,34 @@ function pollProgram() {
   next.src = '/cockpit/program?_=' + Date.now();
 }
 
-// --- Timer ---
+// --- Timer (mirrors the broadcast HUD clock in src/obs/hud.html) ---
+let timerState = null, clockOffset = 0;   // serverNow - clientNow at last poll
+function fmtClock(s) {
+  s = Math.max(0, Math.ceil(s));
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}`;
+}
+function renderTimer() {
+  const el = $('timer').querySelector('.t');
+  if (!timerState || !timerState.visible) { el.textContent = '—'; return; }
+  if (timerState.end === null) {
+    // not started yet (prestart): show the planned race duration
+    const s = (timerState.remaining_s ?? null) !== null ? timerState.remaining_s
+                                                         : timerState.duration_s;
+    el.textContent = fmtClock(s);
+  } else {
+    const remaining = timerState.end - (Date.now() / 1000 + clockOffset);
+    el.textContent = remaining > 0 ? fmtClock(remaining) : '0:00:00';
+  }
+}
 async function pollTimer() {
   try {
     const d = await j('/cockpit/timer');
-    $('timer').querySelector('.t').textContent = d.remaining || d.display || d.clock || '—';
-  } catch (e) { /* transient */ }
-  setTimeout(pollTimer, 1000);
+    if (!d.error) { timerState = d; clockOffset = d.server_now - Date.now() / 1000; }
+  } catch (e) { /* keep last good state on transient errors */ }
+  setTimeout(pollTimer, 5000);   // re-sync with the server every 5 s
 }
+setInterval(renderTimer, 250);   // smooth local countdown between polls
 
 // --- Chat ---
 async function pollChat() {
