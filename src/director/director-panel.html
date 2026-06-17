@@ -378,6 +378,17 @@
     </div>
   </details>
 
+  <details class="bus urls" id="subsBox">
+    <summary>Pending stream submissions <span class="unread" id="subsCount" hidden>0</span></summary>
+    <div class="body">
+      <table><tbody id="subsBody"></tbody></table>
+      <div class="hint" id="subsEmpty">No pending submissions. Commentators can submit
+        their own stream link from the cockpit; approvals here write the Schedule
+        (Sheet) — the feed picks it up on RELOAD A/B / NEXT. Nothing a commentator
+        submits goes on air without an approval.</div>
+    </div>
+  </details>
+
   <details class="bus urls qualifying" id="qualBox">
     <summary>Qualifying <span class="livebadge" id="qualModeBadge"></span></summary>
     <div class="body">
@@ -1368,6 +1379,58 @@ async function qualPoll(){
 }
 $("#qualBox").addEventListener("toggle", ()=>qualPoll());
 
+/* ---------- Pending stream submissions (#193) --------------------------------
+   Commentators submit their own stream link from the cockpit; each lands here
+   pending. APPROVE writes the Schedule via /schedule/set (the feed picks it up
+   on RELOAD A/B / NEXT); REJECT discards. Polled always so the count badge
+   surfaces even while the section is collapsed. */
+let subsBusy = null;     // id currently being approved/rejected (guards double-clicks)
+function subRow(e){
+  const tr = document.createElement("tr"); tr.dataset.id = e.id;
+  const prev = e.prev_url ? escapeHtml(e.prev_url) : "— empty —";
+  tr.innerHTML = `<td class="rn">${escapeHtml(e.target_stint||"?")}</td>
+    <td><b>${escapeHtml(e.streamer_name||e.streamer_key||"?")}</b><br>
+        <span class="hint" style="word-break:break-all">${prev} → <b>${escapeHtml(e.proposed_url||"")}</b></span></td>
+    <td class="act"><button class="save app">APPROVE</button><button class="clear rej">REJECT</button></td>`;
+  tr.querySelector(".app").addEventListener("click", ()=>subAct(e.id, "approve"));
+  tr.querySelector(".rej").addEventListener("click", ()=>subAct(e.id, "reject"));
+  return tr;
+}
+async function subAct(id, action){
+  if (subsBusy) return;
+  if (action === "reject" && !confirm("Reject this stream submission?")) return;
+  subsBusy = id;
+  const tr = document.querySelector(`#subsBody tr[data-id="${id}"]`);
+  if (tr) tr.querySelectorAll("button").forEach(b=>b.disabled = true);
+  try{
+    const r = await fetch("/submissions/" + action, {method:"POST", cache:"no-store",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({id})});
+    const d = await r.json();
+    if (d.error){ log("Submission " + action + ": " + d.error, "err"); toast("Submission: " + d.error); }
+    else { log("Submission " + id + " " + action + (action==="approve"?"d — feed picks it up on RELOAD / NEXT":"ed")); }
+  }catch(e){ log("Submission " + action + " failed: " + e, "err"); toast("Submission " + action + " failed"); }
+  finally{ subsBusy = null; subsPoll(); }
+}
+async function subsPoll(){
+  try{
+    const r = await fetch("/submissions", {cache:"no-store"});
+    const d = await r.json();
+    const pend = d.pending || [];
+    const badge = $("#subsCount");
+    badge.textContent = pend.length; badge.hidden = pend.length === 0;
+    $("#subsEmpty").style.display = pend.length ? "none" : "";
+    if (!$("#subsBox").open) return;     // collapsed -> keep the badge fresh only
+    const body = $("#subsBody"), seen = new Set();
+    pend.forEach(e=>{
+      seen.add(String(e.id));
+      let tr = document.querySelector(`#subsBody tr[data-id="${e.id}"]`);
+      if (!tr){ tr = subRow(e); body.appendChild(tr); }
+    });
+    [...body.children].forEach(tr=>{ if(!seen.has(tr.dataset.id)) tr.remove(); });
+  }catch(e){}
+}
+$("#subsBox").addEventListener("toggle", ()=>subsPoll());
+
 // ---- Live Preview ---------------------------------------------------------
 const PV_KEY = "rc_preview_open";
 let pvTimer = null;
@@ -1426,6 +1489,7 @@ setupPoll(); setInterval(setupPoll, 2000);
 chatPoll(); setInterval(chatPoll, 2000);
 setInterval(schedPoll, 2000);
 setInterval(qualPoll, 2000);
+subsPoll(); setInterval(subsPoll, 2000);
 
 /* ---------- auto-connect to OBS ----------
    Connection details may arrive in the URL fragment (the Control Center's

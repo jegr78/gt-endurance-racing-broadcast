@@ -9,6 +9,8 @@ gets a self-contained cockpit:
   X handovers** cue (and, while on air, their next own stint).
 - **Crew chat** — the same chat as the Director Panel, attributed to the commentator.
 - **Race timer** — the live remaining-time clock.
+- **Submit a stream link** — propose the stream URL for one of *their own* stints; it
+  lands as a pending request the director approves before it can go on air (see below).
 
 ![Cockpit section in the Control Center](images/cc-cockpit.png)
 
@@ -146,6 +148,38 @@ byte-identical default links. `racecast event takeover` also pulls A's
 any revocations A made are honored on B. Because the Funnel host changes, re-publish
 the links after takeover.
 
+## Submit a stream link (commentator self-service, director-approved)
+
+A commentator can submit the **stream URL for one of their own stints** straight from
+the cockpit — useful when each driver/commentator brings their own YouTube/Twitch
+stream. **Nothing a commentator submits ever goes on air automatically:** every
+submission is a *pending request* the director approves (or rejects) in the
+[Director Panel](Director).
+
+How it works:
+
+1. In the cockpit, **Submit your stream link** lists the commentator's own stints (from
+   the schedule). They pick a stint, paste a YouTube/Twitch URL, and submit.
+2. The relay checks the URL with the same guard the schedule editor uses (YouTube/Twitch
+   only) and confirms the chosen stint is **theirs** — a token can only ever touch its
+   own slots, never anyone else's and never the schedule structure.
+3. The request is stored **pending** (`runtime/<league>/cockpit-pending.json`, survives a
+   restart) and a Discord `@here` ping fires if a webhook is configured (#188).
+4. The director sees it under **Pending stream submissions** in the Director Panel — with
+   the submitter, target stint, and the old → proposed URL — and clicks **Approve** or
+   **Reject**. Approve writes the schedule (the Google Sheet) exactly like a manual edit;
+   the feed picks the new URL up on the next **RELOAD A/B / NEXT** (a live feed is never
+   torn mid-stint). Reject discards it.
+
+Every submission and director decision is appended to an audit log
+(`runtime/<league>/cockpit-submissions.log`, one JSON line each).
+
+**Security:** the *submit* path is the only write reachable over the public Funnel, and
+only ever with a valid per-commentator token, a per-identity rate limit, and the
+own-stints-only check above. The director's *list / approve / reject* endpoints live
+under a separate `/submissions/*` namespace that is **not** funnelled — they stay
+tailnet-only, reached from the Director Panel like the rest of the director surface.
+
 ## Control Center
 
 The **Cockpit** view in the [Control Center](Control-Center) mirrors all of this:
@@ -153,5 +187,5 @@ enable toggle, Funnel on/off, the per-commentator link list with copy + revoke.
 
 ## Not included (v1)
 
-Commentator self-service stream-link submission, audio talkback/IFB, WebRTC/SRT/RTMP
-guest ingest, and recording are deliberately out of scope.
+Audio talkback/IFB, WebRTC/SRT/RTMP guest ingest, and recording are deliberately out of
+scope.

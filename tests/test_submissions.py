@@ -1,0 +1,421 @@
+#!/usr/bin/env python3
+"""Stdlib unit checks for the commentator stream-link submission flow (issue #193).
+Run: python3 tests/test_submissions.py
+
+Covers the pure pending store (src/scripts/cockpit_submissions.py), the relay's
+own-row resolver + Discord payload builder, and the live HTTP surface
+(POST /cockpit/submit, GET /submissions, POST /submissions/{approve,reject})."""
+import importlib.util
+import json
+import os
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+
+
+def _load(name, rel):
+    spec = importlib.util.spec_from_file_location(name, os.path.join(ROOT, *rel))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+ca = _load("cockpit_auth", ("src", "scripts", "cockpit_auth.py"))
+cs = _load("cockpit_submissions", ("src", "scripts", "cockpit_submissions.py"))
+m = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))
+
+SECRET = "sek"
+
+
+def _rows():
+    # ScheduleSource 4-tuples: (url, streamer, stint, line)
+    return [("u0", "Alpha Racing", "S1", 2),
+            ("", "Beta", "S2", 3),
+            ("", "Alpha Racing", "S3", 4),
+            ("u3", "Gamma", "S4", 5)]
+
+
+# ---- pure pending store -----------------------------------------------------
+
+def t_store_add_assigns_monotonic_ids():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "cockpit-pending.json")
+        e1 = cs.add_pending(p, streamer_key="alpha-racing", streamer_name="Alpha Racing",
+                            target_line=4, target_stint="S3", proposed_url="u-new",
+                            prev_url="", now=100.0)
+        e2 = cs.add_pending(p, streamer_key="beta", streamer_name="Beta",
+                            target_line=3, target_stint="S2", proposed_url="u-b",
+                            prev_url="", now=101.0)
+        assert e1["id"] == 1 and e2["id"] == 2
+        assert e1["ts"] == 100.0 and e1["proposed_url"] == "u-new"
+        ids = [e["id"] for e in cs.list_pending(p)]
+        assert ids == [1, 2]
+
+
+def t_store_ids_monotonic_across_pop():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "cockpit-pending.json")
+        cs.add_pending(p, streamer_key="a", streamer_name="A", target_line=2,
+                       target_stint="S1", proposed_url="u", prev_url="", now=1.0)
+        assert cs.pop_pending(p, 1)["id"] == 1
+        # the next id must NOT reuse 1 even though the store is now empty
+        e = cs.add_pending(p, streamer_key="a", streamer_name="A", target_line=2,
+                           target_stint="S1", proposed_url="u2", prev_url="", now=2.0)
+        assert e["id"] == 2
+
+
+def t_store_pop_returns_and_removes():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "cockpit-pending.json")
+        cs.add_pending(p, streamer_key="a", streamer_name="A", target_line=2,
+                       target_stint="S1", proposed_url="u", prev_url="", now=1.0)
+        cs.add_pending(p, streamer_key="b", streamer_name="B", target_line=3,
+                       target_stint="S2", proposed_url="u2", prev_url="", now=2.0)
+        got = cs.pop_pending(p, 1)
+        assert got["streamer_key"] == "a"
+        assert [e["id"] for e in cs.list_pending(p)] == [2]
+        assert cs.pop_pending(p, 999) is None       # unknown id -> None, no change
+        assert [e["id"] for e in cs.list_pending(p)] == [2]
+
+
+def t_store_caps_oldest_dropped():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "cockpit-pending.json")
+        for i in range(5):
+            cs.add_pending(p, streamer_key="a", streamer_name="A", target_line=2,
+                           target_stint="S1", proposed_url=f"u{i}", prev_url="",
+                           now=float(i), max_pending=3)
+        kept = cs.list_pending(p)
+        assert len(kept) == 3
+        assert [e["id"] for e in kept] == [3, 4, 5]   # oldest (1,2) dropped
+
+
+def t_store_load_missing_and_corrupt():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "cockpit-pending.json")
+        assert cs.list_pending(p) == []                # missing -> []
+        with open(p, "w") as fh:
+            fh.write("{not json")
+        assert cs.list_pending(p) == []                # corrupt -> [] (never throws)
+
+
+def t_store_validate_rejects_bad_shapes():
+    for bad in ({"pending": "x"}, {"pending": [{"id": "x"}]},
+                {"pending": [{"id": 1, "streamer_key": "BAD KEY"}]}, []):
+        try:
+            cs.validate_pending(bad)
+            raise AssertionError(f"expected ValueError for {bad!r}")
+        except ValueError:
+            pass
+
+
+def t_audit_appends_jsonl():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "cockpit-submissions.log")
+        cs.append_audit(p, {"event": "submit", "id": 1, "ts": 1.0})
+        cs.append_audit(p, {"event": "approve", "id": 1, "ts": 2.0})
+        with open(p, encoding="utf-8") as fh:
+            lines = [json.loads(x) for x in fh.read().splitlines()]
+        assert [r["event"] for r in lines] == ["submit", "approve"]
+
+
+# ---- own-row resolver (pure) ------------------------------------------------
+
+def t_resolve_by_stint_own_row():
+    ok, target = m.own_submission_target(_rows(), "alpha-racing", stint="S3")
+    assert ok is True
+    assert target["target_line"] == 4 and target["target_stint"] == "S3"
+    assert target["streamer_name"] == "Alpha Racing" and target["prev_url"] == ""
+
+
+def t_resolve_rejects_foreign_stint():
+    # S2 belongs to Beta, not Alpha -> rejected for alpha-racing
+    ok, err = m.own_submission_target(_rows(), "alpha-racing", stint="S2")
+    assert ok is False and "assigned to you" in err.lower()
+
+
+def t_resolve_rejects_when_not_scheduled():
+    ok, err = m.own_submission_target(_rows(), "nobody", stint="S1")
+    assert ok is False
+
+
+def t_resolve_by_row_index_checks_ownership():
+    # schedule row 1 (1-based) is Alpha's first stint
+    ok, target = m.own_submission_target(_rows(), "alpha-racing", row=1)
+    assert ok is True and target["target_line"] == 2
+    # row 2 is Beta's -> alpha cannot target it
+    ok, err = m.own_submission_target(_rows(), "alpha-racing", row=2)
+    assert ok is False
+
+
+def t_own_stints_lists_only_mine_with_link_and_url():
+    st = m.cockpit_own_stints(_rows(), "alpha-racing")
+    assert [s["stint"] for s in st] == ["S1", "S3"]
+    assert st[0]["row"] == 1 and st[0]["has_link"] is True and st[0]["url"] == "u0"
+    assert st[1]["row"] == 3 and st[1]["has_link"] is False and st[1]["url"] == ""
+    # carries ONLY the commentator's own URLs — a foreign row's url (u3, Gamma)
+    # is never included (so the cockpit can pre-fill own links without leaking
+    # anyone else's).
+    assert all(s["url"] != "u3" for s in st)
+
+
+# ---- Discord payload (pure) -------------------------------------------------
+
+def t_submission_payload_shape():
+    e = {"streamer_name": "Alpha Racing", "target_stint": "S3", "proposed_url": "u-new"}
+    payload = m.cockpit_submission_payload(e, pending_count=2)
+    assert payload["content"] == "@here"
+    assert payload["allowed_mentions"]["parse"] == ["everyone"]
+    body = json.dumps(payload)
+    assert "Alpha Racing" in body and "S3" in body
+
+
+# ---- live HTTP surface ------------------------------------------------------
+
+def _client(secret=SECRET, enabled=True, rows=None, live_idx=0,
+            submission_path=None, audit_path=None, setup_ctl="default",
+            webhook=None):
+    """make_handler over a real server, wired with a submission store + a
+    recording setup_ctl stub. Returns (server, get, post, calls)."""
+    import threading as _t
+    import urllib.error
+    from urllib.request import Request, urlopen
+
+    calls = []
+
+    class _Feed:
+        def __init__(self, idx):
+            self.idx = idx
+
+    class _Source:
+        def __init__(self, rws):
+            self._rows = rws
+
+        def get_rows(self):
+            return list(self._rows)
+
+        def health(self):
+            return {"count": len(self._rows)}
+
+    class _Relay:
+        def __init__(self):
+            self.source = _Source(rows if rows is not None else _rows())
+            self.mode = "race"
+            self.feeds = {"A": _Feed(live_idx), "B": _Feed(live_idx + 1)}
+            self.discord_webhook_url = webhook
+
+        def live_feed(self):
+            return "A"
+
+    class _Setup:
+        def schedule_set(self, row, url=None, name=None, stint=None):
+            calls.append({"row": row, "url": url, "name": name, "stint": stint})
+            return {"ok": True, "row": row}
+
+    store = m.SubmissionStore(submission_path, audit_path) if submission_path else None
+    sc = _Setup() if setup_ctl == "default" else setup_ctl
+    handler = m.make_handler(_Relay(), setup_ctl=sc, cockpit_secret=secret,
+                             cockpit_enabled=enabled, submission_store=store)
+    srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    _t.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+
+    def _read(req):
+        try:
+            with urlopen(req, timeout=5) as r:
+                return r.status, r.headers, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.headers, e.read()
+
+    def get(path, cookie=None, headers=None):
+        h = dict(headers or {})
+        if cookie:
+            h["Cookie"] = cookie
+        return _read(Request(base + path, headers=h))
+
+    def post(path, body, cookie=None, headers=None):
+        h = {"Content-Type": "application/json", **(headers or {})}
+        if cookie:
+            h["Cookie"] = cookie
+        return _read(Request(base + path, data=json.dumps(body).encode(),
+                             headers=h, method="POST"))
+
+    return srv, get, post, calls
+
+
+def t_cockpit_data_exposes_my_stints():
+    with tempfile.TemporaryDirectory() as d:
+        srv, get, _post, _c = _client(submission_path=os.path.join(d, "p.json"))
+        try:
+            tok = ca.mint_token(SECRET, "alpha-racing")
+            code, _h, body = get("/cockpit/data?t=" + tok)
+            assert code == 200, code
+            data = json.loads(body)
+            assert data["submit_enabled"] is True
+            assert [s["stint"] for s in data["my_stints"]] == ["S1", "S3"]
+            # own-stint URL is now surfaced (approved) so the cockpit can pre-fill
+            # it; a foreign commentator's URL (Gamma's u3) is NEVER exposed.
+            assert any(s.get("url") == "u0" for s in data["my_stints"])
+            assert "u3" not in body.decode()
+        finally:
+            srv.shutdown()
+
+
+def t_cockpit_data_exposes_my_pending():
+    # After submitting, /cockpit/data surfaces the commentator's OWN pending
+    # entries (stint + id, never a URL) so the cockpit shows live status that
+    # clears once the director acts. A different commentator sees none.
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "p.json")
+        srv, get, post, _c = _client(submission_path=p)
+        try:
+            tok_a = ca.mint_token(SECRET, "alpha-racing")
+            tok_b = ca.mint_token(SECRET, "beta")
+            post("/cockpit/submit",
+                 {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"},
+                 cookie="rc_cockpit=" + tok_a)
+            da = json.loads(get("/cockpit/data?t=" + tok_a)[2])
+            db = json.loads(get("/cockpit/data?t=" + tok_b)[2])
+            assert [x["stint"] for x in da["my_pending"]] == ["S3"]
+            assert "id" in da["my_pending"][0]
+            assert db["my_pending"] == []                  # only the submitter's own
+            assert "youtube" not in json.dumps(da["my_pending"]).lower()  # no URL leak
+        finally:
+            srv.shutdown()
+
+
+def t_submit_requires_auth():
+    with tempfile.TemporaryDirectory() as d:
+        srv, _get, post, _c = _client(submission_path=os.path.join(d, "p.json"))
+        try:
+            code, _h, _b = post("/cockpit/submit",
+                                {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"})
+            assert code == 401, code
+        finally:
+            srv.shutdown()
+
+
+def t_submit_disabled_is_404():
+    with tempfile.TemporaryDirectory() as d:
+        srv, _get, post, _c = _client(enabled=False,
+                                      submission_path=os.path.join(d, "p.json"))
+        try:
+            tok = ca.mint_token(SECRET, "alpha-racing")
+            code, _h, _b = post("/cockpit/submit",
+                                {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"},
+                                cookie="rc_cockpit=" + tok)
+            assert code == 404, code
+        finally:
+            srv.shutdown()
+
+
+def t_submit_rejects_non_channel_url():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "p.json")
+        srv, _get, post, _c = _client(submission_path=p)
+        try:
+            tok = ca.mint_token(SECRET, "alpha-racing")
+            code, _h, body = post("/cockpit/submit",
+                                  {"url": "http://evil.example/x", "stint": "S3"},
+                                  cookie="rc_cockpit=" + tok)
+            assert code == 400, (code, body)
+            assert cs.list_pending(p) == []          # nothing stored
+        finally:
+            srv.shutdown()
+
+
+def t_submit_rejects_foreign_row():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "p.json")
+        srv, _get, post, _c = _client(submission_path=p)
+        try:
+            tok = ca.mint_token(SECRET, "alpha-racing")
+            # S2 is Beta's stint
+            code, _h, _b = post("/cockpit/submit",
+                                {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S2"},
+                                cookie="rc_cockpit=" + tok)
+            assert code == 400, code
+            assert cs.list_pending(p) == []
+        finally:
+            srv.shutdown()
+
+
+def t_submit_stores_pending_for_own_row():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "p.json")
+        srv, get, post, _c = _client(submission_path=p)
+        try:
+            tok = ca.mint_token(SECRET, "alpha-racing")
+            code, _h, body = post("/cockpit/submit",
+                                  {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"},
+                                  cookie="rc_cockpit=" + tok)
+            assert code == 200, (code, body)
+            pend = cs.list_pending(p)
+            assert len(pend) == 1
+            e = pend[0]
+            assert e["streamer_key"] == "alpha-racing" and e["target_line"] == 4
+            assert e["target_stint"] == "S3"
+            # director list endpoint surfaces it (tailnet-only, no /cockpit prefix)
+            code, _h, body = get("/submissions")
+            assert code == 200, code
+            assert json.loads(body)["pending"][0]["id"] == e["id"]
+        finally:
+            srv.shutdown()
+
+
+def t_approve_writes_schedule_and_clears():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "p.json")
+        srv, get, post, calls = _client(submission_path=p)
+        try:
+            tok = ca.mint_token(SECRET, "alpha-racing")
+            post("/cockpit/submit", {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"},
+                 cookie="rc_cockpit=" + tok)
+            sid = cs.list_pending(p)[0]["id"]
+            code, _h, body = post("/submissions/approve", {"id": sid})
+            assert code == 200, (code, body)
+            assert len(calls) == 1
+            assert calls[0]["row"] == 4 and calls[0]["url"] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+            assert calls[0]["stint"] == "S3" and calls[0]["name"] == "Alpha Racing"
+            assert cs.list_pending(p) == []          # cleared after approve
+        finally:
+            srv.shutdown()
+
+
+def t_reject_discards_without_writing():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "p.json")
+        srv, _get, post, calls = _client(submission_path=p)
+        try:
+            tok = ca.mint_token(SECRET, "alpha-racing")
+            post("/cockpit/submit", {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"},
+                 cookie="rc_cockpit=" + tok)
+            sid = cs.list_pending(p)[0]["id"]
+            code, _h, _b = post("/submissions/reject", {"id": sid})
+            assert code == 200, code
+            assert calls == []                       # never wrote the schedule
+            assert cs.list_pending(p) == []
+        finally:
+            srv.shutdown()
+
+
+def t_submissions_list_is_not_under_cockpit_prefix():
+    # /submissions must NOT require a cockpit token (it is tailnet-only, never
+    # funnelled) and must work even when the cockpit is disabled.
+    with tempfile.TemporaryDirectory() as d:
+        srv, get, _post, _c = _client(enabled=False,
+                                      submission_path=os.path.join(d, "p.json"))
+        try:
+            code, _h, body = get("/submissions")
+            assert code == 200, code
+            assert json.loads(body)["pending"] == []
+        finally:
+            srv.shutdown()
+
+
+if __name__ == "__main__":
+    for name, fn in sorted(globals().items()):
+        if name.startswith("t_") and callable(fn):
+            fn(); print("ok", name)
+    print("ALL PASS")
