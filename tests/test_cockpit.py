@@ -264,8 +264,11 @@ def t_data_authed_tally():
         assert d["me"] == "alpha-racing" and d["on_air"] is True
         assert d["up_next"] == {"stint": "S3", "in_n": 2}
         assert d["mode"] == "race"
-        # curated: never leak schedule URLs / raw status
-        assert "url" not in body.decode() and "schedule_len" not in body.decode()
+        # my_stints surfaces the commentator's OWN urls (u0, u2) so the cockpit
+        # can pre-fill them, but never a foreign row's url (u1 Beta, u3 Gamma)
+        # or raw relay status.
+        assert "u1" not in body.decode() and "u3" not in body.decode()
+        assert "schedule_len" not in body.decode()
     finally:
         srv.shutdown()
 
