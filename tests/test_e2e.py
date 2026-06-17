@@ -15,11 +15,6 @@ def t_free_port_is_bindable():
     s.close()
 
 
-def t_free_port_varies():
-    # Two consecutive calls should not collide in practice.
-    assert e.free_port() != e.free_port() or True  # non-flaky: just exercise it
-
-
 def _stub_relay():
     import json, threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
