@@ -372,7 +372,9 @@
         on RELOAD A/B / NEXT (rows marked <b>A</b>/<b>B</b> are live now); the POV URL
         applies on POV RELOAD. Each row's <b>Streamer</b> and <b>Stint</b> label
         (Configuration vocab) become the HUD's STREAMER/STINT when that row goes
-        on air. Streamer/Stint/URL can still be edited in the Sheet directly.</div>
+        on air. <b>CLEAR URL</b> removes only the stream link and keeps the
+        Streamer + Stint slot. Streamer/Stint/URL can still be edited in the
+        Sheet directly.</div>
     </div>
   </details>
 
@@ -1172,7 +1174,7 @@ function schedRow(i){
     <td style="width:22%"><select class="nm" title="Streamer (Configuration vocab)"></select></td>
     <td style="width:18%"><select class="st" title="Stint label (Configuration vocab)"></select></td>
     <td><input class="u" placeholder="youtube.com/watch?v=… · twitch.tv/<channel> · UC…"></td>
-    <td class="act"><button class="save">SAVE</button><button class="clear">CLEAR</button></td>`;
+    <td class="act"><button class="save">SAVE</button><button class="clear">CLEAR URL</button></td>`;
   fillSchedSelect(tr.querySelector(".nm"), schedOptions.streamer, "");
   fillSchedSelect(tr.querySelector(".st"), schedOptions.stint, "");
   tr.querySelectorAll("input,select").forEach(inp=>{
@@ -1181,12 +1183,17 @@ function schedRow(i){
   });
   tr.querySelector(".save").addEventListener("click", ()=>schedSave(tr, i));
   tr.querySelector(".clear").addEventListener("click", ()=>{
-    // Clears name + URL in the sheet (the row itself stays — deleting rows
-    // would shift the stint indices of everything after it).
+    // Clear the URL ONLY — keep Streamer + Stint so the slot survives. Emptying
+    // all three cells makes the relay's CSV parser drop the now-blank row, which
+    // collapses the 1-based schedule index this panel keys rows by; the next poll
+    // then re-stamps this in-progress row's sheetRow from the shifted neighbour,
+    // so a later SAVE writes to the WRONG physical line (a cleared row clobbered
+    // its neighbour). Streamer/Stint stay editable via the dropdowns; clear the
+    // whole row in the Sheet directly if you really need to.
     const live = tr.querySelector(".livebadge").textContent;
-    if (!confirm("Clear schedule row " + i + " (streamer + stint + URL) in the sheet?" +
+    if (!confirm("Clear the stream link (URL) for row " + i + " in the sheet?" +
+                 " Streamer + Stint stay." +
                  (live ? ` Feed ${live} keeps playing until RELOAD ${live} / NEXT.` : ""))) return;
-    tr.querySelector(".nm").value = ""; tr.querySelector(".st").value = "";
     tr.querySelector(".u").value = "";
     schedSave(tr, i);
   });
