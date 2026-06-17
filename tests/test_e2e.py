@@ -236,6 +236,35 @@ def t_run_checks_turns_exception_into_fail():
     assert code == 1 and results[0].status == "fail" and "kaboom" in results[0].message
 
 
+def t_first_roster_streamer_picks_first():
+    # A well-formed /schedule/data body (the real relay's {"rows":[{"name":...}]}
+    # shape) -> the first non-empty streamer name. The bytes-decoding here is the
+    # SAME path the real-league run takes, so it covers the 3-tuple unpack +
+    # JSON decode that the old 2-tuple unpack broke.
+    import json
+    body = json.dumps({"rows": [
+        {"row": 1, "name": "Alice", "stint": "Stint 1"},
+        {"row": 2, "name": "Bob", "stint": "Stint 2"},
+    ]}).encode()
+    assert e.first_roster_streamer(200, body) == "Alice"
+
+
+def t_first_roster_streamer_empty_is_none():
+    import json
+    assert e.first_roster_streamer(200, json.dumps({"rows": []}).encode()) is None
+    # blank names are skipped, too
+    body = json.dumps({"rows": [{"name": "  "}, {"name": ""}]}).encode()
+    assert e.first_roster_streamer(200, body) is None
+
+
+def t_first_roster_streamer_non_200_is_none():
+    import json
+    body = json.dumps({"rows": [{"name": "Alice"}]}).encode()
+    # Non-200 -> None even when the body would parse to a roster.
+    assert e.first_roster_streamer(500, body) is None
+    assert e.first_roster_streamer(404, b"") is None
+
+
 def t_classify_capability():
     assert e.classify_capability(available=False, name="playwright").status == "skip"
     assert e.classify_capability(available=True, name="playwright") is None

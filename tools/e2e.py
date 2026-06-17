@@ -228,19 +228,15 @@ def run_real_league(args):
         # Mint a token for a REAL streamer from the live schedule. /schedule/data
         # is unauthenticated and reflects the league's actual roster (the relay
         # fetched the real Sheet on startup), so we don't have to hardcode a name.
-        st, sched = E.http_request(relay_url + "/schedule/data", timeout=10)
-        roster = []
-        if st == 200:
-            import json as _json
-            for row in (_json.loads(sched or b"null") or {}).get("rows", []):
-                n = (row.get("name") or "").strip()
-                if n:
-                    roster.append(n)
-        if not roster:
+        # http_request returns a 3-tuple (status, body_bytes, headers); the pure
+        # decode + first-streamer pick lives in E.first_roster_streamer (unit-
+        # tested), so this byte-decoding path can't regress unnoticed again.
+        st, sched_body, _ = E.http_request(relay_url + "/schedule/data", timeout=10)
+        streamer = E.first_roster_streamer(st, sched_body)
+        if not streamer:
             print("real-league: the live schedule is empty (no Sheet/network?).")
             print("  Cockpit-token checks need a real streamer; skipping the run.")
             return 0
-        streamer = roster[0]
         key = cockpit_auth.streamer_key(streamer)
         token = cockpit_auth.mint_token(rc.cockpit_secret, key, version=1)
 
@@ -256,7 +252,7 @@ def run_real_league(args):
         _wait_ready(ui_url + "/api/ping", args.timeout, ui, ui_log)
 
         print(f"real-league {name!r}: minting cockpit token for {streamer!r} "
-              f"(schedule has {len(roster)} rows).")
+              "(first roster streamer from the live schedule).")
         ctx = E.Ctx(relay_url=relay_url, disabled_relay_url=relay_url, ui_url=ui_url,
                     token=token, streamer_key=key, own_stint=None, expect={})
         results, code = E.run_checks(E.REAL_LEAGUE_CHECKS, ctx)

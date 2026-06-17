@@ -108,6 +108,32 @@ def _get_json(url, headers=None):
     return st, (_json.loads(body or b"null"))
 
 
+def first_roster_streamer(status, body_bytes):
+    """Given a `/schedule/data` HTTP response — the SAME (status, body_bytes)
+    shape http_request() returns (status int + raw body bytes) — return the
+    first roster streamer name, or None when the status is not 200, the body is
+    empty/unparseable, or no row carries a streamer name.
+
+    The real relay serves /schedule/data as {"rows": [{"name": ...}, ...]}; this
+    is the pure decode + extract step that the real-league run uses to pick a
+    streamer to mint a cockpit token for, without hardcoding a name."""
+    if status != 200:
+        return None
+    try:
+        data = _json.loads(body_bytes or b"null")
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    for row in data.get("rows") or []:
+        if not isinstance(row, dict):
+            continue
+        name = (row.get("name") or "").strip()
+        if name:
+            return name
+    return None
+
+
 def check_status_ok(ctx):
     st, data = _get_json(ctx.relay_url + "/status")
     if st != 200:
