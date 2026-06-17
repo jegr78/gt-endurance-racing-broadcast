@@ -358,16 +358,21 @@ SYNTHETIC_CHECKS = [
     check_enable_preserves_keys,
 ]
 
-# Real-league mode (local only): the NON-mutating, no-external-call subset.
-# EXCLUDES check_chat_round_trip + check_submission_pending (they WRITE — a real
-# submission could ping the league's Discord webhook / write the pending store)
-# and check_cockpit_404_when_disabled (needs a second disabled relay). Uses the
-# relaxed check_status_live (real schedule_len/live_stint are unknown).
+# Real-league mode (local only): the safe subset for a copied profile. Read-only
+# checks PLUS check_chat_round_trip — the crew chat is relay-local (an in-memory
+# ring buffer persisted only to the copied runtime/<league>/chat.json, no
+# external push), so posting a marker is harmless against a throwaway copy.
+# EXCLUDES check_submission_pending (POST /cockpit/submit could ping the league's
+# REAL Discord webhook) and check_cockpit_404_when_disabled (needs a second
+# disabled relay). Uses the relaxed check_status_live (real schedule_len/
+# live_stint are unknown without the live Sheet).
 REAL_LEAGUE_CHECKS = [
     check_status_live,
     check_cockpit_requires_token,
     check_cockpit_accepts_token,
+    check_cockpit_tally,
     check_cockpit_timer_renders,
+    check_chat_round_trip,
     check_cc_api_cockpit,
     check_enable_preserves_keys,
 ]
