@@ -20,6 +20,30 @@ def t_free_port_varies():
     assert e.free_port() != e.free_port() or True  # non-flaky: just exercise it
 
 
+def _relay_parse(text):
+    import importlib.util
+    here = os.path.dirname(__file__)
+    path = os.path.join(here, "..", "src", "relay", "racecast-feeds.py")
+    spec = importlib.util.spec_from_file_location("racecast_feeds", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.ScheduleSource._parse_rows(text)
+
+
+def t_build_schedule_csv_parses_in_relay():
+    rows = [
+        ("https://www.youtube.com/watch?v=aaaaaaaaaaa", "Alice", "Stint 1"),
+        ("https://www.twitch.tv/bobcaster", "Bob", "Stint 2"),
+    ]
+    csv_text = e.build_schedule_csv(rows)
+    assert csv_text.splitlines()[0].lower().split(",")[:3] == ["url", "streamer", "stint"]
+    parsed = _relay_parse(csv_text)
+    assert parsed is not None and len(parsed) == 2, parsed
+    # (url, streamer, stint, line) tuples; streamers survive.
+    assert [r[1] for r in parsed] == ["Alice", "Bob"], parsed
+    assert [r[2] for r in parsed] == ["Stint 1", "Stint 2"], parsed
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
