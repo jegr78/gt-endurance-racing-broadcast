@@ -102,6 +102,14 @@ def t_parse_peers_garbage_and_empty():
     assert ts.parse_tailscale_peers(json.dumps({"Peer": None})) == []
 
 
+def t_funnel_args():
+    on = ts.funnel_args(path="/cockpit", target_port=8088, enable=True)
+    assert on == ["funnel", "--bg", "--set-path=/cockpit",
+                  "http://127.0.0.1:8088/cockpit"]
+    off = ts.funnel_args(path="/cockpit", target_port=8088, enable=False)
+    assert off == ["funnel", "--set-path=/cockpit", "off"]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

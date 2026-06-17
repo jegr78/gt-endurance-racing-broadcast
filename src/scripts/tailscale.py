@@ -170,3 +170,34 @@ def tailscale_up(binary, timeout=15):
 def tailscale_down(binary, timeout=15):
     """Argument-less `tailscale down`: disconnect, keep login + settings."""
     return _run_verb(binary, "down", timeout)
+
+
+def funnel_args(path, target_port, enable):
+    """Pure: the `tailscale funnel` argv to expose ONLY *path* (e.g. /cockpit) on
+    public 443, reverse-proxied to the local relay, or to tear it down. Unit-
+    tested without shelling out. The target keeps the same path so /cockpit/* maps
+    1:1 onto the relay's /cockpit/* (#191)."""
+    flag = f"--set-path={path}"
+    if enable:
+        return ["funnel", "--bg", flag, f"http://127.0.0.1:{target_port}{path}"]
+    return ["funnel", flag, "off"]
+
+
+def funnel(binary, path, target_port, enable, timeout=20):
+    """Run the funnel on/off command. Returns (ok, detail). Best-effort, mirrors
+    _run_verb. NOTE: enabling requires MagicDNS + HTTPS + the 'funnel' nodeAttr in
+    the tailnet policy (a one-time admin step) — surface failures verbatim."""
+    args = funnel_args(path, target_port, enable)
+    try:
+        out = subprocess.run([binary, *args], capture_output=True, text=True,
+                             errors="replace", timeout=timeout,
+                             env=services.external_tool_env(),
+                             **services.no_window_kwargs())
+    except subprocess.TimeoutExpired:
+        return False, f"timed out after {timeout}s"
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, str(exc)
+    if out.returncode:
+        detail = (out.stderr or out.stdout or "").strip()
+        return False, detail or f"exit code {out.returncode}"
+    return True, (out.stdout or "").strip()
