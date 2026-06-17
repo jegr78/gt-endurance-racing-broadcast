@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for the Commentator Cockpit. Run: python3 tests/test_cockpit.py"""
 import importlib.util
+import json
 import os
 import tempfile
 
@@ -159,6 +160,104 @@ def t_tally_not_scheduled():
 def t_display_name_maps_key_to_name():
     assert m.cockpit_display_name(_rows(), "alpha-racing") == "Alpha Racing"
     assert m.cockpit_display_name(_rows(), "nobody") == "nobody"
+
+
+def _cockpit_client(secret="sek", enabled=True, rows=None, live_idx=0,
+                    versions_path=None, chat_store=None, timer_store=None,
+                    page_path=None):
+    """Stand up make_handler over a real ThreadingHTTPServer on an ephemeral port.
+    Returns (server, get, post); caller must srv.shutdown() in a finally block."""
+    import threading as _t
+    import urllib.error
+    from urllib.request import Request, urlopen
+
+    class _Feed:
+        def __init__(self, idx):
+            self.idx = idx
+
+    class _Source:
+        def __init__(self, rws):
+            self._rows = rws
+
+        def get_rows(self):
+            return list(self._rows)
+
+        def health(self):
+            return {"count": len(self._rows)}
+
+    class _Relay:
+        def __init__(self):
+            self.source = _Source(rows if rows is not None else _rows())
+            self.mode = "race"
+            self.feeds = {"A": _Feed(live_idx), "B": _Feed(live_idx + 1)}
+
+        def live_feed(self):
+            return "A"
+
+        def status(self):
+            return {"schedule_len": len(self.source.get_rows())}
+
+    handler = m.make_handler(_Relay(), chat_store=chat_store, timer_store=timer_store,
+                             cockpit_page_path=page_path, cockpit_secret=secret,
+                             cockpit_enabled=enabled, cockpit_versions_path=versions_path)
+    srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    _t.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+
+    def _read(req):
+        try:
+            with urlopen(req, timeout=5) as r:
+                return r.status, r.headers, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.headers, e.read()
+
+    def get(path, cookie=None):
+        h = {"Cookie": cookie} if cookie else {}
+        return _read(Request(base + path, headers=h))
+
+    def post(path, body, cookie=None):
+        h = {"Content-Type": "application/json"}
+        if cookie:
+            h["Cookie"] = cookie
+        return _read(Request(base + path, data=json.dumps(body).encode(),
+                             headers=h, method="POST"))
+
+    return srv, get, post
+
+
+def t_data_requires_auth():
+    srv, get, _post = _cockpit_client()
+    try:
+        code, _h, _b = get("/cockpit/data")
+        assert code == 401, code
+    finally:
+        srv.shutdown()
+
+
+def t_data_disabled_is_404():
+    srv, get, _post = _cockpit_client(enabled=False)
+    try:
+        tok = ca.mint_token("sek", "alpha-racing")
+        code, _h, _b = get("/cockpit/data?t=" + tok)
+        assert code == 404, code
+    finally:
+        srv.shutdown()
+
+
+def t_data_authed_tally():
+    srv, get, _post = _cockpit_client()
+    try:
+        tok = ca.mint_token("sek", "alpha-racing")
+        code, _h, body = get("/cockpit/data?t=" + tok)
+        assert code == 200, code
+        d = json.loads(body)
+        assert d["me"] == "alpha-racing" and d["on_air"] is True
+        assert d["up_next"] == {"stint": "S3", "in_n": 2}
+        assert d["mode"] == "race"
+        # curated: never leak schedule URLs / raw status
+        assert "url" not in body.decode() and "schedule_len" not in body.decode()
+    finally:
+        srv.shutdown()
 
 
 if __name__ == "__main__":

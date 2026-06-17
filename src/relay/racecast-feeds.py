@@ -2620,6 +2620,20 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if p == ["chat", "reload"]:
                         return self._send(chat_store.reload())
                     return self._send({"error": "unknown", "path": self.path}, 404)
+                if p[:1] == ["cockpit"]:
+                    if not self._cockpit_active():
+                        return self._send({"error": "cockpit disabled"}, 404)
+                    if p == ["cockpit", "data"]:
+                        me = self._cockpit_auth()
+                        if me is None:
+                            return None
+                        rows = relay.source.get_rows()
+                        live_idx = relay.feeds[relay.live_feed()].idx
+                        tally = cockpit_tally(rows, live_idx, me)
+                        tally.update({"me": me, "mode": relay.mode,
+                                      "program_available": _obs_ws is not None})
+                        return self._send(tally)
+                    return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["schedule", "data"]:
                     rows = relay.source.get_rows()
                     live = {f.idx: k for k, f in relay.feeds.items()}
