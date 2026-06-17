@@ -68,7 +68,7 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
 
 import argparse, csv, datetime, io, ipaddress, json, os, re, shutil, signal, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, quote, unquote
+from urllib.parse import urlparse, quote, unquote, parse_qs
 from urllib.request import Request, urlopen
 
 # OBS reflection (best effort). obs_ws lives in src/scripts (repo) or the
@@ -85,6 +85,8 @@ except Exception:                                # noqa: BLE001 — reflection i
     _obs_ws = None
 
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
+import cockpit_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
+import cockpit_admin  # talent-cockpit revocation version store (#191)
 from services import external_tool_env  # de-PyInstaller the env for spawned external tools
 
 # ---------- Configuration ----------
@@ -2404,7 +2406,14 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
                  timer_store=None, setup_ctl=None, overlay_dir=None,
                  chat_store=None, preview_path=None, graphics_dir=None,
-                 splitscreen_path=None):
+                 splitscreen_path=None, cockpit_page_path=None, cockpit_secret=None,
+                 cockpit_enabled=False, cockpit_versions_path=None):
+    # Shared across all H instances (one limiter per relay): cap cockpit auth
+    # failures and chat sends per client so the public Funnel ingress (#191)
+    # cannot be brute-forced or flooded.
+    _cockpit_authfail_rl = cockpit_auth.RateLimiter(limit=20, window_s=60)
+    _cockpit_chat_rl = cockpit_auth.RateLimiter(limit=10, window_s=60)
+
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
             body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
@@ -2462,6 +2471,31 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 return self._send({"error": "font not found", "key": name}, 404)
             return self._send_file(path, ctype)
         def log_message(self, *a): pass
+        def _cockpit_active(self):
+            """True iff the cockpit is enabled AND a secret is configured. When
+            false, every /cockpit/* path 404s (like chat/timer when disabled)."""
+            return bool(cockpit_enabled and cockpit_secret)
+        def _cockpit_token(self):
+            """The presented token: query ?t= first (link load), else the cookie."""
+            qs = parse_qs(urlparse(self.path).query)
+            if qs.get("t"):
+                return qs["t"][0]
+            return cockpit_auth.parse_cookie_token(self.headers.get("Cookie"))
+        def _cockpit_auth(self):
+            """Return the authed streamer_key, or None after sending 401/429.
+            Applies a per-client failure rate limit. Caller must return on None."""
+            versions = (cockpit_admin.load_versions(cockpit_versions_path)
+                        if cockpit_versions_path else {})
+            me = cockpit_auth.verify_token(cockpit_secret, self._cockpit_token(),
+                                           versions)
+            if me is None:
+                client = self.client_address[0] if self.client_address else "?"
+                if not _cockpit_authfail_rl.allow(client):
+                    self._send({"error": "rate limited"}, 429)
+                else:
+                    self._send({"error": "unauthorized"}, 401)
+                return None
+            return me
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
             try:
