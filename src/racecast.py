@@ -190,7 +190,8 @@ def _profile_env_vars(rc):
              ("RACECAST_INTRO_URL", rc.intro_url),
              ("RACECAST_OUTRO_URL", rc.outro_url),
              ("RACECAST_DISCORD_WEBHOOK_URL", rc.discord_webhook_url),
-             ("RACECAST_OBS_COLLECTION", rc.obs_collection))
+             ("RACECAST_OBS_COLLECTION", rc.obs_collection),
+             ("RACECAST_COCKPIT_SECRET", rc.cockpit_secret))
     return {k: v for k, v in pairs if v}
 
 def _apply_active_profile_env():

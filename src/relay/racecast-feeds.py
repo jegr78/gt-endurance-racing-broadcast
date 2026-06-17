@@ -3042,6 +3042,12 @@ def main():
             splitscreen_path = os.path.abspath(cand); break
     if not splitscreen_path:
         print("WARN: splitscreen.html not found — /splitscreen will 404.")
+    cockpit_page_path = None
+    for cand in (os.path.join(here, "cockpit.html"),
+                 os.path.join(here, "..", "cockpit.html"),
+                 os.path.join(here, "..", "cockpit", "cockpit.html")):
+        if os.path.exists(cand):
+            cockpit_page_path = os.path.abspath(cand); break
     if not args.no_hud and not args.sheet_csv_url:
         base = f"https://docs.google.com/spreadsheets/d/{args.sheet_id}/gviz/tq?tqx=out:csv&sheet="
         overlay_url = base + quote(args.overlay_tab)
@@ -3117,11 +3123,21 @@ def main():
         threading.Thread(target=poller, args=(timer_store, args.hud_poll, stop_evt),
                          daemon=True).start()
 
+    # Commentator cockpit (#191): per-league secret (injected from profile.env) +
+    # machine-local master switch (.env). Both must be present or /cockpit/* 404s.
+    cockpit_secret = os.environ.get("RACECAST_COCKPIT_SECRET") or None
+    cockpit_enabled = (os.environ.get("RACECAST_COCKPIT_ENABLED", "").strip().lower()
+                       in ("1", "true", "yes", "on"))
+    cockpit_versions_path = os.path.join(runtime, "cockpit-versions.json")
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
                            timer_store, setup_ctl,
                            overlay_dir=args.overlay_dir, chat_store=chat_store,
                            preview_path=preview_path, graphics_dir=graphics_dir,
-                           splitscreen_path=splitscreen_path)
+                           splitscreen_path=splitscreen_path,
+                           cockpit_page_path=cockpit_page_path,
+                           cockpit_secret=cockpit_secret,
+                           cockpit_enabled=cockpit_enabled,
+                           cockpit_versions_path=cockpit_versions_path)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []
@@ -3177,6 +3193,8 @@ def main():
             print(f"    remote (tailnet):      http://{remote_host}:{args.http_port}/panel")
         elif args.bind == "auto":
             print("    (no Tailscale IP found — local only; start Tailscale for remote access)")
+    if cockpit_secret and cockpit_enabled:
+        print("  Commentator cockpit: /cockpit (auth) — links via 'racecast cockpit links'")
     if hud_source and hud_path:
         print(f"  HUD overlay (OBS source): http://127.0.0.1:{args.http_port}/hud  "
               f"(tabs '{args.overlay_tab}'/'{args.config_tab}', refresh {args.hud_poll}s)")
