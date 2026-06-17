@@ -171,6 +171,15 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "backup_delete": lambda slug: {"ok": True, "removed": True},
             "profile_export": lambda name=None, assets=True: _export_stub(name, assets),
             "profile_import": lambda path, force=False: _import_stub(path, force),
+            "cockpit_status": lambda: {"ok": True, "enabled": True, "has_secret": True,
+                                       "funnel_auto": False, "funnel_capable": True,
+                                       "funnel_on": False,
+                                       "links": [{"name": "Alpha", "tailnet": "",
+                                                  "funnel": "https://h/cockpit?t=x"}]},
+            "cockpit_set_enabled": lambda enabled: {"ok": True, "_got": enabled},
+            "cockpit_funnel": lambda on: {"ok": True, "_got": on},
+            "cockpit_set_funnel_auto": lambda auto: {"ok": True, "_got": auto},
+            "cockpit_revoke": lambda streamer: {"ok": True, "_got": streamer},
             "speedtest": lambda: {"ok": True, "latest": None, "history": []}}
 
 
@@ -1015,6 +1024,34 @@ def t_profile_env_get_route_wraps_provider():
         assert code == 200 and data["ok"] is True
         assert data["entries"][0]["key"] == "K"
         assert seen == [True]
+    finally:
+        httpd.shutdown()
+
+
+def t_cockpit_status_route_wraps_provider():
+    ctx = _ctx()
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/cockpit/status")
+        data = json.loads(body)
+        assert code == 200 and data["enabled"] is True and data["has_secret"] is True
+        assert data["links"][0]["name"] == "Alpha"
+    finally:
+        httpd.shutdown()
+
+
+def t_cockpit_post_routes_pass_args():
+    seen = {}
+    ctx = _ctx()
+    ctx["cockpit_set_enabled"] = lambda enabled: seen.update(en=enabled) or {"ok": True}
+    ctx["cockpit_funnel"] = lambda on: seen.update(fn=on) or {"ok": True}
+    ctx["cockpit_revoke"] = lambda streamer: seen.update(rv=streamer) or {"ok": True}
+    httpd, port = _serve(ctx)
+    try:
+        assert _post_json(port, "/api/cockpit/enabled", {"enabled": True})[0] == 200
+        assert _post_json(port, "/api/cockpit/funnel", {"on": True})[0] == 200
+        assert _post_json(port, "/api/cockpit/revoke", {"streamer": "Alpha"})[0] == 200
+        assert seen == {"en": True, "fn": True, "rv": "Alpha"}
     finally:
         httpd.shutdown()
 

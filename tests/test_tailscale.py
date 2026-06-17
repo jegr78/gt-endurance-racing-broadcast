@@ -102,6 +102,41 @@ def t_parse_peers_garbage_and_empty():
     assert ts.parse_tailscale_peers(json.dumps({"Peer": None})) == []
 
 
+def t_parse_funnel_serving():
+    on = ("https://rig.tail1234.ts.net (Funnel on)\n"
+          "|-- /cockpit proxy http://127.0.0.1:8088/cockpit\n")
+    assert ts.parse_funnel_serving(on, "/cockpit") is True
+    assert ts.parse_funnel_serving(on, "/panel") is False      # different path
+    assert ts.parse_funnel_serving("No serve config", "/cockpit") is False
+    assert ts.parse_funnel_serving("", "/cockpit") is False
+
+
+def t_parse_funnel_capable():
+    full = "https://tailscale.com/cap/funnel"
+    ports = "https://tailscale.com/cap/funnel-ports?ports=443,8443,10000"
+    for key in (full, ports, "funnel"):     # versions vary; accept all forms
+        assert ts.parse_funnel_capable(json.dumps({"Self": {"CapMap": {key: []}}})) is True, key
+    assert ts.parse_funnel_capable(json.dumps(
+        {"Self": {"CapMap": {"https://tailscale.com/cap/ssh": []}}})) is False
+    assert ts.parse_funnel_capable(json.dumps({"Self": {}})) is False
+    assert ts.parse_funnel_capable("not json") is False
+
+
+def t_parse_magicdns_name():
+    out = json.dumps({"Self": {"DNSName": "rig.tail1234.ts.net."}})
+    assert ts.parse_magicdns_name(out) == "rig.tail1234.ts.net"   # trailing dot stripped
+    assert ts.parse_magicdns_name(json.dumps({"Self": {}})) == ""
+    assert ts.parse_magicdns_name("not json") == ""
+
+
+def t_funnel_args():
+    on = ts.funnel_args(path="/cockpit", target_port=8088, enable=True)
+    assert on == ["funnel", "--bg", "--set-path=/cockpit",
+                  "http://127.0.0.1:8088/cockpit"]
+    off = ts.funnel_args(path="/cockpit", target_port=8088, enable=False)
+    assert off == ["funnel", "--set-path=/cockpit", "off"]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

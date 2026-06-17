@@ -85,6 +85,102 @@ def detect_tailscale_ip():
     return tailscale_backend()[2]
 
 
+def parse_magicdns_name(output):
+    """Self's MagicDNS name (e.g. 'host.tailnet.ts.net') from `tailscale status
+    --json`, trailing dot stripped, or '' when absent. Pure → unit-tested. Used to
+    build the public Funnel cockpit URL (#191) instead of a placeholder host."""
+    try:
+        data = json.loads(output)
+    except ValueError:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    name = (data.get("Self") or {}).get("DNSName") or ""
+    return name.rstrip(".") if isinstance(name, str) else ""
+
+
+def parse_funnel_capable(output):
+    """True iff `tailscale status --json` shows this node carries the Funnel
+    capability — i.e. the tailnet policy granted it the 'funnel' nodeAttr (the
+    one-time admin step). Pure → unit-tested. Lets `cockpit funnel on` fail fast
+    with guidance instead of hanging on the CLI's interactive enable prompt."""
+    try:
+        data = json.loads(output)
+    except ValueError:
+        return False
+    if not isinstance(data, dict):
+        return False
+    capmap = (data.get("Self") or {}).get("CapMap") or {}
+    if not isinstance(capmap, dict):
+        return False
+    # Tailscale exposes the funnel grant under varying keys across versions: a bare
+    # "funnel", the full "https://tailscale.com/cap/funnel", or a
+    # "…/cap/funnel-ports?ports=…" variant. Match any of them.
+    return any(k == "funnel" or "tailscale.com/cap/funnel" in k for k in capmap)
+
+
+def funnel_capable(timeout=3):
+    """Best-effort: is this node authorized for Funnel? (same discovery as
+    tailscale_backend). False when the CLI is missing / backend down / nodeAttr
+    absent."""
+    for binary in _TAILSCALE_BINS:
+        try:
+            out = subprocess.run([binary, "status", "--json"], capture_output=True,
+                                 text=True, errors="replace", timeout=timeout,
+                                 env=services.external_tool_env(),
+                                 **services.no_window_kwargs())
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if out.returncode == 0:
+            return parse_funnel_capable(out.stdout)
+    return False
+
+
+def parse_funnel_serving(output, path="/cockpit"):
+    """True iff `tailscale funnel status` shows *path* served via an ENABLED
+    Funnel. Pure → unit-tested. 'No serve config' or the path absent -> False.
+    Best-effort text parse (the CLI has no stable JSON for funnel status)."""
+    if not output:
+        return False
+    low = output.lower()
+    if "no serve config" in low:
+        return False
+    return "funnel on" in low and path.lower() in low
+
+
+def funnel_on(path="/cockpit", timeout=5):
+    """Is *path* currently exposed via Funnel? Best-effort (same discovery as
+    tailscale_backend); False on any failure."""
+    for binary in _TAILSCALE_BINS:
+        try:
+            out = subprocess.run([binary, "funnel", "status"], capture_output=True,
+                                 text=True, errors="replace", timeout=timeout,
+                                 env=services.external_tool_env(),
+                                 **services.no_window_kwargs())
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if out.returncode == 0:
+            return parse_funnel_serving(out.stdout, path)
+    return False
+
+
+def detect_magicdns_name(timeout=3):
+    """This machine's MagicDNS name via the CLI, or '' if unavailable. Best-effort
+    (same discovery as tailscale_backend)."""
+    for binary in _TAILSCALE_BINS:
+        try:
+            out = subprocess.run([binary, "status", "--json"], capture_output=True,
+                                 text=True, errors="replace", timeout=timeout,
+                                 env=services.external_tool_env(),
+                                 **services.no_window_kwargs())
+        except (OSError, subprocess.SubprocessError):
+            continue
+        name = parse_magicdns_name(out.stdout)
+        if name:
+            return name
+    return ""
+
+
 def parse_tailscale_peers(output):
     """Tailnet peers from `tailscale status --json`: a list of
     {hostname, ip, online, os}, one per peer that has a CGNAT IPv4 (peers without
@@ -170,3 +266,34 @@ def tailscale_up(binary, timeout=15):
 def tailscale_down(binary, timeout=15):
     """Argument-less `tailscale down`: disconnect, keep login + settings."""
     return _run_verb(binary, "down", timeout)
+
+
+def funnel_args(path, target_port, enable):
+    """Pure: the `tailscale funnel` argv to expose ONLY *path* (e.g. /cockpit) on
+    public 443, reverse-proxied to the local relay, or to tear it down. Unit-
+    tested without shelling out. The target keeps the same path so /cockpit/* maps
+    1:1 onto the relay's /cockpit/* (#191)."""
+    flag = f"--set-path={path}"
+    if enable:
+        return ["funnel", "--bg", flag, f"http://127.0.0.1:{target_port}{path}"]
+    return ["funnel", flag, "off"]
+
+
+def funnel(binary, path, target_port, enable, timeout=20):
+    """Run the funnel on/off command. Returns (ok, detail). Best-effort, mirrors
+    _run_verb. NOTE: enabling requires MagicDNS + HTTPS + the 'funnel' nodeAttr in
+    the tailnet policy (a one-time admin step) — surface failures verbatim."""
+    args = funnel_args(path, target_port, enable)
+    try:
+        out = subprocess.run([binary, *args], capture_output=True, text=True,
+                             errors="replace", timeout=timeout,
+                             env=services.external_tool_env(),
+                             **services.no_window_kwargs())
+    except subprocess.TimeoutExpired:
+        return False, f"timed out after {timeout}s"
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, str(exc)
+    if out.returncode:
+        detail = (out.stderr or out.stdout or "").strip()
+        return False, detail or f"exit code {out.returncode}"
+    return True, (out.stdout or "").strip()

@@ -1630,6 +1630,48 @@ def t_chat_routing():
     assert m.route(["chat"]) == {"kind": "chat", "rest": []}
 
 
+def t_set_env_key_preserves_other_keys():
+    """_set_env_key must NOT drop other keys/comments (regression: cockpit
+    enable/disable wiped SHEET_ID etc. by passing a single pair to the
+    full-set _write_env_file)."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "profile.env")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write("# header comment\nNAME=Demo\nSHEET_ID=abc123\n"
+                     "SHEET_PUSH_URL=https://x/exec\n")
+        res = m._set_env_key(p, "COCKPIT_SECRET", "deadbeef")
+        assert res.get("ok"), res
+        with open(p, encoding="utf-8") as fh:
+            text = fh.read()
+        got = m.parse_env_text(text)
+        assert got["NAME"] == "Demo"
+        assert got["SHEET_ID"] == "abc123"            # NOT wiped
+        assert got["SHEET_PUSH_URL"] == "https://x/exec"
+        assert got["COCKPIT_SECRET"] == "deadbeef"    # added
+        assert "# header comment" in text             # comments preserved
+        # updating an existing key keeps the others too
+        res = m._set_env_key(p, "SHEET_ID", "newid")
+        with open(p, encoding="utf-8") as fh:
+            got = m.parse_env_text(fh.read())
+        assert got["SHEET_ID"] == "newid" and got["NAME"] == "Demo"
+        assert got["COCKPIT_SECRET"] == "deadbeef"
+
+
+def t_route_cockpit():
+    assert m.route(["cockpit", "links"]) == {"kind": "cockpit", "rest": ["links"]}
+    assert m.route(["cockpit", "enable"]) == {"kind": "cockpit", "rest": ["enable"]}
+    assert m.route(["cockpit", "token", "revoke", "Alpha"]) == {
+        "kind": "cockpit", "rest": ["token", "revoke", "Alpha"]}
+    # cockpit validates the verb at route() time (unlike chat)
+    for bad in (["cockpit"], ["cockpit", "bogus"]):
+        try:
+            m.route(bad)
+            raise AssertionError(bad)
+        except ValueError:
+            pass
+
+
 def t_cookies_twitch_routing():
     # "twitch" as the first token selects the Twitch export
     args = m._cookies_oneshot_args(["twitch", "firefox"])

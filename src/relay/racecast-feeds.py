@@ -68,7 +68,7 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
 
 import argparse, csv, datetime, io, ipaddress, json, os, re, shutil, signal, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, quote, unquote
+from urllib.parse import urlparse, quote, unquote, parse_qs
 from urllib.request import Request, urlopen
 
 # OBS reflection (best effort). obs_ws lives in src/scripts (repo) or the
@@ -85,6 +85,8 @@ except Exception:                                # noqa: BLE001 — reflection i
     _obs_ws = None
 
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
+import cockpit_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
+import cockpit_admin  # talent-cockpit revocation version store (#191)
 from services import external_tool_env  # de-PyInstaller the env for spawned external tools
 
 # ---------- Configuration ----------
@@ -1297,6 +1299,36 @@ def live_schedule_row(rows, live_idx):
     return {"streamer": streamer, "stint": stint}
 
 
+def cockpit_tally(rows, live_idx, me_key):
+    """Talent tally for a commentator identified by *me_key* (a streamer_key).
+    Pure — unit-testable without a running relay. *rows* are ScheduleSource
+    4-tuples (url, streamer, stint, line); *live_idx* is the on-air feed's index.
+      on_air   = the on-air row's streamer normalizes to me_key
+      up_next  = the nearest FUTURE row that is me ->
+                 {"stint": <stint label>, "in_n": <handovers away>}, else None
+      scheduled= me appears anywhere in the schedule"""
+    cur = live_schedule_row(rows, live_idx)
+    on_air = bool(cur and asset_key(cur["streamer"]) == me_key)
+    up_next = None
+    if live_idx is not None:
+        for j in range(live_idx + 1, len(rows)):
+            _url, streamer, stint, _line = rows[j]
+            if asset_key(streamer) == me_key:
+                up_next = {"stint": stint, "in_n": j - live_idx}
+                break
+    scheduled = any(asset_key(r[1]) == me_key for r in rows)
+    return {"on_air": on_air, "up_next": up_next, "scheduled": scheduled}
+
+
+def cockpit_display_name(rows, me_key):
+    """The display streamer name whose asset_key == me_key (first match), so chat
+    messages are attributed to a human-readable name. Falls back to me_key."""
+    for _url, streamer, _stint, _line in rows:
+        if asset_key(streamer) == me_key:
+            return streamer
+    return me_key
+
+
 class ScheduleSource:
     """Reads the schedule from the Google Sheet (CSV) with last-good + fallback."""
     def __init__(self, csv_url, cache_path, local_fallback):
@@ -2374,7 +2406,20 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
                  timer_store=None, setup_ctl=None, overlay_dir=None,
                  chat_store=None, preview_path=None, graphics_dir=None,
-                 splitscreen_path=None):
+                 splitscreen_path=None, cockpit_page_path=None, cockpit_secret=None,
+                 cockpit_enabled=False, cockpit_versions_path=None):
+    # Shared across all H instances (one limiter per relay). The CHAT limiter is
+    # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
+    # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
+    # the single proxy address — so it is a COARSE GLOBAL cap on failed cockpit
+    # auths, not a per-client control. That is acceptable: valid tokens never reach
+    # this limiter (only the failure branch does, so legit talent is never locked
+    # out), and the 128-bit HMAC signature makes brute force infeasible regardless
+    # — this is pure defense-in-depth. X-Forwarded-For is deliberately NOT trusted
+    # for the key (spoofable over the public ingress, which would weaken it).
+    _cockpit_authfail_rl = cockpit_auth.RateLimiter(limit=20, window_s=60)
+    _cockpit_chat_rl = cockpit_auth.RateLimiter(limit=10, window_s=60)
+
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
             body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
@@ -2400,6 +2445,27 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Content-Type", "text/css; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(body)
+            return None
+        def _send_html_with_cookie(self, path, token):
+            """Serve the cockpit HTML and set the rc_cockpit auth cookie so all
+            sub-requests authenticate without the token staying in the URL bar."""
+            try:
+                with open(path, "rb") as fh: body = fh.read()
+            except OSError:
+                return self._send({"error": "cockpit page not found"}, 404)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            # `Secure` only behind the HTTPS Funnel (which injects X-Forwarded-Proto):
+            # browsers DROP a Secure cookie set over plain http, which would break the
+            # tailnet fallback link (http://<ip>:8088/cockpit) — its sub-requests
+            # would never re-auth. The tailnet hop is already WireGuard-encrypted.
+            secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+            self.send_header("Set-Cookie",
+                             f"{cockpit_auth.COOKIE_NAME}={token}; Path=/cockpit; "
+                             f"HttpOnly{secure}; SameSite=Lax")
             self.end_headers(); self.wfile.write(body)
             return None
         def _send_jpeg(self, body):
@@ -2432,6 +2498,31 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 return self._send({"error": "font not found", "key": name}, 404)
             return self._send_file(path, ctype)
         def log_message(self, *a): pass
+        def _cockpit_active(self):
+            """True iff the cockpit is enabled AND a secret is configured. When
+            false, every /cockpit/* path 404s (like chat/timer when disabled)."""
+            return bool(cockpit_enabled and cockpit_secret)
+        def _cockpit_token(self):
+            """The presented token: query ?t= first (link load), else the cookie."""
+            qs = parse_qs(urlparse(self.path).query)
+            if qs.get("t"):
+                return qs["t"][0]
+            return cockpit_auth.parse_cookie_token(self.headers.get("Cookie"))
+        def _cockpit_auth(self):
+            """Return the authed streamer_key, or None after sending 401/429.
+            Applies a per-client failure rate limit. Caller must return on None."""
+            versions = (cockpit_admin.load_versions(cockpit_versions_path)
+                        if cockpit_versions_path else {})
+            me = cockpit_auth.verify_token(cockpit_secret, self._cockpit_token(),
+                                           versions)
+            if me is None:
+                client = self.client_address[0] if self.client_address else "?"
+                if not _cockpit_authfail_rl.allow(client):
+                    self._send({"error": "rate limited"}, 429)
+                else:
+                    self._send({"error": "unauthorized"}, 401)
+                return None
+            return me
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
             try:
@@ -2556,6 +2647,63 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if p == ["chat", "reload"]:
                         return self._send(chat_store.reload())
                     return self._send({"error": "unknown", "path": self.path}, 404)
+                if p[:1] == ["cockpit"]:
+                    if not self._cockpit_active():
+                        return self._send({"error": "cockpit disabled"}, 404)
+                    if p == ["cockpit"]:
+                        me = self._cockpit_auth()
+                        if me is None:
+                            return None
+                        if not cockpit_page_path:
+                            return self._send({"error": "cockpit page not found"}, 404)
+                        return self._send_html_with_cookie(cockpit_page_path,
+                                                           self._cockpit_token())
+                    if p == ["cockpit", "data"]:
+                        me = self._cockpit_auth()
+                        if me is None:
+                            return None
+                        rows = relay.source.get_rows()
+                        live_idx = relay.feeds[relay.live_feed()].idx
+                        tally = cockpit_tally(rows, live_idx, me)
+                        tally.update({"me": me, "mode": relay.mode,
+                                      "program_available": _obs_ws is not None})
+                        return self._send(tally)
+                    if p == ["cockpit", "program"]:
+                        if self._cockpit_auth() is None:
+                            return None
+                        if _obs_ws is None:
+                            return self._send({"error": "obs unavailable"}, 503)
+                        data, note = _obs_ws.get_program_screenshot(width=640)
+                        if data is None:
+                            return self._send({"error": "preview unavailable",
+                                               "note": note}, 503)
+                        return self._send_jpeg(data)
+                    if p == ["cockpit", "timer"]:
+                        if self._cockpit_auth() is None:
+                            return None
+                        if not timer_store:
+                            return self._send({"error": "timer disabled"}, 404)
+                        return self._send(timer_store.data())
+                    if p == ["cockpit", "chat", "data"]:
+                        if self._cockpit_auth() is None:
+                            return None
+                        if not chat_store:
+                            return self._send({"error": "chat disabled"}, 404)
+                        return self._send(chat_store.data())
+                    if p == ["cockpit", "versions"]:
+                        # Producer-to-producer takeover pull. This path SITS UNDER
+                        # /cockpit, so it IS reachable via Funnel — it must therefore
+                        # authenticate, not rely on obscurity. Talent tokens are
+                        # per-commentator; this is gated on the shared league secret
+                        # (every producer of the league holds it), constant-time.
+                        presented = self.headers.get("X-Cockpit-Secret")
+                        if not cockpit_auth.secret_matches(presented, cockpit_secret):
+                            return self._send({"error": "unauthorized"}, 401)
+                        if not cockpit_versions_path:
+                            return self._send({"versions": {}})
+                        return self._send({"versions":
+                            cockpit_admin.load_versions(cockpit_versions_path)})
+                    return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["schedule", "data"]:
                     rows = relay.source.get_rows()
                     live = {f.idx: k for k, f in relay.feeds.items()}
@@ -2638,6 +2786,25 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"error": "body must be JSON"}, 400)
                 if not isinstance(body, dict):
                     return self._send({"error": "body must be a JSON object"}, 400)
+                if p[:1] == ["cockpit"]:
+                    if not self._cockpit_active():
+                        return self._send({"error": "cockpit disabled"}, 404)
+                    if p == ["cockpit", "chat", "send"]:
+                        me = self._cockpit_auth()
+                        if me is None:
+                            return None
+                        if not chat_store:
+                            return self._send({"error": "chat disabled"}, 404)
+                        # Key the limit on the authed identity, not the socket IP:
+                        # behind Funnel every commentator shares one proxy IP, so an
+                        # IP key would throttle the whole crew together (#191 review).
+                        if not _cockpit_chat_rl.allow(me):
+                            return self._send({"error": "rate limited"}, 429)
+                        # Identity is the token's streamer, never client-declared.
+                        name = cockpit_display_name(relay.source.get_rows(), me)
+                        return self._send(chat_store.add(user=name,
+                                                         text=body.get("text")))
+                    return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["chat", "send"]:
                     if not chat_store:
                         return self._send({"error": "chat disabled"}, 404)
@@ -2901,6 +3068,12 @@ def main():
             splitscreen_path = os.path.abspath(cand); break
     if not splitscreen_path:
         print("WARN: splitscreen.html not found — /splitscreen will 404.")
+    cockpit_page_path = None
+    for cand in (os.path.join(here, "cockpit.html"),
+                 os.path.join(here, "..", "cockpit.html"),
+                 os.path.join(here, "..", "cockpit", "cockpit.html")):
+        if os.path.exists(cand):
+            cockpit_page_path = os.path.abspath(cand); break
     if not args.no_hud and not args.sheet_csv_url:
         base = f"https://docs.google.com/spreadsheets/d/{args.sheet_id}/gviz/tq?tqx=out:csv&sheet="
         overlay_url = base + quote(args.overlay_tab)
@@ -2976,11 +3149,21 @@ def main():
         threading.Thread(target=poller, args=(timer_store, args.hud_poll, stop_evt),
                          daemon=True).start()
 
+    # Commentator cockpit (#191): per-league secret (injected from profile.env) +
+    # machine-local master switch (.env). Both must be present or /cockpit/* 404s.
+    cockpit_secret = (os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip() or None
+    cockpit_enabled = (os.environ.get("RACECAST_COCKPIT_ENABLED", "").strip().lower()
+                       in ("1", "true", "yes", "on"))
+    cockpit_versions_path = os.path.join(runtime, "cockpit-versions.json")
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
                            timer_store, setup_ctl,
                            overlay_dir=args.overlay_dir, chat_store=chat_store,
                            preview_path=preview_path, graphics_dir=graphics_dir,
-                           splitscreen_path=splitscreen_path)
+                           splitscreen_path=splitscreen_path,
+                           cockpit_page_path=cockpit_page_path,
+                           cockpit_secret=cockpit_secret,
+                           cockpit_enabled=cockpit_enabled,
+                           cockpit_versions_path=cockpit_versions_path)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []
@@ -3036,6 +3219,11 @@ def main():
             print(f"    remote (tailnet):      http://{remote_host}:{args.http_port}/panel")
         elif args.bind == "auto":
             print("    (no Tailscale IP found — local only; start Tailscale for remote access)")
+    if cockpit_secret and cockpit_enabled:
+        if cockpit_page_path:
+            print("  Commentator cockpit: /cockpit (auth) — links via 'racecast cockpit links'")
+        else:
+            print("  WARN: cockpit enabled but cockpit.html not found — /cockpit will 404.")
     if hud_source and hud_path:
         print(f"  HUD overlay (OBS source): http://127.0.0.1:{args.http_port}/hud  "
               f"(tabs '{args.overlay_tab}'/'{args.config_tab}', refresh {args.hud_poll}s)")

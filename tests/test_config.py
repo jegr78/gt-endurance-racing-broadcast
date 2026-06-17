@@ -224,6 +224,22 @@ def t_resolve_config_discord_webhook_from_field():
         assert cfg.discord_webhook_url == "https://discord.com/api/webhooks/1/tok"
 
 
+def t_resolve_config_cockpit_secret_from_field():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo", "NAME=Demo\nSHEET_ID=abc\nCOCKPIT_SECRET=s3cr3t\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.cockpit_secret == "s3cr3t"
+
+
+def t_resolve_config_cockpit_secret_blank_when_absent():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo", "NAME=Demo\nSHEET_ID=abc\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.cockpit_secret == ""
+
+
 def t_resolve_config_obs_collection_from_field():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
