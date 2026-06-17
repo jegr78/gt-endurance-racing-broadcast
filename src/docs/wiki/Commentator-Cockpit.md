@@ -69,14 +69,11 @@ At <https://login.tailscale.com/admin>:
 ### Automate the tailnet setup — `racecast cockpit setup-funnel`
 
 Steps 1–2 can be done from the producer machine instead of clicking through the admin
-console, using a **Tailscale API access token** (or an OAuth client).
+console, using a **Tailscale API access token**.
 
 #### Get the API credential (the "admin token")
 
-You need to be a tailnet **Owner / Admin / Network-admin**. Both options live on the
-Admin console **Settings → Keys** page.
-
-**Easiest — an API access token:**
+You need to be a tailnet **Owner / Admin / Network-admin**.
 
 1. Open **<https://login.tailscale.com/admin/settings/keys>** (Admin console →
    **Settings → Keys**).
@@ -92,19 +89,9 @@ Admin console **Settings → Keys** page.
 afterwards, so you only need the token for that single run. **Generate it, run
 setup-funnel, then revoke it and clear the `.env` line** — don't keep it around. The
 token's ≤90-day expiry is therefore a non-issue (you're not renewing anything). It
-has full account access while it exists, so treat it like a password.
-
-**Alternative — a scopable OAuth client** (least-privilege, doesn't expire): further
-down the same **Keys** page, under **OAuth clients**, generate one with **Write**
-access to **DNS** and the **Policy file (ACL)** only, then set instead:
-```
-RACECAST_TS_OAUTH_CLIENT_ID=<id>
-RACECAST_TS_OAUTH_CLIENT_SECRET=tskey-client-...
-```
-
-> Either credential can rewrite your tailnet policy — treat it like a password, keep
-> it only in `.env` (never committed), and it is only needed while running
-> `setup-funnel`, never during a broadcast.
+has full account access while it exists, so treat it like a password — keep it only in
+`.env` (never committed), and it is only needed while running `setup-funnel`, never
+during a broadcast.
 
 #### Run it
 
@@ -118,7 +105,7 @@ nodeAttr to the policy. Because the API returns the policy as plain JSON, the wr
 **reformats your ACL and drops HuJSON comments** — so it **backs up the current
 policy** to `runtime/ts-acl-backup-<ts>.json` first and uses an `If-Match` ETag to
 avoid clobbering a concurrent edit. **HTTPS Certificates** has no API; enable it once
-on the DNS page (the command reminds you). The OAuth secret can rewrite the tailnet
+on the DNS page (the command reminds you). The API token can rewrite the tailnet
 policy — keep it in `.env` (gitignored), never commit it. Scope `--target` to a tag
 instead of the default `autogroup:member` if you want a tighter grant.
 

@@ -1,7 +1,7 @@
 """Automate the one-time Tailscale-tailnet prerequisites for the Commentator
 Cockpit Funnel (issue #191), driven by `racecast cockpit setup-funnel`.
 
-What it does, via the Tailscale Admin API authenticated with an OAuth client:
+What it does, via the Tailscale Admin API authenticated with an API access token:
   1. enable MagicDNS                          (dns/preferences — a single, safe pref)
   2. add the `funnel` nodeAttr to the policy  (acl GET -> merge -> POST, ETag-guarded)
 HTTPS-certificate enablement has no reliable public API and stays a one-click
@@ -16,7 +16,6 @@ import urllib.parse
 import urllib.request
 
 API = "https://api.tailscale.com/api/v2"
-OAUTH_URL = API + "/oauth/token"
 FUNNEL_ATTR = "funnel"
 DEFAULT_TARGET = "autogroup:member"
 
@@ -62,15 +61,6 @@ def setup_plan(prefs, acl):
 
 
 # ----------------------------- thin HTTP ---------------------------------
-
-def fetch_token(client_id, client_secret, timeout=15):
-    """Exchange OAuth client credentials for a short-lived API access token."""
-    data = urllib.parse.urlencode(
-        {"client_id": client_id, "client_secret": client_secret}).encode()
-    req = urllib.request.Request(OAUTH_URL, data=data, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as r:   # noqa: S310 (https)
-        return json.loads(r.read())["access_token"]
-
 
 def _req(token, method, path, body=None, etag=None, accept=None, timeout=20):
     headers = {"Authorization": "Bearer " + token}
