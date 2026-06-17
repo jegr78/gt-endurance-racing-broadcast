@@ -425,6 +425,8 @@
         <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Tools</button>
       <button class="navitem" data-nav="settings" onclick="showView('settings')">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>General Settings</button>
+      <button class="navitem" data-nav="cockpit" onclick="showView('cockpit')">
+        <svg viewBox="0 0 24 24"><path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>Cockpit</button>
       <button class="navitem" data-nav="logs" onclick="showView('logs')">
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>Logs</button>
       <button class="navitem" data-nav="help" onclick="showView('help')">
@@ -843,6 +845,33 @@
         <p class="envhint">Machine-level <b>.env</b> on this computer (ports, OBS-WebSocket password, Companion path) — shared across all leagues. League config (Sheet, OBS collection, …) lives under <b>Profile</b>. Values are masked; comments are preserved. Changes apply when you next (re)start the affected service.</p>
       </div>
 
+      <!-- ===== Commentator Cockpit ===== -->
+      <div class="view" data-view="cockpit" hidden>
+        <div class="viewhead"><h2>Commentator Cockpit</h2>
+          <span class="sub">talent-facing program monitor, tally, chat &amp; timer</span>
+          <span class="spacer"></span>
+          <button onclick="loadCockpit()">Reload</button></div>
+        <div class="enverr" id="cp-err" hidden></div>
+        <section>
+          <label class="cprow"><input type="checkbox" id="cp-enabled" onchange="toggleCockpit()">
+            Enable cockpit on this machine</label>
+          <p class="sub">Generates a per-league secret on first enable. The relay must be
+            (re)started after toggling. The cockpit is exposed publicly only when you also
+            turn the Funnel on below.</p>
+        </section>
+        <section>
+          <div class="viewhead"><h3>Public access (Tailscale Funnel)</h3></div>
+          <button id="cp-funnel-on" onclick="cockpitFunnel(true)">Funnel ON (public)</button>
+          <button id="cp-funnel-off" onclick="cockpitFunnel(false)">Funnel OFF</button>
+          <p class="sub">Exposes only <code>/cockpit</code> publicly. Needs MagicDNS + HTTPS
+            + the <code>funnel</code> nodeAttr in the tailnet policy (one-time admin step).</p>
+        </section>
+        <section>
+          <div class="viewhead"><h3>Commentator links</h3></div>
+          <div id="cp-links"></div>
+        </section>
+      </div>
+
       <!-- ===== Logs ===== -->
       <div class="view" data-view="logs" hidden>
         <div class="viewhead"><h2>Logs</h2>
@@ -968,6 +997,7 @@ function showView(name) {
   if (name === 'preflight' && !preflightRun) { preflightRun = true; runPreflight(); }
   if (name === 'preflight') loadSpeedtest();
   if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
+  if (name === 'cockpit') loadCockpit();   // reload each visit: reflects toggles/links
   if (name === 'streams' && !streamsLoaded) { streamsLoaded = true; loadStreams(); }
   if (name === 'help' && !docsLoaded) { docsLoaded = true; fetchDocs(); }
   // preview list (opt-in) lives in Help — load it lazily on each visit so a
@@ -2147,6 +2177,64 @@ function showProfileErr(elId, msg) {
   const e = $(elId);
   e.textContent = msg;
   e.hidden = false;
+}
+
+// ===== Commentator Cockpit (issue #191) =====
+async function loadCockpit() {
+  let d;
+  try { d = await (await fetch('/api/cockpit/status', {cache: 'no-store'})).json(); }
+  catch (e) { showProfileErr('cp-err', 'Control Center not reachable.'); return; }
+  if (!d.ok) { showProfileErr('cp-err', d.error || 'cockpit status failed'); return; }
+  $('cp-err').hidden = true;
+  $('cp-enabled').checked = !!d.enabled;
+  const c = $('cp-links');
+  c.textContent = '';
+  if (!d.has_secret) {
+    c.textContent = 'Enable the cockpit to generate a league secret and links.';
+    return;
+  }
+  if (!(d.links || []).length) {
+    c.textContent = 'No streamers in the schedule yet (start the relay).';
+    return;
+  }
+  d.links.forEach(l => {
+    const row = document.createElement('div');
+    row.className = 'cprow';
+    const nm = document.createElement('b');
+    nm.textContent = l.name + '  ';
+    const copy = document.createElement('button');
+    copy.textContent = 'Copy funnel link';
+    copy.onclick = () => navigator.clipboard.writeText(l.funnel);
+    const rev = document.createElement('button');
+    rev.textContent = 'Revoke';
+    rev.onclick = () => revokeCockpit(l.name);
+    row.append(nm, copy, document.createTextNode(' '), rev);
+    c.appendChild(row);
+  });
+}
+async function toggleCockpit() {
+  $('cp-err').hidden = true;
+  const r = await (await fetch('/api/cockpit/enabled', {method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({enabled: $('cp-enabled').checked})})).json();
+  if (!r.ok) showProfileErr('cp-err', r.error || 'could not toggle cockpit');
+  loadCockpit();
+}
+async function cockpitFunnel(on) {
+  $('cp-err').hidden = true;
+  const r = await (await fetch('/api/cockpit/funnel', {method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({on})})).json();
+  if (!r.ok) showProfileErr('cp-err', r.error || 'funnel command failed');
+}
+async function revokeCockpit(streamer) {
+  if (!confirm('Revoke ' + streamer + "'s current link?")) return;
+  $('cp-err').hidden = true;
+  const r = await (await fetch('/api/cockpit/revoke', {method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({streamer})})).json();
+  if (!r.ok) showProfileErr('cp-err', r.error || 'revoke failed');
+  loadCockpit();
 }
 
 // Header league logo: point the <img> at the server-resolved active-profile
