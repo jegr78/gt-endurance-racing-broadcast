@@ -25,6 +25,12 @@ machine and the panel's HUD row + URLs section are display-only.
 The relay only sends Setup values that exist in the Configuration tab's
 vocabulary columns — the same lists the sheet's own dropdowns use.
 
+> **Not written to the Sheet:** the free-text **event title**
+> ([Director](Director#event-title)) is producer-side runtime state
+> (`runtime/<profile>/event.json`), set from `EVENT_TITLE` / `event start
+> --title` / the panel's inline editor. It changes per event and is producer-
+> chosen, so it is deliberately kept out of the shared Sheet.
+
 A `teams` write sends `{"action":"teams","slot":1|2|3,"name":"<team>"}`. The
 relay validates the panel's choice against the Configuration tab's roster and
 sends the **verbatim** Configuration team label (e.g. `OVO eSports #111`), so the

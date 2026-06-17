@@ -258,6 +258,32 @@ def check_submission_pending(ctx):
     return CheckResult("submission_pending", "pass", "")
 
 
+def check_event_title_round_trip(ctx):
+    """#207: POST /event/title sets the free-text event title; it must then surface
+    in BOTH /status (director panel) and /cockpit/data (talent). Relay-local state
+    (event.json), no external push -> safe in synthetic AND real-league mode."""
+    title = "E2E - Round 7 - Spa 24h"
+    payload = _json.dumps({"title": title}).encode()
+    st, body, _ = http_request(ctx.relay_url + "/event/title", method="POST",
+                               headers={"Content-Type": "application/json"},
+                               data=payload)
+    if st != 200:
+        return CheckResult("event_title_round_trip", "fail",
+                           f"POST HTTP {st}: {body[:120]!r}")
+    res = _json.loads(body or b"null") or {}
+    if res.get("title") != title:
+        return CheckResult("event_title_round_trip", "fail", f"echo: {res}")
+    st, data = _get_json(ctx.relay_url + "/status")
+    if st != 200 or data.get("event_title") != title:
+        return CheckResult("event_title_round_trip", "fail",
+                           f"/status event_title={data.get('event_title')!r}")
+    st, cd = _get_json(f"{ctx.relay_url}/cockpit/data?t={ctx.token}")
+    if st != 200 or cd.get("event_title") != title:
+        return CheckResult("event_title_round_trip", "fail",
+                           f"/cockpit/data event_title={cd.get('event_title')!r}")
+    return CheckResult("event_title_round_trip", "pass", "")
+
+
 def check_status_live(ctx):
     """Relaxed real-league /status health: 200 + a non-empty schedule + a live
     block, WITHOUT pinning exact counts (real schedule_len/live_stint are
@@ -354,14 +380,16 @@ SYNTHETIC_CHECKS = [
     check_cockpit_timer_renders,
     check_chat_round_trip,
     check_submission_pending,
+    check_event_title_round_trip,
     check_cc_api_cockpit,
     check_enable_preserves_keys,
 ]
 
 # Real-league mode (local only): the safe subset for a copied profile. Read-only
-# checks PLUS check_chat_round_trip — the crew chat is relay-local (an in-memory
-# ring buffer persisted only to the copied runtime/<league>/chat.json, no
-# external push), so posting a marker is harmless against a throwaway copy.
+# checks PLUS check_chat_round_trip and check_event_title_round_trip — both write
+# only relay-local state (the crew chat ring buffer -> chat.json; the event title
+# -> event.json), with no external push, so they are harmless against a throwaway
+# copy.
 # EXCLUDES check_submission_pending (POST /cockpit/submit could ping the league's
 # REAL Discord webhook) and check_cockpit_404_when_disabled (needs a second
 # disabled relay). Uses the relaxed check_status_live (real schedule_len/
@@ -373,6 +401,7 @@ REAL_LEAGUE_CHECKS = [
     check_cockpit_tally,
     check_cockpit_timer_renders,
     check_chat_round_trip,
+    check_event_title_round_trip,
     check_cc_api_cockpit,
     check_enable_preserves_keys,
 ]

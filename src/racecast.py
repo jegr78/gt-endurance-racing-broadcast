@@ -193,7 +193,8 @@ def _profile_env_vars(rc):
              ("RACECAST_OUTRO_URL", rc.outro_url),
              ("RACECAST_DISCORD_WEBHOOK_URL", rc.discord_webhook_url),
              ("RACECAST_OBS_COLLECTION", rc.obs_collection),
-             ("RACECAST_COCKPIT_SECRET", rc.cockpit_secret))
+             ("RACECAST_COCKPIT_SECRET", rc.cockpit_secret),
+             ("RACECAST_EVENT_TITLE", rc.event_title))
     return {k: v for k, v in pairs if v}
 
 def _apply_active_profile_env():
@@ -540,6 +541,12 @@ def _relay_script():
 
 def _relay_pid_path():
     return os.path.join(_runtime_dir(), "relay.pid")
+
+def _event_title_path():
+    """The active profile's persisted event-title file (#207). The relay's
+    EventTitleStore loads this on startup, so writing it before a takeover bring-up
+    makes the new relay adopt producer A's on-air title."""
+    return os.path.join(_runtime_dir(), "event.json")
 
 def _relay_log_path():
     return os.path.join(_runtime_dir(), "logs", "relay.console.log")
@@ -1824,6 +1831,20 @@ def _qualifying_args(rest):
     return ["--qualifying"] if "--qualifying" in rest else []
 
 
+def _title_args(rest):
+    """['--event-title', VALUE] when `event start` was given --title (or --title=),
+    else [] — forwarded to the relay launch so 'event start --title "…"' brings the
+    stack up with that free-text event title and persists it (#207). Free text: no
+    validation beyond presence (the relay sanitizes); an explicit empty value clears
+    the title. A bare '--title' whose next token is another flag is NOT consumed."""
+    for i, tok in enumerate(rest):
+        if tok.startswith("--title="):
+            return ["--event-title", tok.split("=", 1)[1]]
+        if tok == "--title" and i + 1 < len(rest) and not rest[i + 1].startswith("--"):
+            return ["--event-title", rest[i + 1]]
+    return []
+
+
 def _event_modules():
     """event/preflight are plain sibling modules of services (scripts/ is on
     sys.path; frozen: hidden-imports in tools/build-binary.py)."""
@@ -1953,6 +1974,17 @@ def league_guard(a_sheet_id, b_sheet_id, force):
     return (f"league mismatch: producer A is league {a_sheet_id}, but your active "
             f"profile is league {b_sheet_id} — wrong profile? re-run with --force "
             f"to take over anyway")
+
+
+def _takeover_event_title(status):
+    """Producer A's on-air event title (#207) to adopt at takeover, or None to leave
+    the local title untouched — A unreachable (status None) or an older relay whose
+    /status omits the field. An empty string is a valid value (A has no title -> clear
+    ours to match). Pure."""
+    if not isinstance(status, dict) or "event_title" not in status:
+        return None
+    title = status.get("event_title")
+    return title if isinstance(title, str) else None
 
 
 def _event_gate_results(ev, pf):
@@ -2151,8 +2183,8 @@ def event_start(rest):
     # 3. Relay (before OBS — see docstring). A takeover bring-up forwards
     # --stint so the feeds start at the stint that is on air right now;
     # --qualifying brings the stack up in qualifying mode (Feed A on the
-    # Qualifying tab).
-    relay_start(_stint_args(rest) + _qualifying_args(rest))
+    # Qualifying tab); --title sets the free-text event title (#207).
+    relay_start(_stint_args(rest) + _qualifying_args(rest) + _title_args(rest))
     # 4. OBS
     if ev.app_running("obs"):
         print("obs: already running.")
@@ -2281,6 +2313,20 @@ def event_takeover(rest):
         cockpit_cmd(["pull-versions", host, "--port", str(port)])
     except SystemExit:
         print("note: cockpit-versions pull failed — continuing takeover.")
+
+    # Adopt A's on-air event title (#207), persisted to event.json BEFORE bring-up
+    # so the new relay loads it (mirrors the chat pull). Best-effort, never aborts.
+    a_title = _takeover_event_title(status)
+    if a_title is not None:
+        try:
+            path = _event_title_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump({"title": a_title}, fh)
+            print(f"Adopted A's event title: “{a_title}”." if a_title
+                  else "Cleared the event title to match producer A.")
+        except OSError as exc:
+            print(f"note: could not persist A's event title ({exc}) — continuing.")
 
     print(f"Taking over at stint {plan['stint']} (from A's "
           f"{plan['source']})" + (" — qualifying mode" if plan["qualifying"] else "") + ".")

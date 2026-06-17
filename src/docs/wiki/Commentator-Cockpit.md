@@ -4,6 +4,9 @@ A **talent-facing** page served by the relay — the counterpart to the Director
 Panel, but for the **commentators**. Each commentator opens one personal link and
 gets a self-contained cockpit:
 
+- **Event title** — the round's free-text title (e.g. `GTEC - 2026 - Round 4 -
+  Nürburgring 24h`) in the header, the same label the director and Discord see.
+  Read-only here; the director sets it (see [Director](Director#event-title)).
 - **Live program monitor** — the actual broadcast output (low-bandwidth JPEG stills).
 - **Tally** — a large **YOU ARE ON AIR** indicator plus an **UP NEXT · stint N · in
   X handovers** cue (and, while on air, their next own stint).

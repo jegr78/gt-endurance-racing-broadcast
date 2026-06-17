@@ -74,6 +74,7 @@ def _stub_relay2():
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     chat = []          # mutable closure state — the round-trip target
     pending = []
+    event = {"title": ""}   # /event/title round-trip target (#207)
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a): pass
@@ -84,11 +85,14 @@ def _stub_relay2():
             self.end_headers(); self.wfile.write(body)
         def do_GET(self):
             p = self.path.split("?")[0]
+            if p == "/status":
+                return self._send(200, {"schedule_len": 2, "event_title": event["title"]})
             if p == "/cockpit/data":
                 if not self._authed(): return self._send(401, {"error": "auth"})
                 # flat (real shape): tally fields merged at top level
                 return self._send(200, {"on_air": True, "up_next": None,
-                                        "scheduled": True, "me": "alice"})
+                                        "scheduled": True, "me": "alice",
+                                        "event_title": event["title"]})
             if p == "/cockpit/timer":
                 if not self._authed(): return self._send(401, {"error": "auth"})
                 return self._send(200, {"visible": True, "end": None,
@@ -113,6 +117,9 @@ def _stub_relay2():
                 pending.append(entry)
                 return self._send(200, {"ok": True, "id": "sub-1",
                                         "stint": body.get("stint")})
+            if p == "/event/title":
+                event["title"] = (body.get("title") or "").strip()
+                return self._send(200, {"ok": True, "title": event["title"]})
             return self._send(404, {"error": "nope"})
     srv = ThreadingHTTPServer(("127.0.0.1", e.free_port()), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -157,6 +164,16 @@ def t_check_submission_pending():
                     token="good", streamer_key="alice", own_stint="Stint 1",
                     expect={})
         assert e.check_submission_pending(ctx).status == "pass"
+    finally:
+        srv.shutdown()
+
+
+def t_check_event_title_round_trip():
+    srv, url = _stub_relay2()
+    try:
+        ctx = e.Ctx(relay_url=url, disabled_relay_url=url, ui_url=None,
+                    token="good", streamer_key="alice", expect={})
+        assert e.check_event_title_round_trip(ctx).status == "pass"
     finally:
         srv.shutdown()
 

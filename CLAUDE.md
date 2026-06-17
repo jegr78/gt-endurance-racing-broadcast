@@ -95,6 +95,7 @@ python3 tests/test_init.py           # racecast init wizard logic (plan/skip/gat
 python3 tests/test_timer.py          # relay race-timer unit checks
 python3 tests/test_chat.py           # crew chat (ChatStore + chat_admin + endpoints)
 python3 tests/test_submissions.py    # cockpit stream-link submissions (pending store + own-row resolver + endpoints)
+python3 tests/test_event_title.py    # free-text event title (#207): sanitizer + EventTitleStore + /event/title + /status + /cockpit/data
 python3 tests/test_backup.py         # profile look backups (zip snapshot create/list/restore/delete)
 python3 tests/test_setup.py          # panel sheet-control (webhook payloads, SetupControl, endpoints)
 python3 tests/test_ui_ops.py         # Control Center structured status providers + op registry
@@ -138,7 +139,7 @@ python3 src/racecast.py profile export NAME      # export a league profile to a 
 python3 src/racecast.py profile import FILE       # import a profile bundle (--force to replace an existing one)
 python3 src/racecast.py --profile NAME <command>  # run ONE command against a non-active profile
 python3 src/racecast.py event status      # event-day readiness report (apps + services + assets)
-python3 src/racecast.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later); --qualifying = qualifying mode (Feed A serves the Qualifying tab; switch live via /mode/race|/mode/qualifying or the panel)
+python3 src/racecast.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later); --qualifying = qualifying mode (Feed A serves the Qualifying tab; switch live via /mode/race|/mode/qualifying or the panel); --title "…" = free-text event title shown in Panel/Cockpit/Discord (#207; also editable live in the panel, persisted to runtime/<profile>/event.json, pulled from producer A at takeover)
 python3 src/racecast.py event stop        # stop racecast services; GUI apps keep running
 python3 src/racecast.py tailscale up|down|status  # connect/disconnect/inspect Tailscale (event start connects automatically)
 python3 src/racecast.py obs refresh       # force-reload the relay-served OBS browser sources (HUD/timer)

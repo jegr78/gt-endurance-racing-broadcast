@@ -43,6 +43,11 @@ their scene goes active.
 > (readiness report — names the exact fix command for anything missing),
 > `racecast event stop` (wind-down). All act on the active league profile; run one
 > against another league with `racecast --profile <name> event …`.
+>
+> Add `--title "GTEC - 2026 - Round 4 - Nürburgring 24h"` to label this round in
+> the Director Panel, the Commentator Cockpit and Discord (also editable live in
+> the panel; see [Director](Director#event-title)). At a producer takeover, the
+> incoming machine pulls the on-air title from producer A automatically.
 
 ## Before you go live
 
