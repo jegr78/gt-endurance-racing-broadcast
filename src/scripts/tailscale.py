@@ -272,11 +272,16 @@ def funnel_args(path, target_port, enable):
     """Pure: the `tailscale funnel` argv to expose ONLY *path* (e.g. /cockpit) on
     public 443, reverse-proxied to the local relay, or to tear it down. Unit-
     tested without shelling out. The target keeps the same path so /cockpit/* maps
-    1:1 onto the relay's /cockpit/* (#191)."""
-    flag = f"--set-path={path}"
+    1:1 onto the relay's /cockpit/* (#191).
+
+    Teardown uses `funnel reset`, not the path-specific `--set-path=… off` form:
+    that form silently failed with "handler does not exist" and left the public
+    funnel up (#200). `racecast cockpit funnel` only ever mounts /cockpit, so
+    resetting the whole funnel config is the precise teardown here."""
     if enable:
-        return ["funnel", "--bg", flag, f"http://127.0.0.1:{target_port}{path}"]
-    return ["funnel", flag, "off"]
+        return ["funnel", "--bg", f"--set-path={path}",
+                f"http://127.0.0.1:{target_port}{path}"]
+    return ["funnel", "reset"]
 
 
 def funnel(binary, path, target_port, enable, timeout=20):
