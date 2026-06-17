@@ -7,6 +7,7 @@ Pulled on producer takeover (apply_pulled), exactly like chat_admin.apply_pulled
 import json
 import os
 import re
+import tempfile
 
 _KEY_RE = re.compile(r"[a-z0-9-]+")
 
@@ -41,19 +42,25 @@ def load_versions(path):
 
 def current_version(versions, key):
     """Current version for a streamer_key, defaulting to 1 when absent."""
-    try:
-        return int(versions.get(key, 1))
-    except (TypeError, ValueError):
-        return 1
+    return versions.get(key, 1)
 
 
 def write_versions(path, versions):
-    """Atomically persist {key: version} as {"versions": {...}} (temp + replace)."""
+    """Atomically persist {key: version} as {"versions": {...}} (temp + replace).
+    Uses mkstemp in the target directory so the rename is same-filesystem, and
+    unlinks the temp file on any failure — mirroring chat_admin.write_messages."""
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump({"versions": versions}, fh, indent=2, sort_keys=True)
-    os.replace(tmp, path)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({"versions": versions}, fh, indent=2, sort_keys=True)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass  # cleanup is best-effort; re-raise the original write failure below
+        raise
 
 
 def bump_version(path, key):
