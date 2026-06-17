@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Unit checks for the empty-except guard in tools/lint.py (mirrors CodeQL's
-py/empty-except locally so a missing comment fails the gate pre-push, not
-post-merge). Run: python3 tests/test_lint.py"""
+"""Unit checks for the in-house guards in tools/lint.py — the empty-except guard
+(mirrors CodeQL's py/empty-except) and the procedure-return-value guard (mirrors
+py/procedure-return-value-used) — so both fail the gate pre-push, not post-merge.
+Run: python3 tests/test_lint.py"""
 import importlib.util, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -74,6 +75,67 @@ def t_repo_is_clean():
     # The whole repo must already satisfy the guard (this is the regression that
     # would have caught the 5 alerts from #139/#142 before they reached CodeQL).
     assert lint.check_empty_excepts(ROOT) == [], lint.check_empty_excepts(ROOT)
+
+
+# --- procedure-return-value-used guard (CodeQL py/procedure-return-value-used) ---
+# A procedure (returns only None) whose result is USED.
+PROC_USED_RETURN = "def p():\n    print(1)\n\ndef c():\n    return p()\n"
+PROC_USED_ASSIGN = "def p():\n    print(1)\n\ndef c():\n    x = p()\n    return x\n"
+PROC_BARE_RETURN = "def p():\n    if a:\n        return\n    print(1)\n\nx = p()\n"
+# Standalone call (result discarded) — fine.
+PROC_STANDALONE = "def p():\n    print(1)\n\ndef c():\n    p()\n"
+# `return None` is a deliberate value -> NOT a procedure (CodeQL ignores it).
+RETURNS_NONE = "def p():\n    return None\n\ndef c():\n    return p()\n"
+# Returns a real value -> not a procedure.
+RETURNS_VALUE = "def p():\n    return 5\n\ndef c():\n    x = p()\n"
+# Always raises / exits -> never returns None -> not a procedure.
+ALWAYS_RAISES = "def p():\n    raise SystemExit(1)\n\ndef c():\n    return p()\n"
+ALWAYS_EXITS = "import sys\ndef p():\n    sys.exit(1)\n\ndef c():\n    return p()\n"
+# A generator is not a procedure.
+GENERATOR = "def p():\n    yield 1\n\ndef c():\n    x = p()\n"
+
+
+def t_proc_return_flags_used_return():
+    assert lint.find_proc_return_value_uses(PROC_USED_RETURN) == [(5, "p")]
+
+
+def t_proc_return_flags_used_assignment():
+    assert lint.find_proc_return_value_uses(PROC_USED_ASSIGN) == [(5, "p")]
+
+
+def t_proc_return_flags_bare_return_procedure():
+    assert lint.find_proc_return_value_uses(PROC_BARE_RETURN) == [(6, "p")]
+
+
+def t_proc_return_standalone_call_ok():
+    assert lint.find_proc_return_value_uses(PROC_STANDALONE) == []
+
+
+def t_proc_return_explicit_none_not_a_procedure():
+    assert lint.find_proc_return_value_uses(RETURNS_NONE) == []
+
+
+def t_proc_return_value_returner_not_a_procedure():
+    assert lint.find_proc_return_value_uses(RETURNS_VALUE) == []
+
+
+def t_proc_return_always_raising_not_a_procedure():
+    assert lint.find_proc_return_value_uses(ALWAYS_RAISES) == []
+    assert lint.find_proc_return_value_uses(ALWAYS_EXITS) == []
+
+
+def t_proc_return_generator_not_a_procedure():
+    assert lint.find_proc_return_value_uses(GENERATOR) == []
+
+
+def t_proc_return_syntax_error_source_is_safe():
+    assert lint.find_proc_return_value_uses("def (:\n  pass\n") == []
+
+
+def t_proc_return_repo_is_clean():
+    # The whole repo must already satisfy this guard (would have caught alerts
+    # #117/#118/#120 — `return _cockpit_*(args)` to void helpers — pre-merge).
+    assert lint.check_proc_return_value_uses(ROOT) == [], lint.check_proc_return_value_uses(ROOT)
 
 
 if __name__ == "__main__":

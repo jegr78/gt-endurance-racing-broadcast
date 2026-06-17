@@ -2593,6 +2593,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             # tailnet fallback link (http://<ip>:8088/cockpit) — its sub-requests
             # would never re-auth. The tailnet hop is already WireGuard-encrypted.
             secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+            # Allowlist-sanitize before it touches the header: the token already
+            # passed verify_token(), but the Set-Cookie value must never be raw
+            # request input (CWE-113 response splitting / CWE-20 cookie injection).
+            token = cockpit_auth.safe_cookie_token(token)
             self.send_header("Set-Cookie",
                              f"{cockpit_auth.COOKIE_NAME}={token}; Path=/cockpit; "
                              f"HttpOnly{secure}; SameSite=Lax")

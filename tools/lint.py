@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Run the ruff linter over the repo (config: ruff.toml at the repo root), plus a
-small in-house guard that mirrors CodeQL's py/empty-except (ruff can't — see below).
+"""Run the ruff linter over the repo (config: ruff.toml at the repo root), plus two
+small in-house guards that mirror CodeQL classes ruff can't (see below).
 
     python3 tools/lint.py          # check only (what CI runs)
     python3 tools/lint.py --fix    # auto-fix what ruff can (e.g. unused imports)
@@ -16,6 +16,13 @@ reproduces CodeQL's actual behavior — flag an empty handler (`pass`/`...`) wit
 explanatory comment, EXCEPT the benign idioms CodeQL also ignores (a deliberate
 `raise` in the try, or an optional-import / KeyboardInterrupt-style handler). So a
 missing comment fails the gate locally/pre-push instead of surfacing post-merge.
+
+The procedure-return-value guard (find_proc_return_value_uses) reproduces CodeQL's
+py/procedure-return-value-used, which ruff has NO equivalent for: flag `x = proc()`
+/ `return proc()` where the callee only ever returns None (a 'procedure'). It is
+scoped to same-file, bare-name calls — the recurring dispatcher shape — so it stays
+false-positive-free; cross-module/method cases stay CodeQL's job. (Three such alerts
+landed together once; this catches the next one pre-merge.)
 """
 import ast, io, os, shutil, subprocess, sys, tokenize
 
@@ -93,6 +100,80 @@ def find_empty_excepts(source):
     return hits
 
 
+def _scope_returns_yields(fn):
+    """The Return nodes and whether a yield appears in *fn*'s OWN scope (a nested
+    def/lambda owns its own returns, so we stop at those)."""
+    rets, has_yield, stack = [], False, list(fn.body)
+    while stack:
+        n = stack.pop()
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue                       # nested scope — not ours
+        if isinstance(n, ast.Return):
+            rets.append(n)
+        if isinstance(n, (ast.Yield, ast.YieldFrom)):
+            has_yield = True
+        stack.extend(ast.iter_child_nodes(n))
+    return rets, has_yield
+
+
+def _always_terminates(stmts):
+    """True iff this statement block can NOT fall through its end — it always
+    raises, returns, or sys.exit()s. Bounded (matches the trailing-raise / both-
+    branches-raise shapes CodeQL excludes); anything more exotic conservatively
+    counts as falling through. Used only for the no-`return` case below."""
+    if not stmts:
+        return False
+    last = stmts[-1]
+    if isinstance(last, (ast.Raise, ast.Return)):
+        return True
+    if isinstance(last, ast.Expr) and isinstance(last.value, ast.Call):
+        f = last.value.func                # sys.exit(...) / exit(...)
+        if (f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")) == "exit":
+            return True
+    if isinstance(last, ast.If) and last.body and last.orelse:
+        return _always_terminates(last.body) and _always_terminates(last.orelse)
+    return False
+
+
+def _is_procedure(fn):
+    """True iff *fn* is a 'procedure' in CodeQL's sense (py/procedure-return-value-
+    used): it only ever returns None *implicitly* — via a bare `return` or by
+    falling off the end. A `return <expr>` (INCLUDING an explicit `return None`,
+    which CodeQL treats as a deliberate value) or a yield disqualifies it; a
+    function that always raises/exits is not a procedure either (it never returns
+    None)."""
+    rets, has_yield = _scope_returns_yields(fn)
+    if has_yield:
+        return False
+    if any(r.value is not None for r in rets):
+        return False                       # returns a value (incl. `return None`)
+    if any(r.value is None for r in rets):
+        return True                        # has a bare `return` -> implicit-None exit
+    return not _always_terminates(fn.body)  # no returns -> procedure iff it can fall through
+
+
+def find_proc_return_value_uses(source):
+    """(lineno, name) for every call whose result is USED but whose callee is a
+    same-file procedure (returns only None) — CodeQL's py/procedure-return-value-
+    used. Same-file, bare-name calls only (no cross-module / method resolution),
+    which is the recurring `return helper(args)` / `x = helper()` shape; this keeps
+    it precise (no false positives) and leaves anything deeper to CodeQL. A call is
+    'used' unless it is a statement on its own (`helper()` as an expression
+    statement). Returns [] for unparseable source. Pure -> unit-tested."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    procs = {n.name for n in ast.walk(tree)
+             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_procedure(n)}
+    standalone = {id(n.value) for n in ast.walk(tree)
+                  if isinstance(n, ast.Expr) and isinstance(n.value, ast.Call)}
+    hits = [(n.lineno, n.func.id) for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+            and n.func.id in procs and id(n) not in standalone]
+    return sorted(hits)
+
+
 def _python_files(root):
     """Tracked .py files (git, so dist/runtime/incoming stay excluded); a plain
     walk is the fallback when git is unavailable."""
@@ -123,6 +204,21 @@ def check_empty_excepts(root):
     return sorted(bad)
 
 
+def check_proc_return_value_uses(root):
+    """(relpath, lineno, name) for every use of a same-file procedure's return
+    value in the repo (CodeQL py/procedure-return-value-used)."""
+    bad = []
+    for path in _python_files(root):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                src = fh.read()
+        except OSError:
+            continue
+        for lineno, name in find_proc_return_value_uses(src):
+            bad.append((os.path.relpath(path, root), lineno, name))
+    return sorted(bad)
+
+
 def main():
     if not shutil.which("ruff"):
         sys.exit("lint: ruff not found on PATH.\n"
@@ -135,6 +231,14 @@ def main():
               "handler body, e.g. `pass  # already gone`:")
         for relpath, lineno in bad:
             print(f"  {relpath}:{lineno}: except body is only pass/... with no comment")
+        rc = rc or 1
+    proc_bad = check_proc_return_value_uses(ROOT)
+    if proc_bad:
+        print("\nprocedure-return-value-used (CodeQL py/procedure-return-value-used) — "
+              "this callee only ever returns None; drop the assignment / `return`, or "
+              "give the callee an explicit `return <value>`:")
+        for relpath, lineno, name in proc_bad:
+            print(f"  {relpath}:{lineno}: result of {name}() is used but it returns None")
         rc = rc or 1
     return rc
 
