@@ -99,9 +99,6 @@ def parse_magicdns_name(output):
     return name.rstrip(".") if isinstance(name, str) else ""
 
 
-_FUNNEL_CAP = "https://tailscale.com/cap/funnel"
-
-
 def parse_funnel_capable(output):
     """True iff `tailscale status --json` shows this node carries the Funnel
     capability — i.e. the tailnet policy granted it the 'funnel' nodeAttr (the
@@ -114,7 +111,12 @@ def parse_funnel_capable(output):
     if not isinstance(data, dict):
         return False
     capmap = (data.get("Self") or {}).get("CapMap") or {}
-    return isinstance(capmap, dict) and _FUNNEL_CAP in capmap
+    if not isinstance(capmap, dict):
+        return False
+    # Tailscale exposes the funnel grant under varying keys across versions: a bare
+    # "funnel", the full "https://tailscale.com/cap/funnel", or a
+    # "…/cap/funnel-ports?ports=…" variant. Match any of them.
+    return any(k == "funnel" or "tailscale.com/cap/funnel" in k for k in capmap)
 
 
 def funnel_capable(timeout=3):

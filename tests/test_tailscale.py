@@ -112,8 +112,10 @@ def t_parse_funnel_serving():
 
 
 def t_parse_funnel_capable():
-    cap = "https://tailscale.com/cap/funnel"
-    assert ts.parse_funnel_capable(json.dumps({"Self": {"CapMap": {cap: []}}})) is True
+    full = "https://tailscale.com/cap/funnel"
+    ports = "https://tailscale.com/cap/funnel-ports?ports=443,8443,10000"
+    for key in (full, ports, "funnel"):     # versions vary; accept all forms
+        assert ts.parse_funnel_capable(json.dumps({"Self": {"CapMap": {key: []}}})) is True, key
     assert ts.parse_funnel_capable(json.dumps(
         {"Self": {"CapMap": {"https://tailscale.com/cap/ssh": []}}})) is False
     assert ts.parse_funnel_capable(json.dumps({"Self": {}})) is False
