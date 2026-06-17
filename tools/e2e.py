@@ -185,7 +185,7 @@ def _stub_tools_bin(tmp):
         p = os.path.join(bindir, name)
         with open(p, "w", encoding="utf-8") as fh:
             fh.write("#!/bin/sh\nexit 0\n")
-        os.chmod(p, 0o755)
+        os.chmod(p, 0o700)   # owner-only: the harness spawns the relay as this user
     return bindir
 
 
