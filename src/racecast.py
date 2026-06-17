@@ -904,6 +904,25 @@ def _cockpit_versions_path():
     return os.path.join(_runtime_dir(), "cockpit-versions.json")
 
 
+def _set_env_key(path, key, value):
+    """Set ONE key in a .env / profile.env, preserving every other key + comments.
+    _write_env_file()/merge_env_text() treat their `entries` as the COMPLETE
+    desired key set (any existing key NOT passed is dropped), so we must read the
+    full file, update/add the one key, and write the whole set back. {ok}|{error}."""
+    entries = []
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as fh:
+            entries = [{"key": k, "value": v}
+                       for k, v in parse_env_text(fh.read()).items()]
+    for e in entries:
+        if e["key"] == key:
+            e["value"] = value
+            break
+    else:
+        entries.append({"key": key, "value": value})
+    return _write_env_file(path, entries)
+
+
 def _cockpit_roster():
     """Distinct streamer names from the active schedule (first-seen order), read
     from the running relay's /schedule/data. Raises on an unreachable relay."""
@@ -1008,21 +1027,18 @@ def cockpit_cmd(rest):
             with open(ppath, encoding="utf-8") as fh:
                 existing = parse_env_text(fh.read()).get("COCKPIT_SECRET", "")
         if not existing:
-            res = _write_env_file(ppath, [{"key": "COCKPIT_SECRET",
-                                           "value": secrets.token_hex(32)}])
+            res = _set_env_key(ppath, "COCKPIT_SECRET", secrets.token_hex(32))
             if not res.get("ok"):
                 sys.exit(f"racecast: {res['error']}")
             print(f"generated COCKPIT_SECRET in {ppath}")
-        res = _write_env_file(_env_file(), [{"key": "RACECAST_COCKPIT_ENABLED",
-                                             "value": "true"}])
+        res = _set_env_key(_env_file(), "RACECAST_COCKPIT_ENABLED", "true")
         if not res.get("ok"):
             sys.exit(f"racecast: {res['error']}")
         print("cockpit enabled — restart the relay, then 'racecast cockpit links'.")
         return None
 
     if verb == "disable":
-        res = _write_env_file(_env_file(), [{"key": "RACECAST_COCKPIT_ENABLED",
-                                             "value": "false"}])
+        res = _set_env_key(_env_file(), "RACECAST_COCKPIT_ENABLED", "false")
         if not res.get("ok"):
             sys.exit(f"racecast: {res['error']}")
         print("cockpit disabled — restart the relay to stop serving /cockpit.")
