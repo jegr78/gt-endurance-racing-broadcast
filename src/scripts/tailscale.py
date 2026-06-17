@@ -99,6 +99,41 @@ def parse_magicdns_name(output):
     return name.rstrip(".") if isinstance(name, str) else ""
 
 
+_FUNNEL_CAP = "https://tailscale.com/cap/funnel"
+
+
+def parse_funnel_capable(output):
+    """True iff `tailscale status --json` shows this node carries the Funnel
+    capability — i.e. the tailnet policy granted it the 'funnel' nodeAttr (the
+    one-time admin step). Pure → unit-tested. Lets `cockpit funnel on` fail fast
+    with guidance instead of hanging on the CLI's interactive enable prompt."""
+    try:
+        data = json.loads(output)
+    except ValueError:
+        return False
+    if not isinstance(data, dict):
+        return False
+    capmap = (data.get("Self") or {}).get("CapMap") or {}
+    return isinstance(capmap, dict) and _FUNNEL_CAP in capmap
+
+
+def funnel_capable(timeout=3):
+    """Best-effort: is this node authorized for Funnel? (same discovery as
+    tailscale_backend). False when the CLI is missing / backend down / nodeAttr
+    absent."""
+    for binary in _TAILSCALE_BINS:
+        try:
+            out = subprocess.run([binary, "status", "--json"], capture_output=True,
+                                 text=True, errors="replace", timeout=timeout,
+                                 env=services.external_tool_env(),
+                                 **services.no_window_kwargs())
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if out.returncode == 0:
+            return parse_funnel_capable(out.stdout)
+    return False
+
+
 def detect_magicdns_name(timeout=3):
     """This machine's MagicDNS name via the CLI, or '' if unavailable. Best-effort
     (same discovery as tailscale_backend)."""

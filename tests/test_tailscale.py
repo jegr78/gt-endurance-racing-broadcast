@@ -102,6 +102,15 @@ def t_parse_peers_garbage_and_empty():
     assert ts.parse_tailscale_peers(json.dumps({"Peer": None})) == []
 
 
+def t_parse_funnel_capable():
+    cap = "https://tailscale.com/cap/funnel"
+    assert ts.parse_funnel_capable(json.dumps({"Self": {"CapMap": {cap: []}}})) is True
+    assert ts.parse_funnel_capable(json.dumps(
+        {"Self": {"CapMap": {"https://tailscale.com/cap/ssh": []}}})) is False
+    assert ts.parse_funnel_capable(json.dumps({"Self": {}})) is False
+    assert ts.parse_funnel_capable("not json") is False
+
+
 def t_parse_magicdns_name():
     out = json.dumps({"Self": {"DNSName": "rig.tail1234.ts.net."}})
     assert ts.parse_magicdns_name(out) == "rig.tail1234.ts.net"   # trailing dot stripped

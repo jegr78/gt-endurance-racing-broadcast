@@ -953,11 +953,22 @@ def _cockpit_funnel(args):
     tailnet-admin step); funnel() surfaces the verbatim error if missing."""
     import tailscale as ts
     if not args or args[0] not in ("on", "off"):
-        sys.exit("usage: racecast cockpit funnel {on|off}")
+        sys.exit("usage: racecast cockpit funnel {on|off} [--force]")
     enable = args[0] == "on"
     binary, _state, _ip = ts.tailscale_backend()
     if not binary:
         sys.exit("racecast: Tailscale CLI not found / backend not running.")
+    # Fail fast on the one-time prerequisite: without the 'funnel' nodeAttr the
+    # `tailscale funnel` CLI blocks on an interactive enable prompt (a 20 s hang
+    # with no stdin). Detect it and print the exact admin steps instead.
+    if enable and "--force" not in args and not ts.funnel_capable():
+        sys.exit(
+            "racecast: this node is not authorized for Tailscale Funnel yet.\n"
+            "One-time tailnet-admin setup at https://login.tailscale.com/admin :\n"
+            "  1. DNS -> enable MagicDNS AND HTTPS Certificates\n"
+            "  2. Access Controls -> grant the 'funnel' nodeAttr, e.g.:\n"
+            '       "nodeAttrs": [{ "target": ["autogroup:member"], "attr": ["funnel"] }]\n'
+            "Then re-run 'racecast cockpit funnel on'. (Use --force to skip this check.)")
     ok, detail = ts.funnel(binary, path="/cockpit", target_port=RELAY_PORT,
                            enable=enable)
     if not ok:

@@ -9,6 +9,7 @@
 - [Run an event](Run-an-event)
 - [Director setup](Director-Setup)
 - [Director guide](Director)
+- [Commentator Cockpit](Commentator-Cockpit)
 - [Who does what](Who-does-what)
 - [If something goes wrong](If-something-goes-wrong)
 
