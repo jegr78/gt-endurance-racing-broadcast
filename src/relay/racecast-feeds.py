@@ -87,6 +87,7 @@ except Exception:                                # noqa: BLE001 — reflection i
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
 import cockpit_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
 import cockpit_admin  # talent-cockpit revocation version store (#191)
+import cockpit_submissions  # talent stream-link submission store (#193)
 from services import external_tool_env  # de-PyInstaller the env for spawned external tools
 
 # ---------- Configuration ----------
@@ -1329,6 +1330,116 @@ def cockpit_display_name(rows, me_key):
     return me_key
 
 
+def cockpit_own_stints(rows, me_key):
+    """The schedule rows belonging to *me_key* (asset_key match) as a list of
+    {"row": <1-based schedule index>, "stint": <label>, "has_link": bool, "url": str},
+    in schedule order. Feeds the cockpit's stint picker so a commentator submits a
+    link against one of THEIR OWN stints (never a free-form/foreign row), and lets
+    the cockpit pre-fill the field with that stint's current link. ONLY the
+    commentator's own rows are included, so /cockpit/data exposes a commentator's
+    own URLs but never anyone else's (issue #193). Pure."""
+    out = []
+    for i, (url, streamer, stint, _line) in enumerate(rows):
+        if asset_key(streamer) == me_key:
+            u = (url or "").strip()
+            out.append({"row": i + 1, "stint": stint, "has_link": bool(u), "url": u})
+    return out
+
+
+def own_submission_target(rows, me_key, stint=None, row=None):
+    """Resolve the schedule row a commentator (*me_key*) may write via a cockpit
+    submission. Returns (True, {target_line, target_stint, streamer_name,
+    prev_url}) on success, else (False, error_message). Pure — unit-tested.
+
+    Ownership is enforced server-side: the target row's streamer must normalize
+    to *me_key* (set-or-replace ANY of their own rows, per the approved design),
+    so a leaked token can only ever touch that person's own slots. Selection is
+    by *stint* label (preferred) or 1-based schedule *row* index; with neither,
+    a sole own row is used and ambiguity is rejected. *rows* are ScheduleSource
+    4-tuples (url, streamer, stint, line)."""
+    own = [(i, r) for i, r in enumerate(rows) if asset_key(r[1]) == me_key]
+    if not own:
+        return False, "no schedule rows are assigned to you"
+    chosen = None
+    if row is not None:
+        try:
+            idx = int(row) - 1
+        except (TypeError, ValueError):
+            return False, "row must be a whole number (1-based)"
+        if not (0 <= idx < len(rows)):
+            return False, "no such schedule row"
+        if asset_key(rows[idx][1]) != me_key:
+            return False, "that schedule row is not assigned to you"
+        chosen = rows[idx]
+    elif stint is not None:
+        matches = [r for _i, r in own if r[2] == stint]
+        if not matches:
+            return False, f"no stint {stint!r} is assigned to you"
+        chosen = matches[0]
+    elif len(own) == 1:
+        chosen = own[0][1]
+    else:
+        return False, "specify which stint to submit for"
+    url, streamer, st, line = chosen
+    return True, {"target_line": line, "target_stint": st,
+                  "streamer_name": streamer, "prev_url": (url or "").strip()}
+
+
+def cockpit_submission_payload(entry, pending_count):
+    """Discord webhook JSON announcing a new pending stream submission (issue
+    #193), mirroring discord_health_payload: the @here mention sits in top-level
+    `content` (Discord ignores mentions inside an embed). Pure → unit-tested; the
+    caller no-ops when no webhook is configured."""
+    desc = (f"**{entry['streamer_name']}** proposed a stream link for stint "
+            f"**{entry['target_stint']}**.\n{entry['proposed_url']}\n\n"
+            f"Approve or reject it in the Director Panel · Pending stream submissions.")
+    return {"username": "GT Racecast",
+            "content": "@here",
+            "allowed_mentions": {"parse": ["everyone"]},
+            "embeds": [{"title": "📥 New stream-link submission",
+                        "description": desc, "color": 0x1D4ED8,
+                        "footer": {"text": f"{pending_count} pending"}}]}
+
+
+class SubmissionStore:
+    """Thread-safe wrapper around cockpit_submissions (issue #193): serializes the
+    read-modify-write of the pending JSON across request threads, holds the file
+    paths, and emits the audit log. The pure logic + atomic writes live in
+    src/scripts/cockpit_submissions.py (unit-tested directly); this is the thin
+    relay-side adapter, mirroring how ChatStore wraps chat_admin."""
+    def __init__(self, path, audit_path=None):
+        self.path = path
+        self.audit_path = audit_path
+        self._lock = threading.Lock()
+
+    def add(self, **kw):
+        with self._lock:
+            entry = cockpit_submissions.add_pending(self.path, **kw)
+        self._audit("submit", entry)
+        return entry
+
+    def list(self):
+        return cockpit_submissions.list_pending(self.path)
+
+    def get(self, entry_id):
+        for e in self.list():
+            if e["id"] == entry_id:
+                return e
+        return None
+
+    def pop(self, entry_id, event):
+        with self._lock:
+            entry = cockpit_submissions.pop_pending(self.path, entry_id)
+        if entry is not None:
+            self._audit(event, entry)
+        return entry
+
+    def _audit(self, event, entry):
+        if self.audit_path:
+            cockpit_submissions.append_audit(
+                self.audit_path, {"event": event, **entry})
+
+
 class ScheduleSource:
     """Reads the schedule from the Google Sheet (CSV) with last-good + fallback."""
     def __init__(self, csv_url, cache_path, local_fallback):
@@ -1477,17 +1588,27 @@ class ScheduleSource:
         with self.lock:
             return list(self.rows)
 
-    def inject_row(self, physical_row, url, name="", stint=""):
+    def inject_row(self, physical_row, url=None, name=None, stint=None):
         """Optimistically merge a panel schedule write into the in-memory
-        schedule so an idling feed adopts it before the next poll. Keyed by
-        physical sheet row (matches _parse_rows line numbers); the next poll
-        reconciles against the sheet. No-op for an empty/invalid URL."""
-        url = (url or "").strip()
-        if not is_channel(url):
-            return False
+        schedule so an idling feed — and /schedule/data + /cockpit/data — reflect
+        it before the next sheet poll. Keyed by physical sheet row (matches
+        _parse_rows line numbers); the next poll reconciles against the sheet.
+        Each of url/name/stint is applied when given and LEFT UNCHANGED when None,
+        so a URL clear (url="") or a name/stint-only edit each touch only their
+        own fields. A non-empty non-channel URL is rejected (never serve junk); a
+        row left fully empty is dropped, matching _parse_rows which skips blank
+        rows (so the optimistic state can't diverge from a re-poll)."""
         with self.lock:
+            existing = next((r for r in self.rows if r[3] == physical_row), None)
+            cur_u, cur_n, cur_s = existing[:3] if existing else ("", "", "")
+            new_u = cur_u if url is None else (url or "").strip()
+            new_n = cur_n if name is None else (name or "").strip()
+            new_s = cur_s if stint is None else (stint or "").strip()
+            if new_u and not is_channel(new_u):
+                return False
             rows = [r for r in self.rows if r[3] != physical_row]
-            rows.append((url, (name or "").strip(), (stint or "").strip(), physical_row))
+            if new_u or new_n or new_s:        # keep planned stints (url may be "")
+                rows.append((new_u, new_n, new_s, physical_row))
             rows.sort(key=lambda r: r[3])
             self.rows = rows
             self.items = [u for u, _n, _s, _l in rows]
@@ -1811,9 +1932,12 @@ class SetupControl:
                 return err
             payload["stint"] = stint
         ok, err = self._push(payload, "schedule")
-        if ok and inject_source is not None and url:
-            inject_source.inject_row(row, url, payload.get("name", ""),
-                                     payload.get("stint", ""))
+        if ok and inject_source is not None:
+            # Reflect the write locally now — INCLUDING a URL clear (url="") — so
+            # /schedule/data + /cockpit/data don't show the stale link for a poll
+            # interval. None for a field the write didn't touch leaves it as-is.
+            inject_source.inject_row(row, payload.get("url"), payload.get("name"),
+                                     payload.get("stint"))
         return {"ok": True, "row": row} if ok else {"error": err}
 
     def _reject_off_vocab(self, key, value):
@@ -2407,7 +2531,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  timer_store=None, setup_ctl=None, overlay_dir=None,
                  chat_store=None, preview_path=None, graphics_dir=None,
                  splitscreen_path=None, cockpit_page_path=None, cockpit_secret=None,
-                 cockpit_enabled=False, cockpit_versions_path=None):
+                 cockpit_enabled=False, cockpit_versions_path=None,
+                 submission_store=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -2419,6 +2544,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
     # for the key (spoofable over the public ingress, which would weaken it).
     _cockpit_authfail_rl = cockpit_auth.RateLimiter(limit=20, window_s=60)
     _cockpit_chat_rl = cockpit_auth.RateLimiter(limit=10, window_s=60)
+    # Submit is a PUBLIC write path (funnelled). Keyed on the authed identity
+    # (not the shared proxy IP, like chat) so one commentator can't exhaust the
+    # crew's quota; a low cap — a human submits a link a handful of times, not
+    # dozens per minute.
+    _cockpit_submit_rl = cockpit_auth.RateLimiter(limit=5, window_s=60)
 
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
@@ -2523,6 +2653,23 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     self._send({"error": "unauthorized"}, 401)
                 return None
             return me
+        def _notify_submission(self, entry, pending_count):
+            """Best-effort Discord @here ping on a new pending submission (#193);
+            a natural no-op when no webhook is configured. Mirrors the health
+            webhook's fire-and-forget posting."""
+            url = getattr(relay, "discord_webhook_url", None)
+            if not url:
+                return
+            try:
+                data = json.dumps(
+                    cockpit_submission_payload(entry, pending_count)).encode()
+                req = Request(url, data=data, method="POST",
+                              headers={"Content-Type": "application/json",
+                                       "User-Agent": "racecast-feeds/1.0"})
+                urlopen(req, timeout=5).read()
+            except Exception as e:
+                print(f"WARN: Discord submission webhook failed: "
+                      f"{type(e).__name__}: {e}")
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
             try:
@@ -2665,8 +2812,20 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         rows = relay.source.get_rows()
                         live_idx = relay.feeds[relay.live_feed()].idx
                         tally = cockpit_tally(rows, live_idx, me)
+                        # The commentator's OWN pending submissions (stint + id
+                        # only, never a URL) so the cockpit shows live status that
+                        # clears once the director approves/rejects (#193).
+                        my_pending = ([{"id": e["id"], "stint": e["target_stint"]}
+                                       for e in submission_store.list()
+                                       if e["streamer_key"] == me]
+                                      if submission_store else [])
                         tally.update({"me": me, "mode": relay.mode,
-                                      "program_available": _obs_ws is not None})
+                                      "program_available": _obs_ws is not None,
+                                      # own stints for the link-submission picker
+                                      # (#193); empty -> the cockpit hides the form.
+                                      "submit_enabled": submission_store is not None,
+                                      "my_stints": cockpit_own_stints(rows, me),
+                                      "my_pending": my_pending})
                         return self._send(tally)
                     if p == ["cockpit", "program"]:
                         if self._cockpit_auth() is None:
@@ -2704,6 +2863,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send({"versions":
                             cockpit_admin.load_versions(cockpit_versions_path)})
                     return self._send({"error": "unknown", "path": self.path}, 404)
+                if p == ["submissions"]:
+                    # Director pending-submissions list (issue #193). Tailnet-only:
+                    # it is NOT under the funnelled /cockpit prefix, so the public
+                    # ingress never reaches it. Available even when the cockpit is
+                    # disabled (returns []) so the panel section is always safe.
+                    pend = submission_store.list() if submission_store else []
+                    return self._send({"pending": pend})
                 if p == ["schedule", "data"]:
                     rows = relay.source.get_rows()
                     live = {f.idx: k for k, f in relay.feeds.items()}
@@ -2804,12 +2970,78 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         name = cockpit_display_name(relay.source.get_rows(), me)
                         return self._send(chat_store.add(user=name,
                                                          text=body.get("text")))
+                    if p == ["cockpit", "submit"]:
+                        # Public write path (issue #193): a commentator proposes a
+                        # stream link for one of THEIR OWN stints. Token-auth +
+                        # per-identity rate limit + is_channel() SSRF guard +
+                        # server-side ownership check. NEVER goes live here — it
+                        # lands as pending for director approval in /panel.
+                        me = self._cockpit_auth()
+                        if me is None:
+                            return None
+                        if not submission_store:
+                            return self._send({"error": "submissions disabled"}, 404)
+                        if not _cockpit_submit_rl.allow(me):
+                            return self._send({"error": "rate limited"}, 429)
+                        url = (body.get("url") or "").strip()
+                        if not is_channel(url):
+                            return self._send(
+                                {"error": "url must be a watch URL or UC… channel ID"}, 400)
+                        rows = relay.source.get_rows()
+                        ok, res = own_submission_target(
+                            rows, me, stint=body.get("stint"), row=body.get("row"))
+                        if not ok:
+                            return self._send({"error": res}, 400)
+                        entry = submission_store.add(
+                            streamer_key=me,
+                            streamer_name=res["streamer_name"] or me,
+                            target_line=res["target_line"],
+                            target_stint=res["target_stint"],
+                            proposed_url=url, prev_url=res["prev_url"],
+                            now=time.time())
+                        # Director notification: panel badge polls /submissions;
+                        # also fire a Discord @here ping (no-op without a webhook).
+                        self._notify_submission(entry,
+                                                len(submission_store.list()))
+                        return self._send({"ok": True, "id": entry["id"],
+                                           "stint": entry["target_stint"]})
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["chat", "send"]:
                     if not chat_store:
                         return self._send({"error": "chat disabled"}, 404)
                     return self._send(chat_store.add(
                         user=body.get("user"), text=body.get("text")))
+                if p[:1] == ["submissions"]:
+                    # Director approve/reject (issue #193). Tailnet-only (not
+                    # funnelled). Reject needs no webhook; approve writes the
+                    # schedule via the existing setup_ctl.schedule_set path.
+                    if not submission_store:
+                        return self._send({"error": "submissions disabled"}, 404)
+                    if p == ["submissions", "reject"]:
+                        entry = submission_store.pop(body.get("id"), "reject")
+                        if entry is None:
+                            return self._send({"error": "no such submission"}, 404)
+                        return self._send({"ok": True, "id": entry["id"]})
+                    if p == ["submissions", "approve"]:
+                        if not setup_ctl:
+                            return self._send({"error": "setup control disabled"}, 404)
+                        entry = submission_store.get(body.get("id"))
+                        if entry is None:
+                            return self._send({"error": "no such submission"}, 404)
+                        # Same mechanism the panel's Schedule editor uses: write
+                        # the Sheet; the URL applies on the next /reload (the relay
+                        # never tears a feed mid-stint). Pass the row's own
+                        # streamer + stint so the optimistic local inject keeps
+                        # them (both are Configuration vocab, from the sheet). Only
+                        # clear the pending entry once the write actually succeeds.
+                        res = setup_ctl.schedule_set(
+                            entry["target_line"], url=entry["proposed_url"],
+                            name=entry["streamer_name"], stint=entry["target_stint"])
+                        if res.get("error"):
+                            return self._send(res)
+                        submission_store.pop(entry["id"], "approve")
+                        return self._send({"ok": True, "id": entry["id"], **res})
+                    return self._send({"error": "unknown", "path": self.path}, 404)
                 if not setup_ctl:
                     return self._send({"error": "setup control disabled"}, 404)
                 if p == ["schedule", "set"]:
@@ -3155,6 +3387,12 @@ def main():
     cockpit_enabled = (os.environ.get("RACECAST_COCKPIT_ENABLED", "").strip().lower()
                        in ("1", "true", "yes", "on"))
     cockpit_versions_path = os.path.join(runtime, "cockpit-versions.json")
+    # Commentator stream-link submissions (#193): pending store + audit log,
+    # profile-scoped like chat.json / cockpit-versions.json. Always created so the
+    # director's /submissions list works even before the cockpit is enabled.
+    submission_store = SubmissionStore(
+        os.path.join(runtime, "cockpit-pending.json"),
+        os.path.join(runtime, "cockpit-submissions.log"))
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
                            timer_store, setup_ctl,
                            overlay_dir=args.overlay_dir, chat_store=chat_store,
@@ -3163,7 +3401,8 @@ def main():
                            cockpit_page_path=cockpit_page_path,
                            cockpit_secret=cockpit_secret,
                            cockpit_enabled=cockpit_enabled,
-                           cockpit_versions_path=cockpit_versions_path)
+                           cockpit_versions_path=cockpit_versions_path,
+                           submission_store=submission_store)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []

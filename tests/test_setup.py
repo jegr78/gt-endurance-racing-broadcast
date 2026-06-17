@@ -76,6 +76,46 @@ def t_schedule_source_get_rows():
     assert s.get_rows()[1] == ("UCLA_DiR1FfKNvjuUpBHmylQ", "NASA", "", 2)
 
 
+def _sched_with_rows(rows):
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    s = m.ScheduleSource("http://sched", _os.path.join(d, "cache.txt"), None)
+    s.fetch = lambda timeout=15, _r=rows: list(_r)
+    s.refresh()
+    return s
+
+
+def t_inject_row_clears_url_keeps_name_stint():
+    # A URL clear (url="") must update the in-memory row to url="" while KEEPING
+    # streamer+stint, so /schedule/data + /cockpit/data reflect it before the next
+    # sheet poll (bug: the cockpit "(replace)" tag lingered until a browser reload).
+    s = _sched_with_rows([("https://www.youtube.com/watch?v=x", "JeGr", "Stint 1", 2)])
+    assert s.inject_row(2, url="", name="JeGr", stint="Stint 1") is True
+    assert s.get_rows() == [("", "JeGr", "Stint 1", 2)]
+
+
+def t_inject_row_url_none_leaves_url_untouched():
+    # url=None means "leave the URL alone"; only the name changes here.
+    s = _sched_with_rows([("https://www.youtube.com/watch?v=x", "JeGr", "Stint 1", 2)])
+    assert s.inject_row(2, name="GT45") is True
+    assert s.get_rows() == [("https://www.youtube.com/watch?v=x", "GT45", "Stint 1", 2)]
+
+
+def t_inject_row_rejects_junk_url():
+    s = _sched_with_rows([("https://www.youtube.com/watch?v=x", "JeGr", "Stint 1", 2)])
+    assert s.inject_row(2, url="not a url") is False
+    assert s.get_rows() == [("https://www.youtube.com/watch?v=x", "JeGr", "Stint 1", 2)]
+
+
+def t_inject_row_fully_empty_drops_row():
+    # Clearing every cell drops the row, matching the parser (which skips blank
+    # rows) so the in-memory schedule never diverges from a re-poll.
+    s = _sched_with_rows([("https://www.youtube.com/watch?v=x", "JeGr", "Stint 1", 2),
+                          ("https://www.youtube.com/watch?v=y", "GT45", "Stint 2", 3)])
+    assert s.inject_row(2, url="", name="", stint="") is True
+    assert s.get_rows() == [("https://www.youtube.com/watch?v=y", "GT45", "Stint 2", 3)]
+
+
 def t_parse_rows_url_not_first_column():
     text = "Commentator,Channel\nMatt,UCaaaaaaaaaaaaaaaaaaaaaa\nNASA,UCbbbbbbbbbbbbbbbbbbbbbb\n"
     rows = m.ScheduleSource._parse_rows(text)
@@ -277,6 +317,28 @@ def t_schedule_set_validates_streamer_and_stint_vocab():
         assert pushes[-1] == {"action": "schedule", "row": 2,
                               "url": "https://www.youtube.com/watch?v=x",
                               "name": "GT45", "stint": "Stint 2"}
+    finally:
+        m.post_webhook = orig
+
+
+def t_schedule_set_clear_reflects_in_source():
+    # End-to-end: a panel CLEAR URL (url="") writes the sheet AND updates the
+    # in-memory schedule immediately (name/stint kept), so consumers don't show
+    # the stale link for a poll interval.
+    pushes = []
+    hs = _hs_stub()
+    s = _sched_with_rows([("https://www.youtube.com/watch?v=x", "JeGr", "Stint 1", 2)])
+    ctl = m.SetupControl("http://push", hs, schedule_source=s)
+
+    def fake_post(url, payload, timeout=10):
+        pushes.append(payload)
+        return b'{"ok": true, "action": "schedule", "v": 2}'
+    m.post_webhook, orig = fake_post, m.post_webhook
+    try:
+        r = ctl.schedule_set(2, url="", name="JeGr", stint="Stint 1")
+        assert r.get("ok"), r
+        assert pushes[-1]["url"] == ""                       # cleared in the sheet
+        assert s.get_rows() == [("", "JeGr", "Stint 1", 2)]  # and live in memory
     finally:
         m.post_webhook = orig
 
@@ -685,13 +747,17 @@ def t_inject_row_replaces_same_physical_row():
     assert s.get() == ["s1", "UC1234567890123456789012"]
 
 
-def t_inject_row_rejects_empty_or_bad_url():
+def t_inject_row_empty_url_with_name_is_a_clear():
+    # An empty URL is a valid CLEAR when a name/stint is present (the slot
+    # survives as a planned stint with url=""); only a non-empty NON-channel URL
+    # is rejected as junk.
     s = m.ScheduleSource(csv_url=None, cache_path=os.path.join(HERE, "_x.cache"),
                          local_fallback=None)
     s.items = ["s1"]; s.rows = [("s1", "Ann", "", 1)]
-    assert s.inject_row(2, "", "Ben") is False
-    assert s.inject_row(2, "not-a-channel", "Ben") is False
-    assert s.get() == ["s1"]
+    assert s.inject_row(2, "", "Ben") is True
+    assert s.get_rows()[-1] == ("", "Ben", "", 2)          # planned stint, url cleared
+    assert s.inject_row(1, "not-a-channel", "Ann") is False  # junk url rejected
+    assert s.get()[0] == "s1"                                # row 1 left untouched
 
 
 def t_schedule_set_injects_on_success():

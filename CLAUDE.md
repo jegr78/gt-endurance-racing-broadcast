@@ -94,6 +94,7 @@ python3 tests/test_install_apps.py      # install-apps decision helpers
 python3 tests/test_init.py           # racecast init wizard logic (plan/skip/gates)
 python3 tests/test_timer.py          # relay race-timer unit checks
 python3 tests/test_chat.py           # crew chat (ChatStore + chat_admin + endpoints)
+python3 tests/test_submissions.py    # cockpit stream-link submissions (pending store + own-row resolver + endpoints)
 python3 tests/test_backup.py         # profile look backups (zip snapshot create/list/restore/delete)
 python3 tests/test_setup.py          # panel sheet-control (webhook payloads, SetupControl, endpoints)
 python3 tests/test_ui_ops.py         # Control Center structured status providers + op registry
@@ -387,6 +388,20 @@ the `…/cockpit?t=` link once, then an `HttpOnly; Secure; SameSite=Lax` `rc_coc
 Auth core: `src/scripts/cockpit_auth.py`; revocation store: `src/scripts/cockpit_admin.py`;
 talent page: `src/cockpit/cockpit.html`; CLI: `racecast cockpit …`; takeover pulls A's
 versions over the tailnet (like `chat pull`). Tests: `tests/test_cockpit.py`.
+
+**Commentator stream-link submission (issue #193).** A write-scoped add-on: a commentator
+submits a YouTube/Twitch URL for one of *their own* stints from the cockpit
+(`POST /cockpit/submit`, the only write reachable over Funnel) — token-auth + per-identity
+rate limit + `is_channel()` SSRF guard + server-side **own-rows-only** check
+(`own_submission_target`, `asset_key(streamer) == token's streamer_key`). It is stored
+**pending** (never auto-published) in `runtime/<profile>/cockpit-pending.json` and pings
+Discord (`cockpit_submission_payload`, no-op without a webhook). The director's
+**list/approve/reject** live under a separate `/submissions/*` namespace that is **NOT**
+funnelled (tailnet-only, reached from `/panel`); approve calls the existing
+`SetupControl.schedule_set` (writes the Sheet; applies on the next `/reload`). Pure store +
+audit log: `src/scripts/cockpit_submissions.py` (mirrors `cockpit_admin.py`); thin
+thread-safe wrapper `SubmissionStore` + endpoints in the relay; panel section + cockpit
+form in the two HTML files. Tests: `tests/test_submissions.py`.
 
 ### Unified `racecast` CLI (`src/racecast.py`)
 `src/racecast.py` is the single shipped entrypoint for operators. It resolves the
