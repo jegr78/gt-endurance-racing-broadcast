@@ -96,7 +96,7 @@ function renderTally(d) {
     if (d.up_next) {                       // also surface the next own stint
       const sub = document.createElement('div');
       sub.className = 'sub';
-      sub.textContent = 'then: stint ' + d.up_next.stint + ' · in ' + d.up_next.in_n +
+      sub.textContent = 'then: ' + d.up_next.stint + ' · in ' + d.up_next.in_n +
         ' handover' + (d.up_next.in_n === 1 ? '' : 's');
       el.appendChild(sub);
     }
@@ -104,7 +104,7 @@ function renderTally(d) {
     el.className = 'tally next';
     const inN = d.up_next.in_n;
     el.innerHTML = '';
-    el.appendChild(document.createTextNode('UP NEXT · stint ' + d.up_next.stint));
+    el.appendChild(document.createTextNode('UP NEXT · ' + d.up_next.stint));
     const sub = document.createElement('div');
     sub.className = 'sub';
     sub.textContent = 'in ' + inN + ' handover' + (inN === 1 ? '' : 's');
