@@ -2452,9 +2452,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            # `Secure` only behind the HTTPS Funnel (which injects X-Forwarded-Proto):
+            # browsers DROP a Secure cookie set over plain http, which would break the
+            # tailnet fallback link (http://<ip>:8088/cockpit) — its sub-requests
+            # would never re-auth. The tailnet hop is already WireGuard-encrypted.
+            secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
             self.send_header("Set-Cookie",
                              f"{cockpit_auth.COOKIE_NAME}={token}; Path=/cockpit; "
-                             "HttpOnly; Secure; SameSite=Lax")
+                             f"HttpOnly{secure}; SameSite=Lax")
             self.end_headers(); self.wfile.write(body)
             return None
         def _send_jpeg(self, body):
@@ -2680,8 +2685,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             return self._send({"error": "chat disabled"}, 404)
                         return self._send(chat_store.data())
                     if p == ["cockpit", "versions"]:
-                        # Producer-only, tailnet-reachable (NOT funnelled): carries
-                        # only opaque version integers, like `chat pull`. No token.
+                        # Producer-to-producer takeover pull. This path SITS UNDER
+                        # /cockpit, so it IS reachable via Funnel — it must therefore
+                        # authenticate, not rely on obscurity. Talent tokens are
+                        # per-commentator; this is gated on the shared league secret
+                        # (every producer of the league holds it), constant-time.
+                        presented = self.headers.get("X-Cockpit-Secret")
+                        if not cockpit_auth.secret_matches(presented, cockpit_secret):
+                            return self._send({"error": "unauthorized"}, 401)
                         if not cockpit_versions_path:
                             return self._send({"versions": {}})
                         return self._send({"versions":
@@ -2778,8 +2789,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             return None
                         if not chat_store:
                             return self._send({"error": "chat disabled"}, 404)
-                        client = self.client_address[0] if self.client_address else "?"
-                        if not _cockpit_chat_rl.allow(client):
+                        # Key the limit on the authed identity, not the socket IP:
+                        # behind Funnel every commentator shares one proxy IP, so an
+                        # IP key would throttle the whole crew together (#191 review).
+                        if not _cockpit_chat_rl.allow(me):
                             return self._send({"error": "rate limited"}, 429)
                         # Identity is the token's streamer, never client-declared.
                         name = cockpit_display_name(relay.source.get_rows(), me)
@@ -3132,7 +3145,7 @@ def main():
 
     # Commentator cockpit (#191): per-league secret (injected from profile.env) +
     # machine-local master switch (.env). Both must be present or /cockpit/* 404s.
-    cockpit_secret = os.environ.get("RACECAST_COCKPIT_SECRET") or None
+    cockpit_secret = (os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip() or None
     cockpit_enabled = (os.environ.get("RACECAST_COCKPIT_ENABLED", "").strip().lower()
                        in ("1", "true", "yes", "on"))
     cockpit_versions_path = os.path.join(runtime, "cockpit-versions.json")
@@ -3201,7 +3214,10 @@ def main():
         elif args.bind == "auto":
             print("    (no Tailscale IP found — local only; start Tailscale for remote access)")
     if cockpit_secret and cockpit_enabled:
-        print("  Commentator cockpit: /cockpit (auth) — links via 'racecast cockpit links'")
+        if cockpit_page_path:
+            print("  Commentator cockpit: /cockpit (auth) — links via 'racecast cockpit links'")
+        else:
+            print("  WARN: cockpit enabled but cockpit.html not found — /cockpit will 404.")
     if hud_source and hud_path:
         print(f"  HUD overlay (OBS source): http://127.0.0.1:{args.http_port}/hud  "
               f"(tabs '{args.overlay_tab}'/'{args.config_tab}', refresh {args.hud_poll}s)")

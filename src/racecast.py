@@ -971,8 +971,16 @@ def _cockpit_pull_versions(args):
         sys.exit("usage: racecast cockpit pull-versions <A-tailscale-ip> [--port N]")
     host = args[0]
     port = _takeover_port(args[1:])
+    # The endpoint authenticates on the shared league secret (same league = same
+    # secret, which travels with the profile). We send OUR secret; A validates it.
+    _apply_active_profile_env()
+    secret = os.environ.get("RACECAST_COCKPIT_SECRET") or ""
+    import urllib.request
+    req = urllib.request.Request(f"http://{host}:{port}/cockpit/versions",
+                                 headers={"X-Cockpit-Secret": secret})
     try:
-        payload = _relay_fetch_json(f"http://{host}:{port}/cockpit/versions")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
         sys.exit(f"racecast: could not fetch cockpit versions from {host}:{port} "
                  f"({type(exc).__name__})")
@@ -1032,13 +1040,14 @@ def cockpit_cmd(rest):
         if not roster:
             sys.exit("racecast: no streamers in the schedule (is the relay running?).")
         host = _tailscale_ip() or "<tailscale-ip>"
+        magic = _tailscale_magicdns() or "<your-magicdns-host>"
         versions = cpadm.load_versions(_cockpit_versions_path())
         post = "--post" in args
         lines = []
         for name in roster:
             key = cpa.streamer_key(name)
             tok = cpa.mint_token(secret, key, cpadm.current_version(versions, key))
-            url = f"https://<your-magicdns-host>/cockpit?t={tok}"   # Funnel host
+            url = f"https://{magic}/cockpit?t={tok}"                 # Funnel host
             lan = f"http://{host}:{RELAY_PORT}/cockpit?t={tok}"      # tailnet fallback
             print(f"{name}:\n  funnel:  {url}\n  tailnet: {lan}")
             lines.append(f"{name}: {url}")
@@ -1144,6 +1153,15 @@ def _tailscale_ip():
         return tailscale.detect_tailscale_ip()
     except Exception:
         return None
+
+
+def _tailscale_magicdns():
+    """This machine's MagicDNS name (the public Funnel host), or '' if unavailable."""
+    try:
+        import tailscale
+        return tailscale.detect_magicdns_name()
+    except Exception:
+        return ""
 
 
 def _tailscale_peers():
@@ -2916,6 +2934,7 @@ def cockpit_status_data():
         links = []
         if secret:
             host = _tailscale_ip() or ""
+            magic = _tailscale_magicdns()
             versions = cpadm.load_versions(_cockpit_versions_path())
             for name in _cockpit_roster_safe():
                 key = cpa.streamer_key(name)
@@ -2923,7 +2942,8 @@ def cockpit_status_data():
                 links.append({
                     "name": name,
                     "tailnet": f"http://{host}:{RELAY_PORT}/cockpit?t={tok}" if host else "",
-                    "funnel": f"https://<magicdns-host>/cockpit?t={tok}"})
+                    "funnel": (f"https://{magic}/cockpit?t={tok}" if magic
+                               else f"https://<magicdns-host>/cockpit?t={tok}")})
         return {"ok": True, "enabled": enabled, "has_secret": bool(secret), "links": links}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}

@@ -72,6 +72,13 @@
 <script>
 const $ = (id) => document.getElementById(id);
 
+// The auth cookie was set by the response that served this page, so the token in
+// the URL is no longer needed — strip it from the address bar + browser history
+// (keeps it out of screen-shares / shoulder-surfing). Sub-requests use the cookie.
+if (location.search) {
+  try { history.replaceState({}, '', location.pathname); } catch (e) { /* noop */ }
+}
+
 async function j(path) {
   const r = await fetch(path, { cache: 'no-store' });
   if (!r.ok) throw new Error(r.status);

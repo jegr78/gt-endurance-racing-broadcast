@@ -85,6 +85,37 @@ def detect_tailscale_ip():
     return tailscale_backend()[2]
 
 
+def parse_magicdns_name(output):
+    """Self's MagicDNS name (e.g. 'host.tailnet.ts.net') from `tailscale status
+    --json`, trailing dot stripped, or '' when absent. Pure → unit-tested. Used to
+    build the public Funnel cockpit URL (#191) instead of a placeholder host."""
+    try:
+        data = json.loads(output)
+    except ValueError:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    name = (data.get("Self") or {}).get("DNSName") or ""
+    return name.rstrip(".") if isinstance(name, str) else ""
+
+
+def detect_magicdns_name(timeout=3):
+    """This machine's MagicDNS name via the CLI, or '' if unavailable. Best-effort
+    (same discovery as tailscale_backend)."""
+    for binary in _TAILSCALE_BINS:
+        try:
+            out = subprocess.run([binary, "status", "--json"], capture_output=True,
+                                 text=True, errors="replace", timeout=timeout,
+                                 env=services.external_tool_env(),
+                                 **services.no_window_kwargs())
+        except (OSError, subprocess.SubprocessError):
+            continue
+        name = parse_magicdns_name(out.stdout)
+        if name:
+            return name
+    return ""
+
+
 def parse_tailscale_peers(output):
     """Tailnet peers from `tailscale status --json`: a list of
     {hostname, ip, online, os}, one per peer that has a CGNAT IPv4 (peers without

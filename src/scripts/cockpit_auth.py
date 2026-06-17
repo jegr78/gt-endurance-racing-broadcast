@@ -13,6 +13,7 @@ version is below the streamer's current version is rejected.
 import hashlib
 import hmac
 import re
+import threading
 import time
 from http.cookies import SimpleCookie
 
@@ -64,6 +65,13 @@ def verify_token(secret, token, versions=None):
     return key
 
 
+def secret_matches(presented, secret):
+    """Constant-time compare of a presented secret against the configured league
+    secret. Gates the producer-only /cockpit/versions takeover pull (#191), which
+    is reachable via Funnel and therefore must authenticate."""
+    return hmac.compare_digest(presented or "", secret or "")
+
+
 def parse_cookie_token(cookie_header):
     """Extract the rc_cockpit token from a raw Cookie header, or None. Pure."""
     if not cookie_header:
@@ -84,13 +92,15 @@ class RateLimiter:
     def __init__(self, limit, window_s):
         self.limit = limit
         self.window_s = window_s
-        self._hits = {}                    # key -> [window_start, count]
+        self._hits = {}                    # key -> (window_start, count)
+        self._lock = threading.Lock()      # ThreadingHTTPServer = one thread/request
 
     def allow(self, key, now=None):
         now = time.time() if now is None else now
-        start, count = self._hits.get(key, (now, 0))
-        if now - start >= self.window_s:
-            start, count = now, 0
-        count += 1
-        self._hits[key] = (start, count)
-        return count <= self.limit
+        with self._lock:                   # read-modify-write must be atomic
+            start, count = self._hits.get(key, (now, 0))
+            if now - start >= self.window_s:
+                start, count = now, 0
+            count += 1
+            self._hits[key] = (start, count)
+            return count <= self.limit

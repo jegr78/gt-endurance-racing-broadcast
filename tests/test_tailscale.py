@@ -102,6 +102,13 @@ def t_parse_peers_garbage_and_empty():
     assert ts.parse_tailscale_peers(json.dumps({"Peer": None})) == []
 
 
+def t_parse_magicdns_name():
+    out = json.dumps({"Self": {"DNSName": "rig.tail1234.ts.net."}})
+    assert ts.parse_magicdns_name(out) == "rig.tail1234.ts.net"   # trailing dot stripped
+    assert ts.parse_magicdns_name(json.dumps({"Self": {}})) == ""
+    assert ts.parse_magicdns_name("not json") == ""
+
+
 def t_funnel_args():
     on = ts.funnel_args(path="/cockpit", target_port=8088, enable=True)
     assert on == ["funnel", "--bg", "--set-path=/cockpit",

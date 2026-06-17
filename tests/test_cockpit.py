@@ -54,6 +54,14 @@ def t_verify_rejects_wrong_secret():
     assert ca.verify_token("other-secret", tok) is None
 
 
+def t_secret_matches():
+    assert ca.secret_matches("abc", "abc") is True
+    assert ca.secret_matches("abc", "abcd") is False
+    assert ca.secret_matches("", "abc") is False
+    assert ca.secret_matches(None, "abc") is False
+    assert ca.secret_matches(None, None) is True   # both empty -> trivially equal
+
+
 def t_verify_rejects_malformed():
     for bad in ("", "a.b", "a.b.c.d", "alpha.notint.deadbeef" + "0" * 24,
                 "BADKEY.1." + "0" * 32, "alpha-racing.1.short"):
@@ -211,12 +219,14 @@ def _cockpit_client(secret="sek", enabled=True, rows=None, live_idx=0,
         except urllib.error.HTTPError as e:
             return e.code, e.headers, e.read()
 
-    def get(path, cookie=None):
-        h = {"Cookie": cookie} if cookie else {}
+    def get(path, cookie=None, headers=None):
+        h = dict(headers or {})
+        if cookie:
+            h["Cookie"] = cookie
         return _read(Request(base + path, headers=h))
 
-    def post(path, body, cookie=None):
-        h = {"Content-Type": "application/json"}
+    def post(path, body, cookie=None, headers=None):
+        h = {"Content-Type": "application/json", **(headers or {})}
         if cookie:
             h["Cookie"] = cookie
         return _read(Request(base + path, data=json.dumps(body).encode(),
@@ -273,6 +283,24 @@ def t_page_sets_cookie_and_serves_html():
             assert b"cockpit" in body
             setc = headers.get("Set-Cookie", "")
             assert "rc_cockpit=" in setc and "HttpOnly" in setc and "SameSite=Lax" in setc
+            # plain-http (tailnet) request -> NO Secure, else the browser drops it
+            assert "Secure" not in setc
+        finally:
+            srv.shutdown()
+
+
+def t_page_cookie_secure_behind_funnel():
+    with tempfile.TemporaryDirectory() as d:
+        page = os.path.join(d, "cockpit.html")
+        with open(page, "w") as fh:
+            fh.write("<!doctype html><title>cockpit</title>")
+        srv, get, _post = _cockpit_client(page_path=page)
+        try:
+            tok = ca.mint_token("sek", "alpha-racing")
+            code, headers, _body = get("/cockpit?t=" + tok,
+                                       headers={"X-Forwarded-Proto": "https"})
+            assert code == 200, code
+            assert "Secure" in headers.get("Set-Cookie", "")   # Funnel HTTPS -> Secure
         finally:
             srv.shutdown()
 
@@ -334,13 +362,18 @@ def t_cockpit_chat_requires_auth():
             srv.shutdown()
 
 
-def t_versions_endpoint_roundtrip():
+def t_versions_endpoint_requires_secret():
     with tempfile.TemporaryDirectory() as d:
         vp = os.path.join(d, "cockpit-versions.json")
         cad.write_versions(vp, {"alpha": 3})
-        srv, get, _post = _cockpit_client(versions_path=vp)
+        srv, get, _post = _cockpit_client(secret="sek", versions_path=vp)
         try:
-            code, _h, body = get("/cockpit/versions")
+            # /cockpit/versions sits under the funnelled /cockpit prefix -> must auth
+            assert get("/cockpit/versions")[0] == 401                       # no header
+            assert get("/cockpit/versions",
+                       headers={"X-Cockpit-Secret": "wrong"})[0] == 401     # bad secret
+            code, _h, body = get("/cockpit/versions",
+                                 headers={"X-Cockpit-Secret": "sek"})       # right secret
             assert code == 200 and json.loads(body)["versions"] == {"alpha": 3}
         finally:
             srv.shutdown()
