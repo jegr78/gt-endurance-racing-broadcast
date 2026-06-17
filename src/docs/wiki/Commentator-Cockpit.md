@@ -69,20 +69,39 @@ At <https://login.tailscale.com/admin>:
 ### Automate the tailnet setup — `racecast cockpit setup-funnel`
 
 Steps 1–2 can be done from the producer machine instead of clicking through the admin
-console, using a **Tailscale OAuth client**:
+console, using a **Tailscale OAuth client**.
 
-1. Create an OAuth client at <https://login.tailscale.com/admin/settings/oauth> with
-   **write** access to **DNS** and the **Policy file (ACL)**.
-2. Put it in `.env`:
+#### Get the OAuth client (the "admin token")
+
+You need to be a tailnet **Owner / Admin / Network-admin** to create one.
+
+1. Open **<https://login.tailscale.com/admin/settings/oauth>** (Admin console →
+   **Settings → OAuth clients**).
+2. Click **Generate OAuth client…**.
+3. Give it a description (e.g. `racecast cockpit funnel setup`).
+4. Grant **two write scopes** (tick the **Write** box next to each):
+   - **DNS** — to enable MagicDNS.
+   - **Policy file** (sometimes shown as **ACLs**) — to add the `funnel` nodeAttr.
+   Leave everything else unchecked. (If a scope asks you to pick **tags**, that's only
+   for device scopes — DNS and Policy file don't need a tag.)
+5. Click **Generate client**. Tailscale shows a **Client ID** and a **Client secret**
+   (the secret starts with `tskey-client-…` and is shown **once** — copy it now).
+6. Put both in your machine `.env` (next to the binary / repo root — gitignored):
    ```
-   RACECAST_TS_OAUTH_CLIENT_ID=...
-   RACECAST_TS_OAUTH_CLIENT_SECRET=...
+   RACECAST_TS_OAUTH_CLIENT_ID=<the client id>
+   RACECAST_TS_OAUTH_CLIENT_SECRET=tskey-client-...
    ```
-3. Run it:
-   ```bash
-   racecast cockpit setup-funnel            # dry-run: shows what it would change
-   racecast cockpit setup-funnel --apply    # enable MagicDNS + add the funnel nodeAttr
-   ```
+
+> The secret can rewrite your tailnet policy — treat it like a password. It lives only
+> in `.env` (never committed). You can revoke it anytime on the same admin page; it is
+> only needed while running `setup-funnel`, not during a broadcast.
+
+#### Run it
+
+```bash
+racecast cockpit setup-funnel            # dry-run: shows what it would change
+racecast cockpit setup-funnel --apply    # enable MagicDNS + add the funnel nodeAttr
+```
 
 `--apply` enables MagicDNS (a safe single preference) and appends the `funnel`
 nodeAttr to the policy. Because the API returns the policy as plain JSON, the write
