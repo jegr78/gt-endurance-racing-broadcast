@@ -2,6 +2,7 @@
 """Stdlib unit checks for the Commentator Cockpit. Run: python3 tests/test_cockpit.py"""
 import importlib.util
 import os
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -16,6 +17,7 @@ def _load(name, rel):
 
 ca = _load("cockpit_auth", ("src", "scripts", "cockpit_auth.py"))
 m = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))
+cad = _load("cockpit_admin", ("src", "scripts", "cockpit_admin.py"))
 
 SECRET = "test-secret-do-not-ship"
 
@@ -79,6 +81,41 @@ def t_rate_limiter_fixed_window():
     assert rl.allow("ip", now=2) is False      # 3rd hit in window -> blocked
     assert rl.allow("other", now=2) is True    # counter is per-key
     assert rl.allow("ip", now=61) is True       # window reset
+
+
+def t_versions_default_and_bump():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "cockpit-versions.json")
+        assert cad.load_versions(p) == {}                 # missing -> {}
+        assert cad.current_version({}, "alpha") == 1      # default 1
+        assert cad.bump_version(p, "alpha") == 2          # 1 -> 2, persisted
+        assert cad.load_versions(p) == {"alpha": 2}
+        assert cad.bump_version(p, "alpha") == 3
+
+
+def t_revoked_token_rejected_after_bump():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "cockpit-versions.json")
+        tok_v1 = ca.mint_token(SECRET, "alpha", version=1)
+        assert ca.verify_token(SECRET, tok_v1, cad.load_versions(p)) == "alpha"
+        cad.bump_version(p, "alpha")                       # now current = 2
+        assert ca.verify_token(SECRET, tok_v1, cad.load_versions(p)) is None
+        tok_v2 = ca.mint_token(SECRET, "alpha", version=2)
+        assert ca.verify_token(SECRET, tok_v2, cad.load_versions(p)) == "alpha"
+
+
+def t_apply_pulled_validates():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "cockpit-versions.json")
+        assert cad.apply_pulled(p, {"versions": {"alpha": 3, "beta": 2}}) == 2
+        assert cad.load_versions(p) == {"alpha": 3, "beta": 2}
+        for bad in ({"versions": {"alpha": 0}}, {"versions": {"BAD KEY": 2}},
+                    {"versions": {"alpha": "x"}}, {"nope": {}}, []):
+            try:
+                cad.apply_pulled(p, bad)
+                raise AssertionError(f"expected ValueError for {bad!r}")
+            except ValueError:
+                pass  # expected: bad payload rejected before any write
 
 
 if __name__ == "__main__":
