@@ -265,6 +265,39 @@ def t_build_schedule_csv_parses_in_relay():
     assert [r[2] for r in parsed] == ["Stint 1", "Stint 2"], parsed
 
 
+def t_check_enable_preserves_keys_passes():
+    # The self-contained check uses its own tempfile fixture + the REAL
+    # racecast._set_env_key seam; it must pass with no relay and no side effects.
+    assert e.check_enable_preserves_keys(None).status == "pass"
+
+
+def t_set_env_key_preserves_other_keys():
+    # Exercise the #191 seam directly against a temp profile.env: writing ONE key
+    # must not drop the others (the bug was a full-set merge clobbering them).
+    import tempfile, shutil, importlib
+    src = os.path.join(os.path.dirname(__file__), "..", "src")
+    if src not in sys.path:
+        sys.path.insert(0, src)
+    rc = importlib.import_module("racecast")
+    tmp = tempfile.mkdtemp(prefix="racecast-e2e-test-")
+    try:
+        ppath = os.path.join(tmp, "profile.env")
+        with open(ppath, "w", encoding="utf-8") as fh:
+            fh.write("# header\nNAME=Foo\nSHEET_ID=abc123\nSHEET_PUSH_URL=https://x/exec\n"
+                     "CUSTOM=keep\n")
+        res = rc._set_env_key(ppath, "COCKPIT_SECRET", "s" * 64)
+        assert res.get("ok"), res
+        with open(ppath, encoding="utf-8") as fh:
+            after = rc.parse_env_text(fh.read())
+        assert after["NAME"] == "Foo", after
+        assert after["SHEET_ID"] == "abc123", after
+        assert after["SHEET_PUSH_URL"] == "https://x/exec", after
+        assert after["CUSTOM"] == "keep", after
+        assert after["COCKPIT_SECRET"] == "s" * 64, after
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

@@ -7,7 +7,9 @@ import collections
 import csv as _csv
 import io as _io
 import json as _json
+import os
 import socket
+import sys
 import urllib.error
 import urllib.request
 
@@ -230,6 +232,23 @@ def check_submission_pending(ctx):
     return CheckResult("submission_pending", "pass", "")
 
 
+def check_status_live(ctx):
+    """Relaxed real-league /status health: 200 + a non-empty schedule + a live
+    block, WITHOUT pinning exact counts (real schedule_len/live_stint are
+    unknown without the live Sheet, so check_status_ok's fixed assertions don't
+    apply). Structural health only."""
+    st, data = _get_json(ctx.relay_url + "/status")
+    if st != 200:
+        return CheckResult("status_live", "fail", f"/status HTTP {st}")
+    n = data.get("schedule_len")
+    if not isinstance(n, int) or n <= 0:
+        return CheckResult("status_live", "fail", f"schedule_len={n!r} (expected > 0)")
+    live = data.get("live")
+    if not isinstance(live, dict) or "feed" not in live:
+        return CheckResult("status_live", "fail", f"no live block: {live!r}")
+    return CheckResult("status_live", "pass", f"schedule_len={n}, live={live.get('feed')}")
+
+
 def check_cc_api_cockpit(ctx):
     """Control Center /api/cockpit/status responds 200 with sane JSON
     (ok flag + a links list)."""
@@ -243,6 +262,63 @@ def check_cc_api_cockpit(ctx):
     return CheckResult("cc_api_cockpit", "pass", "")
 
 
+def _load_set_env_key():
+    """Import the REAL `_set_env_key` from src/racecast.py — the single-key
+    profile.env writer that the #191 fix lives in. racecast.py imports cleanly
+    as a module (no hyphen, no import-time side effects)."""
+    import importlib
+    here = os.path.dirname(os.path.abspath(__file__))
+    src = os.path.join(here, "..", "src")
+    if src not in sys.path:
+        sys.path.insert(0, src)
+    return importlib.import_module("racecast")
+
+
+def check_enable_preserves_keys(_ctx=None):
+    """#191 regression: `racecast cockpit enable` must NOT wipe other profile.env
+    keys when it writes COCKPIT_SECRET. The bug was a single-pair write through
+    the full-set merge_env_text (any key not re-passed was dropped). We exercise
+    the EXACT seam the CLI uses — `racecast._set_env_key(path, key, value)`
+    (src/racecast.py:908) — against a temp profile.env carrying several keys, and
+    assert every pre-existing key survives + COCKPIT_SECRET was added.
+
+    Self-contained: its own tempfile fixture, no relay, no repo profiles/, no
+    side effects — so it is safe to run anywhere (incl. SYNTHETIC_CHECKS)."""
+    import tempfile
+    rc = _load_set_env_key()
+    tmp = tempfile.mkdtemp(prefix="racecast-e2e-enable-")
+    try:
+        ppath = os.path.join(tmp, "profile.env")
+        pre = {
+            "NAME": "Test League",
+            "SHEET_ID": "1AbC_dEfGhIjKlMnOpQrStUvWxYz",
+            "SHEET_PUSH_URL": "https://script.google.com/macros/s/AKfyc/exec",
+            "CUSTOM_KEY": "keep-me-please",
+        }
+        with open(ppath, "w", encoding="utf-8") as fh:
+            fh.write("# league config\n")
+            for k, v in pre.items():
+                fh.write(f"{k}={v}\n")
+        res = rc._set_env_key(ppath, "COCKPIT_SECRET", "deadbeef" * 8)
+        if not res.get("ok"):
+            return CheckResult("enable_preserves_keys", "fail",
+                               f"_set_env_key failed: {res.get('error')}")
+        with open(ppath, encoding="utf-8") as fh:
+            after = rc.parse_env_text(fh.read())
+        for k, v in pre.items():
+            if after.get(k) != v:
+                return CheckResult("enable_preserves_keys", "fail",
+                                   f"key {k!r} clobbered: was {v!r}, now {after.get(k)!r}")
+        if not after.get("COCKPIT_SECRET"):
+            return CheckResult("enable_preserves_keys", "fail",
+                               "COCKPIT_SECRET was not added")
+        return CheckResult("enable_preserves_keys", "pass",
+                           f"{len(pre)} keys preserved + COCKPIT_SECRET added")
+    finally:
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 SYNTHETIC_CHECKS = [
     check_status_ok,
     check_cockpit_requires_token,
@@ -253,4 +329,19 @@ SYNTHETIC_CHECKS = [
     check_chat_round_trip,
     check_submission_pending,
     check_cc_api_cockpit,
+    check_enable_preserves_keys,
+]
+
+# Real-league mode (local only): the NON-mutating, no-external-call subset.
+# EXCLUDES check_chat_round_trip + check_submission_pending (they WRITE — a real
+# submission could ping the league's Discord webhook / write the pending store)
+# and check_cockpit_404_when_disabled (needs a second disabled relay). Uses the
+# relaxed check_status_live (real schedule_len/live_stint are unknown).
+REAL_LEAGUE_CHECKS = [
+    check_status_live,
+    check_cockpit_requires_token,
+    check_cockpit_accepts_token,
+    check_cockpit_timer_renders,
+    check_cc_api_cockpit,
+    check_enable_preserves_keys,
 ]
