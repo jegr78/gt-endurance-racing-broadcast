@@ -171,6 +171,19 @@ def t_submission_payload_shape():
     assert "Alpha Racing" in body and "S3" in body
 
 
+def t_approval_payload_has_no_ping():
+    # The director-approval note is informational: it must NOT carry an @here
+    # mention (no top-level `content`, mentions suppressed) yet still name the
+    # commentator, the stint and the link that went live.
+    e = {"streamer_name": "Alpha Racing", "target_stint": "S3", "proposed_url": "u-new"}
+    payload = m.cockpit_approval_payload(e)
+    assert "@here" not in json.dumps(payload)
+    assert not payload.get("content")
+    assert payload["allowed_mentions"]["parse"] == []
+    body = json.dumps(payload)
+    assert "Alpha Racing" in body and "S3" in body and "u-new" in body
+
+
 # ---- live HTTP surface ------------------------------------------------------
 
 def _client(secret=SECRET, enabled=True, rows=None, live_idx=0,
@@ -380,6 +393,69 @@ def t_approve_writes_schedule_and_clears():
             assert calls[0]["stint"] == "S3" and calls[0]["name"] == "Alpha Racing"
             assert cs.list_pending(p) == []          # cleared after approve
         finally:
+            srv.shutdown()
+
+
+def _recording_webhook():
+    """A tiny local HTTP server that captures POSTed Discord payloads. Returns
+    (url, captured_list, shutdown_fn)."""
+    import threading as _t
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    captured = []
+
+    class _H(BaseHTTPRequestHandler):
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length", 0))
+            captured.append(json.loads(self.rfile.read(n) or b"{}"))
+            self.send_response(204)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), _H)
+    _t.Thread(target=srv.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{srv.server_address[1]}", captured, srv.shutdown
+
+
+def t_approve_posts_discord_without_ping():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "p.json")
+        hook_url, captured, hook_stop = _recording_webhook()
+        srv, get, post, calls = _client(submission_path=p, webhook=hook_url)
+        try:
+            tok = ca.mint_token(SECRET, "alpha-racing")
+            post("/cockpit/submit", {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"},
+                 cookie="rc_cockpit=" + tok)
+            captured.clear()                         # drop the submission @here ping
+            sid = cs.list_pending(p)[0]["id"]
+            code, _h, _b = post("/submissions/approve", {"id": sid})
+            assert code == 200, code
+            assert len(captured) == 1                # one approval note fired
+            note = json.dumps(captured[0])
+            assert "@here" not in note               # the follow-up: no ping
+            assert "Alpha Racing" in note and "S3" in note
+        finally:
+            hook_stop()
+            srv.shutdown()
+
+
+def t_reject_does_not_post_discord():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "p.json")
+        hook_url, captured, hook_stop = _recording_webhook()
+        srv, _get, post, _c = _client(submission_path=p, webhook=hook_url)
+        try:
+            tok = ca.mint_token(SECRET, "alpha-racing")
+            post("/cockpit/submit", {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"},
+                 cookie="rc_cockpit=" + tok)
+            captured.clear()
+            sid = cs.list_pending(p)[0]["id"]
+            post("/submissions/reject", {"id": sid})
+            assert captured == []                    # reject is silent
+        finally:
+            hook_stop()
             srv.shutdown()
 
 

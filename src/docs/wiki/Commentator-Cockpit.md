@@ -169,7 +169,9 @@ How it works:
    the submitter, target stint, and the old → proposed URL — and clicks **Approve** or
    **Reject**. Approve writes the schedule (the Google Sheet) exactly like a manual edit;
    the feed picks the new URL up on the next **RELOAD A/B / NEXT** (a live feed is never
-   torn mid-stint). Reject discards it.
+   torn mid-stint). On approve a short Discord heads-up fires (if a webhook is configured)
+   — **without** an `@here` ping, since it only confirms the link is now scheduled. Reject
+   discards it silently.
 
 Every submission and director decision is appended to an audit log
 (`runtime/<league>/cockpit-submissions.log`, one JSON line each).
