@@ -2673,6 +2673,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         if not timer_store:
                             return self._send({"error": "timer disabled"}, 404)
                         return self._send(timer_store.data())
+                    if p == ["cockpit", "chat", "data"]:
+                        if self._cockpit_auth() is None:
+                            return None
+                        if not chat_store:
+                            return self._send({"error": "chat disabled"}, 404)
+                        return self._send(chat_store.data())
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["schedule", "data"]:
                     rows = relay.source.get_rows()
@@ -2756,6 +2762,23 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"error": "body must be JSON"}, 400)
                 if not isinstance(body, dict):
                     return self._send({"error": "body must be a JSON object"}, 400)
+                if p[:1] == ["cockpit"]:
+                    if not self._cockpit_active():
+                        return self._send({"error": "cockpit disabled"}, 404)
+                    if p == ["cockpit", "chat", "send"]:
+                        me = self._cockpit_auth()
+                        if me is None:
+                            return None
+                        if not chat_store:
+                            return self._send({"error": "chat disabled"}, 404)
+                        client = self.client_address[0] if self.client_address else "?"
+                        if not _cockpit_chat_rl.allow(client):
+                            return self._send({"error": "rate limited"}, 429)
+                        # Identity is the token's streamer, never client-declared.
+                        name = cockpit_display_name(relay.source.get_rows(), me)
+                        return self._send(chat_store.add(user=name,
+                                                         text=body.get("text")))
+                    return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["chat", "send"]:
                     if not chat_store:
                         return self._send({"error": "chat disabled"}, 404)

@@ -304,6 +304,36 @@ def t_timer_authed():
         srv.shutdown()
 
 
+def t_cockpit_chat_send_forces_identity():
+    with tempfile.TemporaryDirectory() as d:
+        cs = m.ChatStore(os.path.join(d, "chat.json"))
+        srv, get, post = _cockpit_client(chat_store=cs)
+        try:
+            tok = ca.mint_token("sek", "alpha-racing")
+            # client tries to spoof "user" -> must be ignored, forced to display name
+            code, _h, body = post("/cockpit/chat/send",
+                                  {"user": "Impostor", "text": "hi"},
+                                  cookie="rc_cockpit=" + tok)
+            assert code == 200, (code, body)
+            assert json.loads(body)["message"]["user"] == "Alpha Racing"
+            code, _h, body = get("/cockpit/chat/data", cookie="rc_cockpit=" + tok)
+            msgs = json.loads(body)["messages"]
+            assert msgs[-1]["user"] == "Alpha Racing" and msgs[-1]["text"] == "hi"
+        finally:
+            srv.shutdown()
+
+
+def t_cockpit_chat_requires_auth():
+    with tempfile.TemporaryDirectory() as d:
+        cs = m.ChatStore(os.path.join(d, "chat.json"))
+        srv, get, post = _cockpit_client(chat_store=cs)
+        try:
+            assert get("/cockpit/chat/data")[0] == 401
+            assert post("/cockpit/chat/send", {"text": "x"})[0] == 401
+        finally:
+            srv.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
