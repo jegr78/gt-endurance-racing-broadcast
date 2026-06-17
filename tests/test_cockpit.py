@@ -137,6 +137,13 @@ def t_tally_up_next_only():
     t = m.cockpit_tally(_rows(), 0, "beta")
     assert t["on_air"] is False
     assert t["up_next"] == {"stint": "S2", "in_n": 1}
+    assert t["scheduled"] is True
+
+
+def t_tally_live_idx_none():
+    # No feed on air yet: no on_air, the loop is skipped, but me is scheduled.
+    t = m.cockpit_tally(_rows(), None, "alpha-racing")
+    assert t == {"on_air": False, "up_next": None, "scheduled": True}
 
 
 def t_tally_not_upcoming():
