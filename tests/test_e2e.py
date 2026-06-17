@@ -348,6 +348,23 @@ def t_rendered_checks_skip_without_browser():
         driver._playwright_available = saved
 
 
+def t_capture_shots_skips_without_browser():
+    # GATE test: --shots must no-op (return [], never launch a browser or create
+    # the output dir) when Playwright is unavailable — same gate as the rendered
+    # checks. We force unavailability instead of probing the host.
+    driver = _import_e2e()
+    saved = driver._playwright_available
+    driver._playwright_available = lambda: False
+    try:
+        ctx = e.Ctx(relay_url="http://127.0.0.1:1", disabled_relay_url=None,
+                    ui_url="http://127.0.0.1:2", token="tok", streamer_key="alice",
+                    expect={})
+        written = driver._capture_shots(ctx, os.path.join("nonexistent-e2e-shots-dir"))
+        assert written == [], written
+    finally:
+        driver._playwright_available = saved
+
+
 def t_rendered_skip_does_not_change_exit_code():
     # The overall exit code is governed by the API checks: appending SKIP
     # rendered results must keep a green run green (and a red run red).

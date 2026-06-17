@@ -198,6 +198,46 @@ def _stub_tools_bin(tmp):
     return bindir
 
 
+def _capture_shots(ctx, outdir, headed=False, slowmo=0):
+    """Write a screenshot of each visual surface to *outdir* using the same
+    Playwright library the rendered checks use — a reproducible, MCP-free visual
+    tour of a run. Best-effort: a shot failure warns but never fails the run.
+    Returns the list of written paths.
+
+    NOTE: the Control Center Home shows this machine's Tailscale IP — treat the
+    output as a local artifact and do NOT commit it (CLAUDE.md: no real IPs)."""
+    if not _playwright_available():
+        print(f"--shots: Playwright/browser unavailable — nothing written to {outdir}.")
+        return []
+    from playwright.sync_api import sync_playwright  # noqa: PLC0415 — optional, lazy
+    os.makedirs(outdir, exist_ok=True)
+    surfaces = [
+        ("control-center", ctx.ui_url + "/"),
+        ("cockpit", ctx.relay_url + "/cockpit?t=" + ctx.token),
+        ("director-panel", ctx.relay_url + "/panel"),
+        ("hud", ctx.relay_url + "/hud"),
+    ]
+    written = []
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=not headed, slow_mo=slowmo)
+        try:
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+            for name, url in surfaces:
+                path = os.path.join(outdir, f"{name}.png")
+                try:
+                    page.goto(url, wait_until="domcontentloaded")
+                    page.wait_for_timeout(1500)   # let the SPA poll its data in
+                    page.screenshot(path=path, full_page=True)
+                    written.append(path)
+                    print(f"--shots: wrote {path}")
+                except Exception as exc:  # noqa: BLE001 — best-effort artifact
+                    print(f"--shots: WARN could not capture {name}: "
+                          f"{type(exc).__name__}: {exc}")
+        finally:
+            browser.close()
+    return written
+
+
 def _print_live_urls(relay_url, ui_url, token):
     """With --keep the spawned relay + Control Center are left running (they were
     started in their own session, so they outlive this process). Print the live
@@ -302,6 +342,8 @@ def run_synthetic(args):
             if any(r.status == "fail" for r in rendered):
                 code = 1
         print(E.summarize(results))
+        if args.shots:
+            _capture_shots(ctx, args.shots, headed=args.headed, slowmo=args.slowmo)
         if args.keep:
             _print_live_urls(relay_url, ui_url, token)
             print("  NOTE: synthetic schedule was served in-process — it stops "
@@ -412,6 +454,8 @@ def run_real_league(args):
             if any(r.status == "fail" for r in rendered):
                 code = 1
         print(E.summarize(results))
+        if args.shots:
+            _capture_shots(ctx, args.shots, headed=args.headed, slowmo=args.slowmo)
         if args.keep:
             _print_live_urls(relay_url, ui_url, token)
         return code
@@ -435,6 +479,10 @@ def main(argv=None):
                          "window (local only; a visual walk-through of the cockpit page)")
     ap.add_argument("--slowmo", type=int, default=0, metavar="MS",
                     help="slow each Playwright action by MS ms so a --headed run is watchable")
+    ap.add_argument("--shots", metavar="DIR", default=None,
+                    help="write a screenshot of each surface (cockpit/panel/hud/Control "
+                         "Center) to DIR via Playwright — a reproducible, MCP-free visual "
+                         "tour (local only; the Control Center shot shows your Tailscale IP)")
     ap.add_argument("--timeout", type=float, default=30.0,
                     help="per-service readiness timeout (s)")
     ap.add_argument("--keep", action="store_true",
