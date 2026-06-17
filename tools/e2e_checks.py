@@ -12,6 +12,7 @@ import urllib.error
 import urllib.request
 
 CheckResult = collections.namedtuple("CheckResult", "name status message")
+# status in {"pass", "fail", "skip"}
 
 
 def http_request(url, method="GET", headers=None, data=None, timeout=10):
@@ -25,7 +26,6 @@ def http_request(url, method="GET", headers=None, data=None, timeout=10):
             return resp.status, resp.read(), dict(resp.headers)
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read(), dict(exc.headers or {})
-# status in {"pass", "fail", "skip"}
 
 
 def classify_capability(available, name):
