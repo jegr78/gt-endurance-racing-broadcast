@@ -386,11 +386,14 @@ crew chat (identity forced to the token's streamer), and a read-only timer. It i
 `127.0.0.1:8088` — the rest of the relay stays tailnet/loopback-only and is **never**
 funnelled (the security boundary). Funnel passes no Tailscale identity, so auth is 100%
 server-side: a per-commentator token `<streamer_key>.<version>.<sig>` signed with a
-**per-league** `COCKPIT_SECRET` (`profiles/<name>/profile.env`, auto-generated on
-`racecast cockpit enable`, travels with `profile export`); revocation bumps a streamer's
-version in `runtime/<profile>/cockpit-versions.json`. `/cockpit/*` is live only when BOTH
-that secret AND the **machine-local** `RACECAST_COCKPIT_ENABLED` flag (`.env`) are set —
-otherwise every `/cockpit/*` path 404s (like chat/timer when disabled). The token rides in
+**per-league** `COCKPIT_SECRET` (`profiles/<name>/profile.env`, travels with `profile
+export`); revocation bumps a streamer's version in `runtime/<profile>/cockpit-versions.json`.
+The cockpit is **zero-config**: the secret is **auto-provisioned** by the CLI on first relay
+start (`_ensure_active_cockpit_secret` in `src/racecast.py`, idempotent, never the shipped
+`example` profile), so `/cockpit/*` is live **whenever a secret exists** — there is no
+separate enable flag. When the secret is absent every `/cockpit/*` path 404s (like chat/timer
+when disabled). PUBLIC exposure is the **independent Funnel switch** (`cockpit funnel on`),
+the only way `/cockpit` leaves the tailnet. The token rides in
 the `…/cockpit?t=` link once, then an `HttpOnly; Secure; SameSite=Lax` `rc_cockpit` cookie.
 Auth core: `src/scripts/cockpit_auth.py`; revocation store: `src/scripts/cockpit_admin.py`;
 talent page: `src/cockpit/cockpit.html`; CLI: `racecast cockpit …`; takeover pulls A's

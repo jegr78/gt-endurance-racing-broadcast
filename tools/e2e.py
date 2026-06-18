@@ -329,11 +329,10 @@ def run_synthetic(args):
         csv_srv, csv_url = _csv_server(E.build_schedule_csv(SCHEDULE_ROWS))
         servers.append(csv_srv)
 
-        # 3. enabled relay
+        # 3. cockpit relay (a secret in the env -> /cockpit/* is served, token-gated)
         relay_port = E.free_port()
         env = dict(os.environ)
-        env.update(RACECAST_COCKPIT_SECRET=secret, RACECAST_COCKPIT_ENABLED="1",
-                   RACECAST_PROFILE="e2e")
+        env.update(RACECAST_COCKPIT_SECRET=secret, RACECAST_PROFILE="e2e")
         env["PATH"] = stub_bin + os.pathsep + env.get("PATH", "")
         relay_log = os.path.join(tmp, "relay.log")
         relay = _spawn(launcher + ["relay", "run", "--bind", "127.0.0.1",
@@ -344,9 +343,13 @@ def run_synthetic(args):
         relay_url = f"http://127.0.0.1:{relay_port}"
         _wait_ready(relay_url + "/status", args.timeout, relay, relay_log)
 
-        # 4. disabled relay (no RACECAST_COCKPIT_ENABLED) -> /cockpit/* 404
+        # 4. secret-less relay -> /cockpit/* 404. The cockpit is zero-config (the CLI
+        # auto-provisions a secret), so "no cockpit" now means "no secret": we point
+        # this relay at the shipped 'example' profile, the one profile the auto-
+        # provision deliberately never touches -> no secret -> every /cockpit/* 404s.
         dis_port = E.free_port()
-        env2 = dict(os.environ); env2.update(RACECAST_PROFILE="e2e")
+        env2 = dict(os.environ); env2.update(RACECAST_PROFILE="example")
+        env2.pop("RACECAST_COCKPIT_SECRET", None)
         env2["PATH"] = stub_bin + os.pathsep + env2.get("PATH", "")
         dis_log = os.path.join(tmp, "relay-disabled.log")
         dis = _spawn(launcher + ["relay", "run", "--bind", "127.0.0.1",
@@ -433,7 +436,8 @@ def run_real_league(args):
         return 0
     if not rc.cockpit_secret:
         print(f"real-league: profile {name!r} has no COCKPIT_SECRET in profile.env.")
-        print("  Run 'racecast cockpit enable' for that league first; skipping.")
+        print("  Start the relay once for that league (it auto-provisions the secret), "
+              "then re-run; skipping.")
         return 0
 
     tmp = tempfile.mkdtemp(prefix="racecast-e2e-real-")
@@ -445,8 +449,7 @@ def run_real_league(args):
         # never collide with or disturb a relay the operator already runs).
         relay_port = E.free_port()
         env = dict(os.environ)
-        env["RACECAST_PROFILE"] = name
-        env["RACECAST_COCKPIT_ENABLED"] = "1"   # machine flag; secret is the league's real one
+        env["RACECAST_PROFILE"] = name   # the relay serves /cockpit whenever the league has a secret
         relay_log = os.path.join(tmp, "relay.log")
         relay = _spawn([sys.executable, os.path.join(ROOT, "src", "racecast.py"),
                         "relay", "run", "--bind", "127.0.0.1",

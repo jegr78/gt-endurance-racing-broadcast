@@ -639,13 +639,6 @@ def make_handler(ctx):
                                        "error": f"could not write profile .env: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
-            if path == "/api/cockpit/enabled":
-                body = self._body_json()
-                if body is None:
-                    return self._json({"ok": False, "error": "malformed JSON body"},
-                                      code=400)
-                result = ctx["cockpit_set_enabled"](bool(body.get("enabled")))
-                return self._json(result, code=200 if result.get("ok") else 400)
             if path == "/api/cockpit/funnel":
                 body = self._body_json()
                 if body is None:

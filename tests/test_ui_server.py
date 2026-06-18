@@ -171,13 +171,12 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "backup_delete": lambda slug: {"ok": True, "removed": True},
             "profile_export": lambda name=None, assets=True: _export_stub(name, assets),
             "profile_import": lambda path, force=False: _import_stub(path, force),
-            "cockpit_status": lambda: {"ok": True, "enabled": True, "has_secret": True,
+            "cockpit_status": lambda: {"ok": True, "has_secret": True,
                                        "funnel_auto": False, "funnel_capable": True,
                                        "funnel_on": False,
                                        "links": [{"name": "Alpha",
                                                   "internal": "http://127.0.0.1:8088/cockpit?t=x",
                                                   "funnel": "https://h/cockpit?t=x"}]},
-            "cockpit_set_enabled": lambda enabled: {"ok": True, "_got": enabled},
             "cockpit_funnel": lambda on: {"ok": True, "_got": on},
             "cockpit_set_funnel_auto": lambda auto: {"ok": True, "_got": auto},
             "cockpit_revoke": lambda streamer: {"ok": True, "_got": streamer},
@@ -1039,7 +1038,7 @@ def t_cockpit_status_route_wraps_provider():
     try:
         code, body = _get(port, "/api/cockpit/status")
         data = json.loads(body)
-        assert code == 200 and data["enabled"] is True and data["has_secret"] is True
+        assert code == 200 and data["has_secret"] is True
         assert data["links"][0]["name"] == "Alpha"
         # both the public Funnel link and the internal (tailnet/loopback) link ride through
         assert data["links"][0]["funnel"] == "https://h/cockpit?t=x"
@@ -1051,15 +1050,13 @@ def t_cockpit_status_route_wraps_provider():
 def t_cockpit_post_routes_pass_args():
     seen = {}
     ctx = _ctx()
-    ctx["cockpit_set_enabled"] = lambda enabled: seen.update(en=enabled) or {"ok": True}
     ctx["cockpit_funnel"] = lambda on: seen.update(fn=on) or {"ok": True}
     ctx["cockpit_revoke"] = lambda streamer: seen.update(rv=streamer) or {"ok": True}
     httpd, port = _serve(ctx)
     try:
-        assert _post_json(port, "/api/cockpit/enabled", {"enabled": True})[0] == 200
         assert _post_json(port, "/api/cockpit/funnel", {"on": True})[0] == 200
         assert _post_json(port, "/api/cockpit/revoke", {"streamer": "Alpha"})[0] == 200
-        assert seen == {"en": True, "fn": True, "rv": "Alpha"}
+        assert seen == {"fn": True, "rv": "Alpha"}
     finally:
         httpd.shutdown()
 

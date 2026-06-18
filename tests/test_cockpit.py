@@ -183,7 +183,7 @@ def t_display_name_maps_key_to_name():
     assert m.cockpit_display_name(_rows(), "nobody") == "nobody"
 
 
-def _cockpit_client(secret="sek", enabled=True, rows=None, live_idx=0,
+def _cockpit_client(secret="sek", rows=None, live_idx=0,
                     versions_path=None, chat_store=None, timer_store=None,
                     page_path=None):
     """Stand up make_handler over a real ThreadingHTTPServer on an ephemeral port.
@@ -220,7 +220,7 @@ def _cockpit_client(secret="sek", enabled=True, rows=None, live_idx=0,
 
     handler = m.make_handler(_Relay(), chat_store=chat_store, timer_store=timer_store,
                              cockpit_page_path=page_path, cockpit_secret=secret,
-                             cockpit_enabled=enabled, cockpit_versions_path=versions_path)
+                             cockpit_versions_path=versions_path)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     _t.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -257,8 +257,9 @@ def t_data_requires_auth():
         srv.shutdown()
 
 
-def t_data_disabled_is_404():
-    srv, get, _post = _cockpit_client(enabled=False)
+def t_data_without_secret_is_404():
+    # No COCKPIT_SECRET configured -> cockpit not served (every /cockpit/* 404s).
+    srv, get, _post = _cockpit_client(secret=None)
     try:
         tok = ca.mint_token("sek", "alpha-racing")
         code, _h, _b = get("/cockpit/data?t=" + tok)

@@ -1716,11 +1716,14 @@ def t_set_env_key_preserves_other_keys():
 
 def t_route_cockpit():
     assert m.route(["cockpit", "links"]) == {"kind": "cockpit", "rest": ["links"]}
-    assert m.route(["cockpit", "enable"]) == {"kind": "cockpit", "rest": ["enable"]}
+    assert m.route(["cockpit", "funnel", "on"]) == {
+        "kind": "cockpit", "rest": ["funnel", "on"]}
     assert m.route(["cockpit", "token", "revoke", "Alpha"]) == {
         "kind": "cockpit", "rest": ["token", "revoke", "Alpha"]}
-    # cockpit validates the verb at route() time (unlike chat)
-    for bad in (["cockpit"], ["cockpit", "bogus"]):
+    # cockpit validates the verb at route() time (unlike chat); the removed
+    # enable/disable verbs (zero-config now) are rejected like any unknown verb
+    for bad in (["cockpit"], ["cockpit", "bogus"], ["cockpit", "enable"],
+                ["cockpit", "disable"]):
         try:
             m.route(bad)
             raise AssertionError(bad)
@@ -2067,6 +2070,63 @@ def t_cockpit_internal_host_prefers_tailscale_then_loopback():
     assert m._cockpit_internal_host("100.64.0.5") == "100.64.0.5"
     assert m._cockpit_internal_host(None) == "127.0.0.1"
     assert m._cockpit_internal_host("") == "127.0.0.1"
+
+
+def _with_cockpit_secret_env_cleared(fn):
+    """Run fn() with RACECAST_COCKPIT_SECRET cleared + _active_profile_env_strict
+    restored afterwards (the zero-config auto-provision tests monkeypatch both)."""
+    saved_env = os.environ.pop("RACECAST_COCKPIT_SECRET", None)
+    saved_strict = m._active_profile_env_strict
+    try:
+        fn()
+    finally:
+        m._active_profile_env_strict = saved_strict
+        os.environ.pop("RACECAST_COCKPIT_SECRET", None)
+        if saved_env is not None:
+            os.environ["RACECAST_COCKPIT_SECRET"] = saved_env
+
+
+def t_ensure_active_cockpit_secret_generates_and_is_idempotent():
+    import tempfile
+    def body():
+        with tempfile.TemporaryDirectory() as dd:
+            ppath = os.path.join(dd, "profile.env")
+            with open(ppath, "w", encoding="utf-8") as fh:
+                fh.write("NAME=Demo\n")
+            m._active_profile_env_strict = lambda: ("demo", ppath)
+            s1 = m._ensure_active_cockpit_secret()
+            assert s1 and len(s1) == 64, s1                  # token_hex(32) -> 64 hex
+            assert os.environ.get("RACECAST_COCKPIT_SECRET") == s1
+            os.environ.pop("RACECAST_COCKPIT_SECRET", None)   # idempotent: returns the same
+            assert m._ensure_active_cockpit_secret() == s1
+            with open(ppath, encoding="utf-8") as fh:
+                assert m.parse_env_text(fh.read())["NAME"] == "Demo"   # other keys kept
+    _with_cockpit_secret_env_cleared(body)
+
+
+def t_ensure_active_cockpit_secret_skips_example_and_missing():
+    import tempfile
+    def body():
+        with tempfile.TemporaryDirectory() as dd:
+            ppath = os.path.join(dd, "profile.env")
+            with open(ppath, "w", encoding="utf-8") as fh:
+                fh.write("NAME=Example\n")
+            m._active_profile_env_strict = lambda: ("example", ppath)   # never the shipped profile
+            assert m._ensure_active_cockpit_secret() is None
+            m._active_profile_env_strict = lambda: ("ghost",
+                                                    os.path.join(dd, "nope", "profile.env"))
+            assert m._ensure_active_cockpit_secret() is None            # never fabricate a profile
+    _with_cockpit_secret_env_cleared(body)
+
+
+def t_ensure_active_cockpit_secret_respects_existing_env():
+    def body():
+        os.environ["RACECAST_COCKPIT_SECRET"] = "already-set"
+        def _boom():
+            raise AssertionError("must not resolve a profile when env carries a secret")
+        m._active_profile_env_strict = _boom
+        assert m._ensure_active_cockpit_secret() == "already-set"
+    _with_cockpit_secret_env_cleared(body)
 
 
 if __name__ == "__main__":
