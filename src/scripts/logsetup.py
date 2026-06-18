@@ -126,3 +126,35 @@ def newest_log(log_dir):
     """Newest file in log_dir, or None."""
     files = list_logs(log_dir)
     return files[0] if files else None
+
+
+def archive_dates(log_dir, basenames):
+    """Sorted-descending list of YYYY-MM-DD dates for which any of `basenames` has a
+    rotated archive (`<basename>.<date>`) in log_dir."""
+    dates = set()
+    for path in list_logs(log_dir):
+        name = os.path.basename(path)
+        for base in basenames:
+            m = re.fullmatch(re.escape(base) + r"\.(\d{4}-\d{2}-\d{2})", name)
+            if m:
+                dates.add(m.group(1))
+    return sorted(dates, reverse=True)
+
+
+def resolve_archive(log_dir, basename, date):
+    """Realpath of the archive `<basename>.<date>` inside log_dir, or None. Guards
+    traversal: `date` must be exactly YYYY-MM-DD, `basename` must carry no path
+    separators, and the resolved path must stay inside log_dir."""
+    if not date or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        return None
+    if not basename or "/" in basename or "\\" in basename or os.sep in basename:
+        return None
+    root = os.path.realpath(log_dir)
+    full = os.path.realpath(os.path.join(log_dir, f"{basename}.{date}"))
+    try:
+        inside = os.path.commonpath([root, full]) == root
+    except ValueError:
+        return None   # different drives on Windows
+    if not inside or not os.path.isfile(full):
+        return None
+    return full

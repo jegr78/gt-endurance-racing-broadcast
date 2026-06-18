@@ -99,6 +99,26 @@ def t_list_and_newest_log_order(tmp):
     assert lg.newest_log(os.path.join(tmp, "empty")) is None
 
 
+def t_archive_dates_lists_rotated(tmp):
+    d = os.path.join(tmp, "ad"); os.makedirs(d)
+    for n in ("relay.console.log", "relay.console.log.2026-06-17",
+              "relay.console.log.2026-06-16", "feed_A.log.2026-06-17", "junk.txt"):
+        open(os.path.join(d, n), "w").close()
+    assert lg.archive_dates(d, ["relay.console.log", "feed_A.log"]) == \
+        ["2026-06-17", "2026-06-16"]
+
+
+def t_resolve_archive_ok_and_guards(tmp):
+    d = os.path.join(tmp, "ra"); os.makedirs(d)
+    good = os.path.join(d, "relay.console.log.2026-06-17")
+    open(good, "w").close()
+    assert lg.resolve_archive(d, "relay.console.log", "2026-06-17") == os.path.realpath(good)
+    assert lg.resolve_archive(d, "relay.console.log", "2026-06-18") is None   # no file
+    assert lg.resolve_archive(d, "relay.console.log", "../../etc/passwd") is None
+    assert lg.resolve_archive(d, "../relay.console.log", "2026-06-17") is None
+    assert lg.resolve_archive(d, "relay.console.log", "2026-13-99x") is None   # bad date shape
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp:
         for name, fn in sorted(globals().items()):
