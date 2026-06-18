@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.8.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.7.0...v0.8.0) (2026-06-18)
+
+
+### Features
+
+* **cockpit:** Commentator Cockpit — talent monitor, tally, chat & timer ([#191](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/191)) ([75dafc6](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/75dafc6c000ceb884804f4cb2150825835e4c3eb))
+* **cockpit:** commentator stream-link submission with director approval ([#202](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/202)) ([c429bfe](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c429bfeda9285b64801e81f94fb5f923cfeb23de)), closes [#193](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/193)
+* **cockpit:** Discord note (no [@here](https://github.com/here)) when a stream link is approved ([#205](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/205)) ([c9cf02d](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c9cf02db92f410416a7476680549236103fa4ef9))
+* **cockpit:** zero-config — remove the enable flag, auto-provision the secret ([#215](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/215)) ([07db52b](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/07db52b89121308078f2e7f21623fc153120e9e5))
+* **e2e:** drive the harness against the frozen binary (binary-only bug guard) ([#212](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/212)) ([f9da5f5](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/f9da5f5b098db99bdab918007a56eea73d0b2842))
+* **e2e:** e2e/regression harness — drive relay + cockpit + Control Center headlessly ([#208](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/208)) ([007fa33](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/007fa332ab6147d045b57790db3dc72a718b7667))
+* free-text event title across Director Panel, Cockpit & Discord ([#209](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/209)) ([c97b63c](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c97b63c29c07d13e35c7129ec1ac615661b491ca)), closes [#207](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/207)
+* **logs:** timestamps, daily rotation + 7-day cleanup, archive browsing, OBS/Companion/Tailscale sources, and an aggregated live view ([#217](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/217)) ([3b4626e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/3b4626e1f3f66da06911413f54895e1894b6ddb0))
+* **ui:** "Copy internal link" option in the Control Center Cockpit view ([#213](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/213)) ([106bed1](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/106bed131f66b98683d481cb507da2d0c029692b))
+* **ui:** editable event title on the Control Center Home view ([#207](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/207)) ([#210](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/210)) ([da02a74](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/da02a7490bff2ab226df4a2e1722deb4b7e8711b))
+
+
+### Bug Fixes
+
+* **binary:** bundle src/cockpit/ so /cockpit loads in frozen builds ([#211](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/211)) ([035cb26](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/035cb268f94c233229b85a5f0c9e2127302204ad))
+* **cockpit:** tear down the funnel with `funnel reset` ([#201](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/201)) ([7c2806a](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/7c2806abbd49ee364b8e21b8ca6e6a127fe816e9)), closes [#200](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/200)
+* **logs:** close tail_merged handles via `with open()` (CodeQL py/file-not-closed) ([#220](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/220)) ([8337557](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/8337557c04775d9f921e2e8c226fe135fca897f3))
+* **logs:** resolve CodeQL alerts from [#217](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/217)'s tail_merged + close the gate gap ([#219](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/219)) ([c45abf7](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c45abf7c65f284347b4f7bc72aae30fcfffabd7d))
+* **panel:** clear only the URL in the schedule editor, keeping streamer + stint ([#203](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/203)) ([ec6fe42](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/ec6fe4298f89552a583a35775a9b1bb5dbbeb493))
+* **security:** resolve open code-scanning alerts + add procedure-return lint guard ([#204](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/204)) ([1945134](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/1945134e4f8523237f738262498cc7b9916017ce))
+
 ## [0.7.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.6.0...v0.7.0) (2026-06-16)
 
 
