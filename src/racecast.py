@@ -575,6 +575,101 @@ def _append_tailscale_snapshot():
     except Exception:  # noqa: BLE001
         pass
 
+
+def _relay_feed_logs():
+    """The relay's per-feed logs (feed_A/B/POV.log) under the profile logs dir."""
+    d = os.path.join(_runtime_dir(), "logs")
+    return sorted(glob.glob(os.path.join(d, "feed_*.log")))
+
+def _relay_files():
+    files = [_relay_log_path()] + _relay_feed_logs()
+    return [f for f in files if os.path.exists(f)]
+
+def _streams_files():
+    d = os.path.join(_streams_static_dir(), "logs")
+    return sorted(glob.glob(os.path.join(d, "feed_*.log")))
+
+def _obs_files():
+    import logsetup
+    d = logsetup.obs_log_dir(sys.platform)
+    newest = logsetup.newest_log(d)
+    return [newest] if newest else []
+
+def _companion_files():
+    p = _companion_log_path()
+    return [p] if p else []
+
+def _tailscale_files():
+    p = _tailscale_snapshot_path()
+    return [p] if os.path.exists(p) else []
+
+def _read_dated(dirpath, files, date):
+    """Concatenate the rotated archives for `date` across a racecast source's files,
+    each line source-prefixed. Empty string if none / bad date (guarded by
+    resolve_archive)."""
+    import logsetup
+    chunks = []
+    for f in files:
+        arch = logsetup.resolve_archive(dirpath, os.path.basename(f), date)
+        if arch:
+            with open(arch, encoding="utf-8", errors="replace") as fh:
+                label = os.path.basename(f).split(".log")[0]
+                chunks += [f"[{label}] {ln.rstrip(chr(10))}" for ln in fh]
+    return "\n".join(chunks)
+
+def _read_named(dirpath, token):
+    """Read one external log file by basename, guarded to dirpath. None if invalid."""
+    if not token or "/" in token or "\\" in token or os.sep in token or ".." in token:
+        return None
+    root = os.path.realpath(dirpath)
+    full = os.path.realpath(os.path.join(dirpath, token))
+    try:
+        if os.path.commonpath([root, full]) != root or not os.path.isfile(full):
+            return None
+    except ValueError:
+        return None
+    with open(full, encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+def _log_sources():
+    """Registry: source name -> {files, dir, archives, read}. Archives are opaque
+    TOKENS: racecast sources use rotation dates (YYYY-MM-DD); external apps
+    (obs/companion) use the older filenames in their dir (they do not follow our
+    rotation naming). `read(token)` resolves a token to text per source. The UI and
+    CLI both consume this registry."""
+    relay_dir = os.path.join(_runtime_dir(), "logs")
+    streams_dir = os.path.join(_streams_static_dir(), "logs")
+    import logsetup
+    def rc_src(files_fn, dirpath):
+        return {"files": files_fn, "dir": dirpath,
+                "archives": (lambda: logsetup.archive_dates(
+                    dirpath, [os.path.basename(f) for f in files_fn()])),
+                "read": (lambda tok: _read_dated(dirpath, files_fn(), tok))}
+    def ext_src(files_fn, dirpath):
+        def archives():
+            cur = set(os.path.basename(f) for f in files_fn())   # exclude the live/newest
+            return [os.path.basename(f) for f in logsetup.list_logs(dirpath)
+                    if os.path.basename(f) not in cur]
+        return {"files": files_fn, "dir": dirpath, "archives": archives,
+                "read": (lambda tok: _read_named(dirpath, tok))}
+    reg = {
+        "relay": rc_src(_relay_files, relay_dir),
+        "streams": rc_src(_streams_files, streams_dir),
+        "tailscale": rc_src(_tailscale_files, relay_dir),
+        "obs": ext_src(_obs_files, logsetup.obs_log_dir(sys.platform)),
+        "companion": ext_src(_companion_files,
+                             os.path.dirname(_companion_log_path() or "") or "."),
+    }
+    def _agg_files():
+        out = []
+        for n in ("relay", "streams", "obs", "companion", "tailscale"):
+            out += reg[n]["files"]()
+        return out
+    reg["aggregate"] = {"files": _agg_files, "dir": relay_dir,
+                        "archives": (lambda: []),       # aggregate is live-only
+                        "read": (lambda _tok: "")}
+    return reg
+
 def _cookies_path():
     """The YouTube cookie jar -- SHARED across leagues, at the un-scoped runtime/
     root. Canonical name is yt-cookies.txt; a legacy cookies.txt is migrated once."""
@@ -4565,9 +4660,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
                                              _rc_job_executable(),
                                              os.path.join(HERE, "racecast.py")),
             env=_frozen_child_env()),
-        "log_paths": {"relay": _relay_log_path,
-                      "companion": _companion_log_path,
-                      "streams": _latest_stream_log},
+        "log_sources": _log_sources(),
     }
     try:
         httpd = srv.serve(ctx, "127.0.0.1", port)

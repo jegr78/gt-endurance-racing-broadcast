@@ -2129,6 +2129,21 @@ def t_ensure_active_cockpit_secret_respects_existing_env():
     _with_cockpit_secret_env_cleared(body)
 
 
+def t_log_sources_registry_shape():
+    src = m._log_sources()
+    assert set(["relay", "streams", "obs", "companion", "tailscale", "aggregate"]) <= set(src)
+    for _name, spec in src.items():
+        assert callable(spec["files"])          # () -> list[path]
+        assert callable(spec["archives"])       # () -> list[token]
+        assert callable(spec["read"])           # (token) -> text
+    # aggregate's file set is the union of the individual sources
+    agg = set(src["aggregate"]["files"]())
+    parts = set()
+    for n in ("relay", "streams", "obs", "companion", "tailscale"):
+        parts |= set(src[n]["files"]())
+    assert agg == parts
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
