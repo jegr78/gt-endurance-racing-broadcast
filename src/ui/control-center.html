@@ -991,7 +991,7 @@ let jobES = null, logES = null;
 
 let setupLoaded = false, preflightRun = false, assetsLoaded = false,
     settingsLoaded = false, streamsLoaded = false, docsLoaded = false,
-    wizardLoaded = false, profilesLoaded = false;
+    wizardLoaded = false, profilesLoaded = false, logsLoaded = false;
 // op name -> last job exit code (string) run from the wizard. Lets a step that
 // has no persistent "done" state (preflight) — or a failed job — show its real
 // outcome instead of a misleading "pending".
@@ -1020,7 +1020,10 @@ function showView(name) {
   if (name === 'preflight') loadSpeedtest();
   if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
   if (name === 'cockpit') loadCockpit();   // reload each visit: reflects toggles/links
-  if (name === 'logs' && !logES) onLogSourceChange();  // default "All (live)" on first open
+  // First open only: start the default "All (live)" stream. Guarded by a dedicated
+  // flag (not !logES) so returning to Logs after picking an archive — where logES is
+  // null because archives use fetch, not SSE — does not silently clobber the selection.
+  if (name === 'logs' && !logsLoaded) { logsLoaded = true; onLogSourceChange(); }
   if (name === 'streams' && !streamsLoaded) { streamsLoaded = true; loadStreams(); }
   if (name === 'help' && !docsLoaded) { docsLoaded = true; fetchDocs(); }
   // preview list (opt-in) lives in Help — load it lazily on each visit so a
