@@ -7,6 +7,7 @@
   racecast relay     start|stop|restart|status|logs|run|open-panel|open-hud|open-status
   racecast companion start|stop|restart|status|logs|enable-control|open-tablet|open-admin
   racecast streams   start|stop|restart|status|logs
+  racecast <svc> logs [-f] [--list] [--archive YYYY-MM-DD]   # tail merged live logs; --list archives; --archive reads one (svc: relay|streams|companion|obs|tailscale)
   racecast event     status|start|stop      # event-day readiness: check / bring-up / wind-down
   racecast event start --stint N             # takeover: stint N is on air now — the relay starts there
   racecast event start --qualifying          # bring up in qualifying mode (Feed A serves the Qualifying tab)
@@ -15,6 +16,7 @@
   racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
   racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD incl. timer)
   racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
+  racecast obs logs | tailscale logs         # tail OBS's log dir / the Tailscale status-snapshot log (same -f/--list/--archive flags)
   racecast sheet     url | open              # print / open the active league's Google Sheet (built from its SHEET_ID)
   racecast app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
   racecast status                            # aggregate health of all services
@@ -787,8 +789,8 @@ EXTRA_VERBS = {
 HIDDEN_VERBS = {"streams": ("run-feed",)}
 ONESHOTS = ("preflight", "speedtest", "cookies", "graphics", "media", "setup", "install-tools", "install-apps", "obs-browser", "update")
 EVENT_VERBS = ("status", "start", "stop", "takeover")
-TAILSCALE_VERBS = ("up", "down", "status")
-OBS_VERBS = ("refresh", "collection")
+TAILSCALE_VERBS = ("up", "down", "status", "logs")
+OBS_VERBS = ("refresh", "collection", "logs")
 SHEET_VERBS = ("url", "open")           # active league's Google Sheet (from SHEET_ID)
 APP_VERBS = ("launch", "quit")          # GUI app control for the Control Center
 APP_CONTROLLED = ("obs", "discord", "tailscale")   # GUI apps racecast can launch + quit
@@ -1638,8 +1640,25 @@ def relay_status(rest):
     extra = _relay_extra_text(d, _tailscale_ip()) if d["alive"] else ""
     print(sv.status_line("relay", d["pid"], d["alive"], extra))
 
-def relay_logs(rest):
-    sv.tail(_relay_log_path(), follow=("-f" in rest or "--follow" in rest))
+def _logs_cmd(source_name, rest):
+    """Shared `<service> logs` handler over the _log_sources() registry. Supports
+    `--list` (archive tokens), `--archive TOKEN` (read one archive), and a live
+    merged tail of the source's files (-f/--follow to follow)."""
+    src = _log_sources().get(source_name)
+    if src is None:
+        print(f"(unknown log source: {source_name})"); return
+    if "--list" in rest:
+        toks = src["archives"]()
+        print("\n".join(toks) if toks else "(no archives)")
+        return
+    if "--archive" in rest:
+        tok = rest[rest.index("--archive") + 1]
+        text = src["read"](tok)
+        print(text if text else f"(no archive '{tok}')")
+        return
+    sv.tail_merged(src["files"](), follow=("-f" in rest or "--follow" in rest))
+
+def relay_logs(rest):      _logs_cmd("relay", rest)
 
 def relay_run(rest):
     _ensure_active_cockpit_secret()   # zero-config cockpit: provision + inject the secret
@@ -1855,12 +1874,9 @@ def _companion_log_path():
         return None
 
 
-def companion_logs(rest):
-    path = _companion_log_path()
-    if not path:
-        print("(no Companion logs found)")
-        return
-    sv.tail(path, follow=("-f" in rest or "--follow" in rest))
+def companion_logs(rest):  _logs_cmd("companion", rest)
+def obs_logs(rest):        _logs_cmd("obs", rest)
+def tailscale_logs(rest):  _logs_cmd("tailscale", rest)
 
 
 def _streams_static_dir():
@@ -1909,19 +1925,7 @@ def streams_status(rest):
         print(sv.status_line("streams:" + f["label"], f["pid"], f["alive"]))
 
 
-def _latest_stream_log():
-    """Newest static-feed log file, or None."""
-    logs = sorted(glob.glob(os.path.join(_streams_static_dir(), "logs", "feed_*.log")),
-                  key=os.path.getmtime)
-    return logs[-1] if logs else None
-
-
-def streams_logs(rest):
-    path = _latest_stream_log()
-    if not path:
-        print(f"(no stream logs under {os.path.join(_streams_static_dir(), 'logs')})")
-        return
-    sv.tail(path, follow=("-f" in rest or "--follow" in rest))
+def streams_logs(rest):    _logs_cmd("streams", rest)
 
 
 def _http_url(host, port, path):
@@ -2581,6 +2585,7 @@ DISPATCH = {
     ("tailscale", "up"): tailscale_up_cmd, ("tailscale", "down"): tailscale_down_cmd,
     ("tailscale", "status"): tailscale_status_cmd,
     ("obs", "refresh"): obs_refresh_cmd, ("obs", "collection"): obs_collection_cmd,
+    ("obs", "logs"): obs_logs, ("tailscale", "logs"): tailscale_logs,
     ("sheet", "url"): sheet_url_cmd, ("sheet", "open"): sheet_open_cmd,
     ("app", "launch"): app_launch_cmd, ("app", "quit"): app_quit_cmd,
 }

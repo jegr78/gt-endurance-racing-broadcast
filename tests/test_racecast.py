@@ -2144,6 +2144,11 @@ def t_log_sources_registry_shape():
     assert agg == parts
 
 
+def t_dispatch_has_obs_and_tailscale_logs():
+    assert ("obs", "logs") in m.DISPATCH
+    assert ("tailscale", "logs") in m.DISPATCH
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

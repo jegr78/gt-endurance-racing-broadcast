@@ -284,3 +284,42 @@ def tail(log_path, follow=False, lines=40):
                     time.sleep(0.3)
         except KeyboardInterrupt:
             pass
+
+
+def tail_merged(paths, follow=False, lines=40, label_of=None):
+    """Tail several files into one stream, each line prefixed with its source
+    (`[basename] line`). Non-follow: print the last `lines` of each file, source
+    order. Follow: poll all files and emit new lines as they arrive (arrival order).
+    `label_of(path) -> str` overrides the source label (default: basename w/o .log)."""
+    paths = [p for p in paths if p and os.path.exists(p)]
+    if not paths:
+        print("(no log yet)")
+        return
+    def lbl(p):
+        return label_of(p) if label_of else os.path.basename(p).split(".log")[0]
+    handles = []
+    for p in paths:
+        fh = open(p, encoding="utf-8", errors="replace")  # noqa: SIM115
+        for line in fh.readlines()[-lines:]:
+            sys.stdout.write(f"[{lbl(p)}] {line.rstrip(chr(10))}\n")
+        handles.append((fh, p))
+    if not follow:
+        for fh, _ in handles:
+            fh.close()
+        return
+    try:
+        while True:
+            quiet = True
+            for fh, p in handles:
+                line = fh.readline()
+                if line:
+                    sys.stdout.write(f"[{lbl(p)}] {line.rstrip(chr(10))}\n")
+                    sys.stdout.flush()
+                    quiet = False
+            if quiet:
+                time.sleep(0.3)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        for fh, _ in handles:
+            fh.close()

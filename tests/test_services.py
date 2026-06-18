@@ -188,6 +188,20 @@ def t_start_detached_uses_boot_log_when_given(tmp):
         assert "boom" in fh.read()
 
 
+def t_tail_merged_prefixes_sources(tmp):
+    import io, contextlib
+    a = os.path.join(tmp, "feed_A.log"); b = os.path.join(tmp, "feed_B.log")
+    with open(a, "w", encoding="utf-8") as fh:
+        fh.write("a-line\n")
+    with open(b, "w", encoding="utf-8") as fh:
+        fh.write("b-line\n")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        sv.tail_merged([a, b], follow=False, lines=10)
+    out = buf.getvalue()
+    assert "[feed_A] a-line" in out and "[feed_B] b-line" in out
+
+
 def t_stop_commands_per_os():
     assert sv.stop_commands("posix", 123, force=False) is None
     assert sv.stop_commands("posix", 123, force=True) is None
