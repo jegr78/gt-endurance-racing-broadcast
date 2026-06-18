@@ -202,6 +202,20 @@ def t_tail_merged_prefixes_sources(tmp):
     assert "[feed_A] a-line" in out and "[feed_B] b-line" in out
 
 
+def t_tail_merged_honors_lines_limit(tmp):
+    import io, contextlib
+    a = os.path.join(tmp, "feed_A.log")
+    with open(a, "w", encoding="utf-8") as fh:
+        fh.write("".join(f"line-{i}\n" for i in range(10)))
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        sv.tail_merged([a], follow=False, lines=3)
+    out = buf.getvalue()
+    assert "line-6" not in out                       # trimmed to the last 3
+    assert out.count("[feed_A]") == 3
+    assert "[feed_A] line-7" in out and "[feed_A] line-9" in out
+
+
 def t_stop_commands_per_os():
     assert sv.stop_commands("posix", 123, force=False) is None
     assert sv.stop_commands("posix", 123, force=True) is None

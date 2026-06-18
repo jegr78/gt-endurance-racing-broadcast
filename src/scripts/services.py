@@ -1,7 +1,7 @@
 """Manage spawned background services (relay, streams) via a PID file + log file.
 Pure decision logic (read_pid, pid_alive, status_line) is separated from process
 side effects (start_detached, stop_pid, tail) so it unit-tests without spawning."""
-import contextlib, os, signal, subprocess, sys, time
+import os, signal, subprocess, sys, time
 
 
 def read_pid(pid_path):
@@ -297,25 +297,33 @@ def tail_merged(paths, follow=False, lines=40, label_of=None):
         return
     def lbl(p):
         return label_of(p) if label_of else os.path.basename(p).split(".log")[0]
-    with contextlib.ExitStack() as stack:   # closes every handle on any exit path
-        handles = []
-        for p in paths:
-            fh = stack.enter_context(open(p, encoding="utf-8", errors="replace"))
-            handles.append((fh, p))
-            for line in fh.readlines()[-lines:]:
-                sys.stdout.write(f"[{lbl(p)}] {line.rstrip(chr(10))}\n")
-        if not follow:
-            return
-        try:
-            while True:
-                quiet = True
-                for fh, p in handles:
-                    line = fh.readline()
-                    if line:
-                        sys.stdout.write(f"[{lbl(p)}] {line.rstrip(chr(10))}\n")
-                        sys.stdout.flush()
-                        quiet = False
-                if quiet:
-                    time.sleep(0.3)
-        except KeyboardInterrupt:
-            pass  # Ctrl+C ends an interactive tail cleanly
+    # Re-open per read inside a `with` block, tracking a byte offset per file.
+    # CodeQL's py/file-not-closed cannot trace a close through a handle list OR
+    # through contextlib.ExitStack (#217 alert 124/126), so a `with open()` is the
+    # only pattern it accepts as definitely-closed — and it suits a merged tail fine.
+    pos = {}
+    for p in paths:
+        with open(p, "rb") as fh:
+            data = fh.read()
+            pos[p] = fh.tell()
+        for line in data.decode("utf-8", "replace").splitlines()[-lines:]:
+            sys.stdout.write(f"[{lbl(p)}] {line}\n")
+    if not follow:
+        return
+    try:
+        while True:
+            quiet = True
+            for p in paths:
+                with open(p, "rb") as fh:
+                    fh.seek(pos[p])
+                    chunk = fh.read()
+                    pos[p] = fh.tell()
+                if chunk:
+                    for line in chunk.decode("utf-8", "replace").splitlines():
+                        sys.stdout.write(f"[{lbl(p)}] {line}\n")
+                    sys.stdout.flush()
+                    quiet = False
+            if quiet:
+                time.sleep(0.3)
+    except KeyboardInterrupt:
+        pass  # Ctrl+C ends an interactive tail cleanly
