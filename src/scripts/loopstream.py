@@ -107,15 +107,14 @@ def serve_once(url, port, platform="youtube", twitch_token=None, call=subprocess
     logger is given, streamlink's output is pumped through it (timestamps + levels +
     [streamlink] tag); otherwise it inherits stdout (legacy/standalone use).
     `call` is an injectable seam for the unit test (used only in the no-logger path)."""
-    import logsetup
-    if logger is None:
+    if logger is None:   # legacy/standalone path stays dependency-free (no logsetup import)
         return call(streamlink_argv(url, port, platform, twitch_token),
                     env=external_tool_env(), **no_window_kwargs())
+    import logsetup, threading
     proc = subprocess.Popen(streamlink_argv(url, port, platform, twitch_token),
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, encoding="utf-8", errors="replace",
                             env=external_tool_env(), **no_window_kwargs())
-    import threading
     threading.Thread(target=logsetup.pump_subprocess,
                      args=(proc.stdout, logger, "streamlink"), daemon=True).start()
     return proc.wait()
