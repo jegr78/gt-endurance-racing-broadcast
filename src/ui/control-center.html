@@ -388,6 +388,8 @@
   .updwarn { color: #FCD34D; background: rgba(245,158,11,.1);
            border: 1px solid rgba(245,158,11,.32); border-radius: 8px; padding: 9px 13px; }
   .updactions { display:flex; align-items:center; gap:10px; }
+  /* generic confirm/alert modal body — preserves the \n line breaks some messages carry */
+  .cmodal-body { font-size:13px; line-height:1.55; margin:8px 0 16px; white-space:pre-line; }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
   button.primary:hover { background: color-mix(in srgb, var(--accent) 82%, #000); border-color: color-mix(in srgb, var(--accent) 82%, #000); }
   .prevsec { margin-top: 24px; }
@@ -1620,8 +1622,8 @@ async function runWizardAction(key) {
     r = await (await fetch('/api/init/step/' + encodeURIComponent(key),
         {method: 'POST', headers: {'Content-Type': 'application/json'},
          body: '{}'})).json();
-  } catch (e) { alert('Control Center not reachable.'); return; }
-  if (!r.ok) { alert(r.error); return; }
+  } catch (e) { alertModal('Control Center not reachable.'); return; }
+  if (!r.ok) { alertModal(r.error); return; }
   fetchWizard();
 }
 
@@ -1640,14 +1642,14 @@ const CONFIRM_TEXT = {
 };
 
 async function op(name, confirmFirst, params) {
-  if (confirmFirst && !confirm(CONFIRM_TEXT[name] || ('Run ' + name + '?'))) return;
+  if (confirmFirst && !(await confirmModal(CONFIRM_TEXT[name] || ('Run ' + name + '?')))) return;
   let r;
   try {
     r = await (await fetch('/api/op/' + name, {method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({params: params || {}})})).json();
-  } catch (e) { alert('Control Center not reachable.'); return; }
-  if (!r.ok) { alert(r.error); return; }
+  } catch (e) { alertModal('Control Center not reachable.'); return; }
+  if (!r.ok) { alertModal(r.error); return; }
   watchJob(name, r.job_id);
 }
 
@@ -1658,7 +1660,7 @@ function opEventStart() {
 
 function opTakeover() {
   const host = $('takeover-host').value;
-  if (!host) { alert('Pick the producer to take over from (Tailscale device).'); return; }
+  if (!host) { alertModal('Pick the producer to take over from (Tailscale device).'); return; }
   const v = $('stint').value.trim();
   const params = v ? {ip: host, stint: v} : {ip: host};
   op('event-takeover', true, params);
@@ -1725,7 +1727,7 @@ function watchJob(name, id, onDone) {
     // enough (an "already up to date" run also exits 0). The updater prints
     // "updated to <tag>" only after it replaces the binary.
     if (name === 'update' && ok && $('joblog').textContent.indexOf('updated to ') >= 0) {
-      alert('Update installed. Quit and reopen the Control Center to use the new version.');
+      alertModal('Update installed. Quit and reopen the Control Center to use the new version.');
     }
     if (onDone) onDone(e.data);          // resolve runOpAndWait() with the exit code
   });
@@ -1790,7 +1792,7 @@ async function checkAssets() {
 const APP_LABEL = {obs: 'OBS', companion: 'Companion',
                    tailscale: 'Tailscale', discord: 'Discord'};
 // app-specific actions live on the app's own row (each an array of buttons).
-// confirm:true wraps the op in a confirm() dialog; danger:true styles it red.
+// confirm:true wraps the op in a confirmation dialog; danger:true styles it red.
 const APP_ACTION = {
   obs: [{label: 'Start', op: 'obs-start'},
         {label: 'Stop', op: 'obs-stop', danger: true, confirm: true},
@@ -2153,7 +2155,7 @@ function addSettingsRow() { addEnvEditorRow('envrows'); }
 function collectSettings() { return collectEnvEditor('envrows'); }
 
 async function loadSettings(force) {
-  if (force && !confirm('Reload from disk and discard any unsaved edits?')) return;
+  if (force && !(await confirmModal('Reload from disk and discard any unsaved edits?'))) return;
   $('env-err').hidden = true;
   loadFontLibrary();                       // machine-wide overlay font library
   let d;
@@ -2238,7 +2240,7 @@ async function downloadCustomFont() {
 }
 
 async function deleteLibFont(name) {
-  if (!confirm('Remove "' + name.replace(/\.[^.]+$/, '') + '" from the font library?')) return;
+  if (!(await confirmModal('Remove "' + name.replace(/\.[^.]+$/, '') + '" from the font library?'))) return;
   $('font-err').hidden = true;
   let d;
   try {
@@ -2251,7 +2253,7 @@ async function deleteLibFont(name) {
 }
 
 async function saveSettings() {
-  if (!confirm('Save these settings to .env?')) return;
+  if (!(await confirmModal('Save these settings to .env?'))) return;
   $('env-err').hidden = true;
   const b = $('env-save');
   b.disabled = true;                     // block re-entry through the feedback window
@@ -2341,7 +2343,7 @@ async function toggleFunnelAuto() {
   if (!r.ok) showProfileErr('cp-err', r.error || 'could not save the setting');
 }
 async function revokeCockpit(streamer) {
-  if (!confirm('Revoke ' + streamer + "'s current link?")) return;
+  if (!(await confirmModal('Revoke ' + streamer + "'s current link?"))) return;
   $('cp-err').hidden = true;
   const r = await (await fetch('/api/cockpit/revoke', {method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -2496,7 +2498,7 @@ async function importProfile(input, force) {
   if (!d.ok) {
     // Name collision -> offer to replace with force=1 (re-uses the same file).
     if (/exists/i.test(d.error || '') && !force) {
-      if (confirm('A profile with that name exists. Replace it?')) {
+      if (await confirmModal('A profile with that name exists. Replace it?')) {
         return importProfile(input, true);
       }
       input.value = ''; return;
@@ -2505,7 +2507,7 @@ async function importProfile(input, force) {
     input.value = ''; return;
   }
   input.value = '';
-  if (confirm('Imported "' + d.display + '". Switch to it now?')) {
+  if (await confirmModal('Imported "' + d.display + '". Switch to it now?')) {
     // Best-effort: a failed switch must not stop the list from refreshing.
     try {
       await fetch('/api/profile/use', {method: 'POST',
@@ -2544,7 +2546,7 @@ function offerRestart() {
 
 // profile.env editor — mirrors the machine-.env editor, on #penvrows.
 async function loadProfileEnv(force) {
-  if (force && !confirm('Reload from disk and discard any unsaved edits?')) return;
+  if (force && !(await confirmModal('Reload from disk and discard any unsaved edits?'))) return;
   let d;
   try { d = await (await fetch('/api/profile/env', {cache: 'no-store'})).json(); }
   catch (e) { showProfileErr('penv-err', 'Control Center not reachable.');
@@ -2577,7 +2579,7 @@ function openActiveSheet() {
 }
 
 async function saveProfileEnv() {
-  if (!confirm('Save these settings to the active profile.env?')) return;
+  if (!(await confirmModal('Save these settings to the active profile.env?'))) return;
   $('penv-err').hidden = true;
   const b = $('penv-save');
   b.disabled = true;
@@ -3338,7 +3340,7 @@ async function createBackup() {
 }
 
 async function restoreBackup(slug, label) {
-  if (!confirm('Restore this look?\n\n"' + label + '"\n\nThis overwrites the current overlay, graphics and media.')) return;
+  if (!(await confirmModal('Restore this look?\n\n"' + label + '"\n\nThis overwrites the current overlay, graphics and media.'))) return;
   $('backup-err').hidden = true;
   let d;
   try {
@@ -3354,7 +3356,7 @@ async function restoreBackup(slug, label) {
 }
 
 async function deleteBackup(slug, label) {
-  if (!confirm('Delete backup "' + label + '"? This cannot be undone.')) return;
+  if (!(await confirmModal('Delete backup "' + label + '"? This cannot be undone.'))) return;
   $('backup-err').hidden = true;
   let d;
   try {
@@ -3413,7 +3415,7 @@ function collectStreams() {
 }
 
 async function loadStreams(force) {
-  if (force && !confirm('Reload from disk and discard any unsaved edits?')) return;
+  if (force && !(await confirmModal('Reload from disk and discard any unsaved edits?'))) return;
   $('streams-err').hidden = true;
   let d;
   try { d = await (await fetch('/api/streams', {cache: 'no-store'})).json(); }
@@ -3426,7 +3428,7 @@ async function loadStreams(force) {
 }
 
 async function saveStreams() {
-  if (!confirm('Save the feed list to streams.json?')) return;
+  if (!(await confirmModal('Save the feed list to streams.json?'))) return;
   $('streams-err').hidden = true;
   const b = $('feeds-save');
   b.disabled = true;
@@ -3531,6 +3533,38 @@ function watchLog(name) {
   };
 }
 
+// Custom replacements for the native confirm()/alert() — promise-based and styled
+// like the rest of the Control Center modals (#221 quit dialog pattern), backed by
+// one reusable <dialog id="cmodal">. confirmModal() resolves true (OK) / false
+// (Cancel or ESC); alertModal() hides Cancel and resolves when dismissed. The
+// <form method="dialog"> closes with the clicked button's value, so a single
+// 'close' listener covers buttons + ESC (returnValue '' -> false). Wired lazily on
+// first use because the dialog markup is parsed after this script block.
+let cmodalResolve = null, cmodalWired = false;
+function customModal(opts) {
+  const dlg = $('cmodal');
+  if (!cmodalWired) {
+    dlg.addEventListener('close', () => {
+      if (!cmodalResolve) return;
+      const r = cmodalResolve; cmodalResolve = null;
+      r(dlg.returnValue === 'ok');
+    });
+    cmodalWired = true;
+  }
+  return new Promise(resolve => {
+    if (cmodalResolve) { const prev = cmodalResolve; cmodalResolve = null; prev(false); }
+    cmodalResolve = resolve;
+    $('cmodal-title').textContent = opts.title || (opts.isAlert ? 'Notice' : 'Please confirm');
+    $('cmodal-body').textContent = opts.body || '';
+    $('cmodal-ok').textContent = opts.okLabel || 'OK';
+    $('cmodal-cancel').hidden = !!opts.isAlert;
+    dlg.returnValue = '';
+    dlg.showModal();
+  });
+}
+function confirmModal(body, opts) { return customModal({body, ...(opts || {})}); }
+function alertModal(body, opts) { return customModal({body, isAlert: true, ...(opts || {})}); }
+
 function quitUi() {
   // Default OFF on every open (no persistence) — quitting must never kill a live
   // broadcast unless the operator opts in this time.
@@ -3574,7 +3608,7 @@ async function quitConfirm() {
   try {
     code = await runOpAndWait('event-stop');
   } catch (e) {
-    alert(e.message || 'Could not start the event stop.');
+    alertModal(e.message || 'Could not start the event stop.');
     return;                                // dispatch failed — leave the CC open
   }
   if (code !== '0') return;                // failed: keep the CC open, error stays in the console
@@ -3619,6 +3653,16 @@ assetsLoaded = true; fetchAssetFiles();
     <button id="quitcancel" onclick="closeQuitModal()" autofocus>Cancel</button>
     <button class="primary" id="quitgo" onclick="quitConfirm()">Quit</button>
   </div>
+</dialog>
+
+<dialog id="cmodal" class="updmodal">
+  <h3 id="cmodal-title"></h3>
+  <p id="cmodal-body" class="cmodal-body"></p>
+  <form method="dialog" class="updactions">
+    <span style="flex:1"></span>
+    <button id="cmodal-cancel" value="cancel">Cancel</button>
+    <button class="primary" id="cmodal-ok" value="ok" autofocus>OK</button>
+  </form>
 </dialog>
 </body>
 </html>
