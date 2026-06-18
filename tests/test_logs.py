@@ -55,6 +55,32 @@ def t_prune_missing_dir_is_noop():
     assert lg.prune_old_logs("/no/such/dir/xyz", keep_days=7, now_ts=1) == []
 
 
+def t_classify_subproc_line_levels():
+    assert lg.classify_subproc_line("HTTP 403 Forbidden") == logging.ERROR
+    assert lg.classify_subproc_line("Traceback (most recent call last)") == logging.ERROR
+    assert lg.classify_subproc_line("Waiting for streams, retrying in 5s") == logging.WARNING
+    assert lg.classify_subproc_line("Opening stream: 1080p (hls)") == logging.INFO
+
+
+def t_tag_line_prefixes_and_strips_eol():
+    assert lg.tag_line("feed_A", "serving stint 3\n") == "[feed_A] serving stint 3"
+    assert lg.tag_line("relay", "x\r\n") == "[relay] x"
+
+
+def t_pump_subprocess_logs_each_line(tmp):
+    import io
+    path = os.path.join(tmp, "logs", "feed_A.log")
+    log = lg.configure_logging("test.pump", path, to_stdout=False)
+    stream = io.StringIO("Opening stream\nHTTP 403 Forbidden\n")
+    lg.pump_subprocess(stream, log, "streamlink")
+    for h in log.handlers:
+        h.flush()
+    with open(path, encoding="utf-8") as fh:
+        body = fh.read()
+    assert "INFO [streamlink] Opening stream" in body, body
+    assert "ERROR [streamlink] HTTP 403 Forbidden" in body, body
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp:
         for name, fn in sorted(globals().items()):

@@ -60,3 +60,39 @@ def prune_old_logs(log_dir, keep_days=DEFAULT_RETENTION_DAYS, now_ts=None):
         except OSError:
             pass  # file vanished between listdir and remove — skip it
     return sorted(removed)
+
+
+_ERROR_HINTS = ("error", "fatal", "forbidden", "403", "401", "traceback",
+                "exception", "failed", "denied", "could not", "no such")
+_WARN_HINTS = ("warn", "retry", "retrying", "unable", "timeout", "timed out",
+               "waiting for")
+
+
+def classify_subproc_line(line):
+    """Heuristic logging level for one pumped subprocess line."""
+    low = line.lower()
+    if any(h in low for h in _ERROR_HINTS):
+        return logging.ERROR
+    if any(h in low for h in _WARN_HINTS):
+        return logging.WARNING
+    return logging.INFO
+
+
+def tag_line(source, line):
+    """Prefix a single log line with its source tag for the merged view, stripping
+    the trailing newline/carriage-return."""
+    return f"[{source}] {line.rstrip(chr(10)).rstrip(chr(13))}"
+
+
+def pump_subprocess(stream, logger, tag):
+    """Read text lines from a subprocess pipe (stream) and log each at a classified
+    level, prefixed `[tag]`. Runs to EOF; swallows read errors. Designed to run in a
+    daemon thread so it never blocks daemon shutdown."""
+    try:
+        for raw in iter(stream.readline, ""):
+            if raw == "":
+                break
+            line = raw.rstrip("\n").rstrip("\r")
+            logger.log(classify_subproc_line(line), "[%s] %s", tag, line)
+    except (ValueError, OSError):
+        pass  # pipe closed mid-read — end the thread, never the daemon
