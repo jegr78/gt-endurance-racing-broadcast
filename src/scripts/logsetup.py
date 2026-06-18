@@ -9,6 +9,52 @@ from logging.handlers import TimedRotatingFileHandler
 DEFAULT_RETENTION_DAYS = 7
 
 
+class _ResilientTimedRotatingFileHandler(TimedRotatingFileHandler):
+    """A TimedRotatingFileHandler whose midnight rollover never drops a log
+    record. On Windows the rollover rename fails (PermissionError / WinError 32)
+    while another process holds the file open — the Control Center tails
+    relay.console.log and feed_*.log live, and Windows forbids renaming an open
+    file. The stock handler lets that exception escape emit(), so every line is
+    lost to stderr and NOTHING reaches the timestamped log. Here a failed
+    rollover re-opens the still-present base file (so the in-flight record is
+    written) and pushes the next attempt forward one interval (so we don't
+    re-attempt — and re-fail — on every subsequent emit). POSIX is unaffected: it
+    can rename an open file, so the rollover succeeds and this path never runs."""
+    def doRollover(self):
+        try:
+            super().doRollover()
+        except OSError:
+            if self.stream is None:
+                self.stream = self._open()
+            now = int(time.time())
+            while self.rolloverAt <= now:
+                self.rolloverAt += self.interval
+
+
+def read_new_lines(path, pos):
+    """Read whole lines appended to `path` since byte offset `pos`, returning
+    (lines, new_pos). RE-OPENS AND CLOSES the file each call so a concurrent
+    writer can rotate/rename it on Windows — a continuously-held read handle is
+    exactly what blocks the relay's midnight rollover. A half-written trailing
+    line (no terminating newline yet) is held back for the next poll. On
+    rotation/truncation (file now shorter than `pos`) it restarts from offset 0.
+    A missing/unreadable file yields ([], pos) so the caller just retries."""
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            if fh.tell() < pos:
+                pos = 0                  # rotated or truncated — re-read from top
+            fh.seek(pos)
+            data = fh.read()
+    except OSError:
+        return [], pos                   # vanished mid-rotation — retry next poll
+    nl = data.rfind(b"\n")
+    if nl == -1:
+        return [], pos                   # no complete line yet
+    consumed = data[:nl + 1]
+    return consumed.decode("utf-8", "replace").splitlines(), pos + len(consumed)
+
+
 def configure_logging(name, log_path, level=logging.INFO, to_stdout=None):
     """A logging.Logger writing timestamped, leveled lines to log_path with daily
     midnight rotation (archive suffix `.YYYY-MM-DD`). backupCount=0 -> the handler
@@ -23,8 +69,9 @@ def configure_logging(name, log_path, level=logging.INFO, to_stdout=None):
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s",
                             datefmt="%Y-%m-%d %H:%M:%S")
-    fh = TimedRotatingFileHandler(log_path, when="midnight", backupCount=0,
-                                  encoding="utf-8", delay=True)
+    fh = _ResilientTimedRotatingFileHandler(log_path, when="midnight",
+                                            backupCount=0, encoding="utf-8",
+                                            delay=True)
     fh.setFormatter(fmt)
     fh._racecast = True
     logger.addHandler(fh)

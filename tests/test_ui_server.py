@@ -5,6 +5,7 @@ import json, os, re, sys, tempfile, threading, time, urllib.error, urllib.reques
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))   # ui_server imports logsetup
 sys.path.insert(0, os.path.join(ROOT, "src", "ui"))
 import ui_jobs
 import ui_server as us
@@ -560,6 +561,37 @@ def t_log_file_rejects_traversal():
     try:
         code, _b = _get(port, "/api/logs/relay/file?token=../../etc/passwd")
         assert code == 400
+    finally:
+        httpd.shutdown()
+
+
+def t_log_stream_tails_appended_lines_via_reopen():
+    """The live log SSE stream seeds with history and then delivers lines
+    appended after the client connected — exercising the re-open-per-poll
+    follow() (logsetup.read_new_lines), which never holds the file open and so
+    cannot block the relay's midnight rotation/rename on Windows."""
+    tmp = tempfile.mkdtemp()
+    d = os.path.join(tmp, "logs")
+    os.makedirs(d)
+    logf = os.path.join(d, "relay.console.log")
+    with open(logf, "w", encoding="utf-8") as fh:
+        fh.write("seeded line one\n")
+    httpd, port = _serve(_ctx_with_sources(tmp))
+    try:
+        req = _urlopen(f"http://127.0.0.1:{port}/api/logs/relay/stream", timeout=10)
+        assert req.headers["Content-Type"] == "text/event-stream"
+        raw = b""
+        deadline = time.time() + 10
+        while b"seeded line one" not in raw and time.time() < deadline:
+            raw += req.read(1)                  # tiny reads — no buffering surprises
+        assert b"seeded line one" in raw, raw
+        # Append after the client is connected; the re-open poll must pick it up.
+        with open(logf, "a", encoding="utf-8") as fh:
+            fh.write("appended after connect\n")
+        while b"appended after connect" not in raw and time.time() < deadline:
+            raw += req.read(1)
+        req.close()
+        assert b"appended after connect" in raw, raw
     finally:
         httpd.shutdown()
 

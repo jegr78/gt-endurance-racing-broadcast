@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stdlib checks for the logging helper. Run: python3 tests/test_logs.py"""
-import logging, os, sys, tempfile
+import logging, os, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -35,6 +35,70 @@ def t_configure_logging_idempotent(tmp):
     n = len(a.handlers)
     b = lg.configure_logging("test.relay.c", path, to_stdout=False)
     assert a is b and len(b.handlers) == n   # no duplicate handlers
+
+
+def t_rotation_survives_locked_file_no_line_lost(tmp):
+    """Windows: a rollover whose rename fails because another process holds the
+    file open (the Control Center tails relay.console.log / feed_*.log live —
+    WinError 32) must NOT drop the log record. The handler keeps writing to the
+    base file and defers the rollover instead of letting the line escape to
+    stderr. Simulated by forcing a rollover and making rotate() raise."""
+    path = os.path.join(tmp, "logs", "rot.log")
+    log = lg.configure_logging("test.rotlock", path, to_stdout=False)
+    handler = next(h for h in log.handlers if getattr(h, "_racecast", False))
+    # Force the next emit to attempt a rollover, and make the rename fail the way
+    # Windows does when the file is held open by another process.
+    handler.rolloverAt = 1                       # in the past -> shouldRollover True
+    def boom(src, dst):
+        raise PermissionError(32, "The process cannot access the file")
+    handler.rotate = boom
+    log.warning("must survive the failed rollover")
+    for h in log.handlers:
+        h.flush()
+    with open(path, encoding="utf-8") as fh:
+        body = fh.read()
+    assert "WARNING must survive the failed rollover" in body, body   # line not lost
+    assert handler.rolloverAt > time.time(), handler.rolloverAt       # rollover deferred
+    # A second line still lands too (no per-emit re-attempt storm).
+    log.warning("second line still written")
+    for h in log.handlers:
+        h.flush()
+    with open(path, encoding="utf-8") as fh:
+        assert "second line still written" in fh.read()
+
+
+def t_read_new_lines_incremental_and_rotation(tmp):
+    """The re-open-per-poll tail reader: returns whole lines appended since the
+    last byte offset, holds back a half-written trailing line, and restarts from
+    the top when the file is rotated/truncated (so it never keeps the file open
+    and blocks the writer's rename on Windows)."""
+    p = os.path.join(tmp, "rnl.log")
+    with open(p, "wb") as fh:
+        fh.write(b"alpha\nbeta\n")
+    lines, pos = lg.read_new_lines(p, 0)
+    assert lines == ["alpha", "beta"] and pos == 11, (lines, pos)
+    # nothing new -> empty, offset unchanged
+    lines, pos2 = lg.read_new_lines(p, pos)
+    assert lines == [] and pos2 == pos, (lines, pos2)
+    # a full line + a partial (no trailing newline) -> only the full line
+    with open(p, "ab") as fh:
+        fh.write(b"gamma\npar")
+    lines, pos = lg.read_new_lines(p, pos)
+    assert lines == ["gamma"], lines
+    # completing the partial line delivers it whole
+    with open(p, "ab") as fh:
+        fh.write(b"tial\n")
+    lines, pos = lg.read_new_lines(p, pos)
+    assert lines == ["partial"], lines
+    # rotation/truncation: file replaced by a shorter one -> re-read from the top
+    with open(p, "wb") as fh:
+        fh.write(b"fresh\n")
+    lines, pos = lg.read_new_lines(p, pos)
+    assert lines == ["fresh"], lines
+
+
+def t_read_new_lines_missing_file(tmp):
+    assert lg.read_new_lines(os.path.join(tmp, "nope.log"), 0) == ([], 0)
 
 
 def t_prune_removes_only_old_files(tmp):

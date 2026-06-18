@@ -8,6 +8,8 @@ import json, os, queue, shutil, tempfile, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
+import logsetup   # re-open-per-poll log tailing (scripts/ on sys.path via racecast)
+
 APP_ID = "racecast-control-center"
 DEFAULT_PORT = 8089
 TAIL_LINES = 40          # how much history a log stream starts with
@@ -899,18 +901,27 @@ def make_handler(ctx):
                 except queue.Full:
                     pass  # consumer stalled — drop the line rather than grow unbounded
             def follow(path):
+                # Seed with the last TAIL_LINES of history, then poll for new
+                # lines by RE-OPENING the file each pass (logsetup.read_new_lines)
+                # — never holding it open. A continuously-held read handle blocks
+                # the relay's midnight rollover on Windows (rename of an open file
+                # fails), which silently breaks logging; see logsetup.read_new_lines.
+                pos = 0
                 try:
-                    with open(path, encoding="utf-8", errors="replace") as fh:
-                        for ln in fh.readlines()[-TAIL_LINES:]:
-                            emit((label_of(path), ln.rstrip("\r\n")))
-                        while not stop["v"]:
-                            ln = fh.readline()
-                            if ln:
-                                emit((label_of(path), ln.rstrip("\r\n")))
-                            else:
-                                time.sleep(0.4)
+                    with open(path, "rb") as fh:
+                        data = fh.read()
+                        pos = fh.tell()
+                    for ln in data.decode("utf-8", "replace").splitlines()[-TAIL_LINES:]:
+                        emit((label_of(path), ln))
                 except OSError:
-                    pass  # file vanished/rotated/unreadable — this reader just stops
+                    pos = 0  # not there yet — start from the top once it appears
+                while not stop["v"]:
+                    lines, pos = logsetup.read_new_lines(path, pos)
+                    if lines:
+                        for ln in lines:
+                            emit((label_of(path), ln))
+                    else:
+                        time.sleep(0.4)
             for p in files:
                 threading.Thread(target=follow, args=(p,), daemon=True).start()
             return q, stop
@@ -928,9 +939,9 @@ def make_handler(ctx):
                         self.wfile.flush()
                     except queue.Empty:
                         self.wfile.write(b": ping\n\n"); self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 stop["v"] = True                  # browser tab closed mid-stream
-                return None
+                return None                        # ConnectionAbortedError = Windows (WinError 10053)
 
         def _stream_log(self, name):
             # "aggregate" is just another registry source (its files = the union).
