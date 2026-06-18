@@ -902,8 +902,7 @@ def chat_cmd(rest):
         return None
 
 
-COCKPIT_VERBS = ("enable", "disable", "funnel", "setup-funnel", "links", "token",
-                 "pull-versions")
+COCKPIT_VERBS = ("funnel", "setup-funnel", "links", "token", "pull-versions")
 
 
 def _cockpit_versions_path():
@@ -1034,43 +1033,47 @@ def _cockpit_pull_versions(args):
     return None
 
 
-def cockpit_cmd(rest):
-    """`racecast cockpit enable|disable|funnel|links|token|pull-versions` —
-    manage the talent Commentator Cockpit (issue #191)."""
-    import secrets
-    verb, args = rest[0], rest[1:]
-
-    if verb == "enable":
-        active, ppath = _active_profile_env_strict()
-        if not active:
-            sys.exit("racecast: no active profile — create or select one first.")
-        existing = ""
-        if os.path.exists(ppath):
-            with open(ppath, encoding="utf-8") as fh:
-                existing = parse_env_text(fh.read()).get("COCKPIT_SECRET", "")
+def _ensure_active_cockpit_secret():
+    """Zero-config cockpit: make sure the active league has a COCKPIT_SECRET so the
+    relay can mint/verify tokens without an explicit setup step, and mirror it into
+    os.environ so a spawned relay inherits it. Generates a random per-league secret
+    in profile.env on first use; idempotent; respects an already-set secret (so an
+    exported/imported league keeps its tokens). Only provisions into a real, existing
+    profile — never the shipped 'example' profile and never a non-existent one.
+    Best-effort: returns the secret or None and never raises."""
+    try:
+        env_secret = (os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip()
+        if env_secret:
+            return env_secret
+        import secrets
+        name, ppath = _active_profile_env_strict()
+        if not name or name == "example" or not ppath or not os.path.exists(ppath):
+            return None
+        with open(ppath, encoding="utf-8") as fh:
+            existing = parse_env_text(fh.read()).get("COCKPIT_SECRET", "")
+        secret = existing or secrets.token_hex(32)
         if not existing:
-            res = _set_env_key(ppath, "COCKPIT_SECRET", secrets.token_hex(32))
+            res = _set_env_key(ppath, "COCKPIT_SECRET", secret)
             if not res.get("ok"):
-                sys.exit(f"racecast: {res['error']}")
-            print(f"generated COCKPIT_SECRET in {ppath}")
-        res = _set_env_key(_env_file(), "RACECAST_COCKPIT_ENABLED", "true")
-        if not res.get("ok"):
-            sys.exit(f"racecast: {res['error']}")
-        print("cockpit enabled — restart the relay, then 'racecast cockpit links'.")
+                return None
+        os.environ["RACECAST_COCKPIT_SECRET"] = secret
+        return secret
+    except Exception:
         return None
 
-    if verb == "disable":
-        res = _set_env_key(_env_file(), "RACECAST_COCKPIT_ENABLED", "false")
-        if not res.get("ok"):
-            sys.exit(f"racecast: {res['error']}")
-        print("cockpit disabled — restart the relay to stop serving /cockpit.")
-        return None
+
+def cockpit_cmd(rest):
+    """`racecast cockpit funnel|links|token|setup-funnel|pull-versions` — manage the
+    talent Commentator Cockpit (issue #191). The cockpit is zero-config: a per-league
+    COCKPIT_SECRET is auto-generated on first relay start and the relay serves
+    /cockpit whenever one exists (token-gated). PUBLIC exposure is `cockpit funnel`."""
+    verb, args = rest[0], rest[1:]
 
     if verb == "links":
         _apply_active_profile_env()
-        secret = os.environ.get("RACECAST_COCKPIT_SECRET")
+        secret = _ensure_active_cockpit_secret()
         if not secret:
-            sys.exit("racecast: no COCKPIT_SECRET — run 'racecast cockpit enable' first.")
+            sys.exit("racecast: no active league profile — create or select one first.")
         try:
             roster = _cockpit_roster()
         except Exception:
@@ -1315,6 +1318,7 @@ def relay_start(rest):
     if busy:
         print(f"WARNING: feed port(s) {', '.join(map(str, busy))} already in use — "
               f"that feed may fail to bind. Free them first: racecast freeport")
+    _ensure_active_cockpit_secret()   # zero-config cockpit: provision + inject the secret
     argv = _relay_daemon_argv(rest, IS_FROZEN)
     newpid = sv.start_detached(argv, _relay_log_path(), _relay_pid_path(),
                                env=_frozen_child_env())
@@ -1517,6 +1521,7 @@ def relay_logs(rest):
     sv.tail(_relay_log_path(), follow=("-f" in rest or "--follow" in rest))
 
 def relay_run(rest):
+    _ensure_active_cockpit_secret()   # zero-config cockpit: provision + inject the secret
     raise SystemExit(_run_script("relay/racecast-feeds.py",
                                  _relay_runtime_args() + rest))
 
@@ -3206,24 +3211,19 @@ def _cockpit_internal_host(ip):
 
 
 def cockpit_status_data():
-    """Cockpit state for the Control Center: machine-local enabled flag, per-league
-    secret presence, and the per-commentator links. Reads on-disk truth so a
-    toggle reflects without a Control Center restart. {ok, ...}; never raises."""
+    """Cockpit state for the Control Center: per-league secret presence and the
+    per-commentator links. The cockpit is zero-config — the secret is auto-provisioned
+    here so links populate without an explicit enable step. Reads on-disk truth so a
+    profile switch reflects without a Control Center restart. {ok, ...}; never raises."""
     try:
         menv = {}
         epath = _env_file()
         if os.path.exists(epath):
             with open(epath, encoding="utf-8") as fh:
                 menv = parse_env_text(fh.read())
-        enabled = menv.get("RACECAST_COCKPIT_ENABLED", "").strip().lower() in (
-            "1", "true", "yes", "on")
         funnel_auto = menv.get("RACECAST_COCKPIT_FUNNEL", "").strip().lower() in (
             "1", "true", "yes", "on")
-        secret = ""
-        _active, ppath = _active_profile_env_strict()
-        if ppath and os.path.exists(ppath):
-            with open(ppath, encoding="utf-8") as fh:
-                secret = parse_env_text(fh.read()).get("COCKPIT_SECRET", "")
+        secret = _ensure_active_cockpit_secret() or ""
         links = []
         if secret:
             host = _cockpit_internal_host(_tailscale_ip())
@@ -3244,7 +3244,7 @@ def cockpit_status_data():
             funnel_on = ts.funnel_on() if funnel_capable else False
         except Exception:
             pass  # best-effort: tailnet down / CLI missing -> report both False
-        return {"ok": True, "enabled": enabled, "has_secret": bool(secret),
+        return {"ok": True, "has_secret": bool(secret),
                 "funnel_auto": funnel_auto, "funnel_capable": funnel_capable,
                 "funnel_on": funnel_on, "links": links}
     except Exception as exc:
@@ -3262,14 +3262,6 @@ def cockpit_set_funnel_auto_data(auto):
         return {"ok": False, "error": str(exc)}
 
 
-def cockpit_set_enabled_data(enabled):
-    """Toggle the machine-local master switch (+ generate a secret on first
-    enable), via the same path as the CLI. {ok} or {ok:false,error}."""
-    try:
-        cockpit_cmd(["enable" if enabled else "disable"])
-        return {"ok": True}
-    except SystemExit as exc:
-        return {"ok": False, "error": str(exc)}
 
 
 def cockpit_funnel_data(on):
@@ -4517,7 +4509,6 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "profile_env_read": profile_env_entries_data,
         "profile_env_write": profile_env_write_data,
         "cockpit_status": cockpit_status_data,
-        "cockpit_set_enabled": cockpit_set_enabled_data,
         "cockpit_funnel": cockpit_funnel_data,
         "cockpit_set_funnel_auto": cockpit_set_funnel_auto_data,
         "cockpit_revoke": cockpit_revoke_data,

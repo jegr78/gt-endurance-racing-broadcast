@@ -863,11 +863,10 @@
           <button onclick="loadCockpit()">Reload</button></div>
         <div class="enverr" id="cp-err" hidden></div>
         <section>
-          <label class="cprow"><input type="checkbox" id="cp-enabled" onchange="toggleCockpit()">
-            Enable cockpit on this machine</label>
-          <p class="sub">Generates a per-league secret on first enable. The relay must be
-            (re)started after toggling. The cockpit is exposed publicly only when you also
-            turn the Funnel on below.</p>
+          <p class="sub">Zero-config: the relay serves the talent-facing
+            <code>/cockpit</code> automatically — a per-league secret is generated on
+            first relay start. Every request is token-gated (links below). The cockpit
+            is exposed <b>publicly</b> only when you also turn the Funnel on.</p>
         </section>
         <section>
           <div class="viewhead"><h3>Public access (Tailscale Funnel)</h3>
@@ -2261,7 +2260,6 @@ async function loadCockpit() {
   catch (e) { showProfileErr('cp-err', 'Control Center not reachable.'); return; }
   if (!d.ok) { showProfileErr('cp-err', d.error || 'cockpit status failed'); return; }
   $('cp-err').hidden = true;
-  $('cp-enabled').checked = !!d.enabled;
   // Funnel state pill + controls
   const pill = $('cp-funnel-state'), txt = $('cp-funnel-state-txt');
   pill.classList.remove('on', 'warn', 'fail');
@@ -2299,14 +2297,6 @@ async function loadCockpit() {
                document.createTextNode(' '), rev);
     c.appendChild(row);
   });
-}
-async function toggleCockpit() {
-  $('cp-err').hidden = true;
-  const r = await (await fetch('/api/cockpit/enabled', {method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({enabled: $('cp-enabled').checked})})).json();
-  if (!r.ok) showProfileErr('cp-err', r.error || 'could not toggle cockpit');
-  loadCockpit();
 }
 async function cockpitFunnel(on) {
   $('cp-err').hidden = true;

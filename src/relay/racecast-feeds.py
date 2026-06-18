@@ -2630,7 +2630,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  timer_store=None, setup_ctl=None, overlay_dir=None,
                  chat_store=None, preview_path=None, graphics_dir=None,
                  splitscreen_path=None, cockpit_page_path=None, cockpit_secret=None,
-                 cockpit_enabled=False, cockpit_versions_path=None,
+                 cockpit_versions_path=None,
                  submission_store=None, event_store=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
@@ -2732,9 +2732,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             return self._send_file(path, ctype)
         def log_message(self, *a): pass
         def _cockpit_active(self):
-            """True iff the cockpit is enabled AND a secret is configured. When
-            false, every /cockpit/* path 404s (like chat/timer when disabled)."""
-            return bool(cockpit_enabled and cockpit_secret)
+            """True iff a per-league cockpit secret is configured. The secret is
+            auto-provisioned by the CLI (zero-config), so the cockpit is served
+            whenever one exists; when it is absent every /cockpit/* path 404s (like
+            chat/timer when disabled). PUBLIC exposure is the separate Funnel switch."""
+            return bool(cockpit_secret)
         def _cockpit_token(self):
             """The presented token: query ?t= first (link load), else the cookie."""
             qs = parse_qs(urlparse(self.path).query)
@@ -2912,7 +2914,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if p[:1] == ["cockpit"]:
                     if not self._cockpit_active():
-                        return self._send({"error": "cockpit disabled"}, 404)
+                        return self._send({"error": "cockpit not configured"}, 404)
                     if p == ["cockpit"]:
                         me = self._cockpit_auth()
                         if me is None:
@@ -3072,7 +3074,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"error": "body must be a JSON object"}, 400)
                 if p[:1] == ["cockpit"]:
                     if not self._cockpit_active():
-                        return self._send({"error": "cockpit disabled"}, 404)
+                        return self._send({"error": "cockpit not configured"}, 404)
                     if p == ["cockpit", "chat", "send"]:
                         me = self._cockpit_auth()
                         if me is None:
@@ -3525,11 +3527,11 @@ def main():
         threading.Thread(target=poller, args=(timer_store, args.hud_poll, stop_evt),
                          daemon=True).start()
 
-    # Commentator cockpit (#191): per-league secret (injected from profile.env) +
-    # machine-local master switch (.env). Both must be present or /cockpit/* 404s.
+    # Commentator cockpit (#191): per-league secret (injected from profile.env,
+    # auto-provisioned by the CLI — zero-config). Present => /cockpit/* is served
+    # (token-gated); absent => every /cockpit/* path 404s. PUBLIC exposure is the
+    # separate Tailscale Funnel switch, never implied by the secret alone.
     cockpit_secret = (os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip() or None
-    cockpit_enabled = (os.environ.get("RACECAST_COCKPIT_ENABLED", "").strip().lower()
-                       in ("1", "true", "yes", "on"))
     cockpit_versions_path = os.path.join(runtime, "cockpit-versions.json")
     # Commentator stream-link submissions (#193): pending store + audit log,
     # profile-scoped like chat.json / cockpit-versions.json. Always created so the
@@ -3544,7 +3546,6 @@ def main():
                            splitscreen_path=splitscreen_path,
                            cockpit_page_path=cockpit_page_path,
                            cockpit_secret=cockpit_secret,
-                           cockpit_enabled=cockpit_enabled,
                            cockpit_versions_path=cockpit_versions_path,
                            submission_store=submission_store,
                            event_store=event_store)
@@ -3606,11 +3607,11 @@ def main():
     if event_store.get():
         print(f"  Event title: “{event_store.get()}”  (panel/cockpit/Discord; "
               f"edit live in the Director Panel)")
-    if cockpit_secret and cockpit_enabled:
+    if cockpit_secret:
         if cockpit_page_path:
             print("  Commentator cockpit: /cockpit (auth) — links via 'racecast cockpit links'")
         else:
-            print("  WARN: cockpit enabled but cockpit.html not found — /cockpit will 404.")
+            print("  WARN: cockpit secret set but cockpit.html not found — /cockpit will 404.")
     if hud_source and hud_path:
         print(f"  HUD overlay (OBS source): http://127.0.0.1:{args.http_port}/hud  "
               f"(tabs '{args.overlay_tab}'/'{args.config_tab}', refresh {args.hud_poll}s)")

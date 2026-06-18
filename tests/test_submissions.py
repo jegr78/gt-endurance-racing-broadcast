@@ -201,7 +201,7 @@ def t_payloads_carry_event_title():
 
 # ---- live HTTP surface ------------------------------------------------------
 
-def _client(secret=SECRET, enabled=True, rows=None, live_idx=0,
+def _client(secret=SECRET, rows=None, live_idx=0,
             submission_path=None, audit_path=None, setup_ctl="default",
             webhook=None):
     """make_handler over a real server, wired with a submission store + a
@@ -244,7 +244,7 @@ def _client(secret=SECRET, enabled=True, rows=None, live_idx=0,
     store = m.SubmissionStore(submission_path, audit_path) if submission_path else None
     sc = _Setup() if setup_ctl == "default" else setup_ctl
     handler = m.make_handler(_Relay(), setup_ctl=sc, cockpit_secret=secret,
-                             cockpit_enabled=enabled, submission_store=store)
+                             submission_store=store)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     _t.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -326,7 +326,7 @@ def t_submit_requires_auth():
 
 def t_submit_disabled_is_404():
     with tempfile.TemporaryDirectory() as d:
-        srv, _get, post, _c = _client(enabled=False,
+        srv, _get, post, _c = _client(secret="",
                                       submission_path=os.path.join(d, "p.json"))
         try:
             tok = ca.mint_token(SECRET, "alpha-racing")
@@ -495,7 +495,7 @@ def t_submissions_list_is_not_under_cockpit_prefix():
     # /submissions must NOT require a cockpit token (it is tailnet-only, never
     # funnelled) and must work even when the cockpit is disabled.
     with tempfile.TemporaryDirectory() as d:
-        srv, get, _post, _c = _client(enabled=False,
+        srv, get, _post, _c = _client(secret="",
                                       submission_path=os.path.join(d, "p.json"))
         try:
             code, _h, body = get("/submissions")

@@ -360,12 +360,12 @@ def _load_set_env_key():
 
 
 def check_enable_preserves_keys(_ctx=None):
-    """#191 regression: `racecast cockpit enable` must NOT wipe other profile.env
-    keys when it writes COCKPIT_SECRET. The bug was a single-pair write through
-    the full-set merge_env_text (any key not re-passed was dropped). We exercise
-    the EXACT seam the CLI uses — `racecast._set_env_key(path, key, value)`
-    (src/racecast.py:908) — against a temp profile.env carrying several keys, and
-    assert every pre-existing key survives + COCKPIT_SECRET was added.
+    """#191 regression: provisioning COCKPIT_SECRET must NOT wipe other profile.env
+    keys. The bug was a single-pair write through the full-set merge_env_text (any
+    key not re-passed was dropped). This is the exact seam the zero-config
+    auto-provision (`_ensure_active_cockpit_secret`) uses —
+    `racecast._set_env_key(path, key, value)` — exercised against a temp profile.env
+    carrying several keys; assert every pre-existing key survives + COCKPIT_SECRET added.
 
     Self-contained: its own tempfile fixture, no relay, no repo profiles/, no
     side effects — so it is safe to run anywhere (incl. SYNTHETIC_CHECKS)."""

@@ -41,20 +41,25 @@ identity). Each commentator gets a **signed per-person token**
 carried by `racecast profile export`/import). The token rides in the link once, then
 moves into an `HttpOnly` cookie. Revoking one person bumps their version — see below.
 
-## Enable it (per machine + per league)
+## It's on by default (zero-config)
+
+There is **nothing to enable**. The relay serves `/cockpit` automatically: a per-league
+`COCKPIT_SECRET` is **auto-generated** in the active profile's `profile.env` on the first
+`racecast relay start` / `event start`. Every request is token-gated, so `/cockpit` is safe
+to serve — and it only leaves the tailnet when you turn the **Funnel** on (below).
 
 ```bash
-racecast cockpit enable      # generate the league COCKPIT_SECRET + flip the machine switch
-racecast relay restart       # the relay decides /cockpit at launch
-racecast cockpit links       # print every commentator's tailnet + funnel link
+racecast relay start         # the secret is provisioned here on first run
+racecast cockpit links       # print every commentator's internal + funnel link
 ```
 
-`enable` does two things: writes `COCKPIT_SECRET` into the active profile's
-`profile.env` (if absent) and sets the machine-local `RACECAST_COCKPIT_ENABLED=true`
-in `.env`. Both must be present or `/cockpit/*` returns 404 (like chat/timer when
-off). The link roster is the distinct streamer names in the active schedule.
+`/cockpit/*` returns 404 only when **no** secret is configured (e.g. the shipped `example`
+profile, which is never auto-provisioned). The link roster is the distinct streamer names in
+the active schedule. `racecast cockpit links --post` also drops the links into the crew chat.
 
-`racecast cockpit links --post` also drops the links into the crew chat.
+> **Turning it off:** the cockpit has no off switch other than not exposing it — to take it
+> off the public internet run `racecast cockpit funnel off`. On the tailnet it stays
+> token-gated like the rest of the relay.
 
 ## Public access via Tailscale Funnel — one-time setup
 
