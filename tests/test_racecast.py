@@ -1983,6 +1983,84 @@ def t_function_local_peer_imports_are_frozen():
                          f"not --hidden-import in tools/build-binary.py: {missing}")
 
 
+# ---- event title providers (Control Center Home; #207 follow-up) ----
+
+def t_event_title_read_from_relay_when_alive():
+    d = m.event_title_read_data(alive=lambda: True,
+                                fetch=lambda u: {"event_title": "Round 4"})
+    assert d == {"ok": True, "title": "Round 4",
+                 "source": "relay", "relay_alive": True}, d
+
+
+def t_event_title_read_relay_unreachable_falls_back_to_file():
+    # alive() True but the GET blows up -> read the persisted file instead.
+    import json, tempfile
+    with tempfile.TemporaryDirectory() as dd:
+        p = os.path.join(dd, "event.json")
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump({"title": "From File"}, fh)
+        def boom(_u):
+            raise OSError("relay starting up")
+        d = m.event_title_read_data(alive=lambda: True, fetch=boom,
+                                    path=p, default="Default Cup")
+        assert d["title"] == "From File" and d["source"] == "file", d
+
+
+def t_event_title_read_file_then_default_when_relay_down():
+    import json, tempfile
+    with tempfile.TemporaryDirectory() as dd:
+        p = os.path.join(dd, "event.json")
+        # no file -> profile default
+        d = m.event_title_read_data(alive=lambda: False, path=p, default="Default Cup")
+        assert d == {"ok": True, "title": "Default Cup",
+                     "source": "default", "relay_alive": False}, d
+        # file present -> file wins
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump({"title": "From File"}, fh)
+        d = m.event_title_read_data(alive=lambda: False, path=p, default="Default Cup")
+        assert d["title"] == "From File" and d["source"] == "file", d
+
+
+def t_event_title_write_posts_to_relay_when_alive():
+    sent = {}
+    def post(url, payload):
+        sent["url"] = url; sent["payload"] = payload
+        return {"ok": True, "title": payload["title"]}
+    d = m.event_title_write_data("  Round 5  ", alive=lambda: True, post=post,
+                                 sanitize=lambda s: s.strip())
+    assert d == {"ok": True, "title": "Round 5", "applied": "relay"}, d
+    assert sent["url"].endswith("/event/title"), sent
+    assert sent["payload"] == {"title": "Round 5"}, sent
+
+
+def t_event_title_write_writes_file_when_relay_down():
+    import json, tempfile
+    with tempfile.TemporaryDirectory() as dd:
+        p = os.path.join(dd, "sub", "event.json")     # dir created on demand
+        d = m.event_title_write_data("Round 6", alive=lambda: False, path=p,
+                                     sanitize=lambda s: s.strip())
+        assert d == {"ok": True, "title": "Round 6", "applied": "file"}, d
+        with open(p, encoding="utf-8") as fh:
+            assert json.load(fh) == {"title": "Round 6"}
+
+
+def t_event_title_write_applies_the_real_relay_sanitizer():
+    # No sanitize seam -> exercises _event_title_sanitizer loading the relay rule.
+    import tempfile
+    with tempfile.TemporaryDirectory() as dd:
+        p = os.path.join(dd, "event.json")
+        d = m.event_title_write_data("Round\n7\tCup", alive=lambda: False, path=p)
+        assert d["ok"] and d["title"] == "Round7Cup", d   # control chars stripped
+
+
+def t_event_title_write_relay_error_returns_not_ok():
+    def boom(_u, _p):
+        raise OSError("connection refused")
+    d = m.event_title_write_data("x", alive=lambda: True, post=boom,
+                                 sanitize=lambda s: s)
+    assert d["ok"] is False and "connection refused" in d["error"], d
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
