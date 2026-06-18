@@ -2,7 +2,12 @@
 """Stdlib unit checks for live-failure-visibility: cookie_health, resolve_hls
 error propagation, Feed phases, Relay.status() contract.
 Run: python3 tests/test_health.py"""
-import importlib.util, os, tempfile
+import importlib.util, logging, os, tempfile
+
+# resolve_hls/ssai_warning now take a logger (per-feed logger in production),
+# not a path. A plain logging.Logger with no handlers is the test stand-in:
+# its .info/.warning/.error calls are no-ops without a handler.
+_LOG = logging.getLogger("test_health.resolve")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -48,7 +53,7 @@ def t_resolve_hls_success_returns_url_and_no_error():
     orig = m.subprocess.run
     m.subprocess.run = lambda *a, **k: _FakeRun(stdout="https://hls.example/x.m3u8\n")
     try:
-        url, err = m.resolve_hls("https://yt.example/x", None, os.devnull)
+        url, err = m.resolve_hls("https://yt.example/x", None, _LOG)
     finally:
         m.subprocess.run = orig
     assert url == "https://hls.example/x.m3u8" and err is None
@@ -59,7 +64,7 @@ def t_resolve_hls_failure_returns_last_stderr_line():
     m.subprocess.run = lambda *a, **k: _FakeRun(
         stderr="WARNING: noise\nERROR: This live event will begin in 2 hours\n")
     try:
-        url, err = m.resolve_hls("https://yt.example/x", None, os.devnull)
+        url, err = m.resolve_hls("https://yt.example/x", None, _LOG)
     finally:
         m.subprocess.run = orig
     assert url is None
@@ -70,21 +75,24 @@ def t_resolve_hls_failure_without_stderr_says_not_live():
     orig = m.subprocess.run
     m.subprocess.run = lambda *a, **k: _FakeRun()
     try:
-        url, err = m.resolve_hls("https://yt.example/x", None, os.devnull)
+        url, err = m.resolve_hls("https://yt.example/x", None, _LOG)
     finally:
         m.subprocess.run = orig
     assert url is None and err == "not live?"
 
 
 def t_feed_initial_phase_is_idle():
-    f = m.Feed("A", 53001, 0, lambda: [], HERE)
+    # Feed now opens a per-feed log at init -> use a tempdir, not the repo tree.
+    with tempfile.TemporaryDirectory() as td:
+        f = m.Feed("A", 53001, 0, lambda: [], td)
     assert f.phase == "idle"
     assert f.last_error is None
     assert isinstance(f.phase_since, float)
 
 
 def t_set_phase_updates_since_only_on_change():
-    f = m.Feed("A", 53001, 0, lambda: [], HERE)
+    with tempfile.TemporaryDirectory() as td:
+        f = m.Feed("A", 53001, 0, lambda: [], td)
     f._set_phase("connecting")
     assert f.phase == "connecting"
     since = f.phase_since

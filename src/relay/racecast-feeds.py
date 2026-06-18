@@ -1163,7 +1163,7 @@ def manifest_has_ssai_markers(text):
     return bool(text) and bool(_SSAI_RE.search(text))
 
 
-def ssai_warning(hls_url, logfile):
+def ssai_warning(hls_url, logger):
     """Fetch the resolved manifest once and, if it carries SSAI markers, return a
     short warning string for /status (else None). Best-effort: any network/parse
     failure returns None so the feed is never blocked by the probe."""
@@ -1174,11 +1174,7 @@ def ssai_warning(hls_url, logfile):
     except Exception:
         return None   # probe is a bonus signal; never fail the resolve on it
     if manifest_has_ssai_markers(body):
-        try:
-            with open(logfile, "a", encoding="utf-8") as log:
-                log.write("   WARN: source manifest carries server-side ads (cannot strip)\n")
-        except Exception:
-            pass  # logging best-effort
+        logger.warning("source manifest carries server-side ads (cannot strip)")
         return "source has server-side ads (not a clean broadcast feed)"
     return None
 
@@ -1316,7 +1312,7 @@ def grab_feed_frame(port, width=480, timeout=8.0):
     return proc.stdout
 
 
-def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
+def resolve_hls(url, cookies, logger, fmt=YTDLP_FORMAT):
     """Resolve a YouTube live URL to a direct HLS manifest URL via yt-dlp
     (handles cookies + the bot-check). Returns (url, None) on success or
     (None, error_line) — the error line feeds /status so the panel can show
@@ -1327,11 +1323,7 @@ def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
                            timeout=90, env=external_tool_env(), **_no_window_kwargs())
     except FileNotFoundError:
         # Startup checks for yt-dlp; reaching here means it vanished mid-run.
-        try:
-            with open(logfile, "a", encoding="utf-8") as log:
-                log.write("   yt-dlp not found on PATH\n")
-        except Exception:
-            pass  # logging is best-effort; never let it break the resolve loop
+        logger.error("yt-dlp not found on PATH")
         return None, "yt-dlp not found on PATH"
     except subprocess.TimeoutExpired:
         return None, "yt-dlp timed out (90 s)"
@@ -1340,11 +1332,7 @@ def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
         return out[0], None
     err = (r.stderr or "").strip().splitlines()
     last = err[-1] if err else "not live?"
-    try:
-        with open(logfile, "a", encoding="utf-8") as log:
-            log.write(f"   yt-dlp could not resolve {url} ({last})\n")
-    except Exception:
-        pass  # logging is best-effort; never let it break the resolve loop
+    logger.warning("yt-dlp could not resolve %s (%s)", url, last)
     return None, last
 
 
@@ -2105,6 +2093,9 @@ class Feed:
         self.stop = False
         self.advance = threading.Event()
         self.logfile = os.path.join(logdir, f"feed_{name}.log")
+        import logsetup
+        self.log = logsetup.configure_logging(
+            f"racecast.feed.{name}", self.logfile, to_stdout=False)
         # Health for /status: phase ("idle" | "connecting" | "serving"),
         # since-when, and the last yt-dlp error line. Written by the run()
         # thread, read by Relay.status() — a reader may briefly pair a new
@@ -2175,42 +2166,47 @@ class Feed:
             self._set_phase("connecting")
             url = channel_url(ch)
             plat = platform_of(url)
-            with open(self.logfile, "a", encoding="utf-8") as log:
-                log.write(f"\n>> [{self.name}:{self.port}] stint {i+1} ({plat}) -> {url}\n"); log.flush()
+            self.log.info("stint %d (%s) -> %s", i + 1, plat, url)
 
             if plat == "twitch":
                 token = twitch_oauth_from_cookies(
                     cookies_for("twitch", self.cookie_dir))      # None for public Twitch (no auth file)
                 target, serve_platform = url, "twitch"           # no yt-dlp hop
             else:
-                hls, err = resolve_hls(url, self.cookies, self.logfile, self.fmt)
+                hls, err = resolve_hls(url, self.cookies, self.log, self.fmt)
                 if self.stop: break
                 if self.advance.is_set():
                     self.advance.clear(); continue
                 if not hls:
                     self.last_error = err
                     time.sleep(RESOLVE_RETRY); continue
-                self.last_error = ssai_warning(hls, self.logfile)  # warn, never block
+                self.last_error = ssai_warning(hls, self.log)  # warn, never block
                 token, target, serve_platform = None, hls, "youtube"
 
-            with open(self.logfile, "a", encoding="utf-8") as log:
-                log.write(f">> [{self.name}:{self.port}] serving stint {i+1} ({serve_platform})\n"); log.flush()
-                cmd = streamlink_serve_cmd(target, self.port, serve_platform, token)
-                try:
-                    self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT,
-                                                 env=external_tool_env(), **_no_window_kwargs())
-                    if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
-                        self.last_error = None
-                    self._set_phase("serving")
-                    self.dropped = False          # live picture -> any prior alarm clears
-                    serve_started = time.monotonic()
-                    self.proc.wait()
-                    serve_elapsed = time.monotonic() - serve_started
-                    serve_rc = self.proc.returncode
-                except FileNotFoundError:
-                    log.write(f">> [{self.name}] streamlink not found on PATH — retrying\n"); log.flush()
-                    self.proc = None
-                    time.sleep(RETRY_SLEEP); continue
+            import logsetup
+            self.log.info("serving stint %d (%s)", i + 1, serve_platform)
+            cmd = streamlink_serve_cmd(target, self.port, serve_platform, token)
+            try:
+                self.proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, encoding="utf-8", errors="replace",
+                    env=external_tool_env(), **_no_window_kwargs())
+                pump = threading.Thread(
+                    target=logsetup.pump_subprocess,
+                    args=(self.proc.stdout, self.log, "streamlink"), daemon=True)
+                pump.start()
+                if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
+                    self.last_error = None
+                self._set_phase("serving")
+                self.dropped = False          # live picture -> any prior alarm clears
+                serve_started = time.monotonic()
+                self.proc.wait()
+                serve_elapsed = time.monotonic() - serve_started
+                serve_rc = self.proc.returncode
+            except FileNotFoundError:
+                self.log.warning("streamlink not found on PATH — retrying")
+                self.proc = None
+                time.sleep(RETRY_SLEEP); continue
             self._set_phase("connecting")
             # A serving process just exited: flag an unexpected loss (DROP) so the
             # panel/Companion alarm fires — but not on an intentional stop or a
