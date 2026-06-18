@@ -37,6 +37,24 @@ def t_configure_logging_idempotent(tmp):
     assert a is b and len(b.handlers) == n   # no duplicate handlers
 
 
+def t_prune_removes_only_old_files(tmp):
+    d = os.path.join(tmp, "prune"); os.makedirs(d)
+    now = 1_000_000_000
+    fresh = os.path.join(d, "relay.console.log")
+    old = os.path.join(d, "relay.console.log.2020-01-01")
+    for p in (fresh, old):
+        open(p, "w").close()
+    os.utime(fresh, (now - 1 * 86400, now - 1 * 86400))    # 1 day old -> keep
+    os.utime(old, (now - 30 * 86400, now - 30 * 86400))    # 30 days old -> delete
+    removed = lg.prune_old_logs(d, keep_days=7, now_ts=now)
+    assert removed == [old], removed
+    assert os.path.exists(fresh) and not os.path.exists(old)
+
+
+def t_prune_missing_dir_is_noop():
+    assert lg.prune_old_logs("/no/such/dir/xyz", keep_days=7, now_ts=1) == []
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp:
         for name, fn in sorted(globals().items()):
