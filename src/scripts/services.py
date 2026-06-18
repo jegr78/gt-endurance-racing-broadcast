@@ -298,16 +298,14 @@ def tail_merged(paths, follow=False, lines=40, label_of=None):
     def lbl(p):
         return label_of(p) if label_of else os.path.basename(p).split(".log")[0]
     handles = []
-    for p in paths:
-        fh = open(p, encoding="utf-8", errors="replace")  # noqa: SIM115
-        for line in fh.readlines()[-lines:]:
-            sys.stdout.write(f"[{lbl(p)}] {line.rstrip(chr(10))}\n")
-        handles.append((fh, p))
-    if not follow:
-        for fh, _ in handles:
-            fh.close()
-        return
     try:
+        for p in paths:
+            fh = open(p, encoding="utf-8", errors="replace")  # noqa: SIM115
+            handles.append((fh, p))   # track before reading so any error still closes it
+            for line in fh.readlines()[-lines:]:
+                sys.stdout.write(f"[{lbl(p)}] {line.rstrip(chr(10))}\n")
+        if not follow:
+            return
         while True:
             quiet = True
             for fh, p in handles:
@@ -321,5 +319,5 @@ def tail_merged(paths, follow=False, lines=40, label_of=None):
     except KeyboardInterrupt:
         pass
     finally:
-        for fh, _ in handles:
+        for fh, _ in handles:   # close on every exit: normal, error, or Ctrl+C
             fh.close()

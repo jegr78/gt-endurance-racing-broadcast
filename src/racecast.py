@@ -1658,7 +1658,11 @@ def _logs_cmd(source_name, rest):
         print("\n".join(toks) if toks else "(no archives)")
         return
     if "--archive" in rest:
-        tok = rest[rest.index("--archive") + 1]
+        i = rest.index("--archive")
+        if i + 1 >= len(rest):
+            print("(--archive needs a token — run with --list to see available ones)")
+            return
+        tok = rest[i + 1]
         text = src["read"](tok)
         print(text if text else f"(no archive '{tok}')")
         return
