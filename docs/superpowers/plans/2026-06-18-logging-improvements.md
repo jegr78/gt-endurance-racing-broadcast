@@ -1500,7 +1500,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ## Notes on tricky bits
 
-- **Two writers, one file:** never let `start_detached` redirect a daemon's stdout to the same file the daemon's `configure_logging` owns — always a separate `*.boot.log`. (Tasks 7-9.)
+- **Two writers, one file:** never let `start_detached` redirect a daemon's stdout to the same file the daemon's `configure_logging` owns — always a separate `*.boot.log`. (Tasks 7-9.) **This includes the call SITE:** `relay_start` must pass `_relay_boot_log_path()` (`…/logs/relay.boot.log`), NOT `_relay_log_path()` (`relay.console.log`, which the relay's own rotating handler owns) — otherwise midnight rotation corrupts (the inherited fd keeps writing to the renamed inode). The static-streams path splits the same way (`feed_<port>.boot.log`). Guarded by `tests/test_racecast.py::t_relay_start_spawns_to_boot_log_not_console`.
 - **Frozen mode:** `configure_logging` + pump threads run in the re-invoked daemon process (`racecast relay run`, `streams run-feed`); paths resolve under `runtime/<profile>/` next to the binary. No frozen-specific code needed, but smoke the binary path via the e2e `binary` job before release.
 - **Cross-platform paths:** `obs_log_dir` builds fixed-OS paths with `/` concatenation, never `os.path.join` (Task 4 note) — the Windows CI runner would otherwise inject `\` and fail the pinned POSIX fixtures.
 - **Aggregate liveness:** the aggregate captures its file set at connect; document that newly-started feeds need a reconnect (or add the optional periodic re-glob in Task 13 Step 4).
