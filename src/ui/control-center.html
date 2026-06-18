@@ -1192,17 +1192,19 @@ async function saveEventTitle(value) {
         body: JSON.stringify({title: value})})).json();
   } catch (e) {
     $('evt-title-err').textContent = 'Control Center not reachable.';
-    $('evt-title-err').hidden = false; return;
+    $('evt-title-err').hidden = false; return false;
   }
   if (!d.ok) {
     $('evt-title-err').textContent = d.error || 'could not set the event title';
-    $('evt-title-err').hidden = false; return;
+    $('evt-title-err').hidden = false; return false;
   }
+  $('evt-title-err').hidden = true;
   renderEventTitle(d.title);               // textContent path -> XSS-safe
+  return true;
 }
 $('evt-title-edit').addEventListener('click', startEditEventTitle);
 $('evt-title-input').addEventListener('keydown', async (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); await saveEventTitle(e.target.value); stopEditEventTitle(); }
+  if (e.key === 'Enter') { e.preventDefault(); if (await saveEventTitle(e.target.value)) stopEditEventTitle(); }
   else if (e.key === 'Escape') { stopEditEventTitle(); }
 });
 $('evt-title-input').addEventListener('blur', () => { if (evtEditing) stopEditEventTitle(); });
