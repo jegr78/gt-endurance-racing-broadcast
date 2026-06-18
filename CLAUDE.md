@@ -102,6 +102,7 @@ python3 tests/test_ui_ops.py         # Control Center structured status provider
 python3 tests/test_ui_jobs.py        # Control Center job manager (child spawn, line buffer)
 python3 tests/test_ui_server.py      # Control Center HTTP server (routes, SSE, quit)
 python3 tests/test_e2e.py            # e2e-harness pure pieces (free-port, CSV builder, check registry, gates)
+python3 tests/test_logs.py           # rotating logger, prune, subprocess pump, OBS dir, archive resolution
 python3 tools/run-tests.py           # the whole suite (exactly what CI runs)
 python3 tools/lint.py                # ruff lint (= the CI lint job); --fix auto-corrects.
                                      # Rules mirror the CodeQL alert classes — see ruff.toml.
@@ -122,7 +123,9 @@ python3 tools/e2e.py --playwright [--headed] [--shots DIR]  # optional rendered 
 # Unified operator CLI (the producer's main entrypoint)
 python3 src/racecast.py relay start       # start the relay in the background
 python3 src/racecast.py relay stop        # stop it
-python3 src/racecast.py relay logs -f     # tail the relay log
+python3 src/racecast.py relay logs -f     # tail the relay log (console + feed_A/B/POV, merged)
+python3 src/racecast.py relay logs --list                  # list available archive dates
+python3 src/racecast.py relay logs --archive 2026-06-17   # read a past day's rotated log
 python3 src/racecast.py relay run         # foreground/debug mode
 python3 src/racecast.py companion enable-control  # Linux only: one-time setup (systemd drop-in + root helper + sudoers rule)
 python3 src/racecast.py companion start   # bind Companion to Tailscale IP and start it
@@ -144,6 +147,8 @@ python3 src/racecast.py event stop        # stop racecast services; GUI apps kee
 python3 src/racecast.py tailscale up|down|status  # connect/disconnect/inspect Tailscale (event start connects automatically)
 python3 src/racecast.py obs refresh       # force-reload the relay-served OBS browser sources (HUD/timer)
 python3 src/racecast.py obs collection    # check the active OBS scene collection (add `set` to switch to the active profile's collection)
+python3 src/racecast.py obs logs          # tail the newest OBS Studio log (read-only, not rotated by racecast)
+python3 src/racecast.py tailscale logs    # tail the tailscale.snapshot.log (timestamped `tailscale status` blocks, appended on start + racecast tailscale status)
 python3 src/racecast.py sheet open        # open the active league's Google Sheet in the browser (built from its SHEET_ID); `sheet url` prints the link. Also an "Open Sheet ↗" button in the Control Center Profile view.
 python3 src/racecast.py init              # guided first-time setup: .env gate, profile select, install-tools/-apps, cookies, graphics, media, setup, export companion, preflight — with skip-detection (--browser NAME, --skip-installs, --force)
 python3 src/racecast.py update            # self-update the binary from GitHub Releases (--tag TAG installs an exact release; UI previews use this)
@@ -345,6 +350,23 @@ Tailscale is down, `auto` falls back to localhost-only (OBS keeps working). Pass
 explicit value (`127.0.0.1` for local-only, or `0.0.0.0`) to override. The endpoints
 have no auth and `/status` reveals stream URLs, so the tailnet is the trust boundary —
 keep it to invited members. Bind logic is pure + unit-tested: `tests/test_bind.py`.
+
+**Logging.** The relay and each static-stream feed write timestamped, leveled lines
+(`YYYY-MM-DD HH:MM:SS LEVEL …`) to per-service log files under `runtime/<profile>/logs/`
+via `src/scripts/logsetup.py` (`TimedRotatingFileHandler`, daily midnight rotation,
+archive suffix `.YYYY-MM-DD`). Old archives are pruned on each service start: the
+retention window defaults to 7 days and is overridable with
+`RACECAST_LOG_RETENTION_DAYS`. Each relay feed has its own `feed_A/B/POV.log`; the
+streamlink child's output is pumped through the feed logger with a `[streamlink]` tag
+and classified levels (ERROR for 4xx/fatal, WARNING for retries). The `relay` and
+`streams` CLI log sources are **merged-file views** (console + all feed logs in one
+stream); `aggregate` is the default Control Center source and merges all live sources
+(relay, streams, OBS, Companion, Tailscale). OBS Studio and Companion logs are
+read-only from their native app directories; the Tailscale source appends a
+timestamped `tailscale status` snapshot on each service start and on
+`racecast tailscale status`. Archive history is accessible with
+`relay|streams logs --list` / `--archive <date>` (racecast sources) or by filename
+token (OBS/Companion).
 
 The same server also hosts the **lower-third HUD** as one relay-served page,
 replacing ~13 cropped Google-Sheets-editor browser sources (the old producer-lag

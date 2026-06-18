@@ -893,11 +893,16 @@
       <div class="view" data-view="logs" hidden>
         <div class="viewhead"><h2>Logs</h2>
           <span class="spacer"></span>
-          <select id="logsel" onchange="watchLog(this.value)" aria-label="Service log to tail">
-            <option value="">— select a log —</option>
+          <select id="logsel" onchange="onLogSourceChange()" aria-label="Log source">
+            <option value="aggregate">All (live)</option>
             <option value="relay">relay</option>
-            <option value="companion">companion</option>
             <option value="streams">streams</option>
+            <option value="obs">obs</option>
+            <option value="companion">companion</option>
+            <option value="tailscale">tailscale</option>
+          </select>
+          <select id="logarch" onchange="onLogArchiveChange()" aria-label="Archive (day)">
+            <option value="">live</option>
           </select></div>
         <pre id="svclog"></pre>
       </div>
@@ -986,7 +991,7 @@ let jobES = null, logES = null;
 
 let setupLoaded = false, preflightRun = false, assetsLoaded = false,
     settingsLoaded = false, streamsLoaded = false, docsLoaded = false,
-    wizardLoaded = false, profilesLoaded = false;
+    wizardLoaded = false, profilesLoaded = false, logsLoaded = false;
 // op name -> last job exit code (string) run from the wizard. Lets a step that
 // has no persistent "done" state (preflight) — or a failed job — show its real
 // outcome instead of a misleading "pending".
@@ -1015,6 +1020,10 @@ function showView(name) {
   if (name === 'preflight') loadSpeedtest();
   if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
   if (name === 'cockpit') loadCockpit();   // reload each visit: reflects toggles/links
+  // First open only: start the default "All (live)" stream. Guarded by a dedicated
+  // flag (not !logES) so returning to Logs after picking an archive — where logES is
+  // null because archives use fetch, not SSE — does not silently clobber the selection.
+  if (name === 'logs' && !logsLoaded) { logsLoaded = true; onLogSourceChange(); }
   if (name === 'streams' && !streamsLoaded) { streamsLoaded = true; loadStreams(); }
   if (name === 'help' && !docsLoaded) { docsLoaded = true; fetchDocs(); }
   // preview list (opt-in) lives in Help — load it lazily on each visit so a
@@ -3453,6 +3462,44 @@ async function fetchDocs() {
     row.append(nm, ds, a);
     c.appendChild(row);
   });
+}
+
+function onLogSourceChange() {
+  const name = $('logsel').value;
+  populateArchives(name);
+  $('logarch').value = '';
+  watchLog(name);
+}
+
+async function populateArchives(name) {
+  const sel = $('logarch');
+  sel.innerHTML = '<option value="">live</option>';
+  if (name === 'aggregate') { sel.disabled = true; return; }
+  sel.disabled = false;
+  try {
+    const r = await fetch('/api/logs/' + name + '/archives');
+    const j = await r.json();
+    (j.tokens || []).forEach(t => {
+      const o = document.createElement('option');
+      o.value = t; o.textContent = t; sel.appendChild(o);
+    });
+  } catch (e) {}
+}
+
+function onLogArchiveChange() {
+  const name = $('logsel').value, token = $('logarch').value;
+  if (!token) { watchLog(name); return; }
+  if (logES) { logES.close(); logES = null; }
+  loadArchive(name, token);
+}
+
+async function loadArchive(name, token) {
+  $('svclog').textContent = '(loading…)';
+  try {
+    const r = await fetch('/api/logs/' + name + '/file?token=' + encodeURIComponent(token));
+    const j = await r.json();
+    $('svclog').textContent = j.ok ? (j.text || '(empty)') : ('(' + (j.error || 'error') + ')');
+  } catch (e) { $('svclog').textContent = '(failed to load archive)'; }
 }
 
 function watchLog(name) {

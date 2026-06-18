@@ -138,7 +138,9 @@ racecast tailscale down       # disconnect Tailscale after the event
 racecast preflight            # check tools/hardware
 racecast speedtest            # opt-in Ookla bandwidth test; logs locally, preflight warns vs 25/10 Mbps
 racecast relay start          # start the relay (background)
-racecast relay logs -f        # watch it live
+racecast relay logs -f        # watch it live (console + feed_A/B/POV merged)
+racecast relay logs --list                  # list available archive dates
+racecast relay logs --archive 2026-06-17   # read a past day's rotated log
 racecast relay status         # health + tailnet URL
 racecast companion enable-control  # Linux only: one-time setup so companion start/stop can control the companion-pi systemd service without a password
 racecast companion start      # bind Companion to Tailscale, start it
@@ -148,6 +150,8 @@ racecast freeport             # free a stuck feed port (53001-53003) — kills a
 racecast obs refresh          # force-reload the relay-served OBS browser sources (HUD/timer)
 racecast obs collection       # check the active OBS scene collection
 racecast obs collection set   # switch OBS to this league's scene collection
+racecast obs logs             # tail the newest OBS Studio log
+racecast tailscale logs       # tail the Tailscale status snapshot log
 racecast chat clear           # wipe the crew-chat history on the active relay
 racecast chat pull <ip>       # take over another producer's chat history at handover (relay may be running)
 racecast chat import <file>   # load a previously exported JSON file into the relay

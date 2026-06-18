@@ -66,7 +66,7 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   Stop: Ctrl+C
 """
 
-import argparse, csv, datetime, io, ipaddress, json, os, re, shutil, signal, subprocess, sys, threading, time
+import argparse, csv, datetime, io, ipaddress, json, logging, os, re, shutil, signal, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, quote, unquote, parse_qs
 from urllib.request import Request, urlopen
@@ -88,7 +88,14 @@ import chat_admin  # required (ChatStore); src/scripts is on sys.path via the bl
 import cockpit_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
 import cockpit_admin  # talent-cockpit revocation version store (#191)
 import cockpit_submissions  # talent stream-link submission store (#193)
+import logsetup  # rotating per-feed/console loggers + streamlink pump (src/scripts on sys.path)
 from services import external_tool_env  # de-PyInstaller the env for spawned external tools
+
+# Module-level relay logger. main() attaches the file/console handlers via
+# logsetup.configure_logging("racecast.relay", …); logging.getLogger returns the
+# same instance, so call sites here log to the configured handlers without a
+# threaded parameter. Safe to use before configuration (no handler -> no output).
+LOG = logging.getLogger("racecast.relay")
 
 # ---------- Configuration ----------
 # Pipeline: yt-dlp resolves the live HLS URL (passes YouTube's bot-check via
@@ -1157,7 +1164,7 @@ def manifest_has_ssai_markers(text):
     return bool(text) and bool(_SSAI_RE.search(text))
 
 
-def ssai_warning(hls_url, logfile):
+def ssai_warning(hls_url, logger):
     """Fetch the resolved manifest once and, if it carries SSAI markers, return a
     short warning string for /status (else None). Best-effort: any network/parse
     failure returns None so the feed is never blocked by the probe."""
@@ -1168,11 +1175,7 @@ def ssai_warning(hls_url, logfile):
     except Exception:
         return None   # probe is a bonus signal; never fail the resolve on it
     if manifest_has_ssai_markers(body):
-        try:
-            with open(logfile, "a", encoding="utf-8") as log:
-                log.write("   WARN: source manifest carries server-side ads (cannot strip)\n")
-        except Exception:
-            pass  # logging best-effort
+        logger.warning("source manifest carries server-side ads (cannot strip)")
         return "source has server-side ads (not a clean broadcast feed)"
     return None
 
@@ -1310,7 +1313,7 @@ def grab_feed_frame(port, width=480, timeout=8.0):
     return proc.stdout
 
 
-def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
+def resolve_hls(url, cookies, logger, fmt=YTDLP_FORMAT):
     """Resolve a YouTube live URL to a direct HLS manifest URL via yt-dlp
     (handles cookies + the bot-check). Returns (url, None) on success or
     (None, error_line) — the error line feeds /status so the panel can show
@@ -1321,11 +1324,7 @@ def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
                            timeout=90, env=external_tool_env(), **_no_window_kwargs())
     except FileNotFoundError:
         # Startup checks for yt-dlp; reaching here means it vanished mid-run.
-        try:
-            with open(logfile, "a", encoding="utf-8") as log:
-                log.write("   yt-dlp not found on PATH\n")
-        except Exception:
-            pass  # logging is best-effort; never let it break the resolve loop
+        logger.error("yt-dlp not found on PATH")
         return None, "yt-dlp not found on PATH"
     except subprocess.TimeoutExpired:
         return None, "yt-dlp timed out (90 s)"
@@ -1334,11 +1333,7 @@ def resolve_hls(url, cookies, logfile, fmt=YTDLP_FORMAT):
         return out[0], None
     err = (r.stderr or "").strip().splitlines()
     last = err[-1] if err else "not live?"
-    try:
-        with open(logfile, "a", encoding="utf-8") as log:
-            log.write(f"   yt-dlp could not resolve {url} ({last})\n")
-    except Exception:
-        pass  # logging is best-effort; never let it break the resolve loop
+    logger.warning("yt-dlp could not resolve %s (%s)", url, last)
     return None, last
 
 
@@ -1648,7 +1643,7 @@ class ScheduleSource:
 
     def load_initial(self, template=None):
         if self.refresh():
-            print(f"Schedule loaded from Google Sheet: {len(self.items)} stints.")
+            LOG.info("Schedule loaded from Google Sheet: %d stints.", len(self.items))
             return
         # Sheet unreachable -> cache, then a user-filled local fallback
         for path, label in ((self.cache_path, "cache"), (self.local_fallback, "local schedule.txt")):
@@ -1660,8 +1655,8 @@ class ScheduleSource:
                     with self.lock:
                         self.items = items
                         self.rows = [(u, "", "", i + 1) for i, u in enumerate(items)]
-                    print(f"WARN: sheet unreachable ({self.last_error}). "
-                          f"Using {label}: {len(items)} stints.")
+                    LOG.warning("sheet unreachable (%s). Using %s: %d stints.",
+                                self.last_error, label, len(items))
                     return
         # Nothing available: drop a commented template (if missing) and explain.
         if template and self.local_fallback and not os.path.exists(self.local_fallback):
@@ -1669,7 +1664,7 @@ class ScheduleSource:
                 os.makedirs(os.path.dirname(self.local_fallback), exist_ok=True)
                 with open(self.local_fallback, "w", encoding="utf-8") as fh:
                     fh.write(template)
-                print(f"Wrote a fallback template to {self.local_fallback}")
+                LOG.info("Wrote a fallback template to %s", self.local_fallback)
             except OSError:
                 pass  # template is a convenience; the sys.exit below explains anyway
         sys.exit(f"ERROR: no schedule available. Sheet error: {self.last_error}\n"
@@ -2099,6 +2094,8 @@ class Feed:
         self.stop = False
         self.advance = threading.Event()
         self.logfile = os.path.join(logdir, f"feed_{name}.log")
+        self.log = logsetup.configure_logging(
+            f"racecast.feed.{name}", self.logfile, to_stdout=False)
         # Health for /status: phase ("idle" | "connecting" | "serving"),
         # since-when, and the last yt-dlp error line. Written by the run()
         # thread, read by Relay.status() — a reader may briefly pair a new
@@ -2169,42 +2166,46 @@ class Feed:
             self._set_phase("connecting")
             url = channel_url(ch)
             plat = platform_of(url)
-            with open(self.logfile, "a", encoding="utf-8") as log:
-                log.write(f"\n>> [{self.name}:{self.port}] stint {i+1} ({plat}) -> {url}\n"); log.flush()
+            self.log.info("stint %d (%s) -> %s", i + 1, plat, url)
 
             if plat == "twitch":
                 token = twitch_oauth_from_cookies(
                     cookies_for("twitch", self.cookie_dir))      # None for public Twitch (no auth file)
                 target, serve_platform = url, "twitch"           # no yt-dlp hop
             else:
-                hls, err = resolve_hls(url, self.cookies, self.logfile, self.fmt)
+                hls, err = resolve_hls(url, self.cookies, self.log, self.fmt)
                 if self.stop: break
                 if self.advance.is_set():
                     self.advance.clear(); continue
                 if not hls:
                     self.last_error = err
                     time.sleep(RESOLVE_RETRY); continue
-                self.last_error = ssai_warning(hls, self.logfile)  # warn, never block
+                self.last_error = ssai_warning(hls, self.log)  # warn, never block
                 token, target, serve_platform = None, hls, "youtube"
 
-            with open(self.logfile, "a", encoding="utf-8") as log:
-                log.write(f">> [{self.name}:{self.port}] serving stint {i+1} ({serve_platform})\n"); log.flush()
-                cmd = streamlink_serve_cmd(target, self.port, serve_platform, token)
-                try:
-                    self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT,
-                                                 env=external_tool_env(), **_no_window_kwargs())
-                    if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
-                        self.last_error = None
-                    self._set_phase("serving")
-                    self.dropped = False          # live picture -> any prior alarm clears
-                    serve_started = time.monotonic()
-                    self.proc.wait()
-                    serve_elapsed = time.monotonic() - serve_started
-                    serve_rc = self.proc.returncode
-                except FileNotFoundError:
-                    log.write(f">> [{self.name}] streamlink not found on PATH — retrying\n"); log.flush()
-                    self.proc = None
-                    time.sleep(RETRY_SLEEP); continue
+            self.log.info("serving stint %d (%s)", i + 1, serve_platform)
+            cmd = streamlink_serve_cmd(target, self.port, serve_platform, token)
+            try:
+                self.proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, encoding="utf-8", errors="replace",
+                    env=external_tool_env(), **_no_window_kwargs())
+                pump = threading.Thread(
+                    target=logsetup.pump_subprocess,
+                    args=(self.proc.stdout, self.log, "streamlink"), daemon=True)
+                pump.start()
+                if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
+                    self.last_error = None
+                self._set_phase("serving")
+                self.dropped = False          # live picture -> any prior alarm clears
+                serve_started = time.monotonic()
+                self.proc.wait()
+                serve_elapsed = time.monotonic() - serve_started
+                serve_rc = self.proc.returncode
+            except FileNotFoundError:
+                self.log.warning("streamlink not found on PATH — retrying")
+                self.proc = None
+                time.sleep(RETRY_SLEEP); continue
             self._set_phase("connecting")
             # A serving process just exited: flag an unexpected loss (DROP) so the
             # panel/Companion alarm fires — but not on an intentional stop or a
@@ -2356,7 +2357,7 @@ class Relay:
                                    "User-Agent": "racecast-feeds/1.0"})
             urlopen(req, timeout=5).read()   # noqa: S310 — operator-configured webhook
         except Exception as e:                # noqa: BLE001 — best effort
-            print(f"WARN: Discord health webhook failed: {type(e).__name__}: {e}")
+            LOG.warning("Discord health webhook failed: %s: %s", type(e).__name__, e)
 
     def _heartbeat_loop(self):
         """Background tick: refresh health and push to Discord on a level change
@@ -2517,6 +2518,8 @@ class Relay:
         cut = self.feeds[new_live].phase == "serving"  # only hand over to a feed that is actually live
         if cut:
             self._reflect(new_live, cut=True)        # never flip visibility/audio onto a black/not-yet-serving feed
+        nf = self.feeds[new_live]
+        LOG.info("handover -> feed %s now on air (stint index %d)", nf.name, nf.idx + 1)
         return {**result, "obs_cut": cut}
 
     def advance(self, which, delta):
@@ -2538,6 +2541,7 @@ class Relay:
         a_idx, b_idx = stint_start_indices(stint, len(self.source.get()))
         self.A.set_index(a_idx)
         self.B.set_index(b_idx)
+        LOG.info("set_stint -> Feed A stint %d, Feed B stint %d", a_idx + 1, b_idx + 1)
         self._reflect(self.live_feed(), cut=False)   # set visibility/audio; director picks the scene
         return self.status()
 
@@ -2553,6 +2557,7 @@ class Relay:
         if mode == "qualifying" and not self.qual_source:
             return {"error": "qualifying disabled (no Qualifying tab, or --no-qualifying)"}
         self.mode = mode
+        LOG.info("mode -> %s", self.mode)
         self.active_source().refresh(timeout=6)        # fresh rows for the schedule we switch to
         a_idx, b_idx = stint_start_indices(1, len(self.active_source().get()))
         self.A.set_index(a_idx)
@@ -2565,6 +2570,8 @@ class Relay:
         targets = [which.upper()] if which else list(self.feeds)
         for t in targets:
             if t in self.feeds: self.feeds[t].reload()
+        LOG.info("reload: schedule re-read (%d stints), feeds %s",
+                 len(self.source.get()), ",".join(targets))
         return {"reloaded": targets, **self.status()}
 
     def pov_reload(self):
@@ -2772,8 +2779,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                        "User-Agent": "racecast-feeds/1.0"})
                 urlopen(req, timeout=5).read()
             except Exception as e:
-                print(f"WARN: Discord {what} webhook failed: "
-                      f"{type(e).__name__}: {e}")
+                LOG.warning("Discord %s webhook failed: %s: %s",
+                            what, type(e).__name__, e)
         def _event_title(self):
             """The current event title (#207) for Discord footers, or ""."""
             return event_store.get() if event_store else ""
@@ -3241,19 +3248,19 @@ def export_cookies(browser, out):
                               timeout=90, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                               env=external_tool_env(), **_no_window_kwargs())
     except FileNotFoundError:
-        print("WARN: yt-dlp not found — cannot auto-export cookies."); return False
+        LOG.warning("yt-dlp not found — cannot auto-export cookies."); return False
     except subprocess.TimeoutExpired:
-        print("WARN: cookie export timed out (Keychain prompt not approved?)."); return False
+        LOG.warning("cookie export timed out (Keychain prompt not approved?)."); return False
     ok = os.path.exists(out)
     if ok:
         try: os.chmod(out, 0o600)   # live YouTube session — owner-only
         except OSError: pass        # best-effort hardening; never block the export
-        print(f"Cookie export from '{browser}': OK -> {out}")
+        LOG.info("Cookie export from '%s': OK -> %s", browser, out)
     else:
         err = (proc.stderr or b"").decode("utf-8", errors="replace")
         for line in [l for l in err.splitlines() if l.strip()][-1:]:
-            print("WARN:", line)   # the real yt-dlp reason, not a guess
-        print(f"Cookie export from '{browser}': FAILED — " + _cookie_hint(err, browser))
+            LOG.warning("%s", line)   # the real yt-dlp reason, not a guess
+        LOG.warning("Cookie export from '%s': FAILED — %s", browser, _cookie_hint(err, browser))
     return ok
 
 
@@ -3363,6 +3370,11 @@ def main():
     except OSError: pass            # best-effort hardening; never block startup
     logdir = args.logdir if os.path.isabs(args.logdir) else os.path.join(runtime, args.logdir)
     os.makedirs(logdir, exist_ok=True)
+
+    logsetup.configure_logging("racecast.relay", os.path.join(logdir, "relay.console.log"))
+    _keep = int(os.environ.get("RACECAST_LOG_RETENTION_DAYS") or logsetup.DEFAULT_RETENTION_DAYS)
+    logsetup.prune_old_logs(logdir, keep_days=_keep)   # cleanup on every start
+
     local = args.schedule if os.path.isabs(args.schedule) else os.path.join(runtime, args.schedule)
     cache = os.path.join(runtime, "schedule.cache.txt")
     ports = [int(x) for x in args.ports.split(",")]
@@ -3370,6 +3382,10 @@ def main():
     csv_url = args.sheet_csv_url or (
         f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
         f"/gviz/tq?tqx=out:csv&sheet={quote(args.sheet_tab)}")
+
+    LOG.info("relay starting — profile=%s bind=%s ports=%s mode=%s schedule=%s",
+             os.environ.get("RACECAST_PROFILE", "?"), args.bind, args.ports,
+             ("qualifying" if args.qualifying else "race"), csv_url)
 
     # POV source: own sheet tab (cell A2). Derivable only from sheet-id/tab,
     # so a custom --sheet-csv-url disables POV (no tab to point at).
@@ -3411,8 +3427,8 @@ def main():
     if cookies:
         _ch = cookie_health(cookies)
         if _ch["stale"]:
-            print(f"WARN: yt-cookies.txt is {_ch['age_h']:.0f} h old — cookies rotate; "
-                  "run 'racecast cookies firefox' before the event.")
+            LOG.warning("yt-cookies.txt is %.0f h old — cookies rotate; "
+                        "run 'racecast cookies firefox' before the event.", _ch['age_h'])
 
     # Locate the director panel (shipped in the package root, one level up from relay/)
     panel_path = None
@@ -3436,7 +3452,7 @@ def main():
         if os.path.exists(cand):
             splitscreen_path = os.path.abspath(cand); break
     if not splitscreen_path:
-        print("WARN: splitscreen.html not found — /splitscreen will 404.")
+        LOG.warning("splitscreen.html not found — /splitscreen will 404.")
     cockpit_page_path = None
     for cand in (os.path.join(here, "cockpit.html"),
                  os.path.join(here, "..", "cockpit.html"),
@@ -3456,8 +3472,7 @@ def main():
             if os.path.exists(cand):
                 hud_path = os.path.abspath(cand); break
         if not hud_path:
-            print("WARN: hud.html not found — /hud will 404 (assets dir: "
-                  f"{assets_dir}).")
+            LOG.warning("hud.html not found — /hud will 404 (assets dir: %s).", assets_dir)
         for cand in (os.path.join(here, "hud-preview.html"),
                      os.path.join(here, "..", "hud-preview.html"),
                      os.path.join(here, "..", "obs", "hud-preview.html")):
@@ -3495,8 +3510,8 @@ def main():
                               qual_source=qual_source, pov_source=pov_source)
                  if hud_source else None)
     if len(source.get()) < 2:
-        print("INFO: schedule has fewer than 2 stints — Feed B idles on the empty next "
-              "slot (black) until that stint's link is added; Feed A keeps serving stint 1.")
+        LOG.info("schedule has fewer than 2 stints — Feed B idles on the empty next "
+                 "slot (black) until that stint's link is added; Feed A keeps serving stint 1.")
 
     relay = Relay(source, ports, logdir, cookies,
                   pov_source=pov_source, pov_port=args.pov_port,
@@ -3557,7 +3572,7 @@ def main():
             servers.append(QuietThreadingHTTPServer((addr, args.http_port), handler))
             bound_addrs.append(addr)
         except OSError as e:
-            print(f"  (warn) could not bind {addr}:{args.http_port} — {e}")
+            LOG.warning("could not bind %s:%s — %s", addr, args.http_port, e)
     # The loopback bind is mandatory when requested: OBS always reaches the relay
     # on 127.0.0.1. If it failed but (e.g.) the Tailscale IP bound, running on
     # would be a silent split-brain — 127.0.0.1 stays served by the STALE relay
@@ -3574,7 +3589,7 @@ def main():
         # IMPORTANT: do NOT call shutdown() from the thread running serve_forever()
         # (deadlock). Stop the feeds and exit hard — the OS frees the sockets; the
         # streamlink subprocesses are cleanly terminated.
-        print("\nStopping feeds…")
+        LOG.info("Stopping feeds…")
         stop_evt.set(); relay.shutdown(); os._exit(0)
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
@@ -3582,52 +3597,56 @@ def main():
     # The non-loopback bind (if any) is the address remote directors/tablets use.
     remote_host = next((a for a in bind_addrs if a not in ("127.0.0.1", "localhost")), None)
 
-    print(f"racecast relay running.  Schedule source: {'CSV URL' if args.sheet_csv_url else f'sheet tab “{args.sheet_tab}”'}")
+    LOG.info("racecast relay running.  Schedule source: %s",
+             'CSV URL' if args.sheet_csv_url else f'sheet tab “{args.sheet_tab}”')
     if relay.qual_source:
         _qmode = "QUALIFYING (live)" if relay.mode == "qualifying" else "race"
-        print(f"  Qualifying tab '{args.qualifying_tab}' available — mode: {_qmode}  "
-              f"(switch: /mode/qualifying | /mode/race)")
-    print(f"  Feed A -> http://127.0.0.1:{ports[0]}   Feed B -> http://127.0.0.1:{ports[1]}")
+        LOG.info("  Qualifying tab '%s' available — mode: %s  "
+                 "(switch: /mode/qualifying | /mode/race)", args.qualifying_tab, _qmode)
+    LOG.info("  Feed A -> http://127.0.0.1:%s   Feed B -> http://127.0.0.1:%s", ports[0], ports[1])
     if args.stint != 1:
         if relay.A.idx != args.stint - 1:
-            print(f"  WARN: --stint {args.stint} clamped to stint {relay.A.idx + 1} "
-                  f"(schedule has {len(source.get())} stints).")
-        print(f"  Takeover start: stint {relay.A.idx + 1} on Feed A; "
-              f"Feed B preloads stint {relay.B.idx + 1}.")
-    print(f"  Controls: http://127.0.0.1:{args.http_port}/status | /next | /reload")
+            LOG.warning("  --stint %s clamped to stint %s (schedule has %s stints).",
+                        args.stint, relay.A.idx + 1, len(source.get()))
+        LOG.info("  Takeover start: stint %s on Feed A; Feed B preloads stint %s.",
+                 relay.A.idx + 1, relay.B.idx + 1)
+    LOG.info("  Controls: http://127.0.0.1:%s/status | /next | /reload", args.http_port)
     if relay.pov:
-        print(f"  Driver-POV PiP -> http://127.0.0.1:{args.pov_port}  "
-              f"(sheet tab '{args.pov_tab}' url+name; control /pov/reload | /pov/stop | /pov/toggle)")
+        LOG.info("  Driver-POV PiP -> http://127.0.0.1:%s  "
+                 "(sheet tab '%s' url+name; control /pov/reload | /pov/stop | /pov/toggle)",
+                 args.pov_port, args.pov_tab)
     if panel_path:
-        print(f"  Director panel (local): http://127.0.0.1:{args.http_port}/panel")
+        LOG.info("  Director panel (local): http://127.0.0.1:%s/panel", args.http_port)
         if remote_host:
-            print(f"    remote (tailnet):      http://{remote_host}:{args.http_port}/panel")
+            LOG.info("    remote (tailnet):      http://%s:%s/panel", remote_host, args.http_port)
         elif args.bind == "auto":
-            print("    (no Tailscale IP found — local only; start Tailscale for remote access)")
+            LOG.info("    (no Tailscale IP found — local only; start Tailscale for remote access)")
     if event_store.get():
-        print(f"  Event title: “{event_store.get()}”  (panel/cockpit/Discord; "
-              f"edit live in the Director Panel)")
+        LOG.info("  Event title: “%s”  (panel/cockpit/Discord; edit live in the Director Panel)",
+                 event_store.get())
     if cockpit_secret:
         if cockpit_page_path:
-            print("  Commentator cockpit: /cockpit (auth) — links via 'racecast cockpit links'")
+            LOG.info("  Commentator cockpit: /cockpit (auth) — links via 'racecast cockpit links'")
         else:
-            print("  WARN: cockpit secret set but cockpit.html not found — /cockpit will 404.")
+            LOG.warning("  cockpit secret set but cockpit.html not found — /cockpit will 404.")
     if hud_source and hud_path:
-        print(f"  HUD overlay (OBS source): http://127.0.0.1:{args.http_port}/hud  "
-              f"(tabs '{args.overlay_tab}'/'{args.config_tab}', refresh {args.hud_poll}s)")
+        LOG.info("  HUD overlay (OBS source): http://127.0.0.1:%s/hud  "
+                 "(tabs '%s'/'%s', refresh %ss)",
+                 args.http_port, args.overlay_tab, args.config_tab, args.hud_poll)
     if setup_ctl:
         mode = "writes ON" if push_url else "read-only (set RACECAST_SHEET_PUSH_URL)"
-        print(f"  Panel sheet controls (/setup /schedule /pov/set): {mode}")
+        LOG.info("  Panel sheet controls (/setup /schedule /pov/set): %s", mode)
     if timer_store:
         push = "sheet+push" if timer_store.push_url else (
             "sheet read-only (set RACECAST_SHEET_PUSH_URL for handover sync)"
             if timer_store.csv_url else "local only")
-        print(f"  HUD overlay incl. race timer (OBS source): "
-              f"http://127.0.0.1:{args.http_port}/hud")
-        print(f"  Timer controls: /timer/start | /timer/stop | /timer/reset "
-              f"(tab '{args.timer_tab}', {push})")
-    print(f"  Cookies (bot-check protection): {'ON — ' + cookies if cookies else 'off (no yt-cookies.txt)'}")
-    print(f"  Sheet poll every {args.poll}s.  Ctrl+C to stop.")
+        LOG.info("  HUD overlay incl. race timer (OBS source): http://127.0.0.1:%s/hud",
+                 args.http_port)
+        LOG.info("  Timer controls: /timer/start | /timer/stop | /timer/reset (tab '%s', %s)",
+                 args.timer_tab, push)
+    LOG.info("  Cookies (bot-check protection): %s",
+             'ON — ' + cookies if cookies else 'off (no yt-cookies.txt)')
+    LOG.info("  Sheet poll every %ss.  Ctrl+C to stop.", args.poll)
     # Serve every bound address; keep the last on the main thread for signals.
     for httpd in servers[:-1]:
         threading.Thread(target=httpd.serve_forever, daemon=True).start()

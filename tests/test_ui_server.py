@@ -108,7 +108,7 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
                                          if key == "cheat-sheet" else None),
             "jobs": jobs or ui_jobs.JobManager(
                 lambda a: [sys.executable, "-c", "print('hi from job')"]),
-            "log_paths": {},
+            "log_sources": {},
             "env_read": lambda: {"ok": True, "path": "/x/.env",
                                  "entries": [{"key": "RACECAST_SHEET_ID", "value": "abc"}]},
             "env_write": lambda entries: {"ok": True, "path": "/x/.env", "_got": entries},
@@ -484,6 +484,82 @@ def t_job_stream_unknown_id_is_404():
     try:
         code, _b = _get(port, "/api/jobs/nope/stream")
         assert code == 404
+    finally:
+        httpd.shutdown()
+
+
+def _ctx_with_sources(tmp):
+    """A ctx whose 'relay' log source points at tmp/logs, mirroring the
+    {files, dir, archives, read} shape of racecast._log_sources() — kept
+    self-contained so this server test does not depend on racecast.py."""
+    import re as _re
+    d = os.path.join(tmp, "logs")
+
+    def files():
+        # Live files = base logs in the dir (no rotation-date suffix).
+        try:
+            names = os.listdir(d)
+        except OSError:
+            return []
+        out = [os.path.join(d, n) for n in names
+               if os.path.isfile(os.path.join(d, n))
+               and not _re.search(r"\.\d{4}-\d{2}-\d{2}$", n)]
+        return sorted(out)
+
+    def archives():
+        bases = [os.path.basename(f) for f in files()]
+        dates = set()
+        try:
+            names = os.listdir(d)
+        except OSError:
+            names = []
+        for name in names:
+            for base in bases:
+                m = _re.fullmatch(_re.escape(base) + r"\.(\d{4}-\d{2}-\d{2})", name)
+                if m:
+                    dates.add(m.group(1))
+        return sorted(dates, reverse=True)
+
+    def read(token):
+        # Resolve a date token to the concatenated archive text; guard traversal.
+        if (not token or "/" in token or "\\" in token or os.sep in token
+                or ".." in token or not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", token)):
+            return None
+        chunks = []
+        for f in files():
+            arch = os.path.join(d, os.path.basename(f) + "." + token)
+            if os.path.isfile(arch):
+                with open(arch, encoding="utf-8", errors="replace") as fh:
+                    chunks.append(fh.read())
+        return "\n".join(chunks)
+
+    ctx = _ctx()
+    ctx["log_sources"] = {"relay": {"files": files, "dir": d,
+                                    "archives": archives, "read": read}}
+    return ctx
+
+
+def t_log_archives_lists_dates():
+    tmp = tempfile.mkdtemp()
+    d = os.path.join(tmp, "logs")
+    os.makedirs(d)
+    for n in ("relay.console.log", "relay.console.log.2026-06-17"):
+        open(os.path.join(d, n), "w").close()
+    httpd, port = _serve(_ctx_with_sources(tmp))
+    try:
+        code, body = _get(port, "/api/logs/relay/archives")
+        assert code == 200 and "2026-06-17" in body.decode("utf-8")
+    finally:
+        httpd.shutdown()
+
+
+def t_log_file_rejects_traversal():
+    tmp = tempfile.mkdtemp()
+    os.makedirs(os.path.join(tmp, "logs"))
+    httpd, port = _serve(_ctx_with_sources(tmp))
+    try:
+        code, _b = _get(port, "/api/logs/relay/file?token=../../etc/passwd")
+        assert code == 400
     finally:
         httpd.shutdown()
 

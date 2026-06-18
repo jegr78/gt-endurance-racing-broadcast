@@ -18,13 +18,12 @@ def state_dir(here):
         return os.path.join(os.path.dirname(os.path.dirname(here)), "runtime", "static")
     return here
 
-def feed_argv(frozen, executable, loop_path, channel, port):
-    """Child argv for one feed. Frozen racecast binary: re-invoke ourselves with the
-    hidden `streams run-feed` verb (no python3 on producer machines); otherwise
-    run loopstream.py with the current interpreter."""
+def feed_argv(frozen, executable, loop_path, channel, port, log_path):
+    """Child argv for one feed. The feed OWNS log_path via its own rotating logger;
+    start_detached captures only the boot/crash fd to a separate *.boot.log."""
     if frozen:
-        return [executable, "streams", "run-feed", channel, port]
-    return [executable, loop_path, channel, port]
+        return [executable, "streams", "run-feed", channel, port, "--log", log_path]
+    return [executable, loop_path, channel, port, "--log", log_path]
 
 
 def feed_env(frozen, base_env):
@@ -135,16 +134,16 @@ def main():
     loop = os.path.join(here, "loopstream.py")
     frozen = bool(getattr(sys, "frozen", False))
     for i, (ch, port) in enumerate(load_feeds(sdir), 1):
-        # Close the parent's log fd after the spawn — the child holds its own
-        # duplicate (same pattern as services.start_detached).
-        with open(os.path.join(logdir, f"feed_{port}.log"), "ab") as log:
-            p = subprocess.Popen(feed_argv(frozen, sys.executable, loop, ch, port),
-                                 stdout=log, stderr=subprocess.STDOUT,
-                                 env=feed_env(frozen, os.environ),
-                                 **_spawn_kwargs())
+        feed_log = os.path.join(logdir, f"feed_{port}.log")
+        boot_log = os.path.join(logdir, f"feed_{port}.boot.log")
+        with open(boot_log, "ab") as boot:
+            p = subprocess.Popen(
+                feed_argv(frozen, sys.executable, loop, ch, port, feed_log),
+                stdout=boot, stderr=subprocess.STDOUT,
+                env=feed_env(frozen, os.environ), **_spawn_kwargs())
         with open(os.path.join(sdir, f"feed_{port}.pid"), "w") as fh:
             fh.write(str(p.pid))
-        print(f"Started Feed {i} -> channel {ch} on http://127.0.0.1:{port} (log: {logdir}/feed_{port}.log)")
+        print(f"Started Feed {i} -> channel {ch} on http://127.0.0.1:{port} (log: {feed_log})")
     print("\nAll feeds launched. Point each OBS media source at its http://127.0.0.1:PORT.")
     print("Stop everything with:  racecast streams stop")
 

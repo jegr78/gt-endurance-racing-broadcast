@@ -284,6 +284,12 @@ def funnel_args(path, target_port, enable):
     return ["funnel", "reset"]
 
 
+def status_snapshot_text(output, ts):
+    """One timestamped snapshot block for the tailscale.snapshot.log. Pure: caller
+    supplies the wall-clock `ts` string and the `tailscale status` text."""
+    return f"==== {ts} ====\n{output.rstrip()}\n"
+
+
 def funnel(binary, path, target_port, enable, timeout=20):
     """Run the funnel on/off command. Returns (ok, detail). Best-effort, mirrors
     _run_verb. NOTE: enabling requires MagicDNS + HTTPS + the 'funnel' nodeAttr in

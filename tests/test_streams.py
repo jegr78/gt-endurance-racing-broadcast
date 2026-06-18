@@ -22,15 +22,14 @@ loop = _load("loopstream", os.path.join("src", "scripts", "loopstream.py"))
 feeds_x = _load("feeds_x", os.path.join("src", "relay", "racecast-feeds.py"))
 
 
-def t_feed_argv_repo_uses_python():
-    argv = start.feed_argv(False, "python3", os.path.join("x", "loopstream.py"),
-                           "UC123", "53001")
-    assert argv == ["python3", os.path.join("x", "loopstream.py"), "UC123", "53001"]
+def t_feed_argv_repo_includes_log():
+    argv = start.feed_argv(False, "/py", "/loop.py", "UC123", "53001", "/r/logs/feed_53001.log")
+    assert argv == ["/py", "/loop.py", "UC123", "53001", "--log", "/r/logs/feed_53001.log"]
 
 
-def t_feed_argv_frozen_reinvokes_binary():
-    argv = start.feed_argv(True, os.path.join("apps", "racecast"), "ignored", "UC123", "53001")
-    assert argv == [os.path.join("apps", "racecast"), "streams", "run-feed", "UC123", "53001"]
+def t_feed_argv_frozen_includes_log():
+    argv = start.feed_argv(True, "/bin/racecast", "/loop.py", "UC123", "53001", "/r/logs/feed_53001.log")
+    assert argv == ["/bin/racecast", "streams", "run-feed", "UC123", "53001", "--log", "/r/logs/feed_53001.log"]
 
 
 def t_state_dirs_match():

@@ -7,6 +7,7 @@
   racecast relay     start|stop|restart|status|logs|run|open-panel|open-hud|open-status
   racecast companion start|stop|restart|status|logs|enable-control|open-tablet|open-admin
   racecast streams   start|stop|restart|status|logs
+  racecast <svc> logs [-f] [--list] [--archive YYYY-MM-DD]   # tail merged live logs; --list archives; --archive reads one (svc: relay|streams|companion|obs|tailscale)
   racecast event     status|start|stop      # event-day readiness: check / bring-up / wind-down
   racecast event start --stint N             # takeover: stint N is on air now — the relay starts there
   racecast event start --qualifying          # bring up in qualifying mode (Feed A serves the Qualifying tab)
@@ -15,6 +16,7 @@
   racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
   racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD incl. timer)
   racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
+  racecast obs logs | tailscale logs         # tail OBS's log dir / the Tailscale status-snapshot log (same -f/--list/--archive flags)
   racecast sheet     url | open              # print / open the active league's Google Sheet (built from its SHEET_ID)
   racecast app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
   racecast status                            # aggregate health of all services
@@ -551,6 +553,139 @@ def _event_title_path():
 def _relay_log_path():
     return os.path.join(_runtime_dir(), "logs", "relay.console.log")
 
+def _relay_boot_log_path():
+    """Where start_detached captures the daemon's raw stdout/stderr (crashes/tracebacks
+    BEFORE logging is configured). MUST differ from _relay_log_path(): the relay's own
+    TimedRotatingFileHandler owns relay.console.log, and a second writer on the same
+    file would corrupt rotation (the inherited fd would keep writing to the renamed
+    inode at midnight). Mirrors the static-streams feed_<port>.boot.log split."""
+    return os.path.join(_runtime_dir(), "logs", "relay.boot.log")
+
+def _tailscale_snapshot_path():
+    return os.path.join(_runtime_dir(), "logs", "tailscale.snapshot.log")
+
+def _append_tailscale_snapshot():
+    """Best-effort: append a timestamped `tailscale status` block to the snapshot log."""
+    try:
+        import tailscale as _ts
+        # tailscale_backend() probes `status --json`; if that hangs it times out and
+        # returns binary=None, so the second `status` call below never runs (no
+        # compounding block). When the binary IS found the daemon is responsive, so
+        # the second call returns promptly.
+        binary, _state, _ip = _ts.tailscale_backend()
+        if binary is None:
+            text = "tailscale binary not found"   # module present, CLI binary absent
+        else:
+            out = subprocess.run([binary, "status"], capture_output=True, text=True,
+                                 errors="replace", timeout=5,
+                                 env=sv.external_tool_env(),
+                                 **sv.no_window_kwargs())
+            text = (out.stdout or out.stderr or "").strip() or "no output"
+        ts_str = time.strftime("%Y-%m-%d %H:%M:%S")
+        path = _tailscale_snapshot_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        # append-only; small per entry — no rotation needed (prune_old_logs is
+        # mtime-based and won't touch it while the relay is in regular use).
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(_ts.status_snapshot_text(text, ts_str))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _relay_feed_logs():
+    """The relay's per-feed logs (feed_A/B/POV.log) under the profile logs dir."""
+    d = os.path.join(_runtime_dir(), "logs")
+    return sorted(glob.glob(os.path.join(d, "feed_*.log")))
+
+def _relay_files():
+    files = [_relay_log_path()] + _relay_feed_logs()
+    return [f for f in files if os.path.exists(f)]
+
+def _streams_files():
+    d = os.path.join(_streams_static_dir(), "logs")
+    return sorted(glob.glob(os.path.join(d, "feed_*.log")))
+
+def _obs_files():
+    import logsetup
+    d = logsetup.obs_log_dir(sys.platform)
+    newest = logsetup.newest_log(d)
+    return [newest] if newest else []
+
+def _companion_files():
+    p = _companion_log_path()
+    return [p] if p else []
+
+def _tailscale_files():
+    p = _tailscale_snapshot_path()
+    return [p] if os.path.exists(p) else []
+
+def _read_dated(dirpath, files, date):
+    """Concatenate the rotated archives for `date` across a racecast source's files,
+    each line source-prefixed. Empty string if none / bad date (guarded by
+    resolve_archive)."""
+    import logsetup
+    chunks = []
+    for f in files:
+        arch = logsetup.resolve_archive(dirpath, os.path.basename(f), date)
+        if arch:
+            with open(arch, encoding="utf-8", errors="replace") as fh:
+                label = os.path.basename(f).split(".log")[0]
+                chunks += [f"[{label}] {ln.rstrip(chr(10))}" for ln in fh]
+    return "\n".join(chunks)
+
+def _read_named(dirpath, token):
+    """Read one external log file by basename, guarded to dirpath. None if invalid."""
+    if not token or "/" in token or "\\" in token or os.sep in token or ".." in token:
+        return None
+    root = os.path.realpath(dirpath)
+    full = os.path.realpath(os.path.join(dirpath, token))
+    try:
+        if os.path.commonpath([root, full]) != root or not os.path.isfile(full):
+            return None
+    except ValueError:
+        return None
+    with open(full, encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+def _log_sources():
+    """Registry: source name -> {files, dir, archives, read}. Archives are opaque
+    TOKENS: racecast sources use rotation dates (YYYY-MM-DD); external apps
+    (obs/companion) use the older filenames in their dir (they do not follow our
+    rotation naming). `read(token)` resolves a token to text per source. The UI and
+    CLI both consume this registry."""
+    relay_dir = os.path.join(_runtime_dir(), "logs")
+    streams_dir = os.path.join(_streams_static_dir(), "logs")
+    import logsetup
+    def rc_src(files_fn, dirpath):
+        return {"files": files_fn, "dir": dirpath,
+                "archives": (lambda: logsetup.archive_dates(
+                    dirpath, [os.path.basename(f) for f in files_fn()])),
+                "read": (lambda tok: _read_dated(dirpath, files_fn(), tok))}
+    def ext_src(files_fn, dirpath):
+        def archives():
+            cur = set(os.path.basename(f) for f in files_fn())   # exclude the live/newest
+            return [os.path.basename(f) for f in logsetup.list_logs(dirpath)
+                    if os.path.basename(f) not in cur]
+        return {"files": files_fn, "dir": dirpath, "archives": archives,
+                "read": (lambda tok: _read_named(dirpath, tok))}
+    reg = {
+        "relay": rc_src(_relay_files, relay_dir),
+        "streams": rc_src(_streams_files, streams_dir),
+        "tailscale": rc_src(_tailscale_files, relay_dir),
+        "obs": ext_src(_obs_files, logsetup.obs_log_dir(sys.platform)),
+        "companion": ext_src(_companion_files,
+                             os.path.dirname(_companion_log_path() or "") or "."),
+    }
+    def _agg_files():
+        out = []
+        for n in ("relay", "streams", "obs", "companion", "tailscale"):
+            out += reg[n]["files"]()
+        return out
+    reg["aggregate"] = {"files": _agg_files, "dir": relay_dir,
+                        "archives": (lambda: []),       # aggregate is live-only
+                        "read": (lambda _tok: "")}
+    return reg
+
 def _cookies_path():
     """The YouTube cookie jar -- SHARED across leagues, at the un-scoped runtime/
     root. Canonical name is yt-cookies.txt; a legacy cookies.txt is migrated once."""
@@ -668,8 +803,8 @@ EXTRA_VERBS = {
 HIDDEN_VERBS = {"streams": ("run-feed",)}
 ONESHOTS = ("preflight", "speedtest", "cookies", "graphics", "media", "setup", "install-tools", "install-apps", "obs-browser", "update")
 EVENT_VERBS = ("status", "start", "stop", "takeover")
-TAILSCALE_VERBS = ("up", "down", "status")
-OBS_VERBS = ("refresh", "collection")
+TAILSCALE_VERBS = ("up", "down", "status", "logs")
+OBS_VERBS = ("refresh", "collection", "logs")
 SHEET_VERBS = ("url", "open")           # active league's Google Sheet (from SHEET_ID)
 APP_VERBS = ("launch", "quit")          # GUI app control for the Control Center
 APP_CONTROLLED = ("obs", "discord", "tailscale")   # GUI apps racecast can launch + quit
@@ -1321,9 +1456,10 @@ def relay_start(rest):
               f"that feed may fail to bind. Free them first: racecast freeport")
     _ensure_active_cockpit_secret()   # zero-config cockpit: provision + inject the secret
     argv = _relay_daemon_argv(rest, IS_FROZEN)
-    newpid = sv.start_detached(argv, _relay_log_path(), _relay_pid_path(),
+    newpid = sv.start_detached(argv, _relay_boot_log_path(), _relay_pid_path(),
                                env=_frozen_child_env())
     print(f"relay started (pid {newpid}). Watch it: racecast relay logs -f")
+    _append_tailscale_snapshot()
     _refresh_obs_pages(wait=10)   # pages may have changed since the last run
     return None
 
@@ -1518,8 +1654,29 @@ def relay_status(rest):
     extra = _relay_extra_text(d, _tailscale_ip()) if d["alive"] else ""
     print(sv.status_line("relay", d["pid"], d["alive"], extra))
 
-def relay_logs(rest):
-    sv.tail(_relay_log_path(), follow=("-f" in rest or "--follow" in rest))
+def _logs_cmd(source_name, rest):
+    """Shared `<service> logs` handler over the _log_sources() registry. Supports
+    `--list` (archive tokens), `--archive TOKEN` (read one archive), and a live
+    merged tail of the source's files (-f/--follow to follow)."""
+    src = _log_sources().get(source_name)
+    if src is None:
+        print(f"(unknown log source: {source_name})"); return
+    if "--list" in rest:
+        toks = src["archives"]()
+        print("\n".join(toks) if toks else "(no archives)")
+        return
+    if "--archive" in rest:
+        i = rest.index("--archive")
+        if i + 1 >= len(rest):
+            print("(--archive needs a token — run with --list to see available ones)")
+            return
+        tok = rest[i + 1]
+        text = src["read"](tok)
+        print(text if text else f"(no archive '{tok}')")
+        return
+    sv.tail_merged(src["files"](), follow=("-f" in rest or "--follow" in rest))
+
+def relay_logs(rest):      _logs_cmd("relay", rest)
 
 def relay_run(rest):
     _ensure_active_cockpit_secret()   # zero-config cockpit: provision + inject the secret
@@ -1735,18 +1892,16 @@ def _companion_log_path():
         return None
 
 
-def companion_logs(rest):
-    path = _companion_log_path()
-    if not path:
-        print("(no Companion logs found)")
-        return
-    sv.tail(path, follow=("-f" in rest or "--follow" in rest))
+def companion_logs(rest):  _logs_cmd("companion", rest)
+def obs_logs(rest):        _logs_cmd("obs", rest)
+def tailscale_logs(rest):  _logs_cmd("tailscale", rest)
 
 
 def _streams_static_dir():
     return os.path.join(_runtime_dir(), "static")
 
 def streams_start(rest):
+    _append_tailscale_snapshot()
     raise SystemExit(_run_script("scripts/start-streams.py",
                                  ["--state-dir", _streams_static_dir()] + rest))
 
@@ -1788,19 +1943,7 @@ def streams_status(rest):
         print(sv.status_line("streams:" + f["label"], f["pid"], f["alive"]))
 
 
-def _latest_stream_log():
-    """Newest static-feed log file, or None."""
-    logs = sorted(glob.glob(os.path.join(_streams_static_dir(), "logs", "feed_*.log")),
-                  key=os.path.getmtime)
-    return logs[-1] if logs else None
-
-
-def streams_logs(rest):
-    path = _latest_stream_log()
-    if not path:
-        print(f"(no stream logs under {os.path.join(_streams_static_dir(), 'logs')})")
-        return
-    sv.tail(path, follow=("-f" in rest or "--follow" in rest))
+def streams_logs(rest):    _logs_cmd("streams", rest)
 
 
 def _http_url(host, port, path):
@@ -2156,6 +2299,7 @@ def tailscale_status_cmd(_rest):
         print(f"Tailscale: {state} — {_tailscale_login_hint()}.")
     else:
         print(f"Tailscale: {state} — run `racecast tailscale up` to connect.")
+    _append_tailscale_snapshot()
 
 
 def _check_scene_collection():
@@ -2459,6 +2603,7 @@ DISPATCH = {
     ("tailscale", "up"): tailscale_up_cmd, ("tailscale", "down"): tailscale_down_cmd,
     ("tailscale", "status"): tailscale_status_cmd,
     ("obs", "refresh"): obs_refresh_cmd, ("obs", "collection"): obs_collection_cmd,
+    ("obs", "logs"): obs_logs, ("tailscale", "logs"): tailscale_logs,
     ("sheet", "url"): sheet_url_cmd, ("sheet", "open"): sheet_open_cmd,
     ("app", "launch"): app_launch_cmd, ("app", "quit"): app_quit_cmd,
 }
@@ -4538,9 +4683,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
                                              _rc_job_executable(),
                                              os.path.join(HERE, "racecast.py")),
             env=_frozen_child_env()),
-        "log_paths": {"relay": _relay_log_path,
-                      "companion": _companion_log_path,
-                      "streams": _latest_stream_log},
+        "log_sources": _log_sources(),
     }
     try:
         httpd = srv.serve(ctx, "127.0.0.1", port)

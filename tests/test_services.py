@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stdlib checks for the spawned-service daemon helper. Run: python3 tests/test_services.py"""
-import os, sys, tempfile
+import os, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -167,6 +167,39 @@ def t_external_tool_env_does_not_mutate_input():
     src = {"LD_LIBRARY_PATH": "/tmp/_MEIabc:/usr/lib"}
     sv.external_tool_env(frozen=True, environ=src)
     assert src["LD_LIBRARY_PATH"] == "/tmp/_MEIabc:/usr/lib"   # caller's dict untouched
+
+
+def t_start_detached_uses_boot_log_when_given(tmp):
+    boot = os.path.join(tmp, "logs", "relay.boot.log")
+    pidf = os.path.join(tmp, "relay.pid")
+    # The child crashes to stderr; start_detached must capture that to the boot file
+    # the caller passes (the "boot file" contract — pre-logging crashes are visible).
+    argv = [sys.executable, "-c", "import sys; sys.stderr.write('boom\\n')"]
+    pid = sv.start_detached(argv, boot, pidf)
+    # Let the short-lived child run to completion before we stop/clean up, so the
+    # stderr write reaches the boot file (no race against an immediate signal).
+    for _ in range(50):
+        if not sv.pid_alive(pid):
+            break
+        time.sleep(0.1)
+    sv.stop_pid(pid, pidf, timeout=5)
+    assert os.path.exists(boot)             # crash/stderr captured to the boot file
+    with open(boot, encoding="utf-8") as fh:
+        assert "boom" in fh.read()
+
+
+def t_tail_merged_prefixes_sources(tmp):
+    import io, contextlib
+    a = os.path.join(tmp, "feed_A.log"); b = os.path.join(tmp, "feed_B.log")
+    with open(a, "w", encoding="utf-8") as fh:
+        fh.write("a-line\n")
+    with open(b, "w", encoding="utf-8") as fh:
+        fh.write("b-line\n")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        sv.tail_merged([a, b], follow=False, lines=10)
+    out = buf.getvalue()
+    assert "[feed_A] a-line" in out and "[feed_B] b-line" in out
 
 
 def t_stop_commands_per_os():

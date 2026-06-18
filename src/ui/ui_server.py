@@ -4,7 +4,7 @@ Same construction as the relay's control server (ThreadingHTTPServer +
 make_handler closure). v1 binds 127.0.0.1 only; the bind/auth seams for the
 v2 Tailscale+password feature are this module's serve() and _allowed().
 Spec: docs/superpowers/specs/2026-06-07-control-center-design.md."""
-import json, os, shutil, tempfile, threading, time
+import json, os, queue, shutil, tempfile, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -112,7 +112,7 @@ def make_handler(ctx):
     init_plan(browser) -> dict (wizard plan: per-step done/kind/op/instruction),
     init_step(key) -> dict (run one non-job wizard step, {ok, done} | {ok: False, error}),
     profile_export(name, assets) -> dict, profile_import(path, force) -> dict,
-    jobs (ui_jobs.JobManager), log_paths {name: () -> path|None},
+    jobs (ui_jobs.JobManager), log_sources {name: {files, dir, archives, read}},
     favicon_path (the brand SVG served at /favicon.svg),
     shutdown() (installed by serve())."""
 
@@ -550,8 +550,15 @@ def make_handler(ctx):
                 snap = ctx["jobs"].snapshot(job_id) if job_id else None
                 return self._json({"ok": True, **snap}) if snap else self._not_found("unknown job")
             if path.startswith("/api/logs/") and path.endswith("/stream"):
-                name = path.split("/")[3]
+                name = path.split("/")[3]   # "aggregate" is just another registry source
                 return self._stream_log(name) if name else self._not_found("unknown log")
+            if path.startswith("/api/logs/") and path.endswith("/archives"):
+                name = path.split("/")[3]
+                return self._log_archives(name)
+            if path.startswith("/api/logs/") and "/file" in path:
+                name = path.split("/")[3]
+                qs = parse_qs(urlparse(self.path).query or "")
+                return self._log_file(name, qs.get("token", [""])[0])
             return self._not_found()
 
         def do_POST(self):
@@ -860,35 +867,78 @@ def make_handler(ctx):
             except (BrokenPipeError, ConnectionResetError):
                 return None                       # browser tab closed mid-stream
 
-        def _stream_log(self, name):
-            path_fn = ctx["log_paths"].get(name)
-            if path_fn is None:
+        def _src(self, name):
+            return ctx.get("log_sources", {}).get(name)
+
+        def _log_archives(self, name):
+            src = self._src(name)
+            if src is None:
                 return self._not_found(f"unknown log: {name}")
+            return self._json({"ok": True, "tokens": src["archives"]()})
+
+        def _log_file(self, name, token):
+            src = self._src(name)
+            if src is None:
+                return self._not_found(f"unknown log: {name}")
+            # Structural guard up front (defense-in-depth; the source read() guards too).
+            if not token or "/" in token or "\\" in token or ".." in token:
+                return self._json({"ok": False, "error": "bad token"}, code=400)
+            text = src["read"](token)
+            return self._json({"ok": True, "text": text or ""})
+
+        def _tail_files(self, files, label_of):
+            """Yield (label, line) for the last TAIL_LINES of each file then new
+            lines as they arrive (arrival order). Used by single-source + aggregate.
+            Returns (queue, stop); the caller sets stop['v'] = True on disconnect so
+            the daemon reader threads exit."""
+            q = queue.Queue(maxsize=2000)   # bounded: a stalled (not-yet-closed) client
+            stop = {"v": False}             # must not let a busy log grow memory forever
+            def emit(item):
+                try:
+                    q.put_nowait(item)
+                except queue.Full:
+                    pass  # consumer stalled — drop the line rather than grow unbounded
+            def follow(path):
+                try:
+                    with open(path, encoding="utf-8", errors="replace") as fh:
+                        for ln in fh.readlines()[-TAIL_LINES:]:
+                            emit((label_of(path), ln.rstrip("\r\n")))
+                        while not stop["v"]:
+                            ln = fh.readline()
+                            if ln:
+                                emit((label_of(path), ln.rstrip("\r\n")))
+                            else:
+                                time.sleep(0.4)
+                except OSError:
+                    pass  # file vanished/rotated/unreadable — this reader just stops
+            for p in files:
+                threading.Thread(target=follow, args=(p,), daemon=True).start()
+            return q, stop
+
+        def _stream_source(self, files, label_of):
             self._sse_headers()
+            if not files:
+                self.wfile.write(sse_frame("(no log yet — waiting)")); self.wfile.flush()
+            q, stop = self._tail_files(files, label_of)
             try:
-                path, notified = path_fn(), False
-                while not path or not os.path.exists(path):
-                    # one visible notice, then SSE comment pings (detect a
-                    # closed tab without spamming the client)
-                    self.wfile.write(sse_frame("(no log yet — waiting)")
-                                     if not notified else b": ping\n\n")
-                    self.wfile.flush()
-                    notified = True
-                    time.sleep(2.0)
-                    path = path_fn()
-                with open(path, encoding="utf-8", errors="replace") as fh:
-                    for line in fh.readlines()[-TAIL_LINES:]:
-                        self.wfile.write(sse_frame(line.rstrip("\r\n")))
-                    self.wfile.flush()
-                    while True:
-                        line = fh.readline()
-                        if line:
-                            self.wfile.write(sse_frame(line.rstrip("\r\n")))
-                            self.wfile.flush()
-                        else:
-                            time.sleep(0.5)
+                while True:
+                    try:
+                        label, line = q.get(timeout=0.4)
+                        self.wfile.write(sse_frame(f"[{label}] {line}"))
+                        self.wfile.flush()
+                    except queue.Empty:
+                        self.wfile.write(b": ping\n\n"); self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
-                return None                       # browser tab closed mid-stream
+                stop["v"] = True                  # browser tab closed mid-stream
+                return None
+
+        def _stream_log(self, name):
+            # "aggregate" is just another registry source (its files = the union).
+            src = self._src(name)
+            if src is None:
+                return self._not_found(f"unknown log: {name}")
+            return self._stream_source(
+                src["files"](), lambda p: os.path.basename(p).split(".log")[0])
 
     return Handler
 

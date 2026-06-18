@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for the POV additions. Run: python3 tests/test_pov.py"""
-import importlib.util, os
+import importlib.util, os, tempfile
 import threading, urllib.request, urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+# Feed opens a per-feed log at construction (configure_logging). Point every
+# Feed/Relay logdir at a throwaway temp dir so the suite never writes feed_*.log
+# into the repo tree.
+LOGDIR = tempfile.mkdtemp(prefix="racecast-test-logs-")
 spec = importlib.util.spec_from_file_location(
     "irofeeds", os.path.join(ROOT, "src", "relay", "racecast-feeds.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
@@ -97,7 +101,7 @@ def t_feed_grab_cmd_pinned():
 
 
 def t_feed_paused_returns_none():
-    f = m.Feed("POV", 53003, 0, lambda: ["https://youtu.be/x"], HERE)
+    f = m.Feed("POV", 53003, 0, lambda: ["https://youtu.be/x"], LOGDIR)
     f.paused = True
     assert f.current_channel() == (None, 0)
     f.paused = False
@@ -106,7 +110,7 @@ def t_feed_paused_returns_none():
 
 
 def t_feed_has_fmt_attr():
-    f = m.Feed("POV", 53003, 0, lambda: [], HERE, fmt="b[height<=720]/b")
+    f = m.Feed("POV", 53003, 0, lambda: [], LOGDIR, fmt="b[height<=720]/b")
     assert f.fmt == "b[height<=720]/b"
 
 
@@ -144,7 +148,7 @@ def t_serve_exit_is_drop():
 
 
 def t_feed_starts_not_dropped():
-    f = m.Feed("A", 53001, 0, lambda: ["a"], HERE)
+    f = m.Feed("A", 53001, 0, lambda: ["a"], LOGDIR)
     assert f.dropped is False
 
 
@@ -163,7 +167,7 @@ def t_status_surfaces_feed_down():
 def t_reload_and_set_index_clear_dropped():
     # Director intervention (reload / reposition) acknowledges the drop: the alarm
     # clears, and re-fires only if the feed drops again.
-    f = m.Feed("A", 53001, 0, lambda: ["a", "b"], HERE)
+    f = m.Feed("A", 53001, 0, lambda: ["a", "b"], LOGDIR)
     f.dropped = True
     f.reload()
     assert f.dropped is False
@@ -174,18 +178,18 @@ def t_reload_and_set_index_clear_dropped():
 
 def t_current_channel_idles_past_end():
     # idx beyond the schedule -> idle (None), NOT a clamp onto the last stint
-    f = m.Feed("B", 53002, 1, lambda: ["https://youtu.be/only"], HERE)
+    f = m.Feed("B", 53002, 1, lambda: ["https://youtu.be/only"], LOGDIR)
     assert f.current_channel() == (None, 1)        # one link, B on slot 2 -> idle
-    f2 = m.Feed("B", 53002, 0, lambda: ["https://youtu.be/only"], HERE)
+    f2 = m.Feed("B", 53002, 0, lambda: ["https://youtu.be/only"], LOGDIR)
     assert f2.current_channel() == ("https://youtu.be/only", 0)
 
 
 def t_set_index_allows_one_past_end_for_idle():
-    f = m.Feed("A", 53001, 0, lambda: ["a", "b"], HERE)
+    f = m.Feed("A", 53001, 0, lambda: ["a", "b"], LOGDIR)
     assert f.set_index(2) is True                  # len 2 -> idle slot 2 is reachable
     assert f.idx == 2
     assert f.current_channel() == (None, 2)        # idles
-    f2 = m.Feed("A", 53001, 0, lambda: ["a", "b"], HERE)
+    f2 = m.Feed("A", 53001, 0, lambda: ["a", "b"], LOGDIR)
     assert f2.set_index(99) is True                # clamps to len (idle sentinel) from idx 0
     assert f2.idx == 2
     assert f2.set_index(99) is False               # already at the sentinel -> no-op
@@ -205,7 +209,7 @@ class _StubSource:
 
 
 def _relay(items):
-    r = m.Relay(_StubSource(items), (53001, 53002), HERE)
+    r = m.Relay(_StubSource(items), (53001, 53002), LOGDIR)
     r._reflect = lambda live, cut: None        # isolate index logic from OBS I/O
     r._reflect_pov = lambda shown: None        # isolate POV toggle from OBS I/O
     return r
@@ -270,7 +274,7 @@ def t_live_schedule_row_pure():
 def t_relay_live_schedule_row_tracks_on_air_feed():
     rows = [("s1", "JeGr", "Stint 1", 1), ("s2", "GT45", "Stint 2", 2),
             ("s3", "Ann", "Stint 3", 3), ("s4", "Ben", "Stint 4", 4)]
-    r = m.Relay(_StubSource(["s1", "s2", "s3", "s4"], rows), (53001, 53002), HERE)
+    r = m.Relay(_StubSource(["s1", "s2", "s3", "s4"], rows), (53001, 53002), LOGDIR)
     r._reflect = lambda live, cut: None
     assert r.live_feed() == "A"                        # A on stint 1
     assert r.live_schedule_row() == {"streamer": "JeGr", "stint": "Stint 1"}
@@ -282,7 +286,7 @@ def t_relay_live_schedule_row_tracks_on_air_feed():
 def _relay_q(items, qual_items, qual_rows=None, mode="race"):
     race = _StubSource(items)
     qual = _StubSource(qual_items, qual_rows)
-    r = m.Relay(race, (53001, 53002), HERE, qual_source=qual, mode=mode)
+    r = m.Relay(race, (53001, 53002), LOGDIR, qual_source=qual, mode=mode)
     r._reflect = lambda live, cut: None
     return r
 
@@ -397,7 +401,7 @@ def t_hud_page_has_pov_name_slot_and_gating():
 
 
 def t_preview_program_endpoint_serves_jpeg():
-    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], HERE)
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
 
     class FakeObs:
         def get_program_screenshot(self, **kw): return (b"\xff\xd8PGM\xff\xd9", "")
@@ -416,7 +420,7 @@ def t_preview_program_endpoint_serves_jpeg():
 
 
 def t_preview_program_503_when_obs_down():
-    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], HERE)
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
     old = m._obs_ws; m._obs_ws = None; srv = _serve(r)
     try:
         port = srv.server_address[1]
@@ -430,7 +434,7 @@ def t_preview_program_503_when_obs_down():
 
 
 def t_preview_feed_onair_uses_obs_not_grab():
-    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], HERE)   # A on air (idx 0)
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)   # A on air (idx 0)
 
     class FakeObs:
         def get_source_screenshot(self, name, **kw):
@@ -449,7 +453,7 @@ def t_preview_feed_onair_uses_obs_not_grab():
 
 
 def t_preview_feed_offair_uses_grab_not_obs():
-    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], HERE)   # B off air (idx 1)
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)   # B off air (idx 1)
     calls = {}
     def fake_grab(port, width=480, timeout=8.0):
         calls["port"] = port; calls["width"] = width; return b"\xff\xd8GRB\xff\xd9"
@@ -469,7 +473,7 @@ def t_preview_feed_offair_uses_grab_not_obs():
 
 
 def t_preview_feed_pov_paused_is_503():
-    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], HERE)   # no POV configured
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)   # no POV configured
     srv = _serve(r)
     try:
         port = srv.server_address[1]
@@ -483,7 +487,7 @@ def t_preview_feed_pov_paused_is_503():
 
 
 def t_preview_feed_unknown_is_404():
-    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], HERE)
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
     srv = _serve(r)
     try:
         port = srv.server_address[1]
@@ -497,7 +501,7 @@ def t_preview_feed_unknown_is_404():
 
 
 def t_preview_feed_grab_failure_is_503():
-    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], HERE)   # B off air
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)   # B off air
     class FakeObs:
         def get_source_screenshot(self, *a, **k): return (None, "x")
     old = m._obs_ws; m._obs_ws = FakeObs()

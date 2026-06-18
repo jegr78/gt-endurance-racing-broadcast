@@ -2129,6 +2129,38 @@ def t_ensure_active_cockpit_secret_respects_existing_env():
     _with_cockpit_secret_env_cleared(body)
 
 
+def t_log_sources_registry_shape():
+    src = m._log_sources()
+    assert set(["relay", "streams", "obs", "companion", "tailscale", "aggregate"]) <= set(src)
+    for _name, spec in src.items():
+        assert callable(spec["files"])          # () -> list[path]
+        assert callable(spec["archives"])       # () -> list[token]
+        assert callable(spec["read"])           # (token) -> text
+    # aggregate's file set is the union of the individual sources
+    agg = set(src["aggregate"]["files"]())
+    parts = set()
+    for n in ("relay", "streams", "obs", "companion", "tailscale"):
+        parts |= set(src[n]["files"]())
+    assert agg == parts
+
+
+def t_dispatch_has_obs_and_tailscale_logs():
+    assert ("obs", "logs") in m.DISPATCH
+    assert ("tailscale", "logs") in m.DISPATCH
+
+
+def t_relay_start_spawns_to_boot_log_not_console():
+    # The relay daemon attaches its own rotating handler to relay.console.log; the
+    # detached spawn MUST capture raw stdout/stderr to a separate boot file, or the
+    # two writers corrupt midnight rotation (the inherited fd keeps writing to the
+    # renamed inode). Guards against reintroducing the #-final-review bug.
+    import inspect
+    src = inspect.getsource(m.relay_start)
+    assert "_relay_boot_log_path()" in src
+    assert "_relay_log_path()" not in src   # never hand the console log to start_detached
+    assert m._relay_boot_log_path() != m._relay_log_path()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

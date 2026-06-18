@@ -102,30 +102,55 @@ def streamlink_argv(url, port, platform="youtube", twitch_token=None):
             "--retry-streams", "15", "--retry-open", "5"]
 
 
-def serve_once(url, port, platform="youtube", twitch_token=None, call=subprocess.call):
-    """Serve `url` on `port` until streamlink exits; returns its exit code.
-    `call` is an injectable seam for the unit test."""
-    return call(streamlink_argv(url, port, platform, twitch_token),
-                env=external_tool_env(), **no_window_kwargs())
+def serve_once(url, port, platform="youtube", twitch_token=None, call=subprocess.call, logger=None):
+    """Serve `url` on `port` until streamlink exits; returns its exit code. When a
+    logger is given, streamlink's output is pumped through it (timestamps + levels +
+    [streamlink] tag); otherwise it inherits stdout (legacy/standalone use).
+    `call` is an injectable seam for the unit test (used only in the no-logger path)."""
+    if logger is None:   # legacy/standalone path stays dependency-free (no logsetup import)
+        return call(streamlink_argv(url, port, platform, twitch_token),
+                    env=external_tool_env(), **no_window_kwargs())
+    import logsetup, threading
+    proc = subprocess.Popen(streamlink_argv(url, port, platform, twitch_token),
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, encoding="utf-8", errors="replace",
+                            env=external_tool_env(), **no_window_kwargs())
+    threading.Thread(target=logsetup.pump_subprocess,
+                     args=(proc.stdout, logger, "streamlink"), daemon=True).start()
+    return proc.wait()
 
 
 def main():
-    if len(sys.argv) != 3:
-        sys.exit("usage: loopstream.py <CHANNEL_ID_or_URL> <PORT>")
-    ch, port = sys.argv[1], sys.argv[2]
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("channel")
+    ap.add_argument("port")
+    ap.add_argument("--log", help="rotating log file this feed owns")
+    a = ap.parse_args()
+    ch, port = a.channel, a.port
     url = channel_url(ch)
     plat = platform_of(url)
+    logger = None
+    if a.log:
+        import logsetup
+        logger = logsetup.configure_logging(
+            f"racecast.staticfeed.{port}", a.log, to_stdout=False)
+        logsetup.prune_old_logs(
+            os.path.dirname(a.log),
+            keep_days=int(os.environ.get("RACECAST_LOG_RETENTION_DAYS") or logsetup.DEFAULT_RETENTION_DAYS))
     token = None
     if plat == "twitch":
         token = twitch_oauth_from_cookies(
             os.path.join(runtime_dir(os.path.dirname(os.path.abspath(__file__))), "twitch-cookies.txt"))
     while True:
-        print(f">> [{port}] Connecting to {url} ({plat})", flush=True)
+        msg = f"connecting to {url} ({plat})"
+        logger.info(msg) if logger else print(f">> [{port}] {msg}", flush=True)
         try:
-            serve_once(url, port, plat, token)
+            serve_once(url, port, plat, token, logger=logger)
         except FileNotFoundError:
             sys.exit("ERROR: streamlink not found (brew install streamlink / pip install -U streamlink).")
-        print(f">> [{port}] Stream ended or not live. Retrying in 10s...", flush=True)
+        end = "stream ended or not live — retrying in 10s"
+        logger.warning(end) if logger else print(f">> [{port}] {end}", flush=True)
         time.sleep(10)
 
 
