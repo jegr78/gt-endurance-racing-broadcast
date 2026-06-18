@@ -1685,7 +1685,7 @@ async function loadTakeoverPeers() {
 
 let jobId = null, jobCancelled = false;
 
-function watchJob(name, id) {
+function watchJob(name, id, onDone) {
   if (jobES) jobES.close();
   jobId = id;
   jobCancelled = false;
@@ -1727,6 +1727,24 @@ function watchJob(name, id) {
     if (name === 'update' && ok && $('joblog').textContent.indexOf('updated to ') >= 0) {
       alert('Update installed. Quit and reopen the Control Center to use the new version.');
     }
+    if (onDone) onDone(e.data);          // resolve runOpAndWait() with the exit code
+  });
+}
+
+// Dispatch an op and resolve once its job finishes — reuses the op-dispatch POST
+// + watchJob console wiring instead of duplicating EventSource handling. Resolves
+// with the job's exit code (a string, '0' = success); rejects if the dispatch
+// itself fails (server unreachable / op rejected).
+function runOpAndWait(name, params) {
+  return new Promise(async (resolve, reject) => {
+    let r;
+    try {
+      r = await (await fetch('/api/op/' + name, {method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({params: params || {}})})).json();
+    } catch (e) { reject(new Error('Control Center not reachable.')); return; }
+    if (!r.ok) { reject(new Error(r.error)); return; }
+    watchJob(name, r.job_id, resolve);
   });
 }
 
@@ -3513,11 +3531,54 @@ function watchLog(name) {
   };
 }
 
-async function quitUi() {
-  if (!confirm('Quit the Control Center? Relay/Companion/streams keep running.')) return;
+function quitUi() {
+  // Default OFF on every open (no persistence) — quitting must never kill a live
+  // broadcast unless the operator opts in this time.
+  $('quit-stop-event').checked = false;
+  quitStopToggle();
+  $('quitgo').disabled = false;
+  $('quitcancel').disabled = false;
+  $('quitmodal').showModal();
+}
+
+function closeQuitModal() { $('quitmodal').close(); }
+
+// Reflect the checkbox in the dialog copy: with the box off, the live-broadcast
+// safety note holds; with it on, warn that the services will be stopped first.
+function quitStopToggle() {
+  $('quithint').textContent = $('quit-stop-event').checked
+    ? 'The event will be stopped first (relay/Companion/streams; ~15–32 s). '
+      + 'OBS/Discord/Tailscale keep running.'
+    : 'Relay/Companion/streams keep running.';
+}
+
+async function blankAndQuit() {
   try { await fetch('/api/quit', {method: 'POST'}); } catch (e) {}
   document.body.innerHTML =
     '<p style="padding:30px;font:14px system-ui;color:#F8FAFC">Control Center stopped — you can close this tab.</p>';
+}
+
+async function quitConfirm() {
+  if (!$('quit-stop-event').checked) {     // plain quit — unchanged behaviour
+    closeQuitModal();
+    blankAndQuit();
+    return;
+  }
+  // Stop the event first, then quit. The event-stop job is a subprocess of THIS
+  // UI server, so quitting before it finishes would orphan/kill the stop mid-way:
+  // waiting for the 'done' event is mandatory.
+  $('quitgo').disabled = true;
+  $('quitcancel').disabled = true;
+  closeQuitModal();                        // reveal the docked console for live progress
+  let code;
+  try {
+    code = await runOpAndWait('event-stop');
+  } catch (e) {
+    alert(e.message || 'Could not start the event stop.');
+    return;                                // dispatch failed — leave the CC open
+  }
+  if (code !== '0') return;                // failed: keep the CC open, error stays in the console
+  blankAndQuit();
 }
 
 refresh();
@@ -3543,6 +3604,20 @@ assetsLoaded = true; fetchAssetFiles();
     <span style="flex:1"></span>
     <button onclick="closeUpdModal()" autofocus>Cancel</button>
     <button class="primary" id="updgo">Update now</button>
+  </div>
+</dialog>
+
+<dialog id="quitmodal" class="updmodal">
+  <h3>Quit the Control Center?</h3>
+  <p id="quithint" style="font-size:13px;line-height:1.55;margin:8px 0 14px">
+    Relay/Companion/streams keep running.</p>
+  <label class="prevtoggle" style="margin:0 0 16px">
+    <input type="checkbox" id="quit-stop-event" onchange="quitStopToggle()">
+    Also stop the event (relay/Companion/streams)</label>
+  <div class="updactions">
+    <span style="flex:1"></span>
+    <button id="quitcancel" onclick="closeQuitModal()" autofocus>Cancel</button>
+    <button class="primary" id="quitgo" onclick="quitConfirm()">Quit</button>
   </div>
 </dialog>
 </body>
