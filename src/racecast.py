@@ -551,6 +551,30 @@ def _event_title_path():
 def _relay_log_path():
     return os.path.join(_runtime_dir(), "logs", "relay.console.log")
 
+def _tailscale_snapshot_path():
+    return os.path.join(_runtime_dir(), "logs", "tailscale.snapshot.log")
+
+def _append_tailscale_snapshot():
+    """Best-effort: append a timestamped `tailscale status` block to the snapshot log."""
+    try:
+        import tailscale as _ts
+        binary, _state, _ip = _ts.tailscale_backend()
+        if binary is None:
+            text = "tailscale binary not found"
+        else:
+            out = subprocess.run([binary, "status"], capture_output=True, text=True,
+                                 errors="replace", timeout=5,
+                                 env=sv.external_tool_env(),
+                                 **sv.no_window_kwargs())
+            text = (out.stdout or out.stderr or "").strip() or "no output"
+        ts_str = time.strftime("%Y-%m-%d %H:%M:%S")
+        path = _tailscale_snapshot_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(_ts.status_snapshot_text(text, ts_str))
+    except Exception:  # noqa: BLE001
+        pass
+
 def _cookies_path():
     """The YouTube cookie jar -- SHARED across leagues, at the un-scoped runtime/
     root. Canonical name is yt-cookies.txt; a legacy cookies.txt is migrated once."""
@@ -1324,6 +1348,7 @@ def relay_start(rest):
     newpid = sv.start_detached(argv, _relay_log_path(), _relay_pid_path(),
                                env=_frozen_child_env())
     print(f"relay started (pid {newpid}). Watch it: racecast relay logs -f")
+    _append_tailscale_snapshot()
     _refresh_obs_pages(wait=10)   # pages may have changed since the last run
     return None
 
@@ -1747,6 +1772,7 @@ def _streams_static_dir():
     return os.path.join(_runtime_dir(), "static")
 
 def streams_start(rest):
+    _append_tailscale_snapshot()
     raise SystemExit(_run_script("scripts/start-streams.py",
                                  ["--state-dir", _streams_static_dir()] + rest))
 
@@ -2156,6 +2182,7 @@ def tailscale_status_cmd(_rest):
         print(f"Tailscale: {state} — {_tailscale_login_hint()}.")
     else:
         print(f"Tailscale: {state} — run `racecast tailscale up` to connect.")
+    _append_tailscale_snapshot()
 
 
 def _check_scene_collection():

@@ -141,6 +141,13 @@ def t_funnel_args():
     assert off == ["funnel", "reset"]
 
 
+def t_status_snapshot_text_shape():
+    out = ts.status_snapshot_text("100.64.0.1  myhost  active", ts="2026-06-18 12:00:00")
+    assert out.startswith("==== 2026-06-18 12:00:00 ====\n")
+    assert out.rstrip().endswith("100.64.0.1  myhost  active")
+    assert out.endswith("\n")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
