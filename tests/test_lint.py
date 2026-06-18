@@ -18,7 +18,11 @@ COMMENT_LINE = "try:\n    f()\nexcept OSError:\n    # already gone\n    pass\n"
 NON_EMPTY = "try:\n    f()\nexcept OSError:\n    log()\n"
 RAISE_IN_TRY = "try:\n    f()\n    raise AssertionError\nexcept ValueError:\n    pass\n"
 BENIGN_IMPORT = "try:\n    import x\nexcept ImportError:\n    pass\n"
-BENIGN_KBD = "try:\n    loop()\nexcept KeyboardInterrupt:\n    pass\n"
+# KeyboardInterrupt is NOT a blanket-benign type: CodeQL flags a silent Ctrl-C
+# swallow when the try can also exit normally (#217 alert 124). The gate therefore
+# requires an explanatory comment on it, like any other swallow.
+KBD_NO_COMMENT = "try:\n    loop()\nexcept KeyboardInterrupt:\n    pass\n"
+KBD_COMMENT = "try:\n    loop()\nexcept KeyboardInterrupt:\n    pass  # Ctrl-C\n"
 BARE_EXCEPT = "try:\n    f()\nexcept:\n    pass\n"
 MIXED_BENIGN = "try:\n    f()\nexcept (ImportError, OSError):\n    pass\n"
 DOTTED = "try:\n    f()\nexcept asyncio.TimeoutError:\n    pass\n"
@@ -51,7 +55,12 @@ def t_raise_in_try_is_excluded():
 
 def t_benign_caught_types_excluded():
     assert lint.find_empty_excepts(BENIGN_IMPORT) == []      # optional-import guard
-    assert lint.find_empty_excepts(BENIGN_KBD) == []         # Ctrl-C swallow
+
+
+def t_keyboardinterrupt_swallow_needs_comment():
+    # CodeQL flags a comment-free Ctrl-C swallow (#217 alert 124); the gate mirrors that.
+    assert lint.find_empty_excepts(KBD_NO_COMMENT) == [3]
+    assert lint.find_empty_excepts(KBD_COMMENT) == []
 
 
 def t_bare_except_is_flagged():
