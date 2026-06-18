@@ -174,7 +174,8 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "cockpit_status": lambda: {"ok": True, "enabled": True, "has_secret": True,
                                        "funnel_auto": False, "funnel_capable": True,
                                        "funnel_on": False,
-                                       "links": [{"name": "Alpha", "tailnet": "",
+                                       "links": [{"name": "Alpha",
+                                                  "internal": "http://127.0.0.1:8088/cockpit?t=x",
                                                   "funnel": "https://h/cockpit?t=x"}]},
             "cockpit_set_enabled": lambda enabled: {"ok": True, "_got": enabled},
             "cockpit_funnel": lambda on: {"ok": True, "_got": on},
@@ -1040,6 +1041,9 @@ def t_cockpit_status_route_wraps_provider():
         data = json.loads(body)
         assert code == 200 and data["enabled"] is True and data["has_secret"] is True
         assert data["links"][0]["name"] == "Alpha"
+        # both the public Funnel link and the internal (tailnet/loopback) link ride through
+        assert data["links"][0]["funnel"] == "https://h/cockpit?t=x"
+        assert data["links"][0]["internal"] == "http://127.0.0.1:8088/cockpit?t=x"
     finally:
         httpd.shutdown()
 
