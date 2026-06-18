@@ -2061,6 +2061,14 @@ def t_event_title_write_relay_error_returns_not_ok():
     assert d["ok"] is False and "connection refused" in d["error"], d
 
 
+def t_cockpit_internal_host_prefers_tailscale_then_loopback():
+    # The Control Center's "internal" cockpit link mirrors the relay panel:
+    # the producer's Tailscale IP when the tailnet is up, 127.0.0.1 when down.
+    assert m._cockpit_internal_host("100.64.0.5") == "100.64.0.5"
+    assert m._cockpit_internal_host(None) == "127.0.0.1"
+    assert m._cockpit_internal_host("") == "127.0.0.1"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

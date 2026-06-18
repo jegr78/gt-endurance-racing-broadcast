@@ -19,12 +19,18 @@ gets a self-contained cockpit:
 
 It is served under its own `/cockpit/*` path namespace and can be reached two ways:
 
-- **Tailnet** — `http://<producer-tailscale-ip>:8088/cockpit?t=<token>` for crew who
-  are already on the tailnet (e.g. a phone with the Tailscale app).
+- **Internal (tailnet)** — `http://<producer-tailscale-ip>:8088/cockpit?t=<token>` for
+  crew who are already on the tailnet (e.g. a phone with the Tailscale app). When the
+  tailnet is down it falls back to `http://127.0.0.1:8088/...` — the same rule the
+  producer panel link uses (relay `--bind auto`).
 - **Public, via Tailscale Funnel** — `https://<your-magicdns-host>/cockpit?t=<token>`
   for commentators **without** a Tailscale account (free-tier friendly). Funnel maps
   **only** the `/cockpit` path; the rest of the relay (`/panel`, `/status`, feeds)
   stays tailnet/loopback-only.
+
+The Control Center's **Cockpit** view (above) offers both per commentator — a **Copy
+funnel link** and a **Copy internal link** button — next to **Revoke**; the CLI
+`racecast cockpit links` prints both as well.
 
 ## Authentication
 
