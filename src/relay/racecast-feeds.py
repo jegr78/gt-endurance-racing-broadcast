@@ -88,6 +88,7 @@ import chat_admin  # required (ChatStore); src/scripts is on sys.path via the bl
 import cockpit_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
 import cockpit_admin  # talent-cockpit revocation version store (#191)
 import cockpit_submissions  # talent stream-link submission store (#193)
+import logsetup  # rotating per-feed/console loggers + streamlink pump (src/scripts on sys.path)
 from services import external_tool_env  # de-PyInstaller the env for spawned external tools
 
 # Module-level relay logger. main() attaches the file/console handlers via
@@ -2093,7 +2094,6 @@ class Feed:
         self.stop = False
         self.advance = threading.Event()
         self.logfile = os.path.join(logdir, f"feed_{name}.log")
-        import logsetup
         self.log = logsetup.configure_logging(
             f"racecast.feed.{name}", self.logfile, to_stdout=False)
         # Health for /status: phase ("idle" | "connecting" | "serving"),
@@ -2183,7 +2183,6 @@ class Feed:
                 self.last_error = ssai_warning(hls, self.log)  # warn, never block
                 token, target, serve_platform = None, hls, "youtube"
 
-            import logsetup
             self.log.info("serving stint %d (%s)", i + 1, serve_platform)
             cmd = streamlink_serve_cmd(target, self.port, serve_platform, token)
             try:
@@ -3372,7 +3371,6 @@ def main():
     logdir = args.logdir if os.path.isabs(args.logdir) else os.path.join(runtime, args.logdir)
     os.makedirs(logdir, exist_ok=True)
 
-    import logsetup
     logsetup.configure_logging("racecast.relay", os.path.join(logdir, "relay.console.log"))
     _keep = int(os.environ.get("RACECAST_LOG_RETENTION_DAYS") or logsetup.DEFAULT_RETENTION_DAYS)
     logsetup.prune_old_logs(logdir, keep_days=_keep)   # cleanup on every start
