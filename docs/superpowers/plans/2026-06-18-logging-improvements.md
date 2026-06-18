@@ -111,7 +111,6 @@ import logging, os, re, sys, time
 from logging.handlers import TimedRotatingFileHandler
 
 DEFAULT_RETENTION_DAYS = 7
-_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def configure_logging(name, log_path, level=logging.INFO, to_stdout=None):
@@ -303,9 +302,7 @@ def pump_subprocess(stream, logger, tag):
     level, prefixed `[tag]`. Runs to EOF; swallows read errors. Designed to run in a
     daemon thread so it never blocks daemon shutdown."""
     try:
-        for raw in iter(stream.readline, ""):
-            if raw == "":
-                break
+        for raw in iter(stream.readline, ""):   # sentinel "" stops at EOF
             line = raw.rstrip("\n").rstrip("\r")
             logger.log(classify_subproc_line(line), "[%s] %s", tag, line)
     except (ValueError, OSError):
