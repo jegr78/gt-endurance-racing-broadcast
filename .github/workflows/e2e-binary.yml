@@ -1,0 +1,75 @@
+name: e2e-binary
+
+# Binary-path regression guard. Builds the PyInstaller binary and runs the e2e
+# harness AGAINST IT (tools/e2e.py --binary), so binary-ONLY bugs surface here —
+# a file/import missing from the bundle, frozen path resolution — the class the
+# src/ dev build hides (e.g. the cockpit.html bundle omission that 404'd
+# /cockpit only in preview builds). The matrix `e2e` job covers the src/ path on
+# every PR; this is the heavier frozen counterpart.
+#
+# Path/label-triggered to keep the ~1-2 min build OFF every PR: it runs
+# automatically when a PR touches the relay/served pages or the build/e2e
+# tooling, on demand via the `binary-e2e` label, or manually (workflow_dispatch).
+# The job always starts but a `decide` step gates the heavy work, so an
+# unrelated PR finishes in seconds and never blocks.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-binary-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  e2e-binary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          fetch-depth: 0   # need base..head to diff the changed paths
+
+      - name: Decide whether to run (relevant paths, label, or manual)
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          HAS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'binary-e2e') }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          run=false
+          # Manual dispatch or the explicit label always runs.
+          if [ "$EVENT" = "workflow_dispatch" ] || [ "$HAS_LABEL" = "true" ]; then
+            run=true
+          # Otherwise run only when the PR touches the relay / served pages or the
+          # binary-build / e2e tooling (the surfaces a frozen-only bug can hide in).
+          elif [ -n "$BASE_SHA" ] && [ -n "$HEAD_SHA" ]; then
+            if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -qE \
+                '^(src/relay/|src/cockpit/|src/ui/|src/director/|src/obs/|tools/build-binary\.py|tools/e2e\.py|tools/e2e_checks\.py|\.github/workflows/e2e-binary\.yml)'; then
+              run=true
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "decision: run=$run (event=$EVENT label=$HAS_LABEL)"
+
+      - name: Set up Python
+        if: steps.decide.outputs.run == 'true'
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller
+        if: steps.decide.outputs.run == 'true'
+        run: python -m pip install pyinstaller
+
+      - name: Build the binary, then run the e2e harness against it
+        if: steps.decide.outputs.run == 'true'
+        run: python tools/e2e.py --build

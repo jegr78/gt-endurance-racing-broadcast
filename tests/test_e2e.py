@@ -5,6 +5,29 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 import e2e_checks as e
 
 
+def t_binary_name_per_os():
+    assert e.binary_name("nt") == "racecast.exe"
+    assert e.binary_name("posix") == "racecast"
+
+
+def t_default_binary_path_layout():
+    # build-binary.py drops the executable at <root>/dist/bin/<name>.
+    p = e.default_binary_path("/repo", "posix")
+    assert p == os.path.join("/repo", "dist", "bin", "racecast")
+    pw = e.default_binary_path("/repo", "nt")
+    assert pw.endswith(os.path.join("dist", "bin", "racecast.exe"))
+
+
+def t_service_launcher_binary_vs_src():
+    # Binary mode -> just the binary; src mode -> [python, script]. Either way the
+    # caller appends the SAME subcommand, so the checks run unchanged against both.
+    assert e.service_launcher("/tmp/app/racecast") == ["/tmp/app/racecast"]
+    assert e.service_launcher(None, python="py3", script="src/racecast.py") == \
+        ["py3", "src/racecast.py"]
+    # empty string (flag given without a path) is falsy -> src path, not binary.
+    assert e.service_launcher("", python="py3", script="s.py") == ["py3", "s.py"]
+
+
 def t_free_port_is_bindable():
     p = e.free_port()
     assert isinstance(p, int) and 1024 < p < 65536, p

@@ -95,6 +95,39 @@ def free_port():
 
 
 # ---------------------------------------------------------------------------
+# Binary-mode launcher helpers (pure; tools/e2e.py --binary)
+# ---------------------------------------------------------------------------
+# Driving the FROZEN binary instead of `python src/racecast.py` is the
+# regression guard for binary-ONLY bugs — a file/import missing from the
+# PyInstaller bundle, or frozen path resolution — the class the src/ dev build
+# hides (e.g. the cockpit.html bundle omission). The argv assembly is pure so it
+# is unit-tested without building a binary.
+
+def binary_name(osname=None):
+    """The racecast executable's filename for *osname* (os.name): 'racecast.exe'
+    on Windows ('nt'), else 'racecast'."""
+    osname = os.name if osname is None else osname
+    return "racecast.exe" if osname == "nt" else "racecast"
+
+
+def default_binary_path(root, osname=None):
+    """Where tools/build-binary.py drops the racecast executable:
+    <root>/dist/bin/<binary_name>."""
+    return os.path.join(root, "dist", "bin", binary_name(osname))
+
+
+def service_launcher(binary, python=None, script=None):
+    """Argv PREFIX that invokes the racecast CLI. With *binary* set -> the frozen
+    binary ([binary]); otherwise the src/ dev path ([python, script]). Callers
+    append the subcommand + args (e.g. + ["relay", "run", "--bind", ...]); the
+    subcommand surface is identical either way, so the same checks run against
+    both. *python* defaults to the current interpreter."""
+    if binary:
+        return [binary]
+    return [python or sys.executable, script]
+
+
+# ---------------------------------------------------------------------------
 # Check context + individual HTTP check callables
 # ---------------------------------------------------------------------------
 Ctx = collections.namedtuple(

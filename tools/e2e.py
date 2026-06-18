@@ -28,16 +28,45 @@ def _csv_server(csv_text):
     return srv, f"http://127.0.0.1:{srv.server_address[1]}/schedule.csv"
 
 
-def _spawn(argv, env, log):
-    """Spawn a child from src/, its own process group so teardown kills the tree.
-    stdout/stderr captured to *log* (a file path) for diagnosis."""
+def _spawn(argv, env, log, cwd=ROOT):
+    """Spawn a child in its own process group so teardown kills the tree.
+    stdout/stderr captured to *log* (a file path) for diagnosis. *cwd* is ROOT for
+    the src/ dev path; binary mode runs from the copied binary's isolated app dir."""
     fh = open(log, "wb")  # noqa: SIM115 — handle outlives this fn; closed in _kill
     kw = {}
     if os.name == "posix":
         kw["start_new_session"] = True
-    p = subprocess.Popen(argv, cwd=ROOT, env=env, stdout=fh, stderr=subprocess.STDOUT, **kw)
+    p = subprocess.Popen(argv, cwd=cwd, env=env, stdout=fh, stderr=subprocess.STDOUT, **kw)
     p._logfh = fh  # keep handle for close on teardown
     return p
+
+
+def _resolve_binary(args, tmp):
+    """Locate (optionally build) the frozen racecast binary and copy it into an
+    ISOLATED temp app-home, so its frozen side-effect files (.env, the seeded
+    profiles/example, runtime/) land in the throwaway dir — never in dist/bin.
+    Returns the copied executable's path. The binary uses dirname(exe) as its app
+    home (racecast._app_home), which is why the copy — not the dist/bin original —
+    is what we drive."""
+    src = args.binary or E.default_binary_path(ROOT)
+    if args.build:
+        print("building the binary (tools/build-binary.py)...", flush=True)
+        rc = subprocess.call([sys.executable,
+                              os.path.join(ROOT, "tools", "build-binary.py"),
+                              "--version", "e2e"])
+        if rc != 0:
+            raise RuntimeError("tools/build-binary.py failed")
+        src = args.binary or E.default_binary_path(ROOT)
+    if not os.path.exists(src):
+        raise RuntimeError(
+            f"binary not found: {src}\n"
+            "  Build it first: python3 tools/build-binary.py  (or pass --build).")
+    app = os.path.join(tmp, "app")
+    os.makedirs(app, exist_ok=True)
+    dst = os.path.join(app, E.binary_name())
+    shutil.copy2(src, dst)
+    os.chmod(dst, 0o700)   # owner-only rwx (the harness spawns it as this user) — not world-readable
+    return dst
 
 
 def _kill(p):
@@ -282,6 +311,20 @@ def run_synthetic(args):
         # on a clean machine / CI runner (the fake schedule URLs are never pulled).
         stub_bin = _stub_tools_bin(tmp)
 
+        # Launcher: the FROZEN binary (binary mode) or `python src/racecast.py`
+        # (src/dev mode). Binary mode is the regression guard for binary-ONLY bugs
+        # (a file/import missing from the PyInstaller bundle, frozen path
+        # resolution) — the class the src/ dev build hides. The subcommand surface
+        # is identical, so the same 10 checks run against whichever is driven.
+        if args.binary is not None:
+            binary = _resolve_binary(args, tmp)
+            launcher, run_cwd = E.service_launcher(binary), os.path.dirname(binary)
+            print(f"binary mode: driving the frozen binary at {binary}", flush=True)
+        else:
+            launcher = E.service_launcher(
+                None, sys.executable, os.path.join(ROOT, "src", "racecast.py"))
+            run_cwd = ROOT
+
         # 2. schedule CSV server
         csv_srv, csv_url = _csv_server(E.build_schedule_csv(SCHEDULE_ROWS))
         servers.append(csv_srv)
@@ -293,11 +336,10 @@ def run_synthetic(args):
                    RACECAST_PROFILE="e2e")
         env["PATH"] = stub_bin + os.pathsep + env.get("PATH", "")
         relay_log = os.path.join(tmp, "relay.log")
-        relay = _spawn([sys.executable, os.path.join(ROOT, "src", "racecast.py"),
-                        "relay", "run", "--bind", "127.0.0.1",
+        relay = _spawn(launcher + ["relay", "run", "--bind", "127.0.0.1",
                         "--http-port", str(relay_port), "--sheet-csv-url", csv_url,
                         "--cookies", dummy_cookies, "--runtime-dir", relay_runtime],
-                       env, relay_log)
+                       env, relay_log, cwd=run_cwd)
         procs.append(relay)
         relay_url = f"http://127.0.0.1:{relay_port}"
         _wait_ready(relay_url + "/status", args.timeout, relay, relay_log)
@@ -307,12 +349,11 @@ def run_synthetic(args):
         env2 = dict(os.environ); env2.update(RACECAST_PROFILE="e2e")
         env2["PATH"] = stub_bin + os.pathsep + env2.get("PATH", "")
         dis_log = os.path.join(tmp, "relay-disabled.log")
-        dis = _spawn([sys.executable, os.path.join(ROOT, "src", "racecast.py"),
-                      "relay", "run", "--bind", "127.0.0.1",
+        dis = _spawn(launcher + ["relay", "run", "--bind", "127.0.0.1",
                       "--http-port", str(dis_port), "--sheet-csv-url", csv_url,
                       "--cookies", dummy_cookies,
                       "--runtime-dir", os.path.join(tmp, "runtime-disabled")],
-                     env2, dis_log)
+                     env2, dis_log, cwd=run_cwd)
         procs.append(dis)
         dis_url = f"http://127.0.0.1:{dis_port}"
         _wait_ready(dis_url + "/status", args.timeout, dis, dis_log)
@@ -321,8 +362,7 @@ def run_synthetic(args):
         ui_port = E.free_port()
         env3 = dict(env); env3["RACECAST_UI_PORT"] = str(ui_port)
         ui_log = os.path.join(tmp, "ui.log")
-        ui = _spawn([sys.executable, os.path.join(ROOT, "src", "racecast.py"),
-                     "ui", "--no-browser"], env3, ui_log)
+        ui = _spawn(launcher + ["ui", "--no-browser"], env3, ui_log, cwd=run_cwd)
         procs.append(ui)
         ui_url = f"http://127.0.0.1:{ui_port}"
         _wait_ready(ui_url + "/api/ping", args.timeout, ui, ui_log)
@@ -472,6 +512,13 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="racecast e2e/regression harness")
     ap.add_argument("--real-league", metavar="NAME", default=None,
                     help="drive the copied real-league dev build (local only, never CI)")
+    ap.add_argument("--binary", nargs="?", const="", default=None, metavar="PATH",
+                    help="drive the FROZEN binary instead of src/ — the regression "
+                         "guard for binary-only bugs (missing bundled file/import, "
+                         "frozen path resolution). PATH defaults to "
+                         "dist/bin/racecast; pair with --build to build it first")
+    ap.add_argument("--build", action="store_true",
+                    help="build the binary (tools/build-binary.py) before a --binary run")
     ap.add_argument("--playwright", action="store_true",
                     help="also run gated rendered checks (skip if unavailable)")
     ap.add_argument("--headed", action="store_true",
@@ -489,7 +536,12 @@ def main(argv=None):
                     help="skip teardown: leave relay + Control Center running and print "
                          "their URLs (open them in a browser)")
     args = ap.parse_args(argv)
+    # --build implies binary mode even without an explicit --binary.
+    if args.build and args.binary is None:
+        args.binary = ""
     if args.real_league:
+        if args.binary is not None:
+            ap.error("--binary is synthetic-only; not supported with --real-league")
         return run_real_league(args)
     return run_synthetic(args)
 
