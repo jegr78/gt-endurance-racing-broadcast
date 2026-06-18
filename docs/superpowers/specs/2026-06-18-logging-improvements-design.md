@@ -148,12 +148,15 @@ the other self-contained scripts). Contains the reusable, mostly-pure pieces:
 
 - Existing `relay|streams|companion logs` gain:
   - `--list` — list available archives (date + size).
-  - `--date YYYY-MM-DD` — read a specific archive (no follow; static file).
+  - `--archive TOKEN` — read a specific archive (no follow; static). The token is a
+    rotation date (`YYYY-MM-DD`) for racecast sources; for external apps
+    (obs/companion) it is an older filename from `--list` (they do not follow our
+    `name.YYYY-MM-DD` rotation naming).
   - `-f`/`--follow` unchanged (live file).
 - New, consistent with the existing `obs`/`tailscale` command groups:
-  - `racecast obs logs [-f|--list|--date YYYY-MM-DD]` — read-only tail of the
-    platform OBS log dir's newest file (or a selected one).
-  - `racecast tailscale logs [--list|--date]` — read the snapshot log.
+  - `racecast obs logs [-f|--list|--archive FILE]` — read-only tail of the
+    platform OBS log dir's newest file (or a selected older one).
+  - `racecast tailscale logs [--list|--archive YYYY-MM-DD]` — read the snapshot log.
 - `racecast tailscale status` additionally appends a timestamped snapshot to
   `runtime/<profile>/logs/tailscale.snapshot.log`; a snapshot is also written on
   each service start.
@@ -167,8 +170,8 @@ the other self-contained scripts). Contains the reusable, mostly-pure pieces:
   "live" = SSE tail (existing behavior). Selecting a date → static read (no SSE).
 - New server routes in `src/ui/ui_server.py`:
   - `/api/logs/<name>/archives` — JSON list of archives for a source.
-  - `/api/logs/<name>/file?date=YYYY-MM-DD` — static archive content (uses
-    `resolve_archive`; **path-traversal guarded** server-side).
+  - `/api/logs/<name>/file?token=…` — static archive content (token = date for
+    racecast sources, filename for external; **path-traversal guarded** server-side).
   - `/api/logs/aggregate/stream` — SSE merge-tail (below).
 - **Merged-source model.** A logical source maps to a **set** of live files, not
   one file (`racecast.py` builds the mapping in `ctx`):
@@ -182,8 +185,10 @@ the other self-contained scripts). Contains the reusable, mostly-pure pieces:
   share one code path. Each emitted line is source-prefixed (`[relay]`,
   `[feed_A]`, `[streams:53001]`, `[obs]`, …).
 - `ctx` replaces the flat `log_paths` (`racecast.py:4541`) with a source registry:
-  each source name → `{files: () -> list[path], archives: () -> list[date], read:
-  (date) -> text}`. External/newest-log and snapshot resolvers are wired in here.
+  each source name → `{files: () -> list[path], dir, archives: () -> list[token],
+  read: (token) -> text}` (token = rotation date for racecast sources, older
+  filename for external apps). External/newest-log and snapshot resolvers are wired
+  in here.
 
 ### Aggregated live log
 
@@ -222,7 +227,7 @@ the other self-contained scripts). Contains the reusable, mostly-pure pieces:
   output shape.
 - `tests/test_ui_server.py`: new routes (`/archives`, `/file`, aggregate stream
   seam) + traversal reject.
-- `tests/test_racecast.py`: CLI routing for `--list`/`--date`, `obs logs`,
+- `tests/test_racecast.py`: CLI routing for `--list`/`--archive`, `obs logs`,
   `tailscale logs`.
 - `tests/test_services.py`: boot-file redirect + prune-on-start.
 
@@ -241,7 +246,7 @@ the other self-contained scripts). Contains the reusable, mostly-pure pieces:
 - `src/relay/racecast-feeds.py` — adopt logger, event logging, streamlink pump.
 - `src/scripts/loopstream.py` (+ `start-streams.py` redirect) — logger + pump.
 - `src/racecast.py` — obs/tailscale log resolvers, archive resolvers, ctx wiring,
-  CLI subcommands (`--list`/`--date`, `obs logs`, `tailscale logs`), tailscale
+  CLI subcommands (`--list`/`--archive`, `obs logs`, `tailscale logs`), tailscale
   snapshot append, `.env` retention knob.
 - `src/ui/ui_server.py` — archive routes, static read, aggregate SSE, traversal guard.
 - `src/ui/control-center.html` — source options (obs/tailscale/aggregate-default),
