@@ -553,6 +553,14 @@ def _event_title_path():
 def _relay_log_path():
     return os.path.join(_runtime_dir(), "logs", "relay.console.log")
 
+def _relay_boot_log_path():
+    """Where start_detached captures the daemon's raw stdout/stderr (crashes/tracebacks
+    BEFORE logging is configured). MUST differ from _relay_log_path(): the relay's own
+    TimedRotatingFileHandler owns relay.console.log, and a second writer on the same
+    file would corrupt rotation (the inherited fd would keep writing to the renamed
+    inode at midnight). Mirrors the static-streams feed_<port>.boot.log split."""
+    return os.path.join(_runtime_dir(), "logs", "relay.boot.log")
+
 def _tailscale_snapshot_path():
     return os.path.join(_runtime_dir(), "logs", "tailscale.snapshot.log")
 
@@ -1448,7 +1456,7 @@ def relay_start(rest):
               f"that feed may fail to bind. Free them first: racecast freeport")
     _ensure_active_cockpit_secret()   # zero-config cockpit: provision + inject the secret
     argv = _relay_daemon_argv(rest, IS_FROZEN)
-    newpid = sv.start_detached(argv, _relay_log_path(), _relay_pid_path(),
+    newpid = sv.start_detached(argv, _relay_boot_log_path(), _relay_pid_path(),
                                env=_frozen_child_env())
     print(f"relay started (pid {newpid}). Watch it: racecast relay logs -f")
     _append_tailscale_snapshot()

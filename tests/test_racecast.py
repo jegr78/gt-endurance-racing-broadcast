@@ -2149,6 +2149,18 @@ def t_dispatch_has_obs_and_tailscale_logs():
     assert ("tailscale", "logs") in m.DISPATCH
 
 
+def t_relay_start_spawns_to_boot_log_not_console():
+    # The relay daemon attaches its own rotating handler to relay.console.log; the
+    # detached spawn MUST capture raw stdout/stderr to a separate boot file, or the
+    # two writers corrupt midnight rotation (the inherited fd keeps writing to the
+    # renamed inode). Guards against reintroducing the #-final-review bug.
+    import inspect
+    src = inspect.getsource(m.relay_start)
+    assert "_relay_boot_log_path()" in src
+    assert "_relay_log_path()" not in src   # never hand the console log to start_detached
+    assert m._relay_boot_log_path() != m._relay_log_path()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
