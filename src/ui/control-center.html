@@ -157,6 +157,14 @@
            font:13px var(--mono); min-height:34px; }
   input[type=number]:focus-visible { outline:2px solid var(--accent);
            outline-offset:2px; }
+  /* Top-level text inputs (e.g. the Home event-title editor) — bare inputs
+     without a type attr aren't matched by input[type=text], so include
+     input:not([type]). More specific .envrow/.ovpanel rules still win. */
+  input[type=text], input:not([type]) { background:#232C42; color:var(--txt);
+           border:1px solid var(--line); border-radius:8px; padding:7px 10px;
+           font:13px var(--mono); min-height:34px; box-sizing:border-box; }
+  input[type=text]:focus-visible, input:not([type]):focus-visible {
+           outline:2px solid var(--accent); outline-offset:2px; }
   pre { background:#0B1120; border:1px solid var(--line); border-radius:10px;
         padding:12px 14px; overflow:auto; white-space:pre-wrap; margin:0;
         font:12px/1.55 var(--mono); color:#CBD5E1; }
