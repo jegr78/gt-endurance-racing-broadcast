@@ -1042,22 +1042,23 @@ def _ensure_active_cockpit_secret():
     profile — never the shipped 'example' profile and never a non-existent one.
     Best-effort: returns the secret or None and never raises."""
     try:
-        env_secret = (os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip()
-        if env_secret:
-            return env_secret
+        env_val = (os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip()
+        if env_val:
+            return env_val
         import secrets
         name, ppath = _active_profile_env_strict()
         if not name or name == "example" or not ppath or not os.path.exists(ppath):
             return None
         with open(ppath, encoding="utf-8") as fh:
             existing = parse_env_text(fh.read()).get("COCKPIT_SECRET", "")
-        secret = existing or secrets.token_hex(32)
-        if not existing:
-            res = _set_env_key(ppath, "COCKPIT_SECRET", secret)
-            if not res.get("ok"):
-                return None
-        os.environ["RACECAST_COCKPIT_SECRET"] = secret
-        return secret
+        if existing:                       # already provisioned (or exported) -> reuse
+            os.environ["RACECAST_COCKPIT_SECRET"] = existing
+            return existing
+        fresh = secrets.token_hex(32)      # first use on this league -> generate + persist
+        if not _set_env_key(ppath, "COCKPIT_SECRET", fresh).get("ok"):
+            return None
+        os.environ["RACECAST_COCKPIT_SECRET"] = fresh
+        return fresh
     except Exception:
         return None
 
