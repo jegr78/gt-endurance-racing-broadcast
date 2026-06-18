@@ -65,7 +65,7 @@ def _resolve_binary(args, tmp):
     os.makedirs(app, exist_ok=True)
     dst = os.path.join(app, E.binary_name())
     shutil.copy2(src, dst)
-    os.chmod(dst, 0o755)
+    os.chmod(dst, 0o700)   # owner-only rwx (the harness spawns it as this user) — not world-readable
     return dst
 
 
