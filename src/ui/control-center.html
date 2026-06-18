@@ -882,6 +882,10 @@
         </section>
         <section>
           <div class="viewhead"><h3>Commentator links</h3></div>
+          <p class="sub"><b>Funnel link</b> is the public HTTPS link (needs the Funnel ON
+            above). <b>Internal link</b> reaches the relay over Tailscale (the producer's
+            tailnet IP, or <code>127.0.0.1</code> when the tailnet is down) without the
+            Funnel — same rule as the producer panel link.</p>
           <div id="cp-links"></div>
         </section>
       </div>
@@ -2284,10 +2288,15 @@ async function loadCockpit() {
     const copy = document.createElement('button');
     copy.textContent = 'Copy funnel link';
     copy.onclick = () => navigator.clipboard.writeText(l.funnel);
+    const copyInt = document.createElement('button');
+    copyInt.textContent = 'Copy internal link';
+    copyInt.title = 'Tailscale-IP link (127.0.0.1 when the tailnet is down) — no Funnel needed';
+    copyInt.onclick = () => navigator.clipboard.writeText(l.internal);
     const rev = document.createElement('button');
     rev.textContent = 'Revoke';
     rev.onclick = () => revokeCockpit(l.name);
-    row.append(nm, copy, document.createTextNode(' '), rev);
+    row.append(nm, copy, document.createTextNode(' '), copyInt,
+               document.createTextNode(' '), rev);
     c.appendChild(row);
   });
 }

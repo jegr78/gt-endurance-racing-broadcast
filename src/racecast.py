@@ -3197,6 +3197,14 @@ def _cockpit_roster_safe():
         return []
 
 
+def _cockpit_internal_host(ip):
+    """Host for the 'internal' cockpit link the Control Center offers alongside the
+    public Funnel link: the producer's Tailscale IP when the tailnet is up, else
+    loopback. Mirrors the relay panel's own link rule (relay --bind auto binds the
+    Tailscale IP + 127.0.0.1)."""
+    return ip or "127.0.0.1"
+
+
 def cockpit_status_data():
     """Cockpit state for the Control Center: machine-local enabled flag, per-league
     secret presence, and the per-commentator links. Reads on-disk truth so a
@@ -3218,7 +3226,7 @@ def cockpit_status_data():
                 secret = parse_env_text(fh.read()).get("COCKPIT_SECRET", "")
         links = []
         if secret:
-            host = _tailscale_ip() or ""
+            host = _cockpit_internal_host(_tailscale_ip())
             magic = _tailscale_magicdns()
             versions = cpadm.load_versions(_cockpit_versions_path())
             for name in _cockpit_roster_safe():
@@ -3226,7 +3234,7 @@ def cockpit_status_data():
                 tok = cpa.mint_token(secret, key, cpadm.current_version(versions, key))
                 links.append({
                     "name": name,
-                    "tailnet": f"http://{host}:{RELAY_PORT}/cockpit?t={tok}" if host else "",
+                    "internal": f"http://{host}:{RELAY_PORT}/cockpit?t={tok}",
                     "funnel": (f"https://{magic}/cockpit?t={tok}" if magic
                                else f"https://<magicdns-host>/cockpit?t={tok}")})
         funnel_on = funnel_capable = False
