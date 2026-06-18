@@ -512,6 +512,16 @@
           </select>
           <button id="takeover-btn" onclick="opTakeover()"
                   title="Take over the broadcast from the selected producer at their current stint (the stint field overrides if set)">Take over</button></div>
+        <section id="home-event">
+          <div class="row"><span class="name">Event title</span>
+            <span class="dim grow" id="evt-title-text">—</span>
+            <input id="evt-title-input" class="grow" maxlength="120" hidden
+                   placeholder="Event title (e.g. GTEC - 2026 - Round 4 - Nürburgring 24h)"
+                   aria-label="Event title">
+            <button id="evt-title-edit"
+                    title="Set the event title shown on the HUD, Cockpit and Discord">Edit</button></div>
+          <div class="enverr" id="evt-title-err" hidden></div>
+        </section>
         <section>
           <div class="row"><span class="name">Tailscale</span>
             <span class="badge" id="h-tailscale"><span class="dot"></span><span>…</span></span>
@@ -1013,6 +1023,8 @@ function showView(name) {
       && lastStatus.relay.alive && lastStatus.relay.http_ok) fetchRelayLive();
   // entering Home: refresh the takeover device dropdown from the tailnet
   if (name === 'home') loadTakeoverPeers();
+  // entering Home: load the current event title (works relay up or down)
+  if (name === 'home') fetchEventTitle();
 }
 
 function toggleConsole(force) {
@@ -1142,6 +1154,58 @@ async function fetchRelayLive() {
   liveTimer = {t: d.timer || {}, at: Date.now() / 1000};
   renderTimer();
 }
+
+// ----- event title (Home; #207 follow-up) -----
+let evtTitle = '', evtEditing = false;
+function renderEventTitle(title) {
+  evtTitle = (title || '').trim();
+  if (evtEditing) return;                  // don't yank an editor the user has open
+  const el = $('evt-title-text');
+  el.textContent = evtTitle || 'not set';
+  el.classList.toggle('dim', !evtTitle);
+}
+async function fetchEventTitle() {
+  let d;
+  try { d = await (await fetch('/api/event-title', {cache: 'no-store'})).json(); }
+  catch (e) { return; }                    // server gone — keep last state
+  if (d && d.ok) renderEventTitle(d.title);
+}
+function startEditEventTitle() {
+  evtEditing = true;
+  $('evt-title-err').hidden = true;
+  const inp = $('evt-title-input');
+  inp.value = evtTitle;
+  $('evt-title-text').hidden = true; $('evt-title-edit').hidden = true;
+  inp.hidden = false; inp.focus(); inp.select();
+}
+function stopEditEventTitle() {            // restore display (Esc / blur / post-save)
+  evtEditing = false;
+  $('evt-title-input').hidden = true;
+  $('evt-title-text').hidden = false; $('evt-title-edit').hidden = false;
+  renderEventTitle(evtTitle);
+}
+async function saveEventTitle(value) {
+  let d;
+  try {
+    d = await (await fetch('/api/event-title', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({title: value})})).json();
+  } catch (e) {
+    $('evt-title-err').textContent = 'Control Center not reachable.';
+    $('evt-title-err').hidden = false; return;
+  }
+  if (!d.ok) {
+    $('evt-title-err').textContent = d.error || 'could not set the event title';
+    $('evt-title-err').hidden = false; return;
+  }
+  renderEventTitle(d.title);               // textContent path -> XSS-safe
+}
+$('evt-title-edit').addEventListener('click', startEditEventTitle);
+$('evt-title-input').addEventListener('keydown', async (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); await saveEventTitle(e.target.value); stopEditEventTitle(); }
+  else if (e.key === 'Escape') { stopEditEventTitle(); }
+});
+$('evt-title-input').addEventListener('blur', () => { if (evtEditing) stopEditEventTitle(); });
 
 function renderTimer() {
   if (!liveTimer) return;
@@ -1404,6 +1468,7 @@ async function refresh() {
   // Live relay stats are a separate localhost round-trip — only while Home is
   // open and the relay control server is actually answering.
   if (currentView === 'home' && relayUp && s.relay.http_ok) fetchRelayLive();
+  if (currentView === 'home') fetchEventTitle();
 }
 
 // ----- Setup wizard (on-demand /api/init/plan) -----
