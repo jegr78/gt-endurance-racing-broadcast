@@ -34,7 +34,11 @@ The logs feature (CLI + Control Center) is thin and lossy:
    **Companion** (extend today's newest-file read with archive selection), and a
    **Tailscale status snapshot** log (Tailscale has no tailable log file).
 5. An **aggregated live log** ("All (live)") as the **default** Control Center
-   view, merging the racecast-owned sources (relay + all stream feeds).
+   view, merging **all** live sources — relay + all stream feeds + the external
+   logs (OBS, Companion, Tailscale snapshot). In normal operation usually only the
+   relay runs, so a relay+streams-only aggregate would add little over the relay
+   view; including the external logs is what makes the aggregate worthwhile
+   (accepting the noise and the non-uniform line formats).
 
 ## Non-goals
 
@@ -44,8 +48,9 @@ The logs feature (CLI + Control Center) is thin and lossy:
   native format).
 - No aggregation of *history* (archives are browsed per-source); no CLI aggregate
   command in this iteration (aggregate is UI-only).
-- Aggregate excludes external logs by default (relay + streams only); OBS/Companion/
-  Tailscale stay individually selectable.
+- No timestamp normalization in the aggregate: external (OBS/Companion) lines are
+  merged as-is, source-prefixed, in arrival order — not reformatted or re-sorted to
+  our timestamp format.
 
 ## Chosen approach
 
@@ -156,19 +161,25 @@ the other self-contained scripts). Contains the reusable, mostly-pure pieces:
   - `/api/logs/aggregate/stream` — SSE merge-tail (below).
 - `ctx["log_paths"]` (`racecast.py:4541`) extends with `obs` and `tailscale`
   resolvers; new parallel `ctx["log_archives"]` (source → list) and the aggregate
-  source set (relay + stream feed files) are wired alongside.
+  source set (relay + stream feed files + the external newest-log resolvers) are
+  wired alongside.
 
 ### Aggregated live log
 
-- `/api/logs/aggregate/stream` tails each **live racecast** log file (relay +
-  every `feed_<port>.log`) in its own daemon reader thread, prefixes each line with
-  a source tag (`[relay]`, `[streams:53001]`), and pushes to a thread-safe queue;
-  the SSE handler drains the queue. **Arrival order** (every line already carries
-  its own timestamp — honest `tail -f file1 file2`; no live re-sorting).
-- Feeds that start *after* the client connects are picked up by periodically
-  re-globbing the streams logs dir and attaching new tailers.
-- Aggregate is **live-only** (relay + streams); external logs and archive history
-  are browsed per-source.
+- `/api/logs/aggregate/stream` tails **all** live sources — the relay log, every
+  `feed_<port>.log`, and the newest external log per app (OBS, Companion) plus the
+  Tailscale snapshot — each in its own daemon reader thread. Every line is prefixed
+  with a source tag (`[relay]`, `[streams:53001]`, `[obs]`, `[companion]`,
+  `[tailscale]`) and pushed to a thread-safe queue that the SSE handler drains.
+  **Arrival order** — racecast lines carry their own timestamp; external lines are
+  passed through verbatim. Honest `tail -f file1 file2…`; no live re-sorting and no
+  reformatting of external lines.
+- Sources discovered/refreshed periodically: re-globbing the streams logs dir picks
+  up feeds that start *after* the client connects, and the newest-file resolution
+  for OBS/Companion is re-evaluated so a new app session's log is followed.
+- Best-effort: an absent source (OBS not installed/running, no Companion log) is
+  simply skipped and attached if/when it appears.
+- Aggregate is **live-only**; archive history is browsed per-source.
 
 ## Error handling & edge cases
 
