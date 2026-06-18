@@ -11,6 +11,14 @@ The logs feature (CLI + Control Center) is thin and lossy:
   (`src/scripts/loopstream.py`) emit via raw `print()`; `services.start_detached`
   appends the child's stdout/stderr to one file through a raw fd (`"ab"`).
   Operators cannot correlate a log line with wall-clock time.
+- **Existing per-feed files are unsurfaced.** The relay already writes each feed to
+  its own file — `feed_A.log` / `feed_B.log` / `feed_POV.log` under
+  `runtime/<profile>/logs/` (`racecast-feeds.py:2101`) — and pipes the **streamlink
+  subprocess stdout straight into that file via a raw fd** (`stdout=log`,
+  `racecast-feeds.py:2194`), alongside `resolve_hls`/`ssai_warning` diagnostics. So
+  the streamlink/yt-dlp errors operators most want live in `feed_*.log`, **which the
+  Control Center never surfaces today** (its "relay" source shows only
+  `relay.console.log`). These files also carry no timestamps and never rotate.
 - **Missing information.** Operators specifically miss: (1) **start context**
   (which profile, bind address, ports, schedule source, race/qualifying mode),
   (2) **handover/stint events** (`/next`, `/reload`, Feed A/B swap, `set_stint`,
@@ -113,11 +121,14 @@ the other self-contained scripts). Contains the reusable, mostly-pure pieces:
     that did not resolve via `asset_key`.
   - **yt-dlp errors** — the short-lived `yt-dlp -g` resolve calls are captured;
     failures are logged explicitly at WARNING/ERROR (no pump needed for these).
-- **Subprocess pump** — the **long-lived streamlink server** processes are spawned
-  with `stdout=PIPE, stderr=STDOUT`; a daemon reader thread reads line-by-line and
-  logs each with a source tag (`[streamlink]`) at the level from
-  `classify_subproc_line`. The thread is a daemon thread (never blocks shutdown);
-  a pipe read error ends only the thread, never the relay.
+- **Per-feed loggers + subprocess pump** — each relay feed (A/B/POV) already owns a
+  `feed_<name>.log`; convert that file from a raw `stdout=log` fd redirect to its own
+  `configure_logging` logger. The **long-lived streamlink server** is spawned with
+  `stdout=PIPE, stderr=STDOUT`; a daemon reader thread reads line-by-line and logs
+  each with a source tag (`[streamlink]`) at the level from `classify_subproc_line`.
+  The `resolve_hls`/`ssai_warning` diagnostic writes (which today `open(self.logfile,
+  "a")`) move onto the same feed logger. The thread is a daemon thread (never blocks
+  shutdown); a pipe read error ends only the thread, never the relay.
 - **Streams (`src/scripts/loopstream.py`)**: same pattern — its own rotating logger
   + a pump for its streamlink child. Each feed port owns an independent logger on
   its own `feed_<port>.log` (independent processes).
@@ -159,18 +170,29 @@ the other self-contained scripts). Contains the reusable, mostly-pure pieces:
   - `/api/logs/<name>/file?date=YYYY-MM-DD` — static archive content (uses
     `resolve_archive`; **path-traversal guarded** server-side).
   - `/api/logs/aggregate/stream` — SSE merge-tail (below).
-- `ctx["log_paths"]` (`racecast.py:4541`) extends with `obs` and `tailscale`
-  resolvers; new parallel `ctx["log_archives"]` (source → list) and the aggregate
-  source set (relay + stream feed files + the external newest-log resolvers) are
-  wired alongside.
+- **Merged-source model.** A logical source maps to a **set** of live files, not
+  one file (`racecast.py` builds the mapping in `ctx`):
+  - `relay` → `relay.console.log` + `feed_A.log` + `feed_B.log` + `feed_POV.log`
+  - `streams` → every `static/logs/feed_<port>.log`
+  - `obs` / `companion` → the newest file in the app's log dir
+  - `tailscale` → the snapshot log
+  - `aggregate` ("All (live)") → the union of all of the above
+  The **same merge-tail mechanism** serves single-file and multi-file sources (a
+  one-file source is just a one-element set), so `relay`, `streams`, and `aggregate`
+  share one code path. Each emitted line is source-prefixed (`[relay]`,
+  `[feed_A]`, `[streams:53001]`, `[obs]`, …).
+- `ctx` replaces the flat `log_paths` (`racecast.py:4541`) with a source registry:
+  each source name → `{files: () -> list[path], archives: () -> list[date], read:
+  (date) -> text}`. External/newest-log and snapshot resolvers are wired in here.
 
 ### Aggregated live log
 
-- `/api/logs/aggregate/stream` tails **all** live sources — the relay log, every
-  `feed_<port>.log`, and the newest external log per app (OBS, Companion) plus the
-  Tailscale snapshot — each in its own daemon reader thread. Every line is prefixed
-  with a source tag (`[relay]`, `[streams:53001]`, `[obs]`, `[companion]`,
-  `[tailscale]`) and pushed to a thread-safe queue that the SSE handler drains.
+- `/api/logs/aggregate/stream` tails **all** live files — the relay console, the
+  relay per-feed logs (`feed_A/B/POV.log`), every static `feed_<port>.log`, the
+  newest external log per app (OBS, Companion), and the Tailscale snapshot — each in
+  its own daemon reader thread. Every line is prefixed with a source tag (`[relay]`,
+  `[feed_A]`, `[streams:53001]`, `[obs]`, `[companion]`, `[tailscale]`) and pushed
+  to a thread-safe queue that the SSE handler drains.
   **Arrival order** — racecast lines carry their own timestamp; external lines are
   passed through verbatim. Honest `tail -f file1 file2…`; no live re-sorting and no
   reformatting of external lines.
