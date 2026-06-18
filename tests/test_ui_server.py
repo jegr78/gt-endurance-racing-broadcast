@@ -180,7 +180,11 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "cockpit_funnel": lambda on: {"ok": True, "_got": on},
             "cockpit_set_funnel_auto": lambda auto: {"ok": True, "_got": auto},
             "cockpit_revoke": lambda streamer: {"ok": True, "_got": streamer},
-            "speedtest": lambda: {"ok": True, "latest": None, "history": []}}
+            "speedtest": lambda: {"ok": True, "latest": None, "history": []},
+            "event_title_read": lambda: {"ok": True, "title": "",
+                                         "source": "default", "relay_alive": False},
+            "event_title_write": lambda value: {"ok": True, "title": value or "",
+                                                "applied": "file"}}
 
 
 def _serve(ctx):
@@ -1429,6 +1433,58 @@ def t_csrf_guard_blocks_foreign_host_on_real_server():
         resp = conn.getresponse()
         assert resp.status == 403, resp.status
         conn.close()
+    finally:
+        httpd.shutdown()
+
+
+def t_event_title_get_route():
+    ctx = _ctx()
+    ctx["event_title_read"] = lambda: {"ok": True, "title": "Round 4",
+                                       "source": "relay", "relay_alive": True}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/event-title")
+        d = json.loads(body)
+        assert code == 200 and d["title"] == "Round 4" and d["source"] == "relay"
+    finally:
+        httpd.shutdown()
+
+
+def t_event_title_get_route_error_is_500():
+    ctx = _ctx()
+    def boom():
+        raise RuntimeError("relay gone")
+    ctx["event_title_read"] = boom
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/event-title")
+        assert code == 500 and "relay gone" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_event_title_post_route_saves():
+    seen = []
+    ctx = _ctx()
+    ctx["event_title_write"] = lambda value: seen.append(value) or {
+        "ok": True, "title": (value or "").strip(), "applied": "file"}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/event-title", {"title": " Round 5 "})
+        d = json.loads(body)
+        assert code == 200 and d["ok"] and d["title"] == "Round 5"
+        assert seen == [" Round 5 "]
+    finally:
+        httpd.shutdown()
+
+
+def t_event_title_post_validation_error_is_400():
+    ctx = _ctx()
+    ctx["event_title_write"] = lambda value: {"ok": False, "error": "relay rejected"}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/event-title", {"title": "x"})
+        assert code == 400 and "relay rejected" in json.loads(body)["error"]
     finally:
         httpd.shutdown()
 

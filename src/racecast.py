@@ -4478,6 +4478,8 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "favicon_path": resource_path("assets/app-icon.svg"),
         "status": ui_status_payload,
         "relay_live": relay_live_data,
+        "event_title_read": event_title_read_data,
+        "event_title_write": event_title_write_data,
         "tailscale_peers": _tailscale_peers,
         "obs_ws": obs_ws_link_data,
         "obs_collection": obs_collection_data,
