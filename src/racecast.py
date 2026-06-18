@@ -560,9 +560,13 @@ def _append_tailscale_snapshot():
     """Best-effort: append a timestamped `tailscale status` block to the snapshot log."""
     try:
         import tailscale as _ts
+        # tailscale_backend() probes `status --json`; if that hangs it times out and
+        # returns binary=None, so the second `status` call below never runs (no
+        # compounding block). When the binary IS found the daemon is responsive, so
+        # the second call returns promptly.
         binary, _state, _ip = _ts.tailscale_backend()
         if binary is None:
-            text = "tailscale binary not found"
+            text = "tailscale binary not found"   # module present, CLI binary absent
         else:
             out = subprocess.run([binary, "status"], capture_output=True, text=True,
                                  errors="replace", timeout=5,
@@ -572,6 +576,8 @@ def _append_tailscale_snapshot():
         ts_str = time.strftime("%Y-%m-%d %H:%M:%S")
         path = _tailscale_snapshot_path()
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        # append-only; small per entry — no rotation needed (prune_old_logs is
+        # mtime-based and won't touch it while the relay is in regular use).
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(_ts.status_snapshot_text(text, ts_str))
     except Exception:  # noqa: BLE001
