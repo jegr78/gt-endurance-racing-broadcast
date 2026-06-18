@@ -550,9 +550,7 @@ def make_handler(ctx):
                 snap = ctx["jobs"].snapshot(job_id) if job_id else None
                 return self._json({"ok": True, **snap}) if snap else self._not_found("unknown job")
             if path.startswith("/api/logs/") and path.endswith("/stream"):
-                name = path.split("/")[3]
-                if name == "aggregate":
-                    return self._stream_aggregate()
+                name = path.split("/")[3]   # "aggregate" is just another registry source
                 return self._stream_log(name) if name else self._not_found("unknown log")
             if path.startswith("/api/logs/") and path.endswith("/archives"):
                 name = path.split("/")[3]
@@ -893,17 +891,22 @@ def make_handler(ctx):
             lines as they arrive (arrival order). Used by single-source + aggregate.
             Returns (queue, stop); the caller sets stop['v'] = True on disconnect so
             the daemon reader threads exit."""
-            q = queue.Queue()
-            stop = {"v": False}
+            q = queue.Queue(maxsize=2000)   # bounded: a stalled (not-yet-closed) client
+            stop = {"v": False}             # must not let a busy log grow memory forever
+            def emit(item):
+                try:
+                    q.put_nowait(item)
+                except queue.Full:
+                    pass  # consumer stalled — drop the line rather than grow unbounded
             def follow(path):
                 try:
                     with open(path, encoding="utf-8", errors="replace") as fh:
                         for ln in fh.readlines()[-TAIL_LINES:]:
-                            q.put((label_of(path), ln.rstrip("\r\n")))
+                            emit((label_of(path), ln.rstrip("\r\n")))
                         while not stop["v"]:
                             ln = fh.readline()
                             if ln:
-                                q.put((label_of(path), ln.rstrip("\r\n")))
+                                emit((label_of(path), ln.rstrip("\r\n")))
                             else:
                                 time.sleep(0.4)
                 except OSError:
@@ -920,7 +923,7 @@ def make_handler(ctx):
             try:
                 while True:
                     try:
-                        label, line = q.get(timeout=0.5)
+                        label, line = q.get(timeout=0.4)
                         self.wfile.write(sse_frame(f"[{label}] {line}"))
                         self.wfile.flush()
                     except queue.Empty:
@@ -930,17 +933,10 @@ def make_handler(ctx):
                 return None
 
         def _stream_log(self, name):
+            # "aggregate" is just another registry source (its files = the union).
             src = self._src(name)
             if src is None:
                 return self._not_found(f"unknown log: {name}")
-            files = src["files"]()
-            return self._stream_source(
-                files, lambda p: os.path.basename(p).split(".log")[0])
-
-        def _stream_aggregate(self):
-            src = self._src("aggregate")
-            if src is None:
-                return self._not_found("aggregate unavailable")
             return self._stream_source(
                 src["files"](), lambda p: os.path.basename(p).split(".log")[0])
 
