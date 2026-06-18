@@ -81,6 +81,24 @@ def t_pump_subprocess_logs_each_line(tmp):
     assert "ERROR [streamlink] HTTP 403 Forbidden" in body, body
 
 
+def t_obs_log_dir_per_platform():
+    assert lg.obs_log_dir("darwin", home="/Users/x") == \
+        "/Users/x/Library/Application Support/obs-studio/logs"
+    assert lg.obs_log_dir("linux", home="/home/x") == "/home/x/.config/obs-studio/logs"
+    assert lg.obs_log_dir("win32", home="/h", env={"APPDATA": "C:/Users/x/AppData/Roaming"}) \
+        == "C:/Users/x/AppData/Roaming/obs-studio/logs"
+
+
+def t_list_and_newest_log_order(tmp):
+    d = os.path.join(tmp, "ll"); os.makedirs(d)
+    a = os.path.join(d, "a.log"); b = os.path.join(d, "b.log")
+    open(a, "w").close(); open(b, "w").close()
+    os.utime(a, (100, 100)); os.utime(b, (200, 200))
+    assert lg.list_logs(d) == [b, a]          # newest first
+    assert lg.newest_log(d) == b
+    assert lg.newest_log(os.path.join(tmp, "empty")) is None
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp:
         for name, fn in sorted(globals().items()):

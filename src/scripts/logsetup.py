@@ -96,3 +96,33 @@ def pump_subprocess(stream, logger, tag):
             logger.log(classify_subproc_line(line), "[%s] %s", tag, line)
     except (ValueError, OSError):
         pass  # pipe closed mid-read — end the thread, never the daemon
+
+
+def obs_log_dir(platform, home=None, env=None):
+    """OBS Studio's log directory for a platform. Fixed-OS path -> string concat
+    with '/', never os.path.join (see plan note). Returns the dir (may not exist)."""
+    home = os.path.expanduser("~") if home is None else home
+    env = os.environ if env is None else env
+    if platform == "darwin":
+        return home + "/Library/Application Support/obs-studio/logs"
+    if platform.startswith("win") or platform == "nt":
+        base = (env.get("APPDATA") or (home + "/AppData/Roaming")).replace("\\", "/")
+        return base + "/obs-studio/logs"
+    return home + "/.config/obs-studio/logs"
+
+
+def list_logs(log_dir):
+    """Regular files in log_dir, newest-first by mtime; [] if dir is absent."""
+    try:
+        files = [os.path.join(log_dir, f) for f in os.listdir(log_dir)]
+    except OSError:
+        return []
+    files = [f for f in files if os.path.isfile(f)]
+    files.sort(key=os.path.getmtime, reverse=True)
+    return files
+
+
+def newest_log(log_dir):
+    """Newest file in log_dir, or None."""
+    files = list_logs(log_dir)
+    return files[0] if files else None
