@@ -119,6 +119,15 @@ def t_resolve_archive_ok_and_guards(tmp):
     assert lg.resolve_archive(d, "relay.console.log", "2026-13-99x") is None   # bad date shape
 
 
+def t_close_logging_releases_handlers(tmp):
+    path = os.path.join(tmp, "logs", "close.log")
+    log = lg.configure_logging("test.close", path, to_stdout=False)
+    log.info("x")
+    assert any(getattr(h, "_racecast", False) for h in log.handlers)
+    lg.close_logging("test.close")
+    assert not any(getattr(h, "_racecast", False) for h in log.handlers)
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp:
         for name, fn in sorted(globals().items()):
@@ -126,3 +135,7 @@ if __name__ == "__main__":
                 import inspect
                 fn(tmp) if inspect.signature(fn).parameters else fn()
                 print("ok", name)
+        # Windows can't delete a file with an open handle — release every rotating
+        # handler this run attached before the temp dir is removed.
+        for _ln in list(logging.Logger.manager.loggerDict):
+            lg.close_logging(_ln)

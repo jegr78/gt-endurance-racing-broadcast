@@ -24,7 +24,7 @@ def configure_logging(name, log_path, level=logging.INFO, to_stdout=None):
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s",
                             datefmt="%Y-%m-%d %H:%M:%S")
     fh = TimedRotatingFileHandler(log_path, when="midnight", backupCount=0,
-                                  encoding="utf-8")
+                                  encoding="utf-8", delay=True)
     fh.setFormatter(fmt)
     fh._racecast = True
     logger.addHandler(fh)
@@ -35,6 +35,18 @@ def configure_logging(name, log_path, level=logging.INFO, to_stdout=None):
         sh._racecast = True
         logger.addHandler(sh)
     return logger
+
+
+def close_logging(name):
+    """Close and detach the rotating handler(s) this module attached to `name`.
+    Tests that point a logger at a TemporaryDirectory MUST call this before the dir
+    is removed: Windows refuses to delete a file with an open handle (POSIX allows
+    it, so it only bites the Windows CI runner). No-op if the logger has none."""
+    logger = logging.getLogger(name)
+    for h in list(logger.handlers):
+        if getattr(h, "_racecast", False):
+            h.close()
+            logger.removeHandler(h)
 
 
 def prune_old_logs(log_dir, keep_days=DEFAULT_RETENTION_DAYS, now_ts=None):
