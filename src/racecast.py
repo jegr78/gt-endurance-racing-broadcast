@@ -1230,6 +1230,31 @@ def _relay_fetch_json(url, timeout=3):
         return json.loads(r.read().decode("utf-8"))
 
 
+def _relay_post_json(url, payload, timeout=3):
+    """POST a JSON body to a relay control-server endpoint and parse its JSON
+    reply (the write sibling of _relay_fetch_json)."""
+    import urllib.request
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method="POST",
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+_EVENT_TITLE_SANITIZER = None
+
+
+def _event_title_sanitizer():
+    """The relay's single sanitize_event_title rule (#207), loaded once and cached.
+    One source of truth for EVENT_TITLE_MAX/normalization — the Control Center must
+    not duplicate it (CLAUDE.md: keep the rule un-forked)."""
+    global _EVENT_TITLE_SANITIZER
+    if _EVENT_TITLE_SANITIZER is None:
+        _EVENT_TITLE_SANITIZER = \
+            _load_relay_module("relay/racecast-feeds.py").sanitize_event_title
+    return _EVENT_TITLE_SANITIZER
+
+
 def relay_status_data(read_pid=None, alive=None, http_ok=None):
     """Structured relay state — one source for `racecast status` (text) and the
     Control Center's /api/status (JSON). Injection points are for tests."""
@@ -2625,6 +2650,75 @@ def relay_live_data(fetch=None, started=None):
                       "remaining_s": t.get("remaining_s"),
                       "duration_s": t.get("duration_s"),
                       "end": t.get("end"), "server_now": t.get("server_now")}}
+
+
+def event_title_read_data(alive=None, fetch=None, path=None, default=None):
+    """Current free-text event title (#207) for the Control Center Home. Relay up
+    -> the authoritative live value from /status. Relay down (or unreachable) ->
+    runtime/<profile>/event.json, falling back to the active profile's EVENT_TITLE
+    default. Never raises. alive/fetch/path/default are test seams."""
+    alive = alive or _relay_is_alive
+    fetch = fetch or _relay_fetch_json
+    path = path or _event_title_path()
+    is_alive = bool(alive())
+    if is_alive:
+        try:
+            st = fetch(f"http://127.0.0.1:{RELAY_PORT}/status")
+            if isinstance(st, dict) and isinstance(st.get("event_title"), str):
+                return {"ok": True, "title": st["event_title"],
+                        "source": "relay", "relay_alive": True}
+        except Exception:  # noqa: BLE001 — relay reachable check is best-effort
+            pass           # fall through to the persisted file / default
+    try:
+        with open(path, encoding="utf-8") as fh:
+            saved = json.load(fh)
+        if isinstance(saved, dict) and isinstance(saved.get("title"), str):
+            return {"ok": True, "title": saved["title"],
+                    "source": "file", "relay_alive": is_alive}
+    except (OSError, ValueError):
+        pass               # no/corrupt file -> the profile default
+    dflt = _profile_event_default() if default is None else default
+    return {"ok": True, "title": dflt or "", "source": "default",
+            "relay_alive": is_alive}
+
+
+def _profile_event_default():
+    """The active profile's EVENT_TITLE default ("" when unset/unresolvable).
+    Best-effort — the Home field degrades to empty, never errors."""
+    try:
+        root = _env_base(IS_FROZEN, _real_executable(), HERE)
+        rc = pcfg.resolve_config(root, runtime_root=_runtime_base_dir())
+        return rc.event_title or ""
+    except Exception:  # noqa: BLE001 — best effort
+        return ""
+
+
+def event_title_write_data(value, alive=None, post=None, path=None, sanitize=None):
+    """Set the live event title (#207) from the Control Center Home. Relay up ->
+    POST /event/title (updates the live store AND persists event.json in one place).
+    Relay down -> write event.json directly (the next `event start` adopts it via
+    EventTitleStore precedence; mirrors takeover()). Sanitized with the relay's one
+    rule. Returns {"ok", "title", "applied"} or {"ok": False, "error"}; never raises.
+    alive/post/path/sanitize are test seams."""
+    alive = alive or _relay_is_alive
+    path = path or _event_title_path()
+    sanitize = sanitize or _event_title_sanitizer()
+    title = sanitize(value)
+    if alive():
+        post = post or _relay_post_json
+        try:
+            res = post(f"http://127.0.0.1:{RELAY_PORT}/event/title", {"title": title})
+            stored = res.get("title", title) if isinstance(res, dict) else title
+            return {"ok": True, "title": stored, "applied": "relay"}
+        except Exception as exc:  # noqa: BLE001 — surface as a clean error to the UI
+            return {"ok": False, "error": f"relay rejected the title: {exc}"}
+    try:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"title": title}, fh)
+        return {"ok": True, "title": title, "applied": "file"}
+    except OSError as exc:
+        return {"ok": False, "error": f"could not write event.json: {exc}"}
 
 
 def obs_ws_link_data(env=None, config_path=None):
@@ -4384,6 +4478,8 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "favicon_path": resource_path("assets/app-icon.svg"),
         "status": ui_status_payload,
         "relay_live": relay_live_data,
+        "event_title_read": event_title_read_data,
+        "event_title_write": event_title_write_data,
         "tailscale_peers": _tailscale_peers,
         "obs_ws": obs_ws_link_data,
         "obs_collection": obs_collection_data,

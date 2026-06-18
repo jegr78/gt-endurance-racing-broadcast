@@ -341,6 +341,13 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"relay stats failed: {exc}"},
                                       code=500)
+            if path == "/api/event-title":
+                try:
+                    return self._json(ctx["event_title_read"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"event title read failed: {exc}"},
+                                      code=500)
             if path == "/api/tailscale-peers":
                 try:
                     return self._json({"ok": True, "peers": ctx["tailscale_peers"]()})
@@ -570,6 +577,18 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"could not write .env: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/event-title":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["event_title_write"](body.get("title"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not set event title: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
             if path == "/api/streams":
