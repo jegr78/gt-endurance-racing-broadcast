@@ -1,7 +1,7 @@
 """Manage spawned background services (relay, streams) via a PID file + log file.
 Pure decision logic (read_pid, pid_alive, status_line) is separated from process
 side effects (start_detached, stop_pid, tail) so it unit-tests without spawning."""
-import os, signal, subprocess, sys, time
+import contextlib, os, signal, subprocess, sys, time
 
 
 def read_pid(pid_path):
@@ -283,7 +283,7 @@ def tail(log_path, follow=False, lines=40):
                 else:
                     time.sleep(0.3)
         except KeyboardInterrupt:
-            pass
+            pass  # Ctrl+C ends an interactive tail cleanly
 
 
 def tail_merged(paths, follow=False, lines=40, label_of=None):
@@ -297,27 +297,25 @@ def tail_merged(paths, follow=False, lines=40, label_of=None):
         return
     def lbl(p):
         return label_of(p) if label_of else os.path.basename(p).split(".log")[0]
-    handles = []
-    try:
+    with contextlib.ExitStack() as stack:   # closes every handle on any exit path
+        handles = []
         for p in paths:
-            fh = open(p, encoding="utf-8", errors="replace")  # noqa: SIM115
-            handles.append((fh, p))   # track before reading so any error still closes it
+            fh = stack.enter_context(open(p, encoding="utf-8", errors="replace"))
+            handles.append((fh, p))
             for line in fh.readlines()[-lines:]:
                 sys.stdout.write(f"[{lbl(p)}] {line.rstrip(chr(10))}\n")
         if not follow:
             return
-        while True:
-            quiet = True
-            for fh, p in handles:
-                line = fh.readline()
-                if line:
-                    sys.stdout.write(f"[{lbl(p)}] {line.rstrip(chr(10))}\n")
-                    sys.stdout.flush()
-                    quiet = False
-            if quiet:
-                time.sleep(0.3)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        for fh, _ in handles:   # close on every exit: normal, error, or Ctrl+C
-            fh.close()
+        try:
+            while True:
+                quiet = True
+                for fh, p in handles:
+                    line = fh.readline()
+                    if line:
+                        sys.stdout.write(f"[{lbl(p)}] {line.rstrip(chr(10))}\n")
+                        sys.stdout.flush()
+                        quiet = False
+                if quiet:
+                    time.sleep(0.3)
+        except KeyboardInterrupt:
+            pass  # Ctrl+C ends an interactive tail cleanly

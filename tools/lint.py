@@ -14,8 +14,14 @@ The empty-except guard exists because ruff's S110 stays OFF (it would re-flag th
 documented `except ...: pass  # reason` blocks CodeQL accepts). This guard
 reproduces CodeQL's actual behavior — flag an empty handler (`pass`/`...`) with NO
 explanatory comment, EXCEPT the benign idioms CodeQL also ignores (a deliberate
-`raise` in the try, or an optional-import / KeyboardInterrupt-style handler). So a
-missing comment fails the gate locally/pre-push instead of surfacing post-merge.
+`raise` in the try, or the optional-import idiom). So a missing comment fails the
+gate locally/pre-push instead of surfacing post-merge.
+
+NOTE on KeyboardInterrupt: it is NOT blanket-exempt. CodeQL flags a silent Ctrl-C
+swallow when the protected try can also exit normally — which #217's `tail_merged`
+did (a `return` inside the try), landing alert 124 post-merge even though the gate
+had waved it through. The gate now requires a comment on it like any other swallow;
+that is at worst stricter than CodeQL (a one-line comment), never laxer.
 
 The procedure-return-value guard (find_proc_return_value_uses) reproduces CodeQL's
 py/procedure-return-value-used, which ruff has NO equivalent for: flag `x = proc()`
@@ -29,8 +35,10 @@ import ast, io, os, shutil, subprocess, sys, tokenize
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Caught types for which a silent `pass` is an accepted idiom (CodeQL does not
-# flag these): optional imports and CLI/interpreter-shutdown signals.
-_BENIGN_EXC = frozenset({"ImportError", "ModuleNotFoundError", "KeyboardInterrupt",
+# flag these): optional imports and interpreter/iterator-control signals.
+# KeyboardInterrupt is deliberately NOT here — CodeQL flags a comment-free Ctrl-C
+# swallow when the try has a normal exit too (#217 alert 124); see module docstring.
+_BENIGN_EXC = frozenset({"ImportError", "ModuleNotFoundError",
                          "SystemExit", "StopIteration", "GeneratorExit"})
 
 
