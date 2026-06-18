@@ -31,6 +31,23 @@ def t_icon_missing_file_is_skipped():
     assert bb._icon_arg(platform="win32", osname="nt", exists=lambda p: False) == []
 
 
+def t_every_served_html_dir_is_bundled():
+    # Each src/ subdir that holds a relay/Control-Center-served .html page must be
+    # listed in DATA, or the frozen binary 404s that page (its here-relative lookup
+    # finds nothing under _MEIPASS/src/). Regression for the cockpit.html omission
+    # that made /cockpit return "cockpit page not found" in preview builds.
+    src = os.path.join(ROOT, "src")
+    served = set()
+    for dirpath, _dirs, files in os.walk(src):
+        rel = os.path.relpath(dirpath, src)
+        if rel == "." or rel.split(os.sep)[0] == "docs":
+            continue
+        if any(f.endswith(".html") for f in files):
+            served.add(rel.split(os.sep)[0])
+    missing = served - set(bb.DATA)
+    assert not missing, f"src dirs with served HTML not bundled in DATA: {sorted(missing)}"
+
+
 def t_committed_icons_exist_and_are_valid():
     # The committed icons must be present and well-formed (regenerated from the
     # SVG by tools/make-icons.py) so release builds actually embed an icon.
