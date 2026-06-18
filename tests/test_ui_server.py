@@ -1472,8 +1472,26 @@ def t_event_title_post_route_saves():
     try:
         code, body = _post_json(port, "/api/event-title", {"title": " Round 5 "})
         d = json.loads(body)
+        # the route forwards the raw value (proven by `seen`) and relays the
+        # provider result verbatim; the strip lives in the provider/stub, not the route
         assert code == 200 and d["ok"] and d["title"] == "Round 5"
         assert seen == [" Round 5 "]
+    finally:
+        httpd.shutdown()
+
+
+def t_event_title_post_malformed_body_is_400():
+    httpd, port = _serve(_ctx())
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/event-title", method="POST",
+            data=b"{not json", headers={"Content-Type": "application/json"})
+        try:
+            with _urlopen(req, timeout=5) as r:
+                code = r.status
+        except urllib.error.HTTPError as e:
+            code = e.code
+        assert code == 400
     finally:
         httpd.shutdown()
 
