@@ -7,7 +7,6 @@ import logging, os, re, sys, time
 from logging.handlers import TimedRotatingFileHandler
 
 DEFAULT_RETENTION_DAYS = 7
-_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def configure_logging(name, log_path, level=logging.INFO, to_stdout=None):
@@ -80,7 +79,8 @@ def classify_subproc_line(line):
 
 def tag_line(source, line):
     """Prefix a single log line with its source tag for the merged view, stripping
-    the trailing newline/carriage-return."""
+    the trailing newline/carriage-return. chr(10)/chr(13) avoid a backslash escape
+    inside the f-string expression (only allowed on Python 3.12+; the repo is 3.11)."""
     return f"[{source}] {line.rstrip(chr(10)).rstrip(chr(13))}"
 
 
@@ -89,9 +89,7 @@ def pump_subprocess(stream, logger, tag):
     level, prefixed `[tag]`. Runs to EOF; swallows read errors. Designed to run in a
     daemon thread so it never blocks daemon shutdown."""
     try:
-        for raw in iter(stream.readline, ""):
-            if raw == "":
-                break
+        for raw in iter(stream.readline, ""):   # sentinel "" stops at EOF
             line = raw.rstrip("\n").rstrip("\r")
             logger.log(classify_subproc_line(line), "[%s] %s", tag, line)
     except (ValueError, OSError):
