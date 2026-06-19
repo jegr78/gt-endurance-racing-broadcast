@@ -30,7 +30,8 @@ It is served under its own `/cockpit/*` path namespace and can be reached two wa
 
 The Control Center's **Cockpit** view (above) offers both per commentator — a **Copy
 funnel link** and a **Copy internal link** button — next to **Revoke**; the CLI
-`racecast links` prints both as well.
+`racecast links` prints both as well. Each link lands on the [Console launcher](Console),
+which then shows this cockpit as one of its role-gated cards.
 
 ## Authentication
 

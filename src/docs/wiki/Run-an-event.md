@@ -83,7 +83,7 @@ the Control Center; the CLI alternative is in italics.
    from **Relay** and **Apps**.) Confirm each live feed shows up in OBS. *CLI:
    `racecast event start`, or `racecast relay start` then `racecast companion start`.*
 10. On the **Home** dashboard, make sure **Companion** is connected and a director
-   can reach `http://<producer-tailscale-ip>:8000/tablet` (first-time directors:
+   can reach the Web Buttons page (`http://<producer-tailscale-ip>:8000/tablet`) (first-time directors:
    [Director setup](Director-Setup)).
 11. **Enter the league's stream key** in OBS (**Settings → Stream**).
 
@@ -112,7 +112,7 @@ so the Stream Deck and the panel share one muscle memory:
 
 | Bus | What it does |
 |---|---|
-| **PGM** | one-press program switches (scene + feed visibility + mutes), identical to the Companion macros — STINT A/B, SPLIT, INTERVIEW, STANDBY, INTRO, OUTRO, RED FLAG. SPLIT also sets Race Control to *Driver Swaps*, STINT A/B clear it, and RED FLAG toggles the Standby Cover together with the *Red Flag* message ([Director guide](Director#the-companion-button-board)); these Race Control writes need the sheet-write webhook |
+| **PGM** | one-press program switches (scene + feed visibility + mutes), identical to the Companion macros — STINT A/B, SPLIT, INTERVIEW, STANDBY, INTRO, OUTRO, RED FLAG. SPLIT also sets Race Control to *Driver Swaps*, STINT A/B clear it, and RED FLAG toggles the Standby Cover together with the *Red Flag* message ([Director guide](Director#the-companion-web-buttons-board)); these Race Control writes need the sheet-write webhook |
 | **FEEDS** | relay control: NEXT (driver change — cuts back to Stint and clears Race Control with the cut), feed reloads, POV reload/stop, FEEDS → STINT… |
 | **HUD** | the Stint HUD label, Streamer, Session and Race Control dropdowns — changes show on the HUD immediately and are written back to the Setup tab ([Director guide](Director)) |
 | **SCN·VIS** | raw scene switches and feed visibility toggles |

@@ -52,13 +52,13 @@ def t_relay_open_verbs():
 
 
 def t_companion_open_verbs():
-    for verb in ("open-tablet", "open-admin"):
+    for verb in ("open-buttons", "open-admin"):
         assert m.route(["companion", verb])["verb"] == verb
 
 
 def t_open_verbs_are_not_cross_service():
     _raises(lambda: m.route(["companion", "open-panel"]))
-    _raises(lambda: m.route(["relay", "open-tablet"]))
+    _raises(lambda: m.route(["relay", "open-buttons"]))
     _raises(lambda: m.route(["streams", "open-hud"]))
 
 
@@ -814,7 +814,8 @@ def t_profile_env_vars_filters_empty():
         profile="demo", name="Demo", sheet_id="abc",
         sheet_push_url="", intro_url="https://i", outro_url="")
     assert m._profile_env_vars(rc) == {
-        "RACECAST_SHEET_ID": "abc", "RACECAST_INTRO_URL": "https://i"}
+        "RACECAST_SHEET_ID": "abc", "RACECAST_INTRO_URL": "https://i",
+        "RACECAST_PROFILE_NAME": "Demo"}
 
 
 def t_profile_env_vars_includes_obs_collection():

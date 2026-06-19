@@ -5,7 +5,7 @@
   python3 racecast.py     relay start        # shipped package
 
   racecast relay     start|stop|restart|status|logs|run|open-panel|open-hud|open-status
-  racecast companion start|stop|restart|status|logs|enable-control|open-tablet|open-admin
+  racecast companion start|stop|restart|status|logs|enable-control|open-buttons|open-admin
   racecast streams   start|stop|restart|status|logs
   racecast <svc> logs [-f] [--list] [--archive YYYY-MM-DD]   # tail merged live logs; --list archives; --archive reads one (svc: relay|streams|companion|obs|tailscale)
   racecast event     status|start|stop      # event-day readiness: check / bring-up / wind-down
@@ -196,7 +196,9 @@ def _profile_env_vars(rc):
              ("RACECAST_DISCORD_WEBHOOK_URL", rc.discord_webhook_url),
              ("RACECAST_OBS_COLLECTION", rc.obs_collection),
              ("RACECAST_CONSOLE_SECRET", rc.console_secret),
-             ("RACECAST_EVENT_TITLE", rc.event_title))
+             ("RACECAST_EVENT_TITLE", rc.event_title),
+             ("RACECAST_PROFILE_NAME", rc.name),
+             ("RACECAST_LOGO", rc.logo_path))
     return {k: v for k, v in pairs if v}
 
 def _apply_active_profile_env():
@@ -797,7 +799,7 @@ SERVICE_VERBS = ("start", "stop", "restart", "status", "logs")
 # Per-service verbs beyond the common set (relay foreground + browser-open shortcuts).
 EXTRA_VERBS = {
     "relay": ("run", "open-panel", "open-hud", "open-status"),
-    "companion": ("open-tablet", "open-admin", "enable-control"),
+    "companion": ("open-buttons", "open-admin", "enable-control"),
 }
 # Internal verbs: routed but never advertised (frozen feed children use run-feed).
 HIDDEN_VERBS = {"streams": ("run-feed",)}
@@ -2054,7 +2056,7 @@ def _companion_open(path):
         cfg = json.load(fh)
     _open_url(_http_url(cfg.get("bind_ip", "127.0.0.1"), cfg.get("http_port", 8000), path))
 
-def companion_open_tablet(rest):
+def companion_open_buttons(rest):
     _companion_open("/tablet")
 
 def companion_open_admin(rest):
@@ -2717,7 +2719,7 @@ DISPATCH = {
     ("companion", "start"): companion_start, ("companion", "stop"): companion_stop,
     ("companion", "restart"): companion_restart, ("companion", "status"): companion_status,
     ("companion", "logs"): companion_logs,
-    ("companion", "open-tablet"): companion_open_tablet,
+    ("companion", "open-buttons"): companion_open_buttons,
     ("companion", "open-admin"): companion_open_admin,
     ("companion", "enable-control"): companion_enable_control,
     ("streams", "start"): streams_start, ("streams", "stop"): streams_stop,

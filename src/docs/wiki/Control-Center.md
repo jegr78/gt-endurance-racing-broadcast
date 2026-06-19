@@ -37,7 +37,7 @@ side and share the `runtime/` folder next to them.
 The Control Center listens on `127.0.0.1` only (this machine). Its API is
 unauthenticated and can start installs and stop services, so it is deliberately
 **not** reachable from the LAN or the tailnet. Don't put it behind a proxy or
-forward its port. (The director's panel and Companion tablet *are* reached over
+forward its port. (The director's panel and Companion Web Buttons *are* reached over
 Tailscale — those are separate, see [Director setup](Director-Setup).)
 
 ## A tour of the views
@@ -55,7 +55,7 @@ and tiles for Preflight / Assets / Cookies readiness. **Start event** brings the
 station up (optional stint number for a mid-event takeover); **Stop event** winds
 the `racecast` services down. The sidebar also shows the **active league profile**
 (click it to jump to the Profile view). From here you also open the Director panel
-and copy the director/tablet links.
+and copy the director / Web Buttons links.
 
 > **CLI alternative:** `racecast status`, `racecast event start [--stint N]`, `racecast event stop`.
 

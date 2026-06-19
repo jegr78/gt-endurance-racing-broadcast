@@ -33,7 +33,7 @@ class _Crew:
     def get(self): return list(self._rows)
 
 
-def _serve():
+def _serve(companion_url=None, logo_path=None):
     rows = [("https://youtu.be/a", "Alice", "1", 2)]           # alice -> commentator
     src = _FakeSource(_URLS8, rows)
     relay = m.Relay(src, [53001, 53002], LOGDIR)
@@ -45,7 +45,9 @@ def _serve():
         crew_source=crew,
         panel_path=os.path.join(SRC, "director", "director-panel.html"),
         cockpit_page_path=os.path.join(SRC, "cockpit", "cockpit.html"),
-        console_page_path=os.path.join(SRC, "console", "console.html"))
+        console_page_path=os.path.join(SRC, "console", "console.html"),
+        companion_url=companion_url,
+        logo_path=logo_path)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
@@ -348,6 +350,242 @@ def t_takeover_chat_and_versions_gated_and_routed():
         # Without the step-up secret both are 403.
         assert _get(port, "/console/takeover/chat", _tok("carol"))[0] == 403
         assert _get(port, "/console/takeover/versions", _tok("carol"))[0] == 403
+    finally:
+        srv.shutdown()
+
+
+from http.server import BaseHTTPRequestHandler
+
+
+class _StubCompanion(BaseHTTPRequestHandler):
+    last = {}
+    def do_GET(self):
+        _StubCompanion.last = {"path": self.path,
+                               "prefix": self.headers.get("Companion-custom-prefix"),
+                               "cookie": self.headers.get("Cookie")}
+        body = b"<html>companion web buttons</html>"
+        self.send_response(200); self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body))); self.end_headers()
+        self.wfile.write(body)
+    def log_message(self, *a): pass
+
+
+def _stub_companion():
+    srv = m.ThreadingHTTPServer(("127.0.0.1", 0), _StubCompanion)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def t_buttons_http_proxies_for_director():
+    up = _stub_companion(); upurl = f"http://127.0.0.1:{up.server_address[1]}"
+    srv = _serve(companion_url=upurl); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console/buttons/tablet", _tok("bob"))   # director
+        assert code == 200, (code, body)
+        assert "companion web buttons" in body, body
+        assert _StubCompanion.last["prefix"] == "console/buttons", _StubCompanion.last  # no slash
+        assert _StubCompanion.last["path"] == "/tablet", _StubCompanion.last
+    finally:
+        srv.shutdown(); up.shutdown()
+
+
+def t_buttons_forbidden_for_commentator():
+    up = _stub_companion(); upurl = f"http://127.0.0.1:{up.server_address[1]}"
+    srv = _serve(companion_url=upurl); port = srv.server_address[1]
+    try:
+        assert _get(port, "/console/buttons/tablet", _tok("alice"))[0] == 403
+    finally:
+        srv.shutdown(); up.shutdown()
+
+
+def t_buttons_502_when_companion_down():
+    srv = _serve(companion_url="http://127.0.0.1:1"); port = srv.server_address[1]
+    try:
+        assert _get(port, "/console/buttons/tablet", _tok("bob"))[0] == 502
+    finally:
+        srv.shutdown()
+
+
+def t_buttons_health_shape_and_director_gated():
+    srv = _serve(companion_url="http://127.0.0.1:1"); port = srv.server_address[1]
+    try:
+        assert _get(port, "/console/buttons/health", _tok("alice"))[0] == 403   # commentator
+        code, body = _get(port, "/console/buttons/health", _tok("bob"))         # director
+        assert code == 200, (code, body)
+        blob = json.loads(body)
+        assert set(blob) == {"reachable", "version", "ok"}, blob
+        assert blob["reachable"] is False and blob["ok"] is False               # nothing on port 1
+    finally:
+        srv.shutdown()
+
+
+import socket as _socket
+
+
+class _WSStub:
+    last_request = b""
+
+
+def _ws_echo_stub():
+    """Raw-socket upstream: records the handshake request line, completes a 101, echoes bytes."""
+    srv = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    srv.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", 0)); srv.listen(1)
+    def serve():
+        while True:
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return
+            data = b""
+            while b"\r\n\r\n" not in data:
+                chunk = conn.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+            _WSStub.last_request = data
+            conn.sendall(b"HTTP/1.1 101 Switching Protocols\r\n"
+                         b"Upgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
+            try:
+                while True:
+                    b = conn.recv(4096)
+                    if not b:
+                        break
+                    conn.sendall(b)
+            except OSError:
+                pass  # client disconnected — normal echo-stub teardown
+            conn.close()
+    threading.Thread(target=serve, daemon=True).start()
+    return srv
+
+
+def t_buttons_ws_passthrough_and_strips_token():
+    up = _ws_echo_stub(); upurl = f"http://127.0.0.1:{up.getsockname()[1]}"
+    srv = _serve(companion_url=upurl); port = srv.server_address[1]
+    try:
+        c = _socket.create_connection(("127.0.0.1", port), timeout=5)
+        req = ("GET /console/buttons/trpc?t=%s HTTP/1.1\r\n"
+               "Host: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+               "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+               "Sec-WebSocket-Version: 13\r\n\r\n") % _tok("bob")
+        c.sendall(req.encode())
+        resp = c.recv(4096)
+        assert resp.split(b"\r\n")[0].endswith(b"101 Switching Protocols"), resp
+        c.sendall(b"hello-trpc")
+        assert c.recv(4096) == b"hello-trpc"
+        c.close()
+        # The upstream handshake must hit /trpc with the relay token stripped.
+        first_line = _WSStub.last_request.split(b"\r\n")[0]
+        assert first_line.startswith(b"GET /trpc"), first_line
+        assert b"t=" not in first_line, first_line
+    finally:
+        srv.shutdown(); up.close()
+
+
+def t_buttons_http_does_not_forward_relay_cookie():
+    # The rc_cockpit auth cookie must be scrubbed before forwarding upstream;
+    # other cookies in the same header must be preserved.
+    up = _stub_companion(); upurl = f"http://127.0.0.1:{up.server_address[1]}"
+    srv = _serve(companion_url=upurl); port = srv.server_address[1]
+    try:
+        url = f"http://127.0.0.1:{port}/console/buttons/tablet?t=" + _tok("bob")
+        req = urllib.request.Request(url)
+        req.add_header("Cookie", "rc_cockpit=secret; keep=1")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            assert r.status == 200
+        # The stub saw the Cookie header with keep=1 but NOT rc_cockpit.
+        received_cookie = _StubCompanion.last.get("cookie") or ""
+        assert "rc_cockpit" not in received_cookie, received_cookie
+        assert "keep=1" in received_cookie, received_cookie
+    finally:
+        srv.shutdown(); up.shutdown()
+
+
+def t_buttons_ws_does_not_forward_relay_cookie_and_carries_prefix():
+    # The WS upgrade path must scrub rc_cockpit and inject the sub-path prefix header.
+    up = _ws_echo_stub(); upurl = f"http://127.0.0.1:{up.getsockname()[1]}"
+    srv = _serve(companion_url=upurl); port = srv.server_address[1]
+    try:
+        c = _socket.create_connection(("127.0.0.1", port), timeout=5)
+        req = ("GET /console/buttons/trpc?t=%s HTTP/1.1\r\n"
+               "Host: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+               "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+               "Sec-WebSocket-Version: 13\r\n"
+               "Cookie: rc_cockpit=%s\r\n\r\n") % (_tok("bob"), _tok("bob"))
+        c.sendall(req.encode())
+        resp = c.recv(4096)
+        assert resp.split(b"\r\n")[0].endswith(b"101 Switching Protocols"), resp
+        c.close()
+        # rc_cockpit must not appear in the upstream handshake.
+        assert b"rc_cockpit" not in _WSStub.last_request, _WSStub.last_request[:400]
+        # The prefix header must be present.
+        assert b"Companion-custom-prefix: console/buttons" in _WSStub.last_request, \
+            _WSStub.last_request[:400]
+    finally:
+        srv.shutdown(); up.close()
+
+
+def t_console_launcher_has_buttons_wiring_for_director():
+    srv = _serve(companion_url="http://127.0.0.1:1"); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console", _tok("bob"))   # director
+        assert code == 200, (code, body)
+        assert "/buttons/health" in body, body
+        # The card lands on the web-buttons page (/tablet), not Companion's admin root.
+        assert "RC_API('/buttons/tablet')" in body, body
+    finally:
+        srv.shutdown()
+
+
+def t_console_logo_served_any_auth():
+    import tempfile
+    # Write a tiny valid PNG (8-byte signature + minimal IHDR would be complex; just
+    # use the minimal bytes that pass os.path.splitext extension check).
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as fh:
+        fh.write(b"\x89PNG\r\n\x1a\n" + b"\x00" * 20)
+        logo_path = fh.name
+    try:
+        srv = _serve(logo_path=logo_path); port = srv.server_address[1]
+        try:
+            # Any authenticated subject (alice = commentator) can GET /console/logo.
+            url = f"http://127.0.0.1:{port}/console/logo?t=" + _tok("alice")
+            with urllib.request.urlopen(url, timeout=5) as r:
+                code = r.status
+                body = r.read()
+            assert code == 200, code
+            assert len(body) > 0, "logo body was empty"
+            # No token -> 401.
+            code2, _ = _get(port, "/console/logo")
+            assert code2 == 401, code2
+        finally:
+            srv.shutdown()
+    finally:
+        os.unlink(logo_path)
+
+
+def t_console_logo_404_when_unset():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console/logo", _tok("alice"))
+        assert code == 404, (code, body)
+    finally:
+        srv.shutdown()
+
+
+def t_status_league_includes_name():
+    rows = [("https://youtu.be/a", "Alice", "1", 2)]
+    src = _FakeSource(_URLS8, rows)
+    relay = m.Relay(src, [53001, 53002], LOGDIR, league_name="IRO GTEC")
+    assert relay.status()["league"]["name"] == "IRO GTEC"
+
+
+def t_console_launcher_fetches_status_and_logo():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console", _tok("bob"))   # director
+        assert code == 200, (code, body)
+        assert "RC_API('/status')" in body, body
+        assert "RC_API('/logo')" in body, body
     finally:
         srv.shutdown()
 

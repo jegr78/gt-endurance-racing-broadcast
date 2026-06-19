@@ -72,6 +72,8 @@ def min_capability(segments, method="GET"):
         return Requirement(DIRECTOR, False)
     if p and p[0] == "obs":                     # relay-mediated OBS control (scene/source/audio/state)
         return Requirement(DIRECTOR, False)
+    if p and p[0] == "buttons":                 # /console/buttons/* -> Companion proxy (#236)
+        return Requirement(DIRECTOR, False)
     if p and p[0] == "setup" and p != ["setup", "data"]:
         return Requirement(DIRECTOR, False)
     if len(p) >= 2 and p[0] == "timer" and p[1] != "data":
@@ -90,6 +92,8 @@ def min_capability(segments, method="GET"):
     # --- any authenticated: read-only monitors + identity-forced chat ---
     # ["console"], ["data"], ["program"] are console-only shell/landing pages (Phase 3),
     # not relay-route mirrors.
+    if p == ["logo"]:
+        return Requirement(ANY, False)
     if p in ([], ["status"], ["console"], ["data"], ["program"]):
         return Requirement(ANY, False)
     if p and p[0] in ("hud", "preview", "splitscreen"):

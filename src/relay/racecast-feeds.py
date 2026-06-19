@@ -89,6 +89,10 @@ import cockpit_auth   # talent-cockpit token auth (#191); pure, src/scripts on s
 import cockpit_admin  # talent-cockpit revocation version store (#191)
 import cockpit_submissions  # talent stream-link submission store (#193)
 import console_policy  # /console authorization matrix + decision (#216)
+import console_proxy      # pure /console/buttons proxy plumbing (#236)
+import install_apps       # companion_http_version for the buttons health probe (#236)
+import companion_common   # companion config.json path for bind-address resolution (#236)
+import tailscale          # detect_tailscale_ip fallback for bind-address resolution (#236)
 import logsetup  # rotating per-feed/console loggers + streamlink pump (src/scripts on sys.path)
 from services import external_tool_env  # de-PyInstaller the env for spawned external tools
 
@@ -346,6 +350,19 @@ ASSET_EXTS = (("png", "image/png"), ("svg", "image/svg+xml"),
 # Identity whitelist: the handler re-derives the Content-Type header value from
 # this constant map, so a request-derived string can never reach send_header().
 ASSET_CTYPES = {ctype: ctype for _, ctype in ASSET_EXTS}
+
+# Logo image extensions accepted for /console/logo (#236). Mirrors racecast.py.
+_LOGO_EXTS = frozenset((".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"))
+_LOGO_CTYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml"}
+
+
+def servable_logo_path(logo_path):
+    """Return `logo_path` when it points at a web-image file (by extension),
+    else "". No filesystem check — extension whitelist only."""
+    if logo_path and os.path.splitext(logo_path)[1].lower() in _LOGO_EXTS:
+        return logo_path
+    return ""
 
 
 def resolve_asset(assets_dir, sub, key):
@@ -2459,10 +2476,11 @@ class Relay:
     def __init__(self, source, ports, logdir, cookies=None, pov_source=None,
                  pov_port=None, start_stint=1, cookie_dir=None,
                  qual_source=None, mode="race", discord_webhook_url=None,
-                 sheet_id=None, event_title_store=None):
+                 sheet_id=None, event_title_store=None, league_name=""):
         self.race_source = source
         self.qual_source = qual_source
         self.sheet_id = sheet_id          # league identity, surfaced in /status for takeover
+        self.league_name = league_name    # display name injected from the active profile (#236)
         self.event_title_store = event_title_store   # free-text event title for Discord footers (#207)
         # Active schedule is race by default; qualifying only when a qual source
         # exists. self.source (property below) returns whichever is active, so
@@ -2623,7 +2641,7 @@ class Relay:
         # the on-air feed is the lower-index one (live_feed), its stint = idx+1.
         live = self.live_feed()
         out["live"] = {"feed": live, "stint": self.feeds[live].idx + 1, "mode": self.mode}
-        out["league"] = {"sheet_id": self.sheet_id}
+        out["league"] = {"sheet_id": self.sheet_id, "name": self.league_name}
         self._refresh_health(now)            # keep the displayed level fresh (2 s poll)
         out["health"] = {"level": self.health_level, "reasons": self.health_reasons,
                          "since_s": round(now - self.health_since, 1)}
@@ -2858,7 +2876,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  splitscreen_path=None, cockpit_page_path=None, console_secret=None,
                  cockpit_versions_path=None,
                  submission_store=None, event_store=None, crew_source=None,
-                 console_page_path=None):
+                 console_page_path=None, companion_url=None, logo_path=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -2966,6 +2984,118 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             if not ctype:
                 return self._send({"error": "font not found", "key": name}, 404)
             return self._send_file(path, ctype)
+        def _companion_base(self):
+            """Resolved Companion admin base URL. The make_handler `companion_url` override
+            wins (tests / non-standard installs); otherwise resolve from Companion's own
+            config.json bind_ip, then the Tailscale IP, then loopback (#236)."""
+            if companion_url:
+                return companion_url
+            bind_ip = None
+            try:
+                import sys as _sys, json as _json
+                with open(companion_common.companion_config_path(_sys.platform)) as fh:
+                    bind_ip = (_json.load(fh).get("bind_ip") or "").strip() or None
+            except Exception:
+                bind_ip = None
+            return console_proxy.resolve_companion_base(bind_ip, tailscale.detect_tailscale_ip())
+
+        def _proxy_companion(self, method):
+            """Reverse-proxy a /console/buttons/* request to the local Companion (Option C,
+            #236), director-gated by the caller. HTTP and WebSocket (tRPC /trpc) paths both
+            strip the relay auth token first. Best-effort: never raises; unreachable Companion
+            -> 502."""
+            import urllib.request, urllib.error
+            from urllib.parse import urlsplit
+            clean_path = console_proxy.strip_relay_token(self.path)   # relay token never goes upstream
+            base = self._companion_base()
+            u = urlsplit(base); host, cport = u.hostname or "127.0.0.1", u.port or 8000
+            if console_proxy.is_websocket_upgrade(self.headers):
+                import socket, select
+                try:
+                    up = socket.create_connection((host, cport), timeout=5)
+                except OSError as e:
+                    LOG.warning("Companion WS connect failed: %s", e)
+                    return self._send({"error": "Companion not reachable"}, 502)
+                # Replay the upgrade: rewritten+token-stripped path, upgrade headers forwarded
+                # RAW (Upgrade/Connection/Sec-WebSocket-* must survive), prefix injected.
+                # The relay's rc_cockpit auth cookie must never reach Companion.
+                hdrs = {}
+                for k, v in self.headers.items():
+                    lk = k.lower()
+                    if lk in ("host", "accept-encoding"):
+                        continue
+                    if lk == "cookie":
+                        cleaned = console_proxy.scrub_relay_cookie(v)
+                        if cleaned:
+                            hdrs[k] = cleaned
+                        # else: drop entirely
+                        continue
+                    hdrs[k] = v
+                hdrs["Host"] = "%s:%d" % (host, cport)
+                hdrs[console_proxy.COMPANION_PREFIX_HEADER] = console_proxy.PREFIX_HEADER_VALUE
+                raw = ("GET %s HTTP/1.1\r\n" % console_proxy.upstream_path(clean_path)
+                       + "".join("%s: %s\r\n" % kv for kv in hdrs.items()) + "\r\n")
+                up.sendall(raw.encode("latin-1"))
+                client = self.connection
+                try:
+                    while True:
+                        r, _, _ = select.select([client, up], [], [], 120)
+                        if not r:
+                            break
+                        for s in r:
+                            chunk = s.recv(65536)
+                            if not chunk:
+                                raise ConnectionError
+                            (up if s is client else client).sendall(chunk)
+                except Exception:
+                    pass  # normal on client/upstream disconnect
+                finally:
+                    up.close()
+                self.close_connection = True
+                return None
+            # --- HTTP path (token-stripped clean_path forwarded upstream) ---
+            url = base.rstrip("/") + console_proxy.upstream_path(clean_path)
+            length = int(self.headers.get("Content-Length") or 0)
+            data = self.rfile.read(length) if length else None
+            hdrs = console_proxy.forward_request_headers(
+                self.headers, host="%s:%d" % (host, cport))
+            req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    body, status = resp.read(), resp.status
+                    out_headers = console_proxy.filter_response_headers(resp.headers.items())
+                    ctype = resp.headers.get("Content-Type", "application/octet-stream")
+            except urllib.error.HTTPError as e:
+                body, status = e.read(), e.code
+                out_headers = console_proxy.filter_response_headers(e.headers.items())
+                ctype = e.headers.get("Content-Type", "application/octet-stream")
+            except Exception as e:
+                LOG.warning("Companion proxy failed: %s: %s", type(e).__name__, e)
+                return self._send({"error": "Companion not reachable"}, 502)
+            self.send_response(status)
+            for k, v in out_headers:
+                self.send_header(k, v)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(body)
+            return None
+
+        def _buttons_health(self):
+            """Director-gated availability probe for the launcher: is Companion up and new
+            enough (>= 4.1.0) to serve under the /console/buttons sub-path? (#236)"""
+            import urllib.request
+            base = self._companion_base()
+            ver = install_apps.companion_http_version(base)
+            reachable = ver is not None
+            if not reachable:
+                try:
+                    urllib.request.urlopen(base.rstrip("/") + "/", timeout=2); reachable = True
+                except Exception:
+                    reachable = False
+            ok = reachable and console_proxy.version_ge(ver, (4, 1, 0))
+            return self._send({"reachable": reachable, "version": ver, "ok": ok})
+
         def log_message(self, *a): pass
         def _cockpit_active(self):
             """True iff a per-league cockpit secret is configured. The secret is
@@ -3028,6 +3158,32 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             # /console-only: identity introspection for the launcher (any auth).
             if sub == ["whoami"]:
                 self._send({"subject": subject, "roles": sorted(roles)})
+                return None
+            # /console/buttons/* -> reverse-proxy to the local Companion (#236), director only.
+            # 'buttons/health' is served by the relay (launcher availability probe) and shadows
+            # that one upstream path (Companion's UI does not use /health).
+            if sub and sub[0] == "buttons":
+                if console_policy.decide(roles, sub, method, has_step_up) != console_policy.ALLOW:
+                    self._send({"error": "forbidden"}, 403)
+                    return None
+                if sub == ["buttons", "health"]:
+                    self._buttons_health()
+                    return None
+                self._proxy_companion(method)
+                return None
+            # /console/logo — serve the league logo to any authenticated subject (#236).
+            # Funnelled so it must live under /console; served locally from logo_path.
+            if sub == ["logo"]:
+                if console_policy.decide(roles, sub, method, has_step_up) != console_policy.ALLOW:
+                    self._send({"error": "forbidden"}, 403)
+                    return None
+                path = servable_logo_path(logo_path)
+                if not path:
+                    self._send({"error": "no logo"}, 404)
+                    return None
+                ext = os.path.splitext(path)[1].lower()
+                ctype = _LOGO_CTYPES.get(ext, "image/png")
+                self._send_file(path, ctype)
                 return None
             # Role-adaptive pages: authorize via the same matrix, then serve HTML
             # with the /console base + a Path=/console cookie. Served BEFORE the API
@@ -3647,6 +3803,12 @@ def main():
     ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
                     help="Google Sheet ID for the schedule/POV tabs. Default: env "
                          "RACECAST_SHEET_ID (injected by the CLI from the active profile).")
+    ap.add_argument("--league-name", default=os.environ.get("RACECAST_PROFILE_NAME", ""),
+                    help="League display name shown on the /console launcher. Default: env "
+                         "RACECAST_PROFILE_NAME (injected by the CLI from the active profile).")
+    ap.add_argument("--logo", default=os.environ.get("RACECAST_LOGO", ""),
+                    help="Absolute path to the league logo image. Default: env "
+                         "RACECAST_LOGO (injected by the CLI from the active profile).")
     ap.add_argument("--sheet-tab", default=DEFAULT_SHEET_TAB)
     ap.add_argument("--sheet-csv-url", default=None,
                     help="Full CSV URL (overrides sheet-id/tab; e.g. publish-to-web)")
@@ -3920,7 +4082,8 @@ def main():
                   mode=("qualifying" if args.qualifying else "race"),
                   discord_webhook_url=os.environ.get("RACECAST_DISCORD_WEBHOOK_URL"),
                   sheet_id=args.sheet_id,
-                  event_title_store=event_store)
+                  event_title_store=event_store,
+                  league_name=args.league_name)
     relay.start()
     relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
     # Launching straight into qualifying mode: seed the HUD Streamer/Stint from
@@ -3967,7 +4130,8 @@ def main():
                            submission_store=submission_store,
                            event_store=event_store,
                            console_page_path=console_page_path,
-                           crew_source=crew_source)
+                           crew_source=crew_source,
+                           logo_path=args.logo)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []
