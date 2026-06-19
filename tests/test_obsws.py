@@ -765,6 +765,73 @@ def t_feed_state_intents_live_b_no_cut():
     ]
 
 
+# --------------------------------------------------------------------------
+# set_current_program_scene / set_input_volume / set_input_mute /
+# read_obs_state — relay-mediated OBS control helpers
+# --------------------------------------------------------------------------
+class _FakeSession:
+    def __init__(self, responses=None):
+        self.sent = []
+        self._responses = responses or {}
+
+    def request(self, request_type, request_data=None):
+        self.sent.append((request_type, request_data or {}))
+        return self._responses.get(request_type, {})
+
+    def close(self):
+        self.sent.append(("close", {}))
+
+
+def t_set_current_program_scene_sends_request():
+    sess = _FakeSession()
+    orig, m._connect = m._connect, lambda *a, **k: (sess, "")
+    try:
+        ok, note = m.set_current_program_scene("Stint")
+    finally:
+        m._connect = orig
+    assert ok is True and note == ""
+    assert ("SetCurrentProgramScene", {"sceneName": "Stint"}) in sess.sent
+
+
+def t_set_input_volume_and_mute():
+    sess = _FakeSession()
+    orig, m._connect = m._connect, lambda *a, **k: (sess, "")
+    try:
+        assert m.set_input_volume("Mic", -6.0)[0] is True
+        assert m.set_input_mute("Mic", True)[0] is True
+    finally:
+        m._connect = orig
+    assert ("SetInputVolume", {"inputName": "Mic", "inputVolumeDb": -6.0}) in sess.sent
+    assert ("SetInputMute", {"inputName": "Mic", "inputMuted": True}) in sess.sent
+
+
+def t_read_obs_state_batches_one_session():
+    sess = _FakeSession({
+        "GetCurrentProgramScene": {"currentProgramSceneName": "Stint"},
+        "GetSceneItemId": {"sceneItemId": 7},
+        "GetSceneItemEnabled": {"sceneItemEnabled": True},
+        "GetInputMute": {"inputMuted": False},
+        "GetInputVolume": {"inputVolumeDb": -3.0},
+    })
+    orig, m._connect = m._connect, lambda *a, **k: (sess, "")
+    try:
+        state, note = m.read_obs_state([("Stint", "HUD")], ["Mic"])
+    finally:
+        m._connect = orig
+    assert note == "" and state["scene"] == "Stint"
+    assert state["sources"] == [{"scene": "Stint", "source": "HUD", "enabled": True}]
+    assert state["audio"] == [{"input": "Mic", "muted": False, "volumeDb": -3.0}]
+
+
+def t_obs_helpers_unreachable_return_failure_not_raise():
+    orig, m._connect = m._connect, lambda *a, **k: (None, "OBS not running")
+    try:
+        assert m.set_current_program_scene("Stint") == (False, "OBS not running")
+        assert m.read_obs_state([], []) == (None, "OBS not running")
+    finally:
+        m._connect = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
