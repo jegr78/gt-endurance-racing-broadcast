@@ -38,9 +38,14 @@ def _serve():
     src = _FakeSource(_URLS8, rows)
     relay = m.Relay(src, [53001, 53002], LOGDIR)
     crew = _Crew([("Bob", True, False), ("Carol", False, True)])  # bob=director, carol=producer
-    handler = m.make_handler(relay, cockpit_secret=SECRET, cockpit_versions_path=None,
-                             chat_store=m.ChatStore(os.path.join(LOGDIR, "chat.json")),
-                             crew_source=crew)
+    SRC = os.path.join(ROOT, "src")
+    handler = m.make_handler(
+        relay, cockpit_secret=SECRET, cockpit_versions_path=None,
+        chat_store=m.ChatStore(os.path.join(LOGDIR, "chat.json")),
+        crew_source=crew,
+        panel_path=os.path.join(SRC, "director", "director-panel.html"),
+        cockpit_page_path=os.path.join(SRC, "cockpit", "cockpit.html"),
+        console_page_path=os.path.join(SRC, "console", "console.html"))
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
@@ -186,6 +191,75 @@ def t_wrong_method_console_route_is_404():
         except urllib.error.HTTPError as e:
             code = e.code
         assert code == 404, code
+    finally:
+        srv.shutdown()
+
+
+def t_root_cockpit_page_has_empty_base():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/cockpit", _tok("alice"))
+        assert code == 200, (code, body)
+        assert 'window.RC_API_BASE = ""' in body, body[:400]
+    finally:
+        srv.shutdown()
+
+
+def t_console_whoami_returns_roles():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, data = _get(port, "/console/whoami", _tok("bob"))   # bob = director
+        assert code == 200, (code, data)
+        body = json.loads(data)
+        assert body["subject"] == "bob"
+        assert "director" in body["roles"]
+    finally:
+        srv.shutdown()
+
+
+def t_console_launcher_served_any_auth():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console", _tok("alice"))   # commentator
+        assert code == 200, (code, body)
+        assert 'window.RC_API_BASE = "/console"' in body, body[:400]
+    finally:
+        srv.shutdown()
+
+
+def t_console_cockpit_page_any_auth_with_console_base_and_cookie():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        url = f"http://127.0.0.1:{port}/console/cockpit?t=" + _tok("alice")
+        with urllib.request.urlopen(url, timeout=5) as r:
+            body = r.read().decode()
+            setc = r.headers.get("Set-Cookie", "")
+        assert 'window.RC_API_BASE = "/console"' in body, body[:400]
+        assert "Path=/console" in setc, setc
+    finally:
+        srv.shutdown()
+
+
+def t_console_panel_requires_director():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        assert _get(port, "/console/panel", _tok("alice"))[0] == 403   # commentator -> no
+        assert _get(port, "/console/panel", _tok("bob"))[0] == 200      # director -> yes
+    finally:
+        srv.shutdown()
+
+
+def t_console_launcher_links_are_mount_absolute():
+    # Card hrefs must be built through RC_API so they resolve under /console
+    # (a bare relative 'cockpit' against /console would navigate to /cockpit).
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console", _tok("bob"))   # bob = director: both cards render
+        assert code == 200, (code, body)
+        assert "RC_API('/cockpit')" in body, body
+        assert "RC_API('/panel')" in body, body
+        # The old bare-relative forms must be gone.
+        assert "card('cockpit'" not in body and "card('panel'" not in body, body
     finally:
         srv.shutdown()
 

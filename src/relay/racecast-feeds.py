@@ -2779,7 +2779,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  chat_store=None, preview_path=None, graphics_dir=None,
                  splitscreen_path=None, cockpit_page_path=None, cockpit_secret=None,
                  cockpit_versions_path=None,
-                 submission_store=None, event_store=None, crew_source=None):
+                 submission_store=None, event_store=None, crew_source=None,
+                 console_page_path=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -2824,31 +2825,40 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Cache-Control", "no-store")
             self.end_headers(); self.wfile.write(body)
             return None
-        def _send_html_with_cookie(self, path, token):
-            """Serve the cockpit HTML and set the rc_cockpit auth cookie so all
-            sub-requests authenticate without the token staying in the URL bar."""
+        def _send_page(self, path, api_base="", cookie_token=None, cookie_path=None):
+            """Serve an HTML page, substituting the __RC_API_BASE__ placeholder with
+            api_base ("" at the tailnet/loopback root, "/console" behind Funnel) and
+            optionally setting the rc_cockpit auth cookie scoped to cookie_path."""
             try:
-                with open(path, "rb") as fh: body = fh.read()
+                with open(path, "rb") as fh:
+                    body = fh.read()
             except OSError:
-                return self._send({"error": "cockpit page not found"}, 404)
+                return self._send({"error": "page not found"}, 404)
+            body = body.replace(b"__RC_API_BASE__", (api_base or "").encode())
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
-            # `Secure` only behind the HTTPS Funnel (which injects X-Forwarded-Proto):
-            # browsers DROP a Secure cookie set over plain http, which would break the
-            # tailnet fallback link (http://<ip>:8088/cockpit) — its sub-requests
-            # would never re-auth. The tailnet hop is already WireGuard-encrypted.
-            secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
-            # Allowlist-sanitize before it touches the header: the token already
-            # passed verify_token(), but the Set-Cookie value must never be raw
-            # request input (CWE-113 response splitting / CWE-20 cookie injection).
-            token = cockpit_auth.safe_cookie_token(token)
-            self.send_header("Set-Cookie",
-                             f"{cockpit_auth.COOKIE_NAME}={token}; Path=/cockpit; "
-                             f"HttpOnly{secure}; SameSite=Lax")
-            self.end_headers(); self.wfile.write(body)
+            if cookie_token is not None and cookie_path:
+                # `Secure` only behind the HTTPS Funnel (X-Forwarded-Proto); browsers
+                # drop a Secure cookie over plain http, which would break the tailnet
+                # fallback link (its sub-requests would never re-auth). The tailnet
+                # hop is already WireGuard-encrypted.
+                secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+                # Allowlist-sanitize: the value must never be raw request input
+                # (CWE-113 response splitting / CWE-20 cookie injection).
+                safe = cockpit_auth.safe_cookie_token(cookie_token)
+                self.send_header("Set-Cookie",
+                                 f"{cockpit_auth.COOKIE_NAME}={safe}; Path={cookie_path}; "
+                                 f"HttpOnly{secure}; SameSite=Lax")
+            self.end_headers()
+            self.wfile.write(body)
             return None
+
+        def _send_html_with_cookie(self, path, token):
+            """Back-compat: the tailnet /cockpit page (cookie scoped to /cockpit,
+            base empty)."""
+            return self._send_page(path, "", cookie_token=token, cookie_path="/cockpit")
         def _send_jpeg(self, body):
             self.send_response(200)
             self.send_header("Content-Type", "image/jpeg")
@@ -2934,6 +2944,25 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             roles = self._console_roles(subject)
             presented = self.headers.get("X-Cockpit-Secret")
             has_step_up = bool(presented) and cockpit_auth.secret_matches(presented, cockpit_secret)
+            # /console-only: identity introspection for the launcher (any auth).
+            if sub == ["whoami"]:
+                self._send({"subject": subject, "roles": sorted(roles)})
+                return None
+            # Role-adaptive pages: authorize via the same matrix, then serve HTML
+            # with the /console base + a Path=/console cookie. Served BEFORE the API
+            # fall-through so they don't reach the root page handlers (wrong cookie
+            # path / no base).
+            page = {(): console_page_path, ("cockpit",): cockpit_page_path,
+                    ("panel",): panel_path}.get(tuple(sub))
+            if page is not None or tuple(sub) in {(), ("cockpit",), ("panel",)}:
+                if console_policy.decide(roles, sub, method, has_step_up) != console_policy.ALLOW:
+                    self._send({"error": "forbidden"}, 403)
+                    return None
+                if not page:
+                    return self._send({"error": "page not found"}, 404)
+                token = self._cockpit_token()
+                self._send_page(page, "/console", cookie_token=token, cookie_path="/console")
+                return None
             # console_policy.decide derives capability from the path; the `method`
             # arg is plumbing for a future tightening — it is not a live check today.
             outcome = console_policy.decide(roles, sub, method, has_step_up)
@@ -3000,7 +3029,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send(base)
                 if p == ["panel"]:
                     if not panel_path: return self._send({"error":"panel disabled"}, 404)
-                    return self._send_file(panel_path, "text/html; charset=utf-8")
+                    return self._send_page(panel_path, "")
                 if p == ["hud"]:
                     if not (hud_source and hud_path):
                         return self._send({"error": "hud disabled"}, 404)
@@ -3674,6 +3703,12 @@ def main():
                  os.path.join(here, "..", "cockpit", "cockpit.html")):
         if os.path.exists(cand):
             cockpit_page_path = os.path.abspath(cand); break
+    console_page_path = None
+    for cand in (os.path.join(here, "console.html"),
+                 os.path.join(here, "..", "console.html"),
+                 os.path.join(here, "..", "console", "console.html")):
+        if os.path.exists(cand):
+            console_page_path = os.path.abspath(cand); break
     if not args.no_hud and not args.sheet_csv_url:
         base = f"https://docs.google.com/spreadsheets/d/{args.sheet_id}/gviz/tq?tqx=out:csv&sheet="
         overlay_url = base + quote(args.overlay_tab)
@@ -3782,6 +3817,7 @@ def main():
                            cockpit_versions_path=cockpit_versions_path,
                            submission_store=submission_store,
                            event_store=event_store,
+                           console_page_path=console_page_path,
                            crew_source=crew_source)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)

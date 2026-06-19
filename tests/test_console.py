@@ -139,6 +139,12 @@ def t_splitscreen_and_overlay_fonts_are_any_reads():
         assert _cap(segs) == ("any", False), segs
 
 
+def t_cockpit_chat_send_is_any_read():
+    # cockpit.html POSTs /cockpit/chat/send; under /console it must be allowed
+    # (any authenticated) -- identity is forced server-side by the cockpit handler.
+    assert _cap(["cockpit", "chat", "send"], "POST") == ("any", False)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
