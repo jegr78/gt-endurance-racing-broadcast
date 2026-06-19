@@ -101,6 +101,17 @@ def t_resolve_unknown_subject_is_empty():
     assert m.resolve_roles(crew, {"alice"}, "stranger") == set()
 
 
+def t_schedule_keys_normalizes_and_skips_blank():
+    rows = [("https://youtu.be/a", "Alice", "1", 2),
+            ("", "Bob O'Brien", "2", 3),
+            ("https://youtu.be/c", "", "3", 4)]   # blank streamer -> skipped
+    assert m.schedule_keys(rows) == {"alice", m.asset_key("Bob O'Brien")}
+
+
+def t_schedule_keys_empty():
+    assert m.schedule_keys([]) == set()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

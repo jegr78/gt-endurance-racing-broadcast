@@ -88,6 +88,7 @@ import chat_admin  # required (ChatStore); src/scripts is on sys.path via the bl
 import cockpit_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
 import cockpit_admin  # talent-cockpit revocation version store (#191)
 import cockpit_submissions  # talent stream-link submission store (#193)
+import console_policy  # /console authorization matrix + decision (#216)  # noqa: F401
 import logsetup  # rotating per-feed/console loggers + streamlink pump (src/scripts on sys.path)
 from services import external_tool_env  # de-PyInstaller the env for spawned external tools
 
@@ -552,6 +553,13 @@ def resolve_roles(crew_rows, schedule_keys, subject):
         if is_prod:
             roles.add("producer")
     return roles
+
+
+def schedule_keys(rows):
+    """Set of asset_key-normalized streamer names present in a schedule's rows
+    ([(url, name, stint, line)]). This is the implicit commentator roster that
+    resolve_roles unions with the Crew tab (#216)."""
+    return {asset_key(n) for (_u, n, _s, _l) in rows if (n or "").strip()}
 
 TEAM_NUMBER_RE = re.compile(r"^(.*?)\s*#(\d+)\s*$")
 
@@ -2771,7 +2779,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  chat_store=None, preview_path=None, graphics_dir=None,
                  splitscreen_path=None, cockpit_page_path=None, cockpit_secret=None,
                  cockpit_versions_path=None,
-                 submission_store=None, event_store=None):
+                 submission_store=None, event_store=None, crew_source=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -3416,6 +3424,9 @@ def main():
                     help="Google-Sheet tab for the qualifying schedule (same "
                          "URL/Streamer/Stint structure as the race Schedule tab; "
                          "default 'Qualifying'). One stream, served on Feed A.")
+    ap.add_argument("--crew-tab", default="Crew",
+                    help="Sheet tab naming Director/Producer crew for /console roles "
+                         "(#216); disabled with a custom --sheet-csv-url.")
     ap.add_argument("--qualifying", action="store_true",
                     help="Start in QUALIFYING mode: serve the qualifying tab on "
                          "Feed A instead of the race schedule (different-day "
@@ -3540,6 +3551,18 @@ def main():
         qual_cache = os.path.join(runtime, "qualifying.cache.txt")
         qual_source = ScheduleSource(qual_csv_url, qual_cache, None)
         qual_source.refresh()   # non-fatal: empty/unreachable = qualifying mode just idles
+
+    # Crew roster (#216): Name | Director | Producer tab giving the director/
+    # producer capabilities for /console. Like POV/qualifying it is derivable
+    # only from sheet-id/tab, so a custom --sheet-csv-url disables it. Missing or
+    # empty tab is non-fatal -- roles just fall back to schedule-only commentator.
+    crew_source = None
+    if not args.sheet_csv_url:
+        crew_csv_url = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
+                        f"/gviz/tq?tqx=out:csv&sheet={quote(args.crew_tab)}")
+        crew_cache = os.path.join(runtime, "crew.cache.txt")
+        crew_source = CrewSource(crew_csv_url, crew_cache)
+        crew_source.refresh()   # non-fatal: empty/unreachable = no director/producer rows
 
     # Optionally auto-export cookies from a logged-in browser first (yt-dlp)
     if args.cookies_from_browser:
@@ -3668,6 +3691,9 @@ def main():
     if qual_source:
         threading.Thread(target=poller, args=(qual_source, args.poll, stop_evt),
                          daemon=True).start()
+    if crew_source:
+        threading.Thread(target=poller, args=(crew_source, args.poll, stop_evt),
+                         daemon=True).start()
     if hud_source:
         threading.Thread(target=poller, args=(hud_source, args.hud_poll, stop_evt),
                          daemon=True).start()
@@ -3696,7 +3722,8 @@ def main():
                            cockpit_secret=cockpit_secret,
                            cockpit_versions_path=cockpit_versions_path,
                            submission_store=submission_store,
-                           event_store=event_store)
+                           event_store=event_store,
+                           crew_source=crew_source)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []
