@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Race Console</title>
+<script>
+  window.RC_API_BASE = "__RC_API_BASE__";
+  window.RC_API = function (p) {
+    var b = window.RC_API_BASE || "";
+    if (!b || typeof p !== "string" || p.charAt(0) !== "/") return p;
+    if (p.indexOf(b + "/") === 0 || p === b) return p;
+    return b + p;
+  };
+  (function () { var _f = window.fetch; window.fetch = function (u, o) { return _f(window.RC_API(u), o); }; })();
+</script>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font: 16px/1.4 system-ui, sans-serif; background: #0e1116; color: #e6e6e6; }
+  header { padding: 20px 24px; border-bottom: 1px solid #232a33; }
+  h1 { margin: 0; font-size: 20px; }
+  .who { color: #8b97a6; font-size: 13px; margin-top: 4px; }
+  main { padding: 24px; display: grid; gap: 14px; max-width: 560px; }
+  a.card { display: block; padding: 16px 18px; background: #161b22; border: 1px solid #232a33;
+           border-radius: 10px; color: #e6e6e6; text-decoration: none; }
+  a.card:hover { border-color: #3b82f6; }
+  a.card .t { font-weight: 600; }
+  a.card .d { color: #8b97a6; font-size: 13px; margin-top: 2px; }
+  .empty { color: #8b97a6; }
+</style>
+</head>
+<body>
+<header><h1>Race Console</h1><div class="who" id="who">…</div></header>
+<main id="menu"></main>
+<script>
+  function card(href, title, desc) {
+    return '<a class="card" href="' + href + '"><div class="t">' + title +
+           '</div><div class="d">' + desc + '</div></a>';
+  }
+  fetch('/whoami').then(function (r) { return r.json(); }).then(function (me) {
+    var roles = me.roles || [];
+    document.getElementById('who').textContent =
+      me.subject + (roles.length ? ' — ' + roles.join(', ') : ' — viewer');
+    var out = [];
+    out.push(card('cockpit', 'Commentator Cockpit', 'Program monitor, tally, chat, stint links'));
+    if (roles.indexOf('director') !== -1)
+      out.push(card('panel', 'Director Panel', 'Feed, schedule, timer, HUD & submissions control'));
+    var menu = document.getElementById('menu');
+    menu.innerHTML = out.join('') ||
+      '<div class="empty">No surfaces are available for your role.</div>';
+  }).catch(function () {
+    document.getElementById('menu').innerHTML =
+      '<div class="empty">Could not load your access. Check your link.</div>';
+  });
+</script>
+</body>
+</html>

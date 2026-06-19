@@ -205,6 +205,50 @@ def t_root_cockpit_page_has_empty_base():
         srv.shutdown()
 
 
+def t_console_whoami_returns_roles():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, data = _get(port, "/console/whoami", _tok("bob"))   # bob = director
+        assert code == 200, (code, data)
+        body = json.loads(data)
+        assert body["subject"] == "bob"
+        assert "director" in body["roles"]
+    finally:
+        srv.shutdown()
+
+
+def t_console_launcher_served_any_auth():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console", _tok("alice"))   # commentator
+        assert code == 200, (code, body)
+        assert 'window.RC_API_BASE = "/console"' in body, body[:400]
+    finally:
+        srv.shutdown()
+
+
+def t_console_cockpit_page_any_auth_with_console_base_and_cookie():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        url = f"http://127.0.0.1:{port}/console/cockpit?t=" + _tok("alice")
+        with urllib.request.urlopen(url, timeout=5) as r:
+            body = r.read().decode()
+            setc = r.headers.get("Set-Cookie", "")
+        assert 'window.RC_API_BASE = "/console"' in body, body[:400]
+        assert "Path=/console" in setc, setc
+    finally:
+        srv.shutdown()
+
+
+def t_console_panel_requires_director():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        assert _get(port, "/console/panel", _tok("alice"))[0] == 403   # commentator -> no
+        assert _get(port, "/console/panel", _tok("bob"))[0] == 200      # director -> yes
+    finally:
+        srv.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

@@ -2944,6 +2944,25 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             roles = self._console_roles(subject)
             presented = self.headers.get("X-Cockpit-Secret")
             has_step_up = bool(presented) and cockpit_auth.secret_matches(presented, cockpit_secret)
+            # /console-only: identity introspection for the launcher (any auth).
+            if sub == ["whoami"]:
+                self._send({"subject": subject, "roles": sorted(roles)})
+                return None
+            # Role-adaptive pages: authorize via the same matrix, then serve HTML
+            # with the /console base + a Path=/console cookie. Served BEFORE the API
+            # fall-through so they don't reach the root page handlers (wrong cookie
+            # path / no base).
+            page = {(): console_page_path, ("cockpit",): cockpit_page_path,
+                    ("panel",): panel_path}.get(tuple(sub))
+            if page is not None or tuple(sub) in {(), ("cockpit",), ("panel",)}:
+                if console_policy.decide(roles, sub, method, has_step_up) != console_policy.ALLOW:
+                    self._send({"error": "forbidden"}, 403)
+                    return None
+                if not page:
+                    return self._send({"error": "page not found"}, 404)
+                token = self._cockpit_token()
+                self._send_page(page, "/console", cookie_token=token, cookie_path="/console")
+                return None
             # console_policy.decide derives capability from the path; the `method`
             # arg is plumbing for a future tightening — it is not a live check today.
             outcome = console_policy.decide(roles, sub, method, has_step_up)
@@ -3684,6 +3703,12 @@ def main():
                  os.path.join(here, "..", "cockpit", "cockpit.html")):
         if os.path.exists(cand):
             cockpit_page_path = os.path.abspath(cand); break
+    console_page_path = None
+    for cand in (os.path.join(here, "console.html"),
+                 os.path.join(here, "..", "console.html"),
+                 os.path.join(here, "..", "console", "console.html")):
+        if os.path.exists(cand):
+            console_page_path = os.path.abspath(cand); break
     if not args.no_hud and not args.sheet_csv_url:
         base = f"https://docs.google.com/spreadsheets/d/{args.sheet_id}/gviz/tq?tqx=out:csv&sheet="
         overlay_url = base + quote(args.overlay_tab)
@@ -3792,6 +3817,7 @@ def main():
                            cockpit_versions_path=cockpit_versions_path,
                            submission_store=submission_store,
                            event_store=event_store,
+                           console_page_path=console_page_path,
                            crew_source=crew_source)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
