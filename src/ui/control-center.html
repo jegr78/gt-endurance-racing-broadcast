@@ -865,7 +865,7 @@
         <p class="envhint">Machine-level <b>.env</b> on this computer (ports, OBS-WebSocket password, Companion path) — shared across all leagues. League config (Sheet, OBS collection, …) lives under <b>Profile</b>. Values are masked; comments are preserved. Changes apply when you next (re)start the affected service.</p>
       </div>
 
-      <!-- ===== Commentator Cockpit ===== -->
+      <!-- ===== Crew Console ===== -->
       <div class="view" data-view="cockpit" hidden>
         <div class="viewhead"><h2>Crew Console</h2>
           <span class="sub">role-adaptive crew links — commentator, director &amp; producer</span>
@@ -2290,7 +2290,7 @@ function showProfileErr(elId, msg) {
   e.hidden = false;
 }
 
-// ===== Commentator Cockpit (issue #191) =====
+// ===== Crew Console (issue #191; role-adaptive links #216) =====
 async function loadCockpit() {
   let d;
   try { d = await (await fetch('/api/cockpit/status', {cache: 'no-store'})).json(); }
