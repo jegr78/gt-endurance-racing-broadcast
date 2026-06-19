@@ -16,11 +16,33 @@ The original spike deferred Phase 8 on two findings; both have moved:
   proxy sets a `Companion-custom-prefix: <path>` request header and Companion's server
   rewrites a built-in placeholder (`/ROOT_URL_HERE`) in every served html/js/css; the UI
   builds URLs via `makeAbsolutePath`. A **stock binary ≥ v4.1.0** works — no custom build.
-- **F2 (hand-rolled socket.io proxy) — de-risked.** socket.io starts over Engine.IO
-  **HTTP long-polling** and only *upgrades* to WebSocket; if the upgrade fails it stays on
-  polling. Polling is plain HTTP a simple stdlib reverse proxy handles. So the **mandatory**
-  work is an HTTP reverse proxy; the WebSocket passthrough becomes an **optional latency
-  optimization** with polling as a built-in fallback.
+- **F2 (hand-rolled socket.io proxy) — different, and smaller, than the spike feared.**
+  Current Companion (validated on **v4.3.4**) no longer uses socket.io at all: its realtime
+  channel is **tRPC over a single raw WebSocket** at `/trpc`. There is **no HTTP
+  long-polling fallback** — without the WebSocket the web-buttons page hangs on a loading
+  spinner. So a WebSocket passthrough is **mandatory**, not optional. The upside: a *raw*
+  WebSocket is materially **simpler** to proxy than socket.io — no Engine.IO handshake, no
+  `sid` sticky sessions, no polling transport. With a single upstream, the proxy is a
+  transparent byte pump after one Upgrade handshake (no frame parsing).
+
+### Phase 0 validation (completed 2026-06-19, against a live local Companion v4.3.4)
+
+A throwaway stdlib proxy + a real browser confirmed the design and corrected three
+assumptions — these are now load-bearing facts, not guesses:
+
+1. **Companion v4.3.4** (≥ v4.1.0); the `Companion-custom-prefix` mechanism is present.
+2. **The header value must have NO leading slash** — `console/buttons`, not `/console/buttons`
+   (the latter makes Companion emit broken `//console/buttons/…` protocol-relative URLs).
+   The relay therefore keeps two distinct strings: the **path prefix** `/console/buttons`
+   (to strip/route) and the **header value** `console/buttons`.
+3. **The realtime channel is a raw WebSocket at `/trpc`** (tRPC), with no polling fallback.
+   A polling-only proxy renders a permanent spinner; the WebSocket passthrough is required.
+4. **WS passthrough works:** with a transparent raw-WebSocket byte pump, the full live
+   button page renders (0 console errors, live button colours) through the proxy.
+5. **Companion binds to the Tailscale IP, not loopback.** `racecast companion start` launches
+   Companion with `--admin-address=<tailscale-ip>` (e.g. `…:8000`), so the relay must
+   **resolve** Companion's bind address, not assume `127.0.0.1` (see "Companion address
+   resolution" below).
 
 ## Security posture (decided, deliberate)
 
@@ -31,12 +53,13 @@ recorded here so it is never mistaken for an oversight.
 - **Companion has no real auth boundary, by vendor design.** Its Admin Password is "only
   designed to stop casual browsers". Per bitfocus/companion#3814 (closed **NOT_PLANNED** by
   a core maintainer: *"it is not intended to be proper security, so currently this bypass is
-  expected behaviour"*), the socket.io channel can **export the full configuration without
-  auth** (including connection settings — potentially stored credentials such as the OBS
-  WebSocket password or module API keys) and **mutate configuration**. There is **no**
-  buttons-only / press-only mode and none planned (#2986 closed DUPLICATE).
+  expected behaviour"*), Companion's realtime control channel can **export the full
+  configuration without auth** (including connection settings — potentially stored
+  credentials such as the OBS WebSocket password or module API keys) and **mutate
+  configuration**. There is **no** buttons-only / press-only mode and none planned (#2986
+  closed DUPLICATE).
 - **Consequence:** "buttons-only" cannot be enforced at the Companion layer (one shared,
-  unconstrained socket). We therefore proxy Companion **transparently** (Option C) and rely
+  unconstrained control channel). We therefore proxy Companion **transparently** (Option C) and rely
   on the **relay's director token gate** as the boundary — the same gate that already
   protects `/console/panel`.
 - **Why this is acceptable here.** A director on the tailnet today already reaches
@@ -60,12 +83,21 @@ the same zero-config model as `/console/panel`.
 
 ```
 Funnel: only /console  ->  relay :8088                 (UNCHANGED — single-mount invariant intact)
-Relay:  /console/buttons/*  --[director gate]-->  http://127.0.0.1:8000/*   (Companion)
-        - strip the /console/buttons prefix from the upstream path
-        - inject  Companion-custom-prefix: /console/buttons
-        - Phase 1: proxy HTTP (incl. Engine.IO long-polling) ; Phase 2 (opt): WS upgrade passthrough
+Relay:  /console/buttons/*  --[director gate]-->  http://<companion-bind>:8000/*   (Companion)
+        - strip the /console/buttons path prefix from the upstream path
+        - inject  Companion-custom-prefix: console/buttons   (NO leading slash)
+        - proxy HTTP for html/js/css/assets  AND  raw-WebSocket passthrough for /trpc
+        - <companion-bind> is RESOLVED (Companion's config.json bind_ip / Tailscale IP), not 127.0.0.1
 Prereq: Companion >= v4.1.0 (stock binary)
 ```
+
+### Companion address resolution
+
+`racecast companion start` binds Companion to the Tailscale IP (`--admin-address`), so the
+relay cannot assume loopback. A small resolver returns the Companion base URL, in order:
+Companion's own `config.json` `bind_ip` (the same file `companion_common.py` reads/writes) →
+`tailscale.detect_tailscale_ip()` → `127.0.0.1`, each on the admin port `8000`. The relay
+proxies to that base.
 
 The relay **must** be in the path (not a direct Funnel mount to port 8000) for two
 reasons: (a) to keep the director token gate in front, and (b) to inject the
@@ -73,53 +105,66 @@ reasons: (a) to keep the director token gate in front, and (b) to inject the
 gate, add a second Funnel mount (breaking the test-locked single-mount boundary), and
 could not inject the prefix header (Tailscale serve/funnel cannot add request headers).
 
-### Why polling-first
+### Why the WebSocket passthrough is simple here
 
-A pure HTTP reverse proxy needs no socket hijack and no RFC-6455 framing. Because there
-is exactly **one** upstream (a single Companion instance), Engine.IO's `sid` polling needs
-**no sticky-session routing** — every poll reaches the same Companion. The WebSocket
-upgrade, if added later, is a transparent byte pump (no frame parsing) and degrades to
-polling on any failure.
+Although the WS is mandatory, it is a *raw* WebSocket to a **single** upstream, so the proxy
+never parses or understands frames: it forwards the client's Upgrade request to Companion
+(rewritten path + injected prefix), relays the `101 Switching Protocols` back, then pumps
+bytes in both directions until either side closes. No Engine.IO handshake, no `sid` sticky
+sessions, no polling transport — the spike's feared socket.io complexity does not apply.
 
 ## Components
 
 Each unit is small, single-purpose, and independently testable.
 
 ### U1 — Pure proxy helpers (`src/scripts/console_proxy.py`, new)
-Pure functions, no I/O, fully unit-testable:
-- `upstream_path(request_path)` — strip the `/console/buttons` prefix (map
-  `/console/buttons/x/y` → `/x/y`, `/console/buttons` and `/console/buttons/` → `/`),
-  preserving the query string.
-- `forward_request_headers(headers, prefix)` — copy client headers, **drop hop-by-hop**
-  headers (`Connection`, `Keep-Alive`, `Proxy-*`, `TE`, `Trailer`, `Transfer-Encoding`,
-  `Upgrade` for the HTTP path), set `Host: 127.0.0.1:8000`, and inject
-  `Companion-custom-prefix: <prefix>` (prefix = `/console/buttons`).
-- `filter_response_headers(headers)` — drop hop-by-hop + length/encoding headers the proxy
-  recomputes; pass the rest through.
-- `is_websocket_upgrade(headers)` — detect `Upgrade: websocket` (used in Phase 2 only).
+Pure functions, no I/O, fully unit-testable. Two distinct prefix strings:
+`MOUNT_PREFIX = "/console/buttons"` (path) and `PREFIX_HEADER_VALUE = "console/buttons"`
+(the no-leading-slash header value — Phase 0 fact #2).
+- `upstream_path(request_path)` — strip `MOUNT_PREFIX` (map `/console/buttons/x/y` → `/x/y`,
+  `/console/buttons` and `/console/buttons/` → `/`), preserving the query string.
+- `forward_request_headers(headers, prefix=PREFIX_HEADER_VALUE, host=...)` — copy client
+  headers, **drop hop-by-hop** (`Connection`, `Keep-Alive`, `Proxy-*`, `TE`, `Trailer`,
+  `Transfer-Encoding`, `Upgrade`) **and** `Accept-Encoding` (force identity), set `Host`,
+  inject `Companion-custom-prefix: console/buttons`. (For the WS path, the upgrade headers
+  are forwarded raw instead — see U2.)
+- `filter_response_headers(headers)` — drop hop-by-hop + length/type/encoding headers the
+  proxy recomputes; pass the rest through.
+- `is_websocket_upgrade(headers)` — detect `Upgrade: websocket` + `Connection: upgrade`.
+- `version_ge(ver_str, floor)` — dotted-version compare for the health gate.
 
 These have **no** Companion/socket knowledge beyond HTTP plumbing, so Companion upgrades
 do not touch them.
 
-### U2 — Relay HTTP proxy method (`src/relay/racecast-feeds.py`)
-A handler method `_proxy_companion(self, request_path, method)` that:
-1. builds the upstream URL `http://127.0.0.1:8000` + `upstream_path(...)`;
-2. reads the client body (for POST polling frames) via `Content-Length`;
-3. issues the upstream request with `urllib.request` (stdlib), forwarded+injected headers,
-   a short connect timeout;
-4. streams the upstream status, `filter_response_headers(...)`, and body back to the client;
-5. on connection refused / timeout → **HTTP 502** with a plain-text note
-   ("Companion not reachable on 127.0.0.1:8000").
+### U2 — Relay proxy method (`src/relay/racecast-feeds.py`) — HTTP **and** WebSocket
+A handler method `_proxy_companion(self, method)` that:
+1. resolves the Companion base (see "Companion address resolution") and builds the upstream
+   URL + `upstream_path(self.path)`;
+2. **WebSocket branch (mandatory):** when `is_websocket_upgrade(self.headers)` (the `/trpc`
+   tRPC channel), open a raw `socket.create_connection((host, 8000))`, replay the Upgrade
+   request line (rewritten path) with the upgrade headers + injected prefix forwarded raw,
+   relay the upstream `101 Switching Protocols` to the client socket (`self.connection`), then
+   pump bytes bidirectionally via `select` until either side closes. Transparent — no frame
+   parsing. Any failure → close the upgrade; never raises.
+3. **HTTP branch:** read the client body via `Content-Length`; issue the upstream request with
+   `urllib.request` (stdlib), forwarded+injected headers; stream the upstream status,
+   `filter_response_headers(...)`, and body back.
+4. on connection refused / timeout → **HTTP 502** with a JSON note.
 It never raises out of the handler (best-effort contract, like `get_program_screenshot`).
+
+### U2a — Companion address resolver (`src/relay/racecast-feeds.py` or a small helper)
+`_resolve_companion_base()` → `http://<host>:8000`, trying Companion's `config.json` `bind_ip`,
+then `tailscale.detect_tailscale_ip()`, then `127.0.0.1`. Pure-ish (filesystem read of the
+known config path); injected/overridable in tests via the `companion_url` make_handler kwarg.
 
 ### U3 — Gate wiring (`src/relay/racecast-feeds.py` `_console_gate` + `console_policy.py`)
 - `console_policy`: map the `buttons` path segment to the **director** capability (no
   step-up). Mirrors how `panel` maps to director.
 - `_console_gate`: when `sub and sub[0] == "buttons"`, run the normal identity + role
   resolution, call `console_policy.decide(...)`; on `ALLOW`, call
-  `self._proxy_companion(self.path, method)` and **return None** (the gate handled the
+  `self._proxy_companion(method)` and **return None** (the gate handled the
   response — it does not fall through to the JSON API). On non-ALLOW, emit the existing
-  403/404 exactly as today. Works for both GET and POST (Engine.IO uses both).
+  403/404 exactly as today. Works for GET (incl. the WS upgrade) and POST.
 
 ### U4 — Launcher entry (`src/console/console.html`)
 For a director subject (`/console/whoami` roles), render a **"Companion Buttons"** link
@@ -138,25 +183,18 @@ code. **Routing:** `_console_gate` intercepts `sub == ["buttons", "health"]` and
 relay response **before** the `buttons[...]` proxy branch, so it shadows that one path on the
 upstream (Companion's web-buttons UI does not use `/health`, so there is no collision).
 
-### U6 — Phase 2 (optional) WebSocket passthrough
-Only if polling latency proves insufficient. In `_proxy_companion`, when
-`is_websocket_upgrade`, open a raw `socket.create_connection(("127.0.0.1", 8000))`, replay
-the upgrade request (rewritten path + injected prefix), relay the upstream `101` to the
-client socket (`self.connection`), then pump bytes bidirectionally (two directions via
-`select`) until either side closes. Transparent — no socket.io frame parsing. Guarded so any
-failure falls back to a closed upgrade and the client reverts to polling.
-
-## Data flow (Phase 1)
+## Data flow
 
 1. Director opens `https://<host>/console/buttons/` (token in cookie from the launcher).
 2. Funnel forwards `/console/*` to relay:8088. `do_GET` sees `console`, calls `_console_gate`.
 3. Gate authenticates the token, resolves roles, `decide(... "buttons" ...)` → director →
    ALLOW → `_proxy_companion("/console/buttons/", "GET")`.
-4. Proxy GETs `http://127.0.0.1:8000/` with `Companion-custom-prefix: /console/buttons`.
+4. Proxy GETs `http://<companion-bind>:8000/` with `Companion-custom-prefix: console/buttons`.
    Companion returns html/js/css with every URL rewritten to `/console/buttons/...`.
-5. The browser loads assets and the Engine.IO handshake from `/console/buttons/socket.io/…`
-   — each is gated + proxied identically (GET/POST polling). Buttons render and press; state
-   updates flow over polling. (Phase 2 would upgrade this leg to WebSocket.)
+5. The browser loads assets (gated + HTTP-proxied) and opens the tRPC **WebSocket** at
+   `/console/buttons/trpc` — the gate routes it to `_proxy_companion`, which hijacks the
+   connection and transparently pumps it to Companion's `/trpc`. Buttons render with live
+   state and presses actuate Companion. (No polling fallback exists; the WS is required.)
 
 ## Error handling
 
@@ -172,13 +210,17 @@ failure falls back to a closed upgrade and the client reverts to polling.
 - `tests/test_console.py` / `tests/test_console_gate.py` — `buttons` → director capability;
   gate routes `/console/buttons/*` to the proxy on ALLOW and 403s a non-director.
 - `tests/test_console_proxy.py` (new) — pure U1 helpers: path strip + query preservation,
-  header injection, hop-by-hop filtering, websocket-upgrade detection.
+  header injection (no-leading-slash prefix), hop-by-hop + Accept-Encoding filtering,
+  websocket-upgrade detection, `version_ge`.
+- `tests/test_console_gate.py` — `buttons` → director; HTTP proxy to a stub upstream (asserts
+  the injected `Companion-custom-prefix: console/buttons` and stripped path); 502 when the
+  stub is down; **WS upgrade** to a raw-socket stub that completes a `101` and echoes a frame.
 - `tests/test_tailscale.py` — unchanged and still green: only `/console` is funnelled; assert
   no second mount is introduced.
 - `tools/e2e.py` (synthetic, optional) — a stub upstream on a free port; assert
   `/console/buttons/*` proxies through with the prefix header and 502s when the stub is down.
-- Phase 0 prototype validates the polling-only assumption against a **real** local Companion
-  before Phase 1 is written (it is throwaway; not committed as production code).
+- Phase 0 (done 2026-06-19) validated the design against a **real** local Companion v4.3.4
+  with a throwaway proxy + a browser (not committed). Its findings are folded in above.
 
 ## Docs impact (must ship in the same change)
 
@@ -199,14 +241,14 @@ not left stale:
 - No Control Center / Director Panel UI surface changes → no `cc-*.png` / `director-panel.png`
   screenshot refresh. The `/console` launcher is not a wiki-screenshotted surface.
 
-## Phasing (becomes the implementation plan's task groups)
+## Phasing
 
-- **Phase 0 — Prototype/spike (throwaway).** Validate web-buttons through a relay HTTP proxy
-  on **polling alone** against a real Companion ≥ v4.1.0; confirm the prefix header resolves
-  all URLs. Go/No-Go for Phase 1. Records findings; ships no production code.
-- **Phase 1 — Production HTTP/polling proxy.** U1–U5 + tests + docs. Shippable feature.
-- **Phase 2 — Optional WebSocket passthrough (U6).** Only if polling latency is inadequate;
-  has the polling fallback as a safety net.
+- **Phase 0 — Prototype/spike (throwaway). DONE 2026-06-19.** Validated against a real
+  Companion v4.3.4: prefix header works (no leading slash), the realtime channel is a raw
+  WebSocket at `/trpc` (no polling fallback), WS passthrough renders the live button page,
+  and Companion binds to the Tailscale IP. Verdict: GO. Shipped no production code.
+- **Phase 1 — Production proxy (HTTP + mandatory WebSocket).** U1, U2, U2a, U3, U4, U5 +
+  tests + docs. Shippable feature. (The WebSocket is part of Phase 1, not deferred.)
 
 ## Out of scope (YAGNI)
 
