@@ -88,7 +88,7 @@ import chat_admin  # required (ChatStore); src/scripts is on sys.path via the bl
 import cockpit_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
 import cockpit_admin  # talent-cockpit revocation version store (#191)
 import cockpit_submissions  # talent stream-link submission store (#193)
-import console_policy  # /console authorization matrix + decision (#216)  # noqa: F401
+import console_policy  # /console authorization matrix + decision (#216)
 import logsetup  # rotating per-feed/console loggers + streamlink pump (src/scripts on sys.path)
 from services import external_tool_env  # de-PyInstaller the env for spawned external tools
 
@@ -2906,6 +2906,51 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     self._send({"error": "unauthorized"}, 401)
                 return None
             return me
+        def _console_roles(self, subject):
+            """Resolve a verified subject to its capability set from the live
+            schedule (commentator) + Crew roster (director/producer)."""
+            src = getattr(relay, "source", None)
+            if src is not None and hasattr(src, "get_rows"):
+                rows = src.get_rows()
+            else:
+                rows = getattr(src, "rows", []) or []
+            crew = crew_source.get() if crew_source else []
+            return resolve_roles(crew, schedule_keys(rows), subject)
+
+        def _console_gate(self, p, method):
+            """Authorize a /console/* request and return the segment list to fall
+            through to (ALLOW), or None after sending a response. p includes the
+            leading 'console'. Identity-bound routes are rewritten to their
+            identity-forced /cockpit equivalents so the server sets the speaker.
+            Boundary: when no league cockpit secret is configured, /console 404s
+            exactly like /cockpit."""
+            if not cockpit_secret:
+                self._send({"error": "not found"}, 404)
+                return None
+            sub = p[1:]
+            subject = self._cockpit_auth()        # identity only; sends 401/429 on failure
+            if subject is None:
+                return None
+            roles = self._console_roles(subject)
+            presented = self.headers.get("X-Cockpit-Secret")
+            has_step_up = bool(presented) and cockpit_auth.secret_matches(presented, cockpit_secret)
+            outcome = console_policy.decide(roles, sub, method, has_step_up)
+            if outcome == console_policy.ALLOW:
+                if sub == ["chat", "send"]:
+                    return ["cockpit", "chat", "send"]
+                if sub == ["chat", "data"]:
+                    return ["cockpit", "chat", "data"]
+                if sub == ["submit"]:
+                    return ["cockpit", "submit"]
+                return sub
+            if outcome == console_policy.STEP_UP_REQUIRED:
+                self._send({"error": "step-up required"}, 403)
+                return None
+            if outcome == console_policy.FORBIDDEN:
+                self._send({"error": "forbidden"}, 403)
+                return None
+            self._send({"error": "not found"}, 404)   # NOT_FOUND
+            return None
         def _post_discord(self, payload, what):
             """Best-effort fire-and-forget POST of a Discord webhook payload; a
             natural no-op when no webhook is configured. Mirrors the health
@@ -2938,6 +2983,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
             try:
+                if p and p[0] == "console":
+                    p = self._console_gate(p, "GET")
+                    if p is None:
+                        return
                 if not p or p == ["status"]:
                     base = relay.status()
                     if timer_store: base["timer"] = timer_store.summary()
@@ -3211,6 +3260,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
         def do_POST(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
             try:
+                if p and p[0] == "console":
+                    p = self._console_gate(p, "POST")
+                    if p is None:
+                        return
                 length = int(self.headers.get("Content-Length") or 0)
                 if length > 65536:
                     return self._send({"error": "body too large"}, 413)
