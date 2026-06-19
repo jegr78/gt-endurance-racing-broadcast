@@ -3021,7 +3021,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p and p[0] == "console":
                     p = self._console_gate(p, "GET")
                     if p is None:
-                        return
+                        return None     # gate already sent its response (401/403/404)
                 if not p or p == ["status"]:
                     base = relay.status()
                     if timer_store: base["timer"] = timer_store.summary()
@@ -3308,7 +3308,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p and p[0] == "console":
                     p = self._console_gate(p, "POST")
                     if p is None:
-                        return
+                        return None     # gate already sent its response (401/403/404)
                 length = int(self.headers.get("Content-Length") or 0)
                 if length > 65536:
                     return self._send({"error": "body too large"}, 413)
