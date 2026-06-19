@@ -92,6 +92,8 @@ def min_capability(segments, method="GET"):
     # --- any authenticated: read-only monitors + identity-forced chat ---
     # ["console"], ["data"], ["program"] are console-only shell/landing pages (Phase 3),
     # not relay-route mirrors.
+    if p == ["logo"]:
+        return Requirement(ANY, False)
     if p in ([], ["status"], ["console"], ["data"], ["program"]):
         return Requirement(ANY, False)
     if p and p[0] in ("hud", "preview", "splitscreen"):

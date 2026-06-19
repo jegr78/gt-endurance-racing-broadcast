@@ -814,7 +814,8 @@ def t_profile_env_vars_filters_empty():
         profile="demo", name="Demo", sheet_id="abc",
         sheet_push_url="", intro_url="https://i", outro_url="")
     assert m._profile_env_vars(rc) == {
-        "RACECAST_SHEET_ID": "abc", "RACECAST_INTRO_URL": "https://i"}
+        "RACECAST_SHEET_ID": "abc", "RACECAST_INTRO_URL": "https://i",
+        "RACECAST_PROFILE_NAME": "Demo"}
 
 
 def t_profile_env_vars_includes_obs_collection():

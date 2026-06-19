@@ -351,6 +351,19 @@ ASSET_EXTS = (("png", "image/png"), ("svg", "image/svg+xml"),
 # this constant map, so a request-derived string can never reach send_header().
 ASSET_CTYPES = {ctype: ctype for _, ctype in ASSET_EXTS}
 
+# Logo image extensions accepted for /console/logo (#236). Mirrors racecast.py.
+_LOGO_EXTS = frozenset((".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"))
+_LOGO_CTYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml"}
+
+
+def servable_logo_path(logo_path):
+    """Return `logo_path` when it points at a web-image file (by extension),
+    else "". No filesystem check — extension whitelist only."""
+    if logo_path and os.path.splitext(logo_path)[1].lower() in _LOGO_EXTS:
+        return logo_path
+    return ""
+
 
 def resolve_asset(assets_dir, sub, key):
     """Resolve a HUD asset by key (no extension) to (path, content_type).
@@ -2463,10 +2476,11 @@ class Relay:
     def __init__(self, source, ports, logdir, cookies=None, pov_source=None,
                  pov_port=None, start_stint=1, cookie_dir=None,
                  qual_source=None, mode="race", discord_webhook_url=None,
-                 sheet_id=None, event_title_store=None):
+                 sheet_id=None, event_title_store=None, league_name=""):
         self.race_source = source
         self.qual_source = qual_source
         self.sheet_id = sheet_id          # league identity, surfaced in /status for takeover
+        self.league_name = league_name    # display name injected from the active profile (#236)
         self.event_title_store = event_title_store   # free-text event title for Discord footers (#207)
         # Active schedule is race by default; qualifying only when a qual source
         # exists. self.source (property below) returns whichever is active, so
@@ -2627,7 +2641,7 @@ class Relay:
         # the on-air feed is the lower-index one (live_feed), its stint = idx+1.
         live = self.live_feed()
         out["live"] = {"feed": live, "stint": self.feeds[live].idx + 1, "mode": self.mode}
-        out["league"] = {"sheet_id": self.sheet_id}
+        out["league"] = {"sheet_id": self.sheet_id, "name": self.league_name}
         self._refresh_health(now)            # keep the displayed level fresh (2 s poll)
         out["health"] = {"level": self.health_level, "reasons": self.health_reasons,
                          "since_s": round(now - self.health_since, 1)}
@@ -2862,7 +2876,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  splitscreen_path=None, cockpit_page_path=None, console_secret=None,
                  cockpit_versions_path=None,
                  submission_store=None, event_store=None, crew_source=None,
-                 console_page_path=None, companion_url=None):
+                 console_page_path=None, companion_url=None, logo_path=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -3156,6 +3170,20 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     self._buttons_health()
                     return None
                 self._proxy_companion(method)
+                return None
+            # /console/logo — serve the league logo to any authenticated subject (#236).
+            # Funnelled so it must live under /console; served locally from logo_path.
+            if sub == ["logo"]:
+                if console_policy.decide(roles, sub, method, has_step_up) != console_policy.ALLOW:
+                    self._send({"error": "forbidden"}, 403)
+                    return None
+                path = servable_logo_path(logo_path)
+                if not path:
+                    self._send({"error": "no logo"}, 404)
+                    return None
+                ext = os.path.splitext(path)[1].lower()
+                ctype = _LOGO_CTYPES.get(ext, "image/png")
+                self._send_file(path, ctype)
                 return None
             # Role-adaptive pages: authorize via the same matrix, then serve HTML
             # with the /console base + a Path=/console cookie. Served BEFORE the API
@@ -3775,6 +3803,12 @@ def main():
     ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
                     help="Google Sheet ID for the schedule/POV tabs. Default: env "
                          "RACECAST_SHEET_ID (injected by the CLI from the active profile).")
+    ap.add_argument("--league-name", default=os.environ.get("RACECAST_PROFILE_NAME", ""),
+                    help="League display name shown on the /console launcher. Default: env "
+                         "RACECAST_PROFILE_NAME (injected by the CLI from the active profile).")
+    ap.add_argument("--logo", default=os.environ.get("RACECAST_LOGO", ""),
+                    help="Absolute path to the league logo image. Default: env "
+                         "RACECAST_LOGO (injected by the CLI from the active profile).")
     ap.add_argument("--sheet-tab", default=DEFAULT_SHEET_TAB)
     ap.add_argument("--sheet-csv-url", default=None,
                     help="Full CSV URL (overrides sheet-id/tab; e.g. publish-to-web)")
@@ -4048,7 +4082,8 @@ def main():
                   mode=("qualifying" if args.qualifying else "race"),
                   discord_webhook_url=os.environ.get("RACECAST_DISCORD_WEBHOOK_URL"),
                   sheet_id=args.sheet_id,
-                  event_title_store=event_store)
+                  event_title_store=event_store,
+                  league_name=args.league_name)
     relay.start()
     relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
     # Launching straight into qualifying mode: seed the HUD Streamer/Stint from
@@ -4095,7 +4130,8 @@ def main():
                            submission_store=submission_store,
                            event_store=event_store,
                            console_page_path=console_page_path,
-                           crew_source=crew_source)
+                           crew_source=crew_source,
+                           logo_path=args.logo)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []

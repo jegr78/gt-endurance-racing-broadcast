@@ -33,7 +33,7 @@ class _Crew:
     def get(self): return list(self._rows)
 
 
-def _serve(companion_url=None):
+def _serve(companion_url=None, logo_path=None):
     rows = [("https://youtu.be/a", "Alice", "1", 2)]           # alice -> commentator
     src = _FakeSource(_URLS8, rows)
     relay = m.Relay(src, [53001, 53002], LOGDIR)
@@ -46,7 +46,8 @@ def _serve(companion_url=None):
         panel_path=os.path.join(SRC, "director", "director-panel.html"),
         cockpit_page_path=os.path.join(SRC, "cockpit", "cockpit.html"),
         console_page_path=os.path.join(SRC, "console", "console.html"),
-        companion_url=companion_url)
+        companion_url=companion_url,
+        logo_path=logo_path)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
@@ -532,6 +533,59 @@ def t_console_launcher_has_buttons_wiring_for_director():
         assert "/buttons/health" in body, body
         # The card lands on the web-buttons page (/tablet), not Companion's admin root.
         assert "RC_API('/buttons/tablet')" in body, body
+    finally:
+        srv.shutdown()
+
+
+def t_console_logo_served_any_auth():
+    import tempfile
+    # Write a tiny valid PNG (8-byte signature + minimal IHDR would be complex; just
+    # use the minimal bytes that pass os.path.splitext extension check).
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as fh:
+        fh.write(b"\x89PNG\r\n\x1a\n" + b"\x00" * 20)
+        logo_path = fh.name
+    try:
+        srv = _serve(logo_path=logo_path); port = srv.server_address[1]
+        try:
+            # Any authenticated subject (alice = commentator) can GET /console/logo.
+            url = f"http://127.0.0.1:{port}/console/logo?t=" + _tok("alice")
+            with urllib.request.urlopen(url, timeout=5) as r:
+                code = r.status
+                body = r.read()
+            assert code == 200, code
+            assert len(body) > 0, "logo body was empty"
+            # No token -> 401.
+            code2, _ = _get(port, "/console/logo")
+            assert code2 == 401, code2
+        finally:
+            srv.shutdown()
+    finally:
+        os.unlink(logo_path)
+
+
+def t_console_logo_404_when_unset():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console/logo", _tok("alice"))
+        assert code == 404, (code, body)
+    finally:
+        srv.shutdown()
+
+
+def t_status_league_includes_name():
+    rows = [("https://youtu.be/a", "Alice", "1", 2)]
+    src = _FakeSource(_URLS8, rows)
+    relay = m.Relay(src, [53001, 53002], LOGDIR, league_name="IRO GTEC")
+    assert relay.status()["league"]["name"] == "IRO GTEC"
+
+
+def t_console_launcher_fetches_status_and_logo():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console", _tok("bob"))   # director
+        assert code == 200, (code, body)
+        assert "RC_API('/status')" in body, body
+        assert "RC_API('/logo')" in body, body
     finally:
         srv.shutdown()
 

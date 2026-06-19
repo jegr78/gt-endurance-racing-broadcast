@@ -162,6 +162,10 @@ def t_buttons_commentator_forbidden_director_allowed():
     assert cp.decide({cp.DIRECTOR}, ["buttons", "tablet"]) == cp.ALLOW
 
 
+def t_logo_is_any_authenticated():
+    assert cp.min_capability(["logo"]) == cp.Requirement(cp.ANY, False)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
