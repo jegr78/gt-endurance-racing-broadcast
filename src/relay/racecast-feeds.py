@@ -526,6 +526,33 @@ def asset_key(s):
     s = re.sub(r"\s+", "-", s)
     return re.sub(r"[^a-z0-9-]", "", s)
 
+def resolve_roles(crew_rows, schedule_keys, subject):
+    """Resolve a verified identity *subject* to its capability set for this event.
+
+    crew_rows: iterable of (name, is_director, is_producer) from CrewSource.get().
+    schedule_keys: set of asset_key-normalized streamer names present in the live
+        Schedule/Qualifying roster.
+    subject: the asset_key-normalized person name from the verified token.
+
+    Returns a subset of {"commentator", "director", "producer"}:
+    - "commentator" iff subject appears in schedule_keys (own-row capability, as
+      today -- streamers are never tagged for commentator in the Crew tab);
+    - "director"/"producer" from any Crew row whose name normalizes to subject.
+    An unknown subject (no crew row, not in the schedule) yields the empty set.
+    Identity != authorization: this is the only place roles are derived, per the
+    role-based-funnel-access spec (#216)."""
+    roles = set()
+    if subject in schedule_keys:
+        roles.add("commentator")
+    for name, is_dir, is_prod in crew_rows:
+        if asset_key(name) != subject:
+            continue
+        if is_dir:
+            roles.add("director")
+        if is_prod:
+            roles.add("producer")
+    return roles
+
 TEAM_NUMBER_RE = re.compile(r"^(.*?)\s*#(\d+)\s*$")
 
 def split_team_label(s):
@@ -588,6 +615,19 @@ NUMBER_HEADERS = ("number",)
 SCHEDULE_URL_HEADERS = ("url",)
 SCHEDULE_STREAMER_HEADERS = ("streamer", "name")  # "name" = the POV tab's column
 SCHEDULE_STINT_HEADERS = ("stint",)
+# Crew tab headers (matched case-insensitively). The Crew tab carries
+# Name | Director | Producer boolean columns; commentator capability is NOT
+# listed here -- it is implied by presence in the live Schedule roster
+# (see resolve_roles). See issue #216 / the role-based-funnel-access spec.
+CREW_NAME_HEADERS = ("name", "crew", "person")
+CREW_DIRECTOR_HEADERS = ("director",)
+CREW_PRODUCER_HEADERS = ("producer",)
+CREW_TRUTHY = frozenset({"x", "yes", "true", "1", "y", "✓"})
+
+
+def _crew_truthy(v):
+    """True iff a Crew cell marks the role set (case-insensitive, trimmed)."""
+    return (v or "").strip().lower() in CREW_TRUTHY
 
 
 def parse_config_roster(text):
@@ -1711,6 +1751,99 @@ class ScheduleSource:
         return {"count": n,
                 "last_ok_age_s": (round(time.time() - self.last_ok, 1) if self.last_ok else None),
                 "last_error": self.last_error}
+
+
+class CrewSource:
+    """Reads the Crew roster from the Google Sheet (CSV) with last-good + fallback.
+
+    Mirrors ScheduleSource: a Name | Director | Producer tab giving the
+    director/producer capabilities. Commentator capability is resolved
+    separately from the live Schedule roster (see resolve_roles). A missing or
+    empty tab is non-fatal -- it simply yields no director/producer rows."""
+
+    def __init__(self, csv_url, cache_path=None):
+        self.csv_url = csv_url
+        self.cache_path = cache_path
+        self.lock = threading.Lock()
+        self.rows = []
+        self.last_ok = None
+        self.last_error = None
+
+    @staticmethod
+    def _parse_rows(text):
+        """CSV -> [(name, is_director, is_producer)] or None.
+
+        Header mode (opt-in): if a recognized Name header is present, the
+        Name/Director/Producer columns are located by header text (so they may
+        move and extra columns are ignored). Positional fallback (no name
+        header): col0=name, col1=director, col2=producer, dropping a leading
+        header-like row. Rows with an empty name are skipped."""
+        rows = list(csv.reader(io.StringIO(text)))
+        if not rows:
+            return None
+        header = [(h or "").strip().lower() for h in rows[0]]
+        name_i = next((header.index(h) for h in CREW_NAME_HEADERS if h in header), None)
+        if name_i is not None:
+            dir_i = next((header.index(h) for h in CREW_DIRECTOR_HEADERS if h in header), None)
+            prod_i = next((header.index(h) for h in CREW_PRODUCER_HEADERS if h in header), None)
+            out = []
+            for line, r in enumerate(rows, 1):
+                if line == 1:
+                    continue                       # the header row itself
+                name = r[name_i].strip() if len(r) > name_i else ""
+                if not name:
+                    continue
+                is_dir = _crew_truthy(r[dir_i]) if dir_i is not None and len(r) > dir_i else False
+                is_prod = _crew_truthy(r[prod_i]) if prod_i is not None and len(r) > prod_i else False
+                out.append((name, is_dir, is_prod))
+            return out or None
+        # Positional fallback: col0=name, col1=director, col2=producer.
+        start = 0
+        if rows:
+            r0 = [(c or "").strip().lower() for c in rows[0]]
+            if (len(r0) > 1 and r0[1] in CREW_DIRECTOR_HEADERS) or \
+               (len(r0) > 2 and r0[2] in CREW_PRODUCER_HEADERS):
+                start = 1                          # drop a header-like first row
+        out = []
+        for r in rows[start:]:
+            name = r[0].strip() if r else ""
+            if not name:
+                continue
+            is_dir = _crew_truthy(r[1]) if len(r) > 1 else False
+            is_prod = _crew_truthy(r[2]) if len(r) > 2 else False
+            out.append((name, is_dir, is_prod))
+        return out or None
+
+    def get(self):
+        with self.lock:
+            return list(self.rows)
+
+    def fetch(self, timeout=15):
+        if not self.csv_url:
+            return None
+        try:
+            req = Request(self.csv_url, headers={"User-Agent": "racecast-feeds/1.0"})
+            with urlopen(req, timeout=timeout) as resp:
+                text = resp.read().decode("utf-8", "replace")
+            rows = self._parse_rows(text)
+            if not rows:
+                self.last_error = ("Crew tab reachable, but no rows found "
+                                   "(correct tab name? a Name column?)")
+                return None
+            return rows
+        except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
+            return None
+
+    def refresh(self, timeout=15):
+        rows = self.fetch(timeout)
+        if rows:
+            with self.lock:
+                self.rows = rows
+                self.last_ok = time.time()
+                self.last_error = None
+            return True
+        return False
 
 
 OVERRIDE_TTL = 30  # s: unconfirmed panel write -> HUD falls back to sheet truth
