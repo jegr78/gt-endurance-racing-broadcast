@@ -112,6 +112,64 @@ def t_schedule_keys_empty():
     assert m.schedule_keys([]) == set()
 
 
+# ---- live HTTP surface: /crew/data ------------------------------------------
+
+def _crew_client(crew_rows):
+    """make_handler over a real loopback server, wired with a fake crew_source
+    (or None). Returns (server, get)."""
+    import threading as _t, json as _json
+    from urllib.request import urlopen
+
+    class _Feed:
+        def __init__(self, idx): self.idx = idx
+
+    class _Source:
+        def get_rows(self): return []
+        def health(self): return {"count": 0}
+
+    class _Relay:
+        def __init__(self):
+            self.source = _Source(); self.mode = "race"
+            self.feeds = {"A": _Feed(0), "B": _Feed(1)}
+
+    class _Crew:
+        def __init__(self, rows): self._rows = rows
+        def get(self): return list(self._rows)
+
+    crew = _Crew(crew_rows) if crew_rows is not None else None
+    handler = m.make_handler(_Relay(), crew_source=crew)
+    srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    _t.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+
+    def get(path):
+        with urlopen(base + path, timeout=5) as r:
+            return r.status, _json.loads(r.read().decode())
+    return srv, get
+
+
+def t_crew_data_endpoint_returns_rows():
+    srv, get = _crew_client([("Alice", True, True), ("Bob", True, False)])
+    try:
+        status, body = get("/crew/data")
+        assert status == 200, status
+        assert body == {"rows": [
+            {"name": "Alice", "director": True, "producer": True},
+            {"name": "Bob", "director": True, "producer": False}]}, body
+    finally:
+        srv.shutdown()
+
+
+def t_crew_data_endpoint_empty_when_disabled():
+    srv, get = _crew_client(None)   # no crew_source -> crew disabled
+    try:
+        status, body = get("/crew/data")
+        assert status == 200, status
+        assert body == {"rows": []}, body
+    finally:
+        srv.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

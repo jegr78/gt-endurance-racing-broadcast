@@ -3230,6 +3230,16 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                                  "live": live.get(i)}
                                                 for i, (u, n, st, line) in enumerate(rows)],
                                        "source": relay.source.health()})
+                if p == ["crew", "data"]:
+                    # Tailnet-only crew roster view (#216 phase 5). A ROOT path —
+                    # NOT under the funnelled /console prefix, so the public
+                    # ingress never reaches it (same trust model as
+                    # /schedule/data). Lets the `racecast links` CLI enumerate
+                    # Crew ∪ Schedule over loopback. Empty when crew is disabled.
+                    rows = crew_source.get() if crew_source else []
+                    return self._send({"rows": [
+                        {"name": n, "director": bool(d), "producer": bool(pr)}
+                        for (n, d, pr) in rows]})
                 if p == ["qualifying", "data"]:
                     qs = relay.qual_source
                     if not qs:
