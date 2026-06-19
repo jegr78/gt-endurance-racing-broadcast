@@ -15,7 +15,7 @@ health warnings; the **Companion buttons** are a hardware-style alternative (the
 same layout a Stream Deck uses) for those who prefer large physical buttons. The
 practical differences:
 
-| | Director panel (`…:8088/panel`) | Companion buttons (`…:8000/tablet`) |
+| | Director panel (`…:8088/panel`) | Web Buttons (`…:8000/tablet`) |
 |---|---|---|
 | What it is | one page with everything — program switches, feeds, HUD, graphics, timer, audio — plus live status and health warnings | the big-button board (same layout as a Stream Deck) |
 | Needs | nothing beyond the tailnet (or Funnel `/console/panel` link) — no OBS IP, port, or password; the relay talks to the producer's local OBS on your behalf | nothing — the OBS connection lives on the producer's machine |
@@ -198,9 +198,9 @@ the producer's machine.
   a producer handover to carry the conversation forward.
 - `racecast chat import <file>` — load a previously exported JSON file into the relay.
 
-## The Companion button board
+## The Companion Web Buttons board
 
-The same show as big buttons: open
+The same show as big buttons: open the Web Buttons page at
 `http://<producer-tailscale-ip>:8000/tablet`. Two pages — **show control**
 and **race timer & audio**. The left column on each page (`UP` / `DOWN`)
 flips between them. Everything below is a single tap.

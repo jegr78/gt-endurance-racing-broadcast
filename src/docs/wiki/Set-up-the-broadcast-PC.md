@@ -416,7 +416,7 @@ Then find this machine's IP with `tailscale ip -4` (or `racecast tailscale statu
 
 **Then, on any OS:** invite each director (free, up to 6 people) at
 [login.tailscale.com](https://login.tailscale.com/admin/users); they install Tailscale and
-sign in too. A director can then open `http://100.x.y.z:8000/tablet` to drive the show.
+sign in too. A director can then open the Web Buttons page (`http://100.x.y.z:8000/tablet`) to drive the show.
 More: [Director setup](Director-Setup) (the page to send your directors) and the
 [Director guide](Director).
 

@@ -8,7 +8,7 @@
 Everyone who helps run an event gets **one personal link**. Opening it lands them on
 `/console` — a single role-adaptive page that shows exactly the surfaces their role
 allows and nothing else. The same link works whether they are on the tailnet or coming
-in over the public internet.
+in over the public internet. See the [Console launcher](Console) page for a card-by-card overview.
 
 ## The default: the public Funnel
 
@@ -161,7 +161,7 @@ and uses no step-up header. Full detail:
 
 ## Companion web buttons over the Funnel (`/console/buttons`)
 
-A director can open their physical Companion button page in the browser over the Funnel at
+A director can open their **Web Buttons** page in the browser over the Funnel at
 `/console/buttons` (a card on the `/console` launcher, shown when Companion ≥ v4.1.0 is
 running). The relay reverse-proxies it — HTTP for the page and assets, plus a transparent
 WebSocket passthrough for Companion's realtime control channel — behind the **director token

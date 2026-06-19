@@ -153,7 +153,7 @@ flowchart LR
   EP -. "director-gated buttons proxy (HTTP+WS)" .-> Companion
   OM -->|"WebSocket"| WS
 
-  DIR["Director browser<br/>tailnet or Funnel"] -->|":8000/tablet (tailnet)<br/>/console/buttons (Funnel)"| Companion
+  DIR["Director browser<br/>tailnet or Funnel"] -->|"Web Buttons :8000/tablet (tailnet)<br/>/console/buttons (Funnel)"| Companion
 ```
 
 The relay's **root** control surface (`/panel`, `/status`, `/next`, `/set/*`, the feed
@@ -206,6 +206,6 @@ sequenceDiagram
 | `53003` | Relay POV feed (PiP) |
 | `8088`  | Relay control server (HTTP GET endpoints, `/panel`) |
 | `4455`  | OBS WebSocket server |
-| `8000`  | Companion admin + web buttons (`/tablet`) |
+| `8000`  | Companion admin + Web Buttons (`/tablet`) |
 
 See [Set up the broadcast PC](Set-up-the-broadcast-PC) to put all of this on a machine.

@@ -83,7 +83,7 @@ the Control Center; the CLI alternative is in italics.
    from **Relay** and **Apps**.) Confirm each live feed shows up in OBS. *CLI:
    `racecast event start`, or `racecast relay start` then `racecast companion start`.*
 10. On the **Home** dashboard, make sure **Companion** is connected and a director
-   can reach `http://<producer-tailscale-ip>:8000/tablet` (first-time directors:
+   can reach the Web Buttons page (`http://<producer-tailscale-ip>:8000/tablet`) (first-time directors:
    [Director setup](Director-Setup)).
 11. **Enter the league's stream key** in OBS (**Settings → Stream**).
 

@@ -9,6 +9,7 @@
 - [Run an event](Run-an-event)
 - [Director setup](Director-Setup)
 - [Director guide](Director)
+- [The Console launcher](Console)
 - [Commentator Cockpit](Commentator-Cockpit)
 - [Remote access &amp; the Funnel](Remote-access)
 - [Who does what](Who-does-what)

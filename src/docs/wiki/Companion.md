@@ -65,8 +65,8 @@ writes go to `/setup/set/racecontrol/…` / `/setup/clear/racecontrol` and need 
 ### Over the tailnet
 
 `racecast companion start` binds Companion to this machine's Tailscale IP. A director on
-the tailnet opens `http://<tailscale-ip>:8000/tablet` in any browser to reach the live
-button page.
+the tailnet opens `http://<tailscale-ip>:8000/tablet` in any browser to reach the Web
+Buttons page.
 
 ### Over the Funnel (no Tailscale account needed)
 
@@ -82,7 +82,7 @@ for the full security boundary and trade-off note.
 
 ## Test
 
-Run `racecast companion open-tablet` (opens the board on Companion's bound address), press
+Run `racecast companion open-buttons` (opens the Web Buttons board on Companion's bound address), press
 a button → OBS reacts. For remote directors, see [Director (Remote)](Director).
 
 ## State feedback (optional)

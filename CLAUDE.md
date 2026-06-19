@@ -53,7 +53,7 @@ no package manager); external runtime deps are `yt-dlp`, `streamlink`, `ffmpeg`,
 - **Changed a UI surface? Refresh its wiki screenshot in the SAME change.** This
   is the step that keeps getting forgotten. Any visible change to the **Control
   Center** (`src/ui/`), the **Director Panel** (`/panel`), or the **Companion /
-  Tablet buttons** means the matching image under `src/docs/wiki/images/` is now
+  Web Buttons** means the matching image under `src/docs/wiki/images/` is now
   stale and MUST be regenerated and committed alongside the code — never as a
   "later" follow-up. Surface → image: Control Center views → `cc-<view>.png`
   (e.g. the overlay builder → `cc-overlay-builder.png`); Director Panel →
