@@ -2247,6 +2247,55 @@ def t_cockpit_status_links_union_crew():
         m._ensure_active_cockpit_secret = orig_secret
 
 
+def t_crew_entries_data_maps_relay_rows():
+    seen = {}
+    def fake_fetch(url, timeout=3):
+        seen["url"] = url
+        return {"rows": [{"name": "Dana", "director": True, "producer": False},
+                         {"name": "Pia", "director": 0, "producer": "x"}]}
+    orig = m._relay_fetch_json
+    m._relay_fetch_json = fake_fetch
+    try:
+        out = m.crew_entries_data()
+    finally:
+        m._relay_fetch_json = orig
+    assert out["ok"] is True, out
+    assert out["entries"] == [{"name": "Dana", "director": True, "producer": False},
+                              {"name": "Pia", "director": False, "producer": True}]
+    assert seen["url"].endswith("/crew/data")
+
+
+def t_crew_entries_data_relay_down_is_error_not_raise():
+    def boom(url, timeout=3):
+        raise OSError("connection refused")
+    orig = m._relay_fetch_json
+    m._relay_fetch_json = boom
+    try:
+        out = m.crew_entries_data()
+    finally:
+        m._relay_fetch_json = orig
+    assert out["ok"] is False and "error" in out
+
+
+def t_crew_write_and_delete_post_to_relay():
+    posts = []
+    def fake_post(url, payload, timeout=3):
+        posts.append((url, payload))
+        return {"ok": True, "row": payload.get("row")}
+    orig = m._relay_post_json
+    m._relay_post_json = fake_post
+    try:
+        w = m.crew_write_data(2, "Dana", True, False)
+        d = m.crew_delete_data(3)
+    finally:
+        m._relay_post_json = orig
+    assert w == {"ok": True, "row": 2}
+    assert posts[0][0].endswith("/crew/set")
+    assert posts[0][1] == {"row": 2, "name": "Dana", "director": True, "producer": False}
+    assert d == {"ok": True, "row": 3}
+    assert posts[1][0].endswith("/crew/delete") and posts[1][1] == {"row": 3}
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

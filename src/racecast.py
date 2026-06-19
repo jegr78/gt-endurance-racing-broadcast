@@ -3410,6 +3410,44 @@ def _cockpit_internal_host(ip):
     return ip or "127.0.0.1"
 
 
+def crew_entries_data():
+    """Crew roster for the Control Center, read live from the running relay's
+    /crew/data. {ok, entries:[{name,director,producer}]} or {ok:false, error}."""
+    try:
+        data = _relay_fetch_json("http://127.0.0.1:%d/crew/data" % RELAY_PORT)
+    except Exception as exc:
+        return {"ok": False,
+                "error": "relay not reachable (start the relay): %s" % exc}
+    entries = [{"name": row.get("name", ""),
+                "director": bool(row.get("director")),
+                "producer": bool(row.get("producer"))}
+               for row in (data.get("rows") or [])]
+    return {"ok": True, "entries": entries}
+
+
+def crew_write_data(row, name, director, producer):
+    """Write one crew row via the relay's /crew/set (the relay holds the webhook
+    URL — the Control Center never POSTs to SHEET_PUSH_URL directly)."""
+    try:
+        return _relay_post_json(
+            "http://127.0.0.1:%d/crew/set" % RELAY_PORT,
+            {"row": row, "name": name,
+             "director": bool(director), "producer": bool(producer)})
+    except Exception as exc:
+        return {"ok": False,
+                "error": "relay not reachable (start the relay): %s" % exc}
+
+
+def crew_delete_data(row):
+    """Delete one crew row via the relay's /crew/delete."""
+    try:
+        return _relay_post_json("http://127.0.0.1:%d/crew/delete" % RELAY_PORT,
+                                {"row": row})
+    except Exception as exc:
+        return {"ok": False,
+                "error": "relay not reachable (start the relay): %s" % exc}
+
+
 def cockpit_status_data():
     """Cockpit state for the Control Center: per-league secret presence and the
     per-commentator links. The cockpit is zero-config — the secret is auto-provisioned
@@ -4714,6 +4752,9 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "profile_new": profile_new_data,
         "profile_env_read": profile_env_entries_data,
         "profile_env_write": profile_env_write_data,
+        "crew_read": crew_entries_data,
+        "crew_write": crew_write_data,
+        "crew_delete": crew_delete_data,
         "cockpit_status": cockpit_status_data,
         "cockpit_funnel": cockpit_funnel_data,
         "cockpit_set_funnel_auto": cockpit_set_funnel_auto_data,

@@ -185,7 +185,12 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "event_title_read": lambda: {"ok": True, "title": "",
                                          "source": "default", "relay_alive": False},
             "event_title_write": lambda value: {"ok": True, "title": value or "",
-                                                "applied": "file"}}
+                                                "applied": "file"},
+            "crew_read": lambda: {"ok": True, "entries": [
+                {"name": "Dana", "director": True, "producer": False}]},
+            "crew_write": lambda row, name, director, producer: {
+                "ok": True, "row": row, "_got": (row, name, director, producer)},
+            "crew_delete": lambda row: {"ok": True, "row": row, "_got": row}}
 
 
 def _serve(ctx):
@@ -1612,6 +1617,39 @@ def t_event_title_post_validation_error_is_400():
     try:
         code, body = _post_json(port, "/api/event-title", {"title": "x"})
         assert code == 400 and "relay rejected" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_api_crew_get_returns_entries():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/crew")
+        assert code == 200
+        data = json.loads(body)
+        assert data["entries"][0]["name"] == "Dana"
+    finally:
+        httpd.shutdown()
+
+
+def t_api_crew_post_writes_row():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _post_json(port, "/api/crew",
+                                {"row": 2, "name": "Pia", "director": False, "producer": True})
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["_got"] == [2, "Pia", False, True]
+    finally:
+        httpd.shutdown()
+
+
+def t_api_crew_delete_post():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _post_json(port, "/api/crew/delete", {"row": 3})
+        data = json.loads(body)
+        assert code == 200 and data["_got"] == 3
     finally:
         httpd.shutdown()
 
