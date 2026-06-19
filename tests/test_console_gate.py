@@ -33,7 +33,7 @@ class _Crew:
     def get(self): return list(self._rows)
 
 
-def _serve():
+def _serve(companion_url=None):
     rows = [("https://youtu.be/a", "Alice", "1", 2)]           # alice -> commentator
     src = _FakeSource(_URLS8, rows)
     relay = m.Relay(src, [53001, 53002], LOGDIR)
@@ -45,7 +45,8 @@ def _serve():
         crew_source=crew,
         panel_path=os.path.join(SRC, "director", "director-panel.html"),
         cockpit_page_path=os.path.join(SRC, "cockpit", "cockpit.html"),
-        console_page_path=os.path.join(SRC, "console", "console.html"))
+        console_page_path=os.path.join(SRC, "console", "console.html"),
+        companion_url=companion_url)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
@@ -348,6 +349,70 @@ def t_takeover_chat_and_versions_gated_and_routed():
         # Without the step-up secret both are 403.
         assert _get(port, "/console/takeover/chat", _tok("carol"))[0] == 403
         assert _get(port, "/console/takeover/versions", _tok("carol"))[0] == 403
+    finally:
+        srv.shutdown()
+
+
+from http.server import BaseHTTPRequestHandler
+
+
+class _StubCompanion(BaseHTTPRequestHandler):
+    last = {}
+    def do_GET(self):
+        _StubCompanion.last = {"path": self.path,
+                               "prefix": self.headers.get("Companion-custom-prefix")}
+        body = b"<html>companion web buttons</html>"
+        self.send_response(200); self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body))); self.end_headers()
+        self.wfile.write(body)
+    def log_message(self, *a): pass
+
+
+def _stub_companion():
+    srv = m.ThreadingHTTPServer(("127.0.0.1", 0), _StubCompanion)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def t_buttons_http_proxies_for_director():
+    up = _stub_companion(); upurl = f"http://127.0.0.1:{up.server_address[1]}"
+    srv = _serve(companion_url=upurl); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console/buttons/tablet", _tok("bob"))   # director
+        assert code == 200, (code, body)
+        assert "companion web buttons" in body, body
+        assert _StubCompanion.last["prefix"] == "console/buttons", _StubCompanion.last  # no slash
+        assert _StubCompanion.last["path"] == "/tablet", _StubCompanion.last
+    finally:
+        srv.shutdown(); up.shutdown()
+
+
+def t_buttons_forbidden_for_commentator():
+    up = _stub_companion(); upurl = f"http://127.0.0.1:{up.server_address[1]}"
+    srv = _serve(companion_url=upurl); port = srv.server_address[1]
+    try:
+        assert _get(port, "/console/buttons/tablet", _tok("alice"))[0] == 403
+    finally:
+        srv.shutdown(); up.shutdown()
+
+
+def t_buttons_502_when_companion_down():
+    srv = _serve(companion_url="http://127.0.0.1:1"); port = srv.server_address[1]
+    try:
+        assert _get(port, "/console/buttons/tablet", _tok("bob"))[0] == 502
+    finally:
+        srv.shutdown()
+
+
+def t_buttons_health_shape_and_director_gated():
+    srv = _serve(companion_url="http://127.0.0.1:1"); port = srv.server_address[1]
+    try:
+        assert _get(port, "/console/buttons/health", _tok("alice"))[0] == 403   # commentator
+        code, body = _get(port, "/console/buttons/health", _tok("bob"))         # director
+        assert code == 200, (code, body)
+        blob = json.loads(body)
+        assert set(blob) == {"reachable", "version", "ok"}, blob
+        assert blob["reachable"] is False and blob["ok"] is False               # nothing on port 1
     finally:
         srv.shutdown()
 

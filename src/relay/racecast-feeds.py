@@ -89,6 +89,10 @@ import cockpit_auth   # talent-cockpit token auth (#191); pure, src/scripts on s
 import cockpit_admin  # talent-cockpit revocation version store (#191)
 import cockpit_submissions  # talent stream-link submission store (#193)
 import console_policy  # /console authorization matrix + decision (#216)
+import console_proxy      # pure /console/buttons proxy plumbing (#236)
+import install_apps       # companion_http_version for the buttons health probe (#236)
+import companion_common   # companion config.json path for bind-address resolution (#236)
+import tailscale          # detect_tailscale_ip fallback for bind-address resolution (#236)
 import logsetup  # rotating per-feed/console loggers + streamlink pump (src/scripts on sys.path)
 from services import external_tool_env  # de-PyInstaller the env for spawned external tools
 
@@ -2858,7 +2862,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  splitscreen_path=None, cockpit_page_path=None, console_secret=None,
                  cockpit_versions_path=None,
                  submission_store=None, event_store=None, crew_source=None,
-                 console_page_path=None):
+                 console_page_path=None, companion_url=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -2966,6 +2970,77 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             if not ctype:
                 return self._send({"error": "font not found", "key": name}, 404)
             return self._send_file(path, ctype)
+        def _companion_base(self):
+            """Resolved Companion admin base URL. The make_handler `companion_url` override
+            wins (tests / non-standard installs); otherwise resolve from Companion's own
+            config.json bind_ip, then the Tailscale IP, then loopback (#236)."""
+            if companion_url:
+                return companion_url
+            bind_ip = None
+            try:
+                import sys as _sys, json as _json
+                with open(companion_common.companion_config_path(_sys.platform)) as fh:
+                    bind_ip = (_json.load(fh).get("bind_ip") or "").strip() or None
+            except Exception:
+                bind_ip = None
+            return console_proxy.resolve_companion_base(bind_ip, tailscale.detect_tailscale_ip())
+
+        def _proxy_companion(self, method):
+            """Reverse-proxy a /console/buttons/* request to the local Companion (Option C,
+            #236), director-gated by the caller. HTTP here; the WebSocket (tRPC /trpc) branch
+            is added in the next task. Best-effort: never raises; unreachable Companion -> 502."""
+            import urllib.request, urllib.error
+            from urllib.parse import urlsplit, parse_qs, urlencode, urlunsplit
+            base = self._companion_base()
+            host = urlsplit(base).hostname or "127.0.0.1"
+            # Strip the relay-internal ?t= auth token before proxying — it must not
+            # reach Companion (security) and Companion ignores it anyway.
+            parts = urlsplit(self.path)
+            qs = {k: v for k, v in parse_qs(parts.query, keep_blank_values=True).items()
+                  if k != "t"}
+            clean_path = urlunsplit(("", "", parts.path, urlencode(qs, doseq=True), ""))
+            url = base.rstrip("/") + console_proxy.upstream_path(clean_path)
+            length = int(self.headers.get("Content-Length") or 0)
+            data = self.rfile.read(length) if length else None
+            hdrs = console_proxy.forward_request_headers(
+                self.headers, host="%s:%d" % (host, urlsplit(base).port or 8000))
+            req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    body, status = resp.read(), resp.status
+                    out_headers = console_proxy.filter_response_headers(resp.headers.items())
+                    ctype = resp.headers.get("Content-Type", "application/octet-stream")
+            except urllib.error.HTTPError as e:
+                body, status = e.read(), e.code
+                out_headers = console_proxy.filter_response_headers(e.headers.items())
+                ctype = e.headers.get("Content-Type", "application/octet-stream")
+            except Exception as e:
+                LOG.warning("Companion proxy failed: %s: %s", type(e).__name__, e)
+                return self._send({"error": "Companion not reachable"}, 502)
+            self.send_response(status)
+            for k, v in out_headers:
+                self.send_header(k, v)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(body)
+            return None
+
+        def _buttons_health(self):
+            """Director-gated availability probe for the launcher: is Companion up and new
+            enough (>= 4.1.0) to serve under the /console/buttons sub-path? (#236)"""
+            import urllib.request
+            base = self._companion_base()
+            ver = install_apps.companion_http_version(base)
+            reachable = ver is not None
+            if not reachable:
+                try:
+                    urllib.request.urlopen(base.rstrip("/") + "/", timeout=2); reachable = True
+                except Exception:
+                    reachable = False
+            ok = reachable and console_proxy.version_ge(ver, (4, 1, 0))
+            return self._send({"reachable": reachable, "version": ver, "ok": ok})
+
         def log_message(self, *a): pass
         def _cockpit_active(self):
             """True iff a per-league cockpit secret is configured. The secret is
@@ -3028,6 +3103,18 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             # /console-only: identity introspection for the launcher (any auth).
             if sub == ["whoami"]:
                 self._send({"subject": subject, "roles": sorted(roles)})
+                return None
+            # /console/buttons/* -> reverse-proxy to the local Companion (#236), director only.
+            # 'buttons/health' is served by the relay (launcher availability probe) and shadows
+            # that one upstream path (Companion's UI does not use /health).
+            if sub and sub[0] == "buttons":
+                if console_policy.decide(roles, sub, method, has_step_up) != console_policy.ALLOW:
+                    self._send({"error": "forbidden"}, 403)
+                    return None
+                if sub == ["buttons", "health"]:
+                    self._buttons_health()
+                    return None
+                self._proxy_companion(method)
                 return None
             # Role-adaptive pages: authorize via the same matrix, then serve HTML
             # with the /console base + a Path=/console cookie. Served BEFORE the API
