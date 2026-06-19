@@ -140,7 +140,7 @@ def t_status_live_and_league_block():
         r.sheet_id = "SHEET123"
         st = r.status()
         assert st["live"] == {"feed": "A", "stint": 1, "mode": "race"}
-        assert st["league"] == {"sheet_id": "SHEET123"}
+        assert st["league"] == {"sheet_id": "SHEET123", "name": ""}
         r.A.idx = 2                               # after a handover B is on air
         assert r.status()["live"] == {"feed": "B", "stint": 2, "mode": "race"}
 
@@ -148,7 +148,7 @@ def t_status_live_and_league_block():
 def t_status_league_sheet_id_none_when_unset():
     with tempfile.TemporaryDirectory() as td:
         r = _mk_relay(td, ["a", "b"])
-        assert r.status()["league"] == {"sheet_id": None}
+        assert r.status()["league"] == {"sheet_id": None, "name": ""}
 
 
 def t_status_cookies_health_no_cookies():

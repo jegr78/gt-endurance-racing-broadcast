@@ -44,7 +44,7 @@ password — nothing to do.)
 ## The button board
 
 The board has two pages — **show control** and **audio**. The full layout, what each
-button does, and the screenshots live in the [Director guide](Director#the-companion-button-board) —
+button does, and the screenshots live in the [Director guide](Director#the-companion-web-buttons-board) —
 that's the operator's reference for actually using the board.
 
 This page covers only how the board is wired up. The relay buttons (`Feeds Next`,
