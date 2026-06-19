@@ -73,6 +73,34 @@ def t_crewsource_get_returns_snapshot_copy():
     assert src.get() == [("Alice", True, False)]
 
 
+def t_resolve_commentator_from_schedule_only():
+    roles = m.resolve_roles([], {"alice"}, "alice")
+    assert roles == {"commentator"}, roles
+
+
+def t_resolve_director_and_producer_from_crew():
+    crew = [("Alice", True, True), ("Bob", True, False)]
+    assert m.resolve_roles(crew, set(), "alice") == {"director", "producer"}
+    assert m.resolve_roles(crew, set(), "bob") == {"director"}
+
+
+def t_resolve_multi_role_union_commentator_plus_director():
+    crew = [("Alice", True, False)]
+    assert m.resolve_roles(crew, {"alice"}, "alice") == {"commentator", "director"}
+
+
+def t_resolve_name_normalized_via_asset_key():
+    # "Alice O'Brien" normalizes to the same key the token carries.
+    subject = m.asset_key("Alice O'Brien")
+    crew = [("Alice O'Brien", False, True)]
+    assert m.resolve_roles(crew, set(), subject) == {"producer"}
+
+
+def t_resolve_unknown_subject_is_empty():
+    crew = [("Alice", True, True)]
+    assert m.resolve_roles(crew, {"alice"}, "stranger") == set()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

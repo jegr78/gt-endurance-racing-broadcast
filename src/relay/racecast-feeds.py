@@ -526,6 +526,33 @@ def asset_key(s):
     s = re.sub(r"\s+", "-", s)
     return re.sub(r"[^a-z0-9-]", "", s)
 
+def resolve_roles(crew_rows, schedule_keys, subject):
+    """Resolve a verified identity *subject* to its capability set for this event.
+
+    crew_rows: iterable of (name, is_director, is_producer) from CrewSource.get().
+    schedule_keys: set of asset_key-normalized streamer names present in the live
+        Schedule/Qualifying roster.
+    subject: the asset_key-normalized person name from the verified token.
+
+    Returns a subset of {"commentator", "director", "producer"}:
+    - "commentator" iff subject appears in schedule_keys (own-row capability, as
+      today -- streamers are never tagged for commentator in the Crew tab);
+    - "director"/"producer" from any Crew row whose name normalizes to subject.
+    An unknown subject (no crew row, not in the schedule) yields the empty set.
+    Identity != authorization: this is the only place roles are derived, per the
+    role-based-funnel-access spec (#216)."""
+    roles = set()
+    if subject in schedule_keys:
+        roles.add("commentator")
+    for name, is_dir, is_prod in crew_rows:
+        if asset_key(name) != subject:
+            continue
+        if is_dir:
+            roles.add("director")
+        if is_prod:
+            roles.add("producer")
+    return roles
+
 TEAM_NUMBER_RE = re.compile(r"^(.*?)\s*#(\d+)\s*$")
 
 def split_team_label(s):
