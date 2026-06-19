@@ -480,9 +480,15 @@ environment before dispatching to:
   optionally `--from` an existing one), edit the active league's `profile.env`, style the
   per-league overlays in the **visual overlay builder** (drag/resize the HUD/Timer slots
   on a same-origin Shadow-DOM canvas over `Overlay.png`, with a fonts uploader and an
-  advanced-CSS escape hatch), and download profile-scoped graphics/media. Routes:
+  advanced-CSS escape hatch), download profile-scoped graphics/media, and manage the
+  **crew roster** in the **crew editor** (reads the league Sheet's `Crew` tab via the
+  relay's `/crew/data`; writes per-row director/producer flags back via the `crew`
+  webhook action — routes `/api/crew`, `/api/crew/delete`). The Crew tab
+  (`Name | Director | Producer` header in row 1) and the `crew` Apps Script action are a
+  league Sheet-side coordination item (see `Sheet-Webhook` wiki page); without them roles
+  degrade gracefully and the editor surfaces an outdated-script banner. Routes:
   `/api/profiles`, `/api/profile/{use,new,env}`, `/api/overlay`,
-  `/api/overlay/{slots,layout,fonts,bg,font/<name>}`.
+  `/api/overlay/{slots,layout,fonts,bg,font/<name>}`, `/api/crew`, `/api/crew/delete`.
 - **General Settings** — machine-wide knobs: the `.env` editor (`RACECAST_*` vars),
   cookie refresh, and the **overlay font library** (`runtime/fonts/`, shared across
   leagues). A curated baseline set (`overlay_build.GOOGLE_FONTS`) is downloaded at build
