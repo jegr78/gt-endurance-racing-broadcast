@@ -147,7 +147,7 @@ python3 src/racecast.py --profile NAME <command>  # run ONE command against a no
 python3 src/racecast.py event status      # event-day readiness report (apps + services + assets)
 python3 src/racecast.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later); --qualifying = qualifying mode (Feed A serves the Qualifying tab; switch live via /mode/race|/mode/qualifying or the panel); --title "…" = free-text event title shown in Panel/Cockpit/Discord (#207; also editable live in the panel, persisted to runtime/<profile>/event.json, pulled from producer A at takeover)
 python3 src/racecast.py event takeover <A-ip> [--stint N]  # take over from A over the tailnet: read on-air stint+league from /status, pull chat+cockpit-versions, bring up at that stint
-python3 src/racecast.py event takeover <A-magicdns-host> --funnel [--stint N]  # same but over the public Funnel — no Tailscale account needed on B; authenticated with the shared league COCKPIT_SECRET (step-up via X-Cockpit-Secret header); calls /console/takeover/{status,chat,versions}; status is redacted (live/league/event_title/timer/mode only — feed stream URLs never leave the tailnet)
+python3 src/racecast.py event takeover <A-magicdns-host> --funnel [--stint N]  # same but over the public Funnel — no Tailscale account needed on B; authenticated with the shared league COCKPIT_SECRET (step-up via X-Console-Secret header); calls /console/takeover/{status,chat,versions}; status is redacted (live/league/event_title/timer/mode only — feed stream URLs never leave the tailnet)
 python3 src/racecast.py event stop        # stop racecast services; GUI apps keep running
 python3 src/racecast.py tailscale up|down|status  # connect/disconnect/inspect Tailscale (event start connects automatically)
 python3 src/racecast.py obs refresh       # force-reload the relay-served OBS browser sources (HUD/timer)
@@ -442,8 +442,9 @@ beyond the existing `/console` mount):
 - `GET /console/takeover/versions` — the cockpit-versions revocation map (same payload
   as `/cockpit/versions`).
 
-All three require the **step-up** `X-Cockpit-Secret` header carrying the shared per-league
-`COCKPIT_SECRET` (producer-level auth — the same secret that signs commentator tokens). A
+All three require the **step-up** `X-Console-Secret` header (legacy name `X-Cockpit-Secret`
+still accepted for one release) carrying the shared per-league `COCKPIT_SECRET` (producer-level
+auth — the same secret that signs commentator tokens). A
 wrong secret returns HTTP 403; the client aborts loudly. A network failure falls back to the
 local `--stint N` bringup. On success, B's relay is brought up via the normal `event start`
 path with the adopted stint/league/title/mode, and chat + versions are applied locally

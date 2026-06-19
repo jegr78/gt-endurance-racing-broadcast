@@ -1231,7 +1231,7 @@ def _cockpit_pull_versions(args):
     secret = os.environ.get("RACECAST_COCKPIT_SECRET") or ""
     import urllib.request
     req = urllib.request.Request(f"http://{host}:{port}/cockpit/versions",
-                                 headers={"X-Cockpit-Secret": secret})
+                                 headers={"X-Console-Secret": secret})
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
@@ -1441,7 +1441,7 @@ def _takeover_get(url, secret=None, timeout=5):
     urllib HTTPError on 401/403 (bad secret) so the caller can distinguish auth
     rejection from a network failure."""
     import urllib.request
-    headers = {"X-Cockpit-Secret": secret} if secret else {}
+    headers = {"X-Console-Secret": secret} if secret else {}
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))

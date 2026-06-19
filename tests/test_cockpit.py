@@ -388,10 +388,13 @@ def t_versions_endpoint_requires_secret():
             # /cockpit/versions sits under the funnelled /cockpit prefix -> must auth
             assert get("/cockpit/versions")[0] == 401                       # no header
             assert get("/cockpit/versions",
-                       headers={"X-Cockpit-Secret": "wrong"})[0] == 401     # bad secret
+                       headers={"X-Console-Secret": "wrong"})[0] == 401     # bad secret
             code, _h, body = get("/cockpit/versions",
-                                 headers={"X-Cockpit-Secret": "sek"})       # right secret
+                                 headers={"X-Console-Secret": "sek"})       # right secret
             assert code == 200 and json.loads(body)["versions"] == {"alpha": 3}
+            # Back-compat: the renamed header's legacy name X-Cockpit-Secret still works.
+            assert get("/cockpit/versions",
+                       headers={"X-Cockpit-Secret": "sek"})[0] == 200
         finally:
             srv.shutdown()
 
