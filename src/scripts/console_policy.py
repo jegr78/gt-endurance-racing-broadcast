@@ -55,6 +55,8 @@ def min_capability(segments, method="GET"):
     # --- director: feed / schedule / timer / setup / pov control ---
     if p == ["next"]:
         return Requirement(DIRECTOR, False)
+    if len(p) == 2 and p[0] == "next":
+        return Requirement(DIRECTOR, False)
     if len(p) == 2 and p[0] == "prev":
         return Requirement(DIRECTOR, False)
     if p == ["reload"] or (len(p) == 2 and p[0] == "reload"):
@@ -95,3 +97,18 @@ def min_capability(segments, method="GET"):
         return Requirement(ANY, False)
 
     return None
+
+
+def decide(roles, segments, method="GET", has_step_up=False):
+    """Policy decision for a /console request. Identity is assumed already
+    verified by the caller; *roles* is the resolved capability set (possibly
+    empty), *has_step_up* the caller's shared-producer-secret check result.
+    Returns ALLOW / FORBIDDEN / STEP_UP_REQUIRED / NOT_FOUND."""
+    req = min_capability(segments, method)
+    if req is None:
+        return NOT_FOUND
+    if req.capability != ANY and req.capability not in roles:
+        return FORBIDDEN
+    if req.step_up and not has_step_up:
+        return STEP_UP_REQUIRED
+    return ALLOW

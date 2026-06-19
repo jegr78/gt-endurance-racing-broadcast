@@ -87,6 +87,51 @@ def t_unknown_route_is_none():
         assert cp.min_capability(segs) is None, segs
 
 
+def t_next_with_feed_is_director():
+    assert _cap(["next", "A"]) == ("director", False)
+
+
+def t_decide_any_allows_even_empty_roles():
+    # A valid identity with no roles can still reach read-only monitors.
+    assert cp.decide(set(), ["status"]) == cp.ALLOW
+    assert cp.decide(set(), ["cockpit", "data"]) == cp.ALLOW
+
+
+def t_decide_unknown_route_is_not_found():
+    assert cp.decide({"director"}, ["bogus"]) == cp.NOT_FOUND
+
+
+def t_decide_commentator_blocked_from_director_op():
+    assert cp.decide({"commentator"}, ["next"]) == cp.FORBIDDEN
+
+
+def t_decide_director_allowed_director_op():
+    assert cp.decide({"director"}, ["next"]) == cp.ALLOW
+    assert cp.decide({"commentator", "director"}, ["set", "A", "3"]) == cp.ALLOW
+
+
+def t_decide_commentator_allowed_submit():
+    assert cp.decide({"commentator"}, ["cockpit", "submit"], "POST") == cp.ALLOW
+    assert cp.decide({"director"}, ["cockpit", "submit"], "POST") == cp.FORBIDDEN
+
+
+def t_decide_producer_stepup_enforced():
+    # Producer without the second factor is told to step up, not allowed.
+    assert cp.decide({"producer"}, ["set", "stint", "4"]) == cp.STEP_UP_REQUIRED
+    assert cp.decide({"producer"}, ["set", "stint", "4"], has_step_up=True) == cp.ALLOW
+
+
+def t_decide_stepup_route_still_requires_the_role_first():
+    # A director (not producer) hitting a producer op is FORBIDDEN regardless of step-up.
+    assert cp.decide({"director"}, ["mode", "race"]) == cp.FORBIDDEN
+    assert cp.decide({"director"}, ["mode", "race"], has_step_up=True) == cp.FORBIDDEN
+
+
+def t_decide_prod_page_needs_producer_no_stepup():
+    assert cp.decide({"producer"}, ["prod"]) == cp.ALLOW
+    assert cp.decide({"director"}, ["prod"]) == cp.FORBIDDEN
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
