@@ -43,6 +43,9 @@ def min_capability(segments, method="GET"):
         return Requirement(PRODUCER, True)
     if len(p) == 2 and p[0] == "mode":
         return Requirement(PRODUCER, True)
+    # NOTE: takeover/* are the Phase 7 producer-takeover PULL endpoints
+    # (/console/takeover/*, spec section H) -- console-only, not current relay
+    # routes (the live takeover today is /set/stint/<n>, mapped below).
     if p and p[0] == "takeover" and len(p) >= 2:
         return Requirement(PRODUCER, True)
     if p == ["cockpit", "versions"]:
@@ -83,9 +86,13 @@ def min_capability(segments, method="GET"):
         return Requirement(COMMENTATOR, False)
 
     # --- any authenticated: read-only monitors + identity-forced chat ---
+    # ["console"], ["data"], ["program"] are console-only shell/landing pages (Phase 3),
+    # not relay-route mirrors.
     if p in ([], ["status"], ["console"], ["data"], ["program"]):
         return Requirement(ANY, False)
-    if p and p[0] in ("hud", "preview"):
+    if p and p[0] in ("hud", "preview", "splitscreen"):
+        return Requirement(ANY, False)
+    if len(p) == 3 and p[:2] == ["overlay", "fonts"]:
         return Requirement(ANY, False)
     if p in (["timer", "data"], ["setup", "data"],
              ["schedule", "data"], ["qualifying", "data"]):

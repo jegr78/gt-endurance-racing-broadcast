@@ -132,6 +132,13 @@ def t_decide_prod_page_needs_producer_no_stepup():
     assert cp.decide({"director"}, ["prod"]) == cp.FORBIDDEN
 
 
+def t_splitscreen_and_overlay_fonts_are_any_reads():
+    for segs in (["splitscreen"], ["splitscreen", "data"],
+                 ["splitscreen", "override.css"],
+                 ["overlay", "fonts", "Inter.woff2"]):
+        assert _cap(segs) == ("any", False), segs
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
