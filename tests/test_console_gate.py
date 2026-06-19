@@ -249,6 +249,21 @@ def t_console_panel_requires_director():
         srv.shutdown()
 
 
+def t_console_launcher_links_are_mount_absolute():
+    # Card hrefs must be built through RC_API so they resolve under /console
+    # (a bare relative 'cockpit' against /console would navigate to /cockpit).
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console", _tok("bob"))   # bob = director: both cards render
+        assert code == 200, (code, body)
+        assert "RC_API('/cockpit')" in body, body
+        assert "RC_API('/panel')" in body, body
+        # The old bare-relative forms must be gone.
+        assert "card('cockpit'" not in body and "card('panel'" not in body, body
+    finally:
+        srv.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

@@ -49,9 +49,9 @@
     document.getElementById('who').textContent =
       me.subject + (roles.length ? ' — ' + roles.join(', ') : ' — viewer');
     var out = [];
-    out.push(card('cockpit', 'Commentator Cockpit', 'Program monitor, tally, chat, stint links'));
+    out.push(card(RC_API('/cockpit'), 'Commentator Cockpit', 'Program monitor, tally, chat, stint links'));
     if (roles.indexOf('director') !== -1)
-      out.push(card('panel', 'Director Panel', 'Feed, schedule, timer, HUD & submissions control'));
+      out.push(card(RC_API('/panel'), 'Director Panel', 'Feed, schedule, timer, HUD & submissions control'));
     var menu = document.getElementById('menu');
     menu.innerHTML = out.join('') ||
       '<div class="empty">No surfaces are available for your role.</div>';
