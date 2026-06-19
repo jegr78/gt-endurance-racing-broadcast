@@ -21,9 +21,16 @@ machine and the panel's HUD row + URLs section are display-only.
 | `schedule` | **Schedule** tab (or the **Qualifying** tab when the payload carries `"tab":"Qualifying"`), **physical row N** (the panel sends the CSV line number automatically): URL + Streamer + Stint label, located by the `URL`/`Streamer`/`Stint` headers in row 1 (falls back to fixed cols A/B with no header row); row `last+1` appends. The Stint cell is only written when a `Stint` header exists. The Qualifying tab has the **same structure** as the Schedule tab. **Neither tab may have leading blank rows** — the gviz CSV export maps physical sheet rows to CSV lines 1:1 when the tab starts at row 1. A header row is silently skipped when reading but its physical line number is still used when writing. |
 | `pov` | POV tab **row 2**: the `url` and/or `name` cell, located by header text (so the columns may move) |
 | `teams` | Setup tab: the cell **below** the `Team <slot>` header (slot 1–3 → `A6`/`B6`/`C6` in the shipped layout) — found by text, same as the other Setup fields. The Overlay tab only mirrors them read-only |
+| `crew` | **Crew** tab (`Name \| Director \| Producer`, header in row 1). `{"action":"crew","row":N,"name":..,"director":bool,"producer":bool}` writes **data row N** (sheet row N+1; `row last+1` appends); `director`/`producer` booleans write `X` / clear the cell. `{"action":"crew","row":N,"delete":true}` deletes data row N (rows shift up). The tab must start at row 1 with the header and have no interior blank rows (the Control Center editor maintains this). |
 
 The relay only sends Setup values that exist in the Configuration tab's
 vocabulary columns — the same lists the sheet's own dropdowns use.
+
+> **Crew-tab coordination:** the `crew` action requires a **Crew** tab in the league's
+> Sheet (columns `Name | Director | Producer`, header in row 1) **and** the redeployed
+> v6 script that handles `crew`. Without it, director/producer roles simply resolve to
+> empty — commentators still work from the Schedule — and the Control Center crew editor
+> surfaces an *outdated-script* error. Nothing crashes.
 
 > **Not written to the Sheet:** the free-text **event title**
 > ([Director](Director#event-title)) is producer-side runtime state
@@ -56,6 +63,30 @@ Setup tab's `Team 1`/`Team 2`/`Team 3` cells — so the value matches the tab's
 own dropdown. The Overlay tab's `Teams P1/P2/P3` rows mirror those Setup cells
 read-only.
 
+## Crew
+
+The `crew` action maintains the **Crew** tab — the per-person director/producer roster
+used by the relay to resolve `/console` roles. The Control Center's crew editor reads
+the tab via the relay (`/crew/data`) and writes changes back through the `crew` webhook
+action (`/api/crew`, `/api/crew/delete` in the Control Center API, which POST to the
+relay, which forwards to the webhook). The script responds
+`{"ok":true,"action":"crew","v":6}` — accepted by the relay's `check_webhook_response`.
+
+**Tab structure:** one header row (`Name | Director | Producer`) at row 1; data rows
+below it; no interior blank rows. The Control Center editor maintains this invariant.
+
+**Write a row:** `{"action":"crew","row":N,"name":"Alice","director":true,"producer":false}`
+writes or overwrites data row N (sheet row N+1, skipping the header). `row last+1`
+appends a new person. `director`/`producer` booleans write `X` / clear the cell.
+
+**Delete a row:** `{"action":"crew","row":N,"delete":true}` deletes data row N
+(sheet row N+1); all rows below shift up. The Control Center re-numbers its in-memory
+roster after the delete.
+
+> **Graceful degradation:** without a Crew tab or an up-to-date script, director and
+> producer roles resolve to empty — commentators still reach `/console/cockpit` from
+> the Schedule — and the editor surfaces an *outdated-script* banner. Nothing crashes.
+
 ## One-time setup (per sheet)
 
 1. Open the broadcast Google Sheet → **Extensions → Apps Script**.
@@ -64,7 +95,7 @@ read-only.
    ```javascript
    const KEY = 'change-me';            // must match the key=... in the URL below
    const TABS = {setup: 'Setup', schedule: 'Schedule', qualifying: 'Qualifying',
-                 pov: 'POV', timer: 'Timer'};
+                 pov: 'POV', timer: 'Timer', crew: 'Crew'};
    const SETUP_FIELDS = ['Stint', 'Streamer', 'Session', 'Race Control'];
    const TIMER_ROWS = {'Race End (UTC)': 1, 'Duration': 2, 'Visible': 3,
                        'Updated (UTC)': 4, 'Remaining': 5};
@@ -82,8 +113,9 @@ read-only.
        else if (action === 'schedule') writeSchedule(ss, p);
        else if (action === 'pov') writePov(ss, p);
        else if (action === 'teams') writeTeams(ss, p);
+       else if (action === 'crew') writeCrew(ss, p);
        else return out({error: 'unknown action: ' + action});
-       return out({ok: true, action: action, v: 5});
+       return out({ok: true, action: action, v: 6});
      } catch (err) { return out({error: String(err)}); }
    }
 
@@ -187,6 +219,24 @@ read-only.
          }
      throw 'header not found in Setup tab: Team ' + slot;
    }
+
+   function writeCrew(ss, p) {
+     const sheet = ss.getSheetByName(TABS.crew) || ss.insertSheet(TABS.crew);
+     if (sheet.getLastRow() < 1) {
+       sheet.getRange(1, 1, 1, 3).setValues([['Name', 'Director', 'Producer']]);
+     }
+     const row = parseInt(p.row, 10);                 // 1-based data row (header is row 1)
+     if (!(row >= 1)) throw 'crew: row must be >= 1';
+     const target = row + 1;                          // sheet row (skip the header)
+     if (p['delete'] === true) {
+       if (target <= sheet.getLastRow()) sheet.deleteRow(target);
+       return;
+     }
+     const name = (p.name || '').toString().trim();
+     if (!name) throw 'crew: name is required';
+     sheet.getRange(target, 1, 1, 3).setValues([[
+       name, p.director ? 'X' : '', p.producer ? 'X' : '']]);
+   }
    ```
 
 3. **Deploy → New deployment → Web app**, execute as **Me**, access:
@@ -209,14 +259,20 @@ instead creates a NEW URL and every `profile.env` must be updated.)
 The relay detects an outdated (v1, timer-only) script: panel writes then
 report *"webhook script outdated — redeploy"* instead of failing silently.
 
-The current script is **v4** (v3 added the Schedule `Stint` column; v4 lets the
-`schedule` action target the **Qualifying** tab via `"tab":"Qualifying"`). The
-relay does not enforce the version, so an older script degrades gracefully: a v2
-script ignores Stint write-back, and a v2/v3 script ignores the `tab` field and
-writes the **Schedule** tab — so qualifying-row edits would land on the race
-Schedule until you redeploy. The handover HUD update (Setup tab via the `setup`
-action) and serving the qualifying stream read-only both keep working regardless.
+The current script is **v6** (v3 added the Schedule `Stint` column; v4 lets the
+`schedule` action target the **Qualifying** tab via `"tab":"Qualifying"`; v5 added
+`teams`; v6 adds the `crew` action and the `Crew` tab). The relay does not enforce
+the version, so an older script degrades gracefully: a v2 script ignores Stint
+write-back; v2/v3 scripts ignore the `tab` field and write the **Schedule** tab —
+qualifying-row edits would land on the race Schedule until you redeploy; a v5 script
+ignores the `crew` action, so the Control Center crew editor surfaces an
+*outdated-script* error and leaves the Sheet unchanged (the relay still reads the Crew
+tab directly for role resolution, so director/producer roles work if the tab is
+populated by hand). The handover HUD update (Setup tab via the `setup` action) and
+serving the qualifying stream read-only both keep working regardless.
 Add a **Qualifying** tab (same columns as Schedule) and redeploy to enable it.
+Add a **Crew** tab (`Name | Director | Producer`, header in row 1) and redeploy to
+enable the crew editor's write-back.
 
 ## Security
 

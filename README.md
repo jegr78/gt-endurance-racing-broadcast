@@ -80,9 +80,10 @@ creates a `.env` next to the binaries for your machine config. Full step-by-step
 · [The Control Center (wiki)](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Control-Center).
 
 The **Profile view** switches leagues, copies a profile to create a new one,
-edits `profile.env` (incl. `OBS_COLLECTION`), edits the overlay CSS, and manages
-that profile's graphics/media. **General Settings** holds the machine `.env` and
-cookies.
+edits `profile.env` (incl. `OBS_COLLECTION`), edits the overlay CSS, manages
+that profile's graphics/media, and edits the per-league **crew roster** (director/producer
+flags, written back to the Sheet's Crew tab). **General Settings** holds the machine
+`.env` and cookies.
 
 > **First start:** Windows SmartScreen / macOS Gatekeeper show a one-time warning for
 > unsigned binaries — choose "Run anyway" / right-click → Open. On macOS, clearing

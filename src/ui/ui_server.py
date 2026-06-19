@@ -438,6 +438,13 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"could not read profile .env: {exc}"},
                                       code=500)
+            if path == "/api/crew":
+                try:
+                    return self._json(ctx["crew_read"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not read crew roster: {exc}"},
+                                      code=500)
             if path == "/api/profile/logo":
                 p = ctx["profile_logo"]()
                 return self._serve_file(p) if p else self._not_found("no logo")
@@ -646,6 +653,31 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"could not write profile .env: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/crew":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["crew_write"](body.get("row"), body.get("name"),
+                                               body.get("director"), body.get("producer"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not write crew row: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/crew/delete":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["crew_delete"](body.get("row"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not delete crew row: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
             if path == "/api/cockpit/funnel":

@@ -1033,6 +1033,75 @@ def t_panel_schedule_qualifying_selects_are_styled():
         ".urls select:focus rule missing -> no focus affordance like the HUD dropdowns (#152)"
 
 
+def t_crew_set_validates_and_pushes():
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    try:
+        assert "error" in ctl.crew_set("x", name="Dana")        # non-numeric row
+        assert "error" in ctl.crew_set(0, name="Dana")          # row < 1
+        assert "error" in ctl.crew_set(2, name="")              # empty name
+        assert pushes == []                                     # all rejected pre-push
+        r = ctl.crew_set(2, name="Dana", director=True, producer=False)
+        assert r.get("ok"), r
+        assert pushes[-1] == {"action": "crew", "row": 2, "name": "Dana",
+                              "director": True, "producer": False}
+    finally:
+        m.post_webhook = orig
+
+
+def t_crew_set_coerces_flags_and_strips_name():
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    try:
+        r = ctl.crew_set(3, name="  Pia  ", director=0, producer="x")
+        assert r.get("ok"), r
+        assert pushes[-1] == {"action": "crew", "row": 3, "name": "Pia",
+                              "director": False, "producer": True}
+    finally:
+        m.post_webhook = orig
+
+
+def t_crew_delete_pushes_delete_flag():
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    try:
+        assert "error" in ctl.crew_delete(0)
+        r = ctl.crew_delete(2)
+        assert r.get("ok"), r
+        assert pushes[-1] == {"action": "crew", "row": 2, "delete": True}
+    finally:
+        m.post_webhook = orig
+
+
+def t_crew_requires_webhook():
+    ctl = m.SetupControl(None, _hs_stub())
+    assert "error" in ctl.crew_set(1, name="Dana")
+    assert "error" in ctl.crew_delete(1)
+
+
+def t_crew_set_reflects_in_crew_source():
+    # End-to-end echo: a successful write updates the in-memory CrewSource so
+    # /crew/data shows it before the next poll (name/flags), like schedule.
+    pushes = []
+    hs = _hs_stub()
+    cs = m.CrewSource("http://crew")
+    cs.rows = [("Alice", True, False)]                 # 1 existing data row
+    ctl = m.SetupControl("http://push", hs, crew_source=cs)
+    def fake_post(url, payload, timeout=10):
+        pushes.append(payload)
+        return b'{"ok": true, "action": "crew", "v": 5}'
+    m.post_webhook, orig = fake_post, m.post_webhook
+    try:
+        assert ctl.crew_set(2, name="Bob", director=False, producer=True).get("ok")
+        assert cs.get() == [("Alice", True, False), ("Bob", False, True)]  # appended
+        assert ctl.crew_set(1, name="Alice", director=False, producer=False).get("ok")
+        assert cs.get()[0] == ("Alice", False, False)                     # edited in place
+        assert ctl.crew_delete(2).get("ok")
+        assert cs.get() == [("Alice", False, False)]                      # deleted
+    finally:
+        m.post_webhook = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
