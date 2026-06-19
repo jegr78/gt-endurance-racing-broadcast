@@ -55,13 +55,13 @@ def _tok(key):
     return m.cockpit_auth.mint_token(SECRET, key)
 
 
-def _get(port, path, token=None, secret=None):
+def _get(port, path, token=None, secret=None, secret_header="X-Console-Secret"):
     url = f"http://127.0.0.1:{port}{path}"
     if token:
         url += ("&" if "?" in path else "?") + "t=" + token
     req = urllib.request.Request(url)
     if secret:
-        req.add_header("X-Cockpit-Secret", secret)
+        req.add_header(secret_header, secret)
     try:
         with urllib.request.urlopen(req, timeout=5) as r:
             return r.status, r.read().decode()
@@ -281,6 +281,19 @@ def t_takeover_status_needs_producer_and_step_up():
         assert "feeds" not in blob and "pov" not in blob, blob
         serialised = json.dumps(blob)
         assert "youtube" not in serialised.lower() and "http" not in serialised.lower(), serialised
+    finally:
+        srv.shutdown()
+
+
+def t_legacy_cockpit_secret_header_still_accepted():
+    # Back-compat: the step-up header was renamed X-Cockpit-Secret -> X-Console-Secret.
+    # The relay accepts the legacy name for one release so a mixed-version takeover
+    # (old client sending X-Cockpit-Secret, new relay) still authorizes.
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, _ = _get(port, "/console/takeover/status", _tok("carol"), SECRET,
+                       secret_header="X-Cockpit-Secret")
+        assert code == 200, code
     finally:
         srv.shutdown()
 

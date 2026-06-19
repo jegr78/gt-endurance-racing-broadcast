@@ -3020,7 +3020,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             if subject is None:
                 return None
             roles = self._console_roles(subject)
-            presented = self.headers.get("X-Cockpit-Secret")
+            # Step-up secret header. X-Console-Secret is the current name; the legacy
+            # X-Cockpit-Secret is still accepted for one release (mixed-version takeover).
+            presented = (self.headers.get("X-Console-Secret")
+                         or self.headers.get("X-Cockpit-Secret"))
             has_step_up = bool(presented) and cockpit_auth.secret_matches(presented, cockpit_secret)
             # /console-only: identity introspection for the launcher (any auth).
             if sub == ["whoami"]:
@@ -3301,7 +3304,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         # authenticate, not rely on obscurity. Talent tokens are
                         # per-commentator; this is gated on the shared league secret
                         # (every producer of the league holds it), constant-time.
-                        presented = self.headers.get("X-Cockpit-Secret")
+                        presented = (self.headers.get("X-Console-Secret")
+                                     or self.headers.get("X-Cockpit-Secret"))  # legacy fallback
                         if not cockpit_auth.secret_matches(presented, cockpit_secret):
                             return self._send({"error": "unauthorized"}, 401)
                         if not cockpit_versions_path:

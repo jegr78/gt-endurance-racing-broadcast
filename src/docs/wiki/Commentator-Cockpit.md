@@ -184,7 +184,8 @@ racecast event takeover producer-a.example.ts.net --funnel
 
 1. B's CLI fetches `/console/takeover/status`, `/console/takeover/chat`, and
    `/console/takeover/versions` from A's Funnel host — each request carries the
-   shared secret in the `X-Cockpit-Secret` header (producer-level step-up auth).
+   shared secret in the `X-Console-Secret` header (producer-level step-up auth; the
+   legacy `X-Cockpit-Secret` name is still accepted for one release).
 2. The **status** response is redacted: only `live`, `league`, `event_title`,
    `timer`, and `mode` are returned. Feed stream URLs are stripped and never leave
    A's tailnet.
