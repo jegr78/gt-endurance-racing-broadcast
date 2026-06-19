@@ -162,6 +162,48 @@ byte-identical default links. `racecast event takeover` also pulls A's
 any revocations A made are honored on B. Because the Funnel host changes, re-publish
 the links after takeover.
 
+### Takeover over Funnel
+
+When producer B is **not on the tailnet** (no Tailscale account, different network),
+the handover can still happen over A's public Funnel:
+
+```bash
+racecast event takeover producer-a.example.ts.net --funnel
+# optionally: --stint N  (if B should override the on-air stint)
+```
+
+**Prerequisites:**
+
+- **Producer A** runs `racecast funnel on` (mounts only `/console` on the public
+  Funnel — `/status`, `/panel`, and the feed ports are not exposed).
+- **Producer B's active profile** carries the same league `COCKPIT_SECRET`. It
+  arrives automatically via `racecast profile import` (the secret travels inside the
+  profile bundle exported with `racecast profile export`).
+
+**What happens:**
+
+1. B's CLI fetches `/console/takeover/status`, `/console/takeover/chat`, and
+   `/console/takeover/versions` from A's Funnel host — each request carries the
+   shared secret in the `X-Cockpit-Secret` header (producer-level step-up auth).
+2. The **status** response is redacted: only `live`, `league`, `event_title`,
+   `timer`, and `mode` are returned. Feed stream URLs are stripped and never leave
+   A's tailnet.
+3. Chat history and cockpit-versions revocations are applied locally, exactly as
+   the tailnet `racecast event takeover <A-tailscale-ip>` path does.
+4. B's station comes up via the normal `event start` path with the adopted
+   stint/league/title/mode.
+
+**Security boundary:**
+
+- A wrong secret returns HTTP 401/403 and aborts the takeover (B is told to check
+  the profile secret — a silent partial takeover is never allowed).
+- A network failure (unreachable host) falls back to a local `--stint N` bringup
+  with a clear warning.
+- Only `/console` is Funnel-mounted. Confirm from outside the tailnet that
+  `/status` and `/panel` are **not** reachable on A's Funnel host.
+- The tailnet takeover path (`racecast event takeover <100.x-ip>`) is unchanged
+  and does not use the step-up header.
+
 ## Submit a stream link (commentator self-service, director-approved)
 
 A commentator can submit the **stream URL for one of their own stints** straight from

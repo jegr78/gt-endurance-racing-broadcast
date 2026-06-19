@@ -146,6 +146,8 @@ python3 src/racecast.py profile import FILE       # import a profile bundle (--f
 python3 src/racecast.py --profile NAME <command>  # run ONE command against a non-active profile
 python3 src/racecast.py event status      # event-day readiness report (apps + services + assets)
 python3 src/racecast.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later); --qualifying = qualifying mode (Feed A serves the Qualifying tab; switch live via /mode/race|/mode/qualifying or the panel); --title "…" = free-text event title shown in Panel/Cockpit/Discord (#207; also editable live in the panel, persisted to runtime/<profile>/event.json, pulled from producer A at takeover)
+python3 src/racecast.py event takeover <A-ip> [--stint N]  # take over from A over the tailnet: read on-air stint+league from /status, pull chat+cockpit-versions, bring up at that stint
+python3 src/racecast.py event takeover <A-magicdns-host> --funnel [--stint N]  # same but over the public Funnel — no Tailscale account needed on B; authenticated with the shared league COCKPIT_SECRET (step-up via X-Cockpit-Secret header); calls /console/takeover/{status,chat,versions}; status is redacted (live/league/event_title/timer/mode only — feed stream URLs never leave the tailnet)
 python3 src/racecast.py event stop        # stop racecast services; GUI apps keep running
 python3 src/racecast.py tailscale up|down|status  # connect/disconnect/inspect Tailscale (event start connects automatically)
 python3 src/racecast.py obs refresh       # force-reload the relay-served OBS browser sources (HUD/timer)
@@ -427,6 +429,30 @@ roster (Crew tab ∪ live Schedule) is exposed via a tailnet-only `GET /crew/dat
 (root path, **never** funnelled — only `/console` is mounted); `racecast links` unions Crew
 ∪ Schedule to produce role-adaptive `/console` links for every person. The Control Center
 cockpit view is now called **"Crew Console"**.
+
+**Producer takeover over Funnel (`/console/takeover/*`, issue #216 Phase 7).** When
+producer B is not on the tailnet, `racecast event takeover <A-magicdns-host> --funnel`
+pulls the handover state over A's public Funnel. Three read-only endpoints live under
+`/console/takeover/` (all reachable via Funnel, **never** adding to the public surface
+beyond the existing `/console` mount):
+- `GET /console/takeover/status` — **redacted** status: only `live`, `league`,
+  `event_title`, `timer`, and `mode`. Feed stream URLs are stripped — they never leave
+  the tailnet. This is an allowlist, not a blocklist.
+- `GET /console/takeover/chat` — the full chat history (same payload as `/chat/data`).
+- `GET /console/takeover/versions` — the cockpit-versions revocation map (same payload
+  as `/cockpit/versions`).
+
+All three require the **step-up** `X-Cockpit-Secret` header carrying the shared per-league
+`COCKPIT_SECRET` (producer-level auth — the same secret that signs commentator tokens). A
+wrong secret returns HTTP 403; the client aborts loudly. A network failure falls back to the
+local `--stint N` bringup. On success, B's relay is brought up via the normal `event start`
+path with the adopted stint/league/title/mode, and chat + versions are applied locally
+(`ca.apply_pulled` / `cpadm.apply_pulled`, same as the tailnet pull path). The tailnet path
+(`racecast event takeover <100.x-ip>`) is unchanged and does not use the step-up header.
+The security boundary is preserved: only `/console` is Funnel-mounted; no takeover endpoint
+is reachable without the step-up secret; feed URLs stay tailnet-only. CLI helper:
+`_funnel_takeover_base(host)` + `_takeover_get(url, secret, timeout)`; plan:
+`docs/superpowers/plans/2026-06-19-console-roles-phase7-takeover-funnel.md`.
 
 **Commentator stream-link submission (issue #193).** A write-scoped add-on: a commentator
 submits a YouTube/Twitch URL for one of *their own* stints from the cockpit
