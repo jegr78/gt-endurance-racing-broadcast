@@ -150,6 +150,46 @@ def t_chat_send_forces_token_identity():
         srv.shutdown()
 
 
+def t_chat_send_ignores_client_supplied_user():
+    # A client-supplied "user" field in the POST body must be overridden by the
+    # token identity — the stored speaker must be the token's key, never "bob".
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        url = f"http://127.0.0.1:{port}/console/chat/send?t=" + _tok("alice")
+        body = json.dumps({"user": "bob", "text": "spoof attempt"}).encode()
+        req = urllib.request.Request(url, data=body, method="POST",
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            assert r.status == 200
+        code, data = _get(port, "/console/chat/data", _tok("alice"))
+        msgs = json.loads(data).get("messages", [])
+        spoof = [msg for msg in msgs if msg.get("text") == "spoof attempt"]
+        assert spoof, data
+        # The stored speaker must be the TOKEN identity (alice), never the client's "bob".
+        for msg in spoof:
+            assert m.asset_key(msg.get("user", "")) == "alice", msg
+    finally:
+        srv.shutdown()
+
+
+def t_wrong_method_console_route_is_404():
+    # /status is GET-only; POSTing it through /console authorizes (ANY) then 404s
+    # at the root dispatch. Pins the GET/POST asymmetry.
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        url = f"http://127.0.0.1:{port}/console/status?t=" + _tok("alice")
+        req = urllib.request.Request(url, data=b"{}", method="POST",
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                code = r.status
+        except urllib.error.HTTPError as e:
+            code = e.code
+        assert code == 404, code
+    finally:
+        srv.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

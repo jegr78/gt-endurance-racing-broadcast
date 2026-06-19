@@ -2934,8 +2934,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             roles = self._console_roles(subject)
             presented = self.headers.get("X-Cockpit-Secret")
             has_step_up = bool(presented) and cockpit_auth.secret_matches(presented, cockpit_secret)
+            # console_policy.decide derives capability from the path; the `method`
+            # arg is plumbing for a future tightening — it is not a live check today.
             outcome = console_policy.decide(roles, sub, method, has_step_up)
             if outcome == console_policy.ALLOW:
+                # Identity-bound routes -> their identity-forced /cockpit handlers,
+                # which re-run _cockpit_auth to set the speaker from the token (a
+                # harmless second verify, NOT a missing optimization). This is what
+                # makes a client-supplied chat "user" impossible over /console.
                 if sub == ["chat", "send"]:
                     return ["cockpit", "chat", "send"]
                 if sub == ["chat", "data"]:
