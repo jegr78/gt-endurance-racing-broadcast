@@ -30,7 +30,7 @@ It is served under its own `/cockpit/*` path namespace and can be reached two wa
 
 The Control Center's **Cockpit** view (above) offers both per commentator — a **Copy
 funnel link** and a **Copy internal link** button — next to **Revoke**; the CLI
-`racecast cockpit links` prints both as well.
+`racecast links` prints both as well.
 
 ## Authentication
 
@@ -50,12 +50,12 @@ to serve — and it only leaves the tailnet when you turn the **Funnel** on (bel
 
 ```bash
 racecast relay start         # the secret is provisioned here on first run
-racecast cockpit links       # print every commentator's internal + funnel link
+racecast links               # print one role-adaptive /console link per person (Crew tab ∪ live Schedule)
 ```
 
 `/cockpit/*` returns 404 only when **no** secret is configured (e.g. the shipped `example`
-profile, which is never auto-provisioned). The link roster is the distinct streamer names in
-the active schedule. `racecast cockpit links --post` also drops the links into the crew chat.
+profile, which is never auto-provisioned). The link roster unions the Crew tab with the
+active schedule. `racecast links --post` also drops the links into the crew chat.
 
 > **Turning it off:** the cockpit has no off switch other than not exposing it — to take it
 > off the public internet run `racecast funnel off`. On the tailnet it stays
@@ -141,13 +141,13 @@ enable prompt). Pass `--force` to skip the pre-check.
 > reachable — only `/console` should be.
 
 The Funnel host is the **active producer's** MagicDNS name. On a producer handover
-it changes, so re-run `racecast cockpit links` on the new machine and re-share.
+it changes, so re-run `racecast links` on the new machine and re-share.
 
 ## Revoking / rotating a link
 
 ```bash
 racecast cockpit token revoke "<streamer name>"   # bump that person's version
-racecast cockpit links                            # re-issue their (now-newer) link
+racecast links                                          # re-issue their (now-newer) link
 ```
 
 The old link's version is now stale and is rejected immediately (the relay reads the
