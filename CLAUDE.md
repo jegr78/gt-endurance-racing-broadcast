@@ -438,6 +438,8 @@ audit log: `src/scripts/cockpit_submissions.py` (mirrors `cockpit_admin.py`); th
 thread-safe wrapper `SubmissionStore` + endpoints in the relay; panel section + cockpit
 form in the two HTML files. Tests: `tests/test_submissions.py`.
 
+**Role-adaptive /console pages (issue #216).** The relay also serves a `/console` launcher plus `/console/cockpit` and `/console/panel` pages, all role-gated behind the Phase 3a `/console` auth gate; page API calls resolve under the mount via an injected `window.RC_API_BASE` shim. Launcher, cockpit, and panel are in `src/console/console.html`, served with the authenticated subject's role-conditional links; `/console/whoami` returns the authenticated subject. Authorization is per-role (any authenticated subject reaches `/console` + `/console/cockpit`; directors reach `/console/panel`). Tests: `tests/test_console.py` + `tests/test_console_gate.py`.
+
 ### Unified `racecast` CLI (`src/racecast.py`)
 `src/racecast.py` is the single shipped entrypoint for operators. It resolves the
 active profile (via `src/scripts/config.py`) and injects its league values into the
