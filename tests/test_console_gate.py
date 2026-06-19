@@ -40,7 +40,7 @@ def _serve():
     crew = _Crew([("Bob", True, False), ("Carol", False, True)])  # bob=director, carol=producer
     SRC = os.path.join(ROOT, "src")
     handler = m.make_handler(
-        relay, cockpit_secret=SECRET, cockpit_versions_path=None,
+        relay, console_secret=SECRET, cockpit_versions_path=None,
         chat_store=m.ChatStore(os.path.join(LOGDIR, "chat.json")),
         crew_source=crew,
         panel_path=os.path.join(SRC, "director", "director-panel.html"),

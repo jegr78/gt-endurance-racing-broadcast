@@ -37,14 +37,16 @@ funnel link** and a **Copy internal link** button — next to **Revoke**; the CL
 Every `/cockpit` request authenticates server-side (Funnel passes no Tailscale
 identity). Each commentator gets a **signed per-person token**
 `<streamer_key>.<version>.<sig>`, derived from a **per-league secret**
-`COCKPIT_SECRET` (in `profiles/<league>/profile.env`, auto-generated on enable, and
-carried by `racecast profile export`/import). The token rides in the link once, then
-moves into an `HttpOnly` cookie. Revoking one person bumps their version — see below.
+`CONSOLE_SECRET` (in `profiles/<league>/profile.env`, auto-generated on first relay
+start, and carried by `racecast profile export`/import). The token rides in the link
+once, then moves into an `HttpOnly` cookie. Revoking one person bumps their version —
+see below. (The legacy key name `COCKPIT_SECRET` is still read as a fallback so
+existing leagues and profile exports keep working without any manual migration.)
 
 ## It's on by default (zero-config)
 
 There is **nothing to enable**. The relay serves `/cockpit` automatically: a per-league
-`COCKPIT_SECRET` is **auto-generated** in the active profile's `profile.env` on the first
+`CONSOLE_SECRET` is **auto-generated** in the active profile's `profile.env` on the first
 `racecast relay start` / `event start`. Every request is token-gated, so `/cockpit` is safe
 to serve — and it only leaves the tailnet when you turn the **Funnel** on (below).
 
@@ -181,7 +183,7 @@ racecast event takeover producer-a.example.ts.net --funnel
 
 - **Producer A** runs `racecast funnel on` (mounts only `/console` on the public
   Funnel — `/status`, `/panel`, and the feed ports are not exposed).
-- **Producer B's active profile** carries the same league `COCKPIT_SECRET`. It
+- **Producer B's active profile** carries the same league `CONSOLE_SECRET`. It
   arrives automatically via `racecast profile import` (the secret travels inside the
   profile bundle exported with `racecast profile export`).
 

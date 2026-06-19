@@ -1685,15 +1685,15 @@ def t_funnel_takeover_base_builds_console_url():
 
 
 def t_event_takeover_funnel_requires_secret():
-    # --funnel with no COCKPIT_SECRET in the active profile -> clear abort.
-    restore = _with_env(RACECAST_COCKPIT_SECRET="", RACECAST_SHEET_ID="L1")
+    # --funnel with no CONSOLE_SECRET in the active profile -> clear abort.
+    restore = _with_env(RACECAST_CONSOLE_SECRET="", RACECAST_SHEET_ID="L1")
     try:
         try:
             m.event_takeover(["producer-a.example.ts.net", "--funnel", "--stint", "3"])
             raise AssertionError("expected SystemExit")
         except SystemExit as e:
             msg = str(e.code).lower() if e.code else ""
-            assert "secret" in msg or "cockpit_secret" in msg
+            assert "secret" in msg or "console_secret" in msg
     finally:
         restore()
 
@@ -1704,7 +1704,7 @@ def t_event_takeover_funnel_auth_rejected_aborts():
     import urllib.error
     def fake_get(url, secret=None, timeout=5):
         raise urllib.error.HTTPError(url, 403, "forbidden", {}, None)
-    restore = _with_env(RACECAST_COCKPIT_SECRET="S", RACECAST_SHEET_ID="L1")
+    restore = _with_env(RACECAST_CONSOLE_SECRET="S", RACECAST_SHEET_ID="L1")
     orig_get, m._takeover_get = m._takeover_get, fake_get
     orig_es, m.event_start = m.event_start, lambda a: (_ for _ in ()).throw(
         AssertionError("event_start must not run on auth-reject"))
@@ -1733,7 +1733,7 @@ def t_event_takeover_funnel_success_calls_event_start():
         if url.endswith("/versions"):
             return {"versions": {}}
         return {}
-    restore = _with_env(RACECAST_COCKPIT_SECRET="S", RACECAST_SHEET_ID="L1",
+    restore = _with_env(RACECAST_CONSOLE_SECRET="S", RACECAST_SHEET_ID="L1",
                         RACECAST_SHEET_PUSH_URL="https://push")
     orig_get, m._takeover_get = m._takeover_get, fake_get
     es = {}
@@ -1770,7 +1770,7 @@ def t_set_env_key_preserves_other_keys():
         with open(p, "w", encoding="utf-8") as fh:
             fh.write("# header comment\nNAME=Demo\nSHEET_ID=abc123\n"
                      "SHEET_PUSH_URL=https://x/exec\n")
-        res = m._set_env_key(p, "COCKPIT_SECRET", "deadbeef")
+        res = m._set_env_key(p, "CONSOLE_SECRET", "deadbeef")
         assert res.get("ok"), res
         with open(p, encoding="utf-8") as fh:
             text = fh.read()
@@ -1778,14 +1778,14 @@ def t_set_env_key_preserves_other_keys():
         assert got["NAME"] == "Demo"
         assert got["SHEET_ID"] == "abc123"            # NOT wiped
         assert got["SHEET_PUSH_URL"] == "https://x/exec"
-        assert got["COCKPIT_SECRET"] == "deadbeef"    # added
+        assert got["CONSOLE_SECRET"] == "deadbeef"    # added
         assert "# header comment" in text             # comments preserved
         # updating an existing key keeps the others too
         m._set_env_key(p, "SHEET_ID", "newid")
         with open(p, encoding="utf-8") as fh:
             got = m.parse_env_text(fh.read())
         assert got["SHEET_ID"] == "newid" and got["NAME"] == "Demo"
-        assert got["COCKPIT_SECRET"] == "deadbeef"
+        assert got["CONSOLE_SECRET"] == "deadbeef"
 
 
 def t_route_cockpit():
@@ -2213,17 +2213,22 @@ def t_cockpit_internal_host_prefers_tailscale_then_loopback():
 
 
 def _with_cockpit_secret_env_cleared(fn):
-    """Run fn() with RACECAST_COCKPIT_SECRET cleared + _active_profile_env_strict
-    restored afterwards (the zero-config auto-provision tests monkeypatch both)."""
-    saved_env = os.environ.pop("RACECAST_COCKPIT_SECRET", None)
+    """Run fn() with RACECAST_CONSOLE_SECRET + RACECAST_COCKPIT_SECRET cleared +
+    _active_profile_env_strict restored afterwards (zero-config auto-provision tests
+    monkeypatch both)."""
+    saved_new = os.environ.pop("RACECAST_CONSOLE_SECRET", None)
+    saved_old = os.environ.pop("RACECAST_COCKPIT_SECRET", None)
     saved_strict = m._active_profile_env_strict
     try:
         fn()
     finally:
         m._active_profile_env_strict = saved_strict
+        os.environ.pop("RACECAST_CONSOLE_SECRET", None)
         os.environ.pop("RACECAST_COCKPIT_SECRET", None)
-        if saved_env is not None:
-            os.environ["RACECAST_COCKPIT_SECRET"] = saved_env
+        if saved_new is not None:
+            os.environ["RACECAST_CONSOLE_SECRET"] = saved_new
+        if saved_old is not None:
+            os.environ["RACECAST_COCKPIT_SECRET"] = saved_old
 
 
 def t_ensure_active_cockpit_secret_generates_and_is_idempotent():
@@ -2236,8 +2241,11 @@ def t_ensure_active_cockpit_secret_generates_and_is_idempotent():
             m._active_profile_env_strict = lambda: ("demo", ppath)
             s1 = m._ensure_active_cockpit_secret()
             assert s1 and len(s1) == 64, s1                  # token_hex(32) -> 64 hex
-            assert os.environ.get("RACECAST_COCKPIT_SECRET") == s1
-            os.environ.pop("RACECAST_COCKPIT_SECRET", None)   # idempotent: returns the same
+            assert os.environ.get("RACECAST_CONSOLE_SECRET") == s1   # new env var name
+            with open(ppath, encoding="utf-8") as fh:
+                written = m.parse_env_text(fh.read())
+            assert written.get("CONSOLE_SECRET") == s1        # new key written
+            os.environ.pop("RACECAST_CONSOLE_SECRET", None)   # idempotent: returns the same
             assert m._ensure_active_cockpit_secret() == s1
             with open(ppath, encoding="utf-8") as fh:
                 assert m.parse_env_text(fh.read())["NAME"] == "Demo"   # other keys kept
@@ -2260,12 +2268,25 @@ def t_ensure_active_cockpit_secret_skips_example_and_missing():
 
 
 def t_ensure_active_cockpit_secret_respects_existing_env():
+    """New RACECAST_CONSOLE_SECRET in env is returned immediately (back-compat:
+    legacy RACECAST_COCKPIT_SECRET is also honoured)."""
     def body():
-        os.environ["RACECAST_COCKPIT_SECRET"] = "already-set"
+        os.environ["RACECAST_CONSOLE_SECRET"] = "already-set"
         def _boom():
             raise AssertionError("must not resolve a profile when env carries a secret")
         m._active_profile_env_strict = _boom
         assert m._ensure_active_cockpit_secret() == "already-set"
+    _with_cockpit_secret_env_cleared(body)
+
+
+def t_ensure_active_cockpit_secret_respects_legacy_env():
+    """Back-compat: legacy RACECAST_COCKPIT_SECRET in env is still honoured."""
+    def body():
+        os.environ["RACECAST_COCKPIT_SECRET"] = "legacy-set"
+        def _boom():
+            raise AssertionError("must not resolve a profile when env carries a secret")
+        m._active_profile_env_strict = _boom
+        assert m._ensure_active_cockpit_secret() == "legacy-set"
     _with_cockpit_secret_env_cleared(body)
 
 

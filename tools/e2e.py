@@ -332,7 +332,7 @@ def run_synthetic(args):
         # 3. cockpit relay (a secret in the env -> /cockpit/* is served, token-gated)
         relay_port = E.free_port()
         env = dict(os.environ)
-        env.update(RACECAST_COCKPIT_SECRET=secret, RACECAST_PROFILE="e2e")
+        env.update(RACECAST_CONSOLE_SECRET=secret, RACECAST_PROFILE="e2e")
         env["PATH"] = stub_bin + os.pathsep + env.get("PATH", "")
         relay_log = os.path.join(tmp, "relay.log")
         relay = _spawn(launcher + ["relay", "run", "--bind", "127.0.0.1",
@@ -349,7 +349,7 @@ def run_synthetic(args):
         # provision deliberately never touches -> no secret -> every /cockpit/* 404s.
         dis_port = E.free_port()
         env2 = dict(os.environ); env2.update(RACECAST_PROFILE="example")
-        env2.pop("RACECAST_COCKPIT_SECRET", None)
+        env2.pop("RACECAST_CONSOLE_SECRET", None)
         env2["PATH"] = stub_bin + os.pathsep + env2.get("PATH", "")
         dis_log = os.path.join(tmp, "relay-disabled.log")
         dis = _spawn(launcher + ["relay", "run", "--bind", "127.0.0.1",
@@ -434,8 +434,8 @@ def run_real_league(args):
         print("  Copy it in first (see the racecast-local-uat skill); this is a "
               "graceful skip, not a failure.")
         return 0
-    if not rc.cockpit_secret:
-        print(f"real-league: profile {name!r} has no COCKPIT_SECRET in profile.env.")
+    if not rc.console_secret:
+        print(f"real-league: profile {name!r} has no CONSOLE_SECRET in profile.env.")
         print("  Start the relay once for that league (it auto-provisions the secret), "
               "then re-run; skipping.")
         return 0
@@ -472,7 +472,7 @@ def run_real_league(args):
             print("  Cockpit-token checks need a real streamer; skipping the run.")
             return 0
         key = cockpit_auth.streamer_key(streamer)
-        token = cockpit_auth.mint_token(rc.cockpit_secret, key, version=1)
+        token = cockpit_auth.mint_token(rc.console_secret, key, version=1)
 
         # Control Center against the same real profile.
         ui_port = E.free_port()

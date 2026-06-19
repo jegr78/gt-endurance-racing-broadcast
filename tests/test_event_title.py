@@ -142,7 +142,7 @@ def _client(event_default="", event_title=None, rows=None):
         def status(self):
             return {"schedule_len": 1, "feeds": {}}
 
-    handler = m.make_handler(_Relay(), cockpit_secret=SECRET, event_store=store)
+    handler = m.make_handler(_Relay(), console_secret=SECRET, event_store=store)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     _t.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"

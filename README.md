@@ -133,7 +133,7 @@ racecast event start          # bring everything up: Tailscale, Discord, relay, 
 racecast event start --stint 4 # take over mid-event (12h/24h): stint 4 is on air now
 racecast event start --title "GTEC - 2026 - Round 4 - Nürburgring 24h"  # set the event title (Panel/Cockpit/Discord); also editable live in the Panel
 racecast event takeover <A-ip>                       # take over from A over the tailnet (reads on-air stint, pulls chat + cockpit-versions)
-racecast event takeover <A-magicdns-host> --funnel  # same but over A's public Funnel — no Tailscale account on B; needs `racecast funnel on` running on A and the league COCKPIT_SECRET in B's profile
+racecast event takeover <A-magicdns-host> --funnel  # same but over A's public Funnel — no Tailscale account on B; needs `racecast funnel on` running on A and the league CONSOLE_SECRET in B's profile
 racecast event status         # event-day readiness report (apps, services, cookies, graphics, media, config)
 racecast event stop           # stop relay/Companion/streams — OBS & friends keep running
 racecast tailscale up         # connect Tailscale (event start does this automatically)

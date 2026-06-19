@@ -2855,7 +2855,7 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
                  timer_store=None, setup_ctl=None, overlay_dir=None,
                  chat_store=None, preview_path=None, graphics_dir=None,
-                 splitscreen_path=None, cockpit_page_path=None, cockpit_secret=None,
+                 splitscreen_path=None, cockpit_page_path=None, console_secret=None,
                  cockpit_versions_path=None,
                  submission_store=None, event_store=None, crew_source=None,
                  console_page_path=None):
@@ -2972,7 +2972,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             auto-provisioned by the CLI (zero-config), so the cockpit is served
             whenever one exists; when it is absent every /cockpit/* path 404s (like
             chat/timer when disabled). PUBLIC exposure is the separate Funnel switch."""
-            return bool(cockpit_secret)
+            return bool(console_secret)
         def _cockpit_token(self):
             """The presented token: query ?t= first (link load), else the cookie."""
             qs = parse_qs(urlparse(self.path).query)
@@ -2984,7 +2984,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             Applies a per-client failure rate limit. Caller must return on None."""
             versions = (cockpit_admin.load_versions(cockpit_versions_path)
                         if cockpit_versions_path else {})
-            me = cockpit_auth.verify_token(cockpit_secret, self._cockpit_token(),
+            me = cockpit_auth.verify_token(console_secret, self._cockpit_token(),
                                            versions)
             if me is None:
                 client = self.client_address[0] if self.client_address else "?"
@@ -3012,7 +3012,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             identity-forced /cockpit equivalents so the server sets the speaker.
             Boundary: when no league cockpit secret is configured, /console 404s
             exactly like /cockpit."""
-            if not cockpit_secret:
+            if not console_secret:
                 self._send({"error": "not found"}, 404)
                 return None
             sub = p[1:]
@@ -3024,7 +3024,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             # X-Cockpit-Secret is still accepted for one release (mixed-version takeover).
             presented = (self.headers.get("X-Console-Secret")
                          or self.headers.get("X-Cockpit-Secret"))
-            has_step_up = bool(presented) and cockpit_auth.secret_matches(presented, cockpit_secret)
+            has_step_up = bool(presented) and cockpit_auth.secret_matches(presented, console_secret)
             # /console-only: identity introspection for the launcher (any auth).
             if sub == ["whoami"]:
                 self._send({"subject": subject, "roles": sorted(roles)})
@@ -3306,7 +3306,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         # (every producer of the league holds it), constant-time.
                         presented = (self.headers.get("X-Console-Secret")
                                      or self.headers.get("X-Cockpit-Secret"))  # legacy fallback
-                        if not cockpit_auth.secret_matches(presented, cockpit_secret):
+                        if not cockpit_auth.secret_matches(presented, console_secret):
                             return self._send({"error": "unauthorized"}, 401)
                         if not cockpit_versions_path:
                             return self._send({"versions": {}})
@@ -3948,7 +3948,7 @@ def main():
     # auto-provisioned by the CLI — zero-config). Present => /cockpit/* is served
     # (token-gated); absent => every /cockpit/* path 404s. PUBLIC exposure is the
     # separate Tailscale Funnel switch, never implied by the secret alone.
-    cockpit_secret = (os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip() or None
+    console_secret = (os.environ.get("RACECAST_CONSOLE_SECRET") or os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip() or None
     cockpit_versions_path = os.path.join(runtime, "cockpit-versions.json")
     # Commentator stream-link submissions (#193): pending store + audit log,
     # profile-scoped like chat.json / cockpit-versions.json. Always created so the
@@ -3962,7 +3962,7 @@ def main():
                            preview_path=preview_path, graphics_dir=graphics_dir,
                            splitscreen_path=splitscreen_path,
                            cockpit_page_path=cockpit_page_path,
-                           cockpit_secret=cockpit_secret,
+                           console_secret=console_secret,
                            cockpit_versions_path=cockpit_versions_path,
                            submission_store=submission_store,
                            event_store=event_store,
@@ -4028,7 +4028,7 @@ def main():
     if event_store.get():
         LOG.info("  Event title: “%s”  (panel/cockpit/Discord; edit live in the Director Panel)",
                  event_store.get())
-    if cockpit_secret:
+    if console_secret:
         if cockpit_page_path:
             LOG.info("  Commentator cockpit: /cockpit (auth) — links via 'racecast links'")
         else:

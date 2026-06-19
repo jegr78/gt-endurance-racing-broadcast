@@ -349,7 +349,7 @@ def t_set_env_key_preserves_other_keys():
         with open(ppath, "w", encoding="utf-8") as fh:
             fh.write("# header\nNAME=Foo\nSHEET_ID=abc123\nSHEET_PUSH_URL=https://x/exec\n"
                      "CUSTOM=keep\n")
-        res = rc._set_env_key(ppath, "COCKPIT_SECRET", "s" * 64)
+        res = rc._set_env_key(ppath, "CONSOLE_SECRET", "s" * 64)
         assert res.get("ok"), res
         with open(ppath, encoding="utf-8") as fh:
             after = rc.parse_env_text(fh.read())
@@ -357,7 +357,7 @@ def t_set_env_key_preserves_other_keys():
         assert after["SHEET_ID"] == "abc123", after
         assert after["SHEET_PUSH_URL"] == "https://x/exec", after
         assert after["CUSTOM"] == "keep", after
-        assert after["COCKPIT_SECRET"] == "s" * 64, after
+        assert after["CONSOLE_SECRET"] == "s" * 64, after
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
