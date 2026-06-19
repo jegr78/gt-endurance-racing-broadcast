@@ -145,6 +145,11 @@ def t_cockpit_chat_send_is_any_read():
     assert _cap(["cockpit", "chat", "send"], "POST") == ("any", False)
 
 
+def t_obs_routes_require_director():
+    for seg in (["obs", "scene"], ["obs", "source"], ["obs", "audio"], ["obs", "state"]):
+        assert cp.min_capability(seg) == cp.Requirement(cp.DIRECTOR, False), seg
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

@@ -69,6 +69,22 @@ def _get(port, path, token=None, secret=None, secret_header="X-Console-Secret"):
         return e.code, e.read().decode()
 
 
+def _post(port, path, token=None, secret=None, body=None, secret_header="X-Console-Secret"):
+    url = f"http://127.0.0.1:{port}{path}"
+    if token:
+        url += ("&" if "?" in path else "?") + "t=" + token
+    data = json.dumps(body or {}).encode()
+    req = urllib.request.Request(url, data=data, method="POST",
+                                 headers={"Content-Type": "application/json"})
+    if secret:
+        req.add_header(secret_header, secret)
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status, r.read().decode()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()
+
+
 def t_no_token_is_401():
     srv = _serve(); port = srv.server_address[1]
     try:
@@ -304,6 +320,18 @@ def t_takeover_director_without_producer_is_forbidden():
     try:
         code, _ = _get(port, "/console/takeover/status", _tok("bob"), SECRET)
         assert code == 403, code
+    finally:
+        srv.shutdown()
+
+
+def t_console_obs_scene_requires_director():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        assert _post(port, "/console/obs/scene", body={"scene": "Stint"})[0] == 401   # no token
+        assert _post(port, "/console/obs/scene", _tok("carol"),                        # producer, not director
+                     body={"scene": "Stint"})[0] == 403
+        code, _ = _post(port, "/console/obs/scene", _tok("bob"), body={"scene": "Stint"})
+        assert code in (200, 503), code   # director allowed (200 ok, or 503 when no OBS in the test)
     finally:
         srv.shutdown()
 

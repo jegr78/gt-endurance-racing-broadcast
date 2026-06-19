@@ -3517,6 +3517,40 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send({"error": "event title disabled"}, 404)
                     title = event_store.set(body.get("title"))
                     return self._send({"ok": True, "title": title})
+                if p == ["obs", "scene"]:
+                    if _obs_ws is None:
+                        return self._send({"error": "obs unavailable"}, 503)
+                    ok, note = _obs_ws.set_current_program_scene(body.get("scene"))
+                    return self._send({"ok": True} if ok
+                                      else {"ok": False, "error": note}, 200 if ok else 503)
+                if p == ["obs", "source"]:
+                    if _obs_ws is None:
+                        return self._send({"error": "obs unavailable"}, 503)
+                    ok, note = _obs_ws.set_scene_item_enabled(
+                        body.get("scene"), body.get("source"), bool(body.get("on")))
+                    return self._send({"ok": True} if ok
+                                      else {"ok": False, "error": note}, 200 if ok else 503)
+                if p == ["obs", "audio"]:
+                    if _obs_ws is None:
+                        return self._send({"error": "obs unavailable"}, 503)
+                    inp = body.get("input")
+                    if "mute" in body:
+                        ok, note = _obs_ws.set_input_mute(inp, bool(body.get("mute")))
+                    elif "db" in body:
+                        ok, note = _obs_ws.set_input_volume(inp, body.get("db"))
+                    else:
+                        return self._send({"ok": False, "error": "audio needs db or mute"}, 400)
+                    return self._send({"ok": True} if ok
+                                      else {"ok": False, "error": note}, 200 if ok else 503)
+                if p == ["obs", "state"]:
+                    if _obs_ws is None:
+                        return self._send({"error": "obs unavailable"}, 503)
+                    sources = [(s.get("scene"), s.get("source"))
+                               for s in (body.get("sources") or [])]
+                    state, note = _obs_ws.read_obs_state(sources, body.get("inputs") or [])
+                    if state is None:
+                        return self._send({"ok": False, "error": note}, 503)
+                    return self._send({"ok": True, **state})
                 if not setup_ctl:
                     return self._send({"error": "setup control disabled"}, 404)
                 if p == ["schedule", "set"]:
