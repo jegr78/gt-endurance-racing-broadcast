@@ -360,7 +360,8 @@ class _StubCompanion(BaseHTTPRequestHandler):
     last = {}
     def do_GET(self):
         _StubCompanion.last = {"path": self.path,
-                               "prefix": self.headers.get("Companion-custom-prefix")}
+                               "prefix": self.headers.get("Companion-custom-prefix"),
+                               "cookie": self.headers.get("Cookie")}
         body = b"<html>companion web buttons</html>"
         self.send_response(200); self.send_header("Content-Type", "text/html")
         self.send_header("Content-Length", str(len(body))); self.end_headers()
@@ -476,6 +477,49 @@ def t_buttons_ws_passthrough_and_strips_token():
         first_line = _WSStub.last_request.split(b"\r\n")[0]
         assert first_line.startswith(b"GET /trpc"), first_line
         assert b"t=" not in first_line, first_line
+    finally:
+        srv.shutdown(); up.close()
+
+
+def t_buttons_http_does_not_forward_relay_cookie():
+    # The rc_cockpit auth cookie must be scrubbed before forwarding upstream;
+    # other cookies in the same header must be preserved.
+    up = _stub_companion(); upurl = f"http://127.0.0.1:{up.server_address[1]}"
+    srv = _serve(companion_url=upurl); port = srv.server_address[1]
+    try:
+        url = f"http://127.0.0.1:{port}/console/buttons/tablet?t=" + _tok("bob")
+        req = urllib.request.Request(url)
+        req.add_header("Cookie", "rc_cockpit=secret; keep=1")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            assert r.status == 200
+        # The stub saw the Cookie header with keep=1 but NOT rc_cockpit.
+        received_cookie = _StubCompanion.last.get("cookie") or ""
+        assert "rc_cockpit" not in received_cookie, received_cookie
+        assert "keep=1" in received_cookie, received_cookie
+    finally:
+        srv.shutdown(); up.shutdown()
+
+
+def t_buttons_ws_does_not_forward_relay_cookie_and_carries_prefix():
+    # The WS upgrade path must scrub rc_cockpit and inject the sub-path prefix header.
+    up = _ws_echo_stub(); upurl = f"http://127.0.0.1:{up.getsockname()[1]}"
+    srv = _serve(companion_url=upurl); port = srv.server_address[1]
+    try:
+        c = _socket.create_connection(("127.0.0.1", port), timeout=5)
+        req = ("GET /console/buttons/trpc?t=%s HTTP/1.1\r\n"
+               "Host: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+               "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+               "Sec-WebSocket-Version: 13\r\n"
+               "Cookie: rc_cockpit=%s\r\n\r\n") % (_tok("bob"), _tok("bob"))
+        c.sendall(req.encode())
+        resp = c.recv(4096)
+        assert resp.split(b"\r\n")[0].endswith(b"101 Switching Protocols"), resp
+        c.close()
+        # rc_cockpit must not appear in the upstream handshake.
+        assert b"rc_cockpit" not in _WSStub.last_request, _WSStub.last_request[:400]
+        # The prefix header must be present.
+        assert b"Companion-custom-prefix: console/buttons" in _WSStub.last_request, \
+            _WSStub.last_request[:400]
     finally:
         srv.shutdown(); up.close()
 

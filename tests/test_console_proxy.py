@@ -28,10 +28,38 @@ def t_forward_headers_inject_no_leading_slash_prefix():
 def t_filter_response_headers_drops_framing_and_hop_by_hop():
     kept = dict(cp.filter_response_headers(
         [("Content-Length", "10"), ("Content-Type", "text/html"),
-         ("Set-Cookie", "a=b"), ("Transfer-Encoding", "chunked"), ("X-Foo", "bar")]))
+         ("Content-Encoding", "gzip"), ("Set-Cookie", "a=b"),
+         ("Transfer-Encoding", "chunked"), ("X-Foo", "bar")]))
     assert "Content-Length" not in kept and "Content-Type" not in kept
+    assert "Content-Encoding" not in kept
     assert "Transfer-Encoding" not in kept
     assert kept["Set-Cookie"] == "a=b" and kept["X-Foo"] == "bar"
+
+
+def t_scrub_relay_cookie_removes_rc_cockpit_only():
+    # Only rc_cockpit → None (drop the header).
+    assert cp.scrub_relay_cookie("rc_cockpit=abc") is None
+    # Mixed: rc_cockpit stripped, others preserved.
+    assert cp.scrub_relay_cookie("a=1; rc_cockpit=abc; b=2") == "a=1; b=2"
+    # No rc_cockpit → unchanged.
+    assert cp.scrub_relay_cookie("a=1") == "a=1"
+    # Empty / None input → None.
+    assert cp.scrub_relay_cookie(None) is None
+    assert cp.scrub_relay_cookie("") is None
+
+
+def t_forward_headers_drops_relay_cookie_only_header():
+    # A Cookie header that contains ONLY rc_cockpit must be dropped entirely.
+    out = cp.forward_request_headers({"Cookie": "rc_cockpit=secret"})
+    assert "Cookie" not in out
+
+
+def t_forward_headers_strips_relay_cookie_keeps_others():
+    # When other cookies are present alongside rc_cockpit, they must survive.
+    out = cp.forward_request_headers({"Cookie": "other=1; rc_cockpit=secret"})
+    assert "Cookie" in out
+    assert "rc_cockpit" not in out["Cookie"]
+    assert "other=1" in out["Cookie"]
 
 
 def t_is_websocket_upgrade():

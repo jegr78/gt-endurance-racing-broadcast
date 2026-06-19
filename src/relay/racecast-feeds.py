@@ -3004,8 +3004,19 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"error": "Companion not reachable"}, 502)
                 # Replay the upgrade: rewritten+token-stripped path, upgrade headers forwarded
                 # RAW (Upgrade/Connection/Sec-WebSocket-* must survive), prefix injected.
-                hdrs = {k: v for k, v in self.headers.items()
-                        if k.lower() not in ("host", "accept-encoding")}
+                # The relay's rc_cockpit auth cookie must never reach Companion.
+                hdrs = {}
+                for k, v in self.headers.items():
+                    lk = k.lower()
+                    if lk in ("host", "accept-encoding"):
+                        continue
+                    if lk == "cookie":
+                        cleaned = console_proxy.scrub_relay_cookie(v)
+                        if cleaned:
+                            hdrs[k] = cleaned
+                        # else: drop entirely
+                        continue
+                    hdrs[k] = v
                 hdrs["Host"] = "%s:%d" % (host, cport)
                 hdrs[console_proxy.COMPANION_PREFIX_HEADER] = console_proxy.PREFIX_HEADER_VALUE
                 raw = ("GET %s HTTP/1.1\r\n" % console_proxy.upstream_path(clean_path)

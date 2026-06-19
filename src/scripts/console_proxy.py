@@ -11,10 +11,21 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 MOUNT_PREFIX = "/console/buttons"          # the relay path prefix (strip / route)
 PREFIX_HEADER_VALUE = "console/buttons"    # the Companion-custom-prefix value (NO leading slash)
 COMPANION_PREFIX_HEADER = "Companion-custom-prefix"
+RELAY_COOKIE = "rc_cockpit"               # the relay's auth cookie — must never reach Companion
 
 # RFC 7230 hop-by-hop headers (lowercase) — never forwarded on the HTTP path.
 HOP_BY_HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
               "te", "trailer", "trailers", "transfer-encoding", "upgrade"}
+
+
+def scrub_relay_cookie(cookie_header):
+    """Remove the relay's rc_cockpit auth cookie from a Cookie header value, preserving any
+    other cookies. Returns the cleaned header, or None if nothing remains (drop the header)."""
+    if not cookie_header:
+        return None
+    kept = [c.strip() for c in cookie_header.split(";")
+            if c.strip() and c.split("=", 1)[0].strip() != RELAY_COOKIE]
+    return "; ".join(kept) if kept else None
 
 
 def strip_relay_token(request_path):
@@ -49,6 +60,12 @@ def forward_request_headers(headers, prefix=PREFIX_HEADER_VALUE, host="127.0.0.1
     for k, v in headers.items():
         lk = k.lower()
         if lk in HOP_BY_HOP or lk in ("host", "accept-encoding"):
+            continue
+        if lk == "cookie":
+            cleaned = scrub_relay_cookie(v)
+            if cleaned:
+                out[k] = cleaned
+            # else: drop the header entirely — nothing useful remains
             continue
         out[k] = v
     out["Host"] = host
