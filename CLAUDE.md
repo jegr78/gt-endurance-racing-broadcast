@@ -86,6 +86,7 @@ python3 tests/test_overlay.py        # per-league overlay overrides (hud/timer C
 python3 tests/test_streams.py       # static-streams helpers (frozen feed spawn)
 python3 tests/test_roles.py          # crew roster (CrewSource) + role resolution (#216)
 python3 tests/test_console.py        # /console authorization policy: capability matrix + decision (#216)
+python3 tests/test_console_gate.py   # /console auth gate: token->roles->decide fall-through (#216)
 python3 tests/test_event.py          # event readiness helpers (probes/launch/assets)
 python3 tests/test_tailscale.py      # Tailscale detection/control helpers
 python3 tests/test_obsws.py          # minimal obs-websocket client (feed release on stop, page refresh on start)

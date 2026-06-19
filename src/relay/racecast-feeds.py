@@ -88,6 +88,7 @@ import chat_admin  # required (ChatStore); src/scripts is on sys.path via the bl
 import cockpit_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
 import cockpit_admin  # talent-cockpit revocation version store (#191)
 import cockpit_submissions  # talent stream-link submission store (#193)
+import console_policy  # /console authorization matrix + decision (#216)
 import logsetup  # rotating per-feed/console loggers + streamlink pump (src/scripts on sys.path)
 from services import external_tool_env  # de-PyInstaller the env for spawned external tools
 
@@ -552,6 +553,13 @@ def resolve_roles(crew_rows, schedule_keys, subject):
         if is_prod:
             roles.add("producer")
     return roles
+
+
+def schedule_keys(rows):
+    """Set of asset_key-normalized streamer names present in a schedule's rows
+    ([(url, name, stint, line)]). This is the implicit commentator roster that
+    resolve_roles unions with the Crew tab (#216)."""
+    return {asset_key(n) for (_u, n, _s, _l) in rows if (n or "").strip()}
 
 TEAM_NUMBER_RE = re.compile(r"^(.*?)\s*#(\d+)\s*$")
 
@@ -2771,7 +2779,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  chat_store=None, preview_path=None, graphics_dir=None,
                  splitscreen_path=None, cockpit_page_path=None, cockpit_secret=None,
                  cockpit_versions_path=None,
-                 submission_store=None, event_store=None):
+                 submission_store=None, event_store=None, crew_source=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -2898,6 +2906,57 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     self._send({"error": "unauthorized"}, 401)
                 return None
             return me
+        def _console_roles(self, subject):
+            """Resolve a verified subject to its capability set from the live
+            schedule (commentator) + Crew roster (director/producer)."""
+            src = getattr(relay, "source", None)
+            if src is not None and hasattr(src, "get_rows"):
+                rows = src.get_rows()
+            else:
+                rows = getattr(src, "rows", []) or []
+            crew = crew_source.get() if crew_source else []
+            return resolve_roles(crew, schedule_keys(rows), subject)
+
+        def _console_gate(self, p, method):
+            """Authorize a /console/* request and return the segment list to fall
+            through to (ALLOW), or None after sending a response. p includes the
+            leading 'console'. Identity-bound routes are rewritten to their
+            identity-forced /cockpit equivalents so the server sets the speaker.
+            Boundary: when no league cockpit secret is configured, /console 404s
+            exactly like /cockpit."""
+            if not cockpit_secret:
+                self._send({"error": "not found"}, 404)
+                return None
+            sub = p[1:]
+            subject = self._cockpit_auth()        # identity only; sends 401/429 on failure
+            if subject is None:
+                return None
+            roles = self._console_roles(subject)
+            presented = self.headers.get("X-Cockpit-Secret")
+            has_step_up = bool(presented) and cockpit_auth.secret_matches(presented, cockpit_secret)
+            # console_policy.decide derives capability from the path; the `method`
+            # arg is plumbing for a future tightening — it is not a live check today.
+            outcome = console_policy.decide(roles, sub, method, has_step_up)
+            if outcome == console_policy.ALLOW:
+                # Identity-bound routes -> their identity-forced /cockpit handlers,
+                # which re-run _cockpit_auth to set the speaker from the token (a
+                # harmless second verify, NOT a missing optimization). This is what
+                # makes a client-supplied chat "user" impossible over /console.
+                if sub == ["chat", "send"]:
+                    return ["cockpit", "chat", "send"]
+                if sub == ["chat", "data"]:
+                    return ["cockpit", "chat", "data"]
+                if sub == ["submit"]:
+                    return ["cockpit", "submit"]
+                return sub
+            if outcome == console_policy.STEP_UP_REQUIRED:
+                self._send({"error": "step-up required"}, 403)
+                return None
+            if outcome == console_policy.FORBIDDEN:
+                self._send({"error": "forbidden"}, 403)
+                return None
+            self._send({"error": "not found"}, 404)   # NOT_FOUND
+            return None
         def _post_discord(self, payload, what):
             """Best-effort fire-and-forget POST of a Discord webhook payload; a
             natural no-op when no webhook is configured. Mirrors the health
@@ -2930,6 +2989,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
             try:
+                if p and p[0] == "console":
+                    p = self._console_gate(p, "GET")
+                    if p is None:
+                        return
                 if not p or p == ["status"]:
                     base = relay.status()
                     if timer_store: base["timer"] = timer_store.summary()
@@ -3203,6 +3266,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
         def do_POST(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
             try:
+                if p and p[0] == "console":
+                    p = self._console_gate(p, "POST")
+                    if p is None:
+                        return
                 length = int(self.headers.get("Content-Length") or 0)
                 if length > 65536:
                     return self._send({"error": "body too large"}, 413)
@@ -3416,6 +3483,9 @@ def main():
                     help="Google-Sheet tab for the qualifying schedule (same "
                          "URL/Streamer/Stint structure as the race Schedule tab; "
                          "default 'Qualifying'). One stream, served on Feed A.")
+    ap.add_argument("--crew-tab", default="Crew",
+                    help="Sheet tab naming Director/Producer crew for /console roles "
+                         "(#216); disabled with a custom --sheet-csv-url.")
     ap.add_argument("--qualifying", action="store_true",
                     help="Start in QUALIFYING mode: serve the qualifying tab on "
                          "Feed A instead of the race schedule (different-day "
@@ -3540,6 +3610,18 @@ def main():
         qual_cache = os.path.join(runtime, "qualifying.cache.txt")
         qual_source = ScheduleSource(qual_csv_url, qual_cache, None)
         qual_source.refresh()   # non-fatal: empty/unreachable = qualifying mode just idles
+
+    # Crew roster (#216): Name | Director | Producer tab giving the director/
+    # producer capabilities for /console. Like POV/qualifying it is derivable
+    # only from sheet-id/tab, so a custom --sheet-csv-url disables it. Missing or
+    # empty tab is non-fatal -- roles just fall back to schedule-only commentator.
+    crew_source = None
+    if not args.sheet_csv_url:
+        crew_csv_url = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
+                        f"/gviz/tq?tqx=out:csv&sheet={quote(args.crew_tab)}")
+        crew_cache = os.path.join(runtime, "crew.cache.txt")
+        crew_source = CrewSource(crew_csv_url, crew_cache)
+        crew_source.refresh()   # non-fatal: empty/unreachable = no director/producer rows
 
     # Optionally auto-export cookies from a logged-in browser first (yt-dlp)
     if args.cookies_from_browser:
@@ -3668,6 +3750,9 @@ def main():
     if qual_source:
         threading.Thread(target=poller, args=(qual_source, args.poll, stop_evt),
                          daemon=True).start()
+    if crew_source:
+        threading.Thread(target=poller, args=(crew_source, args.poll, stop_evt),
+                         daemon=True).start()
     if hud_source:
         threading.Thread(target=poller, args=(hud_source, args.hud_poll, stop_evt),
                          daemon=True).start()
@@ -3696,7 +3781,8 @@ def main():
                            cockpit_secret=cockpit_secret,
                            cockpit_versions_path=cockpit_versions_path,
                            submission_store=submission_store,
-                           event_store=event_store)
+                           event_store=event_store,
+                           crew_source=crew_source)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []
