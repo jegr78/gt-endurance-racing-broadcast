@@ -10,6 +10,7 @@
 - [Director setup](Director-Setup)
 - [Director guide](Director)
 - [Commentator Cockpit](Commentator-Cockpit)
+- [Remote access &amp; the Funnel](Remote-access)
 - [Who does what](Who-does-what)
 - [If something goes wrong](If-something-goes-wrong)
 
