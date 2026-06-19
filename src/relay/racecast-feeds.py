@@ -2779,7 +2779,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  chat_store=None, preview_path=None, graphics_dir=None,
                  splitscreen_path=None, cockpit_page_path=None, cockpit_secret=None,
                  cockpit_versions_path=None,
-                 submission_store=None, event_store=None, crew_source=None):
+                 submission_store=None, event_store=None, crew_source=None,
+                 console_page_path=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -2824,31 +2825,40 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Cache-Control", "no-store")
             self.end_headers(); self.wfile.write(body)
             return None
-        def _send_html_with_cookie(self, path, token):
-            """Serve the cockpit HTML and set the rc_cockpit auth cookie so all
-            sub-requests authenticate without the token staying in the URL bar."""
+        def _send_page(self, path, api_base="", cookie_token=None, cookie_path=None):
+            """Serve an HTML page, substituting the __RC_API_BASE__ placeholder with
+            api_base ("" at the tailnet/loopback root, "/console" behind Funnel) and
+            optionally setting the rc_cockpit auth cookie scoped to cookie_path."""
             try:
-                with open(path, "rb") as fh: body = fh.read()
+                with open(path, "rb") as fh:
+                    body = fh.read()
             except OSError:
-                return self._send({"error": "cockpit page not found"}, 404)
+                return self._send({"error": "page not found"}, 404)
+            body = body.replace(b"__RC_API_BASE__", (api_base or "").encode())
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
-            # `Secure` only behind the HTTPS Funnel (which injects X-Forwarded-Proto):
-            # browsers DROP a Secure cookie set over plain http, which would break the
-            # tailnet fallback link (http://<ip>:8088/cockpit) — its sub-requests
-            # would never re-auth. The tailnet hop is already WireGuard-encrypted.
-            secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
-            # Allowlist-sanitize before it touches the header: the token already
-            # passed verify_token(), but the Set-Cookie value must never be raw
-            # request input (CWE-113 response splitting / CWE-20 cookie injection).
-            token = cockpit_auth.safe_cookie_token(token)
-            self.send_header("Set-Cookie",
-                             f"{cockpit_auth.COOKIE_NAME}={token}; Path=/cockpit; "
-                             f"HttpOnly{secure}; SameSite=Lax")
-            self.end_headers(); self.wfile.write(body)
+            if cookie_token is not None and cookie_path:
+                # `Secure` only behind the HTTPS Funnel (X-Forwarded-Proto); browsers
+                # drop a Secure cookie over plain http, which would break the tailnet
+                # fallback link (its sub-requests would never re-auth). The tailnet
+                # hop is already WireGuard-encrypted.
+                secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+                # Allowlist-sanitize: the value must never be raw request input
+                # (CWE-113 response splitting / CWE-20 cookie injection).
+                safe = cockpit_auth.safe_cookie_token(cookie_token)
+                self.send_header("Set-Cookie",
+                                 f"{cockpit_auth.COOKIE_NAME}={safe}; Path={cookie_path}; "
+                                 f"HttpOnly{secure}; SameSite=Lax")
+            self.end_headers()
+            self.wfile.write(body)
             return None
+
+        def _send_html_with_cookie(self, path, token):
+            """Back-compat: the tailnet /cockpit page (cookie scoped to /cockpit,
+            base empty)."""
+            return self._send_page(path, "", cookie_token=token, cookie_path="/cockpit")
         def _send_jpeg(self, body):
             self.send_response(200)
             self.send_header("Content-Type", "image/jpeg")
@@ -3000,7 +3010,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send(base)
                 if p == ["panel"]:
                     if not panel_path: return self._send({"error":"panel disabled"}, 404)
-                    return self._send_file(panel_path, "text/html; charset=utf-8")
+                    return self._send_page(panel_path, "")
                 if p == ["hud"]:
                     if not (hud_source and hud_path):
                         return self._send({"error": "hud disabled"}, 404)

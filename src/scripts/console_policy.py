@@ -100,7 +100,8 @@ def min_capability(segments, method="GET"):
     if p in (["chat", "data"], ["chat", "reload"], ["chat", "send"]):
         return Requirement(ANY, False)
     if p in (["cockpit"], ["cockpit", "data"], ["cockpit", "program"],
-             ["cockpit", "timer"], ["cockpit", "chat", "data"]):
+             ["cockpit", "timer"], ["cockpit", "chat", "data"],
+             ["cockpit", "chat", "send"]):
         return Requirement(ANY, False)
 
     return None

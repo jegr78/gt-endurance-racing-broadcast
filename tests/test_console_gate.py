@@ -38,9 +38,14 @@ def _serve():
     src = _FakeSource(_URLS8, rows)
     relay = m.Relay(src, [53001, 53002], LOGDIR)
     crew = _Crew([("Bob", True, False), ("Carol", False, True)])  # bob=director, carol=producer
-    handler = m.make_handler(relay, cockpit_secret=SECRET, cockpit_versions_path=None,
-                             chat_store=m.ChatStore(os.path.join(LOGDIR, "chat.json")),
-                             crew_source=crew)
+    SRC = os.path.join(ROOT, "src")
+    handler = m.make_handler(
+        relay, cockpit_secret=SECRET, cockpit_versions_path=None,
+        chat_store=m.ChatStore(os.path.join(LOGDIR, "chat.json")),
+        crew_source=crew,
+        panel_path=os.path.join(SRC, "director", "director-panel.html"),
+        cockpit_page_path=os.path.join(SRC, "cockpit", "cockpit.html"),
+        console_page_path=os.path.join(SRC, "console", "console.html"))
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
@@ -186,6 +191,16 @@ def t_wrong_method_console_route_is_404():
         except urllib.error.HTTPError as e:
             code = e.code
         assert code == 404, code
+    finally:
+        srv.shutdown()
+
+
+def t_root_cockpit_page_has_empty_base():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/cockpit", _tok("alice"))
+        assert code == 200, (code, body)
+        assert 'window.RC_API_BASE = ""' in body, body[:400]
     finally:
         srv.shutdown()
 
