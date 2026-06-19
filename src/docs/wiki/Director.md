@@ -18,8 +18,8 @@ practical differences:
 | | Director panel (`…:8088/panel`) | Companion buttons (`…:8000/tablet`) |
 |---|---|---|
 | What it is | one page with everything — program switches, feeds, HUD, graphics, timer, audio — plus live status and health warnings | the big-button board (same layout as a Stream Deck) |
-| Needs | the **OBS WebSocket password** from the producer for scene/audio control: enter the producer's IP, port `4455` and the password once at the top of the panel — the browser remembers them. **FEEDS, TIMER, HUD and URLs work without it** | nothing — the OBS connection lives on the producer's machine |
-| Strengths | one-tab overview; shows problems early (banners, feed health) | muscle memory; very large touch targets |
+| Needs | nothing beyond the tailnet (or Funnel `/console/panel` link) — no OBS IP, port, or password; the relay talks to the producer's local OBS on your behalf | nothing — the OBS connection lives on the producer's machine |
+| Strengths | one-tab overview; shows problems early (banners, feed health); works fully over Funnel | muscle memory; very large touch targets |
 
 ## The director panel
 
@@ -40,11 +40,11 @@ memory:
 | **AUDIO** | per-source dB sliders, 0 dB reset and mutes |
 | **URLs** | collapsible editor for the schedule and POV URLs |
 
-**FEEDS, TIMER, HUD and URLs work relay-only** — no OBS connection needed
-(HUD and URLs additionally need the sheet-write webhook, see
-[Sheet-Webhook](Sheet-Webhook); without it they are display-only). Everything
-else needs the OBS WebSocket connection from the panel header (see the table
-above).
+All controls — scenes, sources, audio, feeds, timer, HUD, and URLs — work
+relay-only. The relay calls the producer's local OBS on your behalf; no OBS
+IP, port, or password is needed in the browser. HUD and URLs additionally need
+the sheet-write webhook (see [Sheet-Webhook](Sheet-Webhook)); without it they
+are display-only.
 
 ### Status strip and feed health
 
@@ -318,9 +318,10 @@ black tile in the split; it goes live on its own once the link is in.
 
 The relay also handles the audio (it mutes the off-air feed, unmutes the on-air one).
 **STINT A / STINT B**, **MUTE A / MUTE B** and **Feed A/B Toggle** are a
-**break-glass fallback**: if the panel shows **OBS NOT REACHABLE**, NEXT can't
-auto-cut — then use **STINT A / STINT B** (and, if needed, the manual FEED/MUTE
-buttons) to cut by hand; `/status` shows which feed is live.
+**break-glass fallback**: if the panel shows **OBS NOT REACHABLE** (the relay
+cannot reach OBS on the producer machine), NEXT can't auto-cut — then use
+**STINT A / STINT B** (and, if needed, the manual FEED/MUTE buttons) to cut by
+hand; `/status` shows which feed is live.
 
 ## Showing a driver POV (plan ahead)
 

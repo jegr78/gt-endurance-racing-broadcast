@@ -138,7 +138,12 @@ enable prompt). Pass `--force` to skip the pre-check.
 
 > **Security boundary:** Funnel forwards only the `/console` path. Confirm from
 > outside the tailnet that `https://<magicdns-host>/status` and `/panel` are **not**
-> reachable — only `/console` should be.
+> reachable — only `/console` should be. The OBS-WebSocket connection stays entirely
+> on the producer machine: scene switches, audio, and source visibility go through
+> four relay-mediated endpoints (`/obs/scene`, `/obs/source`, `/obs/audio`,
+> `/obs/state`) that are director-gated and never funnelled. Directors access the
+> full panel — including OBS controls — via `/console/panel` over the public Funnel
+> without any OBS credential.
 
 The Funnel host is the **active producer's** MagicDNS name. On a producer handover
 it changes, so re-run `racecast links` on the new machine and re-share.
