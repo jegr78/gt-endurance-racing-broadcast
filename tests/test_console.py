@@ -150,6 +150,18 @@ def t_obs_routes_require_director():
         assert cp.min_capability(seg) == cp.Requirement(cp.DIRECTOR, False), seg
 
 
+def t_buttons_requires_director_no_stepup():
+    assert cp.min_capability(["buttons"]) == cp.Requirement(cp.DIRECTOR, False)
+    assert cp.min_capability(["buttons", "tablet"]) == cp.Requirement(cp.DIRECTOR, False)
+    assert cp.min_capability(["buttons", "trpc"]) == cp.Requirement(cp.DIRECTOR, False)
+    assert cp.min_capability(["buttons", "health"]) == cp.Requirement(cp.DIRECTOR, False)
+
+
+def t_buttons_commentator_forbidden_director_allowed():
+    assert cp.decide({cp.COMMENTATOR}, ["buttons", "tablet"]) == cp.FORBIDDEN
+    assert cp.decide({cp.DIRECTOR}, ["buttons", "tablet"]) == cp.ALLOW
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
