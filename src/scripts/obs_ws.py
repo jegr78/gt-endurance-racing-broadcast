@@ -518,6 +518,95 @@ def get_program_screenshot(width=640, fmt="jpg", quality=60,
         session.close()
 
 
+def set_current_program_scene(scene, host="127.0.0.1", port=None,
+                              password=None, timeout=2.0):
+    """Switch the OBS program scene (best effort). (ok, note); never raises."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return False, note
+    try:
+        session.request("SetCurrentProgramScene", {"sceneName": scene})
+        return True, ""
+    except Exception as exc:                          # noqa: BLE001 — best-effort contract
+        return False, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
+def set_input_volume(input_name, volume_db, host="127.0.0.1", port=None,
+                     password=None, timeout=2.0):
+    """Set an OBS audio input volume in dB (best effort). (ok, note)."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return False, note
+    try:
+        session.request("SetInputVolume",
+                        {"inputName": input_name, "inputVolumeDb": float(volume_db)})
+        return True, ""
+    except Exception as exc:                          # noqa: BLE001 — best-effort contract
+        return False, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
+def set_input_mute(input_name, muted, host="127.0.0.1", port=None,
+                   password=None, timeout=2.0):
+    """Set an OBS audio input mute state (best effort). (ok, note)."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return False, note
+    try:
+        session.request("SetInputMute",
+                        {"inputName": input_name, "inputMuted": bool(muted)})
+        return True, ""
+    except Exception as exc:                          # noqa: BLE001 — best-effort contract
+        return False, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
+def read_obs_state(sources, inputs, host="127.0.0.1", port=None,
+                   password=None, timeout=2.0):
+    """One-session panel-refresh snapshot: current program scene + the enabled state
+    of each (scene, source) + the mute/volume of each audio input. `sources` =
+    [(scene, source), …]; `inputs` = [name, …]. Returns (state, "") or (None, note);
+    a per-item OBS error leaves that item's fields None rather than failing the whole
+    read. Best effort — never raises."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return None, note
+    try:
+        cur = session.request("GetCurrentProgramScene", {})
+        scene = cur.get("currentProgramSceneName") or cur.get("sceneName")
+        src_out = []
+        for sc, src in sources:
+            try:
+                sid = session.request(
+                    "GetSceneItemId",
+                    {"sceneName": sc, "sourceName": src}).get("sceneItemId")
+                enabled = session.request(
+                    "GetSceneItemEnabled",
+                    {"sceneName": sc, "sceneItemId": sid}).get("sceneItemEnabled")
+            except Exception:                         # noqa: BLE001 — per-item best effort
+                enabled = None
+            src_out.append({"scene": sc, "source": src, "enabled": enabled})
+        aud_out = []
+        for name in inputs:
+            try:
+                muted = session.request(
+                    "GetInputMute", {"inputName": name}).get("inputMuted")
+                vol = session.request(
+                    "GetInputVolume", {"inputName": name}).get("inputVolumeDb")
+            except Exception:                         # noqa: BLE001 — per-item best effort
+                muted, vol = None, None
+            aud_out.append({"input": name, "muted": muted, "volumeDb": vol})
+        return {"scene": scene, "sources": src_out, "audio": aud_out}, ""
+    except Exception as exc:                          # noqa: BLE001 — best-effort contract
+        return None, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
 def reflect_feed_state(live, do_cut, scene=STINT_SCENE, sources=None,
                        host="127.0.0.1", port=None, password=None, timeout=2.0):
     """Reflect which feed (A/B) is on air into OBS: show/hide the Stint-scene
