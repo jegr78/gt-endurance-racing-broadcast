@@ -12,7 +12,7 @@
   racecast event start --stint N             # takeover: stint N is on air now — the relay starts there
   racecast event start --qualifying          # bring up in qualifying mode (Feed A serves the Qualifying tab)
   racecast event start --force               # skip the pre-flight gate (start despite missing SHEET_ID/graphics)
-  racecast event takeover <A-ip> [--stint N]  # take over from another producer: read A's on-air stint+league, pull chat, bring up at that stint
+  racecast event takeover <A-ip> [--funnel] [--stint N]  # take over from another producer: read A's on-air stint+league, pull chat, bring up at that stint; --funnel <magicdns-host> pulls state over the public Funnel using the league COCKPIT_SECRET
   racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
   racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD incl. timer)
   racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
@@ -1418,6 +1418,35 @@ def _relay_fetch_json(url, timeout=3):
         return json.loads(r.read().decode("utf-8"))
 
 
+def _active_cockpit_secret():
+    """The active league's COCKPIT_SECRET from the resolved profile env ('' if unset).
+    Same league = same secret (it travels with `profile export`), so producer B already
+    holds A's secret — no typing needed for a same-league takeover."""
+    _apply_active_profile_env()
+    return (os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip()
+
+
+def _funnel_takeover_base(host):
+    """`https://<magicdns-host>/console/takeover` from a MagicDNS host or a pasted URL.
+    Strips any scheme and trailing path (e.g. '.../console') the operator pasted."""
+    host = (host or "").strip()
+    if "://" in host:
+        host = host.split("://", 1)[1]
+    host = host.split("/", 1)[0].rstrip("/")
+    return "https://%s/console/takeover" % host
+
+
+def _takeover_get(url, secret=None, timeout=5):
+    """GET a (funnel) takeover endpoint with the step-up secret header. Raises
+    urllib HTTPError on 401/403 (bad secret) so the caller can distinguish auth
+    rejection from a network failure."""
+    import urllib.request
+    headers = {"X-Cockpit-Secret": secret} if secret else {}
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
 def _relay_post_json(url, payload, timeout=3):
     """POST a JSON body to a relay control-server endpoint and parse its JSON
     reply (the write sibling of _relay_fetch_json)."""
@@ -2493,29 +2522,51 @@ def event_takeover(rest):
     stack up at that stint via `event start`. The broadcast-output switch (stream
     key) stays a crew procedure."""
     if not rest or rest[0].startswith("-"):
-        sys.exit("usage: racecast event takeover <A-tailscale-ip> [--stint N] "
+        sys.exit("usage: racecast event takeover <A-tailscale-ip> [--funnel] [--stint N] "
                  "[--qualifying] [--port N] [--force]")
     host, args = rest[0], rest[1:]
     force = "--force" in args
     qualifying_flag = "--qualifying" in args
+    funnel = "--funnel" in args
     port = _takeover_port(args)
     stint_tokens = _stint_args(args)        # validates 1-based int (sys.exit on bad)
     stint_override = int(stint_tokens[1]) if stint_tokens else None
 
+    secret = _active_cockpit_secret() if funnel else None
+    if funnel and not secret:
+        sys.exit("racecast: --funnel takeover needs the league COCKPIT_SECRET in your "
+                 "active profile (same league as A). Set it, or use the tailnet IP.")
+    base = _funnel_takeover_base(host) if funnel else None
+
     status = None
-    try:
-        fetched = _relay_fetch_json(f"http://{host}:{port}/status")
-        status = fetched if isinstance(fetched, dict) else None
-    except Exception:
-        status = None
+    if funnel:
+        try:
+            fetched = _takeover_get(base + "/status", secret)
+            status = fetched if isinstance(fetched, dict) else None
+        except Exception as exc:
+            code = getattr(exc, "code", None)
+            if code in (401, 403):
+                sys.exit("racecast: producer A rejected the step-up secret (HTTP "
+                         f"{code}) — check the league COCKPIT_SECRET matches A's.")
+            status = None                 # network/unreachable -> fall back to --stint
+    else:
+        try:
+            fetched = _relay_fetch_json(f"http://{host}:{port}/status")
+            status = fetched if isinstance(fetched, dict) else None
+        except Exception:
+            status = None
 
     a_sheet = (status.get("league") or {}).get("sheet_id") if status else None
     block = league_guard(a_sheet, os.environ.get("RACECAST_SHEET_ID"), force)
     if block:
         sys.exit(f"racecast: {block}")
     if status is None:
-        print(f"note: producer A at {host}:{port} not reachable — relying on "
-              f"--stint and the shared sheet.")
+        if funnel:
+            print(f"note: producer A at {host} not reachable via Funnel — relying on "
+                  f"--stint and the shared sheet.")
+        else:
+            print(f"note: producer A at {host}:{port} not reachable — relying on "
+                  f"--stint and the shared sheet.")
     elif not a_sheet:
         print("note: could not verify A's league (older relay?) — proceeding.")
 
@@ -2529,14 +2580,29 @@ def event_takeover(rest):
                  "read the on-air stint off A's panel and re-run with --stint N.")
 
     try:                                    # best-effort: a chat failure must not abort
-        chat_cmd(["pull", host, "--port", str(port)])
+        if funnel:
+            payload = _takeover_get(base + "/chat", secret)
+            n = ca.apply_pulled(_chat_path(), payload)
+            _chat_reload_if_running()
+            print(f"Pulled {n} messages from A (funnel).")
+        else:
+            chat_cmd(["pull", host, "--port", str(port)])
     except SystemExit:
         print("note: chat pull failed — continuing takeover.")
+    except Exception as exc:
+        print(f"note: chat pull failed ({type(exc).__name__}) — continuing takeover.")
 
     try:                                    # best-effort: cockpit pull must not abort
-        cockpit_cmd(["pull-versions", host, "--port", str(port)])
+        if funnel:
+            payload = _takeover_get(base + "/versions", secret)
+            count = cpadm.apply_pulled(_cockpit_versions_path(), payload)
+            print(f"pulled {count} cockpit version record(s) from A (funnel).")
+        else:
+            cockpit_cmd(["pull-versions", host, "--port", str(port)])
     except SystemExit:
         print("note: cockpit-versions pull failed — continuing takeover.")
+    except Exception as exc:
+        print(f"note: cockpit-versions pull failed ({type(exc).__name__}) — continuing.")
 
     # Adopt A's on-air event title (#207), persisted to event.json BEFORE bring-up
     # so the new relay loads it (mirrors the chat pull). Best-effort, never aborts.

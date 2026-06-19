@@ -1675,6 +1675,80 @@ def t_event_takeover_pulls_event_title():
             restore()
 
 
+def t_funnel_takeover_base_builds_console_url():
+    assert m._funnel_takeover_base("producer-a.example.ts.net") == \
+        "https://producer-a.example.ts.net/console/takeover"
+    assert m._funnel_takeover_base("https://producer-a.example.ts.net/console") == \
+        "https://producer-a.example.ts.net/console/takeover"
+    assert m._funnel_takeover_base("http://producer-a.example.ts.net/") == \
+        "https://producer-a.example.ts.net/console/takeover"
+
+
+def t_event_takeover_funnel_requires_secret():
+    # --funnel with no COCKPIT_SECRET in the active profile -> clear abort.
+    restore = _with_env(RACECAST_COCKPIT_SECRET="", RACECAST_SHEET_ID="L1")
+    try:
+        try:
+            m.event_takeover(["producer-a.example.ts.net", "--funnel", "--stint", "3"])
+            raise AssertionError("expected SystemExit")
+        except SystemExit as e:
+            msg = str(e.code).lower() if e.code else ""
+            assert "secret" in msg or "cockpit_secret" in msg
+    finally:
+        restore()
+
+
+def t_event_takeover_funnel_auth_rejected_aborts():
+    # A 403/401 from the funnel endpoint means a bad/missing secret — abort, do NOT
+    # silently fall back (unlike a network failure).
+    import urllib.error
+    def fake_get(url, secret=None, timeout=5):
+        raise urllib.error.HTTPError(url, 403, "forbidden", {}, None)
+    restore = _with_env(RACECAST_COCKPIT_SECRET="S", RACECAST_SHEET_ID="L1")
+    orig_get, m._takeover_get = m._takeover_get, fake_get
+    orig_es, m.event_start = m.event_start, lambda a: (_ for _ in ()).throw(
+        AssertionError("event_start must not run on auth-reject"))
+    try:
+        try:
+            m.event_takeover(["producer-a.example.ts.net", "--funnel", "--stint", "3"])
+            raise AssertionError("expected SystemExit")
+        except SystemExit as e:
+            msg = str(e.code).lower() if e.code else ""
+            assert "secret" in msg or "rejected" in msg
+    finally:
+        m._takeover_get, m.event_start = orig_get, orig_es
+        restore()
+
+
+def t_event_takeover_funnel_success_calls_event_start():
+    seen = {}
+    def fake_get(url, secret=None, timeout=5):
+        seen.setdefault("urls", []).append(url)
+        seen["secret"] = secret
+        if url.endswith("/status"):
+            return {"live": {"feed": "A", "stint": 3, "mode": "race"},
+                    "league": {"sheet_id": "L1"}, "event_title": "", "timer": None}
+        if url.endswith("/chat"):
+            return {"messages": []}
+        if url.endswith("/versions"):
+            return {"versions": {}}
+        return {}
+    restore = _with_env(RACECAST_COCKPIT_SECRET="S", RACECAST_SHEET_ID="L1",
+                        RACECAST_SHEET_PUSH_URL="https://push")
+    orig_get, m._takeover_get = m._takeover_get, fake_get
+    es = {}
+    orig_es, m.event_start = m.event_start, lambda a: es.update(args=a)
+    try:
+        m.event_takeover(["producer-a.example.ts.net", "--funnel"])
+    finally:
+        m._takeover_get, m.event_start = orig_get, orig_es
+        restore()
+    assert es.get("args") == ["--stint", "3"], es           # derived from A's live.stint
+    assert all(u.startswith("https://producer-a.example.ts.net/console/takeover")
+               for u in seen["urls"])
+    assert seen["secret"] == "S"                            # step-up header sent
+
+
 def t_chat_routing():
     # verb is passed through in rest; route() does not validate it (chat_cmd does)
     assert m.route(["chat", "clear"]) == {"kind": "chat", "rest": ["clear"]}
