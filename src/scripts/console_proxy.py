@@ -6,7 +6,7 @@ _proxy_companion uses. Companion >= v4.1.0 serves its UI under a sub-path when t
 injects the `Companion-custom-prefix` header WITHOUT a leading slash (bitfocus/companion
 #3503; validated on v4.3.4). Knowing nothing about tRPC/WebSocket framing, these helpers are
 unaffected by Companion upgrades. Tests: tests/test_console_proxy.py."""
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 MOUNT_PREFIX = "/console/buttons"          # the relay path prefix (strip / route)
 PREFIX_HEADER_VALUE = "console/buttons"    # the Companion-custom-prefix value (NO leading slash)
@@ -15,6 +15,16 @@ COMPANION_PREFIX_HEADER = "Companion-custom-prefix"
 # RFC 7230 hop-by-hop headers (lowercase) — never forwarded on the HTTP path.
 HOP_BY_HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
               "te", "trailer", "trailers", "transfer-encoding", "upgrade"}
+
+
+def strip_relay_token(request_path):
+    """Remove the relay's `t` auth-token query param before forwarding upstream — the relay
+    credential must never reach Companion. Path and all other query params are preserved."""
+    parts = urlsplit(request_path)
+    if not parts.query:
+        return request_path
+    kept = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "t"]
+    return urlunsplit(("", "", parts.path, urlencode(kept), ""))
 
 
 def upstream_path(request_path):

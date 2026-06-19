@@ -55,6 +55,13 @@ def t_resolve_companion_base():
     assert cp.resolve_companion_base(None, None) == "http://127.0.0.1:8000"
 
 
+def t_strip_relay_token_removes_only_t():
+    assert cp.strip_relay_token("/console/buttons/tablet?t=abc") == "/console/buttons/tablet"
+    assert cp.strip_relay_token("/console/buttons/x?a=1&t=abc&b=2") == "/console/buttons/x?a=1&b=2"
+    assert cp.strip_relay_token("/console/buttons/x") == "/console/buttons/x"
+    assert cp.strip_relay_token("/console/buttons/x?a=1") == "/console/buttons/x?a=1"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

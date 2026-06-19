@@ -2987,23 +2987,53 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
 
         def _proxy_companion(self, method):
             """Reverse-proxy a /console/buttons/* request to the local Companion (Option C,
-            #236), director-gated by the caller. HTTP here; the WebSocket (tRPC /trpc) branch
-            is added in the next task. Best-effort: never raises; unreachable Companion -> 502."""
+            #236), director-gated by the caller. HTTP and WebSocket (tRPC /trpc) paths both
+            strip the relay auth token first. Best-effort: never raises; unreachable Companion
+            -> 502."""
             import urllib.request, urllib.error
-            from urllib.parse import urlsplit, parse_qs, urlencode, urlunsplit
+            from urllib.parse import urlsplit
+            clean_path = console_proxy.strip_relay_token(self.path)   # relay token never goes upstream
             base = self._companion_base()
-            host = urlsplit(base).hostname or "127.0.0.1"
-            # Strip the relay-internal ?t= auth token before proxying — it must not
-            # reach Companion (security) and Companion ignores it anyway.
-            parts = urlsplit(self.path)
-            qs = {k: v for k, v in parse_qs(parts.query, keep_blank_values=True).items()
-                  if k != "t"}
-            clean_path = urlunsplit(("", "", parts.path, urlencode(qs, doseq=True), ""))
+            u = urlsplit(base); host, cport = u.hostname or "127.0.0.1", u.port or 8000
+            if console_proxy.is_websocket_upgrade(self.headers):
+                import socket, select
+                try:
+                    up = socket.create_connection((host, cport), timeout=5)
+                except OSError as e:
+                    LOG.warning("Companion WS connect failed: %s", e)
+                    return self._send({"error": "Companion not reachable"}, 502)
+                # Replay the upgrade: rewritten+token-stripped path, upgrade headers forwarded
+                # RAW (Upgrade/Connection/Sec-WebSocket-* must survive), prefix injected.
+                hdrs = {k: v for k, v in self.headers.items()
+                        if k.lower() not in ("host", "accept-encoding")}
+                hdrs["Host"] = "%s:%d" % (host, cport)
+                hdrs[console_proxy.COMPANION_PREFIX_HEADER] = console_proxy.PREFIX_HEADER_VALUE
+                raw = ("GET %s HTTP/1.1\r\n" % console_proxy.upstream_path(clean_path)
+                       + "".join("%s: %s\r\n" % kv for kv in hdrs.items()) + "\r\n")
+                up.sendall(raw.encode("latin-1"))
+                client = self.connection
+                try:
+                    while True:
+                        r, _, _ = select.select([client, up], [], [], 120)
+                        if not r:
+                            break
+                        for s in r:
+                            chunk = s.recv(65536)
+                            if not chunk:
+                                raise ConnectionError
+                            (up if s is client else client).sendall(chunk)
+                except Exception:
+                    pass  # normal on client/upstream disconnect
+                finally:
+                    up.close()
+                self.close_connection = True
+                return None
+            # --- HTTP path (token-stripped clean_path forwarded upstream) ---
             url = base.rstrip("/") + console_proxy.upstream_path(clean_path)
             length = int(self.headers.get("Content-Length") or 0)
             data = self.rfile.read(length) if length else None
             hdrs = console_proxy.forward_request_headers(
-                self.headers, host="%s:%d" % (host, urlsplit(base).port or 8000))
+                self.headers, host="%s:%d" % (host, cport))
             req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
             try:
                 with urllib.request.urlopen(req, timeout=10) as resp:

@@ -417,6 +417,69 @@ def t_buttons_health_shape_and_director_gated():
         srv.shutdown()
 
 
+import socket as _socket
+
+
+class _WSStub:
+    last_request = b""
+
+
+def _ws_echo_stub():
+    """Raw-socket upstream: records the handshake request line, completes a 101, echoes bytes."""
+    srv = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    srv.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", 0)); srv.listen(1)
+    def serve():
+        while True:
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return
+            data = b""
+            while b"\r\n\r\n" not in data:
+                chunk = conn.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+            _WSStub.last_request = data
+            conn.sendall(b"HTTP/1.1 101 Switching Protocols\r\n"
+                         b"Upgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
+            try:
+                while True:
+                    b = conn.recv(4096)
+                    if not b:
+                        break
+                    conn.sendall(b)
+            except OSError:
+                pass  # client disconnected — normal echo-stub teardown
+            conn.close()
+    threading.Thread(target=serve, daemon=True).start()
+    return srv
+
+
+def t_buttons_ws_passthrough_and_strips_token():
+    up = _ws_echo_stub(); upurl = f"http://127.0.0.1:{up.getsockname()[1]}"
+    srv = _serve(companion_url=upurl); port = srv.server_address[1]
+    try:
+        c = _socket.create_connection(("127.0.0.1", port), timeout=5)
+        req = ("GET /console/buttons/trpc?t=%s HTTP/1.1\r\n"
+               "Host: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+               "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+               "Sec-WebSocket-Version: 13\r\n\r\n") % _tok("bob")
+        c.sendall(req.encode())
+        resp = c.recv(4096)
+        assert resp.split(b"\r\n")[0].endswith(b"101 Switching Protocols"), resp
+        c.sendall(b"hello-trpc")
+        assert c.recv(4096) == b"hello-trpc"
+        c.close()
+        # The upstream handshake must hit /trpc with the relay token stripped.
+        first_line = _WSStub.last_request.split(b"\r\n")[0]
+        assert first_line.startswith(b"GET /trpc"), first_line
+        assert b"t=" not in first_line, first_line
+    finally:
+        srv.shutdown(); up.close()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
