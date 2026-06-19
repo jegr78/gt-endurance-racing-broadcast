@@ -63,7 +63,7 @@
       fetch(RC_API('/buttons/health')).then(function (r) { return r.json(); }).then(function (h) {
         if (h.ok) {
           out.push('<a class="card" target="_blank" rel="noopener" href="' +
-            RC_API('/buttons/') + '"><div class="t">Companion Buttons</div>' +
+            RC_API('/buttons/tablet') + '"><div class="t">Companion Buttons</div>' +
             '<div class="d">Your physical Companion button page, in the browser</div></a>');
         } else if (h.reachable) {
           out.push('<div class="card" style="opacity:.5"><div class="t">Companion Buttons</div>' +

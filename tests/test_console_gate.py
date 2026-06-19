@@ -530,7 +530,8 @@ def t_console_launcher_has_buttons_wiring_for_director():
         code, body = _get(port, "/console", _tok("bob"))   # director
         assert code == 200, (code, body)
         assert "/buttons/health" in body, body
-        assert "RC_API('/buttons/')" in body, body
+        # The card lands on the web-buttons page (/tablet), not Companion's admin root.
+        assert "RC_API('/buttons/tablet')" in body, body
     finally:
         srv.shutdown()
 
