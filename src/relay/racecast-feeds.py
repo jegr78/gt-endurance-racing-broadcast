@@ -3055,6 +3055,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return ["cockpit", "chat", "data"]
                 if sub == ["submit"]:
                     return ["cockpit", "submit"]
+                if sub == ["takeover", "chat"]:
+                    return ["chat", "data"]          # full history, gated producer+step-up
+                if sub == ["takeover", "versions"]:
+                    return ["cockpit", "versions"]   # secret already step-up-verified above
                 return sub
             if outcome == console_policy.STEP_UP_REQUIRED:
                 self._send({"error": "step-up required"}, 403)
@@ -3105,6 +3109,18 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if timer_store: base["timer"] = timer_store.summary()
                     base["event_title"] = event_store.get() if event_store else ""
                     return self._send(base)
+                if p == ["takeover", "status"]:
+                    # Funnel-exposed (producer + step-up via _console_gate). Redacted:
+                    # ONLY the fields a takeover needs — NEVER the feeds/pov stream URLs
+                    # that the tailnet /status carries (this leaves the tailnet).
+                    full = relay.status()
+                    return self._send({
+                        "live": full.get("live"),
+                        "league": full.get("league"),
+                        "mode": full.get("mode"),
+                        "event_title": event_store.get() if event_store else "",
+                        "timer": timer_store.summary() if timer_store else None,
+                    })
                 if p == ["panel"]:
                     if not panel_path: return self._send({"error":"panel disabled"}, 404)
                     return self._send_page(panel_path, "")

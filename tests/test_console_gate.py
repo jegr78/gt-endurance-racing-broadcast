@@ -264,6 +264,53 @@ def t_console_launcher_links_are_mount_absolute():
         srv.shutdown()
 
 
+def t_takeover_status_needs_producer_and_step_up():
+    # No token -> 401; producer token WITHOUT the secret -> 403 step-up; producer
+    # token WITH the secret -> 200 and a REDACTED body (no feed stream URLs).
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, _ = _get(port, "/console/takeover/status")                          # no auth
+        assert code == 401, code
+        code, _ = _get(port, "/console/takeover/status", _tok("carol"))           # no secret
+        assert code == 403, code
+        code, body = _get(port, "/console/takeover/status", _tok("carol"), SECRET)
+        assert code == 200, (code, body)
+        blob = json.loads(body)
+        assert "live" in blob and "league" in blob, blob
+        # Redaction: the public takeover status must NOT carry the feed map or stream URLs.
+        assert "feeds" not in blob and "pov" not in blob, blob
+        serialised = json.dumps(blob)
+        assert "youtube" not in serialised.lower() and "http" not in serialised.lower(), serialised
+    finally:
+        srv.shutdown()
+
+
+def t_takeover_director_without_producer_is_forbidden():
+    # A director (no producer role) is rejected even with the step-up secret.
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, _ = _get(port, "/console/takeover/status", _tok("bob"), SECRET)
+        assert code == 403, code
+    finally:
+        srv.shutdown()
+
+
+def t_takeover_chat_and_versions_gated_and_routed():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console/takeover/chat", _tok("carol"), SECRET)
+        assert code == 200, (code, body)
+        assert "messages" in json.loads(body), body
+        code, body = _get(port, "/console/takeover/versions", _tok("carol"), SECRET)
+        assert code == 200, (code, body)
+        assert "versions" in json.loads(body), body
+        # Without the step-up secret both are 403.
+        assert _get(port, "/console/takeover/chat", _tok("carol"))[0] == 403
+        assert _get(port, "/console/takeover/versions", _tok("carol"))[0] == 403
+    finally:
+        srv.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
