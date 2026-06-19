@@ -1716,19 +1716,25 @@ def t_set_env_key_preserves_other_keys():
 
 def t_route_cockpit():
     assert m.route(["cockpit", "links"]) == {"kind": "cockpit", "rest": ["links"]}
-    assert m.route(["cockpit", "funnel", "on"]) == {
-        "kind": "cockpit", "rest": ["funnel", "on"]}
     assert m.route(["cockpit", "token", "revoke", "Alpha"]) == {
         "kind": "cockpit", "rest": ["token", "revoke", "Alpha"]}
-    # cockpit validates the verb at route() time (unlike chat); the removed
-    # enable/disable verbs (zero-config now) are rejected like any unknown verb
+    # `funnel` is no longer a cockpit verb (#216 — it is a top-level command now);
+    # like the removed enable/disable verbs it is rejected at route() time.
     for bad in (["cockpit"], ["cockpit", "bogus"], ["cockpit", "enable"],
-                ["cockpit", "disable"]):
+                ["cockpit", "disable"], ["cockpit", "funnel", "on"]):
         try:
             m.route(bad)
             raise AssertionError(bad)
         except ValueError:
             pass
+
+
+def t_route_funnel():
+    assert m.route(["funnel", "on"]) == {"kind": "funnel", "rest": ["on"]}
+    assert m.route(["funnel", "off"]) == {"kind": "funnel", "rest": ["off"]}
+    # Validation of on|off happens in funnel_cmd, not route(): route stays a
+    # pure pass-through for the funnel command (like chat/profile).
+    assert m.route(["funnel"]) == {"kind": "funnel", "rest": []}
 
 
 def t_cookies_twitch_routing():

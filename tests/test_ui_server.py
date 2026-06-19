@@ -176,8 +176,8 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
                                        "funnel_auto": False, "funnel_capable": True,
                                        "funnel_on": False,
                                        "links": [{"name": "Alpha",
-                                                  "internal": "http://127.0.0.1:8088/cockpit?t=x",
-                                                  "funnel": "https://h/cockpit?t=x"}]},
+                                                  "internal": "http://127.0.0.1:8088/console?t=x",
+                                                  "funnel": "https://h/console?t=x"}]},
             "cockpit_funnel": lambda on: {"ok": True, "_got": on},
             "cockpit_set_funnel_auto": lambda auto: {"ok": True, "_got": auto},
             "cockpit_revoke": lambda streamer: {"ok": True, "_got": streamer},
@@ -1149,8 +1149,8 @@ def t_cockpit_status_route_wraps_provider():
         assert code == 200 and data["has_secret"] is True
         assert data["links"][0]["name"] == "Alpha"
         # both the public Funnel link and the internal (tailnet/loopback) link ride through
-        assert data["links"][0]["funnel"] == "https://h/cockpit?t=x"
-        assert data["links"][0]["internal"] == "http://127.0.0.1:8088/cockpit?t=x"
+        assert data["links"][0]["funnel"] == "https://h/console?t=x"
+        assert data["links"][0]["internal"] == "http://127.0.0.1:8088/console?t=x"
     finally:
         httpd.shutdown()
 
