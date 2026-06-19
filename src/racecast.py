@@ -12,7 +12,7 @@
   racecast event start --stint N             # takeover: stint N is on air now — the relay starts there
   racecast event start --qualifying          # bring up in qualifying mode (Feed A serves the Qualifying tab)
   racecast event start --force               # skip the pre-flight gate (start despite missing SHEET_ID/graphics)
-  racecast event takeover <A-ip> [--funnel] [--stint N]  # take over from another producer: read A's on-air stint+league, pull chat, bring up at that stint; --funnel <magicdns-host> pulls state over the public Funnel using the league COCKPIT_SECRET
+  racecast event takeover <A-ip> [--funnel] [--stint N]  # take over from another producer: read A's on-air stint+league, pull chat, bring up at that stint; --funnel <magicdns-host> pulls state over the public Funnel using the league CONSOLE_SECRET
   racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
   racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD incl. timer)
   racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
@@ -195,7 +195,7 @@ def _profile_env_vars(rc):
              ("RACECAST_OUTRO_URL", rc.outro_url),
              ("RACECAST_DISCORD_WEBHOOK_URL", rc.discord_webhook_url),
              ("RACECAST_OBS_COLLECTION", rc.obs_collection),
-             ("RACECAST_COCKPIT_SECRET", rc.cockpit_secret),
+             ("RACECAST_CONSOLE_SECRET", rc.console_secret),
              ("RACECAST_EVENT_TITLE", rc.event_title))
     return {k: v for k, v in pairs if v}
 
@@ -1228,7 +1228,8 @@ def _cockpit_pull_versions(args):
     # The endpoint authenticates on the shared league secret (same league = same
     # secret, which travels with the profile). We send OUR secret; A validates it.
     _apply_active_profile_env()
-    secret = os.environ.get("RACECAST_COCKPIT_SECRET") or ""
+    secret = (os.environ.get("RACECAST_CONSOLE_SECRET") or
+              os.environ.get("RACECAST_COCKPIT_SECRET") or "")
     import urllib.request
     req = urllib.request.Request(f"http://{host}:{port}/cockpit/versions",
                                  headers={"X-Console-Secret": secret})
@@ -1249,7 +1250,7 @@ def _cockpit_pull_versions(args):
 
 
 def _ensure_active_cockpit_secret():
-    """Zero-config cockpit: make sure the active league has a COCKPIT_SECRET so the
+    """Zero-config cockpit: make sure the active league has a CONSOLE_SECRET so the
     relay can mint/verify tokens without an explicit setup step, and mirror it into
     os.environ so a spawned relay inherits it. Generates a random per-league secret
     in profile.env on first use; idempotent; respects an already-set secret (so an
@@ -1257,7 +1258,8 @@ def _ensure_active_cockpit_secret():
     profile — never the shipped 'example' profile and never a non-existent one.
     Best-effort: returns the secret or None and never raises."""
     try:
-        env_val = (os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip()
+        env_val = (os.environ.get("RACECAST_CONSOLE_SECRET") or
+                   os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip()
         if env_val:
             return env_val
         import secrets
@@ -1265,14 +1267,15 @@ def _ensure_active_cockpit_secret():
         if not name or name == "example" or not ppath or not os.path.exists(ppath):
             return None
         with open(ppath, encoding="utf-8") as fh:
-            existing = parse_env_text(fh.read()).get("COCKPIT_SECRET", "")
+            parsed = parse_env_text(fh.read())
+            existing = parsed.get("CONSOLE_SECRET") or parsed.get("COCKPIT_SECRET", "")
         if existing:                       # already provisioned (or exported) -> reuse
-            os.environ["RACECAST_COCKPIT_SECRET"] = existing
+            os.environ["RACECAST_CONSOLE_SECRET"] = existing
             return existing
         fresh = secrets.token_hex(32)      # first use on this league -> generate + persist
-        if not _set_env_key(ppath, "COCKPIT_SECRET", fresh).get("ok"):
+        if not _set_env_key(ppath, "CONSOLE_SECRET", fresh).get("ok"):
             return None
-        os.environ["RACECAST_COCKPIT_SECRET"] = fresh
+        os.environ["RACECAST_CONSOLE_SECRET"] = fresh
         return fresh
     except Exception:
         return None
@@ -1281,7 +1284,7 @@ def _ensure_active_cockpit_secret():
 def cockpit_cmd(rest):
     """`racecast cockpit token|setup-funnel|pull-versions` — manage the
     talent Commentator Cockpit (issue #191). The cockpit is zero-config: a per-league
-    COCKPIT_SECRET is auto-generated on first relay start and the relay serves
+    CONSOLE_SECRET is auto-generated on first relay start and the relay serves
     /cockpit whenever one exists (token-gated). PUBLIC exposure is the top-level
     `racecast funnel` command. Console links (Crew ∪ Schedule) are issued via the
     top-level `racecast links` command (#216)."""
@@ -1419,11 +1422,12 @@ def _relay_fetch_json(url, timeout=3):
 
 
 def _active_cockpit_secret():
-    """The active league's COCKPIT_SECRET from the resolved profile env ('' if unset).
+    """The active league's CONSOLE_SECRET from the resolved profile env ('' if unset).
     Same league = same secret (it travels with `profile export`), so producer B already
     holds A's secret — no typing needed for a same-league takeover."""
     _apply_active_profile_env()
-    return (os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip()
+    return (os.environ.get("RACECAST_CONSOLE_SECRET") or
+            os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip()
 
 
 def _funnel_takeover_base(host):
@@ -2534,7 +2538,7 @@ def event_takeover(rest):
 
     secret = _active_cockpit_secret() if funnel else None
     if funnel and not secret:
-        sys.exit("racecast: --funnel takeover needs the league COCKPIT_SECRET in your "
+        sys.exit("racecast: --funnel takeover needs the league CONSOLE_SECRET in your "
                  "active profile (same league as A). Set it, or use the tailnet IP.")
     base = _funnel_takeover_base(host) if funnel else None
 
@@ -2547,7 +2551,7 @@ def event_takeover(rest):
             code = getattr(exc, "code", None)
             if code in (401, 403):
                 sys.exit("racecast: producer A rejected the step-up secret (HTTP "
-                         f"{code}) — check the league COCKPIT_SECRET matches A's.")
+                         f"{code}) — check the league CONSOLE_SECRET matches A's.")
             status = None                 # network/unreachable -> fall back to --stint
     else:
         try:

@@ -224,20 +224,40 @@ def t_resolve_config_discord_webhook_from_field():
         assert cfg.discord_webhook_url == "https://discord.com/api/webhooks/1/tok"
 
 
-def t_resolve_config_cockpit_secret_from_field():
+def t_resolve_config_console_secret_from_new_key():
+    """New CONSOLE_SECRET key resolves to cfg.console_secret."""
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
-        _mkprofile(root, "demo", "NAME=Demo\nSHEET_ID=abc\nCOCKPIT_SECRET=s3cr3t\n")
+        _mkprofile(root, "demo", "NAME=Demo\nSHEET_ID=abc\nCONSOLE_SECRET=s3cr3t\n")
         cfg = m.resolve_config(root, environ={})
-        assert cfg.cockpit_secret == "s3cr3t"
+        assert cfg.console_secret == "s3cr3t"
 
 
-def t_resolve_config_cockpit_secret_blank_when_absent():
+def t_resolve_config_console_secret_back_compat_legacy_key():
+    """Back-compat: old COCKPIT_SECRET key still resolves to cfg.console_secret."""
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo", "NAME=Demo\nSHEET_ID=abc\nCOCKPIT_SECRET=legacy\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.console_secret == "legacy"
+
+
+def t_resolve_config_console_secret_new_key_wins_over_legacy():
+    """When both keys present, CONSOLE_SECRET wins over COCKPIT_SECRET."""
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo",
+                   "NAME=Demo\nSHEET_ID=abc\nCOCKPIT_SECRET=old\nCONSOLE_SECRET=new\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.console_secret == "new"
+
+
+def t_resolve_config_console_secret_blank_when_absent():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
         _mkprofile(root, "demo", "NAME=Demo\nSHEET_ID=abc\n")
         cfg = m.resolve_config(root, environ={})
-        assert cfg.cockpit_secret == ""
+        assert cfg.console_secret == ""
 
 
 def t_resolve_config_event_title_from_field():

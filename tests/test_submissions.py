@@ -243,7 +243,7 @@ def _client(secret=SECRET, rows=None, live_idx=0,
 
     store = m.SubmissionStore(submission_path, audit_path) if submission_path else None
     sc = _Setup() if setup_ctl == "default" else setup_ctl
-    handler = m.make_handler(_Relay(), setup_ctl=sc, cockpit_secret=secret,
+    handler = m.make_handler(_Relay(), setup_ctl=sc, console_secret=secret,
                              submission_store=store)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     _t.Thread(target=srv.serve_forever, daemon=True).start()

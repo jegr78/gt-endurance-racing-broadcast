@@ -219,7 +219,7 @@ def _cockpit_client(secret="sek", rows=None, live_idx=0,
             return {"schedule_len": len(self.source.get_rows())}
 
     handler = m.make_handler(_Relay(), chat_store=chat_store, timer_store=timer_store,
-                             cockpit_page_path=page_path, cockpit_secret=secret,
+                             cockpit_page_path=page_path, console_secret=secret,
                              cockpit_versions_path=versions_path)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     _t.Thread(target=srv.serve_forever, daemon=True).start()
@@ -258,7 +258,7 @@ def t_data_requires_auth():
 
 
 def t_data_without_secret_is_404():
-    # No COCKPIT_SECRET configured -> cockpit not served (every /cockpit/* 404s).
+    # No CONSOLE_SECRET configured -> cockpit not served (every /cockpit/* 404s).
     srv, get, _post = _cockpit_client(secret=None)
     try:
         tok = ca.mint_token("sek", "alpha-racing")

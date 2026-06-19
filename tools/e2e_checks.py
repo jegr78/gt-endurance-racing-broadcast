@@ -360,12 +360,12 @@ def _load_set_env_key():
 
 
 def check_enable_preserves_keys(_ctx=None):
-    """#191 regression: provisioning COCKPIT_SECRET must NOT wipe other profile.env
+    """#191 regression: provisioning CONSOLE_SECRET must NOT wipe other profile.env
     keys. The bug was a single-pair write through the full-set merge_env_text (any
     key not re-passed was dropped). This is the exact seam the zero-config
     auto-provision (`_ensure_active_cockpit_secret`) uses —
     `racecast._set_env_key(path, key, value)` — exercised against a temp profile.env
-    carrying several keys; assert every pre-existing key survives + COCKPIT_SECRET added.
+    carrying several keys; assert every pre-existing key survives + CONSOLE_SECRET added.
 
     Self-contained: its own tempfile fixture, no relay, no repo profiles/, no
     side effects — so it is safe to run anywhere (incl. SYNTHETIC_CHECKS)."""
@@ -384,7 +384,7 @@ def check_enable_preserves_keys(_ctx=None):
             fh.write("# league config\n")
             for k, v in pre.items():
                 fh.write(f"{k}={v}\n")
-        res = rc._set_env_key(ppath, "COCKPIT_SECRET", "deadbeef" * 8)
+        res = rc._set_env_key(ppath, "CONSOLE_SECRET", "deadbeef" * 8)
         if not res.get("ok"):
             return CheckResult("enable_preserves_keys", "fail",
                                f"_set_env_key failed: {res.get('error')}")
@@ -394,11 +394,11 @@ def check_enable_preserves_keys(_ctx=None):
             if after.get(k) != v:
                 return CheckResult("enable_preserves_keys", "fail",
                                    f"key {k!r} clobbered: was {v!r}, now {after.get(k)!r}")
-        if not after.get("COCKPIT_SECRET"):
+        if not after.get("CONSOLE_SECRET"):
             return CheckResult("enable_preserves_keys", "fail",
-                               "COCKPIT_SECRET was not added")
+                               "CONSOLE_SECRET was not added")
         return CheckResult("enable_preserves_keys", "pass",
-                           f"{len(pre)} keys preserved + COCKPIT_SECRET added")
+                           f"{len(pre)} keys preserved + CONSOLE_SECRET added")
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

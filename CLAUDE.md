@@ -147,7 +147,7 @@ python3 src/racecast.py --profile NAME <command>  # run ONE command against a no
 python3 src/racecast.py event status      # event-day readiness report (apps + services + assets)
 python3 src/racecast.py event start       # bring everything up (Tailscale, Discord, relay, OBS, Companion); --stint N = mid-event takeover (stint N is on air; /set/stint/<n> corrects later); --qualifying = qualifying mode (Feed A serves the Qualifying tab; switch live via /mode/race|/mode/qualifying or the panel); --title "…" = free-text event title shown in Panel/Cockpit/Discord (#207; also editable live in the panel, persisted to runtime/<profile>/event.json, pulled from producer A at takeover)
 python3 src/racecast.py event takeover <A-ip> [--stint N]  # take over from A over the tailnet: read on-air stint+league from /status, pull chat+cockpit-versions, bring up at that stint
-python3 src/racecast.py event takeover <A-magicdns-host> --funnel [--stint N]  # same but over the public Funnel — no Tailscale account needed on B; authenticated with the shared league COCKPIT_SECRET (step-up via X-Console-Secret header); calls /console/takeover/{status,chat,versions}; status is redacted (live/league/event_title/timer/mode only — feed stream URLs never leave the tailnet)
+python3 src/racecast.py event takeover <A-magicdns-host> --funnel [--stint N]  # same but over the public Funnel — no Tailscale account needed on B; authenticated with the shared league CONSOLE_SECRET (step-up via X-Console-Secret header); calls /console/takeover/{status,chat,versions}; status is redacted (live/league/event_title/timer/mode only — feed stream URLs never leave the tailnet)
 python3 src/racecast.py event stop        # stop racecast services; GUI apps keep running
 python3 src/racecast.py tailscale up|down|status  # connect/disconnect/inspect Tailscale (event start connects automatically)
 python3 src/racecast.py obs refresh       # force-reload the relay-served OBS browser sources (HUD/timer)
@@ -413,8 +413,10 @@ crew chat (identity forced to the token's streamer), and a read-only timer. It i
 `127.0.0.1:8088` — the rest of the relay stays tailnet/loopback-only and is **never**
 funnelled (the security boundary). Funnel passes no Tailscale identity, so auth is 100%
 server-side: a per-commentator token `<streamer_key>.<version>.<sig>` signed with a
-**per-league** `COCKPIT_SECRET` (`profiles/<name>/profile.env`, travels with `profile
-export`); revocation bumps a streamer's version in `runtime/<profile>/cockpit-versions.json`.
+**per-league** `CONSOLE_SECRET` (`profiles/<name>/profile.env`, travels with `profile
+export`; the legacy `COCKPIT_SECRET` key is still read as a fallback for one release so
+existing leagues and exports keep working); revocation bumps a streamer's version in
+`runtime/<profile>/cockpit-versions.json`.
 The cockpit is **zero-config**: the secret is **auto-provisioned** by the CLI on first relay
 start (`_ensure_active_cockpit_secret` in `src/racecast.py`, idempotent, never the shipped
 `example` profile), so `/cockpit/*` is live **whenever a secret exists** — there is no
@@ -443,7 +445,7 @@ beyond the existing `/console` mount):
   as `/cockpit/versions`).
 
 All three require the **step-up** `X-Console-Secret` header (legacy name `X-Cockpit-Secret`
-still accepted for one release) carrying the shared per-league `COCKPIT_SECRET` (producer-level
+still accepted for one release) carrying the shared per-league `CONSOLE_SECRET` (producer-level
 auth — the same secret that signs commentator tokens). A
 wrong secret returns HTTP 403; the client aborts loudly. A network failure falls back to the
 local `--stint N` bringup. On success, B's relay is brought up via the normal `event start`
@@ -587,7 +589,7 @@ guaranteed `finally` teardown — no leaked relays/UI even on failure). Two mode
   CI job** (`.github/workflows/ci.yml`, ubuntu) runs exactly this; the matrix `test` job
   already runs `tests/test_e2e.py` via `run-tests.py`.
 - **Real-league** (`--real-league NAME`, **local only — refuses under CI**): drives the
-  copied real-league dev build (real Sheet/cookies/`COCKPIT_SECRET`), minting a token for
+  copied real-league dev build (real Sheet/cookies/`CONSOLE_SECRET`), minting a token for
   a real streamer pulled live from `/schedule/data`. Runs a **non-mutating** subset
   (`REAL_LEAGUE_CHECKS`): it **excludes** `check_submission_pending` (a `POST
   /cockpit/submit` could ping the league's real Discord webhook) and
