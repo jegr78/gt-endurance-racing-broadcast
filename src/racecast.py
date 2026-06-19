@@ -3412,16 +3412,20 @@ def _cockpit_internal_host(ip):
 
 def crew_entries_data():
     """Crew roster for the Control Center, read live from the running relay's
-    /crew/data. {ok, entries:[{name,director,producer}]} or {ok:false, error}."""
+    /crew/data. {ok, entries:[{row,name,director,producer}]} or {ok:false, error}."""
     try:
         data = _relay_fetch_json("http://127.0.0.1:%d/crew/data" % RELAY_PORT)
     except Exception as exc:
         return {"ok": False,
                 "error": "relay not reachable (start the relay): %s" % exc}
-    entries = [{"name": row.get("name", ""),
+    # Each entry carries its 1-based crew DATA-row index (the Crew tab order, header
+    # excluded) so the editor can address it on Save/Delete — the relay's /crew/data
+    # is index-free, and crew_set/crew_delete are keyed by this row.
+    entries = [{"row": i,
+                "name": row.get("name", ""),
                 "director": bool(row.get("director")),
                 "producer": bool(row.get("producer"))}
-               for row in (data.get("rows") or [])]
+               for i, row in enumerate(data.get("rows") or [], start=1)]
     return {"ok": True, "entries": entries}
 
 

@@ -2260,8 +2260,13 @@ def t_crew_entries_data_maps_relay_rows():
     finally:
         m._relay_fetch_json = orig
     assert out["ok"] is True, out
-    assert out["entries"] == [{"name": "Dana", "director": True, "producer": False},
-                              {"name": "Pia", "director": False, "producer": True}]
+    # Each entry carries a 1-based crew DATA-row index so the editor can Save/Delete
+    # a sheet-loaded row (regression: /crew/data is index-free — without this the UI
+    # sends row=undefined and every edit of an existing person fails).
+    assert out["entries"] == [
+        {"row": 1, "name": "Dana", "director": True, "producer": False},
+        {"row": 2, "name": "Pia", "director": False, "producer": True}]
+    assert [e["row"] for e in out["entries"]] == [1, 2]
     assert seen["url"].endswith("/crew/data")
 
 
