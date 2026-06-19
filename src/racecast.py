@@ -3295,7 +3295,7 @@ def _cockpit_setup_funnel(args):
     if not plan:
         print("Funnel prerequisites already satisfied: MagicDNS on, 'funnel' nodeAttr "
               "present.\nReminder: also enable HTTPS Certificates (DNS page) — no API "
-              "for that.\nThen: racecast cockpit funnel on")
+              "for that.\nThen: racecast funnel on")
         return None
     print("Funnel setup — changes needed:")
     for step in plan:
@@ -3323,7 +3323,7 @@ def _cockpit_setup_funnel(args):
                  "(MagicDNS may have applied; the policy was not changed if the ACL "
                  "step failed. Re-run, or finish in the admin console.)")
     print("\nDone. Reminder: enable HTTPS Certificates in the admin console (DNS "
-          "page) if not already.\nThen: racecast cockpit funnel on")
+          "page) if not already.\nThen: racecast funnel on")
     return None
 
 
