@@ -3330,7 +3330,7 @@ def _cockpit_setup_funnel(args):
 def _funnel_auto_enabled():
     """Opt-in: bring the public /console Funnel up on `event start`. Requires the
     machine flag RACECAST_FUNNEL (legacy RACECAST_COCKPIT_FUNNEL still honored for
-    one release) AND the cockpit actually usable (a league secret + enabled) —
+    one release) AND the cockpit actually usable (a per-league secret exists) —
     reads on-disk truth via cockpit_status_data()."""
     epath = _env_file()
     if not os.path.exists(epath):
@@ -3341,7 +3341,10 @@ def _funnel_auto_enabled():
     if flag.strip().lower() not in ("1", "true", "yes", "on"):
         return False
     st = cockpit_status_data()
-    return bool(st.get("ok") and st.get("enabled") and st.get("has_secret"))
+    # Zero-config cockpit has no separate "enable" flag — usability == a league
+    # secret exists. (cockpit_status_data() returns ok/has_secret, never an
+    # "enabled" key; gating on the latter silently dead-ended this path. #216.)
+    return bool(st.get("ok") and st.get("has_secret"))
 
 
 def _cockpit_roster_safe():

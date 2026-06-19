@@ -1737,6 +1737,47 @@ def t_route_funnel():
     assert m.route(["funnel"]) == {"kind": "funnel", "rest": []}
 
 
+def t_funnel_auto_enabled_gate():
+    # _funnel_auto_enabled gates `event start` auto-bringup on the opt-in flag
+    # AND a usable cockpit. The gate reads cockpit_status_data(), whose real
+    # shape is {ok, has_secret, ...} — there is NO "enabled" key (#216 fix: a
+    # stale gate on st["enabled"] made the whole auto-enable path dead).
+    import tempfile
+    orig_env_file = m._env_file
+    orig_status = m.cockpit_status_data
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            epath = os.path.join(d, ".env")
+            m._env_file = lambda: epath
+            usable = {"ok": True, "has_secret": True}
+
+            # Opt-in flag set + usable cockpit -> True (the fix; would be False
+            # under the old st["enabled"] gate).
+            with open(epath, "w", encoding="utf-8") as fh:
+                fh.write("RACECAST_FUNNEL=true\n")
+            m.cockpit_status_data = lambda: usable
+            assert m._funnel_auto_enabled() is True
+
+            # Legacy env name still honored (one-release fallback).
+            with open(epath, "w", encoding="utf-8") as fh:
+                fh.write("RACECAST_COCKPIT_FUNNEL=on\n")
+            assert m._funnel_auto_enabled() is True
+
+            # Flag absent -> False regardless of cockpit usability.
+            with open(epath, "w", encoding="utf-8") as fh:
+                fh.write("RACECAST_FUNNEL=false\n")
+            assert m._funnel_auto_enabled() is False
+
+            # Flag set but cockpit not usable (no secret) -> False.
+            with open(epath, "w", encoding="utf-8") as fh:
+                fh.write("RACECAST_FUNNEL=true\n")
+            m.cockpit_status_data = lambda: {"ok": True, "has_secret": False}
+            assert m._funnel_auto_enabled() is False
+    finally:
+        m._env_file = orig_env_file
+        m.cockpit_status_data = orig_status
+
+
 def t_cookies_twitch_routing():
     # "twitch" as the first token selects the Twitch export
     args = m._cookies_oneshot_args(["twitch", "firefox"])
