@@ -102,7 +102,7 @@ def parse_magicdns_name(output):
 def parse_funnel_capable(output):
     """True iff `tailscale status --json` shows this node carries the Funnel
     capability — i.e. the tailnet policy granted it the 'funnel' nodeAttr (the
-    one-time admin step). Pure → unit-tested. Lets `cockpit funnel on` fail fast
+    one-time admin step). Pure → unit-tested. Lets `racecast funnel on` fail fast
     with guidance instead of hanging on the CLI's interactive enable prompt."""
     try:
         data = json.loads(output)
@@ -136,7 +136,7 @@ def funnel_capable(timeout=3):
     return False
 
 
-def parse_funnel_serving(output, path="/cockpit"):
+def parse_funnel_serving(output, path="/console"):
     """True iff `tailscale funnel status` shows *path* served via an ENABLED
     Funnel. Pure → unit-tested. 'No serve config' or the path absent -> False.
     Best-effort text parse (the CLI has no stable JSON for funnel status)."""
@@ -148,7 +148,7 @@ def parse_funnel_serving(output, path="/cockpit"):
     return "funnel on" in low and path.lower() in low
 
 
-def funnel_on(path="/cockpit", timeout=5):
+def funnel_on(path="/console", timeout=5):
     """Is *path* currently exposed via Funnel? Best-effort (same discovery as
     tailscale_backend); False on any failure."""
     for binary in _TAILSCALE_BINS:
@@ -269,14 +269,14 @@ def tailscale_down(binary, timeout=15):
 
 
 def funnel_args(path, target_port, enable):
-    """Pure: the `tailscale funnel` argv to expose ONLY *path* (e.g. /cockpit) on
+    """Pure: the `tailscale funnel` argv to expose ONLY *path* (e.g. /console) on
     public 443, reverse-proxied to the local relay, or to tear it down. Unit-
-    tested without shelling out. The target keeps the same path so /cockpit/* maps
-    1:1 onto the relay's /cockpit/* (#191).
+    tested without shelling out. The target keeps the same path so /console/* maps
+    1:1 onto the relay's /console/* (#216).
 
     Teardown uses `funnel reset`, not the path-specific `--set-path=… off` form:
     that form silently failed with "handler does not exist" and left the public
-    funnel up (#200). `racecast cockpit funnel` only ever mounts /cockpit, so
+    funnel up (#200). `racecast funnel` only ever mounts /console, so
     resetting the whole funnel config is the precise teardown here."""
     if enable:
         return ["funnel", "--bg", f"--set-path={path}",
