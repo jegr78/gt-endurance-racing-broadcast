@@ -26,7 +26,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/obs-websocket-js@5.0.6/dist/obs-ws.global.js" integrity="sha384-cFeq2Xcu17x+Az+nlYMZAaV1gxGNNfUT48om81Bp23aa9pTsmi+YXAe5XQ7Cx1s+" crossorigin="anonymous"></script>
 <style>
   /* =========================================================
      GT ENDURANCE RACING DIRECTOR CONSOLE — vision-mixer busses
@@ -308,13 +307,6 @@
 
   <div id="banners"></div>
 
-  <div class="conn">
-    <div class="fld ip"><label>OBS IP (Producer Tailscale)</label><input id="ip" placeholder="100.x.y.z"></div>
-    <div class="fld"><label>Port</label><input id="port" value="4455"></div>
-    <div class="fld pw"><label>Password</label><input id="pw" type="password" placeholder="from OBS WebSocket"></div>
-    <span class="pill go" id="connectBtn">Connect</span>
-    <span class="pill stop" id="disconnectBtn" style="display:none">Disconnect</span>
-  </div>
 
   <div class="panes">
   <div class="mainpane">
@@ -433,7 +425,7 @@
     </div>
   </details>
 
-  <div id="log">Ready. FEEDS + TIMER work relay-only; enter the Producer's Tailscale IP + OBS WebSocket password and Connect for everything else.</div>
+  <div id="log">Ready. All controls work relay-only — no OBS connection needed.</div>
 
   </div><!-- /.mainpane -->
 
@@ -539,8 +531,8 @@ const TIMER_ACTIONS = [
 ];
 
 /* ---------- plumbing ---------- */
-const obs = new OBSWebSocket();
-let connected = false, poll = null, programScene = "", refreshing = false;
+let obsState = {scene:"", sources:[], audio:[]};  // last snapshot from /obs/state
+let programScene = "", refreshing = false;
 const $ = s => document.querySelector(s);
 function log(m, kind){
   const t = new Date().toLocaleTimeString();
@@ -573,19 +565,12 @@ function toast(msg){
   setTimeout(()=>t.remove(), 6000);
 }
 
-/* remember connection details locally for convenience */
-try{
-  $("#ip").value   = localStorage.getItem("rc_ip")   || "";
-  $("#port").value = localStorage.getItem("rc_port") || "4455";
-  $("#pw").value   = localStorage.getItem("rc_pw")   || "";
-}catch(e){}
 
 /* ---------- build the busses ---------- */
-function mkKey(label, tag, onClick, obsManaged){
+function mkKey(label, tag, onClick){
   const b = document.createElement("button");
-  b.className = "k"; b.disabled = !!obsManaged;
+  b.className = "k";
   b.innerHTML = `<span class="tag">${tag}</span>${label}`;
-  if (obsManaged) b.dataset.obs = "1";
   b.addEventListener("click", onClick);
   return b;
 }
@@ -593,25 +578,22 @@ const macroKeys = [], sceneKeys = {}, toggleKeys = [];
 let povVisBtn = null;                 // the relay-driven POV visibility button (#130)
 
 CONFIG.macros.forEach(m=>{
-  const b = mkKey(m.label, "program", ()=>runMacro(m), true);
+  const b = mkKey(m.label, "program", ()=>runMacro(m));
   b._m = m; macroKeys.push(b); $("#pgmBus").appendChild(b);
 });
 
-/* RED FLAG — same combo as the Companion button: toggles the Standby Cover in
-   the Stint scene and sets/clears Race Control with it. Reads the real cover
-   state from OBS, so it always converges no matter how the cover was switched.
-   Lights red (via toggleKeys polling + .redflag.on) while the cover is up. */
+/* RED FLAG — toggles the Standby Cover in the Stint scene via the relay's
+   /obs/source endpoint, using the last-known state from /obs/state. */
 {
   const item = {scene:"Stint", source:"Standby Cover"};
-  const b = mkKey("RED FLAG", "alarm", ()=>safe(async ()=>{
-    const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:item.scene, sourceName:item.source});
-    const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:item.scene, sceneItemId});
-    const on = !sceneItemEnabled;
-    await obs.call("SetSceneItemEnabled",{sceneName:item.scene, sceneItemId, sceneItemEnabled:on});
+  const b = mkKey("RED FLAG", "alarm", async ()=>{
+    const last = obsState.sources.find(s=>s.scene===item.scene && s.source===item.source);
+    const on = last ? !last.enabled : true;
+    await obsSource(item.scene, item.source, on);
     log("RED FLAG " + (on ? "— cover up" : "over — cover down"));
     setupSet("racecontrol", on ? "Red Flag - Race Suspended" : "");
-    refresh();
-  }), true);
+    obsStatePoll();
+  });
   b.classList.add("redflag");
   b._item = item; toggleKeys.push(b); $("#pgmBus").appendChild(b);
 }
@@ -640,19 +622,19 @@ $("#feedsBus").appendChild(mkKey("FEEDS → STINT…", "correction", ()=>{
 
 CONFIG.scenes.forEach(name=>{
   const b = mkKey(name.toUpperCase(), "scene",
-    ()=>safe(()=>obs.call("SetCurrentProgramScene",{sceneName:name})), true);
+    ()=>obsScene(name));
   sceneKeys[name] = b; $("#scnBus").appendChild(b);
 });
 { const s = document.createElement("div"); s.className = "sep"; $("#scnBus").appendChild(s); }
 CONFIG.vis.forEach(item=>{
   const b = mkKey(item.label, item.scene,
-                  ()=> item.relay ? relayCall("pov/toggle") : toggleSource(item, b), true);
+                  ()=> item.relay ? relayCall("pov/toggle") : toggleSource(item, b));
   b._item = item; toggleKeys.push(b); $("#scnBus").appendChild(b);
   if (item.relay === "pov") povVisBtn = b;
 });
 
 CONFIG.graphics.forEach(item=>{
-  const b = mkKey(item.label, item.scene, ()=>toggleSource(item, b), true);
+  const b = mkKey(item.label, item.scene, ()=>toggleSource(item, b));
   b._item = item; toggleKeys.push(b); $("#gfxBus").appendChild(b);
 });
 
@@ -668,61 +650,64 @@ CONFIG.audio.forEach(a=>{
   const row = document.createElement("div"); row.className = "arow";
   row.innerHTML =
     `<span class="nm">${a.label}</span>
-     <input type="range" min="-60" max="26" step="0.5" value="0" disabled data-obs="1" data-input="${a.input}">
+     <input type="range" min="-60" max="26" step="0.5" value="0" data-input="${a.input}">
      <span class="db">— dB</span>
-     <button class="rst" disabled data-obs="1">0 dB</button>
-     <button class="mute" disabled data-obs="1" data-input="${a.input}">Mute</button>`;
+     <button class="rst">0 dB</button>
+     <button class="mute" data-input="${a.input}">Mute</button>`;
   $("#audio").appendChild(row);
   const sld = row.querySelector("input"), db = row.querySelector(".db");
   sld.addEventListener("input", e=>{
     sld.dataset.touched = Date.now();
     db.textContent = Number(e.target.value).toFixed(1) + " dB";
-    safe(()=>obs.call("SetInputVolume",{inputName:a.input, inputVolumeDb:Number(e.target.value)}));
+    obsVol(a.input, Number(e.target.value));
   });
-  row.querySelector(".rst").addEventListener("click", ()=>{
-    safe(async ()=>{ await obs.call("SetInputVolume",{inputName:a.input, inputVolumeDb:0}); refresh(); });
+  row.querySelector(".rst").addEventListener("click", async ()=>{
+    await obsVol(a.input, 0); obsStatePoll();
   });
-  row.querySelector(".mute").addEventListener("click", ()=>{
-    safe(async ()=>{ await obs.call("ToggleInputMute",{inputName:a.input}); refresh(); });
+  row.querySelector(".mute").addEventListener("click", async ()=>{
+    const last = obsState.audio.find(x=>x.input===a.input);
+    const muted = last ? !last.muted : true;
+    await obsMute(a.input, muted); obsStatePoll();
   });
 });
 
-/* ---------- OBS actions ---------- */
-async function safe(fn){ try{ await fn(); }catch(e){ log("Action failed: "+(e.message||e), "err"); } }
-
-async function setItemVisible(scene, source, on){
-  const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:scene, sourceName:source});
-  await obs.call("SetSceneItemEnabled",{sceneName:scene, sceneItemId, sceneItemEnabled:on});
+/* ---------- OBS helpers (relay-mediated; no browser→OBS-WS) ---------- */
+async function obsPost(path, body){
+  const r = await fetch(RC_API("/obs/" + path), {method:"POST", cache:"no-store",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  const d = await r.json().catch(()=>({ok:false,error:"bad response"}));
+  obsLed(r.ok && d.ok ? "ok" : "err");
+  return d;
 }
+const obsScene  = (scene)           => obsPost("scene",  {scene});
+const obsSource = (scene,source,on) => obsPost("source", {scene, source, on});
+const obsVol    = (input,db)        => obsPost("audio",  {input, db});
+const obsMute   = (input,muted)     => obsPost("audio",  {input, mute:muted});
 
 /* One press = scene + visibility + mutes, exactly like the Companion macro.
-   Each step is independent: a failing step is logged and the rest still runs
-   (a half high-pressure switch is better than none). */
+   Each step is independent; a failing step is logged and the rest still runs. */
 async function runMacro(m){
-  if(!connected) return;
   const steps = [
-    ["set scene", ()=>obs.call("SetCurrentProgramScene",{sceneName:m.scene})],
-    ...m.show.map(([sc,src])=>[`show ${src}`,  ()=>setItemVisible(sc,src,true)]),
-    ...m.hide.map(([sc,src])=>[`hide ${src}`,  ()=>setItemVisible(sc,src,false)]),
-    ...m.unmute.map(i=>[`unmute ${i}`, ()=>obs.call("SetInputMute",{inputName:i, inputMuted:false})]),
-    ...m.mute.map(i=>[`mute ${i}`,     ()=>obs.call("SetInputMute",{inputName:i, inputMuted:true})]),
+    ["set scene", ()=>obsScene(m.scene)],
+    ...m.show.map(([sc,src])=>[`show ${src}`,   ()=>obsSource(sc,src,true)]),
+    ...m.hide.map(([sc,src])=>[`hide ${src}`,   ()=>obsSource(sc,src,false)]),
+    ...m.unmute.map(i=>[`unmute ${i}`, ()=>obsMute(i,false)]),
+    ...m.mute.map(i=>[`mute ${i}`,     ()=>obsMute(i,true)]),
   ];
   for (const [what, fn] of steps){
     try{ await fn(); }
     catch(e){ log(`${m.label}: ${what} failed: ${e.message||e}`, "err"); }
   }
-  // Race Control side effect (relay, needs the sheet-write webhook) — after
-  // the cut, so the banner change never precedes the picture change.
   if (m.rc !== undefined) setupSet("racecontrol", m.rc);
-  refresh();
+  obsStatePoll();
 }
 
 async function toggleSource(item, btn){
   try{
-    const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:item.scene, sourceName:item.source});
-    const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:item.scene, sceneItemId});
-    await obs.call("SetSceneItemEnabled",{sceneName:item.scene, sceneItemId, sceneItemEnabled:!sceneItemEnabled});
-    btn.classList.toggle("on", !sceneItemEnabled);
+    const last = obsState.sources.find(s=>s.scene===item.scene && s.source===item.source);
+    const on = last ? !last.enabled : true;
+    await obsSource(item.scene, item.source, on);
+    btn.classList.toggle("on", on);
   }catch(e){ log(`Toggle "${item.source}" in "${item.scene}" failed: ${e.message||e}`, "err"); }
 }
 
@@ -739,73 +724,84 @@ async function relayCall(path){
   }catch(e){ log("Relay /" + path + " failed (relay reachable?): " + e, "err"); toast("Relay /" + path + " failed — relay unreachable"); }
 }
 
-/* ---------- OBS state refresh ---------- */
-async function refresh(){
-  if(!connected || refreshing) return;   // drop re-entrant passes (event + interval)
+/* ---------- OBS state poll (relay-mediated; replaces browser obs.call reads) -- */
+async function obsStatePoll(){
+  if (refreshing) return;
   refreshing = true;
   try{
-    try{
-      const {currentProgramSceneName} = await obs.call("GetCurrentProgramScene");
-      programScene = currentProgramSceneName;
-    }catch(e){}
+    // Build the state request from the CONFIG button maps (single source of truth).
+    const sourcesSpec = [];
+    for (const b of toggleKeys){
+      if (b._item && !b._item.relay)
+        sourcesSpec.push({scene: b._item.scene, source: b._item.source});
+    }
+    // Also include macro show-targets so the PGM bus highlights correctly.
+    for (const m of CONFIG.macros){
+      for (const [sc, src] of m.show)
+        sourcesSpec.push({scene: sc, source: src});
+    }
+    const inputsSpec = CONFIG.audio.map(a => a.input);
+
+    const d = await obsPost("state", {sources: sourcesSpec, inputs: inputsSpec});
+    if (!d.ok){ obsLed("err"); return; }
+
+    obsState = {
+      scene:   d.scene   || "",
+      sources: d.sources || [],
+      audio:   d.audio   || [],
+    };
+    programScene = obsState.scene;
+
+    // Scene buttons — highlight current program scene.
     Object.entries(sceneKeys).forEach(([n,b])=>b.classList.toggle("air", n===programScene));
 
+    // Build a quick lookup for source enabled state.
     const visState = {};
-    for(const b of toggleKeys){
-      if (b._item.relay) continue;        // relay-driven (POV): lit from /status, not OBS
-      try{
-        const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:b._item.scene, sourceName:b._item.source});
-        const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:b._item.scene, sceneItemId});
-        b.classList.toggle("on", sceneItemEnabled);
-        visState[b._item.scene + "/" + b._item.source] = sceneItemEnabled;
-      }catch(e){}
+    for (const s of obsState.sources)
+      visState[s.scene + "/" + s.source] = s.enabled;
+
+    // Vis/graphics toggle buttons.
+    for (const b of toggleKeys){
+      if (!b._item || b._item.relay) continue;
+      const key = b._item.scene + "/" + b._item.source;
+      if (key in visState) b.classList.toggle("on", visState[key]);
     }
 
-    for(const b of macroKeys){
+    // Macro (PGM) bus — light when scene is active AND all required sources are visible.
+    for (const b of macroKeys){
       const m = b._m;
       let air = programScene === m.scene;
       if (air && m.show.length){
         for (const [sc,src] of m.show){
-          const key = sc + "/" + src;
-          if (!(key in visState)){
-            try{
-              const {sceneItemId} = await obs.call("GetSceneItemId",{sceneName:sc, sourceName:src});
-              const {sceneItemEnabled} = await obs.call("GetSceneItemEnabled",{sceneName:sc, sceneItemId});
-              visState[key] = sceneItemEnabled;
-            }catch(e){ visState[key] = false; }
-          }
-          if (!visState[key]) { air = false; break; }
+          if (!visState[sc + "/" + src]) { air = false; break; }
         }
       }
       b.classList.toggle("air", !!air);
     }
 
-    for(const row of document.querySelectorAll(".arow")){
+    // Audio rows.
+    for (const row of document.querySelectorAll(".arow")){
       const input = row.querySelector("input[type=range]").dataset.input;
-      try{
-        const {inputMuted} = await obs.call("GetInputMute",{inputName:input});
-        const mbtn = row.querySelector(".mute");
-        mbtn.classList.toggle("muted", inputMuted);
-        mbtn.textContent = inputMuted ? "Muted" : "Mute";
-      }catch(e){}
-      try{
-        const {inputVolumeDb} = await obs.call("GetInputVolume",{inputName:input});
-        const sld = row.querySelector("input[type=range]");
-        if (Date.now() - Number(sld.dataset.touched||0) > 1500){
-          sld.value = Math.max(-60, Math.min(26, inputVolumeDb));
-          row.querySelector(".db").textContent =
-            (inputVolumeDb <= -60 ? "≤−60.0" : inputVolumeDb.toFixed(1)) + " dB";
-        }
-      }catch(e){}
+      const a = obsState.audio.find(x=>x.input===input);
+      if (!a) continue;
+      const mbtn = row.querySelector(".mute");
+      mbtn.classList.toggle("muted", !!a.muted);
+      mbtn.textContent = a.muted ? "Muted" : "Mute";
+      const sld = row.querySelector("input[type=range]");
+      if (Date.now() - Number(sld.dataset.touched||0) > 1500){
+        sld.value = Math.max(-60, Math.min(26, a.volumeDb));
+        row.querySelector(".db").textContent =
+          (a.volumeDb <= -60 ? "≤−60.0" : a.volumeDb.toFixed(1)) + " dB";
+      }
     }
 
     renderAir(visState);
-  }finally{ refreshing = false; }
+  }catch(e){ obsLed("err"); }
+  finally{ refreshing = false; }
 }
 
 function renderAir(visState){
   const el = $("#stAir");
-  if(!connected){ el.classList.remove("air"); el.innerHTML = "ON AIR <b>OBS OFFLINE</b>"; return; }
   el.classList.add("air");
   let what = programScene || "?";
   if (programScene === "Stint"){
@@ -816,9 +812,6 @@ function renderAir(visState){
   el.innerHTML = "ON AIR <b>" + what.toUpperCase() + "</b>";
 }
 
-function setEnabled(on){
-  document.querySelectorAll('[data-obs="1"]').forEach(el=>el.disabled = !on);
-}
 
 /* ---------- relay status strip (works without OBS) ---------- */
 /* state -> [pill suffix, pill css class]; durations/staleness come from the
@@ -960,40 +953,6 @@ async function relayPoll(){
   }
 }
 
-/* ---------- connect / disconnect ---------- */
-$("#connectBtn").addEventListener("click", async ()=>{
-  const ip=$("#ip").value.trim(), port=$("#port").value.trim()||"4455", pw=$("#pw").value;
-  if(!ip){ log("Enter the Producer's Tailscale IP.", "err"); return; }
-  try{ localStorage.setItem("rc_ip",ip); localStorage.setItem("rc_port",port); localStorage.setItem("rc_pw",pw); }catch(e){}
-  try{
-    await obs.connect(`ws://${ip}:${port}`, pw);
-    connected = true; obsLed("ok"); setEnabled(true);
-    $("#connectBtn").style.display="none"; $("#disconnectBtn").style.display="inline-block";
-    log("Connected to OBS.");
-    await refresh();
-    poll = setInterval(refresh, 2000);
-  }catch(e){
-    obsLed("err");
-    log("Connect failed: "+(e.message||e), "err");
-    log("Check: OBS open, WebSocket enabled, right password, Tailscale connected, page opened over http:// (not https).", "err");
-  }
-});
-$("#disconnectBtn").addEventListener("click", async ()=>{
-  clearInterval(poll); try{ await obs.disconnect(); }catch(e){}
-  connected=false; obsLed(""); setEnabled(false); renderAir({});
-  $("#disconnectBtn").style.display="none"; $("#connectBtn").style.display="inline-block";
-  log("Disconnected.");
-});
-obs.on("ConnectionClosed", ()=>{
-  if(connected){ connected=false; clearInterval(poll); obsLed("err"); setEnabled(false); renderAir({});
-    $("#disconnectBtn").style.display="none"; $("#connectBtn").style.display="inline-block";
-    log("Connection lost — press Connect to retry.", "err"); }
-});
-obs.on("CurrentProgramSceneChanged", d=>{
-  programScene = d.sceneName;
-  Object.entries(sceneKeys).forEach(([n,b])=>b.classList.toggle("air", n===programScene));
-  refresh();
-});
 
 /* ---------- race timer (relay-served; works without the OBS connection) --- */
 async function timerCall(path){
@@ -1551,26 +1510,7 @@ chatPoll(); setInterval(chatPoll, 2000);
 setInterval(schedPoll, 2000);
 setInterval(qualPoll, 2000);
 subsPoll(); setInterval(subsPoll, 2000);
-
-/* ---------- auto-connect to OBS ----------
-   Connection details may arrive in the URL fragment (the Control Center's
-   "Open panel" link: #ip=…&port=…&pw=…). A fragment is never sent to the server,
-   so the OBS password stays out of the relay's logs; we strip it from the
-   address bar right after reading. Otherwise we fall back to the values
-   remembered from the last manual Connect. Either way, if an IP is present we
-   connect on load — no need to fill the form and press Connect by hand. */
-(function autoConnect(){
-  try{
-    if (location.hash.length > 1){
-      const p = new URLSearchParams(location.hash.slice(1));
-      if (p.get("ip"))   $("#ip").value   = p.get("ip");
-      if (p.get("port")) $("#port").value = p.get("port");
-      if (p.has("pw"))   $("#pw").value   = p.get("pw");
-      history.replaceState(null, "", location.pathname + location.search);
-    }
-  }catch(e){}
-  if ($("#ip").value.trim()) $("#connectBtn").click();
-})();
+obsStatePoll(); setInterval(obsStatePoll, 2000);
 </script>
 </body>
 </html>
