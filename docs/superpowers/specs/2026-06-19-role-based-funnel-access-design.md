@@ -104,6 +104,12 @@ From the design discussion (2026-06-18) and the resolution of the open questions
 - Missing/empty Crew tab is non-fatal: `director`/`producer` simply resolve to empty,
   commentators still work from the Schedule (graceful degradation, like a missing Overlay
   tab).
+- The Crew tab MUST carry a recognizable header row (a `Name`/`Crew`/`Person` column,
+  optionally `Director`/`Producer`). A tab whose header uses none of these words falls
+  into the positional fallback and consumes its own header row as a (capability-empty)
+  phantom roster entry — harmless for authorization but it would surface as a stray name
+  in the Phase F link enumeration. The Control Center crew editor (§G) writes a
+  conformant header, so this only bites a hand-rolled tab.
 
 ### C. Auth + capability layer
 
