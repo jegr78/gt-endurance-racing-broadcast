@@ -30,7 +30,7 @@ It is served under its own `/cockpit/*` path namespace and can be reached two wa
 
 The Control Center's **Cockpit** view (above) offers both per commentator — a **Copy
 funnel link** and a **Copy internal link** button — next to **Revoke**; the CLI
-`racecast cockpit links` prints both as well.
+`racecast links` prints both as well.
 
 ## Authentication
 
@@ -141,13 +141,13 @@ enable prompt). Pass `--force` to skip the pre-check.
 > reachable — only `/console` should be.
 
 The Funnel host is the **active producer's** MagicDNS name. On a producer handover
-it changes, so re-run `racecast cockpit links` on the new machine and re-share.
+it changes, so re-run `racecast links` on the new machine and re-share.
 
 ## Revoking / rotating a link
 
 ```bash
 racecast cockpit token revoke "<streamer name>"   # bump that person's version
-racecast cockpit links                            # re-issue their (now-newer) link
+racecast links                                          # re-issue their (now-newer) link
 ```
 
 The old link's version is now stale and is rejected immediately (the relay reads the

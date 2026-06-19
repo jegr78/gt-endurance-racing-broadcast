@@ -3891,7 +3891,7 @@ def main():
                  event_store.get())
     if cockpit_secret:
         if cockpit_page_path:
-            LOG.info("  Commentator cockpit: /cockpit (auth) — links via 'racecast cockpit links'")
+            LOG.info("  Commentator cockpit: /cockpit (auth) — links via 'racecast links'")
         else:
             LOG.warning("  cockpit secret set but cockpit.html not found — /cockpit will 404.")
     if hud_source and hud_path:
