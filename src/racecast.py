@@ -869,6 +869,8 @@ def route(argv):
         return {"kind": "cockpit", "rest": rest}
     if cmd == "funnel":
         return {"kind": "funnel", "rest": rest}
+    if cmd == "links":
+        return {"kind": "links", "rest": rest}
     if cmd == "backup":
         return {"kind": "backup", "rest": rest}
     if cmd in ONESHOTS:
@@ -1039,7 +1041,7 @@ def chat_cmd(rest):
         return None
 
 
-COCKPIT_VERBS = ("setup-funnel", "links", "token", "pull-versions")
+COCKPIT_VERBS = ("setup-funnel", "token", "pull-versions")
 
 
 def _cockpit_versions_path():
@@ -1074,6 +1076,44 @@ def _cockpit_roster():
     seen, roster = set(), []
     for row in (data or {}).get("rows", []):
         name = (row.get("name") or "").strip()
+        key = cpa.streamer_key(name)
+        if key and key not in seen:
+            seen.add(key)
+            roster.append(name)
+    return roster
+
+
+def _crew_roster():
+    """Distinct crew names (Director/Producer) from the running relay's
+    /crew/data (first-seen order). Raises on an unreachable relay — mirrors
+    _cockpit_roster. Empty list when the league has no Crew tab."""
+    data = _relay_fetch_json(f"http://127.0.0.1:{RELAY_PORT}/crew/data")
+    seen, roster = set(), []
+    for row in (data or {}).get("rows", []):
+        name = (row.get("name") or "").strip()
+        key = cpa.streamer_key(name)
+        if key and key not in seen:
+            seen.add(key)
+            roster.append(name)
+    return roster
+
+
+def _crew_roster_safe():
+    """_crew_roster() that returns [] instead of raising (Control Center poll)."""
+    try:
+        return _crew_roster()
+    except Exception:
+        return []
+
+
+def _links_roster():
+    """People to mint console links for = live Schedule roster ∪ Crew tab,
+    deduped by streamer_key (pinned == asset_key, the key resolve_roles uses),
+    schedule first so commentators keep their existing order. Raises if the
+    schedule is unreadable (relay down); crew is best-effort."""
+    roster = list(_cockpit_roster())            # may raise if relay is down
+    seen = {cpa.streamer_key(n) for n in roster}
+    for name in _crew_roster_safe():
         key = cpa.streamer_key(name)
         if key and key not in seen:
             seen.add(key)
@@ -1125,9 +1165,45 @@ def funnel_cmd(rest):
     return None
 
 
+def links_cmd(rest):
+    """`racecast links [--post]` — print one /console launcher link per person
+    (Crew tab ∪ live Schedule). Each link carries a signed identity token; the
+    relay resolves the person's roles server-side, so one link adapts to
+    commentator/director/producer. --post drops them into crew chat. (#216)"""
+    _apply_active_profile_env()
+    secret = _ensure_active_cockpit_secret()
+    if not secret:
+        sys.exit("racecast: no active league profile — create or select one first.")
+    try:
+        roster = _links_roster()
+    except Exception:
+        sys.exit("racecast: could not read the schedule (is the relay running?).")
+    if not roster:
+        sys.exit("racecast: no crew or streamers found (is the relay running?).")
+    host = _tailscale_ip() or "<tailscale-ip>"
+    magic = _tailscale_magicdns() or "<your-magicdns-host>"
+    versions = cpadm.load_versions(_cockpit_versions_path())
+    post = "--post" in rest
+    lines = []
+    for name in roster:
+        key = cpa.streamer_key(name)
+        tok = cpa.mint_token(secret, key, cpadm.current_version(versions, key))
+        url = f"https://{magic}/console?t={tok}"                # Funnel host
+        lan = f"http://{host}:{RELAY_PORT}/console?t={tok}"      # tailnet fallback
+        print(f"{name}:\n  funnel:  {url}\n  tailnet: {lan}")
+        lines.append(f"{name}: {url}")
+    if post:
+        try:
+            _post_chat_message("Console links:\n" + "\n".join(lines))
+            print("posted links into crew chat.")
+        except Exception:
+            print("note: could not post to crew chat (relay not running?).")
+    return None
+
+
 def _cockpit_token(args):
     """`racecast cockpit token revoke <streamer>` — bump that streamer's version
-    so their current link stops validating; re-issue with 'racecast cockpit links'.
+    so their current link stops validating; re-issue with 'racecast links'.
     The relay reads cockpit-versions.json per request, so the bump is immediate —
     no relay reload needed."""
     if len(args) < 2 or args[0] != "revoke":
@@ -1137,7 +1213,7 @@ def _cockpit_token(args):
         sys.exit("racecast: empty streamer name.")
     new_ver = cpadm.bump_version(_cockpit_versions_path(), key)
     print(f"revoked '{args[1]}' (key {key}) -> version {new_ver}. "
-          "Re-issue with 'racecast cockpit links'.")
+          "Re-issue with 'racecast links'.")
     return None
 
 
@@ -1203,43 +1279,13 @@ def _ensure_active_cockpit_secret():
 
 
 def cockpit_cmd(rest):
-    """`racecast cockpit links|token|setup-funnel|pull-versions` — manage the
+    """`racecast cockpit token|setup-funnel|pull-versions` — manage the
     talent Commentator Cockpit (issue #191). The cockpit is zero-config: a per-league
     COCKPIT_SECRET is auto-generated on first relay start and the relay serves
     /cockpit whenever one exists (token-gated). PUBLIC exposure is the top-level
-    `racecast funnel` command."""
+    `racecast funnel` command. Console links (Crew ∪ Schedule) are issued via the
+    top-level `racecast links` command (#216)."""
     verb, args = rest[0], rest[1:]
-
-    if verb == "links":
-        _apply_active_profile_env()
-        secret = _ensure_active_cockpit_secret()
-        if not secret:
-            sys.exit("racecast: no active league profile — create or select one first.")
-        try:
-            roster = _cockpit_roster()
-        except Exception:
-            sys.exit("racecast: could not read the schedule (is the relay running?).")
-        if not roster:
-            sys.exit("racecast: no streamers in the schedule (is the relay running?).")
-        host = _tailscale_ip() or "<tailscale-ip>"
-        magic = _tailscale_magicdns() or "<your-magicdns-host>"
-        versions = cpadm.load_versions(_cockpit_versions_path())
-        post = "--post" in args
-        lines = []
-        for name in roster:
-            key = cpa.streamer_key(name)
-            tok = cpa.mint_token(secret, key, cpadm.current_version(versions, key))
-            url = f"https://{magic}/console?t={tok}"                  # Funnel host
-            lan = f"http://{host}:{RELAY_PORT}/console?t={tok}"      # tailnet fallback
-            print(f"{name}:\n  funnel:  {url}\n  tailnet: {lan}")
-            lines.append(f"{name}: {url}")
-        if post:
-            try:
-                _post_chat_message("Cockpit links:\n" + "\n".join(lines))
-                print("posted links into crew chat.")
-            except Exception:
-                print("note: could not post to crew chat (relay not running?).")
-        return None
 
     if verb == "setup-funnel":
         return _cockpit_setup_funnel(args)
@@ -4794,6 +4840,8 @@ def main(argv=None):
         return cockpit_cmd(action["rest"])
     if action["kind"] == "funnel":
         return funnel_cmd(action["rest"])
+    if action["kind"] == "links":
+        return links_cmd(action["rest"])
     if action["kind"] == "backup":
         return backup_cmd(action["rest"])
     if action["kind"] == "oneshot":

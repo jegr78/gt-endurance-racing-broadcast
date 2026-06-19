@@ -1715,18 +1715,37 @@ def t_set_env_key_preserves_other_keys():
 
 
 def t_route_cockpit():
-    assert m.route(["cockpit", "links"]) == {"kind": "cockpit", "rest": ["links"]}
     assert m.route(["cockpit", "token", "revoke", "Alpha"]) == {
         "kind": "cockpit", "rest": ["token", "revoke", "Alpha"]}
-    # `funnel` is no longer a cockpit verb (#216 — it is a top-level command now);
-    # like the removed enable/disable verbs it is rejected at route() time.
+    # `links` is now a top-level command (#216); `funnel` was removed earlier;
+    # like the removed enable/disable verbs both are rejected at route() time.
     for bad in (["cockpit"], ["cockpit", "bogus"], ["cockpit", "enable"],
-                ["cockpit", "disable"], ["cockpit", "funnel", "on"]):
+                ["cockpit", "disable"], ["cockpit", "funnel", "on"],
+                ["cockpit", "links"]):
         try:
             m.route(bad)
             raise AssertionError(bad)
         except ValueError:
             pass
+
+
+def t_route_links():
+    assert m.route(["links"]) == {"kind": "links", "rest": []}
+    assert m.route(["links", "--post"]) == {"kind": "links", "rest": ["--post"]}
+
+
+def t_links_roster_union():
+    # People = Schedule ∪ Crew, deduped by streamer_key (== asset_key), schedule
+    # first. A crew-only director joins the list; a person in both appears once.
+    orig_sched = m._cockpit_roster
+    orig_crew = m._crew_roster
+    try:
+        m._cockpit_roster = lambda: ["Alice", "Bob"]          # schedule (streamers)
+        m._crew_roster = lambda: ["Bob", "Dana the Director"]  # crew tab
+        assert m._links_roster() == ["Alice", "Bob", "Dana the Director"]
+    finally:
+        m._cockpit_roster = orig_sched
+        m._crew_roster = orig_crew
 
 
 def t_route_funnel():
