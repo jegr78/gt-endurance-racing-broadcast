@@ -174,7 +174,7 @@ python3 src/racecast.py chat export       # write the current chat history to ch
 python3 src/racecast.py backup create|list|restore|delete <label>  # named look snapshots (overlay+graphics+media) per profile
 python3 src/racecast.py cockpit enable     # talent Commentator Cockpit: generate a per-league secret + turn it on for this machine (#191)
 python3 src/racecast.py cockpit disable    # stop serving /cockpit on this machine
-python3 src/racecast.py cockpit links      # print per-commentator cockpit links (roster = the active schedule's streamers); --post puts them in crew chat
+python3 src/racecast.py links              # print per-person /console launcher links (Crew tab ∪ live Schedule); --post drops them into crew chat
 python3 src/racecast.py funnel on|off  # public ingress for ONLY /console (the role-adaptive crew launcher) via Tailscale Funnel (needs MagicDNS+HTTPS+funnel nodeAttr)
 python3 src/racecast.py cockpit setup-funnel    # automate the one-time tailnet prereqs (MagicDNS + funnel nodeAttr) via a Tailscale API access token; --apply to perform (dry-run default)
 python3 src/racecast.py cockpit token revoke <streamer>  # rotate one commentator's link (bumps their version)
@@ -422,7 +422,11 @@ which mounts **only** `/console` — the only way `/console` leaves the tailnet.
 the `…/cockpit?t=` link once, then an `HttpOnly; Secure; SameSite=Lax` `rc_cockpit` cookie.
 Auth core: `src/scripts/cockpit_auth.py`; revocation store: `src/scripts/cockpit_admin.py`;
 talent page: `src/cockpit/cockpit.html`; CLI: `racecast cockpit …`; takeover pulls A's
-versions over the tailnet (like `chat pull`). Tests: `tests/test_cockpit.py`.
+versions over the tailnet (like `chat pull`). Tests: `tests/test_cockpit.py`. The crew
+roster (Crew tab ∪ live Schedule) is exposed via a tailnet-only `GET /crew/data` endpoint
+(root path, **never** funnelled — only `/console` is mounted); `racecast links` unions Crew
+∪ Schedule to produce role-adaptive `/console` links for every person. The Control Center
+cockpit view is now called **"Crew Console"**.
 
 **Commentator stream-link submission (issue #193).** A write-scoped add-on: a commentator
 submits a YouTube/Twitch URL for one of *their own* stints from the cockpit

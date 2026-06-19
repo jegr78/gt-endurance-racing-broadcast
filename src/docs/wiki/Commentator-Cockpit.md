@@ -50,12 +50,12 @@ to serve — and it only leaves the tailnet when you turn the **Funnel** on (bel
 
 ```bash
 racecast relay start         # the secret is provisioned here on first run
-racecast cockpit links       # print every commentator's internal + funnel link
+racecast links               # print one role-adaptive /console link per person (Crew tab ∪ live Schedule)
 ```
 
 `/cockpit/*` returns 404 only when **no** secret is configured (e.g. the shipped `example`
-profile, which is never auto-provisioned). The link roster is the distinct streamer names in
-the active schedule. `racecast cockpit links --post` also drops the links into the crew chat.
+profile, which is never auto-provisioned). The link roster unions the Crew tab with the
+active schedule. `racecast links --post` also drops the links into the crew chat.
 
 > **Turning it off:** the cockpit has no off switch other than not exposing it — to take it
 > off the public internet run `racecast funnel off`. On the tailnet it stays
