@@ -473,24 +473,62 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 4: WebSocket passthrough (mandatory — Companion tRPC `/trpc`)
+### Task 4: WebSocket passthrough (mandatory — Companion tRPC `/trpc`) + shared token-strip
+
+> **Task 3 review carry-over (REQUIRED):** Task 3 added an inline `?t=` token-strip *inside the
+> HTTP section* of `_proxy_companion`. A WS branch added at the **top** of that method would run
+> **before** that strip and leak the relay auth token to Companion. So this task first hoists the
+> strip into a pure, shared helper used by **both** branches, then adds the WS passthrough.
 
 **Files:**
-- Modify: `src/relay/racecast-feeds.py` (`_proxy_companion`: handle the WS upgrade first)
-- Test: `tests/test_console_gate.py` (a raw-socket upstream stub + a raw-socket client)
+- Modify: `src/scripts/console_proxy.py` (add the pure `strip_relay_token` helper) + `tests/test_console_proxy.py`
+- Modify: `src/relay/racecast-feeds.py` (`_proxy_companion`: compute one cleaned path, then WS-or-HTTP)
+- Test: `tests/test_console_gate.py` (a raw-socket WS echo stub + a raw-socket client)
 
 **Interfaces:**
-- Consumes: `console_proxy.is_websocket_upgrade`, `console_proxy.upstream_path`, `console_proxy.forward_request_headers`, `self.connection` (the raw client socket).
+- Produces: `console_proxy.strip_relay_token(request_path)->str` — removes ONLY the `t` query param, preserving the path and all other params.
+- Consumes: `console_proxy.is_websocket_upgrade`, `console_proxy.upstream_path`, `console_proxy.COMPANION_PREFIX_HEADER`, `console_proxy.PREFIX_HEADER_VALUE`, `self.connection` (the raw client socket).
 - Produces: a transparent bidirectional byte relay for the `/trpc` WebSocket; any failure closes the upgrade.
 
-- [ ] **Step 1: Write the failing test** — add to `tests/test_console_gate.py`:
+- [ ] **Step 1: Write the failing pure-helper test** — add to `tests/test_console_proxy.py`:
+
+```python
+def t_strip_relay_token_removes_only_t():
+    assert cp.strip_relay_token("/console/buttons/tablet?t=abc") == "/console/buttons/tablet"
+    assert cp.strip_relay_token("/console/buttons/x?a=1&t=abc&b=2") == "/console/buttons/x?a=1&b=2"
+    assert cp.strip_relay_token("/console/buttons/x") == "/console/buttons/x"
+    assert cp.strip_relay_token("/console/buttons/x?a=1") == "/console/buttons/x?a=1"
+```
+
+- [ ] **Step 2: Run it to verify it fails** — `python3 tests/test_console_proxy.py` → FAIL (`strip_relay_token` missing).
+
+- [ ] **Step 3: Add the pure helper** — in `src/scripts/console_proxy.py`, extend the imports to `from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode`, and add:
+
+```python
+def strip_relay_token(request_path):
+    """Remove the relay's `t` auth-token query param before forwarding upstream — the relay
+    credential must never reach Companion. Path and all other query params are preserved."""
+    parts = urlsplit(request_path)
+    if not parts.query:
+        return request_path
+    kept = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "t"]
+    return urlunsplit(("", "", parts.path, urlencode(kept), ""))
+```
+
+- [ ] **Step 4: Confirm the helper test passes** — `python3 tests/test_console_proxy.py` → `ALL PASS`.
+
+- [ ] **Step 5: Write the failing gate/WS test** — add to `tests/test_console_gate.py`:
 
 ```python
 import socket as _socket
 
 
+class _WSStub:
+    last_request = b""
+
+
 def _ws_echo_stub():
-    """Raw-socket upstream: completes a 101 handshake, then echoes bytes."""
+    """Raw-socket upstream: records the handshake request line, completes a 101, echoes bytes."""
     srv = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
     srv.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
     srv.bind(("127.0.0.1", 0)); srv.listen(1)
@@ -506,6 +544,7 @@ def _ws_echo_stub():
                 if not chunk:
                     break
                 data += chunk
+            _WSStub.last_request = data
             conn.sendall(b"HTTP/1.1 101 Switching Protocols\r\n"
                          b"Upgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
             try:
@@ -521,7 +560,7 @@ def _ws_echo_stub():
     return srv
 
 
-def t_buttons_ws_passthrough_for_director():
+def t_buttons_ws_passthrough_and_strips_token():
     up = _ws_echo_stub(); upurl = f"http://127.0.0.1:{up.getsockname()[1]}"
     srv = _serve(companion_url=upurl); port = srv.server_address[1]
     try:
@@ -536,32 +575,43 @@ def t_buttons_ws_passthrough_for_director():
         c.sendall(b"hello-trpc")
         assert c.recv(4096) == b"hello-trpc"
         c.close()
+        # The upstream handshake must hit /trpc with the relay token stripped.
+        first_line = _WSStub.last_request.split(b"\r\n")[0]
+        assert first_line.startswith(b"GET /trpc"), first_line
+        assert b"t=" not in first_line, first_line
     finally:
         srv.shutdown(); up.close()
 ```
 
-- [ ] **Step 2: Run it to verify it fails** — `python3 tests/test_console_gate.py` → FAIL (the WS upgrade is currently treated as a normal HTTP GET; no `101` comes back, or the assert on the echo fails).
+- [ ] **Step 6: Run it to verify it fails** — `python3 tests/test_console_gate.py` → FAIL (WS upgrade not handled; no `101`).
 
-- [ ] **Step 3: Write the implementation** — at the **top** of `_proxy_companion`, before the urllib path, add the WS branch:
+- [ ] **Step 7: Refactor `_proxy_companion` to one cleaned path + add the WS branch** — in `src/relay/racecast-feeds.py`:
+  (a) **Delete** the inline `?t=` strip Task 3 added inside the HTTP section.
+  (b) Make the **first statement** of `_proxy_companion`: `clean_path = console_proxy.strip_relay_token(self.path)`.
+  (c) Add the WS branch immediately after, and have BOTH branches use `console_proxy.upstream_path(clean_path)` (the HTTP section's `upstream_path(...)` call must switch from the old stripped value to `clean_path`):
 
 ```python
-            from urllib.parse import urlsplit as _urlsplit
+        def _proxy_companion(self, method):
+            """...(existing docstring; note: HTTP and WebSocket, token-stripped)..."""
+            import urllib.request, urllib.error
+            from urllib.parse import urlsplit
+            clean_path = console_proxy.strip_relay_token(self.path)   # relay token never goes upstream
+            base = self._companion_base()
+            u = urlsplit(base); host, cport = u.hostname or "127.0.0.1", u.port or 8000
             if console_proxy.is_websocket_upgrade(self.headers):
                 import socket, select
-                base = self._companion_base(); u = _urlsplit(base)
-                host, cport = u.hostname or "127.0.0.1", u.port or 8000
                 try:
                     up = socket.create_connection((host, cport), timeout=5)
                 except OSError as e:
                     LOG.warning("Companion WS connect failed: %s", e)
                     return self._send({"error": "Companion not reachable"}, 502)
-                # Replay the upgrade: rewritten path + the upgrade headers forwarded RAW
-                # (Upgrade/Connection/Sec-WebSocket-* must survive) + injected prefix.
+                # Replay the upgrade: rewritten+token-stripped path, upgrade headers forwarded
+                # RAW (Upgrade/Connection/Sec-WebSocket-* must survive), prefix injected.
                 hdrs = {k: v for k, v in self.headers.items()
                         if k.lower() not in ("host", "accept-encoding")}
                 hdrs["Host"] = "%s:%d" % (host, cport)
                 hdrs[console_proxy.COMPANION_PREFIX_HEADER] = console_proxy.PREFIX_HEADER_VALUE
-                raw = ("GET %s HTTP/1.1\r\n" % console_proxy.upstream_path(self.path)
+                raw = ("GET %s HTTP/1.1\r\n" % console_proxy.upstream_path(clean_path)
                        + "".join("%s: %s\r\n" % kv for kv in hdrs.items()) + "\r\n")
                 up.sendall(raw.encode("latin-1"))
                 client = self.connection
@@ -581,16 +631,51 @@ def t_buttons_ws_passthrough_for_director():
                     up.close()
                 self.close_connection = True
                 return None
+            # --- HTTP path (existing Task 3 logic, now using clean_path) ---
+            url = base.rstrip("/") + console_proxy.upstream_path(clean_path)
+            length = int(self.headers.get("Content-Length") or 0)
+            data = self.rfile.read(length) if length else None
+            hdrs = console_proxy.forward_request_headers(
+                self.headers, host="%s:%d" % (host, cport))
+            req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    body, status = resp.read(), resp.status
+                    out_headers = console_proxy.filter_response_headers(resp.headers.items())
+                    ctype = resp.headers.get("Content-Type", "application/octet-stream")
+            except urllib.error.HTTPError as e:
+                body, status = e.read(), e.code
+                out_headers = console_proxy.filter_response_headers(e.headers.items())
+                ctype = e.headers.get("Content-Type", "application/octet-stream")
+            except Exception as e:
+                LOG.warning("Companion proxy failed: %s: %s", type(e).__name__, e)
+                return self._send({"error": "Companion not reachable"}, 502)
+            self.send_response(status)
+            for k, v in out_headers:
+                self.send_header(k, v)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(body)
+            return None
 ```
 
-- [ ] **Step 4: Run the test to verify it passes** — `python3 tests/test_console_gate.py` → `ALL PASS`.
+> Match the existing method's exact details (docstring, the Task-3 health/HTTP specifics) — the block above is the target shape; preserve any correct Task-3 behaviour not shown here. The net change: token-strip is now a shared first step covering BOTH branches, and the WS branch exists.
 
-- [ ] **Step 5: Lint + commit**
+- [ ] **Step 8: Run the tests to verify they pass**
+
+```bash
+python3 tests/test_console_proxy.py    # ALL PASS (new strip_relay_token test)
+python3 tests/test_console_gate.py     # ALL PASS (incl. the WS passthrough + token-strip test)
+python3 tests/test_tailscale.py        # boundary unchanged — ALL PASS
+```
+
+- [ ] **Step 9: Lint + commit**
 
 ```bash
 python3 tools/lint.py
-git add src/relay/racecast-feeds.py tests/test_console_gate.py
-git commit -m "feat(console): raw-WebSocket passthrough for the Companion tRPC channel (#236)
+git add src/scripts/console_proxy.py tests/test_console_proxy.py src/relay/racecast-feeds.py tests/test_console_gate.py
+git commit -m "feat(console): raw-WebSocket passthrough for Companion tRPC + shared relay-token strip (#236)
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
