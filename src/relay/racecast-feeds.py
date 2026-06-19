@@ -1787,6 +1787,37 @@ class CrewSource:
             out.append((name, is_dir, is_prod))
         return out or None
 
+    def get(self):
+        with self.lock:
+            return list(self.rows)
+
+    def fetch(self, timeout=15):
+        if not self.csv_url:
+            return None
+        try:
+            req = Request(self.csv_url, headers={"User-Agent": "racecast-feeds/1.0"})
+            with urlopen(req, timeout=timeout) as resp:
+                text = resp.read().decode("utf-8", "replace")
+            rows = self._parse_rows(text)
+            if not rows:
+                self.last_error = ("Crew tab reachable, but no rows found "
+                                   "(correct tab name? a Name column?)")
+                return None
+            return rows
+        except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
+            return None
+
+    def refresh(self, timeout=15):
+        rows = self.fetch(timeout)
+        if rows:
+            with self.lock:
+                self.rows = rows
+                self.last_ok = time.time()
+                self.last_error = None
+            return True
+        return False
+
 
 OVERRIDE_TTL = 30  # s: unconfirmed panel write -> HUD falls back to sheet truth
 

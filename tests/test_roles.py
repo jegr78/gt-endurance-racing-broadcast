@@ -58,6 +58,21 @@ def t_parse_empty_returns_none():
     assert m.CrewSource._parse_rows("\n") is None
 
 
+def t_crewsource_no_url_refresh_is_false_and_get_empty():
+    src = m.CrewSource(csv_url="")
+    assert src.refresh() is False
+    assert src.get() == []
+
+
+def t_crewsource_get_returns_snapshot_copy():
+    src = m.CrewSource(csv_url="")
+    src.rows = [("Alice", True, False)]
+    snap = src.get()
+    assert snap == [("Alice", True, False)]
+    snap.append(("X", False, False))       # mutating the snapshot must not leak
+    assert src.get() == [("Alice", True, False)]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
