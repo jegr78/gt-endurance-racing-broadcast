@@ -3430,7 +3430,14 @@ def cockpit_status_data():
             host = _cockpit_internal_host(_tailscale_ip())
             magic = _tailscale_magicdns()
             versions = cpadm.load_versions(_cockpit_versions_path())
-            for name in _cockpit_roster_safe():
+            seen_keys = set()
+            roster = []
+            for name in list(_cockpit_roster_safe()) + list(_crew_roster_safe()):
+                key = cpa.streamer_key(name)
+                if key and key not in seen_keys:
+                    seen_keys.add(key)
+                    roster.append(name)
+            for name in roster:
                 key = cpa.streamer_key(name)
                 tok = cpa.mint_token(secret, key, cpadm.current_version(versions, key))
                 links.append({

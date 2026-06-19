@@ -2227,6 +2227,26 @@ def t_relay_start_spawns_to_boot_log_not_console():
     assert m._relay_boot_log_path() != m._relay_log_path()
 
 
+def t_cockpit_status_links_union_crew():
+    # cockpit_status_data() must union _crew_roster_safe() into the link list,
+    # deduped by streamer_key. Both rosters contribute; dedup removes same-key dupes.
+    orig_sched = m._cockpit_roster_safe
+    orig_crew = m._crew_roster_safe
+    orig_secret = m._ensure_active_cockpit_secret
+    try:
+        m._cockpit_roster_safe = lambda: ["Alice"]
+        m._crew_roster_safe = lambda: ["Dana the Director"]
+        m._ensure_active_cockpit_secret = lambda: "s" * 64
+        data = m.cockpit_status_data()
+        names = [l["name"] for l in data["links"]]
+        assert names == ["Alice", "Dana the Director"], names
+        assert all("/console?t=" in l["internal"] for l in data["links"])
+    finally:
+        m._cockpit_roster_safe = orig_sched
+        m._crew_roster_safe = orig_crew
+        m._ensure_active_cockpit_secret = orig_secret
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

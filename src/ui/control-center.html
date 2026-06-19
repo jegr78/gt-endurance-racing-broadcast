@@ -436,7 +436,7 @@
       <button class="navitem" data-nav="settings" onclick="showView('settings')">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>General Settings</button>
       <button class="navitem" data-nav="cockpit" onclick="showView('cockpit')">
-        <svg viewBox="0 0 24 24"><path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>Cockpit</button>
+        <svg viewBox="0 0 24 24"><path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>Crew Console</button>
       <button class="navitem" data-nav="logs" onclick="showView('logs')">
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>Logs</button>
       <button class="navitem" data-nav="help" onclick="showView('help')">
@@ -867,16 +867,16 @@
 
       <!-- ===== Commentator Cockpit ===== -->
       <div class="view" data-view="cockpit" hidden>
-        <div class="viewhead"><h2>Commentator Cockpit</h2>
-          <span class="sub">talent-facing program monitor, tally, chat &amp; timer</span>
+        <div class="viewhead"><h2>Crew Console</h2>
+          <span class="sub">role-adaptive crew links — commentator, director &amp; producer</span>
           <span class="spacer"></span>
           <button onclick="loadCockpit()">Reload</button></div>
         <div class="enverr" id="cp-err" hidden></div>
         <section>
-          <p class="sub">Zero-config: the relay serves the talent-facing
-            <code>/cockpit</code> automatically — a per-league secret is generated on
-            first relay start. Every request is token-gated (links below). The cockpit
-            is exposed <b>publicly</b> only when you also turn the Funnel on.</p>
+          <p class="sub">Zero-config: the relay serves the role-adaptive <code>/console</code>
+            launcher automatically — a per-league secret is generated on first relay start.
+            Every request is token-gated (links below). It is exposed <b>publicly</b>
+            only when you also turn the Funnel on.</p>
         </section>
         <section>
           <div class="viewhead"><h3>Public access (Tailscale Funnel)</h3>
@@ -886,11 +886,11 @@
           <button id="cp-funnel-off" onclick="cockpitFunnel(false)">Funnel OFF</button>
           <label class="cprow"><input type="checkbox" id="cp-funnel-auto" onchange="toggleFunnelAuto()">
             Auto-enable on event start</label>
-          <p class="sub">Exposes only <code>/cockpit</code> publicly. Needs MagicDNS + HTTPS
+          <p class="sub">Exposes only <code>/console</code> publicly. Needs MagicDNS + HTTPS
             + the <code>funnel</code> nodeAttr in the tailnet policy (one-time admin step).</p>
         </section>
         <section>
-          <div class="viewhead"><h3>Commentator links</h3></div>
+          <div class="viewhead"><h3>Crew links</h3></div>
           <p class="sub"><b>Funnel link</b> is the public HTTPS link (needs the Funnel ON
             above). <b>Internal link</b> reaches the relay over Tailscale (the producer's
             tailnet IP, or <code>127.0.0.1</code> when the tailnet is down) without the
