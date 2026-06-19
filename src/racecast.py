@@ -867,6 +867,8 @@ def route(argv):
         if not rest or rest[0] not in COCKPIT_VERBS:
             raise ValueError(f"usage: racecast cockpit {{{'|'.join(COCKPIT_VERBS)}}}")
         return {"kind": "cockpit", "rest": rest}
+    if cmd == "funnel":
+        return {"kind": "funnel", "rest": rest}
     if cmd == "backup":
         return {"kind": "backup", "rest": rest}
     if cmd in ONESHOTS:
@@ -1037,7 +1039,7 @@ def chat_cmd(rest):
         return None
 
 
-COCKPIT_VERBS = ("funnel", "setup-funnel", "links", "token", "pull-versions")
+COCKPIT_VERBS = ("setup-funnel", "links", "token", "pull-versions")
 
 
 def _cockpit_versions_path():
@@ -1089,35 +1091,37 @@ def _post_chat_message(text):
     urllib.request.urlopen(req, timeout=3).read()
 
 
-def _cockpit_funnel(args):
-    """`racecast cockpit funnel on|off` — public ingress for ONLY /cockpit via
-    Tailscale Funnel. Requires MagicDNS + HTTPS + the 'funnel' nodeAttr (one-time
-    tailnet-admin step); funnel() surfaces the verbatim error if missing."""
+def funnel_cmd(rest):
+    """`racecast funnel on|off` — public ingress for ONLY /console via Tailscale
+    Funnel (the role-adaptive crew launcher; #216). Requires MagicDNS + HTTPS +
+    the 'funnel' nodeAttr (one-time tailnet-admin step); funnel() surfaces the
+    verbatim error if missing. Only /console is mounted — root control endpoints
+    stay tailnet/loopback-only (the security boundary)."""
     import tailscale as ts
-    if not args or args[0] not in ("on", "off"):
-        sys.exit("usage: racecast cockpit funnel {on|off} [--force]")
-    enable = args[0] == "on"
+    if not rest or rest[0] not in ("on", "off"):
+        sys.exit("usage: racecast funnel {on|off} [--force]")
+    enable = rest[0] == "on"
     binary, _state, _ip = ts.tailscale_backend()
     if not binary:
         sys.exit("racecast: Tailscale CLI not found / backend not running.")
     # Fail fast on the one-time prerequisite: without the 'funnel' nodeAttr the
     # `tailscale funnel` CLI blocks on an interactive enable prompt (a 20 s hang
     # with no stdin). Detect it and print the exact admin steps instead.
-    if enable and "--force" not in args and not ts.funnel_capable():
+    if enable and "--force" not in rest and not ts.funnel_capable():
         sys.exit(
             "racecast: this node is not authorized for Tailscale Funnel yet.\n"
             "One-time tailnet-admin setup at https://login.tailscale.com/admin :\n"
             "  1. DNS -> enable MagicDNS AND HTTPS Certificates\n"
             "  2. Access Controls -> grant the 'funnel' nodeAttr, e.g.:\n"
             '       "nodeAttrs": [{ "target": ["autogroup:member"], "attr": ["funnel"] }]\n'
-            "Then re-run 'racecast cockpit funnel on'. (Use --force to skip this check.)")
-    ok, detail = ts.funnel(binary, path="/cockpit", target_port=RELAY_PORT,
+            "Then re-run 'racecast funnel on'. (Use --force to skip this check.)")
+    ok, detail = ts.funnel(binary, path="/console", target_port=RELAY_PORT,
                            enable=enable)
     if not ok:
         sys.exit(f"racecast: funnel {'on' if enable else 'off'} failed: {detail}\n"
                  "Hint: enable MagicDNS + HTTPS and add the 'funnel' nodeAttr in the "
                  "tailnet policy (one-time admin step).")
-    print(f"cockpit funnel {'enabled' if enable else 'disabled'}. {detail}".strip())
+    print(f"funnel {'enabled' if enable else 'disabled'}. {detail}".strip())
     return None
 
 
@@ -1199,10 +1203,11 @@ def _ensure_active_cockpit_secret():
 
 
 def cockpit_cmd(rest):
-    """`racecast cockpit funnel|links|token|setup-funnel|pull-versions` — manage the
+    """`racecast cockpit links|token|setup-funnel|pull-versions` — manage the
     talent Commentator Cockpit (issue #191). The cockpit is zero-config: a per-league
     COCKPIT_SECRET is auto-generated on first relay start and the relay serves
-    /cockpit whenever one exists (token-gated). PUBLIC exposure is `cockpit funnel`."""
+    /cockpit whenever one exists (token-gated). PUBLIC exposure is the top-level
+    `racecast funnel` command."""
     verb, args = rest[0], rest[1:]
 
     if verb == "links":
@@ -1224,8 +1229,8 @@ def cockpit_cmd(rest):
         for name in roster:
             key = cpa.streamer_key(name)
             tok = cpa.mint_token(secret, key, cpadm.current_version(versions, key))
-            url = f"https://{magic}/cockpit?t={tok}"                 # Funnel host
-            lan = f"http://{host}:{RELAY_PORT}/cockpit?t={tok}"      # tailnet fallback
+            url = f"https://{magic}/console?t={tok}"                  # Funnel host
+            lan = f"http://{host}:{RELAY_PORT}/console?t={tok}"      # tailnet fallback
             print(f"{name}:\n  funnel:  {url}\n  tailnet: {lan}")
             lines.append(f"{name}: {url}")
         if post:
@@ -1236,8 +1241,6 @@ def cockpit_cmd(rest):
                 print("note: could not post to crew chat (relay not running?).")
         return None
 
-    if verb == "funnel":
-        return _cockpit_funnel(args)
     if verb == "setup-funnel":
         return _cockpit_setup_funnel(args)
     if verb == "token":
@@ -2387,15 +2390,15 @@ def event_start(rest):
     print("\nWaiting for the launched services to come up (max 60 s)…")
     for name, up in sorted(ev.wait_until_up(probes).items()):
         print(f"  {name}: {'up' if up else 'still not up — see the report below'}")
-    # Cockpit Funnel (opt-in via RACECAST_COCKPIT_FUNNEL): publish /cockpit
-    # publicly once the relay is up. Best-effort — a funnel failure (e.g. missing
-    # nodeAttr) must never abort the event; print one concise line.
-    if _cockpit_funnel_auto_enabled():
+    # Funnel (opt-in via RACECAST_FUNNEL): publish /console publicly once the
+    # relay is up. Best-effort — a funnel failure (e.g. missing nodeAttr) must
+    # never abort the event; print one concise line.
+    if _funnel_auto_enabled():
         try:
-            _cockpit_funnel(["on"])
+            funnel_cmd(["on"])
         except SystemExit as exc:
             msg = exc.code if isinstance(exc.code, str) else "failed"
-            print("cockpit funnel: skipped — " + msg.splitlines()[0])
+            print("funnel: skipped — " + msg.splitlines()[0])
     # OBS may not have been running when relay_start's refresh hook fired
     # (event start launches OBS AFTER the relay) — retry now that both sides
     # are up. Hash-gated: a no-op when the first hook already delivered.
@@ -3292,7 +3295,7 @@ def _cockpit_setup_funnel(args):
     if not plan:
         print("Funnel prerequisites already satisfied: MagicDNS on, 'funnel' nodeAttr "
               "present.\nReminder: also enable HTTPS Certificates (DNS page) — no API "
-              "for that.\nThen: racecast cockpit funnel on")
+              "for that.\nThen: racecast funnel on")
         return None
     print("Funnel setup — changes needed:")
     for step in plan:
@@ -3320,23 +3323,28 @@ def _cockpit_setup_funnel(args):
                  "(MagicDNS may have applied; the policy was not changed if the ACL "
                  "step failed. Re-run, or finish in the admin console.)")
     print("\nDone. Reminder: enable HTTPS Certificates in the admin console (DNS "
-          "page) if not already.\nThen: racecast cockpit funnel on")
+          "page) if not already.\nThen: racecast funnel on")
     return None
 
 
-def _cockpit_funnel_auto_enabled():
-    """Opt-in: bring the public cockpit Funnel up on `event start`. Requires the
-    machine flag RACECAST_COCKPIT_FUNNEL AND the cockpit actually usable (enabled
-    + a league secret) — reads on-disk truth via cockpit_status_data()."""
+def _funnel_auto_enabled():
+    """Opt-in: bring the public /console Funnel up on `event start`. Requires the
+    machine flag RACECAST_FUNNEL (legacy RACECAST_COCKPIT_FUNNEL still honored for
+    one release) AND the cockpit actually usable (a per-league secret exists) —
+    reads on-disk truth via cockpit_status_data()."""
     epath = _env_file()
     if not os.path.exists(epath):
         return False
     with open(epath, encoding="utf-8") as fh:
-        flag = parse_env_text(fh.read()).get("RACECAST_COCKPIT_FUNNEL", "")
+        env = parse_env_text(fh.read())
+    flag = env.get("RACECAST_FUNNEL", env.get("RACECAST_COCKPIT_FUNNEL", ""))
     if flag.strip().lower() not in ("1", "true", "yes", "on"):
         return False
     st = cockpit_status_data()
-    return bool(st.get("ok") and st.get("enabled") and st.get("has_secret"))
+    # Zero-config cockpit has no separate "enable" flag — usability == a league
+    # secret exists. (cockpit_status_data() returns ok/has_secret, never an
+    # "enabled" key; gating on the latter silently dead-ended this path. #216.)
+    return bool(st.get("ok") and st.get("has_secret"))
 
 
 def _cockpit_roster_safe():
@@ -3367,7 +3375,8 @@ def cockpit_status_data():
         if os.path.exists(epath):
             with open(epath, encoding="utf-8") as fh:
                 menv = parse_env_text(fh.read())
-        funnel_auto = menv.get("RACECAST_COCKPIT_FUNNEL", "").strip().lower() in (
+        funnel_auto = menv.get("RACECAST_FUNNEL", menv.get(
+            "RACECAST_COCKPIT_FUNNEL", "")).strip().lower() in (
             "1", "true", "yes", "on")
         secret = _ensure_active_cockpit_secret() or ""
         links = []
@@ -3380,9 +3389,9 @@ def cockpit_status_data():
                 tok = cpa.mint_token(secret, key, cpadm.current_version(versions, key))
                 links.append({
                     "name": name,
-                    "internal": f"http://{host}:{RELAY_PORT}/cockpit?t={tok}",
-                    "funnel": (f"https://{magic}/cockpit?t={tok}" if magic
-                               else f"https://<magicdns-host>/cockpit?t={tok}")})
+                    "internal": f"http://{host}:{RELAY_PORT}/console?t={tok}",
+                    "funnel": (f"https://{magic}/console?t={tok}" if magic
+                               else f"https://<magicdns-host>/console?t={tok}")})
         funnel_on = funnel_capable = False
         try:
             import tailscale as ts
@@ -3399,20 +3408,18 @@ def cockpit_status_data():
 
 def cockpit_set_funnel_auto_data(auto):
     """Persist the opt-in 'bring the public Funnel up on event start' flag
-    (machine-local RACECAST_COCKPIT_FUNNEL). {ok}|{ok:false,error}."""
+    (machine-local RACECAST_FUNNEL). {ok}|{ok:false,error}."""
     try:
-        res = _set_env_key(_env_file(), "RACECAST_COCKPIT_FUNNEL",
+        res = _set_env_key(_env_file(), "RACECAST_FUNNEL",
                            "true" if auto else "false")
         return {"ok": True} if res.get("ok") else res
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
 
-
-
 def cockpit_funnel_data(on):
     try:
-        _cockpit_funnel(["on" if on else "off"])
+        funnel_cmd(["on" if on else "off"])
         return {"ok": True}
     except SystemExit as exc:
         return {"ok": False, "error": str(exc)}
@@ -4785,6 +4792,8 @@ def main(argv=None):
         return chat_cmd(action["rest"])
     if action["kind"] == "cockpit":
         return cockpit_cmd(action["rest"])
+    if action["kind"] == "funnel":
+        return funnel_cmd(action["rest"])
     if action["kind"] == "backup":
         return backup_cmd(action["rest"])
     if action["kind"] == "oneshot":

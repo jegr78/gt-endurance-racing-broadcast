@@ -159,7 +159,7 @@ racecast chat export          # write the current chat history to chat-export.js
 racecast backup create|list|restore|delete <label>   # named look snapshots (overlay+graphics+media)
 racecast cockpit enable       # talent Commentator Cockpit: generate a per-league secret + turn it on (this machine)
 racecast cockpit links        # print per-commentator cockpit links (--post puts them in crew chat)
-racecast cockpit funnel on|off  # public ingress for ONLY /cockpit via Tailscale Funnel
+racecast funnel on|off          # public ingress for ONLY /console (crew launcher) via Tailscale Funnel
 racecast cockpit setup-funnel   # automate the one-time tailnet prereqs via a Tailscale API token (--apply)
 racecast cockpit token revoke <streamer>  # rotate one commentator's link
 ```

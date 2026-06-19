@@ -104,11 +104,14 @@ def t_parse_peers_garbage_and_empty():
 
 def t_parse_funnel_serving():
     on = ("https://rig.tail1234.ts.net (Funnel on)\n"
-          "|-- /cockpit proxy http://127.0.0.1:8088/cockpit\n")
-    assert ts.parse_funnel_serving(on, "/cockpit") is True
-    assert ts.parse_funnel_serving(on, "/panel") is False      # different path
-    assert ts.parse_funnel_serving("No serve config", "/cockpit") is False
-    assert ts.parse_funnel_serving("", "/cockpit") is False
+          "|-- /console proxy http://127.0.0.1:8088/console\n")
+    # Default path is now /console (the #216 migration).
+    assert ts.parse_funnel_serving(on) is True
+    assert ts.parse_funnel_serving(on, "/console") is True
+    # Still parameterizable — an explicit foreign path is not matched.
+    assert ts.parse_funnel_serving(on, "/cockpit") is False
+    assert ts.parse_funnel_serving("nothing here") is False
+    assert ts.parse_funnel_serving("") is False
 
 
 def t_parse_funnel_capable():
@@ -130,15 +133,30 @@ def t_parse_magicdns_name():
 
 
 def t_funnel_args():
-    on = ts.funnel_args(path="/cockpit", target_port=8088, enable=True)
-    assert on == ["funnel", "--bg", "--set-path=/cockpit",
-                  "http://127.0.0.1:8088/cockpit"]
+    on = ts.funnel_args(path="/console", target_port=8088, enable=True)
+    assert on == ["funnel", "--bg", "--set-path=/console",
+                  "http://127.0.0.1:8088/console"]
     # Teardown ignores path/port and resets the funnel config wholesale: the
     # path-specific `--set-path=… off` form silently failed with "handler does
     # not exist" (#200). `funnel reset` is the only form Tailscale verifiably
     # tears down across the versions we target.
-    off = ts.funnel_args(path="/cockpit", target_port=8088, enable=False)
+    off = ts.funnel_args(path="/console", target_port=8088, enable=False)
     assert off == ["funnel", "reset"]
+
+
+def t_funnel_args_mounts_only_console():
+    # Boundary invariant (#216): the public Funnel exposes ONLY /console. The
+    # enable argv must mount exactly one path-prefix, that prefix must be
+    # /console, the reverse-proxy target must stay under /console, and nothing
+    # may mount the root ("/") or the old /cockpit prefix. Root control
+    # endpoints therefore remain unreachable from the public internet.
+    argv = ts.funnel_args(path="/console", target_port=8088, enable=True)
+    set_paths = [a for a in argv if a.startswith("--set-path=")]
+    assert set_paths == ["--set-path=/console"], set_paths
+    assert argv[-1] == "http://127.0.0.1:8088/console"
+    assert not any(a == "--set-path=/" or a.endswith("=/cockpit")
+                   or a.rstrip("/").endswith("/cockpit") for a in argv)
+    assert "/cockpit" not in " ".join(argv)
 
 
 def t_status_snapshot_text_shape():

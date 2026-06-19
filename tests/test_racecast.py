@@ -1716,19 +1716,66 @@ def t_set_env_key_preserves_other_keys():
 
 def t_route_cockpit():
     assert m.route(["cockpit", "links"]) == {"kind": "cockpit", "rest": ["links"]}
-    assert m.route(["cockpit", "funnel", "on"]) == {
-        "kind": "cockpit", "rest": ["funnel", "on"]}
     assert m.route(["cockpit", "token", "revoke", "Alpha"]) == {
         "kind": "cockpit", "rest": ["token", "revoke", "Alpha"]}
-    # cockpit validates the verb at route() time (unlike chat); the removed
-    # enable/disable verbs (zero-config now) are rejected like any unknown verb
+    # `funnel` is no longer a cockpit verb (#216 — it is a top-level command now);
+    # like the removed enable/disable verbs it is rejected at route() time.
     for bad in (["cockpit"], ["cockpit", "bogus"], ["cockpit", "enable"],
-                ["cockpit", "disable"]):
+                ["cockpit", "disable"], ["cockpit", "funnel", "on"]):
         try:
             m.route(bad)
             raise AssertionError(bad)
         except ValueError:
             pass
+
+
+def t_route_funnel():
+    assert m.route(["funnel", "on"]) == {"kind": "funnel", "rest": ["on"]}
+    assert m.route(["funnel", "off"]) == {"kind": "funnel", "rest": ["off"]}
+    # Validation of on|off happens in funnel_cmd, not route(): route stays a
+    # pure pass-through for the funnel command (like chat/profile).
+    assert m.route(["funnel"]) == {"kind": "funnel", "rest": []}
+
+
+def t_funnel_auto_enabled_gate():
+    # _funnel_auto_enabled gates `event start` auto-bringup on the opt-in flag
+    # AND a usable cockpit. The gate reads cockpit_status_data(), whose real
+    # shape is {ok, has_secret, ...} — there is NO "enabled" key (#216 fix: a
+    # stale gate on st["enabled"] made the whole auto-enable path dead).
+    import tempfile
+    orig_env_file = m._env_file
+    orig_status = m.cockpit_status_data
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            epath = os.path.join(d, ".env")
+            m._env_file = lambda: epath
+            usable = {"ok": True, "has_secret": True}
+
+            # Opt-in flag set + usable cockpit -> True (the fix; would be False
+            # under the old st["enabled"] gate).
+            with open(epath, "w", encoding="utf-8") as fh:
+                fh.write("RACECAST_FUNNEL=true\n")
+            m.cockpit_status_data = lambda: usable
+            assert m._funnel_auto_enabled() is True
+
+            # Legacy env name still honored (one-release fallback).
+            with open(epath, "w", encoding="utf-8") as fh:
+                fh.write("RACECAST_COCKPIT_FUNNEL=on\n")
+            assert m._funnel_auto_enabled() is True
+
+            # Flag absent -> False regardless of cockpit usability.
+            with open(epath, "w", encoding="utf-8") as fh:
+                fh.write("RACECAST_FUNNEL=false\n")
+            assert m._funnel_auto_enabled() is False
+
+            # Flag set but cockpit not usable (no secret) -> False.
+            with open(epath, "w", encoding="utf-8") as fh:
+                fh.write("RACECAST_FUNNEL=true\n")
+            m.cockpit_status_data = lambda: {"ok": True, "has_secret": False}
+            assert m._funnel_auto_enabled() is False
+    finally:
+        m._env_file = orig_env_file
+        m.cockpit_status_data = orig_status
 
 
 def t_cookies_twitch_routing():

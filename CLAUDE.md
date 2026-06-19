@@ -175,7 +175,7 @@ python3 src/racecast.py backup create|list|restore|delete <label>  # named look 
 python3 src/racecast.py cockpit enable     # talent Commentator Cockpit: generate a per-league secret + turn it on for this machine (#191)
 python3 src/racecast.py cockpit disable    # stop serving /cockpit on this machine
 python3 src/racecast.py cockpit links      # print per-commentator cockpit links (roster = the active schedule's streamers); --post puts them in crew chat
-python3 src/racecast.py cockpit funnel on|off  # public ingress for ONLY /cockpit via Tailscale Funnel (needs MagicDNS+HTTPS+funnel nodeAttr)
+python3 src/racecast.py funnel on|off  # public ingress for ONLY /console (the role-adaptive crew launcher) via Tailscale Funnel (needs MagicDNS+HTTPS+funnel nodeAttr)
 python3 src/racecast.py cockpit setup-funnel    # automate the one-time tailnet prereqs (MagicDNS + funnel nodeAttr) via a Tailscale API access token; --apply to perform (dry-run default)
 python3 src/racecast.py cockpit token revoke <streamer>  # rotate one commentator's link (bumps their version)
 python3 src/racecast.py --version
@@ -407,7 +407,7 @@ auth-gated `/cockpit/*` namespace: a live program monitor (reusing
 `get_program_screenshot`), an "ON AIR / UP NEXT" tally (`cockpit_tally`, derived from the
 on-air feed + the live schedule via `asset_key`-normalised streamer names), the embedded
 crew chat (identity forced to the token's streamer), and a read-only timer. It is exposed
-**publicly via Tailscale Funnel**, which maps **only** the `/cockpit` path prefix to
+**publicly via Tailscale Funnel**, which maps **only** the `/console` path prefix to
 `127.0.0.1:8088` — the rest of the relay stays tailnet/loopback-only and is **never**
 funnelled (the security boundary). Funnel passes no Tailscale identity, so auth is 100%
 server-side: a per-commentator token `<streamer_key>.<version>.<sig>` signed with a
@@ -417,8 +417,8 @@ The cockpit is **zero-config**: the secret is **auto-provisioned** by the CLI on
 start (`_ensure_active_cockpit_secret` in `src/racecast.py`, idempotent, never the shipped
 `example` profile), so `/cockpit/*` is live **whenever a secret exists** — there is no
 separate enable flag. When the secret is absent every `/cockpit/*` path 404s (like chat/timer
-when disabled). PUBLIC exposure is the **independent Funnel switch** (`cockpit funnel on`),
-the only way `/cockpit` leaves the tailnet. The token rides in
+when disabled). PUBLIC exposure is the **independent Funnel switch** (`racecast funnel on`),
+which mounts **only** `/console` — the only way `/console` leaves the tailnet. The token rides in
 the `…/cockpit?t=` link once, then an `HttpOnly; Secure; SameSite=Lax` `rc_cockpit` cookie.
 Auth core: `src/scripts/cockpit_auth.py`; revocation store: `src/scripts/cockpit_admin.py`;
 talent page: `src/cockpit/cockpit.html`; CLI: `racecast cockpit …`; takeover pulls A's

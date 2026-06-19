@@ -58,13 +58,13 @@ profile, which is never auto-provisioned). The link roster is the distinct strea
 the active schedule. `racecast cockpit links --post` also drops the links into the crew chat.
 
 > **Turning it off:** the cockpit has no off switch other than not exposing it — to take it
-> off the public internet run `racecast cockpit funnel off`. On the tailnet it stays
+> off the public internet run `racecast funnel off`. On the tailnet it stays
 > token-gated like the rest of the relay.
 
 ## Public access via Tailscale Funnel — one-time setup
 
 Funnel is available on **all Tailscale plans incl. the free tier**, but it needs a
-**one-time tailnet-admin** setup before `racecast cockpit funnel on` will work. These
+**one-time tailnet-admin** setup before `racecast funnel on` will work. These
 are **control-plane** settings — they live in the Tailscale admin console, **not** on
 this machine, so they cannot be scripted from the node.
 
@@ -128,17 +128,17 @@ instead of the default `autogroup:member` if you want a tighter grant.
 Then, on the producer machine:
 
 ```bash
-racecast cockpit funnel on    # publish ONLY /cockpit on https://<magicdns-host>
-racecast cockpit funnel off   # tear it down
+racecast funnel on    # publish ONLY /console on https://<magicdns-host>
+racecast funnel off   # tear it down
 ```
 
-`racecast cockpit funnel on` **pre-checks** the `funnel` nodeAttr and fails fast with
+`racecast funnel on` **pre-checks** the `funnel` nodeAttr and fails fast with
 these exact steps if it is missing (rather than hanging on Tailscale's interactive
 enable prompt). Pass `--force` to skip the pre-check.
 
-> **Security boundary:** Funnel forwards only the `/cockpit` path. Confirm from
+> **Security boundary:** Funnel forwards only the `/console` path. Confirm from
 > outside the tailnet that `https://<magicdns-host>/status` and `/panel` are **not**
-> reachable — only `/cockpit` should be.
+> reachable — only `/console` should be.
 
 The Funnel host is the **active producer's** MagicDNS name. On a producer handover
 it changes, so re-run `racecast cockpit links` on the new machine and re-share.
