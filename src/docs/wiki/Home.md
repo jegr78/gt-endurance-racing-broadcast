@@ -34,6 +34,7 @@ flowchart LR
 - **Running a show today?** → [Run an event](Run-an-event)
 - **You're the remote director?** → [Director setup](Director-Setup) (first
   time), then the [Director guide](Director)
+- **Helping over the internet without a Tailscale account?** → [Remote access & the Funnel](Remote-access)
 - **Not sure who does what?** → [Who does what](Who-does-what)
 - **Something's broken?** → [If something goes wrong](If-something-goes-wrong)
 - **Developer / want the technical detail?** → [Architecture](Architecture) and the
@@ -52,6 +53,8 @@ flowchart LR
 | **The panel** | the director's browser page at `:8088/panel` — every control of the show on one page — [Director guide](Director) |
 | **Companion** | Bitfocus Companion, the big-buttons board (browser or Stream Deck), the panel's sibling — [Companion](Companion) |
 | **Tailscale** | the private-network app that makes the producer's PC reachable for remote directors — [Director setup](Director-Setup) |
+| **Funnel** | Tailscale's public ingress; the producer can publish **only** the role-gated `/console` crew page on it, so commentators/directors can help with no Tailscale account — [Remote access & the Funnel](Remote-access) |
+| **/console** | the single role-adaptive crew link — one per person; shows the cockpit, the panel and/or takeover per the person's roles — [Remote access](Remote-access) |
 | **The Sheet** | the shared Google Sheet that drives the schedule, the HUD and the downloadable assets — [Configuration & secrets](Configuration) |
 | **Cookies** | the exported YouTube login the relay needs to pass YouTube's bot check (required); optionally also Twitch for gated feeds — [Relay-Mode](Relay-Mode) |
 | **Preflight** | `racecast preflight`, the machine check that names the exact fix for anything missing — [Set up the broadcast PC](Set-up-the-broadcast-PC) |

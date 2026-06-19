@@ -63,6 +63,14 @@ OBS_COLLECTION=
   several leagues can keep separate collections in OBS on one machine. `racecast setup`
   writes this name into the import JSON; blank = the template name `GT Endurance Racing`.
   The per-league convention is `GT Endurance Racing — <league>`.
+- **`CONSOLE_SECRET`** *(auto-managed — do not set by hand)* — the per-league HMAC secret
+  that signs the `/console` identity tokens (commentator/director/producer) and acts as the
+  step-up secret for irreversible producer ops. It is **generated automatically** on the
+  first `racecast relay start` / `event start` and travels with `racecast profile export`/
+  import, so every producer of a league shares one secret. Keep it gitignored like the rest
+  of `profile.env`; if it leaks, rotate it (delete the line and restart to regenerate, then
+  re-export to the other producers). The legacy key name `COCKPIT_SECRET` is still read as a
+  fallback. See [Remote access](Remote-access#one-link-every-role).
 
 **Which profile is active** (resolution order): a global `--profile <name>` flag wins;
 then the machine `RACECAST_PROFILE` (or `.env`) value; then the `runtime/active-profile`

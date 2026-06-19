@@ -123,12 +123,13 @@ so the Stream Deck and the panel share one muscle memory:
 | **Qualifying** | collapsible section for the single qualifying stream (different day): **QUALIFYING / RACE MODE** switches the relay's active schedule (Qualifying tab served on Feed A), plus a one-row Streamer/Stint/URL editor writing the Qualifying tab. Or bring the stack up in that mode with `racecast event start --qualifying` ([Director guide](Director#director-panel--qualifying)) |
 
 The status strip at the top shows what is on air, which stint each feed
-carries, the POV state and the race timer. **FEEDS, TIMER, HUD and URLs
-work relay-only** — no OBS connection needed (HUD and URLs additionally
-need the sheet-write webhook, see [Sheet-Webhook](Sheet-Webhook); without it
-they are display-only). Everything else needs the OBS WebSocket connection:
-the producer's Tailscale IP, port `4455`, and the password from OBS → Tools →
-WebSocket Server Settings.
+carries, the POV state and the race timer. **Every control works relay-only** —
+scenes, sources and audio included: the panel calls the relay, and the relay
+drives the producer's local OBS, so the director needs **no OBS IP, port or
+password**. HUD and URLs additionally need the sheet-write webhook (see
+[Sheet-Webhook](Sheet-Webhook); without it they are display-only). Because the
+panel holds no OBS credential, it also works in full over the public Funnel at
+`/console/panel` — see [Remote access](Remote-access).
 
 ## During the race: driver changes
 
@@ -194,6 +195,14 @@ is fine.
    them — just forward).
 5. Outgoing producer: stop the stream (the YouTube redirect takes over), then
    `racecast event stop`.
+
+> **Taking over without a Tailscale account?** If the incoming producer is **not** on
+> the tailnet, they can still pull the handover state over the outgoing producer's public
+> Funnel: `racecast event takeover <A-magicdns-host> --funnel [--stint N]`. It reads A's
+> on-air stint, chat and revocations over `/console` (authenticated with the shared league
+> `CONSOLE_SECRET`) and brings the station up at that stint. Feed stream URLs never leave
+> A's tailnet. The tailnet form `racecast event takeover <A-tailscale-ip>` is unchanged.
+> Details: [Remote access](Remote-access#producer-takeover-over-the-funnel).
 
 Typo, or forgot `--stint`? Fix it **before going live**:
 `http://127.0.0.1:8088/set/stint/<N>` repositions both feeds. Like the other

@@ -23,7 +23,8 @@ generates both a 1080p and a 720p rendition; the pull side prefers
 
 Streamers push to their own YouTube channels; the producer station pulls them in, composes
 the show with overlays and Discord audio, and pushes one broadcast to the league's channel.
-Remote directors drive it from a browser over Tailscale. One station can serve several
+Remote directors drive it from a browser over Tailscale — or, without a Tailscale account,
+over the public [Funnel](Remote-access). One station can serve several
 leagues — each is a **profile** (its own sheet, graphics, overlay CSS and OBS collection);
 a resolver picks the active one (`--profile` > `RACECAST_PROFILE` > `runtime/active-profile`
 pointer > sole profile).
@@ -128,10 +129,13 @@ tab `Timer` + the active profile's `runtime/<profile>/timer.json`, Director-cont
 ## 3. Control flow
 
 The director never touches the producer machine directly. The **director panel** is the
-primary control surface (organized as mixer-bus rows); it talks to OBS directly over the
-WebSocket, so it needs the OBS WebSocket password once per device. Companion offers the
-same action set as a hardware-style button board — it talks to OBS over its WebSocket and
-to the relay over plain HTTP GETs.
+primary control surface (organized as mixer-bus rows); it talks **only to the relay** over
+plain HTTP. Scene switches, source visibility and audio are **relay-mediated**: the panel
+calls `/obs/{scene,source,audio,state}` and the relay drives OBS over the WebSocket **on the
+producer's own machine** — so the panel needs **no OBS IP, port or password**, and the OBS
+password never leaves the producer station. Companion offers the same action set as a
+hardware-style button board; running on the producer station, it talks to OBS over its
+WebSocket directly and to the relay over plain HTTP GETs.
 
 ```mermaid
 flowchart LR
@@ -140,16 +144,24 @@ flowchart LR
     OM["OBS Studio module"]
   end
 
-  GH -->|"HTTP GET"| EP["Relay control server :8088<br/>/next  /reload  /set/A/n<br/>/pov/reload  /pov/stop  /pov/toggle  /timer/*  /status  /panel"]
-  OM -->|"WebSocket"| WS["OBS WebSocket :4455"]
-  PANEL["Director panel<br/>served at /panel"] -->|"WebSocket, direct"| WS
+  GH -->|"HTTP GET"| EP["Relay control server :8088<br/>/next  /reload  /set/A/n  /pov/*<br/>/timer/*  /obs/*  /status  /panel"]
+  PANEL["Director panel<br/>served at /panel or /console/panel"] -->|"HTTP only"| EP
+  EP -->|"WebSocket, on the producer machine"| WS["OBS WebSocket :4455"]
+  OM -->|"WebSocket"| WS
 
-  DIR["Director browser<br/>over Tailscale"] -->|":8000/tablet"| Companion
+  DIR["Director browser<br/>tailnet or Funnel"] -->|":8000/tablet"| Companion
 ```
 
-The relay control server is **unauthenticated** and bound to `127.0.0.1` by default.
-For remote directors, prefer binding it to the producer's **Tailscale IP** rather than
-`0.0.0.0` — `/status` reveals stream URLs.
+The relay's **root** control surface (`/panel`, `/status`, `/next`, `/set/*`, the feed
+ports, `/obs/*`) is **unauthenticated** and bound to `127.0.0.1` plus the Tailscale IP by
+default (`--bind auto`) — never `0.0.0.0`, because `/status` reveals stream URLs. The
+**tailnet is the trust boundary** for that surface.
+
+For crew who are **not** on the tailnet, the relay also serves an authenticated,
+role-gated **`/console`** mirror — the *only* thing exposed over the public Tailscale Funnel.
+One signed link per person, roles resolved live from the Crew tab ∪ Schedule, with a
+step-up secret on the few irreversible producer ops. OBS-WebSocket is never funnelled. See
+[Remote access & the Funnel boundary](Remote-access) for the full model.
 
 ---
 

@@ -35,6 +35,7 @@ OBS_COLLECTION=
 | **`INTRO_URL` / `OUTRO_URL`** *(optional)* | Override the Intro/Outro clip URLs that normally come from the Sheet's Assets tab (used by `racecast media`). |
 | **`LOGO`** *(optional)* | A logo image (path relative to the profile dir) for the Control Center. |
 | **`OBS_COLLECTION`** *(optional)* | The OBS scene-collection name this league uses, so several leagues keep separate collections in OBS on one machine. Blank = the profile's `NAME`. |
+| **`CONSOLE_SECRET`** *(auto-managed)* | The per-league secret signing the `/console` crew tokens; **auto-generated on first relay start** and shared across a league's producers via export/import — never set it by hand. See [Configuration](Configuration) and [Remote access](Remote-access). |
 
 A profile folder also holds the league's overlay CSS (`overlay/`, see
 [HUD overlays](HUD-Overlays)); its downloaded graphics and media live under
@@ -130,7 +131,8 @@ racecast profile export <name> --out /tmp/my-league.zip   # custom output path
 ```
 
 The bundle contains the entire `profiles/<name>/` tree — `profile.env` (including
-`SHEET_PUSH_URL`), overlay CSS, any logo — and, unless `--no-assets`, the runtime
+`SHEET_PUSH_URL` **and the auto-generated `CONSOLE_SECRET`**, so the new producer shares the
+league's crew-token secret), overlay CSS, any logo — and, unless `--no-assets`, the runtime
 `graphics/` and `media/` for that profile. Send the zip to the other producer by any
 means (file share, USB drive, etc.).
 
