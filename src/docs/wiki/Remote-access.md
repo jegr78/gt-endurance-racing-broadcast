@@ -117,12 +117,13 @@ flowchart LR
     RELAY["Relay :8088"]
     OBS["OBS + OBS-WebSocket :4455"]
     COMP["Companion :8000"]
-    PRIV["tailnet/loopback only:<br/>/panel /status feeds<br/>/obs/* /crew /submissions"]
+    PRIV["tailnet/loopback only:<br/>/panel /status feeds<br/>/obs/* /crew /submissions<br/>Companion native port"]
   end
   CREW -->|"https://&lt;magicdns&gt;/console"| MOUNT --> RELAY
   RELAY -. "director-gated, on the producer machine" .-> OBS
+  RELAY -. "director-gated buttons proxy (HTTP+WS)" .-> COMP
   RELAY --- PRIV
-  COMP -.->|"never funnelled"| OBS
+  COMP -->|"WebSocket — never funnelled"| OBS
 ```
 
 What stays private (reachable only on the tailnet or loopback, never over Funnel):
@@ -134,7 +135,9 @@ What stays private (reachable only on the tailnet or loopback, never over Funnel
   director therefore drives the full panel over `/console/panel` with **no OBS IP, port or
   password** at all;
 - the director-only `/submissions/*` approve/reject endpoints and the `/crew/data` roster;
-- **Companion** — its admin+buttons port is never exposed publicly (see below).
+- **Companion's native port** — the Companion admin GUI and native button-board port are
+  not funnelled; the relay proxies only the web-buttons page at `/console/buttons` (see
+  below).
 
 Confirm the boundary from outside the tailnet after `racecast funnel on`:
 `https://<magicdns-host>/status` and `/panel` must **not** load — only `/console` should.
@@ -156,14 +159,27 @@ leave A's tailnet). A wrong secret aborts loudly; an unreachable host falls back
 and uses no step-up header. Full detail:
 [Commentator Cockpit → Takeover over Funnel](Commentator-Cockpit#takeover-over-funnel).
 
-## Companion stays on the tailnet
+## Companion web buttons over the Funnel (`/console/buttons`)
 
-The physical **Companion** button board is **not** exposed over the Funnel (Companion has no
-sub-path support, so it cannot be served under the single `/console` mount, and its admin
-and button surfaces share one port behind only a weak password). Remote Companion access
-keeps using the tailnet (`racecast companion start` binds it to the Tailscale IP). A remote
-director without Tailscale uses **`/console/panel`** instead, which already delivers the full
-live-control workflow over the Funnel. See [Companion](Companion).
+A director can open their physical Companion button page in the browser over the Funnel at
+`/console/buttons` (a card on the `/console` launcher, shown when Companion ≥ v4.1.0 is
+running). The relay reverse-proxies it — HTTP for the page and assets, plus a transparent
+WebSocket passthrough for Companion's realtime control channel — behind the **director token
+gate**. The page needs no Tailscale account.
+
+> **Security note (deliberate).** Companion has no real auth boundary by vendor design — its
+> admin password "only stops casual browsers", and its realtime channel can export the full
+> configuration without authentication (bitfocus/companion#3814, closed *won't-fix*). So an
+> authenticated **director** reaching `/console/buttons` effectively has full control of that
+> Companion, including a config export that may contain stored credentials. This is an
+> accepted trade-off (we trust the director roster; a director on the tailnet already has the
+> same access). Recommendations: do not store reusable secrets in a funnelled Companion
+> (rotate the OBS-WebSocket password if it must live there); `racecast cockpit token revoke`
+> rotates a leaked link at once. Only `/console` is Funnel-mounted — `/console/buttons` is a
+> sub-path of that single mount, proxied internally; there is no second mount, and
+> OBS-WebSocket is still never funnelled.
+
+Companion's native admin port stays tailnet-only (never funnelled). See [Companion](Companion).
 
 ---
 

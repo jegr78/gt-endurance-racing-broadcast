@@ -62,7 +62,7 @@ flowchart LR
   OBS -->|RTMP push| YT
   COMP --> WS --> OBS
   COMP -->|"GET /next /reload /pov/*"| RELAY
-  DIR -->|"web buttons :8000"| COMP
+  DIR -->|"web buttons :8000 (tailnet)<br/>or /console/buttons (Funnel, director-gated)"| COMP
 ```
 
 The producer's only live job: **start and stop** the broadcast. Everything else is
@@ -135,7 +135,10 @@ calls `/obs/{scene,source,audio,state}` and the relay drives OBS over the WebSoc
 producer's own machine** — so the panel needs **no OBS IP, port or password**, and the OBS
 password never leaves the producer station. Companion offers the same action set as a
 hardware-style button board; running on the producer station, it talks to OBS over its
-WebSocket directly and to the relay over plain HTTP GETs.
+WebSocket directly and to the relay over plain HTTP GETs. Directors can also reach
+Companion's web-buttons page at `/console/buttons` over the Funnel (Companion ≥ v4.1.0) —
+the relay reverse-proxies it (HTTP + WebSocket) behind the director gate; see
+[Remote access](Remote-access#companion-web-buttons-over-the-funnel-consolebuttons).
 
 ```mermaid
 flowchart LR
@@ -147,9 +150,10 @@ flowchart LR
   GH -->|"HTTP GET"| EP["Relay control server :8088<br/>/next  /reload  /set/A/n  /pov/*<br/>/timer/*  /obs/*  /status  /panel"]
   PANEL["Director panel<br/>served at /panel or /console/panel"] -->|"HTTP only"| EP
   EP -->|"WebSocket, on the producer machine"| WS["OBS WebSocket :4455"]
+  EP -. "director-gated buttons proxy (HTTP+WS)" .-> Companion
   OM -->|"WebSocket"| WS
 
-  DIR["Director browser<br/>tailnet or Funnel"] -->|":8000/tablet"| Companion
+  DIR["Director browser<br/>tailnet or Funnel"] -->|":8000/tablet (tailnet)<br/>/console/buttons (Funnel)"| Companion
 ```
 
 The relay's **root** control surface (`/panel`, `/status`, `/next`, `/set/*`, the feed
@@ -158,9 +162,11 @@ default (`--bind auto`) — never `0.0.0.0`, because `/status` reveals stream UR
 **tailnet is the trust boundary** for that surface.
 
 For crew who are **not** on the tailnet, the relay also serves an authenticated,
-role-gated **`/console`** mirror — the *only* thing exposed over the public Tailscale Funnel.
+role-gated **`/console`** mirror — the *only* path exposed over the public Tailscale Funnel.
 One signed link per person, roles resolved live from the Crew tab ∪ Schedule, with a
-step-up secret on the few irreversible producer ops. OBS-WebSocket is never funnelled. See
+step-up secret on the few irreversible producer ops. OBS-WebSocket is never funnelled.
+Companion's web-buttons page is reachable over the Funnel at `/console/buttons` (director
+gate, relay-proxied — a sub-path of the single `/console` mount). See
 [Remote access & the Funnel boundary](Remote-access) for the full model.
 
 ---

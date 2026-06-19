@@ -411,7 +411,10 @@ on-air feed + the live schedule via `asset_key`-normalised streamer names), the 
 crew chat (identity forced to the token's streamer), and a read-only timer. It is exposed
 **publicly via Tailscale Funnel**, which maps **only** the `/console` path prefix to
 `127.0.0.1:8088` — the rest of the relay stays tailnet/loopback-only and is **never**
-funnelled (the security boundary). Funnel passes no Tailscale identity, so auth is 100%
+funnelled (the security boundary). `/console/buttons` reverse-proxies (HTTP + a raw-WebSocket
+passthrough for Companion's tRPC `/trpc`) to the resolved local Companion bind address,
+director-gated (#236); it is a sub-path of the single `/console` mount (no second mount);
+OBS-WebSocket remains never funnelled. Funnel passes no Tailscale identity, so auth is 100%
 server-side: a per-commentator token `<streamer_key>.<version>.<sig>` signed with a
 **per-league** `CONSOLE_SECRET` (`profiles/<name>/profile.env`, travels with `profile
 export`; the legacy `COCKPIT_SECRET` key is still read as a fallback for one release so
@@ -452,8 +455,9 @@ local `--stint N` bringup. On success, B's relay is brought up via the normal `e
 path with the adopted stint/league/title/mode, and chat + versions are applied locally
 (`ca.apply_pulled` / `cpadm.apply_pulled`, same as the tailnet pull path). The tailnet path
 (`racecast event takeover <100.x-ip>`) is unchanged and does not use the step-up header.
-The security boundary is preserved: only `/console` is Funnel-mounted; no takeover endpoint
-is reachable without the step-up secret; feed URLs stay tailnet-only. CLI helper:
+The security boundary is preserved: only `/console` is Funnel-mounted (with `/console/buttons`
+as a director-gated relay-proxy sub-path — no second mount); no takeover endpoint is reachable
+without the step-up secret; feed URLs stay tailnet-only; OBS-WebSocket is never funnelled. CLI helper:
 `_funnel_takeover_base(host)` + `_takeover_get(url, secret, timeout)`; plan:
 `docs/superpowers/plans/2026-06-19-console-roles-phase7-takeover-funnel.md`.
 

@@ -60,6 +60,26 @@ also clears Race Control when it cuts back to the Stint scene, so a swap done pu
 writes go to `/setup/set/racecontrol/…` / `/setup/clear/racecontrol` and need the
 [sheet-write webhook](Sheet-Webhook).
 
+## Remote access
+
+### Over the tailnet
+
+`racecast companion start` binds Companion to this machine's Tailscale IP. A director on
+the tailnet opens `http://<tailscale-ip>:8000/tablet` in any browser to reach the live
+button page.
+
+### Over the Funnel (no Tailscale account needed)
+
+With Companion ≥ v4.1.0 running and `racecast funnel on` active, a director can open the
+web-buttons page at `https://<magicdns-host>/console/buttons` — shown as a card on the
+`/console` launcher. The relay reverse-proxies the request (HTTP for the page and assets,
+plus a transparent WebSocket passthrough for Companion's realtime channel) behind the
+**director token gate**. No Tailscale account or extra configuration is needed on the
+director's side.
+
+See [Remote access → Companion web buttons over the Funnel](Remote-access#companion-web-buttons-over-the-funnel-consolebuttons)
+for the full security boundary and trade-off note.
+
 ## Test
 
 Run `racecast companion open-tablet` (opens the board on Companion's bound address), press
