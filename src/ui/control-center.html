@@ -632,6 +632,20 @@
           <p class="envhint">League config for the <b>active profile</b> — Sheet ID, push URL, intro/outro, logo, and the OBS scene-collection name (<b>OBS_COLLECTION</b>). Stored in <b>profiles/&lt;active&gt;/profile.env</b>. Values are masked; click the eye to reveal. <b>Open Sheet ↗</b> opens this league's Google Sheet (built from <b>SHEET_ID</b>) in a new tab. Changes apply when you next (re)start the relay.</p>
         </section>
 
+        <section>
+          <div class="viewhead"><h3>Crew</h3>
+            <span class="sub">named roster for Director Panel access + /console roles</span>
+            <span class="spacer"></span>
+            <button onclick="loadCrew()">
+              <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button></div>
+          <div class="enverr" id="crew-err" hidden></div>
+          <div class="envhead"><span style="width:28px;flex:0 0 auto">#</span><span class="v">Name</span><span style="width:68px;flex:0 0 auto;text-align:center">Director</span><span style="width:68px;flex:0 0 auto;text-align:center">Producer</span><span style="width:80px;flex:0 0 auto"></span></div>
+          <div id="crew-rows"></div>
+          <div class="addrow"><button onclick="crewAddRow()">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add person</button></div>
+          <p class="envhint">Director/Producer tag who may reach the Director Panel / producer ops over the console. Needs the Sheet <b>Crew</b> tab + the <b>crew</b> webhook action (wiki: Sheet-Webhook).</p>
+        </section>
+
         <section id="overlay-section">
           <div class="viewhead"><h3>Overlay Builder</h3>
             <span class="sub">drag &amp; style the HUD + Timer slots</span><span class="spacer"></span>
@@ -2436,6 +2450,7 @@ async function loadProfiles(force) {
   });
   loadProfileEnv();                       // editor reflects the now-active profile
   loadOverlay();                          // overlay-CSS editor for the active profile
+  loadCrew();                             // Crew editor for the active profile
   loadBackups();                          // Looks card for the active profile
   fetchAssetFiles();                      // graphics/media gallery for the active profile
 }
@@ -3290,6 +3305,111 @@ function applyOverlay() { op('obs-refresh'); }
 function openHudPreview() {
   const port = (lastStatus && lastStatus.relay && lastStatus.relay.port) || 8088;
   window.open('http://127.0.0.1:' + port + '/hud/preview', '_blank', 'noopener');
+}
+
+// ----- Crew editor card (issue #216) -----
+// Loaded with the Profile view (via loadProfiles) and on every profile switch.
+// Consumes GET /api/crew and POST /api/crew (save) / /api/crew/delete.
+// Errors surface inline on #crew-err; user-controlled text goes through
+// textContent/value (never innerHTML) to prevent XSS.
+
+async function loadCrew() {
+  $('crew-err').hidden = true;
+  const c = $('crew-rows');
+  c.textContent = '';
+  let d;
+  try { d = await (await fetch('/api/crew', {cache: 'no-store'})).json(); }
+  catch (e) { showProfileErr('crew-err', 'Control Center not reachable.'); return; }
+  if (!d.ok) { showProfileErr('crew-err', d.error || 'could not load crew'); return; }
+  (d.entries || []).forEach(e => c.appendChild(crewRow(e.row, e.name, e.director, e.producer)));
+}
+
+// Build one editable crew row (row is 1-based).
+function crewRow(row, name, director, producer) {
+  const wrap = document.createElement('div');
+  wrap.className = 'envrow';
+  wrap.dataset.crewRow = row;
+
+  const num = document.createElement('span');
+  num.style.cssText = 'width:28px;flex:0 0 auto;color:var(--faint);font:12px var(--mono);text-align:right';
+  num.textContent = row;
+
+  const nameInp = document.createElement('input');
+  nameInp.type = 'text';
+  nameInp.className = 'v';
+  nameInp.value = name || '';
+  nameInp.setAttribute('aria-label', 'Crew member name');
+  nameInp.placeholder = 'Name';
+
+  const mkChk = (label, checked) => {
+    const cell = document.createElement('span');
+    cell.style.cssText = 'width:68px;flex:0 0 auto;text-align:center';
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.checked = !!checked;
+    chk.setAttribute('aria-label', label);
+    cell.appendChild(chk);
+    return {cell, chk};
+  };
+  const {cell: dirCell, chk: dirChk} = mkChk('Director', director);
+  const {cell: prodCell, chk: prodChk} = mkChk('Producer', producer);
+
+  const actions = document.createElement('span');
+  actions.style.cssText = 'display:flex;gap:6px;width:80px;flex:0 0 auto';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Save';
+  saveBtn.title = 'Save this row';
+  saveBtn.onclick = () => crewSave(wrap, row, nameInp, dirChk, prodChk, saveBtn);
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'danger';
+  delBtn.textContent = 'Delete';
+  delBtn.title = 'Delete this row';
+  delBtn.onclick = () => crewDelete(row);
+
+  actions.append(saveBtn, delBtn);
+  wrap.append(num, nameInp, dirCell, prodCell, actions);
+  return wrap;
+}
+
+async function crewSave(wrap, row, nameInp, dirChk, prodChk, btn) {
+  $('crew-err').hidden = true;
+  const name = nameInp.value.trim();
+  if (!name) { showProfileErr('crew-err', 'Name is required.'); nameInp.focus(); return; }
+  btn.disabled = true;
+  let d;
+  try {
+    d = await (await fetch('/api/crew', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({row, name, director: dirChk.checked, producer: prodChk.checked})})).json();
+  } catch (e) { showProfileErr('crew-err', 'Control Center not reachable.'); btn.disabled = false; return; }
+  if (!d.ok) { showProfileErr('crew-err', d.error || 'could not save crew entry'); btn.disabled = false; return; }
+  const orig = btn.innerHTML;
+  btn.textContent = 'Saved ✓';
+  setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 1200);
+  loadCrew();
+}
+
+async function crewDelete(row) {
+  $('crew-err').hidden = true;
+  let d;
+  try {
+    d = await (await fetch('/api/crew/delete', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({row})})).json();
+  } catch (e) { showProfileErr('crew-err', 'Control Center not reachable.'); return; }
+  if (!d.ok) { showProfileErr('crew-err', d.error || 'could not delete crew entry'); return; }
+  loadCrew();
+}
+
+// Append a blank editable row with row index = current count + 1.
+// The row does not exist on the server yet; Save creates it.
+function crewAddRow() {
+  $('crew-err').hidden = true;
+  const c = $('crew-rows');
+  const newRow = c.children.length + 1;
+  c.appendChild(crewRow(newRow, '', false, false));
 }
 
 // ----- Looks card (named look backups: overlay + graphics + media) -----
