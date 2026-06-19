@@ -2579,30 +2579,36 @@ def event_takeover(rest):
         sys.exit("racecast: producer A is unreachable and no --stint was given — "
                  "read the on-air stint off A's panel and re-run with --stint N.")
 
-    try:                                    # best-effort: a chat failure must not abort
-        if funnel:
+    # best-effort: a chat failure must not abort the takeover. Per branch so the
+    # tailnet path keeps its original `except SystemExit`-only contract (chat_cmd
+    # exits on failure); the funnel pull raises real exceptions (HTTP/URL/ValueError).
+    if funnel:
+        try:
             payload = _takeover_get(base + "/chat", secret)
             n = ca.apply_pulled(_chat_path(), payload)
             _chat_reload_if_running()
             print(f"Pulled {n} messages from A (funnel).")
-        else:
+        except Exception as exc:
+            print(f"note: chat pull failed ({type(exc).__name__}) — continuing takeover.")
+    else:
+        try:
             chat_cmd(["pull", host, "--port", str(port)])
-    except SystemExit:
-        print("note: chat pull failed — continuing takeover.")
-    except Exception as exc:
-        print(f"note: chat pull failed ({type(exc).__name__}) — continuing takeover.")
+        except SystemExit:
+            print("note: chat pull failed — continuing takeover.")
 
-    try:                                    # best-effort: cockpit pull must not abort
-        if funnel:
+    # best-effort: a cockpit-versions failure must not abort (same per-branch split).
+    if funnel:
+        try:
             payload = _takeover_get(base + "/versions", secret)
             count = cpadm.apply_pulled(_cockpit_versions_path(), payload)
             print(f"pulled {count} cockpit version record(s) from A (funnel).")
-        else:
+        except Exception as exc:
+            print(f"note: cockpit-versions pull failed ({type(exc).__name__}) — continuing.")
+    else:
+        try:
             cockpit_cmd(["pull-versions", host, "--port", str(port)])
-    except SystemExit:
-        print("note: cockpit-versions pull failed — continuing takeover.")
-    except Exception as exc:
-        print(f"note: cockpit-versions pull failed ({type(exc).__name__}) — continuing.")
+        except SystemExit:
+            print("note: cockpit-versions pull failed — continuing takeover.")
 
     # Adopt A's on-air event title (#207), persisted to event.json BEFORE bring-up
     # so the new relay loads it (mirrors the chat pull). Best-effort, never aborts.
