@@ -480,6 +480,17 @@ def t_buttons_ws_passthrough_and_strips_token():
         srv.shutdown(); up.close()
 
 
+def t_console_launcher_has_buttons_wiring_for_director():
+    srv = _serve(companion_url="http://127.0.0.1:1"); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console", _tok("bob"))   # director
+        assert code == 200, (code, body)
+        assert "/buttons/health" in body, body
+        assert "RC_API('/buttons/')" in body, body
+    finally:
+        srv.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
