@@ -1853,6 +1853,35 @@ class CrewSource:
             return True
         return False
 
+    def inject_row(self, row, name=None, director=None, producer=None):
+        """Optimistically merge a Control-Center crew write into the in-memory
+        roster so /crew/data reflects it before the next sheet poll. `row` is the
+        1-based data-row index (header excluded); row == len+1 appends a row whose
+        name is non-empty. Each of name/director/producer is applied when given and
+        LEFT UNCHANGED when None. The next CSV poll reconciles against the sheet."""
+        with self.lock:
+            rows = list(self.rows)
+            i = int(row) - 1
+            cur_n, cur_d, cur_p = rows[i] if 0 <= i < len(rows) else ("", False, False)
+            entry = (cur_n if name is None else (name or "").strip(),
+                     cur_d if director is None else bool(director),
+                     cur_p if producer is None else bool(producer))
+            if 0 <= i < len(rows):
+                rows[i] = entry
+            elif i == len(rows) and entry[0]:
+                rows.append(entry)
+            self.rows = rows
+
+    def delete_row(self, row):
+        """Drop the 1-based data row from the in-memory roster (optimistic echo of
+        a Control-Center crew delete). Out-of-range is a no-op."""
+        with self.lock:
+            i = int(row) - 1
+            if 0 <= i < len(self.rows):
+                rows = list(self.rows)
+                del rows[i]
+                self.rows = rows
+
 
 OVERRIDE_TTL = 30  # s: unconfirmed panel write -> HUD falls back to sheet truth
 
@@ -2028,12 +2057,13 @@ class SetupControl:
     The sheet stays authoritative throughout."""
 
     def __init__(self, push_url, hud_source, schedule_source=None, qual_source=None,
-                 pov_source=None):
+                 pov_source=None, crew_source=None):
         self.push_url = push_url
         self.hud = hud_source
         self.schedule_source = schedule_source
         self.qual_source = qual_source
         self.pov_source = pov_source
+        self.crew_source = crew_source
         self.push_status = "disabled" if not push_url else "never"
         self.last_error = None
 
@@ -2118,6 +2148,54 @@ class SetupControl:
         return self._schedule_write(row, url, name, stint,
                                     tab=DEFAULT_QUALIFYING_TAB,
                                     inject_source=self.qual_source)
+
+    # -- crew roster writes (Crew tab: Name | Director | Producer) -------------
+    def crew_set(self, row, name=None, director=None, producer=None):
+        """Write one Crew tab row via the webhook (per-row, mirrors schedule).
+        `name` is free text (crew may be director/producer-only people, not in
+        the streamer vocabulary); director/producer are coerced to booleans."""
+        if not self.push_url:
+            return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
+                             "in the active profile or .env (wiki: Sheet-Webhook)"}
+        rownum = self._crew_rownum(row)
+        if isinstance(rownum, dict):
+            return rownum
+        name = (name or "").strip()
+        if not name:
+            return {"error": "name is required"}
+        payload = {"action": "crew", "row": rownum, "name": name,
+                   "director": bool(director), "producer": bool(producer)}
+        ok, err = self._push(payload, "crew")
+        if ok and self.crew_source is not None:
+            self.crew_source.inject_row(rownum, name, bool(director), bool(producer))
+        return {"ok": True, "row": rownum} if ok else {"error": err}
+
+    def crew_delete(self, row):
+        """Delete one Crew tab row by 1-based index via the webhook."""
+        if not self.push_url:
+            return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
+                             "in the active profile or .env (wiki: Sheet-Webhook)"}
+        rownum = self._crew_rownum(row)
+        if isinstance(rownum, dict):
+            return rownum
+        ok, err = self._push({"action": "crew", "row": rownum, "delete": True}, "crew")
+        if ok and self.crew_source is not None:
+            self.crew_source.delete_row(rownum)
+        return {"ok": True, "row": rownum} if ok else {"error": err}
+
+    @staticmethod
+    def _crew_rownum(row):
+        """A 1-based crew row as int, or an error dict. Mirrors the schedule row
+        validation (rejects bool, non-numeric, < 1)."""
+        if isinstance(row, bool) or not isinstance(row, (int, str)):
+            return {"error": "row must be a whole number (1-based)"}
+        try:
+            row = int(row)
+        except (TypeError, ValueError):
+            return {"error": "row must be a number (1-based)"}
+        if row < 1:
+            return {"error": "row must be >= 1"}
+        return row
 
     def _schedule_write(self, row, url=None, name=None, stint=None,
                         tab=None, inject_source=None):
@@ -3429,6 +3507,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send(setup_ctl.qualifying_set(
                         body.get("row"), body.get("url"), body.get("name"),
                         body.get("stint")))
+                if p == ["crew", "set"]:
+                    return self._send(setup_ctl.crew_set(
+                        body.get("row"), body.get("name"),
+                        body.get("director"), body.get("producer")))
+                if p == ["crew", "delete"]:
+                    return self._send(setup_ctl.crew_delete(body.get("row")))
                 if p == ["pov", "set"]:
                     return self._send(setup_ctl.pov_set(body.get("url"),
                                                         body.get("name")))
@@ -3767,7 +3851,8 @@ def main():
     source = ScheduleSource(csv_url, cache, local)
     source.load_initial(SCHEDULE_TEMPLATE)
     setup_ctl = (SetupControl(push_url, hud_source, schedule_source=source,
-                              qual_source=qual_source, pov_source=pov_source)
+                              qual_source=qual_source, pov_source=pov_source,
+                              crew_source=crew_source)
                  if hud_source else None)
     if len(source.get()) < 2:
         LOG.info("schedule has fewer than 2 stints — Feed B idles on the empty next "

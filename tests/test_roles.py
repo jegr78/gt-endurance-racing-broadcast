@@ -170,6 +170,19 @@ def t_crew_data_endpoint_empty_when_disabled():
         srv.shutdown()
 
 
+def t_crew_source_inject_row_edit_append_and_delete():
+    cs = m.CrewSource("http://crew")
+    cs.rows = [("Alice", True, False)]
+    cs.inject_row(2, name="Bob", director=False, producer=True)   # append at len+1
+    assert cs.get() == [("Alice", True, False), ("Bob", False, True)]
+    cs.inject_row(1, director=False)                              # partial edit in place
+    assert cs.get()[0] == ("Alice", False, False)
+    cs.delete_row(1)
+    assert cs.get() == [("Bob", False, True)]
+    cs.delete_row(9)                                             # out of range = no-op
+    assert cs.get() == [("Bob", False, True)]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
