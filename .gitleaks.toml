@@ -38,3 +38,18 @@ regexes = [
   '''e2e-secret-0123456789abcdef''',
   '''RACECAST_COCKPIT_SECRET=secret''',
 ]
+
+# The /console/buttons WebSocket-passthrough tests reuse the same RFC 6455
+# section 1.3 "sample nonce" Sec-WebSocket-Key as test_obsws.py — the relay and
+# the raw-socket stub never validate it, so the value is arbitrary. The same
+# literal appears in the feature's plan doc (#236).
+[[allowlists]]
+description = "Public RFC 6455 sample WebSocket key in the /console/buttons WS tests + plan (#236)"
+condition = "AND"
+paths = [
+  '''tests/test_console_gate\.py''',
+  '''docs/superpowers/plans/2026-06-19-companion-buttons-funnel\.md''',
+]
+regexes = [
+  '''dGhlIHNhbXBsZSBub25jZQ==''',
+]
