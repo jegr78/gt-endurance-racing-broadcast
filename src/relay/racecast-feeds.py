@@ -2962,7 +2962,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  discord_client_id=None, discord_client_secret=None,
                  console_versions_path=None,
                  submission_store=None, event_store=None, crew_source=None,
-                 console_page_path=None, companion_url=None, logo_path=None):
+                 console_page_path=None, companion_url=None, logo_path=None,
+                 buttons_page_path=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -3424,6 +3425,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return None
                 if sub == ["buttons", "health"]:
                     self._buttons_health()
+                    return None
+                # /console/buttons (exact) -> our thin wrapper page: a "← Console" back
+                # bar + an iframe embedding the Companion tablet UI (same tab as the
+                # other launcher links). /console/buttons/<rest> proxies to Companion.
+                if sub == ["buttons"] and method == "GET" and buttons_page_path:
+                    self._send_page(buttons_page_path, "/console",
+                                    cookie_token=self._cockpit_token(), cookie_path="/console")
                     return None
                 self._proxy_companion(method)
                 return None
@@ -4308,6 +4316,12 @@ def main():
                  os.path.join(here, "..", "console", "console.html")):
         if os.path.exists(cand):
             console_page_path = os.path.abspath(cand); break
+    buttons_page_path = None
+    for cand in (os.path.join(here, "buttons.html"),
+                 os.path.join(here, "..", "buttons.html"),
+                 os.path.join(here, "..", "console", "buttons.html")):
+        if os.path.exists(cand):
+            buttons_page_path = os.path.abspath(cand); break
     if not args.no_hud and not args.sheet_csv_url:
         base = f"https://docs.google.com/spreadsheets/d/{args.sheet_id}/gviz/tq?tqx=out:csv&sheet="
         overlay_url = base + quote(args.overlay_tab)
@@ -4423,6 +4437,7 @@ def main():
                            submission_store=submission_store,
                            event_store=event_store,
                            console_page_path=console_page_path,
+                           buttons_page_path=buttons_page_path,
                            crew_source=crew_source,
                            logo_path=args.logo)
     bind_addrs = resolve_bind_addresses(

@@ -36,6 +36,16 @@ def t_filter_response_headers_drops_framing_and_hop_by_hop():
     assert kept["Set-Cookie"] == "a=b" and kept["X-Foo"] == "bar"
 
 
+def t_filter_response_headers_drops_x_frame_options_for_iframe():
+    # The /console/buttons wrapper embeds Companion in a same-origin iframe, so the
+    # upstream X-Frame-Options must not survive (any casing) — but unrelated headers do.
+    kept = dict((k.lower(), v) for k, v in cp.filter_response_headers(
+        [("X-Frame-Options", "SAMEORIGIN"), ("x-frame-options", "DENY"),
+         ("X-Content-Type-Options", "nosniff")]))
+    assert "x-frame-options" not in kept
+    assert kept["x-content-type-options"] == "nosniff"
+
+
 def t_scrub_relay_cookie_removes_rc_console_only():
     # Only rc_console → None (drop the header).
     assert cp.scrub_relay_cookie("rc_console=abc") is None

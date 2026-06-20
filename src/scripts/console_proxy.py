@@ -75,11 +75,15 @@ def forward_request_headers(headers, prefix=PREFIX_HEADER_VALUE, host="127.0.0.1
 
 def filter_response_headers(items):
     """Upstream response headers to relay back: drop hop-by-hop and the framing headers the
-    proxy recomputes (Content-Length/Type) or forced off (Content-Encoding)."""
+    proxy recomputes (Content-Length/Type) or forced off (Content-Encoding). Also drop
+    x-frame-options so the /console/buttons wrapper can embed Companion in a same-origin
+    iframe (the wrapper and the proxied content share the relay origin; the director gate
+    upstream is the real boundary, not a frame-busting header)."""
     out = []
     for k, v in items:
         lk = k.lower()
-        if lk in HOP_BY_HOP or lk in ("content-length", "content-type", "content-encoding"):
+        if lk in HOP_BY_HOP or lk in ("content-length", "content-type", "content-encoding",
+                                      "x-frame-options"):
             continue
         out.append((k, v))
     return out

@@ -47,6 +47,7 @@ def _serve(companion_url=None, logo_path=None, sheet_id=None):
         panel_path=os.path.join(SRC, "director", "director-panel.html"),
         cockpit_page_path=os.path.join(SRC, "cockpit", "cockpit.html"),
         console_page_path=os.path.join(SRC, "console", "console.html"),
+        buttons_page_path=os.path.join(SRC, "console", "buttons.html"),
         companion_url=companion_url,
         logo_path=logo_path)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -520,8 +521,28 @@ def t_console_launcher_has_buttons_wiring_for_director():
         code, body = _get(port, "/console", _tok("bob"))   # director
         assert code == 200, (code, body)
         assert "/buttons/health" in body, body
-        # The card lands on the web-buttons page (/tablet), not Companion's admin root.
-        assert "RC_API('/buttons/tablet')" in body, body
+        # The card lands on the /console/buttons wrapper (same tab; the wrapper embeds
+        # Companion in an iframe), not directly on Companion's tablet/admin page.
+        assert "RC_API('/buttons')" in body, body
+        assert "/buttons/tablet" not in body, body
+        assert "_blank" not in body, body
+    finally:
+        srv.shutdown()
+
+
+def t_console_buttons_wrapper_page_director_only():
+    # GET /console/buttons (exact) -> our wrapper HTML (back bar + iframe), director-gated.
+    # /console/buttons/<rest> still proxies to Companion (covered elsewhere).
+    srv = _serve(companion_url="http://127.0.0.1:1"); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console/buttons", _tok("bob"))   # director
+        assert code == 200, (code, body)
+        assert "<iframe" in body, body
+        assert "RC_API('/buttons/tablet')" in body, body   # iframe targets the proxied UI
+        assert 'id="back"' in body, body                    # carries the back link
+        # A commentator may not reach the buttons wrapper.
+        code2, _ = _get(port, "/console/buttons", _tok("alice"))
+        assert code2 == 403, code2
     finally:
         srv.shutdown()
 
