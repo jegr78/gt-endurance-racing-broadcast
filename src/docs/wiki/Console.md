@@ -37,6 +37,8 @@ re-issuing the link.
 
 ## Further reading
 
+- [League-Owner Setup](League-Owner-Setup) — how to configure Discord OAuth, register
+  redirect URIs, and maintain the Crew tab so crew members can log in with Discord.
 - [Remote access & the Funnel boundary](Remote-access) — security model, the Funnel
   mount, and how roles are authorised.
 - [Commentator Cockpit](Commentator-Cockpit) — the talent-facing cockpit in detail.

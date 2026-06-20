@@ -91,6 +91,7 @@ python3 tests/test_event.py          # event readiness helpers (probes/launch/as
 python3 tests/test_tailscale.py      # Tailscale detection/control helpers
 python3 tests/test_obsws.py          # minimal obs-websocket client (feed release on stop, page refresh on start)
 python3 tests/test_discord_web.py    # Discord-web/browser capture decision (native-vs-web, browser target)
+python3 tests/test_discord_oauth.py  # pure Discord OAuth helpers (state HMAC, handle match, token mint)
 python3 tests/test_installer_common.py  # shared installer helpers (brew bootstrap)
 python3 tests/test_install_tools.py     # install-tools decision helpers
 python3 tests/test_install_apps.py      # install-apps decision helpers
@@ -216,8 +217,12 @@ Config comes from **two layers** and one resolver:
   `SHEET_ID` (Google Sheet driving schedule + HUD), `SHEET_PUSH_URL` (optional Apps
   Script webhook that lets the relay write to the Sheet: race-timer state + the
   panel's HUD/Schedule/POV controls), `INTRO_URL`, `OUTRO_URL`, `LOGO`,
-  `OBS_COLLECTION`. The shipped `profiles/example/` is a template, excluded from the
-  usable-league list. One install hosts several leagues this way.
+  `OBS_COLLECTION`, `CONSOLE_SECRET` (signs per-person console tokens; auto-provisioned
+  on first relay start), and optionally `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`
+  (per-league Discord OAuth app — when present, `/console/login` + `/console/oauth/callback`
+  are activated; when absent, OAuth is off and signed links remain the only entry path).
+  The shipped `profiles/example/` is a template, excluded from the usable-league list.
+  One install hosts several leagues this way.
 
 `src/scripts/config.py` is the resolver: it parses the machine `.env` + the selected
 `profiles/<name>/profile.env`, picks the active profile (precedence: `--profile` >
@@ -415,19 +420,24 @@ funnelled (the security boundary). `/console/buttons` reverse-proxies (HTTP + a 
 passthrough for Companion's tRPC `/trpc`) to the resolved local Companion bind address,
 director-gated (#236); it is a sub-path of the single `/console` mount (no second mount);
 OBS-WebSocket remains never funnelled. Funnel passes no Tailscale identity, so auth is 100%
-server-side: a per-commentator token `<streamer_key>.<version>.<sig>` signed with a
+server-side: a per-person token `<streamer_key>.<version>.<sig>` signed with the
 **per-league** `CONSOLE_SECRET` (`profiles/<name>/profile.env`, travels with `profile
-export`; the legacy `COCKPIT_SECRET` key is still read as a fallback for one release so
-existing leagues and exports keep working); revocation bumps a streamer's version in
-`runtime/<profile>/cockpit-versions.json`.
+export`); revocation bumps a streamer's version in
+`runtime/<profile>/console-versions.json`.
 The cockpit is **zero-config**: the secret is **auto-provisioned** by the CLI on first relay
 start (`_ensure_active_cockpit_secret` in `src/racecast.py`, idempotent, never the shipped
 `example` profile), so `/cockpit/*` is live **whenever a secret exists** — there is no
 separate enable flag. When the secret is absent every `/cockpit/*` path 404s (like chat/timer
 when disabled). PUBLIC exposure is the **independent Funnel switch** (`racecast funnel on`),
-which mounts **only** `/console` — the only way `/console` leaves the tailnet. The token rides in
-the `…/cockpit?t=` link once, then an `HttpOnly; Secure; SameSite=Lax` `rc_cockpit` cookie.
-Auth core: `src/scripts/cockpit_auth.py`; revocation store: `src/scripts/cockpit_admin.py`;
+which mounts **only** `/console` — the only way `/console` leaves the tailnet. The token
+rides in the `…/console?t=` link once, then an `HttpOnly; Secure; SameSite=Lax`
+`rc_console` cookie. **Discord OAuth second front door:** when `DISCORD_CLIENT_ID` +
+`DISCORD_CLIENT_SECRET` are set in `profile.env`, the relay also serves
+`/console/login` + `/console/oauth/callback` (scope `identify`); a session-bound
+`rc_oauth_state` cookie guards CSRF; on a Crew-tab Discord-handle match the relay mints
+the same `rc_console` token. The Crew tab gained `Commentator` and `Discord` columns;
+`resolve_roles` is an A1 union (Schedule OR Crew Commentator flag). Auth core:
+`src/scripts/console_auth.py`; revocation store: `src/scripts/console_admin.py`;
 talent page: `src/cockpit/cockpit.html`; CLI: `racecast cockpit …`; takeover pulls A's
 versions over the tailnet (like `chat pull`). Tests: `tests/test_cockpit.py`. The crew
 roster (Crew tab ∪ live Schedule) is exposed via a tailnet-only `GET /crew/data` endpoint
@@ -444,7 +454,7 @@ beyond the existing `/console` mount):
   `event_title`, `timer`, and `mode`. Feed stream URLs are stripped — they never leave
   the tailnet. This is an allowlist, not a blocklist.
 - `GET /console/takeover/chat` — the full chat history (same payload as `/chat/data`).
-- `GET /console/takeover/versions` — the cockpit-versions revocation map (same payload
+- `GET /console/takeover/versions` — the console-versions revocation map (same payload
   as `/cockpit/versions`).
 
 All three require the **step-up** `X-Console-Secret` header (legacy name `X-Cockpit-Secret`
@@ -519,9 +529,10 @@ environment before dispatching to:
   **crew roster** in the **crew editor** (reads the league Sheet's `Crew` tab via the
   relay's `/crew/data`; writes per-row director/producer flags back via the `crew`
   webhook action — routes `/api/crew`, `/api/crew/delete`). The Crew tab
-  (`Name | Director | Producer` header in row 1) and the `crew` Apps Script action are a
-  league Sheet-side coordination item (see `Sheet-Webhook` wiki page); without them roles
-  degrade gracefully and the editor surfaces an outdated-script banner. Routes:
+  (`Name | Commentator | Director | Producer | Discord` header in row 1) and the `crew`
+  Apps Script action are a league Sheet-side coordination item (see `Sheet-Webhook` wiki
+  page); without them roles degrade gracefully and the editor surfaces an
+  outdated-script banner. Routes:
   `/api/profiles`, `/api/profile/{use,new,env}`, `/api/overlay`,
   `/api/overlay/{slots,layout,fonts,bg,font/<name>}`, `/api/crew`, `/api/crew/delete`.
 - **General Settings** — machine-wide knobs: the `.env` editor (`RACECAST_*` vars),
