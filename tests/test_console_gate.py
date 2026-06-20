@@ -31,6 +31,7 @@ class _FakeSource:
 class _Crew:
     def __init__(self, rows): self._rows = list(rows)
     def get(self): return list(self._rows)
+    def commentator_keys(self): return frozenset()
 
 
 def _serve(companion_url=None, logo_path=None):

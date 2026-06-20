@@ -183,6 +183,39 @@ def t_crew_source_inject_row_edit_append_and_delete():
     assert cs.get() == [("Bob", False, True)]
 
 
+def t_crew_discord_and_commentator_columns():
+    csv_text = ("Name,Commentator,Director,Producer,Discord\n"
+                "Alice,,x,,alice_d\n"
+                "Bob,x,,,Bob.Handle\n"
+                "Carol,,,,\n")
+    rows = m.CrewSource._parse_rows(csv_text)
+    # get() shape is unchanged: (name, is_dir, is_prod)
+    assert ("Alice", True, False) in rows, rows
+    assert ("Bob", False, False) in rows, rows
+    src = m.CrewSource("")          # no URL; inject rows directly
+    src.rows = rows
+    src._full_rows = m.CrewSource._parse_full(csv_text)
+    dm = src.discord_map()
+    assert dm.get("alice_d") == "Alice", dm
+    assert dm.get("bob.handle") == "Bob", dm   # lowercased key
+    assert src.commentator_keys() == {m.asset_key("Bob")}, src.commentator_keys()
+
+
+def t_resolve_roles_a1_union_commentator_from_crew_flag():
+    crew = [("Alice", True, False)]
+    # subject not in schedule, but IS in crew commentator set -> commentator
+    roles = m.resolve_roles(crew, set(), m.asset_key("Bob"),
+                            crew_commentator_keys={m.asset_key("Bob")})
+    assert roles == {"commentator"}, roles
+    # schedule still auto-grants (fallback intact)
+    roles2 = m.resolve_roles(crew, {m.asset_key("Dan")}, m.asset_key("Dan"))
+    assert roles2 == {"commentator"}, roles2
+    # director from crew flag, unioned with commentator from schedule
+    roles3 = m.resolve_roles(crew, {m.asset_key("Alice")}, m.asset_key("Alice"),
+                             crew_commentator_keys=set())
+    assert roles3 == {"commentator", "director"}, roles3
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

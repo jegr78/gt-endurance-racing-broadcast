@@ -544,23 +544,25 @@ def asset_key(s):
     s = re.sub(r"\s+", "-", s)
     return re.sub(r"[^a-z0-9-]", "", s)
 
-def resolve_roles(crew_rows, schedule_keys, subject):
+def resolve_roles(crew_rows, schedule_keys, subject, crew_commentator_keys=frozenset()):
     """Resolve a verified identity *subject* to its capability set for this event.
 
     crew_rows: iterable of (name, is_director, is_producer) from CrewSource.get().
     schedule_keys: set of asset_key-normalized streamer names present in the live
         Schedule/Qualifying roster.
     subject: the asset_key-normalized person name from the verified token.
+    crew_commentator_keys: set of asset_key-normalized names whose Crew
+        Commentator flag is truthy (A1 union source).
 
     Returns a subset of {"commentator", "director", "producer"}:
-    - "commentator" iff subject appears in schedule_keys (own-row capability, as
-      today -- streamers are never tagged for commentator in the Crew tab);
+    - "commentator" iff subject is in the live Schedule OR carries the Crew
+      Commentator flag (A1 union);
     - "director"/"producer" from any Crew row whose name normalizes to subject.
     An unknown subject (no crew row, not in the schedule) yields the empty set.
     Identity != authorization: this is the only place roles are derived, per the
     role-based-funnel-access spec (#216)."""
     roles = set()
-    if subject in schedule_keys:
+    if subject in schedule_keys or subject in crew_commentator_keys:
         roles.add("commentator")
     for name, is_dir, is_prod in crew_rows:
         if asset_key(name) != subject:
@@ -647,6 +649,8 @@ SCHEDULE_STINT_HEADERS = ("stint",)
 CREW_NAME_HEADERS = ("name", "crew", "person")
 CREW_DIRECTOR_HEADERS = ("director",)
 CREW_PRODUCER_HEADERS = ("producer",)
+CREW_COMMENTATOR_HEADERS = ("commentator",)
+CREW_DISCORD_HEADERS = ("discord", "discord handle", "discord username")
 CREW_TRUTHY = frozenset({"x", "yes", "true", "1", "y", "✓"})
 
 
@@ -1781,9 +1785,9 @@ class ScheduleSource:
 class CrewSource:
     """Reads the Crew roster from the Google Sheet (CSV) with last-good + fallback.
 
-    Mirrors ScheduleSource: a Name | Director | Producer tab giving the
-    director/producer capabilities. Commentator capability is resolved
-    separately from the live Schedule roster (see resolve_roles). A missing or
+    Mirrors ScheduleSource: a Name | Commentator | Director | Producer | Discord
+    tab giving the role capabilities. Commentator capability is resolved via the
+    A1 union: subject in live Schedule OR Crew Commentator flag. A missing or
     empty tab is non-fatal -- it simply yields no director/producer rows."""
 
     def __init__(self, csv_url, cache_path=None):
@@ -1791,8 +1795,76 @@ class CrewSource:
         self.cache_path = cache_path
         self.lock = threading.Lock()
         self.rows = []
+        self._full_rows = []       # [(name, is_dir, is_prod, is_commentator, discord)]
         self.last_ok = None
         self.last_error = None
+
+    @staticmethod
+    def _parse_rows_positional(text):
+        """Positional fallback CSV -> [(name, is_director, is_producer)].
+        col0=name, col1=director, col2=producer; drops a leading header-like row.
+        Returns [] (not None) when no data rows found."""
+        rows = list(csv.reader(io.StringIO(text)))
+        if not rows:
+            return []
+        start = 0
+        r0 = [(c or "").strip().lower() for c in rows[0]]
+        if (len(r0) > 1 and r0[1] in CREW_DIRECTOR_HEADERS) or \
+           (len(r0) > 2 and r0[2] in CREW_PRODUCER_HEADERS):
+            start = 1                              # drop a header-like first row
+        out = []
+        for r in rows[start:]:
+            name = r[0].strip() if r else ""
+            if not name:
+                continue
+            is_dir = _crew_truthy(r[1]) if len(r) > 1 else False
+            is_prod = _crew_truthy(r[2]) if len(r) > 2 else False
+            out.append((name, is_dir, is_prod))
+        return out
+
+    @staticmethod
+    def _parse_full(text):
+        """CSV -> [(name, is_dir, is_prod, is_commentator, discord)].
+
+        Header mode (opt-in): if a recognized Name header is present, all five
+        columns are located by header text (so they may move and extras are
+        ignored). Positional fallback (no name header): col0=name, col1=director,
+        col2=producer; is_commentator=False and discord="" for every row (those
+        columns need a header to locate). Returns [] on empty input."""
+        rows = list(csv.reader(io.StringIO(text)))
+        if not rows:
+            return []
+        header = [(h or "").strip().lower() for h in rows[0]]
+        name_i = next((header.index(h) for h in CREW_NAME_HEADERS if h in header), None)
+        if name_i is not None:
+            def _col(headers):
+                return next((header.index(h) for h in headers if h in header), None)
+            dir_i = _col(CREW_DIRECTOR_HEADERS)
+            prod_i = _col(CREW_PRODUCER_HEADERS)
+            com_i = _col(CREW_COMMENTATOR_HEADERS)
+            dis_i = _col(CREW_DISCORD_HEADERS)
+
+            def _cell(i, row):
+                return row[i] if i is not None and len(row) > i else ""
+
+            out = []
+            for line, r in enumerate(rows, 1):
+                if line == 1:
+                    continue                       # the header row itself
+                name = r[name_i].strip() if len(r) > name_i else ""
+                if not name:
+                    continue
+                out.append((
+                    name,
+                    _crew_truthy(_cell(dir_i, r)),
+                    _crew_truthy(_cell(prod_i, r)),
+                    _crew_truthy(_cell(com_i, r)),
+                    (_cell(dis_i, r) or "").strip(),
+                ))
+            return out
+        # Positional fallback: name/dir/prod only; no commentator/discord columns.
+        triples = CrewSource._parse_rows_positional(text)
+        return [(n, d, p, False, "") for (n, d, p) in triples]
 
     @staticmethod
     def _parse_rows(text):
@@ -1803,72 +1875,70 @@ class CrewSource:
         move and extra columns are ignored). Positional fallback (no name
         header): col0=name, col1=director, col2=producer, dropping a leading
         header-like row. Rows with an empty name are skipped."""
-        rows = list(csv.reader(io.StringIO(text)))
-        if not rows:
-            return None
-        header = [(h or "").strip().lower() for h in rows[0]]
-        name_i = next((header.index(h) for h in CREW_NAME_HEADERS if h in header), None)
-        if name_i is not None:
-            dir_i = next((header.index(h) for h in CREW_DIRECTOR_HEADERS if h in header), None)
-            prod_i = next((header.index(h) for h in CREW_PRODUCER_HEADERS if h in header), None)
-            out = []
-            for line, r in enumerate(rows, 1):
-                if line == 1:
-                    continue                       # the header row itself
-                name = r[name_i].strip() if len(r) > name_i else ""
-                if not name:
-                    continue
-                is_dir = _crew_truthy(r[dir_i]) if dir_i is not None and len(r) > dir_i else False
-                is_prod = _crew_truthy(r[prod_i]) if prod_i is not None and len(r) > prod_i else False
-                out.append((name, is_dir, is_prod))
-            return out or None
-        # Positional fallback: col0=name, col1=director, col2=producer.
-        start = 0
-        if rows:
-            r0 = [(c or "").strip().lower() for c in rows[0]]
-            if (len(r0) > 1 and r0[1] in CREW_DIRECTOR_HEADERS) or \
-               (len(r0) > 2 and r0[2] in CREW_PRODUCER_HEADERS):
-                start = 1                          # drop a header-like first row
-        out = []
-        for r in rows[start:]:
-            name = r[0].strip() if r else ""
-            if not name:
-                continue
-            is_dir = _crew_truthy(r[1]) if len(r) > 1 else False
-            is_prod = _crew_truthy(r[2]) if len(r) > 2 else False
-            out.append((name, is_dir, is_prod))
-        return out or None
+        full = CrewSource._parse_full(text)
+        result = [(n, d, p) for (n, d, p, _c, _x) in full]
+        return result or None
 
     def get(self):
         with self.lock:
             return list(self.rows)
 
-    def fetch(self, timeout=15):
+    def discord_map(self):
+        """{discord_username_lower: crew_name} from the Crew tab's Discord column.
+        Empty handles are skipped. Last write wins on a duplicate handle."""
+        with self.lock:
+            full = list(self._full_rows)
+        out = {}
+        for name, _d, _p, _c, discord in full:
+            h = (discord or "").strip().lower()
+            if h:
+                out[h] = name
+        return out
+
+    def commentator_keys(self):
+        """asset_key set of crew names whose Commentator flag is truthy (A1 union)."""
+        with self.lock:
+            full = list(self._full_rows)
+        return {asset_key(n) for (n, _d, _p, c, _x) in full if c and (n or "").strip()}
+
+    def _fetch_text(self, timeout=15):
+        """Fetch the raw CSV text from csv_url. Returns None on error."""
         if not self.csv_url:
             return None
         try:
             req = Request(self.csv_url, headers={"User-Agent": "racecast-feeds/1.0"})
             with urlopen(req, timeout=timeout) as resp:
-                text = resp.read().decode("utf-8", "replace")
-            rows = self._parse_rows(text)
-            if not rows:
-                self.last_error = ("Crew tab reachable, but no rows found "
-                                   "(correct tab name? a Name column?)")
-                return None
-            return rows
+                return resp.read().decode("utf-8", "replace")
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e}"
             return None
 
+    def fetch(self, timeout=15):
+        text = self._fetch_text(timeout)
+        if text is None:
+            return None
+        rows = self._parse_rows(text)
+        if not rows:
+            self.last_error = ("Crew tab reachable, but no rows found "
+                               "(correct tab name? a Name column?)")
+            return None
+        return rows
+
     def refresh(self, timeout=15):
-        rows = self.fetch(timeout)
-        if rows:
-            with self.lock:
-                self.rows = rows
-                self.last_ok = time.time()
-                self.last_error = None
-            return True
-        return False
+        text = self._fetch_text(timeout)
+        if text is None:
+            return False
+        rows = self._parse_rows(text)
+        if not rows:
+            self.last_error = ("Crew tab reachable, but no rows found "
+                               "(correct tab name? a Name column?)")
+            return False
+        with self.lock:
+            self.rows = rows
+            self._full_rows = self._parse_full(text)
+            self.last_ok = time.time()
+            self.last_error = None
+        return True
 
     def inject_row(self, row, name=None, director=None, producer=None):
         """Optimistically merge a Control-Center crew write into the in-memory
@@ -3133,7 +3203,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             else:
                 rows = getattr(src, "rows", []) or []
             crew = crew_source.get() if crew_source else []
-            return resolve_roles(crew, schedule_keys(rows), subject)
+            ckeys = crew_source.commentator_keys() if crew_source else frozenset()
+            return resolve_roles(crew, schedule_keys(rows), subject, ckeys)
 
         def _console_gate(self, p, method):
             """Authorize a /console/* request and return the segment list to fall
