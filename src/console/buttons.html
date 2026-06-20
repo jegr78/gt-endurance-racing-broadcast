@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script>
+  // /console base-path shim (#216): the server replaces __RC_API_BASE__ with the
+  // active mount ("/console" behind Funnel — this page is only served there). Used
+  // for the iframe src and the "← Console" back link so both resolve under the mount.
+  window.RC_API_BASE = "__RC_API_BASE__";
+  window.RC_API = function (p) {
+    var b = window.RC_API_BASE || "";
+    if (!b || typeof p !== "string" || p.charAt(0) !== "/") return p;
+    if (p.indexOf(b + "/") === 0 || p === b) return p;   // already prefixed
+    return b + p;
+  };
+</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Web Buttons</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0c0f'/%3E%3Cpath d='M23 11a7 7 0 1 0 0 10' fill='none' stroke='%232bd66a' stroke-width='3.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  html, body { height: 100%; }
+  body { margin: 0; font: 16px/1.4 system-ui, sans-serif; background: #0e1116; color: #e6e6e6;
+         display: flex; flex-direction: column; }
+  header { flex: 0 0 auto; display: flex; align-items: center; gap: 14px;
+           padding: 10px 16px; background: #14171c; border-bottom: 1px solid #232a33; }
+  a.back { display: inline-flex; align-items: center; gap: 6px; text-decoration: none;
+           color: #e6e6e6; background: #161b22; border: 1px solid #232a33; border-radius: 8px;
+           padding: 7px 12px; font-size: 14px; font-weight: 600; }
+  a.back:hover { border-color: #3b82f6; }
+  h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: .02em; color: #c7cdd6; }
+  .frame { flex: 1 1 auto; min-height: 0; position: relative; }
+  iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #0b0d10; }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" id="back" href="/console">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    Console
+  </a>
+  <h1>Web Buttons</h1>
+</header>
+<div class="frame">
+  <iframe id="buttons" title="Companion web buttons"
+          allow="fullscreen; clipboard-read; clipboard-write"></iframe>
+</div>
+<script>
+  // Back link -> the launcher at the mount root; iframe -> the proxied Companion tablet UI.
+  document.getElementById('back').setAttribute('href', window.RC_API_BASE || '/console');
+  document.getElementById('buttons').src = RC_API('/buttons/tablet');
+</script>
+</body>
+</html>

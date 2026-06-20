@@ -233,24 +233,6 @@ def t_resolve_config_console_secret_from_new_key():
         assert cfg.console_secret == "s3cr3t"
 
 
-def t_resolve_config_console_secret_back_compat_legacy_key():
-    """Back-compat: old COCKPIT_SECRET key still resolves to cfg.console_secret."""
-    with tempfile.TemporaryDirectory() as td:
-        root = _mkroot(td)
-        _mkprofile(root, "demo", "NAME=Demo\nSHEET_ID=abc\nCOCKPIT_SECRET=legacy\n")
-        cfg = m.resolve_config(root, environ={})
-        assert cfg.console_secret == "legacy"
-
-
-def t_resolve_config_console_secret_new_key_wins_over_legacy():
-    """When both keys present, CONSOLE_SECRET wins over COCKPIT_SECRET."""
-    with tempfile.TemporaryDirectory() as td:
-        root = _mkroot(td)
-        _mkprofile(root, "demo",
-                   "NAME=Demo\nSHEET_ID=abc\nCOCKPIT_SECRET=old\nCONSOLE_SECRET=new\n")
-        cfg = m.resolve_config(root, environ={})
-        assert cfg.console_secret == "new"
-
 
 def t_resolve_config_console_secret_blank_when_absent():
     with tempfile.TemporaryDirectory() as td:
@@ -310,6 +292,27 @@ def t_resolve_config_obs_collection_default_is_prefixed():
         _mkprofile(root, "demo", "NAME=Demo League\nSHEET_ID=x\n")  # no OBS_COLLECTION
         cfg = m.resolve_config(root, environ={})
         assert cfg.obs_collection == "GT Endurance Racing — Demo League"
+
+
+def t_resolve_config_discord_oauth_keys():
+    """DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET are read from profile.env."""
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo",
+                   "NAME=Demo\nSHEET_ID=abc\n"
+                   "DISCORD_CLIENT_ID=cid\nDISCORD_CLIENT_SECRET=csecret\n")
+        rc = m.resolve_config(root, override="demo", environ={})
+        assert rc.discord_client_id == "cid"
+        assert rc.discord_client_secret == "csecret"
+
+
+def t_resolve_config_discord_oauth_keys_blank_when_absent():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo", "NAME=Demo\nSHEET_ID=abc\n")
+        rc = m.resolve_config(root, environ={})
+        assert rc.discord_client_id == ""
+        assert rc.discord_client_secret == ""
 
 
 def t_resolve_config_obs_collection_explicit_wins_over_prefix():

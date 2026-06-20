@@ -45,8 +45,8 @@ import init_setup as ins
 import config as pcfg    # 'pcfg' (not 'cfg'): avoids F811 clash with local `cfg = json.loads(...)` dicts elsewhere in this file
 import profile_admin as pa
 import chat_admin as ca
-import cockpit_auth as cpa
-import cockpit_admin as cpadm
+import console_auth as cpa
+import console_admin as cpadm
 import overlay_build as ob
 import fonts_bundle as fb
 import ports as pt
@@ -196,6 +196,8 @@ def _profile_env_vars(rc):
              ("RACECAST_DISCORD_WEBHOOK_URL", rc.discord_webhook_url),
              ("RACECAST_OBS_COLLECTION", rc.obs_collection),
              ("RACECAST_CONSOLE_SECRET", rc.console_secret),
+             ("RACECAST_DISCORD_CLIENT_ID", rc.discord_client_id),
+             ("RACECAST_DISCORD_CLIENT_SECRET", rc.discord_client_secret),
              ("RACECAST_EVENT_TITLE", rc.event_title),
              ("RACECAST_PROFILE_NAME", rc.name),
              ("RACECAST_LOGO", rc.logo_path))
@@ -865,10 +867,10 @@ def route(argv):
         return {"kind": "profile", "rest": rest}
     if cmd == "chat":
         return {"kind": "chat", "rest": rest}
-    if cmd == "cockpit":
-        if not rest or rest[0] not in COCKPIT_VERBS:
-            raise ValueError(f"usage: racecast cockpit {{{'|'.join(COCKPIT_VERBS)}}}")
-        return {"kind": "cockpit", "rest": rest}
+    if cmd == "console":
+        if not rest or rest[0] not in CONSOLE_VERBS:
+            raise ValueError(f"usage: racecast console {{{'|'.join(CONSOLE_VERBS)}}}")
+        return {"kind": "console", "rest": rest}
     if cmd == "funnel":
         return {"kind": "funnel", "rest": rest}
     if cmd == "links":
@@ -1043,13 +1045,13 @@ def chat_cmd(rest):
         return None
 
 
-COCKPIT_VERBS = ("setup-funnel", "token", "pull-versions")
+CONSOLE_VERBS = ("setup-funnel", "token", "pull-versions")
 
 
-def _cockpit_versions_path():
-    """runtime/<active-profile>/cockpit-versions.json — same dir the relay reads,
+def _console_versions_path():
+    """runtime/<active-profile>/console-versions.json — same dir the relay reads,
     matching _chat_path()."""
-    return os.path.join(_runtime_dir(), "cockpit-versions.json")
+    return os.path.join(_runtime_dir(), "console-versions.json")
 
 
 def _set_env_key(path, key, value):
@@ -1071,7 +1073,7 @@ def _set_env_key(path, key, value):
     return _write_env_file(path, entries)
 
 
-def _cockpit_roster():
+def _console_roster():
     """Distinct streamer names from the active schedule (first-seen order), read
     from the running relay's /schedule/data. Raises on an unreachable relay."""
     data = _relay_fetch_json(f"http://127.0.0.1:{RELAY_PORT}/schedule/data")
@@ -1088,7 +1090,7 @@ def _cockpit_roster():
 def _crew_roster():
     """Distinct crew names (Director/Producer) from the running relay's
     /crew/data (first-seen order). Raises on an unreachable relay — mirrors
-    _cockpit_roster. Empty list when the league has no Crew tab."""
+    _console_roster. Empty list when the league has no Crew tab."""
     data = _relay_fetch_json(f"http://127.0.0.1:{RELAY_PORT}/crew/data")
     seen, roster = set(), []
     for row in (data or {}).get("rows", []):
@@ -1113,7 +1115,7 @@ def _links_roster():
     deduped by streamer_key (pinned == asset_key, the key resolve_roles uses),
     schedule first so commentators keep their existing order. Raises if the
     schedule is unreadable (relay down); crew is best-effort."""
-    roster = list(_cockpit_roster())            # may raise if relay is down
+    roster = list(_console_roster())            # may raise if relay is down
     seen = {cpa.streamer_key(n) for n in roster}
     for name in _crew_roster_safe():
         key = cpa.streamer_key(name)
@@ -1173,7 +1175,7 @@ def links_cmd(rest):
     relay resolves the person's roles server-side, so one link adapts to
     commentator/director/producer. --post drops them into crew chat. (#216)"""
     _apply_active_profile_env()
-    secret = _ensure_active_cockpit_secret()
+    secret = _ensure_active_console_secret()
     if not secret:
         sys.exit("racecast: no active league profile — create or select one first.")
     try:
@@ -1184,7 +1186,7 @@ def links_cmd(rest):
         sys.exit("racecast: no crew or streamers found (is the relay running?).")
     host = _tailscale_ip() or "<tailscale-ip>"
     magic = _tailscale_magicdns() or "<your-magicdns-host>"
-    versions = cpadm.load_versions(_cockpit_versions_path())
+    versions = cpadm.load_versions(_console_versions_path())
     post = "--post" in rest
     lines = []
     for name in roster:
@@ -1194,6 +1196,11 @@ def links_cmd(rest):
         lan = f"http://{host}:{RELAY_PORT}/console?t={tok}"      # tailnet fallback
         print(f"{name}:\n  funnel:  {url}\n  tailnet: {lan}")
         lines.append(f"{name}: {url}")
+    print()
+    print("Share this ONE link with the whole crew (Discord login resolves their role):")
+    print(f"  https://{magic}/console")
+    print("Discord OAuth redirect URI to register in the league's Discord app:")
+    print(f"  https://{magic}/console/oauth/callback")
     if post:
         try:
             _post_chat_message("Console links:\n" + "\n".join(lines))
@@ -1203,35 +1210,34 @@ def links_cmd(rest):
     return None
 
 
-def _cockpit_token(args):
-    """`racecast cockpit token revoke <streamer>` — bump that streamer's version
+def _console_token(args):
+    """`racecast console token revoke <streamer>` — bump that streamer's version
     so their current link stops validating; re-issue with 'racecast links'.
-    The relay reads cockpit-versions.json per request, so the bump is immediate —
+    The relay reads console-versions.json per request, so the bump is immediate —
     no relay reload needed."""
     if len(args) < 2 or args[0] != "revoke":
-        sys.exit("usage: racecast cockpit token revoke <streamer-name>")
+        sys.exit("usage: racecast console token revoke <streamer-name>")
     key = cpa.streamer_key(args[1])
     if not key:
         sys.exit("racecast: empty streamer name.")
-    new_ver = cpadm.bump_version(_cockpit_versions_path(), key)
+    new_ver = cpadm.bump_version(_console_versions_path(), key)
     print(f"revoked '{args[1]}' (key {key}) -> version {new_ver}. "
           "Re-issue with 'racecast links'.")
     return None
 
 
-def _cockpit_pull_versions(args):
-    """`racecast cockpit pull-versions <ip> [--port N]` — fetch producer A's
-    cockpit-versions over the tailnet and adopt them locally (takeover). Mirrors
+def _console_pull_versions(args):
+    """`racecast console pull-versions <ip> [--port N]` — fetch producer A's
+    console-versions over the tailnet and adopt them locally (takeover). Mirrors
     `chat pull`: tailnet trust, best-effort."""
     if not args or args[0].startswith("-"):
-        sys.exit("usage: racecast cockpit pull-versions <A-tailscale-ip> [--port N]")
+        sys.exit("usage: racecast console pull-versions <A-tailscale-ip> [--port N]")
     host = args[0]
     port = _takeover_port(args[1:])
     # The endpoint authenticates on the shared league secret (same league = same
     # secret, which travels with the profile). We send OUR secret; A validates it.
     _apply_active_profile_env()
-    secret = (os.environ.get("RACECAST_CONSOLE_SECRET") or
-              os.environ.get("RACECAST_COCKPIT_SECRET") or "")
+    secret = os.environ.get("RACECAST_CONSOLE_SECRET") or ""
     import urllib.request
     req = urllib.request.Request(f"http://{host}:{port}/cockpit/versions",
                                  headers={"X-Console-Secret": secret})
@@ -1239,20 +1245,20 @@ def _cockpit_pull_versions(args):
         with urllib.request.urlopen(req, timeout=5) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
-        sys.exit(f"racecast: could not fetch cockpit versions from {host}:{port} "
+        sys.exit(f"racecast: could not fetch console versions from {host}:{port} "
                  f"({type(exc).__name__})")
     if not isinstance(payload, dict):
-        sys.exit(f"racecast: bad cockpit versions response from {host}:{port}")
+        sys.exit(f"racecast: bad console versions response from {host}:{port}")
     try:
-        count = cpadm.apply_pulled(_cockpit_versions_path(), payload)
+        count = cpadm.apply_pulled(_console_versions_path(), payload)
     except ValueError as exc:
-        sys.exit(f"racecast: bad cockpit versions payload: {exc}")
-    print(f"pulled {count} cockpit version record(s) from {host}.")
+        sys.exit(f"racecast: bad console versions payload: {exc}")
+    print(f"pulled {count} console version record(s) from {host}.")
     return None
 
 
-def _ensure_active_cockpit_secret():
-    """Zero-config cockpit: make sure the active league has a CONSOLE_SECRET so the
+def _ensure_active_console_secret():
+    """Zero-config console: make sure the active league has a CONSOLE_SECRET so the
     relay can mint/verify tokens without an explicit setup step, and mirror it into
     os.environ so a spawned relay inherits it. Generates a random per-league secret
     in profile.env on first use; idempotent; respects an already-set secret (so an
@@ -1260,8 +1266,7 @@ def _ensure_active_cockpit_secret():
     profile — never the shipped 'example' profile and never a non-existent one.
     Best-effort: returns the secret or None and never raises."""
     try:
-        env_val = (os.environ.get("RACECAST_CONSOLE_SECRET") or
-                   os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip()
+        env_val = (os.environ.get("RACECAST_CONSOLE_SECRET") or "").strip()
         if env_val:
             return env_val
         import secrets
@@ -1270,7 +1275,7 @@ def _ensure_active_cockpit_secret():
             return None
         with open(ppath, encoding="utf-8") as fh:
             parsed = parse_env_text(fh.read())
-            existing = parsed.get("CONSOLE_SECRET") or parsed.get("COCKPIT_SECRET", "")
+            existing = parsed.get("CONSOLE_SECRET", "")
         if existing:                       # already provisioned (or exported) -> reuse
             os.environ["RACECAST_CONSOLE_SECRET"] = existing
             return existing
@@ -1283,9 +1288,9 @@ def _ensure_active_cockpit_secret():
         return None
 
 
-def cockpit_cmd(rest):
-    """`racecast cockpit token|setup-funnel|pull-versions` — manage the
-    talent Commentator Cockpit (issue #191). The cockpit is zero-config: a per-league
+def console_cmd(rest):
+    """`racecast console token|setup-funnel|pull-versions` — manage the
+    talent Commentator Cockpit (issue #191). The console is zero-config: a per-league
     CONSOLE_SECRET is auto-generated on first relay start and the relay serves
     /cockpit whenever one exists (token-gated). PUBLIC exposure is the top-level
     `racecast funnel` command. Console links (Crew ∪ Schedule) are issued via the
@@ -1293,12 +1298,12 @@ def cockpit_cmd(rest):
     verb, args = rest[0], rest[1:]
 
     if verb == "setup-funnel":
-        return _cockpit_setup_funnel(args)
+        return _console_setup_funnel(args)
     if verb == "token":
-        return _cockpit_token(args)
+        return _console_token(args)
     if verb == "pull-versions":
-        return _cockpit_pull_versions(args)
-    sys.exit(f"usage: racecast cockpit {{{'|'.join(COCKPIT_VERBS)}}}")
+        return _console_pull_versions(args)
+    sys.exit(f"usage: racecast console {{{'|'.join(CONSOLE_VERBS)}}}")
 
 
 BACKUP_VERBS = ("create", "list", "restore", "delete")
@@ -1423,13 +1428,12 @@ def _relay_fetch_json(url, timeout=3):
         return json.loads(r.read().decode("utf-8"))
 
 
-def _active_cockpit_secret():
+def _active_console_secret():
     """The active league's CONSOLE_SECRET from the resolved profile env ('' if unset).
     Same league = same secret (it travels with `profile export`), so producer B already
     holds A's secret — no typing needed for a same-league takeover."""
     _apply_active_profile_env()
-    return (os.environ.get("RACECAST_CONSOLE_SECRET") or
-            os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip()
+    return (os.environ.get("RACECAST_CONSOLE_SECRET") or "").strip()
 
 
 def _funnel_takeover_base(host):
@@ -1538,7 +1542,7 @@ def relay_start(rest):
     if busy:
         print(f"WARNING: feed port(s) {', '.join(map(str, busy))} already in use — "
               f"that feed may fail to bind. Free them first: racecast freeport")
-    _ensure_active_cockpit_secret()   # zero-config cockpit: provision + inject the secret
+    _ensure_active_console_secret()   # zero-config console: provision + inject the secret
     argv = _relay_daemon_argv(rest, IS_FROZEN)
     newpid = sv.start_detached(argv, _relay_boot_log_path(), _relay_pid_path(),
                                env=_frozen_child_env())
@@ -1763,7 +1767,7 @@ def _logs_cmd(source_name, rest):
 def relay_logs(rest):      _logs_cmd("relay", rest)
 
 def relay_run(rest):
-    _ensure_active_cockpit_secret()   # zero-config cockpit: provision + inject the secret
+    _ensure_active_console_secret()   # zero-config console: provision + inject the secret
     raise SystemExit(_run_script("relay/racecast-feeds.py",
                                  _relay_runtime_args() + rest))
 
@@ -2538,7 +2542,7 @@ def event_takeover(rest):
     stint_tokens = _stint_args(args)        # validates 1-based int (sys.exit on bad)
     stint_override = int(stint_tokens[1]) if stint_tokens else None
 
-    secret = _active_cockpit_secret() if funnel else None
+    secret = _active_console_secret() if funnel else None
     if funnel and not secret:
         sys.exit("racecast: --funnel takeover needs the league CONSOLE_SECRET in your "
                  "active profile (same league as A). Set it, or use the tailnet IP.")
@@ -2602,19 +2606,19 @@ def event_takeover(rest):
         except SystemExit:
             print("note: chat pull failed — continuing takeover.")
 
-    # best-effort: a cockpit-versions failure must not abort (same per-branch split).
+    # best-effort: a console-versions failure must not abort (same per-branch split).
     if funnel:
         try:
             payload = _takeover_get(base + "/versions", secret)
-            count = cpadm.apply_pulled(_cockpit_versions_path(), payload)
-            print(f"pulled {count} cockpit version record(s) from A (funnel).")
+            count = cpadm.apply_pulled(_console_versions_path(), payload)
+            print(f"pulled {count} console version record(s) from A (funnel).")
         except Exception as exc:
-            print(f"note: cockpit-versions pull failed ({type(exc).__name__}) — continuing.")
+            print(f"note: console-versions pull failed ({type(exc).__name__}) — continuing.")
     else:
         try:
-            cockpit_cmd(["pull-versions", host, "--port", str(port)])
+            console_cmd(["pull-versions", host, "--port", str(port)])
         except SystemExit:
-            print("note: cockpit-versions pull failed — continuing takeover.")
+            print("note: console-versions pull failed — continuing takeover.")
 
     # Adopt A's on-air event title (#207), persisted to event.json BEFORE bring-up
     # so the new relay loads it (mirrors the chat pull). Best-effort, never aborts.
@@ -3389,8 +3393,8 @@ def _ts_api_err(exc):
     return f"{type(exc).__name__}: {exc}"
 
 
-def _cockpit_setup_funnel(args):
-    """`racecast cockpit setup-funnel [--apply] [--target T]` — automate the
+def _console_setup_funnel(args):
+    """`racecast console setup-funnel [--apply] [--target T]` — automate the
     one-time tailnet prerequisites via the Tailscale Admin API: enable MagicDNS +
     add the 'funnel' nodeAttr. Auth via a Tailscale API access token
     (RACECAST_TS_API_KEY). Dry-run unless --apply. HTTPS certificate enablement has
@@ -3455,7 +3459,7 @@ def _funnel_auto_enabled():
     """Opt-in: bring the public /console Funnel up on `event start`. Requires the
     machine flag RACECAST_FUNNEL (legacy RACECAST_COCKPIT_FUNNEL still honored for
     one release) AND the cockpit actually usable (a per-league secret exists) —
-    reads on-disk truth via cockpit_status_data()."""
+    reads on-disk truth via console_status_data()."""
     epath = _env_file()
     if not os.path.exists(epath):
         return False
@@ -3464,24 +3468,24 @@ def _funnel_auto_enabled():
     flag = env.get("RACECAST_FUNNEL", env.get("RACECAST_COCKPIT_FUNNEL", ""))
     if flag.strip().lower() not in ("1", "true", "yes", "on"):
         return False
-    st = cockpit_status_data()
-    # Zero-config cockpit has no separate "enable" flag — usability == a league
-    # secret exists. (cockpit_status_data() returns ok/has_secret, never an
+    st = console_status_data()
+    # Zero-config console has no separate "enable" flag — usability == a league
+    # secret exists. (console_status_data() returns ok/has_secret, never an
     # "enabled" key; gating on the latter silently dead-ended this path. #216.)
     return bool(st.get("ok") and st.get("has_secret"))
 
 
-def _cockpit_roster_safe():
-    """_cockpit_roster() that returns [] instead of raising when the relay is
+def _console_roster_safe():
+    """_console_roster() that returns [] instead of raising when the relay is
     down (the Control Center status poll must never 500)."""
     try:
-        return _cockpit_roster()
+        return _console_roster()
     except Exception:
         return []
 
 
-def _cockpit_internal_host(ip):
-    """Host for the 'internal' cockpit link the Control Center offers alongside the
+def _console_internal_host(ip):
+    """Host for the 'internal' console link the Control Center offers alongside the
     public Funnel link: the producer's Tailscale IP when the tailnet is up, else
     loopback. Mirrors the relay panel's own link rule (relay --bind auto binds the
     Tailscale IP + 127.0.0.1)."""
@@ -3502,19 +3506,22 @@ def crew_entries_data():
     entries = [{"row": i,
                 "name": row.get("name", ""),
                 "director": bool(row.get("director")),
-                "producer": bool(row.get("producer"))}
+                "producer": bool(row.get("producer")),
+                "commentator": bool(row.get("commentator")),
+                "discord": row.get("discord") or ""}
                for i, row in enumerate(data.get("rows") or [], start=1)]
     return {"ok": True, "entries": entries}
 
 
-def crew_write_data(row, name, director, producer):
+def crew_write_data(row, name, director, producer, commentator=False, discord=""):
     """Write one crew row via the relay's /crew/set (the relay holds the webhook
     URL — the Control Center never POSTs to SHEET_PUSH_URL directly)."""
     try:
         return _relay_post_json(
             "http://127.0.0.1:%d/crew/set" % RELAY_PORT,
             {"row": row, "name": name,
-             "director": bool(director), "producer": bool(producer)})
+             "director": bool(director), "producer": bool(producer),
+             "commentator": bool(commentator), "discord": (discord or "").strip()})
     except Exception as exc:
         return {"ok": False,
                 "error": "relay not reachable (start the relay): %s" % exc}
@@ -3530,9 +3537,9 @@ def crew_delete_data(row):
                 "error": "relay not reachable (start the relay): %s" % exc}
 
 
-def cockpit_status_data():
-    """Cockpit state for the Control Center: per-league secret presence and the
-    per-commentator links. The cockpit is zero-config — the secret is auto-provisioned
+def console_status_data():
+    """Console state for the Control Center: per-league secret presence and the
+    per-commentator links. The console is zero-config — the secret is auto-provisioned
     here so links populate without an explicit enable step. Reads on-disk truth so a
     profile switch reflects without a Control Center restart. {ok, ...}; never raises."""
     try:
@@ -3544,15 +3551,15 @@ def cockpit_status_data():
         funnel_auto = menv.get("RACECAST_FUNNEL", menv.get(
             "RACECAST_COCKPIT_FUNNEL", "")).strip().lower() in (
             "1", "true", "yes", "on")
-        secret = _ensure_active_cockpit_secret() or ""
+        secret = _ensure_active_console_secret() or ""
         links = []
         if secret:
-            host = _cockpit_internal_host(_tailscale_ip())
+            host = _console_internal_host(_tailscale_ip())
             magic = _tailscale_magicdns()
-            versions = cpadm.load_versions(_cockpit_versions_path())
+            versions = cpadm.load_versions(_console_versions_path())
             seen_keys = set()
             roster = []
-            for name in list(_cockpit_roster_safe()) + list(_crew_roster_safe()):
+            for name in list(_console_roster_safe()) + list(_crew_roster_safe()):
                 key = cpa.streamer_key(name)
                 if key and key not in seen_keys:
                     seen_keys.add(key)
@@ -3579,7 +3586,7 @@ def cockpit_status_data():
         return {"ok": False, "error": str(exc)}
 
 
-def cockpit_set_funnel_auto_data(auto):
+def console_set_funnel_auto_data(auto):
     """Persist the opt-in 'bring the public Funnel up on event start' flag
     (machine-local RACECAST_FUNNEL). {ok}|{ok:false,error}."""
     try:
@@ -3590,7 +3597,7 @@ def cockpit_set_funnel_auto_data(auto):
         return {"ok": False, "error": str(exc)}
 
 
-def cockpit_funnel_data(on):
+def console_funnel_data(on):
     try:
         funnel_cmd(["on" if on else "off"])
         return {"ok": True}
@@ -3598,9 +3605,9 @@ def cockpit_funnel_data(on):
         return {"ok": False, "error": str(exc)}
 
 
-def cockpit_revoke_data(streamer):
+def console_revoke_data(streamer):
     try:
-        _cockpit_token(["revoke", streamer])
+        _console_token(["revoke", streamer])
         return {"ok": True}
     except SystemExit as exc:
         return {"ok": False, "error": str(exc)}
@@ -4837,10 +4844,10 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "crew_read": crew_entries_data,
         "crew_write": crew_write_data,
         "crew_delete": crew_delete_data,
-        "cockpit_status": cockpit_status_data,
-        "cockpit_funnel": cockpit_funnel_data,
-        "cockpit_set_funnel_auto": cockpit_set_funnel_auto_data,
-        "cockpit_revoke": cockpit_revoke_data,
+        "console_status": console_status_data,
+        "console_funnel": console_funnel_data,
+        "console_set_funnel_auto": console_set_funnel_auto_data,
+        "console_revoke": console_revoke_data,
         "overlay_read": overlay_read_data,
         "overlay_write": overlay_write_data,
         "overlay_slots": overlay_slots_data,
@@ -4966,8 +4973,8 @@ def main(argv=None):
         return profile_cmd(action["rest"])
     if action["kind"] == "chat":
         return chat_cmd(action["rest"])
-    if action["kind"] == "cockpit":
-        return cockpit_cmd(action["rest"])
+    if action["kind"] == "console":
+        return console_cmd(action["rest"])
     if action["kind"] == "funnel":
         return funnel_cmd(action["rest"])
     if action["kind"] == "links":

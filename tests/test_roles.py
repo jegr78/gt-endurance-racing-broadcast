@@ -66,11 +66,20 @@ def t_crewsource_no_url_refresh_is_false_and_get_empty():
 
 def t_crewsource_get_returns_snapshot_copy():
     src = m.CrewSource(csv_url="")
-    src.rows = [("Alice", True, False)]
-    snap = src.get()
+    src.rows = [("Alice", True, False, False, "")]   # canonical 5-tuple store
+    snap = src.get()                                 # get() projects to 3-tuples
     assert snap == [("Alice", True, False)]
     snap.append(("X", False, False))       # mutating the snapshot must not leak
     assert src.get() == [("Alice", True, False)]
+
+
+def t_crewsource_get_full_returns_five_tuples():
+    src = m.CrewSource(csv_url="")
+    src.rows = [("Alice", True, False, True, "alice_d")]
+    full = src.get_full()
+    assert full == [("Alice", True, False, True, "alice_d")]
+    full.append(("X", False, False, False, ""))      # snapshot copy, no leak
+    assert src.get_full() == [("Alice", True, False, True, "alice_d")]
 
 
 def t_resolve_commentator_from_schedule_only():
@@ -134,7 +143,7 @@ def _crew_client(crew_rows):
 
     class _Crew:
         def __init__(self, rows): self._rows = rows
-        def get(self): return list(self._rows)
+        def get_full(self): return list(self._rows)
 
     crew = _Crew(crew_rows) if crew_rows is not None else None
     handler = m.make_handler(_Relay(), crew_source=crew)
@@ -149,13 +158,16 @@ def _crew_client(crew_rows):
 
 
 def t_crew_data_endpoint_returns_rows():
-    srv, get = _crew_client([("Alice", True, True), ("Bob", True, False)])
+    srv, get = _crew_client([("Alice", True, True, False, "alice_d"),
+                             ("Bob", True, False, True, "")])
     try:
         status, body = get("/crew/data")
         assert status == 200, status
         assert body == {"rows": [
-            {"name": "Alice", "director": True, "producer": True},
-            {"name": "Bob", "director": True, "producer": False}]}, body
+            {"name": "Alice", "director": True, "producer": True,
+             "commentator": False, "discord": "alice_d"},
+            {"name": "Bob", "director": True, "producer": False,
+             "commentator": True, "discord": ""}]}, body
     finally:
         srv.shutdown()
 
@@ -172,7 +184,7 @@ def t_crew_data_endpoint_empty_when_disabled():
 
 def t_crew_source_inject_row_edit_append_and_delete():
     cs = m.CrewSource("http://crew")
-    cs.rows = [("Alice", True, False)]
+    cs.rows = [("Alice", True, False, False, "")]
     cs.inject_row(2, name="Bob", director=False, producer=True)   # append at len+1
     assert cs.get() == [("Alice", True, False), ("Bob", False, True)]
     cs.inject_row(1, director=False)                              # partial edit in place
@@ -181,6 +193,50 @@ def t_crew_source_inject_row_edit_append_and_delete():
     assert cs.get() == [("Bob", False, True)]
     cs.delete_row(9)                                             # out of range = no-op
     assert cs.get() == [("Bob", False, True)]
+
+
+def t_crew_source_inject_row_commentator_discord_partial():
+    # commentator/discord follow the same applied-when-given, kept-when-None rule.
+    cs = m.CrewSource("http://crew")
+    cs.rows = [("Alice", True, False, False, "")]
+    cs.inject_row(2, name="Bob", commentator=True, discord="Bob.Handle")  # append
+    assert cs.get_full()[1] == ("Bob", False, False, True, "Bob.Handle")
+    cs.inject_row(2, director=True)                              # partial edit keeps the rest
+    assert cs.get_full()[1] == ("Bob", True, False, True, "Bob.Handle")
+    cs.inject_row(1, discord="alice_d")                         # only discord changes
+    assert cs.get_full()[0] == ("Alice", True, False, False, "alice_d")
+
+
+def t_crew_discord_and_commentator_columns():
+    csv_text = ("Name,Commentator,Director,Producer,Discord\n"
+                "Alice,,x,,alice_d\n"
+                "Bob,x,,,Bob.Handle\n"
+                "Carol,,,,\n")
+    rows = m.CrewSource._parse_rows(csv_text)
+    # get() shape is unchanged: (name, is_dir, is_prod)
+    assert ("Alice", True, False) in rows, rows
+    assert ("Bob", False, False) in rows, rows
+    src = m.CrewSource("")          # no URL; inject rows directly
+    src.rows = m.CrewSource._parse_full(csv_text)   # canonical 5-tuple store
+    dm = src.discord_map()
+    assert dm.get("alice_d") == "Alice", dm
+    assert dm.get("bob.handle") == "Bob", dm   # lowercased key
+    assert src.commentator_keys() == {m.asset_key("Bob")}, src.commentator_keys()
+
+
+def t_resolve_roles_a1_union_commentator_from_crew_flag():
+    crew = [("Alice", True, False)]
+    # subject not in schedule, but IS in crew commentator set -> commentator
+    roles = m.resolve_roles(crew, set(), m.asset_key("Bob"),
+                            crew_commentator_keys={m.asset_key("Bob")})
+    assert roles == {"commentator"}, roles
+    # schedule still auto-grants (fallback intact)
+    roles2 = m.resolve_roles(crew, {m.asset_key("Dan")}, m.asset_key("Dan"))
+    assert roles2 == {"commentator"}, roles2
+    # director from crew flag, unioned with commentator from schedule
+    roles3 = m.resolve_roles(crew, {m.asset_key("Alice")}, m.asset_key("Alice"),
+                             crew_commentator_keys=set())
+    assert roles3 == {"commentator", "director"}, roles3
 
 
 if __name__ == "__main__":

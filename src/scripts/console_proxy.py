@@ -11,7 +11,7 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 MOUNT_PREFIX = "/console/buttons"          # the relay path prefix (strip / route)
 PREFIX_HEADER_VALUE = "console/buttons"    # the Companion-custom-prefix value (NO leading slash)
 COMPANION_PREFIX_HEADER = "Companion-custom-prefix"
-RELAY_COOKIE = "rc_cockpit"               # the relay's auth cookie — must never reach Companion
+RELAY_COOKIE = "rc_console"               # the relay's auth cookie — must never reach Companion
 
 # RFC 7230 hop-by-hop headers (lowercase) — never forwarded on the HTTP path.
 HOP_BY_HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
@@ -19,7 +19,7 @@ HOP_BY_HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authoriza
 
 
 def scrub_relay_cookie(cookie_header):
-    """Remove the relay's rc_cockpit auth cookie from a Cookie header value, preserving any
+    """Remove the relay's rc_console auth cookie from a Cookie header value, preserving any
     other cookies. Returns the cleaned header, or None if nothing remains (drop the header)."""
     if not cookie_header:
         return None
@@ -75,11 +75,15 @@ def forward_request_headers(headers, prefix=PREFIX_HEADER_VALUE, host="127.0.0.1
 
 def filter_response_headers(items):
     """Upstream response headers to relay back: drop hop-by-hop and the framing headers the
-    proxy recomputes (Content-Length/Type) or forced off (Content-Encoding)."""
+    proxy recomputes (Content-Length/Type) or forced off (Content-Encoding). Also drop
+    x-frame-options so the /console/buttons wrapper can embed Companion in a same-origin
+    iframe (the wrapper and the proxied content share the relay origin; the director gate
+    upstream is the real boundary, not a frame-busting header)."""
     out = []
     for k, v in items:
         lk = k.lower()
-        if lk in HOP_BY_HOP or lk in ("content-length", "content-type", "content-encoding"):
+        if lk in HOP_BY_HOP or lk in ("content-length", "content-type", "content-encoding",
+                                      "x-frame-options"):
             continue
         out.append((k, v))
     return out

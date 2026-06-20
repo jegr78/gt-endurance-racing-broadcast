@@ -1790,13 +1790,13 @@ def t_set_env_key_preserves_other_keys():
 
 
 def t_route_cockpit():
-    assert m.route(["cockpit", "token", "revoke", "Alpha"]) == {
-        "kind": "cockpit", "rest": ["token", "revoke", "Alpha"]}
+    assert m.route(["console", "token", "revoke", "Alpha"]) == {
+        "kind": "console", "rest": ["token", "revoke", "Alpha"]}
     # `links` is now a top-level command (#216); `funnel` was removed earlier;
     # like the removed enable/disable verbs both are rejected at route() time.
-    for bad in (["cockpit"], ["cockpit", "bogus"], ["cockpit", "enable"],
-                ["cockpit", "disable"], ["cockpit", "funnel", "on"],
-                ["cockpit", "links"]):
+    for bad in (["console"], ["console", "bogus"], ["console", "enable"],
+                ["console", "disable"], ["console", "funnel", "on"],
+                ["console", "links"]):
         try:
             m.route(bad)
             raise AssertionError(bad)
@@ -1812,15 +1812,54 @@ def t_route_links():
 def t_links_roster_union():
     # People = Schedule ∪ Crew, deduped by streamer_key (== asset_key), schedule
     # first. A crew-only director joins the list; a person in both appears once.
-    orig_sched = m._cockpit_roster
+    orig_sched = m._console_roster
     orig_crew = m._crew_roster
     try:
-        m._cockpit_roster = lambda: ["Alice", "Bob"]          # schedule (streamers)
+        m._console_roster = lambda: ["Alice", "Bob"]          # schedule (streamers)
         m._crew_roster = lambda: ["Bob", "Dana the Director"]  # crew tab
         assert m._links_roster() == ["Alice", "Bob", "Dana the Director"]
     finally:
-        m._cockpit_roster = orig_sched
+        m._console_roster = orig_sched
         m._crew_roster = orig_crew
+
+
+def t_links_cmd_prints_share_url_and_redirect_uri():
+    # links_cmd must print a bare share URL and OAuth redirect URI after the
+    # per-person link list.
+    import io, sys as _sys
+    orig_roster = m._links_roster
+    orig_magic = m._tailscale_magicdns
+    orig_ip = m._tailscale_ip
+    orig_secret = m._ensure_active_console_secret
+    orig_versions = m.cpadm.load_versions
+    orig_apply = m._apply_active_profile_env
+    orig_versions_path = m._console_versions_path
+    try:
+        m._links_roster = lambda: ["Alice"]
+        m._tailscale_magicdns = lambda: "my-host.ts.net"
+        m._tailscale_ip = lambda: "100.64.0.1"
+        m._ensure_active_console_secret = lambda: "testsecret"
+        m.cpadm.load_versions = lambda p: {}
+        m._apply_active_profile_env = lambda: None
+        m._console_versions_path = lambda: "/tmp/versions.json"
+        buf = io.StringIO()
+        old_stdout = _sys.stdout
+        _sys.stdout = buf
+        try:
+            m.links_cmd([])
+        finally:
+            _sys.stdout = old_stdout
+        out = buf.getvalue()
+        assert "/console/oauth/callback" in out, out
+        assert "/console" in out, out
+    finally:
+        m._links_roster = orig_roster
+        m._tailscale_magicdns = orig_magic
+        m._tailscale_ip = orig_ip
+        m._ensure_active_console_secret = orig_secret
+        m.cpadm.load_versions = orig_versions
+        m._apply_active_profile_env = orig_apply
+        m._console_versions_path = orig_versions_path
 
 
 def t_route_funnel():
@@ -1833,23 +1872,23 @@ def t_route_funnel():
 
 def t_funnel_auto_enabled_gate():
     # _funnel_auto_enabled gates `event start` auto-bringup on the opt-in flag
-    # AND a usable cockpit. The gate reads cockpit_status_data(), whose real
+    # AND a usable cockpit. The gate reads console_status_data(), whose real
     # shape is {ok, has_secret, ...} — there is NO "enabled" key (#216 fix: a
     # stale gate on st["enabled"] made the whole auto-enable path dead).
     import tempfile
     orig_env_file = m._env_file
-    orig_status = m.cockpit_status_data
+    orig_status = m.console_status_data
     try:
         with tempfile.TemporaryDirectory() as d:
             epath = os.path.join(d, ".env")
             m._env_file = lambda: epath
             usable = {"ok": True, "has_secret": True}
 
-            # Opt-in flag set + usable cockpit -> True (the fix; would be False
+            # Opt-in flag set + usable console -> True (the fix; would be False
             # under the old st["enabled"] gate).
             with open(epath, "w", encoding="utf-8") as fh:
                 fh.write("RACECAST_FUNNEL=true\n")
-            m.cockpit_status_data = lambda: usable
+            m.console_status_data = lambda: usable
             assert m._funnel_auto_enabled() is True
 
             # Legacy env name still honored (one-release fallback).
@@ -1862,14 +1901,14 @@ def t_funnel_auto_enabled_gate():
                 fh.write("RACECAST_FUNNEL=false\n")
             assert m._funnel_auto_enabled() is False
 
-            # Flag set but cockpit not usable (no secret) -> False.
+            # Flag set but console not usable (no secret) -> False.
             with open(epath, "w", encoding="utf-8") as fh:
                 fh.write("RACECAST_FUNNEL=true\n")
-            m.cockpit_status_data = lambda: {"ok": True, "has_secret": False}
+            m.console_status_data = lambda: {"ok": True, "has_secret": False}
             assert m._funnel_auto_enabled() is False
     finally:
         m._env_file = orig_env_file
-        m.cockpit_status_data = orig_status
+        m.console_status_data = orig_status
 
 
 def t_cookies_twitch_routing():
@@ -2205,34 +2244,30 @@ def t_event_title_write_relay_error_returns_not_ok():
     assert d["ok"] is False and "connection refused" in d["error"], d
 
 
-def t_cockpit_internal_host_prefers_tailscale_then_loopback():
+def t_console_internal_host_prefers_tailscale_then_loopback():
     # The Control Center's "internal" cockpit link mirrors the relay panel:
     # the producer's Tailscale IP when the tailnet is up, 127.0.0.1 when down.
-    assert m._cockpit_internal_host("100.64.0.5") == "100.64.0.5"
-    assert m._cockpit_internal_host(None) == "127.0.0.1"
-    assert m._cockpit_internal_host("") == "127.0.0.1"
+    assert m._console_internal_host("100.64.0.5") == "100.64.0.5"
+    assert m._console_internal_host(None) == "127.0.0.1"
+    assert m._console_internal_host("") == "127.0.0.1"
 
 
 def _with_cockpit_secret_env_cleared(fn):
-    """Run fn() with RACECAST_CONSOLE_SECRET + RACECAST_COCKPIT_SECRET cleared +
+    """Run fn() with RACECAST_CONSOLE_SECRET cleared +
     _active_profile_env_strict restored afterwards (zero-config auto-provision tests
     monkeypatch both)."""
     saved_new = os.environ.pop("RACECAST_CONSOLE_SECRET", None)
-    saved_old = os.environ.pop("RACECAST_COCKPIT_SECRET", None)
     saved_strict = m._active_profile_env_strict
     try:
         fn()
     finally:
         m._active_profile_env_strict = saved_strict
         os.environ.pop("RACECAST_CONSOLE_SECRET", None)
-        os.environ.pop("RACECAST_COCKPIT_SECRET", None)
         if saved_new is not None:
             os.environ["RACECAST_CONSOLE_SECRET"] = saved_new
-        if saved_old is not None:
-            os.environ["RACECAST_COCKPIT_SECRET"] = saved_old
 
 
-def t_ensure_active_cockpit_secret_generates_and_is_idempotent():
+def t_ensure_active_console_secret_generates_and_is_idempotent():
     import tempfile
     def body():
         with tempfile.TemporaryDirectory() as dd:
@@ -2240,20 +2275,20 @@ def t_ensure_active_cockpit_secret_generates_and_is_idempotent():
             with open(ppath, "w", encoding="utf-8") as fh:
                 fh.write("NAME=Demo\n")
             m._active_profile_env_strict = lambda: ("demo", ppath)
-            s1 = m._ensure_active_cockpit_secret()
+            s1 = m._ensure_active_console_secret()
             assert s1 and len(s1) == 64, s1                  # token_hex(32) -> 64 hex
             assert os.environ.get("RACECAST_CONSOLE_SECRET") == s1   # new env var name
             with open(ppath, encoding="utf-8") as fh:
                 written = m.parse_env_text(fh.read())
             assert written.get("CONSOLE_SECRET") == s1        # new key written
             os.environ.pop("RACECAST_CONSOLE_SECRET", None)   # idempotent: returns the same
-            assert m._ensure_active_cockpit_secret() == s1
+            assert m._ensure_active_console_secret() == s1
             with open(ppath, encoding="utf-8") as fh:
                 assert m.parse_env_text(fh.read())["NAME"] == "Demo"   # other keys kept
     _with_cockpit_secret_env_cleared(body)
 
 
-def t_ensure_active_cockpit_secret_skips_example_and_missing():
+def t_ensure_active_console_secret_skips_example_and_missing():
     import tempfile
     def body():
         with tempfile.TemporaryDirectory() as dd:
@@ -2261,34 +2296,23 @@ def t_ensure_active_cockpit_secret_skips_example_and_missing():
             with open(ppath, "w", encoding="utf-8") as fh:
                 fh.write("NAME=Example\n")
             m._active_profile_env_strict = lambda: ("example", ppath)   # never the shipped profile
-            assert m._ensure_active_cockpit_secret() is None
+            assert m._ensure_active_console_secret() is None
             m._active_profile_env_strict = lambda: ("ghost",
                                                     os.path.join(dd, "nope", "profile.env"))
-            assert m._ensure_active_cockpit_secret() is None            # never fabricate a profile
+            assert m._ensure_active_console_secret() is None            # never fabricate a profile
     _with_cockpit_secret_env_cleared(body)
 
 
-def t_ensure_active_cockpit_secret_respects_existing_env():
-    """New RACECAST_CONSOLE_SECRET in env is returned immediately (back-compat:
-    legacy RACECAST_COCKPIT_SECRET is also honoured)."""
+def t_ensure_active_console_secret_respects_existing_env():
+    """RACECAST_CONSOLE_SECRET in env is returned immediately without resolving a profile."""
     def body():
         os.environ["RACECAST_CONSOLE_SECRET"] = "already-set"
         def _boom():
             raise AssertionError("must not resolve a profile when env carries a secret")
         m._active_profile_env_strict = _boom
-        assert m._ensure_active_cockpit_secret() == "already-set"
+        assert m._ensure_active_console_secret() == "already-set"
     _with_cockpit_secret_env_cleared(body)
 
-
-def t_ensure_active_cockpit_secret_respects_legacy_env():
-    """Back-compat: legacy RACECAST_COCKPIT_SECRET in env is still honoured."""
-    def body():
-        os.environ["RACECAST_COCKPIT_SECRET"] = "legacy-set"
-        def _boom():
-            raise AssertionError("must not resolve a profile when env carries a secret")
-        m._active_profile_env_strict = _boom
-        assert m._ensure_active_cockpit_secret() == "legacy-set"
-    _with_cockpit_secret_env_cleared(body)
 
 
 def t_log_sources_registry_shape():
@@ -2323,32 +2347,35 @@ def t_relay_start_spawns_to_boot_log_not_console():
     assert m._relay_boot_log_path() != m._relay_log_path()
 
 
-def t_cockpit_status_links_union_crew():
-    # cockpit_status_data() must union _crew_roster_safe() into the link list,
+def t_console_status_links_union_crew():
+    # console_status_data() must union _crew_roster_safe() into the link list,
     # deduped by streamer_key. Both rosters contribute; dedup removes same-key dupes.
-    orig_sched = m._cockpit_roster_safe
+    orig_sched = m._console_roster_safe
     orig_crew = m._crew_roster_safe
-    orig_secret = m._ensure_active_cockpit_secret
+    orig_secret = m._ensure_active_console_secret
     try:
-        m._cockpit_roster_safe = lambda: ["Alice"]
+        m._console_roster_safe = lambda: ["Alice"]
         m._crew_roster_safe = lambda: ["Dana the Director"]
-        m._ensure_active_cockpit_secret = lambda: "s" * 64
-        data = m.cockpit_status_data()
+        m._ensure_active_console_secret = lambda: "s" * 64
+        data = m.console_status_data()
         names = [l["name"] for l in data["links"]]
         assert names == ["Alice", "Dana the Director"], names
         assert all("/console?t=" in l["internal"] for l in data["links"])
     finally:
-        m._cockpit_roster_safe = orig_sched
+        m._console_roster_safe = orig_sched
         m._crew_roster_safe = orig_crew
-        m._ensure_active_cockpit_secret = orig_secret
+        m._ensure_active_console_secret = orig_secret
 
 
 def t_crew_entries_data_maps_relay_rows():
     seen = {}
     def fake_fetch(url, timeout=3):
         seen["url"] = url
-        return {"rows": [{"name": "Dana", "director": True, "producer": False},
-                         {"name": "Pia", "director": 0, "producer": "x"}]}
+        return {"rows": [
+            {"name": "Dana", "director": True, "producer": False,
+             "commentator": False, "discord": "dana_d"},
+            {"name": "Pia", "director": 0, "producer": "x",
+             "commentator": "x", "discord": None}]}
     orig = m._relay_fetch_json
     m._relay_fetch_json = fake_fetch
     try:
@@ -2360,8 +2387,10 @@ def t_crew_entries_data_maps_relay_rows():
     # a sheet-loaded row (regression: /crew/data is index-free — without this the UI
     # sends row=undefined and every edit of an existing person fails).
     assert out["entries"] == [
-        {"row": 1, "name": "Dana", "director": True, "producer": False},
-        {"row": 2, "name": "Pia", "director": False, "producer": True}]
+        {"row": 1, "name": "Dana", "director": True, "producer": False,
+         "commentator": False, "discord": "dana_d"},
+        {"row": 2, "name": "Pia", "director": False, "producer": True,
+         "commentator": True, "discord": ""}]
     assert [e["row"] for e in out["entries"]] == [1, 2]
     assert seen["url"].endswith("/crew/data")
 
@@ -2386,13 +2415,14 @@ def t_crew_write_and_delete_post_to_relay():
     orig = m._relay_post_json
     m._relay_post_json = fake_post
     try:
-        w = m.crew_write_data(2, "Dana", True, False)
+        w = m.crew_write_data(2, "Dana", True, False, commentator=True, discord="  dana_d ")
         d = m.crew_delete_data(3)
     finally:
         m._relay_post_json = orig
     assert w == {"ok": True, "row": 2}
     assert posts[0][0].endswith("/crew/set")
-    assert posts[0][1] == {"row": 2, "name": "Dana", "director": True, "producer": False}
+    assert posts[0][1] == {"row": 2, "name": "Dana", "director": True, "producer": False,
+                           "commentator": True, "discord": "dana_d"}
     assert d == {"ok": True, "row": 3}
     assert posts[1][0].endswith("/crew/delete") and posts[1][1] == {"row": 3}
 

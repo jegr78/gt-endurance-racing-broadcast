@@ -30,6 +30,14 @@ the Companion Web Buttons board at `:8000/tablet` respectively — but reached t
 the role-gated `/console` mirror, with API calls transparently routed to the correct
 endpoints.
 
+All three cards open **in the same tab**. Every destination carries a **`← Console`**
+back link in its header that returns to this launcher, so there is clean
+forward-and-back navigation without relying on the browser history. The Web Buttons card
+opens a thin `/console/buttons` wrapper that embeds the Companion board in an iframe and
+hosts that back link (Companion's own page can't carry it); the buttons themselves are
+unchanged. The back link is shown only under the `/console` mount — at the tailnet
+`/cockpit` and `/panel` URLs there is no launcher to return to, so it stays hidden.
+
 A person can hold multiple roles (e.g. a commentator who is also a director); all
 their cards appear on one landing page. Roles are resolved live from the Crew tab and
 the active schedule on every request, so a role change takes effect immediately without
@@ -37,6 +45,8 @@ re-issuing the link.
 
 ## Further reading
 
+- [League-Owner Setup](League-Owner-Setup) — how to configure Discord OAuth, register
+  redirect URIs, and maintain the Crew tab so crew members can log in with Discord.
 - [Remote access & the Funnel boundary](Remote-access) — security model, the Funnel
   mount, and how roles are authorised.
 - [Commentator Cockpit](Commentator-Cockpit) — the talent-facing cockpit in detail.

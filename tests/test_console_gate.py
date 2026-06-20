@@ -31,21 +31,23 @@ class _FakeSource:
 class _Crew:
     def __init__(self, rows): self._rows = list(rows)
     def get(self): return list(self._rows)
+    def commentator_keys(self): return frozenset()
 
 
-def _serve(companion_url=None, logo_path=None):
+def _serve(companion_url=None, logo_path=None, sheet_id=None):
     rows = [("https://youtu.be/a", "Alice", "1", 2)]           # alice -> commentator
     src = _FakeSource(_URLS8, rows)
-    relay = m.Relay(src, [53001, 53002], LOGDIR)
+    relay = m.Relay(src, [53001, 53002], LOGDIR, sheet_id=sheet_id)
     crew = _Crew([("Bob", True, False), ("Carol", False, True)])  # bob=director, carol=producer
     SRC = os.path.join(ROOT, "src")
     handler = m.make_handler(
-        relay, console_secret=SECRET, cockpit_versions_path=None,
+        relay, console_secret=SECRET, console_versions_path=None,
         chat_store=m.ChatStore(os.path.join(LOGDIR, "chat.json")),
         crew_source=crew,
         panel_path=os.path.join(SRC, "director", "director-panel.html"),
         cockpit_page_path=os.path.join(SRC, "cockpit", "cockpit.html"),
         console_page_path=os.path.join(SRC, "console", "console.html"),
+        buttons_page_path=os.path.join(SRC, "console", "buttons.html"),
         companion_url=companion_url,
         logo_path=logo_path)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -54,7 +56,7 @@ def _serve(companion_url=None, logo_path=None):
 
 
 def _tok(key):
-    return m.cockpit_auth.mint_token(SECRET, key)
+    return m.console_auth.mint_token(SECRET, key)
 
 
 def _get(port, path, token=None, secret=None, secret_header="X-Console-Secret"):
@@ -303,18 +305,6 @@ def t_takeover_status_needs_producer_and_step_up():
         srv.shutdown()
 
 
-def t_legacy_cockpit_secret_header_still_accepted():
-    # Back-compat: the step-up header was renamed X-Cockpit-Secret -> X-Console-Secret.
-    # The relay accepts the legacy name for one release so a mixed-version takeover
-    # (old client sending X-Cockpit-Secret, new relay) still authorizes.
-    srv = _serve(); port = srv.server_address[1]
-    try:
-        code, _ = _get(port, "/console/takeover/status", _tok("carol"), SECRET,
-                       secret_header="X-Cockpit-Secret")
-        assert code == 200, code
-    finally:
-        srv.shutdown()
-
 
 def t_takeover_director_without_producer_is_forbidden():
     # A director (no producer role) is rejected even with the step-up secret.
@@ -483,26 +473,26 @@ def t_buttons_ws_passthrough_and_strips_token():
 
 
 def t_buttons_http_does_not_forward_relay_cookie():
-    # The rc_cockpit auth cookie must be scrubbed before forwarding upstream;
+    # The rc_console auth cookie must be scrubbed before forwarding upstream;
     # other cookies in the same header must be preserved.
     up = _stub_companion(); upurl = f"http://127.0.0.1:{up.server_address[1]}"
     srv = _serve(companion_url=upurl); port = srv.server_address[1]
     try:
         url = f"http://127.0.0.1:{port}/console/buttons/tablet?t=" + _tok("bob")
         req = urllib.request.Request(url)
-        req.add_header("Cookie", "rc_cockpit=secret; keep=1")
+        req.add_header("Cookie", "rc_console=secret; keep=1")
         with urllib.request.urlopen(req, timeout=5) as r:
             assert r.status == 200
-        # The stub saw the Cookie header with keep=1 but NOT rc_cockpit.
+        # The stub saw the Cookie header with keep=1 but NOT rc_console.
         received_cookie = _StubCompanion.last.get("cookie") or ""
-        assert "rc_cockpit" not in received_cookie, received_cookie
+        assert "rc_console" not in received_cookie, received_cookie
         assert "keep=1" in received_cookie, received_cookie
     finally:
         srv.shutdown(); up.shutdown()
 
 
 def t_buttons_ws_does_not_forward_relay_cookie_and_carries_prefix():
-    # The WS upgrade path must scrub rc_cockpit and inject the sub-path prefix header.
+    # The WS upgrade path must scrub rc_console and inject the sub-path prefix header.
     up = _ws_echo_stub(); upurl = f"http://127.0.0.1:{up.getsockname()[1]}"
     srv = _serve(companion_url=upurl); port = srv.server_address[1]
     try:
@@ -511,13 +501,13 @@ def t_buttons_ws_does_not_forward_relay_cookie_and_carries_prefix():
                "Host: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
                "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
                "Sec-WebSocket-Version: 13\r\n"
-               "Cookie: rc_cockpit=%s\r\n\r\n") % (_tok("bob"), _tok("bob"))
+               "Cookie: rc_console=%s\r\n\r\n") % (_tok("bob"), _tok("bob"))
         c.sendall(req.encode())
         resp = c.recv(4096)
         assert resp.split(b"\r\n")[0].endswith(b"101 Switching Protocols"), resp
         c.close()
-        # rc_cockpit must not appear in the upstream handshake.
-        assert b"rc_cockpit" not in _WSStub.last_request, _WSStub.last_request[:400]
+        # rc_console must not appear in the upstream handshake.
+        assert b"rc_console" not in _WSStub.last_request, _WSStub.last_request[:400]
         # The prefix header must be present.
         assert b"Companion-custom-prefix: console/buttons" in _WSStub.last_request, \
             _WSStub.last_request[:400]
@@ -531,8 +521,28 @@ def t_console_launcher_has_buttons_wiring_for_director():
         code, body = _get(port, "/console", _tok("bob"))   # director
         assert code == 200, (code, body)
         assert "/buttons/health" in body, body
-        # The card lands on the web-buttons page (/tablet), not Companion's admin root.
-        assert "RC_API('/buttons/tablet')" in body, body
+        # The card lands on the /console/buttons wrapper (same tab; the wrapper embeds
+        # Companion in an iframe), not directly on Companion's tablet/admin page.
+        assert "RC_API('/buttons')" in body, body
+        assert "/buttons/tablet" not in body, body
+        assert "_blank" not in body, body
+    finally:
+        srv.shutdown()
+
+
+def t_console_buttons_wrapper_page_director_only():
+    # GET /console/buttons (exact) -> our wrapper HTML (back bar + iframe), director-gated.
+    # /console/buttons/<rest> still proxies to Companion (covered elsewhere).
+    srv = _serve(companion_url="http://127.0.0.1:1"); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console/buttons", _tok("bob"))   # director
+        assert code == 200, (code, body)
+        assert "<iframe" in body, body
+        assert "RC_API('/buttons/tablet')" in body, body   # iframe targets the proxied UI
+        assert 'id="back"' in body, body                    # carries the back link
+        # A commentator may not reach the buttons wrapper.
+        code2, _ = _get(port, "/console/buttons", _tok("alice"))
+        assert code2 == 403, code2
     finally:
         srv.shutdown()
 
@@ -572,6 +582,213 @@ def t_console_logo_404_when_unset():
         srv.shutdown()
 
 
+# ---------- helpers for OAuth endpoint tests ----------
+
+class _CrewWithDiscord(_Crew):
+    """Extends _Crew with a discord_map() that returns a fixed handle->name mapping."""
+    def __init__(self, rows, discord):
+        super().__init__(rows)
+        self._discord = discord
+    def discord_map(self):
+        return dict(self._discord)
+
+
+def _serve_oauth(discord_client_id="cid", discord_client_secret="sec"):
+    rows = [("https://youtu.be/a", "Alice", "1", 2)]
+    src = _FakeSource(_URLS8, rows)
+    relay = m.Relay(src, [53001, 53002], LOGDIR)
+    crew = _CrewWithDiscord(
+        [("Alice", False, False), ("Bob", True, False)],
+        {"alice_discord": "Alice"})
+    SRC = os.path.join(ROOT, "src")
+    handler = m.make_handler(
+        relay, console_secret=SECRET, console_versions_path=None,
+        chat_store=m.ChatStore(os.path.join(LOGDIR, "chat2.json")),
+        crew_source=crew,
+        panel_path=os.path.join(SRC, "director", "director-panel.html"),
+        cockpit_page_path=os.path.join(SRC, "cockpit", "cockpit.html"),
+        console_page_path=os.path.join(SRC, "console", "console.html"),
+        discord_client_id=discord_client_id,
+        discord_client_secret=discord_client_secret)
+    srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, msg, headers, fp)
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def _get_with_headers(port, path, extra_headers=None):
+    """Like _get but supports arbitrary request headers; no auth token.
+    Does NOT follow redirects — the 302 Location is returned as-is."""
+    url = f"http://127.0.0.1:{port}{path}"
+    req = urllib.request.Request(url)
+    for k, v in (extra_headers or {}).items():
+        req.add_header(k, v)
+    try:
+        with _NO_REDIRECT_OPENER.open(req, timeout=5) as r:
+            return r.status, dict(r.headers), r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, dict(e.headers), e.read()
+
+
+# ---------- OAuth endpoint tests ----------
+
+def t_console_login_redirects_when_oauth_configured():
+    srv = _serve_oauth(); port = srv.server_address[1]
+    try:
+        code, headers, _ = _get_with_headers(port, "/console/login",
+                                             {"Host": "box.tail1.ts.net",
+                                              "X-Forwarded-Proto": "https"})
+        assert code == 302, code
+        loc = headers.get("Location") or headers.get("location") or ""
+        assert loc.startswith("https://discord.com/oauth2/authorize?"), loc
+        assert "client_id=cid" in loc, loc
+        assert "redirect_uri=https%3A%2F%2Fbox.tail1.ts.net%2Fconsole%2Foauth%2Fcallback" in loc, loc
+    finally:
+        srv.shutdown()
+
+
+def t_console_login_404_when_oauth_unconfigured():
+    srv = _serve_oauth(discord_client_id="", discord_client_secret="")
+    port = srv.server_address[1]
+    try:
+        code, _h, _b = _get_with_headers(port, "/console/login",
+                                          {"Host": "box.tail1.ts.net"})
+        assert code == 404, code
+    finally:
+        srv.shutdown()
+
+
+def t_oauth_callback_sets_cookie_on_crew_match():
+    # The CSRF state cookie (rc_oauth_state) must carry the same nonce embedded in
+    # the signed `state`, or the callback rejects it as a forged/expired login.
+    import time as _t
+    m._TEST_EXCHANGE = lambda code, redirect_uri: "alice_discord"
+    try:
+        srv = _serve_oauth(); port = srv.server_address[1]
+        try:
+            state = m.discord_oauth.sign_state(SECRET, "n1", int(_t.time()))
+            code, headers, _ = _get_with_headers(
+                port, f"/console/oauth/callback?code=abc&state={state}",
+                {"Host": "box.tail1.ts.net", "X-Forwarded-Proto": "https",
+                 "Cookie": "rc_oauth_state=n1"})
+            assert code == 302, code
+            loc = headers.get("Location") or headers.get("location") or ""
+            assert loc.endswith("/console"), loc
+            setc = headers.get("Set-Cookie") or headers.get("set-cookie") or ""
+            assert "rc_console=" in setc, setc
+            assert "Path=/console" in setc, setc
+            assert "HttpOnly" in setc, setc
+            # Behind https the auth cookie must be marked Secure.
+            assert "Secure" in setc, setc
+        finally:
+            srv.shutdown()
+    finally:
+        del m._TEST_EXCHANGE
+
+
+def t_oauth_callback_bad_state_400():
+    m._TEST_EXCHANGE = lambda code, redirect_uri: "alice_discord"
+    try:
+        srv = _serve_oauth(); port = srv.server_address[1]
+        try:
+            code, _h, _b = _get_with_headers(
+                port, "/console/oauth/callback?code=abc&state=not.valid.sig",
+                {"Host": "box.tail1.ts.net"})
+            assert code == 400, code
+        finally:
+            srv.shutdown()
+    finally:
+        del m._TEST_EXCHANGE
+
+
+def t_oauth_callback_csrf_cookie_mismatch_400():
+    # A correctly-signed state but a missing/mismatched session cookie is the
+    # login-CSRF case: the callback must reject with 400 BEFORE any token exchange.
+    import time as _t
+    called = []
+    m._TEST_EXCHANGE = lambda code, redirect_uri: called.append(1) or "alice_discord"
+    try:
+        srv = _serve_oauth(); port = srv.server_address[1]
+        try:
+            state = m.discord_oauth.sign_state(SECRET, "n1", int(_t.time()))
+            # No cookie at all.
+            code, _h, _b = _get_with_headers(
+                port, f"/console/oauth/callback?code=abc&state={state}",
+                {"Host": "box.tail1.ts.net"})
+            assert code == 400, code
+            # Wrong nonce in the cookie.
+            code2, _h2, _b2 = _get_with_headers(
+                port, f"/console/oauth/callback?code=abc&state={state}",
+                {"Host": "box.tail1.ts.net", "Cookie": "rc_oauth_state=WRONG"})
+            assert code2 == 400, code2
+            assert not called, "exchange must not run on a CSRF mismatch"
+        finally:
+            srv.shutdown()
+    finally:
+        del m._TEST_EXCHANGE
+
+
+def t_oauth_callback_502_when_exchange_fails():
+    # The token-exchange returning "" (Discord error) -> 502, no rc_console cookie.
+    import time as _t
+    m._TEST_EXCHANGE = lambda *_: ""
+    try:
+        srv = _serve_oauth(); port = srv.server_address[1]
+        try:
+            state = m.discord_oauth.sign_state(SECRET, "n1", int(_t.time()))
+            code, headers, _b = _get_with_headers(
+                port, f"/console/oauth/callback?code=abc&state={state}",
+                {"Host": "box.tail1.ts.net", "Cookie": "rc_oauth_state=n1"})
+            assert code == 502, code
+            setc = headers.get("Set-Cookie") or headers.get("set-cookie") or ""
+            assert "rc_console=" not in setc, setc
+        finally:
+            srv.shutdown()
+    finally:
+        del m._TEST_EXCHANGE
+
+
+def t_oauth_callback_no_crew_match_denies():
+    import time as _t
+    m._TEST_EXCHANGE = lambda code, redirect_uri: "ghost_user"
+    try:
+        srv = _serve_oauth(); port = srv.server_address[1]
+        try:
+            state = m.discord_oauth.sign_state(SECRET, "n1", int(_t.time()))
+            code, headers, body = _get_with_headers(
+                port, f"/console/oauth/callback?code=abc&state={state}",
+                {"Host": "box.tail1.ts.net", "Cookie": "rc_oauth_state=n1"})
+            assert code == 403, code
+            assert b"crew" in body.lower() or b"not on the crew" in body.lower(), body
+            setc = headers.get("Set-Cookie") or headers.get("set-cookie") or ""
+            assert "rc_oauth_state=" in setc and "Max-Age=0" in setc, \
+                f"403 should clear state cookie; got Set-Cookie: {setc!r}"
+        finally:
+            srv.shutdown()
+    finally:
+        del m._TEST_EXCHANGE
+
+
+def t_console_root_auth_optional_with_oauth():
+    # With OAuth configured and NO token cookie, GET /console serves the launcher
+    # page (200) so an unauthenticated visitor sees the Login-with-Discord button.
+    srv = _serve_oauth(); port = srv.server_address[1]
+    try:
+        code, _h, body = _get_with_headers(port, "/console",
+                                           {"Host": "box.tail1.ts.net"})
+        assert code == 200, code
+        assert body, "launcher page should have a body"
+    finally:
+        srv.shutdown()
+
+
 def t_status_league_includes_name():
     rows = [("https://youtu.be/a", "Alice", "1", 2)]
     src = _FakeSource(_URLS8, rows)
@@ -586,6 +803,60 @@ def t_console_launcher_fetches_status_and_logo():
         assert code == 200, (code, body)
         assert "RC_API('/status')" in body, body
         assert "RC_API('/logo')" in body, body
+    finally:
+        srv.shutdown()
+
+
+def t_console_status_strips_feed_urls_for_commentator():
+    # Funnel-exposed /console/status must NOT leak the commentator feed stream
+    # URLs (feeds[*].channel) to a commentator token, nor the POV url / Sheet id.
+    srv = _serve(sheet_id="SHEET-XYZ"); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console/status", _tok("alice"))   # commentator
+        assert code == 200, (code, body)
+        d = json.loads(body)
+        assert d["feeds"]["A"]["stint"], d            # operational data kept
+        assert "channel" not in d["feeds"]["A"], d    # stream URL stripped
+        assert "name" in d["league"], d               # league name kept
+        assert "sheet_id" not in d["league"], d       # sheet id stripped for commentator
+    finally:
+        srv.shutdown()
+
+
+def t_console_status_keeps_sheet_id_for_director_but_strips_feed_urls():
+    srv = _serve(sheet_id="SHEET-XYZ"); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console/status", _tok("bob"))     # director
+        assert code == 200, (code, body)
+        d = json.loads(body)
+        assert "channel" not in d["feeds"]["A"], d        # feed URL stripped for ALL roles
+        assert d["league"]["sheet_id"] == "SHEET-XYZ", d  # director keeps sheet id
+    finally:
+        srv.shutdown()
+
+
+def t_console_schedule_data_is_director_only():
+    # /schedule/data + /qualifying/data return per-stint stream URLs, so over the
+    # Funnel a commentator must NOT reach them (sibling of the /status leak).
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        assert _get(port, "/console/schedule/data", _tok("alice"))[0] == 403   # commentator
+        assert _get(port, "/console/qualifying/data", _tok("alice"))[0] == 403
+        assert _get(port, "/console/schedule/data", _tok("bob"))[0] == 200      # director
+    finally:
+        srv.shutdown()
+
+
+def t_tailnet_status_is_unredacted():
+    # The plain tailnet /status (never through the /console gate) keeps the full
+    # payload incl. feed stream URLs — the tailnet is the trust boundary.
+    srv = _serve(sheet_id="SHEET-XYZ"); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/status")                # no /console, no token
+        assert code == 200, (code, body)
+        d = json.loads(body)
+        assert d["feeds"]["A"]["channel"], d              # full feed URL present
+        assert d["league"]["sheet_id"] == "SHEET-XYZ", d
     finally:
         srv.shutdown()
 

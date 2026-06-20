@@ -27,6 +27,10 @@
   body { margin: 0; font: 15px/1.4 system-ui, sans-serif; background: #0b0d10; color: #e8eaed; }
   header { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: #14171c; }
   header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .02em; }
+  a.back { display: inline-flex; align-items: center; gap: 6px; text-decoration: none;
+           color: #e8eaed; background: #1b1f25; border: 1px solid #232830; border-radius: 8px;
+           padding: 6px 10px; font-size: 13px; font-weight: 600; }
+  a.back:hover { border-color: #3b82f6; }
   #who { opacity: .7; font-size: 13px; }
   #eventTitle { font-size: 13px; font-weight: 600; color: #ffb454; }
   #eventTitle:not(:empty)::before { content: "· "; opacity: .5; font-weight: 400; }
@@ -75,10 +79,23 @@
 </head>
 <body>
 <header>
+  <a class="back" id="backConsole" href="#" hidden aria-label="Back to Console">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    Console
+  </a>
   <h1>Commentator Cockpit</h1>
   <span id="eventTitle"></span>
   <span id="who"></span>
 </header>
+<script>
+  // Show the "← Console" back link only when served under the /console mount
+  // (RC_API_BASE set); at the tailnet root (/cockpit) there is no launcher to return to.
+  (function () {
+    var b = window.RC_API_BASE;
+    if (b) { var a = document.getElementById('backConsole'); a.href = b; a.hidden = false; }
+  })();
+</script>
 
 <div id="tally" class="tally idle">…</div>
 

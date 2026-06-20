@@ -1,5 +1,5 @@
 """Commentator stream-link submission store (issue #193), mirroring
-cockpit_admin.py: pure validation + atomic JSON writes, best-effort reads that
+console_admin.py: pure validation + atomic JSON writes, best-effort reads that
 never throw. A commentator submits a YouTube/Twitch link from the (public,
 Funnel-exposed) cockpit; it lands here as a PENDING entry that the director
 approves/rejects from /panel (tailnet-only) — never auto-published.
@@ -52,7 +52,7 @@ def _validate_entry(e):
 
 def validate_pending(payload):
     """{"seq": int>=0, "pending": [entry,...]} -> (seq, [entry,...]). Raises
-    ValueError on any malformed shape (mirrors cockpit_admin.validate_versions)."""
+    ValueError on any malformed shape (mirrors console_admin.validate_versions)."""
     if not isinstance(payload, dict):
         raise ValueError("payload must be an object")
     pending = payload.get("pending")
@@ -69,7 +69,7 @@ def validate_pending(payload):
 
 def _load(path):
     """(seq, entries) from disk, or (0, []) when missing/corrupt — best-effort,
-    like cockpit_admin.load_versions: a bad file must never wedge the relay."""
+    like console_admin.load_versions: a bad file must never wedge the relay."""
     try:
         with open(path, encoding="utf-8") as fh:
             return validate_pending(json.load(fh))
@@ -79,7 +79,7 @@ def _load(path):
 
 def _write(path, seq, entries):
     """Atomically persist {"seq", "pending"} (temp + replace), same-filesystem
-    rename, temp unlinked on failure — mirrors cockpit_admin.write_versions."""
+    rename, temp unlinked on failure — mirrors console_admin.write_versions."""
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", suffix=".tmp")
     try:

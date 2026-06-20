@@ -16,9 +16,9 @@ def _load(name, rel):
     return mod
 
 
-ca = _load("cockpit_auth", ("src", "scripts", "cockpit_auth.py"))
+ca = _load("console_auth", ("src", "scripts", "console_auth.py"))
 m = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))
-cad = _load("cockpit_admin", ("src", "scripts", "cockpit_admin.py"))
+cad = _load("console_admin", ("src", "scripts", "console_admin.py"))
 
 SECRET = "test-secret-do-not-ship"
 
@@ -69,7 +69,7 @@ def t_verify_rejects_malformed():
 
 
 def t_streamer_key_matches_asset_key():
-    """cockpit_auth.streamer_key must behave identically to relay asset_key()."""
+    """console_auth.streamer_key must behave identically to relay asset_key()."""
     for s in ("Alpha Racing", "  Beta!#1 ", "Ümlaut x", "a-b_c d", "", "  "):
         assert ca.streamer_key(s) == m.asset_key(s), s
 
@@ -107,7 +107,7 @@ def t_rate_limiter_fixed_window():
 
 def t_versions_default_and_bump():
     with tempfile.TemporaryDirectory() as d:
-        p = os.path.join(d, "cockpit-versions.json")
+        p = os.path.join(d, "console-versions.json")
         assert cad.load_versions(p) == {}                 # missing -> {}
         assert cad.current_version({}, "alpha") == 1      # default 1
         assert cad.bump_version(p, "alpha") == 2          # 1 -> 2, persisted
@@ -117,7 +117,7 @@ def t_versions_default_and_bump():
 
 def t_revoked_token_rejected_after_bump():
     with tempfile.TemporaryDirectory() as d:
-        p = os.path.join(d, "cockpit-versions.json")
+        p = os.path.join(d, "console-versions.json")
         tok_v1 = ca.mint_token(SECRET, "alpha", version=1)
         assert ca.verify_token(SECRET, tok_v1, cad.load_versions(p)) == "alpha"
         cad.bump_version(p, "alpha")                       # now current = 2
@@ -128,7 +128,7 @@ def t_revoked_token_rejected_after_bump():
 
 def t_apply_pulled_validates():
     with tempfile.TemporaryDirectory() as d:
-        p = os.path.join(d, "cockpit-versions.json")
+        p = os.path.join(d, "console-versions.json")
         assert cad.apply_pulled(p, {"versions": {"alpha": 3, "beta": 2}}) == 2
         assert cad.load_versions(p) == {"alpha": 3, "beta": 2}
         for bad in ({"versions": {"alpha": 0}}, {"versions": {"BAD KEY": 2}},
@@ -220,7 +220,7 @@ def _cockpit_client(secret="sek", rows=None, live_idx=0,
 
     handler = m.make_handler(_Relay(), chat_store=chat_store, timer_store=timer_store,
                              cockpit_page_path=page_path, console_secret=secret,
-                             cockpit_versions_path=versions_path)
+                             console_versions_path=versions_path)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     _t.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -299,7 +299,7 @@ def t_page_sets_cookie_and_serves_html():
             assert code == 200, code
             assert b"cockpit" in body
             setc = headers.get("Set-Cookie", "")
-            assert "rc_cockpit=" in setc and "HttpOnly" in setc and "SameSite=Lax" in setc
+            assert "rc_console=" in setc and "HttpOnly" in setc and "SameSite=Lax" in setc
             # plain-http (tailnet) request -> NO Secure, else the browser drops it
             assert "Secure" not in setc
         finally:
@@ -330,7 +330,7 @@ def t_page_bad_token_401_no_cookie():
         try:
             code, headers, _b = get("/cockpit?t=bogus")
             assert code == 401, code
-            assert "rc_cockpit=" not in (headers.get("Set-Cookie") or "")
+            assert "rc_console=" not in (headers.get("Set-Cookie") or "")
         finally:
             srv.shutdown()
 
@@ -342,7 +342,7 @@ def t_timer_authed():
     srv, get, _post = _cockpit_client(timer_store=_Timer())
     try:
         tok = ca.mint_token("sek", "alpha-racing")
-        code, _h, body = get("/cockpit/timer", cookie="rc_cockpit=" + tok)
+        code, _h, body = get("/cockpit/timer", cookie="rc_console=" + tok)
         assert code == 200, code
         assert json.loads(body)["remaining"] == "1:00:00"
     finally:
@@ -358,10 +358,10 @@ def t_cockpit_chat_send_forces_identity():
             # client tries to spoof "user" -> must be ignored, forced to display name
             code, _h, body = post("/cockpit/chat/send",
                                   {"user": "Impostor", "text": "hi"},
-                                  cookie="rc_cockpit=" + tok)
+                                  cookie="rc_console=" + tok)
             assert code == 200, (code, body)
             assert json.loads(body)["message"]["user"] == "Alpha Racing"
-            code, _h, body = get("/cockpit/chat/data", cookie="rc_cockpit=" + tok)
+            code, _h, body = get("/cockpit/chat/data", cookie="rc_console=" + tok)
             msgs = json.loads(body)["messages"]
             assert msgs[-1]["user"] == "Alpha Racing" and msgs[-1]["text"] == "hi"
         finally:
@@ -381,7 +381,7 @@ def t_cockpit_chat_requires_auth():
 
 def t_versions_endpoint_requires_secret():
     with tempfile.TemporaryDirectory() as d:
-        vp = os.path.join(d, "cockpit-versions.json")
+        vp = os.path.join(d, "console-versions.json")
         cad.write_versions(vp, {"alpha": 3})
         srv, get, _post = _cockpit_client(secret="sek", versions_path=vp)
         try:
@@ -392,9 +392,6 @@ def t_versions_endpoint_requires_secret():
             code, _h, body = get("/cockpit/versions",
                                  headers={"X-Console-Secret": "sek"})       # right secret
             assert code == 200 and json.loads(body)["versions"] == {"alpha": 3}
-            # Back-compat: the renamed header's legacy name X-Cockpit-Secret still works.
-            assert get("/cockpit/versions",
-                       headers={"X-Cockpit-Secret": "sek"})[0] == 200
         finally:
             srv.shutdown()
 

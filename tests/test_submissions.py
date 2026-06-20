@@ -21,7 +21,7 @@ def _load(name, rel):
     return mod
 
 
-ca = _load("cockpit_auth", ("src", "scripts", "cockpit_auth.py"))
+ca = _load("console_auth", ("src", "scripts", "console_auth.py"))
 cs = _load("cockpit_submissions", ("src", "scripts", "cockpit_submissions.py"))
 m = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))
 
@@ -302,7 +302,7 @@ def t_cockpit_data_exposes_my_pending():
             tok_b = ca.mint_token(SECRET, "beta")
             post("/cockpit/submit",
                  {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"},
-                 cookie="rc_cockpit=" + tok_a)
+                 cookie="rc_console=" + tok_a)
             da = json.loads(get("/cockpit/data?t=" + tok_a)[2])
             db = json.loads(get("/cockpit/data?t=" + tok_b)[2])
             assert [x["stint"] for x in da["my_pending"]] == ["S3"]
@@ -332,7 +332,7 @@ def t_submit_disabled_is_404():
             tok = ca.mint_token(SECRET, "alpha-racing")
             code, _h, _b = post("/cockpit/submit",
                                 {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"},
-                                cookie="rc_cockpit=" + tok)
+                                cookie="rc_console=" + tok)
             assert code == 404, code
         finally:
             srv.shutdown()
@@ -346,7 +346,7 @@ def t_submit_rejects_non_channel_url():
             tok = ca.mint_token(SECRET, "alpha-racing")
             code, _h, body = post("/cockpit/submit",
                                   {"url": "http://evil.example/x", "stint": "S3"},
-                                  cookie="rc_cockpit=" + tok)
+                                  cookie="rc_console=" + tok)
             assert code == 400, (code, body)
             assert cs.list_pending(p) == []          # nothing stored
         finally:
@@ -362,7 +362,7 @@ def t_submit_rejects_foreign_row():
             # S2 is Beta's stint
             code, _h, _b = post("/cockpit/submit",
                                 {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S2"},
-                                cookie="rc_cockpit=" + tok)
+                                cookie="rc_console=" + tok)
             assert code == 400, code
             assert cs.list_pending(p) == []
         finally:
@@ -377,7 +377,7 @@ def t_submit_stores_pending_for_own_row():
             tok = ca.mint_token(SECRET, "alpha-racing")
             code, _h, body = post("/cockpit/submit",
                                   {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"},
-                                  cookie="rc_cockpit=" + tok)
+                                  cookie="rc_console=" + tok)
             assert code == 200, (code, body)
             pend = cs.list_pending(p)
             assert len(pend) == 1
@@ -399,7 +399,7 @@ def t_approve_writes_schedule_and_clears():
         try:
             tok = ca.mint_token(SECRET, "alpha-racing")
             post("/cockpit/submit", {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"},
-                 cookie="rc_cockpit=" + tok)
+                 cookie="rc_console=" + tok)
             sid = cs.list_pending(p)[0]["id"]
             code, _h, body = post("/submissions/approve", {"id": sid})
             assert code == 200, (code, body)
@@ -442,7 +442,7 @@ def t_approve_posts_discord_without_ping():
         try:
             tok = ca.mint_token(SECRET, "alpha-racing")
             post("/cockpit/submit", {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"},
-                 cookie="rc_cockpit=" + tok)
+                 cookie="rc_console=" + tok)
             captured.clear()                         # drop the submission @here ping
             sid = cs.list_pending(p)[0]["id"]
             code, _h, _b = post("/submissions/approve", {"id": sid})
@@ -464,7 +464,7 @@ def t_reject_does_not_post_discord():
         try:
             tok = ca.mint_token(SECRET, "alpha-racing")
             post("/cockpit/submit", {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"},
-                 cookie="rc_cockpit=" + tok)
+                 cookie="rc_console=" + tok)
             captured.clear()
             sid = cs.list_pending(p)[0]["id"]
             post("/submissions/reject", {"id": sid})
@@ -481,7 +481,7 @@ def t_reject_discards_without_writing():
         try:
             tok = ca.mint_token(SECRET, "alpha-racing")
             post("/cockpit/submit", {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "stint": "S3"},
-                 cookie="rc_cockpit=" + tok)
+                 cookie="rc_console=" + tok)
             sid = cs.list_pending(p)[0]["id"]
             code, _h, _b = post("/submissions/reject", {"id": sid})
             assert code == 200, code

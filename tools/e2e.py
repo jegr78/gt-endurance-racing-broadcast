@@ -11,7 +11,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
 import e2e_checks as E
-import cockpit_auth
+import console_auth
 
 
 def _csv_server(csv_text):
@@ -290,8 +290,8 @@ def run_synthetic(args):
         shutil.copytree(os.path.join(ROOT, "profiles", "example"),
                         os.path.join(prof_root, "e2e"))
         secret = "e2e-secret-0123456789abcdef"
-        key = cockpit_auth.streamer_key("Alice")
-        token = cockpit_auth.mint_token(secret, key, version=1)
+        key = console_auth.streamer_key("Alice")
+        token = console_auth.mint_token(secret, key, version=1)
 
         # The CLI always injects --cookies <runtime>/yt-cookies.txt and the relay
         # hard-exits if that path is missing. Synthetic runs have no real YouTube
@@ -301,7 +301,7 @@ def run_synthetic(args):
         dummy_cookies = os.path.join(tmp, "yt-cookies.txt")
         with open(dummy_cookies, "w", encoding="utf-8") as fh:
             fh.write("# Netscape HTTP Cookie File\n")
-        # Isolate ALL relay state (chat.json, cockpit-versions/pending.json) in the
+        # Isolate ALL relay state (chat.json, console-versions/pending.json) in the
         # temp dir. The CLI injects --runtime-dir <repo>/runtime/...; we override it
         # (last-wins) so a synthetic run never writes into the real runtime tree.
         relay_runtime = os.path.join(tmp, "runtime")
@@ -471,8 +471,8 @@ def run_real_league(args):
             print("real-league: the live schedule is empty (no Sheet/network?).")
             print("  Cockpit-token checks need a real streamer; skipping the run.")
             return 0
-        key = cockpit_auth.streamer_key(streamer)
-        token = cockpit_auth.mint_token(rc.console_secret, key, version=1)
+        key = console_auth.streamer_key(streamer)
+        token = console_auth.mint_token(rc.console_secret, key, version=1)
 
         # Control Center against the same real profile.
         ui_port = E.free_port()

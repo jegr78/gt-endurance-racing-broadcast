@@ -32,7 +32,7 @@ racecast funnel off    # take it back off the public internet
 ```
 
 The one-time tailnet prerequisites (MagicDNS, HTTPS, the `funnel` nodeAttr) and the
-optional `racecast cockpit setup-funnel` automation are documented once, on the
+optional `racecast console setup-funnel` automation are documented once, on the
 [Commentator Cockpit](Commentator-Cockpit#public-access-via-tailscale-funnel--one-time-setup)
 page.
 
@@ -52,13 +52,12 @@ on every request.
   roles in the Control Center **Crew editor** (or the Sheet's Crew tab) and they apply
   immediately — no link re-issue. See [Sheet-Webhook](Sheet-Webhook#crew) for the Crew tab
   + Apps Script action.
-- **Rotation.** `racecast cockpit token revoke "<name>"` bumps that person's version, so
+- **Rotation.** `racecast console token revoke "<name>"` bumps that person's version, so
   their old link stops working at once — nobody else is affected and no secret is rotated.
 
 All tokens are signed with one **per-league secret**, `CONSOLE_SECRET`, auto-generated in
 the active profile's `profile.env` on first relay start and carried by
-`racecast profile export`/import. (See [Configuration](Configuration); the
-legacy key name `COCKPIT_SECRET` is still read as a fallback.)
+`racecast profile export`/import. (See [Configuration](Configuration).)
 
 ## The `/console` launcher — role-adaptive
 
@@ -97,8 +96,7 @@ the on-air stint (`/set/stint`), switching race/qualifying mode (`/mode/*`), and
 pulling takeover state — require a **second factor** beyond the identity token: the shared
 **per-league producer secret**, sent in the `X-Console-Secret` request header. It is the
 same `CONSOLE_SECRET` that signs the tokens, checked in constant time. This bounds the
-damage a single leaked link can do. (The legacy header name `X-Cockpit-Secret` is still
-accepted for one release.)
+damage a single leaked link can do.
 
 ## The security boundary
 
@@ -174,7 +172,7 @@ gate**. The page needs no Tailscale account.
 > Companion, including a config export that may contain stored credentials. This is an
 > accepted trade-off (we trust the director roster; a director on the tailnet already has the
 > same access). Recommendations: do not store reusable secrets in a funnelled Companion
-> (rotate the OBS-WebSocket password if it must live there); `racecast cockpit token revoke`
+> (rotate the OBS-WebSocket password if it must live there); `racecast console token revoke`
 > rotates a leaked link at once. Only `/console` is Funnel-mounted — `/console/buttons` is a
 > sub-path of that single mount, proxied internally; there is no second mount, and
 > OBS-WebSocket is still never funnelled.

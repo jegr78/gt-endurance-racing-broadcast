@@ -36,12 +36,22 @@ def t_filter_response_headers_drops_framing_and_hop_by_hop():
     assert kept["Set-Cookie"] == "a=b" and kept["X-Foo"] == "bar"
 
 
-def t_scrub_relay_cookie_removes_rc_cockpit_only():
-    # Only rc_cockpit → None (drop the header).
-    assert cp.scrub_relay_cookie("rc_cockpit=abc") is None
-    # Mixed: rc_cockpit stripped, others preserved.
-    assert cp.scrub_relay_cookie("a=1; rc_cockpit=abc; b=2") == "a=1; b=2"
-    # No rc_cockpit → unchanged.
+def t_filter_response_headers_drops_x_frame_options_for_iframe():
+    # The /console/buttons wrapper embeds Companion in a same-origin iframe, so the
+    # upstream X-Frame-Options must not survive (any casing) — but unrelated headers do.
+    kept = dict((k.lower(), v) for k, v in cp.filter_response_headers(
+        [("X-Frame-Options", "SAMEORIGIN"), ("x-frame-options", "DENY"),
+         ("X-Content-Type-Options", "nosniff")]))
+    assert "x-frame-options" not in kept
+    assert kept["x-content-type-options"] == "nosniff"
+
+
+def t_scrub_relay_cookie_removes_rc_console_only():
+    # Only rc_console → None (drop the header).
+    assert cp.scrub_relay_cookie("rc_console=abc") is None
+    # Mixed: rc_console stripped, others preserved.
+    assert cp.scrub_relay_cookie("a=1; rc_console=abc; b=2") == "a=1; b=2"
+    # No rc_console → unchanged.
     assert cp.scrub_relay_cookie("a=1") == "a=1"
     # Empty / None input → None.
     assert cp.scrub_relay_cookie(None) is None
@@ -49,16 +59,16 @@ def t_scrub_relay_cookie_removes_rc_cockpit_only():
 
 
 def t_forward_headers_drops_relay_cookie_only_header():
-    # A Cookie header that contains ONLY rc_cockpit must be dropped entirely.
-    out = cp.forward_request_headers({"Cookie": "rc_cockpit=secret"})
+    # A Cookie header that contains ONLY rc_console must be dropped entirely.
+    out = cp.forward_request_headers({"Cookie": "rc_console=secret"})
     assert "Cookie" not in out
 
 
 def t_forward_headers_strips_relay_cookie_keeps_others():
-    # When other cookies are present alongside rc_cockpit, they must survive.
-    out = cp.forward_request_headers({"Cookie": "other=1; rc_cockpit=secret"})
+    # When other cookies are present alongside rc_console, they must survive.
+    out = cp.forward_request_headers({"Cookie": "other=1; rc_console=secret"})
     assert "Cookie" in out
-    assert "rc_cockpit" not in out["Cookie"]
+    assert "rc_console" not in out["Cookie"]
     assert "other=1" in out["Cookie"]
 
 

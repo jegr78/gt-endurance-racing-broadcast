@@ -160,11 +160,11 @@ racecast chat pull <ip>       # take over another producer's chat history at han
 racecast chat import <file>   # load a previously exported JSON file into the relay
 racecast chat export          # write the current chat history to chat-export.json (or --out PATH)
 racecast backup create|list|restore|delete <label>   # named look snapshots (overlay+graphics+media)
-racecast cockpit enable       # talent Commentator Cockpit: generate a per-league secret + turn it on (this machine)
 racecast links                # print per-person /console launcher links (Crew tab ∪ live Schedule); --post puts them in crew chat
 racecast funnel on|off          # public ingress for ONLY /console (crew launcher) via Tailscale Funnel
-racecast cockpit setup-funnel   # automate the one-time tailnet prereqs via a Tailscale API token (--apply)
-racecast cockpit token revoke <streamer>  # rotate one commentator's link
+racecast console setup-funnel   # automate the one-time tailnet prereqs via a Tailscale API token (--apply)
+racecast console token revoke <streamer>  # rotate one commentator's link
+# Note: the per-league CONSOLE_SECRET is auto-provisioned on first relay start (zero-config)
 ```
 
 For live debugging, run the relay in the foreground: `racecast relay run`.

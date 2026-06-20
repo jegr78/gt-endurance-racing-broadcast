@@ -2,7 +2,7 @@
 """Pure authorization policy for the funnelled /console namespace (#216 phase 2).
 
 Identity != authorization (locked decision #3): a verified token proves *who*
-(see cockpit_auth), the live roster resolves *roles* (see resolve_roles in the
+(see console_auth), the live roster resolves *roles* (see resolve_roles in the
 relay), and THIS module decides whether a given role set may reach a given
 /console subpath. No I/O, no token/crypto logic, no routes -- the Phase 3
 _console_auth handler wires identity -> roles -> decide().
@@ -80,6 +80,10 @@ def min_capability(segments, method="GET"):
         return Requirement(DIRECTOR, False)
     if p == ["schedule", "set"] or p == ["qualifying", "set"]:
         return Requirement(DIRECTOR, False)
+    if p == ["schedule", "data"] or p == ["qualifying", "data"]:
+        # These carry per-stint stream URLs; director-only (the panel's sole
+        # consumer) so a commentator can't read every feed's URL over the Funnel.
+        return Requirement(DIRECTOR, False)
     if p == ["event", "title"]:
         return Requirement(DIRECTOR, False)
     if p == ["submissions"] or (len(p) == 2 and p[0] == "submissions"):
@@ -100,8 +104,7 @@ def min_capability(segments, method="GET"):
         return Requirement(ANY, False)
     if len(p) == 3 and p[:2] == ["overlay", "fonts"]:
         return Requirement(ANY, False)
-    if p in (["timer", "data"], ["setup", "data"],
-             ["schedule", "data"], ["qualifying", "data"]):
+    if p in (["timer", "data"], ["setup", "data"]):
         return Requirement(ANY, False)
     if p in (["chat", "data"], ["chat", "reload"], ["chat", "send"]):
         return Requirement(ANY, False)

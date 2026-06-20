@@ -66,9 +66,9 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   Stop: Ctrl+C
 """
 
-import argparse, csv, datetime, io, ipaddress, json, logging, os, re, shutil, signal, subprocess, sys, threading, time
+import argparse, csv, datetime, hmac, html, io, ipaddress, json, logging, os, re, secrets, shutil, signal, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, quote, unquote, parse_qs
+from urllib.parse import urlparse, quote, unquote, parse_qs, urlencode
 from urllib.request import Request, urlopen
 
 # OBS reflection (best effort). obs_ws lives in src/scripts (repo) or the
@@ -85,8 +85,9 @@ except Exception:                                # noqa: BLE001 — reflection i
     _obs_ws = None
 
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
-import cockpit_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
-import cockpit_admin  # talent-cockpit revocation version store (#191)
+import console_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
+import console_admin  # talent-cockpit revocation version store (#191)
+import discord_oauth  # Discord OAuth2 helpers for /console/login
 import cockpit_submissions  # talent stream-link submission store (#193)
 import console_policy  # /console authorization matrix + decision (#216)
 import console_proxy      # pure /console/buttons proxy plumbing (#236)
@@ -544,23 +545,25 @@ def asset_key(s):
     s = re.sub(r"\s+", "-", s)
     return re.sub(r"[^a-z0-9-]", "", s)
 
-def resolve_roles(crew_rows, schedule_keys, subject):
+def resolve_roles(crew_rows, schedule_keys, subject, crew_commentator_keys=frozenset()):
     """Resolve a verified identity *subject* to its capability set for this event.
 
     crew_rows: iterable of (name, is_director, is_producer) from CrewSource.get().
     schedule_keys: set of asset_key-normalized streamer names present in the live
         Schedule/Qualifying roster.
     subject: the asset_key-normalized person name from the verified token.
+    crew_commentator_keys: set of asset_key-normalized names whose Crew
+        Commentator flag is truthy (A1 union source).
 
     Returns a subset of {"commentator", "director", "producer"}:
-    - "commentator" iff subject appears in schedule_keys (own-row capability, as
-      today -- streamers are never tagged for commentator in the Crew tab);
+    - "commentator" iff subject is in the live Schedule OR carries the Crew
+      Commentator flag (A1 union);
     - "director"/"producer" from any Crew row whose name normalizes to subject.
     An unknown subject (no crew row, not in the schedule) yields the empty set.
     Identity != authorization: this is the only place roles are derived, per the
     role-based-funnel-access spec (#216)."""
     roles = set()
-    if subject in schedule_keys:
+    if subject in schedule_keys or subject in crew_commentator_keys:
         roles.add("commentator")
     for name, is_dir, is_prod in crew_rows:
         if asset_key(name) != subject:
@@ -647,6 +650,8 @@ SCHEDULE_STINT_HEADERS = ("stint",)
 CREW_NAME_HEADERS = ("name", "crew", "person")
 CREW_DIRECTOR_HEADERS = ("director",)
 CREW_PRODUCER_HEADERS = ("producer",)
+CREW_COMMENTATOR_HEADERS = ("commentator",)
+CREW_DISCORD_HEADERS = ("discord", "discord handle", "discord username")
 CREW_TRUTHY = frozenset({"x", "yes", "true", "1", "y", "✓"})
 
 
@@ -1781,18 +1786,85 @@ class ScheduleSource:
 class CrewSource:
     """Reads the Crew roster from the Google Sheet (CSV) with last-good + fallback.
 
-    Mirrors ScheduleSource: a Name | Director | Producer tab giving the
-    director/producer capabilities. Commentator capability is resolved
-    separately from the live Schedule roster (see resolve_roles). A missing or
+    Mirrors ScheduleSource: a Name | Commentator | Director | Producer | Discord
+    tab giving the role capabilities. Commentator capability is resolved via the
+    A1 union: subject in live Schedule OR Crew Commentator flag. A missing or
     empty tab is non-fatal -- it simply yields no director/producer rows."""
 
     def __init__(self, csv_url, cache_path=None):
         self.csv_url = csv_url
         self.cache_path = cache_path
         self.lock = threading.Lock()
-        self.rows = []
+        self.rows = []             # canonical: [(name, is_dir, is_prod, is_commentator, discord)]
         self.last_ok = None
         self.last_error = None
+
+    @staticmethod
+    def _parse_rows_positional(text):
+        """Positional fallback CSV -> [(name, is_director, is_producer)].
+        col0=name, col1=director, col2=producer; drops a leading header-like row.
+        Returns [] (not None) when no data rows found."""
+        rows = list(csv.reader(io.StringIO(text)))
+        if not rows:
+            return []
+        start = 0
+        r0 = [(c or "").strip().lower() for c in rows[0]]
+        if (len(r0) > 1 and r0[1] in CREW_DIRECTOR_HEADERS) or \
+           (len(r0) > 2 and r0[2] in CREW_PRODUCER_HEADERS):
+            start = 1                              # drop a header-like first row
+        out = []
+        for r in rows[start:]:
+            name = r[0].strip() if r else ""
+            if not name:
+                continue
+            is_dir = _crew_truthy(r[1]) if len(r) > 1 else False
+            is_prod = _crew_truthy(r[2]) if len(r) > 2 else False
+            out.append((name, is_dir, is_prod))
+        return out
+
+    @staticmethod
+    def _parse_full(text):
+        """CSV -> [(name, is_dir, is_prod, is_commentator, discord)].
+
+        Header mode (opt-in): if a recognized Name header is present, all five
+        columns are located by header text (so they may move and extras are
+        ignored). Positional fallback (no name header): col0=name, col1=director,
+        col2=producer; is_commentator=False and discord="" for every row (those
+        columns need a header to locate). Returns [] on empty input."""
+        rows = list(csv.reader(io.StringIO(text)))
+        if not rows:
+            return []
+        header = [(h or "").strip().lower() for h in rows[0]]
+        name_i = next((header.index(h) for h in CREW_NAME_HEADERS if h in header), None)
+        if name_i is not None:
+            def _col(headers):
+                return next((header.index(h) for h in headers if h in header), None)
+            dir_i = _col(CREW_DIRECTOR_HEADERS)
+            prod_i = _col(CREW_PRODUCER_HEADERS)
+            com_i = _col(CREW_COMMENTATOR_HEADERS)
+            dis_i = _col(CREW_DISCORD_HEADERS)
+
+            def _cell(i, row):
+                return row[i] if i is not None and len(row) > i else ""
+
+            out = []
+            for line, r in enumerate(rows, 1):
+                if line == 1:
+                    continue                       # the header row itself
+                name = r[name_i].strip() if len(r) > name_i else ""
+                if not name:
+                    continue
+                out.append((
+                    name,
+                    _crew_truthy(_cell(dir_i, r)),
+                    _crew_truthy(_cell(prod_i, r)),
+                    _crew_truthy(_cell(com_i, r)),
+                    (_cell(dis_i, r) or "").strip(),
+                ))
+            return out
+        # Positional fallback: name/dir/prod only; no commentator/discord columns.
+        triples = CrewSource._parse_rows_positional(text)
+        return [(n, d, p, False, "") for (n, d, p) in triples]
 
     @staticmethod
     def _parse_rows(text):
@@ -1803,86 +1875,94 @@ class CrewSource:
         move and extra columns are ignored). Positional fallback (no name
         header): col0=name, col1=director, col2=producer, dropping a leading
         header-like row. Rows with an empty name are skipped."""
-        rows = list(csv.reader(io.StringIO(text)))
-        if not rows:
-            return None
-        header = [(h or "").strip().lower() for h in rows[0]]
-        name_i = next((header.index(h) for h in CREW_NAME_HEADERS if h in header), None)
-        if name_i is not None:
-            dir_i = next((header.index(h) for h in CREW_DIRECTOR_HEADERS if h in header), None)
-            prod_i = next((header.index(h) for h in CREW_PRODUCER_HEADERS if h in header), None)
-            out = []
-            for line, r in enumerate(rows, 1):
-                if line == 1:
-                    continue                       # the header row itself
-                name = r[name_i].strip() if len(r) > name_i else ""
-                if not name:
-                    continue
-                is_dir = _crew_truthy(r[dir_i]) if dir_i is not None and len(r) > dir_i else False
-                is_prod = _crew_truthy(r[prod_i]) if prod_i is not None and len(r) > prod_i else False
-                out.append((name, is_dir, is_prod))
-            return out or None
-        # Positional fallback: col0=name, col1=director, col2=producer.
-        start = 0
-        if rows:
-            r0 = [(c or "").strip().lower() for c in rows[0]]
-            if (len(r0) > 1 and r0[1] in CREW_DIRECTOR_HEADERS) or \
-               (len(r0) > 2 and r0[2] in CREW_PRODUCER_HEADERS):
-                start = 1                          # drop a header-like first row
-        out = []
-        for r in rows[start:]:
-            name = r[0].strip() if r else ""
-            if not name:
-                continue
-            is_dir = _crew_truthy(r[1]) if len(r) > 1 else False
-            is_prod = _crew_truthy(r[2]) if len(r) > 2 else False
-            out.append((name, is_dir, is_prod))
-        return out or None
+        full = CrewSource._parse_full(text)
+        result = [(n, d, p) for (n, d, p, _c, _x) in full]
+        return result or None
 
     def get(self):
+        """Back-compat 3-tuple roster (name, is_dir, is_prod) for resolve_roles."""
+        with self.lock:
+            return [(n, d, p) for (n, d, p, _c, _x) in self.rows]
+
+    def get_full(self):
+        """Full 5-tuple roster (name, is_dir, is_prod, is_commentator, discord)."""
         with self.lock:
             return list(self.rows)
 
-    def fetch(self, timeout=15):
+    def discord_map(self):
+        """{discord_username_lower: crew_name} from the Crew tab's Discord column.
+        Empty handles are skipped. Last write wins on a duplicate handle."""
+        with self.lock:
+            full = list(self.rows)
+        out = {}
+        for name, _d, _p, _c, discord in full:
+            h = (discord or "").strip().lower()
+            if h:
+                out[h] = name
+        return out
+
+    def commentator_keys(self):
+        """asset_key set of crew names whose Commentator flag is truthy (A1 union)."""
+        with self.lock:
+            full = list(self.rows)
+        return {asset_key(n) for (n, _d, _p, c, _x) in full if c and (n or "").strip()}
+
+    def _fetch_text(self, timeout=15):
+        """Fetch the raw CSV text from csv_url. Returns None on error."""
         if not self.csv_url:
             return None
         try:
             req = Request(self.csv_url, headers={"User-Agent": "racecast-feeds/1.0"})
             with urlopen(req, timeout=timeout) as resp:
-                text = resp.read().decode("utf-8", "replace")
-            rows = self._parse_rows(text)
-            if not rows:
-                self.last_error = ("Crew tab reachable, but no rows found "
-                                   "(correct tab name? a Name column?)")
-                return None
-            return rows
+                return resp.read().decode("utf-8", "replace")
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e}"
             return None
 
-    def refresh(self, timeout=15):
-        rows = self.fetch(timeout)
-        if rows:
-            with self.lock:
-                self.rows = rows
-                self.last_ok = time.time()
-                self.last_error = None
-            return True
-        return False
+    def fetch(self, timeout=15):
+        text = self._fetch_text(timeout)
+        if text is None:
+            return None
+        rows = self._parse_rows(text)
+        if not rows:
+            self.last_error = ("Crew tab reachable, but no rows found "
+                               "(correct tab name? a Name column?)")
+            return None
+        return rows
 
-    def inject_row(self, row, name=None, director=None, producer=None):
+    def refresh(self, timeout=15):
+        text = self._fetch_text(timeout)
+        if text is None:
+            return False
+        rows = self._parse_full(text)
+        if not rows:
+            self.last_error = ("Crew tab reachable, but no rows found "
+                               "(correct tab name? a Name column?)")
+            return False
+        with self.lock:
+            self.rows = rows
+            self.last_ok = time.time()
+            self.last_error = None
+        return True
+
+    def inject_row(self, row, name=None, director=None, producer=None,
+                   commentator=None, discord=None):
         """Optimistically merge a Control-Center crew write into the in-memory
         roster so /crew/data reflects it before the next sheet poll. `row` is the
         1-based data-row index (header excluded); row == len+1 appends a row whose
-        name is non-empty. Each of name/director/producer is applied when given and
-        LEFT UNCHANGED when None. The next CSV poll reconciles against the sheet."""
+        name is non-empty. Each of name/director/producer/commentator/discord is
+        applied when given and LEFT UNCHANGED when None. The next CSV poll
+        reconciles against the sheet."""
         with self.lock:
             rows = list(self.rows)
             i = int(row) - 1
-            cur_n, cur_d, cur_p = rows[i] if 0 <= i < len(rows) else ("", False, False)
+            cur = rows[i] if 0 <= i < len(rows) else ("", False, False, False, "")
+            cur_n, cur_d, cur_p, cur_c, cur_x = cur
             entry = (cur_n if name is None else (name or "").strip(),
                      cur_d if director is None else bool(director),
-                     cur_p if producer is None else bool(producer))
+                     cur_p if producer is None else bool(producer),
+                     cur_c if commentator is None else bool(commentator),
+                     cur_x if discord is None else (discord or "").strip())
             if 0 <= i < len(rows):
                 rows[i] = entry
             elif i == len(rows) and entry[0]:
@@ -2166,11 +2246,13 @@ class SetupControl:
                                     tab=DEFAULT_QUALIFYING_TAB,
                                     inject_source=self.qual_source)
 
-    # -- crew roster writes (Crew tab: Name | Director | Producer) -------------
-    def crew_set(self, row, name=None, director=None, producer=None):
+    # -- crew roster writes (Crew tab: Name | Commentator | Director | Producer | Discord) --
+    def crew_set(self, row, name=None, director=None, producer=None,
+                 commentator=None, discord=None):
         """Write one Crew tab row via the webhook (per-row, mirrors schedule).
         `name` is free text (crew may be director/producer-only people, not in
-        the streamer vocabulary); director/producer are coerced to booleans."""
+        the streamer vocabulary); director/producer/commentator are coerced to
+        booleans; discord is the trimmed Discord username (may be empty)."""
         if not self.push_url:
             return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
                              "in the active profile or .env (wiki: Sheet-Webhook)"}
@@ -2180,11 +2262,14 @@ class SetupControl:
         name = (name or "").strip()
         if not name:
             return {"error": "name is required"}
+        discord = (discord or "").strip()
         payload = {"action": "crew", "row": rownum, "name": name,
-                   "director": bool(director), "producer": bool(producer)}
+                   "director": bool(director), "producer": bool(producer),
+                   "commentator": bool(commentator), "discord": discord}
         ok, err = self._push(payload, "crew")
         if ok and self.crew_source is not None:
-            self.crew_source.inject_row(rownum, name, bool(director), bool(producer))
+            self.crew_source.inject_row(rownum, name, bool(director), bool(producer),
+                                        bool(commentator), discord)
         return {"ok": True, "row": rownum} if ok else {"error": err}
 
     def crew_delete(self, row):
@@ -2874,9 +2959,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  timer_store=None, setup_ctl=None, overlay_dir=None,
                  chat_store=None, preview_path=None, graphics_dir=None,
                  splitscreen_path=None, cockpit_page_path=None, console_secret=None,
-                 cockpit_versions_path=None,
+                 discord_client_id=None, discord_client_secret=None,
+                 console_versions_path=None,
                  submission_store=None, event_store=None, crew_source=None,
-                 console_page_path=None, companion_url=None, logo_path=None):
+                 console_page_path=None, companion_url=None, logo_path=None,
+                 buttons_page_path=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -2886,13 +2973,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
     # out), and the 128-bit HMAC signature makes brute force infeasible regardless
     # — this is pure defense-in-depth. X-Forwarded-For is deliberately NOT trusted
     # for the key (spoofable over the public ingress, which would weaken it).
-    _cockpit_authfail_rl = cockpit_auth.RateLimiter(limit=20, window_s=60)
-    _cockpit_chat_rl = cockpit_auth.RateLimiter(limit=10, window_s=60)
+    _console_authfail_rl = console_auth.RateLimiter(limit=20, window_s=60)
+    _cockpit_chat_rl = console_auth.RateLimiter(limit=10, window_s=60)
     # Submit is a PUBLIC write path (funnelled). Keyed on the authed identity
     # (not the shared proxy IP, like chat) so one commentator can't exhaust the
     # crew's quota; a low cap — a human submits a link a handful of times, not
     # dozens per minute.
-    _cockpit_submit_rl = cockpit_auth.RateLimiter(limit=5, window_s=60)
+    _cockpit_submit_rl = console_auth.RateLimiter(limit=5, window_s=60)
 
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
@@ -2924,13 +3011,15 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
         def _send_page(self, path, api_base="", cookie_token=None, cookie_path=None):
             """Serve an HTML page, substituting the __RC_API_BASE__ placeholder with
             api_base ("" at the tailnet/loopback root, "/console" behind Funnel) and
-            optionally setting the rc_cockpit auth cookie scoped to cookie_path."""
+            optionally setting the rc_console auth cookie scoped to cookie_path."""
             try:
                 with open(path, "rb") as fh:
                     body = fh.read()
             except OSError:
                 return self._send({"error": "page not found"}, 404)
             body = body.replace(b"__RC_API_BASE__", (api_base or "").encode())
+            oauth_flag = b"1" if (discord_client_id and discord_client_secret) else b""
+            body = body.replace(b"__RC_OAUTH__", oauth_flag)
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -2943,9 +3032,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
                 # Allowlist-sanitize: the value must never be raw request input
                 # (CWE-113 response splitting / CWE-20 cookie injection).
-                safe = cockpit_auth.safe_cookie_token(cookie_token)
+                safe = console_auth.safe_cookie_token(cookie_token)
                 self.send_header("Set-Cookie",
-                                 f"{cockpit_auth.COOKIE_NAME}={safe}; Path={cookie_path}; "
+                                 f"{console_auth.COOKIE_NAME}={safe}; Path={cookie_path}; "
                                  f"HttpOnly{secure}; SameSite=Lax")
             self.end_headers()
             self.wfile.write(body)
@@ -3018,7 +3107,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"error": "Companion not reachable"}, 502)
                 # Replay the upgrade: rewritten+token-stripped path, upgrade headers forwarded
                 # RAW (Upgrade/Connection/Sec-WebSocket-* must survive), prefix injected.
-                # The relay's rc_cockpit auth cookie must never reach Companion.
+                # The relay's rc_console auth cookie must never reach Companion.
                 hdrs = {}
                 for k, v in self.headers.items():
                     lk = k.lower()
@@ -3097,6 +3186,165 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             return self._send({"reachable": reachable, "version": ver, "ok": ok})
 
         def log_message(self, *a): pass
+
+        def _send_redirect(self, location):
+            self.send_response(302)
+            self.send_header("Location", location)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
+
+        def _send_html(self, content, code=200):
+            body = content.encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(body)
+            return None
+
+        def _oauth_redirect_uri(self):
+            """Build this host's callback URI from the request Host header.
+            Returns None if the host is not a valid MagicDNS name (forged-Host guard)."""
+            host = (self.headers.get("Host") or "").split(":")[0].strip()
+            if not discord_oauth.valid_redirect_host(host):
+                return None
+            return f"https://{host}/console/oauth/callback"
+
+        def _oauth_exchange(self, code, redirect_uri):
+            """Exchange auth code for Discord username. Returns "" on any failure.
+            A module-level _TEST_EXCHANGE hook short-circuits this in unit tests."""
+            hook = globals().get("_TEST_EXCHANGE")
+            if hook is not None:
+                return hook(code, redirect_uri)
+            try:
+                data = urlencode({
+                    "client_id": discord_client_id,
+                    "client_secret": discord_client_secret,
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                }).encode("utf-8")
+                req = Request(discord_oauth.TOKEN_ENDPOINT, data=data, method="POST",
+                              headers={"Content-Type": "application/x-www-form-urlencoded",
+                                       "User-Agent": "racecast-feeds/1.0"})
+                with urlopen(req, timeout=10) as resp:
+                    tok = json.loads(resp.read().decode("utf-8")).get("access_token")
+                if not tok:
+                    return ""
+                ureq = Request(discord_oauth.USERINFO_ENDPOINT,
+                               headers={"Authorization": f"Bearer {tok}",
+                                        "User-Agent": "racecast-feeds/1.0"})
+                with urlopen(ureq, timeout=10) as uresp:
+                    return discord_oauth.parse_identity(
+                        json.loads(uresp.read().decode("utf-8")))
+            except Exception as e:
+                LOG.warning("Discord OAuth exchange failed: %s: %s", type(e).__name__, e)
+                return ""
+
+        _STATE_COOKIE = "rc_oauth_state"
+
+        def _state_clear_cookie(self):
+            """Per-request state cookie clear — mirrors the Secure flag when on HTTPS."""
+            secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+            return (f"{self._STATE_COOKIE}=; Path=/console; "
+                    f"Max-Age=0; HttpOnly{secure}; SameSite=Lax")
+
+        def _oauth_login(self):
+            """GET /console/login -> 302 to Discord authorize (OAuth must be configured)."""
+            if not (discord_client_id and discord_client_secret):
+                self._send({"error": "not found"}, 404)
+                return None
+            redirect_uri = self._oauth_redirect_uri()
+            if not redirect_uri:
+                return self._send_html(
+                    "<h1>Login unavailable</h1><p>This host can't run Discord login "
+                    "(needs the public Funnel address).</p>", 400)
+            nonce = secrets.token_urlsafe(16)
+            state = discord_oauth.sign_state(console_secret, nonce, int(time.time()))
+            secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+            state_cookie = (f"{self._STATE_COOKIE}={nonce}; Path=/console; "
+                            f"HttpOnly; SameSite=Lax; Max-Age=600{secure}")
+            self.send_response(302)
+            self.send_header("Location",
+                             discord_oauth.authorize_url(discord_client_id, redirect_uri, state))
+            self.send_header("Set-Cookie", state_cookie)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
+
+        def _oauth_callback(self):
+            """GET /console/oauth/callback?code=&state= -> mint cookie or deny page."""
+            if not (discord_client_id and discord_client_secret):
+                self._send({"error": "not found"}, 404)
+                return None
+            qs = parse_qs(urlparse(self.path).query)
+            if qs.get("error"):
+                return self._send_html_with_set_cookie(
+                    "<h1>Login cancelled</h1>"
+                    "<p><a href='/console/login'>Try again</a></p>",
+                    self._state_clear_cookie())
+            state = (qs.get("state") or [""])[0]
+            if not discord_oauth.verify_state(console_secret, state, int(time.time())):
+                return self._send_html_with_set_cookie(
+                    "<h1>Login expired or invalid</h1>"
+                    "<p><a href='/console/login'>Try again</a></p>",
+                    self._state_clear_cookie(), 400)
+            # CSRF: verify the state nonce matches the session cookie.
+            cookie_nonce = console_auth.parse_cookie_token(
+                self.headers.get("Cookie"), cookie_name=self._STATE_COOKIE) or ""
+            state_nonce = discord_oauth.state_nonce(state)
+            if not cookie_nonce or not hmac.compare_digest(cookie_nonce, state_nonce):
+                return self._send_html_with_set_cookie(
+                    "<h1>Login expired or invalid</h1>"
+                    "<p><a href='/console/login'>Try again</a></p>",
+                    self._state_clear_cookie(), 400)
+            redirect_uri = self._oauth_redirect_uri()
+            if not redirect_uri:
+                return self._send_html_with_set_cookie(
+                    "<h1>Login unavailable</h1>", self._state_clear_cookie(), 400)
+            username = self._oauth_exchange((qs.get("code") or [""])[0], redirect_uri)
+            if not username:
+                return self._send_html_with_set_cookie(
+                    "<h1>Login failed</h1>"
+                    "<p><a href='/console/login'>Try again</a></p>",
+                    self._state_clear_cookie(), 502)
+            dm = crew_source.discord_map() if (crew_source and hasattr(crew_source, "discord_map")) else {}
+            name = discord_oauth.match_subject(username, dm)
+            if not name:
+                return self._send_html_with_set_cookie(
+                    f"<h1>Not on the crew list</h1>"
+                    f"<p>Your Discord <b>@{html.escape(username)}</b> "
+                    "isn't in this league's Crew list. Ask your league admin to add it.</p>",
+                    self._state_clear_cookie(), 403)
+            key = console_auth.streamer_key(name)
+            versions = (console_admin.load_versions(console_versions_path)
+                        if console_versions_path else {})
+            token = console_auth.mint_token(console_secret, key,
+                                            console_admin.current_version(versions, key))
+            secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+            safe = console_auth.safe_cookie_token(token)
+            self.send_response(302)
+            self.send_header("Location", "/console")
+            self.send_header("Set-Cookie",
+                             f"{console_auth.COOKIE_NAME}={safe}; Path=/console; "
+                             f"HttpOnly{secure}; SameSite=Lax")
+            self.send_header("Set-Cookie", self._state_clear_cookie())
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
+
+        def _send_html_with_set_cookie(self, content, set_cookie, code=200):
+            """Like _send_html but also emits a Set-Cookie header before the body."""
+            body = content.encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Set-Cookie", set_cookie)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(body)
+            return None
+
         def _cockpit_active(self):
             """True iff a per-league cockpit secret is configured. The secret is
             auto-provisioned by the CLI (zero-config), so the cockpit is served
@@ -3108,17 +3356,17 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             qs = parse_qs(urlparse(self.path).query)
             if qs.get("t"):
                 return qs["t"][0]
-            return cockpit_auth.parse_cookie_token(self.headers.get("Cookie"))
-        def _cockpit_auth(self):
+            return console_auth.parse_cookie_token(self.headers.get("Cookie"))
+        def _console_auth(self):
             """Return the authed streamer_key, or None after sending 401/429.
             Applies a per-client failure rate limit. Caller must return on None."""
-            versions = (cockpit_admin.load_versions(cockpit_versions_path)
-                        if cockpit_versions_path else {})
-            me = cockpit_auth.verify_token(console_secret, self._cockpit_token(),
+            versions = (console_admin.load_versions(console_versions_path)
+                        if console_versions_path else {})
+            me = console_auth.verify_token(console_secret, self._cockpit_token(),
                                            versions)
             if me is None:
                 client = self.client_address[0] if self.client_address else "?"
-                if not _cockpit_authfail_rl.allow(client):
+                if not _console_authfail_rl.allow(client):
                     self._send({"error": "rate limited"}, 429)
                 else:
                     self._send({"error": "unauthorized"}, 401)
@@ -3133,7 +3381,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             else:
                 rows = getattr(src, "rows", []) or []
             crew = crew_source.get() if crew_source else []
-            return resolve_roles(crew, schedule_keys(rows), subject)
+            ckeys = crew_source.commentator_keys() if crew_source else frozenset()
+            return resolve_roles(crew, schedule_keys(rows), subject, ckeys)
 
         def _console_gate(self, p, method):
             """Authorize a /console/* request and return the segment list to fall
@@ -3146,15 +3395,23 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 self._send({"error": "not found"}, 404)
                 return None
             sub = p[1:]
-            subject = self._cockpit_auth()        # identity only; sends 401/429 on failure
+            # OAuth front door — bootstrap identity before the auth check.
+            if sub == ["login"]:
+                return self._oauth_login()
+            if sub == ["oauth", "callback"]:
+                return self._oauth_callback()
+            # The launcher root is auth-optional when OAuth is configured so an
+            # unauthenticated visitor can see the Login with Discord button.
+            if sub == [] and bool(discord_client_id and discord_client_secret) and self._cockpit_token() is None:
+                self._send_page(console_page_path, "/console")
+                return None
+            subject = self._console_auth()        # identity only; sends 401/429 on failure
             if subject is None:
                 return None
             roles = self._console_roles(subject)
-            # Step-up secret header. X-Console-Secret is the current name; the legacy
-            # X-Cockpit-Secret is still accepted for one release (mixed-version takeover).
-            presented = (self.headers.get("X-Console-Secret")
-                         or self.headers.get("X-Cockpit-Secret"))
-            has_step_up = bool(presented) and cockpit_auth.secret_matches(presented, console_secret)
+            # Step-up secret header.
+            presented = self.headers.get("X-Console-Secret")
+            has_step_up = bool(presented) and console_auth.secret_matches(presented, console_secret)
             # /console-only: identity introspection for the launcher (any auth).
             if sub == ["whoami"]:
                 self._send({"subject": subject, "roles": sorted(roles)})
@@ -3168,6 +3425,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return None
                 if sub == ["buttons", "health"]:
                     self._buttons_health()
+                    return None
+                # /console/buttons (exact) -> our thin wrapper page: a "← Console" back
+                # bar + an iframe embedding the Companion tablet UI (same tab as the
+                # other launcher links). /console/buttons/<rest> proxies to Companion.
+                if sub == ["buttons"] and method == "GET" and buttons_page_path:
+                    self._send_page(buttons_page_path, "/console",
+                                    cookie_token=self._cockpit_token(), cookie_path="/console")
                     return None
                 self._proxy_companion(method)
                 return None
@@ -3204,8 +3468,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             # arg is plumbing for a future tightening — it is not a live check today.
             outcome = console_policy.decide(roles, sub, method, has_step_up)
             if outcome == console_policy.ALLOW:
+                # /console/status is Funnel-exposed: serve a role-redacted payload
+                # (no feed stream URLs leave the tailnet) instead of full status.
+                # GET-only; a POST falls through to the root dispatch's 404.
+                if sub == ["status"] and method == "GET":
+                    self._send(self._console_status_payload(roles))
+                    return None
                 # Identity-bound routes -> their identity-forced /cockpit handlers,
-                # which re-run _cockpit_auth to set the speaker from the token (a
+                # which re-run _console_auth to set the speaker from the token (a
                 # harmless second verify, NOT a missing optimization). This is what
                 # makes a client-supplied chat "user" impossible over /console.
                 if sub == ["chat", "send"]:
@@ -3256,6 +3526,35 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             approves a submission and the link is scheduled (#193 follow-up)."""
             self._post_discord(
                 cockpit_approval_payload(entry, self._event_title()), "approval")
+        def _status_payload(self):
+            """The full /status JSON (feeds, pov, league, health) + timer +
+            event_title. Served verbatim on the tailnet; redacted for /console
+            via _console_status_payload."""
+            base = relay.status()
+            if timer_store:
+                base["timer"] = timer_store.summary()
+            base["event_title"] = event_store.get() if event_store else ""
+            return base
+        def _console_status_payload(self, roles):
+            """Status for the Funnel-exposed /console mount. Feed stream URLs
+            never leave the tailnet, so feeds[*].channel is stripped for EVERY
+            role; the POV stream URL + Sheet id are kept only for
+            director/producer (the director panel pre-fills its POV editor from
+            pov.url and already writes it over Funnel). The plain tailnet
+            /status is unaffected."""
+            full = self._status_payload()
+            out = dict(full)
+            out["feeds"] = {
+                k: {kk: vv for kk, vv in (fd or {}).items() if kk != "channel"}
+                for k, fd in (full.get("feeds") or {}).items()}
+            if not ({"director", "producer"} & set(roles)):
+                pov = full.get("pov")
+                if isinstance(pov, dict):
+                    out["pov"] = {k: v for k, v in pov.items() if k != "url"}
+                lg = full.get("league")
+                if isinstance(lg, dict):
+                    out["league"] = {k: v for k, v in lg.items() if k != "sheet_id"}
+            return out
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
             try:
@@ -3264,10 +3563,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if p is None:
                         return None     # gate already sent its response (401/403/404)
                 if not p or p == ["status"]:
-                    base = relay.status()
-                    if timer_store: base["timer"] = timer_store.summary()
-                    base["event_title"] = event_store.get() if event_store else ""
-                    return self._send(base)
+                    return self._send(self._status_payload())
                 if p == ["takeover", "status"]:
                     # Funnel-exposed (producer + step-up via _console_gate). Redacted:
                     # ONLY the fields a takeover needs — NEVER the feeds/pov stream URLs
@@ -3401,7 +3697,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if not self._cockpit_active():
                         return self._send({"error": "cockpit not configured"}, 404)
                     if p == ["cockpit"]:
-                        me = self._cockpit_auth()
+                        me = self._console_auth()
                         if me is None:
                             return None
                         if not cockpit_page_path:
@@ -3409,7 +3705,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send_html_with_cookie(cockpit_page_path,
                                                            self._cockpit_token())
                     if p == ["cockpit", "data"]:
-                        me = self._cockpit_auth()
+                        me = self._console_auth()
                         if me is None:
                             return None
                         rows = relay.source.get_rows()
@@ -3433,7 +3729,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                       "my_pending": my_pending})
                         return self._send(tally)
                     if p == ["cockpit", "program"]:
-                        if self._cockpit_auth() is None:
+                        if self._console_auth() is None:
                             return None
                         if _obs_ws is None:
                             return self._send({"error": "obs unavailable"}, 503)
@@ -3443,13 +3739,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                                "note": note}, 503)
                         return self._send_jpeg(data)
                     if p == ["cockpit", "timer"]:
-                        if self._cockpit_auth() is None:
+                        if self._console_auth() is None:
                             return None
                         if not timer_store:
                             return self._send({"error": "timer disabled"}, 404)
                         return self._send(timer_store.data())
                     if p == ["cockpit", "chat", "data"]:
-                        if self._cockpit_auth() is None:
+                        if self._console_auth() is None:
                             return None
                         if not chat_store:
                             return self._send({"error": "chat disabled"}, 404)
@@ -3460,14 +3756,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         # authenticate, not rely on obscurity. Talent tokens are
                         # per-commentator; this is gated on the shared league secret
                         # (every producer of the league holds it), constant-time.
-                        presented = (self.headers.get("X-Console-Secret")
-                                     or self.headers.get("X-Cockpit-Secret"))  # legacy fallback
-                        if not cockpit_auth.secret_matches(presented, console_secret):
+                        presented = self.headers.get("X-Console-Secret")
+                        if not console_auth.secret_matches(presented, console_secret):
                             return self._send({"error": "unauthorized"}, 401)
-                        if not cockpit_versions_path:
+                        if not console_versions_path:
                             return self._send({"versions": {}})
                         return self._send({"versions":
-                            cockpit_admin.load_versions(cockpit_versions_path)})
+                            console_admin.load_versions(console_versions_path)})
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["submissions"]:
                     # Director pending-submissions list (issue #193). Tailnet-only:
@@ -3490,10 +3785,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     # ingress never reaches it (same trust model as
                     # /schedule/data). Lets the `racecast links` CLI enumerate
                     # Crew ∪ Schedule over loopback. Empty when crew is disabled.
-                    rows = crew_source.get() if crew_source else []
+                    rows = crew_source.get_full() if crew_source else []
                     return self._send({"rows": [
-                        {"name": n, "director": bool(d), "producer": bool(pr)}
-                        for (n, d, pr) in rows]})
+                        {"name": n, "director": bool(d), "producer": bool(pr),
+                         "commentator": bool(c), "discord": x or ""}
+                        for (n, d, pr, c, x) in rows]})
                 if p == ["qualifying", "data"]:
                     qs = relay.qual_source
                     if not qs:
@@ -3576,7 +3872,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if not self._cockpit_active():
                         return self._send({"error": "cockpit not configured"}, 404)
                     if p == ["cockpit", "chat", "send"]:
-                        me = self._cockpit_auth()
+                        me = self._console_auth()
                         if me is None:
                             return None
                         if not chat_store:
@@ -3596,7 +3892,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         # per-identity rate limit + is_channel() SSRF guard +
                         # server-side ownership check. NEVER goes live here — it
                         # lands as pending for director approval in /panel.
-                        me = self._cockpit_auth()
+                        me = self._console_auth()
                         if me is None:
                             return None
                         if not submission_store:
@@ -3720,7 +4016,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["crew", "set"]:
                     return self._send(setup_ctl.crew_set(
                         body.get("row"), body.get("name"),
-                        body.get("director"), body.get("producer")))
+                        body.get("director"), body.get("producer"),
+                        body.get("commentator"), body.get("discord")))
                 if p == ["crew", "delete"]:
                     return self._send(setup_ctl.crew_delete(body.get("row")))
                 if p == ["pov", "set"]:
@@ -4019,6 +4316,12 @@ def main():
                  os.path.join(here, "..", "console", "console.html")):
         if os.path.exists(cand):
             console_page_path = os.path.abspath(cand); break
+    buttons_page_path = None
+    for cand in (os.path.join(here, "buttons.html"),
+                 os.path.join(here, "..", "buttons.html"),
+                 os.path.join(here, "..", "console", "buttons.html")):
+        if os.path.exists(cand):
+            buttons_page_path = os.path.abspath(cand); break
     if not args.no_hud and not args.sheet_csv_url:
         base = f"https://docs.google.com/spreadsheets/d/{args.sheet_id}/gviz/tq?tqx=out:csv&sheet="
         overlay_url = base + quote(args.overlay_tab)
@@ -4111,10 +4414,12 @@ def main():
     # auto-provisioned by the CLI — zero-config). Present => /cockpit/* is served
     # (token-gated); absent => every /cockpit/* path 404s. PUBLIC exposure is the
     # separate Tailscale Funnel switch, never implied by the secret alone.
-    console_secret = (os.environ.get("RACECAST_CONSOLE_SECRET") or os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip() or None
-    cockpit_versions_path = os.path.join(runtime, "cockpit-versions.json")
+    console_secret = (os.environ.get("RACECAST_CONSOLE_SECRET") or "").strip() or None
+    discord_client_id = (os.environ.get("RACECAST_DISCORD_CLIENT_ID") or "").strip()
+    discord_client_secret = (os.environ.get("RACECAST_DISCORD_CLIENT_SECRET") or "").strip()
+    console_versions_path = os.path.join(runtime, "console-versions.json")
     # Commentator stream-link submissions (#193): pending store + audit log,
-    # profile-scoped like chat.json / cockpit-versions.json. Always created so the
+    # profile-scoped like chat.json / console-versions.json. Always created so the
     # director's /submissions list works even before the cockpit is enabled.
     submission_store = SubmissionStore(
         os.path.join(runtime, "cockpit-pending.json"),
@@ -4126,10 +4431,13 @@ def main():
                            splitscreen_path=splitscreen_path,
                            cockpit_page_path=cockpit_page_path,
                            console_secret=console_secret,
-                           cockpit_versions_path=cockpit_versions_path,
+                           discord_client_id=discord_client_id,
+                           discord_client_secret=discord_client_secret,
+                           console_versions_path=console_versions_path,
                            submission_store=submission_store,
                            event_store=event_store,
                            console_page_path=console_page_path,
+                           buttons_page_path=buttons_page_path,
                            crew_source=crew_source,
                            logo_path=args.logo)
     bind_addrs = resolve_bind_addresses(

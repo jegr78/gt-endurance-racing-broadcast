@@ -1,13 +1,13 @@
-"""Commentator-cockpit auth core (issue #191) — pure, stdlib-only, importable by
-both the relay (src/relay/racecast-feeds.py) and the CLI (src/racecast.py) WITHOUT
-importing the hyphenated relay module.
+"""Console auth core (issue #216, renamed from the #191 cockpit module) — pure, stdlib-only,
+importable by both the relay (src/relay/racecast-feeds.py) and the CLI (src/racecast.py)
+WITHOUT importing the hyphenated relay module.
 
 Token model (per the approved design):
     token = "<streamer_key>.<version>.<sig>"
     streamer_key = streamer_key(name)                 # URL-safe [a-z0-9-]
     sig = HMAC_SHA256(secret, "<streamer_key>:<version>") hex, truncated to 128 bits.
 A valid signature IS proof the request is that streamer — no token->name map is stored.
-Revocation is a per-streamer integer version (see cockpit_admin.py): a token whose
+Revocation is a per-streamer integer version (see console_admin.py): a token whose
 version is below the streamer's current version is rejected.
 """
 import hashlib
@@ -17,7 +17,7 @@ import threading
 import time
 from http.cookies import SimpleCookie
 
-COOKIE_NAME = "rc_cockpit"
+COOKIE_NAME = "rc_console"
 _KEY_RE = re.compile(r"[a-z0-9-]+")
 # A minted token is "<streamer_key>.<version>.<sig>" — streamer_key is [a-z0-9-],
 # version is digits, sig is hex — so the whole token can only ever be [A-Za-z0-9._-].
@@ -85,8 +85,10 @@ def safe_cookie_token(token):
     return token if token and _TOKEN_RE.fullmatch(token) else ""
 
 
-def parse_cookie_token(cookie_header):
-    """Extract the rc_cockpit token from a raw Cookie header, or None. Pure."""
+def parse_cookie_token(cookie_header, cookie_name=COOKIE_NAME):
+    """Extract a named cookie's value from a raw Cookie header, or None.
+    Defaults to the rc_console auth cookie; callers (e.g. the OAuth state
+    cookie) may pass another cookie_name. Pure."""
     if not cookie_header:
         return None
     try:
@@ -94,7 +96,7 @@ def parse_cookie_token(cookie_header):
         jar.load(cookie_header)
     except Exception:
         return None
-    morsel = jar.get(COOKIE_NAME)
+    morsel = jar.get(cookie_name)
     return morsel.value if morsel else None
 
 

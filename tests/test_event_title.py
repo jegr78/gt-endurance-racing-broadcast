@@ -21,7 +21,7 @@ def _load(name, rel):
     return mod
 
 
-ca = _load("cockpit_auth", ("src", "scripts", "cockpit_auth.py"))
+ca = _load("console_auth", ("src", "scripts", "console_auth.py"))
 m = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))
 
 SECRET = "sek"
