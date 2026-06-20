@@ -61,6 +61,8 @@ def main():
     cp("obs/splitscreen.html", "splitscreen.html")
     cp("cockpit/cockpit.html", "cockpit.html")
     cp("racecontrol/race-control.html", "race-control.html")
+    cp("console/console.html", "console.html")        # /console launcher (#216)
+    cp("console/buttons.html", "buttons.html")         # /console/buttons wrapper (#236)
     cp("setup-assets.py", "setup-assets.py")
     cp("racecast.py", "racecast.py")
     cp("racecast_ui.py", "racecast_ui.py")   # windowed Control Center launcher (racecast-ui)
@@ -173,6 +175,8 @@ def main():
         "splitscreen page shipped": os.path.isfile(os.path.join(PKG, "splitscreen.html")),
         "cockpit page shipped": os.path.isfile(os.path.join(PKG, "cockpit.html")),
         "race-control page shipped": os.path.isfile(os.path.join(PKG, "race-control.html")),
+        "console launcher shipped": os.path.isfile(os.path.join(PKG, "console.html")),
+        "console buttons page shipped": os.path.isfile(os.path.join(PKG, "buttons.html")),
         "preview backdrop shipped": os.path.isfile(os.path.join(PKG, "assets", "preview-bg.jpg")),
         ".env.example shipped": os.path.isfile(os.path.join(PKG, ".env.example")),
         "example profile shipped": os.path.isfile(
