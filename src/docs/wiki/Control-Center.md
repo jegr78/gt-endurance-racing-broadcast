@@ -79,13 +79,15 @@ Everything that belongs to a **league**, gathered in one view (the model behind 
   **Apply in OBS** reloads the browser sources (same as `obs refresh`). The first override on
   a profile that had no `overlay/` yet needs one `racecast relay restart` to activate; later
   edits apply live.
-- **Crew editor** — reads the league Sheet's `Crew` tab (`Name | Director | Producer`)
-  via the relay and lets the producer set director/producer flags per person; changes
-  are written back to the Sheet via the `crew` webhook action. The Crew tab and the
-  redeployed Apps Script `crew` action are a league Sheet-side coordination item
-  (see [Sheet-Webhook](Sheet-Webhook)); without them roles degrade gracefully.
+- **Crew editor** — reads the league Sheet's `Crew` tab
+  (`Name | Commentator | Director | Producer | Race Control | Discord`) via the relay and
+  lets the producer set the per-person role flags; changes are written back to the Sheet
+  via the `crew` webhook action. **Race Control** flags a person for the read-only
+  [Race Control](Console) monitoring desk. The Crew tab and the redeployed Apps Script
+  `crew` action are a league Sheet-side coordination item (see [Sheet-Webhook](Sheet-Webhook));
+  without them roles degrade gracefully.
 
-![Control Center — Crew editor: per-person Director/Producer roster for /console access](images/cc-crew-editor.png)
+![Control Center — Crew editor: per-person Commentator/Director/Producer/Race Control roster for /console access](images/cc-crew-editor.png)
 
 - **Assets** — the active profile's broadcast graphics and intro/outro media. Thumbnails
   show which graphics are present; **Download** fetches them from the Sheet's Assets tab;

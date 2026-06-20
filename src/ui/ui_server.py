@@ -663,7 +663,8 @@ def make_handler(ctx):
                 try:
                     result = ctx["crew_write"](body.get("row"), body.get("name"),
                                                body.get("director"), body.get("producer"),
-                                               body.get("commentator"), body.get("discord"))
+                                               body.get("commentator"), body.get("race_control"),
+                                               body.get("discord"))
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"could not write crew row: {exc}"},

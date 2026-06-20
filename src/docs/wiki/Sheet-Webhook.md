@@ -21,16 +21,19 @@ machine and the panel's HUD row + URLs section are display-only.
 | `schedule` | **Schedule** tab (or the **Qualifying** tab when the payload carries `"tab":"Qualifying"`), **physical row N** (the panel sends the CSV line number automatically): URL + Streamer + Stint label, located by the `URL`/`Streamer`/`Stint` headers in row 1 (falls back to fixed cols A/B with no header row); row `last+1` appends. The Stint cell is only written when a `Stint` header exists. The Qualifying tab has the **same structure** as the Schedule tab. **Neither tab may have leading blank rows** — the gviz CSV export maps physical sheet rows to CSV lines 1:1 when the tab starts at row 1. A header row is silently skipped when reading but its physical line number is still used when writing. |
 | `pov` | POV tab **row 2**: the `url` and/or `name` cell, located by header text (so the columns may move) |
 | `teams` | Setup tab: the cell **below** the `Team <slot>` header (slot 1–3 → `A6`/`B6`/`C6` in the shipped layout) — found by text, same as the other Setup fields. The Overlay tab only mirrors them read-only |
-| `crew` | **Crew** tab (`Name \| Commentator \| Director \| Producer \| Discord`, header in row 1). `{"action":"crew","row":N,"name":..,"commentator":bool,"director":bool,"producer":bool,"discord":".."}` writes **data row N** (sheet row N+1; `row last+1` appends). Columns are located **by header text** (any order; extra columns are ignored), so a pre-existing 3-column `Name\|Director\|Producer` tab is auto-extended with the `Commentator` and `Discord` columns on first write. `commentator`/`director`/`producer` are written as **`TRUE`/`FALSE` booleans** (checkbox-compatible — never the string `X`, which would break a Google Sheets checkbox cell); `discord` is the verbatim username. `{"action":"crew","row":N,"delete":true}` deletes data row N (rows shift up). The tab must start at row 1 with the header and have no interior blank rows (the Control Center editor maintains this). |
+| `crew` | **Crew** tab (`Name \| Commentator \| Director \| Producer \| Race Control \| Discord`, header in row 1). `{"action":"crew","row":N,"name":..,"commentator":bool,"director":bool,"producer":bool,"race_control":bool,"discord":".."}` writes **data row N** (sheet row N+1; `row last+1` appends). Columns are located **by header text** (any order; extra columns are ignored), so a pre-existing `Name\|Director\|Producer` tab is auto-extended with the `Commentator`, `Race Control` and `Discord` columns on first write. `commentator`/`director`/`producer`/`race_control` are written as **`TRUE`/`FALSE` booleans** (checkbox-compatible — never the string `X`, which would break a Google Sheets checkbox cell); `discord` is the verbatim username. `{"action":"crew","row":N,"delete":true}` deletes data row N (rows shift up). The tab must start at row 1 with the header and have no interior blank rows (the Control Center editor maintains this). |
 
 The relay only sends Setup values that exist in the Configuration tab's
 vocabulary columns — the same lists the sheet's own dropdowns use.
 
 > **Crew-tab coordination:** the `crew` action requires a **Crew** tab in the league's
-> Sheet (columns `Name | Commentator | Director | Producer | Discord`, header in row 1)
-> **and** the redeployed v7 script that handles `crew`. Without it, director/producer
-> roles simply resolve to empty — commentators still work from the Schedule — and the
-> Control Center crew editor surfaces an *outdated-script* error. Nothing crashes.
+> Sheet (columns `Name | Commentator | Director | Producer | Race Control | Discord`,
+> header in row 1) **and** the redeployed script that handles `crew`. Without it,
+> director/producer/race-control roles simply resolve to empty — commentators still
+> work from the Schedule — and the Control Center crew editor surfaces an
+> *outdated-script* error. Nothing crashes. A script predating the **Race Control**
+> column ignores the extra `race_control` field and the column is appended on the next
+> write, so older deployments degrade gracefully.
 
 > **Not written to the Sheet:** the free-text **event title**
 > ([Director](Director#event-title)) is producer-side runtime state
@@ -66,34 +69,42 @@ read-only.
 ## Crew
 
 The `crew` action maintains the **Crew** tab — the per-person roster used by the relay
-to resolve `/console` roles (commentator/director/producer) and to match a Discord login
-to a crew member. The Control Center's crew editor reads the tab via the relay
-(`/crew/data`) and writes changes back through the `crew` webhook action (`/api/crew`,
-`/api/crew/delete` in the Control Center API, which POST to the relay, which forwards to
-the webhook). The script responds `{"ok":true,"action":"crew","v":7}` — accepted by the
-relay's `check_webhook_response`.
+to resolve `/console` roles (commentator/director/producer/**race control**) and to match
+a Discord login to a crew member. The Control Center's crew editor reads the tab via the
+relay (`/crew/data`) and writes changes back through the `crew` webhook action
+(`/api/crew`, `/api/crew/delete` in the Control Center API, which POST to the relay, which
+forwards to the webhook). The script responds `{"ok":true,"action":"crew","v":7}` —
+accepted by the relay's `check_webhook_response`.
 
-**Tab structure:** one header row (`Name | Commentator | Director | Producer | Discord`)
-at row 1; data rows below it; no interior blank rows. Both the read and write paths are
-**header-aware** — they locate each column by its header text, so the columns may sit in
-any order and extra columns are ignored. The Control Center editor maintains the
-no-blank-rows invariant.
+The **Race Control** column flags a person for the read-only [Race Control](Console)
+monitoring desk (`/console/race-control`: program preview, redacted schedule, timer,
+chat). It is unrelated to the director-only HUD **Race Control** banner (the Setup-tab
+`Race Control` field, see [Director](Director)); the role string is `race_control`, the
+banner is `racecontrol`, and they never collide.
 
-**Write a row:** `{"action":"crew","row":N,"name":"Alice","commentator":false,"director":true,"producer":false,"discord":"alice_d"}`
+**Tab structure:** one header row
+(`Name | Commentator | Director | Producer | Race Control | Discord`) at row 1; data rows
+below it; no interior blank rows. Both the read and write paths are **header-aware** —
+they locate each column by its header text, so the columns may sit in any order and extra
+columns are ignored. The Control Center editor maintains the no-blank-rows invariant.
+
+**Write a row:** `{"action":"crew","row":N,"name":"Alice","commentator":false,"director":true,"producer":false,"race_control":false,"discord":"alice_d"}`
 writes or overwrites data row N (sheet row N+1, skipping the header). `row last+1`
-appends a new person. `commentator`/`director`/`producer` are written as `TRUE`/`FALSE`
-booleans (checkbox-compatible — never the string `X`, which would break a Google Sheets
-checkbox cell); `discord` writes the verbatim username (empty clears it). A pre-existing
-3-column `Name | Director | Producer` tab is auto-extended with the `Commentator` and
-`Discord` columns on the first write — existing data is untouched.
+appends a new person. `commentator`/`director`/`producer`/`race_control` are written as
+`TRUE`/`FALSE` booleans (checkbox-compatible — never the string `X`, which would break a
+Google Sheets checkbox cell); `discord` writes the verbatim username (empty clears it). A
+pre-existing `Name | Director | Producer` tab is auto-extended with the `Commentator`,
+`Race Control` and `Discord` columns on the first write — existing data is untouched.
 
 **Delete a row:** `{"action":"crew","row":N,"delete":true}` deletes data row N
 (sheet row N+1); all rows below shift up. The Control Center re-numbers its in-memory
 roster after the delete.
 
-> **Graceful degradation:** without a Crew tab or an up-to-date script, director and
-> producer roles resolve to empty — commentators still reach `/console/cockpit` from
-> the Schedule — and the editor surfaces an *outdated-script* banner. Nothing crashes.
+> **Graceful degradation:** without a Crew tab or an up-to-date script, director,
+> producer and race-control roles resolve to empty — commentators still reach
+> `/console/cockpit` from the Schedule — and the editor surfaces an *outdated-script*
+> banner. A script predating the **Race Control** column ignores the extra field and
+> appends the column on the next write. Nothing crashes.
 
 ## One-time setup (per sheet)
 
@@ -230,7 +241,7 @@ roster after the delete.
 
    function writeCrew(ss, p) {
      const sheet = ss.getSheetByName(TABS.crew) || ss.insertSheet(TABS.crew);
-     const HEADERS = ['Name', 'Commentator', 'Director', 'Producer', 'Discord'];
+     const HEADERS = ['Name', 'Commentator', 'Director', 'Producer', 'Race Control', 'Discord'];
      if (sheet.getLastRow() < 1) {
        sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
      }
@@ -270,6 +281,7 @@ roster after the delete.
      setFlag('Commentator', p.commentator);
      setFlag('Director', p.director);
      setFlag('Producer', p.producer);
+     setFlag('Race Control', p.race_control);
      setText('Discord', (p.discord || '').toString().trim());
    }
    ```

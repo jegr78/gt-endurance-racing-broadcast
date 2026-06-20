@@ -2375,7 +2375,7 @@ def t_crew_entries_data_maps_relay_rows():
             {"name": "Dana", "director": True, "producer": False,
              "commentator": False, "discord": "dana_d"},
             {"name": "Pia", "director": 0, "producer": "x",
-             "commentator": "x", "discord": None}]}
+             "commentator": "x", "race_control": "x", "discord": None}]}
     orig = m._relay_fetch_json
     m._relay_fetch_json = fake_fetch
     try:
@@ -2388,9 +2388,9 @@ def t_crew_entries_data_maps_relay_rows():
     # sends row=undefined and every edit of an existing person fails).
     assert out["entries"] == [
         {"row": 1, "name": "Dana", "director": True, "producer": False,
-         "commentator": False, "discord": "dana_d"},
+         "commentator": False, "race_control": False, "discord": "dana_d"},
         {"row": 2, "name": "Pia", "director": False, "producer": True,
-         "commentator": True, "discord": ""}]
+         "commentator": True, "race_control": True, "discord": ""}]
     assert [e["row"] for e in out["entries"]] == [1, 2]
     assert seen["url"].endswith("/crew/data")
 
@@ -2415,14 +2415,15 @@ def t_crew_write_and_delete_post_to_relay():
     orig = m._relay_post_json
     m._relay_post_json = fake_post
     try:
-        w = m.crew_write_data(2, "Dana", True, False, commentator=True, discord="  dana_d ")
+        w = m.crew_write_data(2, "Dana", True, False, commentator=True,
+                              race_control=True, discord="  dana_d ")
         d = m.crew_delete_data(3)
     finally:
         m._relay_post_json = orig
     assert w == {"ok": True, "row": 2}
     assert posts[0][0].endswith("/crew/set")
     assert posts[0][1] == {"row": 2, "name": "Dana", "director": True, "producer": False,
-                           "commentator": True, "discord": "dana_d"}
+                           "commentator": True, "race_control": True, "discord": "dana_d"}
     assert d == {"ok": True, "row": 3}
     assert posts[1][0].endswith("/crew/delete") and posts[1][1] == {"row": 3}
 

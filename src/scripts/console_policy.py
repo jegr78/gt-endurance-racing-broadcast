@@ -20,6 +20,10 @@ import collections
 COMMENTATOR = "commentator"
 DIRECTOR = "director"
 PRODUCER = "producer"
+# Race Control (#244): a read-only monitoring desk (program/schedule/timer/chat).
+# Distinct from the director-only HUD `racecontrol` banner Setup field — the role
+# string is "race_control", the banner is "racecontrol"; they never collide.
+RACE_CONTROL = "race_control"
 ANY = "any"
 
 # Decision outcomes returned by decide().
@@ -90,6 +94,12 @@ def min_capability(segments, method="GET"):
         return Requirement(DIRECTOR, False)
     if p and p[0] == "cues":                    # /cues/send|data|presets|reload
         return Requirement(DIRECTOR, False)
+
+    # --- race control: read-only monitoring desk (#244) ---
+    # Page + its redacted-schedule data endpoint. The desk reuses the ANY cockpit
+    # monitors (program/timer/chat) below; only these two are race_control-gated.
+    if p == ["race-control"] or p == ["race-control", "data"]:
+        return Requirement(RACE_CONTROL, False)
 
     # --- commentator: own-row stream-link submission ---
     if p == ["submit"] or p == ["cockpit", "submit"]:

@@ -4,7 +4,7 @@
 separate URLs for each surface, one link adapts to the signed-in person's role and
 shows only the cards they are allowed to use — nothing more.
 
-![The /console launcher — role-adaptive cards: Commentator Cockpit, Director Panel, Web Buttons](images/console-landing.png)
+![The /console launcher — role-adaptive cards: Commentator Cockpit, Race Control, Director Panel, Web Buttons](images/console-landing.png)
 
 ## How it works
 
@@ -22,6 +22,7 @@ security model.
 | Card | Path | Who sees it |
 |---|---|---|
 | **Commentator Cockpit** | `/console/cockpit` | any authenticated person |
+| **Race Control** | `/console/race-control` | crew flagged **Race Control** |
 | **Director Panel** | `/console/panel` | directors |
 | **Web Buttons** | `/console/buttons` | directors (requires Companion ≥ v4.1.0) |
 
@@ -29,6 +30,24 @@ Each card leads to the same page as its tailnet equivalent — `/cockpit`, `/pan
 the Companion Web Buttons board at `:8000/tablet` respectively — but reached through
 the role-gated `/console` mirror, with API calls transparently routed to the correct
 endpoints.
+
+### Race Control (read-only monitoring desk)
+
+**Race Control** is a *read-only* surface for a monitoring desk: a live **program
+preview**, the **streamer / stint schedule**, the **race timer**, and **crew chat**
+(posted under the desk operator's own name). It triggers **no broadcast actions** — the
+**director keeps full control of the Panel**. Flag a person for it with the **Race
+Control** column on the Sheet's Crew tab (or the Control Center crew editor); the role
+string is `race_control`. The schedule it shows is **redacted** — stream URLs never leave
+the tailnet, the same boundary as the producer-takeover status — so the desk is safe over
+the public Funnel.
+
+![Race Control desk — program preview, redacted streamer/stint schedule with an on-air marker, race timer and crew chat](images/console-race-control.png)
+
+> **Naming note:** the role shares its label with the director-only HUD **Race Control**
+> banner (the Setup-tab `Race Control` field shown on the lower third). They are
+> unrelated: the role is `race_control` (Crew tab), the banner is `racecontrol` (Setup
+> tab). This role never writes to that banner.
 
 All three cards open **in the same tab**. Every destination carries a **`← Console`**
 back link in its header that returns to this launcher, so there is clean
