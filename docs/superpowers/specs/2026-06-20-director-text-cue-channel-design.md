@@ -84,7 +84,7 @@ The feature mirrors the crew-chat architecture one-to-one. Three layers:
   "target": "max-mustermann",
   "level": "critical",
   "text": "You're hot — mic live",
-  "from": "Director Name",
+  "from": "Director",
   "ack": { "ts": 1718900005.0 }
 }
 ```
@@ -173,7 +173,11 @@ dev build **in the same change**.
 
 - `INFO_CUE_TTL_S = 30` — info-cue auto-expiry window.
 - `MAX_CUES = 100` — ring-buffer cap.
-- Rate limits: send 30/60 s, ack 30/60 s.
+- `MAX_CUE_TEXT = 200` — per-cue character cap.
+- Rate limit: **ack 30/60 s per identity**. The send is director-gated (Funnel) /
+  tailnet-trusted (root) like `/next`, so it carries **no** limiter.
+- `from` is a fixed **"Director"** label (cosmetic sender tag in the cockpit) — no
+  per-director identity plumbing into the root `/cues` handler.
 - `CUE_PRESET_HEADERS = ("cue preset", "cue presets", "cue")` — Configuration-tab column.
 
 ## Error handling & edge cases
