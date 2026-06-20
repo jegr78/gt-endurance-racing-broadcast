@@ -3446,6 +3446,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             # arg is plumbing for a future tightening — it is not a live check today.
             outcome = console_policy.decide(roles, sub, method, has_step_up)
             if outcome == console_policy.ALLOW:
+                # /console/status is Funnel-exposed: serve a role-redacted payload
+                # (no feed stream URLs leave the tailnet) instead of full status.
+                # GET-only; a POST falls through to the root dispatch's 404.
+                if sub == ["status"] and method == "GET":
+                    self._send(self._console_status_payload(roles))
+                    return None
                 # Identity-bound routes -> their identity-forced /cockpit handlers,
                 # which re-run _console_auth to set the speaker from the token (a
                 # harmless second verify, NOT a missing optimization). This is what
@@ -3498,6 +3504,35 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             approves a submission and the link is scheduled (#193 follow-up)."""
             self._post_discord(
                 cockpit_approval_payload(entry, self._event_title()), "approval")
+        def _status_payload(self):
+            """The full /status JSON (feeds, pov, league, health) + timer +
+            event_title. Served verbatim on the tailnet; redacted for /console
+            via _console_status_payload."""
+            base = relay.status()
+            if timer_store:
+                base["timer"] = timer_store.summary()
+            base["event_title"] = event_store.get() if event_store else ""
+            return base
+        def _console_status_payload(self, roles):
+            """Status for the Funnel-exposed /console mount. Feed stream URLs
+            never leave the tailnet, so feeds[*].channel is stripped for EVERY
+            role; the POV stream URL + Sheet id are kept only for
+            director/producer (the director panel pre-fills its POV editor from
+            pov.url and already writes it over Funnel). The plain tailnet
+            /status is unaffected."""
+            full = self._status_payload()
+            out = dict(full)
+            out["feeds"] = {
+                k: {kk: vv for kk, vv in (fd or {}).items() if kk != "channel"}
+                for k, fd in (full.get("feeds") or {}).items()}
+            if not ({"director", "producer"} & set(roles)):
+                pov = full.get("pov")
+                if isinstance(pov, dict):
+                    out["pov"] = {k: v for k, v in pov.items() if k != "url"}
+                lg = full.get("league")
+                if isinstance(lg, dict):
+                    out["league"] = {k: v for k, v in lg.items() if k != "sheet_id"}
+            return out
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
             try:
@@ -3506,10 +3541,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if p is None:
                         return None     # gate already sent its response (401/403/404)
                 if not p or p == ["status"]:
-                    base = relay.status()
-                    if timer_store: base["timer"] = timer_store.summary()
-                    base["event_title"] = event_store.get() if event_store else ""
-                    return self._send(base)
+                    return self._send(self._status_payload())
                 if p == ["takeover", "status"]:
                     # Funnel-exposed (producer + step-up via _console_gate). Redacted:
                     # ONLY the fields a takeover needs — NEVER the feeds/pov stream URLs

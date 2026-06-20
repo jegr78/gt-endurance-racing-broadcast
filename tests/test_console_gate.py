@@ -34,10 +34,10 @@ class _Crew:
     def commentator_keys(self): return frozenset()
 
 
-def _serve(companion_url=None, logo_path=None):
+def _serve(companion_url=None, logo_path=None, sheet_id=None):
     rows = [("https://youtu.be/a", "Alice", "1", 2)]           # alice -> commentator
     src = _FakeSource(_URLS8, rows)
-    relay = m.Relay(src, [53001, 53002], LOGDIR)
+    relay = m.Relay(src, [53001, 53002], LOGDIR, sheet_id=sheet_id)
     crew = _Crew([("Bob", True, False), ("Carol", False, True)])  # bob=director, carol=producer
     SRC = os.path.join(ROOT, "src")
     handler = m.make_handler(
@@ -782,6 +782,48 @@ def t_console_launcher_fetches_status_and_logo():
         assert code == 200, (code, body)
         assert "RC_API('/status')" in body, body
         assert "RC_API('/logo')" in body, body
+    finally:
+        srv.shutdown()
+
+
+def t_console_status_strips_feed_urls_for_commentator():
+    # Funnel-exposed /console/status must NOT leak the commentator feed stream
+    # URLs (feeds[*].channel) to a commentator token, nor the POV url / Sheet id.
+    srv = _serve(sheet_id="SHEET-XYZ"); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console/status", _tok("alice"))   # commentator
+        assert code == 200, (code, body)
+        d = json.loads(body)
+        assert d["feeds"]["A"]["stint"], d            # operational data kept
+        assert "channel" not in d["feeds"]["A"], d    # stream URL stripped
+        assert "name" in d["league"], d               # league name kept
+        assert "sheet_id" not in d["league"], d       # sheet id stripped for commentator
+    finally:
+        srv.shutdown()
+
+
+def t_console_status_keeps_sheet_id_for_director_but_strips_feed_urls():
+    srv = _serve(sheet_id="SHEET-XYZ"); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console/status", _tok("bob"))     # director
+        assert code == 200, (code, body)
+        d = json.loads(body)
+        assert "channel" not in d["feeds"]["A"], d        # feed URL stripped for ALL roles
+        assert d["league"]["sheet_id"] == "SHEET-XYZ", d  # director keeps sheet id
+    finally:
+        srv.shutdown()
+
+
+def t_tailnet_status_is_unredacted():
+    # The plain tailnet /status (never through the /console gate) keeps the full
+    # payload incl. feed stream URLs — the tailnet is the trust boundary.
+    srv = _serve(sheet_id="SHEET-XYZ"); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/status")                # no /console, no token
+        assert code == 200, (code, body)
+        d = json.loads(body)
+        assert d["feeds"]["A"]["channel"], d              # full feed URL present
+        assert d["league"]["sheet_id"] == "SHEET-XYZ", d
     finally:
         srv.shutdown()
 
