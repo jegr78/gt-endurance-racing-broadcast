@@ -27,7 +27,7 @@ Open `http://<producer-tailscale-ip>:8088/panel`. The page is organized as
 horizontal busses; the Stream Deck pages and the panel share one muscle
 memory:
 
-![The director panel — the whole show on one page: the PGM, FEEDS, HUD, SCN·VIS, GFX, TIMER and AUDIO busses, a status strip, and the collapsible URLs / Qualifying / Chat sections](images/director-panel.png)
+![The director panel — the whole show on one page: the PGM, FEEDS, HUD, SCN·VIS, GFX, TIMER, AUDIO and CUES busses, a status strip, and the collapsible URLs / Qualifying / Chat sections](images/director-panel.png)
 
 | Bus | What's on it |
 |---|---|
