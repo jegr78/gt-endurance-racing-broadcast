@@ -294,6 +294,27 @@ def t_resolve_config_obs_collection_default_is_prefixed():
         assert cfg.obs_collection == "GT Endurance Racing — Demo League"
 
 
+def t_resolve_config_discord_oauth_keys():
+    """DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET are read from profile.env."""
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo",
+                   "NAME=Demo\nSHEET_ID=abc\n"
+                   "DISCORD_CLIENT_ID=cid\nDISCORD_CLIENT_SECRET=csecret\n")
+        rc = m.resolve_config(root, override="demo", environ={})
+        assert rc.discord_client_id == "cid"
+        assert rc.discord_client_secret == "csecret"
+
+
+def t_resolve_config_discord_oauth_keys_blank_when_absent():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo", "NAME=Demo\nSHEET_ID=abc\n")
+        rc = m.resolve_config(root, environ={})
+        assert rc.discord_client_id == ""
+        assert rc.discord_client_secret == ""
+
+
 def t_resolve_config_obs_collection_explicit_wins_over_prefix():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)

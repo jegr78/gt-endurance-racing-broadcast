@@ -2944,6 +2944,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  timer_store=None, setup_ctl=None, overlay_dir=None,
                  chat_store=None, preview_path=None, graphics_dir=None,
                  splitscreen_path=None, cockpit_page_path=None, console_secret=None,
+                 discord_client_id=None, discord_client_secret=None,
                  console_versions_path=None,
                  submission_store=None, event_store=None, crew_source=None,
                  console_page_path=None, companion_url=None, logo_path=None):
@@ -4180,6 +4181,8 @@ def main():
     # (token-gated); absent => every /cockpit/* path 404s. PUBLIC exposure is the
     # separate Tailscale Funnel switch, never implied by the secret alone.
     console_secret = (os.environ.get("RACECAST_CONSOLE_SECRET") or "").strip() or None
+    discord_client_id = os.environ.get("RACECAST_DISCORD_CLIENT_ID", "")
+    discord_client_secret = os.environ.get("RACECAST_DISCORD_CLIENT_SECRET", "")
     console_versions_path = os.path.join(runtime, "console-versions.json")
     # Commentator stream-link submissions (#193): pending store + audit log,
     # profile-scoped like chat.json / console-versions.json. Always created so the
@@ -4194,6 +4197,8 @@ def main():
                            splitscreen_path=splitscreen_path,
                            cockpit_page_path=cockpit_page_path,
                            console_secret=console_secret,
+                           discord_client_id=discord_client_id,
+                           discord_client_secret=discord_client_secret,
                            console_versions_path=console_versions_path,
                            submission_store=submission_store,
                            event_store=event_store,

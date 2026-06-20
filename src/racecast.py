@@ -196,6 +196,8 @@ def _profile_env_vars(rc):
              ("RACECAST_DISCORD_WEBHOOK_URL", rc.discord_webhook_url),
              ("RACECAST_OBS_COLLECTION", rc.obs_collection),
              ("RACECAST_CONSOLE_SECRET", rc.console_secret),
+             ("RACECAST_DISCORD_CLIENT_ID", rc.discord_client_id),
+             ("RACECAST_DISCORD_CLIENT_SECRET", rc.discord_client_secret),
              ("RACECAST_EVENT_TITLE", rc.event_title),
              ("RACECAST_PROFILE_NAME", rc.name),
              ("RACECAST_LOGO", rc.logo_path))

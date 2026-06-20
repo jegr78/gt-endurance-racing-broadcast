@@ -157,6 +157,8 @@ class ResolvedConfig:
     discord_webhook_url: str = ""  # league Discord webhook for live health alerts (optional)
     obs_collection: str = ""     # OBS scene-collection name; falls back to NAME
     console_secret: str = ""     # per-league HMAC secret signing /console identity tokens (#216)
+    discord_client_id: str = ""      # per-league Discord OAuth app (console login)
+    discord_client_secret: str = ""  # never leaves the producer machine
     event_title: str = ""        # optional free-text event title (Panel/Cockpit/Discord, #207)
     logo_path: str = ""          # absolute path, or "" if unset/missing
     profile_dir: str = ""
@@ -211,6 +213,8 @@ def resolve_config(root, *, override=None, runtime_root=None, environ=None):
         discord_webhook_url=prof.get("DISCORD_WEBHOOK_URL", ""),
         obs_collection=prof.get("OBS_COLLECTION") or f"{PRODUCT_COLLECTION_PREFIX} — {resolved_name}",
         console_secret=prof.get("CONSOLE_SECRET", ""),
+        discord_client_id=prof.get("DISCORD_CLIENT_ID", ""),
+        discord_client_secret=prof.get("DISCORD_CLIENT_SECRET", ""),
         event_title=prof.get("EVENT_TITLE", ""),
         logo_path=logo_path,
         profile_dir=pdir,
