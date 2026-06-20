@@ -107,6 +107,7 @@ python3 tests/test_ui_jobs.py        # Control Center job manager (child spawn, 
 python3 tests/test_ui_server.py      # Control Center HTTP server (routes, SSE, quit)
 python3 tests/test_e2e.py            # e2e-harness pure pieces (free-port, CSV builder, check registry, gates)
 python3 tests/test_logs.py           # rotating logger, prune, subprocess pump, OBS dir, archive resolution
+python3 tests/test_cues.py           # director text-cue channel (cue_admin: sanitize/active-set/prune/apply_pulled)
 python3 tools/run-tests.py           # the whole suite (exactly what CI runs)
 python3 tools/lint.py                # ruff lint (= the CI lint job); --fix auto-corrects.
                                      # Rules mirror the CodeQL alert classes — see ruff.toml.
@@ -408,6 +409,22 @@ actions (`racecast chat clear|pull|import|export`, logic in
 `src/scripts/chat_admin.py`) that write the file and trigger `/chat/reload`. The
 tailnet is the trust boundary (unauthenticated, like the rest of the relay).
 Tests: `tests/test_chat.py`.
+
+The relay also provides a **director→talent text-cue channel** (an IFB-lite, text-only
+stand-in for an earpiece): the Director Panel's **Cues** section lets a director pick a
+target (a specific commentator, **All talent**, or **On air** — resolved server-side at
+send time), choose a level, and send a short cue. **`Info`** cues auto-expire after 30 s
+and appear as a brief toast in the talent's cockpit; **`Critical`** cues are sticky banners
+the commentator must **Acknowledge** — after which the director sees a **✓ seen** stamp.
+Quick-cue **presets** come from a `Cue Preset` column in the Sheet's **Configuration** tab
+(same admin-managed vocabulary model as Race Control); free text is always available and
+is the only option when the Configuration tab is unreachable. Endpoints `POST /cues/send`,
+`GET /cues/data`, `GET /cues/presets`, `GET /cues/reload` are **director**-gated; talent
+endpoints `GET /cockpit/cues` + `POST /cockpit/cues/ack` are identity-scoped to the
+token's own commentator. All are reachable via Funnel only through the existing `/console`
+mount — no new public surface. Persisted to `runtime/<profile>/cues.json`; producer
+takeover (tailnet + `--funnel`) pulls A's still-active cues via `/console/takeover/cues`.
+Pure logic: `src/scripts/cue_admin.py`. Tests: `tests/test_cues.py`.
 
 The relay also serves a **talent-facing Commentator Cockpit** (issue #191) under an
 auth-gated `/cockpit/*` namespace: a live program monitor (reusing

@@ -17,6 +17,20 @@ gets a self-contained cockpit:
 
 ![Cockpit section in the Control Center](images/cc-cockpit.png)
 
+### Director cues
+
+Directors can send short text cues from the panel directly to your cockpit — a
+text-only stand-in for an earpiece. Two levels:
+
+- **Info** — appears as a brief auto-fading toast at the top of the cockpit and
+  disappears after 30 seconds on its own.
+- **Critical** — a large sticky banner that stays on screen until you click
+  **Acknowledge**. Once you do, the director's panel shows a **✓ seen** stamp with
+  the time.
+
+You only receive cues addressed to you by name or to **All talent** — cues sent to
+other individual commentators are never shown in your cockpit.
+
 It is served under its own `/cockpit/*` path namespace and can be reached two ways:
 
 - **Internal (tailnet)** — `http://<producer-tailscale-ip>:8088/cockpit?t=<token>` for

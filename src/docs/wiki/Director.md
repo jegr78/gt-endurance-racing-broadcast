@@ -198,6 +198,36 @@ the producer's machine.
   a producer handover to carry the conversation forward.
 - `racecast chat import <file>` — load a previously exported JSON file into the relay.
 
+## Cues
+
+The panel has a collapsible **Cues** section — a director→talent text-cue channel
+(a text-only stand-in for an earpiece). It lets you send a short on-screen message
+directly to one or more commentators without leaving the panel.
+
+**Sending a cue:**
+
+1. Pick a **target** from the dropdown:
+   - a specific commentator by name (from the Crew/schedule roster),
+   - **All talent** — sent to every commentator's cockpit, or
+   - **On air** — the relay resolves this server-side to whoever is currently on the
+     live feed at the moment you press Send.
+2. Pick a **level**:
+   - **Info** — appears as a brief auto-fading toast in the cockpit; expires after 30 s
+     with no action needed from the commentator.
+   - **Critical** — a large sticky banner that stays up until the commentator clicks
+     **Acknowledge**. Once they do, your panel shows a **✓ seen** stamp with the time.
+3. Pick or type the cue text. **Presets** (quick-cue buttons) come from the
+   `Cue Preset` column in the sheet's **Configuration** tab — managed by the
+   sheet admin, picked up automatically, no panel change needed. Free text is
+   always available and is the only option when the Configuration tab cannot be
+   reached.
+4. Press **Send**.
+
+The commentator sees the cue scoped to them (their own name or "all") — they never
+see cues addressed to other individuals. The cue panel needs no sheet-write webhook;
+it works read-only regardless of `SHEET_PUSH_URL` (presets may be unavailable if
+the Configuration tab is unreachable, but free text is always there).
+
 ## The Companion Web Buttons board
 
 The same show as big buttons: open the Web Buttons page at
