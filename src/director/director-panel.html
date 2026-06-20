@@ -479,7 +479,7 @@
       <div id="cuePresets"></div>
       <div class="cue-compose">
         <select id="cueTarget" aria-label="Cue target">
-          <option value="all">All talent</option>
+          <option value="all">All</option>
           <option value="on-air">On air</option>
         </select>
         <select id="cueLevel" aria-label="Cue level">
@@ -1549,7 +1549,7 @@ async function loadCueTargets(){
   const sel = document.getElementById("cueTarget");
   // Always reset to the two fixed options first.
   sel.innerHTML = "";
-  [["all","All talent"],["on-air","On air"]].forEach(([v,t])=>{
+  [["all","All"],["on-air","On air"]].forEach(([v,t])=>{
     const o = document.createElement("option");
     o.value = v; o.textContent = t; sel.appendChild(o);
   });
