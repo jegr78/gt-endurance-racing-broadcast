@@ -3226,8 +3226,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 return ""
 
         _STATE_COOKIE = "rc_oauth_state"
-        _STATE_COOKIE_CLEAR = (
-            "rc_oauth_state=; Path=/console; Max-Age=0; HttpOnly; SameSite=Lax")
+
+        def _state_clear_cookie(self):
+            """Per-request state cookie clear — mirrors the Secure flag when on HTTPS."""
+            secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+            return (f"{self._STATE_COOKIE}=; Path=/console; "
+                    f"Max-Age=0; HttpOnly{secure}; SameSite=Lax")
 
         def _oauth_login(self):
             """GET /console/login -> 302 to Discord authorize (OAuth must be configured)."""
@@ -3259,14 +3263,16 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 return None
             qs = parse_qs(urlparse(self.path).query)
             if qs.get("error"):
-                return self._send_html("<h1>Login cancelled</h1>"
-                                       "<p><a href='/console/login'>Try again</a></p>")
+                return self._send_html_with_set_cookie(
+                    "<h1>Login cancelled</h1>"
+                    "<p><a href='/console/login'>Try again</a></p>",
+                    self._state_clear_cookie())
             state = (qs.get("state") or [""])[0]
             if not discord_oauth.verify_state(console_secret, state, int(time.time())):
                 return self._send_html_with_set_cookie(
                     "<h1>Login expired or invalid</h1>"
                     "<p><a href='/console/login'>Try again</a></p>",
-                    self._STATE_COOKIE_CLEAR, 400)
+                    self._state_clear_cookie(), 400)
             # CSRF: verify the state nonce matches the session cookie.
             cookie_nonce = console_auth.parse_cookie_token(
                 self.headers.get("Cookie"), cookie_name=self._STATE_COOKIE) or ""
@@ -3275,17 +3281,17 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 return self._send_html_with_set_cookie(
                     "<h1>Login expired or invalid</h1>"
                     "<p><a href='/console/login'>Try again</a></p>",
-                    self._STATE_COOKIE_CLEAR, 400)
+                    self._state_clear_cookie(), 400)
             redirect_uri = self._oauth_redirect_uri()
             if not redirect_uri:
                 return self._send_html_with_set_cookie(
-                    "<h1>Login unavailable</h1>", self._STATE_COOKIE_CLEAR, 400)
+                    "<h1>Login unavailable</h1>", self._state_clear_cookie(), 400)
             username = self._oauth_exchange((qs.get("code") or [""])[0], redirect_uri)
             if not username:
                 return self._send_html_with_set_cookie(
                     "<h1>Login failed</h1>"
                     "<p><a href='/console/login'>Try again</a></p>",
-                    self._STATE_COOKIE_CLEAR, 502)
+                    self._state_clear_cookie(), 502)
             dm = crew_source.discord_map() if (crew_source and hasattr(crew_source, "discord_map")) else {}
             name = discord_oauth.match_subject(username, dm)
             if not name:
@@ -3293,7 +3299,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     f"<h1>Not on the crew list</h1>"
                     f"<p>Your Discord <b>@{html.escape(username)}</b> "
                     "isn't in this league's Crew list. Ask your league admin to add it.</p>",
-                    self._STATE_COOKIE_CLEAR, 403)
+                    self._state_clear_cookie(), 403)
             key = console_auth.streamer_key(name)
             versions = (console_admin.load_versions(console_versions_path)
                         if console_versions_path else {})
@@ -3306,7 +3312,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Set-Cookie",
                              f"{console_auth.COOKIE_NAME}={safe}; Path=/console; "
                              f"HttpOnly{secure}; SameSite=Lax")
-            self.send_header("Set-Cookie", self._STATE_COOKIE_CLEAR)
+            self.send_header("Set-Cookie", self._state_clear_cookie())
             self.send_header("Content-Length", "0")
             self.end_headers()
             return None

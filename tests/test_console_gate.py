@@ -741,11 +741,14 @@ def t_oauth_callback_no_crew_match_denies():
         srv = _serve_oauth(); port = srv.server_address[1]
         try:
             state = m.discord_oauth.sign_state(SECRET, "n1", int(_t.time()))
-            code, _h, body = _get_with_headers(
+            code, headers, body = _get_with_headers(
                 port, f"/console/oauth/callback?code=abc&state={state}",
                 {"Host": "box.tail1.ts.net", "Cookie": "rc_oauth_state=n1"})
             assert code == 403, code
             assert b"crew" in body.lower() or b"not on the crew" in body.lower(), body
+            setc = headers.get("Set-Cookie") or headers.get("set-cookie") or ""
+            assert "rc_oauth_state=" in setc and "Max-Age=0" in setc, \
+                f"403 should clear state cookie; got Set-Cookie: {setc!r}"
         finally:
             srv.shutdown()
     finally:
