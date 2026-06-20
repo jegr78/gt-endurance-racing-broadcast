@@ -21,16 +21,16 @@ machine and the panel's HUD row + URLs section are display-only.
 | `schedule` | **Schedule** tab (or the **Qualifying** tab when the payload carries `"tab":"Qualifying"`), **physical row N** (the panel sends the CSV line number automatically): URL + Streamer + Stint label, located by the `URL`/`Streamer`/`Stint` headers in row 1 (falls back to fixed cols A/B with no header row); row `last+1` appends. The Stint cell is only written when a `Stint` header exists. The Qualifying tab has the **same structure** as the Schedule tab. **Neither tab may have leading blank rows** — the gviz CSV export maps physical sheet rows to CSV lines 1:1 when the tab starts at row 1. A header row is silently skipped when reading but its physical line number is still used when writing. |
 | `pov` | POV tab **row 2**: the `url` and/or `name` cell, located by header text (so the columns may move) |
 | `teams` | Setup tab: the cell **below** the `Team <slot>` header (slot 1–3 → `A6`/`B6`/`C6` in the shipped layout) — found by text, same as the other Setup fields. The Overlay tab only mirrors them read-only |
-| `crew` | **Crew** tab (`Name \| Director \| Producer`, header in row 1). `{"action":"crew","row":N,"name":..,"director":bool,"producer":bool}` writes **data row N** (sheet row N+1; `row last+1` appends); `director`/`producer` booleans write `X` / clear the cell. `{"action":"crew","row":N,"delete":true}` deletes data row N (rows shift up). The tab must start at row 1 with the header and have no interior blank rows (the Control Center editor maintains this). |
+| `crew` | **Crew** tab (`Name \| Commentator \| Director \| Producer \| Discord`, header in row 1). `{"action":"crew","row":N,"name":..,"commentator":bool,"director":bool,"producer":bool,"discord":".."}` writes **data row N** (sheet row N+1; `row last+1` appends). Columns are located **by header text** (any order; extra columns are ignored), so a pre-existing 3-column `Name\|Director\|Producer` tab is auto-extended with the `Commentator` and `Discord` columns on first write. `commentator`/`director`/`producer` booleans write `X` / clear the cell; `discord` is the verbatim username. `{"action":"crew","row":N,"delete":true}` deletes data row N (rows shift up). The tab must start at row 1 with the header and have no interior blank rows (the Control Center editor maintains this). |
 
 The relay only sends Setup values that exist in the Configuration tab's
 vocabulary columns — the same lists the sheet's own dropdowns use.
 
 > **Crew-tab coordination:** the `crew` action requires a **Crew** tab in the league's
-> Sheet (columns `Name | Director | Producer`, header in row 1) **and** the redeployed
-> v6 script that handles `crew`. Without it, director/producer roles simply resolve to
-> empty — commentators still work from the Schedule — and the Control Center crew editor
-> surfaces an *outdated-script* error. Nothing crashes.
+> Sheet (columns `Name | Commentator | Director | Producer | Discord`, header in row 1)
+> **and** the redeployed v7 script that handles `crew`. Without it, director/producer
+> roles simply resolve to empty — commentators still work from the Schedule — and the
+> Control Center crew editor surfaces an *outdated-script* error. Nothing crashes.
 
 > **Not written to the Sheet:** the free-text **event title**
 > ([Director](Director#event-title)) is producer-side runtime state
@@ -65,19 +65,26 @@ read-only.
 
 ## Crew
 
-The `crew` action maintains the **Crew** tab — the per-person director/producer roster
-used by the relay to resolve `/console` roles. The Control Center's crew editor reads
-the tab via the relay (`/crew/data`) and writes changes back through the `crew` webhook
-action (`/api/crew`, `/api/crew/delete` in the Control Center API, which POST to the
-relay, which forwards to the webhook). The script responds
-`{"ok":true,"action":"crew","v":6}` — accepted by the relay's `check_webhook_response`.
+The `crew` action maintains the **Crew** tab — the per-person roster used by the relay
+to resolve `/console` roles (commentator/director/producer) and to match a Discord login
+to a crew member. The Control Center's crew editor reads the tab via the relay
+(`/crew/data`) and writes changes back through the `crew` webhook action (`/api/crew`,
+`/api/crew/delete` in the Control Center API, which POST to the relay, which forwards to
+the webhook). The script responds `{"ok":true,"action":"crew","v":7}` — accepted by the
+relay's `check_webhook_response`.
 
-**Tab structure:** one header row (`Name | Director | Producer`) at row 1; data rows
-below it; no interior blank rows. The Control Center editor maintains this invariant.
+**Tab structure:** one header row (`Name | Commentator | Director | Producer | Discord`)
+at row 1; data rows below it; no interior blank rows. Both the read and write paths are
+**header-aware** — they locate each column by its header text, so the columns may sit in
+any order and extra columns are ignored. The Control Center editor maintains the
+no-blank-rows invariant.
 
-**Write a row:** `{"action":"crew","row":N,"name":"Alice","director":true,"producer":false}`
+**Write a row:** `{"action":"crew","row":N,"name":"Alice","commentator":false,"director":true,"producer":false,"discord":"alice_d"}`
 writes or overwrites data row N (sheet row N+1, skipping the header). `row last+1`
-appends a new person. `director`/`producer` booleans write `X` / clear the cell.
+appends a new person. `commentator`/`director`/`producer` booleans write `X` / clear the
+cell; `discord` writes the verbatim username (empty clears it). A pre-existing
+3-column `Name | Director | Producer` tab is auto-extended with the `Commentator` and
+`Discord` columns on the first write — existing data is untouched.
 
 **Delete a row:** `{"action":"crew","row":N,"delete":true}` deletes data row N
 (sheet row N+1); all rows below shift up. The Control Center re-numbers its in-memory
@@ -115,7 +122,7 @@ roster after the delete.
        else if (action === 'teams') writeTeams(ss, p);
        else if (action === 'crew') writeCrew(ss, p);
        else return out({error: 'unknown action: ' + action});
-       return out({ok: true, action: action, v: 6});
+       return out({ok: true, action: action, v: 7});
      } catch (err) { return out({error: String(err)}); }
    }
 
@@ -222,8 +229,9 @@ roster after the delete.
 
    function writeCrew(ss, p) {
      const sheet = ss.getSheetByName(TABS.crew) || ss.insertSheet(TABS.crew);
+     const HEADERS = ['Name', 'Commentator', 'Director', 'Producer', 'Discord'];
      if (sheet.getLastRow() < 1) {
-       sheet.getRange(1, 1, 1, 3).setValues([['Name', 'Director', 'Producer']]);
+       sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
      }
      const row = parseInt(p.row, 10);                 // 1-based data row (header is row 1)
      if (!(row >= 1)) throw 'crew: row must be >= 1';
@@ -234,8 +242,25 @@ roster after the delete.
      }
      const name = (p.name || '').toString().trim();
      if (!name) throw 'crew: name is required';
-     sheet.getRange(target, 1, 1, 3).setValues([[
-       name, p.director ? 'X' : '', p.producer ? 'X' : '']]);
+     // Locate each column by header text (case-insensitive); append any header
+     // that is missing, so an existing 3-column tab (Name|Director|Producer) is
+     // auto-extended with Commentator/Discord without disturbing its data.
+     let header = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
+     const colOf = (label) => {
+       for (let c = 0; c < header.length; c++)
+         if (String(header[c]).trim().toLowerCase() === label.toLowerCase()) return c + 1;
+       const col = header.length + 1;                 // append a new header column
+       sheet.getRange(1, col).setValue(label);
+       header = header.concat([label]);
+       return col;
+     };
+     const set = (label, value) =>
+       sheet.getRange(target, colOf(label)).setNumberFormat('@').setValue(value);
+     set('Name', name);
+     set('Commentator', p.commentator ? 'X' : '');
+     set('Director', p.director ? 'X' : '');
+     set('Producer', p.producer ? 'X' : '');
+     set('Discord', (p.discord || '').toString().trim());
    }
    ```
 
@@ -259,20 +284,25 @@ instead creates a NEW URL and every `profile.env` must be updated.)
 The relay detects an outdated (v1, timer-only) script: panel writes then
 report *"webhook script outdated — redeploy"* instead of failing silently.
 
-The current script is **v6** (v3 added the Schedule `Stint` column; v4 lets the
+The current script is **v7** (v3 added the Schedule `Stint` column; v4 lets the
 `schedule` action target the **Qualifying** tab via `"tab":"Qualifying"`; v5 added
-`teams`; v6 adds the `crew` action and the `Crew` tab). The relay does not enforce
-the version, so an older script degrades gracefully: a v2 script ignores Stint
+`teams`; v6 added the `crew` action and the `Crew` tab; v7 makes `crew` header-aware
+and adds the `Commentator` + `Discord` columns). The relay does not enforce the
+version, so an older script degrades gracefully: a v2 script ignores Stint
 write-back; v2/v3 scripts ignore the `tab` field and write the **Schedule** tab —
 qualifying-row edits would land on the race Schedule until you redeploy; a v5 script
 ignores the `crew` action, so the Control Center crew editor surfaces an
-*outdated-script* error and leaves the Sheet unchanged (the relay still reads the Crew
-tab directly for role resolution, so director/producer roles work if the tab is
-populated by hand). The handover HUD update (Setup tab via the `setup` action) and
-serving the qualifying stream read-only both keep working regardless.
+*outdated-script* error and leaves the Sheet unchanged. A **v6** script writes only
+the `Name | Director | Producer` columns positionally — on a 5-column tab it would
+write the Director flag into the `Commentator` column, so **redeploy v7 before using
+the crew editor against a tab that has the `Commentator`/`Discord` columns** (v7 is
+header-aware and writes each column by its header). The relay still reads the Crew tab
+directly for role resolution, so roles work if the tab is populated by hand. The
+handover HUD update (Setup tab via the `setup` action) and serving the qualifying
+stream read-only both keep working regardless.
 Add a **Qualifying** tab (same columns as Schedule) and redeploy to enable it.
-Add a **Crew** tab (`Name | Director | Producer`, header in row 1) and redeploy to
-enable the crew editor's write-back.
+Add a **Crew** tab (`Name | Commentator | Director | Producer | Discord`, header in
+row 1) and redeploy to enable the crew editor's write-back.
 
 ## Security
 

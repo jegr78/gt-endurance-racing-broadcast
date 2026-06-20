@@ -3506,19 +3506,22 @@ def crew_entries_data():
     entries = [{"row": i,
                 "name": row.get("name", ""),
                 "director": bool(row.get("director")),
-                "producer": bool(row.get("producer"))}
+                "producer": bool(row.get("producer")),
+                "commentator": bool(row.get("commentator")),
+                "discord": row.get("discord") or ""}
                for i, row in enumerate(data.get("rows") or [], start=1)]
     return {"ok": True, "entries": entries}
 
 
-def crew_write_data(row, name, director, producer):
+def crew_write_data(row, name, director, producer, commentator=False, discord=""):
     """Write one crew row via the relay's /crew/set (the relay holds the webhook
     URL — the Control Center never POSTs to SHEET_PUSH_URL directly)."""
     try:
         return _relay_post_json(
             "http://127.0.0.1:%d/crew/set" % RELAY_PORT,
             {"row": row, "name": name,
-             "director": bool(director), "producer": bool(producer)})
+             "director": bool(director), "producer": bool(producer),
+             "commentator": bool(commentator), "discord": (discord or "").strip()})
     except Exception as exc:
         return {"ok": False,
                 "error": "relay not reachable (start the relay): %s" % exc}

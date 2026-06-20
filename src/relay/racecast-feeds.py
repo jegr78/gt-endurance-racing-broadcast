@@ -1795,8 +1795,7 @@ class CrewSource:
         self.csv_url = csv_url
         self.cache_path = cache_path
         self.lock = threading.Lock()
-        self.rows = []
-        self._full_rows = []       # [(name, is_dir, is_prod, is_commentator, discord)]
+        self.rows = []             # canonical: [(name, is_dir, is_prod, is_commentator, discord)]
         self.last_ok = None
         self.last_error = None
 
@@ -1881,6 +1880,12 @@ class CrewSource:
         return result or None
 
     def get(self):
+        """Back-compat 3-tuple roster (name, is_dir, is_prod) for resolve_roles."""
+        with self.lock:
+            return [(n, d, p) for (n, d, p, _c, _x) in self.rows]
+
+    def get_full(self):
+        """Full 5-tuple roster (name, is_dir, is_prod, is_commentator, discord)."""
         with self.lock:
             return list(self.rows)
 
@@ -1888,7 +1893,7 @@ class CrewSource:
         """{discord_username_lower: crew_name} from the Crew tab's Discord column.
         Empty handles are skipped. Last write wins on a duplicate handle."""
         with self.lock:
-            full = list(self._full_rows)
+            full = list(self.rows)
         out = {}
         for name, _d, _p, _c, discord in full:
             h = (discord or "").strip().lower()
@@ -1899,7 +1904,7 @@ class CrewSource:
     def commentator_keys(self):
         """asset_key set of crew names whose Commentator flag is truthy (A1 union)."""
         with self.lock:
-            full = list(self._full_rows)
+            full = list(self.rows)
         return {asset_key(n) for (n, _d, _p, c, _x) in full if c and (n or "").strip()}
 
     def _fetch_text(self, timeout=15):
@@ -1929,31 +1934,35 @@ class CrewSource:
         text = self._fetch_text(timeout)
         if text is None:
             return False
-        rows = self._parse_rows(text)
+        rows = self._parse_full(text)
         if not rows:
             self.last_error = ("Crew tab reachable, but no rows found "
                                "(correct tab name? a Name column?)")
             return False
         with self.lock:
             self.rows = rows
-            self._full_rows = self._parse_full(text)
             self.last_ok = time.time()
             self.last_error = None
         return True
 
-    def inject_row(self, row, name=None, director=None, producer=None):
+    def inject_row(self, row, name=None, director=None, producer=None,
+                   commentator=None, discord=None):
         """Optimistically merge a Control-Center crew write into the in-memory
         roster so /crew/data reflects it before the next sheet poll. `row` is the
         1-based data-row index (header excluded); row == len+1 appends a row whose
-        name is non-empty. Each of name/director/producer is applied when given and
-        LEFT UNCHANGED when None. The next CSV poll reconciles against the sheet."""
+        name is non-empty. Each of name/director/producer/commentator/discord is
+        applied when given and LEFT UNCHANGED when None. The next CSV poll
+        reconciles against the sheet."""
         with self.lock:
             rows = list(self.rows)
             i = int(row) - 1
-            cur_n, cur_d, cur_p = rows[i] if 0 <= i < len(rows) else ("", False, False)
+            cur = rows[i] if 0 <= i < len(rows) else ("", False, False, False, "")
+            cur_n, cur_d, cur_p, cur_c, cur_x = cur
             entry = (cur_n if name is None else (name or "").strip(),
                      cur_d if director is None else bool(director),
-                     cur_p if producer is None else bool(producer))
+                     cur_p if producer is None else bool(producer),
+                     cur_c if commentator is None else bool(commentator),
+                     cur_x if discord is None else (discord or "").strip())
             if 0 <= i < len(rows):
                 rows[i] = entry
             elif i == len(rows) and entry[0]:
@@ -2237,11 +2246,13 @@ class SetupControl:
                                     tab=DEFAULT_QUALIFYING_TAB,
                                     inject_source=self.qual_source)
 
-    # -- crew roster writes (Crew tab: Name | Director | Producer) -------------
-    def crew_set(self, row, name=None, director=None, producer=None):
+    # -- crew roster writes (Crew tab: Name | Commentator | Director | Producer | Discord) --
+    def crew_set(self, row, name=None, director=None, producer=None,
+                 commentator=None, discord=None):
         """Write one Crew tab row via the webhook (per-row, mirrors schedule).
         `name` is free text (crew may be director/producer-only people, not in
-        the streamer vocabulary); director/producer are coerced to booleans."""
+        the streamer vocabulary); director/producer/commentator are coerced to
+        booleans; discord is the trimmed Discord username (may be empty)."""
         if not self.push_url:
             return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
                              "in the active profile or .env (wiki: Sheet-Webhook)"}
@@ -2251,11 +2262,14 @@ class SetupControl:
         name = (name or "").strip()
         if not name:
             return {"error": "name is required"}
+        discord = (discord or "").strip()
         payload = {"action": "crew", "row": rownum, "name": name,
-                   "director": bool(director), "producer": bool(producer)}
+                   "director": bool(director), "producer": bool(producer),
+                   "commentator": bool(commentator), "discord": discord}
         ok, err = self._push(payload, "crew")
         if ok and self.crew_source is not None:
-            self.crew_source.inject_row(rownum, name, bool(director), bool(producer))
+            self.crew_source.inject_row(rownum, name, bool(director), bool(producer),
+                                        bool(commentator), discord)
         return {"ok": True, "row": rownum} if ok else {"error": err}
 
     def crew_delete(self, row):
@@ -3763,10 +3777,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     # ingress never reaches it (same trust model as
                     # /schedule/data). Lets the `racecast links` CLI enumerate
                     # Crew ∪ Schedule over loopback. Empty when crew is disabled.
-                    rows = crew_source.get() if crew_source else []
+                    rows = crew_source.get_full() if crew_source else []
                     return self._send({"rows": [
-                        {"name": n, "director": bool(d), "producer": bool(pr)}
-                        for (n, d, pr) in rows]})
+                        {"name": n, "director": bool(d), "producer": bool(pr),
+                         "commentator": bool(c), "discord": x or ""}
+                        for (n, d, pr, c, x) in rows]})
                 if p == ["qualifying", "data"]:
                     qs = relay.qual_source
                     if not qs:
@@ -3993,7 +4008,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["crew", "set"]:
                     return self._send(setup_ctl.crew_set(
                         body.get("row"), body.get("name"),
-                        body.get("director"), body.get("producer")))
+                        body.get("director"), body.get("producer"),
+                        body.get("commentator"), body.get("discord")))
                 if p == ["crew", "delete"]:
                     return self._send(setup_ctl.crew_delete(body.get("row")))
                 if p == ["pov", "set"]:
