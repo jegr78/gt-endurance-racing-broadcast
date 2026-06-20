@@ -66,9 +66,9 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   Stop: Ctrl+C
 """
 
-import argparse, csv, datetime, io, ipaddress, json, logging, os, re, shutil, signal, subprocess, sys, threading, time
+import argparse, csv, datetime, hashlib, hmac, io, ipaddress, json, logging, os, re, shutil, signal, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, quote, unquote, parse_qs
+from urllib.parse import urlparse, quote, unquote, parse_qs, urlencode
 from urllib.request import Request, urlopen
 
 # OBS reflection (best effort). obs_ws lives in src/scripts (repo) or the
@@ -87,6 +87,7 @@ except Exception:                                # noqa: BLE001 — reflection i
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
 import console_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
 import console_admin  # talent-cockpit revocation version store (#191)
+import discord_oauth  # Discord OAuth2 helpers for /console/login
 import cockpit_submissions  # talent stream-link submission store (#193)
 import console_policy  # /console authorization matrix + decision (#216)
 import console_proxy      # pure /console/buttons proxy plumbing (#236)
@@ -3168,6 +3169,123 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             return self._send({"reachable": reachable, "version": ver, "ok": ok})
 
         def log_message(self, *a): pass
+
+        def _send_redirect(self, location):
+            self.send_response(302)
+            self.send_header("Location", location)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
+
+        def _send_html(self, html, code=200):
+            body = html.encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(body)
+            return None
+
+        def _oauth_redirect_uri(self):
+            """Build this host's callback URI from the request Host header.
+            Returns None if the host is not a valid MagicDNS name (forged-Host guard)."""
+            host = (self.headers.get("Host") or "").split(":")[0].strip()
+            if not discord_oauth.valid_redirect_host(host):
+                return None
+            return f"https://{host}/console/oauth/callback"
+
+        def _oauth_exchange(self, code, redirect_uri):
+            """Exchange auth code for Discord username. Returns "" on any failure.
+            A module-level _TEST_EXCHANGE hook short-circuits this in unit tests."""
+            hook = globals().get("_TEST_EXCHANGE")
+            if hook is not None:
+                return hook(code, redirect_uri)
+            try:
+                data = urlencode({
+                    "client_id": discord_client_id,
+                    "client_secret": discord_client_secret,
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                }).encode("utf-8")
+                req = Request(discord_oauth.TOKEN_ENDPOINT, data=data, method="POST",
+                              headers={"Content-Type": "application/x-www-form-urlencoded",
+                                       "User-Agent": "racecast-feeds/1.0"})
+                with urlopen(req, timeout=10) as resp:
+                    tok = json.loads(resp.read().decode("utf-8")).get("access_token")
+                if not tok:
+                    return ""
+                ureq = Request(discord_oauth.USERINFO_ENDPOINT,
+                               headers={"Authorization": f"Bearer {tok}",
+                                        "User-Agent": "racecast-feeds/1.0"})
+                with urlopen(ureq, timeout=10) as uresp:
+                    return discord_oauth.parse_identity(
+                        json.loads(uresp.read().decode("utf-8")))
+            except Exception as e:
+                LOG.warning("Discord OAuth exchange failed: %s: %s", type(e).__name__, e)
+                return ""
+
+        def _oauth_login(self):
+            """GET /console/login -> 302 to Discord authorize (OAuth must be configured)."""
+            if not (discord_client_id and discord_client_secret):
+                self._send({"error": "not found"}, 404)
+                return None
+            redirect_uri = self._oauth_redirect_uri()
+            if not redirect_uri:
+                return self._send_html(
+                    "<h1>Login unavailable</h1><p>This host can't run Discord login "
+                    "(needs the public Funnel address).</p>", 400)
+            nonce = console_auth.safe_cookie_token(
+                hmac.new(console_secret.encode(),
+                         str(self.client_address).encode(),
+                         hashlib.sha256).hexdigest()[:16]) or "x"
+            state = discord_oauth.sign_state(console_secret, nonce, int(time.time()))
+            return self._send_redirect(
+                discord_oauth.authorize_url(discord_client_id, redirect_uri, state))
+
+        def _oauth_callback(self):
+            """GET /console/oauth/callback?code=&state= -> mint cookie or deny page."""
+            if not (discord_client_id and discord_client_secret):
+                self._send({"error": "not found"}, 404)
+                return None
+            qs = parse_qs(urlparse(self.path).query)
+            if qs.get("error"):
+                return self._send_html("<h1>Login cancelled</h1>"
+                                       "<p><a href='/console/login'>Try again</a></p>")
+            state = (qs.get("state") or [""])[0]
+            if not discord_oauth.verify_state(console_secret, state, int(time.time())):
+                return self._send_html("<h1>Login expired or invalid</h1>"
+                                       "<p><a href='/console/login'>Try again</a></p>", 400)
+            redirect_uri = self._oauth_redirect_uri()
+            if not redirect_uri:
+                return self._send_html("<h1>Login unavailable</h1>", 400)
+            username = self._oauth_exchange((qs.get("code") or [""])[0], redirect_uri)
+            if not username:
+                return self._send_html("<h1>Login failed</h1>"
+                                       "<p><a href='/console/login'>Try again</a></p>", 502)
+            dm = crew_source.discord_map() if (crew_source and hasattr(crew_source, "discord_map")) else {}
+            name = discord_oauth.match_subject(username, dm)
+            if not name:
+                return self._send_html(
+                    f"<h1>Not on the crew list</h1><p>Your Discord <b>@{username}</b> "
+                    "isn't in this league's Crew list. Ask your league admin to add it.</p>",
+                    403)
+            key = console_auth.streamer_key(name)
+            versions = (console_admin.load_versions(console_versions_path)
+                        if console_versions_path else {})
+            token = console_auth.mint_token(console_secret, key,
+                                            console_admin.current_version(versions, key))
+            secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+            safe = console_auth.safe_cookie_token(token)
+            self.send_response(302)
+            self.send_header("Location", "/console")
+            self.send_header("Set-Cookie",
+                             f"{console_auth.COOKIE_NAME}={safe}; Path=/console; "
+                             f"HttpOnly{secure}; SameSite=Lax")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
+
         def _cockpit_active(self):
             """True iff a per-league cockpit secret is configured. The secret is
             auto-provisioned by the CLI (zero-config), so the cockpit is served
@@ -3218,6 +3336,16 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 self._send({"error": "not found"}, 404)
                 return None
             sub = p[1:]
+            # OAuth front door — bootstrap identity before the auth check.
+            if sub == ["login"]:
+                return self._oauth_login()
+            if sub == ["oauth", "callback"]:
+                return self._oauth_callback()
+            # The launcher root is auth-optional when OAuth is configured so an
+            # unauthenticated visitor can see the Login with Discord button.
+            if sub == [] and bool(discord_client_id and discord_client_secret) and self._cockpit_token() is None:
+                self._send_page(console_page_path, "/console")
+                return None
             subject = self._console_auth()        # identity only; sends 401/429 on failure
             if subject is None:
                 return None
@@ -4181,8 +4309,8 @@ def main():
     # (token-gated); absent => every /cockpit/* path 404s. PUBLIC exposure is the
     # separate Tailscale Funnel switch, never implied by the secret alone.
     console_secret = (os.environ.get("RACECAST_CONSOLE_SECRET") or "").strip() or None
-    discord_client_id = os.environ.get("RACECAST_DISCORD_CLIENT_ID", "")
-    discord_client_secret = os.environ.get("RACECAST_DISCORD_CLIENT_SECRET", "")
+    discord_client_id = (os.environ.get("RACECAST_DISCORD_CLIENT_ID") or "").strip()
+    discord_client_secret = (os.environ.get("RACECAST_DISCORD_CLIENT_SECRET") or "").strip()
     console_versions_path = os.path.join(runtime, "console-versions.json")
     # Commentator stream-link submissions (#193): pending store + audit log,
     # profile-scoped like chat.json / console-versions.json. Always created so the

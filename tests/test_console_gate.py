@@ -561,6 +561,145 @@ def t_console_logo_404_when_unset():
         srv.shutdown()
 
 
+# ---------- helpers for OAuth endpoint tests ----------
+
+class _CrewWithDiscord(_Crew):
+    """Extends _Crew with a discord_map() that returns a fixed handle->name mapping."""
+    def __init__(self, rows, discord):
+        super().__init__(rows)
+        self._discord = discord
+    def discord_map(self):
+        return dict(self._discord)
+
+
+def _serve_oauth(discord_client_id="cid", discord_client_secret="sec"):
+    rows = [("https://youtu.be/a", "Alice", "1", 2)]
+    src = _FakeSource(_URLS8, rows)
+    relay = m.Relay(src, [53001, 53002], LOGDIR)
+    crew = _CrewWithDiscord(
+        [("Alice", False, False), ("Bob", True, False)],
+        {"alice_discord": "Alice"})
+    SRC = os.path.join(ROOT, "src")
+    handler = m.make_handler(
+        relay, console_secret=SECRET, console_versions_path=None,
+        chat_store=m.ChatStore(os.path.join(LOGDIR, "chat2.json")),
+        crew_source=crew,
+        panel_path=os.path.join(SRC, "director", "director-panel.html"),
+        cockpit_page_path=os.path.join(SRC, "cockpit", "cockpit.html"),
+        console_page_path=os.path.join(SRC, "console", "console.html"),
+        discord_client_id=discord_client_id,
+        discord_client_secret=discord_client_secret)
+    srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, msg, headers, fp)
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def _get_with_headers(port, path, extra_headers=None):
+    """Like _get but supports arbitrary request headers; no auth token.
+    Does NOT follow redirects — the 302 Location is returned as-is."""
+    url = f"http://127.0.0.1:{port}{path}"
+    req = urllib.request.Request(url)
+    for k, v in (extra_headers or {}).items():
+        req.add_header(k, v)
+    try:
+        with _NO_REDIRECT_OPENER.open(req, timeout=5) as r:
+            return r.status, dict(r.headers), r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, dict(e.headers), e.read()
+
+
+# ---------- OAuth endpoint tests ----------
+
+def t_console_login_redirects_when_oauth_configured():
+    srv = _serve_oauth(); port = srv.server_address[1]
+    try:
+        code, headers, _ = _get_with_headers(port, "/console/login",
+                                             {"Host": "box.tail1.ts.net",
+                                              "X-Forwarded-Proto": "https"})
+        assert code == 302, code
+        loc = headers.get("Location") or headers.get("location") or ""
+        assert loc.startswith("https://discord.com/oauth2/authorize?"), loc
+        assert "client_id=cid" in loc, loc
+        assert "redirect_uri=https%3A%2F%2Fbox.tail1.ts.net%2Fconsole%2Foauth%2Fcallback" in loc, loc
+    finally:
+        srv.shutdown()
+
+
+def t_console_login_404_when_oauth_unconfigured():
+    srv = _serve_oauth(discord_client_id="", discord_client_secret="")
+    port = srv.server_address[1]
+    try:
+        code, _h, _b = _get_with_headers(port, "/console/login",
+                                          {"Host": "box.tail1.ts.net"})
+        assert code == 404, code
+    finally:
+        srv.shutdown()
+
+
+def t_oauth_callback_sets_cookie_on_crew_match():
+    import time as _t
+    m._TEST_EXCHANGE = lambda code, redirect_uri: "alice_discord"
+    try:
+        srv = _serve_oauth(); port = srv.server_address[1]
+        try:
+            state = m.discord_oauth.sign_state(SECRET, "n1", int(_t.time()))
+            code, headers, _ = _get_with_headers(
+                port, f"/console/oauth/callback?code=abc&state={state}",
+                {"Host": "box.tail1.ts.net", "X-Forwarded-Proto": "https"})
+            assert code == 302, code
+            loc = headers.get("Location") or headers.get("location") or ""
+            assert loc.endswith("/console"), loc
+            setc = headers.get("Set-Cookie") or headers.get("set-cookie") or ""
+            assert "rc_console=" in setc, setc
+            assert "Path=/console" in setc, setc
+            assert "HttpOnly" in setc, setc
+        finally:
+            srv.shutdown()
+    finally:
+        del m._TEST_EXCHANGE
+
+
+def t_oauth_callback_bad_state_400():
+    m._TEST_EXCHANGE = lambda code, redirect_uri: "alice_discord"
+    try:
+        srv = _serve_oauth(); port = srv.server_address[1]
+        try:
+            code, _h, _b = _get_with_headers(
+                port, "/console/oauth/callback?code=abc&state=not.valid.sig",
+                {"Host": "box.tail1.ts.net"})
+            assert code == 400, code
+        finally:
+            srv.shutdown()
+    finally:
+        del m._TEST_EXCHANGE
+
+
+def t_oauth_callback_no_crew_match_denies():
+    import time as _t
+    m._TEST_EXCHANGE = lambda code, redirect_uri: "ghost_user"
+    try:
+        srv = _serve_oauth(); port = srv.server_address[1]
+        try:
+            state = m.discord_oauth.sign_state(SECRET, "n1", int(_t.time()))
+            code, _h, body = _get_with_headers(
+                port, f"/console/oauth/callback?code=abc&state={state}",
+                {"Host": "box.tail1.ts.net"})
+            assert code == 403, code
+            assert b"crew" in body.lower() or b"not on the crew" in body.lower(), body
+        finally:
+            srv.shutdown()
+    finally:
+        del m._TEST_EXCHANGE
+
+
 def t_status_league_includes_name():
     rows = [("https://youtu.be/a", "Alice", "1", 2)]
     src = _FakeSource(_URLS8, rows)
