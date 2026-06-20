@@ -335,11 +335,11 @@ def check_status_live(ctx):
 
 
 def check_cc_api_cockpit(ctx):
-    """Control Center /api/cockpit/status responds 200 with sane JSON
+    """Control Center /api/console/status responds 200 with sane JSON
     (ok flag + a links list)."""
     if not ctx.ui_url:
         return CheckResult("cc_api_cockpit", "skip", "no ui_url")
-    st, data = _get_json(ctx.ui_url + "/api/cockpit/status")
+    st, data = _get_json(ctx.ui_url + "/api/console/status")
     if st != 200:
         return CheckResult("cc_api_cockpit", "fail", f"HTTP {st}")
     if "ok" not in data or not isinstance(data.get("links"), list):
@@ -363,7 +363,7 @@ def check_enable_preserves_keys(_ctx=None):
     """#191 regression: provisioning CONSOLE_SECRET must NOT wipe other profile.env
     keys. The bug was a single-pair write through the full-set merge_env_text (any
     key not re-passed was dropped). This is the exact seam the zero-config
-    auto-provision (`_ensure_active_cockpit_secret`) uses —
+    auto-provision (`_ensure_active_console_secret`) uses —
     `racecast._set_env_key(path, key, value)` — exercised against a temp profile.env
     carrying several keys; assert every pre-existing key survives + CONSOLE_SECRET added.
 

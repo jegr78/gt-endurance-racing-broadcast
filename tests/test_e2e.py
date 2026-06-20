@@ -208,7 +208,7 @@ def t_check_cc_api_cockpit():
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a): pass
         def do_GET(self):
-            if self.path == "/api/cockpit/status":
+            if self.path == "/api/console/status":
                 body = json.dumps({"ok": True, "enabled": False,
                                    "links": []}).encode()
                 self.send_response(200)

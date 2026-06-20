@@ -448,12 +448,12 @@ def make_handler(ctx):
             if path == "/api/profile/logo":
                 p = ctx["profile_logo"]()
                 return self._serve_file(p) if p else self._not_found("no logo")
-            if path == "/api/cockpit/status":
+            if path == "/api/console/status":
                 try:
-                    return self._json(ctx["cockpit_status"]())
+                    return self._json(ctx["console_status"]())
                 except Exception as exc:
                     return self._json({"ok": False,
-                                       "error": f"cockpit status failed: {exc}"},
+                                       "error": f"console status failed: {exc}"},
                                       code=500)
             if path == "/api/overlay":
                 try:
@@ -680,26 +680,26 @@ def make_handler(ctx):
                                        "error": f"could not delete crew row: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
-            if path == "/api/cockpit/funnel":
+            if path == "/api/console/funnel":
                 body = self._body_json()
                 if body is None:
                     return self._json({"ok": False, "error": "malformed JSON body"},
                                       code=400)
-                result = ctx["cockpit_funnel"](bool(body.get("on")))
+                result = ctx["console_funnel"](bool(body.get("on")))
                 return self._json(result, code=200 if result.get("ok") else 400)
-            if path == "/api/cockpit/funnel-auto":
+            if path == "/api/console/funnel-auto":
                 body = self._body_json()
                 if body is None:
                     return self._json({"ok": False, "error": "malformed JSON body"},
                                       code=400)
-                result = ctx["cockpit_set_funnel_auto"](bool(body.get("auto")))
+                result = ctx["console_set_funnel_auto"](bool(body.get("auto")))
                 return self._json(result, code=200 if result.get("ok") else 400)
-            if path == "/api/cockpit/revoke":
+            if path == "/api/console/revoke":
                 body = self._body_json()
                 if body is None:
                     return self._json({"ok": False, "error": "malformed JSON body"},
                                       code=400)
-                result = ctx["cockpit_revoke"](body.get("streamer") or "")
+                result = ctx["console_revoke"](body.get("streamer") or "")
                 return self._json(result, code=200 if result.get("ok") else 400)
             if path == "/api/overlay":
                 body = self._body_json()

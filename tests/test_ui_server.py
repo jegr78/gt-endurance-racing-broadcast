@@ -172,15 +172,15 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "backup_delete": lambda slug: {"ok": True, "removed": True},
             "profile_export": lambda name=None, assets=True: _export_stub(name, assets),
             "profile_import": lambda path, force=False: _import_stub(path, force),
-            "cockpit_status": lambda: {"ok": True, "has_secret": True,
+            "console_status": lambda: {"ok": True, "has_secret": True,
                                        "funnel_auto": False, "funnel_capable": True,
                                        "funnel_on": False,
                                        "links": [{"name": "Alpha",
                                                   "internal": "http://127.0.0.1:8088/console?t=x",
                                                   "funnel": "https://h/console?t=x"}]},
-            "cockpit_funnel": lambda on: {"ok": True, "_got": on},
-            "cockpit_set_funnel_auto": lambda auto: {"ok": True, "_got": auto},
-            "cockpit_revoke": lambda streamer: {"ok": True, "_got": streamer},
+            "console_funnel": lambda on: {"ok": True, "_got": on},
+            "console_set_funnel_auto": lambda auto: {"ok": True, "_got": auto},
+            "console_revoke": lambda streamer: {"ok": True, "_got": streamer},
             "speedtest": lambda: {"ok": True, "latest": None, "history": []},
             "event_title_read": lambda: {"ok": True, "title": "",
                                          "source": "default", "relay_alive": False},
@@ -1145,11 +1145,11 @@ def t_profile_env_get_route_wraps_provider():
         httpd.shutdown()
 
 
-def t_cockpit_status_route_wraps_provider():
+def t_console_status_route_wraps_provider():
     ctx = _ctx()
     httpd, port = _serve(ctx)
     try:
-        code, body = _get(port, "/api/cockpit/status")
+        code, body = _get(port, "/api/console/status")
         data = json.loads(body)
         assert code == 200 and data["has_secret"] is True
         assert data["links"][0]["name"] == "Alpha"
@@ -1160,15 +1160,15 @@ def t_cockpit_status_route_wraps_provider():
         httpd.shutdown()
 
 
-def t_cockpit_post_routes_pass_args():
+def t_console_post_routes_pass_args():
     seen = {}
     ctx = _ctx()
-    ctx["cockpit_funnel"] = lambda on: seen.update(fn=on) or {"ok": True}
-    ctx["cockpit_revoke"] = lambda streamer: seen.update(rv=streamer) or {"ok": True}
+    ctx["console_funnel"] = lambda on: seen.update(fn=on) or {"ok": True}
+    ctx["console_revoke"] = lambda streamer: seen.update(rv=streamer) or {"ok": True}
     httpd, port = _serve(ctx)
     try:
-        assert _post_json(port, "/api/cockpit/funnel", {"on": True})[0] == 200
-        assert _post_json(port, "/api/cockpit/revoke", {"streamer": "Alpha"})[0] == 200
+        assert _post_json(port, "/api/console/funnel", {"on": True})[0] == 200
+        assert _post_json(port, "/api/console/revoke", {"streamer": "Alpha"})[0] == 200
         assert seen == {"fn": True, "rv": "Alpha"}
     finally:
         httpd.shutdown()

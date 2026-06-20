@@ -435,7 +435,7 @@
         <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Tools</button>
       <button class="navitem" data-nav="settings" onclick="showView('settings')">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>General Settings</button>
-      <button class="navitem" data-nav="cockpit" onclick="showView('cockpit')">
+      <button class="navitem" data-nav="console" onclick="showView('console')">
         <svg viewBox="0 0 24 24"><path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>Crew Console</button>
       <button class="navitem" data-nav="logs" onclick="showView('logs')">
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>Logs</button>
@@ -880,11 +880,11 @@
       </div>
 
       <!-- ===== Crew Console ===== -->
-      <div class="view" data-view="cockpit" hidden>
+      <div class="view" data-view="console" hidden>
         <div class="viewhead"><h2>Crew Console</h2>
           <span class="sub">role-adaptive crew links — commentator, director &amp; producer</span>
           <span class="spacer"></span>
-          <button onclick="loadCockpit()">Reload</button></div>
+          <button onclick="loadConsole()">Reload</button></div>
         <div class="enverr" id="cp-err" hidden></div>
         <section>
           <p class="sub">Zero-config: the relay serves the role-adaptive <code>/console</code>
@@ -896,8 +896,8 @@
           <div class="viewhead"><h3>Public access (Tailscale Funnel)</h3>
             <span class="spacer"></span>
             <span id="cp-funnel-state" class="badge"><span class="dot"></span><span id="cp-funnel-state-txt">—</span></span></div>
-          <button id="cp-funnel-on" onclick="cockpitFunnel(true)">Funnel ON (public)</button>
-          <button id="cp-funnel-off" onclick="cockpitFunnel(false)">Funnel OFF</button>
+          <button id="cp-funnel-on" onclick="consoleFunnel(true)">Funnel ON (public)</button>
+          <button id="cp-funnel-off" onclick="consoleFunnel(false)">Funnel OFF</button>
           <label class="cprow"><input type="checkbox" id="cp-funnel-auto" onchange="toggleFunnelAuto()">
             Auto-enable on event start</label>
           <p class="sub">Exposes only <code>/console</code> publicly. Needs MagicDNS + HTTPS
@@ -1043,7 +1043,7 @@ function showView(name) {
   if (name === 'preflight' && !preflightRun) { preflightRun = true; runPreflight(); }
   if (name === 'preflight') loadSpeedtest();
   if (name === 'settings' && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
-  if (name === 'cockpit') loadCockpit();   // reload each visit: reflects toggles/links
+  if (name === 'console') loadConsole();   // reload each visit: reflects toggles/links
   // First open only: start the default "All (live)" stream. Guarded by a dedicated
   // flag (not !logES) so returning to Logs after picking an archive — where logES is
   // null because archives use fetch, not SSE — does not silently clobber the selection.
@@ -2305,11 +2305,11 @@ function showProfileErr(elId, msg) {
 }
 
 // ===== Crew Console (issue #191; role-adaptive links #216) =====
-async function loadCockpit() {
+async function loadConsole() {
   let d;
-  try { d = await (await fetch('/api/cockpit/status', {cache: 'no-store'})).json(); }
+  try { d = await (await fetch('/api/console/status', {cache: 'no-store'})).json(); }
   catch (e) { showProfileErr('cp-err', 'Control Center not reachable.'); return; }
-  if (!d.ok) { showProfileErr('cp-err', d.error || 'cockpit status failed'); return; }
+  if (!d.ok) { showProfileErr('cp-err', d.error || 'console status failed'); return; }
   $('cp-err').hidden = true;
   // Funnel state pill + controls
   const pill = $('cp-funnel-state'), txt = $('cp-funnel-state-txt');
@@ -2349,17 +2349,17 @@ async function loadCockpit() {
     c.appendChild(row);
   });
 }
-async function cockpitFunnel(on) {
+async function consoleFunnel(on) {
   $('cp-err').hidden = true;
-  const r = await (await fetch('/api/cockpit/funnel', {method: 'POST',
+  const r = await (await fetch('/api/console/funnel', {method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({on})})).json();
   if (!r.ok) showProfileErr('cp-err', r.error || 'funnel command failed');
-  loadCockpit();   // refresh the ON/OFF state pill
+  loadConsole();   // refresh the ON/OFF state pill
 }
 async function toggleFunnelAuto() {
   $('cp-err').hidden = true;
-  const r = await (await fetch('/api/cockpit/funnel-auto', {method: 'POST',
+  const r = await (await fetch('/api/console/funnel-auto', {method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({auto: $('cp-funnel-auto').checked})})).json();
   if (!r.ok) showProfileErr('cp-err', r.error || 'could not save the setting');
@@ -2367,11 +2367,11 @@ async function toggleFunnelAuto() {
 async function revokeCockpit(streamer) {
   if (!(await confirmModal('Revoke ' + streamer + "'s current link?"))) return;
   $('cp-err').hidden = true;
-  const r = await (await fetch('/api/cockpit/revoke', {method: 'POST',
+  const r = await (await fetch('/api/console/revoke', {method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({streamer})})).json();
   if (!r.ok) showProfileErr('cp-err', r.error || 'revoke failed');
-  loadCockpit();
+  loadConsole();
 }
 
 // Header league logo: point the <img> at the server-resolved active-profile

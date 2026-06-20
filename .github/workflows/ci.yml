@@ -75,7 +75,7 @@ jobs:
   e2e:
     # Integration outer loop: stand up the relay + Control Center from src/ and
     # assert the live HTTP surface (cockpit auth gating, tally, chat round-trip,
-    # /api/cockpit/status, …) — the end-to-end behaviour run-tests.py's unit
+    # /api/console/status, …) — the end-to-end behaviour run-tests.py's unit
     # suite can't cover. Synthetic mode only: no real Sheet/cookies/OBS/Tailscale
     # and no yt-dlp/streamlink/ffmpeg/deno (the relay's feed pulls are best-effort
     # daemon threads, so the control server still comes up). Stdlib only — NO
