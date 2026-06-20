@@ -149,6 +149,40 @@ def t_apply_pulled_prunes_and_writes():
         assert [c["id"] for c in cu.load_cues(path)] == [2]
 
 
+_relay = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))
+
+
+def t_parse_cue_presets_by_header():
+    csv_text = ("Stints,Streamers,Cue Preset\n"
+                "Stint 1,JeGr,Wrap up\n"
+                "Stint 2,Ann,Throw to pit\n"
+                ",,Wrap up\n")                 # duplicate dropped, blanks skipped
+    assert _relay.parse_cue_presets(csv_text) == ["Wrap up", "Throw to pit"]
+
+
+def t_parse_cue_presets_absent_column():
+    assert _relay.parse_cue_presets("Stints,Streamers\nStint 1,JeGr\n") == []
+
+
+def t_cuestore_add_list_ack_round_trip():
+    with tempfile.TemporaryDirectory() as d:
+        store = _relay.CueStore(os.path.join(d, "cues.json"))
+        r = store.add(target="max", level="critical", text="hot", now=100.0)
+        assert r["ok"] and r["cue"]["id"] == 1 and r["cue"]["from"] == "Director"
+        # a foreign commentator cannot ack max's cue
+        assert "error" in store.ack(1, "ann", now=101.0)
+        assert store.list()[0]["ack"] is None
+        # the addressee can
+        assert store.ack(1, "max", now=102.0)["ok"] is True
+        assert store.list()[0]["ack"] == {"ts": 102.0}
+
+
+def t_cuestore_rejects_bad_level():
+    with tempfile.TemporaryDirectory() as d:
+        store = _relay.CueStore(os.path.join(d, "cues.json"))
+        assert "error" in store.add(target="max", level="loud", text="x")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

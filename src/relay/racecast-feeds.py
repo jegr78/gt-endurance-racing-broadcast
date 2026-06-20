@@ -85,6 +85,7 @@ except Exception:                                # noqa: BLE001 — reflection i
     _obs_ws = None
 
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
+import cue_admin   # director text-cue channel (#243)
 import console_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
 import console_admin  # talent-cockpit revocation version store (#191)
 import discord_oauth  # Discord OAuth2 helpers for /console/login
@@ -742,6 +743,29 @@ def parse_config_vocab(text):
     return out
 
 
+# Configuration-tab column of director cue presets (admin-managed, read-only in
+# the panel). Located by header like the vocab columns; blanks/dupes dropped.
+CUE_PRESET_HEADERS = ("cue preset", "cue presets", "cue")
+
+
+def parse_cue_presets(text):
+    """Configuration tab CSV -> [preset strings] for the panel's cue buttons."""
+    rows = list(csv.reader(io.StringIO(text)))
+    if not rows:
+        return []
+    header = [(h or "").strip().lower() for h in rows[0]]
+    i = next((header.index(h) for h in CUE_PRESET_HEADERS if h in header), None)
+    if i is None:
+        return []
+    out, seen = [], set()
+    for row in rows[1:]:
+        v = (row[i] or "").strip() if len(row) > i else ""
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
 def team_entry(raw, roster):
     """One /hud/data team object from an Overlay slot value + the roster. Name is
     always the stripped form; number/logo come from the roster (Number column
@@ -1219,6 +1243,73 @@ class ChatStore:
         with self.lock:
             self.messages = msgs
         return {"ok": True, "count": len(msgs)}
+
+
+class CueStore:
+    """Director text-cue ring buffer + best-effort JSON file
+    (runtime/<profile>/cues.json), loaded + pruned on construction. Mirrors
+    ChatStore. add() is the director write; ack() is the talent write (scoped to
+    the cue's target); reload() re-reads the file (takeover). ts is server clock."""
+
+    def __init__(self, path):
+        self.path = path
+        self.lock = threading.Lock()
+        try:
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        except OSError:
+            pass  # best-effort: load_cues() below tolerates a missing/unwritable dir
+        self.cues = cue_admin.prune(cue_admin.load_cues(self.path), time.time())
+
+    def add(self, target, level, text, from_name=cue_admin.DEFAULT_FROM, now=None):
+        now = time.time() if now is None else now
+        with self.lock:
+            nid = max([0] + [c["id"] for c in self.cues]) + 1
+            entry = cue_admin.sanitize_cue({"id": nid, "ts": now, "target": target,
+                                            "level": level, "text": text,
+                                            "from": from_name, "ack": None})
+            if entry is None:
+                return {"error": "cue needs target, level (info|critical) and text"}
+            self.cues.append(entry)
+            del self.cues[: -cue_admin.MAX_CUES]
+            try:
+                cue_admin.write_cues(self.path, self.cues)
+            except OSError:
+                pass  # best-effort: the in-memory cue still stands
+            return {"ok": True, "cue": entry}
+
+    def list(self):
+        with self.lock:
+            return list(self.cues)
+
+    def data(self):
+        with self.lock:
+            return {"cues": list(self.cues)}
+
+    def ack(self, cue_id, streamer_key, now=None):
+        now = time.time() if now is None else now
+        with self.lock:
+            for c in self.cues:
+                if c["id"] == cue_id:
+                    if c["target"] not in (streamer_key, "all"):
+                        return {"error": "not your cue"}
+                    c["ack"] = {"ts": now}
+                    try:
+                        cue_admin.write_cues(self.path, self.cues)
+                    except OSError:
+                        pass  # best-effort: the in-memory ack still stands
+                    return {"ok": True, "id": cue_id}
+            return {"error": "no such cue"}
+
+    def reload(self):
+        try:
+            with open(self.path, encoding="utf-8") as fh:
+                payload = json.load(fh)
+            cues = cue_admin.prune(cue_admin.validate_payload(payload), time.time())
+        except (OSError, ValueError) as e:
+            return {"error": f"reload failed: {type(e).__name__}: {e}"}
+        with self.lock:
+            self.cues = cues
+        return {"ok": True, "count": len(cues)}
 
 
 # HLS tags that signal server-side ad insertion (SCTE-35 splice cues or an
@@ -1998,6 +2089,7 @@ class HudSource:
         self.lock = threading.Lock()
         self._data = None
         self._vocab = {k: [] for k in VOCAB_COLUMNS}
+        self._cue_presets = []
         self._roster = {}
         self._roster_full = {}   # stripped team name -> verbatim Configuration label
         self.overrides = {}   # hud-data key -> (value, expires_ts)
@@ -2026,6 +2118,7 @@ class HudSource:
             roster = parse_config_roster(config_text)
             roster_full = parse_team_full_labels(config_text)
             vocab = parse_config_vocab(config_text)
+            cue_presets = parse_cue_presets(config_text)
             data = build_hud_data(overlay, roster)
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e}"
@@ -2033,6 +2126,7 @@ class HudSource:
         with self.lock:
             self._data = data
             self._vocab = vocab
+            self._cue_presets = cue_presets
             self._roster = roster
             self._roster_full = roster_full
             # a sheet poll that already shows the pushed value = confirmation
@@ -2089,6 +2183,10 @@ class HudSource:
     def vocab(self):
         with self.lock:
             return {k: list(v) for k, v in self._vocab.items()}
+
+    def cue_presets(self):
+        with self.lock:
+            return list(self._cue_presets)
 
     def roster_names(self):
         """Team names from the Configuration roster, in sheet order (panel vocab)."""
@@ -2957,7 +3055,7 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
 
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
                  timer_store=None, setup_ctl=None, overlay_dir=None,
-                 chat_store=None, preview_path=None, graphics_dir=None,
+                 chat_store=None, cue_store=None, preview_path=None, graphics_dir=None,
                  splitscreen_path=None, cockpit_page_path=None, console_secret=None,
                  discord_client_id=None, discord_client_secret=None,
                  console_versions_path=None,
@@ -2980,6 +3078,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
     # crew's quota; a low cap — a human submits a link a handful of times, not
     # dozens per minute.
     _cockpit_submit_rl = console_auth.RateLimiter(limit=5, window_s=60)
+    # Talent ack is a funnelled write; key on the authed identity (like chat), not
+    # the shared proxy IP. The director SEND has no limiter (director-gated /
+    # tailnet-trusted, like /next).
+    _cockpit_cue_ack_rl = console_auth.RateLimiter(limit=30, window_s=60)
 
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
@@ -3488,6 +3590,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return ["chat", "data"]          # full history, gated producer+step-up
                 if sub == ["takeover", "versions"]:
                     return ["cockpit", "versions"]   # secret already step-up-verified above
+                if sub == ["takeover", "cues"]:
+                    return ["cues", "data"]          # full list, gated producer+step-up
                 return sub
             if outcome == console_policy.STEP_UP_REQUIRED:
                 self._send({"error": "step-up required"}, 403)
@@ -3693,6 +3797,17 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if p == ["chat", "reload"]:
                         return self._send(chat_store.reload())
                     return self._send({"error": "unknown", "path": self.path}, 404)
+                if p[:1] == ["cues"]:
+                    if not cue_store:
+                        return self._send({"error": "cues disabled"}, 404)
+                    if p == ["cues", "data"]:
+                        return self._send(cue_store.data())
+                    if p == ["cues", "presets"]:
+                        return self._send({"presets": hud_source.cue_presets()
+                                           if hud_source else []})
+                    if p == ["cues", "reload"]:
+                        return self._send(cue_store.reload())
+                    return self._send({"error": "unknown", "path": self.path}, 404)
                 if p[:1] == ["cockpit"]:
                     if not self._cockpit_active():
                         return self._send({"error": "cockpit not configured"}, 404)
@@ -3750,6 +3865,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         if not chat_store:
                             return self._send({"error": "chat disabled"}, 404)
                         return self._send(chat_store.data())
+                    if p == ["cockpit", "cues"]:
+                        me = self._console_auth()
+                        if me is None:
+                            return None
+                        if not cue_store:
+                            return self._send({"error": "cues disabled"}, 404)
+                        return self._send({"cues": cue_admin.active_cues_for(
+                            cue_store.list(), me, time.time())})
                     if p == ["cockpit", "versions"]:
                         # Producer-to-producer takeover pull. This path SITS UNDER
                         # /cockpit, so it IS reachable via Funnel — it must therefore
@@ -3921,12 +4044,39 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                                 len(submission_store.list()))
                         return self._send({"ok": True, "id": entry["id"],
                                            "stint": entry["target_stint"]})
+                    if p == ["cockpit", "cues", "ack"]:
+                        me = self._console_auth()
+                        if me is None:
+                            return None
+                        if not cue_store:
+                            return self._send({"error": "cues disabled"}, 404)
+                        if not _cockpit_cue_ack_rl.allow(me):
+                            return self._send({"error": "rate limited"}, 429)
+                        try:
+                            cid = int(body.get("id"))
+                        except (TypeError, ValueError):
+                            return self._send({"error": "id must be an integer"}, 400)
+                        return self._send(cue_store.ack(cid, me))
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["chat", "send"]:
                     if not chat_store:
                         return self._send({"error": "chat disabled"}, 404)
                     return self._send(chat_store.add(
                         user=body.get("user"), text=body.get("text")))
+                if p == ["cues", "send"]:
+                    if not cue_store:
+                        return self._send({"error": "cues disabled"}, 404)
+                    rows = relay.source.get_rows()
+                    live_idx = relay.feeds[relay.live_feed()].idx
+                    cur = live_schedule_row(rows, live_idx)
+                    on_air_key = asset_key(cur["streamer"]) if cur else None
+                    target = cue_admin.resolve_target(body.get("target"),
+                                                      on_air_key, asset_key)
+                    if not target:
+                        return self._send({"error": "unknown target (nobody on air?)"}, 400)
+                    return self._send(cue_store.add(
+                        target=target, level=(body.get("level") or "").strip(),
+                        text=body.get("text")))
                 if p[:1] == ["submissions"]:
                     # Director approve/reject (issue #193). Tailnet-only (not
                     # funnelled). Reject needs no webhook; approve writes the
@@ -4359,6 +4509,7 @@ def main():
         timer_store.refresh()   # non-fatal: adopt a newer sheet anchor on startup
 
     chat_store = ChatStore(os.path.join(runtime, "chat.json"))
+    cue_store = CueStore(os.path.join(runtime, "cues.json"))
     # Free-text event title (#207): persisted runtime state (event.json), seeded
     # from the EVENT_TITLE default (profile.env). An explicit --event-title wins and
     # is persisted, so it survives a restart; a takeover instead pulls A's title
@@ -4427,6 +4578,7 @@ def main():
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
                            timer_store, setup_ctl,
                            overlay_dir=args.overlay_dir, chat_store=chat_store,
+                           cue_store=cue_store,
                            preview_path=preview_path, graphics_dir=graphics_dir,
                            splitscreen_path=splitscreen_path,
                            cockpit_page_path=cockpit_page_path,
