@@ -84,7 +84,7 @@ At <https://login.tailscale.com/admin>:
    Scope `target` as tightly as you like (a specific tag or device instead of
    `autogroup:member`).
 
-### Automate the tailnet setup — `racecast cockpit setup-funnel`
+### Automate the tailnet setup — `racecast console setup-funnel`
 
 Steps 1–2 can be done from the producer machine instead of clicking through the admin
 console, using a **Tailscale API access token**.
@@ -114,8 +114,8 @@ during a broadcast.
 #### Run it
 
 ```bash
-racecast cockpit setup-funnel            # dry-run: shows what it would change
-racecast cockpit setup-funnel --apply    # enable MagicDNS + add the funnel nodeAttr
+racecast console setup-funnel            # dry-run: shows what it would change
+racecast console setup-funnel --apply    # enable MagicDNS + add the funnel nodeAttr
 ```
 
 `--apply` enables MagicDNS (a safe single preference) and appends the `funnel`
@@ -153,7 +153,7 @@ it changes, so re-run `racecast links` on the new machine and re-share.
 ## Revoking / rotating a link
 
 ```bash
-racecast cockpit token revoke "<streamer name>"   # bump that person's version
+racecast console token revoke "<streamer name>"   # bump that person's version
 racecast links                                          # re-issue their (now-newer) link
 ```
 

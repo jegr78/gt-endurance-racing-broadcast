@@ -175,12 +175,12 @@ python3 src/racecast.py chat pull <ip>    # take over another producer's chat hi
 python3 src/racecast.py chat import <file> # load a previously exported JSON file into the relay
 python3 src/racecast.py chat export       # write the current chat history to chat-export.json (or --out PATH)
 python3 src/racecast.py backup create|list|restore|delete <label>  # named look snapshots (overlay+graphics+media) per profile
-python3 src/racecast.py cockpit enable     # talent Commentator Cockpit: generate a per-league secret + turn it on for this machine (#191)
-python3 src/racecast.py cockpit disable    # stop serving /cockpit on this machine
 python3 src/racecast.py links              # print per-person /console launcher links (Crew tab ∪ live Schedule); --post drops them into crew chat
 python3 src/racecast.py funnel on|off  # public ingress for ONLY /console (the role-adaptive crew launcher) via Tailscale Funnel (needs MagicDNS+HTTPS+funnel nodeAttr)
-python3 src/racecast.py cockpit setup-funnel    # automate the one-time tailnet prereqs (MagicDNS + funnel nodeAttr) via a Tailscale API access token; --apply to perform (dry-run default)
-python3 src/racecast.py cockpit token revoke <streamer>  # rotate one commentator's link (bumps their version)
+python3 src/racecast.py console setup-funnel    # automate the one-time tailnet prereqs (MagicDNS + funnel nodeAttr) via a Tailscale API access token; --apply to perform (dry-run default)
+python3 src/racecast.py console token revoke <streamer>  # rotate one commentator's link (bumps their version)
+python3 src/racecast.py console pull-versions <ip>  # pull the console-versions revocation map from another producer (takeover helper)
+# Note: the per-league CONSOLE_SECRET is auto-provisioned on first relay start (zero-config); there is no separate enable/disable command
 python3 src/racecast.py --version
 
 # Fetch any missing HUD country flags from the sheet's Configuration tab
@@ -438,7 +438,7 @@ rides in the `…/console?t=` link once, then an `HttpOnly; Secure; SameSite=Lax
 the same `rc_console` token. The Crew tab gained `Commentator` and `Discord` columns;
 `resolve_roles` is an A1 union (Schedule OR Crew Commentator flag). Auth core:
 `src/scripts/console_auth.py`; revocation store: `src/scripts/console_admin.py`;
-talent page: `src/cockpit/cockpit.html`; CLI: `racecast cockpit …`; takeover pulls A's
+talent page: `src/cockpit/cockpit.html`; CLI: `racecast console …`; takeover pulls A's
 versions over the tailnet (like `chat pull`). Tests: `tests/test_cockpit.py`. The crew
 roster (Crew tab ∪ live Schedule) is exposed via a tailnet-only `GET /crew/data` endpoint
 (root path, **never** funnelled — only `/console` is mounted); `racecast links` unions Crew

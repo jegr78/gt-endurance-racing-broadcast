@@ -108,7 +108,7 @@ Two independent revocation mechanisms exist:
 | What you want to revoke | Mechanism |
 |---|---|
 | **A person's access** (Discord login AND signed links) | Remove or blank their `Discord` cell and all role flags in the Crew tab. Role resolution runs on every request — the change takes effect immediately with no relay restart. |
-| **A leaked signed link** (without locking the person out) | Run `racecast cockpit token revoke <name>`. This bumps the version in `console-versions.json`; old signed links are rejected on next use. The person can still log in fresh with Discord. |
+| **A leaked signed link** (without locking the person out) | Run `racecast console token revoke <name>`. This bumps the version in `console-versions.json`; old signed links are rejected on next use. The person can still log in fresh with Discord. |
 
 ---
 
