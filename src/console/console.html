@@ -7,6 +7,7 @@
   // Patches fetch and exposes RC_API() so same-origin API calls resolve under the
   // mount; a no-op when the base is empty.
   window.RC_API_BASE = "__RC_API_BASE__";
+  window.RC_OAUTH = "__RC_OAUTH__" === "1";
   window.RC_API = function (p) {
     var b = window.RC_API_BASE || "";
     if (!b || typeof p !== "string" || p.charAt(0) !== "/") return p;
@@ -86,8 +87,16 @@
       }).catch(function () { /* leave the menu as rendered */ });
     }
   }).catch(function () {
-    document.getElementById('menu').innerHTML =
-      '<div class="empty">Could not load your access. Check your link.</div>';
+    document.getElementById('who').textContent = 'not signed in';
+    var menu = document.getElementById('menu');
+    if (window.RC_OAUTH) {
+      menu.innerHTML = '<a class="card" href="' + RC_API('/login') +
+        '"><div class="t">Login with Discord</div><div class="d">' +
+        'Sign in to reach your console</div></a>';
+    } else {
+      menu.innerHTML =
+        '<div class="empty">Could not load your access. Check your link.</div>';
+    }
   });
   fetch(RC_API('/status')).then(function (r) { return r.json(); }).then(function (s) {
     var name = (s.league && s.league.name) || '';

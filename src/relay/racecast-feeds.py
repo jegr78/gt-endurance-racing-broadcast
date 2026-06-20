@@ -3003,6 +3003,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             except OSError:
                 return self._send({"error": "page not found"}, 404)
             body = body.replace(b"__RC_API_BASE__", (api_base or "").encode())
+            oauth_flag = b"1" if (discord_client_id and discord_client_secret) else b""
+            body = body.replace(b"__RC_OAUTH__", oauth_flag)
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))

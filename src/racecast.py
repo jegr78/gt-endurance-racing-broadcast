@@ -1196,6 +1196,11 @@ def links_cmd(rest):
         lan = f"http://{host}:{RELAY_PORT}/console?t={tok}"      # tailnet fallback
         print(f"{name}:\n  funnel:  {url}\n  tailnet: {lan}")
         lines.append(f"{name}: {url}")
+    print()
+    print("Share this ONE link with the whole crew (Discord login resolves their role):")
+    print(f"  https://{magic}/console")
+    print("Discord OAuth redirect URI to register in the league's Discord app:")
+    print(f"  https://{magic}/console/oauth/callback")
     if post:
         try:
             _post_chat_message("Console links:\n" + "\n".join(lines))

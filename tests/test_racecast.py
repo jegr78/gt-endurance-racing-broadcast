@@ -1823,6 +1823,45 @@ def t_links_roster_union():
         m._crew_roster = orig_crew
 
 
+def t_links_cmd_prints_share_url_and_redirect_uri():
+    # links_cmd must print a bare share URL and OAuth redirect URI after the
+    # per-person link list.
+    import io, sys as _sys
+    orig_roster = m._links_roster
+    orig_magic = m._tailscale_magicdns
+    orig_ip = m._tailscale_ip
+    orig_secret = m._ensure_active_cockpit_secret
+    orig_versions = m.cpadm.load_versions
+    orig_apply = m._apply_active_profile_env
+    orig_versions_path = m._console_versions_path
+    try:
+        m._links_roster = lambda: ["Alice"]
+        m._tailscale_magicdns = lambda: "my-host.ts.net"
+        m._tailscale_ip = lambda: "100.64.0.1"
+        m._ensure_active_cockpit_secret = lambda: "testsecret"
+        m.cpadm.load_versions = lambda p: {}
+        m._apply_active_profile_env = lambda: None
+        m._console_versions_path = lambda: "/tmp/versions.json"
+        buf = io.StringIO()
+        old_stdout = _sys.stdout
+        _sys.stdout = buf
+        try:
+            m.links_cmd([])
+        finally:
+            _sys.stdout = old_stdout
+        out = buf.getvalue()
+        assert "/console/oauth/callback" in out, out
+        assert "/console" in out, out
+    finally:
+        m._links_roster = orig_roster
+        m._tailscale_magicdns = orig_magic
+        m._tailscale_ip = orig_ip
+        m._ensure_active_cockpit_secret = orig_secret
+        m.cpadm.load_versions = orig_versions
+        m._apply_active_profile_env = orig_apply
+        m._console_versions_path = orig_versions_path
+
+
 def t_route_funnel():
     assert m.route(["funnel", "on"]) == {"kind": "funnel", "rest": ["on"]}
     assert m.route(["funnel", "off"]) == {"kind": "funnel", "rest": ["off"]}
