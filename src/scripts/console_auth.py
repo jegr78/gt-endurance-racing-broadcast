@@ -1,6 +1,6 @@
-"""Commentator-cockpit auth core (issue #191) — pure, stdlib-only, importable by
-both the relay (src/relay/racecast-feeds.py) and the CLI (src/racecast.py) WITHOUT
-importing the hyphenated relay module.
+"""Console auth core (issue #216, formerly cockpit_auth #191) — pure, stdlib-only,
+importable by both the relay (src/relay/racecast-feeds.py) and the CLI (src/racecast.py)
+WITHOUT importing the hyphenated relay module.
 
 Token model (per the approved design):
     token = "<streamer_key>.<version>.<sig>"
@@ -17,7 +17,7 @@ import threading
 import time
 from http.cookies import SimpleCookie
 
-COOKIE_NAME = "rc_cockpit"
+COOKIE_NAME = "rc_console"
 _KEY_RE = re.compile(r"[a-z0-9-]+")
 # A minted token is "<streamer_key>.<version>.<sig>" — streamer_key is [a-z0-9-],
 # version is digits, sig is hex — so the whole token can only ever be [A-Za-z0-9._-].
@@ -86,7 +86,7 @@ def safe_cookie_token(token):
 
 
 def parse_cookie_token(cookie_header):
-    """Extract the rc_cockpit token from a raw Cookie header, or None. Pure."""
+    """Extract the rc_console token from a raw Cookie header, or None. Pure."""
     if not cookie_header:
         return None
     try:

@@ -16,7 +16,7 @@ def _load(name, rel):
     return mod
 
 
-ca = _load("cockpit_auth", ("src", "scripts", "cockpit_auth.py"))
+ca = _load("console_auth", ("src", "scripts", "console_auth.py"))
 m = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))
 cad = _load("cockpit_admin", ("src", "scripts", "cockpit_admin.py"))
 
@@ -69,7 +69,7 @@ def t_verify_rejects_malformed():
 
 
 def t_streamer_key_matches_asset_key():
-    """cockpit_auth.streamer_key must behave identically to relay asset_key()."""
+    """console_auth.streamer_key must behave identically to relay asset_key()."""
     for s in ("Alpha Racing", "  Beta!#1 ", "Ümlaut x", "a-b_c d", "", "  "):
         assert ca.streamer_key(s) == m.asset_key(s), s
 
@@ -299,7 +299,7 @@ def t_page_sets_cookie_and_serves_html():
             assert code == 200, code
             assert b"cockpit" in body
             setc = headers.get("Set-Cookie", "")
-            assert "rc_cockpit=" in setc and "HttpOnly" in setc and "SameSite=Lax" in setc
+            assert "rc_console=" in setc and "HttpOnly" in setc and "SameSite=Lax" in setc
             # plain-http (tailnet) request -> NO Secure, else the browser drops it
             assert "Secure" not in setc
         finally:
@@ -330,7 +330,7 @@ def t_page_bad_token_401_no_cookie():
         try:
             code, headers, _b = get("/cockpit?t=bogus")
             assert code == 401, code
-            assert "rc_cockpit=" not in (headers.get("Set-Cookie") or "")
+            assert "rc_console=" not in (headers.get("Set-Cookie") or "")
         finally:
             srv.shutdown()
 
@@ -342,7 +342,7 @@ def t_timer_authed():
     srv, get, _post = _cockpit_client(timer_store=_Timer())
     try:
         tok = ca.mint_token("sek", "alpha-racing")
-        code, _h, body = get("/cockpit/timer", cookie="rc_cockpit=" + tok)
+        code, _h, body = get("/cockpit/timer", cookie="rc_console=" + tok)
         assert code == 200, code
         assert json.loads(body)["remaining"] == "1:00:00"
     finally:
@@ -358,10 +358,10 @@ def t_cockpit_chat_send_forces_identity():
             # client tries to spoof "user" -> must be ignored, forced to display name
             code, _h, body = post("/cockpit/chat/send",
                                   {"user": "Impostor", "text": "hi"},
-                                  cookie="rc_cockpit=" + tok)
+                                  cookie="rc_console=" + tok)
             assert code == 200, (code, body)
             assert json.loads(body)["message"]["user"] == "Alpha Racing"
-            code, _h, body = get("/cockpit/chat/data", cookie="rc_cockpit=" + tok)
+            code, _h, body = get("/cockpit/chat/data", cookie="rc_console=" + tok)
             msgs = json.loads(body)["messages"]
             assert msgs[-1]["user"] == "Alpha Racing" and msgs[-1]["text"] == "hi"
         finally:

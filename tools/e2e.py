@@ -11,7 +11,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
 import e2e_checks as E
-import cockpit_auth
+import console_auth as cockpit_auth
 
 
 def _csv_server(csv_text):

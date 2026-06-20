@@ -51,7 +51,7 @@ def _stub_relay():
             self.end_headers(); self.wfile.write(body)
         def _authed(self):
             return ("t=" in (self.path or "")) or \
-                   ("rc_cockpit=" + state["token"]) in (self.headers.get("Cookie") or "")
+                   ("rc_console=" + state["token"]) in (self.headers.get("Cookie") or "")
         def do_GET(self):
             p = self.path.split("?")[0]
             if p == "/status":
@@ -65,7 +65,7 @@ def _stub_relay():
             elif p == "/cockpit":
                 if not self._authed(): return self._send(401, b"no")
                 self._send(200, b"<html>cockpit</html>", "text/html",
-                           {"Set-Cookie": "rc_cockpit=good; HttpOnly"})
+                           {"Set-Cookie": "rc_console=good; HttpOnly"})
             else:
                 self._send(404, b"nope")
             return None

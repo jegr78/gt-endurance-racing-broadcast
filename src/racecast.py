@@ -45,7 +45,7 @@ import init_setup as ins
 import config as pcfg    # 'pcfg' (not 'cfg'): avoids F811 clash with local `cfg = json.loads(...)` dicts elsewhere in this file
 import profile_admin as pa
 import chat_admin as ca
-import cockpit_auth as cpa
+import console_auth as cpa
 import cockpit_admin as cpadm
 import overlay_build as ob
 import fonts_bundle as fb

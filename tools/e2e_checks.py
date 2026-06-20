@@ -192,8 +192,8 @@ def check_cockpit_accepts_token(ctx):
     st, _, hdrs = http_request(url)
     if st != 200:
         return CheckResult("cockpit_accepts_token", "fail", f"HTTP {st}")
-    if "rc_cockpit=" not in (hdrs.get("Set-Cookie") or ""):
-        return CheckResult("cockpit_accepts_token", "fail", "no rc_cockpit cookie")
+    if "rc_console=" not in (hdrs.get("Set-Cookie") or ""):
+        return CheckResult("cockpit_accepts_token", "fail", "no rc_console cookie")
     return CheckResult("cockpit_accepts_token", "pass", "")
 
 

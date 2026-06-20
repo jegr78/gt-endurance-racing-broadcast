@@ -54,7 +54,7 @@ def _serve(companion_url=None, logo_path=None):
 
 
 def _tok(key):
-    return m.cockpit_auth.mint_token(SECRET, key)
+    return m.console_auth.mint_token(SECRET, key)
 
 
 def _get(port, path, token=None, secret=None, secret_header="X-Console-Secret"):
@@ -483,26 +483,26 @@ def t_buttons_ws_passthrough_and_strips_token():
 
 
 def t_buttons_http_does_not_forward_relay_cookie():
-    # The rc_cockpit auth cookie must be scrubbed before forwarding upstream;
+    # The rc_console auth cookie must be scrubbed before forwarding upstream;
     # other cookies in the same header must be preserved.
     up = _stub_companion(); upurl = f"http://127.0.0.1:{up.server_address[1]}"
     srv = _serve(companion_url=upurl); port = srv.server_address[1]
     try:
         url = f"http://127.0.0.1:{port}/console/buttons/tablet?t=" + _tok("bob")
         req = urllib.request.Request(url)
-        req.add_header("Cookie", "rc_cockpit=secret; keep=1")
+        req.add_header("Cookie", "rc_console=secret; keep=1")
         with urllib.request.urlopen(req, timeout=5) as r:
             assert r.status == 200
-        # The stub saw the Cookie header with keep=1 but NOT rc_cockpit.
+        # The stub saw the Cookie header with keep=1 but NOT rc_console.
         received_cookie = _StubCompanion.last.get("cookie") or ""
-        assert "rc_cockpit" not in received_cookie, received_cookie
+        assert "rc_console" not in received_cookie, received_cookie
         assert "keep=1" in received_cookie, received_cookie
     finally:
         srv.shutdown(); up.shutdown()
 
 
 def t_buttons_ws_does_not_forward_relay_cookie_and_carries_prefix():
-    # The WS upgrade path must scrub rc_cockpit and inject the sub-path prefix header.
+    # The WS upgrade path must scrub rc_console and inject the sub-path prefix header.
     up = _ws_echo_stub(); upurl = f"http://127.0.0.1:{up.getsockname()[1]}"
     srv = _serve(companion_url=upurl); port = srv.server_address[1]
     try:
@@ -511,13 +511,13 @@ def t_buttons_ws_does_not_forward_relay_cookie_and_carries_prefix():
                "Host: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
                "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
                "Sec-WebSocket-Version: 13\r\n"
-               "Cookie: rc_cockpit=%s\r\n\r\n") % (_tok("bob"), _tok("bob"))
+               "Cookie: rc_console=%s\r\n\r\n") % (_tok("bob"), _tok("bob"))
         c.sendall(req.encode())
         resp = c.recv(4096)
         assert resp.split(b"\r\n")[0].endswith(b"101 Switching Protocols"), resp
         c.close()
-        # rc_cockpit must not appear in the upstream handshake.
-        assert b"rc_cockpit" not in _WSStub.last_request, _WSStub.last_request[:400]
+        # rc_console must not appear in the upstream handshake.
+        assert b"rc_console" not in _WSStub.last_request, _WSStub.last_request[:400]
         # The prefix header must be present.
         assert b"Companion-custom-prefix: console/buttons" in _WSStub.last_request, \
             _WSStub.last_request[:400]

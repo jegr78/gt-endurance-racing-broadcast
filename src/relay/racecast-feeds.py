@@ -85,7 +85,7 @@ except Exception:                                # noqa: BLE001 — reflection i
     _obs_ws = None
 
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
-import cockpit_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
+import console_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
 import cockpit_admin  # talent-cockpit revocation version store (#191)
 import cockpit_submissions  # talent stream-link submission store (#193)
 import console_policy  # /console authorization matrix + decision (#216)
@@ -2886,13 +2886,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
     # out), and the 128-bit HMAC signature makes brute force infeasible regardless
     # — this is pure defense-in-depth. X-Forwarded-For is deliberately NOT trusted
     # for the key (spoofable over the public ingress, which would weaken it).
-    _cockpit_authfail_rl = cockpit_auth.RateLimiter(limit=20, window_s=60)
-    _cockpit_chat_rl = cockpit_auth.RateLimiter(limit=10, window_s=60)
+    _cockpit_authfail_rl = console_auth.RateLimiter(limit=20, window_s=60)
+    _cockpit_chat_rl = console_auth.RateLimiter(limit=10, window_s=60)
     # Submit is a PUBLIC write path (funnelled). Keyed on the authed identity
     # (not the shared proxy IP, like chat) so one commentator can't exhaust the
     # crew's quota; a low cap — a human submits a link a handful of times, not
     # dozens per minute.
-    _cockpit_submit_rl = cockpit_auth.RateLimiter(limit=5, window_s=60)
+    _cockpit_submit_rl = console_auth.RateLimiter(limit=5, window_s=60)
 
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
@@ -2943,9 +2943,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
                 # Allowlist-sanitize: the value must never be raw request input
                 # (CWE-113 response splitting / CWE-20 cookie injection).
-                safe = cockpit_auth.safe_cookie_token(cookie_token)
+                safe = console_auth.safe_cookie_token(cookie_token)
                 self.send_header("Set-Cookie",
-                                 f"{cockpit_auth.COOKIE_NAME}={safe}; Path={cookie_path}; "
+                                 f"{console_auth.COOKIE_NAME}={safe}; Path={cookie_path}; "
                                  f"HttpOnly{secure}; SameSite=Lax")
             self.end_headers()
             self.wfile.write(body)
@@ -3108,13 +3108,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             qs = parse_qs(urlparse(self.path).query)
             if qs.get("t"):
                 return qs["t"][0]
-            return cockpit_auth.parse_cookie_token(self.headers.get("Cookie"))
+            return console_auth.parse_cookie_token(self.headers.get("Cookie"))
         def _cockpit_auth(self):
             """Return the authed streamer_key, or None after sending 401/429.
             Applies a per-client failure rate limit. Caller must return on None."""
             versions = (cockpit_admin.load_versions(cockpit_versions_path)
                         if cockpit_versions_path else {})
-            me = cockpit_auth.verify_token(console_secret, self._cockpit_token(),
+            me = console_auth.verify_token(console_secret, self._cockpit_token(),
                                            versions)
             if me is None:
                 client = self.client_address[0] if self.client_address else "?"
@@ -3154,7 +3154,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             # X-Cockpit-Secret is still accepted for one release (mixed-version takeover).
             presented = (self.headers.get("X-Console-Secret")
                          or self.headers.get("X-Cockpit-Secret"))
-            has_step_up = bool(presented) and cockpit_auth.secret_matches(presented, console_secret)
+            has_step_up = bool(presented) and console_auth.secret_matches(presented, console_secret)
             # /console-only: identity introspection for the launcher (any auth).
             if sub == ["whoami"]:
                 self._send({"subject": subject, "roles": sorted(roles)})
@@ -3462,7 +3462,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         # (every producer of the league holds it), constant-time.
                         presented = (self.headers.get("X-Console-Secret")
                                      or self.headers.get("X-Cockpit-Secret"))  # legacy fallback
-                        if not cockpit_auth.secret_matches(presented, console_secret):
+                        if not console_auth.secret_matches(presented, console_secret):
                             return self._send({"error": "unauthorized"}, 401)
                         if not cockpit_versions_path:
                             return self._send({"versions": {}})
