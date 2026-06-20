@@ -66,7 +66,7 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   Stop: Ctrl+C
 """
 
-import argparse, csv, datetime, hashlib, hmac, io, ipaddress, json, logging, os, re, shutil, signal, subprocess, sys, threading, time
+import argparse, csv, datetime, hmac, html, io, ipaddress, json, logging, os, re, secrets, shutil, signal, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, quote, unquote, parse_qs, urlencode
 from urllib.request import Request, urlopen
@@ -3177,8 +3177,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.end_headers()
             return None
 
-        def _send_html(self, html, code=200):
-            body = html.encode("utf-8")
+        def _send_html(self, content, code=200):
+            body = content.encode("utf-8")
             self.send_response(code)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -3225,6 +3225,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 LOG.warning("Discord OAuth exchange failed: %s: %s", type(e).__name__, e)
                 return ""
 
+        _STATE_COOKIE = "rc_oauth_state"
+        _STATE_COOKIE_CLEAR = (
+            "rc_oauth_state=; Path=/console; Max-Age=0; HttpOnly; SameSite=Lax")
+
         def _oauth_login(self):
             """GET /console/login -> 302 to Discord authorize (OAuth must be configured)."""
             if not (discord_client_id and discord_client_secret):
@@ -3235,13 +3239,18 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 return self._send_html(
                     "<h1>Login unavailable</h1><p>This host can't run Discord login "
                     "(needs the public Funnel address).</p>", 400)
-            nonce = console_auth.safe_cookie_token(
-                hmac.new(console_secret.encode(),
-                         str(self.client_address).encode(),
-                         hashlib.sha256).hexdigest()[:16]) or "x"
+            nonce = secrets.token_urlsafe(16)
             state = discord_oauth.sign_state(console_secret, nonce, int(time.time()))
-            return self._send_redirect(
-                discord_oauth.authorize_url(discord_client_id, redirect_uri, state))
+            secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+            state_cookie = (f"{self._STATE_COOKIE}={nonce}; Path=/console; "
+                            f"HttpOnly; SameSite=Lax; Max-Age=600{secure}")
+            self.send_response(302)
+            self.send_header("Location",
+                             discord_oauth.authorize_url(discord_client_id, redirect_uri, state))
+            self.send_header("Set-Cookie", state_cookie)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
 
         def _oauth_callback(self):
             """GET /console/oauth/callback?code=&state= -> mint cookie or deny page."""
@@ -3254,22 +3263,37 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                        "<p><a href='/console/login'>Try again</a></p>")
             state = (qs.get("state") or [""])[0]
             if not discord_oauth.verify_state(console_secret, state, int(time.time())):
-                return self._send_html("<h1>Login expired or invalid</h1>"
-                                       "<p><a href='/console/login'>Try again</a></p>", 400)
+                return self._send_html_with_set_cookie(
+                    "<h1>Login expired or invalid</h1>"
+                    "<p><a href='/console/login'>Try again</a></p>",
+                    self._STATE_COOKIE_CLEAR, 400)
+            # CSRF: verify the state nonce matches the session cookie.
+            cookie_nonce = console_auth.parse_cookie_token(
+                self.headers.get("Cookie"), cookie_name=self._STATE_COOKIE) or ""
+            state_nonce = discord_oauth.state_nonce(state)
+            if not cookie_nonce or not hmac.compare_digest(cookie_nonce, state_nonce):
+                return self._send_html_with_set_cookie(
+                    "<h1>Login expired or invalid</h1>"
+                    "<p><a href='/console/login'>Try again</a></p>",
+                    self._STATE_COOKIE_CLEAR, 400)
             redirect_uri = self._oauth_redirect_uri()
             if not redirect_uri:
-                return self._send_html("<h1>Login unavailable</h1>", 400)
+                return self._send_html_with_set_cookie(
+                    "<h1>Login unavailable</h1>", self._STATE_COOKIE_CLEAR, 400)
             username = self._oauth_exchange((qs.get("code") or [""])[0], redirect_uri)
             if not username:
-                return self._send_html("<h1>Login failed</h1>"
-                                       "<p><a href='/console/login'>Try again</a></p>", 502)
+                return self._send_html_with_set_cookie(
+                    "<h1>Login failed</h1>"
+                    "<p><a href='/console/login'>Try again</a></p>",
+                    self._STATE_COOKIE_CLEAR, 502)
             dm = crew_source.discord_map() if (crew_source and hasattr(crew_source, "discord_map")) else {}
             name = discord_oauth.match_subject(username, dm)
             if not name:
-                return self._send_html(
-                    f"<h1>Not on the crew list</h1><p>Your Discord <b>@{username}</b> "
+                return self._send_html_with_set_cookie(
+                    f"<h1>Not on the crew list</h1>"
+                    f"<p>Your Discord <b>@{html.escape(username)}</b> "
                     "isn't in this league's Crew list. Ask your league admin to add it.</p>",
-                    403)
+                    self._STATE_COOKIE_CLEAR, 403)
             key = console_auth.streamer_key(name)
             versions = (console_admin.load_versions(console_versions_path)
                         if console_versions_path else {})
@@ -3282,8 +3306,20 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Set-Cookie",
                              f"{console_auth.COOKIE_NAME}={safe}; Path=/console; "
                              f"HttpOnly{secure}; SameSite=Lax")
+            self.send_header("Set-Cookie", self._STATE_COOKIE_CLEAR)
             self.send_header("Content-Length", "0")
             self.end_headers()
+            return None
+
+        def _send_html_with_set_cookie(self, content, set_cookie, code=200):
+            """Like _send_html but also emits a Set-Cookie header before the body."""
+            body = content.encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Set-Cookie", set_cookie)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(body)
             return None
 
         def _cockpit_active(self):

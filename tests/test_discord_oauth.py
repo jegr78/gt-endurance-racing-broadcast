@@ -58,6 +58,17 @@ def t_state_future_dated_rejected():
     assert do.verify_state("secret", s, now=1000, ttl=300) is False  # ts in the future
 
 
+def t_state_nonce():
+    s = do.sign_state("secret", "abc123", 1000)
+    assert do.state_nonce(s) == "abc123"
+    # Malformed / non-string inputs return ""
+    assert do.state_nonce("") == ""
+    assert do.state_nonce("not.a.state.extra") == ""
+    assert do.state_nonce("twoparts.only") == ""
+    assert do.state_nonce(None) == ""
+    assert do.state_nonce(12345) == ""
+
+
 for _n, _f in sorted(globals().items()):
     if _n.startswith("t_") and callable(_f):
         _f(); print("ok", _n)

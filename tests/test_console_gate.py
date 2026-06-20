@@ -645,6 +645,8 @@ def t_console_login_404_when_oauth_unconfigured():
 
 
 def t_oauth_callback_sets_cookie_on_crew_match():
+    # The CSRF state cookie (rc_oauth_state) must carry the same nonce embedded in
+    # the signed `state`, or the callback rejects it as a forged/expired login.
     import time as _t
     m._TEST_EXCHANGE = lambda code, redirect_uri: "alice_discord"
     try:
@@ -653,7 +655,8 @@ def t_oauth_callback_sets_cookie_on_crew_match():
             state = m.discord_oauth.sign_state(SECRET, "n1", int(_t.time()))
             code, headers, _ = _get_with_headers(
                 port, f"/console/oauth/callback?code=abc&state={state}",
-                {"Host": "box.tail1.ts.net", "X-Forwarded-Proto": "https"})
+                {"Host": "box.tail1.ts.net", "X-Forwarded-Proto": "https",
+                 "Cookie": "rc_oauth_state=n1"})
             assert code == 302, code
             loc = headers.get("Location") or headers.get("location") or ""
             assert loc.endswith("/console"), loc
@@ -661,6 +664,8 @@ def t_oauth_callback_sets_cookie_on_crew_match():
             assert "rc_console=" in setc, setc
             assert "Path=/console" in setc, setc
             assert "HttpOnly" in setc, setc
+            # Behind https the auth cookie must be marked Secure.
+            assert "Secure" in setc, setc
         finally:
             srv.shutdown()
     finally:
@@ -682,6 +687,53 @@ def t_oauth_callback_bad_state_400():
         del m._TEST_EXCHANGE
 
 
+def t_oauth_callback_csrf_cookie_mismatch_400():
+    # A correctly-signed state but a missing/mismatched session cookie is the
+    # login-CSRF case: the callback must reject with 400 BEFORE any token exchange.
+    import time as _t
+    called = []
+    m._TEST_EXCHANGE = lambda code, redirect_uri: called.append(1) or "alice_discord"
+    try:
+        srv = _serve_oauth(); port = srv.server_address[1]
+        try:
+            state = m.discord_oauth.sign_state(SECRET, "n1", int(_t.time()))
+            # No cookie at all.
+            code, _h, _b = _get_with_headers(
+                port, f"/console/oauth/callback?code=abc&state={state}",
+                {"Host": "box.tail1.ts.net"})
+            assert code == 400, code
+            # Wrong nonce in the cookie.
+            code2, _h2, _b2 = _get_with_headers(
+                port, f"/console/oauth/callback?code=abc&state={state}",
+                {"Host": "box.tail1.ts.net", "Cookie": "rc_oauth_state=WRONG"})
+            assert code2 == 400, code2
+            assert not called, "exchange must not run on a CSRF mismatch"
+        finally:
+            srv.shutdown()
+    finally:
+        del m._TEST_EXCHANGE
+
+
+def t_oauth_callback_502_when_exchange_fails():
+    # The token-exchange returning "" (Discord error) -> 502, no rc_console cookie.
+    import time as _t
+    m._TEST_EXCHANGE = lambda *_: ""
+    try:
+        srv = _serve_oauth(); port = srv.server_address[1]
+        try:
+            state = m.discord_oauth.sign_state(SECRET, "n1", int(_t.time()))
+            code, headers, _b = _get_with_headers(
+                port, f"/console/oauth/callback?code=abc&state={state}",
+                {"Host": "box.tail1.ts.net", "Cookie": "rc_oauth_state=n1"})
+            assert code == 502, code
+            setc = headers.get("Set-Cookie") or headers.get("set-cookie") or ""
+            assert "rc_console=" not in setc, setc
+        finally:
+            srv.shutdown()
+    finally:
+        del m._TEST_EXCHANGE
+
+
 def t_oauth_callback_no_crew_match_denies():
     import time as _t
     m._TEST_EXCHANGE = lambda code, redirect_uri: "ghost_user"
@@ -691,13 +743,26 @@ def t_oauth_callback_no_crew_match_denies():
             state = m.discord_oauth.sign_state(SECRET, "n1", int(_t.time()))
             code, _h, body = _get_with_headers(
                 port, f"/console/oauth/callback?code=abc&state={state}",
-                {"Host": "box.tail1.ts.net"})
+                {"Host": "box.tail1.ts.net", "Cookie": "rc_oauth_state=n1"})
             assert code == 403, code
             assert b"crew" in body.lower() or b"not on the crew" in body.lower(), body
         finally:
             srv.shutdown()
     finally:
         del m._TEST_EXCHANGE
+
+
+def t_console_root_auth_optional_with_oauth():
+    # With OAuth configured and NO token cookie, GET /console serves the launcher
+    # page (200) so an unauthenticated visitor sees the Login-with-Discord button.
+    srv = _serve_oauth(); port = srv.server_address[1]
+    try:
+        code, _h, body = _get_with_headers(port, "/console",
+                                           {"Host": "box.tail1.ts.net"})
+        assert code == 200, code
+        assert body, "launcher page should have a body"
+    finally:
+        srv.shutdown()
 
 
 def t_status_league_includes_name():

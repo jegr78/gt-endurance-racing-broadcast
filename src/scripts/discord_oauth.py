@@ -67,6 +67,15 @@ def verify_state(secret, state, now, ttl=300):
     return 0 <= (int(now) - ts) <= int(ttl)
 
 
+def state_nonce(state):
+    """The nonce embedded in a well-formed state ("<ts>.<nonce>.<sig>"), or "".
+    Call only AFTER verify_state has confirmed the state; this does not re-verify."""
+    if not state or not isinstance(state, str):
+        return ""
+    parts = state.split(".")
+    return parts[1] if len(parts) == 3 else ""
+
+
 def parse_identity(user_json):
     """Lowercased Discord `username` from a /users/@me dict, or "" on anything
     unexpected. Pure — the relay passes the already-parsed JSON."""

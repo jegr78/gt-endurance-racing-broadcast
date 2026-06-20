@@ -85,8 +85,10 @@ def safe_cookie_token(token):
     return token if token and _TOKEN_RE.fullmatch(token) else ""
 
 
-def parse_cookie_token(cookie_header):
-    """Extract the rc_console token from a raw Cookie header, or None. Pure."""
+def parse_cookie_token(cookie_header, cookie_name=COOKIE_NAME):
+    """Extract a named cookie's value from a raw Cookie header, or None.
+    Defaults to the rc_console auth cookie; callers (e.g. the OAuth state
+    cookie) may pass another cookie_name. Pure."""
     if not cookie_header:
         return None
     try:
@@ -94,7 +96,7 @@ def parse_cookie_token(cookie_header):
         jar.load(cookie_header)
     except Exception:
         return None
-    morsel = jar.get(COOKIE_NAME)
+    morsel = jar.get(cookie_name)
     return morsel.value if morsel else None
 
 
