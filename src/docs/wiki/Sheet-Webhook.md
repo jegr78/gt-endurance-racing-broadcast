@@ -21,7 +21,7 @@ machine and the panel's HUD row + URLs section are display-only.
 | `schedule` | **Schedule** tab (or the **Qualifying** tab when the payload carries `"tab":"Qualifying"`), **physical row N** (the panel sends the CSV line number automatically): URL + Streamer + Stint label, located by the `URL`/`Streamer`/`Stint` headers in row 1 (falls back to fixed cols A/B with no header row); row `last+1` appends. The Stint cell is only written when a `Stint` header exists. The Qualifying tab has the **same structure** as the Schedule tab. **Neither tab may have leading blank rows** — the gviz CSV export maps physical sheet rows to CSV lines 1:1 when the tab starts at row 1. A header row is silently skipped when reading but its physical line number is still used when writing. |
 | `pov` | POV tab **row 2**: the `url` and/or `name` cell, located by header text (so the columns may move) |
 | `teams` | Setup tab: the cell **below** the `Team <slot>` header (slot 1–3 → `A6`/`B6`/`C6` in the shipped layout) — found by text, same as the other Setup fields. The Overlay tab only mirrors them read-only |
-| `crew` | **Crew** tab (`Name \| Commentator \| Director \| Producer \| Discord`, header in row 1). `{"action":"crew","row":N,"name":..,"commentator":bool,"director":bool,"producer":bool,"discord":".."}` writes **data row N** (sheet row N+1; `row last+1` appends). Columns are located **by header text** (any order; extra columns are ignored), so a pre-existing 3-column `Name\|Director\|Producer` tab is auto-extended with the `Commentator` and `Discord` columns on first write. `commentator`/`director`/`producer` booleans write `X` / clear the cell; `discord` is the verbatim username. `{"action":"crew","row":N,"delete":true}` deletes data row N (rows shift up). The tab must start at row 1 with the header and have no interior blank rows (the Control Center editor maintains this). |
+| `crew` | **Crew** tab (`Name \| Commentator \| Director \| Producer \| Discord`, header in row 1). `{"action":"crew","row":N,"name":..,"commentator":bool,"director":bool,"producer":bool,"discord":".."}` writes **data row N** (sheet row N+1; `row last+1` appends). Columns are located **by header text** (any order; extra columns are ignored), so a pre-existing 3-column `Name\|Director\|Producer` tab is auto-extended with the `Commentator` and `Discord` columns on first write. `commentator`/`director`/`producer` are written as **`TRUE`/`FALSE` booleans** (checkbox-compatible — never the string `X`, which would break a Google Sheets checkbox cell); `discord` is the verbatim username. `{"action":"crew","row":N,"delete":true}` deletes data row N (rows shift up). The tab must start at row 1 with the header and have no interior blank rows (the Control Center editor maintains this). |
 
 The relay only sends Setup values that exist in the Configuration tab's
 vocabulary columns — the same lists the sheet's own dropdowns use.
@@ -81,8 +81,9 @@ no-blank-rows invariant.
 
 **Write a row:** `{"action":"crew","row":N,"name":"Alice","commentator":false,"director":true,"producer":false,"discord":"alice_d"}`
 writes or overwrites data row N (sheet row N+1, skipping the header). `row last+1`
-appends a new person. `commentator`/`director`/`producer` booleans write `X` / clear the
-cell; `discord` writes the verbatim username (empty clears it). A pre-existing
+appends a new person. `commentator`/`director`/`producer` are written as `TRUE`/`FALSE`
+booleans (checkbox-compatible — never the string `X`, which would break a Google Sheets
+checkbox cell); `discord` writes the verbatim username (empty clears it). A pre-existing
 3-column `Name | Director | Producer` tab is auto-extended with the `Commentator` and
 `Discord` columns on the first write — existing data is untouched.
 
@@ -254,13 +255,22 @@ roster after the delete.
        header = header.concat([label]);
        return col;
      };
-     const set = (label, value) =>
+     // Name/Discord are free text (pinned as text so e.g. "5plurge" or a numeric-
+     // looking handle is not coerced). The three role columns are written as
+     // BOOLEANS, not the string "X": the Crew tab normally uses Google Sheets
+     // checkboxes, whose cells only accept TRUE/FALSE — writing "X" (or "" to clear)
+     // trips the checkbox data-validation (the cell shows a red "invalid" marker and
+     // the box stops working). A boolean checks/unchecks a checkbox cell cleanly and
+     // still reads back as truthy/falsy on a plain (non-checkbox) cell.
+     const setText = (label, value) =>
        sheet.getRange(target, colOf(label)).setNumberFormat('@').setValue(value);
-     set('Name', name);
-     set('Commentator', p.commentator ? 'X' : '');
-     set('Director', p.director ? 'X' : '');
-     set('Producer', p.producer ? 'X' : '');
-     set('Discord', (p.discord || '').toString().trim());
+     const setFlag = (label, value) =>
+       sheet.getRange(target, colOf(label)).setValue(!!value);
+     setText('Name', name);
+     setFlag('Commentator', p.commentator);
+     setFlag('Director', p.director);
+     setFlag('Producer', p.producer);
+     setText('Discord', (p.discord || '').toString().trim());
    }
    ```
 
