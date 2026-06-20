@@ -84,6 +84,24 @@ Name | Commentator | Director | Producer | Discord
 A person with no Discord handle in the Crew tab cannot log in with Discord — the relay
 finds no match and returns HTTP 403.
 
+#### Editing the Crew tab from the Control Center
+
+You can maintain all five columns by hand in the Sheet, **or** use the **crew editor** in
+the Control Center (**Profile** view → **Crew** card). It reads the live roster and lets
+you add/edit/delete people — Name, the Commentator/Director/Producer checkboxes, and the
+Discord username — writing each change straight back to the Sheet. Both the read and the
+write paths locate columns **by header text**, so the columns may sit in any order and
+extra columns are left untouched.
+
+The editor needs two things in place: the **Crew tab** (header above) and the
+**`crew` Apps Script webhook action** at version **v7** or newer (the version that writes
+the Commentator and Discord columns header-aware — see
+[Sheet-Webhook](Sheet-Webhook)). If the deployed script is older, the editor still reads
+the roster but surfaces an *outdated-script* banner on save; redeploy the current script
+to enable write-back. A pre-existing 3-column `Name | Director | Producer` tab is
+auto-extended with the Commentator and Discord columns on the first write — existing data
+is untouched.
+
 ### 5. Share the generic console URL
 
 Post the single URL in your crew channel:
