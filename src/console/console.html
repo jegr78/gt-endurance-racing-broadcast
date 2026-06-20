@@ -58,7 +58,10 @@
     return '<a class="card" href="' + href + '"><div class="t">' + title +
            '</div><div class="d">' + desc + '</div></a>';
   }
-  fetch('/whoami').then(function (r) { return r.json(); }).then(function (me) {
+  fetch('/whoami').then(function (r) {
+    if (!r.ok) throw new Error('unauthorized');   // 401/403 -> not signed in (login branch)
+    return r.json();
+  }).then(function (me) {
     var roles = me.roles || [];
     document.getElementById('who').textContent =
       me.subject + (roles.length ? ' — ' + roles.join(', ') : ' — viewer');
