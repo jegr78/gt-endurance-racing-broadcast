@@ -26,6 +26,7 @@ role checks. **Audio talkback and one-off guest ingest remain deliberate non-goa
 | Targeting | A specific commentator **·** all talent (`"all"`) **·** "on air" shortcut (resolved server-side to the on-air streamer's key at send time). |
 | Input | Sheet-managed **presets** (read-only in the panel) **+** free text. |
 | Acknowledgement | Director sees **✓ seen** with a timestamp for critical cues (ack receipt). |
+| Producer takeover | Cues are **pulled at takeover like crew chat** (#189) — tailnet and Funnel paths. |
 | State model | **Append-only cue log** (mirrors `ChatStore`/`SubmissionStore`), client-side active-set filtering. |
 | Preset source | A **`Cue Preset` column in the existing Configuration tab**, read via the already-polling `HudSource`. No per-preset level. |
 
@@ -33,8 +34,9 @@ role checks. **Audio talkback and one-off guest ingest remain deliberate non-goa
 
 - Native audio talkback / IFB.
 - WebRTC / SRT / RTMP ingest of any kind.
-- Server-configurable presets beyond the Sheet column; per-preset level; cue management CLI.
-- Carrying cues across a producer takeover (#189) — cues are ephemeral "for now" commands.
+- Server-configurable presets beyond the Sheet column; per-preset level.
+- A standalone cue-management CLI surface (`clear`/`import`/`export`) like `racecast chat …`
+  — cues are ephemeral; only the **takeover pull** is in scope (see *Producer takeover*).
 - SSE/push delivery — the relay is poll-based everywhere; cues poll like chat.
 
 ## Architecture
@@ -56,6 +58,8 @@ The feature mirrors the crew-chat architecture one-to-one. Three layers:
      `now < ts + info_ttl`, `critical` while `ack is None`. The core unit-tested helper.
    - `prune(cues, now, info_ttl)` — drop expired `info` and acked `critical` entries; applied
      on load (a relay restart carries no stale cues) and bounded to `MAX_CUES`.
+   - `apply_pulled(path, pulled_cues)` — replace the local store with a sanitized + pruned copy
+     of another producer's cues at takeover (mirrors `chat_admin.apply_pulled`).
    - Monotonic `id` allocation (like `cockpit_submissions` entry ids).
 
 2. **`CueStore`** in `src/relay/racecast-feeds.py` (next to `ChatStore`) — thread-safe
@@ -123,6 +127,26 @@ funnelled path.
   the `cockpit_tally` on-air→streamer mapping). If nobody is on air, the send returns an
   error and writes nothing.
 
+## Producer takeover (#189) — cues ride along like chat
+
+When producer B takes over from A, B pulls A's cues exactly as it pulls the crew chat, so an
+unacknowledged critical cue is not lost at handover. `apply_pulled` sanitizes **and** prunes
+the adopted list, so expired `info` and already-acked `critical` cues drop out — only the
+still-active cues survive the handover.
+
+- **Tailnet** (`racecast event takeover <A-ip>`): B reads A's `GET /cues/data` over the
+  tailnet (unauthenticated, like the existing chat/versions pull) and applies it via
+  `cue_admin.apply_pulled`, alongside the existing chat + console-versions pull.
+- **Funnel** (`racecast event takeover <A-host> --funnel`): add a read-only
+  `GET /console/takeover/cues` next to the existing `/console/takeover/{status,chat,versions}`,
+  returning the full cue list (same payload as `/cues/data`). It requires the same step-up
+  `X-Console-Secret` header as the other takeover endpoints; a wrong secret → 403, a network
+  failure falls back to a cue-less bringup. This adds **no** new public surface beyond the
+  existing `/console` mount.
+
+The standalone `racecast chat pull/clear/import/export` CLI surface is **not** mirrored for
+cues — only the takeover pull is in scope.
+
 ## UI
 
 ### Director Panel (`src/director/director-panel.html`) — new "Cues" section
@@ -169,7 +193,7 @@ dev build **in the same change**.
   (caps/control-chars/level+target validation/reject), `resolve_target` (on-air→key, none
   on-air), `active_cues_for` (info TTL expiry, critical sticky-until-ack, target match
   me/`all`, scope isolation from other keys), `prune` + `MAX_CUES`, monotonic id, `ack` sets
-  the ack and respects scope.
+  the ack and respects scope, `apply_pulled` (sanitizes + prunes the adopted list).
 - **`tests/test_console.py`**: extend the policy matrix for `cues` (director) and
   `cockpit/cues` (any-auth read+ack).
 - **CLI flag grep:** no flag is removed; a new `--cues-tab` is **not** added (presets live in
@@ -181,9 +205,11 @@ dev build **in the same change**.
 ## Files touched
 
 - `src/scripts/cue_admin.py` — **new** pure module.
-- `src/relay/racecast-feeds.py` — `CueStore`, the 6 endpoints, policy wiring, `parse_cue_presets`
-  + `HudSource._cue_presets` / `cue_presets()`.
+- `src/relay/racecast-feeds.py` — `CueStore`, the 6 endpoints, the `GET /console/takeover/cues`
+  takeover endpoint, policy wiring, `parse_cue_presets` + `HudSource._cue_presets` / `cue_presets()`.
 - `src/scripts/console_policy.py` — `cues` + `cockpit/cues` policy entries.
+- `src/racecast.py` — pull cues in the `event takeover` flow (tailnet + `--funnel`), mirroring
+  the chat/versions pull (`_funnel_takeover_base` / `_takeover_get`).
 - `src/director/director-panel.html` — Cues section (presets + free text + target/level + recent/ack).
 - `src/cockpit/cockpit.html` — cue receiver banner/toast + `pollCues()` + ack.
 - `tests/test_cues.py` — **new**; `tests/test_console.py` — extended.
