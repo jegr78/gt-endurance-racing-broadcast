@@ -27,7 +27,6 @@ def t_any_authenticated_reads():
                  ["hud", "preview"], ["hud", "assets", "flags", "de.png"],
                  ["preview", "program"], ["preview", "feed", "A"],
                  ["timer", "data"], ["setup", "data"],
-                 ["schedule", "data"], ["qualifying", "data"],
                  ["chat", "data"], ["chat", "reload"],
                  ["cockpit"], ["cockpit", "data"], ["cockpit", "program"],
                  ["cockpit", "timer"], ["cockpit", "chat", "data"]):
@@ -62,6 +61,14 @@ def t_setup_data_and_timer_data_are_reads_not_director():
     # The read endpoints under setup/timer must stay "any", not escalate to director.
     assert _cap(["setup", "data"]) == ("any", False)
     assert _cap(["timer", "data"]) == ("any", False)
+
+
+def t_schedule_and_qualifying_data_are_director_reads():
+    # These return per-stint stream URLs, so over the Funnel they must NOT be
+    # any-auth (a commentator would otherwise read every feed's stream URL).
+    # Director-only, matching their sole consumer (the director panel).
+    assert _cap(["schedule", "data"]) == ("director", False)
+    assert _cap(["qualifying", "data"]) == ("director", False)
 
 
 def t_producer_stepup_irreversible_ops():

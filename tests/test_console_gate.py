@@ -814,6 +814,18 @@ def t_console_status_keeps_sheet_id_for_director_but_strips_feed_urls():
         srv.shutdown()
 
 
+def t_console_schedule_data_is_director_only():
+    # /schedule/data + /qualifying/data return per-stint stream URLs, so over the
+    # Funnel a commentator must NOT reach them (sibling of the /status leak).
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        assert _get(port, "/console/schedule/data", _tok("alice"))[0] == 403   # commentator
+        assert _get(port, "/console/qualifying/data", _tok("alice"))[0] == 403
+        assert _get(port, "/console/schedule/data", _tok("bob"))[0] == 200      # director
+    finally:
+        srv.shutdown()
+
+
 def t_tailnet_status_is_unredacted():
     # The plain tailnet /status (never through the /console gate) keeps the full
     # payload incl. feed stream URLs — the tailnet is the trust boundary.

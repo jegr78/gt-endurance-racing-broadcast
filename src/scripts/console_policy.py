@@ -80,6 +80,10 @@ def min_capability(segments, method="GET"):
         return Requirement(DIRECTOR, False)
     if p == ["schedule", "set"] or p == ["qualifying", "set"]:
         return Requirement(DIRECTOR, False)
+    if p == ["schedule", "data"] or p == ["qualifying", "data"]:
+        # These carry per-stint stream URLs; director-only (the panel's sole
+        # consumer) so a commentator can't read every feed's URL over the Funnel.
+        return Requirement(DIRECTOR, False)
     if p == ["event", "title"]:
         return Requirement(DIRECTOR, False)
     if p == ["submissions"] or (len(p) == 2 and p[0] == "submissions"):
@@ -100,8 +104,7 @@ def min_capability(segments, method="GET"):
         return Requirement(ANY, False)
     if len(p) == 3 and p[:2] == ["overlay", "fonts"]:
         return Requirement(ANY, False)
-    if p in (["timer", "data"], ["setup", "data"],
-             ["schedule", "data"], ["qualifying", "data"]):
+    if p in (["timer", "data"], ["setup", "data"]):
         return Requirement(ANY, False)
     if p in (["chat", "data"], ["chat", "reload"], ["chat", "send"]):
         return Requirement(ANY, False)
