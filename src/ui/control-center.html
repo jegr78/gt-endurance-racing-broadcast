@@ -2322,7 +2322,7 @@ async function loadConsole() {
   const c = $('cp-links');
   c.textContent = '';
   if (!d.has_secret) {
-    c.textContent = 'Enable the cockpit to generate a league secret and links.';
+    c.textContent = 'Start the relay to generate a league secret and crew links.';
     return;
   }
   if (!(d.links || []).length) {
@@ -2343,7 +2343,7 @@ async function loadConsole() {
     copyInt.onclick = () => navigator.clipboard.writeText(l.internal);
     const rev = document.createElement('button');
     rev.textContent = 'Revoke';
-    rev.onclick = () => revokeCockpit(l.name);
+    rev.onclick = () => revokeConsole(l.name);
     row.append(nm, copy, document.createTextNode(' '), copyInt,
                document.createTextNode(' '), rev);
     c.appendChild(row);
@@ -2364,7 +2364,7 @@ async function toggleFunnelAuto() {
     body: JSON.stringify({auto: $('cp-funnel-auto').checked})})).json();
   if (!r.ok) showProfileErr('cp-err', r.error || 'could not save the setting');
 }
-async function revokeCockpit(streamer) {
+async function revokeConsole(streamer) {
   if (!(await confirmModal('Revoke ' + streamer + "'s current link?"))) return;
   $('cp-err').hidden = true;
   const r = await (await fetch('/api/console/revoke', {method: 'POST',
