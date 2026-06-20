@@ -48,6 +48,14 @@ def t_valid_redirect_host():
     assert do.valid_redirect_host("evil.com") is False
     assert do.valid_redirect_host("box.ts.net\r\nX") is False
     assert do.valid_redirect_host("") is False
+    # Hyphen-boundary hosts must be rejected
+    assert do.valid_redirect_host("-evil.ts.net") is False
+    assert do.valid_redirect_host("bad-.ts.net") is False
+
+
+def t_state_future_dated_rejected():
+    s = do.sign_state("secret", "abc123", 2000)
+    assert do.verify_state("secret", s, now=1000, ttl=300) is False  # ts in the future
 
 
 for _n, _f in sorted(globals().items()):

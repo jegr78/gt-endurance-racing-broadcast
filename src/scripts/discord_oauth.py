@@ -18,8 +18,8 @@ AUTHORIZE_ENDPOINT = "https://discord.com/oauth2/authorize"
 TOKEN_ENDPOINT = "https://discord.com/api/oauth2/token"
 USERINFO_ENDPOINT = "https://discord.com/api/users/@me"
 
-# A MagicDNS host: dot-separated labels ending in .ts.net, no scheme/port/path/space.
-_HOST_RE = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net\Z", re.IGNORECASE)
+# MagicDNS host: dot-separated DNS labels (no hyphen at a label boundary) ending in .ts.net.
+_HOST_RE = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+ts\.net\Z", re.IGNORECASE)
 _NONCE_RE = re.compile(r"[A-Za-z0-9_-]+\Z")
 
 
