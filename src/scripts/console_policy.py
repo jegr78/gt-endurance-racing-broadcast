@@ -2,7 +2,7 @@
 """Pure authorization policy for the funnelled /console namespace (#216 phase 2).
 
 Identity != authorization (locked decision #3): a verified token proves *who*
-(see cockpit_auth), the live roster resolves *roles* (see resolve_roles in the
+(see console_auth), the live roster resolves *roles* (see resolve_roles in the
 relay), and THIS module decides whether a given role set may reach a given
 /console subpath. No I/O, no token/crypto logic, no routes -- the Phase 3
 _console_auth handler wires identity -> roles -> decide().

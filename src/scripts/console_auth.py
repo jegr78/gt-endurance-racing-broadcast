@@ -1,4 +1,4 @@
-"""Console auth core (issue #216, formerly cockpit_auth #191) — pure, stdlib-only,
+"""Console auth core (issue #216, renamed from the #191 cockpit module) — pure, stdlib-only,
 importable by both the relay (src/relay/racecast-feeds.py) and the CLI (src/racecast.py)
 WITHOUT importing the hyphenated relay module.
 

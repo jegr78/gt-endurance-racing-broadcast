@@ -2886,7 +2886,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
     # out), and the 128-bit HMAC signature makes brute force infeasible regardless
     # — this is pure defense-in-depth. X-Forwarded-For is deliberately NOT trusted
     # for the key (spoofable over the public ingress, which would weaken it).
-    _cockpit_authfail_rl = console_auth.RateLimiter(limit=20, window_s=60)
+    _console_authfail_rl = console_auth.RateLimiter(limit=20, window_s=60)
     _cockpit_chat_rl = console_auth.RateLimiter(limit=10, window_s=60)
     # Submit is a PUBLIC write path (funnelled). Keyed on the authed identity
     # (not the shared proxy IP, like chat) so one commentator can't exhaust the
@@ -2924,7 +2924,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
         def _send_page(self, path, api_base="", cookie_token=None, cookie_path=None):
             """Serve an HTML page, substituting the __RC_API_BASE__ placeholder with
             api_base ("" at the tailnet/loopback root, "/console" behind Funnel) and
-            optionally setting the rc_cockpit auth cookie scoped to cookie_path."""
+            optionally setting the rc_console auth cookie scoped to cookie_path."""
             try:
                 with open(path, "rb") as fh:
                     body = fh.read()
@@ -3018,7 +3018,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"error": "Companion not reachable"}, 502)
                 # Replay the upgrade: rewritten+token-stripped path, upgrade headers forwarded
                 # RAW (Upgrade/Connection/Sec-WebSocket-* must survive), prefix injected.
-                # The relay's rc_cockpit auth cookie must never reach Companion.
+                # The relay's rc_console auth cookie must never reach Companion.
                 hdrs = {}
                 for k, v in self.headers.items():
                     lk = k.lower()
@@ -3109,7 +3109,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             if qs.get("t"):
                 return qs["t"][0]
             return console_auth.parse_cookie_token(self.headers.get("Cookie"))
-        def _cockpit_auth(self):
+        def _console_auth(self):
             """Return the authed streamer_key, or None after sending 401/429.
             Applies a per-client failure rate limit. Caller must return on None."""
             versions = (cockpit_admin.load_versions(cockpit_versions_path)
@@ -3118,7 +3118,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                            versions)
             if me is None:
                 client = self.client_address[0] if self.client_address else "?"
-                if not _cockpit_authfail_rl.allow(client):
+                if not _console_authfail_rl.allow(client):
                     self._send({"error": "rate limited"}, 429)
                 else:
                     self._send({"error": "unauthorized"}, 401)
@@ -3146,7 +3146,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 self._send({"error": "not found"}, 404)
                 return None
             sub = p[1:]
-            subject = self._cockpit_auth()        # identity only; sends 401/429 on failure
+            subject = self._console_auth()        # identity only; sends 401/429 on failure
             if subject is None:
                 return None
             roles = self._console_roles(subject)
@@ -3205,7 +3205,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             outcome = console_policy.decide(roles, sub, method, has_step_up)
             if outcome == console_policy.ALLOW:
                 # Identity-bound routes -> their identity-forced /cockpit handlers,
-                # which re-run _cockpit_auth to set the speaker from the token (a
+                # which re-run _console_auth to set the speaker from the token (a
                 # harmless second verify, NOT a missing optimization). This is what
                 # makes a client-supplied chat "user" impossible over /console.
                 if sub == ["chat", "send"]:
@@ -3401,7 +3401,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if not self._cockpit_active():
                         return self._send({"error": "cockpit not configured"}, 404)
                     if p == ["cockpit"]:
-                        me = self._cockpit_auth()
+                        me = self._console_auth()
                         if me is None:
                             return None
                         if not cockpit_page_path:
@@ -3409,7 +3409,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send_html_with_cookie(cockpit_page_path,
                                                            self._cockpit_token())
                     if p == ["cockpit", "data"]:
-                        me = self._cockpit_auth()
+                        me = self._console_auth()
                         if me is None:
                             return None
                         rows = relay.source.get_rows()
@@ -3433,7 +3433,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                       "my_pending": my_pending})
                         return self._send(tally)
                     if p == ["cockpit", "program"]:
-                        if self._cockpit_auth() is None:
+                        if self._console_auth() is None:
                             return None
                         if _obs_ws is None:
                             return self._send({"error": "obs unavailable"}, 503)
@@ -3443,13 +3443,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                                "note": note}, 503)
                         return self._send_jpeg(data)
                     if p == ["cockpit", "timer"]:
-                        if self._cockpit_auth() is None:
+                        if self._console_auth() is None:
                             return None
                         if not timer_store:
                             return self._send({"error": "timer disabled"}, 404)
                         return self._send(timer_store.data())
                     if p == ["cockpit", "chat", "data"]:
-                        if self._cockpit_auth() is None:
+                        if self._console_auth() is None:
                             return None
                         if not chat_store:
                             return self._send({"error": "chat disabled"}, 404)
@@ -3576,7 +3576,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if not self._cockpit_active():
                         return self._send({"error": "cockpit not configured"}, 404)
                     if p == ["cockpit", "chat", "send"]:
-                        me = self._cockpit_auth()
+                        me = self._console_auth()
                         if me is None:
                             return None
                         if not chat_store:
@@ -3596,7 +3596,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         # per-identity rate limit + is_channel() SSRF guard +
                         # server-side ownership check. NEVER goes live here — it
                         # lands as pending for director approval in /panel.
-                        me = self._cockpit_auth()
+                        me = self._console_auth()
                         if me is None:
                             return None
                         if not submission_store:
