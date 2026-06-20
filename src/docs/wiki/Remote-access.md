@@ -57,8 +57,7 @@ on every request.
 
 All tokens are signed with one **per-league secret**, `CONSOLE_SECRET`, auto-generated in
 the active profile's `profile.env` on first relay start and carried by
-`racecast profile export`/import. (See [Configuration](Configuration); the
-legacy key name `COCKPIT_SECRET` is still read as a fallback.)
+`racecast profile export`/import. (See [Configuration](Configuration).)
 
 ## The `/console` launcher — role-adaptive
 
@@ -97,8 +96,7 @@ the on-air stint (`/set/stint`), switching race/qualifying mode (`/mode/*`), and
 pulling takeover state — require a **second factor** beyond the identity token: the shared
 **per-league producer secret**, sent in the `X-Console-Secret` request header. It is the
 same `CONSOLE_SECRET` that signs the tokens, checked in constant time. This bounds the
-damage a single leaked link can do. (The legacy header name `X-Cockpit-Secret` is still
-accepted for one release.)
+damage a single leaked link can do.
 
 ## The security boundary
 

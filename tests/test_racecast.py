@@ -2214,22 +2214,18 @@ def t_cockpit_internal_host_prefers_tailscale_then_loopback():
 
 
 def _with_cockpit_secret_env_cleared(fn):
-    """Run fn() with RACECAST_CONSOLE_SECRET + RACECAST_COCKPIT_SECRET cleared +
+    """Run fn() with RACECAST_CONSOLE_SECRET cleared +
     _active_profile_env_strict restored afterwards (zero-config auto-provision tests
     monkeypatch both)."""
     saved_new = os.environ.pop("RACECAST_CONSOLE_SECRET", None)
-    saved_old = os.environ.pop("RACECAST_COCKPIT_SECRET", None)
     saved_strict = m._active_profile_env_strict
     try:
         fn()
     finally:
         m._active_profile_env_strict = saved_strict
         os.environ.pop("RACECAST_CONSOLE_SECRET", None)
-        os.environ.pop("RACECAST_COCKPIT_SECRET", None)
         if saved_new is not None:
             os.environ["RACECAST_CONSOLE_SECRET"] = saved_new
-        if saved_old is not None:
-            os.environ["RACECAST_COCKPIT_SECRET"] = saved_old
 
 
 def t_ensure_active_cockpit_secret_generates_and_is_idempotent():
@@ -2269,8 +2265,7 @@ def t_ensure_active_cockpit_secret_skips_example_and_missing():
 
 
 def t_ensure_active_cockpit_secret_respects_existing_env():
-    """New RACECAST_CONSOLE_SECRET in env is returned immediately (back-compat:
-    legacy RACECAST_COCKPIT_SECRET is also honoured)."""
+    """RACECAST_CONSOLE_SECRET in env is returned immediately without resolving a profile."""
     def body():
         os.environ["RACECAST_CONSOLE_SECRET"] = "already-set"
         def _boom():
@@ -2279,16 +2274,6 @@ def t_ensure_active_cockpit_secret_respects_existing_env():
         assert m._ensure_active_cockpit_secret() == "already-set"
     _with_cockpit_secret_env_cleared(body)
 
-
-def t_ensure_active_cockpit_secret_respects_legacy_env():
-    """Back-compat: legacy RACECAST_COCKPIT_SECRET in env is still honoured."""
-    def body():
-        os.environ["RACECAST_COCKPIT_SECRET"] = "legacy-set"
-        def _boom():
-            raise AssertionError("must not resolve a profile when env carries a secret")
-        m._active_profile_env_strict = _boom
-        assert m._ensure_active_cockpit_secret() == "legacy-set"
-    _with_cockpit_secret_env_cleared(body)
 
 
 def t_log_sources_registry_shape():

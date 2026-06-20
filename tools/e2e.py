@@ -301,7 +301,7 @@ def run_synthetic(args):
         dummy_cookies = os.path.join(tmp, "yt-cookies.txt")
         with open(dummy_cookies, "w", encoding="utf-8") as fh:
             fh.write("# Netscape HTTP Cookie File\n")
-        # Isolate ALL relay state (chat.json, cockpit-versions/pending.json) in the
+        # Isolate ALL relay state (chat.json, console-versions/pending.json) in the
         # temp dir. The CLI injects --runtime-dir <repo>/runtime/...; we override it
         # (last-wins) so a synthetic run never writes into the real runtime tree.
         relay_runtime = os.path.join(tmp, "runtime")

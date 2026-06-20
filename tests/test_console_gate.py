@@ -40,7 +40,7 @@ def _serve(companion_url=None, logo_path=None):
     crew = _Crew([("Bob", True, False), ("Carol", False, True)])  # bob=director, carol=producer
     SRC = os.path.join(ROOT, "src")
     handler = m.make_handler(
-        relay, console_secret=SECRET, cockpit_versions_path=None,
+        relay, console_secret=SECRET, console_versions_path=None,
         chat_store=m.ChatStore(os.path.join(LOGDIR, "chat.json")),
         crew_source=crew,
         panel_path=os.path.join(SRC, "director", "director-panel.html"),
@@ -302,18 +302,6 @@ def t_takeover_status_needs_producer_and_step_up():
     finally:
         srv.shutdown()
 
-
-def t_legacy_cockpit_secret_header_still_accepted():
-    # Back-compat: the step-up header was renamed X-Cockpit-Secret -> X-Console-Secret.
-    # The relay accepts the legacy name for one release so a mixed-version takeover
-    # (old client sending X-Cockpit-Secret, new relay) still authorizes.
-    srv = _serve(); port = srv.server_address[1]
-    try:
-        code, _ = _get(port, "/console/takeover/status", _tok("carol"), SECRET,
-                       secret_header="X-Cockpit-Secret")
-        assert code == 200, code
-    finally:
-        srv.shutdown()
 
 
 def t_takeover_director_without_producer_is_forbidden():

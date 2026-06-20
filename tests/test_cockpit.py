@@ -18,7 +18,7 @@ def _load(name, rel):
 
 ca = _load("console_auth", ("src", "scripts", "console_auth.py"))
 m = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))
-cad = _load("cockpit_admin", ("src", "scripts", "cockpit_admin.py"))
+cad = _load("console_admin", ("src", "scripts", "console_admin.py"))
 
 SECRET = "test-secret-do-not-ship"
 
@@ -107,7 +107,7 @@ def t_rate_limiter_fixed_window():
 
 def t_versions_default_and_bump():
     with tempfile.TemporaryDirectory() as d:
-        p = os.path.join(d, "cockpit-versions.json")
+        p = os.path.join(d, "console-versions.json")
         assert cad.load_versions(p) == {}                 # missing -> {}
         assert cad.current_version({}, "alpha") == 1      # default 1
         assert cad.bump_version(p, "alpha") == 2          # 1 -> 2, persisted
@@ -117,7 +117,7 @@ def t_versions_default_and_bump():
 
 def t_revoked_token_rejected_after_bump():
     with tempfile.TemporaryDirectory() as d:
-        p = os.path.join(d, "cockpit-versions.json")
+        p = os.path.join(d, "console-versions.json")
         tok_v1 = ca.mint_token(SECRET, "alpha", version=1)
         assert ca.verify_token(SECRET, tok_v1, cad.load_versions(p)) == "alpha"
         cad.bump_version(p, "alpha")                       # now current = 2
@@ -128,7 +128,7 @@ def t_revoked_token_rejected_after_bump():
 
 def t_apply_pulled_validates():
     with tempfile.TemporaryDirectory() as d:
-        p = os.path.join(d, "cockpit-versions.json")
+        p = os.path.join(d, "console-versions.json")
         assert cad.apply_pulled(p, {"versions": {"alpha": 3, "beta": 2}}) == 2
         assert cad.load_versions(p) == {"alpha": 3, "beta": 2}
         for bad in ({"versions": {"alpha": 0}}, {"versions": {"BAD KEY": 2}},
@@ -220,7 +220,7 @@ def _cockpit_client(secret="sek", rows=None, live_idx=0,
 
     handler = m.make_handler(_Relay(), chat_store=chat_store, timer_store=timer_store,
                              cockpit_page_path=page_path, console_secret=secret,
-                             cockpit_versions_path=versions_path)
+                             console_versions_path=versions_path)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     _t.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -381,7 +381,7 @@ def t_cockpit_chat_requires_auth():
 
 def t_versions_endpoint_requires_secret():
     with tempfile.TemporaryDirectory() as d:
-        vp = os.path.join(d, "cockpit-versions.json")
+        vp = os.path.join(d, "console-versions.json")
         cad.write_versions(vp, {"alpha": 3})
         srv, get, _post = _cockpit_client(secret="sek", versions_path=vp)
         try:
@@ -392,9 +392,6 @@ def t_versions_endpoint_requires_secret():
             code, _h, body = get("/cockpit/versions",
                                  headers={"X-Console-Secret": "sek"})       # right secret
             assert code == 200 and json.loads(body)["versions"] == {"alpha": 3}
-            # Back-compat: the renamed header's legacy name X-Cockpit-Secret still works.
-            assert get("/cockpit/versions",
-                       headers={"X-Cockpit-Secret": "sek"})[0] == 200
         finally:
             srv.shutdown()
 

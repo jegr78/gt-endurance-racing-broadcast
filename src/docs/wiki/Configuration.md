@@ -69,8 +69,7 @@ OBS_COLLECTION=
   first `racecast relay start` / `event start` and travels with `racecast profile export`/
   import, so every producer of a league shares one secret. Keep it gitignored like the rest
   of `profile.env`; if it leaks, rotate it (delete the line and restart to regenerate, then
-  re-export to the other producers). The legacy key name `COCKPIT_SECRET` is still read as a
-  fallback. See [Remote access](Remote-access#one-link-every-role).
+  re-export to the other producers). See [Remote access](Remote-access#one-link-every-role).
 
 **Which profile is active** (resolution order): a global `--profile <name>` flag wins;
 then the machine `RACECAST_PROFILE` (or `.env`) value; then the `runtime/active-profile`

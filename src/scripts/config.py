@@ -210,7 +210,7 @@ def resolve_config(root, *, override=None, runtime_root=None, environ=None):
         outro_url=prof.get("OUTRO_URL", ""),
         discord_webhook_url=prof.get("DISCORD_WEBHOOK_URL", ""),
         obs_collection=prof.get("OBS_COLLECTION") or f"{PRODUCT_COLLECTION_PREFIX} — {resolved_name}",
-        console_secret=prof.get("CONSOLE_SECRET") or prof.get("COCKPIT_SECRET", ""),
+        console_secret=prof.get("CONSOLE_SECRET", ""),
         event_title=prof.get("EVENT_TITLE", ""),
         logo_path=logo_path,
         profile_dir=pdir,

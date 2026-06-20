@@ -7,7 +7,7 @@ Token model (per the approved design):
     streamer_key = streamer_key(name)                 # URL-safe [a-z0-9-]
     sig = HMAC_SHA256(secret, "<streamer_key>:<version>") hex, truncated to 128 bits.
 A valid signature IS proof the request is that streamer — no token->name map is stored.
-Revocation is a per-streamer integer version (see cockpit_admin.py): a token whose
+Revocation is a per-streamer integer version (see console_admin.py): a token whose
 version is below the streamer's current version is rejected.
 """
 import hashlib

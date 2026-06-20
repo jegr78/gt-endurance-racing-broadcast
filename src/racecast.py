@@ -46,7 +46,7 @@ import config as pcfg    # 'pcfg' (not 'cfg'): avoids F811 clash with local `cfg
 import profile_admin as pa
 import chat_admin as ca
 import console_auth as cpa
-import cockpit_admin as cpadm
+import console_admin as cpadm
 import overlay_build as ob
 import fonts_bundle as fb
 import ports as pt
@@ -1046,10 +1046,10 @@ def chat_cmd(rest):
 COCKPIT_VERBS = ("setup-funnel", "token", "pull-versions")
 
 
-def _cockpit_versions_path():
-    """runtime/<active-profile>/cockpit-versions.json — same dir the relay reads,
+def _console_versions_path():
+    """runtime/<active-profile>/console-versions.json — same dir the relay reads,
     matching _chat_path()."""
-    return os.path.join(_runtime_dir(), "cockpit-versions.json")
+    return os.path.join(_runtime_dir(), "console-versions.json")
 
 
 def _set_env_key(path, key, value):
@@ -1184,7 +1184,7 @@ def links_cmd(rest):
         sys.exit("racecast: no crew or streamers found (is the relay running?).")
     host = _tailscale_ip() or "<tailscale-ip>"
     magic = _tailscale_magicdns() or "<your-magicdns-host>"
-    versions = cpadm.load_versions(_cockpit_versions_path())
+    versions = cpadm.load_versions(_console_versions_path())
     post = "--post" in rest
     lines = []
     for name in roster:
@@ -1206,14 +1206,14 @@ def links_cmd(rest):
 def _cockpit_token(args):
     """`racecast cockpit token revoke <streamer>` — bump that streamer's version
     so their current link stops validating; re-issue with 'racecast links'.
-    The relay reads cockpit-versions.json per request, so the bump is immediate —
+    The relay reads console-versions.json per request, so the bump is immediate —
     no relay reload needed."""
     if len(args) < 2 or args[0] != "revoke":
         sys.exit("usage: racecast cockpit token revoke <streamer-name>")
     key = cpa.streamer_key(args[1])
     if not key:
         sys.exit("racecast: empty streamer name.")
-    new_ver = cpadm.bump_version(_cockpit_versions_path(), key)
+    new_ver = cpadm.bump_version(_console_versions_path(), key)
     print(f"revoked '{args[1]}' (key {key}) -> version {new_ver}. "
           "Re-issue with 'racecast links'.")
     return None
@@ -1221,7 +1221,7 @@ def _cockpit_token(args):
 
 def _cockpit_pull_versions(args):
     """`racecast cockpit pull-versions <ip> [--port N]` — fetch producer A's
-    cockpit-versions over the tailnet and adopt them locally (takeover). Mirrors
+    console-versions over the tailnet and adopt them locally (takeover). Mirrors
     `chat pull`: tailnet trust, best-effort."""
     if not args or args[0].startswith("-"):
         sys.exit("usage: racecast cockpit pull-versions <A-tailscale-ip> [--port N]")
@@ -1230,8 +1230,7 @@ def _cockpit_pull_versions(args):
     # The endpoint authenticates on the shared league secret (same league = same
     # secret, which travels with the profile). We send OUR secret; A validates it.
     _apply_active_profile_env()
-    secret = (os.environ.get("RACECAST_CONSOLE_SECRET") or
-              os.environ.get("RACECAST_COCKPIT_SECRET") or "")
+    secret = os.environ.get("RACECAST_CONSOLE_SECRET") or ""
     import urllib.request
     req = urllib.request.Request(f"http://{host}:{port}/cockpit/versions",
                                  headers={"X-Console-Secret": secret})
@@ -1244,7 +1243,7 @@ def _cockpit_pull_versions(args):
     if not isinstance(payload, dict):
         sys.exit(f"racecast: bad cockpit versions response from {host}:{port}")
     try:
-        count = cpadm.apply_pulled(_cockpit_versions_path(), payload)
+        count = cpadm.apply_pulled(_console_versions_path(), payload)
     except ValueError as exc:
         sys.exit(f"racecast: bad cockpit versions payload: {exc}")
     print(f"pulled {count} cockpit version record(s) from {host}.")
@@ -1260,8 +1259,7 @@ def _ensure_active_cockpit_secret():
     profile — never the shipped 'example' profile and never a non-existent one.
     Best-effort: returns the secret or None and never raises."""
     try:
-        env_val = (os.environ.get("RACECAST_CONSOLE_SECRET") or
-                   os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip()
+        env_val = (os.environ.get("RACECAST_CONSOLE_SECRET") or "").strip()
         if env_val:
             return env_val
         import secrets
@@ -1270,7 +1268,7 @@ def _ensure_active_cockpit_secret():
             return None
         with open(ppath, encoding="utf-8") as fh:
             parsed = parse_env_text(fh.read())
-            existing = parsed.get("CONSOLE_SECRET") or parsed.get("COCKPIT_SECRET", "")
+            existing = parsed.get("CONSOLE_SECRET", "")
         if existing:                       # already provisioned (or exported) -> reuse
             os.environ["RACECAST_CONSOLE_SECRET"] = existing
             return existing
@@ -1428,8 +1426,7 @@ def _active_cockpit_secret():
     Same league = same secret (it travels with `profile export`), so producer B already
     holds A's secret — no typing needed for a same-league takeover."""
     _apply_active_profile_env()
-    return (os.environ.get("RACECAST_CONSOLE_SECRET") or
-            os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip()
+    return (os.environ.get("RACECAST_CONSOLE_SECRET") or "").strip()
 
 
 def _funnel_takeover_base(host):
@@ -2602,19 +2599,19 @@ def event_takeover(rest):
         except SystemExit:
             print("note: chat pull failed — continuing takeover.")
 
-    # best-effort: a cockpit-versions failure must not abort (same per-branch split).
+    # best-effort: a console-versions failure must not abort (same per-branch split).
     if funnel:
         try:
             payload = _takeover_get(base + "/versions", secret)
-            count = cpadm.apply_pulled(_cockpit_versions_path(), payload)
+            count = cpadm.apply_pulled(_console_versions_path(), payload)
             print(f"pulled {count} cockpit version record(s) from A (funnel).")
         except Exception as exc:
-            print(f"note: cockpit-versions pull failed ({type(exc).__name__}) — continuing.")
+            print(f"note: console-versions pull failed ({type(exc).__name__}) — continuing.")
     else:
         try:
             cockpit_cmd(["pull-versions", host, "--port", str(port)])
         except SystemExit:
-            print("note: cockpit-versions pull failed — continuing takeover.")
+            print("note: console-versions pull failed — continuing takeover.")
 
     # Adopt A's on-air event title (#207), persisted to event.json BEFORE bring-up
     # so the new relay loads it (mirrors the chat pull). Best-effort, never aborts.
@@ -3549,7 +3546,7 @@ def cockpit_status_data():
         if secret:
             host = _cockpit_internal_host(_tailscale_ip())
             magic = _tailscale_magicdns()
-            versions = cpadm.load_versions(_cockpit_versions_path())
+            versions = cpadm.load_versions(_console_versions_path())
             seen_keys = set()
             roster = []
             for name in list(_cockpit_roster_safe()) + list(_crew_roster_safe()):

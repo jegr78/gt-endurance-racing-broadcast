@@ -86,7 +86,7 @@ except Exception:                                # noqa: BLE001 — reflection i
 
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
 import console_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
-import cockpit_admin  # talent-cockpit revocation version store (#191)
+import console_admin  # talent-cockpit revocation version store (#191)
 import cockpit_submissions  # talent stream-link submission store (#193)
 import console_policy  # /console authorization matrix + decision (#216)
 import console_proxy      # pure /console/buttons proxy plumbing (#236)
@@ -2874,7 +2874,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  timer_store=None, setup_ctl=None, overlay_dir=None,
                  chat_store=None, preview_path=None, graphics_dir=None,
                  splitscreen_path=None, cockpit_page_path=None, console_secret=None,
-                 cockpit_versions_path=None,
+                 console_versions_path=None,
                  submission_store=None, event_store=None, crew_source=None,
                  console_page_path=None, companion_url=None, logo_path=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
@@ -3112,8 +3112,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
         def _console_auth(self):
             """Return the authed streamer_key, or None after sending 401/429.
             Applies a per-client failure rate limit. Caller must return on None."""
-            versions = (cockpit_admin.load_versions(cockpit_versions_path)
-                        if cockpit_versions_path else {})
+            versions = (console_admin.load_versions(console_versions_path)
+                        if console_versions_path else {})
             me = console_auth.verify_token(console_secret, self._cockpit_token(),
                                            versions)
             if me is None:
@@ -3150,10 +3150,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             if subject is None:
                 return None
             roles = self._console_roles(subject)
-            # Step-up secret header. X-Console-Secret is the current name; the legacy
-            # X-Cockpit-Secret is still accepted for one release (mixed-version takeover).
-            presented = (self.headers.get("X-Console-Secret")
-                         or self.headers.get("X-Cockpit-Secret"))
+            # Step-up secret header.
+            presented = self.headers.get("X-Console-Secret")
             has_step_up = bool(presented) and console_auth.secret_matches(presented, console_secret)
             # /console-only: identity introspection for the launcher (any auth).
             if sub == ["whoami"]:
@@ -3460,14 +3458,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         # authenticate, not rely on obscurity. Talent tokens are
                         # per-commentator; this is gated on the shared league secret
                         # (every producer of the league holds it), constant-time.
-                        presented = (self.headers.get("X-Console-Secret")
-                                     or self.headers.get("X-Cockpit-Secret"))  # legacy fallback
+                        presented = self.headers.get("X-Console-Secret")
                         if not console_auth.secret_matches(presented, console_secret):
                             return self._send({"error": "unauthorized"}, 401)
-                        if not cockpit_versions_path:
+                        if not console_versions_path:
                             return self._send({"versions": {}})
                         return self._send({"versions":
-                            cockpit_admin.load_versions(cockpit_versions_path)})
+                            console_admin.load_versions(console_versions_path)})
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["submissions"]:
                     # Director pending-submissions list (issue #193). Tailnet-only:
@@ -4111,10 +4108,10 @@ def main():
     # auto-provisioned by the CLI — zero-config). Present => /cockpit/* is served
     # (token-gated); absent => every /cockpit/* path 404s. PUBLIC exposure is the
     # separate Tailscale Funnel switch, never implied by the secret alone.
-    console_secret = (os.environ.get("RACECAST_CONSOLE_SECRET") or os.environ.get("RACECAST_COCKPIT_SECRET") or "").strip() or None
-    cockpit_versions_path = os.path.join(runtime, "cockpit-versions.json")
+    console_secret = (os.environ.get("RACECAST_CONSOLE_SECRET") or "").strip() or None
+    console_versions_path = os.path.join(runtime, "console-versions.json")
     # Commentator stream-link submissions (#193): pending store + audit log,
-    # profile-scoped like chat.json / cockpit-versions.json. Always created so the
+    # profile-scoped like chat.json / console-versions.json. Always created so the
     # director's /submissions list works even before the cockpit is enabled.
     submission_store = SubmissionStore(
         os.path.join(runtime, "cockpit-pending.json"),
@@ -4126,7 +4123,7 @@ def main():
                            splitscreen_path=splitscreen_path,
                            cockpit_page_path=cockpit_page_path,
                            console_secret=console_secret,
-                           cockpit_versions_path=cockpit_versions_path,
+                           console_versions_path=console_versions_path,
                            submission_store=submission_store,
                            event_store=event_store,
                            console_page_path=console_page_path,

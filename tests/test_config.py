@@ -233,24 +233,6 @@ def t_resolve_config_console_secret_from_new_key():
         assert cfg.console_secret == "s3cr3t"
 
 
-def t_resolve_config_console_secret_back_compat_legacy_key():
-    """Back-compat: old COCKPIT_SECRET key still resolves to cfg.console_secret."""
-    with tempfile.TemporaryDirectory() as td:
-        root = _mkroot(td)
-        _mkprofile(root, "demo", "NAME=Demo\nSHEET_ID=abc\nCOCKPIT_SECRET=legacy\n")
-        cfg = m.resolve_config(root, environ={})
-        assert cfg.console_secret == "legacy"
-
-
-def t_resolve_config_console_secret_new_key_wins_over_legacy():
-    """When both keys present, CONSOLE_SECRET wins over COCKPIT_SECRET."""
-    with tempfile.TemporaryDirectory() as td:
-        root = _mkroot(td)
-        _mkprofile(root, "demo",
-                   "NAME=Demo\nSHEET_ID=abc\nCOCKPIT_SECRET=old\nCONSOLE_SECRET=new\n")
-        cfg = m.resolve_config(root, environ={})
-        assert cfg.console_secret == "new"
-
 
 def t_resolve_config_console_secret_blank_when_absent():
     with tempfile.TemporaryDirectory() as td:

@@ -1,7 +1,7 @@
-"""Commentator-cockpit revocation store (issue #191), mirroring chat_admin.py:
+"""Console revocation store (issue #191), mirroring chat_admin.py:
 pure validation + atomic JSON writes, no side effects until validation passes.
 
-State file: runtime/<profile>/cockpit-versions.json == {"versions": {key: int}}.
+State file: runtime/<profile>/console-versions.json == {"versions": {key: int}}.
 This is the ONLY token state; everything else is derived from CONSOLE_SECRET.
 Pulled on producer takeover (apply_pulled), exactly like chat_admin.apply_pulled."""
 import json

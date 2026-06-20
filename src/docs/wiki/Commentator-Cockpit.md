@@ -41,8 +41,7 @@ identity). Each commentator gets a **signed per-person token**
 `CONSOLE_SECRET` (in `profiles/<league>/profile.env`, auto-generated on first relay
 start, and carried by `racecast profile export`/import). The token rides in the link
 once, then moves into an `HttpOnly` cookie. Revoking one person bumps their version —
-see below. (The legacy key name `COCKPIT_SECRET` is still read as a fallback so
-existing leagues and profile exports keep working without any manual migration.)
+see below.
 
 ## It's on by default (zero-config)
 
@@ -160,13 +159,13 @@ racecast links                                          # re-issue their (now-ne
 
 The old link's version is now stale and is rejected immediately (the relay reads the
 revocation file per request — no restart, no secret rotation, nobody else affected).
-Revocations are stored in `runtime/<league>/cockpit-versions.json`.
+Revocations are stored in `runtime/<league>/console-versions.json`.
 
 ## Producer handover
 
 The league secret travels with the profile, so producer B regenerates
 byte-identical default links. `racecast event takeover` also pulls A's
-`cockpit-versions.json` over the tailnet (authenticated with the shared secret) so
+`console-versions.json` over the tailnet (authenticated with the shared secret) so
 any revocations A made are honored on B. Because the Funnel host changes, re-publish
 the links after takeover.
 
@@ -192,12 +191,11 @@ racecast event takeover producer-a.example.ts.net --funnel
 
 1. B's CLI fetches `/console/takeover/status`, `/console/takeover/chat`, and
    `/console/takeover/versions` from A's Funnel host — each request carries the
-   shared secret in the `X-Console-Secret` header (producer-level step-up auth; the
-   legacy `X-Cockpit-Secret` name is still accepted for one release).
+   shared secret in the `X-Console-Secret` header (producer-level step-up auth).
 2. The **status** response is redacted: only `live`, `league`, `event_title`,
    `timer`, and `mode` are returned. Feed stream URLs are stripped and never leave
    A's tailnet.
-3. Chat history and cockpit-versions revocations are applied locally, exactly as
+3. Chat history and console-versions revocations are applied locally, exactly as
    the tailnet `racecast event takeover <A-tailscale-ip>` path does.
 4. B's station comes up via the normal `event start` path with the adopted
    stint/league/title/mode.
