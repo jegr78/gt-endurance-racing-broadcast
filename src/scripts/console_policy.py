@@ -88,6 +88,8 @@ def min_capability(segments, method="GET"):
         return Requirement(DIRECTOR, False)
     if p == ["submissions"] or (len(p) == 2 and p[0] == "submissions"):
         return Requirement(DIRECTOR, False)
+    if p and p[0] == "cues":                    # /cues/send|data|presets|reload
+        return Requirement(DIRECTOR, False)
 
     # --- commentator: own-row stream-link submission ---
     if p == ["submit"] or p == ["cockpit", "submit"]:
@@ -110,7 +112,8 @@ def min_capability(segments, method="GET"):
         return Requirement(ANY, False)
     if p in (["cockpit"], ["cockpit", "data"], ["cockpit", "program"],
              ["cockpit", "timer"], ["cockpit", "chat", "data"],
-             ["cockpit", "chat", "send"]):
+             ["cockpit", "chat", "send"],
+             ["cockpit", "cues"], ["cockpit", "cues", "ack"]):
         return Requirement(ANY, False)
 
     return None

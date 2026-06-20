@@ -173,6 +173,27 @@ def t_logo_is_any_authenticated():
     assert cp.min_capability(["logo"]) == cp.Requirement(cp.ANY, False)
 
 
+def t_policy_cues_director_only():
+    # Director may send/read cues; a bare commentator may not.
+    for seg in (["cues", "send"], ["cues", "data"], ["cues", "presets"], ["cues", "reload"]):
+        assert cp.decide({"director"}, seg, "POST", False) == cp.ALLOW, seg
+        assert cp.decide({"commentator"}, seg, "POST", False) == cp.FORBIDDEN, seg
+
+
+def t_policy_cockpit_cues_any_auth():
+    # Any authenticated subject may read their cues and ack one.
+    for seg in (["cockpit", "cues"], ["cockpit", "cues", "ack"]):
+        assert cp.decide({"commentator"}, seg, "POST", False) == cp.ALLOW, seg
+        assert cp.decide(set(), seg, "GET", False) == cp.ALLOW, seg
+
+
+def t_policy_takeover_cues_producer_stepup():
+    seg = ["takeover", "cues"]
+    assert cp.decide({"producer"}, seg, "GET", True) == cp.ALLOW
+    assert cp.decide({"producer"}, seg, "GET", False) == cp.STEP_UP_REQUIRED
+    assert cp.decide({"director"}, seg, "GET", True) == cp.FORBIDDEN
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

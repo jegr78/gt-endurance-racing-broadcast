@@ -223,6 +223,37 @@
     .arow .nm{flex:0 0 64px}
   }
 
+  /* ---------- cues section ---------- */
+  .cue-compose{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-bottom:10px}
+  .cue-compose select,.cue-compose input[type=text]{
+    background:#0c0f13;border:1px solid var(--edge);color:var(--ink);
+    font-family:var(--mono);font-size:13px;padding:10px 12px;border-radius:9px;outline:none}
+  .cue-compose select:focus,.cue-compose input[type=text]:focus{
+    border-color:var(--blue);box-shadow:0 0 0 3px rgba(58,160,255,.18)}
+  #cueTarget{min-width:130px}
+  #cueLevel{min-width:110px}
+  #cueText{flex:1;min-width:160px}
+  #cueSend{padding:10px 18px;font-family:var(--head);font-weight:700;
+    letter-spacing:.14em;font-size:13px;text-transform:uppercase;border-radius:9px;cursor:pointer;
+    border:1px solid var(--amber);color:#14100a;
+    background:linear-gradient(180deg,#ffd361,#d4980a);
+    box-shadow:0 0 14px var(--amber-glow),inset 0 1px 0 rgba(255,255,255,.25);
+    transition:transform .05s ease,filter .15s}
+  #cueSend:hover{filter:brightness(1.08)}
+  #cueSend:active{transform:translateY(1px) scale(.99)}
+  #cueSend:disabled{opacity:.5;cursor:not-allowed}
+  #cuePresets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:0}
+  #cuePresets:empty{display:none}
+  .cue-preset{padding:7px 12px;font-family:var(--mono);font-size:12px;border-radius:8px;
+    border:1px solid var(--edge);background:#141921;color:var(--muted);cursor:pointer;
+    transition:border-color .12s,color .12s}
+  .cue-preset:hover{border-color:var(--amber);color:var(--amber)}
+  #cueRecent{list-style:none;margin:8px 0 0;padding:0;font-size:12px;line-height:1.45}
+  #cueRecent li{padding:4px 0;border-top:1px dashed var(--edge);word-break:break-word;color:var(--ink)}
+  #cueRecent li:first-child{border-top:0}
+  #cueRecent li.cue-critical{color:#ffd361}
+  #cueRecent li.cue-acked{color:var(--muted)}
+
   /* ---------- two-pane layout: scrolling controls + persistent chat ------- */
   .panes{display:block}
   details.chat{display:block}
@@ -441,6 +472,27 @@
         this row. Edits write the <b>Qualifying</b> tab in the Sheet.</div>
     </div>
   </details>
+
+  <section class="bus" id="cuesBus">
+    <div class="cap">Cues</div>
+    <div class="body">
+      <div id="cuePresets"></div>
+      <div class="cue-compose">
+        <select id="cueTarget" aria-label="Cue target">
+          <option value="all">All</option>
+          <option value="on-air">On air</option>
+        </select>
+        <select id="cueLevel" aria-label="Cue level">
+          <option value="info">Info</option>
+          <option value="critical">Critical</option>
+        </select>
+        <input id="cueText" type="text" maxlength="200" placeholder="Cue text…">
+        <button id="cueSend" type="button">SEND CUE</button>
+      </div>
+      <ul id="cueRecent"></ul>
+      <div class="hint" id="cueHint">Send a text cue to a commentator or all talent. Critical cues require acknowledgement in the cockpit.</div>
+    </div>
+  </section>
 
   <div id="log">Ready. All controls work relay-only — no OBS connection needed.</div>
 
@@ -1468,6 +1520,96 @@ async function subsPoll(){
 }
 $("#subsBox").addEventListener("toggle", ()=>subsPoll());
 
+/* ---------- Director cues (#243) -----------------------------------------
+   loadCuePresets: fills clickable shorthand buttons from /cues/presets
+   loadCueTargets: populates the target <select> with schedule names
+   sendCue:        POST /cues/send {target, level, text}
+   pollCueRecent:  GET /cues/data -> recent list with ack status
+   Plain fetch() throughout — the global patch already prefixes RC_API_BASE. */
+
+async function loadCuePresets(){
+  try{
+    const r = await fetch("/cues/presets", {cache:"no-store"});
+    const d = await r.json();
+    const box = document.getElementById("cuePresets");
+    box.replaceChildren();
+    (d.presets || []).forEach(text=>{
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "cue-preset";
+      b.textContent = text;                           // textContent: XSS-safe
+      b.addEventListener("click", ()=>{
+        document.getElementById("cueText").value = text;
+      });
+      box.appendChild(b);
+    });
+  }catch(e){ /* presets optional (--no-hud); degrade to free-text only */ }
+}
+
+async function loadCueTargets(){
+  const sel = document.getElementById("cueTarget");
+  // Always reset to the two fixed options first.
+  sel.innerHTML = "";
+  [["all","All"],["on-air","On air"]].forEach(([v,t])=>{
+    const o = document.createElement("option");
+    o.value = v; o.textContent = t; sel.appendChild(o);
+  });
+  try{
+    const r = await fetch("/schedule/data", {cache:"no-store"});
+    const d = await r.json();
+    const seen = new Set();
+    (d.rows || []).forEach(row=>{
+      const name = (row.name || "").trim();
+      if (name && !seen.has(name)){
+        seen.add(name);
+        const o = document.createElement("option");
+        o.value = name; o.textContent = name;   // server normalizes via asset_key
+        sel.appendChild(o);
+      }
+    });
+  }catch(e){ /* keep All / On air */ }
+}
+
+async function sendCue(){
+  const target = document.getElementById("cueTarget").value;
+  const level  = document.getElementById("cueLevel").value;
+  const text   = document.getElementById("cueText").value.trim();
+  if (!text) return;
+  const btn = document.getElementById("cueSend");
+  btn.disabled = true;
+  try{
+    const r = await fetch("/cues/send", {method:"POST", cache:"no-store",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({target, level, text})});
+    const d = await r.json();
+    if (d.error){ log("Cue: " + d.error, "err"); toast("Cue failed: " + d.error); return; }
+    document.getElementById("cueText").value = "";
+    log("Cue → " + target + " [" + level + "]: " + text);
+    pollCueRecent();
+  }catch(e){ log("Cue send failed (relay reachable?): " + e, "err"); toast("Cue send failed — relay unreachable"); }
+  finally{ btn.disabled = false; }
+}
+
+async function pollCueRecent(){
+  try{
+    const r = await fetch("/cues/data", {cache:"no-store"});
+    const d = await r.json();
+    const ul = document.getElementById("cueRecent");
+    ul.replaceChildren();
+    (d.cues || []).slice(-12).reverse().forEach(c=>{
+      const li = document.createElement("li");
+      const seen = c.ack ? " ✓ seen" : (c.level === "critical" ? " …pending" : "");
+      li.textContent = "[" + c.level + "] → " + c.target + ": " + c.text + seen;  // textContent: XSS-safe
+      if (c.level === "critical") li.classList.add(c.ack ? "cue-acked" : "cue-critical");
+      ul.appendChild(li);
+    });
+  }catch(e){ /* transient; next poll retries */ }
+}
+
+document.getElementById("cueSend").addEventListener("click", sendCue);
+document.getElementById("cueText").addEventListener("keydown", e=>{
+  if (e.key === "Enter") sendCue();
+});
+
 // ---- Live Preview ---------------------------------------------------------
 const PV_KEY = "rc_preview_open";
 let pvTimer = null;
@@ -1528,6 +1670,7 @@ setInterval(schedPoll, 2000);
 setInterval(qualPoll, 2000);
 subsPoll(); setInterval(subsPoll, 2000);
 obsStatePoll(); setInterval(obsStatePoll, 2000);
+loadCuePresets(); loadCueTargets(); pollCueRecent(); setInterval(pollCueRecent, 2000);
 </script>
 </body>
 </html>

@@ -47,6 +47,7 @@ import profile_admin as pa
 import chat_admin as ca
 import console_auth as cpa
 import console_admin as cpadm
+import cue_admin as cue
 import overlay_build as ob
 import fonts_bundle as fb
 import ports as pt
@@ -956,6 +957,20 @@ def _chat_reload_if_running():
     that is down is fine — it loads the file on next start."""
     try:
         _fetch_relay_page("/chat/reload")
+        return True
+    except Exception:
+        return False
+
+
+def _cues_path():
+    return os.path.join(_runtime_dir(), "cues.json")
+
+
+def _cues_reload_if_running():
+    """Best-effort: tell a running local relay to re-read cues.json (handover
+    while it is up). A relay that is down loads the file on next start."""
+    try:
+        _fetch_relay_page("/cues/reload")
         return True
     except Exception:
         return False
@@ -2619,6 +2634,18 @@ def event_takeover(rest):
             console_cmd(["pull-versions", host, "--port", str(port)])
         except SystemExit:
             print("note: console-versions pull failed — continuing takeover.")
+
+    # Adopt A's active cues (#243), like the chat pull — best-effort, never aborts.
+    try:
+        if funnel:
+            payload = _takeover_get(base + "/cues", secret)
+        else:
+            payload = _takeover_get("http://%s:%d/cues/data" % (host, port))
+        n = cue.apply_pulled(_cues_path(), payload, time.time())
+        _cues_reload_if_running()
+        print(f"Pulled {n} cue(s) from A.")
+    except Exception as exc:
+        print(f"note: cue pull failed ({type(exc).__name__}) — continuing takeover.")
 
     # Adopt A's on-air event title (#207), persisted to event.json BEFORE bring-up
     # so the new relay loads it (mirrors the chat pull). Best-effort, never aborts.

@@ -21,6 +21,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Commentator Cockpit</title>
+<!-- Inline "T" (Tally) favicon drawn as rects so it renders without a font; dark tile + live-green letter to match the console/panel theme. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0c0f'/%3E%3Crect x='7' y='8.5' width='18' height='3.8' rx='1.5' fill='%232bd66a'/%3E%3Crect x='14.1' y='8.5' width='3.8' height='16.5' rx='1.5' fill='%232bd66a'/%3E%3C/svg%3E">
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -75,6 +77,44 @@
   .subpend { font-size: 13px; background: #1b1f25; border: 1px solid #2a3038;
              border-radius: 6px; padding: 6px 8px; color: #cbd1d6; }
   .submit .hint { font-size: 12px; opacity: .6; line-height: 1.3; }
+  /* --- Director cues (#243) --- */
+  /* Amber + pulse so a director cue is unmistakable AND distinct from the red
+     "YOU ARE ON AIR" tally right below it (same red made the cue blend in). */
+  .cue-critical { position: sticky; top: 0; z-index: 100;
+                  display: flex; align-items: center; justify-content: center;
+                  gap: 16px; flex-wrap: wrap;
+                  background: #ffb300; color: #1a1200;
+                  font-size: 24px; font-weight: 800; letter-spacing: .02em;
+                  padding: 16px 18px; text-align: center;
+                  border-bottom: 4px solid #ff7a00;
+                  animation: cuePulse 1.1s ease-in-out infinite; }
+  /* display:flex above overrides the [hidden] attribute's display:none, so
+     re-assert it explicitly — otherwise the empty bar lingers with no cue. */
+  .cue-critical[hidden] { display: none; }
+  @keyframes cuePulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255,179,0,0), 0 6px 20px rgba(0,0,0,.5); }
+    50%      { box-shadow: 0 0 0 4px rgba(255,179,0,.85), 0 6px 24px rgba(0,0,0,.6); }
+  }
+  .cue-critical .cue-label { font-size: 13px; font-weight: 900;
+                             letter-spacing: .12em; text-transform: uppercase;
+                             background: #1a1200; color: #ffb300;
+                             padding: 3px 10px; border-radius: 999px; }
+  .cue-critical button { padding: 8px 18px;
+                         background: #1a1200; color: #ffb300;
+                         border: 0; border-radius: 6px; cursor: pointer;
+                         font-weight: 800; font-size: 15px; }
+  .cue-critical button:hover { background: #000; }
+  @media (prefers-reduced-motion: reduce) { .cue-critical { animation: none; } }
+  .cue-toasts { position: fixed; bottom: 18px; right: 18px;
+                display: flex; flex-direction: column; gap: 8px;
+                z-index: 200; max-width: 340px; }
+  .cue-toast { background: #1d4ed8; color: #fff;
+               padding: 10px 14px; border-radius: 8px;
+               font-size: 14px; font-weight: 600;
+               box-shadow: 0 4px 12px rgba(0,0,0,.5);
+               animation: cue-fadein .25s ease; }
+  @keyframes cue-fadein { from { opacity: 0; transform: translateY(8px); }
+                          to   { opacity: 1; transform: translateY(0); } }
 </style>
 </head>
 <body>
@@ -96,6 +136,9 @@
     if (b) { var a = document.getElementById('backConsole'); a.href = b; a.hidden = false; }
   })();
 </script>
+
+<div id="cueCritical" class="cue-critical" hidden></div>
+<div id="cueToasts" class="cue-toasts"></div>
 
 <div id="tally" class="tally idle">…</div>
 
@@ -338,7 +381,54 @@ $('subStint').addEventListener('change', () => {
   $('subUrl').value = subStintUrls[$('subStint').value] || '';
 });
 
-pollTally(); pollProgram(); pollTimer(); pollChat();
+// --- Director cues (#243) ---
+const _shownInfo = new Set();   // info cue ids already toasted (avoid re-toasting each poll)
+
+async function ackCue(id) {
+  try {
+    await fetch('/cockpit/cues/ack', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }) });
+  } catch (e) { /* next poll re-shows the banner if the ack failed */ }
+  pollCues();
+}
+
+async function pollCues() {
+  let cues = [];
+  try {
+    const d = await j('/cockpit/cues');
+    cues = d.cues || [];
+  } catch (e) { setTimeout(pollCues, 3000); return; }
+  // Critical: the most recent active one as a sticky banner with Acknowledge.
+  const crit = cues.filter(c => c.level === 'critical');
+  const banner = $('cueCritical');
+  if (crit.length) {
+    const c = crit[crit.length - 1];
+    banner.textContent = '';
+    const label = document.createElement('span');
+    label.className = 'cue-label'; label.textContent = '⚠ Director';
+    const txt = document.createElement('span');
+    txt.className = 'cue-text'; txt.textContent = c.text;   // XSS-safe
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.textContent = 'Acknowledge';
+    btn.addEventListener('click', () => ackCue(c.id));
+    banner.append(label, txt, btn);
+    banner.hidden = false;
+  } else {
+    banner.hidden = true; banner.textContent = '';
+  }
+  // Info: show each new one once as an auto-fading toast.
+  cues.filter(c => c.level === 'info' && !_shownInfo.has(c.id)).forEach(c => {
+    _shownInfo.add(c.id);
+    const t = document.createElement('div');
+    t.className = 'cue-toast'; t.textContent = c.text;
+    $('cueToasts').appendChild(t);
+    setTimeout(() => t.remove(), 8000);
+  });
+  setTimeout(pollCues, 3000);
+}
+
+pollTally(); pollProgram(); pollTimer(); pollChat(); pollCues();
 </script>
 </body>
 </html>

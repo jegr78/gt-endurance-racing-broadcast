@@ -158,6 +158,28 @@ You can override the sheet per-run without touching the profile: `--sheet-id <ID
 > after importing into OBS** — OBS stores absolute image paths. If you move it, re-run
 > `setup-assets.py` and re-import.
 
+## Google Sheet — Configuration tab columns
+
+The relay reads the sheet's **Configuration** tab for the vocabulary that populates
+the Director Panel dropdowns and the HUD (Streamer names, Session labels, Race
+Control messages, team names, brand text). Most of these columns come pre-populated
+by the league sheet template. The following column is optional and specific to the
+cue channel:
+
+### `Cue Preset` column
+
+Add a column headed **`Cue Preset`** in the Configuration tab to provide quick-cue
+buttons in the Director Panel's **Cues** section. Each non-empty cell in that column
+becomes one preset button — clicking it fills the cue text field instantly. The column
+is **optional**: leave it out (or keep it empty) and directors compose all cues as free
+text. Add, remove, or rename presets by editing the column in the sheet; the panel
+picks up the change on the next poll without any relay restart.
+
+This is the same admin-managed, read-only-in-the-panel model as the **Race Control**
+column. For the full list of Configuration tab columns (Streamer, Session, Race
+Control, Teams, Brand) and how the relay validates values against them, see
+[Sheet-Webhook](Sheet-Webhook#configuration-tab--team-name-and-number-columns).
+
 ## Sheet-driven graphics
 
 The broadcast still-graphics (Overlay, Standings, Schedule, Race/Quali Results, the three
