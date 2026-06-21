@@ -1,5 +1,9 @@
 runtime/
 dist/
+# the vendored Reveal.js dist is committed deck runtime, not a build output —
+# keep it trackable past the unanchored dist/ rule (so a REVEAL_TAG bump that
+# adds files under it does not silently skip them; see tools/fetch-reveal.py)
+!src/docs/slides/vendor/reveal/dist/
 incoming/
 fonts.zip
 # league profiles are machine-local; only the example template + the public
