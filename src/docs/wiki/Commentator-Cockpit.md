@@ -1,8 +1,8 @@
 # Commentator Cockpit
 
 A **talent-facing** page served by the relay — the counterpart to the Director
-Panel, but for the **commentators**. Each commentator opens one personal link and
-gets a self-contained cockpit:
+Panel, but for the **commentators**. Each commentator opens the Console and signs in
+(with Discord) to get a self-contained cockpit:
 
 - **Event title** — the round's free-text title (e.g. `GTEC - 2026 - Round 4 -
   Nürburgring 24h`) in the header, the same label the director and Discord see.
@@ -15,8 +15,9 @@ gets a self-contained cockpit:
 - **Submit a stream link** — propose the stream URL for one of *their own* stints; it
   lands as a pending request the director approves before it can go on air (see below).
 
-You reach your cockpit from your personal **[Console landing page](Console)** — the one
-link your producer sends you, which shows the cockpit as one of its role-gated cards.
+You reach your cockpit from the **[Console](Console)** page — open the link your producer
+shares and **sign in with Discord**; the cockpit appears as one of its role-gated cards.
+(Leagues without Discord login send you a personal sign-in link instead — same result.)
 
 ## Director cues
 

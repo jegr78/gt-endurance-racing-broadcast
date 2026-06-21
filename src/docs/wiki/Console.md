@@ -1,19 +1,27 @@
 # The Console launcher
 
-`/console` is the **single personal link** every crew member opens. Instead of
-separate URLs for each surface, one link adapts to the signed-in person's role and
-shows only the cards they are allowed to use — nothing more.
+`/console` is the **single page** every crew member opens. There are no separate URLs per
+surface: one page adapts to the signed-in person's role and shows only the cards they are
+allowed to use — nothing more.
 
 ![The /console launcher — role-adaptive cards: Commentator Cockpit, Race Control, Director Panel, Web Buttons](images/console-landing.png)
 
 ## How it works
 
-`racecast links` generates one signed `/console` link per person (union of the Crew tab
-and the live schedule). The producer shares each link with the relevant person. Opening it
-in any browser authenticates the person and renders their personalised landing page.
+The producer shares **one Console link** (the same `/console` URL for everyone). Opening
+it shows a **Login with Discord** button; after signing in, the relay matches the person's
+Discord handle to the league's crew roster (the Crew tab ∪ the live schedule) and renders
+their role's cards. Roles are resolved live on every request, so adding someone — or
+changing their role on the roster — takes effect immediately, with no link to re-send.
 
-The same link works **over the tailnet** (e.g. a phone with the Tailscale app) **or over
-the public Funnel** (`racecast funnel on` — no Tailscale account needed on the crew
+> **Fallback — personal sign-in links.** A league that hasn't set up Discord login can
+> instead hand out per-person signed links (`racecast links`): opening one signs that
+> person in directly, no Discord needed. Setting up Discord login is the
+> [League-Owner Setup](League-Owner-Setup) job; issuing/revoking the fallback links is in
+> [Console & cockpit setup](Console-Setup#personal-sign-in-links-fallback--issue--revoke).
+
+Either way the page works **over the tailnet** (e.g. a phone with the Tailscale app) **or
+over the public Funnel** (`racecast funnel on` — no Tailscale account needed on the crew
 member's side). See [Remote access & the Funnel boundary](Remote-access) for the full
 security model.
 
