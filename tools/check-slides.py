@@ -41,37 +41,48 @@ _MEASURE_JS = """() => {
 }"""
 
 
-def check(slides_dir, deck_files, page_factory=None):           # pragma: no cover
+def check(slides_dir, deck_files, shots_dir=None):              # pragma: no cover
     from playwright.sync_api import sync_playwright
+    if shots_dir is not None:
+        os.makedirs(shots_dir, exist_ok=True)
     pw = sync_playwright().start()
-    browser = pw.chromium.launch()
-    findings = []
     try:
-        for deck in deck_files:
-            page = browser.new_page(viewport={"width": SLIDE_W, "height": SLIDE_H})
-            page.goto("file://" + os.path.join(slides_dir, deck))
-            page.wait_for_function("window.Reveal && Reveal.isReady()")
-            total = page.evaluate("Reveal.getTotalSlides()")
-            measures = []
-            for _ in range(total):
-                idx = page.evaluate("Reveal.getIndices()")
-                m = page.evaluate(_MEASURE_JS)
-                m.update({"deck": deck, "slide": f'{idx["h"]}.{idx.get("v", 0)}'})
-                measures.append(m)
-                page.evaluate("Reveal.next()")
-            findings += overflow_findings(measures)
-        return findings
+        browser = pw.chromium.launch()
+        try:
+            findings = []
+            for deck in deck_files:
+                stem = os.path.splitext(deck)[0]
+                page = browser.new_page(viewport={"width": SLIDE_W, "height": SLIDE_H})
+                page.goto("file://" + os.path.join(slides_dir, deck))
+                page.wait_for_function("window.Reveal && Reveal.isReady()")
+                total = page.evaluate("Reveal.getTotalSlides()")
+                measures = []
+                for _ in range(total):
+                    idx = page.evaluate("Reveal.getIndices()")
+                    h, v = idx["h"], idx.get("v", 0)
+                    m = page.evaluate(_MEASURE_JS)
+                    m.update({"deck": deck, "slide": f"{h}.{v}"})
+                    slide_findings = overflow_findings([m])
+                    if slide_findings and shots_dir is not None:
+                        shot = os.path.join(shots_dir, f"{stem}-slide-{h}.{v}.png")
+                        page.screenshot(path=shot)
+                    measures.append(m)
+                    page.evaluate("Reveal.next()")
+                findings += overflow_findings(measures)
+            return findings
+        finally:
+            browser.close()
     finally:
-        browser.close(); pw.stop()
+        pw.stop()
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--shots", default=None)
-    ap.parse_args()
+    args = ap.parse_args()
     decks = [os.path.basename(p) for p in glob.glob(os.path.join(SLIDES, "*.html"))
              if os.path.basename(p) != "index.html"]
-    findings = check(SLIDES, decks)
+    findings = check(SLIDES, decks, shots_dir=args.shots)
     for f in findings:
         print(f'OVERFLOW {f["deck"]} slide {f["slide"]} [{f["kind"]}]: {f["detail"]}')
     if findings:
