@@ -900,6 +900,11 @@
           <button id="cp-funnel-off" onclick="consoleFunnel(false)">Funnel OFF</button>
           <label class="cprow"><input type="checkbox" id="cp-funnel-auto" onchange="toggleFunnelAuto()">
             Auto-enable on event start</label>
+          <div class="cprow" style="margin-top:8px">
+            <button id="cp-copy-link" onclick="copyConsoleLink(this)" disabled>Copy Link</button>
+            <button id="cp-post-link" onclick="postConsoleLink(this)" disabled>Post to Discord</button>
+            <span id="cp-link-hint" class="sub" style="margin-left:8px">MagicDNS not available (is Tailscale up?)</span>
+          </div>
           <p class="sub">Exposes only <code>/console</code> publicly. Needs MagicDNS + HTTPS
             + the <code>funnel</code> nodeAttr in the tailnet policy (one-time admin step).</p>
         </section>
@@ -2319,6 +2324,11 @@ async function loadConsole() {
   else { txt.textContent = 'OFF'; }
   $('cp-funnel-on').disabled = !d.funnel_capable;
   $('cp-funnel-auto').checked = !!d.funnel_auto;
+  window._consoleUrl = d.console_url || '';
+  const hasUrl = !!window._consoleUrl;
+  $('cp-copy-link').disabled = !hasUrl;
+  $('cp-post-link').disabled = !hasUrl;
+  $('cp-link-hint').hidden = hasUrl;
   const c = $('cp-links');
   c.textContent = '';
   if (!d.has_secret) {
@@ -2356,6 +2366,28 @@ async function consoleFunnel(on) {
     body: JSON.stringify({on})})).json();
   if (!r.ok) showProfileErr('cp-err', r.error || 'funnel command failed');
   loadConsole();   // refresh the ON/OFF state pill
+}
+async function copyConsoleLink(btn) {
+  if (!window._consoleUrl) return;
+  await navigator.clipboard.writeText(window._consoleUrl);
+  const old = btn.textContent;
+  btn.textContent = 'Copied ✓';
+  setTimeout(() => { btn.textContent = old; }, 1500);
+}
+async function postConsoleLink(btn) {
+  $('cp-err').hidden = true;
+  btn.disabled = true;
+  const old = btn.textContent;
+  try {
+    const r = await (await fetch('/api/console/post-link', {method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: '{}'})).json();
+    if (!r.ok) { showProfileErr('cp-err', r.error || 'could not post the link'); }
+    else { btn.textContent = 'Posted ✓'; setTimeout(() => { btn.textContent = old; }, 1500); }
+  } catch (e) {
+    showProfileErr('cp-err', 'Control Center not reachable.');
+  } finally {
+    btn.disabled = false;
+  }
 }
 async function toggleFunnelAuto() {
   $('cp-err').hidden = true;
