@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.9.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.8.0...v0.9.0) (2026-06-21)
+
+
+### Features
+
+* **cli:** `racecast links` (Crew ∪ Schedule) + Crew Console ([#216](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/216) phase 5) ([#231](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/231)) ([cd2586e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/cd2586e5044ab0de0ca5ee3bc6369362638fd8c0))
+* **cli:** public Funnel mounts /console + `racecast funnel` command ([#216](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/216) phase 4) ([#230](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/230)) ([e998d4b](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e998d4b3c817bfe5940692f8b9479297d57974c8))
+* **console:** Companion Web Buttons over the Funnel (/console/buttons) ([#241](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/241)) ([81e3a05](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/81e3a0570cefd6ec7de515570adc998a890fc430))
+* **console:** Discord OAuth login for /console + cockpit→console rename ([#242](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/242)) ([f751e76](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/f751e766b34dde8d8a565ee5c11da513e9509d51))
+* **console:** distribute the shared console link from Crew Console (Copy / Post to Discord) ([#249](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/249)) ([89439e5](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/89439e597a5349ccb1937bb02f05aec076acd120))
+* **console:** Race Control crew role — read-only monitoring desk ([#244](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/244)) ([#248](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/248)) ([7fe05c5](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/7fe05c554655af9f7202bcbc70bf0edd33fa5ead))
+* **event:** producer takeover over the public Funnel ([#216](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/216)) ([#234](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/234)) ([7901eca](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/7901eca7d621b90ff982df0aa52daf0d461b22b5))
+* **panel:** preview button on pending stream submissions ([#247](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/247)) ([48f892f](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/48f892f09e6d46f64b20bae1d7d18d037e18c663)), closes [#245](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/245)
+* **panel:** relay-mediated OBS control — credential-free, Funnel-complete Director Panel ([#216](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/216)) ([#238](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/238)) ([5cc7333](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/5cc733310ba4e11ac1fc13f94c214a2ae19eb613))
+* **relay:** /console auth gate + role-gated API mirror ([#216](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/216) phase 3a) ([#228](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/228)) ([d9c4cc5](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/d9c4cc5538d1ce9628ab61582dba832efc246bd7))
+* **relay:** /console authorization policy ([#216](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/216) phase 2) ([#227](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/227)) ([3f62ed8](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/3f62ed8507e343c8732cd63b66ad57c290bd835a))
+* **relay:** crew roster + role resolution ([#216](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/216) phase 1) ([#226](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/226)) ([e7c5f2e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e7c5f2e6fcf1ba0af1a1d3a971848654d978122a))
+* **relay:** director→talent text-cue channel (IFB-lite) ([#243](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/243)) ([#246](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/246)) ([06fcd90](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/06fcd90a647baa66291dbc61187603908d737e7f))
+* **relay:** role-adaptive /console pages + launcher ([#216](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/216) phase 3b) ([#229](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/229)) ([280d7ac](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/280d7acf89b9aee58221d4fc27e5ece56225672f))
+* **ui:** Control Center crew editor for the Crew-tab roster ([#216](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/216)) ([#233](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/233)) ([7e7460a](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/7e7460a6691cbbf6d350f2e6e59dd406488e1c6b))
+* **ui:** optional "stop event" on Control Center quit, waiting for completion ([#221](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/221)) ([1766287](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/176628700f163a891d84e9fef5592620cd9434d0)), closes [#218](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/218)
+* **ui:** replace native confirm()/alert() with custom Control Center modals ([#224](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/224)) ([42a1cae](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/42a1cae4a1030fd34d759d3b07a8cdf3018e0c6f))
+
+
+### Bug Fixes
+
+* **logs:** keep timestamped logging through a blocked Windows log rotation ([#223](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/223)) ([152f80a](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/152f80a8db915c749b92dd6f786d511ecdfed871))
+* **relay:** resolve py/mixed-returns in do_GET/do_POST (CodeQL) ([#232](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/232)) ([1bab505](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/1bab505aefce38121f7b70f7e9b0e93b7c064e09))
+* **ui:** style Control Center event-title input (was browser default) ([#225](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/225)) ([37d7652](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/37d76526bb279c872bdbc2c57c0f7f35c325c9ca))
+* **ui:** widen Crew editor actions column so Save/Delete fit the card ([#251](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/251)) ([27c50a6](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/27c50a6db0299a9f3813544c0208f892719b33a5))
+
 ## [0.8.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.7.0...v0.8.0) (2026-06-18)
 
 
