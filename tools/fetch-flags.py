@@ -40,6 +40,11 @@ ALIASES = {
     "russia": "russia",
 }
 
+# Non-country flagcdn codes (hyphenated) worth shipping anyway: the GB home
+# nations are common driver nationalities in sim racing. Everything else with a
+# hyphen (US states, etc.) is a subdivision we skip in --all mode.
+EXTRA_SUBDIVISIONS = ("gb-eng", "gb-sct", "gb-wls", "gb-nir")
+
 
 def _load_relay_helpers():
     """Reuse asset_key / load_dotenv from the relay so naming stays in sync."""
@@ -75,6 +80,51 @@ def _sheet_countries(sheet_id, tab):
     return out
 
 
+def _fetch_all(m, args):
+    """--all: download every country flag from flagcdn (plus the GB home nations)
+    into src/assets/flags/<asset_key(name)>.svg. Existing files are kept unless
+    --force. Naming matches what the relay serves, so any country named in a
+    league's Sheet resolves a flag with no per-season fetch."""
+    os.makedirs(FLAGS_DIR, exist_ok=True)
+    codes = json.loads(_get(CODES_URL).decode("utf-8"))
+    targets = [(c, n) for c, n in codes.items()
+               if (len(c) == 2 and "-" not in c) or c in EXTRA_SUBDIVISIONS]
+    print(f"flagcdn catalog: {len(targets)} flags to consider")
+
+    added, kept, failed, seen = [], [], [], {}
+    for code, name in sorted(targets, key=lambda t: t[1]):
+        key = m.asset_key(name)
+        if not key:
+            continue
+        if key in seen:                      # two names collapse to one asset_key
+            print(f"  ~ {name:28s} -> {key}.svg already taken by '{seen[key]}', skipped")
+            continue
+        seen[key] = name
+        existing = m.resolve_asset(ASSETS_DIR, "flags", key)
+        if existing and not args.force:
+            kept.append(key)
+            continue
+        if args.dry_run:
+            added.append((name, code, f"flags/{key}.svg (dry-run)"))
+            continue
+        try:
+            data = _get(FLAG_URL.format(code=code))
+        except Exception as e:
+            failed.append(f"{name} ({type(e).__name__})")
+            continue
+        with open(os.path.join(FLAGS_DIR, f"{key}.svg"), "wb") as fh:
+            fh.write(data)
+        added.append((name, code, f"flags/{key}.svg ({len(data)}B)"))
+
+    for name, code, info in added:
+        print(f"  + {name:28s} -> {code} -> {info}")
+    print(f"\nDone (--all): {len(added)} added, {len(kept)} kept, {len(failed)} failed.")
+    if failed:
+        for f in failed:
+            print(f"  ! {f}")
+        sys.exit(1)
+
+
 def main():
     m = _load_relay_helpers()
     m.load_dotenv(ROOT)
@@ -88,7 +138,14 @@ def main():
                     help="Report what would be downloaded; write nothing.")
     ap.add_argument("--force", action="store_true",
                     help="Re-download even if a flag already exists.")
+    ap.add_argument("--all", action="store_true",
+                    help="Ignore the sheet; fetch EVERY country flag from flagcdn "
+                         "(plus the GB home nations) into src/assets/flags/.")
     args = ap.parse_args()
+
+    if args.all:
+        _fetch_all(m, args)
+        return
 
     if not args.sheet_id:
         sys.exit("ERROR: no sheet id. Set RACECAST_SHEET_ID in .env or pass --sheet-id.")
