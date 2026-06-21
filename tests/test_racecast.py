@@ -2353,18 +2353,35 @@ def t_console_status_links_union_crew():
     orig_sched = m._console_roster_safe
     orig_crew = m._crew_roster_safe
     orig_secret = m._ensure_active_console_secret
+    orig_magic = m._tailscale_magicdns
     try:
         m._console_roster_safe = lambda: ["Alice"]
         m._crew_roster_safe = lambda: ["Dana the Director"]
         m._ensure_active_console_secret = lambda: "s" * 64
+        m._tailscale_magicdns = lambda: "host.tail.ts.net"
         data = m.console_status_data()
         names = [l["name"] for l in data["links"]]
         assert names == ["Alice", "Dana the Director"], names
         assert all("/console?t=" in l["internal"] for l in data["links"])
+        # the shared (token-free) landing-page link the distribute buttons use
+        assert data["console_url"] == "https://host.tail.ts.net/console"
     finally:
         m._console_roster_safe = orig_sched
         m._crew_roster_safe = orig_crew
         m._ensure_active_console_secret = orig_secret
+        m._tailscale_magicdns = orig_magic
+
+
+def t_console_status_console_url_empty_without_magicdns():
+    orig_secret = m._ensure_active_console_secret
+    orig_magic = m._tailscale_magicdns
+    try:
+        m._ensure_active_console_secret = lambda: "s" * 64
+        m._tailscale_magicdns = lambda: ""
+        assert m.console_status_data()["console_url"] == ""
+    finally:
+        m._ensure_active_console_secret = orig_secret
+        m._tailscale_magicdns = orig_magic
 
 
 def t_crew_entries_data_maps_relay_rows():

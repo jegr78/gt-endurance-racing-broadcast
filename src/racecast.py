@@ -3582,10 +3582,10 @@ def console_status_data():
             "RACECAST_COCKPIT_FUNNEL", "")).strip().lower() in (
             "1", "true", "yes", "on")
         secret = _ensure_active_console_secret() or ""
+        magic = _tailscale_magicdns()
         links = []
         if secret:
             host = _console_internal_host(_tailscale_ip())
-            magic = _tailscale_magicdns()
             versions = cpadm.load_versions(_console_versions_path())
             seen_keys = set()
             roster = []
@@ -3611,7 +3611,8 @@ def console_status_data():
             pass  # best-effort: tailnet down / CLI missing -> report both False
         return {"ok": True, "has_secret": bool(secret),
                 "funnel_auto": funnel_auto, "funnel_capable": funnel_capable,
-                "funnel_on": funnel_on, "links": links}
+                "funnel_on": funnel_on, "links": links,
+                "console_url": (f"https://{magic}/console" if magic else "")}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
