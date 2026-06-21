@@ -1,5 +1,7 @@
 # Set up the broadcast PC
 
+> New here? Start with the visual [Producer setup deck ↗](https://jegr78.github.io/gt-endurance-racing-broadcast/producer-setup.html), then come back for the detail below.
+
 Do this **once** per machine — about 30 minutes. When you're done, go to
 [Run an event](Run-an-event).
 

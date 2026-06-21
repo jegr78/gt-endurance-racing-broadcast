@@ -1,5 +1,7 @@
 # Commentator Cockpit
 
+> New here? Start with the visual [Commentator onboarding deck ↗](https://jegr78.github.io/gt-endurance-racing-broadcast/commentator.html), then come back for the detail below.
+
 A **talent-facing** page served by the relay — the counterpart to the Director
 Panel, but for the **commentators**. Each commentator opens the Console and signs in
 (with Discord) to get a self-contained cockpit:

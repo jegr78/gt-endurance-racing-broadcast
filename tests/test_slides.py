@@ -90,23 +90,47 @@ _LOCAL_ASSET = _re.compile(r'(?:href|src)="((?:assets|vendor)/[^"]+)"')
 _MD_IMG = _re.compile(r"!\[[^\]]*\]\((assets/[^)]+)\)")
 
 
+# Every role/setup deck and the data-role its <body> must carry.
+_DECK_ROLES = {
+    "director.html": "director",
+    "producer.html": "producer",
+    "commentator.html": "commentator",
+    "race-control.html": "race-control",
+    "producer-setup.html": "producer",
+    "league-admin-setup.html": "league-admin",
+    "overlay-designer.html": "overlay-designer",
+}
+
+
 def _decks():
-    return [os.path.join(SLIDES, f) for f in ("director.html", "index.html")]
+    # the role decks + the landing page, for wiki-link and asset scans
+    return [os.path.join(SLIDES, f) for f in (*_DECK_ROLES, "index.html")]
 
 
-def t_director_deck_scaffolded():
-    with open(os.path.join(SLIDES, "director.html"), encoding="utf-8") as fh:
-        html = fh.read()
-    assert 'data-role="director"' in html
-    assert 'assets/deck.css' in html and 'assets/deck.js' in html
-    assert 'vendor/reveal/dist/reveal.js' in html
-    assert 'data-markdown' in html
+def t_all_decks_scaffolded():
+    for fname, role in _DECK_ROLES.items():
+        path = os.path.join(SLIDES, fname)
+        assert os.path.isfile(path), f"missing deck {fname}"
+        with open(path, encoding="utf-8") as fh:
+            html = fh.read()
+        assert f'data-role="{role}"' in html, f"{fname} missing data-role={role}"
+        assert 'assets/deck.css' in html and 'assets/deck.js' in html, fname
+        assert 'vendor/reveal/dist/reveal.js' in html, fname
+        assert 'data-markdown' in html, fname
 
 
-def t_landing_links_director_deck():
+def t_accent_defined_for_every_deck_role():
+    with open(os.path.join(SLIDES, "assets", "deck.css"), encoding="utf-8") as fh:
+        css = fh.read()
+    for role in set(_DECK_ROLES.values()):
+        assert f'body[data-role="{role}"]' in css, f"deck.css missing accent for {role}"
+
+
+def t_landing_links_every_deck():
     with open(os.path.join(SLIDES, "index.html"), encoding="utf-8") as fh:
         html = fh.read()
-    assert 'href="director.html"' in html
+    for fname in _DECK_ROLES:
+        assert f'href="{fname}"' in html, f"index.html does not link {fname}"
 
 
 def t_outbound_wiki_links_resolve():
