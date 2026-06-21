@@ -374,12 +374,23 @@ def _open_session(host, port, password, timeout):
         raise
 
 
-def _connect(host, port, password, timeout):
-    """(session, "") or (None, reason). Port + password fall back to OBS's own
-    obs-websocket config / RACECAST_OBS_WS_PASSWORD; never raises."""
-    cfg = read_ws_config(default_config_path())
+def resolve_obs_target(host, port, env, cfg):
+    """Where to reach OBS. RACECAST_OBS_WS_HOST / RACECAST_OBS_WS_PORT override
+    everything — a test/proxy seam (point the relay at a simulated OBS for
+    reproducible screenshots, or at OBS on another host) — otherwise the host the
+    caller passed plus OBS's own config port (then the 4455 default)."""
+    host = env.get("RACECAST_OBS_WS_HOST") or host
     if port is None:
-        port = (cfg or {}).get("port") or DEFAULT_PORT
+        p = (env.get("RACECAST_OBS_WS_PORT") or "").strip()
+        port = int(p) if p.isdigit() else ((cfg or {}).get("port") or DEFAULT_PORT)
+    return host, port
+
+
+def _connect(host, port, password, timeout):
+    """(session, "") or (None, reason). Host/port/password fall back to the
+    RACECAST_OBS_WS_* overrides, then OBS's own obs-websocket config; never raises."""
+    cfg = read_ws_config(default_config_path())
+    host, port = resolve_obs_target(host, port, os.environ, cfg)
     if password is None:
         password = find_password(os.environ, default_config_path())
     try:

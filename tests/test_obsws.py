@@ -832,6 +832,22 @@ def t_obs_helpers_unreachable_return_failure_not_raise():
         m._connect = orig
 
 
+def t_resolve_obs_target_env_overrides_then_config():
+    # RACECAST_OBS_WS_HOST/PORT override the discovered target (proxy/remote seam).
+    env = {"RACECAST_OBS_WS_HOST": "100.64.0.5", "RACECAST_OBS_WS_PORT": "4466"}
+    assert m.resolve_obs_target("127.0.0.1", None, env, {"port": 4455}) == ("100.64.0.5", 4466)
+    # no overrides -> caller host + OBS's own config port
+    assert m.resolve_obs_target("127.0.0.1", None, {}, {"port": 4455}) == ("127.0.0.1", 4455)
+    # no overrides, no config -> the 4455 default
+    assert m.resolve_obs_target("127.0.0.1", None, {}, None) == ("127.0.0.1", m.DEFAULT_PORT)
+    # a non-numeric port override is ignored (falls back to config/default)
+    assert m.resolve_obs_target(
+        "127.0.0.1", None, {"RACECAST_OBS_WS_PORT": "x"}, {"port": 4455}) == ("127.0.0.1", 4455)
+    # host override alone still resolves the port via config/default
+    assert m.resolve_obs_target("127.0.0.1", None, {"RACECAST_OBS_WS_HOST": "100.64.0.9"},
+                                {"port": 4455}) == ("100.64.0.9", 4455)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
