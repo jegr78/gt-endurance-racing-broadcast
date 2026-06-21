@@ -1,5 +1,7 @@
 # Who does what
 
+> New crew? The [onboarding decks ↗](https://jegr78.github.io/gt-endurance-racing-broadcast/) are short visual walkthroughs, one per role.
+
 Three groups make the show happen: the **commentators** who stream each stint, the
 **producer** at the PC, and the **director** who chooses what viewers see. An optional
 **Race Control** desk can watch along **read-only** — no broadcast actions.

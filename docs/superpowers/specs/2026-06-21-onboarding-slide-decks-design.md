@@ -159,3 +159,38 @@ Pages/build need no network. Sets a `User-Agent` (maintainer tool; outside the
 ## Confirmed at spec review (2026-06-21)
 - Pages workflow is **dispatch-only** (not auto-deploy on push).
 - New role accents confirmed: Race Control = steel blue-grey, League Admin = violet.
+
+## Addendum — remaining decks + Overlay Package Designer (2026-06-21)
+
+The Director pilot is merged and published. This addendum scopes the **remaining
+decks**, built to the now-finished linear (flat, no vertical stacks) template.
+
+**Decks to build (6):**
+- Role walkthroughs: **Producer (event)**, **Commentator**, **Race Control**.
+- Setup: **Producer setup**, **League Admin setup**.
+- **NEW — Overlay Package Designer**: a 7th card focused on the Control Center's
+  **visual Overlay Builder** + the **live HUD preview with a running relay**
+  (`/hud/preview`). Accent: **magenta `#b5359c`** (new `--overlay-designer` /
+  `data-role="overlay-designer"`).
+
+**Content sourcing (CLAUDE.md: never invent crew procedure).** Each deck distils
+*mechanism* from its wiki page(s) and links there for depth:
+- Producer (event) → `Run-an-event`, `Control-Center` (Home); Commentator →
+  `Commentator-Cockpit`, `Console`; Race Control → `Who-does-what`,
+  `Console` (Race Control); Producer setup → `Set-up-the-broadcast-PC`,
+  `Control-Center` (Setup); League Admin setup → `League-Owner-Setup`,
+  `Profiles`, `Sheet-Webhook`; Overlay Package Designer → `HUD-Overlays`,
+  `Control-Center` (Profile/Overlay Builder).
+
+**Diagrams (build-time Excalidraw-look SVGs):** a **producer-event-flow** diagram
+(Producer event deck) **plus a shared `who-does-what` crew-map** (reused in the
+Producer, Race Control and Commentator decks), both from the Mermaid already in
+the wiki.
+
+**Screenshots:** reuse the committed wiki shots (`cc-home`, `cc-setup`,
+`cc-crew-editor`, `console-landing`, `console-race-control`, `console-login`,
+`cc-overlay-builder`) copied into `slides/assets/img/`. The Overlay deck also gets
+**one freshly-captured** `/hud/preview` live-preview image, produced reproducibly
+with the **`demo` profile + the `tools/obs-sim.py` OBS stand-in** + a running relay
+(no real OBS, public read-only Sheet, no secrets/Tailscale IP in the frame → safe
+to commit).

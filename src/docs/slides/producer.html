@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Producer (event day) — Onboarding · GT Endurance Racing Broadcast</title>
+<link rel="stylesheet" href="vendor/reveal/dist/reveal.css">
+<link rel="stylesheet" href="vendor/reveal/plugin/highlight/monokai.css">
+<link rel="stylesheet" href="assets/deck.css">
+</head>
+<body data-role="producer">
+<div class="reveal"><div class="slides">
+
+<section data-markdown><script type="text/template">
+<span class="role-tag">Producer · Onboarding</span>
+# Producer (event day)
+You start and stop the show and keep the machine healthy.
+The director runs everything in between.
+[Who does what](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Who-does-what)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Your job in one sentence
+Bring the station up, watch the machine, bring it down.
+- On 12h/24h events, only the **final-part** producer joins Discord voice for the interviews.
+- Everything else during the race is the director's responsibility.
+</script></section>
+
+<section data-markdown><script type="text/template">
+## The shape of an event
+
+![Event shape](assets/img/diagrams/producer-event-flow.svg)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## One-click bring-up
+Open the **Control Center**, confirm the **active league**, and press **Start event** — it launches Tailscale, Discord, relay, OBS and Companion in order.
+
+![Control Center Home](assets/img/cc-home.png)
+
+[Run an event](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Run-an-event) · [Control Center](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Control-Center)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## ~30 min before you go live
+Plan about 30 minutes for these steps (all from the Control Center):
+
+1. Confirm the active league profile.
+2. Apply any available tool update; then **reboot** the PC.
+3. **Tools → Update all** — outdated tools are the #1 cause of feed failures.
+4. **Assets → Cookies → Refresh** (log into YouTube in that browser first).
+5. **Assets → Media / Graphics → Download** (if URLs changed).
+6. **Preflight → Run** — fix anything it flags.
+7. **Home → Start event** — confirm each feed shows up in OBS.
+8. Enter the league's **stream key** in OBS (Settings → Stream).
+
+[Run an event](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Run-an-event)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Go live
+- In OBS, switch to the **Standby** scene, then click **Start Streaming**.
+- From here the **director runs the show** — you just watch the machine.
+- The director opens with **Intro**, then cuts into the race look.
+
+You should see: OBS on Standby with **Stop Streaming** showing — confirming the stream is running.
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Who does what
+
+![Who does what](assets/img/diagrams/who-does-what.svg)
+
+The director presses **Feeds Next** at each driver change and dresses the scene.
+The producer just monitors the machine.
+[Who does what](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Who-does-what)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Producer handover (12h / 24h events)
+Each part has its own producer and stream key; viewers follow via the channel redirect.
+
+1. Incoming producer: type the **on-air stint** into the field next to **Start event** and press it.
+   Read the stint number from the outgoing producer's panel status strip.
+2. Verify Feed A shows the expected commentator.
+3. Start your OBS stream — the overlap begins.
+4. Outgoing producer: stop the stream (redirect takes over), then **Stop event**.
+
+No Tailscale? Use `racecast event takeover <A-magicdns-host> --funnel`.
+[Run an event](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Run-an-event) · [Remote access](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Remote-access)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Interviews + Outro
+- **Final-part producer only:** join the Discord **"Interviews"** voice channel personally, before race end — OBS captures audio from your local Discord.
+- Stay muted until the director cuts to the Interview scene; joining early is harmless.
+- When the director is done, they press **OUTRO** — the outro clip plays.
+- After the on-air wrap-up you can **Stop Streaming** in OBS at any time.
+
+[Run an event](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Run-an-event)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## When things go wrong
+Run `racecast preflight` first — it names the exact fix command for anything missing.
+
+Common live fixes:
+- **Feed won't start** → refresh cookies; confirm `deno` is installed.
+- **HUD blank** → check the relay is running (Home dashboard).
+- **Port in use** → run `racecast freeport` (or the free-ports action in the Control Center).
+
+[If something goes wrong](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/If-something-goes-wrong)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Stop + recap
+Press **Stop event** — stops the relay and Companion; OBS, Discord and Tailscale keep running.
+
+Three producer beats:
+1. **Before** — update, reboot, cookies, graphics, preflight, start.
+2. **During** — watch the machine; run `racecast preflight` at the first sign of trouble.
+3. **After** — Stop Streaming in OBS, then Stop event.
+
+Go deeper:
+[Run an event](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Run-an-event) ·
+[Control Center](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Control-Center) ·
+[Who does what](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Who-does-what)
+</script></section>
+
+</div></div>
+<script src="vendor/reveal/dist/reveal.js"></script>
+<script src="vendor/reveal/plugin/markdown/markdown.js"></script>
+<script src="vendor/reveal/plugin/highlight/highlight.js"></script>
+<script src="vendor/reveal/plugin/notes/notes.js"></script>
+<script src="assets/deck.js"></script>
+</body>
+</html>

@@ -213,6 +213,10 @@ def main():
             os.path.join(PKG, "docs", "slides", "index.html")),
         "slides diagram svg shipped": os.path.isfile(os.path.join(
             PKG, "docs", "slides", "assets", "img", "diagrams", "director-event-flow.svg")),
+        "slides overlay-designer deck shipped": os.path.isfile(
+            os.path.join(PKG, "docs", "slides", "overlay-designer.html")),
+        "slides who-does-what diagram shipped": os.path.isfile(os.path.join(
+            PKG, "docs", "slides", "assets", "img", "diagrams", "who-does-what.svg")),
     }
     bad = [k for k, v in checks.items() if not v]
     print(f"Built {PKG}")

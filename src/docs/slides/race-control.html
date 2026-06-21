@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Race Control — Onboarding · GT Endurance Racing Broadcast</title>
+<link rel="stylesheet" href="vendor/reveal/dist/reveal.css">
+<link rel="stylesheet" href="vendor/reveal/plugin/highlight/monokai.css">
+<link rel="stylesheet" href="assets/deck.css">
+</head>
+<body data-role="race-control">
+<div class="reveal"><div class="slides">
+
+<section data-markdown><script type="text/template">
+<span class="role-tag">Race Control · Onboarding</span>
+# Race Control
+A **read-only** monitoring desk — watch the race without touching the broadcast.
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Read-only by design
+- Triggers **no broadcast actions**.
+- The **director keeps full control** of the show.
+- The desk only watches — nothing can be changed from here.
+
+[Who does what](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Who-does-what)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## What you see
+
+![Race Control desk](assets/img/console-race-control.png)
+
+Live **program preview** · **redacted** streamer/stint schedule (URLs stay on the tailnet) · **race timer** · **crew chat** (under your own name).
+
+[Console](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Console)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## How the crew fits together
+
+![Who does what](assets/img/diagrams/who-does-what.svg)
+
+The role is **additive** — the same person can direct the show **and** run Race Control.
+
+[Who does what](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Who-does-what)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Getting in
+1. Open the personal **Console** link the producer sends you.
+2. The **Race Control** card appears if you are flagged for it
+   (the Sheet's Crew tab **Race Control** column, or the Control Center crew editor).
+3. Works over the tailnet or the public Funnel — no Tailscale account needed on your end.
+
+[Console](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Console) ·
+[Console & cockpit setup](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Console-Setup)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Naming note + Recap
+**Naming note:** the `race_control` role (Crew tab) is **not** the director-only HUD
+"Race Control" banner (Setup tab `racecontrol` field). They never collide in code —
+the role never writes to that banner.
+
+**Recap:**
+- Read-only — no broadcast actions.
+- Schedule is redacted; stream URLs stay on the tailnet.
+- Role is additive; one person can hold multiple roles.
+
+Go deeper:
+[Console](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Console) ·
+[Who does what](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Who-does-what)
+</script></section>
+
+</div></div>
+<script src="vendor/reveal/dist/reveal.js"></script>
+<script src="vendor/reveal/plugin/markdown/markdown.js"></script>
+<script src="vendor/reveal/plugin/highlight/highlight.js"></script>
+<script src="vendor/reveal/plugin/notes/notes.js"></script>
+<script src="assets/deck.js"></script>
+</body>
+</html>

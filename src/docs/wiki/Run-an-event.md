@@ -1,5 +1,7 @@
 # Run an event
 
+> New here? Start with the visual [Producer onboarding deck ↗](https://jegr78.github.io/gt-endurance-racing-broadcast/producer.html), then come back for the detail below.
+
 The producer's checklist from go-live to wrap. Assumes the machine is already set up —
 if not, do [Set up the broadcast PC](Set-up-the-broadcast-PC) first.
 
