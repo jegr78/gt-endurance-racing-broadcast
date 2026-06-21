@@ -1,17 +1,17 @@
-/* Per-league HUD override — OPTIONAL. The relay serves this file at
- * /hud/override.css and loads it AFTER the base hud.html styles, so any rule
- * here wins the cascade. Delete what you don't need; an empty/missing file
- * means the base look is used unchanged.
- *
- * Overridable elements (ids in the base hud.html, canvas 1920x1080, top-left):
- *   #stint #session #streamer #round-top #round-flag #round-country
- *   #team0 #team1 #team2 #race-control
- *
- * Examples — uncomment and adjust:
- *   #stint    { left: 800px; top: 30px; font-size: 44px; }
- *   #race-control { background: #222a2f; }
- *
- * Custom font (drop the file in overlay/fonts/ first):
- *   @font-face { font-family: "League"; src: url(/overlay/fonts/League.woff2); }
- *   html, body { font-family: "League", "Arial Narrow", sans-serif; }
- */
+#stint { left: 712px; top: 40px; width: 236px; height: 46px; font-size: 30px; color: #eef0f2; justify-content: center; }
+#session { left: 322px; top: 926px; width: 330px; height: 28px; font-size: 23px; color: #9aa6b2; justify-content: flex-start; }
+#streamer { left: 322px; top: 958px; width: 360px; height: 36px; font-size: 31px; color: #eef0f2; justify-content: flex-start; }
+#round-top { left: 742px; top: 926px; width: 520px; height: 28px; font-size: 23px; color: #9aa6b2; justify-content: flex-start; }
+#round-flag { left: 742px; top: 956px; width: 62px; height: 40px; }
+#round-country { left: 814px; top: 958px; width: 440px; height: 36px; font-size: 31px; color: #eef0f2; justify-content: flex-start; }
+#team1-logo { left: 150px; top: 1006px; width: 54px; height: 50px; }
+#team1-num { left: 214px; top: 1008px; height: 44px; font-size: 22px; border-radius: 4px; color: #ffffff; background: #1f8fb0; }
+#team1-name { left: 286px; top: 1008px; width: 300px; height: 44px; font-size: 28px; --team-name-max: 28px; --team-name-min: 16px; color: #eef0f2; }
+#team2-logo { left: 750px; top: 1006px; width: 54px; height: 50px; }
+#team2-num { left: 814px; top: 1008px; height: 44px; font-size: 22px; border-radius: 4px; color: #ffffff; background: #1f8fb0; }
+#team2-name { left: 886px; top: 1008px; width: 300px; height: 44px; font-size: 28px; --team-name-max: 28px; --team-name-min: 16px; color: #eef0f2; }
+#team3-logo { left: 1350px; top: 1006px; width: 54px; height: 50px; }
+#team3-num { left: 1414px; top: 1008px; height: 44px; font-size: 22px; border-radius: 4px; color: #ffffff; background: #1f8fb0; }
+#team3-name { left: 1486px; top: 1008px; width: 300px; height: 44px; font-size: 28px; --team-name-max: 28px; --team-name-min: 16px; color: #eef0f2; }
+#race-control { left: 240px; top: 862px; width: 1440px; height: 48px; padding: 14px; font-size: 30px; border-radius: 8px; color: #eef0f2; background: #243039; justify-content: flex-start; }
+#clock { left: 986px; top: 34px; width: 236px; height: 56px; font-size: 46px; color: #eef0f2; justify-content: center; }

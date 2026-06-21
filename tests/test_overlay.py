@@ -567,6 +567,24 @@ def t_ob_compile_text_shadow():
         {"textShadow": {"x": 1, "y": 1, "blur": 1, "color": "red; } body{x:1"}})
 
 
+def t_shipped_demo_overlay_css_matches_its_layout():
+    # The demo profile ships a builder-authored HUD overlay: layout-hud.json is
+    # the source, hud.css is its compiled output (what the relay serves). Guard
+    # that the committed pair stays in sync — a hand-edit of one must not drift.
+    import json
+    def _read(*parts):
+        with open(os.path.join(*parts), encoding="utf-8") as fh:
+            return fh.read()
+    od = os.path.join(ROOT, "profiles", "demo", "overlay")
+    layout = json.loads(_read(od, "layout-hud.json"))
+    slots = ob.extract_slots(_read(ROOT, "src", "obs", "hud.html"))
+    compiled = ob.compile_overlay_css(layout, slots)
+    on_disk = _read(od, "hud.css")
+    assert compiled == on_disk, "demo hud.css is out of sync with layout-hud.json"
+    # the race timer is an explicitly placed slot (issue: overlay needs a clock)
+    assert "#clock" in on_disk, "demo overlay has no clock/timer slot"
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):

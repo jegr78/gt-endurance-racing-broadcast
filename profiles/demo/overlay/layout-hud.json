@@ -1,0 +1,155 @@
+{
+  "version": 1,
+  "page": "hud",
+  "slots": {
+    "stint": {
+      "left": 712,
+      "top": 40,
+      "width": 236,
+      "height": 46,
+      "fontSize": 30,
+      "align": "center",
+      "color": "#eef0f2"
+    },
+    "clock": {
+      "left": 986,
+      "top": 34,
+      "width": 236,
+      "height": 56,
+      "fontSize": 46,
+      "align": "center",
+      "color": "#eef0f2"
+    },
+    "session": {
+      "left": 322,
+      "top": 926,
+      "width": 330,
+      "height": 28,
+      "fontSize": 23,
+      "align": "left",
+      "color": "#9aa6b2"
+    },
+    "streamer": {
+      "left": 322,
+      "top": 958,
+      "width": 360,
+      "height": 36,
+      "fontSize": 31,
+      "align": "left",
+      "color": "#eef0f2"
+    },
+    "round-top": {
+      "left": 742,
+      "top": 926,
+      "width": 520,
+      "height": 28,
+      "fontSize": 23,
+      "align": "left",
+      "color": "#9aa6b2"
+    },
+    "round-flag": {
+      "left": 742,
+      "top": 956,
+      "width": 62,
+      "height": 40
+    },
+    "round-country": {
+      "left": 814,
+      "top": 958,
+      "width": 440,
+      "height": 36,
+      "fontSize": 31,
+      "align": "left",
+      "color": "#eef0f2"
+    },
+    "race-control": {
+      "left": 240,
+      "top": 862,
+      "width": 1440,
+      "height": 48,
+      "fontSize": 30,
+      "align": "left",
+      "color": "#eef0f2",
+      "background": "#243039",
+      "padding": 14,
+      "borderRadius": 8
+    },
+    "team1-logo": {
+      "left": 150,
+      "top": 1006,
+      "width": 54,
+      "height": 50
+    },
+    "team1-num": {
+      "left": 214,
+      "top": 1008,
+      "height": 44,
+      "fontSize": 22,
+      "background": "#1f8fb0",
+      "color": "#ffffff",
+      "borderRadius": 4
+    },
+    "team1-name": {
+      "left": 286,
+      "top": 1008,
+      "width": 300,
+      "height": 44,
+      "fontSize": 28,
+      "color": "#eef0f2",
+      "teamNameMax": 28,
+      "teamNameMin": 16
+    },
+    "team2-logo": {
+      "left": 750,
+      "top": 1006,
+      "width": 54,
+      "height": 50
+    },
+    "team2-num": {
+      "left": 814,
+      "top": 1008,
+      "height": 44,
+      "fontSize": 22,
+      "background": "#1f8fb0",
+      "color": "#ffffff",
+      "borderRadius": 4
+    },
+    "team2-name": {
+      "left": 886,
+      "top": 1008,
+      "width": 300,
+      "height": 44,
+      "fontSize": 28,
+      "color": "#eef0f2",
+      "teamNameMax": 28,
+      "teamNameMin": 16
+    },
+    "team3-logo": {
+      "left": 1350,
+      "top": 1006,
+      "width": 54,
+      "height": 50
+    },
+    "team3-num": {
+      "left": 1414,
+      "top": 1008,
+      "height": 44,
+      "fontSize": 22,
+      "background": "#1f8fb0",
+      "color": "#ffffff",
+      "borderRadius": 4
+    },
+    "team3-name": {
+      "left": 1486,
+      "top": 1008,
+      "width": 300,
+      "height": 44,
+      "fontSize": 28,
+      "color": "#eef0f2",
+      "teamNameMax": 28,
+      "teamNameMin": 16
+    }
+  },
+  "fonts": [],
+  "customCss": ""
+}
