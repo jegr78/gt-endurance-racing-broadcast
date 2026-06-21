@@ -181,6 +181,7 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "console_funnel": lambda on: {"ok": True, "_got": on},
             "console_set_funnel_auto": lambda auto: {"ok": True, "_got": auto},
             "console_revoke": lambda streamer: {"ok": True, "_got": streamer},
+            "console_post_link": lambda: {"ok": True},
             "speedtest": lambda: {"ok": True, "latest": None, "history": []},
             "event_title_read": lambda: {"ok": True, "title": "",
                                          "source": "default", "relay_alive": False},
@@ -1166,11 +1167,13 @@ def t_console_post_routes_pass_args():
     ctx = _ctx()
     ctx["console_funnel"] = lambda on: seen.update(fn=on) or {"ok": True}
     ctx["console_revoke"] = lambda streamer: seen.update(rv=streamer) or {"ok": True}
+    ctx["console_post_link"] = lambda: seen.update(post=True) or {"ok": True}
     httpd, port = _serve(ctx)
     try:
         assert _post_json(port, "/api/console/funnel", {"on": True})[0] == 200
         assert _post_json(port, "/api/console/revoke", {"streamer": "Alpha"})[0] == 200
-        assert seen == {"fn": True, "rv": "Alpha"}
+        assert _post_json(port, "/api/console/post-link", {})[0] == 200
+        assert seen == {"fn": True, "rv": "Alpha", "post": True}
     finally:
         httpd.shutdown()
 

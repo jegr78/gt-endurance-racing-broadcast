@@ -3644,6 +3644,46 @@ def console_revoke_data(streamer):
         return {"ok": False, "error": str(exc)}
 
 
+def _active_discord_webhook():
+    """(webhook_url, league_name) for the active profile; ("","") on any
+    failure. Best-effort — the webhook stays server-side, never in the browser."""
+    try:
+        root = _env_base(IS_FROZEN, _real_executable(), HERE)
+        rc = pcfg.resolve_config(root, runtime_root=_runtime_base_dir())
+        return rc.discord_webhook_url or "", rc.name or ""
+    except Exception:  # noqa: BLE001 — best effort
+        return "", ""
+
+
+def _post_discord_webhook(url, payload):
+    """POST a Discord incoming-webhook JSON body. Raises on HTTP/network error
+    (callers catch and report)."""
+    import urllib.request
+    req = urllib.request.Request(
+        url, data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+    urllib.request.urlopen(req, timeout=5).read()
+
+
+def console_post_link_data():
+    """Post the shared /console landing-page link to the league's Discord
+    webhook (with an @here ping). The link is computed server-side from MagicDNS
+    — never supplied by the client. {ok}|{ok:false,error}; never raises."""
+    try:
+        magic = _tailscale_magicdns()
+        if not magic:
+            return {"ok": False, "error": "MagicDNS unavailable — is Tailscale up?"}
+        webhook, league = _active_discord_webhook()
+        if not webhook:
+            return {"ok": False,
+                    "error": "No DISCORD_WEBHOOK_URL configured for this league"}
+        payload = cpadm.console_link_discord_payload(f"https://{magic}/console", league)
+        _post_discord_webhook(webhook, payload)
+        return {"ok": True}
+    except Exception as exc:  # noqa: BLE001 — best effort, surface the message
+        return {"ok": False, "error": str(exc)}
+
+
 def _active_profile_overlay_path(page):
     """(active, abs path to overlay/<page>.css) for the active profile, or
     (None, None) when no profile resolves or `page` is not an overlay page.
@@ -4879,6 +4919,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "console_funnel": console_funnel_data,
         "console_set_funnel_auto": console_set_funnel_auto_data,
         "console_revoke": console_revoke_data,
+        "console_post_link": console_post_link_data,
         "overlay_read": overlay_read_data,
         "overlay_write": overlay_write_data,
         "overlay_slots": overlay_slots_data,

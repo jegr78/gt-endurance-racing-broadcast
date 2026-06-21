@@ -2384,6 +2384,67 @@ def t_console_status_console_url_empty_without_magicdns():
         m._tailscale_magicdns = orig_magic
 
 
+def t_console_post_link_errors_without_magicdns():
+    orig = m._tailscale_magicdns
+    try:
+        m._tailscale_magicdns = lambda: ""
+        r = m.console_post_link_data()
+        assert r["ok"] is False and "MagicDNS" in r["error"]
+    finally:
+        m._tailscale_magicdns = orig
+
+
+def t_console_post_link_errors_without_webhook():
+    orig_magic = m._tailscale_magicdns
+    orig_hook = m._active_discord_webhook
+    try:
+        m._tailscale_magicdns = lambda: "h.ts.net"
+        m._active_discord_webhook = lambda: ("", "")
+        r = m.console_post_link_data()
+        assert r["ok"] is False and "DISCORD_WEBHOOK_URL" in r["error"]
+    finally:
+        m._tailscale_magicdns = orig_magic
+        m._active_discord_webhook = orig_hook
+
+
+def t_console_post_link_posts_payload_to_webhook():
+    sent = {}
+    orig_magic = m._tailscale_magicdns
+    orig_hook = m._active_discord_webhook
+    orig_post = m._post_discord_webhook
+    try:
+        m._tailscale_magicdns = lambda: "h.ts.net"
+        m._active_discord_webhook = lambda: ("https://discord/webhook", "GT Masters")
+        m._post_discord_webhook = lambda url, payload: sent.update(url=url, payload=payload)
+        r = m.console_post_link_data()
+        assert r["ok"] is True
+        assert sent["url"] == "https://discord/webhook"
+        assert "https://h.ts.net/console" in sent["payload"]["content"]
+        assert "@here" in sent["payload"]["content"]
+    finally:
+        m._tailscale_magicdns = orig_magic
+        m._active_discord_webhook = orig_hook
+        m._post_discord_webhook = orig_post
+
+
+def t_console_post_link_reports_post_failure():
+    orig_magic = m._tailscale_magicdns
+    orig_hook = m._active_discord_webhook
+    orig_post = m._post_discord_webhook
+    def boom(url, payload):
+        raise RuntimeError("HTTP 404")
+    try:
+        m._tailscale_magicdns = lambda: "h.ts.net"
+        m._active_discord_webhook = lambda: ("https://discord/webhook", "")
+        m._post_discord_webhook = boom
+        r = m.console_post_link_data()
+        assert r["ok"] is False and "404" in r["error"]
+    finally:
+        m._tailscale_magicdns = orig_magic
+        m._active_discord_webhook = orig_hook
+        m._post_discord_webhook = orig_post
+
+
 def t_crew_entries_data_maps_relay_rows():
     seen = {}
     def fake_fetch(url, timeout=3):
