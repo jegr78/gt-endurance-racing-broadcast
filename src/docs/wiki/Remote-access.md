@@ -33,7 +33,7 @@ racecast funnel off    # take it back off the public internet
 
 The one-time tailnet prerequisites (MagicDNS, HTTPS, the `funnel` nodeAttr) and the
 optional `racecast console setup-funnel` automation are documented once, on the
-[Commentator Cockpit](Commentator-Cockpit#public-access-via-tailscale-funnel--one-time-setup)
+[Console & cockpit setup](Console-Setup#public-access-via-tailscale-funnel--one-time-setup)
 page.
 
 ## One link, every role
@@ -154,8 +154,8 @@ step-up secret, then brings its own station up at the adopted stint. The status 
 **redacted** (only `live`, `league`, `event_title`, `timer`, `mode` — feed stream URLs never
 leave A's tailnet). A wrong secret aborts loudly; an unreachable host falls back to a local
 `--stint N` bringup. The tailnet path (`racecast event takeover <100.x-ip>`) is unchanged
-and uses no step-up header. Full detail:
-[Commentator Cockpit → Takeover over Funnel](Commentator-Cockpit#takeover-over-funnel).
+and uses no step-up header. The operational handover steps (re-publishing links on the new
+machine) are in [Console & cockpit setup → producer handover](Console-Setup#producer-handover).
 
 ## Companion web buttons over the Funnel (`/console/buttons`)
 

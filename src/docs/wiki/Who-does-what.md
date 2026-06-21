@@ -1,7 +1,8 @@
 # Who does what
 
 Three groups make the show happen: the **commentators** who stream each stint, the
-**producer** at the PC, and the **director** who chooses what viewers see.
+**producer** at the PC, and the **director** who chooses what viewers see. An optional
+**Race Control** desk can watch along **read-only** — no broadcast actions.
 
 ```mermaid
 flowchart LR
@@ -14,6 +15,11 @@ flowchart LR
     D1["Choose scenes and graphics"]
     D2["Press Feeds Next at driver changes"]
     D3["Cut to interviews<br/>+ broadcast audio"]
+  end
+  subgraph RC["Remote — Race Control (read-only)"]
+    RC1["Watch program + schedule"]
+    RC2["Monitor the race timer"]
+    RC3["No broadcast actions"]
   end
 ```
 
@@ -35,6 +41,25 @@ flowchart LR
   is moderated from inside the Discord voice channel by one of its participants —
   usually the final-stint streamer; the director can take that role but doesn't have to.
 - Multiple directors can take turns; the producer can also direct locally.
+
+## Race Control (remote, read-only)
+
+An optional **monitoring desk** for someone who needs to keep an eye on the race
+without touching the broadcast — e.g. a steward or a league official.
+
+- **Read-only by design.** It triggers no broadcast actions; the **director keeps full
+  control** of the show. The desk only watches.
+- Sees a live **program preview**, the **streamer / stint schedule** (stream URLs are
+  redacted — they never leave the producer's tailnet), the **race timer**, and the
+  **crew chat** (posts under the operator's own name).
+- Drives nothing from a browser, like the director — open the personal
+  [Console](Console) link the producer sends; the **Race Control** card appears for
+  anyone flagged for it. No machine access.
+- The role is **additive**: the same person can be a director *and* run Race Control.
+  Flag people for it with the **Race Control** column on the Sheet's Crew tab (or the
+  Control Center [crew editor](Control-Center#profile)). See the
+  [Console launcher → Race Control](Console#race-control-read-only-monitoring-desk) for
+  the desk in detail.
 
 ## Commentators / streamers
 
