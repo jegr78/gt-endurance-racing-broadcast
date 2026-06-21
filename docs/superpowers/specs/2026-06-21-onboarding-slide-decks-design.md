@@ -156,6 +156,6 @@ Pages/build need no network. Sets a `User-Agent` (maintainer tool; outside the
 
 **Later (separate spec/plan):** the remaining five decks built to the finished pattern.
 
-## Open items to confirm at spec review
-- Pages workflow **dispatch-only** (vs. auto-deploy on push to `main`).
-- New role accents: Race Control = steel blue-grey, League Admin = violet.
+## Confirmed at spec review (2026-06-21)
+- Pages workflow is **dispatch-only** (not auto-deploy on push).
+- New role accents confirmed: Race Control = steel blue-grey, League Admin = violet.
