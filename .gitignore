@@ -2,9 +2,11 @@ runtime/
 dist/
 incoming/
 fonts.zip
-# league profiles are machine-local; only the example template ships
+# league profiles are machine-local; only the example template + the public
+# demo league ship
 profiles/*
 !profiles/example/
+!profiles/demo/
 __pycache__/
 *.pyc
 .DS_Store

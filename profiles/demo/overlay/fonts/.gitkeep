@@ -1,0 +1,2 @@
+# Drop league font files here (woff2/woff/ttf/otf); reference them from
+# hud.css/timer.css via url(/overlay/fonts/<file>). See ../hud.css.

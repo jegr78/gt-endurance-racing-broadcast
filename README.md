@@ -33,8 +33,13 @@ Two layers, kept deliberately separate so one machine can run several leagues:
   directory with **un-prefixed** keys: `NAME`, `SHEET_ID`, `SHEET_PUSH_URL`,
   `INTRO_URL`, `OUTRO_URL`, `LOGO`, `OBS_COLLECTION`. The Google Sheet that
   drives the HUD + relay schedule comes from this file's `SHEET_ID` — **not**
-  from `.env`. `profiles/example/` is the template; copy it with
-  `racecast profile new <name> --from example`.
+  from `.env`. `profiles/example/` is the copy-from template; copy it with
+  `racecast profile new <name> --from example`. To **try the toolkit
+  immediately**, the shipped `profiles/demo/` league points at a public, read-only
+  demo Sheet — `racecast profile use demo` then `racecast graphics && racecast
+  relay start` runs out of the box (Sheet layout: [Sheet template wiki page][sheet-tpl]).
+
+[sheet-tpl]: https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Sheet-Template
 
 ## Profiles (leagues)
 

@@ -46,8 +46,10 @@ OBS_COLLECTION=
 - **`SHEET_ID`** — the long ID from your HUD/schedule sheet URL:
   `https://docs.google.com/spreadsheets/d/`**`<THIS>`**`/edit`. Drives the relay:
   the schedule, the POV tab, and the HUD overlay (Overlay + Configuration tabs, served
-  at `/hud`). Once set, reopen the sheet anytime with **Open Sheet ↗** (Profile view) or
-  `racecast sheet open` — both rebuild the link from this `SHEET_ID`.
+  at `/hud`). The full tab/column layout the relay expects is in
+  [Sheet template](Sheet-Template). Once set, reopen the sheet anytime with
+  **Open Sheet ↗** (Profile view) or `racecast sheet open` — both rebuild the link from
+  this `SHEET_ID`.
 - **`SHEET_PUSH_URL`** *(optional)* — the Apps Script write webhook shared by the
   relay-hosted race timer **and** the director panel's sheet controls. The race timer uses
   it to sync start/stop/show/hide/correct actions to the Sheet's `Timer` tab (so a second
