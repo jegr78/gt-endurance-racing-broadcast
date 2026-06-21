@@ -37,7 +37,10 @@ STEP_LABELS = {
 STEP_KINDS = {
     "profile": {"kind": "gate", "op": None,
                 "instruction": "Create or select a league profile and set its "
-                               "SHEET_ID (profiles/<name>/profile.env). Then re-check."},
+                               "SHEET_ID (profiles/<name>/profile.env). Then re-check. "
+                               "For a zero-config smoke test, run "
+                               "`racecast profile use demo` — the shipped demo league "
+                               "points at a public read-only Sheet."},
     "env": {"kind": "action", "op": None},
     "install-tools": {"kind": "job", "op": "install-tools"},
     "install-apps": {"kind": "job", "op": "install-apps"},
