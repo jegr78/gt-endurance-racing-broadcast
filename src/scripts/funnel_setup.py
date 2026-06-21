@@ -11,9 +11,7 @@ Split: the policy/preference reasoning is PURE (unit-tested below the API helper
 the HTTP is a thin stdlib layer. Stdlib only — no third-party deps.
 """
 import json
-import urllib.error
-import urllib.parse
-import urllib.request
+import http_util
 
 API = "https://api.tailscale.com/api/v2"
 FUNNEL_ATTR = "funnel"
@@ -72,8 +70,8 @@ def _req(token, method, path, body=None, etag=None, accept=None, timeout=20):
         headers["Content-Type"] = "application/json"
     if etag:
         headers["If-Match"] = etag
-    req = urllib.request.Request(API + path, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=timeout) as r:   # noqa: S310 (https)
+    with http_util.open_url(API + path, data=data, headers=headers,
+                            method=method, timeout=timeout) as r:
         return r.status, dict(r.headers), r.read()
 
 

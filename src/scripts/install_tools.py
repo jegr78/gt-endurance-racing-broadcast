@@ -5,6 +5,7 @@ apt (Linux). Never elevates privileges itself — the brew bootstrap and the
 package managers prompt for sudo on their own; failed installs end with a manual
 guide. Pure decision helpers up top (unit-tested); main() performs the installs."""
 import os, shutil, subprocess, sys
+import http_util
 
 _COMMON = None
 
@@ -98,10 +99,8 @@ def install_speedtest_binary(dest_dir, tag, opener=None, downloads=None):
     downloads = downloads or SPEEDTEST_DOWNLOADS
     want = downloads[tag]
     if opener is None:
-        import urllib.request
         def opener(url):
-            with urllib.request.urlopen(url, timeout=60) as resp:  # nosec - pinned Ookla host, checksum-verified
-                return resp.read()
+            return http_util.get_bytes(url, timeout=60)   # nosec - pinned Ookla host, checksum-verified
     blob = opener(speedtest_download_url(tag))
     got = hashlib.sha256(blob).hexdigest()
     if got != want:
@@ -167,10 +166,8 @@ def install_deno_binary(dest_dir, tag, opener=None, downloads=None):
     downloads = downloads or DENO_DOWNLOADS
     want = downloads[tag]
     if opener is None:
-        import urllib.request
         def opener(url):
-            with urllib.request.urlopen(url, timeout=120) as resp:  # nosec - pinned GitHub host, checksum-verified
-                return resp.read()
+            return http_util.get_bytes(url, timeout=120)   # nosec - pinned GitHub host, checksum-verified
     blob = opener(deno_download_url(tag))
     got = hashlib.sha256(blob).hexdigest()
     if got != want:

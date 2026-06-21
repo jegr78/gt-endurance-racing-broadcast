@@ -43,6 +43,7 @@ import subprocess
 import services as sv
 import init_setup as ins
 import config as pcfg    # 'pcfg' (not 'cfg'): avoids F811 clash with local `cfg = json.loads(...)` dicts elsewhere in this file
+import http_util
 import profile_admin as pa
 import chat_admin as ca
 import console_auth as cpa
@@ -737,9 +738,7 @@ OBS_PAGE_PATHS = ("/hud", "/hud/override.css",
 
 
 def _fetch_relay_page(path):
-    import urllib.request
-    return urllib.request.urlopen(
-        f"http://127.0.0.1:{RELAY_PORT}{path}", timeout=3).read()
+    return http_util.get_bytes(f"http://127.0.0.1:{RELAY_PORT}{path}", timeout=3)
 
 
 def served_pages_hash(fetch=None, paths=OBS_PAGE_PATHS):
@@ -978,7 +977,6 @@ def _cues_reload_if_running():
 
 def chat_cmd(rest):
     """`racecast chat clear|pull|import|export` — manage the crew-chat history."""
-    import urllib.request as _u
     verb = rest[0] if rest else None
     if verb not in CHAT_VERBS:
         sys.exit(f"usage: racecast chat {{{'|'.join(CHAT_VERBS)}}}")
@@ -1043,7 +1041,7 @@ def chat_cmd(rest):
                 sys.exit(f"racecast: --port must be an integer, got {port_str!r}")
         url = f"http://{host}:{port}/chat/data"
         try:
-            with _u.urlopen(url, timeout=5) as resp:
+            with http_util.open_url(url, timeout=5) as resp:
                 if resp.status != 200:
                     sys.exit(f"racecast: pull failed — HTTP {resp.status} from {host}")
                 payload = json.loads(resp.read())
@@ -1142,12 +1140,8 @@ def _links_roster():
 
 def _post_chat_message(text):
     """Best-effort POST of one crew-chat message to the local relay."""
-    import urllib.request
-    req = urllib.request.Request(
-        f"http://127.0.0.1:{RELAY_PORT}/chat/send",
-        data=json.dumps({"user": "Producer", "text": text}).encode(),
-        headers={"Content-Type": "application/json"}, method="POST")
-    urllib.request.urlopen(req, timeout=3).read()
+    http_util.post_json(f"http://127.0.0.1:{RELAY_PORT}/chat/send",
+                        {"user": "Producer", "text": text}, timeout=3)
 
 
 def funnel_cmd(rest):
@@ -1253,12 +1247,9 @@ def _console_pull_versions(args):
     # secret, which travels with the profile). We send OUR secret; A validates it.
     _apply_active_profile_env()
     secret = os.environ.get("RACECAST_CONSOLE_SECRET") or ""
-    import urllib.request
-    req = urllib.request.Request(f"http://{host}:{port}/cockpit/versions",
-                                 headers={"X-Console-Secret": secret})
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
+        payload = http_util.get_json(f"http://{host}:{port}/cockpit/versions",
+                                     headers={"X-Console-Secret": secret}, timeout=5)
     except Exception as exc:
         sys.exit(f"racecast: could not fetch console versions from {host}:{port} "
                  f"({type(exc).__name__})")
@@ -1428,9 +1419,8 @@ def _tailscale_peers():
 def _relay_http_ok():
     """True iff the relay control server answers on localhost."""
     try:
-        import urllib.request
         # .read() drains the socket; we only care whether the request succeeds
-        urllib.request.urlopen(f"http://127.0.0.1:{RELAY_PORT}/status", timeout=3).read()
+        http_util.get_bytes(f"http://127.0.0.1:{RELAY_PORT}/status", timeout=3)
         return True
     except Exception:
         return False
@@ -1438,9 +1428,7 @@ def _relay_http_ok():
 
 def _relay_fetch_json(url, timeout=3):
     """GET a relay control-server endpoint and parse its JSON body."""
-    import urllib.request
-    with urllib.request.urlopen(url, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+    return http_util.get_json(url, timeout=timeout)
 
 
 def _active_console_secret():
@@ -1463,24 +1451,16 @@ def _funnel_takeover_base(host):
 
 def _takeover_get(url, secret=None, timeout=5):
     """GET a (funnel) takeover endpoint with the step-up secret header. Raises
-    urllib HTTPError on 401/403 (bad secret) so the caller can distinguish auth
+    HTTPError on 401/403 (bad secret) so the caller can distinguish auth
     rejection from a network failure."""
-    import urllib.request
-    headers = {"X-Console-Secret": secret} if secret else {}
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+    headers = {"X-Console-Secret": secret} if secret else None
+    return http_util.get_json(url, headers=headers, timeout=timeout)
 
 
 def _relay_post_json(url, payload, timeout=3):
     """POST a JSON body to a relay control-server endpoint and parse its JSON
     reply (the write sibling of _relay_fetch_json)."""
-    import urllib.request
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST",
-                                 headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+    return json.loads(http_util.post_json(url, payload, timeout=timeout).decode("utf-8"))
 
 
 _EVENT_TITLE_SANITIZER = None
@@ -3658,16 +3638,15 @@ def _active_discord_webhook():
 def _post_discord_webhook(url, payload):
     """POST a Discord incoming-webhook JSON body. Raises on HTTP/network error
     (callers catch and report)."""
-    import urllib.request
     # Discord sits behind Cloudflare, which 403s the default urllib
     # "Python-urllib/x.y" User-Agent — without an explicit UA the POST is
     # rejected and the link never arrives (matches the relay's health-alert
     # poster).
-    req = urllib.request.Request(
-        url, data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json",
-                 "User-Agent": "racecast/1.0"}, method="POST")
-    urllib.request.urlopen(req, timeout=5).read()
+    with http_util.open_url(url, data=json.dumps(payload).encode(),
+                            headers={"Content-Type": "application/json",
+                                     "User-Agent": "racecast/1.0"},
+                            method="POST", timeout=5) as r:
+        r.read()
 
 
 def console_post_link_data():
@@ -4043,10 +4022,7 @@ _GOOGLE_FONT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
 
 
 def _http_get(url, headers=None, binary=False, timeout=15):
-    import urllib.request
-    req = urllib.request.Request(url, headers=headers or {})
-    with urllib.request.urlopen(req, timeout=timeout) as r:   # noqa: S310 (fixed Google hosts, allow-listed name)
-        data = r.read()
+    data = http_util.get_bytes(url, headers=headers or None, timeout=timeout)
     return data if binary else data.decode("utf-8", "replace")
 
 

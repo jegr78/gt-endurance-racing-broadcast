@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Unit checks for the Funnel-setup policy logic. Run: python3 tests/test_funnel_setup.py"""
-import importlib.util
-import os
+import importlib.util, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+# funnel_setup imports its sibling `http_util`; in production scripts/ is always
+# on sys.path, so mirror that for the loader.
+sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
 
 
 def _load(name, rel):

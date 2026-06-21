@@ -18,7 +18,8 @@ guidance) separate from the heavy orchestration so the former stays unit-tested.
 
 Tests: tests/test_obs_browser_linux.py
 """
-import hashlib, os, shutil, subprocess, sys, tempfile, urllib.request
+import hashlib, os, shutil, subprocess, sys, tempfile
+import http_util
 
 # --- pinned build spec, keyed by OBS "<major>.<minor>" -------------------
 # Values taken from obs-studio's CMakePresets.json (configurePresets[dependencies]
@@ -206,7 +207,7 @@ def _run(argv, **kw):
 
 def _download(url, dest):
     print(f"  downloading {url}")
-    with urllib.request.urlopen(url) as r, open(dest, "wb") as f:  # noqa: S310 (https, pinned host)
+    with http_util.open_url(url, timeout=None) as r, open(dest, "wb") as f:
         shutil.copyfileobj(r, f)
 
 

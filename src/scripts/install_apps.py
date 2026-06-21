@@ -7,6 +7,7 @@ guide. Never elevates privileges itself — the vendor installers and package
 managers prompt for sudo on their own. The required CLI tools live in
 install_tools.py."""
 import os, shutil, subprocess, sys
+import http_util
 
 _COMMON = None
 
@@ -286,10 +287,8 @@ def _linux_app_version(app, exists, read_text, run):
 def _http_fetch(url, range_bytes):
     """GET `url` (optionally only its first `range_bytes`) and return the decoded
     body. Short timeout; raises on any failure (callers treat that as 'unknown')."""
-    import urllib.request
-    headers = {"Range": f"bytes=0-{range_bytes - 1}"} if range_bytes else {}
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=4) as resp:
+    headers = {"Range": f"bytes=0-{range_bytes - 1}"} if range_bytes else None
+    with http_util.open_url(url, headers=headers, timeout=4) as resp:
         body = resp.read(range_bytes) if range_bytes else resp.read()
     return body.decode("utf-8", "replace")
 

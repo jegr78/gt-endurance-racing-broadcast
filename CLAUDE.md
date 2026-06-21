@@ -24,20 +24,15 @@ no package manager); external runtime deps are `yt-dlp`, `streamlink`, `ffmpeg`,
   The OBS collection and scripts are deliberately path/secret-free in git.
 - Tooling is Python-only by design — do not reintroduce `.sh`/`.bat` (the build
   fails if any are shipped).
-- **Outbound HTTP to an external service MUST send an explicit `User-Agent`.**
-  Discord (and other Cloudflare-fronted hosts: Google Fonts, some GitHub
-  endpoints) reject the default `Python-urllib/x.y` UA with `HTTP 403 Forbidden`,
-  so the request silently never arrives. We have hit this repeatedly (the relay
-  health-alert poster, the installer downloader, and the `/console` Discord
-  link post all 403'd before a UA was added). When you build a `urllib.request.
-  Request(...)` (or `urlopen`) to anything that is **not** loopback/tailnet,
-  set `headers={"User-Agent": "racecast…/1.0", …}` — reuse the existing
-  per-module constant/string (`racecast-feeds/1.0`, `racecast-graphics/1.0`,
-  `installer_common.INSTALLER_UA`, etc.). Loopback/tailnet calls (`127.0.0.1`,
-  the relay control server, another producer's tailnet/funnel host) do **not**
-  need one. There is no automated guard — a static check false-positives on the
-  intentional no-UA internal calls — so this rule is the guard: check it by hand
-  on every new request.
+- **Outbound HTTP goes through `src/scripts/http_util.py`** (the covered side:
+  `racecast.py`, `ui_server.py`, `src/scripts/*`). It always sends a racecast
+  `User-Agent`; Discord and other Cloudflare-fronted hosts (Google Fonts, some
+  vendor endpoints) 403 the default `Python-urllib/x.y` UA, so a bare `urllib`
+  call silently fails. `tests/test_http_util.py` enforces this — it fails if a
+  covered file uses `urlopen`/`urllib.request` directly. Exceptions, each
+  already setting its own UA: the self-contained relay/`get-*`/`setup-assets`
+  scripts (deliberately dependency-light, must not import shared modules) and
+  `src/scripts/update.py` (needs its own HTTPS-only redirect opener + test seam).
 - **Removing/renaming a CLI flag? Grep the whole repo — including `tools/` and
   `.github/`.** Those callers run only in the build/release pipeline, not in the
   test suite (a stale `--timer-url` in the binary smoke test broke every v1.0.0
@@ -106,6 +101,7 @@ python3 tests/test_tailscale.py      # Tailscale detection/control helpers
 python3 tests/test_obsws.py          # minimal obs-websocket client (feed release on stop, page refresh on start)
 python3 tests/test_discord_web.py    # Discord-web/browser capture decision (native-vs-web, browser target)
 python3 tests/test_discord_oauth.py  # pure Discord OAuth helpers (state HMAC, handle match, token mint)
+python3 tests/test_http_util.py     # shared outbound-HTTP helper + User-Agent guard
 python3 tests/test_installer_common.py  # shared installer helpers (brew bootstrap)
 python3 tests/test_install_tools.py     # install-tools decision helpers
 python3 tests/test_install_apps.py      # install-apps decision helpers

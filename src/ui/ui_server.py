@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 import logsetup   # re-open-per-poll log tailing (scripts/ on sys.path via racecast)
+import http_util
 
 APP_ID = "racecast-control-center"
 DEFAULT_PORT = 8089
@@ -47,9 +48,7 @@ def probe_instance(host, port, fetch=None):
 
 
 def _fetch_ping(host, port):
-    import urllib.request
-    with urllib.request.urlopen(f"http://{host}:{port}/api/ping", timeout=2) as r:
-        return r.read()
+    return http_util.get_bytes(f"http://{host}:{port}/api/ping", timeout=2)
 
 
 def sse_frame(line):
