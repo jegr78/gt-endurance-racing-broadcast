@@ -71,7 +71,8 @@ box, border style/color/width) in the property panel. The fields **pre-fill** wi
 slot's current template values, so you always see real numbers to adjust from. **Pop out ↗**
 opens the builder in a larger modal over the Control Center; **Save** writes the files;
 **Apply in OBS** reloads the browser source (the same as `racecast obs refresh`);
-**Preview ↗** opens the live HUD preview.
+**Preview ↗** opens the live HUD preview at `/hud/preview` (the real base page with
+live Sheet data over your `Overlay.png` frame).
 
 ![Control Center — Overlay Builder modal: drag/resize the HUD slots on a canvas over the Overlay.png frame, style them in the property panel](images/cc-overlay-builder.png)
 

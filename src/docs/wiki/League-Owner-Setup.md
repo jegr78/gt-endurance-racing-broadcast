@@ -70,7 +70,7 @@ on the list.
 The relay resolves roles from the Google Sheet's **Crew tab**. The tab header must be:
 
 ```
-Name | Commentator | Director | Producer | Discord
+Name | Commentator | Director | Producer | Race Control | Discord
 ```
 
 - **Name** — the person's display name (used in chat, tally, and links).
@@ -80,6 +80,7 @@ Name | Commentator | Director | Producer | Discord
   yet on the schedule).
 - **Director** — flag; grants Director Panel + Web Buttons access.
 - **Producer** — flag; reserved for future producer-level capabilities.
+- **Race Control** — flag; grants the read-only [Race Control](Console) monitoring desk.
 - **Discord** — the Discord **username** (not display name, not `@mention`). Fill this
   for everyone who will log in with Discord. Case is ignored on match.
 
@@ -88,10 +89,10 @@ finds no match and returns HTTP 403.
 
 #### Editing the Crew tab from the Control Center
 
-You can maintain all five columns by hand in the Sheet, **or** use the **crew editor** in
+You can maintain all six columns by hand in the Sheet, **or** use the **crew editor** in
 the Control Center (**Profile** view → **Crew** card). It reads the live roster and lets
-you add/edit/delete people — Name, the Commentator/Director/Producer checkboxes, and the
-Discord username — writing each change straight back to the Sheet. Both the read and the
+you add/edit/delete people — Name, the Commentator/Director/Producer/Race Control
+checkboxes, and the Discord username — writing each change straight back to the Sheet. Both the read and the
 write paths locate columns **by header text**, so the columns may sit in any order and
 extra columns are left untouched.
 
