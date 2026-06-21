@@ -173,6 +173,23 @@ def t_logo_is_any_authenticated():
     assert cp.min_capability(["logo"]) == cp.Requirement(cp.ANY, False)
 
 
+def t_race_control_page_and_data_require_race_control():
+    # The monitoring desk page + its only new data endpoint are gated on the
+    # race_control capability (no step-up), mirroring the cockpit/panel pages (#244).
+    assert cp.min_capability(["race-control"]) == cp.Requirement(cp.RACE_CONTROL, False)
+    assert cp.min_capability(["race-control", "data"]) == cp.Requirement(cp.RACE_CONTROL, False)
+
+
+def t_decide_race_control_allowed_commentator_forbidden():
+    assert cp.decide({cp.RACE_CONTROL}, ["race-control"]) == cp.ALLOW
+    assert cp.decide({cp.RACE_CONTROL}, ["race-control", "data"]) == cp.ALLOW
+    # A plain commentator (or any other role) may not reach the desk.
+    assert cp.decide({cp.COMMENTATOR}, ["race-control"]) == cp.FORBIDDEN
+    assert cp.decide({cp.DIRECTOR}, ["race-control", "data"]) == cp.FORBIDDEN
+    # Additive roles: holding race_control alongside another role still allows it.
+    assert cp.decide({cp.DIRECTOR, cp.RACE_CONTROL}, ["race-control"]) == cp.ALLOW
+
+
 def t_policy_cues_director_only():
     # Director may send/read cues; a bare commentator may not.
     for seg in (["cues", "send"], ["cues", "data"], ["cues", "presets"], ["cues", "reload"]):

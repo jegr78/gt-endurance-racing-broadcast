@@ -29,16 +29,20 @@ class _FakeSource:
 
 
 class _Crew:
-    def __init__(self, rows): self._rows = list(rows)
+    def __init__(self, rows, rc=frozenset()):
+        self._rows = list(rows)
+        self._rc = frozenset(rc)
     def get(self): return list(self._rows)
     def commentator_keys(self): return frozenset()
+    def race_control_keys(self): return self._rc
 
 
 def _serve(companion_url=None, logo_path=None, sheet_id=None):
     rows = [("https://youtu.be/a", "Alice", "1", 2)]           # alice -> commentator
     src = _FakeSource(_URLS8, rows)
     relay = m.Relay(src, [53001, 53002], LOGDIR, sheet_id=sheet_id)
-    crew = _Crew([("Bob", True, False), ("Carol", False, True)])  # bob=director, carol=producer
+    # bob=director, carol=producer; dave=race_control desk (no other role)
+    crew = _Crew([("Bob", True, False), ("Carol", False, True)], rc={"dave"})
     SRC = os.path.join(ROOT, "src")
     handler = m.make_handler(
         relay, console_secret=SECRET, console_versions_path=None,
@@ -47,6 +51,7 @@ def _serve(companion_url=None, logo_path=None, sheet_id=None):
         panel_path=os.path.join(SRC, "director", "director-panel.html"),
         cockpit_page_path=os.path.join(SRC, "cockpit", "cockpit.html"),
         console_page_path=os.path.join(SRC, "console", "console.html"),
+        race_control_page_path=os.path.join(SRC, "racecontrol", "race-control.html"),
         buttons_page_path=os.path.join(SRC, "console", "buttons.html"),
         companion_url=companion_url,
         logo_path=logo_path)
@@ -256,6 +261,59 @@ def t_console_cockpit_page_any_auth_with_console_base_and_cookie():
             setc = r.headers.get("Set-Cookie", "")
         assert 'window.RC_API_BASE = "/console"' in body, body[:400]
         assert "Path=/console" in setc, setc
+    finally:
+        srv.shutdown()
+
+
+def t_console_whoami_includes_race_control_role():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, data = _get(port, "/console/whoami", _tok("dave"))   # dave = race_control
+        assert code == 200, (code, data)
+        body = json.loads(data)
+        assert body["subject"] == "dave"
+        assert "race_control" in body["roles"], body
+    finally:
+        srv.shutdown()
+
+
+def t_console_race_control_page_requires_role():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        # commentator + director are NOT race_control -> 403
+        assert _get(port, "/console/race-control", _tok("alice"))[0] == 403
+        assert _get(port, "/console/race-control", _tok("bob"))[0] == 403
+        code, body = _get(port, "/console/race-control", _tok("dave"))   # race_control
+        assert code == 200, (code, body)
+        assert 'window.RC_API_BASE = "/console"' in body, body[:400]
+    finally:
+        srv.shutdown()
+
+
+def t_console_race_control_data_redacted_and_gated():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        assert _get(port, "/console/race-control/data", _tok("alice"))[0] == 403
+        code, data = _get(port, "/console/race-control/data", _tok("dave"))
+        assert code == 200, (code, data)
+        blob = json.loads(data)
+        assert "schedule" in blob and "on_air" in blob, blob
+        assert blob["mode"] == "race", blob
+        # Redaction: no stream URLs leave the tailnet via the public Funnel desk.
+        serialised = json.dumps(blob)
+        assert "url" not in serialised and "http" not in serialised.lower(), serialised
+        # The schedule row carries stint + streamer + the live marker only.
+        assert blob["schedule"] and set(blob["schedule"][0]) == {"stint", "streamer", "live"}, blob
+    finally:
+        srv.shutdown()
+
+
+def t_console_race_control_reuses_any_cockpit_endpoints():
+    # The desk reuses the ANY cockpit monitors; a race_control token reaches them.
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        assert _get(port, "/console/cockpit/timer", _tok("dave"))[0] in (200, 404)
+        assert _get(port, "/console/cockpit/chat/data", _tok("dave"))[0] == 200
     finally:
         srv.shutdown()
 

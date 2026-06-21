@@ -12,8 +12,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src")
 # Bundled data, laid out under _MEIPASS/src/ so every script's here-relative
 # path resolution (hud.html, assets/, OBS template) keeps working unchanged.
-DATA = ["relay", "scripts", "obs", "assets", "companion", "director", "cockpit", "console", "ui",
-        "setup-assets.py"]
+DATA = ["relay", "scripts", "obs", "assets", "companion", "director", "cockpit", "console",
+        "racecontrol", "ui", "setup-assets.py"]
 # Operator docs the Control Center's Help page serves (racecast.DOCS_FILES) — only
 # these, kept under src/docs/; the docs/wiki/ subtree stays on GitHub.
 DOC_FILES = ["docs/cheat_sheets.html", "docs/Broadcast_Setup_Guide.md",

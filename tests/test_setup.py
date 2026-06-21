@@ -1045,7 +1045,8 @@ def t_crew_set_validates_and_pushes():
         assert r.get("ok"), r
         assert pushes[-1] == {"action": "crew", "row": 2, "name": "Dana",
                               "director": True, "producer": False,
-                              "commentator": False, "discord": ""}
+                              "commentator": False, "race_control": False,
+                              "discord": ""}
     finally:
         m.post_webhook = orig
 
@@ -1055,11 +1056,12 @@ def t_crew_set_coerces_flags_and_strips_name():
     ctl, hs, orig = _ctl(pushes)
     try:
         r = ctl.crew_set(3, name="  Pia  ", director=0, producer="x",
-                         commentator="yes", discord="  Pia#1  ")
+                         commentator="yes", race_control="x", discord="  Pia#1  ")
         assert r.get("ok"), r
         assert pushes[-1] == {"action": "crew", "row": 3, "name": "Pia",
                               "director": False, "producer": True,
-                              "commentator": True, "discord": "Pia#1"}
+                              "commentator": True, "race_control": True,
+                              "discord": "Pia#1"}
     finally:
         m.post_webhook = orig
 
@@ -1088,7 +1090,7 @@ def t_crew_set_reflects_in_crew_source():
     pushes = []
     hs = _hs_stub()
     cs = m.CrewSource("http://crew")
-    cs.rows = [("Alice", True, False, False, "")]      # 1 existing data row (5-tuple)
+    cs.rows = [("Alice", True, False, False, False, "")]  # 1 existing data row (6-tuple)
     ctl = m.SetupControl("http://push", hs, crew_source=cs)
     def fake_post(url, payload, timeout=10):
         pushes.append(payload)
@@ -1098,7 +1100,7 @@ def t_crew_set_reflects_in_crew_source():
         assert ctl.crew_set(2, name="Bob", director=False, producer=True,
                             commentator=True, discord="bob_d").get("ok")
         assert cs.get() == [("Alice", True, False), ("Bob", False, True)]  # appended
-        assert cs.get_full()[1] == ("Bob", False, True, True, "bob_d")     # full echo
+        assert cs.get_full()[1] == ("Bob", False, True, True, False, "bob_d")  # full echo
         assert ctl.crew_set(1, name="Alice", director=False, producer=False).get("ok")
         assert cs.get()[0] == ("Alice", False, False)                     # edited in place
         assert ctl.crew_delete(2).get("ok")

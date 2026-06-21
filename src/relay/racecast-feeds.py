@@ -546,7 +546,8 @@ def asset_key(s):
     s = re.sub(r"\s+", "-", s)
     return re.sub(r"[^a-z0-9-]", "", s)
 
-def resolve_roles(crew_rows, schedule_keys, subject, crew_commentator_keys=frozenset()):
+def resolve_roles(crew_rows, schedule_keys, subject, crew_commentator_keys=frozenset(),
+                  crew_race_control_keys=frozenset()):
     """Resolve a verified identity *subject* to its capability set for this event.
 
     crew_rows: iterable of (name, is_director, is_producer) from CrewSource.get().
@@ -555,17 +556,23 @@ def resolve_roles(crew_rows, schedule_keys, subject, crew_commentator_keys=froze
     subject: the asset_key-normalized person name from the verified token.
     crew_commentator_keys: set of asset_key-normalized names whose Crew
         Commentator flag is truthy (A1 union source).
+    crew_race_control_keys: set of asset_key-normalized names whose Crew Race
+        Control flag is truthy (#244).
 
-    Returns a subset of {"commentator", "director", "producer"}:
+    Returns a subset of {"commentator", "director", "producer", "race_control"}:
     - "commentator" iff subject is in the live Schedule OR carries the Crew
       Commentator flag (A1 union);
-    - "director"/"producer" from any Crew row whose name normalizes to subject.
+    - "director"/"producer" from any Crew row whose name normalizes to subject;
+    - "race_control" iff subject carries the Crew Race Control flag.
     An unknown subject (no crew row, not in the schedule) yields the empty set.
+    Roles are additive (a person may be e.g. both director and race_control).
     Identity != authorization: this is the only place roles are derived, per the
     role-based-funnel-access spec (#216)."""
     roles = set()
     if subject in schedule_keys or subject in crew_commentator_keys:
         roles.add("commentator")
+    if subject in crew_race_control_keys:
+        roles.add("race_control")
     for name, is_dir, is_prod in crew_rows:
         if asset_key(name) != subject:
             continue
@@ -652,6 +659,10 @@ CREW_NAME_HEADERS = ("name", "crew", "person")
 CREW_DIRECTOR_HEADERS = ("director",)
 CREW_PRODUCER_HEADERS = ("producer",)
 CREW_COMMENTATOR_HEADERS = ("commentator",)
+# Race Control (#244): a read-only monitoring desk role. Header-located only
+# (mirrors Commentator) — no positional fallback. NB: the role string is
+# "race_control"; the unrelated director-only HUD banner is "racecontrol".
+CREW_RACE_CONTROL_HEADERS = ("race control", "race-control", "racecontrol", "rc")
 CREW_DISCORD_HEADERS = ("discord", "discord handle", "discord username")
 CREW_TRUTHY = frozenset({"x", "yes", "true", "1", "y", "✓"})
 
@@ -1544,6 +1555,17 @@ def cockpit_tally(rows, live_idx, me_key):
     return {"on_air": on_air, "up_next": up_next, "scheduled": scheduled}
 
 
+def race_control_schedule(rows, live_map):
+    """Redacted schedule for the Race Control monitoring desk (#244): stint +
+    streamer + live-feed marker per row, with NO stream URL. The redaction is the
+    same boundary as /console/takeover/status — feed URLs never leave the tailnet,
+    and this desk is reachable over the public Funnel. Pure for unit testing.
+    *rows* are ScheduleSource 4-tuples (url, streamer, stint, line); *live_map*
+    maps a 0-based row index -> the feed key (A/B) currently serving it."""
+    return [{"stint": st, "streamer": n, "live": live_map.get(i)}
+            for i, (_u, n, st, _l) in enumerate(rows)]
+
+
 def cockpit_display_name(rows, me_key):
     """The display streamer name whose asset_key == me_key (first match), so chat
     messages are attributed to a human-readable name. Falls back to me_key."""
@@ -1886,7 +1908,7 @@ class CrewSource:
         self.csv_url = csv_url
         self.cache_path = cache_path
         self.lock = threading.Lock()
-        self.rows = []             # canonical: [(name, is_dir, is_prod, is_commentator, discord)]
+        self.rows = []             # canonical: [(name, is_dir, is_prod, is_commentator, is_race_control, discord)]
         self.last_ok = None
         self.last_error = None
 
@@ -1915,13 +1937,13 @@ class CrewSource:
 
     @staticmethod
     def _parse_full(text):
-        """CSV -> [(name, is_dir, is_prod, is_commentator, discord)].
+        """CSV -> [(name, is_dir, is_prod, is_commentator, is_race_control, discord)].
 
-        Header mode (opt-in): if a recognized Name header is present, all five
-        columns are located by header text (so they may move and extras are
-        ignored). Positional fallback (no name header): col0=name, col1=director,
-        col2=producer; is_commentator=False and discord="" for every row (those
-        columns need a header to locate). Returns [] on empty input."""
+        Header mode (opt-in): if a recognized Name header is present, all columns
+        are located by header text (so they may move and extras are ignored).
+        Positional fallback (no name header): col0=name, col1=director,
+        col2=producer; is_commentator/is_race_control=False and discord="" for
+        every row (those columns need a header to locate). Returns [] on empty input."""
         rows = list(csv.reader(io.StringIO(text)))
         if not rows:
             return []
@@ -1933,6 +1955,7 @@ class CrewSource:
             dir_i = _col(CREW_DIRECTOR_HEADERS)
             prod_i = _col(CREW_PRODUCER_HEADERS)
             com_i = _col(CREW_COMMENTATOR_HEADERS)
+            rc_i = _col(CREW_RACE_CONTROL_HEADERS)
             dis_i = _col(CREW_DISCORD_HEADERS)
 
             def _cell(i, row):
@@ -1950,12 +1973,13 @@ class CrewSource:
                     _crew_truthy(_cell(dir_i, r)),
                     _crew_truthy(_cell(prod_i, r)),
                     _crew_truthy(_cell(com_i, r)),
+                    _crew_truthy(_cell(rc_i, r)),
                     (_cell(dis_i, r) or "").strip(),
                 ))
             return out
-        # Positional fallback: name/dir/prod only; no commentator/discord columns.
+        # Positional fallback: name/dir/prod only; no commentator/race-control/discord.
         triples = CrewSource._parse_rows_positional(text)
-        return [(n, d, p, False, "") for (n, d, p) in triples]
+        return [(n, d, p, False, False, "") for (n, d, p) in triples]
 
     @staticmethod
     def _parse_rows(text):
@@ -1967,16 +1991,17 @@ class CrewSource:
         header): col0=name, col1=director, col2=producer, dropping a leading
         header-like row. Rows with an empty name are skipped."""
         full = CrewSource._parse_full(text)
-        result = [(n, d, p) for (n, d, p, _c, _x) in full]
+        result = [(n, d, p) for (n, d, p, _c, _rc, _x) in full]
         return result or None
 
     def get(self):
         """Back-compat 3-tuple roster (name, is_dir, is_prod) for resolve_roles."""
         with self.lock:
-            return [(n, d, p) for (n, d, p, _c, _x) in self.rows]
+            return [(n, d, p) for (n, d, p, _c, _rc, _x) in self.rows]
 
     def get_full(self):
-        """Full 5-tuple roster (name, is_dir, is_prod, is_commentator, discord)."""
+        """Full 6-tuple roster
+        (name, is_dir, is_prod, is_commentator, is_race_control, discord)."""
         with self.lock:
             return list(self.rows)
 
@@ -1986,7 +2011,7 @@ class CrewSource:
         with self.lock:
             full = list(self.rows)
         out = {}
-        for name, _d, _p, _c, discord in full:
+        for name, _d, _p, _c, _rc, discord in full:
             h = (discord or "").strip().lower()
             if h:
                 out[h] = name
@@ -1996,7 +2021,13 @@ class CrewSource:
         """asset_key set of crew names whose Commentator flag is truthy (A1 union)."""
         with self.lock:
             full = list(self.rows)
-        return {asset_key(n) for (n, _d, _p, c, _x) in full if c and (n or "").strip()}
+        return {asset_key(n) for (n, _d, _p, c, _rc, _x) in full if c and (n or "").strip()}
+
+    def race_control_keys(self):
+        """asset_key set of crew names whose Race Control flag is truthy (#244)."""
+        with self.lock:
+            full = list(self.rows)
+        return {asset_key(n) for (n, _d, _p, _c, rc, _x) in full if rc and (n or "").strip()}
 
     def _fetch_text(self, timeout=15):
         """Fetch the raw CSV text from csv_url. Returns None on error."""
@@ -2037,22 +2068,23 @@ class CrewSource:
         return True
 
     def inject_row(self, row, name=None, director=None, producer=None,
-                   commentator=None, discord=None):
+                   commentator=None, race_control=None, discord=None):
         """Optimistically merge a Control-Center crew write into the in-memory
         roster so /crew/data reflects it before the next sheet poll. `row` is the
         1-based data-row index (header excluded); row == len+1 appends a row whose
-        name is non-empty. Each of name/director/producer/commentator/discord is
-        applied when given and LEFT UNCHANGED when None. The next CSV poll
-        reconciles against the sheet."""
+        name is non-empty. Each of name/director/producer/commentator/race_control/
+        discord is applied when given and LEFT UNCHANGED when None. The next CSV
+        poll reconciles against the sheet."""
         with self.lock:
             rows = list(self.rows)
             i = int(row) - 1
-            cur = rows[i] if 0 <= i < len(rows) else ("", False, False, False, "")
-            cur_n, cur_d, cur_p, cur_c, cur_x = cur
+            cur = rows[i] if 0 <= i < len(rows) else ("", False, False, False, False, "")
+            cur_n, cur_d, cur_p, cur_c, cur_rc, cur_x = cur
             entry = (cur_n if name is None else (name or "").strip(),
                      cur_d if director is None else bool(director),
                      cur_p if producer is None else bool(producer),
                      cur_c if commentator is None else bool(commentator),
+                     cur_rc if race_control is None else bool(race_control),
                      cur_x if discord is None else (discord or "").strip())
             if 0 <= i < len(rows):
                 rows[i] = entry
@@ -2346,11 +2378,13 @@ class SetupControl:
 
     # -- crew roster writes (Crew tab: Name | Commentator | Director | Producer | Discord) --
     def crew_set(self, row, name=None, director=None, producer=None,
-                 commentator=None, discord=None):
+                 commentator=None, race_control=None, discord=None):
         """Write one Crew tab row via the webhook (per-row, mirrors schedule).
         `name` is free text (crew may be director/producer-only people, not in
-        the streamer vocabulary); director/producer/commentator are coerced to
-        booleans; discord is the trimmed Discord username (may be empty)."""
+        the streamer vocabulary); director/producer/commentator/race_control are
+        coerced to booleans; discord is the trimmed Discord username (may be empty).
+        The webhook degrades gracefully if the Sheet Apps Script lacks the
+        race_control column (it ignores the extra field)."""
         if not self.push_url:
             return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
                              "in the active profile or .env (wiki: Sheet-Webhook)"}
@@ -2363,11 +2397,14 @@ class SetupControl:
         discord = (discord or "").strip()
         payload = {"action": "crew", "row": rownum, "name": name,
                    "director": bool(director), "producer": bool(producer),
-                   "commentator": bool(commentator), "discord": discord}
+                   "commentator": bool(commentator),
+                   "race_control": bool(race_control), "discord": discord}
         ok, err = self._push(payload, "crew")
         if ok and self.crew_source is not None:
-            self.crew_source.inject_row(rownum, name, bool(director), bool(producer),
-                                        bool(commentator), discord)
+            self.crew_source.inject_row(rownum, name=name, director=bool(director),
+                                        producer=bool(producer),
+                                        commentator=bool(commentator),
+                                        race_control=bool(race_control), discord=discord)
         return {"ok": True, "row": rownum} if ok else {"error": err}
 
     def crew_delete(self, row):
@@ -3061,7 +3098,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  console_versions_path=None,
                  submission_store=None, event_store=None, crew_source=None,
                  console_page_path=None, companion_url=None, logo_path=None,
-                 buttons_page_path=None):
+                 buttons_page_path=None, race_control_page_path=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -3484,7 +3521,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 rows = getattr(src, "rows", []) or []
             crew = crew_source.get() if crew_source else []
             ckeys = crew_source.commentator_keys() if crew_source else frozenset()
-            return resolve_roles(crew, schedule_keys(rows), subject, ckeys)
+            rckeys = crew_source.race_control_keys() if crew_source else frozenset()
+            return resolve_roles(crew, schedule_keys(rows), subject, ckeys, rckeys)
 
         def _console_gate(self, p, method):
             """Authorize a /console/* request and return the segment list to fall
@@ -3551,6 +3589,30 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 ctype = _LOGO_CTYPES.get(ext, "image/png")
                 self._send_file(path, ctype)
                 return None
+            # Race Control monitoring desk (#244): a read-only page + ONE new data
+            # endpoint, both gated on the race_control capability. The redacted
+            # schedule strips stream URLs (the Funnel boundary). The desk's
+            # program/timer/chat reuse the ANY cockpit endpoints (no new surface).
+            if sub and sub[0] == "race-control":
+                if console_policy.decide(roles, sub, method, has_step_up) != console_policy.ALLOW:
+                    self._send({"error": "forbidden"}, 403)
+                    return None
+                if sub == ["race-control"] and method == "GET":
+                    if not race_control_page_path:
+                        return self._send({"error": "page not found"}, 404)
+                    self._send_page(race_control_page_path, "/console",
+                                    cookie_token=self._cockpit_token(), cookie_path="/console")
+                    return None
+                if sub == ["race-control", "data"] and method == "GET":
+                    rows = relay.source.get_rows()
+                    live = {f.idx: k for k, f in relay.feeds.items()}
+                    live_idx = relay.feeds[relay.live_feed()].idx
+                    return self._send({
+                        "schedule": race_control_schedule(rows, live),
+                        "event_title": event_store.get() if event_store else "",
+                        "mode": relay.mode,
+                        "on_air": live_schedule_row(rows, live_idx)})
+                return self._send({"error": "not found"}, 404)
             # Role-adaptive pages: authorize via the same matrix, then serve HTML
             # with the /console base + a Path=/console cookie. Served BEFORE the API
             # fall-through so they don't reach the root page handlers (wrong cookie
@@ -3911,8 +3973,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     rows = crew_source.get_full() if crew_source else []
                     return self._send({"rows": [
                         {"name": n, "director": bool(d), "producer": bool(pr),
-                         "commentator": bool(c), "discord": x or ""}
-                        for (n, d, pr, c, x) in rows]})
+                         "commentator": bool(c), "race_control": bool(rc),
+                         "discord": x or ""}
+                        for (n, d, pr, c, rc, x) in rows]})
                 if p == ["qualifying", "data"]:
                     qs = relay.qual_source
                     if not qs:
@@ -4167,7 +4230,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send(setup_ctl.crew_set(
                         body.get("row"), body.get("name"),
                         body.get("director"), body.get("producer"),
-                        body.get("commentator"), body.get("discord")))
+                        body.get("commentator"), body.get("race_control"),
+                        body.get("discord")))
                 if p == ["crew", "delete"]:
                     return self._send(setup_ctl.crew_delete(body.get("row")))
                 if p == ["pov", "set"]:
@@ -4466,6 +4530,12 @@ def main():
                  os.path.join(here, "..", "console", "console.html")):
         if os.path.exists(cand):
             console_page_path = os.path.abspath(cand); break
+    race_control_page_path = None
+    for cand in (os.path.join(here, "race-control.html"),
+                 os.path.join(here, "..", "race-control.html"),
+                 os.path.join(here, "..", "racecontrol", "race-control.html")):
+        if os.path.exists(cand):
+            race_control_page_path = os.path.abspath(cand); break
     buttons_page_path = None
     for cand in (os.path.join(here, "buttons.html"),
                  os.path.join(here, "..", "buttons.html"),
@@ -4589,6 +4659,7 @@ def main():
                            submission_store=submission_store,
                            event_store=event_store,
                            console_page_path=console_page_path,
+                           race_control_page_path=race_control_page_path,
                            buttons_page_path=buttons_page_path,
                            crew_source=crew_source,
                            logo_path=args.logo)
@@ -4657,6 +4728,11 @@ def main():
             LOG.info("  Commentator cockpit: /cockpit (auth) — links via 'racecast links'")
         else:
             LOG.warning("  cockpit secret set but cockpit.html not found — /cockpit will 404.")
+        if race_control_page_path:
+            LOG.info("  Race Control desk: /console/race-control (auth, role-gated)")
+        else:
+            LOG.warning("  console secret set but race-control.html not found — "
+                        "/console/race-control will 404.")
     if hud_source and hud_path:
         LOG.info("  HUD overlay (OBS source): http://127.0.0.1:%s/hud  "
                  "(tabs '%s'/'%s', refresh %ss)",

@@ -188,9 +188,9 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
                                                 "applied": "file"},
             "crew_read": lambda: {"ok": True, "entries": [
                 {"name": "Dana", "director": True, "producer": False}]},
-            "crew_write": lambda row, name, director, producer, commentator=None, discord=None: {
+            "crew_write": lambda row, name, director, producer, commentator=None, race_control=None, discord=None: {
                 "ok": True, "row": row,
-                "_got": (row, name, director, producer, commentator, discord)},
+                "_got": (row, name, director, producer, commentator, race_control, discord)},
             "crew_delete": lambda row: {"ok": True, "row": row, "_got": row}}
 
 
@@ -1638,10 +1638,10 @@ def t_api_crew_post_writes_row():
     try:
         code, body = _post_json(port, "/api/crew",
                                 {"row": 2, "name": "Pia", "director": False, "producer": True,
-                                 "commentator": True, "discord": "pia_d"})
+                                 "commentator": True, "race_control": True, "discord": "pia_d"})
         data = json.loads(body)
         assert code == 200 and data["ok"] is True
-        assert data["_got"] == [2, "Pia", False, True, True, "pia_d"]
+        assert data["_got"] == [2, "Pia", False, True, True, True, "pia_d"]
     finally:
         httpd.shutdown()
 
