@@ -15,7 +15,10 @@ gets a self-contained cockpit:
 - **Submit a stream link** — propose the stream URL for one of *their own* stints; it
   lands as a pending request the director approves before it can go on air (see below).
 
-![Cockpit section in the Control Center](images/cc-cockpit.png)
+Your producer generates and hands out your personal link from the **Crew Console** view
+in the [Control Center](Control-Center#crew-console):
+
+![Crew Console section in the Control Center — where the producer distributes per-person links](images/cc-crew-console.png)
 
 ### Director cues
 

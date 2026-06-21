@@ -169,6 +169,30 @@ Machine-wide (not league) configuration:
 
 > **CLI alternative:** edit `.env` in any text editor; `racecast cookies <browser>`.
 
+### Crew Console
+
+![Control Center — Crew Console: per-person /console links and the public-access (Funnel) switch](images/cc-crew-console.png)
+
+Where you hand out crew access. The relay serves a **role-adaptive `/console`** launcher —
+each person opens one personal link and lands on the surface their roles allow (commentator
+cockpit, director panel, Race Control desk). The per-league secret that signs those links is
+generated automatically on the first relay start, so this view is **zero-config**.
+
+- **Public access (Tailscale Funnel)** — `/console` is reachable over the tailnet by default;
+  flip the **Funnel ON** to also expose **only** `/console` publicly (so crew off the tailnet
+  can open their link). **Auto-enable on event start** turns it on with every event. **Copy
+  Link** / **Post to Discord** distribute the shared launcher link in one click.
+- **Crew links** — one row per person (the Crew tab ∪ the live schedule). **Copy funnel link**
+  copies their public HTTPS link, **Copy internal link** the tailnet/loopback one, and
+  **Revoke** rotates a single person's link (bumps their version) without touching anyone else.
+
+Roles per person come from the [Crew editor](#profile) (and the Schedule). Start the relay
+first — links and the secret only exist once it is running.
+
+> **CLI alternative:** `racecast links` (add `--post` to drop them into crew chat),
+> `racecast funnel on|off`, `racecast console token revoke <streamer>`. See [Console](Console)
+> and [Commentator Cockpit](Commentator-Cockpit) for what the crew sees.
+
 ### Logs
 
 ![Control Center — Logs](images/cc-logs.png)
