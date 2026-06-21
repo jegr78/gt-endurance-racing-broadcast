@@ -76,6 +76,13 @@ def t_step_kinds_jobs_name_a_real_op():
     assert m.STEP_KINDS["export-companion"]["kind"] == "action"
 
 
+def t_profile_step_points_at_demo_for_a_smoke_test():
+    # the profile gate offers the shipped `demo` profile as a zero-config
+    # smoke-test path (public read-only Sheet pre-filled) — issue #206 item 6.
+    instr = m.STEP_KINDS["profile"]["instruction"]
+    assert "demo" in instr
+
+
 # ------------------------------------------------------------- done-detection
 
 def t_tools_done():
