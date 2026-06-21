@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commentator — Onboarding · GT Endurance Racing Broadcast</title>
+<link rel="stylesheet" href="vendor/reveal/dist/reveal.css">
+<link rel="stylesheet" href="vendor/reveal/plugin/highlight/monokai.css">
+<link rel="stylesheet" href="assets/deck.css">
+</head>
+<body data-role="commentator">
+<div class="reveal"><div class="slides">
+
+<section data-markdown><script type="text/template">
+<span class="role-tag">Commentator · Onboarding</span>
+# Commentator
+You stream your stint on your own channel; the producer's relay pulls it in.
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Stream settings
+- Platform: your own **YouTube** or **Twitch**, set to **Unlisted**, the **same channel** every event.
+- Latency: **Low** (not Ultra-low) — buffering protection lives on the producer side.
+- Resolution: **1080p** target; if upload can't hold it, drop to **720p — never below**.
+- **CBR**, 2 s keyframes; use a **hardware encoder** (NVENC / QuickSync / AMF).
+- **No personal overlays** — graphics are added centrally.
+
+More: [Who does what](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Who-does-what)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Streaming from a PlayStation (no PC)
+- **PS5:** 1080p60 to YouTube or Twitch; pick **Unlisted** right on the console.
+- **PS4 Pro:** 1080p. **Base PS4:** 720p — still fine (never below 720p).
+- **Latency — set once, beforehand** on the channel (the console has no latency knob):
+  - YouTube Studio → Settings → stream latency → **Low**.
+  - Twitch Creator Dashboard → Stream → **Low Latency** on (default).
+- No CBR / keyframe / encoder knobs on the console — just set resolution and privacy.
+
+More: [Who does what](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Who-does-what)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Send your watch link
+- Post your `youtube.com/watch?v=…` or `twitch.tv/<you>` link in the crew **Discord** before your stint.
+- Or submit it directly from the cockpit — pick your stint, paste the URL, and submit.
+- It lands as a **pending request** the director approves before it can go on air.
+- You can only ever touch your **own** stints, never anyone else's.
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Open your Console
+Sign in at the Console link your producer shares — with Discord, or a personal sign-in link.
+Your cockpit appears as one of the role-gated cards.
+
+![The Console launcher](assets/img/console-landing.png)
+
+More: [Console](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Console) · [Commentator Cockpit](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Commentator-Cockpit)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Your cockpit
+- **Live program monitor** — low-bandwidth JPEG stills of the actual broadcast output.
+- **Tally** — large **YOU ARE ON AIR** indicator, or **UP NEXT · stint N · in X handovers**.
+- **Crew chat** — the same chat as the Director Panel, attributed to you.
+- **Race timer** — the live remaining-time clock.
+- **Submit a stream link** — propose your URL for one of your own stints.
+
+More: [Commentator Cockpit](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Commentator-Cockpit)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Director cues
+Directors send short text cues to your cockpit — a text-only stand-in for an earpiece.
+
+- **Info** — brief auto-fading toast at the top; disappears after **30 seconds** on its own.
+- **Critical** — sticky banner that stays on screen until you click **Acknowledge**; the director then sees a **✓ seen** stamp.
+
+You only receive cues addressed to you by name or to **All talent**.
+
+More: [Commentator Cockpit](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Commentator-Cockpit)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Recap / Go deeper
+- Set your channel to **Unlisted**, **Low** latency, and no personal overlays.
+- Open the **Console** link the producer shares and sign in.
+- Watch the **tally** — you'll know the moment you go on air or are up next.
+- Acknowledge any **Critical** cues promptly.
+
+Go deeper:
+[Commentator Cockpit](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Commentator-Cockpit) ·
+[Console](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Console) ·
+[Who does what](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Who-does-what)
+</script></section>
+
+</div></div>
+<script src="vendor/reveal/dist/reveal.js"></script>
+<script src="vendor/reveal/plugin/markdown/markdown.js"></script>
+<script src="vendor/reveal/plugin/highlight/highlight.js"></script>
+<script src="vendor/reveal/plugin/notes/notes.js"></script>
+<script src="assets/deck.js"></script>
+</body>
+</html>

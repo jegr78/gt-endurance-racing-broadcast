@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>League Admin setup · GT Endurance Racing Broadcast</title>
+<link rel="stylesheet" href="vendor/reveal/dist/reveal.css">
+<link rel="stylesheet" href="vendor/reveal/plugin/highlight/monokai.css">
+<link rel="stylesheet" href="assets/deck.css">
+</head>
+<body data-role="league-admin">
+<div class="reveal"><div class="slides">
+
+<section data-markdown><script type="text/template">
+<span class="role-tag">League Admin · Onboarding</span>
+# League Admin setup
+You own the Sheet, the crew roster and (optionally) Discord login —
+so producers just run the show.
+</script></section>
+
+<section data-markdown><script type="text/template">
+## A league is a profile
+Every league lives in `profiles/<name>/profile.env`. One machine can host several leagues;
+switching is one command.
+
+Key fields: `SHEET_ID`, optional `SHEET_PUSH_URL`, `CONSOLE_SECRET` (auto-generated).
+
+Hand a league to a new producer:
+```bash
+racecast profile export <name>   # zip with profile.env + CONSOLE_SECRET
+racecast profile import <file>   # on the target machine
+```
+
+More: [Profiles](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Profiles)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## The Sheet drives everything
+The relay reads the shared Google Sheet for the stint schedule, HUD overlay, and race timer.
+
+The optional Apps Script webhook (`SHEET_PUSH_URL`) is the write-back path — timer sync,
+director panel HUD/Schedule/POV controls.
+
+Without it everything still works read-only.
+
+More: [Sheet-Template](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Sheet-Template) ·
+[Sheet-Webhook](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Sheet-Webhook)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Maintain the Crew tab
+
+![Crew editor](assets/img/cc-crew-editor.png)
+
+`Name | Commentator | Director | Producer | Race Control | Discord` — each flag grants `/console` access. Edit by hand, or in the Control Center crew editor (`crew` webhook v7+).
+
+More: [League-Owner-Setup](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/League-Owner-Setup) · [Control-Center](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Control-Center)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Discord login for /console (optional)
+
+![Console login](assets/img/console-login.png)
+
+Create a Discord OAuth app (scope `identify`, **not** a bot), add `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` to `profile.env`, and register `…/console/oauth/callback` as a redirect URI per producer host.
+
+More: [League-Owner-Setup](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/League-Owner-Setup)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Share one URL
+Post the single generic link in your crew channel:
+
+```
+https://<magicdns>/console
+```
+
+Roles resolve live on every request — add or remove a person from the Crew tab
+and the change is effective immediately, no relay restart.
+
+Signed `racecast links` remain the fallback for guests or productions without Discord OAuth.
+
+More: [Console](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Console) ·
+[League-Owner-Setup](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/League-Owner-Setup)
+</script></section>
+
+<section data-markdown><script type="text/template">
+## Revocation + recap
+
+| What to revoke | How |
+|---|---|
+| A person's access | Blank their Crew row — takes effect immediately |
+| A leaked signed link | `racecast console token revoke <name>` |
+
+**Recap:** own the Sheet · maintain the Crew tab · optionally wire Discord login ·
+share one URL.
+
+Go deeper:
+[League-Owner-Setup](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/League-Owner-Setup) ·
+[Profiles](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Profiles) ·
+[Sheet-Webhook](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Sheet-Webhook)
+</script></section>
+
+</div></div>
+<script src="vendor/reveal/dist/reveal.js"></script>
+<script src="vendor/reveal/plugin/markdown/markdown.js"></script>
+<script src="vendor/reveal/plugin/highlight/highlight.js"></script>
+<script src="vendor/reveal/plugin/notes/notes.js"></script>
+<script src="assets/deck.js"></script>
+</body>
+</html>
