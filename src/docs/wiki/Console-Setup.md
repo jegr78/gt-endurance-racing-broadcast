@@ -18,7 +18,7 @@ There is **nothing to enable**. The relay serves `/cockpit` (and the rest of the
 `/console` surface) automatically: a per-league `CONSOLE_SECRET` is **auto-generated**
 in the active profile's `profile.env` on the first `racecast relay start` /
 `event start`. It travels with `racecast profile export`/import, and every request is
-token-gated — see [Remote access → One link, every role](Remote-access#one-link-every-role)
+token-gated — see [Remote access → One identity, every role](Remote-access#one-identity-every-role)
 for the identity/authorization model.
 
 ```bash
