@@ -7,6 +7,7 @@ ROOT = os.path.dirname(HERE)
 # preflight.py imports its sibling `services` (external_tool_env); in production
 # scripts/ is always on sys.path for it, so mirror that for the loader.
 sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
+import http_util
 spec = importlib.util.spec_from_file_location(
     "preflight", os.path.join(ROOT, "src", "scripts", "preflight.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
@@ -282,12 +283,12 @@ def t_fetch_sheet_csv_timeout_maps_to_network():
     # a 'network' outcome (WARN, no sharing blame), not the generic sharing FAIL.
     def boom(*a, **k):
         raise TimeoutError("The read operation timed out")
-    orig = m.urlopen
-    m.urlopen = boom
+    orig = http_util.urlopen
+    http_util.urlopen = boom
     try:
         kind, payload = m.fetch_sheet_csv("SHEET_ID")
     finally:
-        m.urlopen = orig
+        http_util.urlopen = orig
     assert kind == "network"
     assert m.classify_sheet("SHEET_ID", kind, payload).level == "WARN"
 
@@ -297,12 +298,12 @@ def t_fetch_sheet_csv_http_403_maps_to_forbidden():
 
     def boom(*a, **k):
         raise urllib.error.HTTPError("u", 403, "Forbidden", {}, None)
-    orig = m.urlopen
-    m.urlopen = boom
+    orig = http_util.urlopen
+    http_util.urlopen = boom
     try:
         kind, _payload = m.fetch_sheet_csv("SHEET_ID")
     finally:
-        m.urlopen = orig
+        http_util.urlopen = orig
     assert kind == "forbidden"
 
 

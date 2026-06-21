@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Stdlib checks for install_tools decision helpers. Run: python3 tests/test_install_tools.py"""
-import importlib.util, os
+import importlib.util, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
 spec = importlib.util.spec_from_file_location(
     "install_tools", os.path.join(ROOT, "src", "scripts", "install_tools.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)

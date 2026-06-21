@@ -7,6 +7,7 @@ ROOT = os.path.dirname(HERE)
 # installer_common imports its sibling `services` (external_tool_env); in
 # production scripts/ is always on sys.path, so mirror that for the loader.
 sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
+import http_util
 spec = importlib.util.spec_from_file_location(
     "installer_common", os.path.join(ROOT, "src", "scripts", "installer_common.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
@@ -105,20 +106,19 @@ class _FakeResp:
 def _capture_request(fn_name, *args):
     """Run installer_common.<fn_name> with urlopen + subprocess.call stubbed,
     returning (return_code, captured Request, captured argv, captured call kwargs)."""
-    import urllib.request
     captured = {}
 
     def fake_urlopen(req, timeout=None):
         captured["req"] = req
         return _FakeResp(b"vendor-bytes")
 
-    orig_open, orig_call = urllib.request.urlopen, m.subprocess.call
-    urllib.request.urlopen = fake_urlopen
+    orig_open, orig_call = http_util.urlopen, m.subprocess.call
+    http_util.urlopen = fake_urlopen
     m.subprocess.call = lambda cmd, **kw: (captured.update(cmd=cmd, call_kw=kw), 0)[1]
     try:
         rc = getattr(m, fn_name)(*args)
     finally:
-        urllib.request.urlopen, m.subprocess.call = orig_open, orig_call
+        http_util.urlopen, m.subprocess.call = orig_open, orig_call
     return rc, captured.get("req"), captured.get("cmd"), captured.get("call_kw", {})
 
 

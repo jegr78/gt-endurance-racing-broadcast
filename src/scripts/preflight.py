@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+import http_util
 
 from services import external_tool_env  # de-PyInstaller the env for spawned tool probes
 
@@ -285,8 +285,7 @@ def fetch_sheet_csv(sheet_id, tab=SHEET_TAB, timeout=10):
     url = (f"https://docs.google.com/spreadsheets/d/{sheet_id}"
            f"/gviz/tq?tqx=out:csv&sheet={quote(tab)}")
     try:
-        req = Request(url, headers={"User-Agent": "racecast-preflight/1.0"})
-        with urlopen(req, timeout=timeout) as resp:
+        with http_util.open_url(url, timeout=timeout) as resp:
             return "ok", resp.read().decode("utf-8", "replace")
     except HTTPError as exc:
         if exc.code in (401, 403):

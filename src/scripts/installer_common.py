@@ -3,6 +3,7 @@
 Loaded by both via importlib from the sibling path — works in repo mode, the
 test loaders, and the frozen binary (scripts ship as data under _MEIPASS)."""
 import os, shutil, subprocess
+import http_util
 
 from services import external_tool_env  # de-PyInstaller the env for spawned installers
 
@@ -12,18 +13,10 @@ from services import external_tool_env  # de-PyInstaller the env for spawned ins
 BREW_PATHS = ("/opt/homebrew/bin/brew", "/usr/local/bin/brew")
 BREW_INSTALLER = "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
 
-# Some vendor download endpoints (e.g. Discord's /api/download) reject the default
-# python-urllib User-Agent with HTTP 403; send a real one like every other racecast
-# fetch. Any non-urllib UA works (verified: this and curl both 200, bare urllib 403).
-INSTALLER_UA = "racecast-installer/1.0"
-
 
 def _fetch(url, timeout):
     """GET `url` over cert-verified HTTPS with a real User-Agent, returning the body."""
-    import urllib.request
-    req = urllib.request.Request(url, headers={"User-Agent": INSTALLER_UA})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
+    return http_util.get_bytes(url, timeout=timeout)
 
 
 def confirmed(answer):
