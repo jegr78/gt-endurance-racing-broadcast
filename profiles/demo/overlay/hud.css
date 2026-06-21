@@ -1,17 +1,17 @@
 #stint { left: 712px; top: 40px; width: 236px; height: 46px; font-size: 30px; color: #eef0f2; justify-content: center; }
-#session { left: 322px; top: 926px; width: 330px; height: 28px; font-size: 23px; color: #9aa6b2; justify-content: flex-start; }
-#streamer { left: 322px; top: 958px; width: 360px; height: 36px; font-size: 31px; color: #eef0f2; justify-content: flex-start; }
-#round-top { left: 742px; top: 926px; width: 520px; height: 28px; font-size: 23px; color: #9aa6b2; justify-content: flex-start; }
-#round-flag { left: 742px; top: 956px; width: 62px; height: 40px; }
-#round-country { left: 814px; top: 958px; width: 440px; height: 36px; font-size: 31px; color: #eef0f2; justify-content: flex-start; }
-#team1-logo { left: 150px; top: 1006px; width: 54px; height: 50px; }
-#team1-num { left: 214px; top: 1008px; height: 44px; font-size: 22px; border-radius: 4px; color: #ffffff; background: #1f8fb0; }
-#team1-name { left: 286px; top: 1008px; width: 300px; height: 44px; font-size: 28px; --team-name-max: 28px; --team-name-min: 16px; color: #eef0f2; }
-#team2-logo { left: 750px; top: 1006px; width: 54px; height: 50px; }
-#team2-num { left: 814px; top: 1008px; height: 44px; font-size: 22px; border-radius: 4px; color: #ffffff; background: #1f8fb0; }
-#team2-name { left: 886px; top: 1008px; width: 300px; height: 44px; font-size: 28px; --team-name-max: 28px; --team-name-min: 16px; color: #eef0f2; }
-#team3-logo { left: 1350px; top: 1006px; width: 54px; height: 50px; }
-#team3-num { left: 1414px; top: 1008px; height: 44px; font-size: 22px; border-radius: 4px; color: #ffffff; background: #1f8fb0; }
-#team3-name { left: 1486px; top: 1008px; width: 300px; height: 44px; font-size: 28px; --team-name-max: 28px; --team-name-min: 16px; color: #eef0f2; }
-#race-control { left: 240px; top: 862px; width: 1440px; height: 48px; padding: 14px; font-size: 30px; border-radius: 8px; color: #eef0f2; background: #243039; justify-content: flex-start; }
+#session { left: 733px; top: 921px; width: 265px; height: 40px; font-size: 26px; color: #9aa6b2; justify-content: flex-start; }
+#streamer { left: 738px; top: 957px; width: 265px; height: 50px; font-size: 32px; color: #eef0f2; justify-content: flex-start; }
+#round-top { left: 1043px; top: 919px; width: 545px; height: 37px; font-size: 24px; color: #9aa6b2; justify-content: flex-start; }
+#round-flag { left: 1049px; top: 957px; width: 99px; height: 40px; }
+#round-country { left: 1144px; top: 958px; width: 450px; height: 39px; font-size: 26px; color: #eef0f2; justify-content: flex-start; }
+#team1-logo { left: 324px; top: 1013px; width: 54px; height: 50px; }
+#team1-num { left: 387px; top: 1014px; width: 54px; height: 48px; padding: 4px; font-size: 20px; border-radius: 3px; color: #ffffff; background: #12161c; justify-content: center; }
+#team1-name { left: 453px; top: 1010px; width: 250px; height: 56px; font-size: 30px; --team-name-max: 30px; --team-name-min: 16px; color: #eef0f2; justify-content: flex-start; }
+#team2-logo { left: 768px; top: 1013px; width: 54px; height: 50px; }
+#team2-num { left: 830px; top: 1014px; width: 54px; height: 48px; padding: 4px; font-size: 20px; border-radius: 3px; color: #ffffff; background: #12161c; justify-content: center; }
+#team2-name { left: 896px; top: 1010px; width: 250px; height: 56px; font-size: 30px; --team-name-max: 30px; --team-name-min: 16px; color: #eef0f2; justify-content: flex-start; }
+#team3-logo { left: 1212px; top: 1013px; width: 54px; height: 50px; }
+#team3-num { left: 1274px; top: 1014px; width: 54px; height: 48px; padding: 4px; font-size: 20px; border-radius: 3px; color: #ffffff; background: #12161c; justify-content: center; }
+#team3-name { left: 1340px; top: 1010px; width: 250px; height: 56px; font-size: 30px; --team-name-max: 30px; --team-name-min: 16px; color: #eef0f2; justify-content: flex-start; }
+#race-control { left: 264px; top: 864px; width: 1330px; height: 55px; padding: 14px; font-size: 34px; border-radius: 8px; color: #eef0f2; background: #243039; justify-content: flex-start; }
 #clock { left: 986px; top: 34px; width: 236px; height: 56px; font-size: 46px; color: #eef0f2; justify-content: center; }
