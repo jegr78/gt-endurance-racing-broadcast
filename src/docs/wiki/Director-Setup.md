@@ -7,28 +7,34 @@ password**: the relay drives the producer's local OBS on your behalf.
 ## What you need
 
 - A device with a browser — tablet, laptop, or phone.
-- **One personal link** from the producer — your `/console` link. That's it.
+- The producer's **Console link** (the shared `/console` URL).
+- A **Discord account** that the producer has added to the league's crew roster.
 
-The producer generates these with `racecast links` (or the Control Center's
-**Crew Console** view, which can **Copy** a link or **Post to Discord**) and sends
-you yours. The link is yours alone: it carries a signed identity that tells the
-relay what you're allowed to do, so you see the director controls and nobody else's
-link gives them away.
+You sign in to the Console with **Discord** — there's no per-person link to keep track
+of. The producer adds your Discord handle to the crew roster and marks you as a
+**director**; signing in with that account is what gives you the director controls. Roles
+are looked up live, so a change applies the moment you reload — no new link to re-send.
 
-## Step 1 — Open your link
+## Step 1 — Open the Console link and sign in
 
-Open the link the producer sent you in any browser. It lands on **`/console`** — a
+Open the producer's Console link in any browser. If you're not signed in yet it shows a
+**Login with Discord** button — tap it, authorize, and you land back on **`/console`**, a
 single page that shows only the surfaces your role allows. As a director you get a
 **Director Panel** card (the whole show on one page) and, if the producer runs
 Companion ≥ v4.1.0, a **Web Buttons** card (the big-button board). Tap a card to go
 straight in.
 
-The link works **over the public internet** when the producer has the Funnel on —
-**no Tailscale account, nothing to install**. The first time you open it the token
-moves into a secure cookie, so later you can just reopen the page.
+It works **over the public internet** when the producer has the Funnel on — **no
+Tailscale account, nothing to install**. After the first sign-in your session lives in a
+secure cookie, so you can just reopen the page.
 
 **Bookmark it** (or **Add to Home Screen** on a tablet) so you can reopen it in one
 tap on event day.
+
+> **No Discord login at your league?** Some leagues don't set it up — then the producer
+> sends you a **personal sign-in link** instead (generated with `racecast links`, or
+> copied from the Control Center's **Crew Console** view). Open it once; it signs you in
+> the same way and everything below works identically.
 
 > See the [Console launcher](Console) for a card-by-card tour, and the
 > [Director guide](Director) for what the panel and buttons do.
@@ -72,8 +78,9 @@ Things you can check yourself, in order:
 
 | Check | Fix |
 |---|---|
-| Using the **exact link** the producer sent? | Each director has their own link; copy it whole (it ends in a long `?t=…` token). Reopen it if your cookie expired. |
-| Page says your link is invalid or expired | The producer may have rotated it (`racecast console token revoke`). Ask them for a fresh link. |
+| Console shows **not signed in** | Tap **Login with Discord** and authorize — and make sure it's the **Discord account the producer added to the crew roster**, not a personal alt. |
+| Signed in, but no **Director Panel** card | Your account isn't marked as a director on the roster yet. Ask the producer to set your **Director** flag for your handle — it applies immediately, no new link. |
+| No **Login with Discord** button at all | Your league may not use Discord login. Ask the producer for your **personal sign-in link** instead. |
 | Funnel link won't load at all | The producer needs the Funnel on (`racecast funnel on`). Ask them to turn it on, or fall back to the tailnet path above. |
 | Page loads, but a red **RELAY UNREACHABLE** banner shows | You ARE connected — the problem is on the producer's side. Tell the producer; `racecast status` shows them what's down. |
 | Panel loads, but **OBS NOT REACHABLE** / scene buttons grey | The relay can't reach OBS on the producer's machine — nothing you set up. Tell the producer. (You never enter an OBS password; the relay holds it.) |
