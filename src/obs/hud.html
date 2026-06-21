@@ -18,44 +18,44 @@
   .white { color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,.55); }
   .black { color: #111111; }
 
-  /* Top red banner */
-  #stint { left: 774px; top: 26px; width: 375px; height: 65px;
-    justify-content: center; font-size: 40px; letter-spacing: 1px; }
+  /* Top module — stint label, side-by-side with the clock */
+  #stint { left: 712px; top: 40px; width: 236px; height: 46px;
+    justify-content: center; font-size: 30px; letter-spacing: 1px; color: #eef0f2; }
 
   /* Lower-third left block: session above streamer */
   #session  { left: 733px; top: 921px; width: 265px; height: 40px;
-    font-size: 26px; font-style: italic; }
+    font-size: 26px; font-style: italic; color: #9aa6b2; }
   #streamer { left: 738px; top: 957px; width: 265px; height: 50px;
-    font-size: 32px; }
+    font-size: 32px; color: #eef0f2; }
 
   /* Lower-third round block: title, flag, country */
-  #round-top     { left: 1043px; top: 919px; width: 557px; height: 37px;
-    font-size: 24px; font-style: italic; }
+  #round-top     { left: 1043px; top: 919px; width: 545px; height: 37px;
+    font-size: 24px; font-style: italic; color: #9aa6b2; }
   #round-flag    { left: 1049px; top: 957px; width: 99px;  height: 40px; }
   #round-flag img { height: 38px; width: auto; max-width: 99px; object-fit: contain;
     box-shadow: 0 1px 3px rgba(0,0,0,.5); }
-  #round-country { left: 1144px; top: 958px; width: 548px; height: 39px;
-    font-size: 26px; }
+  #round-country { left: 1144px; top: 958px; width: 450px; height: 39px;
+    font-size: 26px; color: #eef0f2; }
 
   /* Team podium row: each car is THREE independently positionable slots —
      brand logo, number badge, auto-fit name (issue #136). The overlay builder
      can place/restyle each on its own; --team-name-max/min bound the auto-fit. */
   .team-logo { height: 50px; width: 54px; }
   .team-logo img { width: 100%; height: 100%; object-fit: contain; }
-  .team-num { height: 56px; background: #c8202a; color: #fff;
-    font-size: 20px; padding: 2px 9px; border-radius: 3px; }
+  .team-num { width: 54px; height: 48px; background: #12161c; color: #fff;
+    font-size: 20px; padding: 4px; border-radius: 3px; justify-content: center; }
   .team-name { height: 56px; --team-name-max: 30px; --team-name-min: 16px;
     overflow: hidden; white-space: nowrap; font-size: var(--team-name-max); }
-  /* Defaults reproduce the old single-row look: logo, then badge, then name. */
-  #team1-logo { left: 323px; top: 1008px; }
-  #team1-num  { left: 387px; top: 1005px; }
-  #team1-name { left: 455px; top: 1005px; width: 250px; }
-  #team2-logo { left: 766px; top: 1008px; }
-  #team2-num  { left: 830px; top: 1005px; }
-  #team2-name { left: 898px; top: 1005px; width: 247px; }
-  #team3-logo { left: 1210px; top: 1008px; }
-  #team3-num  { left: 1274px; top: 1005px; }
-  #team3-name { left: 1342px; top: 1005px; width: 248px; }
+  /* Podium row: logo centred in its chip, fixed number box, aligned names. */
+  #team1-logo { left: 324px; top: 1013px; }
+  #team1-num  { left: 387px; top: 1014px; }
+  #team1-name { left: 453px; top: 1010px; width: 250px; }
+  #team2-logo { left: 768px; top: 1013px; }
+  #team2-num  { left: 830px; top: 1014px; }
+  #team2-name { left: 896px; top: 1010px; width: 250px; }
+  #team3-logo { left: 1212px; top: 1013px; }
+  #team3-num  { left: 1274px; top: 1014px; }
+  #team3-name { left: 1340px; top: 1010px; width: 250px; }
 
   /* POV picture-in-picture frame (issue #141): aligned to the OBS "Feed POV"
      scene item (pos 1496,644, bounds 384x216). Transparent by default — set a
@@ -75,17 +75,17 @@
   /* Race-timer clock, merged in from the old separate timer source. Sits at the
      top band at the clock's true on-air size/position (was OBS crop y[217..895]
      + scale 0.0854 + pos 880,98). Tune live via the builder. */
-  #clock { left: 889px; top: 98px; height: 58px;
-    display: flex; align-items: center; white-space: nowrap;
+  #clock { left: 986px; top: 34px; width: 236px; height: 56px;
+    display: flex; align-items: center; justify-content: center; white-space: nowrap;
     font-family: "SF Mono", "Cascadia Mono", "Consolas", "Menlo", monospace;
-    font-weight: 700; font-size: 36px; color: #ffffff;
+    font-weight: 700; font-size: 46px; color: #eef0f2;
     text-shadow: 0 2px 6px rgba(0,0,0,.6); font-variant-numeric: tabular-nums; }
 
-  /* Race control banner (status line, hidden when empty). Gray band flush
-     with the lower-third block of the Overlay.png frame: x 264..1593 and
-     #4b565c both measured from the graphic (team name bars). */
-  #race-control { left: 264px; top: 864px; width: 1329px; height: 55px;
-    font-size: 34px; background: #4b565c; padding-left: 14px; }
+  /* Race control banner (status line, hidden when empty). Opaque dark band
+     above the lower-third block of the Overlay.png frame (x 264..1594). */
+  #race-control { left: 264px; top: 864px; width: 1330px; height: 55px;
+    font-size: 34px; background: #243039; padding: 14px; border-radius: 8px;
+    color: #eef0f2; }
 </style>
 <link rel="stylesheet" href="/hud/override.css">
 </head>

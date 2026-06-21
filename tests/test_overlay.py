@@ -585,6 +585,38 @@ def t_shipped_demo_overlay_css_matches_its_layout():
     assert "#clock" in on_disk, "demo overlay has no clock/timer slot"
 
 
+def t_hud_base_is_the_demo_standard():
+    # The repo BASE hud.html now ships the de-branded demo standard as its no-override
+    # default (issue #206): timer side-by-side with the stint, a fixed 54x48 dark
+    # number box, and the opaque race-control band. Locks those markers so the base
+    # cannot silently regress to the old IRO red-banner defaults.
+    with open(os.path.join(ROOT, "src", "obs", "hud.html"), encoding="utf-8") as f:
+        style = ob.base_style(f.read())
+    clock = re.search(r"#clock\s*\{[^}]*\}", style).group(0)
+    assert "left: 986px" in clock and "236px" in clock, "clock not side-by-side"
+    teamnum = re.search(r"\.team-num\s*\{[^}]*\}", style).group(0)
+    assert "width: 54px" in teamnum and "#12161c" in teamnum, "number box not the fixed dark box"
+    rc = re.search(r"#race-control\s*\{[^}]*\}", style).group(0)
+    assert "#243039" in rc, "race-control not the opaque demo band"
+    stint = re.search(r"#stint\s*\{[^}]*\}", style).group(0)
+    assert "left: 712px" in stint, "stint not at the side-by-side position"
+
+
+def t_example_overlay_matches_demo_standard():
+    # New leagues scaffold from `example` (profile_admin.create_profile), so the
+    # example overlay must carry the SAME standard as the demo — otherwise a stale
+    # example override would fight the new base on every new profile.
+    def _read(*parts):
+        with open(os.path.join(*parts), encoding="utf-8") as fh:
+            return fh.read()
+    ex = os.path.join(ROOT, "profiles", "example", "overlay")
+    de = os.path.join(ROOT, "profiles", "demo", "overlay")
+    assert _read(ex, "hud.css") == _read(de, "hud.css"), "example hud.css != demo standard"
+    assert os.path.isfile(os.path.join(ex, "layout-hud.json")), "example overlay has no layout-hud.json"
+    assert _read(ex, "layout-hud.json") == _read(de, "layout-hud.json"), \
+        "example layout-hud.json != demo standard"
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
