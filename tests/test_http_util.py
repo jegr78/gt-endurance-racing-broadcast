@@ -99,6 +99,29 @@ def t_httperror_is_reexported_and_propagates():
         h.urlopen = orig
 
 
+# The covered modules must not issue a bare urllib request — everything goes
+# through http_util so the User-Agent can never be forgotten. urllib.parse /
+# urllib.error stay allowed; only `urlopen` and `urllib.request` are banned.
+_COVERED = [
+    ("src", "racecast.py"),
+    ("src", "ui", "ui_server.py"),
+    ("src", "scripts", "installer_common.py"),
+    ("src", "scripts", "install_tools.py"),
+    ("src", "scripts", "install_apps.py"),
+    ("src", "scripts", "funnel_setup.py"),
+    ("src", "scripts", "obs_browser_linux.py"),
+    ("src", "scripts", "preflight.py"),
+]
+
+
+def t_covered_files_have_no_bare_urllib():
+    for parts in _COVERED:
+        with open(os.path.join(ROOT, *parts), encoding="utf-8") as fh:
+            text = fh.read()
+        for banned in ("urlopen", "urllib.request"):
+            assert banned not in text, f"{'/'.join(parts)} still uses {banned!r}"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
