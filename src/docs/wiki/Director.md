@@ -1,5 +1,7 @@
 # Director guide
 
+> New here? Start with the visual [Director onboarding deck ↗](https://jegr78.github.io/gt-endurance-racing-broadcast/director.html), then come back for the detail below.
+
 You direct the show **from a browser** — no OBS, no software on your machine.
 You never touch the producer's PC. Several directors can take turns, and the
 producer can also direct locally.

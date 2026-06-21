@@ -1,0 +1,40 @@
+/* Shared design system for the onboarding decks. Extends the cheat_sheets.html
+   look (Saira Condensed + IBM Plex Mono, ink-friendly, role accent bars).
+   Fonts are vendored locally (no CDN at view time). */
+@font-face{font-family:'Saira Condensed';font-weight:700;font-display:swap;
+  src:url('fonts/SairaCondensed.woff2') format('woff2');}
+@font-face{font-family:'IBM Plex Mono';font-weight:400;font-display:swap;
+  src:url('fonts/IBMPlexMono.woff2') format('woff2');}
+
+:root{
+  --paper:#f4f1ea; --ink:#16181c; --soft:#5b6168; --line:#d8d2c6;
+  --producer:#d62828; --director:#e08a00; --commentator:#1f7a8c;
+  --race-control:#5b7186; --league-admin:#7a4fb5;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --head:'Saira Condensed',system-ui,sans-serif;
+  --accent:var(--director); /* overridden per role below */
+}
+body[data-role="producer"]{--accent:var(--producer)}
+body[data-role="director"]{--accent:var(--director)}
+body[data-role="commentator"]{--accent:var(--commentator)}
+body[data-role="race-control"]{--accent:var(--race-control)}
+body[data-role="league-admin"]{--accent:var(--league-admin)}
+
+.reveal{font-family:var(--mono);color:var(--ink);font-size:30px}
+.reveal .slides{text-align:left}
+.reveal h1,.reveal h2,.reveal h3{font-family:var(--head);font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
+.reveal h1{color:var(--accent)}
+.reveal section{padding:0 12px;box-sizing:border-box;overflow-wrap:break-word}
+/* accent bar at the top of every slide */
+.reveal .slides>section::before,.reveal .slides>section>section::before{
+  content:"";position:absolute;top:-26px;left:0;width:120px;height:9px;
+  background:var(--accent);border-radius:3px}
+.reveal a{color:var(--accent);text-decoration:underline}
+.reveal ul,.reveal ol{display:block}
+.reveal li{line-height:1.45;margin:.25em 0}
+.reveal .role-tag{font-family:var(--head);letter-spacing:.22em;
+  text-transform:uppercase;font-size:14px;color:var(--soft)}
+.reveal img,.reveal svg{max-width:100%;max-height:480px;height:auto}
+.reveal .progress{color:var(--accent)}
+.backgroundColor{background:var(--paper)}
