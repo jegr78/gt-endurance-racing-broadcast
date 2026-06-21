@@ -96,10 +96,13 @@ def main():
     # .env template (repo root, not src/) so producers can set their own RACECAST_SHEET_ID
     shutil.copy2(os.path.join(ROOT, ".env.example"), os.path.join(PKG, ".env.example"))
 
-    # profiles/example/ (repo root, not src/): the league template `racecast profile
-    # new` copies from. Without it the shipped package can't create a profile (#45).
-    shutil.copytree(os.path.join(ROOT, "profiles", "example"),
-                    os.path.join(PKG, "profiles", "example"))
+    # profiles/ (repo root, not src/): ship the committed leagues — `example`
+    # (the template `racecast profile new` copies from; without it the shipped
+    # package can't create a profile, #45) and `demo` (the directly-usable,
+    # public-Sheet demo league, #206).
+    for prof in ("example", "demo"):
+        shutil.copytree(os.path.join(ROOT, "profiles", prof),
+                        os.path.join(PKG, "profiles", prof))
 
     # companion: copy + strip password (defense in depth)
     os.makedirs(os.path.join(PKG, "companion"))
@@ -152,6 +155,8 @@ def main():
     blob = json.dumps(written)
     with open(os.path.join(PKG, "hud.html"), encoding="utf-8") as fh:
         hud = fh.read()
+    with open(os.path.join(PKG, "profiles", "demo", "profile.env"), encoding="utf-8") as fh:
+        demo_env = fh.read()
     checks = {
         "companion pov buttons": "pov/reload" in blob,
         "companion password empty": not has_pw(written),
@@ -181,6 +186,13 @@ def main():
         ".env.example shipped": os.path.isfile(os.path.join(PKG, ".env.example")),
         "example profile shipped": os.path.isfile(
             os.path.join(PKG, "profiles", "example", "profile.env")),
+        "demo profile shipped": os.path.isfile(
+            os.path.join(PKG, "profiles", "demo", "profile.env")),
+        # the public demo league must never carry a write credential / secret —
+        # the key= lines must stay blank (comments may document the URL format).
+        "demo profile secret-free": not re.search(
+            r"^[ \t]*(SHEET_PUSH_URL|CONSOLE_SECRET|DISCORD_WEBHOOK_URL)[ \t]*=[ \t]*\S",
+            demo_env, re.MULTILINE),
         "no sheet url in relay": not re.search(r"/spreadsheets/d/[A-Za-z0-9_-]{20,}/", relay),
         "racecast cli shipped": os.path.isfile(os.path.join(PKG, "racecast.py")),
         "racecast-ui launcher shipped": os.path.isfile(os.path.join(PKG, "racecast_ui.py")),

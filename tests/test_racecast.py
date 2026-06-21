@@ -1737,12 +1737,18 @@ def t_event_takeover_funnel_success_calls_event_start():
     restore = _with_env(RACECAST_CONSOLE_SECRET="S", RACECAST_SHEET_ID="L1",
                         RACECAST_SHEET_PUSH_URL="https://push")
     orig_get, m._takeover_get = m._takeover_get, fake_get
+    # The funnel path resolves the active profile (for the CONSOLE_SECRET), which
+    # would otherwise inject the shipped `demo` league's SHEET_ID over our env and
+    # trip the league guard. Neutralise that injection so we test the takeover path,
+    # not profile resolution (the real _active_console_secret is covered elsewhere).
+    orig_apply, m._apply_active_profile_env = m._apply_active_profile_env, lambda: None
     es = {}
     orig_es, m.event_start = m.event_start, lambda a: es.update(args=a)
     try:
         m.event_takeover(["producer-a.example.ts.net", "--funnel"])
     finally:
         m._takeover_get, m.event_start = orig_get, orig_es
+        m._apply_active_profile_env = orig_apply
         restore()
     assert es.get("args") == ["--stint", "3"], es           # derived from A's live.stint
     assert all(u.startswith("https://producer-a.example.ts.net/console/takeover")

@@ -13,8 +13,11 @@ the OBS collection to change leagues.
 
 A profile lives in `profiles/<name>/`. Its config is the file
 `profiles/<name>/profile.env`, with **un-prefixed** keys (the file *is* the league — real
-environment variables and the machine `.env` do **not** override these). `profiles/example/`
-is the shipped template.
+environment variables and the machine `.env` do **not** override these). Two profiles
+ship with the toolkit: `profiles/example/` is the copy-from template (filtered out of the
+league list), and `profiles/demo/` is a **directly-usable** league pointing at a public,
+read-only demo Sheet — `racecast profile use demo` runs it out of the box (see
+[Sheet template](Sheet-Template)).
 
 ```ini
 # profiles/<name>/profile.env
@@ -30,7 +33,7 @@ OBS_COLLECTION=
 | Key | Meaning |
 |---|---|
 | **`NAME`** | Display name shown in the CLI / Control Center / docs (not the HUD). |
-| **`SHEET_ID`** | The long ID from the league's HUD/schedule sheet URL (`…/spreadsheets/d/`**`<THIS>`**`/edit`). Drives the relay: stint schedule, POV tab, and the HUD overlay. Reopen the sheet anytime with **Open Sheet ↗** (Profile view) or `racecast sheet open`. |
+| **`SHEET_ID`** | The long ID from the league's HUD/schedule sheet URL (`…/spreadsheets/d/`**`<THIS>`**`/edit`). Drives the relay: stint schedule, POV tab, and the HUD overlay — full tab/column layout in [Sheet template](Sheet-Template). Reopen the sheet anytime with **Open Sheet ↗** (Profile view) or `racecast sheet open`. |
 | **`SHEET_PUSH_URL`** *(optional)* | The Apps Script write webhook (the `/exec` URL **including** its `?key=…` secret) shared by the race timer and the director panel's sheet controls. Unset = those write-backs are read-only. See [Sheet-Webhook](Sheet-Webhook). |
 | **`INTRO_URL` / `OUTRO_URL`** *(optional)* | Override the Intro/Outro clip URLs that normally come from the Sheet's Assets tab (used by `racecast media`). |
 | **`LOGO`** *(optional)* | A logo image (path relative to the profile dir) for the Control Center. |

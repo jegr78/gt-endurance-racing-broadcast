@@ -1,0 +1,17 @@
+/* Per-league HUD override — OPTIONAL. The relay serves this file at
+ * /hud/override.css and loads it AFTER the base hud.html styles, so any rule
+ * here wins the cascade. Delete what you don't need; an empty/missing file
+ * means the base look is used unchanged.
+ *
+ * Overridable elements (ids in the base hud.html, canvas 1920x1080, top-left):
+ *   #stint #session #streamer #round-top #round-flag #round-country
+ *   #team0 #team1 #team2 #race-control
+ *
+ * Examples — uncomment and adjust:
+ *   #stint    { left: 800px; top: 30px; font-size: 44px; }
+ *   #race-control { background: #222a2f; }
+ *
+ * Custom font (drop the file in overlay/fonts/ first):
+ *   @font-face { font-family: "League"; src: url(/overlay/fonts/League.woff2); }
+ *   html, body { font-family: "League", "Arial Narrow", sans-serif; }
+ */

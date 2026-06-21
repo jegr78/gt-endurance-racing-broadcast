@@ -18,6 +18,7 @@
 - [Architecture](Architecture)
 - [Relay — how the feeds work](Relay-Mode)
 - [Race Timer](Race-Timer)
+- [Sheet template (read path)](Sheet-Template)
 - [Sheet-Webhook (write path)](Sheet-Webhook)
 - [OBS &amp; scenes](OBS-Setup)
 - [Companion (button config)](Companion)

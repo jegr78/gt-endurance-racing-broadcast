@@ -340,6 +340,34 @@ def t_sheet_edit_url_empty_when_unset():
     assert m.sheet_edit_url("   ") == ""
 
 
+# --- The SHIPPED profiles (profiles/ in the repo root) -----------------------
+# 'demo' is the committed, directly-usable public-Sheet demo league (#206);
+# 'example' is the copy-from template and must stay out of the league list.
+
+def t_shipped_demo_profile_is_listed_and_example_is_not():
+    listed = m.list_profiles(ROOT)
+    assert "demo" in listed, listed
+    assert "example" not in listed, listed
+
+
+def t_shipped_demo_profile_env_is_complete_and_secret_free():
+    env = m.parse_profile(ROOT, "demo")
+    # directly usable: a name + a real (public, read-only) Sheet id + a collection
+    assert env.get("NAME"), env
+    assert env.get("SHEET_ID"), env
+    assert env.get("OBS_COLLECTION"), env
+    # no write credential / secret ever ships in git
+    assert env.get("SHEET_PUSH_URL", "") == "", env
+    assert env.get("CONSOLE_SECRET", "") == "", env
+    assert env.get("DISCORD_WEBHOOK_URL", "") == "", env
+
+
+def t_shipped_demo_profile_resolves_as_active():
+    cfg = m.resolve_config(ROOT, environ={"RACECAST_PROFILE": "demo"})
+    assert cfg.profile == "demo"
+    assert cfg.sheet_id == m.parse_profile(ROOT, "demo")["SHEET_ID"]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

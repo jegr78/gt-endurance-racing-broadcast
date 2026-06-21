@@ -1,5 +1,8 @@
 # Sheet-Webhook — the write path back into the Google Sheet
 
+> This is the **write** path. For the tab/column layout the relay **reads** (and a
+> ready-to-copy demo Sheet), see [Sheet template](Sheet-Template).
+
 The relay reads the Sheet via CSV export (no key needed). Writing back —
 race-timer sync and the director panel's HUD/Schedule/POV controls — goes
 through **one** Google Apps Script web app deployed inside the broadcast
