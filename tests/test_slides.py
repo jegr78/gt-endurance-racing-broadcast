@@ -82,6 +82,62 @@ def t_discover_mmd_finds_sources(tmp=None):
     assert found == [("x", os.path.join(d, "diagrams", "x.mmd"))]
 
 
+import re as _re
+
+_WIKI = os.path.join(ROOT, "src", "docs", "wiki")
+_WIKI_LINK = _re.compile(r"github\.com/[^/]+/[^/]+/wiki/([A-Za-z0-9_\-]+)")
+_LOCAL_ASSET = _re.compile(r'(?:href|src)="((?:assets|vendor)/[^"]+)"')
+_MD_IMG = _re.compile(r"!\[[^\]]*\]\((assets/[^)]+)\)")
+
+
+def _decks():
+    return [os.path.join(SLIDES, f) for f in ("director.html", "index.html")]
+
+
+def t_director_deck_scaffolded():
+    with open(os.path.join(SLIDES, "director.html"), encoding="utf-8") as fh:
+        html = fh.read()
+    assert 'data-role="director"' in html
+    assert 'assets/deck.css' in html and 'assets/deck.js' in html
+    assert 'vendor/reveal/dist/reveal.js' in html
+    assert 'data-markdown' in html
+
+
+def t_landing_links_director_deck():
+    with open(os.path.join(SLIDES, "index.html"), encoding="utf-8") as fh:
+        html = fh.read()
+    assert 'href="director.html"' in html
+
+
+def t_outbound_wiki_links_resolve():
+    for deck in _decks():
+        with open(deck, encoding="utf-8") as fh:
+            html = fh.read()
+        for page in _WIKI_LINK.findall(html):
+            assert os.path.isfile(os.path.join(_WIKI, page + ".md")), \
+                f"{os.path.basename(deck)} -> missing wiki page {page}"
+
+
+def t_referenced_local_assets_exist():
+    for deck in _decks():
+        with open(deck, encoding="utf-8") as fh:
+            html = fh.read()
+        for rel in _LOCAL_ASSET.findall(html) + _MD_IMG.findall(html):
+            assert os.path.isfile(os.path.join(SLIDES, rel)), \
+                f"{os.path.basename(deck)} -> missing asset {rel}"
+
+
+def t_every_mmd_has_committed_svg():
+    for name, _ in bd.discover_mmd(SLIDES):
+        svg = os.path.join(SLIDES, "assets", "img", "diagrams", name + ".svg")
+        assert os.path.isfile(svg), f"missing generated SVG for {name}"
+
+
+def t_no_shell_scripts_in_slides():
+    for _, _, files in os.walk(SLIDES):
+        assert not any(f.endswith((".sh", ".bat")) for f in files)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
