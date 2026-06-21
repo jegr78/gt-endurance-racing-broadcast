@@ -639,7 +639,7 @@
             <button onclick="loadCrew()">
               <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button></div>
           <div class="enverr" id="crew-err" hidden></div>
-          <div class="envhead"><span style="width:28px;flex:0 0 auto">#</span><span class="v">Name</span><span style="width:84px;flex:0 0 auto;text-align:center">Commentator</span><span style="width:60px;flex:0 0 auto;text-align:center">Director</span><span style="width:60px;flex:0 0 auto;text-align:center">Producer</span><span style="width:84px;flex:0 0 auto;text-align:center">Race Control</span><span class="v">Discord</span><span style="width:80px;flex:0 0 auto"></span></div>
+          <div class="envhead"><span style="width:28px;flex:0 0 auto">#</span><span class="v">Name</span><span style="width:84px;flex:0 0 auto;text-align:center">Commentator</span><span style="width:60px;flex:0 0 auto;text-align:center">Director</span><span style="width:60px;flex:0 0 auto;text-align:center">Producer</span><span style="width:84px;flex:0 0 auto;text-align:center">Race Control</span><span class="v">Discord</span><span style="width:136px;flex:0 0 auto"></span></div>
           <div id="crew-rows"></div>
           <div class="addrow"><button onclick="crewAddRow()">
             <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add person</button></div>
@@ -3398,7 +3398,7 @@ function crewRow(row, name, commentator, director, producer, race_control, disco
   discInp.placeholder = 'discord username';
 
   const actions = document.createElement('span');
-  actions.style.cssText = 'display:flex;gap:6px;width:80px;flex:0 0 auto';
+  actions.style.cssText = 'display:flex;gap:6px;width:136px;flex:0 0 auto';
 
   const saveBtn = document.createElement('button');
   saveBtn.textContent = 'Save';
