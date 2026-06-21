@@ -5,19 +5,20 @@
 > The talent specifics live in [Commentator Cockpit](Commentator-Cockpit); the
 > panel specifics in the [Director guide](Director).
 
-Everyone who helps run an event gets **one personal link**. Opening it lands them on
-`/console` — a single role-adaptive page that shows exactly the surfaces their role
-allows and nothing else. The same link works whether they are on the tailnet or coming
-in over the public internet. See the [Console launcher](Console) page for a card-by-card overview.
+Everyone who helps run an event opens the same **Console link** — `/console`, a single
+role-adaptive page that shows exactly the surfaces their role allows and nothing else.
+They **sign in with Discord** (the standard) or open a personal sign-in link (the
+fallback); either way the page works whether they are on the tailnet or coming in over the
+public internet. See the [Console launcher](Console) page for a card-by-card overview.
 
 ## The default: the public Funnel
 
 **The standard way crew connect is the public Tailscale Funnel.** One producer command —
 `racecast funnel on` — publishes the `/console` page at `https://<magicdns-host>/console`,
-and from then on a commentator, a remote director, or a takeover producer just opens their
-link in any browser. **They need no Tailscale account and nothing installed** — which is
-the whole point: more people can help without each joining the tailnet (and it stays inside
-the Tailscale free tier).
+and from then on a commentator, a remote director, or a takeover producer just opens the
+Console link and **signs in with Discord**. **They need no Tailscale account and nothing
+installed** — which is the whole point: more people can help without each joining the
+tailnet (and it stays inside the Tailscale free tier).
 
 Being **directly on the tailnet** is the *alternative*, kept for the producer's own trusted
 devices (the producer's PC, a second machine, a phone with the Tailscale app). On the
@@ -27,8 +28,8 @@ Tailscale IP when present — so the local OBS/Companion workflow never changes.
 
 ```bash
 racecast funnel on     # publish ONLY /console publicly (https://<magicdns-host>/console)
-racecast links         # print one /console link per person (Crew tab ∪ live Schedule)
 racecast funnel off    # take it back off the public internet
+racecast links         # (fallback) per-person sign-in links — for leagues without Discord login
 ```
 
 The one-time tailnet prerequisites (MagicDNS, HTTPS, the `funnel` nodeAttr) and the
@@ -36,24 +37,24 @@ optional `racecast console setup-funnel` automation are documented once, on the
 [Console & cockpit setup](Console-Setup#public-access-via-tailscale-funnel--one-time-setup)
 page.
 
-## One link, every role
+## One identity, every role
 
 A person can be a **commentator AND a director AND/OR a producer** at the same time, and
-roles can change per event. So there is **one link per person**, not one per role. The link
-carries a signed **identity** token; the relay looks up *what that person may do right now*
-on every request.
+roles can change per event. So a person has **one identity**, not one login per role; the
+relay looks up *what that person may do right now* on every request.
 
-- **Identity (the token).** `<subject>.<version>.<sig>` — the person's normalised name, a
-  rotation counter, and an HMAC signature. It proves *who* you are, nothing more. It rides
-  in the link once, then moves into an `HttpOnly; Secure; SameSite=Lax` cookie.
+- **Identity.** Established by a **Discord sign-in** (the standard) or carried once in a
+  signed **personal link** `<subject>.<version>.<sig>` (the fallback). Either way it then
+  lives in an `HttpOnly; Secure; SameSite=Lax` cookie and proves *who* you are, nothing more.
 - **Authorization (looked up live).** The relay resolves *who may do what* per request from
-  the league **Crew** tab (`Name | Director | Producer`) **unioned with the live Schedule**
-  (anyone scheduled to commentate has the commentator capability for their own stints). Edit
-  roles in the Control Center **Crew editor** (or the Sheet's Crew tab) and they apply
-  immediately — no link re-issue. See [Sheet-Webhook](Sheet-Webhook#crew) for the Crew tab
-  + Apps Script action.
-- **Rotation.** `racecast console token revoke "<name>"` bumps that person's version, so
-  their old link stops working at once — nobody else is affected and no secret is rotated.
+  the league **Crew** tab **unioned with the live Schedule** (anyone scheduled to commentate
+  has the commentator capability for their own stints). A Discord login is matched to a crew
+  member by the Crew tab's **Discord** column. Edit roles in the Control Center **Crew
+  editor** (or the Sheet's Crew tab) and they apply immediately — no re-issue. See
+  [Sheet-Webhook](Sheet-Webhook#crew) for the Crew tab + Apps Script action.
+- **Revocation.** `racecast console token revoke "<name>"` bumps that person's version, so an
+  old personal link **and** any live session stop working at once; removing them from the
+  crew roster cuts a Discord login. Nobody else is affected and no secret is rotated.
 
 All tokens are signed with one **per-league secret**, `CONSOLE_SECRET`, auto-generated in
 the active profile's `profile.env` on first relay start and carried by

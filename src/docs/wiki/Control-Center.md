@@ -173,18 +173,21 @@ Machine-wide (not league) configuration:
 
 ![Control Center — Crew Console: per-person /console links and the public-access (Funnel) switch](images/cc-crew-console.png)
 
-Where you hand out crew access. The relay serves a **role-adaptive `/console`** launcher —
-each person opens one personal link and lands on the surface their roles allow (commentator
-cockpit, director panel, Race Control desk). The per-league secret that signs those links is
-generated automatically on the first relay start, so this view is **zero-config**.
+Where you hand out crew access. The relay serves a **role-adaptive `/console`** launcher;
+crew **sign in with Discord** (the standard) or via a per-person link (the fallback), and
+land on the surface their roles allow (commentator cockpit, director panel, Race Control
+desk). The per-league secret behind it is generated automatically on the first relay start,
+so this view is **zero-config**.
 
 - **Public access (Tailscale Funnel)** — `/console` is reachable over the tailnet by default;
   flip the **Funnel ON** to also expose **only** `/console` publicly (so crew off the tailnet
   can open their link). **Auto-enable on event start** turns it on with every event. **Copy
   Link** / **Post to Discord** distribute the shared launcher link in one click.
-- **Crew links** — one row per person (the Crew tab ∪ the live schedule). **Copy funnel link**
-  copies their public HTTPS link, **Copy internal link** the tailnet/loopback one, and
-  **Revoke** rotates a single person's link (bumps their version) without touching anyone else.
+- **Crew links** — one row per person (the Crew tab ∪ the live schedule), for the per-person
+  fallback (leagues without Discord login). **Copy funnel link** copies their public HTTPS
+  link, **Copy internal link** the tailnet/loopback one, and **Revoke** rotates a single
+  person's link (bumps their version) — which also invalidates their Discord session — without
+  touching anyone else.
 
 Roles per person come from the [Crew editor](#profile) (and the Schedule). Start the relay
 first — links and the secret only exist once it is running.
