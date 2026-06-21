@@ -3582,10 +3582,10 @@ def console_status_data():
             "RACECAST_COCKPIT_FUNNEL", "")).strip().lower() in (
             "1", "true", "yes", "on")
         secret = _ensure_active_console_secret() or ""
+        magic = _tailscale_magicdns()
         links = []
         if secret:
             host = _console_internal_host(_tailscale_ip())
-            magic = _tailscale_magicdns()
             versions = cpadm.load_versions(_console_versions_path())
             seen_keys = set()
             roster = []
@@ -3611,7 +3611,8 @@ def console_status_data():
             pass  # best-effort: tailnet down / CLI missing -> report both False
         return {"ok": True, "has_secret": bool(secret),
                 "funnel_auto": funnel_auto, "funnel_capable": funnel_capable,
-                "funnel_on": funnel_on, "links": links}
+                "funnel_on": funnel_on, "links": links,
+                "console_url": (f"https://{magic}/console" if magic else "")}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -3640,6 +3641,51 @@ def console_revoke_data(streamer):
         _console_token(["revoke", streamer])
         return {"ok": True}
     except SystemExit as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _active_discord_webhook():
+    """(webhook_url, league_name) for the active profile; ("","") on any
+    failure. Best-effort — the webhook stays server-side, never in the browser."""
+    try:
+        root = _env_base(IS_FROZEN, _real_executable(), HERE)
+        rc = pcfg.resolve_config(root, runtime_root=_runtime_base_dir())
+        return rc.discord_webhook_url or "", rc.name or ""
+    except Exception:  # noqa: BLE001 — best effort
+        return "", ""
+
+
+def _post_discord_webhook(url, payload):
+    """POST a Discord incoming-webhook JSON body. Raises on HTTP/network error
+    (callers catch and report)."""
+    import urllib.request
+    # Discord sits behind Cloudflare, which 403s the default urllib
+    # "Python-urllib/x.y" User-Agent — without an explicit UA the POST is
+    # rejected and the link never arrives (matches the relay's health-alert
+    # poster).
+    req = urllib.request.Request(
+        url, data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json",
+                 "User-Agent": "racecast/1.0"}, method="POST")
+    urllib.request.urlopen(req, timeout=5).read()
+
+
+def console_post_link_data():
+    """Post the shared /console landing-page link to the league's Discord
+    webhook (with an @here ping). The link is computed server-side from MagicDNS
+    — never supplied by the client. {ok}|{ok:false,error}; never raises."""
+    try:
+        magic = _tailscale_magicdns()
+        if not magic:
+            return {"ok": False, "error": "MagicDNS unavailable — is Tailscale up?"}
+        webhook, league = _active_discord_webhook()
+        if not webhook:
+            return {"ok": False,
+                    "error": "No DISCORD_WEBHOOK_URL configured for this league"}
+        payload = cpadm.console_link_discord_payload(f"https://{magic}/console", league)
+        _post_discord_webhook(webhook, payload)
+        return {"ok": True}
+    except Exception as exc:  # noqa: BLE001 — best effort, surface the message
         return {"ok": False, "error": str(exc)}
 
 
@@ -4878,6 +4924,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "console_funnel": console_funnel_data,
         "console_set_funnel_auto": console_set_funnel_auto_data,
         "console_revoke": console_revoke_data,
+        "console_post_link": console_post_link_data,
         "overlay_read": overlay_read_data,
         "overlay_write": overlay_write_data,
         "overlay_slots": overlay_slots_data,

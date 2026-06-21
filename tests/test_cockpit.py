@@ -140,6 +140,27 @@ def t_apply_pulled_validates():
                 pass  # expected: bad payload rejected before any write
 
 
+def t_console_link_discord_payload_basics():
+    p = cad.console_link_discord_payload("https://h.ts.net/console", "")
+    # mirrors the other racecast posts: same identity, @here in top-level content
+    # (Discord ignores mentions inside an embed), the link in a titled embed
+    assert p["username"] == "GT Racecast"
+    assert p["content"] == "@here"
+    assert p["allowed_mentions"] == {"parse": ["everyone"]}
+    embed = p["embeds"][0]
+    assert embed["title"] == "\U0001F399️ Crew Console"
+    assert "https://h.ts.net/console" in embed["description"]
+    # no league -> no footer leaked, no placeholder text anywhere in the embed
+    assert "footer" not in embed
+    assert "None" not in embed["description"]
+
+
+def t_console_link_discord_payload_weaves_league_name():
+    p = cad.console_link_discord_payload("https://h.ts.net/console", "GT Masters")
+    # a non-empty league shows as the embed footer (like event_title elsewhere)
+    assert p["embeds"][0]["footer"] == {"text": "GT Masters"}
+
+
 def _rows():
     # ScheduleSource 4-tuples: (url, streamer, stint, line)
     return [("u0", "Alpha Racing", "S1", 2),

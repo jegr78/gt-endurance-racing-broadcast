@@ -2353,18 +2353,125 @@ def t_console_status_links_union_crew():
     orig_sched = m._console_roster_safe
     orig_crew = m._crew_roster_safe
     orig_secret = m._ensure_active_console_secret
+    orig_magic = m._tailscale_magicdns
     try:
         m._console_roster_safe = lambda: ["Alice"]
         m._crew_roster_safe = lambda: ["Dana the Director"]
         m._ensure_active_console_secret = lambda: "s" * 64
+        m._tailscale_magicdns = lambda: "host.tail.ts.net"
         data = m.console_status_data()
         names = [l["name"] for l in data["links"]]
         assert names == ["Alice", "Dana the Director"], names
         assert all("/console?t=" in l["internal"] for l in data["links"])
+        # the shared (token-free) landing-page link the distribute buttons use
+        assert data["console_url"] == "https://host.tail.ts.net/console"
     finally:
         m._console_roster_safe = orig_sched
         m._crew_roster_safe = orig_crew
         m._ensure_active_console_secret = orig_secret
+        m._tailscale_magicdns = orig_magic
+
+
+def t_console_status_console_url_empty_without_magicdns():
+    orig_secret = m._ensure_active_console_secret
+    orig_magic = m._tailscale_magicdns
+    try:
+        m._ensure_active_console_secret = lambda: "s" * 64
+        m._tailscale_magicdns = lambda: ""
+        assert m.console_status_data()["console_url"] == ""
+    finally:
+        m._ensure_active_console_secret = orig_secret
+        m._tailscale_magicdns = orig_magic
+
+
+def t_console_post_link_errors_without_magicdns():
+    orig = m._tailscale_magicdns
+    try:
+        m._tailscale_magicdns = lambda: ""
+        r = m.console_post_link_data()
+        assert r["ok"] is False and "MagicDNS" in r["error"]
+    finally:
+        m._tailscale_magicdns = orig
+
+
+def t_console_post_link_errors_without_webhook():
+    orig_magic = m._tailscale_magicdns
+    orig_hook = m._active_discord_webhook
+    try:
+        m._tailscale_magicdns = lambda: "h.ts.net"
+        m._active_discord_webhook = lambda: ("", "")
+        r = m.console_post_link_data()
+        assert r["ok"] is False and "DISCORD_WEBHOOK_URL" in r["error"]
+    finally:
+        m._tailscale_magicdns = orig_magic
+        m._active_discord_webhook = orig_hook
+
+
+def t_console_post_link_posts_payload_to_webhook():
+    sent = {}
+    orig_magic = m._tailscale_magicdns
+    orig_hook = m._active_discord_webhook
+    orig_post = m._post_discord_webhook
+    try:
+        m._tailscale_magicdns = lambda: "h.ts.net"
+        m._active_discord_webhook = lambda: ("https://discord/webhook", "GT Masters")
+        m._post_discord_webhook = lambda url, payload: sent.update(url=url, payload=payload)
+        r = m.console_post_link_data()
+        assert r["ok"] is True
+        assert sent["url"] == "https://discord/webhook"
+        assert sent["payload"]["content"] == "@here"
+        # the server-computed link rides in the embed (built from MagicDNS)
+        assert "https://h.ts.net/console" in sent["payload"]["embeds"][0]["description"]
+        assert sent["payload"]["embeds"][0]["footer"] == {"text": "GT Masters"}
+    finally:
+        m._tailscale_magicdns = orig_magic
+        m._active_discord_webhook = orig_hook
+        m._post_discord_webhook = orig_post
+
+
+def t_console_post_link_reports_post_failure():
+    orig_magic = m._tailscale_magicdns
+    orig_hook = m._active_discord_webhook
+    orig_post = m._post_discord_webhook
+    def boom(url, payload):
+        raise RuntimeError("HTTP 404")
+    try:
+        m._tailscale_magicdns = lambda: "h.ts.net"
+        m._active_discord_webhook = lambda: ("https://discord/webhook", "")
+        m._post_discord_webhook = boom
+        r = m.console_post_link_data()
+        assert r["ok"] is False and "404" in r["error"]
+    finally:
+        m._tailscale_magicdns = orig_magic
+        m._active_discord_webhook = orig_hook
+        m._post_discord_webhook = orig_post
+
+
+def t_post_discord_webhook_sets_user_agent():
+    # Discord sits behind Cloudflare, which 403s the default urllib
+    # "Python-urllib/x.y" User-Agent. The poster MUST send an explicit UA or the
+    # link never arrives (the 403 a UAT surfaced). Capture the Request instead of
+    # hitting the network.
+    import urllib.request
+    captured = {}
+
+    class _Resp:
+        def read(self):
+            return b""
+
+    def fake_urlopen(req, timeout=None):
+        captured["ua"] = req.get_header("User-agent")
+        captured["ct"] = req.get_header("Content-type")
+        return _Resp()
+
+    orig = urllib.request.urlopen
+    urllib.request.urlopen = fake_urlopen
+    try:
+        m._post_discord_webhook("https://discord/webhook", {"content": "hi"})
+    finally:
+        urllib.request.urlopen = orig
+    assert captured["ua"] and "Python-urllib" not in captured["ua"], captured["ua"]
+    assert captured["ct"] == "application/json", captured["ct"]
 
 
 def t_crew_entries_data_maps_relay_rows():

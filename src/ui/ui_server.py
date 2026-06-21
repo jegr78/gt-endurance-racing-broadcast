@@ -703,6 +703,9 @@ def make_handler(ctx):
                                       code=400)
                 result = ctx["console_revoke"](body.get("streamer") or "")
                 return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/console/post-link":
+                result = ctx["console_post_link"]()
+                return self._json(result, code=200 if result.get("ok") else 400)
             if path == "/api/overlay":
                 body = self._body_json()
                 if body is None:
