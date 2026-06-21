@@ -1,6 +1,10 @@
-flowchart LR
-  A[Prepare: reboot, update, cookies] --> B[Go live: start on Standby, cut to Intro]
-  B --> C[Race: stints and driver changes]
-  C --> D[Interviews at the end]
-  D --> E[Outro: cut to the Outro clip]
-  E --> F[Wrap up: stop stream and relay]
+flowchart TB
+  subgraph row1[" "]
+    direction LR
+    A[Prepare: reboot, update, cookies] --> B[Go live: Standby, then Intro] --> C[Race: stints and driver changes]
+  end
+  subgraph row2[" "]
+    direction LR
+    D[Interviews at the end] --> E[Outro: cut to the Outro clip] --> F[Wrap up: stop stream and relay]
+  end
+  C --> D

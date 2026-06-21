@@ -133,6 +133,15 @@ def t_landing_links_every_deck():
         assert f'href="{fname}"' in html, f"index.html does not link {fname}"
 
 
+def t_favicon_present_and_linked():
+    for f in ("favicon.svg", "apple-touch-icon.png"):
+        assert os.path.isfile(os.path.join(SLIDES, f)), f"missing {f}"
+    for fname in (*_DECK_ROLES, "index.html"):
+        with open(os.path.join(SLIDES, fname), encoding="utf-8") as fh:
+            html = fh.read()
+        assert 'href="favicon.svg"' in html, f"{fname} does not link the favicon"
+
+
 def t_outbound_wiki_links_resolve():
     for deck in _decks():
         with open(deck, encoding="utf-8") as fh:

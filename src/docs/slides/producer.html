@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>Producer (event day) — Onboarding · GT Endurance Racing Broadcast</title>
 <link rel="stylesheet" href="vendor/reveal/dist/reveal.css">
 <link rel="stylesheet" href="vendor/reveal/plugin/highlight/monokai.css">
@@ -78,15 +80,15 @@ The producer just monitors the machine.
 
 <section data-markdown><script type="text/template">
 ## Producer handover (12h / 24h events)
-Each part has its own producer and stream key; viewers follow via the channel redirect.
+Each part has its own producer + stream key; viewers follow the channel redirect.
 
-1. Incoming producer: type the **on-air stint** into the field next to **Start event** and press it.
-   Read the stint number from the outgoing producer's panel status strip.
-2. Verify Feed A shows the expected commentator.
-3. Start your OBS stream — the overlap begins.
-4. Outgoing producer: stop the stream (redirect takes over), then **Stop event**.
+**Standard — take over over the Funnel** (no shared Tailscale account needed):
+`racecast event takeover <A-magicdns-host> --funnel` — pulls A's on-air stint, chat and revocations, then brings your station up there.
 
-No Tailscale? Use `racecast event takeover <A-magicdns-host> --funnel`.
+**Alternative — same tailnet:** `racecast event takeover <A-tailscale-ip>`.
+
+Then verify Feed A, start your OBS stream (the overlap begins), and the outgoing producer stops — the redirect carries viewers over.
+
 [Run an event](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Run-an-event) · [Remote access](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Remote-access)
 </script></section>
 

@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>League Admin setup · GT Endurance Racing Broadcast</title>
 <link rel="stylesheet" href="vendor/reveal/dist/reveal.css">
 <link rel="stylesheet" href="vendor/reveal/plugin/highlight/monokai.css">
@@ -38,10 +40,7 @@ More: [Profiles](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Pr
 ## The Sheet drives everything
 The relay reads the shared Google Sheet for the stint schedule, HUD overlay, and race timer.
 
-The optional Apps Script webhook (`SHEET_PUSH_URL`) is the write-back path — timer sync,
-director panel HUD/Schedule/POV controls.
-
-Without it everything still works read-only.
+**Required:** deploy the **Apps Script webhook** and set `SHEET_PUSH_URL` — it is the write-back path the race-timer sync and the Director Panel's HUD / Schedule / POV / crew controls depend on.
 
 More: [Sheet-Template](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Sheet-Template) ·
 [Sheet-Webhook](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Sheet-Webhook)
@@ -52,7 +51,7 @@ More: [Sheet-Template](https://github.com/jegr78/gt-endurance-racing-broadcast/w
 
 ![Crew editor](assets/img/cc-crew-editor.png)
 
-`Name | Commentator | Director | Producer | Race Control | Discord` — each flag grants `/console` access. Edit by hand, or in the Control Center crew editor (`crew` webhook v7+).
+`Name | Commentator | Director | Producer | Race Control | Discord` — each flag grants `/console` access. Edit by hand in the Sheet, or in the Control Center crew editor.
 
 More: [League-Owner-Setup](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/League-Owner-Setup) · [Control-Center](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Control-Center)
 </script></section>
@@ -62,23 +61,18 @@ More: [League-Owner-Setup](https://github.com/jegr78/gt-endurance-racing-broadca
 
 ![Console login](assets/img/console-login.png)
 
-Create a Discord OAuth app (scope `identify`, **not** a bot), add `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` to `profile.env`, and register `…/console/oauth/callback` as a redirect URI per producer host.
+Create a Discord OAuth app (scope `identify`, **not** a bot), add `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` to `profile.env`, and register the redirect URI `https://<magicdns>/console/oauth/callback` — `<magicdns>` is the producer machine's **Tailscale MagicDNS** hostname.
 
 More: [League-Owner-Setup](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/League-Owner-Setup)
 </script></section>
 
 <section data-markdown><script type="text/template">
 ## Share one URL
-Post the single generic link in your crew channel:
+In the Control Center **Crew Console** view, use **Copy Link** or **Post to Discord** to hand out the single generic `…/console` link — no terminal needed.
 
-```
-https://<magicdns>/console
-```
+Roles resolve live on every request — add or remove a person on the Crew tab and it takes effect immediately, no relay restart.
 
-Roles resolve live on every request — add or remove a person from the Crew tab
-and the change is effective immediately, no relay restart.
-
-Signed `racecast links` remain the fallback for guests or productions without Discord OAuth.
+Create a **crew Discord channel** with a **webhook**, and put that webhook URL in `profile.env` as `DISCORD_WEBHOOK_URL` — the relay posts stream-link submissions and health alerts there.
 
 More: [Console](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Console) ·
 [League-Owner-Setup](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/League-Owner-Setup)
