@@ -55,6 +55,7 @@ def main():
     # top-level docs + director panel + setup-assets
     for f in ("Broadcast_Setup_Guide.md", "cheat_sheets.html", "README_SETUP.md"):
         cp(f"docs/{f}", f)
+    cp("docs/slides", "docs/slides")   # onboarding decks (vendored Reveal, static)
     cp("director/director-panel.html", "director-panel.html")
     cp("obs/hud.html", "hud.html")
     cp("obs/hud-preview.html", "hud-preview.html")
@@ -204,6 +205,14 @@ def main():
         "old entrypoint removed: scripts/stop-companion.py": not os.path.isfile(os.path.join(PKG, "scripts", "stop-companion.py")),
         "ui server shipped": os.path.isfile(os.path.join(PKG, "ui", "ui_server.py")),
         "ui page shipped": os.path.isfile(os.path.join(PKG, "ui", "control-center.html")),
+        "slides director deck shipped": os.path.isfile(
+            os.path.join(PKG, "docs", "slides", "director.html")),
+        "slides reveal vendored": os.path.isfile(
+            os.path.join(PKG, "docs", "slides", "vendor", "reveal", "dist", "reveal.js")),
+        "slides landing shipped": os.path.isfile(
+            os.path.join(PKG, "docs", "slides", "index.html")),
+        "slides diagram svg shipped": os.path.isfile(os.path.join(
+            PKG, "docs", "slides", "assets", "img", "diagrams", "director-event-flow.svg")),
     }
     bad = [k for k, v in checks.items() if not v]
     print(f"Built {PKG}")
