@@ -43,7 +43,7 @@ vocabulary columns — the same lists the sheet's own dropdowns use.
 
 A `teams` write sends `{"action":"teams","slot":1|2|3,"name":"<team>"}`. The
 relay validates the panel's choice against the Configuration tab's roster and
-sends the **verbatim** Configuration team label (e.g. `OVO eSports #111`), so the
+sends the **verbatim** Configuration team label (e.g. `Example Team #111`), so the
 Setup cell matches the tab's team dropdown exactly — just like Streamer/Session.
 The script locates the `Team <slot>` header in the **Setup** tab (case-insensitive)
 and writes the name into the cell **below** it (`A6`/`B6`/`C6` in the shipped
@@ -58,8 +58,8 @@ The team-name column in the Configuration tab may be headed **`Teams`** or
 holds the car number. The relay strips a trailing `#NNN` token from the team
 name field and treats the `Number` column as the canonical car number if
 present (it takes precedence over the embedded `#NNN`). This means a row like
-`OVO eSports #111` with a `Number` value of `111` yields team name
-`OVO eSports` and car number `111` without duplication. The panel's P1/P2/P3
+`Example Team #111` with a `Number` value of `111` yields team name
+`Example Team` and car number `111` without duplication. The panel's P1/P2/P3
 podium dropdowns offer the bare team name, but write the **verbatim**
 Configuration label (with the `#NNN` if that is how the column reads) into the
 Setup tab's `Team 1`/`Team 2`/`Team 3` cells — so the value matches the tab's
@@ -180,12 +180,9 @@ roster after the delete.
    }
 
    function writeSchedule(ss, p) {
-     // Header-aware: locate URL/Streamer/Stint columns by header text in row 1
-     // (case-insensitive), same approach as writeSetup/writeTeams. Falls back to
-     // fixed cols A/B when there is no header row (back-compat). The Stint cell
-     // is written only when a 'Stint' header exists. p.tab selects the target
-     // tab (Schedule by default, or Qualifying) — restricted to those two so a
-     // stray value can never address an arbitrary sheet.
+     // Columns located by header text in row 1; falls back to A/B with no header
+     // row. Stint written only when that header exists. p.tab is restricted to the
+     // two known tabs so a stray value can never address an arbitrary sheet.
      const target = p.tab === TABS.qualifying ? TABS.qualifying : TABS.schedule;
      const sheet = tab(ss, target);
      const row = Number(p.row);
@@ -220,11 +217,9 @@ roster after the delete.
    }
 
    function writeTeams(ss, p) {
-     // Teams are Setup-tab fields, exactly like Streamer/Session/Race Control —
-     // the Overlay tab only MIRRORS them read-only (never write there: the relay
-     // would clobber the mirror formula). Each podium slot is the cell BELOW the
-     // 'Team <slot>' header (P1/P2/P3 -> A6/B6/C6 in the shipped layout), located
-     // by text so the layout may move, same as writeSetup.
+     // Each podium slot is the cell below its header, located by text so the
+     // layout may move. Write only the Setup tab — the mirror elsewhere is
+     // read-only and must not be overwritten.
      const slot = Number(p.slot);
      if (!(slot >= 1 && slot <= 3)) throw 'slot out of range: ' + p.slot;
      const sheet = tab(ss, TABS.setup);
@@ -254,9 +249,8 @@ roster after the delete.
      }
      const name = (p.name || '').toString().trim();
      if (!name) throw 'crew: name is required';
-     // Locate each column by header text (case-insensitive); append any header
-     // that is missing, so an existing 3-column tab (Name|Director|Producer) is
-     // auto-extended with Commentator/Discord without disturbing its data.
+     // Columns located by header text; a missing header is appended, so an older
+     // tab is auto-extended without disturbing its data.
      let header = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
      const colOf = (label) => {
        for (let c = 0; c < header.length; c++)
@@ -266,13 +260,9 @@ roster after the delete.
        header = header.concat([label]);
        return col;
      };
-     // Name/Discord are free text (pinned as text so e.g. "5plurge" or a numeric-
-     // looking handle is not coerced). The three role columns are written as
-     // BOOLEANS, not the string "X": the Crew tab normally uses Google Sheets
-     // checkboxes, whose cells only accept TRUE/FALSE — writing "X" (or "" to clear)
-     // trips the checkbox data-validation (the cell shows a red "invalid" marker and
-     // the box stops working). A boolean checks/unchecks a checkbox cell cleanly and
-     // still reads back as truthy/falsy on a plain (non-checkbox) cell.
+     // Text columns are pinned as text so numeric-looking handles aren't coerced.
+     // Role columns are written as booleans (not "X") to stay compatible with
+     // checkbox cells, whose validation only accepts TRUE/FALSE.
      const setText = (label, value) =>
        sheet.getRange(target, colOf(label)).setNumberFormat('@').setValue(value);
      const setFlag = (label, value) =>
