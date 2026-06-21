@@ -80,13 +80,20 @@ def apply_pulled(path, payload):
 
 
 def console_link_discord_payload(console_url, league_name=""):
-    """Discord incoming-webhook JSON body announcing the shared /console
-    landing-page link. Includes an @here ping (allowed_mentions opts the
-    'everyone' parse type in so the ping fires). `league_name` is woven in
-    only when non-empty. Pure — no I/O."""
+    """Discord webhook JSON announcing the shared /console launcher link,
+    mirroring the relay's cockpit_submission_payload / discord_health_payload so
+    every racecast post reads alike: it posts as "GT Racecast", the @here mention
+    sits in top-level `content` (Discord ignores mentions inside an embed), the
+    link rides in a titled embed, and a non-empty `league_name` shows as the embed
+    footer. Pure — no I/O."""
     league = (league_name or "").strip()
-    suffix = f" — {league}" if league else ""
-    content = (f"@here \U0001F399️ **Crew Console{suffix}** — open the "
-               f"launcher and sign in with Discord or your personal link: "
-               f"<{console_url}>")
-    return {"content": content, "allowed_mentions": {"parse": ["everyone"]}}
+    desc = ("Open the launcher and sign in with Discord or your personal "
+            f"link:\n{console_url}")
+    embed = {"title": "\U0001F399️ Crew Console", "description": desc,
+             "color": 0x5865F2}
+    if league:
+        embed["footer"] = {"text": league}
+    return {"username": "GT Racecast",
+            "content": "@here",
+            "allowed_mentions": {"parse": ["everyone"]},
+            "embeds": [embed]}

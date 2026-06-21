@@ -2419,8 +2419,10 @@ def t_console_post_link_posts_payload_to_webhook():
         r = m.console_post_link_data()
         assert r["ok"] is True
         assert sent["url"] == "https://discord/webhook"
-        assert "https://h.ts.net/console" in sent["payload"]["content"]
-        assert "@here" in sent["payload"]["content"]
+        assert sent["payload"]["content"] == "@here"
+        # the server-computed link rides in the embed (built from MagicDNS)
+        assert "https://h.ts.net/console" in sent["payload"]["embeds"][0]["description"]
+        assert sent["payload"]["embeds"][0]["footer"] == {"text": "GT Masters"}
     finally:
         m._tailscale_magicdns = orig_magic
         m._active_discord_webhook = orig_hook
