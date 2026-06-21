@@ -138,6 +138,25 @@ def t_no_shell_scripts_in_slides():
         assert not any(f.endswith((".sh", ".bat")) for f in files)
 
 
+cs = _load(os.path.join("tools", "check-slides.py"), "check_slides")
+
+
+def t_overflow_findings_flags_content_and_media():
+    measures = [
+        {"deck": "director.html", "slide": "0", "cw": 1200, "ch": 700,
+         "media": []},                                  # fits
+        {"deck": "director.html", "slide": "3", "cw": 1300, "ch": 700,
+         "media": []},                                  # content too wide
+        {"deck": "director.html", "slide": "5", "cw": 1000, "ch": 700,
+         "media": [{"src": "x.svg", "w": 1400, "h": 600}]},  # media too wide
+    ]
+    found = cs.overflow_findings(measures)
+    flagged = {(f["slide"], f["kind"]) for f in found}
+    assert ("3", "content") in flagged
+    assert ("5", "media") in flagged
+    assert ("0", "content") not in flagged
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
