@@ -2451,25 +2451,31 @@ def t_post_discord_webhook_sets_user_agent():
     # Discord sits behind Cloudflare, which 403s the default urllib
     # "Python-urllib/x.y" User-Agent. The poster MUST send an explicit UA or the
     # link never arrives (the 403 a UAT surfaced). Capture the Request instead of
-    # hitting the network.
-    import urllib.request
+    # hitting the network. Patch http_util.urlopen — the name bound at import time
+    # in the helper module (urllib.request.urlopen is a different binding after
+    # the http_util migration).
+    import http_util as _hu
     captured = {}
 
     class _Resp:
         def read(self):
             return b""
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            pass
 
     def fake_urlopen(req, timeout=None):
         captured["ua"] = req.get_header("User-agent")
         captured["ct"] = req.get_header("Content-type")
         return _Resp()
 
-    orig = urllib.request.urlopen
-    urllib.request.urlopen = fake_urlopen
+    orig = _hu.urlopen
+    _hu.urlopen = fake_urlopen
     try:
         m._post_discord_webhook("https://discord/webhook", {"content": "hi"})
     finally:
-        urllib.request.urlopen = orig
+        _hu.urlopen = orig
     assert captured["ua"] and "Python-urllib" not in captured["ua"], captured["ua"]
     assert captured["ct"] == "application/json", captured["ct"]
 
