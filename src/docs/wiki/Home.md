@@ -36,6 +36,7 @@ flowchart LR
   time), then the [Director guide](Director)
 - **Helping over the internet without a Tailscale account?** → [Remote access & the Funnel](Remote-access)
 - **Not sure who does what?** → [Who does what](Who-does-what)
+- **New crew?** The [onboarding decks ↗](https://jegr78.github.io/gt-endurance-racing-broadcast/) are short visual walkthroughs per role.
 - **Something's broken?** → [If something goes wrong](If-something-goes-wrong)
 - **Developer / want the technical detail?** → [Architecture](Architecture) and the
   **Technical reference** section in the sidebar.
