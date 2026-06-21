@@ -21,7 +21,8 @@
 ## What you need
 - A modern PC — **macOS, Windows, or Linux**. 16 GB RAM is tight (reboot before events); 32 GB is comfortable.
 - A **wired** internet connection — at least **25 Mbps down / 10 Mbps up** (50 / 20 recommended).
-- A **YouTube login** (always required for cookies), plus the **shared Google Sheet** link from the team.
+- A **YouTube login** (always required for cookies); a **Twitch login** too if any stint uses a gated Twitch feed.
+- Your league **profile** — its `SHEET_ID` rides along, so open the Sheet straight from the Control Center (**Open Sheet ↗**); no link to keep around.
 
 Details: [Set up the broadcast PC](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Set-up-the-broadcast-PC)
 </script></section>
@@ -52,24 +53,21 @@ Details: [Control Center](https://github.com/jegr78/gt-endurance-racing-broadcas
 <section data-markdown><script type="text/template">
 ## The steps
 1. **Get the tool** — download the archive for your OS from the latest release; extract it into its own folder.
-2. **`racecast install-tools`** — installs `yt-dlp`, `streamlink`, `ffmpeg`, and **`deno`** (deno is required to pass YouTube's bot check).
+2. **`racecast install-tools`** — installs `yt-dlp`, `streamlink`, `ffmpeg`, and **`deno`** (deno passes YouTube's bot check).
 3. **`racecast install-apps`** — installs OBS Studio, Bitfocus Companion, Tailscale, and Discord.
-4. **Create a league profile** — `racecast profile new myleague --from example`, then fill in `SHEET_ID`.
-5. **Import OBS scenes** — `racecast setup`, then import the generated collection in OBS.
-6. **Import Companion buttons** — `racecast export companion`, then import in Companion's admin.
+4. **Import your league profile** — `racecast profile import <file>` (carries `SHEET_ID` + secrets). Creating one with `profile new` is the exception.
+5. **Import the OBS scenes + Companion buttons** — `racecast setup` then import the collection in OBS; `racecast export companion` then import in Companion.
 
 Details: [Set up the broadcast PC](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Set-up-the-broadcast-PC)
 </script></section>
 
 <section data-markdown><script type="text/template">
 ## Let Companion control OBS
-In OBS: **Tools → WebSocket Server Settings**
+In OBS: **Tools → WebSocket Server Settings** — enable it (port `4455`), turn on authentication, set a password.
 
-- Enable the server (port `4455`)
-- Turn on authentication
-- Set a password
-
-In Companion: open **Connections** and enter the **same** password for the OBS connection.
+Enter that **same** password in **two** places:
+- **Companion** → Connections → the OBS connection.
+- **racecast** → Control Center **General Settings** (`RACECAST_OBS_WS_PASSWORD`) — so the Director Panel's relay-mediated OBS control works.
 
 **You should see:** the OBS connection **green** under Companion → Connections.
 
@@ -78,15 +76,12 @@ Details: [Set up the broadcast PC](https://github.com/jegr78/gt-endurance-racing
 
 <section data-markdown><script type="text/template">
 ## Connect remote directors (Tailscale)
-**macOS / Windows:** open the Tailscale app and sign in (free account).
+Your **station** still needs Tailscale (it provides the MagicDNS host + Funnel). Sign in once:
 
-**Linux — two one-time commands:**
-```bash
-sudo tailscale up          # prints a login URL — open it and approve
-sudo tailscale set --operator=$USER   # allows connect/disconnect without sudo
-```
+- **macOS / Windows:** open the Tailscale app and sign in (free account).
+- **Linux:** `sudo tailscale up` (open the printed login URL), then `sudo tailscale set --operator=$USER`.
 
-Then invite each director (free, up to 6) at [login.tailscale.com](https://login.tailscale.com/admin/users) — they install Tailscale and sign in too.
+With the **public Funnel** on, crew reach `/console` over the internet — **no Tailscale account needed on their side**. Inviting directors onto your tailnet (free, up to 6) is now only the **fallback**.
 
 Details: [Set up the broadcast PC](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Set-up-the-broadcast-PC) · [Director Setup](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Director-Setup)
 </script></section>
