@@ -140,6 +140,22 @@ def t_apply_pulled_validates():
                 pass  # expected: bad payload rejected before any write
 
 
+def t_console_link_discord_payload_basics():
+    p = cad.console_link_discord_payload("https://h.ts.net/console", "")
+    assert "@here" in p["content"]
+    assert "https://h.ts.net/console" in p["content"]
+    # @here only pings when allowed_mentions opts into the "everyone" parse type
+    assert p["allowed_mentions"] == {"parse": ["everyone"]}
+
+
+def t_console_link_discord_payload_weaves_league_name():
+    p = cad.console_link_discord_payload("https://h.ts.net/console", "GT Masters")
+    assert "GT Masters" in p["content"]
+    # an empty league name must NOT leak surrounding punctuation/placeholder
+    p2 = cad.console_link_discord_payload("https://h.ts.net/console", "")
+    assert "None" not in p2["content"] and "()" not in p2["content"]
+
+
 def _rows():
     # ScheduleSource 4-tuples: (url, streamer, stint, line)
     return [("u0", "Alpha Racing", "S1", 2),

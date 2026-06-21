@@ -77,3 +77,16 @@ def apply_pulled(path, payload):
     versions = validate_versions(payload)
     write_versions(path, versions)
     return len(versions)
+
+
+def console_link_discord_payload(console_url, league_name=""):
+    """Discord incoming-webhook JSON body announcing the shared /console
+    landing-page link. Includes an @here ping (allowed_mentions opts the
+    'everyone' parse type in so the ping fires). `league_name` is woven in
+    only when non-empty. Pure — no I/O."""
+    league = (league_name or "").strip()
+    suffix = f" — {league}" if league else ""
+    content = (f"@here \U0001F399️ **Crew Console{suffix}** — open the "
+               f"launcher and sign in with Discord or your personal link: "
+               f"<{console_url}>")
+    return {"content": content, "allowed_mentions": {"parse": ["everyone"]}}
