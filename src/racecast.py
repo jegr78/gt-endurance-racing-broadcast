@@ -3659,9 +3659,14 @@ def _post_discord_webhook(url, payload):
     """POST a Discord incoming-webhook JSON body. Raises on HTTP/network error
     (callers catch and report)."""
     import urllib.request
+    # Discord sits behind Cloudflare, which 403s the default urllib
+    # "Python-urllib/x.y" User-Agent — without an explicit UA the POST is
+    # rejected and the link never arrives (matches the relay's health-alert
+    # poster).
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"}, method="POST")
+        headers={"Content-Type": "application/json",
+                 "User-Agent": "racecast/1.0"}, method="POST")
     urllib.request.urlopen(req, timeout=5).read()
 
 
