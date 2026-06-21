@@ -11,7 +11,6 @@
 - [Director guide](Director)
 - [The Console launcher](Console)
 - [Commentator Cockpit](Commentator-Cockpit)
-- [Remote access &amp; the Funnel](Remote-access)
 - [Who does what](Who-does-what)
 - [If something goes wrong](If-something-goes-wrong)
 
@@ -23,6 +22,8 @@
 - [OBS &amp; scenes](OBS-Setup)
 - [Companion (button config)](Companion)
 - [Configuration &amp; secrets](Configuration)
+- [Remote access &amp; the Funnel](Remote-access)
+- [Console &amp; cockpit setup](Console-Setup)
 - [League profiles](Profiles)
 - [HUD overlays](HUD-Overlays)
 - [Static mode](Static-Mode)
