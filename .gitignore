@@ -17,6 +17,7 @@ cookies.txt
 *.cache.txt
 *.import.json
 .playwright-mcp/
+.venv-pw/
 .claude/scheduled_tasks.lock
 
 # Visual-companion brainstorm sessions (local mockups)

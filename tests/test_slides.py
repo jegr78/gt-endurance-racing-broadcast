@@ -56,6 +56,32 @@ def t_extract_subset_writes_only_wanted_files(tmp=None):
     assert "dist/reveal.js" in written
 
 
+bd = _load(os.path.join("tools", "build-diagrams.py"), "build_diagrams")
+
+
+def t_slug_is_filesystem_safe():
+    assert bd.slug("Director Event Flow") == "director-event-flow"
+
+
+def t_harness_embeds_source_and_pinned_libs_and_seed():
+    html = bd.harness_html("flowchart LR\n A-->B")
+    assert "flowchart LR" in html
+    assert bd.MERMAID_TO_EXCALIDRAW in html
+    assert bd.EXCALIDRAW in html
+    # deterministic seed pinning must be present so regenerated SVGs are stable
+    assert "seed" in html and str(bd.SEED) in html
+
+
+def t_discover_mmd_finds_sources(tmp=None):
+    import tempfile
+    d = tempfile.mkdtemp(prefix="mmd-test-")
+    os.makedirs(os.path.join(d, "diagrams"))
+    with open(os.path.join(d, "diagrams", "x.mmd"), "w") as fh:
+        fh.write("flowchart LR\n A-->B")
+    found = bd.discover_mmd(d)
+    assert found == [("x", os.path.join(d, "diagrams", "x.mmd"))]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

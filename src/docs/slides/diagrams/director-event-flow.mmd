@@ -1,0 +1,9 @@
+flowchart LR
+  A[Standby cover] --> B[Go live]
+  B --> C[Driver change?]
+  C -->|press Feeds Next| D[Next commentator on air]
+  D --> E[Pick scene + graphics]
+  E --> F[Send cues to talent]
+  F --> C
+  C -->|final stint| G[Interview cut + broadcast audio]
+  G --> H[Outro + end]
