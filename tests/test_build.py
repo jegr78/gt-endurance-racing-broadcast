@@ -19,7 +19,7 @@ def _build_src():
 
 def _served_html_relpaths():
     """All src/ HTML pages the relay/Control Center serve (posix relpaths under
-    src/), excluding the docs/ subtree (cheat_sheets.html ships via the docs loop)."""
+    src/), excluding the docs/ subtree (cheat_sheets.html ships inside docs/slides/)."""
     src = os.path.join(ROOT, "src")
     out = []
     for dirpath, _dirs, files in os.walk(src):

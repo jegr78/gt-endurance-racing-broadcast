@@ -102,11 +102,12 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "streams_write": lambda entries: {"ok": True, "path": "/x/streams.json",
                                               "_got": entries},
             "docs": lambda: {"ok": True, "wiki_url": "https://example/wiki",
-                             "local": [{"key": "cheat-sheet", "title": "Cheat sheet",
-                                        "desc": "d", "kind": "html"}]},
+                             "decks_url": "https://example.github.io/repo/",
+                             "local": [{"key": "setup-readme", "title": "Setup README",
+                                        "desc": "d", "kind": "markdown"}]},
             "docs_content": lambda key: (("text/html; charset=utf-8",
-                                          b"<html>cheat</html>")
-                                         if key == "cheat-sheet" else None),
+                                          b"<!doctype html><h1>readme</h1>")
+                                         if key == "setup-readme" else None),
             "jobs": jobs or ui_jobs.JobManager(
                 lambda a: [sys.executable, "-c", "print('hi from job')"]),
             "log_sources": {},
@@ -403,9 +404,10 @@ def t_docs_route_and_file():
     try:
         code, body = _get(port, "/api/docs")
         data = json.loads(body)
-        assert code == 200 and data["ok"] and data["local"][0]["key"] == "cheat-sheet"
-        code, body = _get(port, "/api/docs/file/cheat-sheet")     # allowlisted -> served
-        assert code == 200 and b"<html" in body.lower()
+        assert code == 200 and data["ok"] and data["local"][0]["key"] == "setup-readme"
+        assert "github.io" in data["decks_url"]                    # onboarding-decks hub
+        code, body = _get(port, "/api/docs/file/setup-readme")    # allowlisted -> served
+        assert code == 200 and b"<h1" in body.lower()
         code, _b = _get(port, "/api/docs/file/unknown")           # not allowlisted -> 404
         assert code == 404
     finally:

@@ -942,6 +942,12 @@
           <span class="spacer"></span>
           <a id="wiki-open" class="linkbtn" target="_blank" rel="noopener" href="#">Open the wiki ↗</a></div>
         <section>
+          <h2>Crew onboarding — start here</h2>
+          <div class="row"><span class="docname">Onboarding decks</span>
+            <span class="dim grow">Short visual walkthrough per role (director, commentator, producer, race control) plus the printable cheat sheet — one central hub.</span>
+            <a class="linkbtn" id="decks-open" target="_blank" rel="noopener">Open ↗</a></div>
+        </section>
+        <section>
           <h2>On this machine</h2>
           <div id="local-docs"><div class="row"><span class="dim">loading…</span></div></div>
         </section>
@@ -957,7 +963,7 @@
             <span class="dim grow">Event-day workflow and checklist.</span>
             <a class="linkbtn" id="g-event" target="_blank" rel="noopener">Open ↗</a></div>
         </section>
-        <p class="envhint">The cheat sheet opens locally and works offline; the guides open the always-current rendered pages on the GitHub wiki. Found a bug or have a question? <a id="issues-link" class="dlink" target="_blank" rel="noopener">Open an issue on GitHub ↗</a></p>
+        <p class="envhint">The onboarding decks and guides open the always-current rendered pages online (decks on GitHub Pages, guides on the wiki); the setup docs under <em>On this machine</em> also work offline. Found a bug or have a question? <a id="issues-link" class="dlink" target="_blank" rel="noopener">Open an issue on GitHub ↗</a></p>
         <section class="prevsec">
           <h2>Preview / testing builds</h2>
           <label class="prevtoggle">
@@ -3626,6 +3632,7 @@ async function fetchDocs() {
   catch (e) { return; }
   if (!d.ok) return;
   $('wiki-open').href = d.wiki_url;
+  if (d.decks_url) $('decks-open').href = d.decks_url;
   $('g-setup').href = d.setup_url;
   $('g-director').href = d.director_url;
   $('g-event').href = d.event_url;

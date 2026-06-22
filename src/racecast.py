@@ -4416,13 +4416,13 @@ def speedtest_data(base_dir=None):
 
 # Bundled operator docs the Control Center's Help page can open (allowlist —
 # only these keys map to a file, so the HTTP layer can serve nothing else).
+# The role cheat sheet + the visual onboarding decks live on GitHub Pages (one
+# central place) and are reached via `decks_url`, not served locally.
 DOCS_FILES = {
-    "cheat-sheet":  "docs/cheat_sheets.html",
     "setup-guide":  "docs/Broadcast_Setup_Guide.md",
     "setup-readme": "docs/README_SETUP.md",
 }
 _DOC_TITLES = {
-    "cheat-sheet":  ("Cheat sheet", "Printable one-page reference for event day."),
     "setup-guide":  ("Setup guide", "Full broadcast-PC install & configuration walkthrough."),
     "setup-readme": ("Setup README", "Quick setup notes and command reference."),
 }
@@ -4434,6 +4434,15 @@ def _wiki_repo():
         return update.REPO
     except Exception:
         return "jegr78/gt-endurance-racing-broadcast"
+
+
+def _pages_url():
+    """The GitHub Pages root for the visual onboarding decks (incl. the role cheat
+    sheet) — `https://<owner>.github.io/<repo>/`. The decks are the central, always-
+    current entry point the Control Center links to instead of serving the cheat
+    sheet locally."""
+    owner, _, name = _wiki_repo().partition("/")
+    return f"https://{owner}.github.io/{name}/"
 
 
 def _resolve_doc(rel, resolve):
@@ -4465,6 +4474,7 @@ def docs_data(resolve=None):
             local.append({"key": key, "title": title, "desc": desc,
                           "kind": "html" if rel.endswith(".html") else "markdown"})
     return {"ok": True, "wiki_url": wiki,
+            "decks_url": _pages_url(),
             "setup_url": f"{wiki}/Set-up-the-broadcast-PC",
             "director_url": f"{wiki}/Director-Setup",
             "event_url": f"{wiki}/Run-an-event",

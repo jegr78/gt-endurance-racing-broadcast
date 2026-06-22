@@ -133,15 +133,15 @@ def t_landing_links_every_deck():
         assert f'href="{fname}"' in html, f"index.html does not link {fname}"
 
 
-def t_cheatsheet_mirror_in_sync_and_linked():
-    # the Pages root (src/docs/slides) is what gets published, so the cheat sheet
-    # is mirrored here from its source src/docs/cheat_sheets.html. Keep them identical.
-    src = os.path.join(ROOT, "src", "docs", "cheat_sheets.html")
-    mirror = os.path.join(SLIDES, "cheat_sheets.html")
-    assert os.path.isfile(mirror), "missing slides/cheat_sheets.html mirror"
-    with open(src, "rb") as a, open(mirror, "rb") as b:
-        assert a.read() == b.read(), \
-            "slides/cheat_sheets.html drifted from src/docs/cheat_sheets.html — re-copy it"
+def t_cheatsheet_present_and_linked():
+    # the role cheat sheet lives in ONE place — the published Pages root
+    # (src/docs/slides); the landing page links it, and the Control Center Help
+    # page points here instead of serving a local copy.
+    assert os.path.isfile(os.path.join(SLIDES, "cheat_sheets.html")), \
+        "missing slides/cheat_sheets.html"
+    # the old duplicate source must be gone (single source of truth)
+    assert not os.path.isfile(os.path.join(ROOT, "src", "docs", "cheat_sheets.html")), \
+        "src/docs/cheat_sheets.html should be removed — the slides copy is canonical"
     with open(os.path.join(SLIDES, "index.html"), encoding="utf-8") as fh:
         assert 'href="cheat_sheets.html"' in fh.read(), "landing page does not link the cheat sheet"
 

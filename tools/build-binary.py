@@ -15,9 +15,9 @@ SRC = os.path.join(ROOT, "src")
 DATA = ["relay", "scripts", "obs", "assets", "companion", "director", "cockpit", "console",
         "racecontrol", "ui", "setup-assets.py"]
 # Operator docs the Control Center's Help page serves (racecast.DOCS_FILES) — only
-# these, kept under src/docs/; the docs/wiki/ subtree stays on GitHub.
-DOC_FILES = ["docs/cheat_sheets.html", "docs/Broadcast_Setup_Guide.md",
-             "docs/README_SETUP.md"]
+# these, kept under src/docs/; the docs/wiki/ subtree and the onboarding decks +
+# cheat sheet (linked, not served) stay on GitHub.
+DOC_FILES = ["docs/Broadcast_Setup_Guide.md", "docs/README_SETUP.md"]
 
 # The bundled scripts (relay, oneshots) are loaded at runtime via importlib, so
 # PyInstaller's static analyser cannot see their imports.  List every stdlib
@@ -293,16 +293,14 @@ def smoke(binary, version):
             out = ui.stdout.read().decode("utf-8", "replace") if ui.poll() is not None else ""
             sys.exit(f"smoke ui FAILED: no Control Center ping on :8389 "
                      f"(rc={ui.poll()}) out={out!r}")
-        # Help page docs must be bundled (DOC_FILES under src/docs/) — catches a
-        # regression where the binary lists no local docs / 404s the cheat sheet.
+        # Help page must expose the onboarding-decks link (Pages hub — the central
+        # place for the cheat sheet + role decks) and bundle the local setup docs.
         with urllib.request.urlopen("http://127.0.0.1:8389/api/docs", timeout=2) as r:
             docs = json.loads(r.read())
-        if not any(d.get("key") == "cheat-sheet" for d in docs.get("local", [])):
-            sys.exit(f"smoke ui FAILED: cheat sheet not bundled (local={docs.get('local')!r})")
-        with urllib.request.urlopen("http://127.0.0.1:8389/api/docs/file/cheat-sheet",
-                                    timeout=2) as r:
-            if b"<html" not in r.read().lower():
-                sys.exit("smoke ui FAILED: bundled cheat sheet did not serve as HTML")
+        if "github.io" not in (docs.get("decks_url") or ""):
+            sys.exit(f"smoke ui FAILED: no onboarding-decks URL (decks_url={docs.get('decks_url')!r})")
+        if not any(d.get("key") == "setup-readme" for d in docs.get("local", [])):
+            sys.exit(f"smoke ui FAILED: setup docs not bundled (local={docs.get('local')!r})")
         # a markdown doc must come back RENDERED (mdrender bundled + working),
         # not as raw text. The setup README is a wiki-pointer stub (heading +
         # bullet list, no tables), so assert on the full-page wrapper + a list.

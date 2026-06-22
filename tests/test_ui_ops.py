@@ -735,47 +735,47 @@ def t_obs_ws_link_data_missing_config():
 
 
 def t_docs_data_lists_present_only(tmp):
-    # only docs that exist on disk are listed; wiki URLs always present
+    # only docs that exist on disk are listed; wiki + onboarding-decks URLs always present
     base = os.path.join(tmp, "docs_data")
     os.makedirs(base, exist_ok=True)
-    open(os.path.join(base, "cheat_sheets.html"), "w").close()
+    open(os.path.join(base, "README_SETUP.md"), "w").close()
     def resolve(rel):
         return os.path.join(base, os.path.basename(rel))
     d = rc.docs_data(resolve=resolve)
     keys = [x["key"] for x in d["local"]]
-    assert keys == ["cheat-sheet"]                       # only the html exists
-    assert d["local"][0]["kind"] == "html"
+    assert keys == ["setup-readme"]                      # only the md exists
+    assert d["local"][0]["kind"] == "markdown"
     assert "/wiki" in d["wiki_url"] and "Director-Setup" in d["director_url"]
+    assert "github.io" in d["decks_url"]                 # central onboarding hub (Pages)
 
 
 def t_docs_file_path_allowlist(tmp):
     base = os.path.join(tmp, "docs_path")
     os.makedirs(base, exist_ok=True)
-    open(os.path.join(base, "cheat_sheets.html"), "w").close()
+    open(os.path.join(base, "README_SETUP.md"), "w").close()
     def resolve(rel):
         return os.path.join(base, os.path.basename(rel))
-    assert rc.docs_file_path("cheat-sheet", resolve=resolve).endswith(
-        "cheat_sheets.html")
+    assert rc.docs_file_path("setup-readme", resolve=resolve).endswith(
+        "README_SETUP.md")
     assert rc.docs_file_path("setup-guide", resolve=resolve) is None  # not on disk
+    assert rc.docs_file_path("cheat-sheet", resolve=resolve) is None  # no longer served locally
     assert rc.docs_file_path("../../etc/passwd", resolve=resolve) is None
     assert rc.docs_file_path("unknown", resolve=resolve) is None
 
 
-def t_docs_content_html_passthrough_and_md_rendered(tmp):
+def t_docs_content_md_rendered(tmp):
     base = os.path.join(tmp, "docs_content")
     os.makedirs(base, exist_ok=True)
-    with open(os.path.join(base, "cheat_sheets.html"), "w") as fh:
-        fh.write("<html><body>cheat</body></html>")
     with open(os.path.join(base, "README_SETUP.md"), "w") as fh:
         fh.write("# Title\n\n| A | B |\n|--|--|\n| 1 | 2 |\n")
     def resolve(rel):
         return os.path.join(base, os.path.basename(rel))
-    ctype, body = rc.docs_content("cheat-sheet", resolve=resolve)
-    assert ctype.startswith("text/html") and body == b"<html><body>cheat</body></html>"
+    # markdown docs are rendered to a styled, self-contained HTML page
     ctype, body = rc.docs_content("setup-readme", resolve=resolve)
     text = body.decode("utf-8")
     assert ctype.startswith("text/html")
     assert "<!doctype html>" in text and "<h1>Title</h1>" in text and "<table>" in text
+    assert rc.docs_content("cheat-sheet", resolve=resolve) is None  # not an allowlisted local doc
     assert rc.docs_content("unknown", resolve=resolve) is None
 
 

@@ -52,10 +52,12 @@ def main():
         shutil.rmtree(PKG)
     os.makedirs(PKG)
 
-    # top-level docs + director panel + setup-assets
-    for f in ("Broadcast_Setup_Guide.md", "cheat_sheets.html", "README_SETUP.md"):
+    # top-level docs + director panel + setup-assets. The role cheat sheet is NOT
+    # copied here — it ships inside docs/slides/ (one central place) and the Control
+    # Center Help page links to the published decks rather than serving it locally.
+    for f in ("Broadcast_Setup_Guide.md", "README_SETUP.md"):
         cp(f"docs/{f}", f)
-    cp("docs/slides", "docs/slides")   # onboarding decks (vendored Reveal, static)
+    cp("docs/slides", "docs/slides")   # onboarding decks + cheat sheet (vendored Reveal, static)
     cp("director/director-panel.html", "director-panel.html")
     cp("obs/hud.html", "hud.html")
     cp("obs/hud-preview.html", "hud-preview.html")
@@ -217,7 +219,7 @@ def main():
             os.path.join(PKG, "docs", "slides", "overlay-designer.html")),
         "slides who-does-what diagram shipped": os.path.isfile(os.path.join(
             PKG, "docs", "slides", "assets", "img", "diagrams", "who-does-what.svg")),
-        "slides cheat-sheet mirror shipped": os.path.isfile(
+        "slides cheat-sheet shipped": os.path.isfile(
             os.path.join(PKG, "docs", "slides", "cheat_sheets.html")),
     }
     bad = [k for k, v in checks.items() if not v]
