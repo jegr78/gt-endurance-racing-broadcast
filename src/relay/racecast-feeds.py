@@ -3988,6 +3988,17 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             return self._send({"versions": {}})
                         return self._send({"versions":
                             console_admin.load_versions(console_versions_path)})
+                    if p == ["cockpit", "graphics"]:
+                        if self._console_auth() is None:
+                            return None
+                        return self._send({"graphics": list_graphics(graphics_dir)})
+                    if len(p) == 3 and p[:2] == ["cockpit", "graphics"]:
+                        if self._console_auth() is None:
+                            return None
+                        hit = resolve_graphic(graphics_dir, unquote(p[2]))
+                        if not hit:
+                            return self._send({"error": "graphic not found"}, 404)
+                        return self._send_file(hit[0], "image/png")
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["submissions"]:
                     # Director pending-submissions list (issue #193). Tailnet-only:
