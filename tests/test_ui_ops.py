@@ -2,6 +2,7 @@
 """Stdlib checks for the Control Center's structured status providers in racecast.py.
 Run: python3 tests/test_ui_ops.py"""
 import os, sys
+from urllib.parse import urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -746,7 +747,7 @@ def t_docs_data_lists_present_only(tmp):
     assert keys == ["setup-readme"]                      # only the md exists
     assert d["local"][0]["kind"] == "markdown"
     assert "/wiki" in d["wiki_url"] and "Director-Setup" in d["director_url"]
-    assert "github.io" in d["decks_url"]                 # central onboarding hub (Pages)
+    assert urlparse(d["decks_url"]).hostname.endswith(".github.io")  # Pages hub
     assert d["decks_local_url"] is None                  # no bundled slides in this fixture
 
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stdlib checks for the Control Center HTTP server (real server on an
 ephemeral port — no fixed ports, CI-safe). Run: python3 tests/test_ui_server.py"""
-import json, os, re, sys, tempfile, threading, time, urllib.error, urllib.request
+import json, os, re, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -424,7 +424,7 @@ def t_docs_route_and_file():
         code, body = _get(port, "/api/docs")
         data = json.loads(body)
         assert code == 200 and data["ok"] and data["local"][0]["key"] == "setup-readme"
-        assert "github.io" in data["decks_url"]                    # onboarding-decks hub
+        assert urllib.parse.urlparse(data["decks_url"]).hostname.endswith(".github.io")  # hub
         code, body = _get(port, "/api/docs/file/setup-readme")    # allowlisted -> served
         assert code == 200 and b"<h1" in body.lower()
         code, _b = _get(port, "/api/docs/file/unknown")           # not allowlisted -> 404
