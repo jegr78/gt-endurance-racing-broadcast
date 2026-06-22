@@ -19,7 +19,7 @@ profile's values.
 Each league is a folder under `profiles/` with a `profile.env`. `profiles/example/` is the
 template — copy it (or use `racecast profile new`) and fill in your values. For the wider
 profile model (machine vs. league config, the active-profile rules, adding a second league),
-see [League profiles](Profiles); for per-league HUD/timer styling see [HUD overlays](HUD-Overlays).
+see [League profiles](Profiles); for per-league overlay styling see [HUD overlays](HUD-Overlays).
 
 ```bash
 racecast profile new myleague --from example   # copies profiles/example/ -> profiles/myleague/

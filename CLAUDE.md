@@ -91,7 +91,7 @@ python3 tests/test_services.py       # daemon helper (PID/spawn/stop)
 python3 tests/test_racecast.py            # racecast CLI routing
 python3 tests/test_config.py         # profile/config resolver (machine .env + profile.env, active pointer)
 python3 tests/test_profile.py        # profile admin (list/show/use/new --from)
-python3 tests/test_overlay.py        # per-league overlay overrides (hud/timer CSS + fonts serving)
+python3 tests/test_overlay.py        # per-league overlay overrides (hud/splitscreen CSS + fonts serving)
 python3 tests/test_streams.py       # static-streams helpers (frozen feed spawn)
 python3 tests/test_roles.py          # crew roster (CrewSource) + role resolution (#216)
 python3 tests/test_console.py        # /console authorization policy: capability matrix + decision (#216)
@@ -118,6 +118,8 @@ python3 tests/test_ui_server.py      # Control Center HTTP server (routes, SSE, 
 python3 tests/test_e2e.py            # e2e-harness pure pieces (free-port, CSV builder, check registry, gates)
 python3 tests/test_logs.py           # rotating logger, prune, subprocess pump, OBS dir, archive resolution
 python3 tests/test_cues.py           # director text-cue channel (cue_admin: sanitize/active-set/prune/apply_pulled)
+# The list above is a representative subset; `tests/` has more (build/binary, splitscreen,
+# standby, funnel-setup, cockpit, console-proxy, fonts, …). run-tests.py runs ALL of them.
 python3 tools/run-tests.py           # the whole suite (exactly what CI runs)
 python3 tools/lint.py                # ruff lint (= the CI lint job); --fix auto-corrects.
                                      # Rules mirror the CodeQL alert classes — see ruff.toml.
@@ -276,12 +278,16 @@ runtime dir; switching profiles points the CLI at a different one.
   race timer are relay-served on the fixed loopback (`127.0.0.1:8088`, no token) — the
   Sheet URL is no longer embedded in the collection (the relay reads `SHEET_ID` from the
   active profile). Timer state = Sheet tab `Timer` + `runtime/timer.json`,
-  Director-controlled via `/timer/*` endpoints. **OBS browser sources cache JS
-  aggressively:** after `hud.html`/`timer.html` (or a per-profile overlay CSS) change,
-  OBS keeps the old page until refreshed. `racecast relay start` and
-  `racecast event start` do that automatically — a hash gate over the *served* page
-  bytes (`runtime/obs-pages.hash`, covering `OBS_PAGE_PATHS` = `/hud`, `/timer`,
-  `/hud/override.css`, `/timer/override.css`) triggers obs-websocket `refreshnocache`
+  Director-controlled via `/timer/*` endpoints; the race-timer clock is **rendered
+  inside `hud.html`** (the page polls `/timer/data` — there is no separate `timer.html`,
+  and `/timer/*` is a JSON API, not a served page). The relay's second overlay page is
+  **`splitscreen.html`** (`/splitscreen` + `/splitscreen/data`), an alternate layout for
+  a two-feed split. **OBS browser sources cache JS aggressively:** after
+  `hud.html`/`splitscreen.html` (or a per-profile overlay CSS) change, OBS keeps the old
+  page until refreshed. `racecast relay start` and `racecast event start` do that
+  automatically — a hash gate over the *served* page bytes (`runtime/obs-pages.hash`,
+  covering `OBS_PAGE_PATHS` = `/hud`, `/hud/override.css`, `/splitscreen`,
+  `/splitscreen/override.css`) triggers obs-websocket `refreshnocache`
   on every browser source pointing at the relay; `racecast obs refresh` forces it. The
   manual right-click → Refresh remains the fallback when obs-websocket is unreachable.
   Anything that must survive a reload therefore lives server-side (`runtime/timer.json`,
@@ -310,17 +316,20 @@ runtime dir; switching profiles points the CLI at a different one.
 - **Companion.** Export the config into the gitignored `incoming/` folder, then
   `tools/strip_companion_pass.py` blanks the WebSocket password and writes
   `src/companion/racecast-buttons.companionconfig`. `build.py` re-strips defensively.
-- **Per-league overlay (optional).** `profiles/<name>/overlay/{hud,timer}.css` +
-  `overlay/fonts/` restyle the relay-served HUD/timer per league via cascade-wins
-  override CSS — the base `hud.html`/`timer.html` carry a `<link>` to the override last
-  in `<head>`, so a league can recolor/reposition the overlay without forking the page.
-  The relay serves `/hud/override.css`, `/timer/override.css`, and
+- **Per-league overlay (optional).** `profiles/<name>/overlay/hud.css` (+ an optional
+  `splitscreen.css`) + `overlay/fonts/` restyle the relay-served overlay pages per
+  league via cascade-wins override CSS — the base `hud.html`/`splitscreen.html` carry a
+  `<link>` to the override last in `<head>`, so a league can recolor/reposition the
+  overlay without forking the page. (A legacy `overlay/timer.css` from before the timer
+  merged into the HUD is folded verbatim into the HUD layout's `customCss` on load — see
+  `overlay_layout_read_data` in `src/racecast.py`.) The relay serves `/hud/override.css`,
+  `/splitscreen/override.css`, and
   `/overlay/fonts/<file>` (each read per request from the `--overlay-dir`; empty body
   when the file is absent). The CLI passes `--overlay-dir profiles/<active>/overlay`
   whenever that dir exists (`_overlay_relay_args` in `src/racecast.py`). The two
   override.css are part of `OBS_PAGE_PATHS`, so editing them advances the refresh hash
   and OBS reloads automatically. Editable in the Control Center — a **visual overlay
-  builder** (issue #114): the slots' `data-edit` markers in `hud.html`/`timer.html`
+  builder** (issue #114): the slots' `data-edit` markers in `hud.html`
   are the single slot source, a pure compiler (`src/scripts/overlay_build.py`,
   `compile_overlay_css`) turns a `layout-<page>.json` the builder owns into the
   generated `<page>.css`, and a hand-written `<page>.css` is migrated verbatim into the
@@ -359,8 +368,8 @@ consumer; that is not a failure.)
 
 Control is an **unauthenticated** `ThreadingHTTPServer` on port `8088` exposing GET
 endpoints (`/next`, `/reload`, `/set/A/<n>`, `/pov/reload`, `/timer/*`, `/status`,
-`/panel`, plus the served pages `/hud`, `/timer` and the per-league overlay assets
-`/hud/override.css`, `/timer/override.css`, `/overlay/fonts/<file>`, …)
+`/panel`, plus the served pages `/hud`, `/splitscreen` and the per-league overlay assets
+`/hud/override.css`, `/splitscreen/override.css`, `/overlay/fonts/<file>`, …)
 driven by Companion's Generic-HTTP module. `--bind` defaults to **`auto`** (plug &
 play): it binds `127.0.0.1` (OBS always reaches the HUD/feeds on the fixed loopback
 address — the OBS collection never needs editing) **and** this machine's Tailscale IP
@@ -508,7 +517,8 @@ Discord (`cockpit_submission_payload`, no-op without a webhook). The director's
 **list/approve/reject** live under a separate `/submissions/*` namespace that is **NOT**
 funnelled (tailnet-only, reached from `/panel`); approve calls the existing
 `SetupControl.schedule_set` (writes the Sheet; applies on the next `/reload`). Pure store +
-audit log: `src/scripts/cockpit_submissions.py` (mirrors `cockpit_admin.py`); thin
+audit log: `src/scripts/cockpit_submissions.py` (mirrors the `chat_admin.py` /
+`console_admin.py` pure-store pattern); thin
 thread-safe wrapper `SubmissionStore` + endpoints in the relay; panel section + cockpit
 form in the two HTML files. Tests: `tests/test_submissions.py`.
 

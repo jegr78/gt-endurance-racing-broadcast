@@ -1,7 +1,7 @@
 # League profiles
 
 > Operator reference. The config keys these set are detailed in
-> [Configuration & secrets](Configuration); the per-league HUD/timer look is in
+> [Configuration & secrets](Configuration); the per-league overlay look is in
 > [HUD overlays](HUD-Overlays).
 
 One machine can run **several leagues**. Each league is a **profile** — a self-contained

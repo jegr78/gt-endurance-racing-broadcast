@@ -54,9 +54,9 @@ flowchart LR
   S1 --> RELAY
   S2 --> RELAY
   Sn --> RELAY
-  RELAY -->|"http://127.0.0.1:5300x"| OBS
+  RELAY -->|"http://127.0.0.1:53001-53003"| OBS
   SHEET --> RELAY
-  RELAY -->|"/hud + /timer overlays"| HUD
+  RELAY -->|"/hud + /splitscreen overlays"| HUD
   HUD --> OBS
   DISC --> OBS
   OBS -->|RTMP push| YT
@@ -116,13 +116,15 @@ teams, race control) and the **Configuration** tab (team → manufacturer via a
   edits appear with no manual reload),
 - `GET /hud/assets/{flags,brands}/<key>` — bundled flag/brand logos, resolved from text.
 
-The `/hud` and `/timer` pages are restyled **per league**: the relay serves the active
-profile's `profiles/<name>/overlay/{hud,timer}.css` (+ `overlay/fonts/`) on top of the
-shared page, so each league can have its own look without forking the HTML.
+The `/hud` and `/splitscreen` pages are restyled **per league**: the relay serves the
+active profile's `profiles/<name>/overlay/hud.css` (+ an optional `splitscreen.css` and
+`overlay/fonts/`) on top of the shared page, so each league can have its own look without
+forking the HTML.
 
-The race timer is also relay-served (`/timer`, fixed loopback URL); state: Sheet
-tab `Timer` + the active profile's `runtime/<profile>/timer.json`, Director-controlled via
-`/timer/*` endpoints.
+The race timer is **part of the HUD** — the clock is drawn inside the `/hud` page (it
+polls `/timer/data`), so OBS needs only the one HUD Browser Source, not a separate timer
+source. Timer state: Sheet tab `Timer` + the active profile's
+`runtime/<profile>/timer.json`, Director-controlled via the `/timer/*` JSON endpoints.
 
 ---
 
