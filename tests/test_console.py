@@ -29,7 +29,8 @@ def t_any_authenticated_reads():
                  ["timer", "data"], ["setup", "data"],
                  ["chat", "data"], ["chat", "reload"],
                  ["cockpit"], ["cockpit", "data"], ["cockpit", "program"],
-                 ["cockpit", "timer"], ["cockpit", "chat", "data"]):
+                 ["cockpit", "timer"], ["cockpit", "chat", "data"],
+                 ["cockpit", "graphics"], ["cockpit", "graphics", "Standings.png"]):
         assert _cap(segs) == ("any", False), segs
 
 

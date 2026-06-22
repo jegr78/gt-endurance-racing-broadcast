@@ -223,9 +223,53 @@ def t_race_control_schedule_empty():
     assert m.race_control_schedule([], {}) == []
 
 
+def _seed_graphics(d):
+    """Write a few dummy PNGs (+ one non-PNG) into dir d; return it."""
+    for fn in ("Standings.png", "Schedule.png", "Race Results.png", "notes.txt"):
+        with open(os.path.join(d, fn), "wb") as fh:
+            fh.write(b"\x89PNG\r\n" + fn.encode())
+    return d
+
+
+def t_list_graphics_sorted_pngs_only():
+    with tempfile.TemporaryDirectory() as d:
+        _seed_graphics(d)
+        got = m.list_graphics(d)
+        assert got == [
+            {"name": "Race Results", "file": "Race Results.png"},
+            {"name": "Schedule", "file": "Schedule.png"},
+            {"name": "Standings", "file": "Standings.png"},
+        ], got
+
+
+def t_list_graphics_missing_or_unset_dir_is_empty():
+    assert m.list_graphics(None) == []
+    assert m.list_graphics("/no/such/dir/xyz") == []
+
+
+def t_resolve_graphic_happy_path():
+    with tempfile.TemporaryDirectory() as d:
+        _seed_graphics(d)
+        hit = m.resolve_graphic(d, "Race Results.png")
+        assert hit is not None
+        path, ctype = hit
+        assert ctype == "image/png"
+        assert os.path.basename(path) == "Race Results.png"
+        assert os.path.realpath(path).startswith(os.path.realpath(d) + os.sep)
+
+
+def t_resolve_graphic_rejects_traversal_and_non_png():
+    with tempfile.TemporaryDirectory() as d:
+        _seed_graphics(d)
+        for bad in ("../secret.png", "a/b.png", "a\\b.png", "..", ".",
+                    "notes.txt", "Missing.png", "", "/etc/passwd"):
+            assert m.resolve_graphic(d, bad) is None, bad
+        assert m.resolve_graphic(None, "Standings.png") is None
+
+
 def _cockpit_client(secret="sek", rows=None, live_idx=0,
                     versions_path=None, chat_store=None, timer_store=None,
-                    page_path=None):
+                    page_path=None, graphics_dir=None):
     """Stand up make_handler over a real ThreadingHTTPServer on an ephemeral port.
     Returns (server, get, post); caller must srv.shutdown() in a finally block."""
     import threading as _t
@@ -260,7 +304,8 @@ def _cockpit_client(secret="sek", rows=None, live_idx=0,
 
     handler = m.make_handler(_Relay(), chat_store=chat_store, timer_store=timer_store,
                              cockpit_page_path=page_path, console_secret=secret,
-                             console_versions_path=versions_path)
+                             console_versions_path=versions_path,
+                             graphics_dir=graphics_dir)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     _t.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -432,6 +477,79 @@ def t_versions_endpoint_requires_secret():
             code, _h, body = get("/cockpit/versions",
                                  headers={"X-Console-Secret": "sek"})       # right secret
             assert code == 200 and json.loads(body)["versions"] == {"alpha": 3}
+        finally:
+            srv.shutdown()
+
+
+def t_graphics_list_requires_auth():
+    srv, get, _post = _cockpit_client()
+    try:
+        assert get("/cockpit/graphics")[0] == 401
+    finally:
+        srv.shutdown()
+
+
+def t_graphics_list_authed_sorted():
+    with tempfile.TemporaryDirectory() as d:
+        _seed_graphics(d)
+        srv, get, _post = _cockpit_client(graphics_dir=d)
+        try:
+            tok = ca.mint_token("sek", "alpha-racing")
+            code, _h, body = get("/cockpit/graphics?t=" + tok)
+            assert code == 200, code
+            names = [e["name"] for e in json.loads(body)["graphics"]]
+            assert names == ["Race Results", "Schedule", "Standings"], names
+        finally:
+            srv.shutdown()
+
+
+def t_graphics_list_empty_without_dir():
+    srv, get, _post = _cockpit_client()          # graphics_dir=None
+    try:
+        tok = ca.mint_token("sek", "alpha-racing")
+        code, _h, body = get("/cockpit/graphics?t=" + tok)
+        assert code == 200 and json.loads(body)["graphics"] == [], body
+    finally:
+        srv.shutdown()
+
+
+def t_graphic_file_served_with_png_ctype():
+    with tempfile.TemporaryDirectory() as d:
+        _seed_graphics(d)
+        srv, get, _post = _cockpit_client(graphics_dir=d)
+        try:
+            tok = ca.mint_token("sek", "alpha-racing")
+            # %20 in the path exercises the unquote() of the filename segment.
+            code, headers, body = get("/cockpit/graphics/Race%20Results.png?t=" + tok)
+            assert code == 200, code
+            assert headers["Content-Type"] == "image/png", headers["Content-Type"]
+            with open(os.path.join(d, "Race Results.png"), "rb") as fh:
+                assert body == fh.read()
+        finally:
+            srv.shutdown()
+
+
+def t_graphic_file_requires_auth():
+    with tempfile.TemporaryDirectory() as d:
+        _seed_graphics(d)
+        srv, get, _post = _cockpit_client(graphics_dir=d)
+        try:
+            assert get("/cockpit/graphics/Standings.png")[0] == 401
+        finally:
+            srv.shutdown()
+
+
+def t_graphic_file_traversal_and_missing_are_404():
+    with tempfile.TemporaryDirectory() as d:
+        _seed_graphics(d)
+        srv, get, _post = _cockpit_client(graphics_dir=d)
+        try:
+            tok = ca.mint_token("sek", "alpha-racing")
+            assert get("/cockpit/graphics/Missing.png?t=" + tok)[0] == 404
+            assert get("/cockpit/graphics/notes.txt?t=" + tok)[0] == 404
+            # URL-encoded traversal: %2F is NOT split into segments, then unquoted
+            # to a slash and rejected by resolve_graphic.
+            assert get("/cockpit/graphics/..%2Fsecret.png?t=" + tok)[0] == 404
         finally:
             srv.shutdown()
 
