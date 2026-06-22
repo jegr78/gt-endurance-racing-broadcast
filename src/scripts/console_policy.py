@@ -126,6 +126,15 @@ def min_capability(segments, method="GET"):
              ["cockpit", "cues"], ["cockpit", "cues", "ack"]):
         return Requirement(ANY, False)
 
+    # Cockpit graphics browser: read-only list + file serve, any authenticated
+    # subject (same tier as /cockpit/program). The file route is 3 segments
+    # (["cockpit","graphics",<filename>]); the filename is validated server-side
+    # by resolve_graphic, not here.
+    if p == ["cockpit", "graphics"]:
+        return Requirement(ANY, False)
+    if len(p) == 3 and p[:2] == ["cockpit", "graphics"]:
+        return Requirement(ANY, False)
+
     return None
 
 

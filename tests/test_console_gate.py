@@ -37,7 +37,7 @@ class _Crew:
     def race_control_keys(self): return self._rc
 
 
-def _serve(companion_url=None, logo_path=None, sheet_id=None):
+def _serve(companion_url=None, logo_path=None, sheet_id=None, graphics_dir=None):
     rows = [("https://youtu.be/a", "Alice", "1", 2)]           # alice -> commentator
     src = _FakeSource(_URLS8, rows)
     relay = m.Relay(src, [53001, 53002], LOGDIR, sheet_id=sheet_id)
@@ -54,7 +54,8 @@ def _serve(companion_url=None, logo_path=None, sheet_id=None):
         race_control_page_path=os.path.join(SRC, "racecontrol", "race-control.html"),
         buttons_page_path=os.path.join(SRC, "console", "buttons.html"),
         companion_url=companion_url,
-        logo_path=logo_path)
+        logo_path=logo_path,
+        graphics_dir=graphics_dir)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
@@ -845,6 +846,32 @@ def t_console_root_auth_optional_with_oauth():
         assert body, "launcher page should have a body"
     finally:
         srv.shutdown()
+
+
+def t_console_cockpit_graphics_list_any_auth():
+    # A commentator token reaches the graphics list over the /console mount.
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console/cockpit/graphics", _tok("alice"))
+        assert code == 200, (code, body)
+        assert json.loads(body)["graphics"] == [], body   # no dir -> empty
+    finally:
+        srv.shutdown()
+
+
+def t_console_cockpit_graphic_file_served_over_mount():
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "Standings.png"), "wb") as fh:
+            fh.write(b"\x89PNG\r\nX")
+        srv = _serve(graphics_dir=d)
+        try:
+            url = (f"http://127.0.0.1:{srv.server_address[1]}"
+                   f"/console/cockpit/graphics/Standings.png?t=" + _tok("alice"))
+            with urllib.request.urlopen(url, timeout=5) as r:
+                code = r.status; body = r.read()
+            assert code == 200 and body == b"\x89PNG\r\nX", (code, body)
+        finally:
+            srv.shutdown()
 
 
 def t_status_league_includes_name():
