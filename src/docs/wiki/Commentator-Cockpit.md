@@ -2,6 +2,8 @@
 
 > New here? Start with the visual [Commentator onboarding deck ↗](https://jegr78.github.io/gt-endurance-racing-broadcast/commentator.html), then come back for the detail below.
 
+![Commentator Cockpit — the on-air tally, live program monitor, race timer, stream-link submission, crew chat and the graphics browser](images/console-cockpit.png)
+
 A **talent-facing** page served by the relay — the counterpart to the Director
 Panel, but for the **commentators**. Each commentator opens the Console and signs in
 (with Discord) to get a self-contained cockpit:
