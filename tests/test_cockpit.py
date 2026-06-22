@@ -223,6 +223,50 @@ def t_race_control_schedule_empty():
     assert m.race_control_schedule([], {}) == []
 
 
+def _seed_graphics(d):
+    """Write a few dummy PNGs (+ one non-PNG) into dir d; return it."""
+    for fn in ("Standings.png", "Schedule.png", "Race Results.png", "notes.txt"):
+        with open(os.path.join(d, fn), "wb") as fh:
+            fh.write(b"\x89PNG\r\n" + fn.encode())
+    return d
+
+
+def t_list_graphics_sorted_pngs_only():
+    with tempfile.TemporaryDirectory() as d:
+        _seed_graphics(d)
+        got = m.list_graphics(d)
+        assert got == [
+            {"name": "Race Results", "file": "Race Results.png"},
+            {"name": "Schedule", "file": "Schedule.png"},
+            {"name": "Standings", "file": "Standings.png"},
+        ], got
+
+
+def t_list_graphics_missing_or_unset_dir_is_empty():
+    assert m.list_graphics(None) == []
+    assert m.list_graphics("/no/such/dir/xyz") == []
+
+
+def t_resolve_graphic_happy_path():
+    with tempfile.TemporaryDirectory() as d:
+        _seed_graphics(d)
+        hit = m.resolve_graphic(d, "Race Results.png")
+        assert hit is not None
+        path, ctype = hit
+        assert ctype == "image/png"
+        assert os.path.basename(path) == "Race Results.png"
+        assert os.path.realpath(path).startswith(os.path.realpath(d) + os.sep)
+
+
+def t_resolve_graphic_rejects_traversal_and_non_png():
+    with tempfile.TemporaryDirectory() as d:
+        _seed_graphics(d)
+        for bad in ("../secret.png", "a/b.png", "a\\b.png", "..", ".",
+                    "notes.txt", "Missing.png", "", "/etc/passwd"):
+            assert m.resolve_graphic(d, bad) is None, bad
+        assert m.resolve_graphic(None, "Standings.png") is None
+
+
 def _cockpit_client(secret="sek", rows=None, live_idx=0,
                     versions_path=None, chat_store=None, timer_store=None,
                     page_path=None):

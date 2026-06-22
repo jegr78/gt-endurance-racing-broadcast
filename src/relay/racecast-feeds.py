@@ -387,6 +387,46 @@ def resolve_asset(assets_dir, sub, key):
     return None
 
 
+def list_graphics(graphics_dir):
+    """Sorted list of the broadcast still-graphics (*.png) in graphics_dir as
+    [{"name": <Sheet label>, "file": <label>.png}, ...] for the cockpit browser.
+    Tolerant of an unset/missing/unreadable dir (returns []). Names are arbitrary
+    Sheet labels (mixed case, spaces) so there is no key regex here — listing is
+    a plain directory read; the SECURITY check lives in resolve_graphic."""
+    if not graphics_dir:
+        return []
+    try:
+        names = os.listdir(graphics_dir)
+    except OSError:
+        return []
+    out = []
+    for fn in names:
+        if fn.lower().endswith(".png") and os.path.isfile(os.path.join(graphics_dir, fn)):
+            out.append({"name": fn[:-4], "file": fn})
+    out.sort(key=lambda e: e["name"].lower())
+    return out
+
+
+def resolve_graphic(graphics_dir, name):
+    """Resolve a requested cockpit-graphics filename to (path, "image/png"), or
+    None when unsafe or absent. Graphics filenames are arbitrary Sheet labels
+    (uppercase/spaces allowed) so ASSET_KEY_RE does NOT apply; safety = reject any
+    path separator / traversal component, then realpath containment inside
+    graphics_dir (same guarantee as resolve_asset). Content-type is the constant
+    "image/png", never request-derived."""
+    if not graphics_dir or not name or name in (".", ".."):
+        return None
+    if "/" in name or "\\" in name:          # no directory components
+        return None
+    if not name.lower().endswith(".png"):
+        return None
+    base = os.path.realpath(graphics_dir)
+    path = os.path.realpath(os.path.join(base, name))
+    if not path.startswith(base + os.sep):   # belt-and-braces containment
+        return None
+    return (path, "image/png") if os.path.isfile(path) else None
+
+
 # Per-profile overlay overrides (profiles/<name>/overlay/). Override CSS is read
 # fresh per request (so a Control Center edit applies on the next OBS refresh
 # without a relay restart); fonts reuse the resolve_asset security pattern.
