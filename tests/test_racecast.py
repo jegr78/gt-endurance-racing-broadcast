@@ -2547,6 +2547,64 @@ def t_crew_write_and_delete_post_to_relay():
     assert posts[1][0].endswith("/crew/delete") and posts[1][1] == {"row": 3}
 
 
+# ---------- singleton relay control port / profile-switch guard (#273) ----------
+
+def t_relay_pid_is_singleton_top_level():
+    # The relay binds the SHARED control port (8088) + feed ports, so only ONE
+    # can run per machine. Its PID lives at the un-scoped runtime/ top level —
+    # NOT runtime/<profile>/ — so stop/status find the one relay regardless of
+    # the active profile (#273).
+    orig_base, orig_active = m._runtime_base_dir, m._active_profile_name
+    base = os.path.join("X", "runtime")
+    m._runtime_base_dir = lambda: base
+    m._active_profile_name = lambda: "league-a"
+    try:
+        assert m._relay_pid_path() == os.path.join(base, "relay.pid")
+        assert "league-a" not in m._relay_pid_path()
+        assert m._relay_profile_path() == os.path.join(base, "relay.profile")
+    finally:
+        m._runtime_base_dir, m._active_profile_name = orig_base, orig_active
+
+
+def t_running_relay_dir_follows_profile_stamp():
+    import tempfile
+    td = tempfile.mkdtemp()
+    base = os.path.join(td, "runtime")
+    os.makedirs(base)
+    orig_base, orig_active = m._runtime_base_dir, m._active_profile_name
+    m._runtime_base_dir = lambda: base
+    m._active_profile_name = lambda: "league-b"        # active switched away
+    try:
+        # no stamp -> falls back to the ACTIVE profile's dir
+        assert m._running_relay_dir() == os.path.join(base, "league-b")
+        # stamp present -> the relay's OWN profile dir, regardless of active, so
+        # `relay logs`/`status` read the dir the daemon actually writes to.
+        with open(m._relay_profile_path(), "w", encoding="utf-8") as fh:
+            fh.write("league-a")
+        assert m._running_relay_dir() == os.path.join(base, "league-a")
+        assert m._relay_log_path() == \
+            os.path.join(base, "league-a", "logs", "relay.console.log")
+    finally:
+        m._runtime_base_dir, m._active_profile_name = orig_base, orig_active
+
+
+def t_relay_start_port_note():
+    # Our own relay is caught by the earlier PID check; this only fires for a
+    # FOREIGN holder of 8088 (and never when the port is free).
+    assert m.relay_start_port_note(True, [123]) is None
+    assert m.relay_start_port_note(False, []) is None
+    note = m.relay_start_port_note(False, [999])
+    assert note and "999" in note and str(m.RELAY_PORT) in note and "freeport" in note
+
+
+def t_profile_switch_block_reason():
+    assert m.profile_switch_block_reason(False, False, False) == []
+    assert m.profile_switch_block_reason(True, False, False) == ["relay"]
+    assert m.profile_switch_block_reason(False, True, False) == ["static streams"]
+    assert m.profile_switch_block_reason(True, True, False) == ["relay", "static streams"]
+    assert m.profile_switch_block_reason(True, True, True) == []   # --force overrides
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

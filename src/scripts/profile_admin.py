@@ -14,7 +14,7 @@ import shutil
 import config as cfg   # sibling in src/scripts (sys.path injected by racecast.py/tests)
 
 PROFILE_VERBS = ("list", "show", "use", "new", "export", "import")
-_USAGE = ("usage: racecast profile {list | show [<name>] | use <name> | "
+_USAGE = ("usage: racecast profile {list | show [<name>] | use <name> [--force] | "
           "new <name> [--from <source>] | export <name> [--no-assets] [--out PATH] | "
           "import <file> [--force]}")
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
@@ -75,9 +75,17 @@ def parse_profile_args(rest):
         if args:
             out["name"] = args[0]
     elif verb == "use":
-        if len(args) != 1:
+        names = []
+        for t in args:
+            if t == "--force":
+                out["force"] = True
+            elif t.startswith("-"):
+                raise ValueError(_USAGE)
+            else:
+                names.append(t)
+        if len(names) != 1:
             raise ValueError(_USAGE)
-        out["name"] = args[0]
+        out["name"] = names[0]
     elif verb == "new":
         if not args:
             raise ValueError(_USAGE)
