@@ -15,9 +15,14 @@ SRC = os.path.join(ROOT, "src")
 DATA = ["relay", "scripts", "obs", "assets", "companion", "director", "cockpit", "console",
         "racecontrol", "ui", "setup-assets.py"]
 # Operator docs the Control Center's Help page serves (racecast.DOCS_FILES) — only
-# these, kept under src/docs/; the docs/wiki/ subtree and the onboarding decks +
-# cheat sheet (linked, not served) stay on GitHub.
+# these, kept under src/docs/. The docs/wiki/ subtree stays on GitHub (Help links
+# to it); the onboarding decks under docs/slides ARE bundled (see SLIDES_DATA below)
+# so the Help page can open them offline.
 DOC_FILES = ["docs/Broadcast_Setup_Guide.md", "docs/README_SETUP.md"]
+# The onboarding decks (incl. the printable cheat sheet) ship as a static tree so
+# the Control Center serves them OFFLINE at /docs/slides/; the GitHub Pages copy is
+# the always-current online default.
+SLIDES_DATA = "docs/slides"
 
 # The bundled scripts (relay, oneshots) are loaded at runtime via importlib, so
 # PyInstaller's static analyser cannot see their imports.  List every stdlib
@@ -116,6 +121,11 @@ def build_target(launcher, workdir, version_file, sep, entry, name, windowed):
     # — it lives on GitHub and the Help page links to it.
     for rel in DOC_FILES:
         cmd += ["--add-data", f"{os.path.join(SRC, rel)}{sep}src/docs"]
+    # The onboarding decks tree (dir DEST mirrors into src/docs/slides), so
+    # resource_path("docs/slides") resolves inside the frozen bundle and the
+    # Control Center can serve the decks + cheat sheet offline.
+    cmd += ["--add-data",
+            f"{os.path.join(SRC, SLIDES_DATA)}{sep}src/docs/slides"]
     # profiles/example/ is the league template `racecast profile new` copies from.
     # It lives at the repo root (a sibling of src/), not under src/, so bundle it
     # explicitly to profiles/example — racecast.ensure_example_profile() unpacks it
