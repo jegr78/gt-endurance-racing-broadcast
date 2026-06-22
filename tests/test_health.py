@@ -2,7 +2,7 @@
 """Stdlib unit checks for live-failure-visibility: cookie_health, resolve_hls
 error propagation, Feed phases, Relay.status() contract.
 Run: python3 tests/test_health.py"""
-import importlib.util, logging, os, tempfile
+import importlib.util, logging, os, tempfile, time
 
 # resolve_hls/ssai_warning now take a logger (per-feed logger in production),
 # not a path. A plain logging.Logger with no handlers is the test stand-in:
@@ -345,6 +345,87 @@ def t_aggregate_health_red_lists_underlying_yellows():
     assert any("cookie" in r.lower() for r in h["reasons"])
 
 
+def t_feed_health_state_ok_when_not_dropped():
+    # A feed that is not dropped is never "down" — regardless of served/since.
+    now = 1000.0
+    assert m.feed_health_state(False, None, False, now) == "ok"
+    assert m.feed_health_state(False, now - 999, True, now) == "ok"
+
+
+def t_feed_health_state_never_served_is_connecting():
+    # Never delivered a stable picture -> cannot have "lost" one. Even past the
+    # grace window it stays connecting (yellow), never down (red). Kills the
+    # startup/demo false CRITICAL.
+    now = 1000.0
+    assert m.feed_health_state(True, now - 999, False, now) == "connecting"
+
+
+def t_feed_health_state_within_grace_is_connecting():
+    # Served, then dropped, but still inside the grace window -> connecting, not
+    # down. A self-healing reconnect blip never reaches CRITICAL.
+    now = 1000.0
+    assert m.feed_health_state(True, now - 5, True, now,
+                               grace_s=m.HEALTH_DROP_GRACE_S) == "connecting"
+    # missing timestamp is treated as just-dropped (within grace)
+    assert m.feed_health_state(True, None, True, now) == "connecting"
+
+
+def t_feed_health_state_down_after_grace_when_served():
+    # Served a stable picture, then dropped continuously past the grace window
+    # -> genuine loss -> down (red). The crew gets paged.
+    now = 1000.0
+    assert m.feed_health_state(True, now - (m.HEALTH_DROP_GRACE_S + 1), True, now) == "down"
+
+
+def t_health_grace_is_one_heartbeat_interval():
+    # Grace = 30 s = one heartbeat interval (scope-confirmed in the issue).
+    assert m.HEALTH_DROP_GRACE_S == 30
+    assert m.HEALTH_DROP_GRACE_S == m.HEARTBEAT_INTERVAL_S
+    assert m.HEALTH_SERVED_OK_S == 10
+
+
+def t_health_facts_demo_feed_never_red():
+    # A feed whose serve never lasted long enough (served_ok False) and has been
+    # "dropped" for a long time must NOT land in feeds_down -> no CRITICAL.
+    orig = m.detect_tailscale_ip
+    m.detect_tailscale_ip = lambda: "100.64.0.9"
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
+            r._maybe_probe_obs = lambda now: None
+            r.obs_reachable = True
+            now = time.time()
+            r.A.dropped = True
+            r.A.served_ok = False
+            r.A.dropped_since = now - 600          # long gone, but never served
+            facts = r._health_facts(now)
+            assert "A" not in facts["feeds_down"]
+            assert m.aggregate_health(facts)["level"] != "red"
+    finally:
+        m.detect_tailscale_ip = orig
+
+
+def t_health_facts_sustained_loss_is_red():
+    # A feed that DID serve a stable picture and then dropped past the grace
+    # window is a genuine loss -> feeds_down -> red.
+    orig = m.detect_tailscale_ip
+    m.detect_tailscale_ip = lambda: "100.64.0.9"
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
+            r._maybe_probe_obs = lambda now: None
+            r.obs_reachable = True
+            now = time.time()
+            r.A.dropped = True
+            r.A.served_ok = True
+            r.A.dropped_since = now - (m.HEALTH_DROP_GRACE_S + 5)
+            facts = r._health_facts(now)
+            assert "A" in facts["feeds_down"]
+            assert m.aggregate_health(facts)["level"] == "red"
+    finally:
+        m.detect_tailscale_ip = orig
+
+
 def t_health_should_notify_transitions_only():
     # first tick: announce only a non-green baseline
     assert m.health_should_notify(None, "green") is False
@@ -403,7 +484,10 @@ def t_status_includes_health():
             r.obs_reachable = True
             h = r.status()["health"]
             assert h["level"] == "green" and h["reasons"] == [] and "since_s" in h
-            r.A.dropped = True                        # lost a live feed -> red
+            # A served feed that dropped past the grace window -> red.
+            r.A.dropped = True                        # lost a live feed
+            r.A.served_ok = True                      # it HAD a stable picture
+            r.A.dropped_since = time.time() - (m.HEALTH_DROP_GRACE_S + 5)
             assert r.status()["health"]["level"] == "red"
     finally:
         m.detect_tailscale_ip = orig
@@ -419,6 +503,8 @@ def t_status_refresh_does_not_consume_notification_baseline():
             r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
             r.obs_reachable = True
             r.A.dropped = True
+            r.A.served_ok = True
+            r.A.dropped_since = time.time() - (m.HEALTH_DROP_GRACE_S + 5)
             r.status(); r.status()
             assert r.health_level == "red"            # display followed the drop
             assert r._notified_level is None          # baseline untouched by /status

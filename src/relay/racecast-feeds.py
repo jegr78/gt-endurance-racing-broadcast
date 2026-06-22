@@ -147,9 +147,34 @@ def serve_exit_is_drop(stopped, advancing):
 # Spec: docs/superpowers/specs/2026-06-16-live-heartbeat-design.md
 HEARTBEAT_INTERVAL_S = 30        # how often the relay re-evaluates health
 HEALTH_CONNECTING_S = 45         # a feed connecting longer than this (not down) = yellow
+HEALTH_DROP_GRACE_S = 30         # a dropped feed must stay down this long (one heartbeat) before it escalates to red
+HEALTH_SERVED_OK_S = 10          # a serve must last this long to count as a stable live picture (turns served_ok sticky)
 HEALTH_COLORS = {                # Discord embed sidebar colour per level
     "green": 0x2ECC71, "yellow": 0xF1C40F, "red": 0xE74C3C}
 _HEALTH_LABEL = {"green": "OK", "yellow": "DEGRADED", "red": "CRITICAL"}
+
+
+def feed_health_state(dropped, dropped_since, served_ok, now,
+                      grace_s=HEALTH_DROP_GRACE_S):
+    """Classify one feed's live health as 'down' / 'connecting' / 'ok' from its
+    drop flags + timestamps — debouncing the raw `dropped` flag so a brief blip
+    or a never-served (demo/startup) feed never pages CRITICAL. Pure →
+    unit-tested in tests/test_health.py.
+
+    'ok'         — not dropped (serving, or idle).
+    'down'       — dropped, HAD a stable picture (served_ok), and has stayed
+                   dropped continuously for at least `grace_s`. A genuine loss.
+    'connecting' — dropped but still inside the grace window, OR never delivered
+                   a stable picture (served_ok False). You cannot "lose" a stream
+                   you never had; a self-healing blip is given time to recover.
+                   Surfaced as a quiet DEGRADED hint, never a CRITICAL @here."""
+    if not dropped:
+        return "ok"
+    if not served_ok:
+        return "connecting"
+    if dropped_since is None or (now - dropped_since) < grace_s:
+        return "connecting"
+    return "down"
 
 
 def aggregate_health(facts):
@@ -2605,6 +2630,13 @@ class Feed:
         # /status so the panel/Companion can raise a distinct alarm. Cleared on
         # recovery (re-serving) and on director intervention (reload/reposition).
         self.dropped = False
+        # Health debounce (issue #278): dropped_since stamps when `dropped` flips
+        # False->True so the heartbeat can require a 30 s grace before escalating
+        # to CRITICAL; served_ok turns sticky once a serve has lasted
+        # HEALTH_SERVED_OK_S, so a feed that never delivered a stable picture
+        # (demo/startup) is classified "connecting", not a lost live stream.
+        self.dropped_since = None
+        self.served_ok = False
 
     def current_channel(self):
         if self.paused:
@@ -2636,6 +2668,14 @@ class Feed:
             except Exception:
                 pass  # the process may already be gone — nothing left to kill
 
+    def _clear_drop_health(self):
+        """Reset the drop-debounce state: no active drop, and the new/reconnecting
+        source has not yet delivered a stable picture (served_ok goes False so a
+        fresh source must re-earn it before a future drop can page CRITICAL)."""
+        self.dropped = False
+        self.dropped_since = None
+        self.served_ok = False
+
     def set_index(self, new_idx):
         sched = self.provider()
         new_idx = max(0, min(new_idx, len(sched)))   # len == idle slot (one past the last stint)
@@ -2643,13 +2683,13 @@ class Feed:
             if new_idx == self.idx:
                 return False
             self.idx = new_idx
-        self.dropped = False              # director repositioned -> alarm acknowledged
+        self._clear_drop_health()         # director repositioned -> alarm acknowledged, new source not yet served
         self.advance.set(); self._kill_proc()
         return True
 
     def reload(self):
         """Reconnect to the (possibly changed) channel at the CURRENT index."""
-        self.dropped = False              # director intervened -> alarm acknowledged
+        self._clear_drop_health()         # director intervened -> alarm acknowledged, reconnecting source
         self.advance.set(); self._kill_proc()
         return True
 
@@ -2693,7 +2733,7 @@ class Feed:
                 if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
                     self.last_error = None
                 self._set_phase("serving")
-                self.dropped = False          # live picture -> any prior alarm clears
+                self._clear_drop_health()     # live picture -> any prior alarm clears; re-earn served_ok
                 serve_started = time.monotonic()
                 self.proc.wait()
                 serve_elapsed = time.monotonic() - serve_started
@@ -2703,10 +2743,19 @@ class Feed:
                 self.proc = None
                 time.sleep(RETRY_SLEEP); continue
             self._set_phase("connecting")
+            # The just-ended serve "earned" served_ok if it lasted long enough —
+            # only then can a future drop be classified a genuine live-picture loss
+            # (issue #278). A near-instant exit (demo/startup) leaves served_ok False.
+            if serve_elapsed >= HEALTH_SERVED_OK_S:
+                self.served_ok = True
             # A serving process just exited: flag an unexpected loss (DROP) so the
             # panel/Companion alarm fires — but not on an intentional stop or a
-            # handover/reload (both handled just below).
+            # handover/reload (both handled just below). Stamp dropped_since on the
+            # False->True edge so the heartbeat can apply the 30 s grace.
+            was_dropped = self.dropped
             self.dropped = serve_exit_is_drop(self.stop, self.advance.is_set())
+            if self.dropped and not was_dropped:
+                self.dropped_since = time.time()
             if self.stop: break
             if self.advance.is_set():
                 self.advance.clear(); continue
@@ -2812,8 +2861,14 @@ class Relay:
         for name, f in live:
             if f.paused:
                 continue
-            if f.dropped:
+            # Debounce the raw drop flag (#278): only a served-then-lost feed past
+            # the grace window is "down" (red); a within-grace blip or a
+            # never-served (demo/startup) feed is a quiet "connecting" (yellow).
+            state = feed_health_state(f.dropped, f.dropped_since, f.served_ok, now)
+            if state == "down":
                 feeds_down.append(name)
+            elif state == "connecting":
+                connecting_long.append(name)
             elif f.phase == "connecting" and (now - f.phase_since) > HEALTH_CONNECTING_S:
                 connecting_long.append(name)
         try:
