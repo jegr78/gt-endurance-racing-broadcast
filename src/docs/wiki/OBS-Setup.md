@@ -112,11 +112,12 @@ The lower-third HUD (streamer, session, round, flag, top-3 teams, race control) 
 
 ### The race timer: relay-served countdown
 
-The **HUD Race Timer** Browser Source points at `http://127.0.0.1:8088/timer` — the same
-fixed loopback address as the HUD, no per-machine editing needed. The relay serves the
-countdown page and its state endpoint (`/timer/data`). Director controls are on the panel's
-Race Timer section and Companion page 2. See [Race-Timer](Race-Timer) for how it works and
-the optional Apps Script write-webhook setup.
+The race-timer clock is **rendered inside the HUD** (`http://127.0.0.1:8088/hud`) — there is
+no separate timer browser source and no `/timer` page to add. The relay exposes the timer
+**state** as JSON at `/timer/data` (the HUD polls it) and the director **controls** under
+`/timer/*`. Director controls are on the panel's Race Timer section and Companion page 2.
+See [Race-Timer](Race-Timer) for how it works and the optional Apps Script
+write-webhook setup.
 
 ## 5. Discord audio (interviews)
 

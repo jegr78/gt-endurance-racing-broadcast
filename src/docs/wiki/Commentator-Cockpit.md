@@ -36,16 +36,24 @@ text-only stand-in for an earpiece. Two levels:
   **Acknowledge**. Once you do, the director's panel shows a **✓ seen** stamp with
   the time.
 
+Cues are **visual only — there is no sound or pop-up alert**. Keep the cockpit open on a
+screen you can glance at so you don't miss a critical banner.
+
 You only receive cues addressed to you by name or to **All talent** — cues sent to
 other individual commentators are never shown in your cockpit.
 
 ## Submit your stream link
 
-If each commentator brings their own stream, you can propose the URL for one of **your
-own** stints right from the cockpit: pick the stint, paste your YouTube/Twitch link, and
-submit. It is **not** live immediately — it lands as a *pending request* your director
-approves (or rejects) first; once approved it goes on air at the next handover/reload for
-that feed. You can only ever touch your own stints, never anyone else's.
+Sending your watch link is the same task described in
+[Who does what → commentators](Who-does-what#commentators--streamers): the **preferred
+way is from the cockpit**; posting it in the crew **Discord** is the fallback when you
+can't reach the cockpit.
+
+From the cockpit you propose the URL for one of **your own** stints: pick the stint, paste
+your YouTube/Twitch link, and submit. It is **not** live immediately — it lands as a
+*pending request* your director approves (or rejects) first; once approved it goes on air
+at the next handover/reload for that feed. You can only ever touch your own stints, never
+anyone else's.
 
 > Producer/admin side (approval flow, storage, security): see
 > [Console & cockpit setup → stream-link submissions](Console-Setup#commentator-stream-link-submissions-director-approved).

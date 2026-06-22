@@ -58,10 +58,12 @@ without touching the broadcast — e.g. a steward or a league official.
   [Console](Console) link the producer sends; the **Race Control** card appears for
   anyone flagged for it. No machine access.
 - The role is **additive**: the same person can be a director *and* run Race Control.
-  Flag people for it with the **Race Control** column on the Sheet's Crew tab (or the
-  Control Center [crew editor](Control-Center#profile)). See the
+  The **producer / league admin** flags people for it (you don't flag yourself) with the
+  **Race Control** column on the Sheet's Crew tab (or the Control Center
+  [crew editor](Control-Center#profile)). See the
   [Console launcher → Race Control](Console#race-control-read-only-monitoring-desk) for
-  the desk in detail.
+  the desk in detail — including using the **crew chat** to flag an incident to the
+  director (the desk's one active affordance; everything else is read-only).
 
 ## Commentators / streamers
 
@@ -76,10 +78,13 @@ Each stint's commentator streams the race on **their own channel**. Hand them th
   720p30 ≈ 3000 kbps. Audio 128–160 kbps AAC.
 - **Encoder:** hardware (NVENC / QuickSync / AMF). **No personal overlays** — graphics are
   added centrally.
-- **Send your watch link** before your stint for the schedule:
-  YouTube: `https://www.youtube.com/watch?v=…` ·
-  Twitch: `https://www.twitch.tv/<your-channel>`. Post it in the crew **Discord** channel —
-  the producer/director enters it into the sheet.
+- **Give the league your Discord handle and channel name** ahead of time — they go into
+  the Crew tab so your Console login is recognised and your stints map to you.
+- **Send your watch link** before your stint for the schedule
+  (YouTube: `https://www.youtube.com/watch?v=…` · Twitch: `https://www.twitch.tv/<your-channel>`).
+  **Preferred:** submit it from your **[cockpit](Commentator-Cockpit#submit-your-stream-link)**
+  (pick your own stint, paste, submit — the director approves it). **Fallback:** post it in
+  the crew **Discord** channel and the producer/director enters it into the sheet.
 
 ### Streaming straight from a PlayStation (no PC)
 
@@ -97,6 +102,21 @@ You can broadcast directly from the console — the relay pulls it the same way:
     default).
 - **No CBR/keyframe/encoder knobs** on the console — that is handled for you; just set the
   resolution and the privacy/latency above.
+
+## League Admin / owner (prepares the league)
+
+Often a different person from the event-day producer: the league owner sets up the
+league's **data and identity layer** once, then keeps it tidy. Fluent in Google Sheets
+and Discord; not necessarily an OBS/relay operator.
+
+- Owns the shared **Google Sheet** — schedule, HUD/overlay data, the **Crew** roster
+  (names, roles, Discord handles), and configuration.
+- Sets up the **Apps Script write-webhook** so the relay can write back to the Sheet.
+- Optionally creates the **Discord OAuth app** (so crew can sign in to the Console with
+  Discord) and a **Discord channel webhook** for submission/health pings.
+- Optionally designs the **per-league look** (overlay/HUD).
+- Full walkthrough: **[League owner setup](League-Owner-Setup)** (and the deck:
+  [League Admin onboarding ↗](https://jegr78.github.io/gt-endurance-racing-broadcast/league-admin-setup.html)).
 
 ## Event sizes
 

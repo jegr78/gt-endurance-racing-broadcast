@@ -279,15 +279,20 @@ roster after the delete.
    }
    ```
 
-3. **Deploy → New deployment → Web app**, execute as **Me**, access:
+3. **Choose one random secret** and use the **same value** in two places: the script's
+   `KEY = '…'` (step 2) **and** the `?key=…` in the URL (step 4). They must match exactly —
+   the `key` is the *only* thing protecting the webhook (see [Security](#security) below),
+   because **access: Anyone** means anyone with the URL could otherwise write to your Sheet.
+4. **Deploy → New deployment → Web app**, execute as **Me**, access:
    **Anyone**. Copy the `/exec` URL.
-4. In the league's `profiles/<name>/profile.env` on every producer machine:
+5. In the league's `profiles/<name>/profile.env` on every producer machine — append your
+   secret as `?key=…` so it matches the script's `KEY`:
 
    ```
    SHEET_PUSH_URL=https://script.google.com/macros/s/…/exec?key=<your secret>
    ```
 
-5. Restart the relay. `racecast event status` shows the profile check as PASS; the
+6. Restart the relay. `racecast event status` shows the profile check as PASS; the
    panel's HUD line reports `sheet sync OK` after the first action.
 
 ## Updating the script later
@@ -316,8 +321,8 @@ directly for role resolution, so roles work if the tab is populated by hand. The
 handover HUD update (Setup tab via the `setup` action) and serving the qualifying
 stream read-only both keep working regardless.
 Add a **Qualifying** tab (same columns as Schedule) and redeploy to enable it.
-Add a **Crew** tab (`Name | Commentator | Director | Producer | Discord`, header in
-row 1) and redeploy to enable the crew editor's write-back.
+Add a **Crew** tab (`Name | Commentator | Director | Producer | Race Control | Discord`,
+header in row 1) and redeploy to enable the crew editor's write-back.
 
 ## Security
 

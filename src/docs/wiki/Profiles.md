@@ -28,6 +28,10 @@ INTRO_URL=
 OUTRO_URL=
 LOGO=
 OBS_COLLECTION=
+# optional Discord integration
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+DISCORD_WEBHOOK_URL=
 ```
 
 | Key | Meaning |
@@ -37,8 +41,10 @@ OBS_COLLECTION=
 | **`SHEET_PUSH_URL`** *(optional)* | The Apps Script write webhook (the `/exec` URL **including** its `?key=…` secret) shared by the race timer and the director panel's sheet controls. Unset = those write-backs are read-only. See [Sheet-Webhook](Sheet-Webhook). |
 | **`INTRO_URL` / `OUTRO_URL`** *(optional)* | Override the Intro/Outro clip URLs that normally come from the Sheet's Assets tab (used by `racecast media`). |
 | **`LOGO`** *(optional)* | A logo image (path relative to the profile dir) for the Control Center. |
-| **`OBS_COLLECTION`** *(optional)* | The OBS scene-collection name this league uses, so several leagues keep separate collections in OBS on one machine. Blank = the profile's `NAME`. |
+| **`OBS_COLLECTION`** *(optional)* | The OBS scene-collection name this league uses, so several leagues keep separate collections in OBS on one machine. Blank = the per-league convention `GT Endurance Racing — <league>`. |
 | **`CONSOLE_SECRET`** *(auto-managed)* | The per-league secret signing the `/console` crew tokens; **auto-generated on first relay start** and shared across a league's producers via export/import — never set it by hand. See [Configuration](Configuration) and [Remote access](Remote-access). |
+| **`DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`** *(optional)* | Per-league Discord **OAuth app** credentials. Both set → crew can sign in to the [Console](Console) with Discord (matched to the Crew tab's `Discord` column); absent → signed `racecast links` are the only entry path. Setup: [Console & cockpit setup](Console-Setup). |
+| **`DISCORD_WEBHOOK_URL`** *(optional)* | A Discord **channel webhook** (not the OAuth app). Set → the relay posts stream-link submissions and health alerts there; absent → those pings are no-ops. Setup: [Console & cockpit setup](Console-Setup). |
 
 A profile folder also holds the league's overlay CSS (`overlay/`, see
 [HUD overlays](HUD-Overlays)); its downloaded graphics and media live under
