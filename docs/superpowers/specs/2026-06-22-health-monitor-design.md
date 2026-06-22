@@ -104,13 +104,13 @@ live_feed TEXT, live_stint INT
 
 ### B. Sampler — in the relay's existing heartbeat
 
-No new thread. In the 30 s heartbeat (`HEARTBEAT_INTERVAL_S`), after `_refresh_health()`:
-write a `kind='periodic'` sample. Additionally, write a `kind='event'` sample
-**immediately** on any state change — health level, per-feed state, OBS reachability —
-by hooking the existing prev/cur comparison (the `health_should_notify` site), so
-incident timestamps are second-accurate, not rounded to the 30 s grid. `prune()` runs on
-relay start and once daily. Retention window: `RACECAST_HEALTH_RETENTION_DAYS`
-(default 30).
+No new thread. In the 30 s heartbeat (`HEARTBEAT_INTERVAL_S`), after `_refresh_health()`,
+the relay records **one row per tick**. The row's `kind` is `'event'` when the categorical
+state (health level, per-feed state, OBS reachability) changed since the previous recorded
+row, else `'periodic'` — so transitions are marked in the series. Granularity therefore
+equals the sample tick (≤30 s); finer per-feed-thread hooking is a documented future
+refinement, not v1. `prune()` runs on relay start and once daily. Retention window:
+`RACECAST_HEALTH_RETENTION_DAYS` (default 30).
 
 ### C. Relay endpoints — `src/relay/racecast-feeds.py`
 
