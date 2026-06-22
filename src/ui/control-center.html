@@ -1974,18 +1974,25 @@ async function fetchAssetFiles() {
           d.graphics.length + ' graphics · ' + d.media.length + ' media');
 }
 
-function renderGallery(containerId, kind, names, isVideo) {
+function renderGallery(containerId, kind, items, isVideo) {
   const c = $(containerId);
   c.textContent = '';
-  if (!names.length) {
+  if (!items.length) {
     const e = document.createElement('div');
     e.className = 'gallery-empty';
     e.textContent = 'none downloaded yet — press Download.';
     c.appendChild(e);
     return;
   }
-  names.forEach(name => {
-    const url = '/api/assets/file/' + kind + '/' + encodeURIComponent(name);
+  items.forEach(item => {
+    // Server sends {name, v}; v = "<profile>-<mtime>" busts the browser's <img>
+    // decode-cache on a profile switch / re-download — the URL is otherwise
+    // identical across profiles that share filenames (#274). Tolerate a bare
+    // string for safety.
+    const name = (typeof item === 'string') ? item : item.name;
+    const ver = (typeof item === 'string') ? '' : item.v;
+    let url = '/api/assets/file/' + kind + '/' + encodeURIComponent(name);
+    if (ver) url += '?v=' + encodeURIComponent(ver);
     const t = document.createElement('div');
     t.className = 'thumb';
     if (isVideo) {

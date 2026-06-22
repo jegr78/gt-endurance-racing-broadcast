@@ -428,20 +428,42 @@ def t_assets_files_data_lists(tmp):
     open(os.path.join(g, "Standings.png"), "w").close()
     open(os.path.join(g, "notes.txt"), "w").close()      # non-image: ignored
     open(os.path.join(m, "intro.mp4"), "w").close()
-    d = rc.assets_files_data(roots={"graphics": g, "media": m})
+    d = rc.assets_files_data(roots={"graphics": g, "media": m}, profile="alpha")
     assert d["ok"] is True
-    assert d["graphics"] == ["Overlay.png", "Standings.png"]   # sorted, .txt dropped
-    assert d["media"] == ["intro.mp4"]
+    assert d["profile"] == "alpha"
+    # entries are {name, v}; names are still sorted with non-image/.txt dropped
+    assert [f["name"] for f in d["graphics"]] == ["Overlay.png", "Standings.png"]
+    assert [f["name"] for f in d["media"]] == ["intro.mp4"]
+
+
+def t_assets_files_data_cache_token(tmp):
+    # Each file carries a per-profile, per-mtime cache token so the Control
+    # Center gallery busts the browser <img> decode-cache on a profile switch
+    # or a re-download (#274). The token must change with BOTH the profile and
+    # the file's mtime (profiles typically share filenames with different bytes).
+    g = os.path.join(tmp, "ct_graphics")
+    os.makedirs(g)
+    p = os.path.join(g, "Overlay.png")
+    open(p, "w").close()
+    os.utime(p, (1000, 1000))
+    roots = {"graphics": g, "media": os.path.join(tmp, "ct_none")}
+    a = rc.assets_files_data(roots=roots, profile="alpha")["graphics"][0]
+    b = rc.assets_files_data(roots=roots, profile="bravo")["graphics"][0]
+    assert a["v"] == "alpha-1000" and b["v"] == "bravo-1000"   # profile busts
+    os.utime(p, (2000, 2000))
+    c = rc.assets_files_data(roots=roots, profile="alpha")["graphics"][0]
+    assert c["v"] == "alpha-2000"                              # mtime busts
 
 
 def t_assets_files_data_missing_dirs(tmp):
     d = rc.assets_files_data(roots={"graphics": os.path.join(tmp, "nope"),
-                                     "media": os.path.join(tmp, "nope2")})
+                                     "media": os.path.join(tmp, "nope2")},
+                             profile="x")
     assert d["ok"] is True and d["graphics"] == [] and d["media"] == []
 
 
 def t_assets_files_data_error():
-    d = rc.assets_files_data(roots={})        # missing keys -> KeyError, caught
+    d = rc.assets_files_data(roots={}, profile="x")  # missing keys -> KeyError, caught
     assert d["ok"] is False and "error" in d
 
 
