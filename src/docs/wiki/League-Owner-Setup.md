@@ -59,7 +59,9 @@ https://<magicdns>/console/oauth/callback
 
 where `<magicdns>` is that machine's Tailscale MagicDNS hostname (e.g.
 `producer.tailnet.ts.net`). `racecast links` prints the exact URI for the active
-machine.
+machine. **If you are not the producer**, ask each producer for their MagicDNS hostname
+(or have them run `racecast links` and send you the printed URI) — you need one line per
+producer machine that will run the relay with Funnel.
 
 To add a URI: in the Discord Developer Portal → **OAuth2** → **Redirects** → paste the
 URI → **Save Changes**. Add one line per producer host; Discord rejects any host not
@@ -79,7 +81,8 @@ Name | Commentator | Director | Producer | Race Control | Discord
   Schedule (the `Commentator` column covers pre-event / reserve commentators who are not
   yet on the schedule).
 - **Director** — flag; grants Director Panel + Web Buttons access.
-- **Producer** — flag; reserved for future producer-level capabilities.
+- **Producer** — flag; grants producer-level capabilities on `/console` — authorizing the
+  step-up (irreversible broadcast-control ops) and the producer-takeover pull endpoints.
 - **Race Control** — flag; grants the read-only [Race Control](Console) monitoring desk.
 - **Discord** — the Discord **username** (not display name, not `@mention`). Fill this
   for everyone who will log in with Discord. Case is ignored on match.

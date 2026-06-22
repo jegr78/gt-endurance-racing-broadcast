@@ -40,6 +40,10 @@ INTRO_URL=
 OUTRO_URL=
 LOGO=
 OBS_COLLECTION=
+# optional Discord integration
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+DISCORD_WEBHOOK_URL=
 ```
 
 - **`NAME`** — display name shown in the CLI / Control Center / docs (not the HUD).
@@ -63,8 +67,8 @@ OBS_COLLECTION=
 - **`LOGO`** *(optional)* — a logo image (relative to the profile dir) for the Control Center.
 - **`OBS_COLLECTION`** *(optional)* — the OBS scene-collection name this league uses, so
   several leagues can keep separate collections in OBS on one machine. `racecast setup`
-  writes this name into the import JSON; blank = the template name `GT Endurance Racing`.
-  The per-league convention is `GT Endurance Racing — <league>`.
+  writes this name into the import JSON; blank = the per-league convention
+  `GT Endurance Racing — <league>`.
 - **`CONSOLE_SECRET`** *(auto-managed — do not set by hand)* — the per-league HMAC secret
   that signs the `/console` identity tokens (commentator/director/producer) and acts as the
   step-up secret for irreversible producer ops. It is **generated automatically** on the
@@ -72,6 +76,15 @@ OBS_COLLECTION=
   import, so every producer of a league shares one secret. Keep it gitignored like the rest
   of `profile.env`; if it leaks, rotate it (delete the line and restart to regenerate, then
   re-export to the other producers). See [Remote access](Remote-access#one-identity-every-role).
+- **`DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`** *(optional)* — the per-league Discord
+  **OAuth app** credentials. When both are set, the relay activates `/console/login` +
+  `/console/oauth/callback`, so crew can sign in to the [Console](Console) with Discord
+  (matched against the Crew tab's `Discord` column). When absent, OAuth is off and the
+  signed `racecast links` are the only entry path. Setup: [Console & cockpit setup](Console-Setup).
+- **`DISCORD_WEBHOOK_URL`** *(optional)* — a Discord **channel webhook** (not the OAuth app).
+  When set, the relay posts commentator stream-link submissions and health alerts to that
+  channel; when absent those notifications are simply no-ops. Setup:
+  [Console & cockpit setup](Console-Setup).
 
 **Which profile is active** (resolution order): a global `--profile <name>` flag wins;
 then the machine `RACECAST_PROFILE` (or `.env`) value; then the `runtime/active-profile`

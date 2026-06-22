@@ -43,14 +43,18 @@ endpoints.
 
 ### Race Control (read-only monitoring desk)
 
-**Race Control** is a *read-only* surface for a monitoring desk: a live **program
-preview**, the **streamer / stint schedule**, the **race timer**, and **crew chat**
-(posted under the desk operator's own name). It triggers **no broadcast actions** — the
-**director keeps full control of the Panel**. Flag a person for it with the **Race
-Control** column on the Sheet's Crew tab (or the Control Center crew editor); the role
-string is `race_control`. The schedule it shows is **redacted** — stream URLs never leave
-the tailnet, the same boundary as the producer-takeover status — so the desk is safe over
-the public Funnel.
+**Race Control** is a monitoring desk: a live **program preview**, the **streamer / stint
+schedule**, the **race timer**, and **crew chat**. *Read-only* means it triggers **no
+broadcast actions** — no scenes, graphics or feeds; the **director keeps full control of
+the Panel**. The **crew chat is two-way**, though, and is the desk's working channel: the
+operator is expected to **post race-control information** for the crew (e.g. a
+drive-through / DSQ for a team, a car's rejoin time, a team that can't field a driver for
+the next stint, a team retiring from the race) and to **direct the commentators** through
+it (e.g. "cut to car #7, P3"). Messages post under the operator's own name. Flag a person
+for it with the **Race Control** column on the Sheet's Crew tab (or the Control Center crew
+editor); the role string is `race_control`. The schedule it shows is **redacted** — stream
+URLs never leave the tailnet, the same boundary as the producer-takeover status — so the
+desk is safe over the public Funnel.
 
 ![Race Control desk — program preview, redacted streamer/stint schedule with an on-air marker, race timer and crew chat](images/console-race-control.png)
 

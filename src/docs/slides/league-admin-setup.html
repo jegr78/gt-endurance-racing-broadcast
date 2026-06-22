@@ -51,15 +51,23 @@ More: [Sheet-Template](https://github.com/jegr78/gt-endurance-racing-broadcast/w
 More: [League-Owner-Setup](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/League-Owner-Setup) · [Control-Center](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Control-Center)
 </script></section>
 
+<section>
 <section data-markdown><script type="text/template">
 ## Discord login for /console
 
 ![Console login](assets/img/console-login.png)
 
-**Required.** Create a Discord OAuth app (scope `identify`, **not** a bot), add `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` to `profile.env`, and register the redirect URI `https://<magicdns>/console/oauth/callback` — `<magicdns>` is the producer's **Tailscale MagicDNS** hostname.
+**Recommended (optional)** — with it crew sign in with Discord; without it signed `racecast links` are the only way in.  ↓ how to set it up
+</script></section>
+<section data-markdown><script type="text/template">
+### Set up the OAuth app
+Create a Discord OAuth app (scope `identify`, **not** a bot), add `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` to `profile.env`, and register the redirect `https://<magicdns>/console/oauth/callback`.
+
+**One redirect line per producer host** — `<magicdns>` is each producer's Tailscale MagicDNS name; ask them, or have them run `racecast links` (it prints the exact URI).
 
 More: [League-Owner-Setup](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/League-Owner-Setup)
 </script></section>
+</section>
 
 <section data-markdown><script type="text/template">
 ## Share one URL

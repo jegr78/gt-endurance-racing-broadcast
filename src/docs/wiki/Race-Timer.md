@@ -1,8 +1,10 @@
 # Race Timer
 
-The remaining-race-time overlay is served by the relay itself at
-`http://127.0.0.1:8088/timer` (the OBS `HUD Race Timer` browser source points
-there). No external service is involved.
+The remaining-race-time clock is part of the relay-served **HUD** overlay
+(`http://127.0.0.1:8088/hud`) — there is no separate timer browser source or
+`/timer` page to add. The relay exposes the timer **state** as JSON at
+`/timer/data` (which the HUD polls) and the director **controls** under
+`/timer/*`. No external service is involved.
 
 ## How it works
 

@@ -25,9 +25,17 @@ practical differences:
 
 ## The director panel
 
-Open `http://<producer-tailscale-ip>:8088/panel`. The page is organized as
-horizontal busses; the Stream Deck pages and the panel share one muscle
-memory:
+**Open it the way the producer set you up:**
+
+- **Standard — the Console link.** Open the personal `/console` link the producer sent
+  you, sign in with **Discord** (or your personal sign-in link), and tap the
+  **Director Panel** card. This works over the internet with **no Tailscale account, IP
+  or password** — see [Director setup](Director-Setup) and [the Console launcher](Console).
+- **Fallback — direct on the tailnet.** If you joined the producer's tailnet, open
+  `http://<producer-tailscale-ip>:8088/panel` directly.
+
+The page is organized as horizontal busses; the Stream Deck pages and the panel share
+one muscle memory:
 
 ![The director panel — the whole show on one page: the PGM, FEEDS, HUD, SCN·VIS, GFX, TIMER, AUDIO and CUES busses, a status strip, and the collapsible URLs / Qualifying / Chat sections](images/director-panel.png)
 
@@ -47,6 +55,12 @@ relay-only. The relay calls the producer's local OBS on your behalf; no OBS
 IP, port, or password is needed in the browser. HUD and URLs additionally need
 the sheet-write webhook (see [Sheet-Webhook](Sheet-Webhook)); without it they
 are display-only.
+
+> **"Race Control" here is the on-screen HUD banner** (the `RED FLAG`/`Driver Swaps`
+> dropdown you set, written to the Setup tab) — **not** the read-only
+> [Race Control monitoring desk](Console#race-control-read-only-monitoring-desk) crew
+> role. They share a name but never interact: this banner stays director-only, and the
+> desk never writes to it.
 
 ### Status strip and feed health
 

@@ -327,8 +327,13 @@ localize and import the collection:
 ```bash
 racecast media       # Intro/Outro clips   -> runtime/<profile>/media/
 racecast graphics    # broadcast graphics  -> runtime/<profile>/graphics/
-racecast setup --out runtime/GT_Endurance.import.json
+racecast setup --out runtime/<profile>/GT_Endurance.import.json
 ```
+
+> Replace `<profile>` with your active league's name (run `racecast profile show` if
+> unsure). `racecast setup` writes into the active profile's runtime dir, so the file
+> lands at `runtime/<profile>/GT_Endurance.import.json` — that's where the next step
+> picks it up.
 
 > **In the Control Center:** **Assets → Download** fetches the graphics and media;
 > the **Setup** view's `setup` step builds the import collection.
@@ -385,12 +390,29 @@ authentication, set a password — and enter the **same** password in Companion'
 connection. (OBS's own walkthrough: the
 [Remote Control Guide](https://obsproject.com/kb/remote-control-guide).)
 
+This same OBS-WebSocket connection is what lets the **Director Panel** switch scenes,
+toggle sources and control audio — those controls run **through the relay**, never a
+direct browser→OBS connection (so the director never needs an OBS IP, port or password).
+The relay **auto-discovers** the password from OBS's own config, so usually there is
+nothing extra to set. If the panel's OBS actions don't take (the panel shows *OBS not
+reachable*), set the password explicitly: Control Center **General Settings →**
+`RACECAST_OBS_WS_PASSWORD` (or the same key in `.env`).
+
 **You should now see:** the OBS connection **green** under Companion →
 **Connections**.
 
 ## 8 — Connect remote directors (Tailscale)
 
 *Takes ~5 minutes.*
+
+> **The standard way to give a director (or any crew) access is the public
+> [`/console`](Remote-access) link over Tailscale Funnel** — they just open the link
+> you send, **no Tailscale account, IP or password on their end**. You still install
+> Tailscale on *this* machine (below) because Funnel runs on top of it; turn the
+> public link on later with `racecast funnel on` (see [Run an event](Run-an-event) and
+> [Remote access & the Funnel](Remote-access)). **Inviting directors into your tailnet
+> (further down) is now only the fallback** for people who prefer a direct tailnet
+> connection.
 
 **macOS / Windows:** open the Tailscale app, sign in (free account — this owns your
 private network), then note this machine's IP (`100.x.y.z`) from the Tailscale menu
@@ -416,9 +438,11 @@ Linux needs the operator step.)
 
 Then find this machine's IP with `tailscale ip -4` (or `racecast tailscale status`).
 
-**Then, on any OS:** invite each director (free, up to 6 people) at
+**Fallback — direct tailnet access:** if a director prefers to join your tailnet instead
+of using the Funnel link, invite them (free, up to 6 people) at
 [login.tailscale.com](https://login.tailscale.com/admin/users); they install Tailscale and
-sign in too. A director can then open the Web Buttons page (`http://100.x.y.z:8000/tablet`) to drive the show.
+sign in too. They can then open the Director Panel (`http://100.x.y.z:8088/panel`) or the
+Web Buttons page (`http://100.x.y.z:8000/tablet`) directly.
 More: [Director setup](Director-Setup) (the page to send your directors) and the
 [Director guide](Director).
 

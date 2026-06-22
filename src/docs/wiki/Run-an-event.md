@@ -133,6 +133,20 @@ password**. HUD and URLs additionally need the sheet-write webhook (see
 panel holds no OBS credential, it also works in full over the public Funnel at
 `/console/panel` — see [Remote access](Remote-access).
 
+> **The HUD/PGM "Race Control" here is the on-screen banner** (the `RED FLAG` /
+> `Driver Swaps` overlay message, written to the Setup tab) — **not** the read-only
+> [Race Control monitoring desk](Console#race-control-read-only-monitoring-desk) crew
+> role. Same name, different things: the banner is director-only; the desk only watches.
+
+**Ports at a glance** (the producer's machine; directors just open the links above):
+
+| Port | Surface |
+|---|---|
+| `8088` | the relay — Director Panel (`/panel`), HUD (`/hud`), `/console`, timer/chat APIs |
+| `8000` | Companion — Web Buttons (`/tablet`) |
+| `4455` | OBS-WebSocket (local only — never funnelled; the relay uses it to drive OBS) |
+| `8089` | the Control Center (`racecast-ui`, local only) |
+
 ## During the race: driver changes
 
 About every two hours the driver/commentator changes. Two feeds take turns so the picture
@@ -231,7 +245,9 @@ role, but does not have to.
 
 When the interviews and the on-air wrap-up are done, the director presses **OUTRO** — the
 looping outro clip plays (with its own audio) and stays on air. After that you can **Stop
-Streaming** in OBS at any time, then stop the feeds (Ctrl+C the relay).
+Streaming** in OBS at any time, then wind everything down with **Stop event**
+(`racecast event stop`). (`Ctrl+C` only applies to the foreground `racecast relay run`
+debug mode — the normal relay runs as a background service.)
 
 ---
 
