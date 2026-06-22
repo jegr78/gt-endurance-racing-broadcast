@@ -49,12 +49,16 @@ flowchart LR
 An optional **monitoring desk** for someone who needs to keep an eye on the race
 without touching the broadcast — e.g. a steward or a league official.
 
-- **Read-only by design.** It triggers no broadcast actions; the **director keeps full
-  control** of the show. The desk only watches.
+- **Read-only on the broadcast.** It triggers no scenes, graphics or feeds; the
+  **director keeps full control** of the show.
 - Sees a live **program preview**, the **streamer / stint schedule** (stream URLs are
-  redacted — they never leave the producer's tailnet), the **race timer**, and the
-  **crew chat** (posts under the operator's own name).
-- Drives nothing from a browser, like the director — open the personal
+  redacted — they never leave the producer's tailnet), and the **race timer**.
+- **Posts to the crew chat** (its working channel — chat is two-way): feed the crew the
+  race-control facts as they happen, e.g. a **drive-through / DSQ** for a team, a car's
+  **rejoin time**, a team that **can't field a driver** for the next stint, or a team
+  **retiring** from the race — and **direct the commentators** through it (e.g. "cut to
+  car #7, P3"). Messages post under the operator's own name.
+- Drives nothing else from a browser, like the director — open the personal
   [Console](Console) link the producer sends; the **Race Control** card appears for
   anyone flagged for it. No machine access.
 - The role is **additive**: the same person can be a director *and* run Race Control.
@@ -62,8 +66,7 @@ without touching the broadcast — e.g. a steward or a league official.
   **Race Control** column on the Sheet's Crew tab (or the Control Center
   [crew editor](Control-Center#profile)). See the
   [Console launcher → Race Control](Console#race-control-read-only-monitoring-desk) for
-  the desk in detail — including using the **crew chat** to flag an incident to the
-  director (the desk's one active affordance; everything else is read-only).
+  the desk in detail.
 
 ## Commentators / streamers
 
