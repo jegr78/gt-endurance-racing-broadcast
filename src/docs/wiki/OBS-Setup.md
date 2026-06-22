@@ -71,10 +71,11 @@ The ports are served by the [Relay](Relay-Mode) (recommended) or by
 
 ## 4. HUD &amp; graphics (Browser Sources)
 
-The HUD, race timer, and info-graphics are **Browser Sources** driven live by the relay
-and the shared Google Sheet. They are left in the scene and toggled by the director via
-Companion — no screen-share, no extra latency. All relay-served sources (`/hud`,
-`/timer`) use fixed loopback URLs — no per-machine editing needed.
+The HUD (with the race timer drawn into it) and the info-graphics are **Browser Sources**
+driven live by the relay and the shared Google Sheet. They are left in the scene and
+toggled by the director via Companion — no screen-share, no extra latency. The relay-served
+overlay sources (`/hud`, `/splitscreen`) use fixed loopback URLs — no per-machine editing
+needed.
 
 > **ARM64 Linux: no Browser Source out of the box.** Ubuntu's `obs-studio` package is
 > built **without** the Browser Source (no CEF), and there is no prebuilt OBS-with-browser

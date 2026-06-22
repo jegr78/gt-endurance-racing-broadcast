@@ -30,7 +30,7 @@ The dashboard then shows each one's state at a glance, plus tiles for Preflight,
 Assets and Cookies readiness — so you can see what's still missing and fix it from
 the matching view.
 
-> **Page updates:** starting the event re-loads the HUD/timer browser sources
+> **Page updates:** starting the event re-loads the HUD/overlay browser sources
 > automatically when an update changed them. If a page ever looks stale,
 > `racecast obs refresh` (or right-click the source → Refresh) forces it.
 

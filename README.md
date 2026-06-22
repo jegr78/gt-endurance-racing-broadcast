@@ -4,15 +4,18 @@ Single-source repo for the GT Endurance Racing broadcast producer station.
 **Edit only under `src/`.** `dist/` and `runtime/` are generated and gitignored.
 
 📖 **Operator docs & onboarding:** see the [project wiki](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki)
-(architecture diagrams, setup, runbook, troubleshooting). Its source lives in
-`src/docs/wiki/` and is published with `python3 tools/sync-wiki.py`.
+(architecture diagrams, setup, runbook, troubleshooting) and the visual
+[onboarding decks](https://jegr78.github.io/gt-endurance-racing-broadcast/) — one short
+walkthrough per role.
+
+🛠️ **Building from source or contributing?** See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Layout
 - `src/` — source of truth: `relay/`, `obs/`, `companion/`, `director/`, `assets/`, `scripts/`, `docs/`, `setup-assets.py`
 - `profiles/` — one directory per league (`profiles/<name>/profile.env` + `overlay/`); `profiles/example/` ships as the template
 - `.env` — machine-local config (gitignored; copy from `.env.example`)
 - `tools/` — maintainer scripts (build, tokenize, sync, helpers) — not shipped
-- `tests/` — `test_pov.py`
+- `tests/` — stdlib test suite (run all with `python3 tools/run-tests.py`)
 - `runtime/` — cookies/logs/caches + per-profile state (gitignored)
 - `dist/` — built distributable + ZIP (gitignored)
 - `docs/superpowers/` — specs & plans
@@ -60,9 +63,10 @@ league keeps its own OBS scene collection, graphics/media, and HUD overlay, so
 switching leagues is a profile switch — no editing of `.env` or the collection.
 
 ### Per-league HUD overlays
-Each profile can restyle the relay-served HUD and race timer via
-`profiles/<name>/overlay/{hud,timer}.css` (with optional `overlay/fonts/`). These
-override the bundled defaults per league and are editable in the Control Center.
+Each profile can restyle the relay-served overlay pages (the HUD — which includes the
+race timer — and the splitscreen) via `profiles/<name>/overlay/hud.css` (plus an optional
+`splitscreen.css` and `overlay/fonts/`). These override the bundled defaults per league
+and are editable in the Control Center's visual overlay builder.
 The first override on a profile whose `overlay/` did not exist when the relay
 started needs one `racecast relay restart`; later edits apply live (Apply in OBS).
 See the [HUD overlays](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/HUD-Overlays) wiki page.
@@ -137,7 +141,7 @@ racecast setup --out runtime/GT_Endurance.import.json   # localize OBS assets + 
 racecast event start          # bring everything up: Tailscale, Discord, relay, OBS, Companion
 racecast event start --stint 4 # take over mid-event (12h/24h): stint 4 is on air now
 racecast event start --title "GTEC - 2026 - Round 4 - Nürburgring 24h"  # set the event title (Panel/Cockpit/Discord); also editable live in the Panel
-racecast event takeover <A-ip>                       # take over from A over the tailnet (reads on-air stint, pulls chat + cockpit-versions)
+racecast event takeover <A-ip>                       # take over from A over the tailnet (reads on-air stint, pulls chat + console token revocations)
 racecast event takeover <A-magicdns-host> --funnel  # same but over A's public Funnel — no Tailscale account on B; needs `racecast funnel on` running on A and the league CONSOLE_SECRET in B's profile
 racecast event status         # event-day readiness report (apps, services, cookies, graphics, media, config)
 racecast event stop           # stop relay/Companion/streams — OBS & friends keep running
@@ -174,13 +178,9 @@ racecast console token revoke <streamer>  # rotate one commentator's link
 
 For live debugging, run the relay in the foreground: `racecast relay run`.
 
-## Build the distributable (maintainer)
-```bash
-python3 tools/build.py     # -> dist/GT_Racecast_Package/ + dist/GT_Racecast_Package.zip
-```
+## Building from source / contributing
 
-## After editing the OBS collection in OBS
-Re-export from OBS, then fold the change back into the tokenized source:
-```bash
-python3 tools/tokenize-obs.py /path/to/exported.json src/obs/GT_Endurance.json
-```
+Editing the toolkit, running the tests and lint, building the distributable and the
+standalone binaries, and the maintainer workflows (OBS-collection round-trip, wiki and
+Pages publishing) all live in **[CONTRIBUTING.md](CONTRIBUTING.md)** — with `CLAUDE.md`
+as the deep-architecture reference.
