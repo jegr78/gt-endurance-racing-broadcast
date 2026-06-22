@@ -77,6 +77,16 @@
   .subpend { font-size: 13px; background: #1b1f25; border: 1px solid #2a3038;
              border-radius: 6px; padding: 6px 8px; color: #cbd1d6; }
   .submit .hint { font-size: 12px; opacity: .6; line-height: 1.3; }
+  /* --- Graphics browser --- */
+  #gfxList { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; }
+  #gfxList a { display: block; text-decoration: none; color: #e8eaed;
+               background: #1b1f25; border: 1px solid #2a3038; border-radius: 6px;
+               padding: 7px 10px; font-size: 14px; }
+  #gfxList a:hover { border-color: #3b82f6; }
+  #gfxList .empty { font-size: 13px; opacity: .6; padding: 2px 0; }
+  #gfxHead { display: flex; align-items: center; justify-content: space-between; }
+  #gfxRefresh { background: none; border: 0; color: #8ab4f8; cursor: pointer;
+                font: inherit; font-size: 12px; padding: 0; }
   /* --- Director cues (#243) --- */
   /* Amber + pulse so a director cue is unmistakable AND distinct from the red
      "YOU ARE ON AIR" tally right below it (same red made the cue blend in). */
@@ -174,6 +184,12 @@
           <button id="chatsend">Send</button>
         </div>
       </div>
+    </div>
+    <div class="card" style="margin-top:12px;">
+      <h2 id="gfxHead">Graphics
+        <button id="gfxRefresh" type="button" title="Reload the graphics list">Refresh</button>
+      </h2>
+      <div id="gfxList"><div class="empty">Loading…</div></div>
     </div>
   </div>
 </div>
@@ -428,7 +444,43 @@ async function pollCues() {
   setTimeout(pollCues, 3000);
 }
 
-pollTally(); pollProgram(); pollTimer(); pollChat(); pollCues();
+// --- Graphics browser ---
+// List the broadcast still-graphics; clicking one opens it in a new tab. The
+// file URL MUST go through RC_API() so it resolves under the /console mount over
+// Funnel (the fetch shim only patches window.fetch, not <a href>). Auth in the
+// new tab rides the rc_console cookie (same-origin GET) — no token in the URL.
+async function loadGraphics() {
+  const box = $('gfxList');
+  try {
+    const d = await j('/cockpit/graphics');
+    const list = d.graphics || [];
+    box.textContent = '';
+    if (!list.length) {
+      const e = document.createElement('div');
+      e.className = 'empty';
+      e.textContent = 'No graphics available.';
+      box.appendChild(e);
+      return;
+    }
+    list.forEach(g => {
+      const a = document.createElement('a');
+      a.href = RC_API('/cockpit/graphics/' + encodeURIComponent(g.file));
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = g.name;                 // XSS-safe (Sheet label)
+      box.appendChild(a);
+    });
+  } catch (e) {
+    box.textContent = '';
+    const er = document.createElement('div');
+    er.className = 'empty';
+    er.textContent = 'Could not load graphics.';
+    box.appendChild(er);
+  }
+}
+$('gfxRefresh').addEventListener('click', loadGraphics);
+
+pollTally(); pollProgram(); pollTimer(); pollChat(); pollCues(); loadGraphics();
 </script>
 </body>
 </html>
