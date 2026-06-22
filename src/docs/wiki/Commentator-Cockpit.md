@@ -16,6 +16,8 @@ Panel, but for the **commentators**. Each commentator opens the Console and sign
 - **Race timer** — the live remaining-time clock.
 - **Submit a stream link** — propose the stream URL for one of *their own* stints; it
   lands as a pending request the director approves before it can go on air (see below).
+- **Graphics** — browse the league's broadcast graphics and open any of them in a new
+  browser tab for reference while on air (see below).
 
 You reach your cockpit from the **[Console](Console)** page — open the link your producer
 shares and **sign in with Discord**; the cockpit appears as one of its role-gated cards.
@@ -45,6 +47,14 @@ that feed. You can only ever touch your own stints, never anyone else's.
 
 > Producer/admin side (approval flow, storage, security): see
 > [Console & cockpit setup → stream-link submissions](Console-Setup#commentator-stream-link-submissions-director-approved).
+
+## Graphics
+
+The cockpit lists the league's **broadcast graphics** — the same still graphics the
+director puts on air (standings, schedule, results, weather, standby, …). Pick one from
+the **Graphics** card and it opens in a **new browser tab** so you can read it while you
+commentate; use **Refresh** if the producer re-downloads the graphics during the event.
+The list is read-only — opening a graphic never changes anything on air.
 
 ## Setup & administration (producers)
 
