@@ -747,6 +747,7 @@ def t_docs_data_lists_present_only(tmp):
     assert d["local"][0]["kind"] == "markdown"
     assert "/wiki" in d["wiki_url"] and "Director-Setup" in d["director_url"]
     assert "github.io" in d["decks_url"]                 # central onboarding hub (Pages)
+    assert d["decks_local_url"] is None                  # no bundled slides in this fixture
 
 
 def t_docs_file_path_allowlist(tmp):
@@ -777,6 +778,30 @@ def t_docs_content_md_rendered(tmp):
     assert "<!doctype html>" in text and "<h1>Title</h1>" in text and "<table>" in text
     assert rc.docs_content("cheat-sheet", resolve=resolve) is None  # not an allowlisted local doc
     assert rc.docs_content("unknown", resolve=resolve) is None
+
+
+def t_docs_slides_serve_and_local_url(tmp):
+    # the bundled onboarding decks (offline copy) serve from src/docs/slides;
+    # resolve("docs/slides") -> base/slides in this fixture.
+    base = os.path.join(tmp, "docs_slides")
+    slides = os.path.join(base, "slides")
+    os.makedirs(os.path.join(slides, "assets"), exist_ok=True)
+    with open(os.path.join(slides, "index.html"), "w") as fh:
+        fh.write("<!doctype html><h1>decks</h1>")
+    with open(os.path.join(slides, "assets", "deck.css"), "w") as fh:
+        fh.write(".reveal{}")
+    def resolve(rel):
+        return os.path.join(base, os.path.basename(rel))
+    # empty path -> index.html; nested asset; content types
+    p, ct = rc.docs_slides_serve("", resolve=resolve)
+    assert p.endswith("index.html") and ct.startswith("text/html")
+    p, ct = rc.docs_slides_serve("assets/deck.css", resolve=resolve)
+    assert p.endswith("deck.css") and ct.startswith("text/css")
+    # missing + traversal are refused
+    assert rc.docs_slides_serve("nope.html", resolve=resolve) is None
+    assert rc.docs_slides_serve("../../etc/passwd", resolve=resolve) is None
+    # docs_data advertises the offline hub when the bundled index resolves
+    assert rc.docs_data(resolve=resolve)["decks_local_url"] == "/docs/slides/"
 
 
 def t_app_control_ops_route():

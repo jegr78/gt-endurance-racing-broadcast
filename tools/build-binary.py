@@ -309,6 +309,14 @@ def smoke(binary, version):
             md = r.read().decode("utf-8", "replace")
         if "<!doctype html>" not in md or "<li>" not in md:
             sys.exit("smoke ui FAILED: setup-readme markdown was not rendered to HTML")
+        # the onboarding decks (incl. the cheat sheet) must be bundled and serve
+        # OFFLINE at /docs/slides/ — catches a regression where the slides tree is
+        # missing from the frozen bundle.
+        if "/docs/slides/" not in (docs.get("decks_local_url") or ""):
+            sys.exit(f"smoke ui FAILED: no offline decks URL (decks_local_url={docs.get('decks_local_url')!r})")
+        with urllib.request.urlopen("http://127.0.0.1:8389/docs/slides/", timeout=2) as r:
+            if b"<html" not in r.read().lower():
+                sys.exit("smoke ui FAILED: bundled onboarding decks did not serve offline")
         urllib.request.urlopen(urllib.request.Request(
             "http://127.0.0.1:8389/api/quit", method="POST", data=b""), timeout=5).read()
         ui.wait(timeout=10)

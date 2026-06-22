@@ -105,7 +105,9 @@ def make_handler(ctx):
     """ctx: version, page_path, status() -> dict, relay_live() -> dict,
     obs_ws() -> dict, obs_collection() -> dict, update_check(force) -> dict, streams_read() -> dict,
     streams_write(entries) -> dict, docs() -> dict,
-    docs_content(key) -> (ctype, bytes)|None, ops {name: argv},
+    docs_content(key) -> (ctype, bytes)|None,
+    docs_slides_serve(relpath) -> (path, ctype)|None (offline onboarding decks),
+    ops {name: argv},
     build_argv(name, params) -> argv (raises ValueError), assets() -> dict,
     asset_files() -> dict, asset_roots() -> {kind: dir} (resolved live per call),
     tools() -> dict, apps() -> dict, preflight() -> dict, speedtest() -> dict,
@@ -416,6 +418,16 @@ def make_handler(ctx):
                 self.end_headers()
                 self.wfile.write(body)
                 return None
+            if path == "/docs/slides" or path.startswith("/docs/slides/"):
+                # static, read-only serve of the bundled onboarding decks (incl. the
+                # cheat sheet) so they open OFFLINE; docs_slides_serve guards traversal.
+                rel = unquote(path[len("/docs/slides"):]).lstrip("/")
+                serve = ctx.get("docs_slides_serve")
+                hit = serve(rel) if serve else None
+                if not hit:
+                    return self._not_found("slides resource not found")
+                with open(hit[0], "rb") as fh:
+                    return self._serve_bytes(fh.read(), hit[1])
             if path == "/api/env":
                 try:
                     return self._json(ctx["env_read"]())

@@ -945,7 +945,10 @@
           <h2>Crew onboarding — start here</h2>
           <div class="row"><span class="docname">Onboarding decks</span>
             <span class="dim grow">Short visual walkthrough per role (director, commentator, producer, race control) plus the printable cheat sheet — one central hub.</span>
-            <a class="linkbtn" id="decks-open" target="_blank" rel="noopener">Open ↗</a></div>
+            <a class="linkbtn" id="decks-open" target="_blank" rel="noopener">Open online ↗</a></div>
+          <div class="row" id="decks-local-row" hidden><span class="docname">Onboarding decks (offline)</span>
+            <span class="dim grow">The same decks + cheat sheet, bundled on this machine — open them without internet.</span>
+            <a class="linkbtn" id="decks-local-open" target="_blank" rel="noopener">Open ↗</a></div>
         </section>
         <section>
           <h2>On this machine</h2>
@@ -963,7 +966,7 @@
             <span class="dim grow">Event-day workflow and checklist.</span>
             <a class="linkbtn" id="g-event" target="_blank" rel="noopener">Open ↗</a></div>
         </section>
-        <p class="envhint">The onboarding decks and guides open the always-current rendered pages online (decks on GitHub Pages, guides on the wiki); the setup docs under <em>On this machine</em> also work offline. Found a bug or have a question? <a id="issues-link" class="dlink" target="_blank" rel="noopener">Open an issue on GitHub ↗</a></p>
+        <p class="envhint">The online links open the always-current rendered pages (decks on GitHub Pages, guides on the wiki); the <em>offline</em> decks and the setup docs under <em>On this machine</em> work without internet. Found a bug or have a question? <a id="issues-link" class="dlink" target="_blank" rel="noopener">Open an issue on GitHub ↗</a></p>
         <section class="prevsec">
           <h2>Preview / testing builds</h2>
           <label class="prevtoggle">
@@ -3633,6 +3636,8 @@ async function fetchDocs() {
   if (!d.ok) return;
   $('wiki-open').href = d.wiki_url;
   if (d.decks_url) $('decks-open').href = d.decks_url;
+  if (d.decks_local_url) { $('decks-local-open').href = d.decks_local_url; $('decks-local-row').hidden = false; }
+  else { $('decks-local-row').hidden = true; }
   $('g-setup').href = d.setup_url;
   $('g-director').href = d.director_url;
   $('g-event').href = d.event_url;
