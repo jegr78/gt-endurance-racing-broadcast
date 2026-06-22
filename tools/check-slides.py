@@ -19,6 +19,26 @@ SLIDES = os.path.join(ROOT, "src", "docs", "slides")
 SLIDE_W, SLIDE_H = 1280, 720
 
 
+def reveal_decks(slides_dir):
+    """Basenames of the actual Reveal decks in slides_dir, sorted.
+
+    Filters by the `class="reveal"` root marker rather than by name: the slides
+    dir also holds non-deck pages (index.html, the printable cheat_sheets.html)
+    that carry no Reveal runtime, so `wait_for_function("Reveal.isReady()")` would
+    hang on them for the full timeout and abort the whole run.
+    """
+    out = []
+    for p in sorted(glob.glob(os.path.join(slides_dir, "*.html"))):
+        try:
+            with open(p, encoding="utf-8") as fh:
+                html = fh.read()
+        except OSError:
+            continue
+        if 'class="reveal"' in html:
+            out.append(os.path.basename(p))
+    return out
+
+
 def overflow_findings(measurements, tol=2):
     """Pure: turn per-slide measurements into overflow findings."""
     out = []
@@ -80,8 +100,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--shots", default=None)
     args = ap.parse_args()
-    decks = [os.path.basename(p) for p in glob.glob(os.path.join(SLIDES, "*.html"))
-             if os.path.basename(p) != "index.html"]
+    decks = reveal_decks(SLIDES)
     findings = check(SLIDES, decks, shots_dir=args.shots)
     for f in findings:
         print(f'OVERFLOW {f["deck"]} slide {f["slide"]} [{f["kind"]}]: {f["detail"]}')
