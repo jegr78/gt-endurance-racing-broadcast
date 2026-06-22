@@ -50,8 +50,8 @@ Plan about 30 minutes for these steps (all from the Control Center):
 1. Confirm the active league profile.
 2. Apply any available tool update; then **reboot** the PC.
 3. **Tools → Update all** — outdated tools are the #1 cause of feed failures.
-4. **Assets → Cookies → Refresh** (log into YouTube in that browser first).
-5. **Assets → Media / Graphics → Download** (if URLs changed).
+4. **Assets** → refresh **Cookies** (log into YouTube first), and **Media / Graphics** if they changed.
+5. Confirm OBS is on **your league's scene collection** (`GT Endurance Racing — <league>`).
 6. **Preflight → Run** — fix anything it flags.
 7. **Home → Start event** — confirm each feed shows up in OBS.
 8. Enter the league's **stream key** in OBS (Settings → Stream).
@@ -82,12 +82,14 @@ The producer just monitors the machine.
 ## Producer handover (12h / 24h events)
 Each part has its own producer + stream key; viewers follow the channel redirect.
 
-**Standard — take over over the Funnel** (no shared Tailscale account needed):
-`racecast event takeover <A-magicdns-host> --funnel` — pulls A's on-air stint, chat and revocations, then brings your station up there.
+On the incoming machine's Control Center **Home**, use **Take over** — point it at producer A. It pulls A's on-air stint, chat and revocations and brings your station up there.
 
-**Alternative — same tailnet:** `racecast event takeover <A-tailscale-ip>`.
+- **Standard:** over the public **Funnel** (no shared Tailscale account needed).
+- **Alternative:** the same **tailnet** (A's `100.x` address).
 
-Then verify Feed A, start your OBS stream (the overlap begins), and the outgoing producer stops — the redirect carries viewers over.
+*CLI: `racecast event takeover <A-host> --funnel` (or `<A-tailscale-ip>`).*
+
+Then verify Feed A, start your OBS stream — the redirect carries viewers over.
 
 [Run an event](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Run-an-event) · [Remote access](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Remote-access)
 </script></section>
