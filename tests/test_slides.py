@@ -133,6 +133,19 @@ def t_landing_links_every_deck():
         assert f'href="{fname}"' in html, f"index.html does not link {fname}"
 
 
+def t_cheatsheet_mirror_in_sync_and_linked():
+    # the Pages root (src/docs/slides) is what gets published, so the cheat sheet
+    # is mirrored here from its source src/docs/cheat_sheets.html. Keep them identical.
+    src = os.path.join(ROOT, "src", "docs", "cheat_sheets.html")
+    mirror = os.path.join(SLIDES, "cheat_sheets.html")
+    assert os.path.isfile(mirror), "missing slides/cheat_sheets.html mirror"
+    with open(src, "rb") as a, open(mirror, "rb") as b:
+        assert a.read() == b.read(), \
+            "slides/cheat_sheets.html drifted from src/docs/cheat_sheets.html — re-copy it"
+    with open(os.path.join(SLIDES, "index.html"), encoding="utf-8") as fh:
+        assert 'href="cheat_sheets.html"' in fh.read(), "landing page does not link the cheat sheet"
+
+
 def t_favicon_present_and_linked():
     for f in ("favicon.svg", "apple-touch-icon.png"):
         assert os.path.isfile(os.path.join(SLIDES, f)), f"missing {f}"

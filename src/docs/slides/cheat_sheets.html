@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GT Endurance Racing Broadcast — Role Cheat Sheets</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Pit-wall cheat cards. Light / ink-friendly for printing,
+     technical character via type + role accent bars. */
+  :root{
+    --paper:#f4f1ea; --card:#fbfaf6; --ink:#16181c; --soft:#5b6168; --line:#d8d2c6;
+    --producer:#d62828; --director:#e08a00; --streamer:#1f7a8c; --cc:#2563a8;
+    --mono:'IBM Plex Mono',ui-monospace,monospace; --head:'Saira Condensed',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--mono);padding:26px}
+  .sheet{max-width:1180px;margin:0 auto}
+  .top{display:flex;align-items:baseline;gap:14px;margin:0 0 20px;flex-wrap:wrap}
+  .top h1{font-family:var(--head);font-weight:700;letter-spacing:.1em;text-transform:uppercase;font-size:30px;margin:0}
+  .top span{font-size:12px;letter-spacing:.26em;text-transform:uppercase;color:var(--soft)}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  @media(max-width:900px){.cards{grid-template-columns:1fr}}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;
+    box-shadow:0 2px 0 var(--line);page-break-inside:avoid;break-inside:avoid}
+  .bar{height:9px}
+  .card.p .bar{background:var(--producer)} .card.d .bar{background:var(--director)} .card.s .bar{background:var(--streamer)}
+  .card .body{padding:16px 17px 18px}
+  .role{font-family:var(--head);font-weight:700;letter-spacing:.1em;text-transform:uppercase;font-size:22px;margin:0;display:flex;align-items:center;gap:9px}
+  .card.p .role{color:var(--producer)} .card.d .role{color:var(--director)} .card.s .role{color:var(--streamer)}
+  .role .num{font-size:12px;color:var(--soft);font-family:var(--mono);font-weight:600;border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+  .sub{font-size:11px;color:var(--soft);letter-spacing:.05em;margin:3px 0 13px}
+
+  h3{font-family:var(--head);font-weight:600;letter-spacing:.12em;text-transform:uppercase;font-size:13px;
+    margin:15px 0 7px;color:var(--ink);border-bottom:1px dashed var(--line);padding-bottom:4px}
+  ol,ul{margin:0;padding-left:18px} li{font-size:12px;line-height:1.5;margin:4px 0}
+  .k{font-weight:600}
+  code{background:#ece7dc;border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:11px}
+  .big{display:block;font-family:var(--head);font-weight:700;font-size:15px;letter-spacing:.04em;margin:2px 0}
+  .warn{color:var(--producer);font-weight:600}
+  table{width:100%;border-collapse:collapse;margin:6px 0;font-size:11px}
+  td{border-top:1px solid var(--line);padding:3px 0} td:last-child{text-align:right;font-weight:600}
+  .foot{margin-top:18px;font-size:11px;color:var(--soft);border-top:1px solid var(--line);padding-top:10px;line-height:1.6}
+  .ccband{margin-top:18px;background:var(--card);border:1px solid var(--line);border-radius:14px;
+    box-shadow:0 2px 0 var(--line);overflow:hidden;page-break-inside:avoid;break-inside:avoid}
+  .ccband .bar{background:var(--cc)}
+  .ccband .body{padding:14px 17px 16px}
+  .ccband .role{color:var(--cc)}
+  .vmap{display:grid;grid-template-columns:repeat(3,1fr);gap:4px 20px;margin:8px 0 0}
+  @media(max-width:900px){.vmap{grid-template-columns:1fr}}
+  .vmap div{font-size:11px;line-height:1.5;border-top:1px solid var(--line);padding:3px 0}
+  .vmap .vn{font-weight:600;color:var(--cc)}
+  @media print{ body{padding:0;background:#fff} .sheet{max-width:none} .top{padding:14px 14px 0} .cards{padding:0 14px} }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <div class="top">
+    <h1>GT Endurance Racing — Cheat Sheets</h1>
+    <span>Print &amp; pin for event day</span>
+  </div>
+
+  <div class="cards">
+
+    <!-- ================= STREAMER ================= -->
+    <section class="card s">
+      <div class="bar"></div>
+      <div class="body">
+        <p class="role">Streamer</p>
+        <p class="sub">You stream your stint. That's it.</p>
+
+        <h3>Settings (set once)</h3>
+        <ul>
+          <li>Stream to <span class="k">your own fixed channel</span>, same one every event, set to <span class="k">Unlisted</span> (the league tells you which channel).</li>
+          <li>Latency: <span class="k">Low</span> — <span class="warn">not Ultra-low</span> (unless your line is rock-solid).</li>
+          <li>Resolution: <span class="k">1080p target, never below 720p</span>.</li>
+          <li>Encoder: <span class="k">hardware</span> (NVENC / QuickSync / AMF). CBR, keyframe <span class="k">2 s</span>.</li>
+          <li>Audio: 128–160 kbps AAC, 48 kHz, stereo.</li>
+          <li><span class="k">No</span> personal overlays/graphics — added centrally.</li>
+          <li><span class="k">PlayStation direct</span> works (PS5 1080p / base PS4 720p, Unlisted on-console). The console <span class="warn">can't set latency</span> — set <span class="k">Low</span> beforehand in YouTube Studio / Twitch dashboard.</li>
+        </ul>
+
+        <h3>Bitrate</h3>
+        <table>
+          <tr><td>1080p60</td><td>8000 kbps</td></tr>
+          <tr><td>1080p30</td><td>6000 kbps</td></tr>
+          <tr><td>720p60</td><td>4500 kbps</td></tr>
+          <tr><td>720p30</td><td>3000 kbps</td></tr>
+        </table>
+
+        <h3>On the day</h3>
+        <ol>
+          <li>Go live <span class="k">~5 min before</span> your stint.</li>
+          <li>Tell the Director you're live.</li>
+          <li>Stay live through the ~10 min handover, then you can stop.</li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ================= PRODUCER ================= -->
+    <section class="card p">
+      <div class="bar"></div>
+      <div class="body">
+        <p class="role">Producer</p>
+        <p class="sub">Set up, then only start &amp; stop the broadcast.</p>
+
+        <h3>Before the event</h3>
+        <p class="sub" style="margin:0 0 8px">Easiest in the <span class="k">Control Center</span> (double-click <code>racecast-ui</code>); CLI shown below.</p>
+        <ol>
+          <li>Update: <code>racecast update</code>, then <code>racecast install-tools --update</code>.</li>
+          <li>Update GPU driver; <span class="k">reboot</span> the PC.</li>
+          <li>Refresh cookies: <code>racecast cookies firefox</code> (log into YouTube in Firefox first). If any stint uses a gated Twitch feed, also run <code>racecast cookies twitch firefox</code>.</li>
+          <li>Check the machine: <code>racecast preflight</code> — fix anything it flags.</li>
+          <li>Bring everything up: <span class="k">racecast event start</span> — Tailscale, Discord, relay, OBS, Companion; prints the director URLs to forward.</li>
+          <li>Companion green; a Director confirms access. Test the Discord audio source.</li>
+          <li>Enter the <span class="k">league's stream key</span> in OBS.</li>
+        </ol>
+
+        <h3>Run</h3>
+        <p class="big">▶ Start Streaming</p>
+        <ul>
+          <li>Hand the show to the Director — you don't touch scenes.</li>
+          <li>Guest feed needed? <code>yt-dlp -g "URL"</code> → give the link to the Director.</li>
+        </ul>
+
+        <h3>Interviews (Discord) — last part only</h3>
+        <ul>
+          <li>Interviews run <span class="k">at the end</span> of the broadcast over Discord voice.</li>
+          <li>Only the <span class="k">producer of the LAST part</span> does this. <span class="warn">8 h event = 1 part = always the last part → that producer always joins.</span> 12 h / 24 h: only the final-part producer; earlier producers skip Discord entirely.</li>
+          <li>The capture taps <span class="k">your local Discord app</span>, so <span class="warn">you must join the "Interviews" voice channel yourself</span> — the Director can't do this remotely.</li>
+          <li>Join <span class="k">before race end</span> (you stay muted in OBS until the Director fires <code>→ INTERVIEW</code>). Keep <span class="warn">Discord windowed, not fullscreen</span>.</li>
+        </ul>
+
+        <h3>End</h3>
+        <ul>
+          <li>■ Stop Streaming.</li>
+          <li>Shut down services: <code>racecast event stop</code>.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ================= DIRECTOR ================= -->
+    <section class="card d">
+      <div class="bar"></div>
+      <div class="body">
+        <p class="role">Director</p>
+        <p class="sub">Run the show from your browser.</p>
+
+        <h3>Connect</h3>
+        <ol>
+          <li>Panel: <code>http://&lt;producer-tailscale-ip&gt;:8088/panel</code>,<br>or Web Buttons: <code>http://&lt;producer-tailscale-ip&gt;:8000/tablet</code>.</li>
+          <li>Panel scene/audio control only: enter the producer's Tailscale IP + port <code>4455</code> + the OBS WebSocket password → Connect (asked once — the browser remembers it). Web Buttons need no password.</li>
+        </ol>
+
+        <h3>During a stint</h3>
+        <ul>
+          <li>Scene <span class="k">Stint</span>, correct feed up, <span class="k">HUD</span> on.</li>
+          <li>Toggle graphics &amp; volumes as needed.</li>
+          <li>Weather: <code>Weather Race (1) Toggle</code> / <code>Weather Race (2) Toggle</code> / <code>Weather Quali Toggle</code> — full-screen overlays, each an independent toggle.</li>
+        </ul>
+
+        <h3>Handover (every 2 h)</h3>
+        <ol>
+          <li>Incoming streamer goes live → their feed <span class="k">appears automatically</span>.</li>
+          <li>Switch to <span class="k">Splitscreen</span> for ~10 min.</li>
+          <li>Switch to <span class="k">Stint</span> on the new feed.</li>
+        </ol>
+
+        <h3>Driver POV (optional)</h3>
+        <ul>
+          <li><span class="warn">Needs lead time (~5 min)</span>: driver goes live + sends URL well before you want it on air.</li>
+          <li>URL in Sheet tab <span class="k">POV</span> (row 2; the <code>name</code> column = on-screen label, &le;20, also settable in the panel POV row) → <code>POV Reload</code> → wait until the panel health line (or <code>/status</code>) shows <span class="k">serving</span> → <code>POV Toggle</code> (relay action; PiP bottom-right).</li>
+          <li>Muted by default; <code>MUTE POV</code> / <code>VOL POV UP/DOWN</code> for sound. Done → <span class="warn">POV Toggle (hide) + POV Stop</span>.</li>
+        </ul>
+
+        <h3>Intro / Outro</h3>
+        <ul>
+          <li><code>INTRO</code> / <code>OUTRO</code> (Page 1, top row) — plays the looping intro/outro clip with audio; press another scene button to leave.</li>
+        </ul>
+
+        <h3>Interview</h3>
+        <ul>
+          <li>Fire <code>→ INTERVIEW</code> (scene <span class="k">Interview</span> + Discord audio up, feeds down).</li>
+          <li><span class="warn">Producer must be joined to the Discord "Interviews" voice channel</span> for audio — confirm with them before you cut.</li>
+        </ul>
+
+        <h3>If a feed stalls</h3>
+        <ul>
+          <li>Cut to another feed/Standby, tell the Producer, check that streamer is still live.</li>
+        </ul>
+      </div>
+    </section>
+
+  </div>
+
+  <section class="ccband">
+    <div class="bar" style="height:9px"></div>
+    <div class="body">
+      <p class="role">Control Center <span class="num">racecast-ui</span></p>
+      <p class="sub" style="margin:3px 0 0">Run the whole station from your browser. <span class="k">Launch:</span> double-click <code>racecast-ui</code> (Linux <code>./racecast-ui</code>) → <code>http://127.0.0.1:8089</code>. Every action is also a <code>racecast …</code> command.</p>
+      <div class="vmap">
+        <div><span class="vn">Home</span> — status; Start/Stop event</div>
+        <div><span class="vn">Setup</span> — first-time wizard</div>
+        <div><span class="vn">Preflight</span> — machine &amp; tool check</div>
+        <div><span class="vn">Relay</span> — start/stop the feeds</div>
+        <div><span class="vn">Static Streams</span> — public-channel fallback</div>
+        <div><span class="vn">Apps</span> — OBS/Companion/Tailscale/Discord</div>
+        <div><span class="vn">Tools</span> — yt-dlp/streamlink/ffmpeg/deno</div>
+        <div><span class="vn">Assets</span> — graphics, media, cookies</div>
+        <div><span class="vn">Settings</span> — the <code>.env</code> (masked)</div>
+        <div><span class="vn">Logs</span> — live service logs</div>
+        <div><span class="vn">Help &amp; Docs</span> — cheat sheet &amp; guides</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <span class="k">Quality floor:</span> 1080p preferred, never below 720p. &nbsp;·&nbsp;
+    <span class="k">Latency:</span> streamers on <span class="k">Low</span>; if used, Producer sets Streamlink <code>--hls-live-edge 6</code> to keep the buffer cushion. &nbsp;·&nbsp;
+    <span class="k">Buffering protection</span> lives on the Producer side (Streamlink ring buffer + OBS network buffer).
+  </div>
+
+</div>
+</body>
+</html>
