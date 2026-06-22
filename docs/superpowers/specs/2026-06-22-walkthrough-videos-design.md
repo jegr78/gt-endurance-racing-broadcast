@@ -201,5 +201,8 @@ muted clip.
    slide template makes Reveal split it into vertical sub-slides, so each half
    needs its own `Note:` — `--list` counts templates and under-reports, but the
    render (Reveal slide count) is authoritative and surfaces any un-narrated slide.
-5. Optional: captions (`.srt`/`.vtt`) from the per-slide audio durations.
-6. Document the tool in a maintainer skill analogous to `slides-diagrams`.
+5. ✅ Captions (`.srt`/`.vtt`) per video from the spoken text + per-slide durations.
+6. ✅ Per-video 1280×720 YouTube thumbnail (`<deck>-thumb.png`), colour-coded by
+   the deck's role accent (`src/docs/slides/walkthrough-thumb.html`, data-role →
+   deck.css var; `--thumbnails-only` renders just these, no TTS/API key).
+7. ✅ Maintainer skill (`.claude/skills/walkthrough-videos`).

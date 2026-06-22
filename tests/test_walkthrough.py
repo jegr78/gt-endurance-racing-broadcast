@@ -100,6 +100,11 @@ def t_output_mp4_name_from_deck():
     assert w.output_mp4_name("race-control") == "race-control.mp4"
 
 
+def t_thumbnail_name_from_deck():
+    assert w.thumbnail_name("producer.html") == "producer-thumb.png"
+    assert w.thumbnail_name("race-control") == "race-control-thumb.png"
+
+
 # ---- gcloud TTS request building -------------------------------------------
 
 def t_gcloud_language_code_from_voice():

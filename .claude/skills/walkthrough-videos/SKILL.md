@@ -33,9 +33,12 @@ billing enabled; key restricted to that API). Free tier covers the whole onboard
 # coverage check (no browser): ... <deck> --list
 ```
 
-Output: `runtime/walkthroughs/<deck>.mp4` + `.srt` + `.vtt` (all gitignored).
-Chosen voice: **en-US-Studio-Q** (Piper voices were rejected as too synthetic for
-public videos). `--no-bumpers`, `--bumper-seconds`, `--no-captions` to opt out.
+Output per deck (all under `runtime/walkthroughs/`, gitignored): `<deck>.mp4`,
+`<deck>.srt`, `<deck>.vtt`, and a 1280x720 YouTube thumbnail `<deck>-thumb.png`
+(colour-coded by the deck's role accent). Chosen voice: **en-US-Studio-Q** (Piper
+voices were rejected as too synthetic for public videos). Opt out with
+`--no-bumpers`, `--bumper-seconds`, `--no-captions`, `--no-thumbnails`. Render ONLY
+the thumbnails (fast, no TTS/video/API key) with `--thumbnails-only`.
 
 ## Authoring speaker notes
 

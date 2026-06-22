@@ -34,6 +34,10 @@ A matching <deck>.srt + <deck>.vtt caption sidecar is written next to each MP4
 (timed from the exact spoken text + per-slide durations — no transcription).
 Disable with --no-captions.
 
+A 1280x720 YouTube thumbnail (<deck>-thumb.png), colour-coded by the deck's role
+accent, is written for each deck. Disable with --no-thumbnails; render ONLY the
+thumbnails (fast, no TTS/video, no API key) with --thumbnails-only.
+
 Usage:
   build-walkthrough-videos.py [DECK ...]                 # default: all decks
   build-walkthrough-videos.py --list                     # no browser: notes coverage
@@ -71,6 +75,21 @@ INTRO_TEXT = "GT Endurance Racing Broadcast. Onboarding."
 OUTRO_TEXT = ("Thanks for watching. You'll find the full setup and reference "
               "documentation in the project wiki.")
 DEFAULT_BUMPER_SECONDS = 6.0
+
+# YouTube thumbnails: one 1280x720 card per deck, colour-coded by the deck's role
+# accent (data-role -> deck.css var). (data_role, title, subtitle) per deck.
+THUMB_HTML = "walkthrough-thumb.html"
+THUMBS = {
+    "producer.html": ("producer", "Producer", "Event-day playbook"),
+    "director.html": ("director", "Director", "Run the show"),
+    "commentator.html": ("commentator", "Commentator", "Go on air"),
+    "producer-setup.html": ("producer", "Producer Setup", "Set up the machine"),
+    "league-admin-setup.html": ("league-admin", "League Admin", "Set up a league"),
+    "overlay-designer.html": ("overlay-designer", "Overlay Designer",
+                              "Style the broadcast look"),
+    "race-control.html": ("race-control", "Race Control",
+                          "Monitor the broadcast"),
+}
 SLIDE_W, SLIDE_H = 1280, 720
 _TEMPLATE_RE = re.compile(
     r'<script type="text/template">(.*?)</script>', re.DOTALL)
@@ -151,7 +170,7 @@ def _read_env_key(name):
                 if line.startswith(name + "="):
                     return line.split("=", 1)[1].strip().strip('"').strip("'")
     except OSError:
-        pass
+        pass  # no .env file -> key simply unset
     return ""
 
 
@@ -262,6 +281,41 @@ def build_bumpers(slides_dir, synth, audio_ext, work, seconds, width, height):
     return seg["intro"], seg["outro"]
 
 
+_THUMB_JS = ("([role, title, sub]) => { document.body.setAttribute('data-role', role);"
+             " document.getElementById('title').textContent = title;"
+             " document.getElementById('sub').textContent = sub; }")
+
+
+def render_thumbnails(slides_dir, decks, out_dir):
+    """Render one 1280x720 YouTube thumbnail PNG per deck (no TTS / no video)."""
+    from playwright.sync_api import sync_playwright
+
+    os.makedirs(out_dir, exist_ok=True)
+    tmpl = "file://" + os.path.join(slides_dir, THUMB_HTML)
+    pw = sync_playwright().start()
+    try:
+        browser = pw.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": SLIDE_W, "height": SLIDE_H},
+                                    device_scale_factor=2)
+            for deck in decks:
+                role, title, sub = THUMBS.get(
+                    deck, ("producer",
+                           os.path.splitext(deck)[0].replace("-", " ").title(), ""))
+                page.goto(tmpl)
+                page.wait_for_load_state("load")
+                page.evaluate(_THUMB_JS, [role, title, sub])
+                page.evaluate("() => document.fonts.ready")
+                page.wait_for_timeout(200)
+                out = os.path.join(out_dir, core.thumbnail_name(deck))
+                page.screenshot(path=out)
+                print(f"OK {out}")
+        finally:
+            browser.close()
+    finally:
+        pw.stop()
+
+
 def build_deck(deck, slides_dir, out_dir, synth, audio_ext,
                width, height, keep, intro_seg=None, outro_seg=None,
                captions=True):
@@ -356,6 +410,10 @@ def main():
                     help="minimum intro/outro length (default 6s)")
     ap.add_argument("--no-captions", action="store_true",
                     help="skip writing the .srt/.vtt subtitle sidecars")
+    ap.add_argument("--no-thumbnails", action="store_true",
+                    help="skip the per-video YouTube thumbnail PNGs")
+    ap.add_argument("--thumbnails-only", action="store_true",
+                    help="render only the thumbnails (no TTS/video; no API key)")
     ap.add_argument("--keep-intermediates", action="store_true")
     args = ap.parse_args()
 
@@ -364,6 +422,10 @@ def main():
         missing = list_coverage(SLIDES, decks)
         if missing:
             sys.exit(f"{missing} slide(s) without a note")
+        return
+
+    if args.thumbnails_only:
+        render_thumbnails(SLIDES, decks, args.out)
         return
 
     synth, audio_ext = make_synth(args)
@@ -388,6 +450,9 @@ def main():
     finally:
         if bumper_work and not args.keep_intermediates:
             shutil.rmtree(bumper_work, ignore_errors=True)
+
+    if not args.no_thumbnails:
+        render_thumbnails(SLIDES, decks, args.out)
 
 
 if __name__ == "__main__":

@@ -105,6 +105,11 @@ def output_mp4_name(deck):
     return os.path.splitext(os.path.basename(deck))[0] + ".mp4"
 
 
+def thumbnail_name(deck):
+    """`producer.html` / `producer` -> `producer-thumb.png` (YouTube thumbnail)."""
+    return os.path.splitext(os.path.basename(deck))[0] + "-thumb.png"
+
+
 # ---- Google Cloud Text-to-Speech (REST) ------------------------------------
 # Pure request building only; the HTTP call + base64 decode live in the tool and
 # go through src/scripts/http_util.py (User-Agent rule). The API key is a
