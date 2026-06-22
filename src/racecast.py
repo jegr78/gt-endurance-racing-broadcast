@@ -548,7 +548,49 @@ def _relay_script():
     return os.path.join(HERE, "relay", "racecast-feeds.py")
 
 def _relay_pid_path():
-    return os.path.join(_runtime_dir(), "relay.pid")
+    # Singleton: the relay binds the SHARED control port (8088) + feed ports, so
+    # only ONE can run per machine. Its PID therefore lives at the un-scoped
+    # runtime/ TOP LEVEL (like the active-profile pointer) — NOT under
+    # runtime/<profile>/ — so stop/status/restart find the one running relay
+    # regardless of which profile is active. A per-profile PID let a `profile use`
+    # while the relay ran orphan it on port 8088 (#273).
+    return os.path.join(_runtime_base_dir(), "relay.pid")
+
+def _relay_profile_path():
+    """Records which profile the running relay was started under (top-level, next
+    to relay.pid). Lets `relay logs`/`status` resolve the relay's OWN per-profile
+    logs dir even after `profile use` changed the active profile (#273)."""
+    return os.path.join(_runtime_base_dir(), "relay.profile")
+
+def _running_relay_profile():
+    """The profile slug the running relay was started under, or "" when no stamp
+    exists (no relay, or a relay from before the stamp was written)."""
+    try:
+        with open(_relay_profile_path(), encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
+
+def _running_relay_dir():
+    """The runtime dir of the profile the relay is RUNNING under (from the
+    relay.profile stamp), or the active profile's dir when no stamp exists. The
+    relay daemon writes its logs under this dir, so logs/status must read from
+    the same place even after the active profile switched (#273)."""
+    slug = _running_relay_profile()
+    return _profile_runtime(_runtime_base_dir(), slug) if slug else _runtime_dir()
+
+def _write_relay_profile_stamp():
+    """Stamp the active profile as the relay's running profile, just before spawn."""
+    path = _relay_profile_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(_active_profile_name() or "")
+
+def _clear_relay_profile_stamp():
+    try:
+        os.remove(_relay_profile_path())
+    except OSError:
+        pass  # no stamp to clear — already gone
 
 def _event_title_path():
     """The active profile's persisted event-title file (#207). The relay's
@@ -557,7 +599,7 @@ def _event_title_path():
     return os.path.join(_runtime_dir(), "event.json")
 
 def _relay_log_path():
-    return os.path.join(_runtime_dir(), "logs", "relay.console.log")
+    return os.path.join(_running_relay_dir(), "logs", "relay.console.log")
 
 def _relay_boot_log_path():
     """Where start_detached captures the daemon's raw stdout/stderr (crashes/tracebacks
@@ -565,10 +607,13 @@ def _relay_boot_log_path():
     TimedRotatingFileHandler owns relay.console.log, and a second writer on the same
     file would corrupt rotation (the inherited fd would keep writing to the renamed
     inode at midnight). Mirrors the static-streams feed_<port>.boot.log split."""
-    return os.path.join(_runtime_dir(), "logs", "relay.boot.log")
+    return os.path.join(_running_relay_dir(), "logs", "relay.boot.log")
 
 def _tailscale_snapshot_path():
-    return os.path.join(_runtime_dir(), "logs", "tailscale.snapshot.log")
+    # Appended on relay start (and on `tailscale status`); grouped with the
+    # running relay's logs so the aggregate log view stays coherent after a
+    # profile switch. Falls back to the active profile when no relay runs (#273).
+    return os.path.join(_running_relay_dir(), "logs", "tailscale.snapshot.log")
 
 def _append_tailscale_snapshot():
     """Best-effort: append a timestamped `tailscale status` block to the snapshot log."""
@@ -599,8 +644,9 @@ def _append_tailscale_snapshot():
 
 
 def _relay_feed_logs():
-    """The relay's per-feed logs (feed_A/B/POV.log) under the profile logs dir."""
-    d = os.path.join(_runtime_dir(), "logs")
+    """The relay's per-feed logs (feed_A/B/POV.log) under the RUNNING relay's
+    profile logs dir (#273 — follows the relay, not the active profile)."""
+    d = os.path.join(_running_relay_dir(), "logs")
     return sorted(glob.glob(os.path.join(d, "feed_*.log")))
 
 def _relay_files():
@@ -659,7 +705,7 @@ def _log_sources():
     (obs/companion) use the older filenames in their dir (they do not follow our
     rotation naming). `read(token)` resolves a token to text per source. The UI and
     CLI both consume this registry."""
-    relay_dir = os.path.join(_runtime_dir(), "logs")
+    relay_dir = os.path.join(_running_relay_dir(), "logs")   # follows the relay (#273)
     streams_dir = os.path.join(_streams_static_dir(), "logs")
     import logsetup
     def rc_src(files_fn, dirpath):
@@ -886,6 +932,23 @@ def route(argv):
     raise ValueError(f"unknown command: {cmd}")
 
 
+def profile_switch_block_reason(relay_alive, streams_alive, force):
+    """Which RUNNING services would be left serving the OLD league after a
+    `profile use` switch (they bind the shared control/feed ports). Returns the
+    list of running service names, or [] when nothing blocks (or --force). The
+    relay survives the switch — its PID is the singleton (#273) — but it keeps
+    serving the previous profile, which is rarely what the operator intends, so
+    refuse unless --force."""
+    if force:
+        return []
+    running = []
+    if relay_alive:
+        running.append("relay")
+    if streams_alive:
+        running.append("static streams")
+    return running
+
+
 def profile_cmd(rest):
     """`racecast profile list|show|use|new|export|import` -- manage league profiles. Resolves the
     project root + runtime dir the same way the rest of the CLI does, so it
@@ -928,6 +991,15 @@ def profile_cmd(rest):
         print(f"  switch to it: racecast profile use {res['name']}")
         return None
     if verb == "use":
+        blocking = profile_switch_block_reason(
+            _relay_is_alive(), _streams_is_alive(), opts["force"])
+        if blocking:
+            svc = " and ".join(blocking)
+            sys.exit(
+                f"racecast: a running {svc} would be left serving the current "
+                f"profile after the switch.\n"
+                f"  stop it first (racecast relay stop / racecast streams stop), "
+                f"or re-run: racecast profile use {opts['name']} --force")
         try:
             pa.set_active_profile(root, runtime_root, opts["name"])
         except ValueError as e:
@@ -1520,15 +1592,38 @@ def _frozen_child_env():
     env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     return env
 
+def relay_start_port_note(our_relay_alive, control_pids):
+    """Message when the control port (8088) is held by something that is NOT our
+    relay (our own relay is caught earlier by the singleton PID check). None when
+    the port is free or our relay holds it. Such a holder makes the new relay's
+    control-port bind fail (#273) — refuse with a pointer to the recovery action."""
+    if our_relay_alive or not control_pids:
+        return None
+    return (f"port {RELAY_PORT} is held by PID {', '.join(map(str, control_pids))} "
+            f"(not a racecast relay) — the relay's control port would fail to bind. "
+            f"Free it first: racecast freeport {RELAY_PORT}")
+
 def relay_start(rest):
     stint = _stint_args(rest)   # validate early: fail fast BEFORE spawning the daemon
+    # The PID file is the un-scoped singleton (_relay_pid_path), so this finds the
+    # one running relay even if the active profile was switched since it started.
     pid = sv.read_pid(_relay_pid_path())
     if sv.pid_alive(pid):
         print(f"relay already running (pid {pid}).")
+        running = _running_relay_profile()
+        if running and running != (_active_profile_name() or ""):
+            print(f"  it is serving profile '{running}', not the active profile — "
+                  f"stop it first: racecast relay stop")
         if stint:
             print(f"  --stint ignored (relay keeps its position) — to reposition the "
                   f"running relay open http://127.0.0.1:{RELAY_PORT}/set/stint/{stint[1]}")
         relay_status([])
+        return None
+    # Our relay is not running, yet the control port is held by a foreign process
+    # (or a pre-upgrade orphan) -> the bind would fail. Refuse with the recovery.
+    note = relay_start_port_note(False, pt.pids_on_port(RELAY_PORT))
+    if note:
+        print(note)
         return None
     # No relay running, yet a feed port already LISTENS -> an orphan (e.g. a leaked
     # static-streams streamlink) will block that feed from binding. Warn + point at
@@ -1538,6 +1633,7 @@ def relay_start(rest):
         print(f"WARNING: feed port(s) {', '.join(map(str, busy))} already in use — "
               f"that feed may fail to bind. Free them first: racecast freeport")
     _ensure_active_console_secret()   # zero-config console: provision + inject the secret
+    _write_relay_profile_stamp()      # record the running profile before spawn (#273)
     argv = _relay_daemon_argv(rest, IS_FROZEN)
     newpid = sv.start_detached(argv, _relay_boot_log_path(), _relay_pid_path(),
                                env=_frozen_child_env())
@@ -1720,9 +1816,11 @@ def relay_stop(rest):
     if not sv.pid_alive(pid):
         if os.path.exists(_relay_pid_path()):
             os.remove(_relay_pid_path())
+        _clear_relay_profile_stamp()        # no relay -> no running-profile stamp
         print("relay is not running.")
         return
     if sv.stop_pid(pid, _relay_pid_path(), is_target=sv.pid_is_relay):
+        _clear_relay_profile_stamp()
         print("relay stopped.")
         _release_obs_feeds()                # AFTER the kill — see docstring
     else:
@@ -2655,6 +2753,11 @@ def _relay_is_alive():
     """True when the relay daemon is up (its PID file names a live process)."""
     pid = sv.read_pid(_relay_pid_path())
     return bool(pid and sv.pid_alive(pid))
+
+
+def _streams_is_alive():
+    """True when any tracked static-streams feed is currently running."""
+    return any(f["alive"] for f in streams_status_data())
 
 
 def parse_freeport_args(rest, default_ports=pt.FEED_PORTS):

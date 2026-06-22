@@ -37,8 +37,12 @@ def t_parse_use_requires_one_name():
     assert m.parse_profile_args(["use", "erf"]) == {
         "verb": "use", "name": "erf", "source": "example",
         "no_assets": False, "out": None, "file": None, "force": False}
+    # --force lets `profile use` switch past a running relay/streams (#273)
+    assert m.parse_profile_args(["use", "erf", "--force"])["force"] is True
+    assert m.parse_profile_args(["use", "erf"])["force"] is False
     _raises(lambda: m.parse_profile_args(["use"]))
     _raises(lambda: m.parse_profile_args(["use", "a", "b"]))
+    _raises(lambda: m.parse_profile_args(["use", "--force"]))   # --force needs a name
 
 
 def t_parse_new_with_from():

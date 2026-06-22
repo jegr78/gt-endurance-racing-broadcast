@@ -272,6 +272,17 @@ machine state (cookies jar, the active-profile pointer) stays at `runtime/` top 
 So `racecast graphics` / `media` / `setup` always write into the active profile's
 runtime dir; switching profiles points the CLI at a different one.
 
+The **relay is a machine singleton** (it binds the shared control port 8088 + feed
+ports, so only one can run), so its **PID file `runtime/relay.pid` lives at the
+top level**, not per-profile — with a sidecar `runtime/relay.profile` recording which
+profile it was started under. That way `relay stop`/`status`/`logs` find and act on the
+one running relay regardless of the active profile, and the relay's per-profile **logs**
+still resolve to the profile it actually runs under (`_running_relay_dir()`). A
+per-profile relay PID used to let a `profile use` while the relay ran orphan it on 8088
+(#273). `profile use` now refuses to switch while a relay/streams is running unless
+`--force`, and `relay start` reports a foreign holder of 8088 (recover with `racecast
+freeport 8088`).
+
 ### Two token round-trips (keep paths/secrets out of git)
 - **OBS.** `src/obs/GT_Endurance.json` stores tokens: `__RACECAST_GRAPHICS__` (broadcast
   still-graphics dir) and `__RACECAST_MEDIA__` (Intro/Outro clip dir). The HUD and the
