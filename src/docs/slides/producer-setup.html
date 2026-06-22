@@ -17,6 +17,8 @@
 <span class="role-tag">Producer · Setup</span>
 # Producer setup (once per machine)
 ~30 minutes, then you're ready to run events.
+
+Note: Welcome to producer setup. This is a one-time job per machine. Plan about thirty minutes, and once it's done you're ready to run events.
 </script></section>
 
 <section data-markdown><script type="text/template">
@@ -27,6 +29,8 @@
 - Your league **profile** — its `SHEET_ID` rides along, so open the Sheet straight from the Control Center (**Open Sheet ↗**); no link to keep around.
 
 Details: [Set up the broadcast PC](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Set-up-the-broadcast-PC)
+
+Note: Here's what you need. A modern PC running macOS, Windows or Linux — sixteen gigabytes of RAM is tight, so reboot before events, while thirty-two is comfortable. A wired internet connection of at least twenty-five megabits down and ten up, with fifty and twenty recommended. A YouTube login is always required for cookies, plus a Twitch login if any stint uses a gated Twitch feed. And your league profile, which carries its own Sheet ID — so you can open the Sheet straight from the Control Center with Open Sheet, no link to keep around.
 </script></section>
 
 <section data-markdown><script type="text/template">
@@ -41,6 +45,8 @@ This station **pulls in** as much as it **pushes out** — on the same line, at 
 The handover worst case is Feed A + B + POV **down** and program **up** at once. **Wired only** — a Wi-Fi jitter spike at a driver change is the classic failure.
 
 Details: [Set up the broadcast PC](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Set-up-the-broadcast-PC)
+
+Note: Download matters as much as upload, because this station pulls in as much as it pushes out, on the same line at the same time. Feed A, the on-air pull, takes about five to six megabits, and Feed B, pre-rolling during a handover, takes the same. The optional POV picture-in-picture takes about three to six, and the program going out to the league channel takes about six to nine. The worst case is a handover where Feed A, B and POV come down while the program goes up all at once. So use wired only — a Wi-Fi jitter spike at a driver change is the classic failure.
 </script></section>
 
 <section data-markdown><script type="text/template">
@@ -50,6 +56,8 @@ Double-click **`racecast-ui`** — it opens in your browser and walks every step
 ![Setup wizard](assets/img/cc-setup.png)
 
 Details: [Control Center](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Control-Center) · [Set up the broadcast PC](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Set-up-the-broadcast-PC)
+
+Note: The easy way is the Setup wizard. Just double-click racecast U I — it opens in your browser and walks you through every step with a progress checklist. If you prefer the command line, racecast init is the equivalent.
 </script></section>
 
 <section data-markdown><script type="text/template">
@@ -62,6 +70,8 @@ Run them in the Control Center **Setup** view (CLI equivalents italic):
 4. **Build the OBS + Companion configs** — Setup generates them; import into OBS + Companion. *CLI: `racecast setup`, `export companion`.*
 
 Details: [Set up the broadcast PC](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Set-up-the-broadcast-PC)
+
+Note: Here are the steps, run from the Control Center Setup view. First, get the tool — download your operating system's archive, extract it into its own folder, and double-click racecast U I. Second, install the tools and apps: yt-dlp, streamlink, ffmpeg and deno, along with O B S, Companion, Tailscale and Discord. Third, import your league profile from the Profile view — it carries the Sheet ID and secrets, and creating one from scratch is the exception. Fourth, build the O B S and Companion configs, which Setup generates for you to import into each app.
 </script></section>
 
 <section data-markdown><script type="text/template">
@@ -75,6 +85,8 @@ Enter that **same** password in **two** places:
 **You should see:** the OBS connection **green** under Companion → Connections.
 
 Details: [Set up the broadcast PC](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Set-up-the-broadcast-PC)
+
+Note: Now let Companion control O B S. In O B S, open Tools, WebSocket Server Settings, enable it on port four four five five, turn on authentication, and set a password. Then enter that same password in two places: in Companion, under Connections, on the O B S connection; and in racecast, under the Control Center General Settings, so the Director Panel's relay-mediated O B S control works. You should see the O B S connection turn green under Companion, Connections.
 </script></section>
 
 <section data-markdown><script type="text/template">
@@ -87,6 +99,8 @@ Your **station** still needs Tailscale (it provides the MagicDNS host + Funnel).
 With the **public Funnel** on, crew reach `/console` over the internet — **no Tailscale account needed on their side**. Inviting directors onto your tailnet (free, up to 6) is now only the **fallback**.
 
 Details: [Set up the broadcast PC](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Set-up-the-broadcast-PC) · [Director Setup](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Director-Setup)
+
+Note: To connect remote directors, your station still needs Tailscale, because it provides the MagicDNS host and the Funnel. Sign in just once. On macOS or Windows, open the Tailscale app and sign in with a free account. On Linux, run sudo tailscale up, open the printed login URL, then set yourself as the operator. With the public Funnel on, crew reach slash console over the internet with no Tailscale account needed on their side. Inviting directors onto your own tailnet, which is free for up to six, is now only the fallback.
 </script></section>
 
 <section data-markdown><script type="text/template">
@@ -95,12 +109,16 @@ Before your first event, run the hardware + tool check in the Control Center: **
 
 Fix anything flagged. Once everything is green, you're ready.
 
+Note: Finally, preflight and recap. Before your first event, run the hardware and tool check in the Control Center under Preflight, Run — or racecast preflight on the command line. Fix anything it flags, and once everything is green, you're ready.
+
 ---
 
 **Go deeper:**
 [Set up the broadcast PC](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Set-up-the-broadcast-PC) ·
 [Control Center](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Control-Center) ·
 [Run an event](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Run-an-event)
+
+Note: To go deeper, the project wiki has fuller guides on setting up the broadcast PC, on the Control Center, and on running an event.
 </script></section>
 
 </div></div>
