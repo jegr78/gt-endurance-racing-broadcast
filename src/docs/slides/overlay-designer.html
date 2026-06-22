@@ -73,7 +73,7 @@ When a league's design uses a font it is copied into `overlay/fonts/` on save, s
 ## First-override caveat + advanced CSS
 The relay only loads `--overlay-dir` when that directory **existed at startup**.
 So the **very first** override on a profile whose `overlay/` did not yet exist
-needs **one `racecast relay restart`** to activate.
+needs **one relay restart** (Control Center **Relay → Restart**) to activate.
 After that, every later edit applies live via **Apply in OBS** — no restart.
 
 The **advanced CSS** box is a raw escape hatch: whatever you type there is appended
@@ -89,7 +89,7 @@ verbatim after the generated rules. Pairs naturally with a per-league OBS collec
 1. Drag the slots, resize, set colors — **Save**.
 2. **Apply in OBS** to reload the browser source.
 3. **Preview ↗** to confirm it looks right against your `Overlay.png`.
-4. Ship it: `racecast profile export <name>` keeps fonts + CSS self-contained.
+4. Ship it: Control Center **Profile → Export** keeps fonts + CSS self-contained.
 
 Go deeper:
 [HUD Overlays](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/HUD-Overlays) ·

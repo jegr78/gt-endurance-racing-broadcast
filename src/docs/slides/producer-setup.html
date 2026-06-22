@@ -53,12 +53,13 @@ Details: [Control Center](https://github.com/jegr78/gt-endurance-racing-broadcas
 </script></section>
 
 <section data-markdown><script type="text/template">
-## The steps
-1. **Get the tool** — download the archive for your OS from the latest release; extract it into its own folder.
-2. **`racecast install-tools`** — installs `yt-dlp`, `streamlink`, `ffmpeg`, and **`deno`** (deno passes YouTube's bot check).
-3. **`racecast install-apps`** — installs OBS Studio, Bitfocus Companion, Tailscale, and Discord.
-4. **Import your league profile** — `racecast profile import <file>` (carries `SHEET_ID` + secrets). Creating one with `profile new` is the exception.
-5. **Import the OBS scenes + Companion buttons** — `racecast setup` then import the collection in OBS; `racecast export companion` then import in Companion.
+## The steps — the Setup view
+Run them in the Control Center **Setup** view (CLI equivalents italic):
+
+1. **Get the tool** — download your OS's archive, extract into its own folder, double-click `racecast-ui`.
+2. **Install tools + apps** — yt-dlp / streamlink / ffmpeg / **deno** and OBS / Companion / Tailscale / Discord. *CLI: `racecast install-tools`, `install-apps`.*
+3. **Import your league profile** — **Profile → Import profile** (carries `SHEET_ID` + secrets); creating one is the exception. *CLI: `racecast profile import <file>`.*
+4. **Build the OBS + Companion configs** — Setup generates them; import into OBS + Companion. *CLI: `racecast setup`, `export companion`.*
 
 Details: [Set up the broadcast PC](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki/Set-up-the-broadcast-PC)
 </script></section>
@@ -90,13 +91,7 @@ Details: [Set up the broadcast PC](https://github.com/jegr78/gt-endurance-racing
 
 <section data-markdown><script type="text/template">
 ## Preflight + recap
-Run the hardware and tool check before your first event:
-
-```bash
-racecast preflight
-```
-
-Or in the Control Center: **Preflight → Run**.
+Before your first event, run the hardware + tool check in the Control Center: **Preflight → Run**. *(CLI: `racecast preflight`.)*
 
 Fix anything flagged. Once everything is green, you're ready.
 
