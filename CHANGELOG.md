@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.9.0...v1.0.0) (2026-06-22)
+
+
+### Features
+
+* **assets:** complete the HUD asset set — full country flags + canonical Lamborghini brand name ([#258](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/258)) ([f47c464](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/f47c464051eba10d4a529440b487caea8b60fe6f))
+* **cockpit:** broadcast-graphics browser (list + open in new tab) ([#268](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/268)) ([a2d66e5](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/a2d66e5ff6dc00a1e38da0e8c6716fb713385760))
+* **docs:** centralize the role cheat sheet on the onboarding decks ([#271](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/271)) ([56def65](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/56def65c731e8a74f7a0ac4a5f7857d752219fd7))
+* **hud:** adopt the de-branded demo overlay as the base standard ([#260](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/260)) ([a581381](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/a581381949d18eac2f9d38cf31657688029b583c)), closes [#206](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/206)
+* **init:** point the profile step at the demo profile for a smoke test ([#262](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/262)) ([ba68340](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/ba68340361fb067220109a18ed90ac77842a0af4)), closes [#206](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/206)
+* **profiles:** ship a directly-usable de-branded demo league + Sheet template docs ([#257](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/257)) ([be3845a](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/be3845ac927534aa6092ea1e93cbb593ae870a03))
+* **slides:** onboarding slide decks + Director pilot ([#263](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/263)) ([17ece27](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/17ece27bb4e463dc9a9a7de5180ffc7aad7731fe))
+
+
+### Miscellaneous Chores
+
+* release 1.0.0 ([82fd6ab](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/82fd6abaea29e061b05481b5be7750fadfe57d21))
+
 ## [0.9.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.8.0...v0.9.0) (2026-06-21)
 
 
