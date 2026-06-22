@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.1](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.0.0...v1.0.1) (2026-06-22)
+
+
+### Bug Fixes
+
+* **relay:** make the relay control port a true singleton across profiles ([#276](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/276)) ([eccb3ef](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/eccb3ef8fa80d82a9a2ce7bb96686546ea3df2b6)), closes [#273](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/273)
+* **ui:** bust Control Center Assets gallery cache on profile switch ([#275](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/275)) ([64527b0](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/64527b0c5f3832550b1c8ae96a6c67c5d7c7de53)), closes [#274](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/274)
+
 ## [1.0.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v0.9.0...v1.0.0) (2026-06-22)
 
 
