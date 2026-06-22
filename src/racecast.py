@@ -3286,15 +3286,21 @@ def assets_status_data(state=None, refresh_env=None):
             "media": {"level": m.level, "detail": m.detail}}
 
 
-def assets_files_data(roots=None):
+def assets_files_data(roots=None, profile=None):
     """Local graphics/media files actually present in runtime/ (cheap listdir —
-    no sheet, no network). Returns {"ok": True, "graphics": [names], "media":
-    [names]} with sorted basenames, or {"ok": False, "error": ...}; never raises.
-    The `roots` override (a {"graphics": dir, "media": dir} dict) is the test
-    seam."""
+    no sheet, no network). Returns {"ok": True, "profile": name, "graphics":
+    [{name, v}], "media": [{name, v}]} with sorted basenames, or {"ok": False,
+    "error": ...}; never raises. Each `v` is a per-profile, per-mtime cache token
+    (`<profile>-<mtime>`) the Control Center appends to the gallery <img>/<video>
+    src so the browser's decode-cache busts on a profile switch or a re-download
+    (#274 — profiles typically share filenames like Overlay.png with different
+    bytes). `roots` (a {"graphics": dir, "media": dir} dict) and `profile` are the
+    test seams."""
     IMG = (".png", ".jpg", ".jpeg", ".webp", ".gif")
     VID = (".mp4", ".webm", ".mov")
     try:
+        if profile is None:
+            profile = _active_profile_name() or ""
         if roots is None:
             rt = _runtime_dir()
             roots = {"graphics": os.path.join(rt, "graphics"),
@@ -3303,10 +3309,15 @@ def assets_files_data(roots=None):
         def listing(d, exts):
             if not os.path.isdir(d):
                 return []
-            return sorted(f for f in os.listdir(d)
-                          if f.lower().endswith(exts)
-                          and os.path.isfile(os.path.join(d, f)))
+            out = []
+            for f in sorted(os.listdir(d)):
+                full = os.path.join(d, f)
+                if f.lower().endswith(exts) and os.path.isfile(full):
+                    out.append({"name": f,
+                                "v": f"{profile}-{int(os.path.getmtime(full))}"})
+            return out
         return {"ok": True,
+                "profile": profile,
                 "graphics": listing(roots["graphics"], IMG),
                 "media": listing(roots["media"], VID)}
     except Exception as exc:
