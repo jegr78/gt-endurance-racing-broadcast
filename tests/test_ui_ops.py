@@ -2,6 +2,7 @@
 """Stdlib checks for the Control Center's structured status providers in racecast.py.
 Run: python3 tests/test_ui_ops.py"""
 import os, sys
+from urllib.parse import urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -735,48 +736,73 @@ def t_obs_ws_link_data_missing_config():
 
 
 def t_docs_data_lists_present_only(tmp):
-    # only docs that exist on disk are listed; wiki URLs always present
+    # only docs that exist on disk are listed; wiki + onboarding-decks URLs always present
     base = os.path.join(tmp, "docs_data")
     os.makedirs(base, exist_ok=True)
-    open(os.path.join(base, "cheat_sheets.html"), "w").close()
+    open(os.path.join(base, "README_SETUP.md"), "w").close()
     def resolve(rel):
         return os.path.join(base, os.path.basename(rel))
     d = rc.docs_data(resolve=resolve)
     keys = [x["key"] for x in d["local"]]
-    assert keys == ["cheat-sheet"]                       # only the html exists
-    assert d["local"][0]["kind"] == "html"
+    assert keys == ["setup-readme"]                      # only the md exists
+    assert d["local"][0]["kind"] == "markdown"
     assert "/wiki" in d["wiki_url"] and "Director-Setup" in d["director_url"]
+    assert urlparse(d["decks_url"]).hostname.endswith(".github.io")  # Pages hub
+    assert d["decks_local_url"] is None                  # no bundled slides in this fixture
 
 
 def t_docs_file_path_allowlist(tmp):
     base = os.path.join(tmp, "docs_path")
     os.makedirs(base, exist_ok=True)
-    open(os.path.join(base, "cheat_sheets.html"), "w").close()
+    open(os.path.join(base, "README_SETUP.md"), "w").close()
     def resolve(rel):
         return os.path.join(base, os.path.basename(rel))
-    assert rc.docs_file_path("cheat-sheet", resolve=resolve).endswith(
-        "cheat_sheets.html")
+    assert rc.docs_file_path("setup-readme", resolve=resolve).endswith(
+        "README_SETUP.md")
     assert rc.docs_file_path("setup-guide", resolve=resolve) is None  # not on disk
+    assert rc.docs_file_path("cheat-sheet", resolve=resolve) is None  # no longer served locally
     assert rc.docs_file_path("../../etc/passwd", resolve=resolve) is None
     assert rc.docs_file_path("unknown", resolve=resolve) is None
 
 
-def t_docs_content_html_passthrough_and_md_rendered(tmp):
+def t_docs_content_md_rendered(tmp):
     base = os.path.join(tmp, "docs_content")
     os.makedirs(base, exist_ok=True)
-    with open(os.path.join(base, "cheat_sheets.html"), "w") as fh:
-        fh.write("<html><body>cheat</body></html>")
     with open(os.path.join(base, "README_SETUP.md"), "w") as fh:
         fh.write("# Title\n\n| A | B |\n|--|--|\n| 1 | 2 |\n")
     def resolve(rel):
         return os.path.join(base, os.path.basename(rel))
-    ctype, body = rc.docs_content("cheat-sheet", resolve=resolve)
-    assert ctype.startswith("text/html") and body == b"<html><body>cheat</body></html>"
+    # markdown docs are rendered to a styled, self-contained HTML page
     ctype, body = rc.docs_content("setup-readme", resolve=resolve)
     text = body.decode("utf-8")
     assert ctype.startswith("text/html")
     assert "<!doctype html>" in text and "<h1>Title</h1>" in text and "<table>" in text
+    assert rc.docs_content("cheat-sheet", resolve=resolve) is None  # not an allowlisted local doc
     assert rc.docs_content("unknown", resolve=resolve) is None
+
+
+def t_docs_slides_serve_and_local_url(tmp):
+    # the bundled onboarding decks (offline copy) serve from src/docs/slides;
+    # resolve("docs/slides") -> base/slides in this fixture.
+    base = os.path.join(tmp, "docs_slides")
+    slides = os.path.join(base, "slides")
+    os.makedirs(os.path.join(slides, "assets"), exist_ok=True)
+    with open(os.path.join(slides, "index.html"), "w") as fh:
+        fh.write("<!doctype html><h1>decks</h1>")
+    with open(os.path.join(slides, "assets", "deck.css"), "w") as fh:
+        fh.write(".reveal{}")
+    def resolve(rel):
+        return os.path.join(base, os.path.basename(rel))
+    # empty path -> index.html; nested asset; content types
+    p, ct = rc.docs_slides_serve("", resolve=resolve)
+    assert p.endswith("index.html") and ct.startswith("text/html")
+    p, ct = rc.docs_slides_serve("assets/deck.css", resolve=resolve)
+    assert p.endswith("deck.css") and ct.startswith("text/css")
+    # missing + traversal are refused
+    assert rc.docs_slides_serve("nope.html", resolve=resolve) is None
+    assert rc.docs_slides_serve("../../etc/passwd", resolve=resolve) is None
+    # docs_data advertises the offline hub when the bundled index resolves
+    assert rc.docs_data(resolve=resolve)["decks_local_url"] == "/docs/slides/"
 
 
 def t_app_control_ops_route():

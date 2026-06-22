@@ -210,8 +210,10 @@ the Google Sheet and both feeds bound, with the HUD and Director-panel URLs list
 
 ![Control Center — Help & Docs](images/cc-help.png)
 
-The bundled cheat sheet and setup guides (rendered offline, on this machine) plus
-links to the always-current pages on this wiki.
+**Start here** opens the visual [onboarding decks](https://jegr78.github.io/gt-endurance-racing-broadcast/)
+— one short walkthrough per role plus the printable cheat sheet, all in one central place.
+**On this machine** lists the bundled setup guides (rendered offline, no internet needed),
+and the guide links open the always-current pages on this wiki.
 
 ## Where to go next
 

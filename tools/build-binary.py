@@ -15,9 +15,14 @@ SRC = os.path.join(ROOT, "src")
 DATA = ["relay", "scripts", "obs", "assets", "companion", "director", "cockpit", "console",
         "racecontrol", "ui", "setup-assets.py"]
 # Operator docs the Control Center's Help page serves (racecast.DOCS_FILES) — only
-# these, kept under src/docs/; the docs/wiki/ subtree stays on GitHub.
-DOC_FILES = ["docs/cheat_sheets.html", "docs/Broadcast_Setup_Guide.md",
-             "docs/README_SETUP.md"]
+# these, kept under src/docs/. The docs/wiki/ subtree stays on GitHub (Help links
+# to it); the onboarding decks under docs/slides ARE bundled (see SLIDES_DATA below)
+# so the Help page can open them offline.
+DOC_FILES = ["docs/Broadcast_Setup_Guide.md", "docs/README_SETUP.md"]
+# The onboarding decks (incl. the printable cheat sheet) ship as a static tree so
+# the Control Center serves them OFFLINE at /docs/slides/; the GitHub Pages copy is
+# the always-current online default.
+SLIDES_DATA = "docs/slides"
 
 # The bundled scripts (relay, oneshots) are loaded at runtime via importlib, so
 # PyInstaller's static analyser cannot see their imports.  List every stdlib
@@ -116,6 +121,11 @@ def build_target(launcher, workdir, version_file, sep, entry, name, windowed):
     # — it lives on GitHub and the Help page links to it.
     for rel in DOC_FILES:
         cmd += ["--add-data", f"{os.path.join(SRC, rel)}{sep}src/docs"]
+    # The onboarding decks tree (dir DEST mirrors into src/docs/slides), so
+    # resource_path("docs/slides") resolves inside the frozen bundle and the
+    # Control Center can serve the decks + cheat sheet offline.
+    cmd += ["--add-data",
+            f"{os.path.join(SRC, SLIDES_DATA)}{sep}src/docs/slides"]
     # profiles/example/ is the league template `racecast profile new` copies from.
     # It lives at the repo root (a sibling of src/), not under src/, so bundle it
     # explicitly to profiles/example — racecast.ensure_example_profile() unpacks it
@@ -293,16 +303,14 @@ def smoke(binary, version):
             out = ui.stdout.read().decode("utf-8", "replace") if ui.poll() is not None else ""
             sys.exit(f"smoke ui FAILED: no Control Center ping on :8389 "
                      f"(rc={ui.poll()}) out={out!r}")
-        # Help page docs must be bundled (DOC_FILES under src/docs/) — catches a
-        # regression where the binary lists no local docs / 404s the cheat sheet.
+        # Help page must expose the onboarding-decks link (Pages hub — the central
+        # place for the cheat sheet + role decks) and bundle the local setup docs.
         with urllib.request.urlopen("http://127.0.0.1:8389/api/docs", timeout=2) as r:
             docs = json.loads(r.read())
-        if not any(d.get("key") == "cheat-sheet" for d in docs.get("local", [])):
-            sys.exit(f"smoke ui FAILED: cheat sheet not bundled (local={docs.get('local')!r})")
-        with urllib.request.urlopen("http://127.0.0.1:8389/api/docs/file/cheat-sheet",
-                                    timeout=2) as r:
-            if b"<html" not in r.read().lower():
-                sys.exit("smoke ui FAILED: bundled cheat sheet did not serve as HTML")
+        if "github.io" not in (docs.get("decks_url") or ""):
+            sys.exit(f"smoke ui FAILED: no onboarding-decks URL (decks_url={docs.get('decks_url')!r})")
+        if not any(d.get("key") == "setup-readme" for d in docs.get("local", [])):
+            sys.exit(f"smoke ui FAILED: setup docs not bundled (local={docs.get('local')!r})")
         # a markdown doc must come back RENDERED (mdrender bundled + working),
         # not as raw text. The setup README is a wiki-pointer stub (heading +
         # bullet list, no tables), so assert on the full-page wrapper + a list.
@@ -311,6 +319,14 @@ def smoke(binary, version):
             md = r.read().decode("utf-8", "replace")
         if "<!doctype html>" not in md or "<li>" not in md:
             sys.exit("smoke ui FAILED: setup-readme markdown was not rendered to HTML")
+        # the onboarding decks (incl. the cheat sheet) must be bundled and serve
+        # OFFLINE at /docs/slides/ — catches a regression where the slides tree is
+        # missing from the frozen bundle.
+        if "/docs/slides/" not in (docs.get("decks_local_url") or ""):
+            sys.exit(f"smoke ui FAILED: no offline decks URL (decks_local_url={docs.get('decks_local_url')!r})")
+        with urllib.request.urlopen("http://127.0.0.1:8389/docs/slides/", timeout=2) as r:
+            if b"<html" not in r.read().lower():
+                sys.exit("smoke ui FAILED: bundled onboarding decks did not serve offline")
         urllib.request.urlopen(urllib.request.Request(
             "http://127.0.0.1:8389/api/quit", method="POST", data=b""), timeout=5).read()
         ui.wait(timeout=10)

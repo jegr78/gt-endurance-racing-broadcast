@@ -4416,13 +4416,13 @@ def speedtest_data(base_dir=None):
 
 # Bundled operator docs the Control Center's Help page can open (allowlist —
 # only these keys map to a file, so the HTTP layer can serve nothing else).
+# The role cheat sheet + the visual onboarding decks live on GitHub Pages (one
+# central place) and are reached via `decks_url`, not served locally.
 DOCS_FILES = {
-    "cheat-sheet":  "docs/cheat_sheets.html",
     "setup-guide":  "docs/Broadcast_Setup_Guide.md",
     "setup-readme": "docs/README_SETUP.md",
 }
 _DOC_TITLES = {
-    "cheat-sheet":  ("Cheat sheet", "Printable one-page reference for event day."),
     "setup-guide":  ("Setup guide", "Full broadcast-PC install & configuration walkthrough."),
     "setup-readme": ("Setup README", "Quick setup notes and command reference."),
 }
@@ -4434,6 +4434,15 @@ def _wiki_repo():
         return update.REPO
     except Exception:
         return "jegr78/gt-endurance-racing-broadcast"
+
+
+def _pages_url():
+    """The GitHub Pages root for the visual onboarding decks (incl. the role cheat
+    sheet) — `https://<owner>.github.io/<repo>/`. The decks are the central, always-
+    current entry point the Control Center links to instead of serving the cheat
+    sheet locally."""
+    owner, _, name = _wiki_repo().partition("/")
+    return f"https://{owner}.github.io/{name}/"
 
 
 def _resolve_doc(rel, resolve):
@@ -4464,7 +4473,13 @@ def docs_data(resolve=None):
             title, desc = _DOC_TITLES[key]
             local.append({"key": key, "title": title, "desc": desc,
                           "kind": "html" if rel.endswith(".html") else "markdown"})
+    # The onboarding decks (incl. the cheat sheet) ship bundled under
+    # src/docs/slides, so the Control Center can open them OFFLINE in addition to
+    # the always-current GitHub Pages copy.
+    decks_local = "/docs/slides/" if docs_slides_serve("index.html", resolve) else None
     return {"ok": True, "wiki_url": wiki,
+            "decks_url": _pages_url(),
+            "decks_local_url": decks_local,
             "setup_url": f"{wiki}/Set-up-the-broadcast-PC",
             "director_url": f"{wiki}/Director-Setup",
             "event_url": f"{wiki}/Run-an-event",
@@ -4479,6 +4494,41 @@ def docs_file_path(key, resolve=None):
     if not rel:
         return None
     return _resolve_doc(rel, resolve or resource_path)
+
+
+_SLIDES_CTYPES = {
+    ".html": "text/html; charset=utf-8", ".htm": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".mjs": "application/javascript; charset=utf-8",
+    ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif",
+    ".ico": "image/x-icon", ".json": "application/json; charset=utf-8",
+    ".map": "application/json; charset=utf-8",
+    ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf",
+    ".txt": "text/plain; charset=utf-8",
+}
+
+
+def docs_slides_serve(relpath, resolve=None):
+    """(path, content_type) for a file in the bundled onboarding-decks tree
+    (`src/docs/slides` — the offline copy of the GitHub Pages hub, incl. the role
+    cheat sheet). An empty/`/` path serves `index.html`. Returns None for a missing
+    file or any path that escapes the slides dir (traversal guard). Never raises.
+    `resolve` is a test seam."""
+    resolve = resolve or resource_path
+    try:
+        base = os.path.realpath(resolve("docs/slides"))
+        rel = (relpath or "").strip("/") or "index.html"
+        target = os.path.realpath(os.path.join(base, rel))
+        if target != base and not target.startswith(base + os.sep):
+            return None
+        if not os.path.isfile(target):
+            return None
+        ext = os.path.splitext(target)[1].lower()
+        return target, _SLIDES_CTYPES.get(ext, "application/octet-stream")
+    except Exception:
+        return None
 
 
 def docs_content(key, resolve=None):
@@ -4874,6 +4924,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "streams_write": streams_config_write_data,
         "docs": docs_data,
         "docs_content": docs_content,
+        "docs_slides_serve": docs_slides_serve,
         "init_plan": _init_plan,
         "init_step": init_step_action_data,
         "ops": ops_mod.OPS,

@@ -42,5 +42,8 @@ On event day:
 `racecast preflight` checks this machine any time and names the exact fix for
 anything missing.
 
-The printable role cheat sheets are in `cheat_sheets.html` (open it in a
-browser, print).
+The visual **onboarding decks** (one short walkthrough per role) and the printable
+**role cheat sheet** are the central reference — one place for every role:
+<https://jegr78.github.io/gt-endurance-racing-broadcast/>. A local copy of the cheat
+sheet also ships at `docs/slides/cheat_sheets.html` (open it in a browser and print).
+In the Control Center, **Help & Docs → Onboarding decks** opens the same hub.

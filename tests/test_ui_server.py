@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stdlib checks for the Control Center HTTP server (real server on an
 ephemeral port — no fixed ports, CI-safe). Run: python3 tests/test_ui_server.py"""
-import json, os, re, sys, tempfile, threading, time, urllib.error, urllib.request
+import json, os, re, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -50,6 +50,23 @@ def _import_stub(path, force):
         _IMPORTED["bytes"] = f.read()
     return {"ok": True, "name": "iro-gtec", "display": "IRO GTEC",
             "includes_assets": True}
+
+
+# A stand-in for the bundled onboarding-decks tree (offline copy served at /docs/slides).
+# realpath the base too (macOS /var -> /private/var) so the traversal guard matches.
+_SLIDES_TMP = os.path.realpath(tempfile.mkdtemp(prefix="cc-slides-"))
+with open(os.path.join(_SLIDES_TMP, "index.html"), "w") as _f:
+    _f.write("<!doctype html><h1>decks offline</h1>")
+
+
+def _slides_serve(rel):
+    rel = (rel or "").strip("/") or "index.html"
+    p = os.path.realpath(os.path.join(_SLIDES_TMP, rel))
+    if p != _SLIDES_TMP and not p.startswith(_SLIDES_TMP + os.sep):
+        return None
+    if not os.path.isfile(p):
+        return None
+    return p, "text/html; charset=utf-8"
 
 
 def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
@@ -102,11 +119,14 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "streams_write": lambda entries: {"ok": True, "path": "/x/streams.json",
                                               "_got": entries},
             "docs": lambda: {"ok": True, "wiki_url": "https://example/wiki",
-                             "local": [{"key": "cheat-sheet", "title": "Cheat sheet",
-                                        "desc": "d", "kind": "html"}]},
+                             "decks_url": "https://example.github.io/repo/",
+                             "decks_local_url": "/docs/slides/",
+                             "local": [{"key": "setup-readme", "title": "Setup README",
+                                        "desc": "d", "kind": "markdown"}]},
             "docs_content": lambda key: (("text/html; charset=utf-8",
-                                          b"<html>cheat</html>")
-                                         if key == "cheat-sheet" else None),
+                                          b"<!doctype html><h1>readme</h1>")
+                                         if key == "setup-readme" else None),
+            "docs_slides_serve": _slides_serve,
             "jobs": jobs or ui_jobs.JobManager(
                 lambda a: [sys.executable, "-c", "print('hi from job')"]),
             "log_sources": {},
@@ -403,10 +423,25 @@ def t_docs_route_and_file():
     try:
         code, body = _get(port, "/api/docs")
         data = json.loads(body)
-        assert code == 200 and data["ok"] and data["local"][0]["key"] == "cheat-sheet"
-        code, body = _get(port, "/api/docs/file/cheat-sheet")     # allowlisted -> served
-        assert code == 200 and b"<html" in body.lower()
+        assert code == 200 and data["ok"] and data["local"][0]["key"] == "setup-readme"
+        assert urllib.parse.urlparse(data["decks_url"]).hostname.endswith(".github.io")  # hub
+        code, body = _get(port, "/api/docs/file/setup-readme")    # allowlisted -> served
+        assert code == 200 and b"<h1" in body.lower()
         code, _b = _get(port, "/api/docs/file/unknown")           # not allowlisted -> 404
+        assert code == 404
+        assert "/docs/slides/" in data["decks_local_url"]          # offline decks hub
+    finally:
+        httpd.shutdown()
+
+
+def t_docs_slides_offline_route():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/docs/slides/")                  # -> index.html
+        assert code == 200 and b"decks offline" in body
+        code, body = _get(port, "/docs/slides/index.html")        # explicit file
+        assert code == 200 and b"decks offline" in body
+        code, _b = _get(port, "/docs/slides/missing.html")        # absent -> 404
         assert code == 404
     finally:
         httpd.shutdown()
