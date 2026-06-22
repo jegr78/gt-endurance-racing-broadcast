@@ -19,7 +19,9 @@ research-first).
   explicitly. A manually pushed `v*` tag also triggers `release.yml` directly.
 - `release.yml` checks out **the tag**, runs the test suite, builds the
   PyInstaller binary per OS (`tools/build-binary.py --version <tag>`), and
-  uploads `iro-windows.zip` / `iro-macos.tar.gz` / `iro-linux.tar.gz` to the
+  uploads **4 assets** — `racecast-windows.zip` / `racecast-macos.tar.gz` /
+  `racecast-linux.tar.gz` / `racecast-linux-arm64.tar.gz` (the two Linux archives
+  build on the `ubuntu-latest` + `ubuntu-24.04-arm` matrix runners) — to the
   GitHub release (`--clobber`, create is idempotent).
 - The version is derived from conventional commits. To force a specific
   version: empty commit with a `Release-As: X.Y.Z` footer on `main`.
@@ -54,7 +56,7 @@ research-first).
    Then — with explicit user OK — `gh pr merge <n> --squash`.
 
 5. **Watch the pipeline** (background until-loop, not polling chat):
-   release done when `gh release view vX.Y.Z` shows **3 assets**; abort-signal
+   release done when `gh release view vX.Y.Z` shows **4 assets**; abort-signal
    is a failed `release.yml` run. Builds take ~5–15 min.
 
 6. **If a build job fails:** read `--log-failed` for the failing *step* first,
