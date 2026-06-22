@@ -203,6 +203,23 @@ def t_overflow_findings_flags_content_and_media():
     assert ("0", "content") not in flagged
 
 
+def t_reveal_decks_only_returns_reveal_pages():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        # two real decks (carry the Reveal root), two non-deck pages that would
+        # otherwise hang wait_for_function('Reveal.isReady()').
+        with open(os.path.join(d, "director.html"), "w") as fh:
+            fh.write('<!doctype html><div class="reveal"><div class="slides"></div></div>')
+        with open(os.path.join(d, "commentator.html"), "w") as fh:
+            fh.write('<div class="reveal"><div class="slides"></div></div>')
+        with open(os.path.join(d, "index.html"), "w") as fh:
+            fh.write("<!doctype html><h1>landing</h1>")
+        with open(os.path.join(d, "cheat_sheets.html"), "w") as fh:
+            fh.write("<!doctype html><table><tr><td>printable cheat sheet</td></tr></table>")
+        decks = cs.reveal_decks(d)
+        assert decks == ["commentator.html", "director.html"], decks  # sorted, decks only
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
