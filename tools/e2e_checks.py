@@ -404,6 +404,34 @@ def check_enable_preserves_keys(_ctx=None):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def check_health_monitor_v3(ctx):
+    """Health Monitor /health-monitor/data must include the v3 band + series fields.
+
+    In synthetic mode OBS, Tailscale, and Companion are absent so the values are
+    None/empty — but the KEYS must be present in the respective maps.
+
+    bands: stream_active, funnel_ok, tailscale_up, companion_ok
+    series: stream_kbps, obs_cpu_pct
+    """
+    st, blob = _get_json(ctx.relay_url + "/health-monitor/data")
+    if st != 200:
+        return CheckResult("health_monitor_v3", "fail", f"/health-monitor/data HTTP {st}")
+    if not isinstance(blob, dict):
+        return CheckResult("health_monitor_v3", "fail", f"body is not a dict: {type(blob)}")
+    err = blob.get("error")
+    if err:
+        return CheckResult("health_monitor_v3", "fail", f"health monitor disabled: {err}")
+    bands = blob.get("bands") or {}
+    for f in ("stream_active", "funnel_ok", "tailscale_up", "companion_ok"):
+        if f not in bands:
+            return CheckResult("health_monitor_v3", "fail", f"missing band {f!r}")
+    series = blob.get("series") or {}
+    for f in ("stream_kbps", "obs_cpu_pct"):
+        if f not in series:
+            return CheckResult("health_monitor_v3", "fail", f"missing series {f!r}")
+    return CheckResult("health_monitor_v3", "pass", "")
+
+
 SYNTHETIC_CHECKS = [
     check_status_ok,
     check_cockpit_requires_token,
@@ -416,6 +444,7 @@ SYNTHETIC_CHECKS = [
     check_event_title_round_trip,
     check_cc_api_cockpit,
     check_enable_preserves_keys,
+    check_health_monitor_v3,
 ]
 
 # Real-league mode (local only): the safe subset for a copied profile. Read-only

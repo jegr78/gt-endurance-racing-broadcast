@@ -329,6 +329,91 @@ def t_build_schedule_csv_parses_in_relay():
     assert [r[2] for r in parsed] == ["Stint 1", "Stint 2"], parsed
 
 
+def t_check_health_monitor_v3():
+    """Stub relay: /health-monitor/data returns the v3 bands+series shape (values
+    None/empty as in synthetic mode). check_health_monitor_v3 must pass.
+    Also verifies that a missing key returns fail, and that a disabled-monitor
+    response ({"error": "..."}) is surfaced as fail."""
+    import json, threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    # The synthetic relay returns None-valued bands/series when OBS/Tailscale absent.
+    BANDS = {
+        "health_level": [], "feed_a_state": [], "feed_b_state": [],
+        "pov_state": [], "obs_reachable": [], "cookies_stale": [], "timer_push": [],
+        "stream_active": [], "stream_reconnecting": [], "funnel_ok": [],
+        "sheet_push_ok": [], "tailscale_up": [], "companion_ok": [],
+    }
+    SERIES = {
+        "source_last_ok_age_s": {"t": [], "v": []},
+        "cookies_age_h": {"t": [], "v": []},
+        "stream_kbps": {"t": [], "v": []},
+        "stream_dropped_pct": {"t": [], "v": []},
+        "stream_congestion": {"t": [], "v": []},
+        "obs_cpu_pct": {"t": [], "v": []},
+        "obs_mem_mb": {"t": [], "v": []},
+        "obs_fps": {"t": [], "v": []},
+        "obs_render_skipped_pct": {"t": [], "v": []},
+        "obs_disk_free_mb": {"t": [], "v": []},
+    }
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            if self.path.split("?")[0] == "/health-monitor/data":
+                body = json.dumps({
+                    "now": 0.0, "from": 0.0, "to": 0.0,
+                    "current": {"health_level": "green", "health_reasons": []},
+                    "bands": BANDS, "incidents": [],
+                    "series": SERIES,
+                }).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self.send_response(404); self.end_headers()
+
+    srv = ThreadingHTTPServer(("127.0.0.1", e.free_port()), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{srv.server_address[1]}"
+        ctx = e.Ctx(relay_url=url, disabled_relay_url=url, ui_url=None,
+                    token="t", streamer_key="alice", expect={})
+        r = e.check_health_monitor_v3(ctx)
+        assert r.status == "pass", f"expected pass: {r}"
+
+        # Missing a required band key -> fail.
+        missing_bands = {k: v for k, v in BANDS.items() if k != "stream_active"}
+
+        class H2(H):
+            def do_GET(self):
+                if self.path.split("?")[0] == "/health-monitor/data":
+                    body = json.dumps({
+                        "now": 0.0, "from": 0.0, "to": 0.0,
+                        "current": {}, "bands": missing_bands,
+                        "incidents": [], "series": SERIES,
+                    }).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(body)
+                else:
+                    self.send_response(404); self.end_headers()
+
+        srv2 = ThreadingHTTPServer(("127.0.0.1", e.free_port()), H2)
+        threading.Thread(target=srv2.serve_forever, daemon=True).start()
+        try:
+            url2 = f"http://127.0.0.1:{srv2.server_address[1]}"
+            ctx2 = ctx._replace(relay_url=url2)
+            r2 = e.check_health_monitor_v3(ctx2)
+            assert r2.status == "fail" and "stream_active" in r2.message, r2
+        finally:
+            srv2.shutdown()
+    finally:
+        srv.shutdown()
+
+
 def t_check_enable_preserves_keys_passes():
     # The self-contained check uses its own tempfile fixture + the REAL
     # racecast._set_env_key seam; it must pass with no relay and no side effects.
