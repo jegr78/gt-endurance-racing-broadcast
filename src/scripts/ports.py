@@ -34,16 +34,25 @@ def parse_fuser_pids(out):
     return sorted({int(tok) for tok in tail.split() if tok.strip().isdigit()})
 
 
+# A LISTENING TCP socket is the one whose FOREIGN address is the wildcard. We key
+# on that, NOT the State column: netstat localizes State ("LISTENING" on English
+# Windows, "ABHÖREN" on German, etc.), so matching the word made pids_on_port find
+# nothing — and thus every port-recovery path silently no-op — on non-English hosts.
+_NETSTAT_LISTEN_FOREIGN = ("0.0.0.0:0", "[::]:0", "*:*")
+
+
 def parse_netstat_pids(out, port):
     """Windows `netstat -ano -p tcp`: columns are Proto / Local / Foreign / State /
-    PID. Keep rows that LISTEN on the LOCAL address for this exact port (so a client
-    connected TO :port, or a longer port that merely shares the prefix, is ignored)."""
+    PID. Keep rows that LISTEN on the LOCAL address for this exact port, identified
+    by the wildcard FOREIGN address (locale-independent — see note above). A client
+    connected TO :port has a real foreign address and a localized non-listen state,
+    so it is ignored; a longer port that merely shares the prefix is ignored too."""
     suffix = f":{port}"
     pids = set()
     for line in out.splitlines():
         col = line.split()
         if (len(col) >= 5 and col[0].upper() == "TCP"
-                and col[3].upper() == "LISTENING"
+                and col[2] in _NETSTAT_LISTEN_FOREIGN
                 and col[1].endswith(suffix) and col[4].isdigit()):
             pids.add(int(col[4]))
     return sorted(pids)
