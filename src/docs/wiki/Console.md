@@ -6,7 +6,7 @@
 surface: one page adapts to the signed-in person's role and shows only the cards they are
 allowed to use — nothing more.
 
-![The /console launcher — role-adaptive cards: Commentator Cockpit, Race Control, Director Panel, Web Buttons](images/console-landing.png)
+![The /console launcher — role-adaptive cards: Commentator Cockpit, Race Control, Director Panel, Web Buttons, and the universal Health Monitor](images/console-landing.png)
 
 ## How it works
 
@@ -31,10 +31,11 @@ security model.
 
 | Card | Path | Who sees it |
 |---|---|---|
-| **Commentator Cockpit** | `/console/cockpit` | any authenticated person |
+| **Commentator Cockpit** | `/console/cockpit` | commentators (on the schedule or flagged **Commentator**) |
 | **Race Control** | `/console/race-control` | crew flagged **Race Control** |
 | **Director Panel** | `/console/panel` | directors |
 | **Web Buttons** | `/console/buttons` | directors (requires Companion ≥ v4.1.0) |
+| **Health Monitor** | `/console/health-monitor` | any authenticated person |
 
 Each card leads to the same page as its tailnet equivalent — `/cockpit`, `/panel`, and
 the Companion Web Buttons board at `:8000/tablet` respectively — but reached through
@@ -63,7 +64,7 @@ desk is safe over the public Funnel.
 > unrelated: the role is `race_control` (Crew tab), the banner is `racecontrol` (Setup
 > tab). This role never writes to that banner.
 
-All three cards open **in the same tab**. Every destination carries a **`← Console`**
+Every card opens **in the same tab**. Every destination carries a **`← Console`**
 back link in its header that returns to this launcher, so there is clean
 forward-and-back navigation without relying on the browser history. The Web Buttons card
 opens a thin `/console/buttons` wrapper that embeds the Companion board in an iframe and
