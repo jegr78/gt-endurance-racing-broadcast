@@ -1615,6 +1615,13 @@ def _takeover_get(url, secret=None, timeout=5):
     return http_util.get_json(url, headers=headers, timeout=timeout)
 
 
+def _takeover_get_text(url, secret=None, timeout=5):
+    """GET a (funnel) takeover endpoint that returns text (NDJSON), with step-up."""
+    headers = {"X-Console-Secret": secret} if secret else None
+    with http_util.open_url(url, headers=headers, timeout=timeout) as r:
+        return r.read().decode("utf-8")
+
+
 def _relay_post_json(url, payload, timeout=3):
     """POST a JSON body to a relay control-server endpoint and parse its JSON
     reply (the write sibling of _relay_fetch_json)."""
@@ -2810,6 +2817,19 @@ def event_takeover(rest):
         print(f"Pulled {n} cue(s) from A.")
     except Exception as exc:
         print(f"note: cue pull failed ({type(exc).__name__}) — continuing takeover.")
+
+    # Adopt A's health history (#health), like the chat pull — best-effort, never aborts.
+    try:
+        if funnel:
+            body = _takeover_get_text(base + "/health", secret)
+        else:
+            with http_util.open_url("http://%s:%d/health/raw" % (host, port), timeout=5) as r:
+                body = r.read().decode("utf-8")
+        conn = hsmod.open_db(_health_db_path()); hsmod.migrate(conn)
+        n = hsmod.import_jsonl(conn, body.splitlines())
+        print(f"Pulled {n} health samples from A.")
+    except Exception as exc:
+        print(f"note: health pull failed ({type(exc).__name__}) — continuing takeover.")
 
     # Adopt A's on-air event title (#207), persisted to event.json BEFORE bring-up
     # so the new relay loads it (mirrors the chat pull). Best-effort, never aborts.

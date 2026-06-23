@@ -2888,6 +2888,7 @@ class Relay:
         self._health_lock = threading.Lock()
         self._hb_stop = threading.Event()
         self.health_store = None  # assigned by bootstrap (Task 13); always exists
+        self._last_prune = 0  # epoch of last health-history prune (daily, in heartbeat)
 
     def active_source(self):
         """The schedule the A/B feeds currently serve: qualifying when in
@@ -3009,6 +3010,11 @@ class Relay:
                     self.health_store.record_tick(self._health_snapshot(now), now)
                 except Exception:  # noqa: BLE001 — sampling is best-effort
                     pass  # never let a store write break the heartbeat
+            if self.health_store is not None and (now - self._last_prune) > 86400:
+                try:
+                    self.health_store.prune(); self._last_prune = now
+                except Exception:  # noqa: BLE001 — best-effort
+                    pass
             if health_should_notify(self._notified_level, level):
                 self._send_health_webhook(level, self.health_reasons, self._notified_level)
                 self._notified_level = level
@@ -4902,6 +4908,14 @@ def main():
 
     chat_store = ChatStore(os.path.join(runtime, "chat.json"))
     cue_store = CueStore(os.path.join(runtime, "cues.json"))
+    _health_store_obj = HealthStore(
+        os.path.join(runtime, "health-history.db"),
+        retention_days=int(os.environ.get("RACECAST_HEALTH_RETENTION_DAYS",
+                                          health_store.DEFAULT_RETENTION_DAYS)))
+    try:
+        _health_store_obj.prune()        # drop stale rows on start
+    except Exception:                     # noqa: BLE001 — best-effort
+        pass
     # Free-text event title (#207): persisted runtime state (event.json), seeded
     # from the EVENT_TITLE default (profile.env). An explicit --event-title wins and
     # is persisted, so it survives a restart; a takeover instead pulls A's title
@@ -4930,6 +4944,7 @@ def main():
                   sheet_id=args.sheet_id,
                   event_title_store=event_store,
                   league_name=args.league_name)
+    relay.health_store = _health_store_obj
     relay.start()
     relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
     # Launching straight into qualifying mode: seed the HUD Streamer/Stint from
