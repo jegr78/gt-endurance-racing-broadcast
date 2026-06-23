@@ -106,7 +106,8 @@ def min_capability(segments, method="GET"):
     # so any authenticated console subject may view it — same tier as the cockpit
     # monitors. Takeover/health is the producer+step-up pull, already matched by the
     # generic takeover/* rule above.
-    if p == ["health-monitor"] or p == ["health-monitor", "data"]:
+    if p == ["health-monitor"] or p == ["health-monitor", "data"] or \
+       (len(p) == 3 and p[:2] == ["health-monitor", "assets"]):
         return Requirement(ANY, False)
 
     # --- commentator: own-row stream-link submission ---

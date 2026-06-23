@@ -996,6 +996,17 @@ def t_takeover_health_requires_step_up_secret():
         srv.shutdown()
 
 
+def t_health_monitor_assets_served():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/health-monitor/assets/uPlot.min.css", None)
+        assert code == 200 and body.strip(), code
+        # Path traversal is refused.
+        assert _get(port, "/health-monitor/assets/../../racecast.py", None)[0] in (400, 404)
+    finally:
+        srv.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

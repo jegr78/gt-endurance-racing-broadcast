@@ -3830,6 +3830,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if sub == ["health-monitor", "data"] and method == "GET":
                     self._send(self._health_monitor_payload())
                     return None
+                if len(sub) == 3 and sub[:2] == ["health-monitor", "assets"]:
+                    return sub        # served by the root asset route
                 return self._send({"error": "not found"}, 404)
             # Role-adaptive pages: authorize via the same matrix, then serve HTML
             # with the /console base + a Path=/console cookie. Served BEFORE the API
@@ -4012,6 +4014,24 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send_page(health_monitor_page_path, "")
                 if p == ["health-monitor", "data"]:
                     return self._send(self._health_monitor_payload())
+                if len(p) == 3 and p[:2] == ["health-monitor", "assets"]:
+                    name = p[2]
+                    if not uplot_dir or not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+                        return self._send({"error": "not found"}, 404)
+                    full = os.path.join(uplot_dir, name)
+                    try:
+                        with open(full, "rb") as fh:
+                            data = fh.read()
+                    except OSError:
+                        return self._send({"error": "not found"}, 404)
+                    ctype = "text/css" if name.endswith(".css") else \
+                            ("application/javascript" if name.endswith(".js") else "application/octet-stream")
+                    self.send_response(200)
+                    self.send_header("Content-Type", ctype + "; charset=utf-8")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header("Cache-Control", "max-age=86400")
+                    self.end_headers(); self.wfile.write(data)
+                    return None
                 if p == ["health", "raw"]:
                     return self._send_text(self._health_raw_payload())
                 if p == ["takeover", "status"]:

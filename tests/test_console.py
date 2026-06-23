@@ -215,6 +215,7 @@ def t_policy_takeover_cues_producer_stepup():
 def t_health_monitor_page_and_data_are_any_authenticated():
     assert cp.min_capability(["health-monitor"]) == cp.Requirement(cp.ANY, False)
     assert cp.min_capability(["health-monitor", "data"]) == cp.Requirement(cp.ANY, False)
+    assert cp.min_capability(["health-monitor", "assets", "uPlot.min.css"]) == cp.Requirement(cp.ANY, False)
 
 
 def t_decide_health_monitor_allows_any_role():
