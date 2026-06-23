@@ -4022,7 +4022,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send(self._health_monitor_payload())
                 if len(p) == 3 and p[:2] == ["health-monitor", "assets"]:
                     name = p[2]
-                    if not uplot_dir or not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+                    if (not uplot_dir or ".." in name
+                            or not re.fullmatch(r"[A-Za-z0-9._-]+", name)):
                         return self._send({"error": "not found"}, 404)
                     full = os.path.join(uplot_dir, name)
                     try:

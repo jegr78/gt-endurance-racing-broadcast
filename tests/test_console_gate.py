@@ -1001,8 +1001,9 @@ def t_health_monitor_assets_served():
     try:
         code, body = _get(port, "/health-monitor/assets/uPlot.min.css", None)
         assert code == 200 and body.strip(), code
-        # Path traversal is refused.
+        # Path traversal is refused (multi-segment and a bare dot-dot segment).
         assert _get(port, "/health-monitor/assets/../../racecast.py", None)[0] in (400, 404)
+        assert _get(port, "/health-monitor/assets/..", None)[0] in (400, 404)
     finally:
         srv.shutdown()
 
