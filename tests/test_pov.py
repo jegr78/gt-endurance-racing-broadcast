@@ -574,6 +574,46 @@ def t_sample_connectivity_sets_state_and_expected():
         m.companion_common.companion_reachable = orig_reachable
 
 
+def _make_min_relay():
+    """Minimal Relay for snapshot/facts tests — two stints, temp log dir."""
+    return m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
+
+
+def t_health_snapshot_carries_new_fields():
+    relay = _make_min_relay()
+    relay.obs_stats = {"obs_cpu_pct": 10.0, "obs_fps": 60.0, "stream_active": True,
+                       "stream_reconnecting": False, "stream_congestion": 0.1,
+                       "stream_dropped_pct": 0.0, "stream_kbps": 6000.0,
+                       "obs_mem_mb": 900.0, "obs_disk_free_mb": 5000.0,
+                       "obs_render_skipped_pct": 0.0}
+    relay.conn_state = {"funnel_ok": True, "tailscale_up": True, "companion_ok": False}
+    relay.funnel_expected = True
+    relay.feeds["A"].quality = "720p"
+    snap = relay._health_snapshot(123.0)
+    assert snap["obs_cpu_pct"] == 10.0 and snap["stream_active"] == 1
+    assert snap["funnel_ok"] == 1 and snap["companion_ok"] == 0
+    assert snap["feed_a_quality"] == "720p"
+    # All COLUMNS keys present (record() tolerates missing, but emit them explicitly).
+    hs = m.health_store
+    for col in hs.COLUMNS:
+        if col not in ("kind",):
+            assert col in snap, col
+
+
+def t_health_facts_gate_funnel_and_push():
+    relay = _make_min_relay()
+    relay.obs_reachable = True
+    relay.obs_stats = {"stream_active": True, "stream_reconnecting": True}
+    relay.conn_state = {"funnel_ok": False, "tailscale_up": True, "companion_ok": True}
+    relay.funnel_expected = True                  # funnel was up, now down -> funnel_down
+    facts = relay._health_facts(1.0)
+    assert facts["stream_reconnecting"] is True
+    assert facts["funnel_down"] is True
+    # funnel never seen up -> not a fault
+    relay.funnel_expected = False
+    assert relay._health_facts(1.0)["funnel_down"] is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

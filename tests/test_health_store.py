@@ -340,9 +340,8 @@ def t_healthstore_bands_incidents_series_smoke():
 def t_relay_health_snapshot_has_no_urls_and_all_columns():
     relay = _make_relay(m)
     snap = relay._health_snapshot(now=123.0)
-    _v3_names = {name for name, _ in hs._V3_COLUMNS}
     for col in hs.COLUMNS:
-        if col in ("ts", "kind") or col in _v3_names:
+        if col in ("ts", "kind"):
             continue
         assert col in snap, col
     assert "timer_push" in snap

@@ -3000,9 +3000,23 @@ class Relay:
             ts_present = detect_tailscale_ip() is not None
         except Exception:                                # noqa: BLE001 — best effort
             ts_present = True
+        st = self.obs_stats or {}
+        cs = self.conn_state or {}
+        funnel_down = bool(self.funnel_expected) and (cs.get("funnel_ok") is False)
+        tpush = None
+        tstore = getattr(self, "timer_store", None)
+        if tstore is not None:
+            try:
+                tpush = tstore.summary().get("push")
+            except Exception:                            # noqa: BLE001 — best-effort
+                tpush = None
         return {"feeds_down": feeds_down, "feeds_connecting_long": connecting_long,
                 "cookies_stale": cookie_health(self.cookies, now=now)["stale"],
-                "obs_reachable": self.obs_reachable, "tailscale_present": ts_present}
+                "obs_reachable": self.obs_reachable, "tailscale_present": ts_present,
+                "stream_active": st.get("stream_active"),
+                "stream_reconnecting": st.get("stream_reconnecting"),
+                "funnel_down": funnel_down,
+                "sheet_push_failing": (tpush == "failed")}
 
     def _refresh_health(self, now):
         """Recompute + store the DISPLAYED health (level/reasons/since). Does NOT
@@ -3034,6 +3048,15 @@ class Relay:
                 tmode, tpush = summ.get("mode"), summ.get("push")
             except Exception:  # noqa: BLE001 — sampling is best-effort
                 pass
+        st = self.obs_stats or {}
+        cs = self.conn_state or {}
+
+        def _b(v):
+            return None if v is None else (1 if v else 0)
+
+        def _q(f):
+            return getattr(f, "quality", None)
+
         return {"ts": now,
                 "health_level": self.health_level, "health_reasons": self.health_reasons,
                 "feed_a_state": a_state, "feed_a_down": a_down, "feed_a_stint": a_stint,
@@ -3049,7 +3072,28 @@ class Relay:
                 "cookies_stale": 1 if ch.get("stale") else 0,
                 "timer_mode": tmode, "timer_push": tpush,
                 "mode": self.mode,
-                "live_feed": live, "live_stint": self.feeds[live].idx + 1}
+                "live_feed": live, "live_stint": self.feeds[live].idx + 1,
+                # v3 OBS stats (already redacted: obs_stats never carries output_bytes)
+                "stream_active": _b(st.get("stream_active")),
+                "stream_reconnecting": _b(st.get("stream_reconnecting")),
+                "stream_kbps": st.get("stream_kbps"),
+                "stream_dropped_pct": st.get("stream_dropped_pct"),
+                "stream_congestion": st.get("stream_congestion"),
+                "obs_cpu_pct": st.get("obs_cpu_pct"),
+                "obs_mem_mb": st.get("obs_mem_mb"),
+                "obs_fps": st.get("obs_fps"),
+                "obs_render_skipped_pct": st.get("obs_render_skipped_pct"),
+                "obs_disk_free_mb": st.get("obs_disk_free_mb"),
+                # v3 connectivity (sheet_push_ok derived from the timer push status)
+                "funnel_ok": _b(cs.get("funnel_ok")),
+                "tailscale_up": _b(cs.get("tailscale_up")),
+                "companion_ok": _b(cs.get("companion_ok")),
+                "sheet_push_ok": (None if tpush in (None, "never", "disabled")
+                                  else (1 if tpush == "ok" else 0)),
+                # v3 feed quality
+                "feed_a_quality": _q(self.feeds["A"]),
+                "feed_b_quality": _q(self.feeds["B"]),
+                "pov_quality": _q(self.pov) if self.pov else None}
 
     def _send_health_webhook(self, level, reasons, prev):
         """POST a Discord health alert. Fully best-effort: no URL or any failure
@@ -4059,12 +4103,16 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             """Allowlist of the live health fields — NEVER the feed/pov stream URLs
             that relay.status() carries (redaction boundary)."""
             full = relay.status()
-            feeds = {k: {"state": v.get("state"), "down": v.get("down"),
-                         "stint": v.get("stint"), "state_age_s": v.get("state_age_s")}
-                     for k, v in (full.get("feeds") or {}).items()}
+            feeds = {}
+            for k, v in (full.get("feeds") or {}).items():
+                q = getattr(relay.feeds.get(k), "quality", None) if relay.feeds.get(k) else None
+                feeds[k] = {"state": v.get("state"), "down": v.get("down"),
+                            "stint": v.get("stint"), "state_age_s": v.get("state_age_s"),
+                            "quality": q}
             pov = full.get("pov")
             pov_red = None if not pov else {"state": pov.get("state"),
-                                            "down": pov.get("down"), "shown": pov.get("shown")}
+                                            "down": pov.get("down"), "shown": pov.get("shown"),
+                                            "quality": getattr(relay.pov, "quality", None)}
             return {"health": full.get("health"), "feeds": feeds, "pov": pov_red,
                     "obs": full.get("obs"), "source": full.get("source"),
                     "cookies_health": full.get("cookies_health"),
