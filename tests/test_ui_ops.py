@@ -993,6 +993,17 @@ def t_health_import_rejects_control_chars():
         pass
 
 
+def t_health_import_rejects_leading_dash():
+    # argv flag-smuggling guard: a path starting with '-' must never reach the
+    # child process as an option flag (e.g. '-rf' or '--out').
+    for bad in ("-rf", "--out", "-"):
+        try:
+            ui_ops.build_argv("health-import", {"file": bad})
+            raise AssertionError(f"expected ValueError for leading-dash path: {bad!r}")
+        except ValueError:
+            pass
+
+
 if __name__ == "__main__":
     import inspect, tempfile
     with tempfile.TemporaryDirectory() as tmp:

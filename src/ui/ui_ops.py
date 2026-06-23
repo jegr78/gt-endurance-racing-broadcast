@@ -98,9 +98,10 @@ def _tag_arg(value):
 
 def _file_arg(value):
     """A local file path the operator typed for `health import`. Reject empty /
-    control chars (argv hygiene); returned as a positional arg."""
+    control chars / a leading '-' (argv flag-smuggling: a path like '--out' must
+    never reach the child as an option); returned as a positional arg."""
     s = str(value).strip()
-    if not s or any(ord(c) < 0x20 for c in s):
+    if not s or s.startswith("-") or any(ord(c) < 0x20 for c in s):
         raise ValueError(f"invalid file path: {value!r}")
     return [s]
 
