@@ -3472,6 +3472,13 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
+# Human-facing /console PAGE routes (segment tuples, sans the leading "console").
+# A GET to one of these with a missing/invalid token, when OAuth is configured,
+# serves the launcher (Login with Discord) instead of a naked 401 JSON page.
+_CONSOLE_PAGE_GETS = frozenset({(), ("cockpit",), ("panel",),
+                                ("health-monitor",), ("race-control",), ("buttons",)})
+
+
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
                  timer_store=None, setup_ctl=None, overlay_dir=None,
                  chat_store=None, cue_store=None, preview_path=None, graphics_dir=None,
@@ -3892,20 +3899,28 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             if qs.get("t"):
                 return qs["t"][0]
             return console_auth.parse_cookie_token(self.headers.get("Cookie"))
+        def _console_subject(self):
+            """Verify the presented token -> streamer_key, or None. Sends nothing
+            (the caller decides whether to deny or serve a login page)."""
+            versions = (console_admin.load_versions(console_versions_path)
+                        if console_versions_path else {})
+            return console_auth.verify_token(console_secret, self._cockpit_token(),
+                                             versions)
+
+        def _console_deny(self):
+            """Send the rate-limited 401/429 for an unauthenticated /console request."""
+            client = self.client_address[0] if self.client_address else "?"
+            if not _console_authfail_rl.allow(client):
+                self._send({"error": "rate limited"}, 429)
+            else:
+                self._send({"error": "unauthorized"}, 401)
+
         def _console_auth(self):
             """Return the authed streamer_key, or None after sending 401/429.
             Applies a per-client failure rate limit. Caller must return on None."""
-            versions = (console_admin.load_versions(console_versions_path)
-                        if console_versions_path else {})
-            me = console_auth.verify_token(console_secret, self._cockpit_token(),
-                                           versions)
+            me = self._console_subject()
             if me is None:
-                client = self.client_address[0] if self.client_address else "?"
-                if not _console_authfail_rl.allow(client):
-                    self._send({"error": "rate limited"}, 429)
-                else:
-                    self._send({"error": "unauthorized"}, 401)
-                return None
+                self._console_deny()
             return me
         def _console_roles(self, subject):
             """Resolve a verified subject to its capability set from the live
@@ -3936,13 +3951,21 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 return self._oauth_login()
             if sub == ["oauth", "callback"]:
                 return self._oauth_callback()
-            # The launcher root is auth-optional when OAuth is configured so an
-            # unauthenticated visitor can see the Login with Discord button.
-            if sub == [] and bool(discord_client_id and discord_client_secret) and self._cockpit_token() is None:
-                self._send_page(console_page_path, "/console")
-                return None
-            subject = self._console_auth()        # identity only; sends 401/429 on failure
+            # Authenticate (verify only — no response sent yet).
+            subject = self._console_subject()
             if subject is None:
+                # Human navigation to a console PAGE (launcher / cockpit / panel /
+                # health-monitor / race-control / buttons) with a MISSING OR INVALID
+                # token, and OAuth configured: serve the launcher so the visitor sees
+                # "Login with Discord" — NEVER a naked 401 JSON page. A stale cookie
+                # from another profile, or a revoked/expired token, no longer
+                # dead-ends; the page itself degrades to the login button on whoami.
+                if (bool(discord_client_id and discord_client_secret)
+                        and method == "GET" and tuple(sub) in _CONSOLE_PAGE_GETS):
+                    self._send_page(console_page_path, "/console")
+                    return None
+                # API calls, non-GET, or OAuth-off installs: the rate-limited 401.
+                self._console_deny()
                 return None
             roles = self._console_roles(subject)
             # Step-up secret header.
