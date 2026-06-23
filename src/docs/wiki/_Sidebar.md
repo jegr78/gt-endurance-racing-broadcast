@@ -12,6 +12,7 @@
 - [The Console launcher](Console)
 - [Commentator Cockpit](Commentator-Cockpit)
 - [Race Control (monitoring desk)](Console#race-control-read-only-monitoring-desk)
+- [Health Monitor](Health-Monitor)
 - [League owner setup](League-Owner-Setup)
 - [Who does what](Who-does-what)
 - [Onboarding decks ↗](https://jegr78.github.io/gt-endurance-racing-broadcast/)
