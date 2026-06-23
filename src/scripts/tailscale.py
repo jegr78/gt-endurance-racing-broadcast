@@ -181,6 +181,22 @@ def detect_magicdns_name(timeout=3):
     return ""
 
 
+def magicdns_is_self(value, self_name):
+    """True when the Sheet `MagicDNS` cell `value` denotes THIS machine — an exact
+    FQDN match against `self_name` (this node's `Self.DNSName`), case-insensitive
+    and ignoring a trailing dot. False when `self_name` is empty (own identity
+    unknown → the caller locks all takeover actions). Pure → unit-tested.
+
+    Exact FQDN by design: the producer schedule carries full `*.ts.net` names, so
+    a bare hostname must NOT match (a short-name collision could otherwise disable
+    the wrong row)."""
+    a = (value or "").strip().rstrip(".").lower()
+    b = (self_name or "").strip().rstrip(".").lower()
+    if not a or not b:
+        return False
+    return a == b
+
+
 def parse_tailscale_peers(output):
     """Tailnet peers from `tailscale status --json`: a list of
     {hostname, ip, online, os}, one per peer that has a CGNAT IPv4 (peers without
