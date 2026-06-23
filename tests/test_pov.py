@@ -540,6 +540,14 @@ def t_aggregate_yellow_signals():
                                "tailscale_up": False, "companion_ok": False})["level"] == "green"
 
 
+def t_parse_stream_quality():
+    assert m.parse_stream_quality("[cli][info] Opening stream: 720p (hls)") == "720p"
+    assert m.parse_stream_quality("[cli][info] Opening stream: source (hls)") == "source"
+    assert m.parse_stream_quality("[cli][info] Opening stream: 1080p60 (muxed-stream)") == "1080p60"
+    assert m.parse_stream_quality("[download] Written 5 MB") is None
+    assert m.parse_stream_quality("") is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

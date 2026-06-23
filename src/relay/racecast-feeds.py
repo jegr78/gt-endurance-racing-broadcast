@@ -2695,6 +2695,18 @@ class SetupControl:
                 "push": self.push_status, "last_error": self.last_error}
 
 
+_STREAM_QUALITY_RE = re.compile(r"Opening stream:\s+(\S+)")
+
+
+def parse_stream_quality(line):
+    """The quality token from a streamlink 'Opening stream: <quality> (...)' line,
+    else None. Pure → unit-tested."""
+    if not line:
+        return None
+    m = _STREAM_QUALITY_RE.search(line)
+    return m.group(1) if m else None
+
+
 class Feed:
     def __init__(self, name, port, idx, provider, logdir, cookies=None, fmt=YTDLP_FORMAT,
                  cookie_dir=None):
@@ -2733,6 +2745,7 @@ class Feed:
         # (demo/startup) is classified "connecting", not a lost live stream.
         self.dropped_since = None
         self.served_ok = False
+        self.quality = None               # last streamlink-selected quality (e.g. "720p")
 
     def current_channel(self):
         if self.paused:
@@ -2771,6 +2784,11 @@ class Feed:
         self.dropped = False
         self.dropped_since = None
         self.served_ok = False
+
+    def _observe_streamlink_line(self, line):
+        q = parse_stream_quality(line)
+        if q:
+            self.quality = q
 
     def set_index(self, new_idx):
         sched = self.provider()
@@ -2824,7 +2842,9 @@ class Feed:
                     env=external_tool_env(), **_no_window_kwargs())
                 pump = threading.Thread(
                     target=logsetup.pump_subprocess,
-                    args=(self.proc.stdout, self.log, "streamlink"), daemon=True)
+                    args=(self.proc.stdout, self.log, "streamlink"),
+                    kwargs={"on_line": self._observe_streamlink_line},
+                    daemon=True)
                 pump.start()
                 if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
                     self.last_error = None
