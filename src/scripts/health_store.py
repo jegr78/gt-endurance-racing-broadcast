@@ -11,6 +11,7 @@ sheet_id column, so the DB is safe to expose, export, and pull over Funnel.
 import json
 import math
 import sqlite3
+import time
 
 SCHEMA_VERSION = 1
 
@@ -167,3 +168,12 @@ def numeric_series(samples, max_points=DEFAULT_MAX_POINTS):
         pairs = downsample(pairs, max_points)
         out[field] = {"t": [p[0] for p in pairs], "v": [p[1] for p in pairs]}
     return out
+
+
+def prune(conn, retention_days=DEFAULT_RETENTION_DAYS, now=None):
+    """Delete samples older than retention_days. Returns the deleted row count."""
+    now = time.time() if now is None else now
+    cutoff = now - retention_days * 86400
+    cur = conn.execute("DELETE FROM samples WHERE ts < ?", (cutoff,))
+    conn.commit()
+    return cur.rowcount

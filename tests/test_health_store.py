@@ -143,6 +143,20 @@ def t_numeric_series_drops_none_and_splits_t_v():
     assert series["source_last_ok_age_s"]["t"] == [0.0, 30.0]
 
 
+def t_prune_deletes_older_than_retention():
+    with tempfile.TemporaryDirectory() as d:
+        conn = hs.open_db(os.path.join(d, "h.db")); hs.migrate(conn)
+        now = 10_000_000.0
+        old = now - 40 * 86400        # 40 days old
+        recent = now - 1 * 86400      # 1 day old
+        hs.record(conn, _snap(ts=old), "periodic")
+        hs.record(conn, _snap(ts=recent), "periodic")
+        deleted = hs.prune(conn, retention_days=30, now=now)
+        assert deleted == 1
+        rows = hs.query_range(conn, 0, 1e12)
+        assert [r["ts"] for r in rows] == [recent]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
