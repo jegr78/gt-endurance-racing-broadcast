@@ -206,14 +206,18 @@ def t_should_probe_obs_throttles_and_respects_inflight():
 
 
 class _FakeObs:
-    """Stand-in for the obs_ws module: probe() returns a canned (reachable, note)."""
+    """Stand-in for the obs_ws module: get_health_stats() returns (reachable, {}, note)."""
     def __init__(self, reachable, note):
         self._result = (reachable, note)
         self.calls = 0
 
-    def probe(self):
+    def get_health_stats(self):
         self.calls += 1
-        return self._result
+        reachable, note = self._result
+        return (reachable, {}, note)
+
+    def stream_kbps(self, *args, **kwargs):
+        return None
 
 
 def t_status_obs_field_reports_probed_reachability():
