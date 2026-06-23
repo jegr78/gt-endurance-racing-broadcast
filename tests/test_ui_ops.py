@@ -141,7 +141,7 @@ def t_ops_registry_routes_in_rc():
     # oneshot, export, or command group) — route() raises ValueError on anything unknown
     for name, argv in ui_ops.OPS.items():
         action = rc.route(list(argv))
-        assert action["kind"] in ("service", "oneshot", "export", "chat", "freeport"), name
+        assert action["kind"] in ("service", "oneshot", "export", "chat", "freeport", "health"), name
 
 
 def t_build_argv_plain_and_unknown():
@@ -956,6 +956,41 @@ def t_cookies_twitch_op():
     assert "cookies-twitch" in ui_ops.OPS
     argv = ui_ops.build_argv("cookies-twitch", {"browser": "firefox"})
     assert argv == ["cookies", "twitch", "firefox"]
+
+
+# ---------- health export / import ops ----------
+
+def t_health_ops_in_registry():
+    assert "health-export" in ui_ops.OPS
+    assert "health-import" in ui_ops.OPS
+    assert ui_ops.build_argv("health-export") == ["health", "export"]
+
+
+def t_health_import_requires_file():
+    # missing file -> ValueError
+    try:
+        ui_ops.build_argv("health-import", {})
+        raise AssertionError("expected ValueError for missing file")
+    except ValueError:
+        pass
+    # empty string also rejected (treated as absent)
+    try:
+        ui_ops.build_argv("health-import", {"file": ""})
+        raise AssertionError("expected ValueError for empty file")
+    except ValueError:
+        pass
+    # valid path -> appended as final positional arg
+    argv = ui_ops.build_argv("health-import", {"file": "/tmp/x.jsonl"})
+    assert argv == ["health", "import", "/tmp/x.jsonl"]
+    assert argv[-1] == "/tmp/x.jsonl"
+
+
+def t_health_import_rejects_control_chars():
+    try:
+        ui_ops.build_argv("health-import", {"file": "/tmp/x\x00y"})
+        raise AssertionError("expected ValueError for control char in path")
+    except ValueError:
+        pass
 
 
 if __name__ == "__main__":
