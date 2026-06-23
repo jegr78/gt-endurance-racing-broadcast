@@ -28,7 +28,7 @@ Funnel-reachable component; it samples itself. Signals:
 - OBS reachability (throttled WS probe): reachable / unknown.
 - Sheet/schedule source: `last_ok_age_s`, `count`.
 - Cookies: `present`, `age_h`, `stale`.
-- Timer: `mode`, `remaining_s`.
+- Timer: `mode`, sync/push status (`ok`/`failed`/`never`/`disabled`) — the health-relevant signal (did the timer write back to the Sheet), not the countdown.
 - Context: `mode` (race/qualifying), live feed + stint, event title.
 
 **Out of scope (v1):** host/machine checks (disk, bandwidth/speedtest, Companion,
@@ -79,7 +79,7 @@ obs_reachable INT          -- nullable (NULL = unknown / not yet probed)
 source_last_ok_age_s REAL  -- nullable
 source_count INT
 cookies_present INT, cookies_age_h REAL, cookies_stale INT
-timer_mode TEXT, timer_remaining_s INT  -- nullable
+timer_mode TEXT, timer_push TEXT  -- nullable (timer sync/push status)
 mode TEXT                  -- race|qualifying
 live_feed TEXT, live_stint INT
 ```
@@ -121,9 +121,9 @@ refinement, not v1. `prune()` runs on relay start and once daily. Retention wind
     "current": { health:{level,reasons,since_s}, feeds:{A,B}, pov, obs,
                  source, cookies, timer, mode, live, event_title },
     "t": [<epoch>, ...],                       // downsampled time axis for charts
-    "series": { source_age:[...], cookie_age:[...], timer_remaining:[...] },
+    "series": { source_age:[...], cookie_age:[...] },
     "bands": { health:[{from,to,state}], feed_a:[...], feed_b:[...],
-               pov:[...], obs:[...], source:[...], cookies:[...] },
+               pov:[...], obs:[...], cookies:[...], timer_push:[...] },
     "incidents": [ {ts, end, duration_s, label, severity}, ... ]
   }
   ```
