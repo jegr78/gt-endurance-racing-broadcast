@@ -31,41 +31,55 @@ def _snap(ts=100.0, level="green", a="serving", b="idle", timer_push="ok"):
 def t_open_migrate_sets_version_and_wal():
     with tempfile.TemporaryDirectory() as d:
         conn = hs.open_db(os.path.join(d, "h.db"))
-        hs.migrate(conn)
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == hs.SCHEMA_VERSION
-        assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+        try:
+            hs.migrate(conn)
+            assert conn.execute("PRAGMA user_version").fetchone()[0] == hs.SCHEMA_VERSION
+            assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+        finally:
+            conn.close()
 
 
 def t_migrate_is_idempotent():
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "h.db")
-        hs.migrate(hs.open_db(path))
+        first = hs.open_db(path)
+        hs.migrate(first)
+        first.close()
         conn = hs.open_db(path)
-        hs.migrate(conn)            # second run must not raise
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == hs.SCHEMA_VERSION
+        try:
+            hs.migrate(conn)            # second run must not raise
+            assert conn.execute("PRAGMA user_version").fetchone()[0] == hs.SCHEMA_VERSION
+        finally:
+            conn.close()
 
 
 def t_record_then_query_roundtrip_parses_reasons():
     with tempfile.TemporaryDirectory() as d:
         conn = hs.open_db(os.path.join(d, "h.db")); hs.migrate(conn)
-        hs.record(conn, _snap(ts=100.0, level="yellow") | {"health_reasons": ["cookies stale"]}, "event")
-        rows = hs.query_range(conn, 0, 1e12)
-        assert len(rows) == 1
-        assert rows[0]["ts"] == 100.0 and rows[0]["kind"] == "event"
-        assert rows[0]["health_level"] == "yellow"
-        assert rows[0]["health_reasons"] == ["cookies stale"]   # parsed back to a list
-        assert rows[0]["pov_state"] is None
+        try:
+            hs.record(conn, _snap(ts=100.0, level="yellow") | {"health_reasons": ["cookies stale"]}, "event")
+            rows = hs.query_range(conn, 0, 1e12)
+            assert len(rows) == 1
+            assert rows[0]["ts"] == 100.0 and rows[0]["kind"] == "event"
+            assert rows[0]["health_level"] == "yellow"
+            assert rows[0]["health_reasons"] == ["cookies stale"]   # parsed back to a list
+            assert rows[0]["pov_state"] is None
+        finally:
+            conn.close()
 
 
 def t_query_range_filters_and_orders():
     with tempfile.TemporaryDirectory() as d:
         conn = hs.open_db(os.path.join(d, "h.db")); hs.migrate(conn)
-        for ts in (300.0, 100.0, 200.0):
-            hs.record(conn, _snap(ts=ts), "periodic")
-        rows = hs.query_range(conn, 150.0, 250.0)
-        assert [r["ts"] for r in rows] == [200.0]
-        allrows = hs.query_range(conn, 0, 1e12)
-        assert [r["ts"] for r in allrows] == [100.0, 200.0, 300.0]   # ascending
+        try:
+            for ts in (300.0, 100.0, 200.0):
+                hs.record(conn, _snap(ts=ts), "periodic")
+            rows = hs.query_range(conn, 150.0, 250.0)
+            assert [r["ts"] for r in rows] == [200.0]
+            allrows = hs.query_range(conn, 0, 1e12)
+            assert [r["ts"] for r in allrows] == [100.0, 200.0, 300.0]   # ascending
+        finally:
+            conn.close()
 
 
 def t_schema_has_no_url_columns():
@@ -154,49 +168,61 @@ def t_numeric_series_drops_none_and_splits_t_v():
 def t_prune_deletes_older_than_retention():
     with tempfile.TemporaryDirectory() as d:
         conn = hs.open_db(os.path.join(d, "h.db")); hs.migrate(conn)
-        now = 10_000_000.0
-        old = now - 40 * 86400        # 40 days old
-        recent = now - 1 * 86400      # 1 day old
-        hs.record(conn, _snap(ts=old), "periodic")
-        hs.record(conn, _snap(ts=recent), "periodic")
-        deleted = hs.prune(conn, retention_days=30, now=now)
-        assert deleted == 1
-        rows = hs.query_range(conn, 0, 1e12)
-        assert [r["ts"] for r in rows] == [recent]
+        try:
+            now = 10_000_000.0
+            old = now - 40 * 86400        # 40 days old
+            recent = now - 1 * 86400      # 1 day old
+            hs.record(conn, _snap(ts=old), "periodic")
+            hs.record(conn, _snap(ts=recent), "periodic")
+            deleted = hs.prune(conn, retention_days=30, now=now)
+            assert deleted == 1
+            rows = hs.query_range(conn, 0, 1e12)
+            assert [r["ts"] for r in rows] == [recent]
+        finally:
+            conn.close()
 
 
 def t_export_then_import_into_fresh_db_roundtrips():
     with tempfile.TemporaryDirectory() as d:
         a = hs.open_db(os.path.join(d, "a.db")); hs.migrate(a)
-        hs.record(a, _snap(ts=100.0, level="green"), "periodic")
-        hs.record(a, _snap(ts=130.0, level="red"), "event")
-        lines = hs.export_jsonl(a)
-        assert len(lines) == 2 and lines[0].startswith("{")
-
         b = hs.open_db(os.path.join(d, "b.db")); hs.migrate(b)
-        n = hs.import_jsonl(b, lines)
-        assert n == 2
-        rows = hs.query_range(b, 0, 1e12)
-        assert [r["ts"] for r in rows] == [100.0, 130.0]
-        assert rows[1]["kind"] == "event"
+        try:
+            hs.record(a, _snap(ts=100.0, level="green"), "periodic")
+            hs.record(a, _snap(ts=130.0, level="red"), "event")
+            lines = hs.export_jsonl(a)
+            assert len(lines) == 2 and lines[0].startswith("{")
+
+            n = hs.import_jsonl(b, lines)
+            assert n == 2
+            rows = hs.query_range(b, 0, 1e12)
+            assert [r["ts"] for r in rows] == [100.0, 130.0]
+            assert rows[1]["kind"] == "event"
+        finally:
+            a.close(); b.close()
 
 
 def t_import_is_idempotent_dedup_by_ts_kind():
     with tempfile.TemporaryDirectory() as d:
         a = hs.open_db(os.path.join(d, "a.db")); hs.migrate(a)
-        hs.record(a, _snap(ts=100.0), "periodic")
-        lines = hs.export_jsonl(a)
-        assert hs.import_jsonl(a, lines) == 0       # re-importing changes nothing
-        assert len(hs.query_range(a, 0, 1e12)) == 1
+        try:
+            hs.record(a, _snap(ts=100.0), "periodic")
+            lines = hs.export_jsonl(a)
+            assert hs.import_jsonl(a, lines) == 0       # re-importing changes nothing
+            assert len(hs.query_range(a, 0, 1e12)) == 1
+        finally:
+            a.close()
 
 
 def t_import_skips_malformed_lines():
     with tempfile.TemporaryDirectory() as d:
         b = hs.open_db(os.path.join(d, "b.db")); hs.migrate(b)
-        good = hs.export_jsonl_line({"ts": 5.0, "kind": "periodic", "health_level": "green",
-                                     "health_reasons": []})
-        n = hs.import_jsonl(b, [good, "{not json", "", "null", "[]"])
-        assert n == 1
+        try:
+            good = hs.export_jsonl_line({"ts": 5.0, "kind": "periodic", "health_level": "green",
+                                         "health_reasons": []})
+            n = hs.import_jsonl(b, [good, "{not json", "", "null", "[]"])
+            assert n == 1
+        finally:
+            b.close()
 
 
 m = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))
@@ -222,23 +248,29 @@ def _make_relay(mod):
 def t_healthstore_record_tick_marks_changes_as_events():
     with tempfile.TemporaryDirectory() as d:
         store = m.HealthStore(os.path.join(d, "h.db"))
-        r1 = store.record_tick(_snap(ts=0.0, level="green"), now=0.0)
-        r2 = store.record_tick(_snap(ts=30.0, level="green"), now=30.0)
-        r3 = store.record_tick(_snap(ts=60.0, level="red"), now=60.0)
-        assert r1["kind"] == "event"        # first row is always an event (baseline)
-        assert r2["kind"] == "periodic"     # unchanged state
-        assert r3["kind"] == "event"        # health_level changed
-        assert len(store.query(0, 1e12)) == 3
+        try:
+            r1 = store.record_tick(_snap(ts=0.0, level="green"), now=0.0)
+            r2 = store.record_tick(_snap(ts=30.0, level="green"), now=30.0)
+            r3 = store.record_tick(_snap(ts=60.0, level="red"), now=60.0)
+            assert r1["kind"] == "event"        # first row is always an event (baseline)
+            assert r2["kind"] == "periodic"     # unchanged state
+            assert r3["kind"] == "event"        # health_level changed
+            assert len(store.query(0, 1e12)) == 3
+        finally:
+            store.close()
 
 
 def t_healthstore_bands_incidents_series_smoke():
     with tempfile.TemporaryDirectory() as d:
         store = m.HealthStore(os.path.join(d, "h.db"))
-        store.record_tick(_snap(ts=0.0, level="green"), now=0.0)
-        store.record_tick(_snap(ts=30.0, level="red") | {"health_reasons": ["Feed B down"]}, now=30.0)
-        assert store.bands(0, 1e12)["health_level"][-1]["state"] == "red"
-        assert store.incidents(0, 1e12)[0]["severity"] == "red"
-        assert "source_last_ok_age_s" in store.series(0, 1e12, 2000)
+        try:
+            store.record_tick(_snap(ts=0.0, level="green"), now=0.0)
+            store.record_tick(_snap(ts=30.0, level="red") | {"health_reasons": ["Feed B down"]}, now=30.0)
+            assert store.bands(0, 1e12)["health_level"][-1]["state"] == "red"
+            assert store.incidents(0, 1e12)[0]["severity"] == "red"
+            assert "source_last_ok_age_s" in store.series(0, 1e12, 2000)
+        finally:
+            store.close()
 
 
 def t_relay_health_snapshot_has_no_urls_and_all_columns():

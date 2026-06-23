@@ -1067,6 +1067,7 @@ def health_cmd(rest):
         conn = hsmod.open_db(db)
         hsmod.migrate(conn)
         lines = hsmod.export_jsonl(conn, frm)
+        conn.close()
         with open(out, "w", encoding="utf-8") as fh:
             fh.write("\n".join(lines) + ("\n" if lines else ""))
         print(f"Exported {len(lines)} samples -> {out}")
@@ -1083,6 +1084,7 @@ def health_cmd(rest):
         conn = hsmod.open_db(db)
         hsmod.migrate(conn)
         n = hsmod.import_jsonl(conn, lines)
+        conn.close()
         print(f"Imported {n} new samples into {db}")
         return None
 
@@ -1115,6 +1117,7 @@ def health_cmd(rest):
         conn = hsmod.open_db(db)
         hsmod.migrate(conn)
         n = hsmod.import_jsonl(conn, body.splitlines())
+        conn.close()
         print(f"Pulled {n} new samples from {host}.")
         return None
 
@@ -2826,7 +2829,7 @@ def event_takeover(rest):
             with http_util.open_url("http://%s:%d/health/raw" % (host, port), timeout=5) as r:
                 body = r.read().decode("utf-8")
         conn = hsmod.open_db(_health_db_path()); hsmod.migrate(conn)
-        n = hsmod.import_jsonl(conn, body.splitlines())
+        n = hsmod.import_jsonl(conn, body.splitlines()); conn.close()
         print(f"Pulled {n} health samples from A.")
     except Exception as exc:
         print(f"note: health pull failed ({type(exc).__name__}) — continuing takeover.")

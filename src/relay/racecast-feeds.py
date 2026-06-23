@@ -1378,6 +1378,10 @@ class HealthStore:
         with self.lock:
             return health_store.import_jsonl(self.conn, lines)
 
+    def close(self):
+        with self.lock:
+            self.conn.close()
+
 
 class CueStore:
     """Director text-cue ring buffer + best-effort JSON file
@@ -4034,7 +4038,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if (not uplot_dir or ".." in name
                             or not re.fullmatch(r"[A-Za-z0-9._-]+", name)):
                         return self._send({"error": "not found"}, 404)
-                    full = os.path.join(uplot_dir, name)
+                    base = os.path.realpath(uplot_dir)
+                    full = os.path.realpath(os.path.join(base, name))
+                    # Containment check (clears CodeQL py/path-injection): the
+                    # resolved path must stay inside the vendored-asset dir.
+                    if os.path.commonpath([base, full]) != base:
+                        return self._send({"error": "not found"}, 404)
                     try:
                         with open(full, "rb") as fh:
                             data = fh.read()
