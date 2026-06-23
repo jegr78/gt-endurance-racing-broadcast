@@ -269,7 +269,9 @@ def t_resolve_graphic_rejects_traversal_and_non_png():
 
 def _cockpit_client(secret="sek", rows=None, live_idx=0,
                     versions_path=None, chat_store=None, timer_store=None,
-                    page_path=None, graphics_dir=None):
+                    page_path=None, graphics_dir=None,
+                    console_page_path=None, discord_client_id=None,
+                    discord_client_secret=None):
     """Stand up make_handler over a real ThreadingHTTPServer on an ephemeral port.
     Returns (server, get, post); caller must srv.shutdown() in a finally block."""
     import threading as _t
@@ -305,7 +307,10 @@ def _cockpit_client(secret="sek", rows=None, live_idx=0,
     handler = m.make_handler(_Relay(), chat_store=chat_store, timer_store=timer_store,
                              cockpit_page_path=page_path, console_secret=secret,
                              console_versions_path=versions_path,
-                             graphics_dir=graphics_dir)
+                             graphics_dir=graphics_dir,
+                             console_page_path=console_page_path,
+                             discord_client_id=discord_client_id,
+                             discord_client_secret=discord_client_secret)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     _t.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -416,6 +421,66 @@ def t_page_bad_token_401_no_cookie():
             code, headers, _b = get("/cockpit?t=bogus")
             assert code == 401, code
             assert "rc_console=" not in (headers.get("Set-Cookie") or "")
+        finally:
+            srv.shutdown()
+
+
+def _launcher_page(d):
+    page = os.path.join(d, "console.html")
+    with open(page, "w") as fh:
+        fh.write("<!doctype html><title>launcher</title>__RC_OAUTH__")
+    return page
+
+
+def t_console_page_login_fallback_on_invalid_token():
+    # A human /console PAGE GET with a MISSING or INVALID token, and OAuth
+    # configured, must serve the launcher (Login with Discord) — NEVER a naked
+    # 401 JSON page. A stale cookie from another profile must not dead-end.
+    with tempfile.TemporaryDirectory() as d:
+        page = _launcher_page(d)
+        srv, get, _post = _cockpit_client(console_page_path=page,
+                                          discord_client_id="cid",
+                                          discord_client_secret="csec")
+        try:
+            for path in ("/console", "/console/health-monitor", "/console/cockpit",
+                         "/console/panel", "/console/race-control"):
+                code, headers, body = get(path, cookie="rc_console=someone.1.deadbeef")
+                assert code == 200, (path, code)
+                assert b"launcher" in body, path
+                # the bad token must NOT mint a session cookie
+                assert "rc_console=" not in (headers.get("Set-Cookie") or ""), path
+            # and with no token at all
+            code, _h, body = get("/console")
+            assert code == 200 and b"launcher" in body, code
+        finally:
+            srv.shutdown()
+
+
+def t_console_data_endpoint_still_401_on_invalid_token():
+    # Only human PAGE GETs fall back to the launcher; API/data/identity routes stay
+    # hard-gated (401) even with OAuth configured — no data leaks to a bad token.
+    with tempfile.TemporaryDirectory() as d:
+        page = _launcher_page(d)
+        srv, get, _post = _cockpit_client(console_page_path=page,
+                                          discord_client_id="cid",
+                                          discord_client_secret="csec")
+        try:
+            for path in ("/console/health-monitor/data", "/console/whoami"):
+                code, _h, _b = get(path, cookie="rc_console=someone.1.deadbeef")
+                assert code == 401, (path, code)
+        finally:
+            srv.shutdown()
+
+
+def t_console_page_401_without_oauth():
+    # No OAuth configured -> no login page exists, so an invalid token on a page GET
+    # stays 401 (signed links remain the only entry path on OAuth-off installs).
+    with tempfile.TemporaryDirectory() as d:
+        page = _launcher_page(d)
+        srv, get, _post = _cockpit_client(console_page_path=page)   # no discord_client_*
+        try:
+            code, _h, _b = get("/console", cookie="rc_console=someone.1.deadbeef")
+            assert code == 401, code
         finally:
             srv.shutdown()
 

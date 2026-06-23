@@ -517,6 +517,142 @@ def t_preview_feed_grab_failure_is_503():
         srv.shutdown(); m._obs_ws = old; m.grab_feed_frame = old_grab
 
 
+def t_aggregate_stream_not_active_is_red():
+    # Off-air only escalates once OBS has streamed at least once (stream_expected
+    # latch) — a live broadcast that drops off air pages.
+    h = m.aggregate_health({"obs_reachable": True, "stream_active": False,
+                            "stream_expected": True})
+    assert h["level"] == "red"
+    assert any("not streaming" in r.lower() or "off air" in r.lower() for r in h["reasons"])
+
+
+def t_aggregate_stream_not_active_pre_show_is_green():
+    # OBS reachable, not streaming, but never streamed this session (no latch) ->
+    # NO alarm, so a pre-show relay start never fires a CRITICAL ping.
+    assert m.aggregate_health({"obs_reachable": True, "stream_active": False})["level"] == "green"
+    assert m.aggregate_health({"obs_reachable": True, "stream_active": False,
+                               "stream_expected": False})["level"] == "green"
+
+
+def t_aggregate_stream_active_unknown_is_green():
+    # OBS reachable but stream_active not sampled (None) -> no alarm.
+    assert m.aggregate_health({"obs_reachable": True})["level"] == "green"
+    assert m.aggregate_health({"obs_reachable": True, "stream_active": None})["level"] == "green"
+    # OBS not reachable -> existing yellow path, stream_active ignored.
+    assert m.aggregate_health({"obs_reachable": False, "stream_active": False,
+                               "stream_expected": True})["level"] == "yellow"
+
+
+def t_aggregate_yellow_signals():
+    for key in ("stream_reconnecting", "funnel_down", "sheet_push_failing"):
+        h = m.aggregate_health({"obs_reachable": True, "stream_active": True, key: True})
+        assert h["level"] == "yellow", (key, h)
+    # observational signals never escalate
+    assert m.aggregate_health({"obs_reachable": True, "stream_active": True,
+                               "tailscale_up": False, "companion_ok": False})["level"] == "green"
+
+
+def t_parse_stream_quality():
+    assert m.parse_stream_quality("[cli][info] Opening stream: 720p (hls)") == "720p"
+    assert m.parse_stream_quality("[cli][info] Opening stream: source (hls)") == "source"
+    assert m.parse_stream_quality("[cli][info] Opening stream: 1080p60 (muxed-stream)") == "1080p60"
+    assert m.parse_stream_quality("[download] Written 5 MB") is None
+    assert m.parse_stream_quality("") is None
+
+
+def t_sample_connectivity_sets_state_and_expected():
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
+    # Monkeypatch the module-level references that _sample_connectivity uses.
+    orig_funnel = m.tailscale.funnel_on
+    orig_backend = m.tailscale.tailscale_backend
+    orig_reachable = m.companion_common.companion_reachable
+    try:
+        # Never-expected case: funnel down before ever seen up -> neutral (None).
+        r2 = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
+        m.tailscale.funnel_on = lambda *a, **k: False
+        m.tailscale.tailscale_backend = lambda *a, **k: ("ts", "Running", "100.64.0.1")
+        m.companion_common.companion_reachable = lambda *a, **k: True
+        r2._sample_connectivity()
+        assert r2.conn_state["funnel_ok"] is None    # neutral, not red
+        assert r2.funnel_expected is False
+
+        m.tailscale.funnel_on = lambda *a, **k: True
+        m.tailscale.tailscale_backend = lambda *a, **k: ("ts", "Running", "100.64.0.1")
+        m.companion_common.companion_reachable = lambda *a, **k: False
+        r._sample_connectivity()
+        assert r.conn_state["funnel_ok"] is True
+        assert r.conn_state["tailscale_up"] is True
+        assert r.conn_state["companion_ok"] is False
+        assert r.funnel_expected is True           # latched once seen up
+        # Funnel later down, but expected stays latched -> funnel_down derivable.
+        m.tailscale.funnel_on = lambda *a, **k: False
+        r._sample_connectivity()
+        assert r.conn_state["funnel_ok"] is False  # real regression: was expected
+        assert r.funnel_expected is True
+    finally:
+        m.tailscale.funnel_on = orig_funnel
+        m.tailscale.tailscale_backend = orig_backend
+        m.companion_common.companion_reachable = orig_reachable
+
+
+def _make_min_relay():
+    """Minimal Relay for snapshot/facts tests — two stints, temp log dir."""
+    return m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
+
+
+def t_health_snapshot_carries_new_fields():
+    relay = _make_min_relay()
+    relay.obs_stats = {"obs_cpu_pct": 10.0, "obs_fps": 60.0, "stream_active": True,
+                       "stream_reconnecting": False, "stream_congestion": 0.1,
+                       "stream_dropped_pct": 0.0, "stream_kbps": 6000.0,
+                       "obs_mem_mb": 900.0, "obs_disk_free_mb": 5000.0,
+                       "obs_render_skipped_pct": 0.0}
+    relay.conn_state = {"funnel_ok": True, "tailscale_up": True, "companion_ok": False}
+    relay.funnel_expected = True
+    relay.feeds["A"].quality = "720p"
+    snap = relay._health_snapshot(123.0)
+    assert snap["obs_cpu_pct"] == 10.0 and snap["stream_active"] == 1
+    assert snap["funnel_ok"] == 1 and snap["companion_ok"] == 0
+    assert snap["feed_a_quality"] == "720p"
+    # All COLUMNS keys present (record() tolerates missing, but emit them explicitly).
+    hs = m.health_store
+    for col in hs.COLUMNS:
+        if col not in ("kind",):
+            assert col in snap, col
+
+
+def t_health_facts_gate_funnel_and_push():
+    relay = _make_min_relay()
+    relay.obs_reachable = True
+    relay.obs_stats = {"stream_active": True, "stream_reconnecting": True}
+    relay.conn_state = {"funnel_ok": False, "tailscale_up": True, "companion_ok": True}
+    relay.funnel_expected = True                  # funnel was up, now down -> funnel_down
+    facts = relay._health_facts(1.0)
+    assert facts["stream_reconnecting"] is True
+    assert facts["funnel_down"] is True
+    # funnel never seen up -> not a fault
+    relay.funnel_expected = False
+    assert relay._health_facts(1.0)["funnel_down"] is False
+
+
+def t_health_facts_stream_expected_gates_off_air():
+    # _health_facts must propagate the stream_expected latch (off until OBS has
+    # streamed, then on). The aggregate LEVEL mapping is covered by the
+    # t_aggregate_stream_not_active_* tests with EXPLICIT facts — we don't assert it
+    # via _health_facts here, because _health_facts also samples ambient signals
+    # (tailscale_present etc.) that would make a level assertion env-dependent.
+    relay = _make_min_relay()
+    relay.obs_reachable = True
+    relay.obs_stats = {"stream_active": False}     # OBS reachable but not streaming
+    relay.stream_expected = False
+    facts = relay._health_facts(1.0)
+    assert facts["stream_expected"] is False
+    assert facts["stream_active"] is False
+    # once OBS has streamed, the latch flips the gate fact on
+    relay.stream_expected = True
+    assert relay._health_facts(1.0)["stream_expected"] is True
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

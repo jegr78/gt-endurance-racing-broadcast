@@ -206,14 +206,18 @@ def t_should_probe_obs_throttles_and_respects_inflight():
 
 
 class _FakeObs:
-    """Stand-in for the obs_ws module: probe() returns a canned (reachable, note)."""
-    def __init__(self, reachable, note):
-        self._result = (reachable, note)
+    """Stand-in for the obs_ws module: get_health_stats() returns
+    (reachable, stats, note). stats defaults to {} (no OBS metrics)."""
+    def __init__(self, reachable, note, stats=None):
+        self._result = (reachable, dict(stats or {}), note)
         self.calls = 0
 
-    def probe(self):
+    def get_health_stats(self):
         self.calls += 1
         return self._result
+
+    def stream_kbps(self, *args, **kwargs):
+        return None
 
 
 def t_status_obs_field_reports_probed_reachability():
@@ -255,6 +259,30 @@ def t_run_obs_probe_records_live_result_and_clears_inflight():
             assert r.obs_reachable is False
             assert r.obs_note == "OBS not running?"
             assert r._obs_probe_running is False
+    finally:
+        m._obs_ws = orig
+
+
+def t_run_obs_probe_latches_stream_expected():
+    orig = m._obs_ws
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
+            assert r.stream_expected is False
+            # OBS reachable but NOT streaming -> latch stays False (pre-show).
+            r._obs_probe_running = True
+            m._obs_ws = _FakeObs(True, "", {"stream_active": False})
+            r._run_obs_probe()
+            assert r.stream_expected is False
+            # OBS goes live -> latch sets True and stays True after it stops again.
+            r._obs_probe_running = True
+            m._obs_ws = _FakeObs(True, "", {"stream_active": True})
+            r._run_obs_probe()
+            assert r.stream_expected is True
+            r._obs_probe_running = True
+            m._obs_ws = _FakeObs(True, "", {"stream_active": False})
+            r._run_obs_probe()
+            assert r.stream_expected is True          # latched — survives going off air
     finally:
         m._obs_ws = orig
 

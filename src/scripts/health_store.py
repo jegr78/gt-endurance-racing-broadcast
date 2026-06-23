@@ -13,7 +13,7 @@ import math
 import sqlite3
 import time
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SAMPLE_INTERVAL_S = 30          # heartbeat tick = sample cadence
 LIVE_WINDOW_S = 900            # default range when no from/to given (15 min)
@@ -32,14 +32,28 @@ COLUMNS = (
     "cookies_present", "cookies_age_h", "cookies_stale",
     "timer_mode", "timer_push",
     "mode", "live_feed", "live_stint",
+    # v3: OBS stats + connectivity + feed quality (redaction-safe: no URLs)
+    "stream_active", "stream_reconnecting", "funnel_ok", "sheet_push_ok",
+    "tailscale_up", "companion_ok",
+    "stream_kbps", "stream_dropped_pct", "stream_congestion",
+    "obs_cpu_pct", "obs_mem_mb", "obs_fps", "obs_render_skipped_pct",
+    "obs_disk_free_mb",
+    "feed_a_quality", "feed_b_quality", "pov_quality",
 )
 
 BAND_FIELDS = ("health_level", "feed_a_state", "feed_b_state",
-               "pov_state", "obs_reachable", "cookies_stale", "timer_push")
-NUMERIC_FIELDS = ("source_last_ok_age_s", "cookies_age_h")
+               "pov_state", "obs_reachable", "cookies_stale", "timer_push",
+               "stream_active", "stream_reconnecting", "funnel_ok",
+               "sheet_push_ok", "tailscale_up", "companion_ok")
+NUMERIC_FIELDS = ("source_last_ok_age_s", "cookies_age_h",
+                  "stream_kbps", "stream_dropped_pct", "stream_congestion",
+                  "obs_cpu_pct", "obs_mem_mb", "obs_fps",
+                  "obs_render_skipped_pct", "obs_disk_free_mb")
 STATE_KEY_FIELDS = ("health_level", "feed_a_state", "feed_a_down",
                     "feed_b_state", "feed_b_down", "pov_state", "obs_reachable",
-                    "timer_push")
+                    "timer_push",
+                    "stream_active", "stream_reconnecting", "funnel_ok",
+                    "sheet_push_ok", "tailscale_up", "companion_ok")
 
 _CREATE = """
 CREATE TABLE IF NOT EXISTS samples (
@@ -52,10 +66,30 @@ CREATE TABLE IF NOT EXISTS samples (
     source_last_ok_age_s REAL, source_count INTEGER,
     cookies_present INTEGER, cookies_age_h REAL, cookies_stale INTEGER,
     timer_mode TEXT, timer_push TEXT,
-    mode TEXT, live_feed TEXT, live_stint INTEGER
+    mode TEXT, live_feed TEXT, live_stint INTEGER,
+    stream_active INTEGER, stream_reconnecting INTEGER,
+    funnel_ok INTEGER, sheet_push_ok INTEGER,
+    tailscale_up INTEGER, companion_ok INTEGER,
+    stream_kbps REAL, stream_dropped_pct REAL, stream_congestion REAL,
+    obs_cpu_pct REAL, obs_mem_mb REAL, obs_fps REAL,
+    obs_render_skipped_pct REAL, obs_disk_free_mb REAL,
+    feed_a_quality TEXT, feed_b_quality TEXT, pov_quality TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_samples_ts ON samples (ts);
 """
+
+# v3 columns, added via ALTER TABLE to pre-v3 DBs (fresh DBs get them from _CREATE).
+_V3_COLUMNS = (
+    ("stream_active", "INTEGER"), ("stream_reconnecting", "INTEGER"),
+    ("funnel_ok", "INTEGER"), ("sheet_push_ok", "INTEGER"),
+    ("tailscale_up", "INTEGER"), ("companion_ok", "INTEGER"),
+    ("stream_kbps", "REAL"), ("stream_dropped_pct", "REAL"),
+    ("stream_congestion", "REAL"), ("obs_cpu_pct", "REAL"),
+    ("obs_mem_mb", "REAL"), ("obs_fps", "REAL"),
+    ("obs_render_skipped_pct", "REAL"), ("obs_disk_free_mb", "REAL"),
+    ("feed_a_quality", "TEXT"), ("feed_b_quality", "TEXT"),
+    ("pov_quality", "TEXT"),
+)
 
 
 def open_db(path):
@@ -69,8 +103,13 @@ def open_db(path):
 
 
 def migrate(conn):
-    """Create the schema and stamp user_version. Idempotent."""
+    """Create the schema, add any missing v3 columns (lossless upgrade from v2),
+    and stamp user_version. Idempotent and version-agnostic."""
     conn.executescript(_CREATE)
+    have = {r["name"] for r in conn.execute("PRAGMA table_info(samples)").fetchall()}
+    for name, decl in _V3_COLUMNS:
+        if name not in have:
+            conn.execute(f"ALTER TABLE samples ADD COLUMN {name} {decl}")
     conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     conn.commit()
 

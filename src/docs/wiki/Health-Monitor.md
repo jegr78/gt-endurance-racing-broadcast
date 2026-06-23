@@ -33,26 +33,88 @@ A large green / yellow / red badge at the top of the page reflects the relay's
 ### Status-band timelines
 
 Horizontal bands show the health history for each subsystem across the selected
-time range. Each band is coloured green / yellow / red per sample period:
+time range. Each band is coloured green / yellow / red per sample period.
+
+The bands are grouped into three sections:
+
+#### Critical
+
+These bands can drive the aggregate health level to red. A problem here is always
+visible to the whole crew through the aggregate badge.
 
 | Band | What it tracks |
 |---|---|
-| **Overall** | Aggregate relay health (the badge above, over time) |
+| **Health** | Aggregate relay health (the badge above, over time) |
+| **Stream active** | Whether OBS is actively streaming to the broadcast platform. Red (and alerting) only once OBS has streamed at least once this session and then stops — so a live broadcast dropping off air pages, but starting the relay before you go live does not. |
+| **Reconnecting** | Whether the OBS output is in a reconnect loop. Yellow when reconnecting. |
+| **Funnel** | Whether Tailscale Funnel is up (required for `/console` to be reachable publicly). Red when expected but down. |
+| **Sheet push** | Whether the relay's last write to the Google Sheet webhook succeeded. Yellow on repeated failure. |
+
+#### Feeds
+
+| Band | What it tracks |
+|---|---|
 | **Feed A** | Whether Feed A was streaming or stalled |
 | **Feed B** | Whether Feed B was streaming or stalled |
 | **POV** | Whether the POV feed was active |
-| **OBS** | Whether the relay could reach OBS (obs-websocket reachability) |
+
+#### Connectivity
+
+These are **observational** — a problem here turns yellow and is noted, but it does not
+necessarily drive the aggregate to red on its own.
+
+| Band | What it tracks |
+|---|---|
+| **OBS** | Whether the relay could reach OBS via obs-websocket |
+| **Tailscale** | Whether this machine's Tailscale node is up |
+| **Companion** | Whether Bitfocus Companion is reachable on its control port |
 | **Cookies** | YouTube-cookie freshness (approaching expiry = yellow; expired = red) |
+| **Timer sync** | Whether the race-timer push to the Sheet is succeeding |
+
+> **Critical vs. observational:** Critical bands (`stream_active`, `funnel_ok`,
+> `sheet_push_ok`, `stream_reconnecting`) contribute to the aggregate health level when
+> they fault. Connectivity bands (`tailscale_up`, `companion_ok`, `obs_reachable`) are
+> informational — they record what happened without necessarily escalating the aggregate.
+>
+> **Off-air alarm latches on the first stream:** the off-air CRITICAL only fires after
+> OBS has gone live at least once this relay session and *then* stops streaming — so a
+> live broadcast that drops off air pages the crew, while simply starting the relay
+> before the show never sends a confusing pre-show ping. (The **Stream active** band
+> itself still shows the honest current state; it is the aggregate health + Discord
+> alert that wait for the latch.)
 
 ### Numeric line charts
 
-Three line charts plot scalar metrics over time:
+Line charts plot scalar metrics over time, grouped by subsystem:
+
+#### OBS Output
+
+| Chart | What it tracks |
+|---|---|
+| **Upstream kbps** | Outgoing stream bitrate reported by OBS |
+| **Dropped frames %** | Percentage of frames dropped by the OBS encoder or network |
+| **Congestion** | OBS output congestion score (0–1; higher = more back-pressure) |
+
+#### OBS Resources
+
+| Chart | What it tracks |
+|---|---|
+| **OBS CPU %** | CPU usage of the OBS process |
+| **OBS memory (MB)** | OBS process resident memory in megabytes |
+| **OBS FPS** | Rendered frames per second reported by OBS |
+| **Render skipped %** | Percentage of frames skipped by the OBS renderer |
+| **Disk free (MB)** | Free disk space on the OBS recording drive |
+
+#### Legacy series (always present)
 
 | Chart | What it tracks |
 |---|---|
 | **Sheet source age** | Seconds since the schedule/overlay sheet was last successfully read |
 | **Cookie age** | Age of the YouTube cookies file in seconds |
-| **Timer remaining** | Race-timer remaining time in seconds (sparse — populated when the timer is running) |
+
+> **Synthetic / no-OBS mode:** when OBS is not reachable (obs-websocket unavailable),
+> the OBS Output and OBS Resources series are empty. The charts render but show no data
+> points — that is correct and expected before an event when OBS is not yet open.
 
 ### Incident timeline
 

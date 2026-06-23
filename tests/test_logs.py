@@ -192,6 +192,19 @@ def t_close_logging_releases_handlers(tmp):
     assert not any(getattr(h, "_racecast", False) for h in log.handlers)
 
 
+def t_pump_subprocess_on_line_hook():
+    import io, logging
+    seen = []
+    stream = io.StringIO("a\nb\n")
+    logger = logging.getLogger("t.pump.hook"); logger.addHandler(logging.NullHandler())
+    lg.pump_subprocess(stream, logger, "streamlink", on_line=seen.append)
+    assert seen == ["a", "b"]
+    # A failing callback never breaks the pump.
+    stream2 = io.StringIO("x\n")
+    def boom(_): raise ValueError("nope")
+    lg.pump_subprocess(stream2, logger, "streamlink", on_line=boom)  # no raise
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp:
         for name, fn in sorted(globals().items()):

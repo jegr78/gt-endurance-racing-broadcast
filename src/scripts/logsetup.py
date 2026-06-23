@@ -143,14 +143,20 @@ def tag_line(source, line):
     return f"[{source}] {line.rstrip(chr(10)).rstrip(chr(13))}"
 
 
-def pump_subprocess(stream, logger, tag):
+def pump_subprocess(stream, logger, tag, on_line=None):
     """Read text lines from a subprocess pipe (stream) and log each at a classified
-    level, prefixed `[tag]`. Runs to EOF; swallows read errors. Designed to run in a
-    daemon thread so it never blocks daemon shutdown."""
+    level, prefixed `[tag]`. When on_line is given, call it per (stripped) line for
+    side-channel parsing (e.g. feed quality) — a failing callback never breaks the
+    pump. Runs to EOF; swallows read errors. Designed for a daemon thread."""
     try:
         for raw in iter(stream.readline, ""):   # sentinel "" stops at EOF
             line = raw.rstrip("\n").rstrip("\r")
             logger.log(classify_subproc_line(line), "[%s] %s", tag, line)
+            if on_line is not None:
+                try:
+                    on_line(line)
+                except Exception:                # noqa: BLE001 — observer is best-effort
+                    pass
     except (ValueError, OSError):
         pass  # pipe closed mid-read — end the thread, never the daemon
 

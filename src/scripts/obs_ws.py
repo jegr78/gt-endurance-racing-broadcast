@@ -401,6 +401,71 @@ def _connect(host, port, password, timeout):
         return None, str(exc) or exc.__class__.__name__
 
 
+def _pct(part, total):
+    """skipped/total as a rounded percentage, or None when either is missing or
+    total is zero (avoid a div-by-zero and a meaningless 0/0)."""
+    if part is None or not total:
+        return None
+    return round(part / total * 100.0, 2)
+
+
+def stream_kbps(prev_bytes, prev_ts, bytes_, ts, active):
+    """Upstream kbps from successive outputBytes samples. None resets the line on
+    stream stop/restart so no ghost spike appears."""
+    if not active or bytes_ is None or prev_bytes is None or prev_ts is None:
+        return None
+    dt = ts - prev_ts
+    if dt <= 0 or bytes_ < prev_bytes:
+        return None
+    return round((bytes_ - prev_bytes) * 8 / 1000.0 / dt, 1)
+
+
+def parse_obs_stats(payload):
+    """Flatten a GetStats response into the health field names. Missing keys -> None."""
+    p = payload or {}
+    return {
+        "obs_cpu_pct": p.get("cpuUsage"),
+        "obs_mem_mb": p.get("memoryUsage"),
+        "obs_disk_free_mb": p.get("availableDiskSpace"),
+        "obs_fps": p.get("activeFps"),
+        "obs_render_skipped_pct": _pct(p.get("renderSkippedFrames"),
+                                       p.get("renderTotalFrames")),
+    }
+
+
+def parse_stream_status(payload):
+    """Flatten a GetStreamStatus response. outputBytes is returned raw (the caller
+    derives kbps from successive samples); missing keys -> None."""
+    p = payload or {}
+    active = p.get("outputActive")
+    recon = p.get("outputReconnecting")
+    return {
+        "stream_active": None if active is None else bool(active),
+        "stream_reconnecting": None if recon is None else bool(recon),
+        "stream_congestion": p.get("outputCongestion"),
+        "stream_dropped_pct": _pct(p.get("outputSkippedFrames"),
+                                   p.get("outputTotalFrames")),
+        "output_bytes": p.get("outputBytes"),
+    }
+
+
+def get_health_stats(host="127.0.0.1", port=None, password=None, timeout=2.0):
+    """One obs-websocket session -> (reachable, stats, note). `stats` is the merged
+    parse_obs_stats + parse_stream_status dict (empty {} when the requests fail but
+    the session opened). Best-effort: never raises (same contract as probe())."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return False, {}, note
+    try:
+        stats = parse_obs_stats(session.request("GetStats", {}))
+        stats.update(parse_stream_status(session.request("GetStreamStatus", {})))
+        return True, stats, ""
+    except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        return True, {}, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
 def probe(host="127.0.0.1", port=None, password=None, timeout=2.0):
     """Lightweight OBS reachability check used by the relay's /status: open an
     obs-websocket session (handshake + auth) and close it at once, touching

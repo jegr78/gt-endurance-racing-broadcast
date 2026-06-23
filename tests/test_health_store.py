@@ -85,7 +85,7 @@ def t_query_range_filters_and_orders():
 def t_schema_has_no_url_columns():
     # Redaction by construction: a stream URL / sheet_id must never be storable.
     cols = " ".join(hs.COLUMNS).lower()
-    for forbidden in ("url", "channel", "sheet", "http"):
+    for forbidden in ("url", "channel", "sheet_id", "http"):
         assert forbidden not in cols, forbidden
 
 
@@ -160,7 +160,7 @@ def t_numeric_series_drops_none_and_splits_t_v():
                _snap(ts=30.0) | {"cookies_age_h": 4.0}]
     series = hs.numeric_series(samples)
     assert set(series) == set(hs.NUMERIC_FIELDS)
-    assert set(hs.NUMERIC_FIELDS) == {"source_last_ok_age_s", "cookies_age_h"}
+    assert {"source_last_ok_age_s", "cookies_age_h"}.issubset(set(hs.NUMERIC_FIELDS))
     assert series["cookies_age_h"] == {"t": [30.0], "v": [4.0]}   # None dropped
     assert series["source_last_ok_age_s"]["t"] == [0.0, 30.0]
 
@@ -223,6 +223,70 @@ def t_import_skips_malformed_lines():
             assert n == 1
         finally:
             b.close()
+
+
+def t_migrate_v2_to_v3_is_lossless():
+    import tempfile, os, sqlite3
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "h.db")
+    # Build a v2 table by hand (old column set + user_version=2), insert one row.
+    c = sqlite3.connect(path)
+    try:
+        c.executescript(
+            "CREATE TABLE samples (ts REAL NOT NULL, kind TEXT NOT NULL, "
+            "health_level TEXT, health_reasons TEXT, feed_a_state TEXT, "
+            "feed_a_down INTEGER, feed_a_stint INTEGER, feed_b_state TEXT, "
+            "feed_b_down INTEGER, feed_b_stint INTEGER, pov_state TEXT, "
+            "obs_reachable INTEGER, source_last_ok_age_s REAL, source_count INTEGER, "
+            "cookies_present INTEGER, cookies_age_h REAL, cookies_stale INTEGER, "
+            "timer_mode TEXT, timer_push TEXT, mode TEXT, live_feed TEXT, "
+            "live_stint INTEGER);")
+        c.execute("PRAGMA user_version=2")
+        c.execute("INSERT INTO samples (ts, kind, health_level) VALUES (?,?,?)",
+                  (1000.0, "tick", "green"))
+        c.commit()
+    finally:
+        c.close()
+    # Migrate via the real loader and assert the upgrade is lossless.
+    conn = hs.open_db(path)
+    try:
+        hs.migrate(conn)
+        ver = conn.execute("PRAGMA user_version").fetchone()[0]
+        assert ver == 3, ver
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(samples)").fetchall()}
+        for f in ("stream_active", "funnel_ok", "stream_kbps", "obs_cpu_pct",
+                  "feed_a_quality", "pov_quality"):
+            assert f in cols, f
+        rows = conn.execute("SELECT ts, health_level, stream_active FROM samples").fetchall()
+        assert rows[0][0] == 1000.0 and rows[0][1] == "green" and rows[0][2] is None
+    finally:
+        conn.close()
+
+
+def t_new_fields_round_trip():
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    conn = hs.open_db(os.path.join(d, "h.db"))
+    try:
+        hs.migrate(conn)
+        snap = {"ts": 5.0, "health_level": "green", "stream_active": 1,
+                "stream_reconnecting": 0, "funnel_ok": 1, "sheet_push_ok": 0,
+                "tailscale_up": 1, "companion_ok": 0, "stream_kbps": 6200.0,
+                "stream_dropped_pct": 0.5, "stream_congestion": 0.1,
+                "obs_cpu_pct": 12.3, "obs_mem_mb": 900.0, "obs_fps": 60.0,
+                "obs_render_skipped_pct": 0.0, "obs_disk_free_mb": 50000.0,
+                "feed_a_quality": "720p", "feed_b_quality": "1080p",
+                "pov_quality": "source"}
+        hs.record(conn, snap, "tick")
+        got = hs.query_range(conn, 0, 10)[0]
+        assert got["stream_active"] == 1 and got["feed_a_quality"] == "720p"
+        assert got["stream_kbps"] == 6200.0 and got["sheet_push_ok"] == 0
+        bands = hs.derive_bands([got])
+        assert "funnel_ok" in bands and "companion_ok" in bands
+        series = hs.numeric_series([got])
+        assert "stream_kbps" in series and "obs_cpu_pct" in series
+    finally:
+        conn.close()
 
 
 m = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))

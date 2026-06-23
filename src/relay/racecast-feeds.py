@@ -186,25 +186,49 @@ def aggregate_health(facts):
     unit-tested. `facts` keys: feeds_down (list of feed names with a lost live
     serve), feeds_connecting_long (list connecting past HEALTH_CONNECTING_S, not
     down), cookies_stale (bool), obs_reachable (True/False/None — None = not yet
-    probed, never an alarm), tailscale_present (bool).
+    probed, never an alarm), tailscale_present (bool),
+    stream_active (True/False/None — OBS streaming state; None = not yet known),
+    stream_expected (bool — OBS has streamed at least once this session; the
+        off-air alarm latches on this so a pre-show relay start never pings),
+    stream_reconnecting (bool — OBS upstream unstable),
+    funnel_down (bool — Funnel was previously seen up but is now down),
+    sheet_push_failing (bool — Sheet webhook returning errors).
 
-    red  = any feed down (a live picture was lost).
+    red  = any feed down (a live picture was lost); or obs_reachable truthy and
+           stream_active is False AND stream_expected (OBS connected and has
+           streamed before but is not streaming now — a live broadcast dropped
+           off air). The stream_expected latch means starting the relay pre-show,
+           before OBS ever goes live, never alarms.
     yellow = OBS WebSocket unreachable · cookies stale · Tailscale down · a feed
-             stuck connecting. A red result still lists the yellow issues under it.
+             stuck connecting · stream_reconnecting · funnel_down ·
+             sheet_push_failing. A red result still lists the yellow issues under it.
     green = none of the above."""
-    reasons, yellow = [], []
+    reasons, red, yellow = [], [], []
     for name in facts.get("feeds_down") or []:
-        reasons.append(f"Feed {name} down — lost the live stream")
+        red.append(f"Feed {name} down — lost the live stream")
+    # OBS reachable but not streaming = off air — but only AFTER OBS has streamed
+    # at least once this session (stream_expected latch), so starting the relay
+    # pre-show, before OBS ever goes live, never fires a CRITICAL ping.
+    if (facts.get("obs_reachable") and facts.get("stream_active") is False
+            and facts.get("stream_expected")):
+        red.append("OBS is not streaming — broadcast is off air")
     if facts.get("obs_reachable") is False:
         yellow.append("OBS WebSocket unreachable — no auto-cut")
+    if facts.get("obs_reachable") and facts.get("stream_reconnecting"):
+        yellow.append("OBS stream reconnecting — upstream unstable")
+    if facts.get("funnel_down"):
+        yellow.append("Funnel down — talent cannot reach the cockpit")
+    if facts.get("sheet_push_failing"):
+        yellow.append("Sheet webhook failing — panel writes are not saved")
     if facts.get("cookies_stale"):
         yellow.append("YouTube cookies stale — handovers may fail")
     if not facts.get("tailscale_present", True):
         yellow.append("Tailscale not connected — directors cannot reach the panel")
     for name in facts.get("feeds_connecting_long") or []:
         yellow.append(f"Feed {name} stuck connecting")
+    reasons.extend(red)
     reasons.extend(yellow)
-    level = "red" if facts.get("feeds_down") else ("yellow" if yellow else "green")
+    level = "red" if red else ("yellow" if yellow else "green")
     return {"level": level, "reasons": reasons}
 
 
@@ -2685,6 +2709,18 @@ class SetupControl:
                 "push": self.push_status, "last_error": self.last_error}
 
 
+_STREAM_QUALITY_RE = re.compile(r"Opening stream:\s+(\S+)")
+
+
+def parse_stream_quality(line):
+    """The quality token from a streamlink 'Opening stream: <quality> (...)' line,
+    else None. Pure → unit-tested."""
+    if not line:
+        return None
+    m = _STREAM_QUALITY_RE.search(line)
+    return m.group(1) if m else None
+
+
 class Feed:
     def __init__(self, name, port, idx, provider, logdir, cookies=None, fmt=YTDLP_FORMAT,
                  cookie_dir=None):
@@ -2723,6 +2759,7 @@ class Feed:
         # (demo/startup) is classified "connecting", not a lost live stream.
         self.dropped_since = None
         self.served_ok = False
+        self.quality = None               # last streamlink-selected quality (e.g. "720p")
 
     def current_channel(self):
         if self.paused:
@@ -2761,6 +2798,11 @@ class Feed:
         self.dropped = False
         self.dropped_since = None
         self.served_ok = False
+
+    def _observe_streamlink_line(self, line):
+        q = parse_stream_quality(line)
+        if q:
+            self.quality = q
 
     def set_index(self, new_idx):
         sched = self.provider()
@@ -2814,7 +2856,9 @@ class Feed:
                     env=external_tool_env(), **_no_window_kwargs())
                 pump = threading.Thread(
                     target=logsetup.pump_subprocess,
-                    args=(self.proc.stdout, self.log, "streamlink"), daemon=True)
+                    args=(self.proc.stdout, self.log, "streamlink"),
+                    kwargs={"on_line": self._observe_streamlink_line},
+                    daemon=True)
                 pump.start()
                 if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
                     self.last_error = None
@@ -2895,6 +2939,14 @@ class Relay:
         self._obs_probe_ts = 0.0      # time.time() of the last reachability probe
         self._obs_probe_running = False
         self._obs_lock = threading.Lock()
+        self.obs_stats = {}               # last redacted OBS GetStats/GetStreamStatus
+        self._obs_last_bytes = None       # for stream_kbps derivation
+        self._obs_last_bytes_ts = None
+        self.conn_state = {"funnel_ok": None, "tailscale_up": None,
+                           "companion_ok": None}
+        self.funnel_expected = False      # latched True once the Funnel is seen up
+        self.stream_expected = False      # latched True once OBS is seen streaming
+                                          # (off-air alarm only fires after this)
         # POV is a THIRD, independent feed — not part of the A/B index. Starts
         # paused (off) until the Director calls /pov/reload.
         self.pov_source = pov_source
@@ -2964,9 +3016,24 @@ class Relay:
             ts_present = detect_tailscale_ip() is not None
         except Exception:                                # noqa: BLE001 — best effort
             ts_present = True
+        st = self.obs_stats or {}
+        cs = self.conn_state or {}
+        funnel_down = bool(self.funnel_expected) and (cs.get("funnel_ok") is False)
+        tpush = None
+        tstore = getattr(self, "timer_store", None)
+        if tstore is not None:
+            try:
+                tpush = tstore.summary().get("push")
+            except Exception:                            # noqa: BLE001 — best-effort
+                tpush = None
         return {"feeds_down": feeds_down, "feeds_connecting_long": connecting_long,
                 "cookies_stale": cookie_health(self.cookies, now=now)["stale"],
-                "obs_reachable": self.obs_reachable, "tailscale_present": ts_present}
+                "obs_reachable": self.obs_reachable, "tailscale_present": ts_present,
+                "stream_active": st.get("stream_active"),
+                "stream_expected": bool(self.stream_expected),
+                "stream_reconnecting": st.get("stream_reconnecting"),
+                "funnel_down": funnel_down,
+                "sheet_push_failing": (tpush == "failed")}
 
     def _refresh_health(self, now):
         """Recompute + store the DISPLAYED health (level/reasons/since). Does NOT
@@ -2998,6 +3065,15 @@ class Relay:
                 tmode, tpush = summ.get("mode"), summ.get("push")
             except Exception:  # noqa: BLE001 — sampling is best-effort
                 pass
+        st = self.obs_stats or {}
+        cs = self.conn_state or {}
+
+        def _b(v):
+            return None if v is None else (1 if v else 0)
+
+        def _q(f):
+            return getattr(f, "quality", None)
+
         return {"ts": now,
                 "health_level": self.health_level, "health_reasons": self.health_reasons,
                 "feed_a_state": a_state, "feed_a_down": a_down, "feed_a_stint": a_stint,
@@ -3013,7 +3089,28 @@ class Relay:
                 "cookies_stale": 1 if ch.get("stale") else 0,
                 "timer_mode": tmode, "timer_push": tpush,
                 "mode": self.mode,
-                "live_feed": live, "live_stint": self.feeds[live].idx + 1}
+                "live_feed": live, "live_stint": self.feeds[live].idx + 1,
+                # v3 OBS stats (already redacted: obs_stats never carries output_bytes)
+                "stream_active": _b(st.get("stream_active")),
+                "stream_reconnecting": _b(st.get("stream_reconnecting")),
+                "stream_kbps": st.get("stream_kbps"),
+                "stream_dropped_pct": st.get("stream_dropped_pct"),
+                "stream_congestion": st.get("stream_congestion"),
+                "obs_cpu_pct": st.get("obs_cpu_pct"),
+                "obs_mem_mb": st.get("obs_mem_mb"),
+                "obs_fps": st.get("obs_fps"),
+                "obs_render_skipped_pct": st.get("obs_render_skipped_pct"),
+                "obs_disk_free_mb": st.get("obs_disk_free_mb"),
+                # v3 connectivity (sheet_push_ok derived from the timer push status)
+                "funnel_ok": _b(cs.get("funnel_ok")),
+                "tailscale_up": _b(cs.get("tailscale_up")),
+                "companion_ok": _b(cs.get("companion_ok")),
+                "sheet_push_ok": (None if tpush in (None, "never", "disabled")
+                                  else (1 if tpush == "ok" else 0)),
+                # v3 feed quality
+                "feed_a_quality": _q(self.feeds["A"]),
+                "feed_b_quality": _q(self.feeds["B"]),
+                "pov_quality": _q(self.pov) if self.pov else None}
 
     def _send_health_webhook(self, level, reasons, prev):
         """POST a Discord health alert. Fully best-effort: no URL or any failure
@@ -3041,6 +3138,7 @@ class Relay:
         while not self._hb_stop.is_set():
             now = time.time()
             self._maybe_probe_obs(now)
+            self._sample_connectivity()
             level = self._refresh_health(now)["level"]
             if self.health_store is not None:
                 try:
@@ -3188,13 +3286,68 @@ class Relay:
         return t
 
     def _run_obs_probe(self):
-        """Body of the reachability probe (own method so it is testable
-        synchronously). Records the live result; clears the in-flight flag."""
-        reachable, note = _obs_ws.probe()
-        with self._obs_lock:
-            self.obs_reachable = reachable
-            self.obs_note = note or None
-            self._obs_probe_running = False
+        """Body of the OBS probe (own method so it is testable synchronously).
+        Fetches reachability + GetStats/GetStreamStatus in one session, derives the
+        upstream kbps, and stores a REDACTED stats dict (never output_bytes)."""
+        if _obs_ws is None:
+            with self._obs_lock:
+                self.obs_reachable = False
+                self.obs_note = "obs_ws unavailable"
+                self._obs_probe_running = False
+                self.obs_stats = {}
+            return
+        now = time.time()
+        try:
+            reachable, stats, note = _obs_ws.get_health_stats()
+            kbps = _obs_ws.stream_kbps(self._obs_last_bytes, self._obs_last_bytes_ts,
+                                       stats.get("output_bytes"), now,
+                                       stats.get("stream_active"))
+            with self._obs_lock:
+                self.obs_reachable = reachable
+                self.obs_note = note or None
+                self._obs_probe_running = False
+                self._obs_last_bytes = stats.get("output_bytes")
+                self._obs_last_bytes_ts = now
+                redacted = {k: v for k, v in stats.items() if k != "output_bytes"}
+                redacted["stream_kbps"] = kbps
+                self.obs_stats = redacted
+                if stats.get("stream_active"):       # latch once OBS goes live
+                    self.stream_expected = True
+        except Exception:                                # noqa: BLE001 — best-effort
+            with self._obs_lock:
+                self._obs_probe_running = False
+
+    def _sample_connectivity(self):
+        """Sample Funnel/Tailscale/Companion reachability into self.conn_state and
+        latch funnel_expected. Best-effort: each probe defaults to None on failure."""
+        try:
+            funnel = tailscale.funnel_on("/console")
+        except Exception:                                # noqa: BLE001 — best-effort
+            funnel = None
+        try:
+            ts_state = tailscale.tailscale_backend()[1]
+            ts_up = (ts_state == "Running") if ts_state is not None else None
+        except Exception:                                # noqa: BLE001
+            ts_up = None
+        try:
+            comp_port = int(os.environ.get("RACECAST_COMPANION_PORT")
+                            or companion_common.COMPANION_DEFAULT_ADMIN_PORT)
+            comp = companion_common.companion_reachable("127.0.0.1", comp_port)
+        except Exception:                                # noqa: BLE001
+            comp = None
+        if funnel:
+            self.funnel_expected = True
+        # Tri-state: True = up; False = down AND was previously expected (real
+        # regression); None = down/absent but never seen up (neutral — renders
+        # grey in the health band, not red).
+        if funnel:
+            funnel_ok = True
+        elif self.funnel_expected:
+            funnel_ok = False
+        else:
+            funnel_ok = None
+        self.conn_state = {"funnel_ok": funnel_ok, "tailscale_up": ts_up,
+                           "companion_ok": comp}
 
     def next_auto(self):
         self.source.refresh(timeout=6)               # fresh sheet data at handover (bounded wait)
@@ -3317,6 +3470,13 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
         if _benign_client_disconnect(sys.exc_info()[1]):
             return                       # client went away — nothing to report
         super().handle_error(request, client_address)
+
+
+# Human-facing /console PAGE routes (segment tuples, sans the leading "console").
+# A GET to one of these with a missing/invalid token, when OAuth is configured,
+# serves the launcher (Login with Discord) instead of a naked 401 JSON page.
+_CONSOLE_PAGE_GETS = frozenset({(), ("cockpit",), ("panel",),
+                                ("health-monitor",), ("race-control",), ("buttons",)})
 
 
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
@@ -3739,20 +3899,28 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             if qs.get("t"):
                 return qs["t"][0]
             return console_auth.parse_cookie_token(self.headers.get("Cookie"))
+        def _console_subject(self):
+            """Verify the presented token -> streamer_key, or None. Sends nothing
+            (the caller decides whether to deny or serve a login page)."""
+            versions = (console_admin.load_versions(console_versions_path)
+                        if console_versions_path else {})
+            return console_auth.verify_token(console_secret, self._cockpit_token(),
+                                             versions)
+
+        def _console_deny(self):
+            """Send the rate-limited 401/429 for an unauthenticated /console request."""
+            client = self.client_address[0] if self.client_address else "?"
+            if not _console_authfail_rl.allow(client):
+                self._send({"error": "rate limited"}, 429)
+            else:
+                self._send({"error": "unauthorized"}, 401)
+
         def _console_auth(self):
             """Return the authed streamer_key, or None after sending 401/429.
             Applies a per-client failure rate limit. Caller must return on None."""
-            versions = (console_admin.load_versions(console_versions_path)
-                        if console_versions_path else {})
-            me = console_auth.verify_token(console_secret, self._cockpit_token(),
-                                           versions)
+            me = self._console_subject()
             if me is None:
-                client = self.client_address[0] if self.client_address else "?"
-                if not _console_authfail_rl.allow(client):
-                    self._send({"error": "rate limited"}, 429)
-                else:
-                    self._send({"error": "unauthorized"}, 401)
-                return None
+                self._console_deny()
             return me
         def _console_roles(self, subject):
             """Resolve a verified subject to its capability set from the live
@@ -3783,13 +3951,21 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 return self._oauth_login()
             if sub == ["oauth", "callback"]:
                 return self._oauth_callback()
-            # The launcher root is auth-optional when OAuth is configured so an
-            # unauthenticated visitor can see the Login with Discord button.
-            if sub == [] and bool(discord_client_id and discord_client_secret) and self._cockpit_token() is None:
-                self._send_page(console_page_path, "/console")
-                return None
-            subject = self._console_auth()        # identity only; sends 401/429 on failure
+            # Authenticate (verify only — no response sent yet).
+            subject = self._console_subject()
             if subject is None:
+                # Human navigation to a console PAGE (launcher / cockpit / panel /
+                # health-monitor / race-control / buttons) with a MISSING OR INVALID
+                # token, and OAuth configured: serve the launcher so the visitor sees
+                # "Login with Discord" — NEVER a naked 401 JSON page. A stale cookie
+                # from another profile, or a revoked/expired token, no longer
+                # dead-ends; the page itself degrades to the login button on whoami.
+                if (bool(discord_client_id and discord_client_secret)
+                        and method == "GET" and tuple(sub) in _CONSOLE_PAGE_GETS):
+                    self._send_page(console_page_path, "/console")
+                    return None
+                # API calls, non-GET, or OAuth-off installs: the rate-limited 401.
+                self._console_deny()
                 return None
             roles = self._console_roles(subject)
             # Step-up secret header.
@@ -3978,12 +4154,16 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             """Allowlist of the live health fields — NEVER the feed/pov stream URLs
             that relay.status() carries (redaction boundary)."""
             full = relay.status()
-            feeds = {k: {"state": v.get("state"), "down": v.get("down"),
-                         "stint": v.get("stint"), "state_age_s": v.get("state_age_s")}
-                     for k, v in (full.get("feeds") or {}).items()}
+            feeds = {}
+            for k, v in (full.get("feeds") or {}).items():
+                q = getattr(relay.feeds.get(k), "quality", None) if relay.feeds.get(k) else None
+                feeds[k] = {"state": v.get("state"), "down": v.get("down"),
+                            "stint": v.get("stint"), "state_age_s": v.get("state_age_s"),
+                            "quality": q}
             pov = full.get("pov")
             pov_red = None if not pov else {"state": pov.get("state"),
-                                            "down": pov.get("down"), "shown": pov.get("shown")}
+                                            "down": pov.get("down"), "shown": pov.get("shown"),
+                                            "quality": getattr(relay.pov, "quality", None)}
             return {"health": full.get("health"), "feeds": feeds, "pov": pov_red,
                     "obs": full.get("obs"), "source": full.get("source"),
                     "cookies_health": full.get("cookies_health"),

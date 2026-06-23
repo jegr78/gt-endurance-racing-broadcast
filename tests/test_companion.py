@@ -133,6 +133,21 @@ def t_parse_running():
     assert cc.parse_running("darwin", 1, "") is False
 
 
+# --- companion_reachable: TCP health probe ------------------------------------
+def t_companion_reachable():
+    import socket
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+    try:
+        assert cc.companion_reachable("127.0.0.1", port, 1.0) is True
+    finally:
+        srv.close()
+    # Closed port -> False (no exception).
+    assert cc.companion_reachable("127.0.0.1", port, 0.5) is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
