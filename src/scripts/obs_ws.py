@@ -409,6 +409,17 @@ def _pct(part, total):
     return round(part / total * 100.0, 2)
 
 
+def stream_kbps(prev_bytes, prev_ts, bytes_, ts, active):
+    """Upstream kbps from successive outputBytes samples. None resets the line on
+    stream stop/restart so no ghost spike appears."""
+    if not active or bytes_ is None or prev_bytes is None or prev_ts is None:
+        return None
+    dt = ts - prev_ts
+    if dt <= 0 or bytes_ < prev_bytes:
+        return None
+    return round((bytes_ - prev_bytes) * 8 / 1000.0 / dt, 1)
+
+
 def parse_obs_stats(payload):
     """Flatten a GetStats response into the health field names. Missing keys -> None."""
     p = payload or {}

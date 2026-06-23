@@ -918,6 +918,15 @@ def t_get_health_stats_merges_stats_and_stream_status():
     assert ("close", {}) in sess.sent
 
 
+def t_stream_kbps():
+    # 125000 bytes over 1 s = 1000 kbps.
+    assert m.stream_kbps(0, 100.0, 125000, 101.0, True) == 1000.0
+    assert m.stream_kbps(None, None, 125000, 101.0, True) is None   # first sample
+    assert m.stream_kbps(0, 100.0, 125000, 101.0, False) is None    # not streaming
+    assert m.stream_kbps(200000, 100.0, 1000, 101.0, True) is None  # counter reset
+    assert m.stream_kbps(0, 101.0, 125000, 101.0, True) is None     # dt == 0
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
