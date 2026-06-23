@@ -484,6 +484,10 @@ def resolve_graphic(graphics_dir, name):
 # Identity allow-list: only these filenames resolve, and the Content-Type is the
 # constant map value (never request-derived) — same model as ASSET_CTYPES / FONT_CTYPES.
 UPLOT_CTYPES = {"uPlot.iife.min.js": "application/javascript", "uPlot.min.css": "text/css"}
+# Identity whitelist (same role as FONT_CTYPES_OUT): the handler re-derives the
+# Content-Type header value from this constant map, so a request-derived string
+# can never reach send_header() (defense vs. HTTP response splitting).
+UPLOT_CTYPES_OUT = {ctype: ctype for ctype in UPLOT_CTYPES.values()}
 
 
 def resolve_uplot_asset(uplot_dir, name):
@@ -4242,6 +4246,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if resolved is None:
                         return self._send({"error": "not found"}, 404)
                     full, ctype = resolved
+                    # Header value comes from the UPLOT_CTYPES_OUT constant, never
+                    # from the request-derived tuple (defense vs. header injection)
+                    # — mirrors _send_asset / _send_font.
+                    ctype = UPLOT_CTYPES_OUT.get(ctype)
+                    if not ctype:
+                        return self._send({"error": "not found"}, 404)
                     try:
                         with open(full, "rb") as fh:
                             data = fh.read()
