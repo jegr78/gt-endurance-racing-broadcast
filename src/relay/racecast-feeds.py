@@ -87,6 +87,9 @@ except Exception:                                # noqa: BLE001 — reflection i
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
 import cue_admin   # director text-cue channel (#243)
 import health_store  # health-history SQLite store (task 7; src/scripts on sys.path)
+_HEALTH_CONST = health_store  # stable module alias: make_handler's `health_store`
+# PARAMETER shadows the module name inside its closure, so the constants
+# (DEFAULT_MAX_POINTS / LIVE_WINDOW_S) are reached via this un-shadowed alias.
 import console_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
 import console_admin  # talent-cockpit revocation version store (#191)
 import discord_oauth  # Discord OAuth2 helpers for /console/login
@@ -3281,7 +3284,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  console_versions_path=None,
                  submission_store=None, event_store=None, crew_source=None,
                  console_page_path=None, companion_url=None, logo_path=None,
-                 buttons_page_path=None, race_control_page_path=None):
+                 buttons_page_path=None, race_control_page_path=None,
+                 health_store=None, health_monitor_page_path=None, uplot_dir=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -3291,6 +3295,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
     # out), and the 128-bit HMAC signature makes brute force infeasible regardless
     # — this is pure defense-in-depth. X-Forwarded-For is deliberately NOT trusted
     # for the key (spoofable over the public ingress, which would weaken it).
+    # Wire the health store onto the relay so the payload builders below read it
+    # via relay.health_store (the canonical attribute; Task 13's bootstrap also
+    # assigns it). The explicit make_handler param is the carrier from the test
+    # harness and the bootstrap call.
+    if health_store is not None:
+        relay.health_store = health_store
     _console_authfail_rl = console_auth.RateLimiter(limit=20, window_s=60)
     _cockpit_chat_rl = console_auth.RateLimiter(limit=10, window_s=60)
     # Submit is a PUBLIC write path (funnelled). Keyed on the authed identity
@@ -3371,6 +3381,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Content-Type", "image/jpeg")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(body)
+            return None
+        def _send_text(self, text, code=200):
+            body = (text or "").encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers(); self.wfile.write(body)
             return None
         def _send_asset(self, assets_dir, sub, key):
@@ -3796,6 +3813,24 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         "mode": relay.mode,
                         "on_air": live_schedule_row(rows, live_idx)})
                 return self._send({"error": "not found"}, 404)
+            # Health-monitor dashboard (#health): a read-only page + ONE data
+            # endpoint, any authenticated subject. Redacted by construction
+            # (_health_monitor_payload never carries stream URLs). Mirrors the
+            # race-control branch above.
+            if sub and sub[0] == "health-monitor":
+                if console_policy.decide(roles, sub, method, has_step_up) != console_policy.ALLOW:
+                    self._send({"error": "forbidden"}, 403)
+                    return None
+                if sub == ["health-monitor"] and method == "GET":
+                    if not health_monitor_page_path:
+                        return self._send({"error": "page not found"}, 404)
+                    self._send_page(health_monitor_page_path, "/console",
+                                    cookie_token=self._cockpit_token(), cookie_path="/console")
+                    return None
+                if sub == ["health-monitor", "data"] and method == "GET":
+                    self._send(self._health_monitor_payload())
+                    return None
+                return self._send({"error": "not found"}, 404)
             # Role-adaptive pages: authorize via the same matrix, then serve HTML
             # with the /console base + a Path=/console cookie. Served BEFORE the API
             # fall-through so they don't reach the root page handlers (wrong cookie
@@ -3837,6 +3872,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return ["cockpit", "versions"]   # secret already step-up-verified above
                 if sub == ["takeover", "cues"]:
                     return ["cues", "data"]          # full list, gated producer+step-up
+                if sub == ["takeover", "health"]:
+                    return ["health", "raw"]         # producer+step-up already verified
                 return sub
             if outcome == console_policy.STEP_UP_REQUIRED:
                 self._send({"error": "step-up required"}, 403)
@@ -3875,6 +3912,62 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             approves a submission and the link is scheduled (#193 follow-up)."""
             self._post_discord(
                 cockpit_approval_payload(entry, self._event_title()), "approval")
+        def _health_query_window(self):
+            qs = parse_qs(urlparse(self.path).query)
+            def _f(name):
+                try:
+                    return float(qs[name][0])
+                except (KeyError, ValueError, IndexError):
+                    return None
+            frm, to = _f("from"), _f("to")
+            try:
+                maxn = int(qs["max"][0])
+            except (KeyError, ValueError, IndexError):
+                maxn = _HEALTH_CONST.DEFAULT_MAX_POINTS
+            now = time.time()
+            if frm is None or to is None:
+                to, frm = now, now - _HEALTH_CONST.LIVE_WINDOW_S
+            return frm, to, maxn, now
+
+        def _health_current(self):
+            """Allowlist of the live health fields — NEVER the feed/pov stream URLs
+            that relay.status() carries (redaction boundary)."""
+            full = relay.status()
+            feeds = {k: {"state": v.get("state"), "down": v.get("down"),
+                         "stint": v.get("stint"), "state_age_s": v.get("state_age_s")}
+                     for k, v in (full.get("feeds") or {}).items()}
+            pov = full.get("pov")
+            pov_red = None if not pov else {"state": pov.get("state"),
+                                            "down": pov.get("down"), "shown": pov.get("shown")}
+            return {"health": full.get("health"), "feeds": feeds, "pov": pov_red,
+                    "obs": full.get("obs"), "source": full.get("source"),
+                    "cookies_health": full.get("cookies_health"),
+                    "mode": full.get("mode"), "live": full.get("live"),
+                    "timer": timer_store.summary() if timer_store else None,
+                    "event_title": event_store.get() if event_store else ""}
+
+        def _health_monitor_payload(self):
+            if relay.health_store is None:
+                return {"error": "health monitor disabled"}
+            frm, to, maxn, now = self._health_query_window()
+            store = relay.health_store
+            return {"now": now, "from": frm, "to": to,
+                    "current": self._health_current(),
+                    "bands": store.bands(frm, to),
+                    "incidents": store.incidents(frm, to),
+                    "series": store.series(frm, to, maxn)}
+
+        def _health_raw_payload(self):
+            """JSON-Lines body of raw samples (for takeover/export). Returns a str."""
+            if relay.health_store is None:
+                return ""
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                frm = float(qs["from"][0])
+            except (KeyError, ValueError, IndexError):
+                frm = 0
+            return "\n".join(relay.health_store.export_lines(frm))
+
         def _status_payload(self):
             """The full /status JSON (feeds, pov, league, health) + timer +
             event_title. Served verbatim on the tailnet; redacted for /console
@@ -3913,6 +4006,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return None     # gate already sent its response (401/403/404)
                 if not p or p == ["status"]:
                     return self._send(self._status_payload())
+                if p == ["health-monitor"]:
+                    if not health_monitor_page_path:
+                        return self._send({"error": "page not found"}, 404)
+                    return self._send_page(health_monitor_page_path, "")
+                if p == ["health-monitor", "data"]:
+                    return self._send(self._health_monitor_payload())
+                if p == ["health", "raw"]:
+                    return self._send_text(self._health_raw_payload())
                 if p == ["takeover", "status"]:
                     # Funnel-exposed (producer + step-up via _console_gate). Redacted:
                     # ONLY the fields a takeover needs — NEVER the feeds/pov stream URLs
@@ -4736,6 +4837,13 @@ def main():
                  os.path.join(here, "..", "console", "buttons.html")):
         if os.path.exists(cand):
             buttons_page_path = os.path.abspath(cand); break
+    health_monitor_page_path = None
+    for cand in (os.path.join(here, "health-monitor.html"),
+                 os.path.join(here, "..", "health-monitor.html"),
+                 os.path.join(here, "..", "console", "health-monitor.html")):
+        if os.path.exists(cand):
+            health_monitor_page_path = os.path.abspath(cand); break
+    uplot_dir = os.path.abspath(os.path.join(here, "..", "assets", "vendor", "uplot"))
     if not args.no_hud and not args.sheet_csv_url:
         base = f"https://docs.google.com/spreadsheets/d/{args.sheet_id}/gviz/tq?tqx=out:csv&sheet="
         overlay_url = base + quote(args.overlay_tab)
@@ -4855,6 +4963,9 @@ def main():
                            console_page_path=console_page_path,
                            race_control_page_path=race_control_page_path,
                            buttons_page_path=buttons_page_path,
+                           health_store=relay.health_store,
+                           health_monitor_page_path=health_monitor_page_path,
+                           uplot_dir=uplot_dir,
                            crew_source=crew_source,
                            logo_path=args.logo)
     bind_addrs = resolve_bind_addresses(

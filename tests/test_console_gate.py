@@ -53,6 +53,9 @@ def _serve(companion_url=None, logo_path=None, sheet_id=None, graphics_dir=None)
         console_page_path=os.path.join(SRC, "console", "console.html"),
         race_control_page_path=os.path.join(SRC, "racecontrol", "race-control.html"),
         buttons_page_path=os.path.join(SRC, "console", "buttons.html"),
+        health_store=m.HealthStore(os.path.join(LOGDIR, "health.db")),
+        health_monitor_page_path=os.path.join(SRC, "console", "health-monitor.html"),
+        uplot_dir=os.path.join(SRC, "assets", "vendor", "uplot"),
         companion_url=companion_url,
         logo_path=logo_path,
         graphics_dir=graphics_dir)
@@ -65,13 +68,16 @@ def _tok(key):
     return m.console_auth.mint_token(SECRET, key)
 
 
-def _get(port, path, token=None, secret=None, secret_header="X-Console-Secret"):
+def _get(port, path, token=None, secret=None, secret_header="X-Console-Secret",
+         headers=None):
     url = f"http://127.0.0.1:{port}{path}"
     if token:
         url += ("&" if "?" in path else "?") + "t=" + token
     req = urllib.request.Request(url)
     if secret:
         req.add_header(secret_header, secret)
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
     try:
         with urllib.request.urlopen(req, timeout=5) as r:
             return r.status, r.read().decode()
@@ -942,6 +948,50 @@ def t_tailnet_status_is_unredacted():
         d = json.loads(body)
         assert d["feeds"]["A"]["channel"], d              # full feed URL present
         assert d["league"]["sheet_id"] == "SHEET-XYZ", d
+    finally:
+        srv.shutdown()
+
+
+def t_console_health_monitor_page_any_authenticated():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        # alice=commentator, bob=director, dave=race_control — all may view.
+        for who in ("alice", "bob", "dave"):
+            code, body = _get(port, "/console/health-monitor", _tok(who))
+            assert code == 200, (who, code)
+            assert 'window.RC_API_BASE = "/console"' in body or '__RC_API_BASE__' not in body
+        # No token -> 401.
+        assert _get(port, "/console/health-monitor", None)[0] in (401, 404)
+    finally:
+        srv.shutdown()
+
+
+def t_console_health_monitor_data_shape_and_redaction():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        code, body = _get(port, "/console/health-monitor/data", _tok("alice"))
+        assert code == 200, (code, body)
+        blob = json.loads(body)
+        for key in ("now", "current", "bands", "incidents", "series"):
+            assert key in blob, key
+        serialised = json.dumps(blob)
+        assert "youtu" not in serialised and "watch?v=" not in serialised   # redaction
+    finally:
+        srv.shutdown()
+
+
+def t_takeover_health_requires_step_up_secret():
+    srv = _serve(); port = srv.server_address[1]
+    try:
+        # carol=producer; without the secret header -> step-up (403/401).
+        assert _get(port, "/console/takeover/health", _tok("carol"))[0] in (401, 403)
+        code, body = _get(port, "/console/takeover/health", _tok("carol"),
+                          headers={"X-Console-Secret": SECRET})
+        assert code == 200, (code, body)
+        # JSON-Lines body (possibly empty) — every non-empty line parses.
+        for line in body.splitlines():
+            if line.strip():
+                json.loads(line)
     finally:
         srv.shutdown()
 
