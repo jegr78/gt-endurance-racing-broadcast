@@ -72,9 +72,10 @@ tag — so a tester can tell which release base a preview belongs to. `racecast
 --version` prints e.g. `1.1.0-preview.pr42.0123abc` (a valid SemVer prerelease)
 and the pre-release is titled `Preview 1.1.0 — PR #42 (0123abc)`; the trailing
 short SHA still pins the exact commit. (Without any version source it degrades to
-the bare `preview-pr42-0123abc` form.) Note the GitHub releases list still sorts
-by build date, so a re-pushed preview jumps to the top — the version in the title
-is how you read its release base, not its list position. Preview binaries are
+the bare `preview-pr42-0123abc` form.) The GitHub releases list orders by
+`created_at`, which for a release is the date of the *tagged commit* (not the
+build time); because a preview's rolling tag is force-moved to each build's
+commit, a fresh preview sorts to the top as expected. Preview binaries are
 unsigned, same one-time SmartScreen/Gatekeeper warning as releases.
 
 > One-time setup: the `preview` label must exist in the repo —

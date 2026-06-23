@@ -114,14 +114,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          SHA: ${{ needs.meta.outputs.sha }}
+          TITLE: ${{ needs.meta.outputs.title }}
         run: |
-          # Rolling: drop any prior pre-release for this tag so target commit,
-          # title, notes and assets all reflect the NEW build, then recreate it.
-          gh release delete "${{ needs.meta.outputs.tag }}" --cleanup-tag --yes || true
-          gh release create "${{ needs.meta.outputs.tag }}" \
+          # Rolling: a preview tag is reused across builds. GitHub orders the
+          # releases list by created_at = the *tagged commit's* date (not the
+          # build/publish time), and `gh release create` IGNORES --target when the
+          # tag already exists -- so a reused tag stays pinned to the commit it was
+          # FIRST created on, freezing created_at at an old date and sinking the
+          # preview among old releases. So move the tag to THIS build's commit
+          # ourselves (force the ref), then recreate the release on it -- now
+          # created_at tracks the fresh commit and the preview sorts to the top.
+          gh release delete "$TAG" --yes || true
+          if gh api "repos/$GH_REPO/git/refs/tags/$TAG" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$TAG" \
+              -f sha="$SHA" -F force=true >/dev/null      # re-point the existing tag
+          else
+            gh api --method POST "repos/$GH_REPO/git/refs" \
+              -f ref="refs/tags/$TAG" -f sha="$SHA" >/dev/null   # first build: create it
+          fi
+          # The tag already points at $SHA, so --target is unnecessary here.
+          gh release create "$TAG" \
             --prerelease \
-            --target "${{ needs.meta.outputs.sha }}" \
-            --title "${{ needs.meta.outputs.title }}" \
+            --title "$TITLE" \
             --notes-file notes.md
 
   build:
