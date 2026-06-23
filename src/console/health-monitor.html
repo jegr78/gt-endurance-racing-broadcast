@@ -236,6 +236,7 @@ window.range = "live";
 let liveTimer = null;
 let rangeStart = 0, rangeEnd = 0;     // epoch seconds for the active fetch
 const charts = {};                    // key -> uPlot instance
+let chartResizeObs = null;            // keeps charts sized to their real column width
 
 // --- Helpers ---
 function pad2(n) { return String(n).padStart(2, "0"); }
@@ -247,6 +248,14 @@ function localDateTime(epoch) {
   const d = new Date(epoch * 1000);
   return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()) +
          " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
+}
+// uPlot x-axis tick label: compact + range-aware so labels never overlap in the
+// narrow half-width charts. HH:MM within a day; M/D once the range spans 2+ days.
+function fmtAxisTime(ts) {
+  const d = new Date(ts * 1000);
+  const span = (rangeEnd > rangeStart) ? (rangeEnd - rangeStart) : 0;
+  if (span >= 2 * 86400) return (d.getMonth() + 1) + "/" + d.getDate();
+  return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
 }
 // "since"/duration humanizer -> e.g. "2h 14m", "3m 5s", "12s"
 function humanize(secs) {
@@ -436,7 +445,11 @@ function renderCharts(series) {
       legend: { show: false },
       scales: { x: { time: true, min: rangeStart, max: rangeEnd } },
       axes: [
-        { stroke: "#8b97a6", grid: { stroke: "#1c2027" }, ticks: { stroke: "#1c2027" } },
+        { stroke: "#8b97a6", grid: { stroke: "#1c2027" }, ticks: { stroke: "#1c2027" },
+          // Force a generous min gap between ticks so labels never overlap in the
+          // narrow half-width charts, and render a compact range-aware label
+          // (HH:MM within a day, M/D for multi-day ranges) — no stacked date row.
+          space: 72, values: (u, splits) => splits.map(fmtAxisTime) },
         { stroke: "#8b97a6", grid: { stroke: "#1c2027" }, ticks: { stroke: "#1c2027" } },
       ],
       series: [
@@ -454,6 +467,24 @@ function renderCharts(series) {
       box.appendChild(err);
     }
   });
+
+  // The CSS grid sizes the chart columns AFTER this synchronous build, so the
+  // box.clientWidth measured above can be stale (over-wide) — uPlot then packs
+  // too many x ticks for the real column and the labels overlap. Re-size every
+  // chart to its actual laid-out width once layout settles, and keep them synced
+  // when the container resizes.
+  const resizeCharts = () => {
+    Object.keys(charts).forEach((k) => {
+      const u = charts[k];
+      if (!u || !u.root || !u.root.parentNode) return;
+      const w = Math.max(280, u.root.parentNode.clientWidth - 16);
+      if (Math.abs(w - u.width) > 1) u.setSize({ width: w, height: 180 });
+    });
+  };
+  requestAnimationFrame(resizeCharts);
+  if (chartResizeObs) chartResizeObs.disconnect();
+  chartResizeObs = new ResizeObserver(resizeCharts);
+  chartResizeObs.observe(host);
 }
 
 // --- 5. Incident timeline ---
