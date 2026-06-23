@@ -192,19 +192,29 @@ def aggregate_health(facts):
     yellow = OBS WebSocket unreachable · cookies stale · Tailscale down · a feed
              stuck connecting. A red result still lists the yellow issues under it.
     green = none of the above."""
-    reasons, yellow = [], []
+    reasons, red, yellow = [], [], []
     for name in facts.get("feeds_down") or []:
-        reasons.append(f"Feed {name} down — lost the live stream")
+        red.append(f"Feed {name} down — lost the live stream")
+    # OBS reachable but not streaming = off air (no live-gate: red even pre-show).
+    if facts.get("obs_reachable") and facts.get("stream_active") is False:
+        red.append("OBS is not streaming — broadcast is off air")
     if facts.get("obs_reachable") is False:
         yellow.append("OBS WebSocket unreachable — no auto-cut")
+    if facts.get("obs_reachable") and facts.get("stream_reconnecting"):
+        yellow.append("OBS stream reconnecting — upstream unstable")
+    if facts.get("funnel_down"):
+        yellow.append("Funnel down — talent cannot reach the cockpit")
+    if facts.get("sheet_push_failing"):
+        yellow.append("Sheet webhook failing — panel writes are not saved")
     if facts.get("cookies_stale"):
         yellow.append("YouTube cookies stale — handovers may fail")
     if not facts.get("tailscale_present", True):
         yellow.append("Tailscale not connected — directors cannot reach the panel")
     for name in facts.get("feeds_connecting_long") or []:
         yellow.append(f"Feed {name} stuck connecting")
+    reasons.extend(red)
     reasons.extend(yellow)
-    level = "red" if facts.get("feeds_down") else ("yellow" if yellow else "green")
+    level = "red" if red else ("yellow" if yellow else "green")
     return {"level": level, "reasons": reasons}
 
 

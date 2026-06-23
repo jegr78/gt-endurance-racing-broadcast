@@ -517,6 +517,29 @@ def t_preview_feed_grab_failure_is_503():
         srv.shutdown(); m._obs_ws = old; m.grab_feed_frame = old_grab
 
 
+def t_aggregate_stream_not_active_is_red():
+    h = m.aggregate_health({"obs_reachable": True, "stream_active": False})
+    assert h["level"] == "red"
+    assert any("not streaming" in r.lower() or "off air" in r.lower() for r in h["reasons"])
+
+
+def t_aggregate_stream_active_unknown_is_green():
+    # OBS reachable but stream_active not sampled (None) -> no alarm.
+    assert m.aggregate_health({"obs_reachable": True})["level"] == "green"
+    assert m.aggregate_health({"obs_reachable": True, "stream_active": None})["level"] == "green"
+    # OBS not reachable -> existing yellow path, stream_active ignored.
+    assert m.aggregate_health({"obs_reachable": False, "stream_active": False})["level"] == "yellow"
+
+
+def t_aggregate_yellow_signals():
+    for key in ("stream_reconnecting", "funnel_down", "sheet_push_failing"):
+        h = m.aggregate_health({"obs_reachable": True, "stream_active": True, key: True})
+        assert h["level"] == "yellow", (key, h)
+    # observational signals never escalate
+    assert m.aggregate_health({"obs_reachable": True, "stream_active": True,
+                               "tailscale_up": False, "companion_ok": False})["level"] == "green"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
