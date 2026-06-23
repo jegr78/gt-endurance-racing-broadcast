@@ -122,6 +122,27 @@ def t_derive_incidents_empty_when_all_green():
     assert hs.derive_incidents([_snap(ts=0.0), _snap(ts=30.0)]) == []
 
 
+def t_downsample_passthrough_when_small():
+    pairs = [(0.0, 1.0), (1.0, 2.0)]
+    assert hs.downsample(pairs, 10) == pairs
+
+
+def t_downsample_buckets_to_max_keeping_last_per_bucket():
+    pairs = [(float(i), float(i)) for i in range(10)]
+    out = hs.downsample(pairs, 5)
+    assert len(out) <= 5
+    assert out[-1] == (9.0, 9.0)             # newest point always kept
+
+
+def t_numeric_series_drops_none_and_splits_t_v():
+    samples = [_snap(ts=0.0) | {"cookies_age_h": None},
+               _snap(ts=30.0) | {"cookies_age_h": 4.0}]
+    series = hs.numeric_series(samples)
+    assert set(series) == set(hs.NUMERIC_FIELDS)
+    assert series["cookies_age_h"] == {"t": [30.0], "v": [4.0]}   # None dropped
+    assert series["source_last_ok_age_s"]["t"] == [0.0, 30.0]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

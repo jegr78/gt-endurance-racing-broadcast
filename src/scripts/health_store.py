@@ -9,6 +9,7 @@ agree on the on-disk shape. Redaction by construction: there is NO stream-URL or
 sheet_id column, so the DB is safe to expose, export, and pull over Funnel.
 """
 import json
+import math
 import sqlite3
 
 SCHEMA_VERSION = 1
@@ -142,4 +143,27 @@ def derive_incidents(samples, gap_s=GAP_S):
         out.append({"ts": b["from"], "end": b["to"],
                     "duration_s": b["to"] - b["from"], "severity": b["state"],
                     "label": _incident_label(b["state"], reasons_at.get(b["from"]))})
+    return out
+
+
+def downsample(pairs, max_points):
+    """Bucket [(ts,val), ...] to <= max_points, taking the last point in each
+    time-bucket (cheap, monotonic-x safe). The newest point is always retained."""
+    n = len(pairs)
+    if max_points <= 0 or n <= max_points:
+        return list(pairs)
+    bucket = math.ceil(n / max_points)
+    out = []
+    for i in range(0, n, bucket):
+        out.append(pairs[min(i + bucket - 1, n - 1)])
+    return out
+
+
+def numeric_series(samples, max_points=DEFAULT_MAX_POINTS):
+    """Per numeric field: drop None, downsample, split into parallel t/v arrays."""
+    out = {}
+    for field in NUMERIC_FIELDS:
+        pairs = [(s["ts"], s.get(field)) for s in samples if s.get(field) is not None]
+        pairs = downsample(pairs, max_points)
+        out[field] = {"t": [p[0] for p in pairs], "v": [p[1] for p in pairs]}
     return out
