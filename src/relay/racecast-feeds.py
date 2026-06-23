@@ -2888,6 +2888,7 @@ class Relay:
         self._health_lock = threading.Lock()
         self._hb_stop = threading.Event()
         self.health_store = None  # assigned by bootstrap (Task 13); always exists
+        self.timer_store = None  # assigned by bootstrap; sampled best-effort for timer_push
         self._last_prune = 0  # epoch of last health-history prune (daily, in heartbeat)
 
     def active_source(self):
@@ -2961,6 +2962,14 @@ class Relay:
         b_state, b_down, b_stint = feed_fields(self.feeds["B"])
         ch = cookie_health(self.cookies, now=now)
         live = self.live_feed()
+        tmode, tpush = None, None
+        ts = getattr(self, "timer_store", None)
+        if ts is not None:
+            try:
+                summ = ts.summary()
+                tmode, tpush = summ.get("mode"), summ.get("push")
+            except Exception:  # noqa: BLE001 — sampling is best-effort
+                pass
         return {"ts": now,
                 "health_level": self.health_level, "health_reasons": self.health_reasons,
                 "feed_a_state": a_state, "feed_a_down": a_down, "feed_a_stint": a_stint,
@@ -2974,7 +2983,7 @@ class Relay:
                 "cookies_present": 1 if self.cookies else 0,
                 "cookies_age_h": ch.get("age_h"),
                 "cookies_stale": 1 if ch.get("stale") else 0,
-                "timer_mode": None, "timer_remaining_s": None,
+                "timer_mode": tmode, "timer_push": tpush,
                 "mode": self.mode,
                 "live_feed": live, "live_stint": self.feeds[live].idx + 1}
 
@@ -4946,6 +4955,7 @@ def main():
                   event_title_store=event_store,
                   league_name=args.league_name)
     relay.health_store = _health_store_obj
+    relay.timer_store = timer_store
     relay.start()
     relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
     # Launching straight into qualifying mode: seed the HUD Streamer/Stint from

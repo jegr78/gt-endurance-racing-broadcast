@@ -13,7 +13,7 @@ import math
 import sqlite3
 import time
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SAMPLE_INTERVAL_S = 30          # heartbeat tick = sample cadence
 LIVE_WINDOW_S = 900            # default range when no from/to given (15 min)
@@ -30,15 +30,16 @@ COLUMNS = (
     "pov_state", "obs_reachable",
     "source_last_ok_age_s", "source_count",
     "cookies_present", "cookies_age_h", "cookies_stale",
-    "timer_mode", "timer_remaining_s",
+    "timer_mode", "timer_push",
     "mode", "live_feed", "live_stint",
 )
 
 BAND_FIELDS = ("health_level", "feed_a_state", "feed_b_state",
-               "pov_state", "obs_reachable", "cookies_stale")
-NUMERIC_FIELDS = ("source_last_ok_age_s", "cookies_age_h", "timer_remaining_s")
+               "pov_state", "obs_reachable", "cookies_stale", "timer_push")
+NUMERIC_FIELDS = ("source_last_ok_age_s", "cookies_age_h")
 STATE_KEY_FIELDS = ("health_level", "feed_a_state", "feed_a_down",
-                    "feed_b_state", "feed_b_down", "pov_state", "obs_reachable")
+                    "feed_b_state", "feed_b_down", "pov_state", "obs_reachable",
+                    "timer_push")
 
 _CREATE = """
 CREATE TABLE IF NOT EXISTS samples (
@@ -50,7 +51,7 @@ CREATE TABLE IF NOT EXISTS samples (
     pov_state TEXT, obs_reachable INTEGER,
     source_last_ok_age_s REAL, source_count INTEGER,
     cookies_present INTEGER, cookies_age_h REAL, cookies_stale INTEGER,
-    timer_mode TEXT, timer_remaining_s INTEGER,
+    timer_mode TEXT, timer_push TEXT,
     mode TEXT, live_feed TEXT, live_stint INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_samples_ts ON samples (ts);

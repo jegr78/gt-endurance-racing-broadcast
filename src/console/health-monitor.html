@@ -110,6 +110,7 @@
   .bandseg.off { background: var(--red); }        /* boolean false (down / stale) */
   .bandseg.unknown { background: #4a5260; }       /* null */
   .bandseg.neutral { background: #3a6ea5; }       /* feed/pov non-down states */
+  .bandseg.offduty { background: #59606b; }       /* timer push never/disabled */
   .bands-axis { display: grid; grid-template-columns: 140px 1fr; gap: 10px; margin-top: 2px; }
   .bands-axis .ax { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted);
                     font-variant-numeric: tabular-nums; }
@@ -317,6 +318,12 @@ function segClass(field, state) {
     // state 1|0|null  -> stale (bad) / fresh (good) / unknown
     return state ? "off" : "on";
   }
+  if (field === "timer_push") {
+    // Sheet write-back status: "ok"/"failed"/"never"/"disabled".
+    if (state === "ok") return "on";
+    if (state === "failed") return "off";
+    return "offduty";                 // "never" / "disabled" -> off-duty grey
+  }
   // feed_a_state / feed_b_state / pov_state: free-form state strings.
   const s = String(state).toLowerCase();
   if (s.indexOf("down") >= 0 || s.indexOf("error") >= 0 || s.indexOf("fail") >= 0) return "off";
@@ -338,6 +345,7 @@ const BAND_FIELDS = [
   ["pov_state", "POV"],
   ["obs_reachable", "OBS"],
   ["cookies_stale", "Cookies"],
+  ["timer_push", "Timer sync"],
 ];
 
 function renderBands(bands) {
@@ -385,7 +393,6 @@ function renderBands(bands) {
 const SERIES = [
   ["source_last_ok_age_s", "Source last-OK age (s)"],
   ["cookies_age_h", "Cookies age (h)"],
-  ["timer_remaining_s", "Timer remaining (s)"],
 ];
 
 function renderCharts(series) {

@@ -150,8 +150,9 @@ Self-contained vanilla JS (like `console.html`), dark Grafana/AWS dashboard them
    POV (only when used), OBS, Sheet source, Cookies. Colored bands over the range, with
    **gaps** where the relay was down (no interpolation). Hover → tooltip with state +
    time span.
-4. **Numeric line charts (uPlot, shared x-cursor/hover):** Sheet `last_ok_age_s`, cookie
-   age (h), timer remaining (when running). Server pre-downsamples (≤ ~2000 points).
+4. **Numeric line charts (uPlot, shared x-cursor/hover):** Sheet `last_ok_age_s` and cookie
+   age (h). Server pre-downsamples (≤ ~2000 points). The timer's Sheet **sync/push** status
+   (`ok`/`failed`/`never`/`disabled`) is a health signal, so it renders as a status band, not a chart.
 5. **Incident timeline:** list from `incidents` — timestamp, label, duration-to-recovery,
    severity color. Statuspage-style, for post-mortems.
 

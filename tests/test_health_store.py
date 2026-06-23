@@ -17,14 +17,14 @@ def _load(name, rel):
 hs = _load("health_store", ("src", "scripts", "health_store.py"))
 
 
-def _snap(ts=100.0, level="green", a="serving", b="idle"):
+def _snap(ts=100.0, level="green", a="serving", b="idle", timer_push="ok"):
     return {"ts": ts, "health_level": level, "health_reasons": [],
             "feed_a_state": a, "feed_a_down": 0, "feed_a_stint": 1,
             "feed_b_state": b, "feed_b_down": 0, "feed_b_stint": 2,
             "pov_state": None, "obs_reachable": 1,
             "source_last_ok_age_s": 2.0, "source_count": 5,
             "cookies_present": 1, "cookies_age_h": 3.0, "cookies_stale": 0,
-            "timer_mode": "running", "timer_remaining_s": 1200,
+            "timer_mode": "running", "timer_push": timer_push,
             "mode": "race", "live_feed": "A", "live_stint": 1}
 
 
@@ -101,6 +101,13 @@ def t_derive_bands_covers_all_band_fields():
     assert bands["feed_a_state"][0]["state"] == "serving"
 
 
+def t_timer_push_is_a_band_field_and_transitions():
+    assert "timer_push" in hs.BAND_FIELDS
+    samples = [_snap(ts=0.0, timer_push="ok"), _snap(ts=30.0, timer_push="failed")]
+    bands = hs.derive_bands(samples)["timer_push"]
+    assert [b["state"] for b in bands] == ["ok", "failed"]
+
+
 def t_derive_incidents_from_non_green_health_bands():
     samples = [
         _snap(ts=0.0, level="green"),
@@ -139,6 +146,7 @@ def t_numeric_series_drops_none_and_splits_t_v():
                _snap(ts=30.0) | {"cookies_age_h": 4.0}]
     series = hs.numeric_series(samples)
     assert set(series) == set(hs.NUMERIC_FIELDS)
+    assert set(hs.NUMERIC_FIELDS) == {"source_last_ok_age_s", "cookies_age_h"}
     assert series["cookies_age_h"] == {"t": [30.0], "v": [4.0]}   # None dropped
     assert series["source_last_ok_age_s"]["t"] == [0.0, 30.0]
 
@@ -240,6 +248,8 @@ def t_relay_health_snapshot_has_no_urls_and_all_columns():
         if col in ("ts", "kind"):
             continue
         assert col in snap, col
+    assert "timer_push" in snap
+    assert "timer_remaining_s" not in snap   # clean break: replaced by timer_push
     blob = repr(snap).lower()
     assert "http" not in blob and "youtu" not in blob   # redaction
 
