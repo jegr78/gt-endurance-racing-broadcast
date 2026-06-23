@@ -49,6 +49,7 @@ import chat_admin as ca
 import console_auth as cpa
 import console_admin as cpadm
 import cue_admin as cue
+import health_store as hsmod
 import overlay_build as ob
 import fonts_bundle as fb
 import ports as pt
@@ -913,6 +914,8 @@ def route(argv):
         return {"kind": "profile", "rest": rest}
     if cmd == "chat":
         return {"kind": "chat", "rest": rest}
+    if cmd == "health":
+        return {"kind": "health", "rest": rest}
     if cmd == "console":
         if not rest or rest[0] not in CONSOLE_VERBS:
             raise ValueError(f"usage: racecast console {{{'|'.join(CONSOLE_VERBS)}}}")
@@ -1031,6 +1034,89 @@ def _chat_reload_if_running():
         return True
     except Exception:
         return False
+
+
+def _health_db_path():
+    return os.path.join(_runtime_dir(), "health-history.db")
+
+
+HEALTH_VERBS = ("export", "import", "pull")
+
+
+def health_cmd(rest):
+    """`racecast health export|import|pull` — move health history across events/machines."""
+    verb = rest[0] if rest else None
+    if verb not in HEALTH_VERBS:
+        sys.exit(f"usage: racecast health {{{'|'.join(HEALTH_VERBS)}}}")
+    args = rest[1:]
+    db = _health_db_path()
+
+    if verb == "export":
+        out, frm = "health-export.jsonl", 0
+        if "--out" in args:
+            i = args.index("--out")
+            if i + 1 >= len(args):
+                sys.exit("usage: racecast health export [--from TS] [--out PATH]")
+            out = args[i + 1]
+        if "--from" in args:
+            i = args.index("--from")
+            try:
+                frm = float(args[i + 1])
+            except (IndexError, ValueError):
+                sys.exit("racecast: --from requires a numeric epoch value")
+        conn = hsmod.open_db(db)
+        hsmod.migrate(conn)
+        lines = hsmod.export_jsonl(conn, frm)
+        with open(out, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + ("\n" if lines else ""))
+        print(f"Exported {len(lines)} samples -> {out}")
+        return None
+
+    if verb == "import":
+        if not args:
+            sys.exit("usage: racecast health import <file.jsonl>")
+        try:
+            with open(args[0], encoding="utf-8") as fh:
+                lines = fh.read().splitlines()
+        except OSError as e:
+            sys.exit(f"racecast: could not read {args[0]}: {e}")
+        conn = hsmod.open_db(db)
+        hsmod.migrate(conn)
+        n = hsmod.import_jsonl(conn, lines)
+        print(f"Imported {n} new samples into {db}")
+        return None
+
+    if verb == "pull":
+        if not args:
+            sys.exit("usage: racecast health pull <tailscale-ip> [--port N] [--from TS]")
+        host = args[0]
+        port = RELAY_PORT
+        if "--port" in args[1:]:
+            i = args.index("--port", 1)
+            try:
+                port = int(args[i + 1])
+            except (IndexError, ValueError):
+                sys.exit("racecast: --port must be an integer")
+        frm = 0
+        if "--from" in args[1:]:
+            i = args.index("--from", 1)
+            try:
+                frm = float(args[i + 1])
+            except (IndexError, ValueError):
+                sys.exit("racecast: --from requires a numeric epoch value")
+        url = f"http://{host}:{port}/health/raw?from={frm}"
+        try:
+            with http_util.open_url(url, timeout=5) as resp:
+                if resp.status != 200:
+                    sys.exit(f"racecast: pull failed — HTTP {resp.status} from {host}")
+                body = resp.read().decode("utf-8")
+        except Exception as e:
+            sys.exit(f"racecast: pull failed — {type(e).__name__}: {e} (local history unchanged)")
+        conn = hsmod.open_db(db)
+        hsmod.migrate(conn)
+        n = hsmod.import_jsonl(conn, body.splitlines())
+        print(f"Pulled {n} new samples from {host}.")
+        return None
 
 
 def _cues_path():
@@ -5191,6 +5277,8 @@ def main(argv=None):
         return profile_cmd(action["rest"])
     if action["kind"] == "chat":
         return chat_cmd(action["rest"])
+    if action["kind"] == "health":
+        return health_cmd(action["rest"])
     if action["kind"] == "console":
         return console_cmd(action["rest"])
     if action["kind"] == "funnel":
