@@ -602,11 +602,22 @@ def t_takeover_event_title_extracts():
 
 
 def t_relay_start_warns_when_running_and_stint_ignored():
-    # already-running + --stint: must tell the operator the flag was ignored
+    # already-running + --stint: must tell the operator the flag was ignored.
+    # Patch every signal so relay_start_plan returns "running": pid on the port,
+    # alive PID, HTTP ok, and profile match.
     import io, contextlib
-    old_read, old_alive = m.sv.read_pid, m.sv.pid_alive
+    old_read = m.sv.read_pid
+    old_alive = m.sv.pid_alive
+    old_pids_on_port = m.pt.pids_on_port
+    old_http_ok = m._relay_http_ok
+    old_running = m._running_relay_profile
+    old_active = m._active_profile_name
     m.sv.read_pid = lambda path: 4242
     m.sv.pid_alive = lambda pid: True
+    m.pt.pids_on_port = lambda port: [4242]
+    m._relay_http_ok = lambda: True
+    m._running_relay_profile = lambda: "testing"
+    m._active_profile_name = lambda: "testing"
     try:
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -615,7 +626,12 @@ def t_relay_start_warns_when_running_and_stint_ignored():
         assert "already running" in out
         assert "--stint ignored" in out and "/set/stint/5" in out
     finally:
-        m.sv.read_pid, m.sv.pid_alive = old_read, old_alive
+        m.sv.read_pid = old_read
+        m.sv.pid_alive = old_alive
+        m.pt.pids_on_port = old_pids_on_port
+        m._relay_http_ok = old_http_ok
+        m._running_relay_profile = old_running
+        m._active_profile_name = old_active
 
 
 def t_relay_stop_releases_obs_feeds_after_kill():
@@ -2586,15 +2602,6 @@ def t_running_relay_dir_follows_profile_stamp():
             os.path.join(base, "league-a", "logs", "relay.console.log")
     finally:
         m._runtime_base_dir, m._active_profile_name = orig_base, orig_active
-
-
-def t_relay_start_port_note():
-    # Our own relay is caught by the earlier PID check; this only fires for a
-    # FOREIGN holder of 8088 (and never when the port is free).
-    assert m.relay_start_port_note(True, [123]) is None
-    assert m.relay_start_port_note(False, []) is None
-    note = m.relay_start_port_note(False, [999])
-    assert note and "999" in note and str(m.RELAY_PORT) in note and "freeport" in note
 
 
 def t_relay_start_plan_port_free_starts():
