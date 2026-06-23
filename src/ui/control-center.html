@@ -75,6 +75,9 @@
                  margin:0; color:var(--txt); text-transform:none; }
   .viewhead h3 { font-size:13px; font-weight:600; margin:0; color:var(--txt); }
   .viewhead .sub { color:var(--dim); font:12px var(--mono); }
+  .fnltog { display:flex; align-items:center; gap:5px; color:var(--dim);
+            font:12px var(--mono); cursor:pointer; user-select:none; white-space:nowrap; }
+  .fnltog input { margin:0; cursor:pointer; }
   section { background:var(--card); border:1px solid var(--line);
             border-radius:12px; padding:8px 18px;
             box-shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 8px 24px rgba(2,6,23,.35); }
@@ -529,6 +532,12 @@
                   title="Pick the current producer's device (Tailscale) to take over from">
             <option value="">take over from…</option>
           </select>
+          <input id="takeover-funnel-host" type="text" hidden
+                 placeholder="producer MagicDNS host"
+                 aria-label="Producer's MagicDNS host to take over from over the public Funnel"
+                 title="A's MagicDNS host (e.g. producer-a.tailnet-xyz.ts.net) — used when you are not on the tailnet">
+          <label class="fnltog" title="Take over over the public Funnel (you are not on A's tailnet). Steps up with this league's CONSOLE_SECRET from your active profile — read locally, never sent from the browser.">
+            <input type="checkbox" id="takeover-funnel" onchange="toggleFunnelTakeover()">Funnel</label>
           <button id="takeover-btn" onclick="opTakeover()"
                   title="Take over the broadcast from the selected producer at their current stint (the stint field overrides if set)">Take over</button></div>
         <section id="home-event">
@@ -1709,11 +1718,28 @@ function opEventStart() {
   op('event-start', true, v ? {stint: v} : {});
 }
 
+// Funnel takeover: B is not on A's tailnet, so the peer dropdown is useless —
+// swap it for a free-text MagicDNS-host field. The CONSOLE_SECRET step-up is read
+// server-side from B's active profile by the CLI, never collected here.
+function toggleFunnelTakeover() {
+  const on = $('takeover-funnel').checked;
+  $('takeover-host').hidden = on;
+  $('takeover-funnel-host').hidden = !on;
+}
+
 function opTakeover() {
-  const host = $('takeover-host').value;
-  if (!host) { alertModal('Pick the producer to take over from (Tailscale device).'); return; }
+  const funnel = $('takeover-funnel').checked;
+  const host = (funnel ? $('takeover-funnel-host').value : $('takeover-host').value).trim();
+  if (!host) {
+    alertModal(funnel
+      ? "Enter producer A's MagicDNS host to take over over the Funnel."
+      : 'Pick the producer to take over from (Tailscale device).');
+    return;
+  }
   const v = $('stint').value.trim();
-  const params = v ? {ip: host, stint: v} : {ip: host};
+  const params = {ip: host};
+  if (funnel) params.funnel = true;
+  if (v) params.stint = v;
   op('event-takeover', true, params);
 }
 
