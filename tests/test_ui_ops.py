@@ -189,6 +189,27 @@ def t_build_argv_event_takeover():
             pass
 
 
+def t_build_argv_event_takeover_funnel():
+    # --funnel flag rides through to the CLI (the per-league CONSOLE_SECRET is
+    # read server-side from the active profile, never sent from the UI).
+    assert ui_ops.build_argv("event-takeover", {"ip": "host-a.tail.ts.net", "funnel": True}) == \
+        ["event", "takeover", "host-a.tail.ts.net", "--funnel"]
+    # funnel + stint: host positional first, then the two flags
+    assert ui_ops.build_argv(
+        "event-takeover", {"ip": "host-a.tail.ts.net", "funnel": True, "stint": "6"}) == \
+        ["event", "takeover", "host-a.tail.ts.net", "--funnel", "--stint", "6"]
+    # falsy funnel = tailnet takeover, no flag
+    assert ui_ops.build_argv("event-takeover", {"ip": "100.64.1.2", "funnel": False}) == \
+        ["event", "takeover", "100.64.1.2"]
+    # the MagicDNS host is charset-locked by the same validator as the tailnet IP
+    for bad in ("a.b; rm -rf /", "host a", "$(x)"):
+        try:
+            ui_ops.build_argv("event-takeover", {"ip": bad, "funnel": True})
+            raise AssertionError(f"invalid funnel host accepted: {bad}")
+        except ValueError:
+            pass
+
+
 def t_build_argv_update_flag():
     assert ui_ops.build_argv("install-tools", {"update": True}) == \
         ["install-tools", "--yes", "--update"]

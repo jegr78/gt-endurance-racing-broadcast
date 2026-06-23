@@ -79,6 +79,14 @@ def _update_flag(value):
     return ["--update"] if value else []
 
 
+def _funnel_flag(value):
+    """`--funnel` switches `event takeover` to pull A's handover state over the
+    public Tailscale Funnel (host is A's MagicDNS name) instead of the tailnet IP.
+    The per-league CONSOLE_SECRET it steps up with is read server-side from the
+    active profile by the CLI — it is never collected or sent from the UI."""
+    return ["--funnel"] if value else []
+
+
 # The UI's `update` op only ever installs a PREVIEW build by tag (a regular
 # update sends no tag and goes to the latest release). Restricting the allowlist
 # to preview-* means a crafted /api/op/update {tag: "v1.0.0"} cannot silently
@@ -113,7 +121,8 @@ PARAMS = {
     "cookies": {"browser": _browser_arg},
     "cookies-twitch": {"browser": _browser_arg},
     "event-start": {"stint": _stint_arg},
-    "event-takeover": {"ip": _ip_arg, "stint": _stint_arg},   # order: ip (positional) then --stint
+    # order: ip (positional) then --funnel then --stint
+    "event-takeover": {"ip": _ip_arg, "funnel": _funnel_flag, "stint": _stint_arg},
     "install-tools": {"update": _update_flag},
     "install-apps": {"update": _update_flag},
     "update": {"tag": _tag_arg},
