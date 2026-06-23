@@ -16,7 +16,19 @@ in WSL/Docker setups Companion runs on the HOST, so local automation would targe
 the wrong machine. Linux users should set Companion's bind address manually and
 start it themselves.
 """
-import json, os
+import json, os, socket
+
+COMPANION_DEFAULT_ADMIN_PORT = 8000
+
+
+def companion_reachable(host="127.0.0.1", port=COMPANION_DEFAULT_ADMIN_PORT, timeout=1.0):
+    """True iff a TCP connection to the Companion admin port succeeds. Best-effort:
+    any socket error -> False (Companion not running / wrong port)."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 
 def desired_bind_ip(bind_arg, tailscale_ip):
