@@ -12,10 +12,40 @@ Usage (from the workflow):
       --sha "$SHA" >> "$GITHUB_OUTPUT"
 """
 import argparse
+import re
 import sys
 
 PREVIEW_PREAMBLE = ("Automated preview build — not a release. Unsigned: expect a "
                     "one-time SmartScreen/Gatekeeper warning on first run.")
+
+_RELEASE_PR_RE = re.compile(r"release\s+v?(\d+\.\d+\.\d+)")
+_SEMVER_RE = re.compile(r"v?(\d+)\.(\d+)\.\d+")
+
+
+def parse_release_pr_version(title):
+    """Extract the X.Y.Z version from an open release-please PR title, e.g.
+    'chore(main): release 1.1.0' -> '1.1.0' (a leading 'v' is tolerated). None
+    when the title is empty or carries no release version. Pure for tests."""
+    m = _RELEASE_PR_RE.search(title or "")
+    return m.group(1) if m else None
+
+
+def next_minor(version):
+    """Given a released version 'X.Y.Z' (or 'vX.Y.Z'), the probable next release
+    if no release-please PR exists yet: 'X.(Y+1).0'. None if unparseable."""
+    m = _SEMVER_RE.match((version or "").strip())
+    if not m:
+        return None
+    return f"{int(m.group(1))}.{int(m.group(2)) + 1}.0"
+
+
+def resolve_base_version(release_pr_title=None, latest_tag=None):
+    """The probable next release version a preview targets:
+      1. the version named in the open release-please PR title, else
+      2. the next minor after the latest released tag, else
+      3. None (the caller then omits the base from the preview identity).
+    Pure: the impure lookups (gh / git) happen in the workflow and are passed in."""
+    return parse_release_pr_version(release_pr_title) or next_minor(latest_tag)
 
 
 def format_preview_notes(commits, sha, limit=50):
@@ -53,19 +83,34 @@ def _sanitize_ref(ref):
     return ref or "main"
 
 
-def compute_preview_meta(event_name, pr_number=None, ref=None, sha=None):
+def compute_preview_meta(event_name, pr_number=None, ref=None, sha=None,
+                         base_version=None):
     """Return {'tag', 'version', 'title'} for a preview build.
 
     PR builds are keyed by PR number (one rolling pre-release per open PR);
     dispatch builds are keyed by the sanitized ref (one per branch, e.g.
     preview-main). The version embeds the 7-char short SHA so `racecast --version`
     pinpoints the exact commit a tester is running.
+
+    When `base_version` (the probable next release, e.g. '1.1.0') is known, it is
+    placed first so the version is a valid SemVer prerelease
+    ('1.1.0-preview.pr42.<sha>') and the title leads with it
+    ('Preview 1.1.0 — PR #42 (<sha>)') — so a tester can read which release base a
+    preview targets, even though the GitHub releases list sorts by build date. The
+    tag is left unchanged (rolling: one stable tag per PR/ref, re-pointed on each
+    push). When `base_version` is None the legacy identity is reproduced verbatim.
     """
     short = (sha or "")[:7]
     if event_name == "pull_request":
         if not pr_number:
             raise ValueError("pull_request event requires a PR number")
         n = int(pr_number)
+        if base_version:
+            return {
+                "tag": f"preview-pr-{n}",
+                "version": f"{base_version}-preview.pr{n}.{short}",
+                "title": f"Preview {base_version} — PR #{n} ({short})",
+            }
         return {
             "tag": f"preview-pr-{n}",
             "version": f"preview-pr{n}-{short}",
@@ -73,6 +118,12 @@ def compute_preview_meta(event_name, pr_number=None, ref=None, sha=None):
         }
     if event_name == "workflow_dispatch":
         r = _sanitize_ref(ref)
+        if base_version:
+            return {
+                "tag": f"preview-{r}",
+                "version": f"{base_version}-preview.{r}.{short}",
+                "title": f"Preview {base_version} — {r} ({short})",
+            }
         return {
             "tag": f"preview-{r}",
             "version": f"preview-{r}-{short}",
@@ -98,8 +149,14 @@ def main(argv=None):
     ap.add_argument("--pr")
     ap.add_argument("--ref")
     ap.add_argument("--sha", required=True)
+    # Optional version inputs (gathered impurely by the workflow): the open
+    # release-please PR title and the latest released tag. Either, both, or
+    # neither may be empty; resolve_base_version() degrades to the legacy identity.
+    ap.add_argument("--release-pr-title", default="")
+    ap.add_argument("--latest-tag", default="")
     a = ap.parse_args(argv)
-    meta = compute_preview_meta(a.event, a.pr, a.ref, a.sha)
+    base_version = resolve_base_version(a.release_pr_title, a.latest_tag)
+    meta = compute_preview_meta(a.event, a.pr, a.ref, a.sha, base_version)
     for key, value in meta.items():
         print(f"{key}={value}")
 

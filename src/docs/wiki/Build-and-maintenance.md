@@ -65,9 +65,17 @@ first).
   pick the ref (default `main`). Publishes a rolling `preview-<ref>` pre-release.
 
 Preview tags are `preview-*`, never `v*`, so they never trigger `release.yml` or
-disturb the release-please Release PR. `racecast --version` of a preview binary prints
-e.g. `preview-pr42-0123abc` so a tester knows the exact commit. Preview binaries
-are unsigned, same one-time SmartScreen/Gatekeeper warning as releases.
+disturb the release-please Release PR. The version a preview binary reports leads
+with the **probable next release version** — read from the open release-please
+Release PR title, or, if none is open yet, the next minor after the latest `v*`
+tag — so a tester can tell which release base a preview belongs to. `racecast
+--version` prints e.g. `1.1.0-preview.pr42.0123abc` (a valid SemVer prerelease)
+and the pre-release is titled `Preview 1.1.0 — PR #42 (0123abc)`; the trailing
+short SHA still pins the exact commit. (Without any version source it degrades to
+the bare `preview-pr42-0123abc` form.) Note the GitHub releases list still sorts
+by build date, so a re-pushed preview jumps to the top — the version in the title
+is how you read its release base, not its list position. Preview binaries are
+unsigned, same one-time SmartScreen/Gatekeeper warning as releases.
 
 > One-time setup: the `preview` label must exist in the repo —
 > `gh label create preview --color FFA500 --description "Build a downloadable preview binary"`.

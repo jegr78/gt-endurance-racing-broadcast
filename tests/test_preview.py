@@ -58,6 +58,68 @@ def t_dispatch_empty_ref_defaults_main():
     assert out["tag"] == "preview-main"
 
 
+# --- base version: parse from the release-please PR, else next-minor ---------
+def t_parse_release_pr_version():
+    assert m.parse_release_pr_version("chore(main): release 1.1.0") == "1.1.0"
+    assert m.parse_release_pr_version("chore: release v2.3.4") == "2.3.4"
+    assert m.parse_release_pr_version("fix: not a release PR") is None
+    assert m.parse_release_pr_version("") is None
+    assert m.parse_release_pr_version(None) is None
+
+
+def t_next_minor():
+    assert m.next_minor("1.0.1") == "1.1.0"
+    assert m.next_minor("v2.3.9") == "2.4.0"
+    assert m.next_minor("0.7.0") == "0.8.0"
+    assert m.next_minor("garbage") is None
+    assert m.next_minor("") is None
+    assert m.next_minor(None) is None
+
+
+def t_resolve_base_version_prefers_release_pr():
+    # release-please PR wins over the tag-derived fallback
+    assert m.resolve_base_version("chore(main): release 1.1.0", "v1.0.1") == "1.1.0"
+
+
+def t_resolve_base_version_falls_back_to_next_minor():
+    # no release-please PR -> next minor after the latest released tag
+    assert m.resolve_base_version("", "v1.0.1") == "1.1.0"
+    assert m.resolve_base_version(None, "v0.9.0") == "0.10.0"
+
+
+def t_resolve_base_version_none_when_nothing_known():
+    assert m.resolve_base_version(None, None) is None
+    assert m.resolve_base_version("", "") is None
+
+
+# --- compute_preview_meta: base_version embeds the target release version -----
+def t_pr_meta_with_base_version():
+    out = m.compute_preview_meta("pull_request", pr_number=42,
+                                 sha="0123abcdef9999", base_version="1.1.0")
+    assert out == {
+        "tag": "preview-pr-42",                       # tag stays rolling-stable
+        "version": "1.1.0-preview.pr42.0123abc",      # valid SemVer prerelease
+        "title": "Preview 1.1.0 — PR #42 (0123abc)",
+    }, out
+
+
+def t_dispatch_meta_with_base_version():
+    out = m.compute_preview_meta("workflow_dispatch", ref="main",
+                                 sha="deadbeef0001", base_version="1.1.0")
+    assert out == {
+        "tag": "preview-main",
+        "version": "1.1.0-preview.main.deadbee",
+        "title": "Preview 1.1.0 — main (deadbee)",
+    }, out
+
+
+def t_meta_without_base_version_keeps_legacy_format():
+    # base_version is optional: omitting it reproduces the pre-feature identity.
+    out = m.compute_preview_meta("pull_request", pr_number=7, sha="abcdef1234567")
+    assert out["version"] == "preview-pr7-abcdef1"
+    assert out["title"] == "Preview: PR #7 (abcdef1)"
+
+
 # --- guards ------------------------------------------------------------------
 def t_pr_requires_number():
     try:
@@ -131,6 +193,37 @@ def t_main_pr_emits_output_lines():
     assert "tag=preview-pr-5" in lines, lines
     assert "version=preview-pr5-1234567" in lines, lines
     assert "title=Preview: PR #5 (1234567)" in lines, lines
+
+
+def t_main_pr_emits_base_version_from_release_pr():
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        m.main(["--event", "pull_request", "--pr", "5", "--sha", "1234567abcdef",
+                "--release-pr-title", "chore(main): release 1.1.0",
+                "--latest-tag", "v1.0.1"])
+    lines = buf.getvalue().strip().splitlines()
+    assert "tag=preview-pr-5" in lines, lines
+    assert "version=1.1.0-preview.pr5.1234567" in lines, lines
+    assert "title=Preview 1.1.0 — PR #5 (1234567)" in lines, lines
+
+
+def t_main_falls_back_to_next_minor_without_release_pr():
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        m.main(["--event", "pull_request", "--pr", "5", "--sha", "1234567abcdef",
+                "--release-pr-title", "", "--latest-tag", "v1.0.1"])
+    lines = buf.getvalue().strip().splitlines()
+    assert "version=1.1.0-preview.pr5.1234567" in lines, lines
+
+
+def t_main_empty_version_inputs_keep_legacy_format():
+    # Neither a release PR nor a tag available -> legacy identity, never crashes.
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        m.main(["--event", "pull_request", "--pr", "5", "--sha", "1234567abcdef",
+                "--release-pr-title", "", "--latest-tag", ""])
+    lines = buf.getvalue().strip().splitlines()
+    assert "version=preview-pr5-1234567" in lines, lines
 
 
 def t_main_dispatch_ignores_empty_pr():
