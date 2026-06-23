@@ -2597,6 +2597,65 @@ def t_relay_start_port_note():
     assert note and "999" in note and str(m.RELAY_PORT) in note and "freeport" in note
 
 
+def t_relay_start_plan_port_free_starts():
+    action, kill, reason = m.relay_start_plan(
+        port_pids=[], feed_pids=[], pidfile_pid=None, pidfile_alive=False,
+        running_profile="", active_profile="testing", http_ok=False)
+    assert action == "start" and kill == [] and reason == ""
+
+
+def t_relay_start_plan_healthy_active_is_noop():
+    action, kill, reason = m.relay_start_plan(
+        port_pids=[100], feed_pids=[200], pidfile_pid=100, pidfile_alive=True,
+        running_profile="testing", active_profile="testing", http_ok=True)
+    assert action == "running" and kill == []
+
+
+def t_relay_start_plan_dead_pidfile_but_port_held_heals():
+    action, kill, reason = m.relay_start_plan(
+        port_pids=[100], feed_pids=[], pidfile_pid=None, pidfile_alive=False,
+        running_profile="", active_profile="testing", http_ok=False)
+    assert action == "heal" and kill == [100] and "100" in reason
+
+
+def t_relay_start_plan_split_brain_heals_and_unions_pids():
+    action, kill, reason = m.relay_start_plan(
+        port_pids=[100, 101], feed_pids=[200], pidfile_pid=100, pidfile_alive=True,
+        running_profile="testing", active_profile="testing", http_ok=True)
+    assert action == "heal" and kill == [100, 101, 200] and "split-brain" in reason
+
+
+def t_relay_start_plan_not_responding_heals():
+    action, kill, reason = m.relay_start_plan(
+        port_pids=[100], feed_pids=[], pidfile_pid=100, pidfile_alive=True,
+        running_profile="testing", active_profile="testing", http_ok=False)
+    assert action == "heal" and kill == [100] and "responding" in reason
+
+
+def t_relay_start_plan_foreign_holder_heals():
+    action, kill, reason = m.relay_start_plan(
+        port_pids=[999], feed_pids=[], pidfile_pid=100, pidfile_alive=True,
+        running_profile="testing", active_profile="testing", http_ok=True)
+    assert action == "heal" and kill == [999] and "foreign" in reason
+
+
+def t_relay_start_plan_wrong_profile_heals_and_names_both():
+    action, kill, reason = m.relay_start_plan(
+        port_pids=[100], feed_pids=[], pidfile_pid=100, pidfile_alive=True,
+        running_profile="iro-gtec", active_profile="testing", http_ok=True)
+    assert action == "heal" and kill == [100]
+    assert "iro-gtec" in reason and "testing" in reason
+
+
+def t_relay_start_plan_empty_stamp_is_mismatch_heals():
+    # A current-binary relay always stamps its profile; an absent stamp means an
+    # old/pre-stamp daemon -> heal (never a "running" no-op on an empty stamp).
+    action, kill, reason = m.relay_start_plan(
+        port_pids=[100], feed_pids=[], pidfile_pid=100, pidfile_alive=True,
+        running_profile="", active_profile="testing", http_ok=True)
+    assert action == "heal" and kill == [100]
+
+
 def t_profile_switch_block_reason():
     assert m.profile_switch_block_reason(False, False, False) == []
     assert m.profile_switch_block_reason(True, False, False) == ["relay"]

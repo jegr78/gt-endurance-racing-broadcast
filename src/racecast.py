@@ -1699,6 +1699,42 @@ def relay_start_port_note(our_relay_alive, control_pids):
             f"(not a racecast relay) — the relay's control port would fail to bind. "
             f"Free it first: racecast freeport {RELAY_PORT}")
 
+
+def relay_start_plan(*, port_pids, feed_pids, pidfile_pid, pidfile_alive,
+                     running_profile, active_profile, http_ok):
+    """Pure: decide what `relay start` must do, from the gathered signals.
+
+    Returns (action, kill_pids, reason):
+      action  "start"   control port free -> just start
+              "running" exactly one healthy active-profile relay we own -> no-op
+              "heal"    a defect (orphan / split-brain / wrong-profile / dead-PID /
+                        not-responding) -> kill kill_pids, then start fresh
+      kill_pids  sorted union of the 8088 + feed-port holders (heal only, else [])
+      reason     short plain-language defect string (heal only, else "")
+
+    An EMPTY/unknown running_profile counts as a mismatch (heal): a current-binary
+    relay always writes its stamp, so a stampless holder is a pre-stamp/old daemon.
+    """
+    port_set = set(port_pids)
+    if not port_set:
+        return ("start", [], "")
+    single = len(port_set) == 1
+    ours = single and pidfile_alive and (pidfile_pid in port_set)
+    if ours and http_ok and running_profile and running_profile == active_profile:
+        return ("running", [], "")
+    kill = sorted(port_set | set(feed_pids))
+    if len(port_set) > 1:
+        reason = "split-brain: %d listeners on port %d" % (len(port_set), RELAY_PORT)
+    elif not ours:
+        reason = "foreign holder PID %s" % ", ".join(str(p) for p in sorted(port_set))
+    elif not http_ok:
+        reason = "relay not responding on port %d" % RELAY_PORT
+    else:
+        reason = "serving profile %r, active is %r" % (
+            running_profile or "(none)", active_profile)
+    return ("heal", kill, reason)
+
+
 def relay_start(rest):
     stint = _stint_args(rest)   # validate early: fail fast BEFORE spawning the daemon
     # The PID file is the un-scoped singleton (_relay_pid_path), so this finds the
