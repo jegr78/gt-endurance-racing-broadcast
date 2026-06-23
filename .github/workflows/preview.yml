@@ -54,18 +54,30 @@ jobs:
         with:
           # PR: build the PR head commit. Dispatch: build the chosen ref.
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.pull_request.head.sha }}
+          fetch-depth: 0          # tags needed for the next-minor version fallback
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.12"
       - name: Compute preview identity (tag/version/title/sha)
         id: id
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           SHA="$(git rev-parse HEAD)"
+          # The probable next release version embedded in the preview identity:
+          # the open release-please PR's title wins; preview_meta.py falls back to
+          # the next minor after the latest v* tag when no Release PR exists.
+          RP_TITLE="$(gh pr list --state open --json title,headRefName \
+            --jq 'map(select(.headRefName | startswith("release-please")))[0].title // ""' \
+            2>/dev/null || true)"
+          LATEST_TAG="$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null || true)"
           python tools/preview_meta.py \
             --event "${{ github.event_name }}" \
             --pr "${{ github.event.pull_request.number }}" \
             --ref "${{ inputs.ref }}" \
-            --sha "$SHA" >> "$GITHUB_OUTPUT"
+            --sha "$SHA" \
+            --release-pr-title "$RP_TITLE" \
+            --latest-tag "$LATEST_TAG" >> "$GITHUB_OUTPUT"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
   release:
