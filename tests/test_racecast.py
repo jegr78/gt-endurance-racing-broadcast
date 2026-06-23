@@ -2608,14 +2608,15 @@ def t_relay_start_plan_healthy_active_is_noop():
     action, kill, reason = m.relay_start_plan(
         port_pids=[100], feed_pids=[200], pidfile_pid=100, pidfile_alive=True,
         running_profile="testing", active_profile="testing", http_ok=True)
-    assert action == "running" and kill == []
+    assert action == "running" and kill == [] and reason == ""
 
 
 def t_relay_start_plan_dead_pidfile_but_port_held_heals():
     action, kill, reason = m.relay_start_plan(
         port_pids=[100], feed_pids=[], pidfile_pid=None, pidfile_alive=False,
         running_profile="", active_profile="testing", http_ok=False)
-    assert action == "heal" and kill == [100] and "100" in reason
+    assert action == "heal" and kill == [100]
+    assert "dead pidfile" in reason and "100" in reason
 
 
 def t_relay_start_plan_split_brain_heals_and_unions_pids():
@@ -2654,6 +2655,7 @@ def t_relay_start_plan_empty_stamp_is_mismatch_heals():
         port_pids=[100], feed_pids=[], pidfile_pid=100, pidfile_alive=True,
         running_profile="", active_profile="testing", http_ok=True)
     assert action == "heal" and kill == [100]
+    assert "(none)" in reason and "testing" in reason
 
 
 def t_profile_switch_block_reason():

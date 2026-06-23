@@ -1723,15 +1723,17 @@ def relay_start_plan(*, port_pids, feed_pids, pidfile_pid, pidfile_alive,
     if ours and http_ok and running_profile and running_profile == active_profile:
         return ("running", [], "")
     kill = sorted(port_set | set(feed_pids))
+    holders = ", ".join(str(p) for p in sorted(port_set))
     if len(port_set) > 1:
-        reason = "split-brain: %d listeners on port %d" % (len(port_set), RELAY_PORT)
-    elif not ours:
-        reason = "foreign holder PID %s" % ", ".join(str(p) for p in sorted(port_set))
+        reason = f"split-brain: {len(port_set)} listeners on port {RELAY_PORT}"
+    elif not pidfile_alive:
+        reason = f"dead pidfile but port {RELAY_PORT} held by PID {holders}"
+    elif pidfile_pid not in port_set:
+        reason = f"foreign holder PID {holders}"
     elif not http_ok:
-        reason = "relay not responding on port %d" % RELAY_PORT
+        reason = f"relay not responding on port {RELAY_PORT}"
     else:
-        reason = "serving profile %r, active is %r" % (
-            running_profile or "(none)", active_profile)
+        reason = f"serving profile {running_profile or '(none)'!r}, active is {active_profile!r}"
     return ("heal", kill, reason)
 
 
