@@ -636,19 +636,21 @@ def t_health_facts_gate_funnel_and_push():
 
 
 def t_health_facts_stream_expected_gates_off_air():
+    # _health_facts must propagate the stream_expected latch (off until OBS has
+    # streamed, then on). The aggregate LEVEL mapping is covered by the
+    # t_aggregate_stream_not_active_* tests with EXPLICIT facts — we don't assert it
+    # via _health_facts here, because _health_facts also samples ambient signals
+    # (tailscale_present etc.) that would make a level assertion env-dependent.
     relay = _make_min_relay()
     relay.obs_reachable = True
     relay.obs_stats = {"stream_active": False}     # OBS reachable but not streaming
-    # never streamed this session -> facts carry stream_expected False -> aggregate green
     relay.stream_expected = False
     facts = relay._health_facts(1.0)
     assert facts["stream_expected"] is False
-    assert m.aggregate_health(facts)["level"] == "green"
-    # once OBS has streamed (latch set), the same off-air state escalates to red
+    assert facts["stream_active"] is False
+    # once OBS has streamed, the latch flips the gate fact on
     relay.stream_expected = True
-    facts = relay._health_facts(1.0)
-    assert facts["stream_expected"] is True
-    assert m.aggregate_health(facts)["level"] == "red"
+    assert relay._health_facts(1.0)["stream_expected"] is True
 
 
 if __name__ == "__main__":
