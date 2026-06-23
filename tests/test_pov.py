@@ -548,6 +548,32 @@ def t_parse_stream_quality():
     assert m.parse_stream_quality("") is None
 
 
+def t_sample_connectivity_sets_state_and_expected():
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
+    # Monkeypatch the module-level references that _sample_connectivity uses.
+    orig_funnel = m.tailscale.funnel_on
+    orig_backend = m.tailscale.tailscale_backend
+    orig_reachable = m.companion_common.companion_reachable
+    try:
+        m.tailscale.funnel_on = lambda *a, **k: True
+        m.tailscale.tailscale_backend = lambda *a, **k: ("ts", "Running", "100.64.0.1")
+        m.companion_common.companion_reachable = lambda *a, **k: False
+        r._sample_connectivity()
+        assert r.conn_state["funnel_ok"] is True
+        assert r.conn_state["tailscale_up"] is True
+        assert r.conn_state["companion_ok"] is False
+        assert r.funnel_expected is True           # latched once seen up
+        # Funnel later down, but expected stays latched -> funnel_down derivable.
+        m.tailscale.funnel_on = lambda *a, **k: False
+        r._sample_connectivity()
+        assert r.conn_state["funnel_ok"] is False
+        assert r.funnel_expected is True
+    finally:
+        m.tailscale.funnel_on = orig_funnel
+        m.tailscale.tailscale_backend = orig_backend
+        m.companion_common.companion_reachable = orig_reachable
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

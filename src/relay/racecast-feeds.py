@@ -2925,6 +2925,12 @@ class Relay:
         self._obs_probe_ts = 0.0      # time.time() of the last reachability probe
         self._obs_probe_running = False
         self._obs_lock = threading.Lock()
+        self.obs_stats = {}               # last redacted OBS GetStats/GetStreamStatus
+        self._obs_last_bytes = None       # for stream_kbps derivation
+        self._obs_last_bytes_ts = None
+        self.conn_state = {"funnel_ok": None, "tailscale_up": None,
+                           "companion_ok": None}
+        self.funnel_expected = False      # latched True once the Funnel is seen up
         # POV is a THIRD, independent feed — not part of the A/B index. Starts
         # paused (off) until the Director calls /pov/reload.
         self.pov_source = pov_source
@@ -3071,6 +3077,7 @@ class Relay:
         while not self._hb_stop.is_set():
             now = time.time()
             self._maybe_probe_obs(now)
+            self._sample_connectivity()
             level = self._refresh_health(now)["level"]
             if self.health_store is not None:
                 try:
@@ -3218,13 +3225,53 @@ class Relay:
         return t
 
     def _run_obs_probe(self):
-        """Body of the reachability probe (own method so it is testable
-        synchronously). Records the live result; clears the in-flight flag."""
-        reachable, note = _obs_ws.probe()
+        """Body of the OBS probe (own method so it is testable synchronously).
+        Fetches reachability + GetStats/GetStreamStatus in one session, derives the
+        upstream kbps, and stores a REDACTED stats dict (never output_bytes)."""
+        if _obs_ws is None:
+            with self._obs_lock:
+                self.obs_reachable = False
+                self.obs_note = "obs_ws unavailable"
+                self._obs_probe_running = False
+                self.obs_stats = {}
+            return
+        now = time.time()
+        reachable, stats, note = _obs_ws.get_health_stats()
+        kbps = _obs_ws.stream_kbps(self._obs_last_bytes, self._obs_last_bytes_ts,
+                                   stats.get("output_bytes"), now,
+                                   stats.get("stream_active"))
         with self._obs_lock:
             self.obs_reachable = reachable
             self.obs_note = note or None
             self._obs_probe_running = False
+            self._obs_last_bytes = stats.get("output_bytes")
+            self._obs_last_bytes_ts = now
+            redacted = {k: v for k, v in stats.items() if k != "output_bytes"}
+            redacted["stream_kbps"] = kbps
+            self.obs_stats = redacted
+
+    def _sample_connectivity(self):
+        """Sample Funnel/Tailscale/Companion reachability into self.conn_state and
+        latch funnel_expected. Best-effort: each probe defaults to None on failure."""
+        try:
+            funnel = tailscale.funnel_on("/console")
+        except Exception:                                # noqa: BLE001 — best-effort
+            funnel = None
+        try:
+            ts_state = tailscale.tailscale_backend()[1]
+            ts_up = (ts_state == "Running") if ts_state is not None else None
+        except Exception:                                # noqa: BLE001
+            ts_up = None
+        try:
+            comp_port = int(os.environ.get("RACECAST_COMPANION_PORT")
+                            or companion_common.COMPANION_DEFAULT_ADMIN_PORT)
+            comp = companion_common.companion_reachable("127.0.0.1", comp_port)
+        except Exception:                                # noqa: BLE001
+            comp = None
+        if funnel:
+            self.funnel_expected = True
+        self.conn_state = {"funnel_ok": funnel, "tailscale_up": ts_up,
+                           "companion_ok": comp}
 
     def next_auto(self):
         self.source.refresh(timeout=6)               # fresh sheet data at handover (bounded wait)
