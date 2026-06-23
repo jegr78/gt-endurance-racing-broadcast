@@ -456,6 +456,30 @@ def resolve_graphic(graphics_dir, name):
     return (path, "image/png") if os.path.isfile(path) else None
 
 
+# Vendored uPlot assets (src/assets/vendor/uplot/) served at /health-monitor/assets/.
+# Identity allow-list: only these filenames resolve, and the Content-Type is the
+# constant map value (never request-derived) — same model as ASSET_CTYPES / FONT_CTYPES.
+UPLOT_CTYPES = {"uPlot.iife.min.js": "application/javascript", "uPlot.min.css": "text/css"}
+
+
+def resolve_uplot_asset(uplot_dir, name):
+    """Resolve a requested uPlot asset filename to (path, content_type), or None
+    when unset/unknown/unsafe/absent. Safety mirrors resolve_graphic: an explicit
+    filename allow-list, reject any path separator / traversal component, then
+    realpath containment inside uplot_dir. Content-type is the constant map value,
+    never request-derived."""
+    ctype = UPLOT_CTYPES.get(name)
+    if not uplot_dir or ctype is None:
+        return None
+    if "/" in name or "\\" in name or name in (".", ".."):
+        return None
+    base = os.path.realpath(uplot_dir)
+    path = os.path.realpath(os.path.join(base, name))
+    if not path.startswith(base + os.sep):   # belt-and-braces containment
+        return None
+    return (path, ctype) if os.path.isfile(path) else None
+
+
 # Per-profile overlay overrides (profiles/<name>/overlay/). Override CSS is read
 # fresh per request (so a Control Center edit applies on the next OBS refresh
 # without a relay restart); fonts reuse the resolve_asset security pattern.
@@ -4034,23 +4058,15 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["health-monitor", "data"]:
                     return self._send(self._health_monitor_payload())
                 if len(p) == 3 and p[:2] == ["health-monitor", "assets"]:
-                    name = p[2]
-                    if (not uplot_dir or ".." in name
-                            or not re.fullmatch(r"[A-Za-z0-9._-]+", name)):
+                    resolved = resolve_uplot_asset(uplot_dir, p[2])
+                    if resolved is None:
                         return self._send({"error": "not found"}, 404)
-                    base = os.path.realpath(uplot_dir)
-                    full = os.path.realpath(os.path.join(base, name))
-                    # Containment check (clears CodeQL py/path-injection): the
-                    # resolved path must stay inside the vendored-asset dir.
-                    if os.path.commonpath([base, full]) != base:
-                        return self._send({"error": "not found"}, 404)
+                    full, ctype = resolved
                     try:
                         with open(full, "rb") as fh:
                             data = fh.read()
                     except OSError:
                         return self._send({"error": "not found"}, 404)
-                    ctype = "text/css" if name.endswith(".css") else \
-                            ("application/javascript" if name.endswith(".js") else "application/octet-stream")
                     self.send_response(200)
                     self.send_header("Content-Type", ctype + "; charset=utf-8")
                     self.send_header("Content-Length", str(len(data)))

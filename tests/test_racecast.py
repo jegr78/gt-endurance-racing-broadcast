@@ -2621,19 +2621,26 @@ def t_health_export_import_roundtrip():
         m.hsmod.record(conn, {"ts": 1.0, "health_level": "green", "health_reasons": []}, "periodic")
         conn.close()
         out = os.path.join(d, "dump.jsonl")
+        # Init the second DB up front and CLOSE it: an open sqlite handle blocks
+        # tempdir cleanup (rmtree) on Windows (WinError 32).
+        db2 = os.path.join(d, "h2.db")
+        c2 = m.hsmod.open_db(db2); m.hsmod.migrate(c2); c2.close()
         # Point the CLI at our temp DB via monkeypatching the path resolver.
         orig_path = m._health_db_path
-        m._health_db_path = lambda: db
-        m.health_cmd(["export", "--out", out])
-        assert os.path.exists(out) and os.path.getsize(out) > 0
-        # Import into a second DB.
-        db2 = os.path.join(d, "h2.db")
-        m.hsmod.migrate(m.hsmod.open_db(db2))
-        m._health_db_path = lambda: db2
-        m.health_cmd(["import", out])
-        conn2 = m.hsmod.open_db(db2)
-        assert len(m.hsmod.query_range(conn2, 0, 1e12)) == 1
-        m._health_db_path = orig_path
+        try:
+            m._health_db_path = lambda: db
+            m.health_cmd(["export", "--out", out])
+            assert os.path.exists(out) and os.path.getsize(out) > 0
+            # Import into the second DB.
+            m._health_db_path = lambda: db2
+            m.health_cmd(["import", out])
+            conn2 = m.hsmod.open_db(db2)
+            try:
+                assert len(m.hsmod.query_range(conn2, 0, 1e12)) == 1
+            finally:
+                conn2.close()
+        finally:
+            m._health_db_path = orig_path
 
 
 if __name__ == "__main__":
