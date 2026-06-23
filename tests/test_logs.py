@@ -193,7 +193,7 @@ def t_close_logging_releases_handlers(tmp):
 
 
 def t_pump_subprocess_on_line_hook():
-    import io, logging
+    import io
     seen = []
     stream = io.StringIO("a\nb\n")
     logger = logging.getLogger("t.pump.hook"); logger.addHandler(logging.NullHandler())
