@@ -391,7 +391,7 @@ const BAND_GROUPS = [["critical", "Critical"], ["feeds", "Feeds"],
 
 function renderBands(bands, current) {
   const host = $("hm-bands");
-  host.innerHTML = "";
+  host.textContent = "";
   const span = Math.max(1, rangeEnd - rangeStart);
   const quality = {
     feed_a_state: current && current.feeds && current.feeds.A && current.feeds.A.quality,
