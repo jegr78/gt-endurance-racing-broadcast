@@ -186,11 +186,18 @@ def aggregate_health(facts):
     unit-tested. `facts` keys: feeds_down (list of feed names with a lost live
     serve), feeds_connecting_long (list connecting past HEALTH_CONNECTING_S, not
     down), cookies_stale (bool), obs_reachable (True/False/None — None = not yet
-    probed, never an alarm), tailscale_present (bool).
+    probed, never an alarm), tailscale_present (bool),
+    stream_active (True/False/None — OBS streaming state; None = not yet known),
+    stream_reconnecting (bool — OBS upstream unstable),
+    funnel_down (bool — Funnel was previously seen up but is now down),
+    sheet_push_failing (bool — Sheet webhook returning errors).
 
-    red  = any feed down (a live picture was lost).
+    red  = any feed down (a live picture was lost); or obs_reachable truthy and
+           stream_active is False (OBS connected but not streaming — off air, no
+           live-gate so this fires even pre-show).
     yellow = OBS WebSocket unreachable · cookies stale · Tailscale down · a feed
-             stuck connecting. A red result still lists the yellow issues under it.
+             stuck connecting · stream_reconnecting · funnel_down ·
+             sheet_push_failing. A red result still lists the yellow issues under it.
     green = none of the above."""
     reasons, red, yellow = [], [], []
     for name in facts.get("feeds_down") or []:
@@ -3318,7 +3325,16 @@ class Relay:
             comp = None
         if funnel:
             self.funnel_expected = True
-        self.conn_state = {"funnel_ok": funnel, "tailscale_up": ts_up,
+        # Tri-state: True = up; False = down AND was previously expected (real
+        # regression); None = down/absent but never seen up (neutral — renders
+        # grey in the health band, not red).
+        if funnel:
+            funnel_ok = True
+        elif self.funnel_expected:
+            funnel_ok = False
+        else:
+            funnel_ok = None
+        self.conn_state = {"funnel_ok": funnel_ok, "tailscale_up": ts_up,
                            "companion_ok": comp}
 
     def next_auto(self):

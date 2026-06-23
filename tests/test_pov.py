@@ -555,6 +555,15 @@ def t_sample_connectivity_sets_state_and_expected():
     orig_backend = m.tailscale.tailscale_backend
     orig_reachable = m.companion_common.companion_reachable
     try:
+        # Never-expected case: funnel down before ever seen up -> neutral (None).
+        r2 = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
+        m.tailscale.funnel_on = lambda *a, **k: False
+        m.tailscale.tailscale_backend = lambda *a, **k: ("ts", "Running", "100.64.0.1")
+        m.companion_common.companion_reachable = lambda *a, **k: True
+        r2._sample_connectivity()
+        assert r2.conn_state["funnel_ok"] is None    # neutral, not red
+        assert r2.funnel_expected is False
+
         m.tailscale.funnel_on = lambda *a, **k: True
         m.tailscale.tailscale_backend = lambda *a, **k: ("ts", "Running", "100.64.0.1")
         m.companion_common.companion_reachable = lambda *a, **k: False
@@ -566,7 +575,7 @@ def t_sample_connectivity_sets_state_and_expected():
         # Funnel later down, but expected stays latched -> funnel_down derivable.
         m.tailscale.funnel_on = lambda *a, **k: False
         r._sample_connectivity()
-        assert r.conn_state["funnel_ok"] is False
+        assert r.conn_state["funnel_ok"] is False  # real regression: was expected
         assert r.funnel_expected is True
     finally:
         m.tailscale.funnel_on = orig_funnel
