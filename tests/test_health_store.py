@@ -75,6 +75,32 @@ def t_schema_has_no_url_columns():
         assert forbidden not in cols, forbidden
 
 
+def t_collapse_bands_merges_equal_and_splits_on_change():
+    pts = [(0.0, "green"), (30.0, "green"), (60.0, "red"), (90.0, "red")]
+    bands = hs.collapse_bands(pts, gap_s=95)
+    assert bands == [{"from": 0.0, "to": 30.0, "state": "green"},
+                     {"from": 60.0, "to": 90.0, "state": "red"}]
+
+
+def t_collapse_bands_breaks_on_gap_even_if_equal():
+    # A long gap (relay down) must end the band, not bridge it.
+    pts = [(0.0, "green"), (30.0, "green"), (1000.0, "green")]
+    bands = hs.collapse_bands(pts, gap_s=95)
+    assert len(bands) == 2
+    assert bands[0] == {"from": 0.0, "to": 30.0, "state": "green"}
+    assert bands[1] == {"from": 1000.0, "to": 1000.0, "state": "green"}
+
+
+def t_derive_bands_covers_all_band_fields():
+    samples = [_snap(ts=0.0, level="green", a="serving"),
+               _snap(ts=30.0, level="red", a="idle")]
+    bands = hs.derive_bands(samples)
+    assert set(bands) == set(hs.BAND_FIELDS)
+    assert bands["health_level"] == [{"from": 0.0, "to": 0.0, "state": "green"},
+                                     {"from": 30.0, "to": 30.0, "state": "red"}]
+    assert bands["feed_a_state"][0]["state"] == "serving"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

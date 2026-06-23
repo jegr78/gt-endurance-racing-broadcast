@@ -104,3 +104,22 @@ def query_range(conn, frm, to):
     cur = conn.execute("SELECT * FROM samples WHERE ts>=? AND ts<=? ORDER BY ts ASC",
                        (frm, to))
     return [_row_to_dict(r) for r in cur.fetchall()]
+
+
+def collapse_bands(points, gap_s=GAP_S):
+    """Collapse [(ts, value), ...] (ascending) into contiguous bands
+    {from,to,state}. A new band starts when the value changes OR the gap to the
+    previous sample exceeds gap_s (the relay was down — never bridge it)."""
+    bands = []
+    for ts, val in points:
+        if bands and bands[-1]["state"] == val and (ts - bands[-1]["to"]) <= gap_s:
+            bands[-1]["to"] = ts
+        else:
+            bands.append({"from": ts, "to": ts, "state": val})
+    return bands
+
+
+def derive_bands(samples, gap_s=GAP_S):
+    """One band list per BAND_FIELD, from ordered samples."""
+    return {field: collapse_bands([(s["ts"], s.get(field)) for s in samples], gap_s)
+            for field in BAND_FIELDS}
