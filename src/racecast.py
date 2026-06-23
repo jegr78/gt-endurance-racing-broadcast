@@ -3425,6 +3425,50 @@ def cookies_status_data(status=None):
         return {"level": "WARN", "detail": f"check failed: {exc}"}
 
 
+PRODUCER_TAB = "Producer"   # read-only league Sheet tab: Part | Producer | MagicDNS
+
+
+def _producer_fetch(url):
+    """Fetch the Producer-tab CSV as text. Covered side -> http_util (UA-stamped),
+    never a bare urllib call (tests/test_http_util.py enforces this)."""
+    return http_util.get_bytes(url, timeout=15).decode("utf-8", "replace")
+
+
+def producer_schedule_data(fetch=None, self_name=None, refresh_env=None):
+    """Read-only producer handover schedule from the active league Sheet's
+    `Producer` tab (`Part | Producer | MagicDNS`), for the Control Center Home
+    view. Network: a gviz CSV fetch (seconds) — served on demand via
+    /api/producer-schedule, never from the status poll (like assets_status_data).
+
+    Each row is tagged `self` (exact-FQDN match of its MagicDNS against this
+    machine's own MagicDNS name) so the Home view disables takeover against this
+    machine. `self_known` is False when our own MagicDNS can't be detected
+    (Tailscale off/logged out) — the UI then locks ALL takeover actions.
+
+    Tolerant: any fetch/parse failure returns empty rows (the card hides), never
+    raises. `fetch`/`self_name`/`refresh_env` are test seams."""
+    from urllib.parse import quote
+    import producer as prod
+    import tailscale as ts
+    (refresh_env or _apply_active_profile_env)()
+    own = ts.detect_magicdns_name() if self_name is None else self_name
+    base = {"rows": [], "self_name": own, "self_known": bool(own)}
+    sheet_id = os.environ.get("RACECAST_SHEET_ID") or ""
+    if not sheet_id:
+        return base
+    url = ("https://docs.google.com/spreadsheets/d/%s/gviz/tq?tqx=out:csv&sheet=%s"
+           % (sheet_id, quote(PRODUCER_TAB)))
+    try:
+        text = (fetch or _producer_fetch)(url)
+        rows = prod.parse_producer_rows(text)
+    except Exception:
+        return base
+    for r in rows:
+        r["self"] = ts.magicdns_is_self(r.get("magicdns", ""), own)
+    base["rows"] = rows
+    return base
+
+
 def assets_status_data(state=None, refresh_env=None):
     """Sheet-driven graphics/media readiness (network: sheet fetch, takes
     seconds — served on demand via /api/assets, never from the status poll).
@@ -5203,6 +5247,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "ops": ops_mod.OPS,
         "build_argv": ops_mod.build_argv,
         "assets": assets_status_data,
+        "producer_schedule": producer_schedule_data,
         "asset_files": assets_files_data,
         "asset_roots": asset_roots_data,
         "tools": tools_status_data,

@@ -2711,6 +2711,50 @@ def t_health_export_import_roundtrip():
             m._health_db_path = orig_path
 
 
+# --- producer_schedule_data: tolerant provider with seams ---------------------
+_PRODUCER_CSV = ("Part,Producer,MagicDNS\r\n"
+                 "1,Alice,producer-a.tail1234.ts.net\r\n"
+                 "2,Bob,producer-b.tail1234.ts.net\r\n")
+
+
+def t_producer_schedule_tags_self_and_shape():
+    os.environ["RACECAST_SHEET_ID"] = "SHEET123"
+    data = m.producer_schedule_data(
+        fetch=lambda url: _PRODUCER_CSV,
+        self_name="producer-b.tail1234.ts.net",
+        refresh_env=lambda: None)
+    assert data["self_name"] == "producer-b.tail1234.ts.net"
+    assert data["self_known"] is True
+    rows = data["rows"]
+    assert [r["producer"] for r in rows] == ["Alice", "Bob"]
+    assert rows[0]["self"] is False
+    assert rows[1]["self"] is True           # Bob == me -> locked
+
+
+def t_producer_schedule_unknown_self_known_false():
+    os.environ["RACECAST_SHEET_ID"] = "SHEET123"
+    data = m.producer_schedule_data(
+        fetch=lambda url: _PRODUCER_CSV, self_name="", refresh_env=lambda: None)
+    assert data["self_known"] is False
+    assert all(r["self"] is False for r in data["rows"])
+
+
+def t_producer_schedule_no_sheet_id_is_empty():
+    os.environ.pop("RACECAST_SHEET_ID", None)
+    data = m.producer_schedule_data(
+        fetch=lambda url: _PRODUCER_CSV, self_name="x.ts.net", refresh_env=lambda: None)
+    assert data == {"rows": [], "self_name": "x.ts.net", "self_known": True}
+
+
+def t_producer_schedule_fetch_failure_is_empty():
+    os.environ["RACECAST_SHEET_ID"] = "SHEET123"
+    def boom(url):
+        raise OSError("network down")
+    data = m.producer_schedule_data(
+        fetch=boom, self_name="x.ts.net", refresh_env=lambda: None)
+    assert data["rows"] == [] and data["self_known"] is True
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
