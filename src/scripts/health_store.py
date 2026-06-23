@@ -177,3 +177,50 @@ def prune(conn, retention_days=DEFAULT_RETENTION_DAYS, now=None):
     cur = conn.execute("DELETE FROM samples WHERE ts < ?", (cutoff,))
     conn.commit()
     return cur.rowcount
+
+
+def export_jsonl_line(row):
+    """Serialize one sample dict (health_reasons may be a list) to a JSON line."""
+    r = {c: row.get(c) for c in COLUMNS}
+    r["kind"] = row.get("kind")
+    reasons = row.get("health_reasons")
+    r["health_reasons"] = reasons if isinstance(reasons, list) else []
+    return json.dumps(r, ensure_ascii=False)
+
+
+def export_jsonl(conn, frm=0):
+    """All samples with ts >= frm as JSON lines, ascending."""
+    cur = conn.execute("SELECT * FROM samples WHERE ts>=? ORDER BY ts ASC", (frm,))
+    out = []
+    for row in cur.fetchall():
+        out.append(export_jsonl_line(_row_to_dict(row)))
+    return out
+
+
+def import_jsonl(conn, lines):
+    """Merge JSON-Lines samples into the DB, deduplicated by (ts, kind). Malformed
+    lines are skipped (never fatal). Returns the number of rows newly inserted."""
+    inserted = 0
+    placeholders = ",".join("?" for _ in COLUMNS)
+    for line in lines:
+        line = (line or "").strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(obj, dict) or obj.get("ts") is None or obj.get("kind") is None:
+            continue
+        dup = conn.execute("SELECT 1 FROM samples WHERE ts=? AND kind=? LIMIT 1",
+                           (obj["ts"], obj["kind"])).fetchone()
+        if dup:
+            continue
+        s = dict(obj)
+        s["health_reasons"] = json.dumps(s.get("health_reasons") or [])
+        values = [s.get(col) for col in COLUMNS]
+        conn.execute(f"INSERT INTO samples ({','.join(COLUMNS)}) VALUES ({placeholders})",
+                     values)
+        inserted += 1
+    conn.commit()
+    return inserted

@@ -157,6 +157,40 @@ def t_prune_deletes_older_than_retention():
         assert [r["ts"] for r in rows] == [recent]
 
 
+def t_export_then_import_into_fresh_db_roundtrips():
+    with tempfile.TemporaryDirectory() as d:
+        a = hs.open_db(os.path.join(d, "a.db")); hs.migrate(a)
+        hs.record(a, _snap(ts=100.0, level="green"), "periodic")
+        hs.record(a, _snap(ts=130.0, level="red"), "event")
+        lines = hs.export_jsonl(a)
+        assert len(lines) == 2 and lines[0].startswith("{")
+
+        b = hs.open_db(os.path.join(d, "b.db")); hs.migrate(b)
+        n = hs.import_jsonl(b, lines)
+        assert n == 2
+        rows = hs.query_range(b, 0, 1e12)
+        assert [r["ts"] for r in rows] == [100.0, 130.0]
+        assert rows[1]["kind"] == "event"
+
+
+def t_import_is_idempotent_dedup_by_ts_kind():
+    with tempfile.TemporaryDirectory() as d:
+        a = hs.open_db(os.path.join(d, "a.db")); hs.migrate(a)
+        hs.record(a, _snap(ts=100.0), "periodic")
+        lines = hs.export_jsonl(a)
+        assert hs.import_jsonl(a, lines) == 0       # re-importing changes nothing
+        assert len(hs.query_range(a, 0, 1e12)) == 1
+
+
+def t_import_skips_malformed_lines():
+    with tempfile.TemporaryDirectory() as d:
+        b = hs.open_db(os.path.join(d, "b.db")); hs.migrate(b)
+        good = hs.export_jsonl_line({"ts": 5.0, "kind": "periodic", "health_level": "green",
+                                     "health_reasons": []})
+        n = hs.import_jsonl(b, [good, "{not json", "", "null", "[]"])
+        assert n == 1
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
