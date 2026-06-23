@@ -212,6 +212,25 @@ def t_policy_takeover_cues_producer_stepup():
     assert cp.decide({"director"}, seg, "GET", True) == cp.FORBIDDEN
 
 
+def t_health_monitor_page_and_data_are_any_authenticated():
+    assert cp.min_capability(["health-monitor"]) == cp.Requirement(cp.ANY, False)
+    assert cp.min_capability(["health-monitor", "data"]) == cp.Requirement(cp.ANY, False)
+
+
+def t_decide_health_monitor_allows_any_role():
+    for role in (cp.COMMENTATOR, cp.DIRECTOR, cp.PRODUCER, cp.RACE_CONTROL):
+        assert cp.decide({role}, ["health-monitor"]) == cp.ALLOW
+        assert cp.decide({role}, ["health-monitor", "data"]) == cp.ALLOW
+    # An authenticated subject with no resolved role still reaches an ANY route.
+    assert cp.decide(set(), ["health-monitor"]) == cp.ALLOW
+
+
+def t_takeover_health_is_producer_step_up():
+    assert cp.min_capability(["takeover", "health"]) == cp.Requirement(cp.PRODUCER, True)
+    assert cp.decide({cp.PRODUCER}, ["takeover", "health"], has_step_up=False) == cp.STEP_UP_REQUIRED
+    assert cp.decide({cp.PRODUCER}, ["takeover", "health"], has_step_up=True) == cp.ALLOW
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
