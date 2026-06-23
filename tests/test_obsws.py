@@ -848,6 +848,76 @@ def t_resolve_obs_target_env_overrides_then_config():
                                 {"port": 4455}) == ("100.64.0.9", 4455)
 
 
+# --------------------------------------------------------------------------
+# parse_obs_stats / parse_stream_status / get_health_stats
+# --------------------------------------------------------------------------
+def t_parse_obs_stats():
+    p = {"cpuUsage": 12.5, "memoryUsage": 910.0, "availableDiskSpace": 51200.0,
+         "activeFps": 60.0, "renderSkippedFrames": 3, "renderTotalFrames": 1000}
+    out = m.parse_obs_stats(p)
+    assert out["obs_cpu_pct"] == 12.5
+    assert out["obs_mem_mb"] == 910.0
+    assert out["obs_disk_free_mb"] == 51200.0
+    assert out["obs_fps"] == 60.0
+    assert out["obs_render_skipped_pct"] == 0.3
+    # Missing fields -> None, never KeyError; zero total -> None (no div by zero).
+    out2 = m.parse_obs_stats({"renderSkippedFrames": 0, "renderTotalFrames": 0})
+    assert out2["obs_cpu_pct"] is None and out2["obs_render_skipped_pct"] is None
+
+
+def t_parse_stream_status():
+    p = {"outputActive": True, "outputReconnecting": False, "outputCongestion": 0.2,
+         "outputSkippedFrames": 5, "outputTotalFrames": 500, "outputBytes": 1234567}
+    out = m.parse_stream_status(p)
+    assert out["stream_active"] is True
+    assert out["stream_reconnecting"] is False
+    assert out["stream_congestion"] == 0.2
+    assert out["stream_dropped_pct"] == 1.0
+    assert out["output_bytes"] == 1234567
+    out2 = m.parse_stream_status({})
+    assert out2["stream_active"] is None and out2["stream_dropped_pct"] is None
+
+
+def t_get_health_stats_unreachable_is_quiet():
+    # Nothing listens here: (False, {}, note), never an exception.
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    free_port = sock.getsockname()[1]
+    sock.close()
+    reachable, stats, note = m.get_health_stats(port=free_port, password="x", timeout=0.5)
+    assert reachable is False
+    assert stats == {}
+    assert note                                    # human-readable reason
+
+
+def t_get_health_stats_merges_stats_and_stream_status():
+    # Use a fake session that returns canned GetStats + GetStreamStatus payloads.
+    sess = _FakeSession({
+        "GetStats": {"cpuUsage": 5.0, "memoryUsage": 800.0,
+                     "availableDiskSpace": 20000.0, "activeFps": 60.0,
+                     "renderSkippedFrames": 0, "renderTotalFrames": 500},
+        "GetStreamStatus": {"outputActive": True, "outputReconnecting": False,
+                            "outputCongestion": 0.0, "outputSkippedFrames": 0,
+                            "outputTotalFrames": 200, "outputBytes": 999},
+    })
+    orig, m._connect = m._connect, lambda *a, **k: (sess, "")
+    try:
+        reachable, stats, note = m.get_health_stats()
+    finally:
+        m._connect = orig
+    assert reachable is True
+    assert note == ""
+    # parse_obs_stats keys present
+    assert stats["obs_cpu_pct"] == 5.0
+    assert stats["obs_mem_mb"] == 800.0
+    assert stats["obs_render_skipped_pct"] == 0.0   # 0 skipped / 500 total -> 0%
+    # parse_stream_status keys present
+    assert stats["stream_active"] is True
+    assert stats["output_bytes"] == 999
+    # session was closed
+    assert ("close", {}) in sess.sent
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
