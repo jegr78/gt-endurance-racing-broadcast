@@ -191,6 +191,59 @@ def t_import_skips_malformed_lines():
         assert n == 1
 
 
+m = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))
+
+LOGDIR = tempfile.mkdtemp(prefix="racecast-test-health-")
+_URLS = [f"https://www.youtube.com/watch?v=stint{i}" for i in range(1, 3)]
+
+
+class _FakeSrc:
+    """Minimal schedule source for _make_relay — two stints, no live pulls."""
+    def __init__(self, items): self.items = list(items)
+    def get(self): return self.items
+    def refresh(self, timeout=None): pass
+    def health(self): return {"last_ok_age_s": 1.0, "count": len(self.items)}
+
+
+def _make_relay(mod):
+    """Build a minimal Relay with two stints and a temp log dir."""
+    src = _FakeSrc(_URLS)
+    return mod.Relay(src, [53001, 53002], LOGDIR)
+
+
+def t_healthstore_record_tick_marks_changes_as_events():
+    with tempfile.TemporaryDirectory() as d:
+        store = m.HealthStore(os.path.join(d, "h.db"))
+        r1 = store.record_tick(_snap(ts=0.0, level="green"), now=0.0)
+        r2 = store.record_tick(_snap(ts=30.0, level="green"), now=30.0)
+        r3 = store.record_tick(_snap(ts=60.0, level="red"), now=60.0)
+        assert r1["kind"] == "event"        # first row is always an event (baseline)
+        assert r2["kind"] == "periodic"     # unchanged state
+        assert r3["kind"] == "event"        # health_level changed
+        assert len(store.query(0, 1e12)) == 3
+
+
+def t_healthstore_bands_incidents_series_smoke():
+    with tempfile.TemporaryDirectory() as d:
+        store = m.HealthStore(os.path.join(d, "h.db"))
+        store.record_tick(_snap(ts=0.0, level="green"), now=0.0)
+        store.record_tick(_snap(ts=30.0, level="red") | {"health_reasons": ["Feed B down"]}, now=30.0)
+        assert store.bands(0, 1e12)["health_level"][-1]["state"] == "red"
+        assert store.incidents(0, 1e12)[0]["severity"] == "red"
+        assert "source_last_ok_age_s" in store.series(0, 1e12, 2000)
+
+
+def t_relay_health_snapshot_has_no_urls_and_all_columns():
+    relay = _make_relay(m)
+    snap = relay._health_snapshot(now=123.0)
+    for col in hs.COLUMNS:
+        if col in ("ts", "kind"):
+            continue
+        assert col in snap, col
+    blob = repr(snap).lower()
+    assert "http" not in blob and "youtu" not in blob   # redaction
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

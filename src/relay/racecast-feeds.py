@@ -86,6 +86,7 @@ except Exception:                                # noqa: BLE001 — reflection i
 
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
 import cue_admin   # director text-cue channel (#243)
+import health_store  # health-history SQLite store (task 7; src/scripts on sys.path)
 import console_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
 import console_admin  # talent-cockpit revocation version store (#191)
 import discord_oauth  # Discord OAuth2 helpers for /console/login
@@ -1319,6 +1320,60 @@ class ChatStore:
         with self.lock:
             self.messages = msgs
         return {"ok": True, "count": len(msgs)}
+
+
+class HealthStore:
+    """Thread-safe wrapper around the SQLite health-history store. One connection
+    guarded by a lock (the heartbeat thread writes; request threads read). Marks a
+    tick as an 'event' when the categorical state changed since the last row."""
+
+    def __init__(self, path, retention_days=health_store.DEFAULT_RETENTION_DAYS):
+        self.path = path
+        self.retention_days = retention_days
+        self.lock = threading.Lock()
+        try:
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        except OSError:
+            pass  # best-effort: open_db below will raise if the path is truly unwritable
+        self.conn = health_store.open_db(self.path)
+        health_store.migrate(self.conn)
+        self._last_key = None
+
+    @staticmethod
+    def _state_key(snapshot):
+        return tuple(snapshot.get(f) for f in health_store.STATE_KEY_FIELDS)
+
+    def record_tick(self, snapshot, now=None):
+        key = self._state_key(snapshot)
+        with self.lock:
+            kind = "event" if key != self._last_key else "periodic"
+            self._last_key = key
+            return health_store.record(self.conn, snapshot, kind, now=now)
+
+    def query(self, frm, to):
+        with self.lock:
+            return health_store.query_range(self.conn, frm, to)
+
+    def bands(self, frm, to):
+        return health_store.derive_bands(self.query(frm, to))
+
+    def incidents(self, frm, to):
+        return health_store.derive_incidents(self.query(frm, to))
+
+    def series(self, frm, to, max_points):
+        return health_store.numeric_series(self.query(frm, to), max_points)
+
+    def prune(self):
+        with self.lock:
+            return health_store.prune(self.conn, self.retention_days)
+
+    def export_lines(self, frm=0):
+        with self.lock:
+            return health_store.export_jsonl(self.conn, frm)
+
+    def import_lines(self, lines):
+        with self.lock:
+            return health_store.import_jsonl(self.conn, lines)
 
 
 class CueStore:
@@ -2829,6 +2884,7 @@ class Relay:
         self._notified_level = None
         self._health_lock = threading.Lock()
         self._hb_stop = threading.Event()
+        self.health_store = None  # assigned by bootstrap (Task 13); always exists
 
     def active_source(self):
         """The schedule the A/B feeds currently serve: qualifying when in
@@ -2891,6 +2947,33 @@ class Relay:
             self.health_reasons = h["reasons"]
         return h
 
+    def _health_snapshot(self, now):
+        """A redacted, flat health sample (matches health_store.COLUMNS minus
+        ts/kind). No stream URLs / sheet_id — safe to persist and pull."""
+        def feed_fields(f):
+            return ("stopped" if f.paused else f.phase,
+                    1 if (f.dropped and not f.paused) else 0, f.idx + 1)
+        a_state, a_down, a_stint = feed_fields(self.feeds["A"])
+        b_state, b_down, b_stint = feed_fields(self.feeds["B"])
+        ch = cookie_health(self.cookies, now=now)
+        live = self.live_feed()
+        return {"ts": now,
+                "health_level": self.health_level, "health_reasons": self.health_reasons,
+                "feed_a_state": a_state, "feed_a_down": a_down, "feed_a_stint": a_stint,
+                "feed_b_state": b_state, "feed_b_down": b_down, "feed_b_stint": b_stint,
+                "pov_state": (None if not self.pov else
+                              ("stopped" if self.pov.paused else self.pov.phase)),
+                "obs_reachable": (None if self.obs_reachable is None
+                                  else (1 if self.obs_reachable else 0)),
+                "source_last_ok_age_s": self.source.health().get("last_ok_age_s"),
+                "source_count": self.source.health().get("count"),
+                "cookies_present": 1 if self.cookies else 0,
+                "cookies_age_h": ch.get("age_h"),
+                "cookies_stale": 1 if ch.get("stale") else 0,
+                "timer_mode": None, "timer_remaining_s": None,
+                "mode": self.mode,
+                "live_feed": live, "live_stint": self.feeds[live].idx + 1}
+
     def _send_health_webhook(self, level, reasons, prev):
         """POST a Discord health alert. Fully best-effort: no URL or any failure
         logs one line and returns — never breaks the heartbeat."""
@@ -2918,6 +3001,11 @@ class Relay:
             now = time.time()
             self._maybe_probe_obs(now)
             level = self._refresh_health(now)["level"]
+            if self.health_store is not None:
+                try:
+                    self.health_store.record_tick(self._health_snapshot(now), now)
+                except Exception:  # noqa: BLE001 — sampling is best-effort
+                    pass  # never let a store write break the heartbeat
             if health_should_notify(self._notified_level, level):
                 self._send_health_webhook(level, self.health_reasons, self._notified_level)
                 self._notified_level = level
