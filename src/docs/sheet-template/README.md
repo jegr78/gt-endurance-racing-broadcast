@@ -21,4 +21,5 @@ without `.csv`), and **File → Import → Upload** each CSV into its tab (impor
 | `Setup.csv` | Setup | Director Panel (write) |
 | `Timer.csv` | Timer | relay |
 | `Crew.csv` | Crew | relay |
+| `Producer.csv` | Producer | Control Center |
 | `Assets.csv` | Assets | `racecast graphics` / `media` |
