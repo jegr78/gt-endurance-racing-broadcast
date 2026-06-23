@@ -101,6 +101,15 @@ def min_capability(segments, method="GET"):
     if p == ["race-control"] or p == ["race-control", "data"]:
         return Requirement(RACE_CONTROL, False)
 
+    # --- health monitor: read-only dashboard, any authenticated subject (#health) ---
+    # Page + its combined data endpoint. Redacted by construction (no stream URLs),
+    # so any authenticated console subject may view it — same tier as the cockpit
+    # monitors. Takeover/health is the producer+step-up pull, already matched by the
+    # generic takeover/* rule above.
+    if p == ["health-monitor"] or p == ["health-monitor", "data"] or \
+       (len(p) == 3 and p[:2] == ["health-monitor", "assets"]):
+        return Requirement(ANY, False)
+
     # --- commentator: own-row stream-link submission ---
     if p == ["submit"] or p == ["cockpit", "submit"]:
         return Requirement(COMMENTATOR, False)

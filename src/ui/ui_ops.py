@@ -41,6 +41,8 @@ OPS = {
     "install-apps": ["install-apps", "--yes"],
     "update": ["update", "--yes"],   # optional `tag` param installs a preview build
     "chat-clear": ["chat", "clear"],
+    "health-export": ["health", "export"],
+    "health-import": ["health", "import"],
 }
 
 # Browsers get-cookies can export from (yt-dlp --cookies-from-browser names).
@@ -94,6 +96,16 @@ def _tag_arg(value):
     return ["--tag", s]
 
 
+def _file_arg(value):
+    """A local file path the operator typed for `health import`. Reject empty /
+    control chars / a leading '-' (argv flag-smuggling: a path like '--out' must
+    never reach the child as an option); returned as a positional arg."""
+    s = str(value).strip()
+    if not s or s.startswith("-") or any(ord(c) < 0x20 for c in s):
+        raise ValueError(f"invalid file path: {value!r}")
+    return [s]
+
+
 # op name -> {param name: validator(value) -> argv fragment}. Ops absent here
 # accept no parameters at all.
 PARAMS = {
@@ -104,6 +116,13 @@ PARAMS = {
     "install-tools": {"update": _update_flag},
     "install-apps": {"update": _update_flag},
     "update": {"tag": _tag_arg},
+    "health-import": {"file": _file_arg},
+}
+
+# op name -> tuple of param names that must be present (non-empty). Params not
+# listed here are optional (the existing build_argv contract: absent/empty = skipped).
+REQUIRED = {
+    "health-import": ("file",),
 }
 
 
@@ -120,6 +139,9 @@ def build_argv(name, params=None):
     unknown = set(params) - set(spec)
     if unknown:
         raise ValueError(f"unexpected parameter(s): {', '.join(sorted(unknown))}")
+    missing = [k for k in REQUIRED.get(name, ()) if not params.get(k)]
+    if missing:
+        raise ValueError(f"missing required parameter(s): {', '.join(missing)}")
     for key, validate in spec.items():
         if key in params and params[key] not in (None, ""):
             argv += validate(params[key])

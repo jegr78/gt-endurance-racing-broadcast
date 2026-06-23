@@ -475,6 +475,11 @@
           <div class="row"><span class="name">Crew chat</span>
             <span class="dim grow"></span>
             <button class="danger" onclick="op('chat-clear', true)">Clear chat</button></div>
+          <div class="row"><span class="name">Health Monitor</span>
+            <span class="dim grow">relay must be running</span>
+            <a class="linkbtn" id="rel-health-open" target="_blank" rel="noopener" hidden>Open monitor ↗</a>
+            <button onclick="op('health-export')">Export history</button>
+            <button onclick="importHealth()">Import history…</button></div>
         </section>
         <p class="envhint">The relay reads its <b>schedule and HUD data from the Google Sheet</b> and is configured through <b>Settings</b>: <span class="mono">RACECAST_SHEET_ID</span> (the sheet) and <span class="mono">RACECAST_SHEET_PUSH_URL</span> (write-back for the timer + panel). There are no other local relay settings — tab names, ports and the bind mode use safe defaults.</p>
       </div>
@@ -1510,6 +1515,11 @@ async function refresh() {
   $('panel-link').href = panelHref;
   const relOpen = $('rel-panel-open');
   if (relOpen) { relOpen.hidden = !panelUp; if (panelUp) relOpen.href = panelHref; }
+  const hmOpen = $('rel-health-open');
+  if (hmOpen) {
+    hmOpen.hidden = !panelUp;
+    if (panelUp) hmOpen.href = 'http://127.0.0.1:' + s.relay.port + '/health-monitor';
+  }
   setBadge('streams', s.streams.filter(f => f.alive).length > 0, 'RUNNING', 'stopped',
            s.streams.length ? s.streams.filter(f => f.alive).length + '/' +
                               s.streams.length + ' feeds up' : 'no feeds started');
@@ -3346,6 +3356,12 @@ window.addEventListener('keydown', e => {
 // saved CSS change shows. Best-effort — needs the relay up + obs-websocket; the
 // job console surfaces the result.
 function applyOverlay() { op('obs-refresh'); }
+
+function importHealth() {
+  const path = prompt('Path to health history file (.jsonl):');
+  if (!path || !path.trim()) return;
+  op('health-import', false, {file: path.trim()});
+}
 
 // Open the relay's HUD design preview (/hud/preview) in a new tab. Served by the
 // relay on the fixed loopback (the producer designs locally), so it needs the

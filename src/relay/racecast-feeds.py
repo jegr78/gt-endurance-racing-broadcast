@@ -86,6 +86,10 @@ except Exception:                                # noqa: BLE001 — reflection i
 
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
 import cue_admin   # director text-cue channel (#243)
+import health_store  # health-history SQLite store (task 7; src/scripts on sys.path)
+_HEALTH_CONST = health_store  # stable module alias: make_handler's `health_store`
+# PARAMETER shadows the module name inside its closure, so the constants
+# (DEFAULT_MAX_POINTS / LIVE_WINDOW_S) are reached via this un-shadowed alias.
 import console_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
 import console_admin  # talent-cockpit revocation version store (#191)
 import discord_oauth  # Discord OAuth2 helpers for /console/login
@@ -450,6 +454,30 @@ def resolve_graphic(graphics_dir, name):
     if not path.startswith(base + os.sep):   # belt-and-braces containment
         return None
     return (path, "image/png") if os.path.isfile(path) else None
+
+
+# Vendored uPlot assets (src/assets/vendor/uplot/) served at /health-monitor/assets/.
+# Identity allow-list: only these filenames resolve, and the Content-Type is the
+# constant map value (never request-derived) — same model as ASSET_CTYPES / FONT_CTYPES.
+UPLOT_CTYPES = {"uPlot.iife.min.js": "application/javascript", "uPlot.min.css": "text/css"}
+
+
+def resolve_uplot_asset(uplot_dir, name):
+    """Resolve a requested uPlot asset filename to (path, content_type), or None
+    when unset/unknown/unsafe/absent. Safety mirrors resolve_graphic: an explicit
+    filename allow-list, reject any path separator / traversal component, then
+    realpath containment inside uplot_dir. Content-type is the constant map value,
+    never request-derived."""
+    ctype = UPLOT_CTYPES.get(name)
+    if not uplot_dir or ctype is None:
+        return None
+    if "/" in name or "\\" in name or name in (".", ".."):
+        return None
+    base = os.path.realpath(uplot_dir)
+    path = os.path.realpath(os.path.join(base, name))
+    if not path.startswith(base + os.sep):   # belt-and-braces containment
+        return None
+    return (path, ctype) if os.path.isfile(path) else None
 
 
 # Per-profile overlay overrides (profiles/<name>/overlay/). Override CSS is read
@@ -1319,6 +1347,64 @@ class ChatStore:
         with self.lock:
             self.messages = msgs
         return {"ok": True, "count": len(msgs)}
+
+
+class HealthStore:
+    """Thread-safe wrapper around the SQLite health-history store. One connection
+    guarded by a lock (the heartbeat thread writes; request threads read). Marks a
+    tick as an 'event' when the categorical state changed since the last row."""
+
+    def __init__(self, path, retention_days=health_store.DEFAULT_RETENTION_DAYS):
+        self.path = path
+        self.retention_days = retention_days
+        self.lock = threading.Lock()
+        try:
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        except OSError:
+            pass  # best-effort: open_db below will raise if the path is truly unwritable
+        self.conn = health_store.open_db(self.path)
+        health_store.migrate(self.conn)
+        self._last_key = None
+
+    @staticmethod
+    def _state_key(snapshot):
+        return tuple(snapshot.get(f) for f in health_store.STATE_KEY_FIELDS)
+
+    def record_tick(self, snapshot, now=None):
+        key = self._state_key(snapshot)
+        with self.lock:
+            kind = "event" if key != self._last_key else "periodic"
+            self._last_key = key
+            return health_store.record(self.conn, snapshot, kind, now=now)
+
+    def query(self, frm, to):
+        with self.lock:
+            return health_store.query_range(self.conn, frm, to)
+
+    def bands(self, frm, to):
+        return health_store.derive_bands(self.query(frm, to))
+
+    def incidents(self, frm, to):
+        return health_store.derive_incidents(self.query(frm, to))
+
+    def series(self, frm, to, max_points):
+        return health_store.numeric_series(self.query(frm, to), max_points)
+
+    def prune(self):
+        with self.lock:
+            return health_store.prune(self.conn, self.retention_days)
+
+    def export_lines(self, frm=0):
+        with self.lock:
+            return health_store.export_jsonl(self.conn, frm)
+
+    def import_lines(self, lines):
+        with self.lock:
+            return health_store.import_jsonl(self.conn, lines)
+
+    def close(self):
+        with self.lock:
+            self.conn.close()
 
 
 class CueStore:
@@ -2829,6 +2915,9 @@ class Relay:
         self._notified_level = None
         self._health_lock = threading.Lock()
         self._hb_stop = threading.Event()
+        self.health_store = None  # assigned by bootstrap (Task 13); always exists
+        self.timer_store = None  # assigned by bootstrap; sampled best-effort for timer_push
+        self._last_prune = 0  # epoch of last health-history prune (daily, in heartbeat)
 
     def active_source(self):
         """The schedule the A/B feeds currently serve: qualifying when in
@@ -2891,6 +2980,41 @@ class Relay:
             self.health_reasons = h["reasons"]
         return h
 
+    def _health_snapshot(self, now):
+        """A redacted, flat health sample (matches health_store.COLUMNS minus
+        ts/kind). No stream URLs / sheet_id — safe to persist and pull."""
+        def feed_fields(f):
+            return ("stopped" if f.paused else f.phase,
+                    1 if (f.dropped and not f.paused) else 0, f.idx + 1)
+        a_state, a_down, a_stint = feed_fields(self.feeds["A"])
+        b_state, b_down, b_stint = feed_fields(self.feeds["B"])
+        ch = cookie_health(self.cookies, now=now)
+        live = self.live_feed()
+        tmode, tpush = None, None
+        ts = getattr(self, "timer_store", None)
+        if ts is not None:
+            try:
+                summ = ts.summary()
+                tmode, tpush = summ.get("mode"), summ.get("push")
+            except Exception:  # noqa: BLE001 — sampling is best-effort
+                pass
+        return {"ts": now,
+                "health_level": self.health_level, "health_reasons": self.health_reasons,
+                "feed_a_state": a_state, "feed_a_down": a_down, "feed_a_stint": a_stint,
+                "feed_b_state": b_state, "feed_b_down": b_down, "feed_b_stint": b_stint,
+                "pov_state": (None if not self.pov else
+                              ("stopped" if self.pov.paused else self.pov.phase)),
+                "obs_reachable": (None if self.obs_reachable is None
+                                  else (1 if self.obs_reachable else 0)),
+                "source_last_ok_age_s": self.source.health().get("last_ok_age_s"),
+                "source_count": self.source.health().get("count"),
+                "cookies_present": 1 if self.cookies else 0,
+                "cookies_age_h": ch.get("age_h"),
+                "cookies_stale": 1 if ch.get("stale") else 0,
+                "timer_mode": tmode, "timer_push": tpush,
+                "mode": self.mode,
+                "live_feed": live, "live_stint": self.feeds[live].idx + 1}
+
     def _send_health_webhook(self, level, reasons, prev):
         """POST a Discord health alert. Fully best-effort: no URL or any failure
         logs one line and returns — never breaks the heartbeat."""
@@ -2918,6 +3042,16 @@ class Relay:
             now = time.time()
             self._maybe_probe_obs(now)
             level = self._refresh_health(now)["level"]
+            if self.health_store is not None:
+                try:
+                    self.health_store.record_tick(self._health_snapshot(now), now)
+                except Exception:  # noqa: BLE001 — sampling is best-effort
+                    pass  # never let a store write break the heartbeat
+            if self.health_store is not None and (now - self._last_prune) > 86400:
+                try:
+                    self.health_store.prune(); self._last_prune = now
+                except Exception:  # noqa: BLE001 — best-effort
+                    pass
             if health_should_notify(self._notified_level, level):
                 self._send_health_webhook(level, self.health_reasons, self._notified_level)
                 self._notified_level = level
@@ -3193,7 +3327,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  console_versions_path=None,
                  submission_store=None, event_store=None, crew_source=None,
                  console_page_path=None, companion_url=None, logo_path=None,
-                 buttons_page_path=None, race_control_page_path=None):
+                 buttons_page_path=None, race_control_page_path=None,
+                 health_store=None, health_monitor_page_path=None, uplot_dir=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -3203,6 +3338,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
     # out), and the 128-bit HMAC signature makes brute force infeasible regardless
     # — this is pure defense-in-depth. X-Forwarded-For is deliberately NOT trusted
     # for the key (spoofable over the public ingress, which would weaken it).
+    # Wire the health store onto the relay so the payload builders below read it
+    # via relay.health_store (the canonical attribute; Task 13's bootstrap also
+    # assigns it). The explicit make_handler param is the carrier from the test
+    # harness and the bootstrap call.
+    if health_store is not None:
+        relay.health_store = health_store
     _console_authfail_rl = console_auth.RateLimiter(limit=20, window_s=60)
     _cockpit_chat_rl = console_auth.RateLimiter(limit=10, window_s=60)
     # Submit is a PUBLIC write path (funnelled). Keyed on the authed identity
@@ -3283,6 +3424,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Content-Type", "image/jpeg")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(body)
+            return None
+        def _send_text(self, text, code=200):
+            body = (text or "").encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers(); self.wfile.write(body)
             return None
         def _send_asset(self, assets_dir, sub, key):
@@ -3708,6 +3856,26 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         "mode": relay.mode,
                         "on_air": live_schedule_row(rows, live_idx)})
                 return self._send({"error": "not found"}, 404)
+            # Health-monitor dashboard (#health): a read-only page + ONE data
+            # endpoint, any authenticated subject. Redacted by construction
+            # (_health_monitor_payload never carries stream URLs). Mirrors the
+            # race-control branch above.
+            if sub and sub[0] == "health-monitor":
+                if console_policy.decide(roles, sub, method, has_step_up) != console_policy.ALLOW:
+                    self._send({"error": "forbidden"}, 403)
+                    return None
+                if sub == ["health-monitor"] and method == "GET":
+                    if not health_monitor_page_path:
+                        return self._send({"error": "page not found"}, 404)
+                    self._send_page(health_monitor_page_path, "/console",
+                                    cookie_token=self._cockpit_token(), cookie_path="/console")
+                    return None
+                if sub == ["health-monitor", "data"] and method == "GET":
+                    self._send(self._health_monitor_payload())
+                    return None
+                if len(sub) == 3 and sub[:2] == ["health-monitor", "assets"]:
+                    return sub        # served by the root asset route
+                return self._send({"error": "not found"}, 404)
             # Role-adaptive pages: authorize via the same matrix, then serve HTML
             # with the /console base + a Path=/console cookie. Served BEFORE the API
             # fall-through so they don't reach the root page handlers (wrong cookie
@@ -3749,6 +3917,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return ["cockpit", "versions"]   # secret already step-up-verified above
                 if sub == ["takeover", "cues"]:
                     return ["cues", "data"]          # full list, gated producer+step-up
+                if sub == ["takeover", "health"]:
+                    return ["health", "raw"]         # producer+step-up already verified
                 return sub
             if outcome == console_policy.STEP_UP_REQUIRED:
                 self._send({"error": "step-up required"}, 403)
@@ -3787,6 +3957,62 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             approves a submission and the link is scheduled (#193 follow-up)."""
             self._post_discord(
                 cockpit_approval_payload(entry, self._event_title()), "approval")
+        def _health_query_window(self):
+            qs = parse_qs(urlparse(self.path).query)
+            def _f(name):
+                try:
+                    return float(qs[name][0])
+                except (KeyError, ValueError, IndexError):
+                    return None
+            frm, to = _f("from"), _f("to")
+            try:
+                maxn = int(qs["max"][0])
+            except (KeyError, ValueError, IndexError):
+                maxn = _HEALTH_CONST.DEFAULT_MAX_POINTS
+            now = time.time()
+            if frm is None or to is None:
+                to, frm = now, now - _HEALTH_CONST.LIVE_WINDOW_S
+            return frm, to, maxn, now
+
+        def _health_current(self):
+            """Allowlist of the live health fields — NEVER the feed/pov stream URLs
+            that relay.status() carries (redaction boundary)."""
+            full = relay.status()
+            feeds = {k: {"state": v.get("state"), "down": v.get("down"),
+                         "stint": v.get("stint"), "state_age_s": v.get("state_age_s")}
+                     for k, v in (full.get("feeds") or {}).items()}
+            pov = full.get("pov")
+            pov_red = None if not pov else {"state": pov.get("state"),
+                                            "down": pov.get("down"), "shown": pov.get("shown")}
+            return {"health": full.get("health"), "feeds": feeds, "pov": pov_red,
+                    "obs": full.get("obs"), "source": full.get("source"),
+                    "cookies_health": full.get("cookies_health"),
+                    "mode": full.get("mode"), "live": full.get("live"),
+                    "timer": timer_store.summary() if timer_store else None,
+                    "event_title": event_store.get() if event_store else ""}
+
+        def _health_monitor_payload(self):
+            if relay.health_store is None:
+                return {"error": "health monitor disabled"}
+            frm, to, maxn, now = self._health_query_window()
+            store = relay.health_store
+            return {"now": now, "from": frm, "to": to,
+                    "current": self._health_current(),
+                    "bands": store.bands(frm, to),
+                    "incidents": store.incidents(frm, to),
+                    "series": store.series(frm, to, maxn)}
+
+        def _health_raw_payload(self):
+            """JSON-Lines body of raw samples (for takeover/export). Returns a str."""
+            if relay.health_store is None:
+                return ""
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                frm = float(qs["from"][0])
+            except (KeyError, ValueError, IndexError):
+                frm = 0
+            return "\n".join(relay.health_store.export_lines(frm))
+
         def _status_payload(self):
             """The full /status JSON (feeds, pov, league, health) + timer +
             event_title. Served verbatim on the tailnet; redacted for /console
@@ -3825,6 +4051,30 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return None     # gate already sent its response (401/403/404)
                 if not p or p == ["status"]:
                     return self._send(self._status_payload())
+                if p == ["health-monitor"]:
+                    if not health_monitor_page_path:
+                        return self._send({"error": "page not found"}, 404)
+                    return self._send_page(health_monitor_page_path, "")
+                if p == ["health-monitor", "data"]:
+                    return self._send(self._health_monitor_payload())
+                if len(p) == 3 and p[:2] == ["health-monitor", "assets"]:
+                    resolved = resolve_uplot_asset(uplot_dir, p[2])
+                    if resolved is None:
+                        return self._send({"error": "not found"}, 404)
+                    full, ctype = resolved
+                    try:
+                        with open(full, "rb") as fh:
+                            data = fh.read()
+                    except OSError:
+                        return self._send({"error": "not found"}, 404)
+                    self.send_response(200)
+                    self.send_header("Content-Type", ctype + "; charset=utf-8")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header("Cache-Control", "max-age=86400")
+                    self.end_headers(); self.wfile.write(data)
+                    return None
+                if p == ["health", "raw"]:
+                    return self._send_text(self._health_raw_payload())
                 if p == ["takeover", "status"]:
                     # Funnel-exposed (producer + step-up via _console_gate). Redacted:
                     # ONLY the fields a takeover needs — NEVER the feeds/pov stream URLs
@@ -4648,6 +4898,13 @@ def main():
                  os.path.join(here, "..", "console", "buttons.html")):
         if os.path.exists(cand):
             buttons_page_path = os.path.abspath(cand); break
+    health_monitor_page_path = None
+    for cand in (os.path.join(here, "health-monitor.html"),
+                 os.path.join(here, "..", "health-monitor.html"),
+                 os.path.join(here, "..", "console", "health-monitor.html")):
+        if os.path.exists(cand):
+            health_monitor_page_path = os.path.abspath(cand); break
+    uplot_dir = os.path.abspath(os.path.join(here, "..", "assets", "vendor", "uplot"))
     if not args.no_hud and not args.sheet_csv_url:
         base = f"https://docs.google.com/spreadsheets/d/{args.sheet_id}/gviz/tq?tqx=out:csv&sheet="
         overlay_url = base + quote(args.overlay_tab)
@@ -4686,6 +4943,14 @@ def main():
 
     chat_store = ChatStore(os.path.join(runtime, "chat.json"))
     cue_store = CueStore(os.path.join(runtime, "cues.json"))
+    _health_store_obj = HealthStore(
+        os.path.join(runtime, "health-history.db"),
+        retention_days=int(os.environ.get("RACECAST_HEALTH_RETENTION_DAYS",
+                                          health_store.DEFAULT_RETENTION_DAYS)))
+    try:
+        _health_store_obj.prune()        # drop stale rows on start
+    except Exception:                     # noqa: BLE001 — best-effort
+        pass
     # Free-text event title (#207): persisted runtime state (event.json), seeded
     # from the EVENT_TITLE default (profile.env). An explicit --event-title wins and
     # is persisted, so it survives a restart; a takeover instead pulls A's title
@@ -4714,6 +4979,8 @@ def main():
                   sheet_id=args.sheet_id,
                   event_title_store=event_store,
                   league_name=args.league_name)
+    relay.health_store = _health_store_obj
+    relay.timer_store = timer_store
     relay.start()
     relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
     # Launching straight into qualifying mode: seed the HUD Streamer/Stint from
@@ -4767,6 +5034,9 @@ def main():
                            console_page_path=console_page_path,
                            race_control_page_path=race_control_page_path,
                            buttons_page_path=buttons_page_path,
+                           health_store=relay.health_store,
+                           health_monitor_page_path=health_monitor_page_path,
+                           uplot_dir=uplot_dir,
                            crew_source=crew_source,
                            logo_path=args.logo)
     bind_addrs = resolve_bind_addresses(

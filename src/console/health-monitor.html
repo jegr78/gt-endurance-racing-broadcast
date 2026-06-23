@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script>
+  // /console base-path shim (#216). The server replaces __RC_API_BASE__ with the
+  // active mount ("/console" behind Funnel, "" at the tailnet/loopback root).
+  // Patches fetch and exposes RC_API() so same-origin API calls resolve under the
+  // mount; a no-op when the base is empty.
+  window.RC_API_BASE = "__RC_API_BASE__";
+  window.RC_OAUTH = "__RC_OAUTH__" === "1";
+  window.RC_API = function (p) {
+    var b = window.RC_API_BASE || "";
+    if (!b || typeof p !== "string" || p.charAt(0) !== "/") return p;
+    if (p.indexOf(b + "/") === 0 || p === b) return p;   // already prefixed
+    return b + p;
+  };
+  (function () {
+    var _f = window.fetch;
+    window.fetch = function (u, o) { return _f(window.RC_API(u), o); };
+  })();
+</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Health Monitor</title>
+<!-- Inline "H" favicon: dark tile + live-green letter, matching the console theme. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0c0f'/%3E%3Cpath d='M11 8v16M21 8v16M11 16h10' fill='none' stroke='%232bd66a' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<!-- uPlot is vendored on the relay (Task 10); both are served under the mount. -->
+<link rel="stylesheet" href="__RC_API_BASE__/health-monitor/assets/uPlot.min.css">
+<script src="__RC_API_BASE__/health-monitor/assets/uPlot.iife.min.js"></script>
+<style>
+  :root {
+    color-scheme: dark;
+    --green: #2ECC71;
+    --yellow: #F1C40F;
+    --red: #E74C3C;
+    --bg: #0b0d10;
+    --panel: #14171c;
+    --panel-2: #1b1f25;
+    --line: #232830;
+    --line-2: #1c2027;
+    --txt: #e8eaed;
+    --muted: #8b97a6;
+    --accent: #3b82f6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         background: var(--bg); color: var(--txt); }
+  a { color: var(--txt); }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+           background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .02em; }
+  a.back { display: inline-flex; align-items: center; gap: 6px; text-decoration: none;
+           color: var(--txt); background: var(--panel-2); border: 1px solid var(--line);
+           border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 600; }
+  a.back:hover { border-color: var(--accent); }
+  #hm-title { font-size: 13px; font-weight: 600; color: #ffb454; }
+  #hm-title:not(:empty)::before { content: "· "; opacity: .5; font-weight: 400; }
+
+  main { padding: 12px; display: flex; flex-direction: column; gap: 12px; max-width: 1180px; margin: 0 auto; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+       margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--line); font-weight: 700; }
+  .body { padding: 12px; }
+
+  /* --- Status header --- */
+  .status { display: flex; align-items: center; gap: 16px; padding: 14px; flex-wrap: wrap; }
+  #hm-badge { font-size: 22px; font-weight: 800; letter-spacing: .04em; padding: 10px 18px;
+              border-radius: 10px; color: #0a0c0f; text-transform: uppercase; min-width: 110px;
+              text-align: center; background: #333; }
+  #hm-badge.green { background: var(--green); }
+  #hm-badge.yellow { background: var(--yellow); }
+  #hm-badge.red { background: var(--red); color: #fff; }
+  .status-meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+  .status-meta .row1 { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .status-meta .since { font-size: 13px; color: var(--muted); }
+  .pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px;
+          border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line);
+          letter-spacing: .04em; }
+  .pill.live { background: #1f3a2a; border-color: #2ECC71; color: var(--green); }
+  #hm-reasons { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+  #hm-reasons li { font-size: 13px; color: var(--txt); }
+  #hm-reasons li::before { content: "▸ "; color: var(--muted); }
+  #hm-reasons:empty::after { content: "All systems nominal."; color: var(--green); font-size: 13px; }
+
+  /* --- Time range bar --- */
+  .rangebar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px; }
+  .rangebar .btn { padding: 6px 12px; background: var(--panel-2); color: var(--txt);
+                   border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+                   font-size: 13px; font-weight: 600; }
+  .rangebar .btn:hover { border-color: var(--accent); }
+  .rangebar .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .rangebar .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
+  .rangebar label { font-size: 12px; color: var(--muted); }
+  .rangebar input[type=datetime-local] { background: var(--bg); color: var(--txt);
+                   border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px; }
+  .rangebar .apply { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+
+  /* --- Status bands --- */
+  .bands { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+  .bandrow { display: grid; grid-template-columns: 140px 1fr; align-items: center; gap: 10px; }
+  .bandlabel { font-size: 12px; color: var(--muted); font-weight: 600; text-align: right; }
+  .bandtrack { position: relative; height: 22px; background: #0a0c0f; border: 1px solid var(--line-2);
+               border-radius: 5px; overflow: hidden; }
+  .bandseg { position: absolute; top: 0; bottom: 0; }
+  .bandseg.green { background: var(--green); }
+  .bandseg.yellow { background: var(--yellow); }
+  .bandseg.red { background: var(--red); }
+  .bandseg.on { background: var(--green); }      /* boolean true (reachable / fresh) */
+  .bandseg.off { background: var(--red); }        /* boolean false (down / stale) */
+  .bandseg.unknown { background: #4a5260; }       /* null */
+  .bandseg.neutral { background: #3a6ea5; }       /* feed/pov non-down states */
+  .bandseg.offduty { background: #59606b; }       /* timer push never/disabled */
+  .bands-axis { display: grid; grid-template-columns: 140px 1fr; gap: 10px; margin-top: 2px; }
+  .bands-axis .ax { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted);
+                    font-variant-numeric: tabular-nums; }
+
+  /* --- Charts --- */
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; padding: 12px; }
+  .chart { background: #0a0c0f; border: 1px solid var(--line-2); border-radius: 8px; padding: 8px; }
+  .chart .ct { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+  .chart .empty { font-size: 12px; color: var(--muted); padding: 24px 8px; text-align: center; }
+  .uplot { width: 100%; }
+  #charts-fallback { padding: 16px; color: var(--yellow); font-size: 13px; }
+
+  /* --- Incidents --- */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line-2); }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  td.dur { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .sev { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; letter-spacing: .04em; }
+  .sev.red { background: var(--red); color: #fff; }
+  .sev.yellow { background: var(--yellow); color: #0a0c0f; }
+  #incEmpty { padding: 16px 12px; color: var(--muted); font-size: 13px; }
+  #incEmpty:not(:empty) + table { display: none; }
+
+  .stamp { font-size: 11px; color: var(--muted); padding: 0 12px 12px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" id="backConsole" href="#" hidden aria-label="Back to Console">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    Console
+  </a>
+  <h1>Health Monitor</h1>
+  <span id="hm-title"></span>
+</header>
+<script>
+  // Show the "← Console" back link only when served under the /console mount.
+  (function () {
+    var b = window.RC_API_BASE;
+    if (b) { var a = document.getElementById('backConsole'); a.href = b; a.hidden = false; }
+  })();
+</script>
+
+<main>
+  <!-- 1. Status header -->
+  <div class="card">
+    <div class="status">
+      <div id="hm-badge">—</div>
+      <div class="status-meta">
+        <div class="row1">
+          <span class="pill" id="hm-mode">—</span>
+          <span class="pill live" id="hm-live">—</span>
+          <span class="since" id="hm-since"></span>
+        </div>
+        <ul id="hm-reasons"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Time-range bar -->
+  <div class="card">
+    <div class="rangebar">
+      <button class="btn" data-range="live">Live</button>
+      <button class="btn" data-range="1h">1h</button>
+      <button class="btn" data-range="6h">6h</button>
+      <button class="btn" data-range="24h">24h</button>
+      <button class="btn" data-range="7d">7d</button>
+      <span class="sep"></span>
+      <label>From <input type="datetime-local" id="hm-from"></label>
+      <label>To <input type="datetime-local" id="hm-to"></label>
+      <button class="btn apply" id="hm-apply">Apply</button>
+    </div>
+  </div>
+
+  <!-- 3. Status bands -->
+  <div class="card">
+    <h2>Status timeline</h2>
+    <div class="bands" id="hm-bands"></div>
+    <div class="bands-axis"><span></span><span class="ax"><span id="hm-axleft"></span><span id="hm-axright"></span></span></div>
+    <div class="stamp" id="hm-stamp"></div>
+  </div>
+
+  <!-- 4. Numeric charts -->
+  <div class="card">
+    <h2>Metrics</h2>
+    <div class="charts" id="hm-charts"></div>
+    <div id="charts-fallback" hidden>Charts unavailable (uPlot asset failed to load). Numeric history is still available via the data endpoint.</div>
+  </div>
+
+  <!-- 5. Incident timeline -->
+  <div class="card">
+    <h2>Incidents</h2>
+    <div id="incEmpty"></div>
+    <table>
+      <thead><tr><th style="width:170px">Started</th><th style="width:90px">Severity</th><th>What</th><th style="width:110px">Duration</th></tr></thead>
+      <tbody id="hm-incidents"></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const API = window.RC_API_BASE || "";
+const HAS_UPLOT = (typeof uPlot !== "undefined");
+
+// The auth cookie was set by the response that served this page, so the token in
+// the URL is no longer needed — strip it from the address bar + history.
+if (location.search) {
+  try { history.replaceState({}, '', location.pathname); } catch (e) { /* noop */ }
+}
+
+// --- State ---
+const RANGES = {
+  "live": 15 * 60,
+  "1h": 3600,
+  "6h": 6 * 3600,
+  "24h": 24 * 3600,
+  "7d": 7 * 24 * 3600,
+};
+window.range = "live";
+let liveTimer = null;
+let rangeStart = 0, rangeEnd = 0;     // epoch seconds for the active fetch
+const charts = {};                    // key -> uPlot instance
+let chartResizeObs = null;            // keeps charts sized to their real column width
+
+// --- Helpers ---
+function pad2(n) { return String(n).padStart(2, "0"); }
+function hms(epoch) {
+  const d = new Date(epoch * 1000);
+  return pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
+}
+function localDateTime(epoch) {
+  const d = new Date(epoch * 1000);
+  return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()) +
+         " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
+}
+// uPlot x-axis tick label: compact + range-aware so labels never overlap in the
+// narrow half-width charts. HH:MM within a day; M/D once the range spans 2+ days.
+function fmtAxisTime(ts) {
+  const d = new Date(ts * 1000);
+  const span = (rangeEnd > rangeStart) ? (rangeEnd - rangeStart) : 0;
+  if (span >= 2 * 86400) return (d.getMonth() + 1) + "/" + d.getDate();
+  return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+}
+// "since"/duration humanizer -> e.g. "2h 14m", "3m 5s", "12s"
+function humanize(secs) {
+  secs = Math.max(0, Math.floor(secs || 0));
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  if (d > 0) return d + "d " + h + "h";
+  if (h > 0) return h + "h " + m + "m";
+  if (m > 0) return m + "m " + s + "s";
+  return s + "s";
+}
+// Convert an epoch seconds value to the value a datetime-local input expects
+// (local wall-clock, no timezone suffix).
+function toLocalInput(epoch) {
+  const d = new Date(epoch * 1000);
+  return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()) +
+         "T" + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+}
+
+// --- 1. Status header ---
+function renderHeader(cur, now) {
+  const h = (cur && cur.health) || {};
+  const badge = $("hm-badge");
+  const level = (h.level === "green" || h.level === "yellow" || h.level === "red") ? h.level : "";
+  badge.className = level;
+  badge.textContent = level ? level.toUpperCase() : "—";
+
+  $("hm-title").textContent = (cur && cur.event_title || "").trim();
+  document.title = (cur && cur.event_title) ? (cur.event_title + " · Health Monitor") : "Health Monitor";
+
+  const mode = (cur && cur.mode) || "—";
+  $("hm-mode").textContent = mode === "qualifying" ? "QUALIFYING" : "RACE";
+
+  const liveEl = $("hm-live");
+  const live = cur && cur.live;
+  if (live && live.feed) {
+    liveEl.hidden = false;
+    liveEl.textContent = "ON AIR · Feed " + live.feed + " · Stint " + (live.stint != null ? live.stint : "?");
+  } else {
+    liveEl.hidden = true;
+  }
+
+  const since = (h.since_s != null) ? ("Stable for " + humanize(h.since_s)) : "";
+  $("hm-since").textContent = since;
+
+  const ul = $("hm-reasons");
+  ul.textContent = "";
+  (h.reasons || []).forEach((r) => {
+    const li = document.createElement("li");
+    li.textContent = r;                     // XSS-safe
+    ul.appendChild(li);
+  });
+}
+
+// --- 3. Status bands ---
+// Map a band field's state value to a CSS class.
+function segClass(field, state) {
+  if (state === null || state === undefined) return "unknown";
+  if (field === "health_level") {
+    return (state === "green" || state === "yellow" || state === "red") ? state : "unknown";
+  }
+  if (field === "obs_reachable") {
+    // state 1|0|null  -> reachable / unreachable / unknown
+    return state ? "on" : "off";
+  }
+  if (field === "cookies_stale") {
+    // state 1|0|null  -> stale (bad) / fresh (good) / unknown
+    return state ? "off" : "on";
+  }
+  if (field === "timer_push") {
+    // Sheet write-back status: "ok"/"failed"/"never"/"disabled".
+    if (state === "ok") return "on";
+    if (state === "failed") return "off";
+    return "offduty";                 // "never" / "disabled" -> off-duty grey
+  }
+  // feed_a_state / feed_b_state / pov_state: free-form state strings.
+  const s = String(state).toLowerCase();
+  if (s.indexOf("down") >= 0 || s.indexOf("error") >= 0 || s.indexOf("fail") >= 0) return "off";
+  if (s.indexOf("serv") >= 0 || s.indexOf("up") >= 0 || s.indexOf("on") >= 0 ||
+      s.indexOf("play") >= 0 || s.indexOf("live") >= 0) return "on";
+  return "neutral";
+}
+function stateLabel(field, state) {
+  if (state === null || state === undefined) return "unknown";
+  if (field === "obs_reachable") return state ? "reachable" : "unreachable";
+  if (field === "cookies_stale") return state ? "stale" : "fresh";
+  return String(state);
+}
+
+const BAND_FIELDS = [
+  ["health_level", "Health"],
+  ["feed_a_state", "Feed A"],
+  ["feed_b_state", "Feed B"],
+  ["pov_state", "POV"],
+  ["obs_reachable", "OBS"],
+  ["cookies_stale", "Cookies"],
+  ["timer_push", "Timer sync"],
+];
+
+function renderBands(bands) {
+  const host = $("hm-bands");
+  host.textContent = "";
+  const span = Math.max(1, rangeEnd - rangeStart);
+
+  BAND_FIELDS.forEach(([field, label]) => {
+    const segs = (bands && bands[field]) || [];
+    // Skip the POV row entirely when every band's state is null.
+    if (field === "pov_state" && segs.every((b) => b.state === null || b.state === undefined)) return;
+
+    const row = document.createElement("div");
+    row.className = "bandrow";
+    const lab = document.createElement("div");
+    lab.className = "bandlabel";
+    lab.textContent = label;
+    const track = document.createElement("div");
+    track.className = "bandtrack";
+
+    segs.forEach((b) => {
+      const from = Math.max(b.from, rangeStart);
+      const to = Math.min(b.to, rangeEnd);
+      if (to <= from) return;
+      const seg = document.createElement("div");
+      seg.className = "bandseg " + segClass(field, b.state);
+      const leftPct = ((from - rangeStart) / span) * 100;
+      const widthPct = ((to - from) / span) * 100;
+      seg.style.left = leftPct + "%";
+      seg.style.width = widthPct + "%";
+      seg.title = stateLabel(field, b.state) + " — " + hms(b.from) + "–" + hms(b.to);
+      track.appendChild(seg);
+    });
+
+    row.appendChild(lab);
+    row.appendChild(track);
+    host.appendChild(row);
+  });
+
+  $("hm-axleft").textContent = hms(rangeStart);
+  $("hm-axright").textContent = hms(rangeEnd);
+}
+
+// --- 4. Numeric charts ---
+const SERIES = [
+  ["source_last_ok_age_s", "Source last-OK age (s)"],
+  ["cookies_age_h", "Cookies age (h)"],
+];
+
+function renderCharts(series) {
+  const host = $("hm-charts");
+  if (!HAS_UPLOT) {
+    host.hidden = true;
+    $("charts-fallback").hidden = false;
+    return;
+  }
+  // Build (or rebuild) one chart per series key. Rebuild on every fetch is
+  // simplest and keeps the chart sized to its container.
+  host.textContent = "";
+  Object.keys(charts).forEach((k) => { try { charts[k].destroy(); } catch (e) {} delete charts[k]; });
+
+  SERIES.forEach(([key, label]) => {
+    const box = document.createElement("div");
+    box.className = "chart";
+    const ct = document.createElement("div");
+    ct.className = "ct";
+    ct.textContent = label;
+    box.appendChild(ct);
+    host.appendChild(box);
+
+    const s = (series && series[key]) || { t: [], v: [] };
+    const t = (s.t || []).map(Number);
+    const v = (s.v || []).map((x) => (x === null || x === undefined) ? null : Number(x));
+
+    if (!t.length) {
+      const e = document.createElement("div");
+      e.className = "empty";
+      e.textContent = "No samples in this range yet.";
+      box.appendChild(e);
+      return;
+    }
+
+    const width = Math.max(280, box.clientWidth - 16);
+    const opts = {
+      width: width,
+      height: 180,
+      cursor: { y: false },
+      legend: { show: false },
+      scales: { x: { time: true, min: rangeStart, max: rangeEnd } },
+      axes: [
+        { stroke: "#8b97a6", grid: { stroke: "#1c2027" }, ticks: { stroke: "#1c2027" },
+          // Force a generous min gap between ticks so labels never overlap in the
+          // narrow half-width charts, and render a compact range-aware label
+          // (HH:MM within a day, M/D for multi-day ranges) — no stacked date row.
+          space: 72, values: (u, splits) => splits.map(fmtAxisTime) },
+        { stroke: "#8b97a6", grid: { stroke: "#1c2027" }, ticks: { stroke: "#1c2027" } },
+      ],
+      series: [
+        {},
+        { stroke: "#2bd66a", width: 2, fill: "rgba(43,214,106,0.10)", spanGaps: false,
+          points: { show: t.length < 40 } },
+      ],
+    };
+    try {
+      charts[key] = new uPlot(opts, [t, v], box);
+    } catch (e) {
+      const err = document.createElement("div");
+      err.className = "empty";
+      err.textContent = "Chart render failed.";
+      box.appendChild(err);
+    }
+  });
+
+  // The CSS grid sizes the chart columns AFTER this synchronous build, so the
+  // box.clientWidth measured above can be stale (over-wide) — uPlot then packs
+  // too many x ticks for the real column and the labels overlap. Re-size every
+  // chart to its actual laid-out width once layout settles, and keep them synced
+  // when the container resizes.
+  const resizeCharts = () => {
+    Object.keys(charts).forEach((k) => {
+      const u = charts[k];
+      if (!u || !u.root || !u.root.parentNode) return;
+      const w = Math.max(280, u.root.parentNode.clientWidth - 16);
+      if (Math.abs(w - u.width) > 1) u.setSize({ width: w, height: 180 });
+    });
+  };
+  requestAnimationFrame(resizeCharts);
+  if (chartResizeObs) chartResizeObs.disconnect();
+  chartResizeObs = new ResizeObserver(resizeCharts);
+  chartResizeObs.observe(host);
+}
+
+// --- 5. Incident timeline ---
+function renderIncidents(incidents) {
+  const body = $("hm-incidents");
+  body.textContent = "";
+  const list = incidents || [];
+  if (!list.length) {
+    $("incEmpty").textContent = "No incidents in this range. 🎉";
+    return;
+  }
+  $("incEmpty").textContent = "";
+  // Newest first.
+  list.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0)).forEach((inc) => {
+    const tr = document.createElement("tr");
+
+    const when = document.createElement("td");
+    when.textContent = localDateTime(inc.ts);
+
+    const sevTd = document.createElement("td");
+    const sev = document.createElement("span");
+    const lvl = (inc.severity === "red" || inc.severity === "yellow") ? inc.severity : "yellow";
+    sev.className = "sev " + lvl;
+    sev.textContent = lvl.toUpperCase();
+    sevTd.appendChild(sev);
+
+    const what = document.createElement("td");
+    what.textContent = inc.label || "";          // XSS-safe
+
+    const dur = document.createElement("td");
+    dur.className = "dur";
+    dur.textContent = humanize(inc.duration_s);
+
+    tr.append(when, sevTd, what, dur);
+    body.appendChild(tr);
+  });
+}
+
+// --- Fetch + render the whole dashboard ---
+async function load() {
+  const now = Math.floor(Date.now() / 1000);
+  let from, to;
+  if (window.range === "fixed") {
+    from = rangeStart; to = rangeEnd;
+  } else {
+    const span = RANGES[window.range] || RANGES["live"];
+    to = now;
+    from = now - span;
+  }
+  rangeStart = from; rangeEnd = to;
+
+  const url = API + "/health-monitor/data?from=" + from + "&to=" + to + "&max=2000";
+  let blob;
+  try {
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    blob = await r.json();
+  } catch (e) {
+    $("hm-stamp").textContent = "Failed to load data (" + e.message + "). Retrying in Live mode.";
+    return;
+  }
+
+  // The server reports its own window; honor it for the band/axis math so the
+  // segments line up exactly with what it returned.
+  if (typeof blob.from === "number") rangeStart = blob.from;
+  if (typeof blob.to === "number") rangeEnd = blob.to;
+
+  renderHeader(blob.current || {}, blob.now);
+  renderBands(blob.bands || {});
+  renderCharts(blob.series || {});
+  renderIncidents(blob.incidents || []);
+  $("hm-stamp").textContent = "Window " + localDateTime(rangeStart) + " → " + localDateTime(rangeEnd) +
+                             " · updated " + hms(blob.now || now);
+}
+
+// --- Time-range controls ---
+function setActiveButton(range) {
+  document.querySelectorAll(".rangebar .btn[data-range]").forEach((b) => {
+    b.classList.toggle("active", b.dataset.range === range);
+  });
+}
+function stopLive() {
+  if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+}
+function selectRange(range) {
+  window.range = range;
+  setActiveButton(range);
+  stopLive();
+  if (range === "live") {
+    load();
+    liveTimer = setInterval(load, 5000);     // 5s rolling refresh
+  } else {
+    load();                                   // single fetch for any fixed window
+  }
+}
+
+document.querySelectorAll(".rangebar .btn[data-range]").forEach((b) => {
+  b.addEventListener("click", () => selectRange(b.dataset.range));
+});
+
+$("hm-apply").addEventListener("click", () => {
+  const fromV = $("hm-from").value;
+  const toV = $("hm-to").value;
+  if (!fromV || !toV) return;
+  const from = Math.floor(new Date(fromV).getTime() / 1000);
+  const to = Math.floor(new Date(toV).getTime() / 1000);
+  if (!(from > 0) || !(to > from)) return;
+  window.range = "fixed";
+  rangeStart = from; rangeEnd = to;
+  setActiveButton(null);                       // no preset highlighted
+  stopLive();
+  load();
+});
+
+// Prefill the datetime-local inputs with the last hour for convenience.
+(function () {
+  const now = Math.floor(Date.now() / 1000);
+  $("hm-from").value = toLocalInput(now - 3600);
+  $("hm-to").value = toLocalInput(now);
+})();
+
+// Boot in Live mode.
+selectRange("live");
+
+// Recompute chart widths on resize (re-fetch keeps it simple + correct).
+let resizeT = null;
+window.addEventListener("resize", () => {
+  if (resizeT) clearTimeout(resizeT);
+  resizeT = setTimeout(load, 300);
+});
+</script>
+</body>
+</html>
