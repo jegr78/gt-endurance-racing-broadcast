@@ -188,13 +188,17 @@ def aggregate_health(facts):
     down), cookies_stale (bool), obs_reachable (True/False/None — None = not yet
     probed, never an alarm), tailscale_present (bool),
     stream_active (True/False/None — OBS streaming state; None = not yet known),
+    stream_expected (bool — OBS has streamed at least once this session; the
+        off-air alarm latches on this so a pre-show relay start never pings),
     stream_reconnecting (bool — OBS upstream unstable),
     funnel_down (bool — Funnel was previously seen up but is now down),
     sheet_push_failing (bool — Sheet webhook returning errors).
 
     red  = any feed down (a live picture was lost); or obs_reachable truthy and
-           stream_active is False (OBS connected but not streaming — off air, no
-           live-gate so this fires even pre-show).
+           stream_active is False AND stream_expected (OBS connected and has
+           streamed before but is not streaming now — a live broadcast dropped
+           off air). The stream_expected latch means starting the relay pre-show,
+           before OBS ever goes live, never alarms.
     yellow = OBS WebSocket unreachable · cookies stale · Tailscale down · a feed
              stuck connecting · stream_reconnecting · funnel_down ·
              sheet_push_failing. A red result still lists the yellow issues under it.
@@ -202,8 +206,11 @@ def aggregate_health(facts):
     reasons, red, yellow = [], [], []
     for name in facts.get("feeds_down") or []:
         red.append(f"Feed {name} down — lost the live stream")
-    # OBS reachable but not streaming = off air (no live-gate: red even pre-show).
-    if facts.get("obs_reachable") and facts.get("stream_active") is False:
+    # OBS reachable but not streaming = off air — but only AFTER OBS has streamed
+    # at least once this session (stream_expected latch), so starting the relay
+    # pre-show, before OBS ever goes live, never fires a CRITICAL ping.
+    if (facts.get("obs_reachable") and facts.get("stream_active") is False
+            and facts.get("stream_expected")):
         red.append("OBS is not streaming — broadcast is off air")
     if facts.get("obs_reachable") is False:
         yellow.append("OBS WebSocket unreachable — no auto-cut")
@@ -2938,6 +2945,8 @@ class Relay:
         self.conn_state = {"funnel_ok": None, "tailscale_up": None,
                            "companion_ok": None}
         self.funnel_expected = False      # latched True once the Funnel is seen up
+        self.stream_expected = False      # latched True once OBS is seen streaming
+                                          # (off-air alarm only fires after this)
         # POV is a THIRD, independent feed — not part of the A/B index. Starts
         # paused (off) until the Director calls /pov/reload.
         self.pov_source = pov_source
@@ -3021,6 +3030,7 @@ class Relay:
                 "cookies_stale": cookie_health(self.cookies, now=now)["stale"],
                 "obs_reachable": self.obs_reachable, "tailscale_present": ts_present,
                 "stream_active": st.get("stream_active"),
+                "stream_expected": bool(self.stream_expected),
                 "stream_reconnecting": st.get("stream_reconnecting"),
                 "funnel_down": funnel_down,
                 "sheet_push_failing": (tpush == "failed")}
@@ -3301,6 +3311,8 @@ class Relay:
                 redacted = {k: v for k, v in stats.items() if k != "output_bytes"}
                 redacted["stream_kbps"] = kbps
                 self.obs_stats = redacted
+                if stats.get("stream_active"):       # latch once OBS goes live
+                    self.stream_expected = True
         except Exception:                                # noqa: BLE001 — best-effort
             with self._obs_lock:
                 self._obs_probe_running = False

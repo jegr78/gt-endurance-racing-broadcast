@@ -518,9 +518,20 @@ def t_preview_feed_grab_failure_is_503():
 
 
 def t_aggregate_stream_not_active_is_red():
-    h = m.aggregate_health({"obs_reachable": True, "stream_active": False})
+    # Off-air only escalates once OBS has streamed at least once (stream_expected
+    # latch) — a live broadcast that drops off air pages.
+    h = m.aggregate_health({"obs_reachable": True, "stream_active": False,
+                            "stream_expected": True})
     assert h["level"] == "red"
     assert any("not streaming" in r.lower() or "off air" in r.lower() for r in h["reasons"])
+
+
+def t_aggregate_stream_not_active_pre_show_is_green():
+    # OBS reachable, not streaming, but never streamed this session (no latch) ->
+    # NO alarm, so a pre-show relay start never fires a CRITICAL ping.
+    assert m.aggregate_health({"obs_reachable": True, "stream_active": False})["level"] == "green"
+    assert m.aggregate_health({"obs_reachable": True, "stream_active": False,
+                               "stream_expected": False})["level"] == "green"
 
 
 def t_aggregate_stream_active_unknown_is_green():
@@ -528,7 +539,8 @@ def t_aggregate_stream_active_unknown_is_green():
     assert m.aggregate_health({"obs_reachable": True})["level"] == "green"
     assert m.aggregate_health({"obs_reachable": True, "stream_active": None})["level"] == "green"
     # OBS not reachable -> existing yellow path, stream_active ignored.
-    assert m.aggregate_health({"obs_reachable": False, "stream_active": False})["level"] == "yellow"
+    assert m.aggregate_health({"obs_reachable": False, "stream_active": False,
+                               "stream_expected": True})["level"] == "yellow"
 
 
 def t_aggregate_yellow_signals():
@@ -621,6 +633,22 @@ def t_health_facts_gate_funnel_and_push():
     # funnel never seen up -> not a fault
     relay.funnel_expected = False
     assert relay._health_facts(1.0)["funnel_down"] is False
+
+
+def t_health_facts_stream_expected_gates_off_air():
+    relay = _make_min_relay()
+    relay.obs_reachable = True
+    relay.obs_stats = {"stream_active": False}     # OBS reachable but not streaming
+    # never streamed this session -> facts carry stream_expected False -> aggregate green
+    relay.stream_expected = False
+    facts = relay._health_facts(1.0)
+    assert facts["stream_expected"] is False
+    assert m.aggregate_health(facts)["level"] == "green"
+    # once OBS has streamed (latch set), the same off-air state escalates to red
+    relay.stream_expected = True
+    facts = relay._health_facts(1.0)
+    assert facts["stream_expected"] is True
+    assert m.aggregate_health(facts)["level"] == "red"
 
 
 if __name__ == "__main__":

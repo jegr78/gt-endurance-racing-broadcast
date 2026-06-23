@@ -45,7 +45,7 @@ visible to the whole crew through the aggregate badge.
 | Band | What it tracks |
 |---|---|
 | **Health** | Aggregate relay health (the badge above, over time) |
-| **Stream active** | Whether OBS is actively streaming to the broadcast platform. Red when OBS is reachable but not streaming — **this fires even before a show starts**; it is not gated on the event being live. |
+| **Stream active** | Whether OBS is actively streaming to the broadcast platform. Red (and alerting) only once OBS has streamed at least once this session and then stops — so a live broadcast dropping off air pages, but starting the relay before you go live does not. |
 | **Reconnecting** | Whether the OBS output is in a reconnect loop. Yellow when reconnecting. |
 | **Funnel** | Whether Tailscale Funnel is up (required for `/console` to be reachable publicly). Red when expected but down. |
 | **Sheet push** | Whether the relay's last write to the Google Sheet webhook succeeded. Yellow on repeated failure. |
@@ -76,10 +76,12 @@ necessarily drive the aggregate to red on its own.
 > they fault. Connectivity bands (`tailscale_up`, `companion_ok`, `obs_reachable`) are
 > informational — they record what happened without necessarily escalating the aggregate.
 >
-> **No live-gate on stream_active:** the relay marks the stream as red whenever OBS is
-> reachable but not currently streaming. This means the **Stream active** band will be
-> red before and after a show, not just during unexpected outages. Use it to confirm
-> the stream is up once you go live; do not be alarmed by pre-show red on this band alone.
+> **Off-air alarm latches on the first stream:** the off-air CRITICAL only fires after
+> OBS has gone live at least once this relay session and *then* stops streaming — so a
+> live broadcast that drops off air pages the crew, while simply starting the relay
+> before the show never sends a confusing pre-show ping. (The **Stream active** band
+> itself still shows the honest current state; it is the aggregate health + Discord
+> alert that wait for the latch.)
 
 ### Numeric line charts
 

@@ -159,16 +159,22 @@ round (value held between rounds); the plan starts at "every round".
 
 | Signal | Severity | Fires when |
 |---|---|---|
-| `stream_active=false` | **red** | OBS reachable & not streaming — **no live-gate** |
+| `stream_active=false` | **red** | OBS reachable & not streaming & `stream_expected` |
 | `stream_reconnecting` | **yellow** | OBS reachable & `outputReconnecting=true` |
 | Funnel down | **yellow** | `funnel_expected` & funnel not configured/up |
 | Sheet-push failing | **yellow** | `SHEET_PUSH_URL` set & last push failed |
 
-**No live-gate (explicit, confirmed consequence):** `stream_active=false`
-escalates to **red whenever OBS is reachable but not streaming — including the
-pre-show phase before "Start Streaming" is pressed.** This is intentional. (When
-OBS is fully closed, the existing `obs_reachable`-red path applies instead, so
-the two never double-count.)
+**Off-air alarm latches on the first stream (`stream_expected`, revised post-UAT):**
+the original design fired the off-air red *with no live-gate* (red even pre-show).
+UAT showed that pings a confusing `@here` CRITICAL the moment the relay starts
+before going live, so it was revised to a `stream_expected` latch (in-memory,
+relay-session-scoped, mirroring `funnel_expected`): the relay sets
+`stream_expected=true` once OBS is observed streaming (`outputActive=true`), and
+`stream_active=false` only escalates to red once that latch is set. Effect: a live
+broadcast that drops off air pages the crew; starting the relay pre-show never
+alarms. The **Stream active** band still shows the honest current state — only the
+aggregate level + Discord alert wait for the latch. (When OBS is fully closed, the
+existing `obs_reachable`-red path applies instead, so the two never double-count.)
 
 **`funnel_expected` (in-memory, relay-session-scoped):** once the relay has
 observed the Funnel up in this session, it sets `funnel_expected=true`; a later
