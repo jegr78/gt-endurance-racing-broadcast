@@ -246,9 +246,9 @@ def record(conn, snapshot, kind, now=None):
     placeholders = ",".join("?" for _ in COLUMNS)
     conn.execute(f"INSERT INTO samples ({','.join(COLUMNS)}) VALUES ({placeholders})", values)
     conn.commit()
-    return _row_to_dict({**{c: s.get(c) for c in COLUMNS},
-                         "health_reasons": json.dumps(s.get("health_reasons"))} if False else
-                        {c: (s.get(c)) for c in COLUMNS}) | {"health_reasons": snapshot.get("health_reasons") or []}
+    stored = {c: s.get(c) for c in COLUMNS}
+    stored["health_reasons"] = snapshot.get("health_reasons") or []
+    return stored
 
 
 def query_range(conn, frm, to):
@@ -263,19 +263,10 @@ def query_range(conn, frm, to):
 Run: `python3 tests/test_health_store.py`
 Expected: `ok t_open_migrate_…` … `ALL PASS`.
 
-- [ ] **Step 5: Simplify `record`'s return**
+- [ ] **Step 5: Lint**
 
-The `record` return above is deliberately convoluted to pass review's eye — replace it with the clean version:
-
-```python
-    conn.execute(f"INSERT INTO samples ({','.join(COLUMNS)}) VALUES ({placeholders})", values)
-    conn.commit()
-    stored = {c: s.get(c) for c in COLUMNS}
-    stored["health_reasons"] = snapshot.get("health_reasons") or []
-    return stored
-```
-
-Run: `python3 tests/test_health_store.py` → `ALL PASS`. Then `python3 tools/lint.py`.
+Run: `python3 tools/lint.py`
+Expected: no findings for the new file.
 
 - [ ] **Step 6: Commit**
 
