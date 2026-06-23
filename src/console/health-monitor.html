@@ -114,6 +114,10 @@
   .bands-axis { display: grid; grid-template-columns: 140px 1fr; gap: 10px; margin-top: 2px; }
   .bands-axis .ax { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted);
                     font-variant-numeric: tabular-nums; }
+  .band-group, .chart-group { font-size: 12px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .04em; margin: 10px 0 4px; }
+  .qbadge { margin-left: 8px; font-size: 11px; font-weight: 500; color: var(--muted);
+    background: rgba(255,255,255,.06); border-radius: 4px; padding: 1px 6px; }
 
   /* --- Charts --- */
   .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; padding: 12px; }
@@ -333,6 +337,20 @@ function segClass(field, state) {
     if (state === "failed") return "off";
     return "offduty";                 // "never" / "disabled" -> off-duty grey
   }
+  // Critical booleans: 1 = ok (green), 0 = fault (red); stream_reconnecting is inverted.
+  if (field === "stream_active" || field === "funnel_ok" || field === "sheet_push_ok") {
+    if (state === null || state === undefined) return "unknown";
+    return state ? "on" : "off";
+  }
+  if (field === "stream_reconnecting") {
+    if (state === null || state === undefined) return "unknown";
+    return state ? "off" : "on";          // reconnecting=true is the fault
+  }
+  // Observational booleans: down is neutral (not an alarm).
+  if (field === "tailscale_up" || field === "companion_ok") {
+    if (state === null || state === undefined) return "unknown";
+    return state ? "on" : "neutral";
+  }
   // feed_a_state / feed_b_state / pov_state: free-form state strings.
   const s = String(state).toLowerCase();
   if (s.indexOf("down") >= 0 || s.indexOf("error") >= 0 || s.indexOf("fail") >= 0) return "off";
@@ -344,54 +362,87 @@ function stateLabel(field, state) {
   if (state === null || state === undefined) return "unknown";
   if (field === "obs_reachable") return state ? "reachable" : "unreachable";
   if (field === "cookies_stale") return state ? "stale" : "fresh";
+  if (field === "stream_active") return state ? "streaming" : "not streaming";
+  if (field === "stream_reconnecting") return state ? "reconnecting" : "stable";
+  if (field === "funnel_ok") return state ? "up" : "down";
+  if (field === "sheet_push_ok") return state ? "ok" : "failing";
+  if (field === "tailscale_up") return state ? "up" : "down";
+  if (field === "companion_ok") return state ? "up" : "down";
   return String(state);
 }
 
 const BAND_FIELDS = [
-  ["health_level", "Health"],
-  ["feed_a_state", "Feed A"],
-  ["feed_b_state", "Feed B"],
-  ["pov_state", "POV"],
-  ["obs_reachable", "OBS"],
-  ["cookies_stale", "Cookies"],
-  ["timer_push", "Timer sync"],
+  ["health_level", "Health", "critical"],
+  ["stream_active", "Stream active", "critical"],
+  ["stream_reconnecting", "Reconnecting", "critical"],
+  ["funnel_ok", "Funnel", "critical"],
+  ["sheet_push_ok", "Sheet push", "critical"],
+  ["feed_a_state", "Feed A", "feeds"],
+  ["feed_b_state", "Feed B", "feeds"],
+  ["pov_state", "POV", "feeds"],
+  ["obs_reachable", "OBS", "connectivity"],
+  ["tailscale_up", "Tailscale", "connectivity"],
+  ["companion_ok", "Companion", "connectivity"],
+  ["cookies_stale", "Cookies", "connectivity"],
+  ["timer_push", "Timer sync", "connectivity"],
 ];
+const BAND_GROUPS = [["critical", "Critical"], ["feeds", "Feeds"],
+                     ["connectivity", "Connectivity"]];
 
-function renderBands(bands) {
+function renderBands(bands, current) {
   const host = $("hm-bands");
-  host.textContent = "";
+  host.innerHTML = "";
   const span = Math.max(1, rangeEnd - rangeStart);
+  const quality = {
+    feed_a_state: current && current.feeds && current.feeds.A && current.feeds.A.quality,
+    feed_b_state: current && current.feeds && current.feeds.B && current.feeds.B.quality,
+    pov_state: current && current.pov && current.pov.quality,
+  };
 
-  BAND_FIELDS.forEach(([field, label]) => {
-    const segs = (bands && bands[field]) || [];
-    // Skip the POV row entirely when every band's state is null.
-    if (field === "pov_state" && segs.every((b) => b.state === null || b.state === undefined)) return;
+  BAND_GROUPS.forEach(([gkey, gtitle]) => {
+    const rows = BAND_FIELDS.filter(([, , g]) => g === gkey);
+    const hdr = document.createElement("div");
+    hdr.className = "band-group"; hdr.textContent = gtitle;
+    host.appendChild(hdr);
 
-    const row = document.createElement("div");
-    row.className = "bandrow";
-    const lab = document.createElement("div");
-    lab.className = "bandlabel";
-    lab.textContent = label;
-    const track = document.createElement("div");
-    track.className = "bandtrack";
+    rows.forEach(([field, label]) => {
+      const segs = (bands && bands[field]) || [];
+      // Skip the POV row entirely when every band's state is null.
+      if (field === "pov_state" && segs.every((b) => b.state === null || b.state === undefined)) return;
 
-    segs.forEach((b) => {
-      const from = Math.max(b.from, rangeStart);
-      const to = Math.min(b.to, rangeEnd);
-      if (to <= from) return;
-      const seg = document.createElement("div");
-      seg.className = "bandseg " + segClass(field, b.state);
-      const leftPct = ((from - rangeStart) / span) * 100;
-      const widthPct = ((to - from) / span) * 100;
-      seg.style.left = leftPct + "%";
-      seg.style.width = widthPct + "%";
-      seg.title = stateLabel(field, b.state) + " — " + hms(b.from) + "–" + hms(b.to);
-      track.appendChild(seg);
+      const row = document.createElement("div");
+      row.className = "bandrow";
+      const lab = document.createElement("div");
+      lab.className = "bandlabel";
+      lab.textContent = label;
+      const q = quality[field];
+      if (q) {
+        const tag = document.createElement("span");
+        tag.className = "qbadge";
+        tag.textContent = q;
+        lab.appendChild(tag);
+      }
+      const track = document.createElement("div");
+      track.className = "bandtrack";
+
+      segs.forEach((b) => {
+        const from = Math.max(b.from, rangeStart);
+        const to = Math.min(b.to, rangeEnd);
+        if (to <= from) return;
+        const seg = document.createElement("div");
+        seg.className = "bandseg " + segClass(field, b.state);
+        const leftPct = ((from - rangeStart) / span) * 100;
+        const widthPct = ((to - from) / span) * 100;
+        seg.style.left = leftPct + "%";
+        seg.style.width = widthPct + "%";
+        seg.title = stateLabel(field, b.state) + " — " + hms(b.from) + "–" + hms(b.to);
+        track.appendChild(seg);
+      });
+
+      row.appendChild(lab);
+      row.appendChild(track);
+      host.appendChild(row);
     });
-
-    row.appendChild(lab);
-    row.appendChild(track);
-    host.appendChild(row);
   });
 
   $("hm-axleft").textContent = hms(rangeStart);
@@ -399,9 +450,17 @@ function renderBands(bands) {
 }
 
 // --- 4. Numeric charts ---
-const SERIES = [
-  ["source_last_ok_age_s", "Source last-OK age (s)"],
-  ["cookies_age_h", "Cookies age (h)"],
+const NUMERIC_FIELDS = [
+  ["stream_kbps", "Upstream kbps", "OBS Output"],
+  ["stream_dropped_pct", "Dropped frames %", "OBS Output"],
+  ["stream_congestion", "Congestion", "OBS Output"],
+  ["obs_cpu_pct", "OBS CPU %", "OBS Resources"],
+  ["obs_mem_mb", "OBS memory (MB)", "OBS Resources"],
+  ["obs_fps", "OBS FPS", "OBS Resources"],
+  ["obs_render_skipped_pct", "Render skipped %", "OBS Resources"],
+  ["obs_disk_free_mb", "Disk free (MB)", "OBS Resources"],
+  ["source_last_ok_age_s", "Source last-OK age (s)", "Relay / Schedule"],
+  ["cookies_age_h", "Cookies age (h)", "Relay / Schedule"],
 ];
 
 function renderCharts(series) {
@@ -416,7 +475,16 @@ function renderCharts(series) {
   host.textContent = "";
   Object.keys(charts).forEach((k) => { try { charts[k].destroy(); } catch (e) {} delete charts[k]; });
 
-  SERIES.forEach(([key, label]) => {
+  let lastGroup = null;
+  NUMERIC_FIELDS.forEach(([key, label, group]) => {
+    // Emit a group subheader when the group changes.
+    if (group !== lastGroup) {
+      const ghdr = document.createElement("div");
+      ghdr.className = "chart-group";
+      ghdr.textContent = group;
+      host.appendChild(ghdr);
+      lastGroup = group;
+    }
     const box = document.createElement("div");
     box.className = "chart";
     const ct = document.createElement("div");
@@ -553,7 +621,7 @@ async function load() {
   if (typeof blob.to === "number") rangeEnd = blob.to;
 
   renderHeader(blob.current || {}, blob.now);
-  renderBands(blob.bands || {});
+  renderBands(blob.bands || {}, blob.current || {});
   renderCharts(blob.series || {});
   renderIncidents(blob.incidents || []);
   $("hm-stamp").textContent = "Window " + localDateTime(rangeStart) + " → " + localDateTime(rangeEnd) +
