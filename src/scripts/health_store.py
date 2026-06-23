@@ -123,3 +123,23 @@ def derive_bands(samples, gap_s=GAP_S):
     """One band list per BAND_FIELD, from ordered samples."""
     return {field: collapse_bands([(s["ts"], s.get(field)) for s in samples], gap_s)
             for field in BAND_FIELDS}
+
+
+def _incident_label(level, reasons):
+    if reasons:
+        return reasons[0]
+    return {"red": "CRITICAL", "yellow": "DEGRADED"}.get(level, level or "")
+
+
+def derive_incidents(samples, gap_s=GAP_S):
+    """Every non-green aggregate-health band becomes an incident with the reasons
+    recorded at the band's start as its label."""
+    reasons_at = {s["ts"]: s.get("health_reasons") or [] for s in samples}
+    out = []
+    for b in collapse_bands([(s["ts"], s.get("health_level")) for s in samples], gap_s):
+        if b["state"] == "green" or b["state"] is None:
+            continue
+        out.append({"ts": b["from"], "end": b["to"],
+                    "duration_s": b["to"] - b["from"], "severity": b["state"],
+                    "label": _incident_label(b["state"], reasons_at.get(b["from"]))})
+    return out

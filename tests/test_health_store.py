@@ -101,6 +101,27 @@ def t_derive_bands_covers_all_band_fields():
     assert bands["feed_a_state"][0]["state"] == "serving"
 
 
+def t_derive_incidents_from_non_green_health_bands():
+    samples = [
+        _snap(ts=0.0, level="green"),
+        _snap(ts=30.0, level="yellow") | {"health_reasons": ["cookies stale"]},
+        _snap(ts=60.0, level="yellow") | {"health_reasons": ["cookies stale"]},
+        _snap(ts=90.0, level="green"),
+        _snap(ts=120.0, level="red") | {"health_reasons": ["Feed B down — lost the live stream"]},
+    ]
+    inc = hs.derive_incidents(samples)
+    assert len(inc) == 2
+    assert inc[0]["severity"] == "yellow"
+    assert inc[0]["ts"] == 30.0 and inc[0]["end"] == 60.0 and inc[0]["duration_s"] == 30.0
+    assert inc[0]["label"] == "cookies stale"
+    assert inc[1]["severity"] == "red"
+    assert inc[1]["label"].startswith("Feed B down")
+
+
+def t_derive_incidents_empty_when_all_green():
+    assert hs.derive_incidents([_snap(ts=0.0), _snap(ts=30.0)]) == []
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
