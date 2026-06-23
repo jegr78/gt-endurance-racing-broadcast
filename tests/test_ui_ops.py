@@ -929,6 +929,25 @@ def t_chat_clear_op_builds_argv():
     assert ui_ops.build_argv("chat-clear") == ["chat", "clear"]
 
 
+def t_kill_relay_op_builds_argv():
+    # The "Kill stale relay" button frees the relay control port 8088 by reusing
+    # `racecast freeport 8088` (no --force: a healthy tracked relay is refused).
+    assert ui_ops.OPS["kill-relay"] == ["freeport", "8088"]
+    assert ui_ops.build_argv("kill-relay") == ["freeport", "8088"]
+
+
+def t_kill_relay_op_routes_to_freeport():
+    assert rc.route(list(ui_ops.OPS["kill-relay"]))["kind"] == "freeport"
+
+
+def t_kill_relay_op_rejects_params():
+    try:
+        ui_ops.build_argv("kill-relay", {"port": "53001"})
+        raise AssertionError("expected ValueError for an unexpected param")
+    except ValueError:
+        pass
+
+
 def t_obs_collection_set_op_rejects_params():
     try:
         ui_ops.build_argv("obs-collection-set", {"x": "1"})

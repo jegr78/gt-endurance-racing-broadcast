@@ -29,6 +29,7 @@ OPS = {
     "event-stop": ["event", "stop"],
     "event-takeover": ["event", "takeover"],   # ip (+ optional stint) appended via PARAMS
     "free-ports": ["freeport"],   # kill orphaned holders of the feed ports (53001-53003)
+    "kill-relay": ["freeport", "8088"],   # free the relay control port: recover a stale/orphaned relay the Stop button can't reach
     "cookies": ["cookies"],
     "cookies-twitch": ["cookies", "twitch"],
     "graphics": ["graphics"],
