@@ -3236,19 +3236,23 @@ class Relay:
                 self.obs_stats = {}
             return
         now = time.time()
-        reachable, stats, note = _obs_ws.get_health_stats()
-        kbps = _obs_ws.stream_kbps(self._obs_last_bytes, self._obs_last_bytes_ts,
-                                   stats.get("output_bytes"), now,
-                                   stats.get("stream_active"))
-        with self._obs_lock:
-            self.obs_reachable = reachable
-            self.obs_note = note or None
-            self._obs_probe_running = False
-            self._obs_last_bytes = stats.get("output_bytes")
-            self._obs_last_bytes_ts = now
-            redacted = {k: v for k, v in stats.items() if k != "output_bytes"}
-            redacted["stream_kbps"] = kbps
-            self.obs_stats = redacted
+        try:
+            reachable, stats, note = _obs_ws.get_health_stats()
+            kbps = _obs_ws.stream_kbps(self._obs_last_bytes, self._obs_last_bytes_ts,
+                                       stats.get("output_bytes"), now,
+                                       stats.get("stream_active"))
+            with self._obs_lock:
+                self.obs_reachable = reachable
+                self.obs_note = note or None
+                self._obs_probe_running = False
+                self._obs_last_bytes = stats.get("output_bytes")
+                self._obs_last_bytes_ts = now
+                redacted = {k: v for k, v in stats.items() if k != "output_bytes"}
+                redacted["stream_kbps"] = kbps
+                self.obs_stats = redacted
+        except Exception:                                # noqa: BLE001 — best-effort
+            with self._obs_lock:
+                self._obs_probe_running = False
 
     def _sample_connectivity(self):
         """Sample Funnel/Tailscale/Companion reachability into self.conn_state and
