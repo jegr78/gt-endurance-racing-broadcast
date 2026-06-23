@@ -951,10 +951,19 @@ def t_chat_clear_op_builds_argv():
 
 
 def t_kill_relay_op_builds_argv():
-    # The "Kill stale relay" button frees the relay control port 8088 by reusing
-    # `racecast freeport 8088` (no --force: a healthy tracked relay is refused).
-    assert ui_ops.OPS["kill-relay"] == ["freeport", "8088"]
-    assert ui_ops.build_argv("kill-relay") == ["freeport", "8088"]
+    # The "Kill stale relay" button force-frees the relay control port + feed ports.
+    assert ui_ops.OPS["kill-relay"] == [
+        "freeport", "--force", "8088", "53001", "53002", "53003"]
+    assert ui_ops.build_argv("kill-relay") == [
+        "freeport", "--force", "8088", "53001", "53002", "53003"]
+
+
+def t_kill_relay_op_is_forceful_and_covers_feed_ports():
+    # The manual emergency brake must actually KILL the holder(s): without --force
+    # freeport refuses while a relay's PID file reports "alive", so it never reached
+    # a cross-profile orphan. Cover the control port AND the feed ports.
+    assert ui_ops.OPS["kill-relay"] == [
+        "freeport", "--force", "8088", "53001", "53002", "53003"]
 
 
 def t_kill_relay_op_routes_to_freeport():

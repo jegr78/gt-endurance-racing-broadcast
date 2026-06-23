@@ -59,6 +59,21 @@ def t_parse_netstat_pids_windows():
     assert ports.parse_netstat_pids(out, 5300) == []
 
 
+def t_parse_netstat_pids_localized_state_column():
+    # Non-English Windows localizes the State column — German prints 'ABHÖREN'
+    # (LISTENING) and 'WARTEND' (TIME_WAIT). The parser must key on the wildcard
+    # FOREIGN address, never the localized word, or pids_on_port returns [] on
+    # every non-English host (it did: German Windows saw no listeners at all).
+    out = (
+        "  TCP    127.0.0.1:8088         0.0.0.0:0              ABHÖREN         34528\n"
+        "  TCP    100.115.69.85:8088     0.0.0.0:0              ABHÖREN         34528\n"
+        "  TCP    127.0.0.1:8088         127.0.0.1:49568        WARTEND         0\n"
+        "  TCP    100.115.69.85:8088     100.115.69.85:49434    WARTEND         0\n"
+    )
+    # only the two wildcard-foreign LISTENING rows count (deduped); WARTEND ignored
+    assert ports.parse_netstat_pids(out, 8088) == [34528]
+
+
 # ---- pids_on_port (injected command runner + which) -----------------------
 
 def t_pids_on_port_posix_prefers_lsof():

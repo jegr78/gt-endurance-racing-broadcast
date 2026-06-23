@@ -1688,42 +1688,85 @@ def _frozen_child_env():
     env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     return env
 
-def relay_start_port_note(our_relay_alive, control_pids):
-    """Message when the control port (8088) is held by something that is NOT our
-    relay (our own relay is caught earlier by the singleton PID check). None when
-    the port is free or our relay holds it. Such a holder makes the new relay's
-    control-port bind fail (#273) — refuse with a pointer to the recovery action."""
-    if our_relay_alive or not control_pids:
-        return None
-    return (f"port {RELAY_PORT} is held by PID {', '.join(map(str, control_pids))} "
-            f"(not a racecast relay) — the relay's control port would fail to bind. "
-            f"Free it first: racecast freeport {RELAY_PORT}")
+
+def relay_start_plan(*, port_pids, feed_pids, pidfile_pid, pidfile_alive,
+                     running_profile, active_profile, http_ok):
+    """Pure: decide what `relay start` must do, from the gathered signals.
+
+    Returns (action, kill_pids, reason):
+      action  "start"   control port free -> just start
+              "running" exactly one healthy active-profile relay we own -> no-op
+              "heal"    a defect (orphan / split-brain / wrong-profile / dead-PID /
+                        not-responding) -> kill kill_pids, then start fresh
+      kill_pids  sorted union of the 8088 + feed-port holders (heal only, else [])
+      reason     short plain-language defect string (heal only, else "")
+
+    An EMPTY/unknown running_profile counts as a mismatch (heal): a current-binary
+    relay always writes its stamp, so a stampless holder is a pre-stamp/old daemon.
+    """
+    port_set = set(port_pids)
+    if not port_set:
+        return ("start", [], "")
+    single = len(port_set) == 1
+    ours = single and pidfile_alive and (pidfile_pid in port_set)
+    if ours and http_ok and running_profile and running_profile == active_profile:
+        return ("running", [], "")
+    kill = sorted(port_set | set(feed_pids))
+    holders = ", ".join(str(p) for p in sorted(port_set))
+    if len(port_set) > 1:
+        reason = f"split-brain: {len(port_set)} listeners on port {RELAY_PORT}"
+    elif not pidfile_alive:
+        reason = f"dead pidfile but port {RELAY_PORT} held by PID {holders}"
+    elif pidfile_pid not in port_set:
+        reason = f"foreign holder PID {holders}"
+    elif not http_ok:
+        reason = f"relay not responding on port {RELAY_PORT}"
+    else:
+        reason = f"serving profile {running_profile or '(none)'!r}, active is {active_profile!r}"
+    return ("heal", kill, reason)
+
 
 def relay_start(rest):
     stint = _stint_args(rest)   # validate early: fail fast BEFORE spawning the daemon
-    # The PID file is the un-scoped singleton (_relay_pid_path), so this finds the
-    # one running relay even if the active profile was switched since it started.
+    # Gather the signals for the pure plan. The PID file is the un-scoped singleton
+    # (_relay_pid_path), so it finds the one tracked relay even across a profile
+    # switch; pids_on_port finds EVERY listener (incl. an untracked orphan / a
+    # Windows dual-bind split-brain) the PID file cannot see.
+    port_pids = pt.pids_on_port(RELAY_PORT)
+    feed_pids = sorted({p for fp in pt.FEED_PORTS for p in pt.pids_on_port(fp)})
     pid = sv.read_pid(_relay_pid_path())
-    if sv.pid_alive(pid):
+    action, kill_pids, reason = relay_start_plan(
+        port_pids=port_pids, feed_pids=feed_pids,
+        pidfile_pid=pid, pidfile_alive=sv.pid_alive(pid),
+        running_profile=_running_relay_profile(),
+        active_profile=_active_profile_name() or "",
+        http_ok=_relay_http_ok() if port_pids else False)
+    if action == "running":
         print(f"relay already running (pid {pid}).")
-        running = _running_relay_profile()
-        if running and running != (_active_profile_name() or ""):
-            print(f"  it is serving profile '{running}', not the active profile — "
-                  f"stop it first: racecast relay stop")
         if stint:
             print(f"  --stint ignored (relay keeps its position) — to reposition the "
                   f"running relay open http://127.0.0.1:{RELAY_PORT}/set/stint/{stint[1]}")
         relay_status([])
         return None
-    # Our relay is not running, yet the control port is held by a foreign process
-    # (or a pre-upgrade orphan) -> the bind would fail. Refuse with the recovery.
-    note = relay_start_port_note(False, pt.pids_on_port(RELAY_PORT))
-    if note:
-        print(note)
-        return None
-    # No relay running, yet a feed port already LISTENS -> an orphan (e.g. a leaked
-    # static-streams streamlink) will block that feed from binding. Warn + point at
-    # the recovery action rather than letting Feed A loop silently in "connecting".
+    if action == "heal":
+        # Self-heal a defect (orphan / split-brain / wrong-profile / dead-PID /
+        # unresponsive). Kill BY PORT — not via the PID file or `freeport` (which
+        # refuses while "a relay is alive") — so a cross-profile/old-binary orphan
+        # is actually cleared instead of deadlocking the start (#273 follow-up).
+        print(f"relay: clearing stale holder(s) of port {RELAY_PORT} "
+              f"({reason}) — killing PID {', '.join(map(str, kill_pids))}, then restarting.")
+        for kpid in kill_pids:
+            pt.kill_pid(kpid)
+        left = sorted({p for p in pt.pids_on_port(RELAY_PORT)})
+        if left:
+            print(f"  WARNING: port {RELAY_PORT} STILL held by PID "
+                  f"{', '.join(map(str, left))} after kill — start may fail.")
+        if os.path.exists(_relay_pid_path()):
+            os.remove(_relay_pid_path())
+        _clear_relay_profile_stamp()
+    # action in {"start", "heal"} -> fresh start.
+    # A feed port may still LISTEN even with 8088 free (a leaked static-streams
+    # streamlink) -> warn rather than letting Feed A loop silently in "connecting".
     busy = [p for p in pt.FEED_PORTS if pt.pids_on_port(p)]
     if busy:
         print(f"WARNING: feed port(s) {', '.join(map(str, busy))} already in use — "
@@ -1735,7 +1778,14 @@ def relay_start(rest):
                                env=_frozen_child_env())
     print(f"relay started (pid {newpid}). Watch it: racecast relay logs -f")
     _append_tailscale_snapshot()
-    _refresh_obs_pages(wait=10)   # pages may have changed since the last run
+    _refresh_obs_pages(wait=10)   # waits for the control port, then refreshes OBS pages
+    # Post-start verification: exactly one process should now hold 8088. More than
+    # one means a residual dual-bind split-brain survived -> surface it, don't hide it.
+    holders = sorted({p for p in pt.pids_on_port(RELAY_PORT)})
+    if len(holders) > 1:
+        print(f"  WARNING: {len(holders)} processes listen on port {RELAY_PORT} "
+              f"(PID {', '.join(map(str, holders))}) — possible split-brain; "
+              f"re-run 'racecast relay start' to reconcile.")
     return None
 
 def _obs_pages_hash_path():
