@@ -464,6 +464,15 @@ def t_obs_stream_endpoint_starts_and_validates():
         srv.shutdown(); m._obs_ws = old
 
 
+def t_director_panel_has_stream_button():
+    path = os.path.join(ROOT, "src", "director", "director-panel.html")
+    with open(path, encoding="utf-8") as fh:
+        html = fh.read()
+    assert 'id="obsStreamBtn"' in html
+    assert 'obsPost("stream"' in html
+    assert "End the live broadcast" in html          # Stop is confirm-guarded
+
+
 def t_obs_stream_503_when_obs_down():
     r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
     old = m._obs_ws; m._obs_ws = None; srv = _serve(r)

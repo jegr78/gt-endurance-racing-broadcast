@@ -136,6 +136,11 @@
   button.k.redflag.on{border-color:var(--air);background:linear-gradient(180deg,#331414,#26100f);
     box-shadow:0 0 0 1px var(--air),0 0 20px var(--air-glow),inset 0 1px 0 rgba(255,255,255,.06)}
   button.k.redflag.on .tag{color:var(--air)}
+  /* OBS stream start/stop (#295): red while LIVE, amber while reconnecting */
+  button.k.stream.live{border-color:var(--air);background:linear-gradient(180deg,#331414,#26100f);
+    color:#ff8080;box-shadow:0 0 0 1px var(--air),0 0 20px var(--air-glow)}
+  button.k.stream.recon{border-color:#d68910;background:linear-gradient(180deg,#332611,#261d10);
+    color:#ffcf80;box-shadow:0 0 0 1px #d68910,0 0 18px rgba(214,137,16,.35)}
   .pgm button.k{min-width:110px;min-height:62px;font-weight:600;font-size:14px}
 
   /* ---------- audio rows ---------- */
@@ -376,7 +381,9 @@
   <section class="bus pgm"><div class="cap">PGM</div><div class="keys" id="pgmBus"></div></section>
 
   <section class="bus preview" id="previewSec">
-    <div class="cap">Live Preview <button class="k" id="pvToggle">SHOW</button></div>
+    <div class="cap">Live Preview
+      <button class="k" id="pvToggle">SHOW</button>
+      <button class="k stream" id="obsStreamBtn" hidden>OFFLINE</button></div>
     <div class="pvbody" id="pvBody" hidden>
       <div class="pvprog">
         <div class="pvframe" id="pvProgramFrame">
@@ -778,6 +785,24 @@ const obsScene  = (scene)           => obsPost("scene",  {scene});
 const obsSource = (scene,source,on) => obsPost("source", {scene, source, on});
 const obsVol    = (input,db)        => obsPost("audio",  {input, db});
 const obsMute   = (input,muted)     => obsPost("audio",  {input, mute:muted});
+const obsStream = (on)              => obsPost("stream", {on});
+
+/* Reflect the real OBS stream state on the broadcast button. `s` is d.stream
+   from /obs/state ({active,reconnecting,timecode}) or null when OBS is
+   unreachable. dataset.live drives the click handler's start-vs-stop choice. */
+function renderStreamBtn(s){
+  const b = $("#obsStreamBtn");
+  b.hidden = false;
+  if (!s){ b.textContent = "STREAM ?"; b.className = "k stream"; b.dataset.live = ""; return; }
+  if (s.reconnecting){
+    b.textContent = "RECONNECTING…"; b.className = "k stream recon"; b.dataset.live = "1";
+  } else if (s.active){
+    const tc = s.timecode ? " " + s.timecode.split(".")[0] : "";
+    b.textContent = "● LIVE" + tc; b.className = "k stream live"; b.dataset.live = "1";
+  } else {
+    b.textContent = "OFFLINE — GO LIVE"; b.className = "k stream"; b.dataset.live = "";
+  }
+}
 
 /* One press = scene + visibility + mutes, exactly like the Companion macro.
    Each step is independent; a failing step is logged and the rest still runs. */
@@ -838,7 +863,7 @@ async function obsStatePoll(){
     const inputsSpec = CONFIG.audio.map(a => a.input);
 
     const d = await obsPost("state", {sources: sourcesSpec, inputs: inputsSpec});
-    if (!d.ok){ obsLed("err"); return; }
+    if (!d.ok){ obsLed("err"); renderStreamBtn(null); return; }
 
     obsState = {
       scene:   d.scene   || "",
@@ -846,6 +871,7 @@ async function obsStatePoll(){
       audio:   d.audio   || [],
     };
     programScene = obsState.scene;
+    renderStreamBtn(d.stream);
 
     // Scene buttons — highlight current program scene.
     Object.entries(sceneKeys).forEach(([n,b])=>b.classList.toggle("air", n===programScene));
@@ -1746,6 +1772,13 @@ bchatPoll(); bchatTimer = setInterval(bchatPoll, 4000);
 setInterval(schedPoll, 2000);
 setInterval(qualPoll, 2000);
 subsPoll(); setInterval(subsPoll, 2000);
+$("#obsStreamBtn").addEventListener("click", async ()=>{
+  const live = $("#obsStreamBtn").dataset.live === "1";
+  if (live && !confirm("End the live broadcast?")) return;
+  const d = await obsStream(!live);
+  if (!d.ok) log("OBS stream: " + (d.error || "failed"), "err");
+  obsStatePoll();
+});
 obsStatePoll(); setInterval(obsStatePoll, 2000);
 loadCuePresets(); loadCueTargets(); pollCueRecent(); setInterval(pollCueRecent, 2000);
 </script>
