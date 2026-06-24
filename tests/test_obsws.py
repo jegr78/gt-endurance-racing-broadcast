@@ -815,6 +815,84 @@ def t_scene_collection_status_empty_current():
     assert s["current"] is None
 
 
+class _FakeSock:
+    """Records sendall/recv/shutdown/settimeout/close for _Session.close() tests.
+    recv_chunks is a list of bytes (b"" means EOF) or exceptions to raise in order."""
+    def __init__(self, recv_chunks=None, raise_on_send=None):
+        self.sent = b""
+        self.calls = []                 # ordered method names
+        self.timeout = None
+        self._recv = list(recv_chunks or [b""])
+        self._raise_on_send = raise_on_send
+    def sendall(self, data):
+        self.calls.append("sendall")
+        if self._raise_on_send:
+            raise self._raise_on_send
+        self.sent += data
+    def recv(self, n):
+        self.calls.append("recv")
+        if not self._recv:
+            return b""
+        item = self._recv.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+    def shutdown(self, how):
+        self.calls.append("shutdown")
+    def settimeout(self, t):
+        self.timeout = t
+    def close(self):
+        self.calls.append("close")
+
+
+def _unmask_client_frame(buf):
+    """Decode one masked client->server frame; return (opcode, unmasked_payload)."""
+    opcode = buf[0] & 0x0F
+    length = buf[1] & 0x7F
+    mask = buf[2:6]
+    masked = buf[6:6 + length]
+    payload = bytes(b ^ mask[i % 4] for i, b in enumerate(masked))
+    return opcode, payload
+
+
+def t_close_sends_status_1000_then_shutdown_then_close():
+    sock = _FakeSock(recv_chunks=[b""])          # immediate EOF
+    sess = m._Session(sock, b"")
+    sess.close()
+    opcode, payload = _unmask_client_frame(sock.sent)
+    assert opcode == 0x8, opcode                  # close frame
+    assert payload == struct.pack(">H", 1000), payload   # status 1000
+    # write half-closed before the socket is closed
+    assert "shutdown" in sock.calls and "close" in sock.calls
+    assert sock.calls.index("shutdown") < sock.calls.index("close")
+    assert sock.timeout == m.CLOSE_DRAIN_TIMEOUT_S
+
+
+def t_close_returns_on_echo_then_eof():
+    # OBS echoes a close frame (server->client, unmasked), then EOF.
+    echo = m.encode_frame(struct.pack(">H", 1000), mask=b"\x00\x00\x00\x00", opcode=0x8)
+    sock = _FakeSock(recv_chunks=[echo, b""])
+    sess = m._Session(sock, b"")
+    sess.close()                                  # must not raise
+    assert sock.calls.count("close") == 1
+
+
+def t_close_does_not_hang_on_silent_socket():
+    # recv raising timeout simulates the drain deadline; close() must still finish.
+    sock = _FakeSock(recv_chunks=[socket.timeout()])
+    sess = m._Session(sock, b"")
+    sess.close()                                  # must not raise, must not loop
+    assert "close" in sock.calls
+
+
+def t_close_safe_when_obs_already_dropped_socket():
+    # sendall raising OSError (OBS gone) must be swallowed; socket still closed.
+    sock = _FakeSock(raise_on_send=OSError("broken pipe"))
+    sess = m._Session(sock, b"")
+    sess.close()                                  # must not raise
+    assert "close" in sock.calls
+
+
 def _raises(fn, exc=ValueError):
     try:
         fn()
