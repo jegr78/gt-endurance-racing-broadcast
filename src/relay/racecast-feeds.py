@@ -391,12 +391,14 @@ def loopback_bind_failed(requested, bound):
 
 def control_port_available(host, port):
     """True if the mandatory loopback control port can be bound right now (no other
-    relay holds it). A throwaway probe using the same SO_REUSEADDR semantics as the
-    real control server, so its verdict matches what the real bind would see. Returns
-    False only on a bind error (port in use / unbindable); the socket is always closed."""
+    relay holds it). A throwaway detection probe — deliberately WITHOUT SO_REUSEADDR:
+    on Windows SO_REUSEADDR lets a bind SUCCEED against a port another socket already
+    holds (unlike POSIX), so the probe would miss a running relay (and the held-port
+    unit test fails on the Windows CI runner). A plain bind fails with EADDRINUSE when
+    the port is taken on every platform — exactly the signal we want. Returns False
+    only on a bind error; the socket is always closed."""
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((host, port))
         return True
     except OSError:
