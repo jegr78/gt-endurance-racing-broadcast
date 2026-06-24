@@ -35,6 +35,7 @@ import urllib.parse
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"   # RFC 6455 magic
 DEFAULT_PORT = 4455
 RELAY_PORTS = (53001, 53002, 53003)
+CLOSE_DRAIN_TIMEOUT_S = 1.0   # max seconds to wait for OBS's close echo before closing the socket
 
 STINT_SCENE = "Stint"                       # single-cam scene holding both feeds
 POV_SOURCE = "Feed POV"                      # the Stint-scene driver-POV PiP scene item
@@ -340,10 +341,26 @@ class _Session:
                 return msg["d"].get("responseData", {})
 
     def close(self):
+        """Best-effort RFC 6455 closing handshake so OBS logs a clean 1000 close
+        instead of an abnormal 1006/EOF: send a status-1000 close frame, then briefly
+        read OBS's close echo / EOF (bounded by CLOSE_DRAIN_TIMEOUT_S) so OBS can
+        finish its side of the close before the socket goes away, then close it.
+
+        We deliberately do NOT shutdown(SHUT_WR): sending a TCP FIN right after the
+        close frame makes OBS's WebSocket server log the disconnect as 1006/"End of
+        File" instead of 1000 — verified empirically against a live OBS. Letting the
+        server send its close echo and close the TCP first (we read to EOF) yields a
+        clean 1000. Never raises; never blocks past the drain timeout."""
         try:
-            self.sock.sendall(encode_frame(b"", opcode=0x8))   # polite close
+            self.sock.sendall(encode_frame(struct.pack(">H", 1000), opcode=0x8))
         except OSError:
-            pass  # OBS may have dropped the socket first — close is courtesy only
+            pass  # OBS may have dropped the socket first — the rest is courtesy only
+        try:
+            self.sock.settimeout(CLOSE_DRAIN_TIMEOUT_S)
+            while self.sock.recv(65536):   # drain OBS's close echo until EOF / timeout
+                pass
+        except OSError:
+            pass  # timeout or reset — stop draining and close
         self.sock.close()
 
 
