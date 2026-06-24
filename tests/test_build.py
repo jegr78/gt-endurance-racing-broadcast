@@ -3,10 +3,20 @@
 
 Importing build.py only runs its module-level defs (the __main__ guard does not
 fire), so this never triggers an actual build."""
-import importlib.util, os, re
+import importlib.util, json, os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+
+# Issue #291: the POV feed + all toggled still-graphics in the Stint scene carry
+# a baked-in 300 ms Fade show/hide transition, so on-air elements ease in/out
+# instead of cutting hard on every obs-websocket visibility toggle.
+OBS_COLLECTION = os.path.join(ROOT, "src", "obs", "GT_Endurance.json")
+FADE_ITEMS = [
+    "Feed POV", "Standby Cover", "Standings", "Schedule", "Race Results",
+    "Quali Results", "Race Weather 1", "Race Weather 2", "Quali Weather",
+]
+FADE_DURATION_MS = 300
 spec = importlib.util.spec_from_file_location(
     "build", os.path.join(ROOT, "tools", "build.py"))
 b = importlib.util.module_from_spec(spec); spec.loader.exec_module(b)
@@ -82,6 +92,29 @@ def t_console_pages_are_shipped():
     build_src = _build_src()
     assert 'cp("console/console.html"' in build_src, "console.html not shipped"
     assert 'cp("console/buttons.html"' in build_src, "buttons.html not shipped"
+
+
+def _stint_items():
+    with open(OBS_COLLECTION, encoding="utf-8") as fh:
+        coll = json.load(fh)
+    for src in coll["sources"]:
+        if src.get("id") == "scene" and src.get("name") == "Stint":
+            return {it["name"]: it for it in src["settings"]["items"]}
+    raise AssertionError("Stint scene not found in OBS collection")
+
+
+def t_stint_graphics_carry_fade_transitions():
+    # Each in-scope item eases in/out: a 300 ms fade_transition on show AND hide.
+    items = _stint_items()
+    for name in FADE_ITEMS:
+        assert name in items, f"{name!r} missing from Stint scene"
+        item = items[name]
+        for key in ("show_transition", "hide_transition"):
+            tr = item.get(key, {})
+            assert tr.get("id") == "fade_transition", \
+                f"{name} {key} is not a fade ({tr!r})"
+            assert tr.get("duration") == FADE_DURATION_MS, \
+                f"{name} {key} duration != {FADE_DURATION_MS} ({tr!r})"
 
 
 if __name__ == "__main__":
