@@ -117,6 +117,31 @@ def t_loopback_localhost_alias_counts():
     assert m.loopback_bind_failed(["localhost"], ["localhost"]) is False
 
 
+# --- control_port_available: early bind probe for the mandatory loopback port ----
+def t_control_port_available_true_when_free_false_when_taken():
+    import socket
+    # A port we bind and hold -> reported unavailable.
+    held = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    held.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    held.bind(("127.0.0.1", 0))
+    held.listen(1)
+    port = held.getsockname()[1]
+    try:
+        assert m.control_port_available("127.0.0.1", port) is False
+    finally:
+        held.close()
+    # Once freed, the same port is available again.
+    assert m.control_port_available("127.0.0.1", port) is True
+
+
+def t_main_probes_control_port_before_refresh_and_logs_league():
+    import inspect
+    src = inspect.getsource(m.main)
+    assert "control_port_available(" in src                       # the early probe exists
+    assert src.index("control_port_available(") < src.index("pov_source")  # before the first refresh
+    assert '(args.league_name or "?")' in src                    # start line uses the injected name
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
