@@ -310,20 +310,26 @@
     .panes{display:grid;grid-template-columns:minmax(0,1fr) clamp(280px,26vw,360px);
            gap:14px;align-items:start}
     .mainpane{min-width:0}
-    /* Right rail: a sticky, viewport-tall column shared by the crew chat (top)
-       and the read-only broadcast chat (below), each taking half the height —
-       both always visible, no wasted space (#294). */
+    /* Right rail: a sticky column with the crew chat (top) and the read-only
+       broadcast chat (below) stacked, both always visible (#294). Each chat log
+       is a fixed-height scroll region (YouTube/Twitch-style) — the box grows with
+       its messages until the cap, then scrolls. NB: a <details> element does not
+       propagate a definite height to its descendants via flex-grow (Chromium quirk
+       — verified live), so the log must be bounded directly with max-height rather
+       than a flex:1 fill chain; otherwise a busy broadcast feed grows it unbounded.
+       The rail itself caps at the viewport and scrolls if the two stacked boxes
+       together exceed it. */
     .rail{position:sticky;top:18px;align-self:start;display:flex;flex-direction:column;
-           gap:14px;height:calc(100vh - 36px)}
-    details.chat#chatBox,details.chat#bchatBox{margin-bottom:0;min-height:0;flex:1 1 0;
+           gap:14px;max-height:calc(100vh - 36px);overflow-y:auto}
+    details.chat#chatBox,details.chat#bchatBox{margin-bottom:0;min-height:0;flex:0 1 auto;
            display:flex;flex-direction:column}
     details.chat#chatBox>summary,details.chat#bchatBox>summary{cursor:default;
            pointer-events:none;margin-bottom:8px}
     details.chat#chatBox>summary::after,details.chat#bchatBox>summary::after{display:none}
     details.chat#chatBox>.body,details.chat#bchatBox>.body{display:flex !important;
-           flex-direction:column;flex:1;min-height:0}
-    details.chat#chatBox .chatlog,details.chat#bchatBox .chatlog{max-height:none;flex:1;
-           min-height:0;margin-top:0}
+           flex-direction:column;min-height:0}
+    details.chat#chatBox .chatlog,details.chat#bchatBox .chatlog{max-height:38vh;
+           overflow-y:auto;min-height:0;margin-top:0}
     details.chat#chatBox .hint,details.chat#bchatBox .hint{margin-top:6px}
   }
   .preview .pvbody{margin-top:6px}
