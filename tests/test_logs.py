@@ -236,6 +236,51 @@ def t_pump_subprocess_on_line_hook():
     lg.pump_subprocess(stream2, logger, "streamlink", on_line=boom)  # no raise
 
 
+def t_throttle_collapses_identical_flood():
+    th = lg.LineThrottle()
+    out = []
+    for _ in range(1000):
+        out += th.emit(logging.ERROR, "Unable to open URL: x (403)", 1000.0)
+    out += th.flush(1000.0)
+    texts = [t for _lvl, t in out]
+    assert texts[0] == "Unable to open URL: x (403)"      # first occurrence emitted
+    assert any("repeated ×999" in t for t in texts)       # the rest counted
+    assert len(out) <= 3                                  # ~one real line + a summary
+    assert all(lvl == logging.ERROR for lvl, _t in out)   # summary keeps the flood's level
+
+
+def t_throttle_rate_limits_distinct_lines():
+    th = lg.LineThrottle(rate_max=5, window_s=10.0, summary_s=30.0)
+    out = []
+    for i in range(20):
+        out += th.emit(logging.INFO, "line " + chr(97 + i) + " alpha", 1000.0)
+    out += th.flush(1000.0)
+    emitted = [t for _lvl, t in out if "suppressed" not in t]
+    assert len(emitted) == 5                              # capped at rate_max in the window
+    assert any(lvl == logging.WARNING and "suppressed 15 lines" in t for lvl, t in out)
+
+
+def t_throttle_flushes_dup_summary_on_pattern_change():
+    th = lg.LineThrottle()
+    out = []
+    out += th.emit(logging.WARNING, "retrying connection", 1000.0)
+    for _ in range(4):
+        out += th.emit(logging.WARNING, "retrying connection", 1000.0)
+    out += th.emit(logging.INFO, "stream opened", 1000.0)
+    texts = [t for _lvl, t in out]
+    assert texts == ["retrying connection", "(previous line repeated ×4)", "stream opened"]
+
+
+def t_throttle_periodic_summary_while_flooding():
+    th = lg.LineThrottle(summary_s=30.0)
+    out = []
+    out += th.emit(logging.ERROR, "boom", 1000.0)         # emitted
+    out += th.emit(logging.ERROR, "boom", 1010.0)         # dup, 10s < 30 -> no summary
+    out += th.emit(logging.ERROR, "boom", 1035.0)         # dup, 35s >= 30 -> summary
+    texts = [t for _lvl, t in out]
+    assert texts == ["boom", "(last line repeated ×2)"]
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp:
         for name, fn in sorted(globals().items()):

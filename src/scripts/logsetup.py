@@ -166,6 +166,73 @@ def normalize_for_dedup(text):
     return _DIGITS_RE.sub("<n>", _URL_RE.sub("<url>", text))
 
 
+LINE_THROTTLE_RATE_MAX = 30
+LINE_THROTTLE_WINDOW_S = 10.0
+LINE_THROTTLE_SUMMARY_S = 30.0
+
+
+class LineThrottle:
+    """Per-stream throttle for pumped subprocess lines. Collapses consecutive
+    duplicate-after-normalization lines (emitting a periodic '(last line repeated
+    ×N)' at the line's own level, plus a '(previous line repeated ×N)' when the
+    pattern changes) AND rate-limits distinct lines to rate_max per window_s (excess
+    dropped, surfaced as a WARNING '(suppressed N lines)'). Pure given an injected
+    monotonic clock. One instance per pump_subprocess call -> per feed, thread-isolated."""
+
+    def __init__(self, rate_max=LINE_THROTTLE_RATE_MAX,
+                 window_s=LINE_THROTTLE_WINDOW_S, summary_s=LINE_THROTTLE_SUMMARY_S):
+        self.rate_max = rate_max
+        self.window_s = window_s
+        self.summary_s = summary_s
+        self.last_key = None
+        self.last_level = logging.INFO
+        self.dup_count = 0
+        self.last_summary_at = 0.0
+        self.window_start = 0.0
+        self.window_count = 0
+        self.dropped_in_window = 0
+
+    def emit(self, level, text, now):
+        """Return the (level, text) records to log for one incoming line."""
+        key = normalize_for_dedup(text)
+        out = []
+        if key == self.last_key:                       # consecutive duplicate
+            self.dup_count += 1
+            if now - self.last_summary_at >= self.summary_s:
+                out.append((self.last_level, f"(last line repeated ×{self.dup_count})"))
+                self.last_summary_at = now
+            return out
+        if self.dup_count > 0:                          # a new, distinct line ends a dup run
+            out.append((self.last_level, f"(previous line repeated ×{self.dup_count})"))
+            self.dup_count = 0
+        self.last_key = key
+        self.last_level = level
+        self.last_summary_at = now
+        if now - self.window_start >= self.window_s:    # roll the rate-limit window
+            if self.dropped_in_window > 0:
+                out.append((logging.WARNING, f"(suppressed {self.dropped_in_window} lines)"))
+                self.dropped_in_window = 0
+            self.window_start = now
+            self.window_count = 0
+        if self.window_count < self.rate_max:
+            self.window_count += 1
+            out.append((level, text))
+        else:
+            self.dropped_in_window += 1
+        return out
+
+    def flush(self, now):
+        """Emit any pending summary at EOF so a trailing flood still reports its count."""
+        out = []
+        if self.dup_count > 0:
+            out.append((self.last_level, f"(previous line repeated ×{self.dup_count})"))
+            self.dup_count = 0
+        if self.dropped_in_window > 0:
+            out.append((logging.WARNING, f"(suppressed {self.dropped_in_window} lines)"))
+            self.dropped_in_window = 0
+        return out
+
+
 def tag_line(source, line):
     """Prefix a single log line with its source tag for the merged view, stripping
     the trailing newline/carriage-return. chr(10)/chr(13) avoid a backslash escape
