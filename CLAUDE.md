@@ -202,6 +202,10 @@ python3 src/racecast.py --version
 # Fetch any missing HUD country flags from the sheet's Configuration tab
 python3 tools/fetch-flags.py            # adds missing -> src/assets/flags/ (keeps old)
 
+# Probe the broadcast-chat reader (#294) against a LIVE channel — standalone, no
+# Sheet/relay/UI; resolves the live videoId via yt-dlp + tails Innertube chat.
+python3 tools/broadcast-chat-probe.py https://www.youtube.com/@SomeChannel  # --resolve-only / --cookies
+
 # Publish the GitHub wiki from src/docs/wiki/ (maintainer; --dry-run to preview)
 python3 tools/sync-wiki.py
 ```
