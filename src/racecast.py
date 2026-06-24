@@ -188,6 +188,15 @@ def _active_profile_name():
 def _runtime_dir():
     return _profile_runtime(_runtime_base_dir(), _active_profile_name())
 
+def _ui_app_log_dir():
+    """Control Center app.log lives machine-wide at runtime/logs (NOT per-profile):
+    the UI's actions span profiles (install-tools, preflight, cookies, freeport…),
+    and the active profile can change mid-session."""
+    return os.path.join(_runtime_base_dir(), "logs")
+
+def _ui_app_log_path():
+    return os.path.join(_ui_app_log_dir(), "app.log")
+
 def _profile_env_vars(rc):
     """The league values from a ResolvedConfig to push into the child env, as a
     dict of the non-empty ones. These are exactly what the relay / one-shots /
@@ -654,6 +663,10 @@ def _relay_files():
     files = [_relay_log_path()] + _relay_feed_logs()
     return [f for f in files if os.path.exists(f)]
 
+def _app_files():
+    p = _ui_app_log_path()
+    return [p] if os.path.exists(p) else []
+
 def _streams_files():
     d = os.path.join(_streams_static_dir(), "logs")
     return sorted(glob.glob(os.path.join(d, "feed_*.log")))
@@ -708,6 +721,7 @@ def _log_sources():
     CLI both consume this registry."""
     relay_dir = os.path.join(_running_relay_dir(), "logs")   # follows the relay (#273)
     streams_dir = os.path.join(_streams_static_dir(), "logs")
+    app_dir = _ui_app_log_dir()                              # machine-wide Control Center log
     import logsetup
     def rc_src(files_fn, dirpath):
         return {"files": files_fn, "dir": dirpath,
@@ -728,6 +742,7 @@ def _log_sources():
         "obs": ext_src(_obs_files, logsetup.obs_log_dir(sys.platform)),
         "companion": ext_src(_companion_files,
                              os.path.dirname(_companion_log_path() or "") or "."),
+        "app": rc_src(_app_files, app_dir),
     }
     def _agg_files():
         out = []
@@ -5230,6 +5245,14 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
             _fontcat["data"], _fontcat["at"] = fresh, now
         return _fontcat["data"] or fresh
 
+    # Control Center action output -> a timestamped, rotating machine-wide app.log
+    # (same logsetup machinery as the relay). to_stdout=False: file only, never
+    # double-write to the UI's own console. Prune on start, like the daemons.
+    import logsetup
+    _app_logger = logsetup.configure_logging("racecast.app", _ui_app_log_path(),
+                                             to_stdout=False)
+    logsetup.prune_old_logs(_ui_app_log_dir())
+
     ctx = {
         "version": version(),
         "page_path": resource_path("ui/control-center.html"),
@@ -5300,7 +5323,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
             lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN,
                                              _rc_job_executable(),
                                              os.path.join(HERE, "racecast.py")),
-            env=_frozen_child_env()),
+            env=_frozen_child_env(), logger=_app_logger),
         "log_sources": _log_sources(),
     }
     try:
