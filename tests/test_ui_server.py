@@ -1706,7 +1706,8 @@ def t_panel_link_has_no_obs_credential_fragment():
     # from the URL fragment. The Control Center must therefore NOT append an
     # `#ip=…&port=…&pw=…` fragment to the /panel link (it only leaked the OBS
     # password into the address bar / shared links and was never stripped).
-    with open(os.path.join(ROOT, "src", "ui", "control-center.html")) as fh:
+    with open(os.path.join(ROOT, "src", "ui", "control-center.html"),
+              encoding="utf-8") as fh:                # cp1252 on Windows would choke
         page = fh.read()
     assert "/api/obs-ws" not in page          # the dead creds fetch is gone
     assert "f.set('pw'" not in page            # no password into the panel URL
