@@ -66,7 +66,7 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   Stop: Ctrl+C
 """
 
-import argparse, csv, datetime, hmac, html, io, ipaddress, json, logging, os, re, secrets, shutil, signal, subprocess, sys, threading, time
+import argparse, csv, datetime, hmac, html, io, ipaddress, json, logging, os, random, re, secrets, shutil, signal, socket, ssl, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, quote, unquote, parse_qs, urlencode
 from urllib.request import Request, urlopen
@@ -1578,10 +1578,6 @@ class ChannelSource:
         with self.lock:
             return list(self.rows)
 
-    def youtube_channels(self):
-        """Just the YouTube channel strings (the only platform implemented)."""
-        return [c for (p, c) in self.get() if p == "youtube" and c]
-
 
 class _BroadcastReader:
     """Polls one live videoId's Innertube chat into the store until the stream
@@ -1638,14 +1634,114 @@ class _BroadcastReader:
             self.stop_evt.wait(min(max(wait_s, 1.0), 10.0))
 
 
-class BroadcastChatSupervisor:
-    """Owns the per-channel live-set resolution and the per-stream readers.
+# Twitch IRC (Phase 2, #294): anonymous read-only chat — no API key / OAuth, just
+# a `justinfan` nick over TLS, JOIN #<login>, receive PRIVMSG. Pure stdlib.
+TWITCH_IRC_HOST = "irc.chat.twitch.tv"
+TWITCH_IRC_PORT = 6697
 
-    Each cycle: read the Channel tab, resolve every YouTube channel's
-    currently-live videoId set via yt-dlp, then start/stop readers so exactly
-    the live streams are followed. Genuinely-ended streams are tombstoned (kept
-    until the channel stops listing them) so they are not restarted; a reader
-    that died while still live is retried. Best-effort throughout."""
+
+class _TwitchReader:
+    """Holds one persistent anonymous Twitch-IRC connection for a channel login,
+    feeding PRIVMSGs into the store. Reconnects on drop with backoff until
+    stopped; `ended` stays False (a Twitch channel is always worth retrying), so
+    the supervisor keeps exactly one reader per configured Twitch channel."""
+
+    def __init__(self, login, store, logger=None):
+        self.login = login
+        self.store = store
+        self.logger = logger
+        self.stop_evt = threading.Event()
+        self.ended = False
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self.thread.start()
+        return self
+
+    def stop(self):
+        self.stop_evt.set()
+
+    def alive(self):
+        return self.thread.is_alive()
+
+    def _run(self):
+        backoff = 2
+        while not self.stop_evt.is_set():
+            try:
+                self._session()
+            except (OSError, ssl.SSLError) as e:
+                if self.logger:
+                    self.logger.warning("twitch chat %s: %s: %s",
+                                        self.login, type(e).__name__, e)
+            except Exception as e:        # never let a reader crash bubble up
+                if self.logger:
+                    self.logger.warning("twitch chat %s failed: %s: %s",
+                                        self.login, type(e).__name__, e)
+            if self.stop_evt.is_set():
+                break
+            self.stop_evt.wait(backoff)   # reconnect backoff
+            backoff = min(backoff * 2, 30)
+
+    @staticmethod
+    def _send(sock, line):
+        sock.sendall((line + "\r\n").encode("utf-8"))
+
+    def _session(self):
+        raw = socket.create_connection((TWITCH_IRC_HOST, TWITCH_IRC_PORT), timeout=10)
+        try:
+            ctx = ssl.create_default_context()
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2   # no legacy TLS 1.0/1.1
+            sock = ctx.wrap_socket(raw, server_hostname=TWITCH_IRC_HOST)
+        except OSError:
+            raw.close()
+            raise
+        try:
+            sock.settimeout(1.0)          # poll stop_evt / stay responsive to PING
+            nick = "justinfan%d" % random.randint(10000, 999999)
+            self._send(sock, "CAP REQ :twitch.tv/tags twitch.tv/commands")
+            self._send(sock, "PASS SCHMOOPIIE")    # ignored for anon login
+            self._send(sock, "NICK " + nick)
+            self._send(sock, "JOIN #" + self.login)
+            buf = b""
+            while not self.stop_evt.is_set():
+                try:
+                    data = sock.recv(4096)
+                except socket.timeout:
+                    continue
+                if not data:
+                    return                # disconnected -> _run reconnects
+                buf += data
+                *lines, buf = buf.split(b"\n")
+                for raw_line in lines:
+                    line = raw_line.decode("utf-8", "replace").rstrip("\r")
+                    if not line:
+                        continue
+                    if line.startswith("PING"):
+                        self._send(sock, "PONG :tmi.twitch.tv")
+                        continue
+                    msg = broadcast_chat.parse_twitch_privmsg(line)
+                    if msg:
+                        if not msg.get("ts"):
+                            msg["ts"] = time.time()   # untagged line: stamp receipt
+                        self.store.add_many("twitch:" + self.login, [msg])
+        finally:
+            try:
+                sock.close()
+            except OSError:
+                pass  # best-effort close; the connection is being torn down anyway
+
+
+class BroadcastChatSupervisor:
+    """Owns the per-channel resolution and the per-source readers (YouTube + Twitch).
+
+    Each cycle reads the Channel tab and builds the DESIRED set of readers keyed by
+    a stable id: for **YouTube**, one per currently-live videoId (resolved via
+    yt-dlp — the /streams tab catches the producer-handover overlap); for
+    **Twitch**, one per channel login (a persistent anonymous IRC connection,
+    `twitch:<login>`). It then reconciles: readers no longer desired are stopped;
+    new ones are started; a reader that died is retried — except a YouTube reader
+    that ended genuinely (stream over) is tombstoned until its videoId leaves the
+    live set, so it is not restarted in a loop. Best-effort throughout."""
 
     def __init__(self, store, channel_source, cookies, interval=30, logger=None):
         self.store = store
@@ -1654,7 +1750,7 @@ class BroadcastChatSupervisor:
         self.interval = interval
         self.logger = logger
         self.stop_evt = threading.Event()
-        self._readers = {}              # video_id -> _BroadcastReader
+        self._readers = {}              # stable key -> reader (BroadcastReader/_TwitchReader)
 
     def stop(self):
         self.stop_evt.set()
@@ -1671,25 +1767,36 @@ class BroadcastChatSupervisor:
         for reader in self._readers.values():
             reader.stop()
 
+    def _desired(self):
+        """{stable_key: zero-arg factory} of the readers that SHOULD be running."""
+        desired = {}
+        for platform, channel in self.channel_source.get():
+            if platform == "youtube":
+                for vid in yt_live_video_ids(channel, self.cookies, logger=self.logger):
+                    desired[vid] = (lambda v=vid: _BroadcastReader(v, self.store, self.logger))
+            elif platform == "twitch":
+                login = broadcast_chat.twitch_login(channel)
+                if login:
+                    key = "twitch:" + login
+                    desired[key] = (lambda lg=login: _TwitchReader(lg, self.store, self.logger))
+        return desired
+
     def _cycle(self):
         self.channel_source.refresh()
-        cur = set()
-        for channel in self.channel_source.youtube_channels():
-            for vid in yt_live_video_ids(channel, self.cookies, logger=self.logger):
-                cur.add(vid)
-        # Stop readers whose stream left the channel.
-        for vid in list(self._readers):
-            if vid not in cur:
-                self._readers.pop(vid).stop()
-        # Start brand-new streams; retry readers that died while still live.
-        for vid in cur:
-            reader = self._readers.get(vid)
+        desired = self._desired()
+        # Stop readers that are no longer desired (stream gone / channel removed).
+        for key in list(self._readers):
+            if key not in desired:
+                self._readers.pop(key).stop()
+        # Start brand-new readers; retry ones that died but are NOT tombstoned.
+        for key, make in desired.items():
+            reader = self._readers.get(key)
             if reader is None:
-                self._readers[vid] = _BroadcastReader(vid, self.store, self.logger).start()
+                self._readers[key] = make().start()
                 if self.logger:
-                    self.logger.info("broadcast-chat: following live stream %s", vid)
+                    self.logger.info("broadcast-chat: following %s", key)
             elif not reader.alive() and not reader.ended:
-                self._readers[vid] = _BroadcastReader(vid, self.store, self.logger).start()
+                self._readers[key] = make().start()
 
 
 class HealthStore:

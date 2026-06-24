@@ -159,6 +159,12 @@ function fmtTs(ts) {
 // True when a scroll container is at (or near) its bottom — so we only
 // auto-scroll on new messages when the reader hasn't scrolled up to read back.
 function atBottom(el) { return el.scrollHeight - el.scrollTop - el.clientHeight < 24; }
+// Platform-aware source label for the handover overlap badge: "TW:<login>" for
+// Twitch (source "twitch:<login>"), "YT:<last4>" for a YouTube videoId.
+function srcBadge(source) {
+  const s = String(source || '');
+  return s.indexOf('twitch:') === 0 ? 'TW:' + s.slice(7) : 'YT:' + s.slice(-4);
+}
 
 // --- Redacted schedule (no stream URLs) + on-air marker ---
 function renderSchedule(d) {
@@ -294,7 +300,7 @@ async function pollBroadcastChat() {
         row.appendChild(document.createTextNode(msg.text || ''));   // XSS-safe
         if (multi && msg.source) {
           const s = document.createElement('span');
-          s.className = 'src'; s.textContent = '#' + String(msg.source).slice(-4);
+          s.className = 'src'; s.textContent = srcBadge(msg.source);
           row.appendChild(s);
         }
         log.appendChild(row);
