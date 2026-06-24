@@ -38,6 +38,7 @@ with **no leading blank rows**. Most tabs locate their columns **by header text*
 | [Setup](#setup-tab) | `Setup` | *(fixed)* | webhook | Director-Panel write target (mirrored read-only into Overlay) |
 | [Timer](#timer-tab) | `Timer` | `--timer-tab` | relay | Race-countdown state (see [Race Timer](Race-Timer)) |
 | [Crew](#crew-tab) | `Crew` | `--crew-tab` | relay | Director / producer / commentator / race-control roster |
+| [Producer](#producer-tab) | `Producer` | — | Control Center | Producer-handover schedule with one-click Funnel takeover |
 | [Assets](#assets-tab) | `Assets` | `--assets-tab` | `racecast graphics` / `media` | Links to the broadcast graphics + intro/outro clips |
 
 ---
@@ -236,6 +237,38 @@ Sample Marshal     | FALSE       | FALSE    | FALSE    | TRUE         | sample_m
 Roles are additive (a person can hold several). Without a Crew tab, commentators still
 work from the Schedule and the other roles resolve empty. The `crew` write action (the
 Control Center crew editor) is detailed in [Sheet-Webhook](Sheet-Webhook).
+
+---
+
+## Producer tab
+
+The producer-handover schedule shown on the **Control Center Home** view. Each row
+represents one production segment and identifies the producer responsible for it by their
+machine's Tailscale MagicDNS name. The Control Center renders each row as a one-click
+**Funnel takeover** button — except your own machine's row, which is shown but
+disabled (the Control Center matches the row's MagicDNS against this machine's own full
+FQDN, displayed as "Your MagicDNS: …" so you know exactly what to enter). There is no
+CLI flag; this tab is read directly by the Control Center on demand using the active
+profile's `SHEET_ID`.
+
+The tab is **read-only / admin-owned**: the league owner maintains it per event directly
+in the Sheet — no write-back from the app.
+
+| Column header | Meaning |
+|---|---|
+| `Part` | Human label for the segment (e.g. `1`, `2`, `Night 1`) |
+| `Producer` | The producer's name |
+| `MagicDNS` | That producer's machine's **full Tailscale MagicDNS FQDN** (e.g. `producer-a.tailXXXX.ts.net`). Must be the full `*.ts.net` name — a bare hostname will not match the self-guard |
+
+Duplicate rows are allowed and meaningful: a producer covering two consecutive segments
+→ repeat the row with the same Producer and MagicDNS.
+
+```
+Part    | Producer          | MagicDNS
+1       | Sample Producer A | producer-a.tailnet-demo.ts.net
+2       | Sample Producer B | producer-b.tailnet-demo.ts.net
+3       | Sample Producer A | producer-a.tailnet-demo.ts.net
+```
 
 ---
 

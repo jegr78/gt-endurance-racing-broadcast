@@ -166,6 +166,27 @@ def t_status_snapshot_text_shape():
     assert out.endswith("\n")
 
 
+# --- magicdns_is_self: exact-FQDN takeover self-guard --------------------------
+def t_magicdns_is_self_exact_fqdn():
+    me = "producer-b.tail1234.ts.net"
+    assert ts.magicdns_is_self("producer-b.tail1234.ts.net", me) is True
+    assert ts.magicdns_is_self("PRODUCER-B.TAIL1234.TS.NET", me) is True   # case-insensitive
+    assert ts.magicdns_is_self("producer-b.tail1234.ts.net.", me) is True  # trailing dot
+    assert ts.magicdns_is_self("  producer-b.tail1234.ts.net  ", me) is True
+
+
+def t_magicdns_is_self_short_name_does_not_match():
+    me = "producer-b.tail1234.ts.net"
+    assert ts.magicdns_is_self("producer-b", me) is False        # bare host: exact-FQDN policy
+    assert ts.magicdns_is_self("producer-a.tail1234.ts.net", me) is False
+
+
+def t_magicdns_is_self_unknown_self_is_false():
+    assert ts.magicdns_is_self("producer-b.tail1234.ts.net", "") is False
+    assert ts.magicdns_is_self("producer-b.tail1234.ts.net", None) is False
+    assert ts.magicdns_is_self("", "producer-b.tail1234.ts.net") is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

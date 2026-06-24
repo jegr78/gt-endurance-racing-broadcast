@@ -80,6 +80,12 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "assets": lambda: {"ok": True,
                                "graphics": {"level": "PASS", "detail": "g"},
                                "media": {"level": "PASS", "detail": "m"}},
+            "producer_schedule": lambda: {
+                "rows": [{"part": "1", "producer": "Alice",
+                          "magicdns": "producer-a.ts.net", "self": False},
+                         {"part": "2", "producer": "Bob",
+                          "magicdns": "producer-b.ts.net", "self": True}],
+                "self_name": "producer-b.ts.net", "self_known": True},
             "asset_files": lambda: {"ok": True,
                                     "graphics": ["Overlay.png"],
                                     "media": ["intro.mp4"]},
@@ -799,6 +805,20 @@ def t_assets_route_provider_error_is_500():
     try:
         code, body = _get(port, "/api/assets")
         assert code == 500 and "sheet down" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_producer_schedule_route_wraps_provider():
+    httpd, port = _serve(_ctx())
+    try:
+        code, body = _get(port, "/api/producer-schedule")
+        data = json.loads(body)
+        assert code == 200
+        assert data["self_known"] is True
+        assert data["self_name"] == "producer-b.ts.net"
+        assert [r["producer"] for r in data["rows"]] == ["Alice", "Bob"]
+        assert data["rows"][1]["self"] is True
     finally:
         httpd.shutdown()
 

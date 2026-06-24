@@ -366,6 +366,13 @@
   .tile.ok .tval { color:var(--ok); }
   .tile.warn .tval { color:var(--warn); }
   .tile.bad .tval { color:var(--bad); }
+  /* Producer schedule table on the Home view */
+  table.prodtable { width:100%; border-collapse:collapse; font:13px var(--mono); }
+  table.prodtable th, table.prodtable td { text-align:left; padding:6px 8px;
+    border-bottom:1px solid var(--line); }
+  table.prodtable th { color:var(--dim); font-weight:600; }
+  table.prodtable td.mono { color:var(--dim); word-break:break-all; }
+  .prodyou { color:var(--dim); font:11px var(--mono); }
   /* update banner in the Home head */
   .updbanner { display:inline-flex; align-items:center; gap:6px;
            padding:6px 12px; border-radius:8px; font-size:13px; font-weight:600;
@@ -594,6 +601,16 @@
           <button class="tile" onclick="showView('settings')">
             <span class="tlabel">Cookies</span>
             <span class="tval" id="t-cookies">checking…</span></button>
+        </section>
+        <section id="home-producers" hidden>
+          <div class="row"><span class="name">Producer schedule</span>
+            <span class="dim grow" id="prod-self">—</span>
+            <button id="prod-refresh" onclick="fetchProducerSchedule()" title="Reload the Producer tab from the league Sheet">Refresh</button></div>
+          <div id="prod-hint" class="dim" hidden></div>
+          <table id="prod-table" class="prodtable">
+            <thead><tr><th>Part</th><th>Producer</th><th>MagicDNS</th><th></th></tr></thead>
+            <tbody id="prod-body"></tbody>
+          </table>
         </section>
         <p class="evnote">Start brings up Tailscale, Discord, OBS, relay and Companion (optional stint = mid-event takeover). Stop only stops the racecast services — OBS, Discord and Tailscale keep running; quit them manually if needed. Use <b>Copy link</b> to share the Companion tablet and Director panel URLs with your directors (they reach them over Tailscale).</p>
       </div>
@@ -1091,6 +1108,8 @@ function showView(name) {
       && lastStatus.relay.alive && lastStatus.relay.http_ok) fetchRelayLive();
   // entering Home: refresh the takeover device dropdown from the tailnet
   if (name === 'home') loadTakeoverPeers();
+  // entering Home: load the producer schedule card (Sheet fetch, on-demand)
+  if (name === 'home') fetchProducerSchedule();
   // entering Home: load the current event title (works relay up or down)
   if (name === 'home') fetchEventTitle();
 }
@@ -1741,6 +1760,56 @@ function opTakeover() {
   if (funnel) params.funnel = true;
   if (v) params.stint = v;
   op('event-takeover', true, params);
+}
+
+// Producer schedule (read-only league Sheet tab) on the Home view. On-demand
+// (network: a Sheet fetch), loaded when Home opens and on manual Refresh — never
+// from the 3s status poll. Each row offers a one-click Funnel takeover against
+// that machine's MagicDNS; your OWN row(s) are disabled (server-tagged `self`),
+// and ALL rows lock when our own MagicDNS is unknown (Tailscale offline).
+async function fetchProducerSchedule() {
+  let d;
+  try { d = await (await fetch('/api/producer-schedule', {cache: 'no-store'})).json(); }
+  catch (e) { return; }
+  renderProducerSchedule(d);
+}
+
+function renderProducerSchedule(d) {
+  const sec = $('home-producers');
+  const rows = (d && d.rows) || [];
+  if (!rows.length) { sec.hidden = true; return; }   // no tab / empty -> hide card
+  sec.hidden = false;
+  const known = !!(d && d.self_known);
+  $('prod-self').textContent = known
+    ? ('Your MagicDNS: ' + d.self_name) : '— (Tailscale offline)';
+  const hint = $('prod-hint');
+  if (!known) { hint.hidden = false;
+    hint.textContent = 'Connect Tailscale to take over from the schedule.'; }
+  else { hint.hidden = true; hint.textContent = ''; }
+  const body = $('prod-body');
+  body.innerHTML = '';
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    const tdPart = document.createElement('td'); tdPart.textContent = r.part || '';
+    const tdProd = document.createElement('td'); tdProd.textContent = r.producer || '';
+    const tdDns = document.createElement('td'); tdDns.className = 'mono';
+    tdDns.textContent = r.magicdns || '';
+    const tdAct = document.createElement('td');
+    if (r.self) {
+      const span = document.createElement('span');
+      span.className = 'prodyou'; span.textContent = 'you'; tdAct.appendChild(span);
+    } else {
+      const btn = document.createElement('button');
+      btn.textContent = 'Take over';
+      // Disabled when our identity is unknown (can't self-guard) or no host.
+      btn.disabled = !known || !r.magicdns;
+      const host = r.magicdns;
+      btn.onclick = () => op('event-takeover', true, {ip: host, funnel: true});
+      tdAct.appendChild(btn);
+    }
+    tr.append(tdPart, tdProd, tdDns, tdAct);
+    body.appendChild(tr);
+  }
 }
 
 // Fill the takeover dropdown from the live tailnet device list (best-effort; the

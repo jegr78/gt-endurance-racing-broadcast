@@ -282,6 +282,13 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"assets check failed: {exc}"},
                                       code=500)
+            if path == "/api/producer-schedule":
+                try:
+                    return self._json(ctx["producer_schedule"]())
+                except Exception as exc:    # sheet/probe failure must stay JSON
+                    return self._json({"ok": False,
+                                       "error": f"producer schedule failed: {exc}"},
+                                      code=500)
             if path == "/api/assets/files":
                 try:
                     return self._json(ctx["asset_files"]())
