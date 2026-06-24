@@ -856,16 +856,17 @@ def _unmask_client_frame(buf):
     return opcode, payload
 
 
-def t_close_sends_status_1000_then_shutdown_then_close():
+def t_close_sends_status_1000_then_drains_then_close():
     sock = _FakeSock(recv_chunks=[b""])          # immediate EOF
     sess = m._Session(sock, b"")
     sess.close()
     opcode, payload = _unmask_client_frame(sock.sent)
     assert opcode == 0x8, opcode                  # close frame
     assert payload == struct.pack(">H", 1000), payload   # status 1000
-    # write half-closed before the socket is closed
-    assert "shutdown" in sock.calls and "close" in sock.calls
-    assert sock.calls.index("shutdown") < sock.calls.index("close")
+    assert "close" in sock.calls
+    # Regression guard: close() must NOT shutdown(SHUT_WR). An early TCP FIN makes
+    # OBS log the disconnect as 1006/"End of File" instead of 1000 (verified live).
+    assert "shutdown" not in sock.calls, sock.calls
     assert sock.timeout == m.CLOSE_DRAIN_TIMEOUT_S
     # settimeout must precede the draining recv (no-hang guarantee)
     if "recv" in sock.calls:

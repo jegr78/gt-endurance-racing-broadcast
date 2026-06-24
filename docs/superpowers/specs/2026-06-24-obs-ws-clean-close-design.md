@@ -59,14 +59,22 @@ Rewrite `_Session.close()` to:
 1. **Send a close frame with status code 1000:**
    `self.sock.sendall(encode_frame(struct.pack(">H", 1000), opcode=0x8))`
    (a 2-byte big-endian status payload instead of the empty body).
-2. **Half-close the write side:** `self.sock.shutdown(socket.SHUT_WR)` — tells OBS
-   we are done sending, so it can complete its side of the handshake.
-3. **Drain briefly:** set a short socket timeout (`CLOSE_DRAIN_TIMEOUT_S = 1.0`)
+2. **Drain briefly:** set a short socket timeout (`CLOSE_DRAIN_TIMEOUT_S = 1.0`)
    and `recv()` in a loop, discarding bytes, until OBS's close echo / EOF /
-   timeout. This gives OBS the window to process the close before the socket goes
-   away, which is what turns 1006 into 1000. The drain reads raw bytes (it does
-   NOT go through `next_json`, which would raise on the close frame).
-4. **Close the socket:** `self.sock.close()`.
+   timeout. This lets OBS send its close echo and close the TCP first, which is
+   what turns 1006 into 1000. The drain reads raw bytes (it does NOT go through
+   `next_json`, which would raise on the close frame).
+3. **Close the socket:** `self.sock.close()`.
+
+**Do NOT `shutdown(SHUT_WR)`.** An earlier design half-closed the write side after
+the close frame; this was **verified to FAIL against a live OBS** — sending a TCP
+FIN right after the close frame makes OBS's WebSocket server (websocketpp) log the
+disconnect as **1006 / "End of File"** instead of 1000. Empirically, the close
+frame followed by a plain drain-to-EOF (no FIN) yields a clean 1000; the FIN
+variant yields 1006 every time. So we send the close frame and let the server
+finish the handshake (send its echo, close the TCP) while we read to EOF, then
+close. This is exactly the kind of behavior the unit tests (a fake socket) cannot
+see and only the manual live-OBS check catches — see Manual verification.
 
 Every step is wrapped so any `OSError`/`socket.timeout` is swallowed — a slow or
 dead OBS hits the 1 s timeout and we still close. `close()` must remain safe to
@@ -86,7 +94,7 @@ closes, so it logs a normal 1000 close instead of an abnormal 1006 / EOF.
 
 ## Error handling
 
-- `sendall`, `shutdown`, the drain loop, and `close` each tolerate `OSError`
+- `sendall`, the drain loop, and `close` each tolerate `OSError`
   (OBS may have closed first). The method never propagates an exception.
 - The drain loop is bounded by `CLOSE_DRAIN_TIMEOUT_S` via `settimeout`, so
   `close()` cannot hang on an unresponsive OBS. A single bounded read loop, not a
@@ -101,25 +109,39 @@ minimal **fake socket** and build a real `m._Session(fake_sock, b"")`:
 - **Close frame carries status 1000:** a fake socket records `sendall` bytes; after
   `close()`, decode the recorded client frame — opcode `0x8`, and the unmasked
   2-byte payload equals `struct.pack(">H", 1000)`.
-- **`shutdown(SHUT_WR)` is called, then the socket is closed:** the fake records the
-  call order; assert `shutdown` precedes `close`.
+- **No `shutdown(SHUT_WR)` (regression guard):** assert `"shutdown"` is NOT in the
+  fake's recorded calls — the early FIN is the exact bug that produced 1006, so a
+  test pins it out. Also assert `settimeout` precedes the first `recv` (the no-hang
+  guarantee).
 - **Clean return on echo + EOF:** a fake whose `recv` returns a close-frame echo
   then `b""` — `close()` returns without raising and calls `sock.close()`.
 - **No hang on a silent socket:** a fake whose `recv` raises `socket.timeout`
   (simulating the drain timeout) — `close()` still returns and closes; it does not
   loop forever or raise.
-- **Safe after OBS already dropped the socket:** a fake whose `sendall`/`shutdown`
-  raise `OSError` — `close()` swallows it and still calls `sock.close()`.
+- **Safe after OBS already dropped the socket:** a fake whose `sendall`
+  raises `OSError` — `close()` swallows it and still calls `sock.close()`.
 
 The fake socket implements only `sendall`, `recv`, `shutdown`, `settimeout`, and
-`close`, each recording its invocation.
+`close`, each recording its invocation. (`shutdown` is recorded so the regression
+guard can assert it is never called.)
+
+**Important — why the live check is mandatory:** the unit tests use a fake socket
+that cannot model OBS's websocketpp FIN-handling, so they pass for BOTH the
+correct (no-FIN) and the broken (FIN) variants. The 1006→1000 difference is only
+observable against a real OBS. The first implementation shipped the FIN variant
+and passed all unit tests + code review; the manual live-OBS run caught it. The
+live verification is therefore a required gate, not a courtesy.
 
 ## Manual verification (PR note)
 
 CI has no OBS, so the 1006→1000 change can only be confirmed against a live OBS:
-run a relay with a cockpit/panel open (which drives `get_program_screenshot`),
-then grep the OBS log for `disconnected with code` and confirm new disconnects
-are `1000`, not `1006`. Document this as a manual check in the PR.
+drive `get_program_screenshot` in a loop (or open a cockpit/panel), then grep the
+OBS log for `disconnected with code` and confirm new disconnects are `1000`, not
+`1006`.
+
+**Result (2026-06-24, live OBS):** 15 real `get_program_screenshot` cycles produced
+**16× code 1000 and 0× 1006**. The same harness on the FIN variant produced
+**8× 1006**; dropping the `shutdown(SHUT_WR)` is what fixed it. Confirmed.
 
 ## Files
 

@@ -342,22 +342,23 @@ class _Session:
 
     def close(self):
         """Best-effort RFC 6455 closing handshake so OBS logs a clean 1000 close
-        instead of an abnormal 1006/EOF: send a status-1000 close frame, half-close
-        the write side, briefly drain OBS's echo (bounded by CLOSE_DRAIN_TIMEOUT_S),
-        then close the socket. Never raises; never blocks past the drain timeout."""
+        instead of an abnormal 1006/EOF: send a status-1000 close frame, then briefly
+        read OBS's close echo / EOF (bounded by CLOSE_DRAIN_TIMEOUT_S) so OBS can
+        finish its side of the close before the socket goes away, then close it.
+
+        We deliberately do NOT shutdown(SHUT_WR): sending a TCP FIN right after the
+        close frame makes OBS's WebSocket server log the disconnect as 1006/"End of
+        File" instead of 1000 — verified empirically against a live OBS. Letting the
+        server send its close echo and close the TCP first (we read to EOF) yields a
+        clean 1000. Never raises; never blocks past the drain timeout."""
         try:
             self.sock.sendall(encode_frame(struct.pack(">H", 1000), opcode=0x8))
         except OSError:
             pass  # OBS may have dropped the socket first — the rest is courtesy only
         try:
-            self.sock.shutdown(socket.SHUT_WR)
-        except OSError:
-            pass  # socket already closed or reset
-        try:
             self.sock.settimeout(CLOSE_DRAIN_TIMEOUT_S)
-            while True:
-                if not self.sock.recv(65536):   # OBS's close echo / EOF
-                    break
+            while self.sock.recv(65536):   # drain OBS's close echo until EOF / timeout
+                pass
         except OSError:
             pass  # timeout or reset — stop draining and close
         self.sock.close()
