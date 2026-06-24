@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for the POV additions. Run: python3 tests/test_pov.py"""
-import importlib.util, os, tempfile
+import importlib.util, json, os, tempfile
 import threading, urllib.request, urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -426,6 +426,54 @@ def t_preview_program_503_when_obs_down():
         port = srv.server_address[1]
         try:
             urllib.request.urlopen(f"http://127.0.0.1:{port}/preview/program", timeout=5)
+            raise AssertionError("expected HTTP 503")
+        except urllib.error.HTTPError as e:
+            assert e.code == 503
+    finally:
+        srv.shutdown(); m._obs_ws = old
+
+
+def t_obs_stream_endpoint_starts_and_validates():
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
+
+    class FakeObs:
+        def __init__(self): self.calls = []
+        def set_stream(self, active, **kw):
+            self.calls.append(active); return (True, "")
+
+    fo = FakeObs(); old = m._obs_ws; m._obs_ws = fo; srv = _serve(r)
+    try:
+        port = srv.server_address[1]
+        url = f"http://127.0.0.1:{port}/obs/stream"
+        req = urllib.request.Request(
+            url, data=b'{"on": true}',
+            headers={"Content-Type": "application/json"}, method="POST")
+        body = urllib.request.urlopen(req, timeout=5).read()
+        assert json.loads(body)["ok"] is True
+        assert fo.calls == [True]
+        # Missing "on" -> 400
+        req = urllib.request.Request(
+            url, data=b'{}', headers={"Content-Type": "application/json"},
+            method="POST")
+        try:
+            urllib.request.urlopen(req, timeout=5)
+            raise AssertionError("expected HTTP 400")
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+    finally:
+        srv.shutdown(); m._obs_ws = old
+
+
+def t_obs_stream_503_when_obs_down():
+    r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
+    old = m._obs_ws; m._obs_ws = None; srv = _serve(r)
+    try:
+        port = srv.server_address[1]
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/obs/stream", data=b'{"on": true}',
+            headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            urllib.request.urlopen(req, timeout=5)
             raise AssertionError("expected HTTP 503")
         except urllib.error.HTTPError as e:
             assert e.code == 503

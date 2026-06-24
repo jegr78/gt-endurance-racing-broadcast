@@ -154,7 +154,8 @@ def t_cockpit_chat_send_is_any_read():
 
 
 def t_obs_routes_require_director():
-    for seg in (["obs", "scene"], ["obs", "source"], ["obs", "audio"], ["obs", "state"]):
+    for seg in (["obs", "scene"], ["obs", "source"], ["obs", "audio"],
+                ["obs", "state"], ["obs", "stream"]):
         assert cp.min_capability(seg) == cp.Requirement(cp.DIRECTOR, False), seg
 
 
