@@ -240,22 +240,37 @@ def tag_line(source, line):
     return f"[{source}] {line.rstrip(chr(10)).rstrip(chr(13))}"
 
 
-def pump_subprocess(stream, logger, tag, on_line=None):
+def pump_subprocess(stream, logger, tag, on_line=None, now=time.monotonic):
     """Read text lines from a subprocess pipe (stream) and log each at a classified
-    level, prefixed `[tag]`. When on_line is given, call it per (stripped) line for
-    side-channel parsing (e.g. feed quality) — a failing callback never breaks the
-    pump. Runs to EOF; swallows read errors. Designed for a daemon thread."""
+    level, prefixed `[tag]`. Repeated lines are throttled and long URLs shortened
+    (LineThrottle + shorten_urls) so a stuck retry loop can't flood the log; the
+    first occurrence and periodic counts survive. When on_line is given, call it per
+    (stripped) ORIGINAL line for side-channel parsing (e.g. feed quality) — a failing
+    callback never breaks the pump. Runs to EOF; swallows read errors. Designed for a
+    daemon thread."""
+    throttle = LineThrottle()
     try:
         for raw in iter(stream.readline, ""):   # sentinel "" stops at EOF
             line = raw.rstrip("\n").rstrip("\r")
-            logger.log(classify_subproc_line(line), "[%s] %s", tag, line)
             if on_line is not None:
                 try:
                     on_line(line)
                 except Exception:                # noqa: BLE001 — observer is best-effort
                     pass
+            try:
+                level = classify_subproc_line(line)   # classify the ORIGINAL line
+                for lvl, text in throttle.emit(level, shorten_urls(line), now()):
+                    logger.log(lvl, "[%s] %s", tag, text)
+            except Exception:                    # noqa: BLE001 — throttling must never break the pump
+                logger.log(classify_subproc_line(line), "[%s] %s", tag, line)
     except (ValueError, OSError):
         pass  # pipe closed mid-read — end the thread, never the daemon
+    finally:
+        try:
+            for lvl, text in throttle.flush(now()):   # surface a trailing flood's count
+                logger.log(lvl, "[%s] %s", tag, text)
+        except Exception:                        # noqa: BLE001 — flush is best-effort too
+            pass
 
 
 def obs_log_dir(platform, home=None, env=None):

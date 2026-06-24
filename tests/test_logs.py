@@ -236,6 +236,29 @@ def t_pump_subprocess_on_line_hook():
     lg.pump_subprocess(stream2, logger, "streamlink", on_line=boom)  # no raise
 
 
+def t_pump_throttles_identical_flood_and_strips_tokens():
+    import io
+    records = []
+
+    class _Cap(logging.Handler):
+        def emit(self, r):
+            records.append((r.levelno, r.getMessage()))
+
+    logger = logging.getLogger("t.pump.flood")
+    logger.handlers = [_Cap()]
+    logger.setLevel(logging.DEBUG)
+    url = "https://manifest.googlevideo.com/itag/301/sig/SECRETTOKEN/" + "z" * 200
+    one = "[cli][error] Unable to fetch new streams: Unable to open URL: " + url + " (403 Forbidden)\n"
+    seen = []
+    lg.pump_subprocess(io.StringIO(one * 500), logger, "streamlink",
+                       on_line=seen.append, now=lambda: 1000.0)
+    msgs = [m for _lvl, m in records]
+    assert len(records) <= 4                              # 500 identical -> a handful
+    assert any("repeated ×499" in m for m in msgs)        # the rest counted
+    assert all("SECRETTOKEN" not in m for m in msgs)      # manifest token stripped
+    assert len(seen) == 500                               # on_line saw every original line
+
+
 def t_throttle_collapses_identical_flood():
     th = lg.LineThrottle()
     out = []
