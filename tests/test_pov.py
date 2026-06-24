@@ -147,6 +147,29 @@ def t_serve_exit_is_drop():
     assert m.serve_exit_is_drop(stopped=True, advancing=True) is False
 
 
+def t_dead_serve_backoff_escalates_and_caps():
+    # base, 2x, 4x, 8x with the default base (RETRY_SLEEP = 10)
+    assert m.dead_serve_backoff(1) == 10
+    assert m.dead_serve_backoff(2) == 20
+    assert m.dead_serve_backoff(3) == 40
+    assert m.dead_serve_backoff(4) == 80
+    # capped at DEAD_SERVE_BACKOFF_CAP (300)
+    assert m.dead_serve_backoff(6) == 300
+    assert m.dead_serve_backoff(100) == 300
+    # count below 1 falls back to the base (defensive)
+    assert m.dead_serve_backoff(0) == 10
+    # explicit base/cap honoured
+    assert m.dead_serve_backoff(3, base=5, cap=15) == 15   # 5*4=20 -> capped to 15
+
+
+def t_should_idle_dead_serves_at_limit():
+    assert m.should_idle_dead_serves(4) is False
+    assert m.should_idle_dead_serves(5) is True            # DEAD_SERVE_IDLE_AFTER == 5
+    assert m.should_idle_dead_serves(6) is True
+    assert m.should_idle_dead_serves(2, limit=2) is True   # custom limit
+    assert m.should_idle_dead_serves(1, limit=2) is False
+
+
 def t_feed_starts_not_dropped():
     f = m.Feed("A", 53001, 0, lambda: ["a"], LOGDIR)
     assert f.dropped is False
