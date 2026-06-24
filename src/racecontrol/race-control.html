@@ -40,6 +40,16 @@
   .wrap { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; padding: 12px; }
   @media (max-width: 820px) { .wrap { grid-template-columns: 1fr; } }
   .card { background: #14171c; border: 1px solid #232830; border-radius: 10px; overflow: hidden; }
+  /* On-air banner — a prominent restatement of the live stint/streamer at the top
+     of the desk, modelled on the cockpit tally. This is a global monitoring view
+     (not identity-scoped like the cockpit), so it always shows WHO is on air. */
+  .tally { margin: 12px; padding: 18px; text-align: center; font-weight: 800; font-size: 26px;
+           letter-spacing: .02em; border-radius: 10px; transition: background .2s; }
+  .tally.onair { background: #c1121f; color: #fff; box-shadow: 0 0 0 3px #ff4d5e inset; }
+  .tally.idle  { background: #1b1f25; color: #9aa0a6; font-size: 18px; }
+  .tally .pill { font-size: 13px; font-weight: 900; letter-spacing: .12em; vertical-align: middle;
+                 background: rgba(0,0,0,.25); border-radius: 999px; padding: 3px 10px; margin-right: 10px; }
+  .tally .sub  { font-size: 14px; font-weight: 600; opacity: .9; margin-top: 6px; }
   #program { width: 100%; display: block; background: #000; aspect-ratio: 16/9; object-fit: contain; }
   .progwrap { position: relative; }
   .progwrap .badge { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.6);
@@ -100,6 +110,8 @@
     if (b) { var a = document.getElementById('backConsole'); a.href = b; a.hidden = false; }
   })();
 </script>
+
+<div id="tally" class="tally idle">…</div>
 
 <div class="wrap">
   <div>
@@ -166,8 +178,30 @@ function srcBadge(source) {
   return s.indexOf('twitch:') === 0 ? 'TW:' + s.slice(7) : 'YT:' + s.slice(-4);
 }
 
+// --- On-air banner: prominent live stint/streamer (mirrors the cockpit tally) ---
+function renderOnAir(o) {
+  const el = $('tally');
+  el.textContent = '';
+  if (o && (o.streamer || o.stint)) {
+    el.className = 'tally onair';
+    const pill = document.createElement('span');
+    pill.className = 'pill'; pill.textContent = 'ON AIR';
+    el.appendChild(pill);
+    el.appendChild(document.createTextNode(o.streamer || '—'));   // XSS-safe
+    if (o.stint) {
+      const sub = document.createElement('div');
+      sub.className = 'sub'; sub.textContent = o.stint;            // e.g. "Stint 4"
+      el.appendChild(sub);
+    }
+  } else {
+    el.className = 'tally idle';
+    el.textContent = 'No stint on air';
+  }
+}
+
 // --- Redacted schedule (no stream URLs) + on-air marker ---
 function renderSchedule(d) {
+  renderOnAir(d.on_air);
   const title = (d.event_title || '').trim();
   $('eventTitle').textContent = title;
   document.title = title ? (title + ' · Race Control') : 'Race Control';
