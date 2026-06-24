@@ -3220,6 +3220,12 @@ class Feed:
         # (demo/startup) is classified "connecting", not a lost live stream.
         self.dropped_since = None
         self.served_ok = False
+        # Consecutive "was live, now dead" serves (resolved OK but died faster than
+        # HEALTH_SERVED_OK_S — the 403/expired-manifest case). Drives escalating
+        # backoff and the idle-after-N give-up in run(). Reset on a real serve, on
+        # operator advance, and in set_index()/reload(). NOT reset in
+        # _clear_drop_health() (that runs every serve-start, which would zero it).
+        self.dead_serves = 0
         self.quality = None               # last streamlink-selected quality (e.g. "720p")
 
     def current_channel(self):
@@ -3273,12 +3279,14 @@ class Feed:
                 return False
             self.idx = new_idx
         self._clear_drop_health()         # director repositioned -> alarm acknowledged, new source not yet served
+        self.dead_serves = 0              # new source -> fresh dead-serve count
         self.advance.set(); self._kill_proc()
         return True
 
     def reload(self):
         """Reconnect to the (possibly changed) channel at the CURRENT index."""
         self._clear_drop_health()         # director intervened -> alarm acknowledged, reconnecting source
+        self.dead_serves = 0              # operator reload -> fresh dead-serve count
         self.advance.set(); self._kill_proc()
         return True
 
@@ -3339,6 +3347,7 @@ class Feed:
             # (issue #278). A near-instant exit (demo/startup) leaves served_ok False.
             if serve_elapsed >= HEALTH_SERVED_OK_S:
                 self.served_ok = True
+                self.dead_serves = 0               # stable live picture -> reset
             # A serving process just exited: flag an unexpected loss (DROP) so the
             # panel/Companion alarm fires — but not on an intentional stop or a
             # handover/reload (both handled just below). Stamp dropped_since on the
@@ -3349,14 +3358,31 @@ class Feed:
                 self.dropped_since = time.time()
             if self.stop: break
             if self.advance.is_set():
-                self.advance.clear(); continue
+                self.advance.clear()
+                self.dead_serves = 0               # operator moved/reloaded -> fresh source
+                continue
             # #143: an unexpected, near-instant non-zero exit (not a stop/handover,
             # both handled above) means streamlink couldn't bind its port — surface
             # it so /status + the panel stop showing a silent 'connecting'.
             err = feed_fast_exit_error(serve_elapsed, serve_rc)
             if err:
                 self.last_error = err
-            time.sleep(RETRY_SLEEP)
+            if serve_elapsed < HEALTH_SERVED_OK_S:
+                # Resolved OK but the serve died fast (403/expired manifest / VOD).
+                self.dead_serves += 1
+                if should_idle_dead_serves(self.dead_serves):
+                    self._set_phase("idle")
+                    self.last_error = ("stint source unavailable — paused after "
+                                       f"{self.dead_serves} attempts; /next or /reload to retry")
+                    # Stop hammering: wait for operator /next or /reload (which set
+                    # advance) or shutdown (self.stop). advance wakes us instantly;
+                    # the 1 s timeout bounds the stop-check latency.
+                    while not self.stop and not self.advance.is_set():
+                        self.advance.wait(1.0)
+                    continue                       # top of loop re-evaluates; advance/stop handled there
+                time.sleep(dead_serve_backoff(self.dead_serves))
+                continue
+            time.sleep(RETRY_SLEEP)                 # served_ok serve that simply ended normally
 
     def shutdown(self):
         self.stop = True; self._kill_proc()
