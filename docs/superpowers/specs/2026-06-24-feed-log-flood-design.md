@@ -99,6 +99,8 @@ Algorithm for an incoming `(level, text, now)` with `key = normalize_for_dedup(t
 
 Properties: the **first** occurrence of any line is always emitted; a sustained identical flood collapses to one real line plus ≤ one summary per `summary_s`, at the flood's own level (an ERROR storm stays visible as ERROR); a flood of *distinct* lines is capped at `rate_max` per `window_s` with periodic `(suppressed N lines)` notices.
 
+`LineThrottle.flush(now)` returns any pending summaries — a `(previous line repeated ×N)` for an unflushed dup run and a `(suppressed N lines)` for unreported drops — so a flood that is the **last** thing before the stream ends still surfaces its count. The caller invokes it once after the read loop.
+
 ### Unit 4 — `pump_subprocess` (wiring only)
 
 Current body logs every line verbatim. New body:
@@ -122,6 +124,12 @@ def pump_subprocess(stream, logger, tag, on_line=None, now=time.monotonic):
                 logger.log(classify_subproc_line(line), "[%s] %s", tag, line)
     except (ValueError, OSError):
         pass  # pipe closed mid-read — end the thread, never the daemon
+    finally:
+        try:
+            for lvl, text in throttle.flush(now()):   # surface a trailing flood's count
+                logger.log(lvl, "[%s] %s", tag, text)
+        except Exception:                # noqa: BLE001 — flush is best-effort too
+            pass
 ```
 
 - `on_line` still runs for **every** line, before throttling — quality parsing is unaffected.
@@ -147,6 +155,7 @@ All in `tests/test_logs.py` (which already covers `pump_subprocess`):
   - 1000 identical-after-normalize lines → far fewer than 1000 emitted records; the first real line is present; the repeat count totals 999 across summaries; summaries carry the original level.
   - A flood of distinct lines within one window → capped at `rate_max`, with a `(suppressed N lines)` summary on the next window roll.
   - A pattern change flushes the pending `(previous line repeated ×N)` summary before the new line.
+  - `flush(now)` after a trailing identical flood (no following distinct line) emits the `(previous line repeated ×N)` count.
 - `pump_subprocess` integration: a fake stream of N identical flood lines + a fake clock + a capturing logger → the logger receives few records, none containing the URL query/token, at least one `(…repeated ×…)` summary; and `on_line` was called once per input line.
 
 ## Files touched
