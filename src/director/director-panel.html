@@ -305,13 +305,21 @@
     .panes{display:grid;grid-template-columns:minmax(0,1fr) clamp(280px,26vw,360px);
            gap:14px;align-items:start}
     .mainpane{min-width:0}
-    details.chat#chatBox{position:sticky;top:18px;align-self:start;margin-bottom:0;
-           display:flex;flex-direction:column;height:calc(100vh - 36px)}
-    details.chat#chatBox>summary{cursor:default;pointer-events:none;margin-bottom:8px}
-    details.chat#chatBox>summary::after{display:none}
-    details.chat#chatBox>.body{display:flex !important;flex-direction:column;flex:1;min-height:0}
-    details.chat#chatBox .chatlog{max-height:none;flex:1;min-height:0;margin-top:0}
-    details.chat#chatBox .hint{margin-top:6px}
+    /* Right rail: a sticky, viewport-tall column shared by the crew chat (top)
+       and the read-only broadcast chat (below), each taking half the height —
+       both always visible, no wasted space (#294). */
+    .rail{position:sticky;top:18px;align-self:start;display:flex;flex-direction:column;
+           gap:14px;height:calc(100vh - 36px)}
+    details.chat#chatBox,details.chat#bchatBox{margin-bottom:0;min-height:0;flex:1 1 0;
+           display:flex;flex-direction:column}
+    details.chat#chatBox>summary,details.chat#bchatBox>summary{cursor:default;
+           pointer-events:none;margin-bottom:8px}
+    details.chat#chatBox>summary::after,details.chat#bchatBox>summary::after{display:none}
+    details.chat#chatBox>.body,details.chat#bchatBox>.body{display:flex !important;
+           flex-direction:column;flex:1;min-height:0}
+    details.chat#chatBox .chatlog,details.chat#bchatBox .chatlog{max-height:none;flex:1;
+           min-height:0;margin-top:0}
+    details.chat#chatBox .hint,details.chat#bchatBox .hint{margin-top:6px}
   }
   .preview .pvbody{margin-top:6px}
   .pvframe{position:relative;width:100%;min-height:60px;display:flex;align-items:center;justify-content:center;
@@ -504,6 +512,7 @@
 
   </div><!-- /.mainpane -->
 
+  <div class="rail">
   <details class="bus chat" id="chatBox" open>
     <summary>Chat <span class="unread" id="chatUnread" hidden>0</span></summary>
     <div class="body">
@@ -521,7 +530,7 @@
     </div>
   </details>
 
-  <details class="bus chat" id="bchatBox">
+  <details class="bus chat" id="bchatBox" open>
     <summary>Broadcast chat <span class="robadge">read-only</span></summary>
     <div class="body">
       <div id="bchatLog" class="chatlog"><div class="bempty">Waiting for the broadcast stream…</div></div>
@@ -530,6 +539,7 @@
         are merged here.</div>
     </div>
   </details>
+  </div><!-- /.rail -->
 
   </div><!-- /.panes -->
 <div id="toasts"></div>
