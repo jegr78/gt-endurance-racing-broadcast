@@ -840,6 +840,7 @@ class _FakeSock:
     def shutdown(self, how):
         self.calls.append("shutdown")
     def settimeout(self, t):
+        self.calls.append("settimeout")
         self.timeout = t
     def close(self):
         self.calls.append("close")
@@ -866,6 +867,9 @@ def t_close_sends_status_1000_then_shutdown_then_close():
     assert "shutdown" in sock.calls and "close" in sock.calls
     assert sock.calls.index("shutdown") < sock.calls.index("close")
     assert sock.timeout == m.CLOSE_DRAIN_TIMEOUT_S
+    # settimeout must precede the draining recv (no-hang guarantee)
+    if "recv" in sock.calls:
+        assert sock.calls.index("settimeout") < sock.calls.index("recv")
 
 
 def t_close_returns_on_echo_then_eof():
