@@ -67,11 +67,16 @@ no package manager); external runtime deps are `yt-dlp`, `streamlink`, `ffmpeg`,
   "later" follow-up. Surface → image: Control Center views → `cc-<view>.png`
   (e.g. the overlay builder → `cc-overlay-builder.png`); Director Panel →
   `director-panel.png`; Companion pages → `companion-page<N>-*.png`. How to
-  recapture: Companion buttons via the **`companion-screenshots`** skill;
-  Control Center / Director Panel by driving a running instance with the
-  Playwright MCP and taking an **element** screenshot of the relevant card/modal
-  (e.g. `#ov-modal .ovmodal-card`) so the framing matches the existing images —
-  not a full-window grab. **Always capture Control Center screenshots from a local
+  recapture (all three skills are repo-anchored under `.claude/skills/`, so they
+  travel with the checkout — Mac, Windows or Linux): Companion buttons via the
+  **`companion-screenshots`** skill; Control Center / Director Panel / the
+  `/console` + cockpit pages via the **`wiki-screenshots`** skill (it drives a
+  running dev-build instance with the Playwright MCP, takes an **element**
+  screenshot of the relevant card/modal — e.g. `#ov-modal .ovmodal-card` — so the
+  framing matches the existing images, and documents the reproducible fake-content
+  recipe: the `demo` profile + `tools/obs-sim.py` OBS stand-in, so the pages show a
+  believable broadcast with no real OBS/league). Verify a published wiki render
+  with **`wiki-visual-test`**. **Always capture Control Center screenshots from a local
   dev build** (run `racecast ui` straight from `src/`, no `VERSION` file stamped) so
   every `cc-*.png` shows the same "dev build" version badge. A real version baked into
   one shot goes stale at the next release and breaks uniformity — the dev-build state
