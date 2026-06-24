@@ -1187,6 +1187,12 @@ $("#chatLog").addEventListener("scroll", ()=>{ if ($("#chatBox").open && chatAtB
 
 /* ---------- Broadcast chat (#294): read-only mirror of the public stream chat ---------- */
 let bchatTimer = null;
+// Platform-aware source label for the handover overlap badge: "TW:<login>" for
+// Twitch (source "twitch:<login>"), "YT:<last4>" for a YouTube videoId.
+function bchatSrcBadge(source){
+  const s = String(source || "");
+  return s.indexOf("twitch:") === 0 ? "TW:" + s.slice(7) : "YT:" + s.slice(-4);
+}
 function bchatRender(messages){
   const el = $("#bchatLog");
   const stick = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
@@ -1207,7 +1213,7 @@ function bchatRender(messages){
     line.append(t, who, body);
     if (multi && msg.source){
       const s = document.createElement("span"); s.className = "src";
-      s.textContent = "#" + String(msg.source).slice(-4); line.appendChild(s);
+      s.textContent = bchatSrcBadge(msg.source); line.appendChild(s);
     }
     el.appendChild(line);
   }
