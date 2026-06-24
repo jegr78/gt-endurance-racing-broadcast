@@ -26,12 +26,16 @@ class Job:
 
 
 class JobManager:
-    def __init__(self, argv_for, env=None, spawn=None, max_lines=5000):
+    def __init__(self, argv_for, env=None, spawn=None, max_lines=5000, logger=None):
         """argv_for(op_args) -> child argv (see ui_ops.job_argv). env: full
-        child environment or None (inherit). spawn: Popen-compatible test seam."""
+        child environment or None (inherit). spawn: Popen-compatible test seam.
+        logger: optional logging.Logger — when set, the action's start marker,
+        each output line (prefixed `[op]`), and its exit code are logged (file
+        persistence; the in-memory buffer + SSE are unchanged). None -> silent."""
         self.argv_for, self.env = argv_for, env
         self.spawn = spawn or self._spawn
         self.max_lines = max_lines
+        self.logger = logger
         self.jobs = {}           # job_id -> Job (kept for the session — the op set is finite)
         self.lock = threading.Lock()
 
@@ -48,9 +52,12 @@ class JobManager:
             for job in self.jobs.values():
                 if job.op == op and job.exit_code is None:  # exit_code writes are atomic
                     return None, f"{op} is already running"
-            proc = self.spawn(self.argv_for(op_args))
+            argv = self.argv_for(op_args)
+            proc = self.spawn(argv)
             job = Job(uuid.uuid4().hex[:12], op, proc)
             self.jobs[job.id] = job
+        if self.logger:
+            self.logger.info("[%s] action started — argv: %s", op, " ".join(argv))
         reader = threading.Thread(target=self._reader, args=(job,), daemon=True)
         try:
             reader.start()
@@ -58,11 +65,15 @@ class JobManager:
             with job.lock:
                 job.exit_code = -1
                 job.lines.append(f"(could not start output reader: {exc})")
+            if self.logger:
+                self.logger.warning("[%s] action finished — exit -1 (%s)", op, exc)
         return job.id, None
 
     def _reader(self, job):
         for raw in job.proc.stdout:
             line = raw.decode("utf-8", "replace").rstrip("\r\n")
+            if self.logger:
+                self.logger.info("[%s] %s", job.op, line)
             with job.lock:
                 job.lines.append(line)
                 overflow = len(job.lines) - self.max_lines
@@ -73,6 +84,9 @@ class JobManager:
         code = job.proc.wait()
         with job.lock:
             job.exit_code = code
+        if self.logger:
+            log = self.logger.info if code == 0 else self.logger.warning
+            log("[%s] action finished — exit %s", job.op, code)
 
     def snapshot(self, job_id):
         """{'id','op','running','exit_code','cancelled'} or None for an unknown id."""
