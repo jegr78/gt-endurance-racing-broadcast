@@ -103,7 +103,7 @@ def request_csrf_ok(headers):
 
 def make_handler(ctx):
     """ctx: version, page_path, status() -> dict, relay_live() -> dict,
-    obs_ws() -> dict, obs_collection() -> dict, update_check(force) -> dict, streams_read() -> dict,
+    obs_collection() -> dict, update_check(force) -> dict, streams_read() -> dict,
     streams_write(entries) -> dict, docs() -> dict,
     docs_content(key) -> (ctype, bytes)|None,
     docs_slides_serve(relpath) -> (path, ctype)|None (offline onboarding decks),
@@ -364,13 +364,6 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"tailscale peers failed: {exc}"},
-                                      code=500)
-            if path == "/api/obs-ws":
-                try:
-                    return self._json(ctx["obs_ws"]())
-                except Exception as exc:
-                    return self._json({"ok": False,
-                                       "error": f"obs-websocket info failed: {exc}"},
                                       code=500)
             if path == "/api/obs-collection":
                 try:

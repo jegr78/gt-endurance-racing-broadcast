@@ -105,8 +105,6 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
                                    "timer": {"mode": "running"}},
             "tailscale_peers": lambda: [
                 {"hostname": "producer-b", "ip": "100.64.0.5", "online": True, "os": "macOS"}],
-            "obs_ws": lambda: {"ok": True, "ip": "127.0.0.1", "port": 4455,
-                               "password": "pw", "auth_required": True},
             "obs_collection": lambda: {"ok": True, "current": "Other",
                                        "expected": "GT Endurance Racing", "match": False,
                                        "expected_present": True,
@@ -356,17 +354,6 @@ def t_tailscale_peers_route_wraps_provider():
         assert code == 200 and data["ok"] is True
         assert data["peers"][0] == {"hostname": "producer-b", "ip": "100.64.0.5",
                                     "online": True, "os": "macOS"}
-    finally:
-        httpd.shutdown()
-
-
-def t_obs_ws_route_wraps_provider():
-    httpd, port = _serve(_ctx())
-    try:
-        code, body = _get(port, "/api/obs-ws")
-        data = json.loads(body)
-        assert code == 200 and data["ok"] and data["port"] == 4455
-        assert data["ip"] == "127.0.0.1" and data["password"] == "pw"
     finally:
         httpd.shutdown()
 
@@ -1712,6 +1699,20 @@ def t_api_crew_delete_post():
         assert code == 200 and data["_got"] == 3
     finally:
         httpd.shutdown()
+
+
+def t_panel_link_has_no_obs_credential_fragment():
+    # The Director Panel is relay-mediated — it no longer reads OBS-WS credentials
+    # from the URL fragment. The Control Center must therefore NOT append an
+    # `#ip=…&port=…&pw=…` fragment to the /panel link (it only leaked the OBS
+    # password into the address bar / shared links and was never stripped).
+    with open(os.path.join(ROOT, "src", "ui", "control-center.html"),
+              encoding="utf-8") as fh:                # cp1252 on Windows would choke
+        page = fh.read()
+    assert "/api/obs-ws" not in page          # the dead creds fetch is gone
+    assert "f.set('pw'" not in page            # no password into the panel URL
+    assert "obsWs" not in page                 # the whole creds plumbing is gone
+    assert "/panel" in page                    # but the plain panel link still exists
 
 
 if __name__ == "__main__":

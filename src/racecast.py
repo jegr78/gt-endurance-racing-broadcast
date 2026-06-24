@@ -3293,28 +3293,6 @@ def event_title_write_data(value, alive=None, post=None, path=None, sanitize=Non
         return {"ok": False, "error": f"could not write event.json: {exc}"}
 
 
-def obs_ws_link_data(env=None, config_path=None):
-    """OBS-WebSocket connection details for auto-connecting the Director panel
-    from the Control Center: local OBS (127.0.0.1), the configured port, and the
-    password (RACECAST_OBS_WS_PASSWORD wins, else OBS's own stored one). Localhost-only
-    data — the Control Center puts it in the panel link's URL *fragment* (never
-    sent to a server). Never raises; password is None when not discoverable.
-    `env`/`config_path` are test seams."""
-    try:
-        import obs_ws
-        if env is None:
-            env = dict(_read_env_file())
-            env.update(os.environ)
-        path = config_path or obs_ws.default_config_path()
-        cfg = obs_ws.read_ws_config(path) or {}
-        return {"ok": True, "ip": "127.0.0.1",
-                "port": int(cfg.get("port") or 4455),
-                "password": obs_ws.find_password(env, path),
-                "auth_required": bool(cfg.get("auth_required", True))}
-    except Exception as exc:
-        return {"ok": False, "error": f"obs-websocket info unavailable: {exc}"}
-
-
 def obs_collection_data(get=None):
     """Live OBS scene-collection check for the Control Center Apps view (on-demand
     /api/obs-collection). Best effort: {"ok": True, **status} when OBS answered,
@@ -5262,7 +5240,6 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "event_title_read": event_title_read_data,
         "event_title_write": event_title_write_data,
         "tailscale_peers": _tailscale_peers,
-        "obs_ws": obs_ws_link_data,
         "obs_collection": obs_collection_data,
         "update_check": update_check_cached,
         "previews": preview_list_cached,
