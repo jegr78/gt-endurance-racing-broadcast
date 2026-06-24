@@ -24,7 +24,7 @@ import csv
 import io
 import re
 
-MAX_MESSAGES = 300      # ring-buffer / display cap (oldest dropped)
+MAX_MESSAGES = 500      # ring-buffer / display cap (oldest dropped)
 MAX_TEXT = 500          # per-message character cap
 MAX_NAME = 60           # author-name character cap (YT names run long)
 DEFAULT_NAME = "Viewer"  # fallback when no/blank author name is supplied

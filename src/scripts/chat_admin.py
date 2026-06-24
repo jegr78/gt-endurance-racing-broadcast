@@ -8,7 +8,7 @@ import json
 import os
 import tempfile
 
-MAX_MESSAGES = 200      # ring-buffer cap (oldest dropped)
+MAX_MESSAGES = 400      # ring-buffer cap (oldest dropped)
 MAX_TEXT = 500          # per-message character cap
 MAX_NAME = 40           # display-name character cap
 DEFAULT_NAME = "Crew"   # fallback when no/blank name is supplied

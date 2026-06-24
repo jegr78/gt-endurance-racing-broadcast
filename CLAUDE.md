@@ -434,7 +434,7 @@ HUD display label, NOT the feed stint index. `SetupControl` + endpoints
 `/setup/*`, `/schedule/*`, `/pov/set` (POST). Tests: `tests/test_setup.py`.
 
 The relay also hosts a **crew chat** (`GET /chat/data`, `POST /chat/send`,
-`GET /chat/reload`) — an in-memory ring buffer (200 messages) persisted to
+`GET /chat/reload`) — an in-memory ring buffer (400 messages) persisted to
 `runtime/<profile>/chat.json`. The panel polls `/chat/data`; messages render via
 `textContent` (XSS-safe); the unread badge is keyed on server `ts` (handover-safe).
 There is **no destructive HTTP endpoint** — clear/import/pull are producer-only CLI
