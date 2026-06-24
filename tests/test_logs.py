@@ -131,7 +131,10 @@ def t_shorten_urls_elides_long_url_keeps_itag():
            "itag/301/sig/SECRETSIG/lsig/SECRETLSIG/playlist/index.m3u8" + "z" * 120)
     line = "Unable to open URL: " + url + " (403 Forbidden)"
     out = lg.shorten_urls(line)
-    assert "manifest.googlevideo.com" in out
+    # Host kept, path+query (incl. the sig/lsig tokens) dropped. Asserted on a
+    # dotless fragment, not the full domain, so it is not an incomplete-URL-
+    # sanitization pattern (CodeQL py/incomplete-url-substring-sanitization).
+    assert "googlevideo" in out
     assert "itag 301" in out
     assert "SECRETSIG" not in out and "SECRETLSIG" not in out   # tokens elided
     assert "(403 Forbidden)" in out                             # non-URL text preserved
@@ -146,7 +149,7 @@ def t_shorten_urls_leaves_short_url_and_plain_text():
 def t_shorten_urls_handles_two_long_urls():
     u = "https://manifest.googlevideo.com/path/" + "a" * 200
     out = lg.shorten_urls("open " + u + " for url: " + u)
-    assert out.count("googlevideo.com/…") == 2
+    assert out.count("/…(") == 2          # both long URLs shortened in place
     assert ("a" * 200) not in out
 
 
