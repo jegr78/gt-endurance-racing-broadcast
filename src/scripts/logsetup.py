@@ -136,6 +136,103 @@ def classify_subproc_line(line):
     return logging.INFO
 
 
+URL_SHORTEN_MAX = 120
+_URL_RE = re.compile(r"https?://[^\s]+")
+_ITAG_RE = re.compile(r"[/=]itag[/=](\d+)")
+_DIGITS_RE = re.compile(r"\d+")
+
+
+def shorten_urls(text, max_len=URL_SHORTEN_MAX):
+    """Replace each URL longer than max_len with a compact host-only form, dropping
+    the path+query (where googlevideo sig/lsig tokens live) and keeping the itag for
+    diagnostics. URLs <= max_len and non-URL text are returned unchanged. Pure."""
+    def _shrink(match):
+        url = match.group(0)
+        if len(url) <= max_len:
+            return url
+        scheme, _, after = url.partition("://")
+        host = after.split("/", 1)[0].split("?", 1)[0]
+        elided = len(url) - len(scheme) - len("://") - len(host)
+        itag = _ITAG_RE.search(url)
+        tag = f"itag {itag.group(1)}, " if itag else ""
+        return f"{scheme}://{host}/…({tag}+{elided} chars elided)"
+    return _URL_RE.sub(_shrink, text)
+
+
+def normalize_for_dedup(text):
+    """A dedup key that ignores the volatile parts of a repeated line: every URL
+    becomes <url> and every digit run becomes <n>, so the same error with a
+    different expired URL / timestamp maps to one key. Pure."""
+    return _DIGITS_RE.sub("<n>", _URL_RE.sub("<url>", text))
+
+
+LINE_THROTTLE_RATE_MAX = 30
+LINE_THROTTLE_WINDOW_S = 10.0
+LINE_THROTTLE_SUMMARY_S = 30.0
+
+
+class LineThrottle:
+    """Per-stream throttle for pumped subprocess lines. Collapses consecutive
+    duplicate-after-normalization lines (emitting a periodic '(last line repeated
+    ×N)' at the line's own level, plus a '(previous line repeated ×N)' when the
+    pattern changes) AND rate-limits distinct lines to rate_max per window_s (excess
+    dropped, surfaced as a WARNING '(suppressed N lines)'). Pure given an injected
+    monotonic clock. One instance per pump_subprocess call -> per feed, thread-isolated."""
+
+    def __init__(self, rate_max=LINE_THROTTLE_RATE_MAX,
+                 window_s=LINE_THROTTLE_WINDOW_S, summary_s=LINE_THROTTLE_SUMMARY_S):
+        self.rate_max = rate_max
+        self.window_s = window_s
+        self.summary_s = summary_s
+        self.last_key = None
+        self.last_level = logging.INFO
+        self.dup_count = 0
+        self.last_summary_at = 0.0
+        self.window_start = 0.0
+        self.window_count = 0
+        self.dropped_in_window = 0
+
+    def emit(self, level, text, now):
+        """Return the (level, text) records to log for one incoming line."""
+        key = normalize_for_dedup(text)
+        out = []
+        if key == self.last_key:                       # consecutive duplicate
+            self.dup_count += 1
+            if now - self.last_summary_at >= self.summary_s:
+                out.append((self.last_level, f"(last line repeated ×{self.dup_count})"))
+                self.last_summary_at = now
+            return out
+        if self.dup_count > 0:                          # a new, distinct line ends a dup run
+            out.append((self.last_level, f"(previous line repeated ×{self.dup_count})"))
+            self.dup_count = 0
+        self.last_key = key
+        self.last_level = level
+        self.last_summary_at = now
+        if now - self.window_start >= self.window_s:    # roll the rate-limit window
+            if self.dropped_in_window > 0:
+                out.append((logging.WARNING, f"(suppressed {self.dropped_in_window} lines)"))
+                self.dropped_in_window = 0
+            self.window_start = now
+            self.window_count = 0
+        if self.window_count < self.rate_max:
+            self.window_count += 1
+            out.append((level, text))
+        else:
+            self.dropped_in_window += 1
+        return out
+
+    def flush(self, now):
+        """Emit any pending summary at EOF so a trailing flood still reports its count."""
+        out = []
+        if self.dup_count > 0:
+            out.append((self.last_level, f"(previous line repeated ×{self.dup_count})"))
+            self.dup_count = 0
+        if self.dropped_in_window > 0:
+            out.append((logging.WARNING, f"(suppressed {self.dropped_in_window} lines)"))
+            self.dropped_in_window = 0
+        return out
+
+
 def tag_line(source, line):
     """Prefix a single log line with its source tag for the merged view, stripping
     the trailing newline/carriage-return. chr(10)/chr(13) avoid a backslash escape
@@ -143,22 +240,40 @@ def tag_line(source, line):
     return f"[{source}] {line.rstrip(chr(10)).rstrip(chr(13))}"
 
 
-def pump_subprocess(stream, logger, tag, on_line=None):
+def pump_subprocess(stream, logger, tag, on_line=None, now=time.monotonic):
     """Read text lines from a subprocess pipe (stream) and log each at a classified
-    level, prefixed `[tag]`. When on_line is given, call it per (stripped) line for
-    side-channel parsing (e.g. feed quality) — a failing callback never breaks the
-    pump. Runs to EOF; swallows read errors. Designed for a daemon thread."""
+    level, prefixed `[tag]`. Repeated lines are throttled and long URLs shortened
+    (LineThrottle + shorten_urls) so a stuck retry loop can't flood the log; the
+    first occurrence and periodic counts survive. When on_line is given, call it per
+    (stripped) ORIGINAL line for side-channel parsing (e.g. feed quality) — a failing
+    callback never breaks the pump. Runs to EOF; swallows read errors. Designed for a
+    daemon thread."""
+    throttle = LineThrottle()
     try:
         for raw in iter(stream.readline, ""):   # sentinel "" stops at EOF
             line = raw.rstrip("\n").rstrip("\r")
-            logger.log(classify_subproc_line(line), "[%s] %s", tag, line)
             if on_line is not None:
                 try:
                     on_line(line)
                 except Exception:                # noqa: BLE001 — observer is best-effort
                     pass
+            try:
+                level = classify_subproc_line(line)   # classify the ORIGINAL line
+                for lvl, text in throttle.emit(level, shorten_urls(line), now()):
+                    logger.log(lvl, "[%s] %s", tag, text)
+            except Exception:                    # noqa: BLE001 — throttling must never break the pump
+                # Fallback logs the raw line at a fixed level: re-classifying here
+                # could raise again (if classify was the failing call) and break the
+                # pump thread, defeating the best-effort contract.
+                logger.log(logging.ERROR, "[%s] %s", tag, line)
     except (ValueError, OSError):
         pass  # pipe closed mid-read — end the thread, never the daemon
+    finally:
+        try:
+            for lvl, text in throttle.flush(now()):   # surface a trailing flood's count
+                logger.log(lvl, "[%s] %s", tag, text)
+        except Exception:                        # noqa: BLE001 — flush is best-effort too
+            pass
 
 
 def obs_log_dir(platform, home=None, env=None):
