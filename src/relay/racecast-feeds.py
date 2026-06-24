@@ -5195,6 +5195,16 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send({"ok": False, "error": "audio needs db or mute"}, 400)
                     return self._send({"ok": True} if ok
                                       else {"ok": False, "error": note}, 200 if ok else 503)
+                if p == ["obs", "stream"]:
+                    if _obs_ws is None:
+                        return self._send({"error": "obs unavailable"}, 503)
+                    if "on" not in body:
+                        return self._send({"ok": False,
+                                           "error": "stream needs on"}, 400)
+                    ok, note = _obs_ws.set_stream(bool(body.get("on")))
+                    return self._send({"ok": True} if ok
+                                      else {"ok": False, "error": note},
+                                      200 if ok else 503)
                 if p == ["obs", "state"]:
                     if _obs_ws is None:
                         return self._send({"error": "obs unavailable"}, 503)

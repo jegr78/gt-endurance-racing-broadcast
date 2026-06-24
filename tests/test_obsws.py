@@ -410,6 +410,19 @@ def _fake_obs_server(server_sock, password, state):
             state.setdefault("set_enabled", []).append(
                 (rdata["sceneName"], rdata["sceneItemId"], rdata["sceneItemEnabled"]))
             resp = {}
+        elif rtype == "GetStreamStatus":
+            resp = {"outputActive": state.get("stream_active", False),
+                    "outputReconnecting": state.get("stream_reconnecting", False),
+                    "outputTimecode": state.get("stream_timecode", "00:00:00.000"),
+                    "outputBytes": state.get("output_bytes", 0)}
+        elif rtype == "StartStream":
+            state.setdefault("stream_calls", []).append("start")
+            state["stream_active"] = True
+            resp = {}
+        elif rtype == "StopStream":
+            state.setdefault("stream_calls", []).append("stop")
+            state["stream_active"] = False
+            resp = {}
         else:
             resp = {}
         _srv_send_json(conn, {"op": 7, "d": {
@@ -447,6 +460,69 @@ def t_release_feed_inputs_wrong_password_is_note_not_crash():
     assert names == []
     assert note
     server_sock.close()
+
+
+# --------------------------------------------------------------------------
+# set_stream — Director Panel broadcast start/stop (#295)
+# (uses the shared _start_fake_obs helper defined further down)
+# --------------------------------------------------------------------------
+def t_set_stream_starts_when_offline():
+    state = {"stream_active": False}
+    port, srv = _start_fake_obs(state)
+    ok, note = m.set_stream(True, port=port, password="supersecret", timeout=5)
+    assert ok and note == "", note
+    assert state["stream_calls"] == ["start"]
+    assert state["stream_active"] is True
+    srv.close()
+
+
+def t_set_stream_stops_when_live():
+    state = {"stream_active": True}
+    port, srv = _start_fake_obs(state)
+    ok, note = m.set_stream(False, port=port, password="supersecret", timeout=5)
+    assert ok and note == "", note
+    assert state["stream_calls"] == ["stop"]
+    assert state["stream_active"] is False
+    srv.close()
+
+
+def t_set_stream_is_idempotent_noop_when_already_live():
+    state = {"stream_active": True}
+    port, srv = _start_fake_obs(state)
+    ok, note = m.set_stream(True, port=port, password="supersecret", timeout=5)
+    assert ok and note == "", note
+    assert "stream_calls" not in state          # no StartStream sent
+    srv.close()
+
+
+def t_set_stream_unreachable_is_note_not_crash():
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    free_port = sock.getsockname()[1]
+    sock.close()
+    ok, note = m.set_stream(True, port=free_port, password="x", timeout=0.5)
+    assert ok is False
+    assert note                                 # human-readable reason
+
+
+def t_parse_stream_status_includes_timecode():
+    out = m.parse_stream_status({"outputActive": True,
+                                 "outputReconnecting": False,
+                                 "outputTimecode": "00:12:34.567"})
+    assert out["stream_timecode"] == "00:12:34.567"
+    assert out["stream_active"] is True
+
+
+def t_read_obs_state_includes_stream():
+    state = {"released": [], "stream_active": True,
+             "stream_timecode": "01:02:03.000"}
+    port, srv = _start_fake_obs(state)
+    out, note = m.read_obs_state([("Stint", "Feed A")], ["Feed A"],
+                                 port=port, password="supersecret", timeout=5)
+    assert note == "", note
+    assert out["stream"] == {"active": True, "reconnecting": False,
+                             "timecode": "01:02:03.000"}
+    srv.close()
 
 
 # --------------------------------------------------------------------------

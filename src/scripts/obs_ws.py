@@ -442,6 +442,7 @@ def parse_stream_status(payload):
     return {
         "stream_active": None if active is None else bool(active),
         "stream_reconnecting": None if recon is None else bool(recon),
+        "stream_timecode": p.get("outputTimecode"),
         "stream_congestion": p.get("outputCongestion"),
         "stream_dropped_pct": _pct(p.get("outputSkippedFrames"),
                                    p.get("outputTotalFrames")),
@@ -641,6 +642,28 @@ def set_input_mute(input_name, muted, host="127.0.0.1", port=None,
         session.close()
 
 
+def set_stream(active, host="127.0.0.1", port=None,
+               password=None, timeout=2.0):
+    """Start or stop the OBS stream output (best effort). `active` True ->
+    StartStream, False -> StopStream. Idempotent: if OBS is ALREADY in the
+    requested state, returns (True, "") without sending a start/stop, so a
+    double-click or retry never surfaces OBS's "output already active" error.
+    (ok, note); never raises."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return False, note
+    try:
+        status = parse_stream_status(session.request("GetStreamStatus", {}))
+        if status.get("stream_active") == bool(active):
+            return True, ""                       # already in the desired state
+        session.request("StartStream" if active else "StopStream", {})
+        return True, ""
+    except Exception as exc:                       # noqa: BLE001 — best-effort contract
+        return False, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
 def read_obs_state(sources, inputs, host="127.0.0.1", port=None,
                    password=None, timeout=2.0):
     """One-session panel-refresh snapshot: current program scene + the enabled state
@@ -676,7 +699,15 @@ def read_obs_state(sources, inputs, host="127.0.0.1", port=None,
             except Exception:                         # noqa: BLE001 — per-item best effort
                 muted, vol = None, None
             aud_out.append({"input": name, "muted": muted, "volumeDb": vol})
-        return {"scene": scene, "sources": src_out, "audio": aud_out}, ""
+        try:
+            st = parse_stream_status(session.request("GetStreamStatus", {}))
+            stream = {"active": st.get("stream_active"),
+                      "reconnecting": st.get("stream_reconnecting"),
+                      "timecode": st.get("stream_timecode")}
+        except Exception:                         # noqa: BLE001 — per-item best effort
+            stream = None
+        return {"scene": scene, "sources": src_out,
+                "audio": aud_out, "stream": stream}, ""
     except Exception as exc:                          # noqa: BLE001 — best-effort contract
         return None, str(exc) or exc.__class__.__name__
     finally:
