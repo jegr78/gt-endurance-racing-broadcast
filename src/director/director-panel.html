@@ -311,24 +311,33 @@
            gap:14px;align-items:start}
     .mainpane{min-width:0}
     /* Right rail: a sticky column with the crew chat (top) and the read-only
-       broadcast chat (below) stacked, both always visible (#294). Each chat log
-       is a fixed-height scroll region (YouTube/Twitch-style) — the box grows with
-       its messages until the cap, then scrolls. NB: a <details> element does not
-       propagate a definite height to its descendants via flex-grow (Chromium quirk
-       — verified live), so the log must be bounded directly with max-height rather
-       than a flex:1 fill chain; otherwise a busy broadcast feed grows it unbounded.
-       The rail itself caps at the viewport and scrolls if the two stacked boxes
-       together exceed it. */
+       broadcast chat (below) stacked, both always visible (#294). Each chat log is
+       a *fixed*-height scroll region (YouTube/Twitch-style) — a stable height from
+       the start, scrolling internally; it must NOT grow with its messages, or the
+       crew box pushes down into the broadcast box. NB: a <details> does not
+       propagate a definite height to its descendants via flex-grow OR flex-shrink
+       (Chromium quirk — verified live: a flex:1 fill chain collapses the log to ~0),
+       so the height is pinned directly rather than flexed. The two logs share the
+       rail: each is calc(50vh - 232px), i.e. (rail-height − chrome)/2, where the
+       ~400px of chrome (two summaries, the name+send row, both hints, the gap) is
+       measured at the narrowest rail (clamp floor 280px); clamped to [88px, 360px]
+       so it stays usable on short windows and bounded on tall ones. With this the
+       two boxes + chrome fit the rail at every realistic director window
+       (≥1280×720, all common laptops), so the rail's own overflow-y:auto scrollbar
+       (the reported "second scrollbar") never appears — it remains only as a
+       fallback for a pathologically small window. Boxes are flex:0 0 auto: they
+       take exactly their content height and never shrink, so the crew box can no
+       longer spill its content over the broadcast box below it. */
     .rail{position:sticky;top:18px;align-self:start;display:flex;flex-direction:column;
            gap:14px;max-height:calc(100vh - 36px);overflow-y:auto}
-    details.chat#chatBox,details.chat#bchatBox{margin-bottom:0;min-height:0;flex:0 1 auto;
+    details.chat#chatBox,details.chat#bchatBox{margin-bottom:0;min-height:0;flex:0 0 auto;
            display:flex;flex-direction:column}
     details.chat#chatBox>summary,details.chat#bchatBox>summary{cursor:default;
            pointer-events:none;margin-bottom:8px}
     details.chat#chatBox>summary::after,details.chat#bchatBox>summary::after{display:none}
     details.chat#chatBox>.body,details.chat#bchatBox>.body{display:flex !important;
            flex-direction:column;min-height:0}
-    details.chat#chatBox .chatlog,details.chat#bchatBox .chatlog{max-height:38vh;
+    details.chat#chatBox .chatlog,details.chat#bchatBox .chatlog{height:clamp(88px, calc(50vh - 232px), 360px);
            overflow-y:auto;min-height:0;margin-top:0}
     details.chat#chatBox .hint,details.chat#bchatBox .hint{margin-top:6px}
   }
