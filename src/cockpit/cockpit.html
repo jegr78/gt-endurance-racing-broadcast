@@ -55,6 +55,19 @@
   #chatlog { flex: 1; overflow-y: auto; padding: 8px 10px; }
   #chatlog .msg { margin-bottom: 6px; }
   #chatlog .u { font-weight: 600; color: #8ab4f8; }
+  #chatlog .ts, #bchatlog .ts { color: #5f6772; font-size: 10px; margin-right: 5px;
+                                font-variant-numeric: tabular-nums; }
+  /* Broadcast chat (#294): read-only mirror, sits in the LEFT column under the
+     PROGRAM monitor and flex-fills the otherwise-empty space below it. */
+  .leftcol { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  #bchatCard { flex: 1; display: flex; flex-direction: column; min-height: 260px; }
+  #bchat { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  #bchatlog { flex: 1; overflow-y: auto; padding: 8px 10px; }
+  #bchatlog .msg { margin-bottom: 6px; }
+  #bchatlog .u { font-weight: 600; color: #f0a868; }   /* amber, distinct from crew blue */
+  #bchatlog .src { font-size: 10px; color: #8a929c; margin-left: 6px; }
+  h2 .ro { font-size: 11px; font-weight: 500; color: #8a929c; border: 1px solid #2a3038;
+           border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
   .chatbar { display: flex; gap: 6px; padding: 8px; border-top: 1px solid #232830; }
   .chatbar input { flex: 1; padding: 8px; background: #0b0d10; color: #e8eaed;
                    border: 1px solid #2a3038; border-radius: 6px; }
@@ -153,10 +166,16 @@
 <div id="tally" class="tally idle">…</div>
 
 <div class="wrap">
-  <div>
+  <div class="leftcol">
     <div class="card progwrap">
       <span class="badge">PROGRAM</span>
       <img id="program" alt="program monitor">
+    </div>
+    <div class="card" id="bchatCard">
+      <h2>Broadcast chat <span class="ro">read-only</span></h2>
+      <div id="bchat">
+        <div id="bchatlog"><div class="empty">Waiting for the broadcast stream…</div></div>
+      </div>
     </div>
   </div>
   <div>
@@ -209,6 +228,14 @@ async function j(path) {
   if (!r.ok) throw new Error(r.status);
   return r.json();
 }
+// Local HH:MM:SS from a server ts (seconds). Empty for a missing/invalid ts.
+function fmtTs(ts) {
+  if (typeof ts !== 'number' || !isFinite(ts)) return '';
+  try { return new Date(ts * 1000).toLocaleTimeString(); } catch (e) { return ''; }
+}
+// True when a scroll container is at (or near) its bottom — used to only
+// auto-scroll on new messages when the reader hasn't scrolled up to read back.
+function atBottom(el) { return el.scrollHeight - el.scrollTop - el.clientHeight < 24; }
 
 // --- Tally ---
 function renderTally(d) {
@@ -361,17 +388,20 @@ async function pollChat() {
   try {
     const d = await j('/cockpit/chat/data');
     const log = $('chatlog');
+    const stick = atBottom(log);            // only auto-scroll if already at the bottom
     log.textContent = '';
     (d.messages || []).forEach(msg => {
       const row = document.createElement('div');
       row.className = 'msg';
+      const t = document.createElement('span');
+      t.className = 'ts'; t.textContent = fmtTs(msg.ts);
       const u = document.createElement('span');
       u.className = 'u'; u.textContent = (msg.user || 'Crew') + ': ';
-      row.appendChild(u);
+      row.appendChild(t); row.appendChild(u);
       row.appendChild(document.createTextNode(msg.text || ''));  // XSS-safe
       log.appendChild(row);
     });
-    log.scrollTop = log.scrollHeight;
+    if (stick) log.scrollTop = log.scrollHeight;
   } catch (e) { /* transient */ }
   setTimeout(pollChat, 3000);
 }
@@ -396,6 +426,51 @@ $('subUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitLi
 $('subStint').addEventListener('change', () => {
   $('subUrl').value = subStintUrls[$('subStint').value] || '';
 });
+
+// --- Broadcast chat (#294): read-only mirror of the public stream chat ---
+// Disabled (no Channel tab) -> the endpoint 404s; hide the card and stop polling.
+function renderBroadcastChat(msgs) {
+  const log = $('bchatlog');
+  const stick = atBottom(log);             // preserve scroll-back position
+  log.textContent = '';
+  if (!msgs.length) {
+    const e = document.createElement('div');
+    e.className = 'empty'; e.textContent = 'Waiting for the broadcast stream…';
+    log.appendChild(e);
+    return;
+  }
+  const multi = new Set(msgs.map(m => m.source)).size > 1;   // handover overlap
+  msgs.forEach(msg => {
+    const row = document.createElement('div');
+    row.className = 'msg';
+    const t = document.createElement('span');
+    t.className = 'ts'; t.textContent = fmtTs(msg.ts);
+    const u = document.createElement('span');
+    u.className = 'u'; u.textContent = (msg.user || 'Viewer') + ': ';
+    row.appendChild(t); row.appendChild(u);
+    row.appendChild(document.createTextNode(msg.text || ''));   // XSS-safe
+    if (multi && msg.source) {
+      const s = document.createElement('span');
+      s.className = 'src'; s.textContent = '#' + String(msg.source).slice(-4);
+      row.appendChild(s);
+    }
+    log.appendChild(row);
+  });
+  if (stick) log.scrollTop = log.scrollHeight;
+}
+async function pollBroadcastChat() {
+  try {
+    const d = await j('/broadcast-chat/data');
+    renderBroadcastChat(d.messages || []);
+  } catch (e) {
+    if (String(e.message) === '404') {     // reader disabled — remove the card
+      const c = $('bchatCard'); if (c) c.style.display = 'none';
+      return;
+    }
+    /* transient — retry */
+  }
+  setTimeout(pollBroadcastChat, 4000);
+}
 
 // --- Director cues (#243) ---
 const _shownInfo = new Set();   // info cue ids already toasted (avoid re-toasting each poll)
@@ -481,6 +556,7 @@ async function loadGraphics() {
 $('gfxRefresh').addEventListener('click', loadGraphics);
 
 pollTally(); pollProgram(); pollTimer(); pollChat(); pollCues(); loadGraphics();
+pollBroadcastChat();
 </script>
 </body>
 </html>

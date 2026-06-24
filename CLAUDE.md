@@ -202,6 +202,10 @@ python3 src/racecast.py --version
 # Fetch any missing HUD country flags from the sheet's Configuration tab
 python3 tools/fetch-flags.py            # adds missing -> src/assets/flags/ (keeps old)
 
+# Probe the broadcast-chat reader (#294) against a LIVE channel — standalone, no
+# Sheet/relay/UI; resolves the live videoId via yt-dlp + tails Innertube chat.
+python3 tools/broadcast-chat-probe.py https://www.youtube.com/@SomeChannel  # --resolve-only / --cookies
+
 # Publish the GitHub wiki from src/docs/wiki/ (maintainer; --dry-run to preview)
 python3 tools/sync-wiki.py
 ```
@@ -434,7 +438,7 @@ HUD display label, NOT the feed stint index. `SetupControl` + endpoints
 `/setup/*`, `/schedule/*`, `/pov/set` (POST). Tests: `tests/test_setup.py`.
 
 The relay also hosts a **crew chat** (`GET /chat/data`, `POST /chat/send`,
-`GET /chat/reload`) — an in-memory ring buffer (200 messages) persisted to
+`GET /chat/reload`) — an in-memory ring buffer (400 messages) persisted to
 `runtime/<profile>/chat.json`. The panel polls `/chat/data`; messages render via
 `textContent` (XSS-safe); the unread badge is keyed on server `ts` (handover-safe).
 There is **no destructive HTTP endpoint** — clear/import/pull are producer-only CLI
@@ -442,6 +446,43 @@ actions (`racecast chat clear|pull|import|export`, logic in
 `src/scripts/chat_admin.py`) that write the file and trigger `/chat/reload`. The
 tailnet is the trust boundary (unauthenticated, like the rest of the relay).
 Tests: `tests/test_chat.py`.
+
+The relay also hosts a **read-only broadcast-chat reader** (issue #294): a mirror of
+the event's **public YouTube** broadcast chat inside the `/console` pages (cockpit,
+director panel, race-control desk) so the crew can follow it without a separate browser
+tab. The broadcast channel(s) come from a Sheet **`Channel`** tab (header `Platform |
+Channel`; `Channel` holds a channel URL / `@handle` / `UC…` id — **never** a video id),
+read by `ChannelSource` (mirrors `CrewSource`); derived from `SHEET_ID` like the crew
+roster, so a custom `--sheet-csv-url` or `--no-broadcast-chat` disables it (flag
+`--channel-tab`, default `Channel`). The relay resolves the channel's **currently-live
+videoId set** via yt-dlp — the **`/streams`** tab so CONCURRENT live streams are all
+found (the producer-handover overlap, where B's stream starts before A's ends), with
+`/live` as the single-stream fallback; **public streams only**, same constraint as the
+feed path. `BroadcastChatSupervisor` runs one `_BroadcastReader` per live videoId
+(~30 s resolve cadence); a genuinely-ended stream is *tombstoned* (not restarted), a
+reader that died while still live is retried. Each reader bootstraps from the
+`live_chat` page then follows the **Innertube `get_live_chat` continuation** — a native
+stdlib poller (relay-owned network, like `CrewSource`, **exempt** from the `http_util`
+UA guard; it must send a browser `User-Agent` or Innertube 403s). `BroadcastChatStore`
+is an **ephemeral** in-memory ring (`broadcast_chat.MAX_MESSAGES = 500`), dedup-by-id,
+**ts-merged across streams** (so a handover overlap renders as one continuous chat,
+tagged by source videoId) — **never persisted, no write path**. Endpoints:
+`GET /broadcast-chat/data` (tailnet/loopback) + `GET /console/broadcast-chat/data`
+(Funnel, **ANY-auth under the existing `/console` mount → no new public surface**), both
+read-only. The data is already public on YouTube, so mirroring it leaks nothing; if the
+reader is disabled the endpoints 404 and the front-end card self-hides. **Backend
+choice:** a native Innertube poller (no new dependency) over `chat-downloader`, because
+the product ships as a single binary and broadcast chat is a non-critical convenience
+panel that degrades gracefully (fragile vs. YouTube changes → empty, never crashes the
+relay); the fetch sits behind a seam so `chat-downloader` could be slotted in later.
+Pure parsers (bootstrap, `get_live_chat`, `runs→text`, `Channel` CSV, `live_set_diff`,
+URL builders) live in `src/scripts/broadcast_chat.py`; the network + threads are in the
+relay. Front-end: a read-only "Broadcast chat" card in the three pages, polled via the
+`RC_API` shim (tailnet + Funnel), rendered with `textContent` + a per-message
+timestamp + a source badge on a handover overlap. Tests: `tests/test_broadcast_chat.py`
+(pure parsers + store + endpoint). Live diagnostic (maintainer, not shipped):
+`tools/broadcast-chat-probe.py <channel>` resolves + tails a live channel's chat
+standalone — the way to validate the real yt-dlp + Innertube path against a live stream.
 
 The relay also provides a **director→talent text-cue channel** (an IFB-lite, text-only
 stand-in for an earpiece): the Director Panel's **Cues** section lets a director pick a
