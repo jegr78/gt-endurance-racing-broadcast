@@ -55,6 +55,14 @@
   #chatlog { flex: 1; overflow-y: auto; padding: 8px 10px; }
   #chatlog .msg { margin-bottom: 6px; }
   #chatlog .u { font-weight: 600; color: #8ab4f8; }
+  /* Broadcast chat (#294): read-only mirror of the public stream chat. */
+  #bchat { display: flex; flex-direction: column; height: 300px; }
+  #bchatlog { flex: 1; overflow-y: auto; padding: 8px 10px; }
+  #bchatlog .msg { margin-bottom: 6px; }
+  #bchatlog .u { font-weight: 600; color: #f0a868; }   /* amber, distinct from crew blue */
+  #bchatlog .src { font-size: 10px; color: #8a929c; margin-left: 6px; }
+  h2 .ro { font-size: 11px; font-weight: 500; color: #8a929c; border: 1px solid #2a3038;
+           border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
   .chatbar { display: flex; gap: 6px; padding: 8px; border-top: 1px solid #232830; }
   .chatbar input { flex: 1; padding: 8px; background: #0b0d10; color: #e8eaed;
                    border: 1px solid #2a3038; border-radius: 6px; }
@@ -183,6 +191,12 @@
           <input id="chatin" placeholder="Message the crew…" maxlength="500">
           <button id="chatsend">Send</button>
         </div>
+      </div>
+    </div>
+    <div class="card" id="bchatCard" style="margin-top:12px;">
+      <h2>Broadcast chat <span class="ro">read-only</span></h2>
+      <div id="bchat">
+        <div id="bchatlog"><div class="empty">Waiting for the broadcast stream…</div></div>
       </div>
     </div>
     <div class="card" style="margin-top:12px;">
@@ -397,6 +411,48 @@ $('subStint').addEventListener('change', () => {
   $('subUrl').value = subStintUrls[$('subStint').value] || '';
 });
 
+// --- Broadcast chat (#294): read-only mirror of the public stream chat ---
+// Disabled (no Channel tab) -> the endpoint 404s; hide the card and stop polling.
+function renderBroadcastChat(msgs) {
+  const log = $('bchatlog');
+  log.textContent = '';
+  if (!msgs.length) {
+    const e = document.createElement('div');
+    e.className = 'empty'; e.textContent = 'Waiting for the broadcast stream…';
+    log.appendChild(e);
+    return;
+  }
+  const multi = new Set(msgs.map(m => m.source)).size > 1;   // handover overlap
+  msgs.forEach(msg => {
+    const row = document.createElement('div');
+    row.className = 'msg';
+    const u = document.createElement('span');
+    u.className = 'u'; u.textContent = (msg.user || 'Viewer') + ': ';
+    row.appendChild(u);
+    row.appendChild(document.createTextNode(msg.text || ''));   // XSS-safe
+    if (multi && msg.source) {
+      const s = document.createElement('span');
+      s.className = 'src'; s.textContent = '#' + String(msg.source).slice(-4);
+      row.appendChild(s);
+    }
+    log.appendChild(row);
+  });
+  log.scrollTop = log.scrollHeight;
+}
+async function pollBroadcastChat() {
+  try {
+    const d = await j('/broadcast-chat/data');
+    renderBroadcastChat(d.messages || []);
+  } catch (e) {
+    if (String(e.message) === '404') {     // reader disabled — remove the card
+      const c = $('bchatCard'); if (c) c.style.display = 'none';
+      return;
+    }
+    /* transient — retry */
+  }
+  setTimeout(pollBroadcastChat, 4000);
+}
+
 // --- Director cues (#243) ---
 const _shownInfo = new Set();   // info cue ids already toasted (avoid re-toasting each poll)
 
@@ -481,6 +537,7 @@ async function loadGraphics() {
 $('gfxRefresh').addEventListener('click', loadGraphics);
 
 pollTally(); pollProgram(); pollTimer(); pollChat(); pollCues(); loadGraphics();
+pollBroadcastChat();
 </script>
 </body>
 </html>

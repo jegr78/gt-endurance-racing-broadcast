@@ -85,6 +85,7 @@ except Exception:                                # noqa: BLE001 — reflection i
     _obs_ws = None
 
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
+import broadcast_chat  # read-only YouTube broadcast-chat reader (#294); pure parsers
 import cue_admin   # director text-cue channel (#243)
 import health_store  # health-history SQLite store (task 7; src/scripts on sys.path)
 _HEALTH_CONST = health_store  # stable module alias: make_handler's `health_store`
@@ -1375,6 +1376,320 @@ class ChatStore:
         with self.lock:
             self.messages = msgs
         return {"ok": True, "count": len(msgs)}
+
+
+# ---------------------------------------------------------------------------
+# Read-only broadcast-chat reader (#294)
+#
+# Mirrors the event's PUBLIC YouTube broadcast chat into the /console pages so
+# the crew can follow it without a separate browser tab. The channel(s) come
+# from the Sheet `Channel` tab; the relay resolves the currently-live videoId(s)
+# via yt-dlp (exactly like the feed path) and polls each one's Innertube live
+# chat. It is READ-ONLY, EPHEMERAL (no file) and best-effort: any failure logs
+# and leaves the rest of the relay untouched. Pure parsers live in
+# src/scripts/broadcast_chat.py; the network + threads live here (this is the
+# self-contained relay, exempt from the http_util User-Agent guard).
+#
+# A producer handover briefly has TWO live streams on the channel; the
+# supervisor runs one reader per live videoId and merges their messages (tagged
+# by source), so the crew sees one continuous chat across the A->B overlap.
+# ---------------------------------------------------------------------------
+
+# Innertube/live_chat 403 the default urllib UA (like Discord/Fonts), so the
+# broadcast-chat HTTP must present a browser UA. Public live chat needs no auth,
+# so these requests carry no cookies (yt-dlp still uses the relay cookies for
+# the resolve hop, where the bot-check applies).
+_YT_CHAT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+
+def _yt_chat_get(url, timeout=15):
+    """GET text from a YouTube URL with a browser UA. None on any error."""
+    try:
+        req = Request(url, headers={"User-Agent": _YT_CHAT_UA,
+                                    "Accept-Language": "en-US,en;q=0.9"})
+        with urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode("utf-8", "replace")
+    except Exception:
+        return None
+
+
+def _yt_chat_post_json(url, body, timeout=15):
+    """POST a JSON body to an Innertube endpoint, parse the JSON reply. None on
+    any error (network, non-JSON, decode)."""
+    try:
+        data = json.dumps(body).encode("utf-8")
+        req = Request(url, data=data, method="POST",
+                      headers={"User-Agent": _YT_CHAT_UA,
+                               "Content-Type": "application/json"})
+        with urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8", "replace"))
+    except Exception:
+        return None
+
+
+def _yt_run_json(cmd, timeout=30):
+    """Run a yt-dlp command expected to print one JSON object, parse it. None on
+    error/non-zero/non-JSON."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, errors="replace",
+                           timeout=timeout, env=external_tool_env(), **_no_window_kwargs())
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0 or not r.stdout:
+        return None
+    try:
+        return json.loads(r.stdout)
+    except ValueError:
+        return None
+
+
+def yt_live_video_ids(channel, cookies, timeout=25, logger=None):
+    """Currently-live videoId(s) for one YouTube channel.
+
+    Prefers the channel `/streams` tab so CONCURRENT live streams are all found
+    (the producer-handover overlap); falls back to the `/live` shorthand (one
+    stream) when the tab enumeration yields nothing. Best-effort: any failure
+    returns []."""
+    ids = []
+    streams_cmd = ["yt-dlp", "--flat-playlist", "--no-warnings",
+                   "--playlist-items", "1-15", "-J"]
+    if cookies:
+        streams_cmd += ["--cookies", cookies]
+    streams_cmd += ["--", broadcast_chat.channel_streams_url(channel)]
+    data = _yt_run_json(streams_cmd, timeout=timeout)
+    for entry in (data or {}).get("entries", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        live = entry.get("live_status") == "is_live" or entry.get("is_live") is True
+        if live and entry.get("id"):
+            ids.append(entry["id"])
+    if ids:
+        return ids
+    # Fallback: the single primary /live stream (videoId only, no manifest).
+    one_cmd = ["yt-dlp", "--print", "id", "--no-warnings", "--no-playlist"]
+    if cookies:
+        one_cmd += ["--cookies", cookies]
+    one_cmd += ["--", broadcast_chat.channel_live_url(channel)]
+    try:
+        r = subprocess.run(one_cmd, capture_output=True, text=True, errors="replace",
+                           timeout=timeout, env=external_tool_env(), **_no_window_kwargs())
+        if r.returncode == 0 and r.stdout.strip():
+            return [r.stdout.strip().splitlines()[0]]
+    except (OSError, subprocess.TimeoutExpired):
+        pass  # best-effort resolve; treat as "no live stream" and fall through
+    if logger:
+        logger.debug("no live stream resolved for channel %s", channel)
+    return []
+
+
+class BroadcastChatStore:
+    """Read-only, in-memory mirror of the public broadcast chat (#294).
+
+    Unlike ChatStore this is EPHEMERAL (no file) and has no remote write path —
+    the relay's reader threads call add_many(); HTTP only ever reads data().
+    Messages carry a `source` videoId so a producer-handover overlap (two live
+    streams) renders as one merged, ts-ordered stream. Dedup is by the YouTube
+    chat-item id (continuations re-deliver recent messages)."""
+
+    _SEEN_CAP = 5000
+
+    def __init__(self, cap=None):
+        self.cap = cap or broadcast_chat.MAX_MESSAGES
+        self.lock = threading.Lock()
+        self.messages = []          # [{ts, user, text, source}], ts-ordered
+        self._seen = set()          # chat-item ids already stored
+        self._seen_order = []       # FIFO of ids for bounded eviction
+
+    def add_many(self, video_id, raw_msgs):
+        """Sanitize + append new messages from one stream; dedup by id, re-sort
+        by ts (merge across streams) and cap. Returns the count added."""
+        added = 0
+        with self.lock:
+            for raw in raw_msgs or []:
+                mid = raw.get("id") if isinstance(raw, dict) else None
+                if mid:
+                    if mid in self._seen:
+                        continue
+                    self._seen.add(mid)
+                    self._seen_order.append(mid)
+                msg = broadcast_chat.sanitize_message(raw, source=video_id)
+                if msg is None:
+                    continue
+                self.messages.append(msg)
+                added += 1
+            self.messages.sort(key=lambda m: m["ts"])
+            del self.messages[: -self.cap]
+            # bound the dedup set so a long event can't grow it without limit
+            overflow = len(self._seen_order) - self._SEEN_CAP
+            if overflow > 0:
+                for old in self._seen_order[:overflow]:
+                    self._seen.discard(old)
+                del self._seen_order[:overflow]
+        return added
+
+    def data(self):
+        with self.lock:
+            return {"messages": list(self.messages)}
+
+    def reset(self):
+        with self.lock:
+            self.messages = []
+            self._seen.clear()
+            self._seen_order.clear()
+
+
+class ChannelSource:
+    """Reads the Sheet `Channel` tab (CSV) -> [(platform, channel)] (#294).
+
+    Thin fetch+parse wrapper (parsing is the pure broadcast_chat.parse_channel_tab).
+    A missing/empty/unreachable tab is non-fatal -- it simply yields no channels,
+    so the broadcast-chat reader has nothing to follow."""
+
+    def __init__(self, csv_url, cache_path=None):
+        self.csv_url = csv_url
+        self.cache_path = cache_path
+        self.lock = threading.Lock()
+        self.rows = []
+        self.last_error = None
+
+    def _fetch_text(self, timeout=15):
+        if not self.csv_url:
+            return None
+        try:
+            req = Request(self.csv_url, headers={"User-Agent": "racecast-feeds/1.0"})
+            with urlopen(req, timeout=timeout) as resp:
+                return resp.read().decode("utf-8", "replace")
+        except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
+            return None
+
+    def refresh(self, timeout=15):
+        text = self._fetch_text(timeout)
+        if text is None:
+            return False
+        rows = broadcast_chat.parse_channel_tab(text)
+        with self.lock:
+            self.rows = rows
+            self.last_error = None
+        return True
+
+    def get(self):
+        with self.lock:
+            return list(self.rows)
+
+    def youtube_channels(self):
+        """Just the YouTube channel strings (the only platform implemented)."""
+        return [c for (p, c) in self.get() if p == "youtube" and c]
+
+
+class _BroadcastReader:
+    """Polls one live videoId's Innertube chat into the store until the stream
+    ends or it is stopped. Bootstraps from the live_chat page, then follows the
+    get_live_chat continuation. `ended` is set True only on a genuine end (the
+    response carried no next continuation) so the supervisor does not restart
+    it; a transient bootstrap/network miss leaves ended=False (retry allowed)."""
+
+    def __init__(self, video_id, store, logger=None):
+        self.video_id = video_id
+        self.store = store
+        self.logger = logger
+        self.stop_evt = threading.Event()
+        self.ended = False
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self.thread.start()
+        return self
+
+    def stop(self):
+        self.stop_evt.set()
+
+    def alive(self):
+        return self.thread.is_alive()
+
+    def _run(self):
+        try:
+            self._poll()
+        except Exception as e:  # never let a reader crash bubble into the relay
+            if self.logger:
+                self.logger.warning("broadcast-chat reader %s failed: %s: %s",
+                                    self.video_id, type(e).__name__, e)
+
+    def _poll(self):
+        page = _yt_chat_get(broadcast_chat.live_chat_page_url(self.video_id))
+        bs = broadcast_chat.parse_bootstrap(page or "")
+        api_key, cont = bs["api_key"], bs["continuation"]
+        if not api_key or not cont:
+            return                       # not live yet / blocked: transient, no tombstone
+        api_url = broadcast_chat.get_live_chat_api_url(api_key)
+        client_version = bs["client_version"]
+        while not self.stop_evt.is_set():
+            body = broadcast_chat.build_get_live_chat_body(cont, client_version)
+            parsed = broadcast_chat.parse_live_chat(_yt_chat_post_json(api_url, body))
+            if parsed["messages"]:
+                self.store.add_many(self.video_id, parsed["messages"])
+            nxt = parsed["continuation"]
+            if not nxt:
+                self.ended = True        # chat closed / stream ended -> do not restart
+                return
+            cont = nxt
+            wait_s = (parsed["timeout_ms"] or 5000) / 1000.0
+            self.stop_evt.wait(min(max(wait_s, 1.0), 10.0))
+
+
+class BroadcastChatSupervisor:
+    """Owns the per-channel live-set resolution and the per-stream readers.
+
+    Each cycle: read the Channel tab, resolve every YouTube channel's
+    currently-live videoId set via yt-dlp, then start/stop readers so exactly
+    the live streams are followed. Genuinely-ended streams are tombstoned (kept
+    until the channel stops listing them) so they are not restarted; a reader
+    that died while still live is retried. Best-effort throughout."""
+
+    def __init__(self, store, channel_source, cookies, interval=30, logger=None):
+        self.store = store
+        self.channel_source = channel_source
+        self.cookies = cookies
+        self.interval = interval
+        self.logger = logger
+        self.stop_evt = threading.Event()
+        self._readers = {}              # video_id -> _BroadcastReader
+
+    def stop(self):
+        self.stop_evt.set()
+
+    def run(self):
+        while not self.stop_evt.is_set():
+            try:
+                self._cycle()
+            except Exception as e:      # a bad cycle must not kill the supervisor
+                if self.logger:
+                    self.logger.warning("broadcast-chat supervisor cycle failed: %s: %s",
+                                        type(e).__name__, e)
+            self.stop_evt.wait(self.interval)
+        for reader in self._readers.values():
+            reader.stop()
+
+    def _cycle(self):
+        self.channel_source.refresh()
+        cur = set()
+        for channel in self.channel_source.youtube_channels():
+            for vid in yt_live_video_ids(channel, self.cookies, logger=self.logger):
+                cur.add(vid)
+        # Stop readers whose stream left the channel.
+        for vid in list(self._readers):
+            if vid not in cur:
+                self._readers.pop(vid).stop()
+        # Start brand-new streams; retry readers that died while still live.
+        for vid in cur:
+            reader = self._readers.get(vid)
+            if reader is None:
+                self._readers[vid] = _BroadcastReader(vid, self.store, self.logger).start()
+                if self.logger:
+                    self.logger.info("broadcast-chat: following live stream %s", vid)
+            elif not reader.alive() and not reader.ended:
+                self._readers[vid] = _BroadcastReader(vid, self.store, self.logger).start()
 
 
 class HealthStore:
@@ -3492,7 +3807,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  submission_store=None, event_store=None, crew_source=None,
                  console_page_path=None, companion_url=None, logo_path=None,
                  buttons_page_path=None, race_control_page_path=None,
-                 health_store=None, health_monitor_page_path=None, uplot_dir=None):
+                 health_store=None, health_monitor_page_path=None, uplot_dir=None,
+                 broadcast_chat_store=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -3979,6 +4295,16 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             if sub == ["whoami"]:
                 self._send({"subject": subject, "roles": sorted(roles)})
                 return None
+            # Read-only broadcast-chat mirror (#294): any authenticated /console
+            # subject (commentator, director, race_control) may read it. Funnelled
+            # under the existing /console mount — no new public surface. The data
+            # is already public on YouTube and is never persisted.
+            if sub == ["broadcast-chat", "data"] and method == "GET":
+                if not broadcast_chat_store:
+                    self._send({"error": "broadcast chat disabled"}, 404)
+                    return None
+                self._send(broadcast_chat_store.data())
+                return None
             # /console/buttons/* -> reverse-proxy to the local Companion (#236), director only.
             # 'buttons/health' is served by the relay (launcher availability probe) and shadows
             # that one upstream path (Companion's UI does not use /health).
@@ -4393,6 +4719,15 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send(chat_store.data())
                     if p == ["chat", "reload"]:
                         return self._send(chat_store.reload())
+                    return self._send({"error": "unknown", "path": self.path}, 404)
+                if p[:1] == ["broadcast-chat"]:
+                    # Read-only mirror of the public YouTube broadcast chat (#294).
+                    # Tailnet/loopback read; the Funnel read is the ANY-auth
+                    # /console/broadcast-chat/data branch in _console_gate.
+                    if not broadcast_chat_store:
+                        return self._send({"error": "broadcast chat disabled"}, 404)
+                    if p == ["broadcast-chat", "data"]:
+                        return self._send(broadcast_chat_store.data())
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if p[:1] == ["cues"]:
                     if not cue_store:
@@ -4882,6 +5217,12 @@ def main():
     ap.add_argument("--crew-tab", default="Crew",
                     help="Sheet tab naming Director/Producer crew for /console roles "
                          "(#216); disabled with a custom --sheet-csv-url.")
+    ap.add_argument("--channel-tab", default="Channel",
+                    help="Sheet tab naming the event broadcast channel(s) for the "
+                         "read-only broadcast-chat reader (#294); disabled with a "
+                         "custom --sheet-csv-url or --no-broadcast-chat.")
+    ap.add_argument("--no-broadcast-chat", action="store_true",
+                    help="Disable the read-only YouTube broadcast-chat reader (#294).")
     ap.add_argument("--qualifying", action="store_true",
                     help="Start in QUALIFYING mode: serve the qualifying tab on "
                          "Feed A instead of the race schedule (different-day "
@@ -5018,6 +5359,19 @@ def main():
         crew_cache = os.path.join(runtime, "crew.cache.txt")
         crew_source = CrewSource(crew_csv_url, crew_cache)
         crew_source.refresh()   # non-fatal: empty/unreachable = no director/producer rows
+
+    # Broadcast-chat reader (#294): the Channel tab + an ephemeral in-memory
+    # store. Derived from sheet-id/tab like the crew roster, so a custom
+    # --sheet-csv-url (or --no-broadcast-chat) disables it. The supervisor thread
+    # is started later, once cookies are resolved.
+    channel_source = None
+    broadcast_chat_store = None
+    if not args.sheet_csv_url and not args.no_broadcast_chat:
+        channel_csv_url = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
+                           f"/gviz/tq?tqx=out:csv&sheet={quote(args.channel_tab)}")
+        channel_cache = os.path.join(runtime, "channel.cache.txt")
+        channel_source = ChannelSource(channel_csv_url, channel_cache)
+        broadcast_chat_store = BroadcastChatStore()
 
     # Optionally auto-export cookies from a logged-in browser first (yt-dlp)
     if args.cookies_from_browser:
@@ -5193,6 +5547,13 @@ def main():
     if timer_store and timer_store.csv_url:
         threading.Thread(target=poller, args=(timer_store, args.hud_poll, stop_evt),
                          daemon=True).start()
+    # Broadcast-chat reader (#294): resolve the channel's live videoId set and
+    # poll each stream's chat. Its own ~30 s resolve cadence (not args.poll —
+    # yt-dlp resolution is heavier than a CSV fetch). Best-effort daemon.
+    if broadcast_chat_store is not None and channel_source is not None:
+        _bc_supervisor = BroadcastChatSupervisor(
+            broadcast_chat_store, channel_source, cookies, interval=30, logger=LOG)
+        threading.Thread(target=_bc_supervisor.run, daemon=True).start()
 
     # Commentator cockpit (#191): per-league secret (injected from profile.env,
     # auto-provisioned by the CLI — zero-config). Present => /cockpit/* is served
@@ -5228,6 +5589,7 @@ def main():
                            health_monitor_page_path=health_monitor_page_path,
                            uplot_dir=uplot_dir,
                            crew_source=crew_source,
+                           broadcast_chat_store=broadcast_chat_store,
                            logo_path=args.logo)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)

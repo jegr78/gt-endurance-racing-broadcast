@@ -270,6 +270,12 @@
   .chatlog .m{margin:2px 0;word-break:break-word}
   .chatlog .who{color:#9ad;font-weight:600;margin-right:4px}
   .chatlog .t{color:#667;font-size:10px;margin-right:4px}
+  /* Broadcast chat (#294): read-only mirror, amber author + source badge. */
+  #bchatLog .who{color:var(--amber)}
+  #bchatLog .src{color:#667;font-size:10px;margin-left:4px}
+  #bchatLog .bempty{color:var(--muted);font-size:11px}
+  .robadge{font-size:10px;font-weight:500;color:var(--muted);border:1px solid #2a2f3a;
+           border-radius:6px;padding:0 5px;margin-left:6px}
   .chatname{display:flex;align-items:center;gap:8px;margin-bottom:6px}
   .chatname label{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
   .chatname input{flex:1;min-width:0;background:#0c0f13;border:1px solid var(--edge);color:var(--ink);
@@ -512,6 +518,16 @@
       </div>
       <div class="hint">Seen by everyone on this relay's tailnet. The producer can clear
         the history from the Control Center or <code>racecast chat clear</code>.</div>
+    </div>
+  </details>
+
+  <details class="bus chat" id="bchatBox">
+    <summary>Broadcast chat <span class="robadge">read-only</span></summary>
+    <div class="body">
+      <div id="bchatLog" class="chatlog"><div class="bempty">Waiting for the broadcast stream…</div></div>
+      <div class="hint">Read-only mirror of the event's public YouTube broadcast chat
+        (the <code>Channel</code> tab). During a producer handover both live streams
+        are merged here.</div>
     </div>
   </details>
 
@@ -1159,6 +1175,47 @@ $("#chatInput").addEventListener("keydown", e=>{ if (e.key === "Enter") chatSend
 $("#chatBox").addEventListener("toggle", ()=>{ if ($("#chatBox").open) chatMarkSeen(); });
 $("#chatLog").addEventListener("scroll", ()=>{ if ($("#chatBox").open && chatAtBottom()) chatMarkSeen(); });
 
+/* ---------- Broadcast chat (#294): read-only mirror of the public stream chat ---------- */
+let bchatTimer = null;
+function bchatRender(messages){
+  const el = $("#bchatLog");
+  const stick = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+  el.replaceChildren();
+  if (!messages.length){
+    const e = document.createElement("div"); e.className = "bempty";
+    e.textContent = "Waiting for the broadcast stream…"; el.appendChild(e);
+    return;
+  }
+  const multi = new Set(messages.map(m => m.source)).size > 1;   // handover overlap
+  for (const msg of messages){
+    const line = document.createElement("div"); line.className = "m";
+    const t = document.createElement("span"); t.className = "t";
+    t.textContent = new Date(msg.ts * 1000).toLocaleTimeString();
+    const who = document.createElement("span"); who.className = "who";
+    who.textContent = (msg.user || "Viewer") + ":";
+    const body = document.createElement("span"); body.textContent = msg.text;  // textContent => no HTML injection
+    line.append(t, who, body);
+    if (multi && msg.source){
+      const s = document.createElement("span"); s.className = "src";
+      s.textContent = "#" + String(msg.source).slice(-4); line.appendChild(s);
+    }
+    el.appendChild(line);
+  }
+  if (stick) el.scrollTop = el.scrollHeight;
+}
+async function bchatPoll(){
+  try{
+    const r = await fetch("/broadcast-chat/data", {cache:"no-store"});
+    if (r.status === 404){                      // reader disabled — remove the panel
+      const b = $("#bchatBox"); if (b) b.style.display = "none";
+      if (bchatTimer) clearInterval(bchatTimer);
+      return;
+    }
+    const d = await r.json();
+    if (!d.error) bchatRender(d.messages || []);
+  }catch(e){ /* relay unreachable: leave the last view in place */ }
+}
+
 SETUP_FIELDS.forEach(([key,label])=>{
   const w = document.createElement("div"); w.className = "fld";
   w.innerHTML = `<label>${label}</label><select data-setup="${key}" disabled></select>`;
@@ -1669,6 +1726,7 @@ setInterval(relayPoll, 2000);
 setInterval(timerPoll, 2000);
 setupPoll(); setInterval(setupPoll, 2000);
 chatPoll(); setInterval(chatPoll, 2000);
+bchatPoll(); bchatTimer = setInterval(bchatPoll, 4000);
 setInterval(schedPoll, 2000);
 setInterval(qualPoll, 2000);
 subsPoll(); setInterval(subsPoll, 2000);
