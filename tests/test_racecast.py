@@ -2394,6 +2394,21 @@ def t_relay_start_spawns_to_boot_log_not_console():
     assert m._relay_boot_log_path() != m._relay_log_path()
 
 
+def t_ui_app_log_path_is_machine_wide():
+    # app.log lives at the un-scoped runtime base, NOT under a profile.
+    assert m._ui_app_log_dir() == os.path.join(m._runtime_base_dir(), "logs")
+    assert m._ui_app_log_path() == os.path.join(m._runtime_base_dir(), "logs", "app.log")
+
+
+def t_run_ui_wires_app_logger():
+    import inspect
+    src = inspect.getsource(m.run_ui)
+    assert 'configure_logging("racecast.app"' in src   # dedicated logger created
+    assert "_ui_app_log_path()" in src
+    assert "prune_old_logs" in src                      # retention applied at startup
+    assert "logger=_app_logger" in src                  # passed into the JobManager
+
+
 def t_console_status_links_union_crew():
     # console_status_data() must union _crew_roster_safe() into the link list,
     # deduped by streamer_key. Both rosters contribute; dedup removes same-key dupes.
