@@ -136,6 +136,36 @@ def classify_subproc_line(line):
     return logging.INFO
 
 
+URL_SHORTEN_MAX = 120
+_URL_RE = re.compile(r"https?://[^\s]+")
+_ITAG_RE = re.compile(r"[/=]itag[/=](\d+)")
+_DIGITS_RE = re.compile(r"\d+")
+
+
+def shorten_urls(text, max_len=URL_SHORTEN_MAX):
+    """Replace each URL longer than max_len with a compact host-only form, dropping
+    the path+query (where googlevideo sig/lsig tokens live) and keeping the itag for
+    diagnostics. URLs <= max_len and non-URL text are returned unchanged. Pure."""
+    def _shrink(match):
+        url = match.group(0)
+        if len(url) <= max_len:
+            return url
+        scheme, _, after = url.partition("://")
+        host = after.split("/", 1)[0].split("?", 1)[0]
+        elided = len(url) - len(scheme) - len("://") - len(host)
+        itag = _ITAG_RE.search(url)
+        tag = f"itag {itag.group(1)}, " if itag else ""
+        return f"{scheme}://{host}/…({tag}+{elided} chars elided)"
+    return _URL_RE.sub(_shrink, text)
+
+
+def normalize_for_dedup(text):
+    """A dedup key that ignores the volatile parts of a repeated line: every URL
+    becomes <url> and every digit run becomes <n>, so the same error with a
+    different expired URL / timestamp maps to one key. Pure."""
+    return _DIGITS_RE.sub("<n>", _URL_RE.sub("<url>", text))
+
+
 def tag_line(source, line):
     """Prefix a single log line with its source tag for the merged view, stripping
     the trailing newline/carriage-return. chr(10)/chr(13) avoid a backslash escape

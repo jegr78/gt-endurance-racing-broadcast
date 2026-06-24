@@ -126,6 +126,37 @@ def t_classify_subproc_line_levels():
     assert lg.classify_subproc_line("Opening stream: 1080p (hls)") == logging.INFO
 
 
+def t_shorten_urls_elides_long_url_keeps_itag():
+    url = ("https://manifest.googlevideo.com/api/manifest/hls_playlist/expire/1781/"
+           "itag/301/sig/SECRETSIG/lsig/SECRETLSIG/playlist/index.m3u8" + "z" * 120)
+    line = "Unable to open URL: " + url + " (403 Forbidden)"
+    out = lg.shorten_urls(line)
+    assert "manifest.googlevideo.com" in out
+    assert "itag 301" in out
+    assert "SECRETSIG" not in out and "SECRETLSIG" not in out   # tokens elided
+    assert "(403 Forbidden)" in out                             # non-URL text preserved
+    assert len(out) < len(line)
+
+
+def t_shorten_urls_leaves_short_url_and_plain_text():
+    assert lg.shorten_urls("see http://h/x now") == "see http://h/x now"
+    assert lg.shorten_urls("no url at all") == "no url at all"
+
+
+def t_shorten_urls_handles_two_long_urls():
+    u = "https://manifest.googlevideo.com/path/" + "a" * 200
+    out = lg.shorten_urls("open " + u + " for url: " + u)
+    assert out.count("googlevideo.com/…") == 2
+    assert ("a" * 200) not in out
+
+
+def t_normalize_for_dedup_collapses_url_and_digits():
+    a = "Unable to open URL: https://x.com/expire/111/sig/AAA (403 Forbidden)"
+    b = "Unable to open URL: https://y.com/expire/999/sig/BBB (403 Forbidden)"
+    assert lg.normalize_for_dedup(a) == lg.normalize_for_dedup(b)
+    assert lg.normalize_for_dedup("alpha line") != lg.normalize_for_dedup("beta line")
+
+
 def t_tag_line_prefixes_and_strips_eol():
     assert lg.tag_line("feed_A", "serving stint 3\n") == "[feed_A] serving stint 3"
     assert lg.tag_line("relay", "x\r\n") == "[relay] x"
