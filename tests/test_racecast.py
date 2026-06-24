@@ -1737,6 +1737,31 @@ def t_event_takeover_funnel_auth_rejected_aborts():
         restore()
 
 
+def t_event_takeover_funnel_401_blames_old_relay_not_secret():
+    # A 401 (not 403) means A is an OLDER relay that still requires a console
+    # token — the abort message must NOT blame the secret (that misled operators
+    # whose secrets matched). Distinct, actionable wording.
+    import urllib.error
+    def fake_get(url, secret=None, timeout=5):
+        raise urllib.error.HTTPError(url, 401, "unauthorized", {}, None)
+    restore = _with_env(RACECAST_CONSOLE_SECRET="S", RACECAST_SHEET_ID="L1")
+    orig_get, m._takeover_get = m._takeover_get, fake_get
+    orig_es, m.event_start = m.event_start, lambda a: (_ for _ in ()).throw(
+        AssertionError("event_start must not run on auth-reject"))
+    try:
+        try:
+            m.event_takeover(["producer-a.example.ts.net", "--funnel", "--stint", "3"])
+            raise AssertionError("expected SystemExit")
+        except SystemExit as e:
+            msg = str(e.code).lower() if e.code else ""
+            assert "401" in msg, msg
+            assert "older" in msg or "update" in msg, msg
+            assert "console_secret" not in msg, msg   # must NOT misattribute to the secret
+    finally:
+        m._takeover_get, m.event_start = orig_get, orig_es
+        restore()
+
+
 def t_event_takeover_funnel_success_calls_event_start():
     seen = {}
     def fake_get(url, secret=None, timeout=5):

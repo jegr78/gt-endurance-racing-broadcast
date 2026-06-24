@@ -84,7 +84,8 @@ to the role-gated mirror endpoints.
 | Crew chat (identity **server-forced** from the token) | `/chat/data`, `/chat/send` | any authenticated |
 | Submit a stream link for **your own** stint | `/cockpit/submit` | commentator |
 | Run the show — handover, reloads, scenes, audio, timer, HUD, URLs | `/next`, `/prev/*`, `/reload*`, `/set/A|B/<n>`, `/obs/{scene,source,audio,state}`, `/timer/*`, `/setup/*`, `/pov/*`, `/schedule/set`, `/qualifying/set`, `/submissions/*`, `/event/title` | director |
-| **Irreversible** ops — reposition the on-air stint, switch mode, pull takeover state | `/set/stint/<n>`, `/mode/*`, `/console/takeover/*` | **producer + step-up** |
+| **Irreversible** ops — reposition the on-air stint, switch mode | `/set/stint/<n>`, `/mode/*` | **producer token + step-up** |
+| Pull takeover state (producer → producer) | `/console/takeover/*` | **step-up secret only** (no per-person token) |
 
 Identity is server-derived everywhere it matters: a chat message or a sheet write carries
 the name from the token, not a client-supplied one — so the old spoofable Director-Panel
@@ -93,11 +94,17 @@ chat name is closed.
 ### The step-up secret for irreversible ops
 
 The few operations that can instantly black out or hijack a live broadcast — repositioning
-the on-air stint (`/set/stint`), switching race/qualifying mode (`/mode/*`), and a producer
-pulling takeover state — require a **second factor** beyond the identity token: the shared
-**per-league producer secret**, sent in the `X-Console-Secret` request header. It is the
-same `CONSOLE_SECRET` that signs the tokens, checked in constant time. This bounds the
-damage a single leaked link can do.
+the on-air stint (`/set/stint`) and switching race/qualifying mode (`/mode/*`) — require a
+**second factor** beyond the identity token: the shared **per-league producer secret**, sent
+in the `X-Console-Secret` request header. It is the same `CONSOLE_SECRET` that signs the
+tokens, checked in constant time. This bounds the damage a single leaked link can do.
+
+Pulling **takeover state** (`/console/takeover/*`) is the one case authorized by that secret
+**alone** — no per-person token. Producer B holds the league `CONSOLE_SECRET` (it travels
+with `profile export`), not a commentator link, so requiring a token would lock a legitimate
+takeover out. The secret signs every token, so possessing it is strictly stronger than
+holding any one of them. A missing or wrong secret is rejected with **HTTP 403** — never a
+401 (a 401 would falsely imply a *token* problem when the secret is what matters).
 
 ## The security boundary
 

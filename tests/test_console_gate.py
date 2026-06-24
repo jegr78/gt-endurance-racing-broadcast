@@ -349,16 +349,20 @@ def t_console_launcher_links_are_mount_absolute():
         srv.shutdown()
 
 
-def t_takeover_status_needs_producer_and_step_up():
-    # No token -> 401; producer token WITHOUT the secret -> 403 step-up; producer
-    # token WITH the secret -> 200 and a REDACTED body (no feed stream URLs).
+def t_takeover_status_needs_step_up_secret():
+    # Producer-to-producer takeover is authorized by the shared step-up secret
+    # ALONE — producer B holds the league CONSOLE_SECRET, not a per-person
+    # commentator token. No secret -> 403 step-up (NEVER 401, which falsely
+    # implied a token problem); the SECRET with NO token -> 200 + a REDACTED body.
     srv = _serve(); port = srv.server_address[1]
     try:
-        code, _ = _get(port, "/console/takeover/status")                          # no auth
-        assert code == 401, code
-        code, _ = _get(port, "/console/takeover/status", _tok("carol"))           # no secret
+        code, _ = _get(port, "/console/takeover/status")                          # no auth at all
         assert code == 403, code
-        code, body = _get(port, "/console/takeover/status", _tok("carol"), SECRET)
+        code, _ = _get(port, "/console/takeover/status", _tok("carol"))           # token, no secret
+        assert code == 403, code
+        code, _ = _get(port, "/console/takeover/status", secret="wrong-secret")   # bad secret
+        assert code == 403, code
+        code, body = _get(port, "/console/takeover/status", secret=SECRET)        # SECRET ONLY, no token
         assert code == 200, (code, body)
         blob = json.loads(body)
         assert "live" in blob and "league" in blob, blob
@@ -371,12 +375,14 @@ def t_takeover_status_needs_producer_and_step_up():
 
 
 
-def t_takeover_director_without_producer_is_forbidden():
-    # A director (no producer role) is rejected even with the step-up secret.
+def t_takeover_authorized_by_secret_regardless_of_token():
+    # The step-up secret signs every token, so possessing it is strictly stronger
+    # than holding any single token: takeover no longer ALSO requires a producer
+    # token. A director token + secret -> 200, and the secret with NO token -> 200.
     srv = _serve(); port = srv.server_address[1]
     try:
-        code, _ = _get(port, "/console/takeover/status", _tok("bob"), SECRET)
-        assert code == 403, code
+        assert _get(port, "/console/takeover/status", _tok("bob"), SECRET)[0] == 200
+        assert _get(port, "/console/takeover/status", secret=SECRET)[0] == 200
     finally:
         srv.shutdown()
 
@@ -396,13 +402,15 @@ def t_console_obs_scene_requires_director():
 def t_takeover_chat_and_versions_gated_and_routed():
     srv = _serve(); port = srv.server_address[1]
     try:
-        code, body = _get(port, "/console/takeover/chat", _tok("carol"), SECRET)
+        # Secret ALONE (no token) authorizes the full-data pull and routes to the
+        # underlying handler (chat history / versions map).
+        code, body = _get(port, "/console/takeover/chat", secret=SECRET)
         assert code == 200, (code, body)
         assert "messages" in json.loads(body), body
-        code, body = _get(port, "/console/takeover/versions", _tok("carol"), SECRET)
+        code, body = _get(port, "/console/takeover/versions", secret=SECRET)
         assert code == 200, (code, body)
         assert "versions" in json.loads(body), body
-        # Without the step-up secret both are 403.
+        # Without the step-up secret both are 403 (even with a producer token).
         assert _get(port, "/console/takeover/chat", _tok("carol"))[0] == 403
         assert _get(port, "/console/takeover/versions", _tok("carol"))[0] == 403
     finally:

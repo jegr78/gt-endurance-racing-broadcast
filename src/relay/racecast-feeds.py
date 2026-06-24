@@ -4378,6 +4378,34 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 return self._oauth_login()
             if sub == ["oauth", "callback"]:
                 return self._oauth_callback()
+            # Producer-to-producer takeover pull (#216 Phase 7): authorized by the
+            # shared per-league step-up secret ALONE. Producer B holds the league
+            # CONSOLE_SECRET (it signs every token) — NOT a per-person commentator
+            # token — so requiring an rc_console subject here would 401 a legitimate
+            # takeover even when the secret matches (the original bug). The secret is
+            # producer-level and strictly stronger than any single token, so it is
+            # sufficient. A missing/invalid secret is 403 (step-up required), NEVER
+            # 401, which misled operators into blaming a matching secret. Runs BEFORE
+            # the subject check below precisely so no token is needed.
+            if sub and sub[0] == "takeover":
+                presented = self.headers.get("X-Console-Secret")
+                if not (presented and console_auth.secret_matches(presented, console_secret)):
+                    self._send({"error": "step-up required"}, 403)
+                    return None
+                # Identity-bound routes -> their full-data handlers (secret already
+                # verified). status is served REDACTED in do_GET (feed URLs never
+                # leave the tailnet); unknown takeover paths 404.
+                rewrite = {
+                    ("takeover", "status"): ["takeover", "status"],
+                    ("takeover", "chat"): ["chat", "data"],
+                    ("takeover", "versions"): ["cockpit", "versions"],
+                    ("takeover", "cues"): ["cues", "data"],
+                    ("takeover", "health"): ["health", "raw"],
+                }.get(tuple(sub))
+                if rewrite is None:
+                    self._send({"error": "not found"}, 404)
+                    return None
+                return rewrite
             # Authenticate (verify only — no response sent yet).
             subject = self._console_subject()
             if subject is None:
@@ -4524,14 +4552,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return ["cockpit", "chat", "data"]
                 if sub == ["submit"]:
                     return ["cockpit", "submit"]
-                if sub == ["takeover", "chat"]:
-                    return ["chat", "data"]          # full history, gated producer+step-up
-                if sub == ["takeover", "versions"]:
-                    return ["cockpit", "versions"]   # secret already step-up-verified above
-                if sub == ["takeover", "cues"]:
-                    return ["cues", "data"]          # full list, gated producer+step-up
-                if sub == ["takeover", "health"]:
-                    return ["health", "raw"]         # producer+step-up already verified
+                # NB: /console/takeover/* is handled earlier (step-up-secret only,
+                # no token) and never reaches this role-gated branch.
                 return sub
             if outcome == console_policy.STEP_UP_REQUIRED:
                 self._send({"error": "step-up required"}, 403)

@@ -2794,9 +2794,15 @@ def event_takeover(rest):
             status = fetched if isinstance(fetched, dict) else None
         except Exception as exc:
             code = getattr(exc, "code", None)
-            if code in (401, 403):
-                sys.exit("racecast: producer A rejected the step-up secret (HTTP "
-                         f"{code}) — check the league CONSOLE_SECRET matches A's.")
+            if code == 403:
+                sys.exit("racecast: producer A rejected the step-up secret (HTTP 403) "
+                         "— the league CONSOLE_SECRET in your active profile does not "
+                         "match A's. Re-export the profile from A and import it here.")
+            if code == 401:
+                sys.exit("racecast: producer A returned HTTP 401 for the takeover pull "
+                         "— A is running an older relay that still requires a console "
+                         "token. Update A to this version, or take over from the "
+                         "tailnet IP instead (racecast event takeover <100.x-ip>).")
             status = None                 # network/unreachable -> fall back to --stint
     else:
         try:
