@@ -235,7 +235,10 @@ def smoke_ui(binary):
         jid, snap = job["job_id"], {}
         for _ in range(60):                  # up to ~30 s for preflight to finish
             time.sleep(0.5)
-            snap = json.loads(_get(f"/api/jobs/{jid}"))
+            try:
+                snap = json.loads(_get(f"/api/jobs/{jid}"))
+            except OSError:                  # transient localhost timeout on a busy
+                continue                     # runner — retry, don't abort the build
             if snap.get("exit_code") is not None:
                 break
         if snap.get("exit_code") is None:
