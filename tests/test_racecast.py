@@ -2364,12 +2364,15 @@ def t_ensure_active_console_secret_respects_existing_env():
 
 def t_log_sources_registry_shape():
     src = m._log_sources()
-    assert set(["relay", "streams", "obs", "companion", "tailscale", "aggregate"]) <= set(src)
+    assert set(["relay", "streams", "obs", "companion", "tailscale",
+                "aggregate", "app"]) <= set(src)
     for _name, spec in src.items():
         assert callable(spec["files"])          # () -> list[path]
         assert callable(spec["archives"])       # () -> list[token]
         assert callable(spec["read"])           # (token) -> text
-    # aggregate's file set is the union of the individual sources
+    # the app source points at the machine-wide runtime/logs dir
+    assert src["app"]["dir"] == m._ui_app_log_dir()
+    # aggregate's file set is the union of the FIVE service sources (app is standalone)
     agg = set(src["aggregate"]["files"]())
     parts = set()
     for n in ("relay", "streams", "obs", "companion", "tailscale"):
@@ -2392,6 +2395,21 @@ def t_relay_start_spawns_to_boot_log_not_console():
     assert "_relay_boot_log_path()" in src
     assert "_relay_log_path()" not in src   # never hand the console log to start_detached
     assert m._relay_boot_log_path() != m._relay_log_path()
+
+
+def t_ui_app_log_path_is_machine_wide():
+    # app.log lives at the un-scoped runtime base, NOT under a profile.
+    assert m._ui_app_log_dir() == os.path.join(m._runtime_base_dir(), "logs")
+    assert m._ui_app_log_path() == os.path.join(m._runtime_base_dir(), "logs", "app.log")
+
+
+def t_run_ui_wires_app_logger():
+    import inspect
+    src = inspect.getsource(m.run_ui)
+    assert 'configure_logging("racecast.app"' in src   # dedicated logger created
+    assert "_ui_app_log_path()" in src
+    assert "prune_old_logs" in src                      # retention applied at startup
+    assert "logger=_app_logger" in src                  # passed into the JobManager
 
 
 def t_console_status_links_union_crew():

@@ -22,6 +22,18 @@ class FakeProc:
         pass
 
 
+class FakeLogger:
+    """Captures (level, formatted-message) tuples — no disk IO."""
+    def __init__(self):
+        self.calls = []
+    def _rec(self, level, msg, args):
+        self.calls.append((level, msg % args if args else msg))
+    def info(self, msg, *args):
+        self._rec("INFO", msg, args)
+    def warning(self, msg, *args):
+        self._rec("WARNING", msg, args)
+
+
 def _wait_done(jm, job_id, timeout=5):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -121,6 +133,41 @@ def t_cancel_finished_and_unknown():
     assert jm.cancel(job_id) is False      # already finished
     assert jm.cancel("nope") is None       # unknown id
     assert jm.snapshot(job_id)["cancelled"] is False
+
+
+def t_logs_start_lines_and_exit():
+    log = FakeLogger()
+    jm = ui_jobs.JobManager(lambda a: ["racecast", "relay", "start"],
+                            spawn=lambda argv: FakeProc(), logger=log)
+    job_id, err = jm.start("relay-start", ["relay", "start"])
+    assert err is None
+    _wait_done(jm, job_id)
+    msgs = [m for _lvl, m in log.calls]
+    assert any(x.startswith("[relay-start] action started")
+               and "racecast relay start" in x for x in msgs)
+    assert "[relay-start] line1" in msgs
+    assert "[relay-start] line2" in msgs
+    assert ("INFO", "[relay-start] action finished — exit 0") in log.calls
+
+
+def t_logs_nonzero_exit_is_warning():
+    log = FakeLogger()
+    jm = ui_jobs.JobManager(lambda a: ["x"],
+                            spawn=lambda argv: FakeProc(code=3), logger=log)
+    job_id, _ = jm.start("op", [])
+    _wait_done(jm, job_id)
+    assert ("WARNING", "[op] action finished — exit 3") in log.calls
+
+
+def t_no_logger_is_silent():
+    # Default logger=None must behave exactly as before — no crash, full output.
+    jm = ui_jobs.JobManager(lambda a: ["x"], spawn=lambda argv: FakeProc())
+    job_id, err = jm.start("op", [])
+    assert err is None
+    snap = _wait_done(jm, job_id)
+    assert snap["exit_code"] == 0
+    lines, _nxt, _code = jm.lines_since(job_id, 0)
+    assert lines == ["line1", "line2"]
 
 
 if __name__ == "__main__":
