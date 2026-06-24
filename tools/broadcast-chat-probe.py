@@ -150,7 +150,9 @@ def tail_twitch(login):
     """Connect to Twitch IRC as an anonymous justinfan nick, JOIN #login and
     print PRIVMSGs — the same path as the relay's _TwitchReader, standalone."""
     raw = socket.create_connection(("irc.chat.twitch.tv", 6697), timeout=10)
-    sock = ssl.create_default_context().wrap_socket(raw, server_hostname="irc.chat.twitch.tv")
+    ctx = ssl.create_default_context()
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2   # no legacy TLS 1.0/1.1
+    sock = ctx.wrap_socket(raw, server_hostname="irc.chat.twitch.tv")
     sock.settimeout(1.0)
 
     def send(line):

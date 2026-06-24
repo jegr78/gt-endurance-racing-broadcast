@@ -1689,8 +1689,9 @@ class _TwitchReader:
     def _session(self):
         raw = socket.create_connection((TWITCH_IRC_HOST, TWITCH_IRC_PORT), timeout=10)
         try:
-            sock = ssl.create_default_context().wrap_socket(
-                raw, server_hostname=TWITCH_IRC_HOST)
+            ctx = ssl.create_default_context()
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2   # no legacy TLS 1.0/1.1
+            sock = ctx.wrap_socket(raw, server_hostname=TWITCH_IRC_HOST)
         except OSError:
             raw.close()
             raise
