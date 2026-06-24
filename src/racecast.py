@@ -663,6 +663,10 @@ def _relay_files():
     files = [_relay_log_path()] + _relay_feed_logs()
     return [f for f in files if os.path.exists(f)]
 
+def _app_files():
+    p = _ui_app_log_path()
+    return [p] if os.path.exists(p) else []
+
 def _streams_files():
     d = os.path.join(_streams_static_dir(), "logs")
     return sorted(glob.glob(os.path.join(d, "feed_*.log")))
@@ -717,6 +721,7 @@ def _log_sources():
     CLI both consume this registry."""
     relay_dir = os.path.join(_running_relay_dir(), "logs")   # follows the relay (#273)
     streams_dir = os.path.join(_streams_static_dir(), "logs")
+    app_dir = _ui_app_log_dir()                              # machine-wide Control Center log
     import logsetup
     def rc_src(files_fn, dirpath):
         return {"files": files_fn, "dir": dirpath,
@@ -737,6 +742,7 @@ def _log_sources():
         "obs": ext_src(_obs_files, logsetup.obs_log_dir(sys.platform)),
         "companion": ext_src(_companion_files,
                              os.path.dirname(_companion_log_path() or "") or "."),
+        "app": rc_src(_app_files, app_dir),
     }
     def _agg_files():
         out = []

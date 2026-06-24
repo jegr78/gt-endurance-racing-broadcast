@@ -2364,12 +2364,15 @@ def t_ensure_active_console_secret_respects_existing_env():
 
 def t_log_sources_registry_shape():
     src = m._log_sources()
-    assert set(["relay", "streams", "obs", "companion", "tailscale", "aggregate"]) <= set(src)
+    assert set(["relay", "streams", "obs", "companion", "tailscale",
+                "aggregate", "app"]) <= set(src)
     for _name, spec in src.items():
         assert callable(spec["files"])          # () -> list[path]
         assert callable(spec["archives"])       # () -> list[token]
         assert callable(spec["read"])           # (token) -> text
-    # aggregate's file set is the union of the individual sources
+    # the app source points at the machine-wide runtime/logs dir
+    assert src["app"]["dir"] == m._ui_app_log_dir()
+    # aggregate's file set is the union of the FIVE service sources (app is standalone)
     agg = set(src["aggregate"]["files"]())
     parts = set()
     for n in ("relay", "streams", "obs", "companion", "tailscale"):
