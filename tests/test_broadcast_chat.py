@@ -293,6 +293,86 @@ def t_parse_channel_tab_empty():
     assert bc.parse_channel_tab("Platform,Channel\n") == []
 
 
+# --- twitch_login (Phase 2) -------------------------------------------------
+
+def t_twitch_login_from_url():
+    assert bc.twitch_login("https://www.twitch.tv/SomeCaster") == "somecaster"
+
+
+def t_twitch_login_from_url_trailing_slash():
+    assert bc.twitch_login("https://www.twitch.tv/SomeCaster/") == "somecaster"
+
+
+def t_twitch_login_no_scheme():
+    assert bc.twitch_login("twitch.tv/SomeCaster") == "somecaster"
+
+
+def t_twitch_login_bare_name():
+    assert bc.twitch_login("SomeCaster") == "somecaster"
+
+
+def t_twitch_login_strips_at():
+    assert bc.twitch_login("@SomeCaster") == "somecaster"
+
+
+def t_twitch_login_rejects_invalid():
+    assert bc.twitch_login("bad name!") is None
+    assert bc.twitch_login("") is None
+    assert bc.twitch_login("https://www.twitch.tv/") is None
+
+
+def t_twitch_login_rejects_crlf_injection():
+    # a channel value must never be able to inject IRC commands into the stream
+    assert bc.twitch_login("foo\r\nJOIN #evil") is None
+
+
+def t_twitch_login_rejects_too_long():
+    assert bc.twitch_login("a" * 26) is None
+
+
+# --- parse_twitch_privmsg (Phase 2) -----------------------------------------
+
+def t_parse_twitch_privmsg_tagged():
+    line = ("@badge-info=;color=#1E90FF;display-name=CoolViewer;emotes=;id=abc-123;"
+            "tmi-sent-ts=1700000000000;turbo=0;user-id=1 "
+            ":coolviewer!coolviewer@coolviewer.tmi.twitch.tv PRIVMSG #somechannel :Hello chat!")
+    m = bc.parse_twitch_privmsg(line)
+    assert m["id"] == "abc-123"
+    assert m["user"] == "CoolViewer"
+    assert m["text"] == "Hello chat!"
+    assert m["ts"] == 1700000000.0
+
+
+def t_parse_twitch_privmsg_text_with_colons():
+    line = ("@display-name=Bob;tmi-sent-ts=1700000000000 "
+            ":bob!bob@bob.tmi.twitch.tv PRIVMSG #chan :it's 3:30 — go!")
+    assert bc.parse_twitch_privmsg(line)["text"] == "it's 3:30 — go!"
+
+
+def t_parse_twitch_privmsg_no_tags_uses_prefix_nick():
+    line = ":bob!bob@bob.tmi.twitch.tv PRIVMSG #chan :hi there"
+    m = bc.parse_twitch_privmsg(line)
+    assert m["user"] == "bob"
+    assert m["text"] == "hi there"
+    assert m["ts"] is None          # the reader stamps now when there is no tag
+
+
+def t_parse_twitch_privmsg_empty_display_name_falls_back():
+    line = "@display-name=;id=x :bob!bob@bob.tmi.twitch.tv PRIVMSG #chan :yo"
+    assert bc.parse_twitch_privmsg(line)["user"] == "bob"
+
+
+def t_parse_twitch_privmsg_ignores_non_privmsg():
+    assert bc.parse_twitch_privmsg(":tmi.twitch.tv 001 justinfan1 :Welcome, GLHF!") is None
+    assert bc.parse_twitch_privmsg("PING :tmi.twitch.tv") is None
+    assert bc.parse_twitch_privmsg(":x!x@x PART #chan") is None
+
+
+def t_parse_twitch_privmsg_garbage():
+    assert bc.parse_twitch_privmsg("") is None
+    assert bc.parse_twitch_privmsg(None) is None
+
+
 # --- relay BroadcastChatStore + endpoint -----------------------------------
 
 m = _load("irofeeds_bc", ("src", "relay", "racecast-feeds.py"))

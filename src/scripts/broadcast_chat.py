@@ -322,3 +322,61 @@ def parse_channel_tab(text):
             platform = _infer_platform(channel)
         out.append((platform, channel))
     return out
+
+
+# --- Twitch (Phase 2) -------------------------------------------------------
+# Anonymous read-only chat over Twitch IRC needs no API key / OAuth: the relay
+# connects to irc.chat.twitch.tv as a `justinfan` nick and JOINs #<login>. These
+# pure helpers extract the login and parse a PRIVMSG line; the socket lives in
+# the relay (like the YouTube network).
+
+_TWITCH_LOGIN_RE = re.compile(r"^[a-z0-9_]{1,25}$")
+
+
+def twitch_login(channel):
+    """A Twitch channel URL / @handle / name -> its lowercase login, or None.
+
+    SECURITY: the login is JOINed into the raw IRC stream, so it is strictly
+    validated to Twitch's own `[a-z0-9_]{1,25}` charset — a value containing
+    spaces or CRLF (which could inject IRC commands) returns None."""
+    s = (channel or "").strip()
+    if "/" in s:
+        s = s.rstrip("/").split("/")[-1]
+    s = s.lstrip("@").lower()
+    return s if _TWITCH_LOGIN_RE.match(s) else None
+
+
+def parse_twitch_privmsg(line):
+    """One Twitch IRC line -> a message dict {id, user, text, ts} for a chat
+    PRIVMSG, else None (server notices, JOIN/PART, PING, …).
+
+    With the `twitch.tv/tags` capability a line is
+    `@k=v;…;display-name=Foo;id=…;tmi-sent-ts=<ms> :nick!… PRIVMSG #chan :text`;
+    the display name + message id + server timestamp come from the tags, falling
+    back to the prefix nick when untagged (ts is then None — the reader stamps
+    the receive time)."""
+    if not isinstance(line, str) or not line:
+        return None
+    tags = {}
+    rest = line
+    if rest.startswith("@"):
+        tagpart, _, rest = rest[1:].partition(" ")
+        for kv in tagpart.split(";"):
+            k, _, v = kv.partition("=")
+            tags[k] = v
+    if not rest.startswith(":"):
+        return None                       # PRIVMSG always has a :prefix
+    prefix, _, rest = rest[1:].partition(" ")
+    parts = rest.split(" ", 2)
+    if len(parts) < 3 or parts[0] != "PRIVMSG":
+        return None
+    text = parts[2][1:] if parts[2].startswith(":") else parts[2]
+    user = tags.get("display-name") or prefix.split("!", 1)[0]
+    ts = None
+    sent = tags.get("tmi-sent-ts")
+    if sent:
+        try:
+            ts = int(sent) / 1000.0
+        except (TypeError, ValueError):
+            ts = None
+    return {"id": tags.get("id") or None, "user": user, "text": text, "ts": ts}

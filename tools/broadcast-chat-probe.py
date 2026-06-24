@@ -1,28 +1,33 @@
 #!/usr/bin/env python3
-"""Probe the read-only YouTube broadcast-chat reader against a LIVE channel (#294).
+"""Probe the read-only broadcast-chat reader against a LIVE channel (#294).
 
-Maintainer / diagnostic tool — NOT shipped. It resolves a channel's currently-live
-videoId(s) via yt-dlp and tails each stream's Innertube live chat to the console,
-exactly as the relay's BroadcastChatSupervisor does — but standalone (no Google
-Sheet, no relay, no UI). Use it to confirm the real yt-dlp + Innertube path works
-against a given live stream (the one part the unit suite can only fixture-test)
-before wiring a `Channel` tab.
+Maintainer / diagnostic tool — NOT shipped. Standalone (no Sheet, no relay, no UI),
+it tails a live channel's chat exactly as the relay's readers do, to confirm the
+real path works (the part the unit suite can only fixture-test) before wiring a
+`Channel` tab:
+  * YouTube — resolve the currently-live videoId(s) via yt-dlp, then tail the
+    Innertube `get_live_chat` continuation.
+  * Twitch — connect anonymously over IRC and tail PRIVMSGs (no API key / OAuth).
 
 Usage:
     python3 tools/broadcast-chat-probe.py https://www.youtube.com/@LofiGirl
     python3 tools/broadcast-chat-probe.py @SomeChannel --resolve-only
     python3 tools/broadcast-chat-probe.py UCxxxx --cookies runtime/yt-cookies.txt
+    python3 tools/broadcast-chat-probe.py https://www.twitch.tv/SomeChannel
+    python3 tools/broadcast-chat-probe.py --twitch SomeChannel
 
 The parsing reuses src/scripts/broadcast_chat.py (the SAME pure functions the relay
-uses — bootstrap, get_live_chat continuation, runs->text); only the network
-(yt-dlp subprocess + Innertube HTTP) lives here. A reliable always-live test target
-with active chat is e.g. a 24/7 lofi/news stream.
+uses); only the network (yt-dlp + Innertube HTTP, or the Twitch IRC socket) lives
+here. A reliable always-live YouTube target with active chat is e.g. a 24/7 stream.
 """
 import argparse
 import importlib.util
 import json
 import os
+import random
 import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import time
@@ -141,16 +146,70 @@ def tail_chat(video_id):
         time.sleep(min(max((parsed["timeout_ms"] or 5000) / 1000.0, 1.0), 8.0))
 
 
+def tail_twitch(login):
+    """Connect to Twitch IRC as an anonymous justinfan nick, JOIN #login and
+    print PRIVMSGs — the same path as the relay's _TwitchReader, standalone."""
+    raw = socket.create_connection(("irc.chat.twitch.tv", 6697), timeout=10)
+    sock = ssl.create_default_context().wrap_socket(raw, server_hostname="irc.chat.twitch.tv")
+    sock.settimeout(1.0)
+
+    def send(line):
+        sock.sendall((line + "\r\n").encode("utf-8"))
+
+    send("CAP REQ :twitch.tv/tags twitch.tv/commands")
+    send("PASS SCHMOOPIIE")
+    send("NICK justinfan%d" % random.randint(10000, 999999))
+    send("JOIN #" + login)
+    print(f"  joined #{login}; tailing chat — Ctrl-C to stop\n")
+    buf = b""
+    while True:
+        try:
+            data = sock.recv(4096)
+        except socket.timeout:
+            continue
+        if not data:
+            print("\n  (disconnected)")
+            return
+        buf += data
+        *lines, buf = buf.split(b"\n")
+        for raw_line in lines:
+            line = raw_line.decode("utf-8", "replace").rstrip("\r")
+            if line.startswith("PING"):
+                send("PONG :tmi.twitch.tv")
+                continue
+            m = bc.parse_twitch_privmsg(line)
+            if m:
+                ts = (time.strftime("%H:%M:%S", time.localtime(m["ts"]))
+                      if m.get("ts") else time.strftime("%H:%M:%S"))
+                print(f"  [{ts}] {m.get('user') or 'Viewer'}: {m.get('text')}")
+
+
 def main():
     ap = argparse.ArgumentParser(
-        description="Probe the YouTube broadcast-chat reader against a live channel (#294).")
-    ap.add_argument("channel", help="channel URL / @handle / UC… id")
-    ap.add_argument("--cookies", help="Netscape cookies.txt (only for gated streams)")
+        description="Probe the broadcast-chat reader against a live channel (#294).")
+    ap.add_argument("channel", help="channel URL / @handle / UC… id (YouTube or Twitch)")
+    ap.add_argument("--twitch", action="store_true",
+                    help="treat the argument as a Twitch channel (auto-detected for twitch.tv URLs)")
+    ap.add_argument("--cookies", help="Netscape cookies.txt (only for gated YouTube streams)")
     ap.add_argument("--resolve-only", action="store_true",
-                    help="just resolve and print the live videoId(s), do not tail chat")
+                    help="YouTube only: just resolve and print the live videoId(s)")
     args = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(line_buffering=True)   # stream chat promptly when piped
+
+    is_twitch = args.twitch or bc._infer_platform(args.channel) == "twitch"
+    if is_twitch:
+        login = bc.twitch_login(args.channel)
+        if not login:
+            sys.exit(f"Not a valid Twitch channel: {args.channel!r}")
+        print(f"Twitch channel: {login}")
+        if args.resolve_only:
+            return
+        try:
+            tail_twitch(login)
+        except KeyboardInterrupt:
+            print("\nstopped.")
+        return
 
     if not shutil.which("yt-dlp"):
         sys.exit("ERROR: yt-dlp not on PATH — run `racecast install-tools`.")
