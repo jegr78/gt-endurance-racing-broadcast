@@ -262,7 +262,10 @@ def pump_subprocess(stream, logger, tag, on_line=None, now=time.monotonic):
                 for lvl, text in throttle.emit(level, shorten_urls(line), now()):
                     logger.log(lvl, "[%s] %s", tag, text)
             except Exception:                    # noqa: BLE001 — throttling must never break the pump
-                logger.log(classify_subproc_line(line), "[%s] %s", tag, line)
+                # Fallback logs the raw line at a fixed level: re-classifying here
+                # could raise again (if classify was the failing call) and break the
+                # pump thread, defeating the best-effort contract.
+                logger.log(logging.ERROR, "[%s] %s", tag, line)
     except (ValueError, OSError):
         pass  # pipe closed mid-read — end the thread, never the daemon
     finally:

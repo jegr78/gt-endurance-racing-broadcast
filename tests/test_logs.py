@@ -259,6 +259,27 @@ def t_pump_throttles_identical_flood_and_strips_tokens():
     assert len(seen) == 500                               # on_line saw every original line
 
 
+def t_pump_falls_back_to_raw_line_when_throttle_raises():
+    import io
+    records = []
+
+    class _Cap(logging.Handler):
+        def emit(self, r):
+            records.append(r.getMessage())
+
+    logger = logging.getLogger("t.pump.fallback")
+    logger.handlers = [_Cap()]
+    logger.setLevel(logging.DEBUG)
+    orig = lg.shorten_urls
+    lg.shorten_urls = lambda _t: (_ for _ in ()).throw(RuntimeError("boom"))
+    try:
+        lg.pump_subprocess(io.StringIO("alpha\nbeta\n"), logger, "streamlink")
+    finally:
+        lg.shorten_urls = orig
+    assert "[streamlink] alpha" in records      # raw line logged despite the failure
+    assert "[streamlink] beta" in records       # the pump kept going to the next line
+
+
 def t_throttle_collapses_identical_flood():
     th = lg.LineThrottle()
     out = []
