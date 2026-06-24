@@ -473,6 +473,24 @@ def t_director_panel_has_stream_button():
     assert "End the live broadcast" in html          # Stop is confirm-guarded
 
 
+def t_director_panel_chat_rail_fixed_height():
+    # The desktop right-rail stacks the crew chat over the read-only broadcast chat.
+    # Both logs must have a *fixed* height (so the crew box never grows with messages
+    # and pushes into the broadcast box), and the two boxes must not flex-shrink
+    # (shrinking made the crew box spill its content over the broadcast box). Two
+    # 38vh logs + chrome also overflowed the rail and produced a second scrollbar.
+    path = os.path.join(ROOT, "src", "director", "director-panel.html")
+    with open(path, encoding="utf-8") as fh:
+        html = fh.read()
+    # The unbounded grow-to-38vh cap is gone (it was the only 38vh in the file).
+    assert "38vh" not in html
+    # Logs get a stable, viewport-aware fixed height (clamped), not max-height growth.
+    assert "details.chat#chatBox .chatlog,details.chat#bchatBox .chatlog{height:clamp(" in html
+    # Boxes do not shrink below their content (flex:0 0 auto, not 0 1 auto).
+    assert "details.chat#chatBox,details.chat#bchatBox{margin-bottom:0;min-height:0;flex:0 0 auto;" in html
+    assert "flex:0 1 auto" not in html
+
+
 def t_obs_stream_503_when_obs_down():
     r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
     old = m._obs_ws; m._obs_ws = None; srv = _serve(r)
