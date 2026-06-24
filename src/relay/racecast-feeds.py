@@ -388,6 +388,22 @@ def loopback_bind_failed(requested, bound):
     req_loop = _LOOPBACK_ADDRS & set(requested)
     return bool(req_loop) and not (_LOOPBACK_ADDRS & set(bound))
 
+
+def control_port_available(host, port):
+    """True if the mandatory loopback control port can be bound right now (no other
+    relay holds it). A throwaway probe using the same SO_REUSEADDR semantics as the
+    real control server, so its verdict matches what the real bind would see. Returns
+    False only on a bind error (port in use / unbindable); the socket is always closed."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
 SCHEDULE_TEMPLATE = (
     "# racecast relay offline fallback schedule — used ONLY if the Google Sheet AND the\n"
     "# last-good cache are both unavailable. One entry per stint, in order:\n"
@@ -5463,8 +5479,22 @@ def main():
         f"/gviz/tq?tqx=out:csv&sheet={quote(args.sheet_tab)}")
 
     LOG.info("relay starting — profile=%s bind=%s ports=%s mode=%s schedule=%s",
-             os.environ.get("RACECAST_PROFILE", "?"), args.bind, args.ports,
+             (args.league_name or "?"), args.bind, args.ports,
              ("qualifying" if args.qualifying else "race"), csv_url)
+
+    # Fail fast: the loopback control port is mandatory (OBS always reaches the relay
+    # on 127.0.0.1). If another relay already holds it, abort BEFORE the network
+    # refreshes below — otherwise the log reads like a successful start
+    # ("Schedule loaded …") right before the bind fails. The real bind later is the
+    # authoritative guard; this just turns a slow, misleading failure into a fast,
+    # clear one.
+    if not control_port_available("127.0.0.1", args.http_port):
+        LOG.error("control port 127.0.0.1:%s already in use — another relay is "
+                  "probably running; aborting before any startup work.", args.http_port)
+        sys.exit(f"Could not bind the control server on 127.0.0.1 port {args.http_port} "
+                 f"— another relay is probably already running. Stop it first "
+                 f"('racecast relay stop'), then check 'racecast status' / 'racecast preflight' "
+                 f"to see what holds the port.")
 
     # POV source: own sheet tab (cell A2). Derivable only from sheet-id/tab,
     # so a custom --sheet-csv-url disables POV (no tab to point at).
