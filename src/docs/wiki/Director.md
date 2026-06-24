@@ -62,6 +62,18 @@ are display-only.
 > role. They share a name but never interact: this banner stays director-only, and the
 > desk never writes to it.
 
+### Going live — Start/Stop the stream
+
+The **Live Preview** header carries a broadcast button. It shows **OFFLINE** when
+OBS is not streaming and turns into **● LIVE HH:MM:SS** (with the running
+broadcast time) once on air; while OBS is reconnecting it reads **RECONNECTING…**.
+Starting the stream is one click; **stopping asks for confirmation** (ending a live
+broadcast mid-event is high-consequence). Like every other control it is
+relay-mediated — it drives the producer's local OBS over the same path as the
+scene/source/audio controls, so no OBS IP, port, or password is needed in the
+browser, and it works over Funnel (`/console/panel`) with only your token. If the
+panel cannot reach OBS the button shows **STREAM ?**.
+
 ### Status strip and feed health
 
 The strip at the top shows what is on air, the race timer, and one pill per
