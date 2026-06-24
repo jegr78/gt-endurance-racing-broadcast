@@ -1214,10 +1214,18 @@
                         "blend_method": "default",
                         "blend_type": "normal",
                         "show_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Feed POV Show Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "hide_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Feed POV Hide Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "private_settings": {}
                     },
@@ -1253,10 +1261,18 @@
                         "blend_method": "default",
                         "blend_type": "normal",
                         "show_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Standby Cover Show Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "hide_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Standby Cover Hide Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "private_settings": {}
                     },
@@ -1411,10 +1427,18 @@
                         "blend_method": "default",
                         "blend_type": "normal",
                         "show_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Standings Show Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "hide_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Standings Hide Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "private_settings": {}
                     },
@@ -1450,10 +1474,18 @@
                         "blend_method": "default",
                         "blend_type": "normal",
                         "show_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Schedule Show Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "hide_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Schedule Hide Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "private_settings": {}
                     },
@@ -1489,10 +1521,18 @@
                         "blend_method": "default",
                         "blend_type": "normal",
                         "show_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Race Results Show Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "hide_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Race Results Hide Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "private_settings": {}
                     },
@@ -1528,10 +1568,18 @@
                         "blend_method": "default",
                         "blend_type": "normal",
                         "show_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Quali Results Show Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "hide_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Quali Results Hide Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "private_settings": {}
                     },
@@ -1567,10 +1615,18 @@
                         "blend_method": "default",
                         "blend_type": "normal",
                         "show_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Race Weather 1 Show Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "hide_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Race Weather 1 Hide Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "private_settings": {}
                     },
@@ -1606,10 +1662,18 @@
                         "blend_method": "default",
                         "blend_type": "normal",
                         "show_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Race Weather 2 Show Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "hide_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Race Weather 2 Hide Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "private_settings": {}
                     },
@@ -1645,10 +1709,18 @@
                         "blend_method": "default",
                         "blend_type": "normal",
                         "show_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Quali Weather Show Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "hide_transition": {
-                            "duration": 0
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Quali Weather Hide Transition",
+                            "transition": {},
+                            "duration": 300
                         },
                         "private_settings": {}
                     }
