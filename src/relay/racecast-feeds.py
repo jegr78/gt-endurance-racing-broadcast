@@ -124,6 +124,23 @@ RESOLVE_RETRY = 15  # seconds between yt-dlp resolve attempts while a stint isn'
 COOKIE_MAX_AGE_H = 12   # keep in sync with preflight.py cookies_status(max_age_hours)
 RETRY_SLEEP = 10    # seconds after a stream ends / manifest expires before re-resolving
 FEED_FAST_EXIT_S = 3.0  # a serve proc dying faster than this (non-zero) = a bind/launch failure, not a stint
+DEAD_SERVE_BACKOFF_CAP = 300   # s — max delay between re-attempts of a fast-dying ("was live, now dead") serve
+DEAD_SERVE_IDLE_AFTER = 5      # consecutive dead serves -> go idle until the operator advances/reloads
+
+
+def dead_serve_backoff(count, base=RETRY_SLEEP, cap=DEAD_SERVE_BACKOFF_CAP):
+    """Escalating sleep (seconds) before re-attempting a stint whose serve keeps
+    dying fast (the 403/expired-manifest 'was live, now dead' case): base, 2x base,
+    4x base ... capped at `cap`. `count` is the number of consecutive dead serves so
+    far (>= 1); a count below 1 returns `base`. Pure so the schedule is unit-tested
+    without sleeping."""
+    return min(base * (2 ** max(count - 1, 0)), cap)
+
+
+def should_idle_dead_serves(count, limit=DEAD_SERVE_IDLE_AFTER):
+    """True once consecutive dead serves reach `limit` -> the feed stops re-spawning
+    and idles until the operator advances (/next) or reloads (/reload)."""
+    return count >= limit
 
 
 def feed_fast_exit_error(elapsed_s, returncode, fast_exit_s=FEED_FAST_EXIT_S):
