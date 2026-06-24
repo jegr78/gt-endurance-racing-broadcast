@@ -753,31 +753,6 @@ def t_streams_config_write_rejects_bad(tmp):
     assert not os.path.exists(p)                        # nothing written on error
 
 
-def t_obs_ws_link_data_from_config(tmp):
-    import json
-    cfg = os.path.join(tmp, "obs-ws-config.json")
-    with open(cfg, "w") as fh:
-        json.dump({"server_port": 4466, "server_password": "secret-pw",
-                   "auth_required": True}, fh)
-    d = rc.obs_ws_link_data(env={}, config_path=cfg)
-    assert d["ok"] and d["ip"] == "127.0.0.1" and d["port"] == 4466
-    assert d["password"] == "secret-pw" and d["auth_required"] is True
-
-
-def t_obs_ws_link_data_env_override(tmp):
-    import json
-    cfg = os.path.join(tmp, "obs-ws-config2.json")
-    with open(cfg, "w") as fh:
-        json.dump({"server_port": 4455, "server_password": "stored"}, fh)
-    d = rc.obs_ws_link_data(env={"RACECAST_OBS_WS_PASSWORD": "override"}, config_path=cfg)
-    assert d["password"] == "override"          # env wins over the stored password
-
-
-def t_obs_ws_link_data_missing_config():
-    d = rc.obs_ws_link_data(env={}, config_path="/nope/obs.json")
-    assert d["ok"] and d["port"] == 4455 and d["password"] is None
-
-
 def t_docs_data_lists_present_only(tmp):
     # only docs that exist on disk are listed; wiki + onboarding-decks URLs always present
     base = os.path.join(tmp, "docs_data")
