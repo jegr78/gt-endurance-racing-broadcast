@@ -2759,9 +2759,10 @@ def event_start(rest):
     print("\nWaiting for the launched services to come up (max 60 s)…")
     for name, up in sorted(ev.wait_until_up(probes).items()):
         print(f"  {name}: {'up' if up else 'still not up — see the report below'}")
-    # Funnel (opt-in via RACECAST_FUNNEL): publish /console publicly once the
-    # relay is up. Best-effort — a funnel failure (e.g. missing nodeAttr) must
-    # never abort the event; print one concise line.
+    # Funnel (opt-OUT via RACECAST_FUNNEL=false): publish /console publicly once
+    # the relay is up. On by default — the Funnel is the preferred produce path.
+    # Best-effort — a funnel failure (e.g. missing nodeAttr) must never abort the
+    # event; print one concise line.
     if _funnel_auto_enabled():
         try:
             funnel_cmd(["on"])
@@ -3814,17 +3815,19 @@ def _console_setup_funnel(args):
 
 
 def _funnel_auto_enabled():
-    """Opt-in: bring the public /console Funnel up on `event start`. Requires the
-    machine flag RACECAST_FUNNEL (legacy RACECAST_COCKPIT_FUNNEL still honored for
-    one release) AND the cockpit actually usable (a per-league secret exists) —
-    reads on-disk truth via console_status_data()."""
+    """Opt-OUT: bring the public /console Funnel up on `event start` by default.
+    The Funnel is the preferred way to produce, so it auto-enables unless the
+    machine flag RACECAST_FUNNEL (legacy RACECAST_COCKPIT_FUNNEL still honored) is
+    explicitly set to a falsey value (false/0/no/off); an absent/empty key means
+    enabled. Still requires the cockpit actually usable (a per-league secret
+    exists) — reads on-disk truth via console_status_data()."""
+    flag = ""
     epath = _env_file()
-    if not os.path.exists(epath):
-        return False
-    with open(epath, encoding="utf-8") as fh:
-        env = parse_env_text(fh.read())
-    flag = env.get("RACECAST_FUNNEL", env.get("RACECAST_COCKPIT_FUNNEL", ""))
-    if flag.strip().lower() not in ("1", "true", "yes", "on"):
+    if os.path.exists(epath):
+        with open(epath, encoding="utf-8") as fh:
+            env = parse_env_text(fh.read())
+        flag = env.get("RACECAST_FUNNEL", env.get("RACECAST_COCKPIT_FUNNEL", ""))
+    if flag.strip().lower() in ("0", "false", "no", "off"):
         return False
     st = console_status_data()
     # Zero-config console has no separate "enable" flag — usability == a league
@@ -3909,9 +3912,11 @@ def console_status_data():
         if os.path.exists(epath):
             with open(epath, encoding="utf-8") as fh:
                 menv = parse_env_text(fh.read())
+        # Opt-OUT: the checkbox is on by default; only an explicit falsey value
+        # (false/0/no/off) unchecks it. Mirrors _funnel_auto_enabled().
         funnel_auto = menv.get("RACECAST_FUNNEL", menv.get(
-            "RACECAST_COCKPIT_FUNNEL", "")).strip().lower() in (
-            "1", "true", "yes", "on")
+            "RACECAST_COCKPIT_FUNNEL", "")).strip().lower() not in (
+            "0", "false", "no", "off")
         secret = _ensure_active_console_secret() or ""
         magic = _tailscale_magicdns()
         links = []
@@ -3949,8 +3954,9 @@ def console_status_data():
 
 
 def console_set_funnel_auto_data(auto):
-    """Persist the opt-in 'bring the public Funnel up on event start' flag
-    (machine-local RACECAST_FUNNEL). {ok}|{ok:false,error}."""
+    """Persist the 'bring the public Funnel up on event start' flag (machine-local
+    RACECAST_FUNNEL). Opt-OUT default: unchecking writes an explicit `false`;
+    checking writes `true`. {ok}|{ok:false,error}."""
     try:
         res = _set_env_key(_env_file(), "RACECAST_FUNNEL",
                            "true" if auto else "false")

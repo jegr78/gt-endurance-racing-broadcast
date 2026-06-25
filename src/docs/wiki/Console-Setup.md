@@ -152,6 +152,14 @@ racecast funnel off   # tear it down
 these exact steps if it is missing (rather than hanging on Tailscale's interactive
 enable prompt). Pass `--force` to skip the pre-check.
 
+Once the one-time setup above is done, you rarely run `funnel on` by hand: the
+Funnel is the **preferred produce path**, so `racecast event start` brings it up
+**automatically** — it is **on by default (opt-out)**. To keep a machine
+tailnet/loopback-only, set `RACECAST_FUNNEL=false` in `.env` (or uncheck
+**Auto-enable on event start** in the Control Center's Crew Console view). A
+machine that lacks the Funnel prereqs simply skips the step with one line — event
+start never aborts over it.
+
 > **Security boundary:** Funnel forwards only the `/console` path. Confirm from
 > outside the tailnet that `https://<magicdns-host>/status` and `/panel` are **not**
 > reachable — only `/console` should be. The OBS-WebSocket connection stays entirely
