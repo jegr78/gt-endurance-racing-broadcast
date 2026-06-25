@@ -2778,7 +2778,8 @@ const OV_CSSNAME = {left: 'left', top: 'top', width: 'width', height: 'height',
   borderRadius: 'border-radius', teamNameMax: '--team-name-max',
   teamNameMin: '--team-name-min', color: 'color', background: 'background',
   borderColor: 'border-color', borderStyle: 'border-style',
-  fontFamily: 'font-family', align: 'justify-content', valign: 'align-items',
+  fontFamily: 'font-family', fontWeight: 'font-weight', fontStyle: 'font-style',
+  align: 'justify-content', valign: 'align-items',
   textTransform: 'text-transform', opacity: 'opacity',
   rotation: 'transform'};
 const OV_PX = new Set(['left', 'top', 'width', 'height', 'padding', 'fontSize',
@@ -3284,6 +3285,16 @@ function ovRenderPanel() {
     ovState.fields.fontFamily = s;
     wrap.appendChild(s); wrap.appendChild(prev);
     panel.appendChild(wrap);
+  }
+  if (has('fontWeight')) {
+    panel.appendChild(ovSelectField('fontWeight', 'Font weight',
+      [{v: '', t: '— default —'}, {v: 'normal', t: 'Normal'},
+       {v: 'bold', t: 'Bold'}], ov));
+  }
+  if (has('fontStyle')) {
+    panel.appendChild(ovSelectField('fontStyle', 'Font style',
+      [{v: '', t: '— default —'}, {v: 'normal', t: 'Normal'},
+       {v: 'italic', t: 'Italic'}], ov));
   }
   if (has('color')) panel.appendChild(ovColorField('color', 'Text color', view));
   if (has('background')) panel.appendChild(ovColorField('background', 'Background', view));
