@@ -318,6 +318,16 @@
              border:1px solid var(--line); border-radius:6px; padding:4px 0;
              font:12px var(--mono); cursor:pointer; }
   .ov-align-btn:hover { border-color:var(--accent); }
+  .ovgridbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+             margin:0 0 8px; font:12px var(--mono); color:var(--dim); }
+  .ovgridbar label { display:inline-flex; align-items:center; gap:4px; margin:0; }
+  .ovgridbar input[type=number] { width:64px; background:#232C42; color:var(--txt);
+             border:1px solid var(--line); border-radius:6px; padding:4px 6px;
+             font:12px var(--mono); }
+  .ovgridbar .ov-gpreset { background:#232C42; color:var(--txt);
+             border:1px solid var(--line); border-radius:6px; padding:3px 8px;
+             font:12px var(--mono); cursor:pointer; }
+  .ovgridbar .ov-gpreset:hover { border-color:var(--accent); }
   .ovadv { margin:10px 0 0; border:1px solid var(--line); border-radius:8px;
            padding:6px 10px; }
   .ovadv summary { cursor:pointer; font:12px var(--mono); color:var(--dim); }
@@ -702,6 +712,14 @@
               <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Apply in OBS</button>
             <button id="overlay-preview" onclick="openHudPreview()" title="Open the HUD design preview in a new tab — live sheet data + your override CSS over a Gran Turismo backdrop (needs the relay running)">
               <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>Preview ↗</button></div>
+          <div class="ovgridbar">
+            <label><input type="checkbox" id="ov-grid-show" onchange="ovGridToggle(this.checked)"> Grid</label>
+            <label>Size <input type="number" id="ov-grid-size" min="1" value="10" onchange="ovGridSetSize(this.value)"></label>
+            <button type="button" class="ov-gpreset" onclick="ovGridSetSize(5)">5</button>
+            <button type="button" class="ov-gpreset" onclick="ovGridSetSize(10)">10</button>
+            <button type="button" class="ov-gpreset" onclick="ovGridSetSize(20)">20</button>
+            <label><input type="checkbox" id="ov-grid-snap" onchange="ovGridSnap(this.checked)"> Snap to grid</label>
+          </div>
           <div class="enverr" id="overlay-err" hidden></div>
           <div class="envhint" id="overlay-migrated" hidden></div>
           <div class="ovbuild">
@@ -2782,7 +2800,8 @@ let overlayPage = 'hud';
 const OV_CANVAS_W = 1920, OV_CANVAS_H = 1080;
 const ovState = {page: 'hud', slots: [], sample: {}, baseCss: '', body: '',
                  layout: null, fonts: [], library: [], scale: 1, sel: null,
-                 shadow: null, selBox: null, fields: {}, undo: [], redo: []};
+                 shadow: null, selBox: null, fields: {}, undo: [], redo: [],
+                 grid: {show: false, size: 10, snap: false}, gridEl: null};
 
 // prop -> CSS property; mirrors src/scripts/overlay_build.py (the canonical map).
 const OV_CSSNAME = {left: 'left', top: 'top', width: 'width', height: 'height',
@@ -2811,7 +2830,8 @@ const OV_SHADOW_CSS =
   '.ov-h-s{bottom:-13px;left:50%;transform:translateX(-50%);cursor:ns-resize}' +
   '.ov-hidden{opacity:.32!important;outline:2px dashed #f59e0b!important;outline-offset:-1px}' +
   '.ov-hidden::after{content:"hidden";position:absolute;top:0;left:0;z-index:60;' +
-  'font:700 9px/1.4 system-ui,sans-serif;background:#f59e0b;color:#111;padding:0 3px;border-radius:2px}';
+  'font:700 9px/1.4 system-ui,sans-serif;background:#f59e0b;color:#111;padding:0 3px;border-radius:2px}' +
+  '.ov-grid{position:absolute;inset:0;pointer-events:none}';
 
 async function loadOverlay() {
   $('overlay-err').hidden = true;
@@ -2824,6 +2844,7 @@ async function loadOverlay() {
   } catch (e) { showProfileErr('overlay-err', 'Control Center not reachable.'); return; }
   if (!slotsR.ok) { showProfileErr('overlay-err', slotsR.error || 'could not load slots'); return; }
   if (!layoutR.ok) { showProfileErr('overlay-err', layoutR.error || 'no active profile'); return; }
+  ovGridLoad();
   ovState.page = overlayPage;
   ovState.slots = slotsR.slots || [];
   ovState.sample = slotsR.sample || {};
@@ -2848,6 +2869,7 @@ async function loadOverlay() {
   ovPopulateSlotPicker();
   ovRefreshFontUI();
   ovHistInit();
+  ovGridSyncControls();
 }
 
 // Populate the "jump to slot" dropdown (issue #140) from the page's slot list,
@@ -2897,6 +2919,13 @@ function ovBuildCanvas() {
   ovState.shadow = sh;
   sh.innerHTML = '<style>' + ovState.baseCss + '\n' + OV_SHADOW_CSS + '\n' +
     ovFontFaceCss() + '</style>' + ovState.body;
+  // Reference grid: inserted right after <style> (before the slots) + pointer-events
+  // none, so it paints UNDER the slots and over the Overlay.png backdrop.
+  ovState.gridEl = document.createElement('div');
+  ovState.gridEl.className = 'ov-grid';
+  const st0 = sh.querySelector('style');
+  sh.insertBefore(ovState.gridEl, st0 ? st0.nextSibling : sh.firstChild);
+  ovUpdateGrid();
   const sel = document.createElement('div');
   sel.className = 'ov-selbox';
   sel.style.display = 'none';
@@ -3038,6 +3067,48 @@ function ovHistButtons() {
   if (r) r.disabled = !ovState.redo || !ovState.redo.length;
 }
 
+// ----- Reference grid (editor aid; NEVER serialised into the layout/override.css) -----
+function ovGridLoad() {
+  const g = {show: false, size: 10, snap: false};
+  try { Object.assign(g, JSON.parse(localStorage.getItem('rc.ov.grid') || '{}')); }
+  catch (e) { /* ignore corrupt prefs */ }
+  g.size = Math.max(1, parseInt(g.size, 10) || 10);
+  g.show = !!g.show; g.snap = !!g.snap;
+  ovState.grid = g;
+}
+function ovGridSave() {
+  try { localStorage.setItem('rc.ov.grid', JSON.stringify(ovState.grid)); } catch (e) {}
+}
+function ovUpdateGrid() {
+  const g = ovState.gridEl;
+  if (!g) return;
+  if (!ovState.grid.show) { g.style.backgroundImage = 'none'; return; }
+  const sz = Math.max(1, ovState.grid.size | 0);
+  const minor = 'rgba(120,170,255,.16)', major = 'rgba(120,170,255,.34)';
+  const lines = (c, s) =>
+    'repeating-linear-gradient(0deg,' + c + ' 0 1px,transparent 1px ' + s + 'px),' +
+    'repeating-linear-gradient(90deg,' + c + ' 0 1px,transparent 1px ' + s + 'px)';
+  // major listed first => painted on top of the minor grid
+  g.style.backgroundImage = lines(major, sz * 10) + ',' + lines(minor, sz);
+}
+function ovSnap(v) {
+  if (!ovState.grid || !ovState.grid.snap) return v;
+  const s = Math.max(1, ovState.grid.size | 0);
+  return Math.round(v / s) * s;
+}
+function ovGridToggle(on) { ovState.grid.show = !!on; ovGridSave(); ovUpdateGrid(); }
+function ovGridSetSize(v) {
+  ovState.grid.size = Math.max(1, parseInt(v, 10) || 1);
+  if ($('ov-grid-size')) $('ov-grid-size').value = ovState.grid.size;
+  ovGridSave(); ovUpdateGrid();
+}
+function ovGridSnap(on) { ovState.grid.snap = !!on; ovGridSave(); }
+function ovGridSyncControls() {
+  if ($('ov-grid-show')) $('ov-grid-show').checked = ovState.grid.show;
+  if ($('ov-grid-size')) $('ov-grid-size').value = ovState.grid.size;
+  if ($('ov-grid-snap')) $('ov-grid-snap').checked = ovState.grid.snap;
+}
+
 function ovFitCanvas() {
   const wrap = $('ov-stage').parentElement;
   // The Profile view starts display:none (clientWidth 0); a ResizeObserver
@@ -3079,8 +3150,8 @@ function ovStartDrag(e) {
   ovSelect(id);
   const sx = e.clientX, sy = e.clientY, sl = el.offsetLeft, st = el.offsetTop;
   function move(ev) {
-    ovSetProp(id, 'left', sl + Math.round((ev.clientX - sx) / ovState.scale));
-    ovSetProp(id, 'top', st + Math.round((ev.clientY - sy) / ovState.scale));
+    ovSetProp(id, 'left', ovSnap(sl + Math.round((ev.clientX - sx) / ovState.scale)));
+    ovSetProp(id, 'top', ovSnap(st + Math.round((ev.clientY - sy) / ovState.scale)));
   }
   function up() {
     window.removeEventListener('pointermove', move);
@@ -3102,8 +3173,8 @@ function ovStartResize(e) {
   function move(ev) {
     const dx = Math.round((ev.clientX - sx) / ovState.scale);
     const dy = Math.round((ev.clientY - sy) / ovState.scale);
-    if (dir === 'se' || dir === 'e') ovSetProp(id, 'width', Math.max(8, sw + dx));
-    if (dir === 'se' || dir === 's') ovSetProp(id, 'height', Math.max(8, sh + dy));
+    if (dir === 'se' || dir === 'e') ovSetProp(id, 'width', Math.max(8, ovSnap(sw + dx)));
+    if (dir === 'se' || dir === 's') ovSetProp(id, 'height', Math.max(8, ovSnap(sh + dy)));
   }
   function up() {
     window.removeEventListener('pointermove', move);
