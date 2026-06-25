@@ -213,9 +213,9 @@ def t_items_idle_on_planned_rows_without_url():
 
 OVERLAY_CSV = (",Stint,Intro,,,,,,,\n,Streamer,JeGr,,,,,,,\n"
                ",Session,Warmup,,,,,,,\n,Race Control,,,,,,,,\n")
-CONFIG_CSV = ("Stints,Streamers,Session,Race Control,Teams,Brand Name\n"
-              "Stint 1,JeGr,Qualifier,Formation Lap,T #1,Porsche\n"
-              "Stint 2,GT45,Race,Final Lap,T #2,BMW\n")
+CONFIG_CSV = ("Stints,Streamers,Session,Race Control,Flag,Teams,Brand Name\n"
+              "Stint 1,JeGr,Qualifier,Formation Lap,Yellow Flag,T #1,Porsche\n"
+              "Stint 2,GT45,Race,Final Lap,Safety Car,T #2,BMW\n")
 
 
 def _hs_stub():
@@ -242,7 +242,7 @@ def t_set_field_unknown_field_and_value():
     ctl = m.SetupControl("http://push", _hs_stub())
     assert "error" in ctl.set_field("nope", "x")
     assert "error" in ctl.set_field("streamer", "Not In Vocab")
-    assert "error" in ctl.set_field("streamer", "")   # only racecontrol clears
+    assert "error" in ctl.set_field("streamer", "")   # racecontrol/flag may clear; others can't
 
 
 def t_set_field_requires_webhook():
@@ -272,6 +272,28 @@ def t_clear_racecontrol_allowed():
         assert r.get("ok")
         ctl._push_setup("Race Control", "")
         assert pushes[-1]["fields"] == {"Race Control": ""}
+    finally:
+        m.post_webhook = orig
+
+
+def t_clear_flag_allowed():
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    try:
+        r = ctl.set_field("flag", "", now=1000.0)
+        assert r.get("ok")
+        ctl._push_setup("Flag", "")
+        assert pushes[-1]["fields"] == {"Flag": ""}
+    finally:
+        m.post_webhook = orig
+
+def t_set_flag_validates_against_vocab():
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    try:
+        assert ctl.set_field("flag", "Safety Car", now=1000.0).get("ok")
+        assert hs.data(now=1001.0)["flag"] == "Safety Car"      # optimistic echo
+        assert "error" in ctl.set_field("flag", "Not A Flag")   # not in vocab
     finally:
         m.post_webhook = orig
 
@@ -401,6 +423,8 @@ def t_setup_data_shape():
     assert d["fields"]["session"] == "Warmup"
     assert d["fields"]["racecontrol"] == ""
     assert d["options"]["racecontrol"] == ["Formation Lap", "Final Lap"]
+    assert d["fields"]["flag"] == ""
+    assert d["options"]["flag"] == ["Yellow Flag", "Safety Car"]
     assert d["pending"] == [] and d["push"] == "disabled"
 
 
@@ -552,6 +576,20 @@ def t_next_handover_keeps_racecontrol_without_cut():
         r = get("/next")
         assert r.get("obs_cut") is False
         assert hs.data()["raceControl"] == "Formation Lap"   # untouched
+    finally:
+        srv.shutdown(); m.post_webhook = orig
+
+
+def t_next_handover_keeps_flag_on_cut():
+    # A track condition (flag) outlives a commentator handover -> NOT cleared on cut.
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    srv, get, post = _client(ctl, next_result={"obs_cut": True})
+    try:
+        assert get("/setup/set/flag/Safety%20Car").get("ok")
+        assert hs.data()["flag"] == "Safety Car"
+        get("/next")
+        assert hs.data()["flag"] == "Safety Car"   # still set after the cut
     finally:
         srv.shutdown(); m.post_webhook = orig
 

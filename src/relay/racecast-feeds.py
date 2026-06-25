@@ -780,7 +780,7 @@ def split_team_label(s):
 OVERLAY_LABELS = {
     "stint": "stint", "streamer": "streamer", "session": "session",
     "round top": "round_top", "round bottom": "country",
-    "race control": "race_control",
+    "race control": "race_control", "flag": "flag",
 }
 
 
@@ -913,7 +913,8 @@ def parse_team_full_labels(text):
 # (strict: the panel offers ONLY these values — spec: panel-sheet-control).
 # Dict KEYS are the API field names used by panel endpoints; VALUES are sheet headers (matched case-insensitively).
 VOCAB_COLUMNS = {"stint": "stints", "streamer": "streamers",
-                 "session": "session", "racecontrol": "race control"}
+                 "session": "session", "racecontrol": "race control",
+                 "flag": "flag"}
 
 
 def parse_config_vocab(text):
@@ -987,6 +988,7 @@ def build_hud_data(overlay, roster):
         },
         "teams": [team_entry(n, roster) for n in overlay.get("teams", ["", "", ""])],
         "raceControl": overlay.get("race_control", ""),
+        "flag": overlay.get("flag", ""),
     }
 
 # ---------- Race timer (relay-hosted countdown) ----------
@@ -2787,7 +2789,7 @@ class HudSource:
     EMPTY = {"stint": "", "streamer": "", "session": "",
              "round": {"top": "", "country": "", "flagKey": ""},
              "teams": [{"name": "", "number": "", "brandKey": "", "brandName": ""} for _ in range(3)],
-             "raceControl": ""}
+             "raceControl": "", "flag": ""}
 
     def __init__(self, overlay_url, config_url, cache_path):
         self.overlay_url = overlay_url
@@ -2946,6 +2948,7 @@ SETUP_FIELDS = {
     "streamer": ("Streamer", "streamer"),
     "session": ("Session", "session"),
     "racecontrol": ("Race Control", "raceControl"),
+    "flag": ("Flag", "flag"),
 }
 
 # Panel team slots: URL segment -> 1-based podium slot (Setup tab "Team <n>" cell).
@@ -2993,8 +2996,8 @@ class SetupControl:
             return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
                              "in the active profile or .env (wiki: Sheet-Webhook)"}
         header, hud_key = SETUP_FIELDS[key]
-        if not value and key != "racecontrol":
-            return {"error": "empty value only allowed for racecontrol"}
+        if not value and key not in ("racecontrol", "flag"):
+            return {"error": "empty value only allowed for racecontrol/flag"}
         if value and value not in self.hud.vocab().get(key, []):
             return {"error": f"not in the Configuration vocabulary: {value!r} "
                              "(add it to the Configuration tab first)"}

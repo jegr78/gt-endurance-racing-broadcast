@@ -91,6 +91,20 @@
   #race-control { left: 264px; top: 864px; width: 1330px; height: 55px;
     font-size: 34px; background: #243039; padding: 14px; border-radius: 8px;
     color: #eef0f2; }
+
+  /* Race-condition flag (Yellow / Safety Car / FCY / …). Hidden when empty;
+     color-coded per state via data-state. Builder-positionable. */
+  #flag-status { left: 264px; top: 800px; width: 360px; height: 50px;
+    font-size: 28px; font-weight: 700; background: #243039; padding: 10px;
+    border-radius: 8px; color: #eef0f2; }
+  #flag-status[data-state="green-flag"] { background: #1f8a3b; color: #fff; }
+  #flag-status[data-state="yellow-flag"] { background: #f2c014; color: #111; }
+  #flag-status[data-state="double-yellow"] { background: #f2c014; color: #111; }
+  #flag-status[data-state="full-course-yellow"] { background: #e6a700; color: #111; }
+  #flag-status[data-state="code-60"] { background: #e2761b; color: #111; }
+  #flag-status[data-state="safety-car"] { background: #eef0f2; color: #111; }
+  #flag-status[data-state="red-flag"] { background: #c62121; color: #fff; }
+  #flag-status[data-state="checkered-flag"] { background: #111; color: #fff; }
 </style>
 <link rel="stylesheet" href="/hud/override.css">
 </head>
@@ -117,6 +131,7 @@
   <div id="team3-name" class="el team-name white" data-edit="Team 3 name" data-edit-kind="text" data-edit-props="teamNameMax,teamNameMin"></div>
   <div id="team3-brand" class="el team-brand white" data-edit="Team 3 brand name" data-edit-kind="text"></div>
   <div id="race-control" class="el white" data-edit="Race control" data-edit-kind="text"></div>
+  <div id="flag-status" class="el" data-edit="Flag status" data-edit-kind="text"></div>
   <div id="pov" class="el" data-edit="POV box" data-edit-kind="box"></div>
   <div id="pov-name" class="el" data-edit="POV name" data-edit-kind="text"></div>
   <div id="clock" class="el white" data-edit="Clock" data-edit-kind="text"></div>
@@ -157,6 +172,21 @@
     const el = document.getElementById(id);
     el.textContent = value || "";
     el.classList.toggle("empty", !value);
+  }
+  const FLAG_ALIASES = {
+    "sc": "safety-car", "fcy": "full-course-yellow", "vsc": "full-course-yellow",
+  };
+  function flagSlug(value) {
+    const s = (value || "").toLowerCase().replace(/[^a-z0-9]+/g, "-")
+                .replace(/^-+|-+$/g, "");
+    return FLAG_ALIASES[s] || s;
+  }
+  function setFlag(id, value) {
+    const el = document.getElementById(id);
+    el.textContent = value || "";
+    el.classList.toggle("empty", !value);
+    if (value) el.dataset.state = flagSlug(value);
+    else el.removeAttribute("data-state");
   }
   function setImg(containerId, key, sub) {
     const el = document.getElementById(containerId);
@@ -208,6 +238,7 @@
       setImg("round-flag", d.round && d.round.flagKey, "flags");
       (d.teams || []).forEach((t, i) => { if (i < 3) setTeam(i, t); });
       setText("race-control", d.raceControl);
+      setFlag("flag-status", d.flag);
       const povOn = !!d.povActive;
       document.getElementById("pov").classList.toggle("empty", !povOn);
       setText("pov-name", povOn ? (d.povName || "") : "");

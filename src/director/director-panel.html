@@ -167,6 +167,7 @@
 
   /* ---------- setup dropdowns (sheet-backed) ---------- */
   .setrow{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .setrow + .setrow{margin-top:10px}
   .fld select{background:#0c0f13;border:1px solid var(--edge);color:var(--ink);
     font-family:var(--mono);font-size:13px;padding:10px 12px;border-radius:9px;
     min-width:150px;outline:none}
@@ -440,6 +441,8 @@
   <section class="bus"><div class="cap">HUD</div>
     <div class="body">
       <div class="setrow" id="setupRow"></div>
+      <div class="setrow" id="teamRow"></div>
+      <div class="setrow" id="condRow"></div>
       <div class="hint" id="setupInfo">HUD: connecting to relay…</div>
     </div>
   </section>
@@ -1152,9 +1155,14 @@ async function timerPoll(){
    on-air stint sets the HUD label automatically. These manual dropdowns stay
    as a live-correction override; the next handover re-asserts the schedule. */
 const SETUP_FIELDS = [
-  ["stint","STINT LABEL"], ["streamer","STREAMER"],
-  ["session","SESSION"], ["racecontrol","RACE CONTROL"],
+  ["stint","STINT LABEL"], ["streamer","STREAMER"], ["session","SESSION"],
+  // Race-condition controls share their own row (#condRow), in this order:
+  // FLAG, RACE CONTROL, then the CLEAR RC button (appended after the loop) so
+  // CLEAR RC stays paired with its Race Control dropdown.
+  ["flag","FLAG"], ["racecontrol","RACE CONTROL"],
 ];
+// Keys that render on the dedicated race-condition row instead of the main HUD row.
+const COND_KEYS = new Set(["flag","racecontrol"]);
 // Configuration vocab for the Schedule editor's Streamer/Stint dropdowns,
 // cached from /setup/data (the same lists the Setup dropdowns use).
 let schedOptions = {streamer: [], stint: []};
@@ -1283,17 +1291,17 @@ SETUP_FIELDS.forEach(([key,label])=>{
   const w = document.createElement("div"); w.className = "fld";
   w.innerHTML = `<label>${label}</label><select data-setup="${key}" disabled></select>`;
   w.querySelector("select").addEventListener("change", e=>setupSet(key, e.target.value));
-  $("#setupRow").appendChild(w);
+  $(COND_KEYS.has(key) ? "#condRow" : "#setupRow").appendChild(w);
 });
 { const b = document.createElement("button");
   b.className = "pill stop"; b.textContent = "CLEAR RC"; b.id = "clearRc";
   b.addEventListener("click", ()=>setupSet("racecontrol",""));
-  $("#setupRow").appendChild(b); }
+  $("#condRow").appendChild(b); }
 TEAM_FIELDS.forEach(([key,label])=>{
   const w = document.createElement("div"); w.className = "fld";
   w.innerHTML = `<label>${label}</label><select data-team="${key}" disabled></select>`;
   w.querySelector("select").addEventListener("change", e=>teamSet(key, e.target.value));
-  $("#setupRow").appendChild(w);
+  $("#teamRow").appendChild(w);
 });
 
 async function teamSet(slot, value){
@@ -1331,7 +1339,7 @@ async function setupPoll(){
   for (const [key] of SETUP_FIELDS){
     const sel = document.querySelector(`select[data-setup="${key}"]`);
     if (!sel || sel === document.activeElement) continue;   // never yank an open menu
-    const opts = (key === "racecontrol" ? [""] : []).concat(d.options[key] || []);
+    const opts = (["racecontrol","flag"].includes(key) ? [""] : []).concat(d.options[key] || []);
     const sig = JSON.stringify(opts);
     if (sel.dataset.sig !== sig){
       sel.innerHTML = opts.map(o=>`<option value="${escapeHtml(o)}">${o===""?"— none —":escapeHtml(o)}</option>`).join("");

@@ -58,6 +58,7 @@ tab mirrors it with a formula — but the relay only ever **reads** Overlay.
 | `Round Top` | Event / round title (top line) |
 | `Round Bottom` | Country name (bottom line; normalised to look up the flag) |
 | `Race Control` | Text for the race-control banner |
+| `Flag` | Current race-condition flag (Green / Yellow / Safety Car / FCY / Red / …); blank hides it |
 | `Teams P1` / `Teams P2` / `Teams P3` | The three podium-slot team names |
 
 Sample:
@@ -97,6 +98,7 @@ A header row (row 1) plus one row per team. Columns are located **by header text
 | `Streamers` | optional | Dropdown options for the panel's **Streamer** field |
 | `Session` | optional | Dropdown options for the panel's **Session** field |
 | `Race Control` | optional | Dropdown options for the panel's **Race Control** field |
+| `Flag` | optional | Dropdown options for the panel/Companion **race-condition flag** (Green/Yellow/Safety Car/Full Course Yellow/Red/…). Shown color-coded in the HUD; hidden when unset. Distinct from the country flag (which derives from `Round Bottom`/Country) |
 | `Cue Preset` | optional | Quick-cue presets for the director text-cue channel |
 
 Sample:
@@ -108,9 +110,15 @@ Sample Team Bravo #22  | 22     | bmw       | Stint 2 | Second Commentator | Qua
 Sample Team Charlie #33| 33     | ferrari   | Stint 3 |                    | Race          | SAFETY CAR   | Throw to break
 ```
 
-The vocabulary columns (`Stints`/`Streamers`/`Session`/`Race Control`/`Cue Preset`) are
-independent lists — blanks are skipped and duplicates dropped. See
+The vocabulary columns (`Stints`/`Streamers`/`Session`/`Race Control`/`Flag`/`Cue Preset`)
+are independent lists — blanks are skipped and duplicates dropped. See
 [Configuration](Configuration#google-sheet--configuration-tab-columns).
+
+The canonical flag states ship default HUD colors: `Green Flag`, `Yellow Flag`,
+`Double Yellow`, `Safety Car`, `Full Course Yellow`, `Code 60`, `Red Flag`,
+`Checkered Flag`. The abbreviations `FCY`/`VSC`/`SC` map onto those. Any other value
+renders in a neutral default style and can be colored per-league via the overlay
+`customCss`.
 
 ---
 
