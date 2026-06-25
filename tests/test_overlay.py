@@ -556,6 +556,22 @@ def t_ob_compile_valign_and_text_transform():
     assert "text-transform" not in _css_x({"textTransform": "evil; }"})
 
 
+def t_ob_compile_font_weight_and_style():
+    assert "font-weight: bold" in _css_x({"fontWeight": "bold"})
+    assert "font-weight: normal" in _css_x({"fontWeight": "normal"})
+    assert "font-style: italic" in _css_x({"fontStyle": "italic"})
+    assert "font-style: normal" in _css_x({"fontStyle": "normal"})
+    # out-of-scope / unknown values dropped (no injection, no numeric scale)
+    assert "font-weight" not in _css_x({"fontWeight": "900"})
+    assert "font-weight" not in _css_x({"fontWeight": "evil; }"})
+    assert "font-style" not in _css_x({"fontStyle": "oblique"})
+
+
+def t_ob_font_weight_style_are_text_only():
+    assert "fontWeight" in ob.KIND_TEXT and "fontStyle" in ob.KIND_TEXT
+    assert "fontWeight" not in ob.KIND_BOX and "fontStyle" not in ob.KIND_BOX
+
+
 def t_ob_compile_text_shadow():
     css = _css_x({"textShadow": {"x": 0, "y": 2, "blur": 4, "color": "#000000"}})
     assert "text-shadow: 0px 2px 4px #000000" in css

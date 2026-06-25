@@ -33,6 +33,8 @@ _ALIGN = {"left": "flex-start", "center": "center", "right": "flex-end"}
 _VALIGN = {"top": "flex-start", "middle": "center", "bottom": "flex-end"}
 _TEXT_TRANSFORM = {"none": "none", "uppercase": "uppercase",
                    "lowercase": "lowercase", "capitalize": "capitalize"}
+_FONT_WEIGHT = {"normal": "normal", "bold": "bold"}
+_FONT_STYLE = {"normal": "normal", "italic": "italic"}
 
 # The default property set offered for a text slot (no data-edit-props attr).
 DEFAULT_PROPS = ("left", "top", "width", "height", "fontSize",
@@ -42,8 +44,8 @@ DEFAULT_PROPS = ("left", "top", "width", "height", "fontSize",
 PROP_ORDER = ("left", "top", "width", "height", "padding",
               "fontSize", "lineHeight", "letterSpacing",
               "borderWidth", "borderRadius",
-              "teamNameMax", "teamNameMin", "fontFamily", "color",
-              "background", "borderColor", "borderStyle",
+              "teamNameMax", "teamNameMin", "fontFamily", "fontWeight",
+              "fontStyle", "color", "background", "borderColor", "borderStyle",
               "align", "valign", "textTransform", "opacity",
               "rotation", "textShadow", "visible")
 
@@ -57,8 +59,8 @@ KIND_BOX = ("left", "top", "width", "height", "padding",
             "background", "borderWidth", "borderStyle", "borderColor",
             "borderRadius", "opacity", "rotation", "visible")
 KIND_TEXT = KIND_BOX + ("fontSize", "lineHeight", "letterSpacing",
-                        "fontFamily", "color", "align", "valign",
-                        "textTransform", "textShadow")
+                        "fontFamily", "fontWeight", "fontStyle", "color",
+                        "align", "valign", "textTransform", "textShadow")
 KIND_PROPS = {"text": KIND_TEXT, "box": KIND_BOX}
 
 # A structured value must never close the rule or inject extra CSS; the only
@@ -254,6 +256,12 @@ def _declaration(prop, value):
     if prop == "textTransform":
         mapped = _TEXT_TRANSFORM.get(value) if isinstance(value, str) else None
         return f"text-transform: {mapped}" if mapped else None
+    if prop == "fontWeight":
+        mapped = _FONT_WEIGHT.get(value) if isinstance(value, str) else None
+        return f"font-weight: {mapped}" if mapped else None
+    if prop == "fontStyle":
+        mapped = _FONT_STYLE.get(value) if isinstance(value, str) else None
+        return f"font-style: {mapped}" if mapped else None
     if prop == "opacity":
         if not isinstance(value, (int, float)) or not 0 <= value <= 1:
             return None
