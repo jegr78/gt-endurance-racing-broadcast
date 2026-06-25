@@ -4016,7 +4016,7 @@ def _resolve_producer_name():
         except OSError:
             name = ""
     _PRODUCER_NAME_CACHE = name
-    return name
+    return _PRODUCER_NAME_CACHE
 
 
 def _takeover_producer(status):
