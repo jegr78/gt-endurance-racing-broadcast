@@ -71,6 +71,7 @@ Session       |     | Race — Hour 3
 Round Top     |     | Demo Series — Round 1
 Round Bottom  |     | Germany
 Race Control  |     | GREEN
+Flag          |     | Green Flag
 Teams P1      |     | Sample Team Alpha #11
 Teams P2      |     | Sample Team Bravo #22
 Teams P3      |     | Sample Team Charlie #33
@@ -104,10 +105,10 @@ A header row (row 1) plus one row per team. Columns are located **by header text
 Sample:
 
 ```
-Teams                  | Number | Brand Key | Stints  | Streamers          | Session       | Race Control | Cue Preset
-Sample Team Alpha #11  | 11     | porsche   | Stint 1 | Sample Commentator | Practice      | GREEN        | Stand by
-Sample Team Bravo #22  | 22     | bmw       | Stint 2 | Second Commentator | Qualifying    | YELLOW       | Wrap in 30s
-Sample Team Charlie #33| 33     | ferrari   | Stint 3 |                    | Race          | SAFETY CAR   | Throw to break
+Teams                  | Number | Brand Key | Stints  | Streamers          | Session       | Race Control | Cue Preset     | Flag
+Sample Team Alpha #11  | 11     | porsche   | Stint 1 | Sample Commentator | Practice      | GREEN        | Stand by       | Green Flag
+Sample Team Bravo #22  | 22     | bmw       | Stint 2 | Second Commentator | Qualifying    | YELLOW       | Wrap in 30s    | Yellow Flag
+Sample Team Charlie #33| 33     | ferrari   | Stint 3 |                    | Race          | SAFETY CAR   | Throw to break | Safety Car
 ```
 
 The vocabulary columns (`Stints`/`Streamers`/`Session`/`Race Control`/`Flag`/`Cue Preset`)
@@ -189,11 +190,12 @@ read-only. Header row in row 1, values written in the cell **below** each header
 | `Streamer` | Current commentator |
 | `Session` | Session label |
 | `Race Control` | Race-control banner text |
+| `Flag` | Race-condition flag (must be in the script's `SETUP_FIELDS`; the Overlay tab mirrors it) |
 | `Team 1` / `Team 2` / `Team 3` | The three podium team names |
 
 ```
-Stint | Streamer           | Session | Race Control | Team 1                | Team 2                 | Team 3
-5     | Sample Commentator | Race    | GREEN        | Sample Team Alpha #11 | Sample Team Bravo #22  | Sample Team Charlie #33
+Stint | Streamer           | Session | Race Control | Flag       | Team 1                | Team 2                 | Team 3
+5     | Sample Commentator | Race    | GREEN        | Green Flag | Sample Team Alpha #11 | Sample Team Bravo #22  | Sample Team Charlie #33
 ```
 
 ---

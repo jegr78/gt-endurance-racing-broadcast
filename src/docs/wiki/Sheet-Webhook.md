@@ -20,7 +20,7 @@ machine and the panel's HUD row + URLs section are display-only.
 | Action (sent by the relay) | Sheet target |
 |---|---|
 | `timer` | Timer tab (race-timer state — see [Race-Timer](Race-Timer)) |
-| `setup` | Setup tab: the cell **below** a header (`Stint`, `Streamer`, `Session`, `Race Control`) — found by text, so the tab layout may move |
+| `setup` | Setup tab: the cell **below** a header (`Stint`, `Streamer`, `Session`, `Race Control`, `Flag`) — found by text, so the tab layout may move. The set of accepted headers is the script's `SETUP_FIELDS` allowlist; a value for a header not in it is rejected (`unknown setup field`), so a new setup field needs the header in the Setup tab **and** in `SETUP_FIELDS` (redeploy) |
 | `schedule` | **Schedule** tab (or the **Qualifying** tab when the payload carries `"tab":"Qualifying"`), **physical row N** (the panel sends the CSV line number automatically): URL + Streamer + Stint label, located by the `URL`/`Streamer`/`Stint` headers in row 1 (falls back to fixed cols A/B with no header row); row `last+1` appends. The Stint cell is only written when a `Stint` header exists. The Qualifying tab has the **same structure** as the Schedule tab. **Neither tab may have leading blank rows** — the gviz CSV export maps physical sheet rows to CSV lines 1:1 when the tab starts at row 1. A header row is silently skipped when reading but its physical line number is still used when writing. |
 | `pov` | POV tab **row 2**: the `url` and/or `name` cell, located by header text (so the columns may move) |
 | `teams` | Setup tab: the cell **below** the `Team <slot>` header (slot 1–3 → `A6`/`B6`/`C6` in the shipped layout) — found by text, same as the other Setup fields. The Overlay tab only mirrors them read-only |
@@ -37,6 +37,15 @@ vocabulary columns — the same lists the sheet's own dropdowns use.
 > *outdated-script* error. Nothing crashes. A script predating the **Race Control**
 > column ignores the extra `race_control` field and the column is appended on the next
 > write, so older deployments degrade gracefully.
+
+> **Race-condition flag coordination:** the panel/Companion **Flag** control writes
+> through the `setup` action like the other Setup fields. It needs three things in
+> place together: a `Flag` header in the **Setup** tab, a `Flag` row in the
+> **Overlay** tab that mirrors it (the relay only ever reads Overlay), and `'Flag'`
+> in the script's `SETUP_FIELDS` allowlist with the script **redeployed** (new
+> version under the same `/exec` URL — not a new deployment, which changes the URL).
+> A script predating `Flag` rejects the write with `unknown setup field: Flag`; the
+> HUD then shows the flag only for the ~30 s optimistic-override window and drops it.
 
 > **Not written to the Sheet:** the free-text **event title**
 > ([Director](Director#event-title)) is producer-side runtime state
@@ -118,7 +127,7 @@ roster after the delete.
    const KEY = 'change-me';            // must match the key=... in the URL below
    const TABS = {setup: 'Setup', schedule: 'Schedule', qualifying: 'Qualifying',
                  pov: 'POV', timer: 'Timer', crew: 'Crew'};
-   const SETUP_FIELDS = ['Stint', 'Streamer', 'Session', 'Race Control'];
+   const SETUP_FIELDS = ['Stint', 'Streamer', 'Session', 'Race Control', 'Flag'];
    const TIMER_ROWS = {'Race End (UTC)': 1, 'Duration': 2, 'Visible': 3,
                        'Updated (UTC)': 4, 'Remaining': 5};
 

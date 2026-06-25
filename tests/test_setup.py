@@ -1147,6 +1147,35 @@ def t_crew_set_reflects_in_crew_source():
         m.post_webhook = orig
 
 
+# ---------- Apps Script <-> relay SETUP_FIELDS parity (#331 follow-up) ----------
+# Every setup-write field the relay can push (the SETUP_FIELDS header strings)
+# must appear in the deployed Apps Script's SETUP_FIELDS allowlist, or
+# writeSetup() throws "unknown setup field: <name>" and the webhook write
+# silently fails. The reference script lives only as a code block in the wiki, so
+# nothing enforced parity -- #331 added the Flag setup field to the relay but not
+# to the script, shipping the Sheet write path dead. This couples the two lists.
+SHEET_WEBHOOK_DOC = os.path.join(ROOT, "src", "docs", "wiki", "Sheet-Webhook.md")
+
+
+def _documented_apps_script_setup_fields():
+    import re
+    with open(SHEET_WEBHOOK_DOC, encoding="utf-8") as fh:
+        text = fh.read()
+    match = re.search(r"const\s+SETUP_FIELDS\s*=\s*\[([^\]]*)\]", text)
+    assert match, "SETUP_FIELDS array not found in the Sheet-Webhook.md Apps Script"
+    return [s for s in re.findall(r"'([^']*)'", match.group(1))]
+
+
+def t_setup_fields_parity_relay_vs_apps_script():
+    relay_headers = {header for header, _hud_key in m.SETUP_FIELDS.values()}
+    documented = set(_documented_apps_script_setup_fields())
+    assert relay_headers == documented, (
+        "relay SETUP_FIELDS and the documented Apps Script SETUP_FIELDS drifted: "
+        f"relay-only={sorted(relay_headers - documented)}, "
+        f"script-only={sorted(documented - relay_headers)}. Update the SETUP_FIELDS "
+        "array in src/docs/wiki/Sheet-Webhook.md and redeploy the script.")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
