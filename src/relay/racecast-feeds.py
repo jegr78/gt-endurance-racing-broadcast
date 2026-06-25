@@ -813,6 +813,11 @@ def parse_overlay(text):
 # Accepted headers for the team's brand TEXT column (priority order). The sheet's
 # image columns ("Brand Logo", "Brands") are deliberately NOT in this set.
 BRAND_TEXT_HEADERS = ("brand key", "brand name", "brand")
+# Optional DISPLAY-name override column. When present and non-empty it overrides
+# the brand TEXT shown in the HUD; it NEVER affects the brand logo (brandKey is
+# always asset_key(Brand)). Exact whole-cell match -> no collision with
+# BRAND_TEXT_HEADERS' "brand name".
+BRAND_NAME_OVERRIDE_HEADERS = ("brand name override",)
 # Accepted headers locating the team-name and (optional) car-number columns.
 TEAM_NAME_HEADERS = ("teams", "team name")
 NUMBER_HEADERS = ("number",)
@@ -859,6 +864,7 @@ def parse_config_roster(text):
     if ti is None:
         return {}
     bi = next((header.index(h) for h in BRAND_TEXT_HEADERS if h in header), None)
+    oi = next((header.index(h) for h in BRAND_NAME_OVERRIDE_HEADERS if h in header), None)
     ni = next((header.index(h) for h in NUMBER_HEADERS if h in header), None)
     out = {}
     for row in rows[1:]:
@@ -868,8 +874,11 @@ def parse_config_roster(text):
         if not name:
             continue
         col_num = (row[ni].strip() if ni is not None and len(row) > ni else "")
-        brand = (asset_key(row[bi]) if bi is not None and len(row) > bi else "")
-        out[name] = {"number": col_num or embedded, "brandKey": brand}
+        brand_raw = (row[bi].strip() if bi is not None and len(row) > bi else "")
+        override = (row[oi].strip() if oi is not None and len(row) > oi else "")
+        out[name] = {"number": col_num or embedded,
+                     "brandKey": asset_key(brand_raw),
+                     "brandName": override or brand_raw}
     return out
 
 
@@ -959,7 +968,8 @@ def team_entry(raw, roster):
     info = roster.get(name, {})
     return {"name": name,
             "number": info.get("number") or embedded,
-            "brandKey": info.get("brandKey", "")}
+            "brandKey": info.get("brandKey", ""),
+            "brandName": info.get("brandName", "")}
 
 
 def build_hud_data(overlay, roster):
@@ -2774,7 +2784,7 @@ class HudSource:
     with last-good caching (mirrors ScheduleSource robustness)."""
     EMPTY = {"stint": "", "streamer": "", "session": "",
              "round": {"top": "", "country": "", "flagKey": ""},
-             "teams": [{"name": "", "number": "", "brandKey": ""} for _ in range(3)],
+             "teams": [{"name": "", "number": "", "brandKey": "", "brandName": ""} for _ in range(3)],
              "raceControl": ""}
 
     def __init__(self, overlay_url, config_url, cache_path):
@@ -2868,7 +2878,7 @@ class HudSource:
             if self.team_overrides:
                 teams = [dict(t) for t in out.get("teams", [])]
                 while len(teams) < 3:
-                    teams.append({"name": "", "number": "", "brandKey": ""})
+                    teams.append({"name": "", "number": "", "brandKey": "", "brandName": ""})
                 for s, (e, _exp) in self.team_overrides.items():
                     if 0 <= s < len(teams):
                         teams[s] = dict(e)
@@ -2895,7 +2905,8 @@ class HudSource:
             info = self._roster.get(name, {})
         return {"name": name,
                 "number": info.get("number") or embedded,
-                "brandKey": info.get("brandKey", "")}
+                "brandKey": info.get("brandKey", ""),
+                "brandName": info.get("brandName", "")}
 
     def full_team_name(self, name):
         """The verbatim Configuration team label (e.g. 'OVO eSports #111') for a
