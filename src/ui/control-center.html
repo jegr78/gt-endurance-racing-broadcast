@@ -3635,6 +3635,10 @@ window.addEventListener('keydown', e => {
 // form field (so number/color inputs and the Advanced-CSS textarea keep native undo).
 window.addEventListener('keydown', e => {
   if (!ovState.shadow) return;
+  // Only when the builder is actually on screen (Profile view active or the
+  // pop-out modal open) — otherwise Ctrl/Cmd-Z on another view would silently
+  // mutate the hidden builder's layout.
+  if (currentView !== 'profile' && $('ov-modal').hidden) return;
   const tn = e.target && e.target.tagName;
   if (tn === 'INPUT' || tn === 'TEXTAREA' || tn === 'SELECT') return;
   if (!(e.ctrlKey || e.metaKey)) return;
