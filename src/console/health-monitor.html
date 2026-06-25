@@ -137,6 +137,13 @@
   .sev.yellow { background: var(--yellow); color: #0a0c0f; }
   #incEmpty { padding: 16px 12px; color: var(--muted); font-size: 13px; }
   #incEmpty:not(:empty) + table { display: none; }
+  /* Event annotations (#317): producer takeover, OBS stream start/stop. */
+  .evt { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; letter-spacing: .03em; background: #3a6ea5; color: #fff; white-space: nowrap; }
+  .evt.takeover { background: #8b5cf6; }
+  .evt.start { background: var(--green); color: #0a0c0f; }
+  .evt.stop { background: var(--red); }
+  #evtEmpty { padding: 16px 12px; color: var(--muted); font-size: 13px; }
+  #evtEmpty:not(:empty) + table { display: none; }
 
   .stamp { font-size: 11px; color: var(--muted); padding: 0 12px 12px; }
 </style>
@@ -214,6 +221,16 @@
       <tbody id="hm-incidents"></tbody>
     </table>
   </div>
+
+  <!-- 6. Event annotations (#317): takeover + OBS stream start/stop -->
+  <div class="card">
+    <h2>Events</h2>
+    <div id="evtEmpty"></div>
+    <table>
+      <thead><tr><th style="width:170px">When</th><th style="width:110px">Event</th><th>Detail</th><th style="width:140px">Producer</th></tr></thead>
+      <tbody id="hm-events"></tbody>
+    </table>
+  </div>
 </main>
 
 <script>
@@ -240,6 +257,38 @@ window.range = "live";
 let liveTimer = null;
 let rangeStart = 0, rangeEnd = 0;     // epoch seconds for the active fetch
 const charts = {};                    // key -> uPlot instance
+let eventsData = [];                  // discrete event annotations (#317), drawn as chart markers
+
+// Event-type presentation (#317): badge class + marker line color.
+function eventMeta(type) {
+  if (type === "takeover") return { label: "Takeover", cls: "takeover", color: "#8b5cf6" };
+  if (type === "obs_stream_start") return { label: "Stream start", cls: "start", color: "#16a34a" };
+  if (type === "obs_stream_stop") return { label: "Stream stop", cls: "stop", color: "#dc2626" };
+  return { label: type || "event", cls: "", color: "#3a6ea5" };
+}
+
+// uPlot plugin: draw a thin vertical line at each event ts, so the metric charts
+// show WHEN a takeover / stream start-stop happened relative to the numbers.
+function eventMarkersPlugin() {
+  return { hooks: { draw: (u) => {
+    if (!eventsData.length) return;
+    const ctx = u.ctx;
+    ctx.save();
+    eventsData.forEach((ev) => {
+      const ts = Number(ev.ts);
+      if (!(ts >= rangeStart && ts <= rangeEnd)) return;
+      const x = Math.round(u.valToPos(ts, "x", true)) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x, u.bbox.top);
+      ctx.lineTo(x, u.bbox.top + u.bbox.height);
+      ctx.strokeStyle = eventMeta(ev.type).color;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.stroke();
+    });
+    ctx.restore();
+  } } };
+}
 let chartResizeObs = null;            // keeps charts sized to their real column width
 
 // --- Helpers ---
@@ -511,6 +560,7 @@ function renderCharts(series) {
       height: 180,
       cursor: { y: false },
       legend: { show: false },
+      plugins: [eventMarkersPlugin()],     // vertical markers at event timestamps (#317)
       scales: { x: { time: true, min: rangeStart, max: rangeEnd } },
       axes: [
         { stroke: "#8b97a6", grid: { stroke: "#1c2027" }, ticks: { stroke: "#1c2027" },
@@ -591,6 +641,40 @@ function renderIncidents(incidents) {
   });
 }
 
+// --- 6. Event annotations (#317) ---
+function renderEvents(events) {
+  const body = $("hm-events");
+  body.textContent = "";
+  const list = events || [];
+  if (!list.length) {
+    $("evtEmpty").textContent = "No events in this range.";
+    return;
+  }
+  $("evtEmpty").textContent = "";
+  list.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0)).forEach((ev) => {
+    const meta = eventMeta(ev.type);
+    const tr = document.createElement("tr");
+
+    const when = document.createElement("td");
+    when.textContent = localDateTime(ev.ts);
+
+    const typeTd = document.createElement("td");
+    const badge = document.createElement("span");
+    badge.className = "evt " + meta.cls;
+    badge.textContent = meta.label;
+    typeTd.appendChild(badge);
+
+    const what = document.createElement("td");
+    what.textContent = ev.label || "";           // XSS-safe (textContent)
+
+    const who = document.createElement("td");
+    who.textContent = ev.producer || "";          // XSS-safe
+
+    tr.append(when, typeTd, what, who);
+    body.appendChild(tr);
+  });
+}
+
 // --- Fetch + render the whole dashboard ---
 async function load() {
   const now = Math.floor(Date.now() / 1000);
@@ -620,10 +704,12 @@ async function load() {
   if (typeof blob.from === "number") rangeStart = blob.from;
   if (typeof blob.to === "number") rangeEnd = blob.to;
 
+  eventsData = blob.events || [];        // set BEFORE renderCharts so markers draw
   renderHeader(blob.current || {}, blob.now);
   renderBands(blob.bands || {}, blob.current || {});
   renderCharts(blob.series || {});
   renderIncidents(blob.incidents || []);
+  renderEvents(eventsData);
   $("hm-stamp").textContent = "Window " + localDateTime(rangeStart) + " → " + localDateTime(rangeEnd) +
                              " · updated " + hms(blob.now || now);
 }

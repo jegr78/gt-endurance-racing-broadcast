@@ -28,6 +28,28 @@ def _cell(row, i):
     return row[i].strip() if (0 <= i < len(row) and row[i]) else ""
 
 
+def _fqdn_eq(value, self_name):
+    """Exact FQDN equality, case-insensitive and ignoring a trailing dot — the same
+    normalization as tailscale.magicdns_is_self (kept here so producer.py stays
+    dependency-free). False when either side is blank (own identity unknown)."""
+    a = (value or "").strip().rstrip(".").lower()
+    b = (self_name or "").strip().rstrip(".").lower()
+    return bool(a) and bool(b) and a == b
+
+
+def resolve_producer_name(rows, self_magicdns):
+    """This machine's producer display name by reverse-resolving its own MagicDNS
+    name against the `Producer` tab: the first row whose `magicdns` FQDN equals
+    `self_magicdns` (exact, like magicdns_is_self) and that carries a non-empty
+    `producer`. Returns "" when own identity is unknown (blank self_magicdns), no
+    row matches, or the matched row has no producer — the caller then falls back to
+    the hostname. Pure → unit-tested."""
+    for r in rows or []:
+        if r.get("producer") and _fqdn_eq(r.get("magicdns"), self_magicdns):
+            return r["producer"]
+    return ""
+
+
 def parse_producer_rows(text):
     """Parse the `Producer` tab CSV into [{"part","producer","magicdns"}, ...].
 

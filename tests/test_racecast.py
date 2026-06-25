@@ -7,6 +7,13 @@ ROOT = os.path.dirname(HERE)
 spec = importlib.util.spec_from_file_location("racecast", os.path.join(ROOT, "src", "racecast.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
+# The takeover announcement (#317) does real network/DB I/O (sheet fetch, Discord,
+# health DB). No existing takeover test exercises it, so default it to a no-op for
+# the whole file (keeps the suite offline + hermetic); the saved original is verified
+# in its own seam-isolated test below.
+_ORIG_ANNOUNCE_TAKEOVER = m._announce_takeover
+m._announce_takeover = lambda *a, **k: None
+
 
 def t_service_start():
     assert m.route(["relay", "start"]) == \
@@ -2796,6 +2803,86 @@ def t_producer_schedule_fetch_failure_is_empty():
     data = m.producer_schedule_data(
         fetch=boom, self_name="x.ts.net", refresh_env=lambda: None)
     assert data["rows"] == [] and data["self_known"] is True
+
+
+# --- producer identity for events (#317) --------------------------------------
+def t_takeover_producer_extracts_name():
+    assert m._takeover_producer({"producer": "Alice"}) == "Alice"
+    assert m._takeover_producer({"producer": "  Bob  "}) == "Bob"
+    assert m._takeover_producer({}) == ""
+    assert m._takeover_producer(None) == ""
+    assert m._takeover_producer({"producer": None}) == ""
+
+
+def t_resolve_producer_name_prefers_sheet_self_row():
+    m._PRODUCER_NAME_CACHE = None
+    orig = m.producer_schedule_data
+    try:
+        m.producer_schedule_data = lambda: {"rows": [
+            {"producer": "Alice", "self": False},
+            {"producer": "Bob", "self": True}]}
+        assert m._resolve_producer_name() == "Bob"
+    finally:
+        m.producer_schedule_data = orig
+        m._PRODUCER_NAME_CACHE = None
+
+
+def t_resolve_producer_name_env_then_hostname_fallback():
+    import socket
+    m._PRODUCER_NAME_CACHE = None
+    orig = m.producer_schedule_data
+    try:
+        m.producer_schedule_data = lambda: {"rows": [{"producer": "Alice", "self": False}]}
+        os.environ["RACECAST_PRODUCER_NAME"] = "Manual Override"
+        assert m._resolve_producer_name() == "Manual Override"   # no self row -> env wins
+        m._PRODUCER_NAME_CACHE = None
+        os.environ.pop("RACECAST_PRODUCER_NAME", None)
+        assert m._resolve_producer_name() == socket.gethostname()  # then hostname
+    finally:
+        m.producer_schedule_data = orig
+        os.environ.pop("RACECAST_PRODUCER_NAME", None)
+        m._PRODUCER_NAME_CACHE = None
+
+
+def t_announce_takeover_writes_health_event_hermetic():
+    import tempfile
+    orig_resolve = m._resolve_producer_name
+    orig_wh = m._active_discord_webhook
+    orig_dbpath = m._health_db_path
+    with tempfile.TemporaryDirectory() as d:
+        dbp = os.path.join(d, "h.db")
+        m._resolve_producer_name = lambda: "Mara"          # no sheet fetch
+        m._active_discord_webhook = lambda: ("", "")        # no webhook -> no Discord post
+        m._health_db_path = lambda: dbp                     # temp DB, never the real runtime
+        try:
+            _ORIG_ANNOUNCE_TAKEOVER({"producer": "Jens"},
+                                    {"stint": 7, "qualifying": False}, "GTEC R4")
+            conn = m.hsmod.open_db(dbp)
+            rows = m.hsmod.query_events(conn, 0, 1e12)
+            conn.close()
+            assert len(rows) == 1 and rows[0]["type"] == "takeover"
+            assert rows[0]["producer"] == "Mara"
+            assert rows[0]["label"] == "Mara took over from Jens"
+            assert rows[0]["metadata"] == {"from": "Jens", "stint": 7}
+        finally:
+            m._resolve_producer_name = orig_resolve
+            m._active_discord_webhook = orig_wh
+            m._health_db_path = orig_dbpath
+
+
+def t_resolve_producer_name_tolerates_fetch_failure():
+    m._PRODUCER_NAME_CACHE = None
+    orig = m.producer_schedule_data
+    try:
+        def boom():
+            raise OSError("network down")
+        m.producer_schedule_data = boom
+        os.environ["RACECAST_PRODUCER_NAME"] = "Fallback"
+        assert m._resolve_producer_name() == "Fallback"
+    finally:
+        m.producer_schedule_data = orig
+        os.environ.pop("RACECAST_PRODUCER_NAME", None)
+        m._PRODUCER_NAME_CACHE = None
 
 
 if __name__ == "__main__":

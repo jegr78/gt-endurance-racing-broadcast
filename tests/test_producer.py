@@ -68,6 +68,43 @@ def t_empty_text_returns_empty():
     assert p.parse_producer_rows(None) == []
 
 
+def t_resolve_producer_name_exact_fqdn_match():
+    rows = p.parse_producer_rows(
+        "Part,Producer,MagicDNS\r\n"
+        "1,Alice,producer-a.tail1234.ts.net\r\n"
+        "2,Bob,producer-b.tail1234.ts.net\r\n")
+    assert p.resolve_producer_name(rows, "producer-b.tail1234.ts.net") == "Bob"
+    # Case-insensitive + trailing-dot tolerant (mirrors magicdns_is_self).
+    assert p.resolve_producer_name(rows, "PRODUCER-A.tail1234.ts.net.") == "Alice"
+
+
+def t_resolve_producer_name_first_matching_row_wins():
+    rows = p.parse_producer_rows(
+        "Part,Producer,MagicDNS\r\n"
+        "1,Bob,producer-b.ts.net\r\n"
+        "2,Bob,producer-b.ts.net\r\n")
+    assert p.resolve_producer_name(rows, "producer-b.ts.net") == "Bob"
+
+
+def t_resolve_producer_name_no_match_returns_empty():
+    rows = p.parse_producer_rows("Part,Producer,MagicDNS\r\n1,Alice,producer-a.ts.net\r\n")
+    assert p.resolve_producer_name(rows, "producer-z.ts.net") == ""
+
+
+def t_resolve_producer_name_blank_self_or_rows_returns_empty():
+    rows = p.parse_producer_rows("Part,Producer,MagicDNS\r\n1,Alice,producer-a.ts.net\r\n")
+    assert p.resolve_producer_name(rows, "") == ""        # own identity unknown
+    assert p.resolve_producer_name(rows, None) == ""
+    assert p.resolve_producer_name([], "producer-a.ts.net") == ""
+
+
+def t_resolve_producer_name_skips_empty_magicdns_and_empty_producer():
+    rows = [{"part": "1", "producer": "Eve", "magicdns": ""},          # no magicdns -> never self
+            {"part": "2", "producer": "", "magicdns": "host.ts.net"}]   # self but no name
+    assert p.resolve_producer_name(rows, "") == ""
+    assert p.resolve_producer_name(rows, "host.ts.net") == ""           # matched row has no producer
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
