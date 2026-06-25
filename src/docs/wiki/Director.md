@@ -293,6 +293,19 @@ flips between them. Everything below is a single tap.
 > Tip: for the everyday moves, use the **combo** buttons on page 1 (`STINT A`,
 > `SPLIT`, `INTERVIEW`, …) — they set the scene and the audio in one tap.
 
+### Page 3 — race-condition flag
+
+| Row | Buttons |
+|-----|---------|
+| **Flag** | `FLAG GREEN`, `FLAG YELLOW`, `SAFETY CAR`, `FCY` (Full Course Yellow), `RED FLAG`, `CLEAR FLAG` — each sets (or clears) the colour-coded **race-condition flag** HUD element (`/setup/set/flag/<state>`, `CLEAR FLAG` → `/setup/clear/flag`). The flag's vocabulary comes from the sheet's Configuration **Flag** column; these buttons cover the canonical states |
+
+> This is a **separate** element from the page-1 `RED FLAG` combo (which drives the
+> Race Control banner + the Standby cover). The race-condition flag is shown
+> color-coded in the HUD, is hidden until set, and **persists across stint
+> handovers** until you clear it. Same control is on the panel's **FLAG** dropdown.
+
+![Companion page 3 — race-condition flag: set Green / Yellow / Safety Car / FCY / Red, or clear](images/companion-page3-flags.png)
+
 How the board is imported and built: [Companion](Companion).
 
 ## Through the broadcast (scene + HUD cues)
