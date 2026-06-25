@@ -290,6 +290,7 @@
   textarea.css-editor:focus-visible { outline:2px solid var(--accent);
                    outline-offset:2px; }
   textarea.css-editor:disabled { opacity:.5; cursor:not-allowed; }
+  #overlay-undo:disabled, #overlay-redo:disabled { opacity:.4; cursor:not-allowed; }
   /* Overlay visual builder */
   .ovbuild { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap;
              margin:0 0 8px; }
@@ -312,6 +313,21 @@
              border:1px solid var(--line); border-radius:6px; background:#232C42; }
   .ovgrid2 { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
   .ovinline { display:flex; gap:6px; align-items:center; }
+  .ov-alignrow { display:flex; gap:4px; margin:6px 0 0; }
+  .ov-align-btn { flex:1 1 0; min-width:0; background:#232C42; color:var(--txt);
+             border:1px solid var(--line); border-radius:6px; padding:4px 0;
+             font:12px var(--mono); cursor:pointer; }
+  .ov-align-btn:hover { border-color:var(--accent); }
+  .ovgridbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+             margin:0 0 8px; font:12px var(--mono); color:var(--dim); }
+  .ovgridbar label { display:inline-flex; align-items:center; gap:4px; margin:0; }
+  .ovgridbar input[type=number] { width:64px; background:#232C42; color:var(--txt);
+             border:1px solid var(--line); border-radius:6px; padding:4px 6px;
+             font:12px var(--mono); }
+  .ovgridbar .ov-gpreset { background:#232C42; color:var(--txt);
+             border:1px solid var(--line); border-radius:6px; padding:3px 8px;
+             font:12px var(--mono); cursor:pointer; }
+  .ovgridbar .ov-gpreset:hover { border-color:var(--accent); }
   .ovadv { margin:10px 0 0; border:1px solid var(--line); border-radius:8px;
            padding:6px 10px; }
   .ovadv summary { cursor:pointer; font:12px var(--mono); color:var(--dim); }
@@ -688,12 +704,22 @@
               <svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Pop out ↗</button>
             <select id="ov-slotpick" class="ov-slotpick" onchange="if(this.value)ovSelect(this.value)"
               title="Jump to a slot" aria-label="Jump to slot"></select>
+            <button id="overlay-undo" onclick="ovUndo()" disabled title="Undo (Ctrl/Cmd-Z)">↶ Undo</button>
+            <button id="overlay-redo" onclick="ovRedo()" disabled title="Redo (Ctrl/Cmd-Shift-Z)">↷ Redo</button>
             <button id="overlay-save" onclick="saveOverlay()">
               <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button>
             <button id="overlay-apply" onclick="applyOverlay()" title="Reload the relay-served HUD/timer browser sources in OBS (needs the relay up + obs-websocket)">
               <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Apply in OBS</button>
             <button id="overlay-preview" onclick="openHudPreview()" title="Open the HUD design preview in a new tab — live sheet data + your override CSS over a Gran Turismo backdrop (needs the relay running)">
               <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>Preview ↗</button></div>
+          <div class="ovgridbar">
+            <label><input type="checkbox" id="ov-grid-show" onchange="ovGridToggle(this.checked)"> Grid</label>
+            <label>Size <input type="number" id="ov-grid-size" min="1" value="10" onchange="ovGridSetSize(this.value)"></label>
+            <button type="button" class="ov-gpreset" onclick="ovGridSetSize(5)">5</button>
+            <button type="button" class="ov-gpreset" onclick="ovGridSetSize(10)">10</button>
+            <button type="button" class="ov-gpreset" onclick="ovGridSetSize(20)">20</button>
+            <label><input type="checkbox" id="ov-grid-snap" onchange="ovGridSnap(this.checked)"> Snap to grid</label>
+          </div>
           <div class="enverr" id="overlay-err" hidden></div>
           <div class="envhint" id="overlay-migrated" hidden></div>
           <div class="ovbuild">
@@ -2769,9 +2795,13 @@ async function saveProfileEnv() {
 // vanilla pointer events — no vendored dependency (the repo ships no JS libs).
 // Loads with the Profile view (via loadProfiles) and on every profile switch.
 let overlayPage = 'hud';
+// Canvas is a fixed 1920x1080 design space (origin top-left); single source for
+// the align toolbar and the snap grid.
+const OV_CANVAS_W = 1920, OV_CANVAS_H = 1080;
 const ovState = {page: 'hud', slots: [], sample: {}, baseCss: '', body: '',
                  layout: null, fonts: [], library: [], scale: 1, sel: null,
-                 shadow: null, selBox: null, fields: {}};
+                 shadow: null, selBox: null, fields: {}, undo: [], redo: [],
+                 grid: {show: false, size: 10, snap: false}, gridEl: null};
 
 // prop -> CSS property; mirrors src/scripts/overlay_build.py (the canonical map).
 const OV_CSSNAME = {left: 'left', top: 'top', width: 'width', height: 'height',
@@ -2800,7 +2830,8 @@ const OV_SHADOW_CSS =
   '.ov-h-s{bottom:-13px;left:50%;transform:translateX(-50%);cursor:ns-resize}' +
   '.ov-hidden{opacity:.32!important;outline:2px dashed #f59e0b!important;outline-offset:-1px}' +
   '.ov-hidden::after{content:"hidden";position:absolute;top:0;left:0;z-index:60;' +
-  'font:700 9px/1.4 system-ui,sans-serif;background:#f59e0b;color:#111;padding:0 3px;border-radius:2px}';
+  'font:700 9px/1.4 system-ui,sans-serif;background:#f59e0b;color:#111;padding:0 3px;border-radius:2px}' +
+  '.ov-grid{position:absolute;inset:0;pointer-events:none}';
 
 async function loadOverlay() {
   $('overlay-err').hidden = true;
@@ -2813,6 +2844,7 @@ async function loadOverlay() {
   } catch (e) { showProfileErr('overlay-err', 'Control Center not reachable.'); return; }
   if (!slotsR.ok) { showProfileErr('overlay-err', slotsR.error || 'could not load slots'); return; }
   if (!layoutR.ok) { showProfileErr('overlay-err', layoutR.error || 'no active profile'); return; }
+  ovGridLoad();
   ovState.page = overlayPage;
   ovState.slots = slotsR.slots || [];
   ovState.sample = slotsR.sample || {};
@@ -2836,6 +2868,8 @@ async function loadOverlay() {
   ovRenderPanel();
   ovPopulateSlotPicker();
   ovRefreshFontUI();
+  ovHistInit();
+  ovGridSyncControls();
 }
 
 // Populate the "jump to slot" dropdown (issue #140) from the page's slot list,
@@ -2885,6 +2919,13 @@ function ovBuildCanvas() {
   ovState.shadow = sh;
   sh.innerHTML = '<style>' + ovState.baseCss + '\n' + OV_SHADOW_CSS + '\n' +
     ovFontFaceCss() + '</style>' + ovState.body;
+  // Reference grid: inserted right after <style> (before the slots) + pointer-events
+  // none, so it paints UNDER the slots and over the Overlay.png backdrop.
+  ovState.gridEl = document.createElement('div');
+  ovState.gridEl.className = 'ov-grid';
+  const st0 = sh.querySelector('style');
+  sh.insertBefore(ovState.gridEl, st0 ? st0.nextSibling : sh.firstChild);
+  ovUpdateGrid();
   const sel = document.createElement('div');
   sel.className = 'ov-selbox';
   sel.style.display = 'none';
@@ -2983,6 +3024,91 @@ function ovSetProp(id, prop, value) {
   ovPositionSel();
 }
 
+// ----- Undo/redo (issue: builder editor aids) -----
+// Snapshot stacks of the in-memory layout. VISUAL edits only — the Advanced-CSS
+// textarea keeps its own native browser undo and is never tracked here. Invariant:
+// ovState.undo's top always equals the last committed layout, so undo reverts to
+// the new top and redo reapplies — no per-prop inverse operations.
+function ovSnap_() { return JSON.parse(JSON.stringify(ovState.layout || {})); }
+
+function ovHistInit() { ovState.undo = [ovSnap_()]; ovState.redo = []; ovHistButtons(); }
+
+function ovCommit() {                       // call after ONE logical edit completes
+  ovState.undo.push(ovSnap_());
+  if (ovState.undo.length > 50) ovState.undo.shift();
+  ovState.redo = [];
+  ovHistButtons();
+}
+
+function ovUndo() {
+  if (!ovState.undo || ovState.undo.length < 2) return;
+  ovState.redo.push(ovState.undo.pop());
+  ovState.layout = JSON.parse(JSON.stringify(ovState.undo[ovState.undo.length - 1]));
+  ovReloadCanvasFromLayout();
+}
+
+function ovRedo() {
+  if (!ovState.redo || !ovState.redo.length) return;
+  const s = ovState.redo.pop();
+  ovState.undo.push(s);
+  ovState.layout = JSON.parse(JSON.stringify(s));
+  ovReloadCanvasFromLayout();
+}
+
+function ovReloadCanvasFromLayout() {
+  ovBuildCanvas();
+  if (ovState.sel && !ovState.shadow.getElementById(ovState.sel)) ovState.sel = null;
+  ovRenderPanel(); ovPositionSel(); ovHistButtons();
+}
+
+function ovHistButtons() {
+  const u = $('overlay-undo'), r = $('overlay-redo');
+  if (u) u.disabled = !ovState.undo || ovState.undo.length < 2;
+  if (r) r.disabled = !ovState.redo || !ovState.redo.length;
+}
+
+// ----- Reference grid (editor aid; NEVER serialised into the layout/override.css) -----
+function ovGridLoad() {
+  const g = {show: false, size: 10, snap: false};
+  try { Object.assign(g, JSON.parse(localStorage.getItem('rc.ov.grid') || '{}')); }
+  catch (e) { /* ignore corrupt prefs */ }
+  g.size = Math.max(1, parseInt(g.size, 10) || 10);
+  g.show = !!g.show; g.snap = !!g.snap;
+  ovState.grid = g;
+}
+function ovGridSave() {
+  try { localStorage.setItem('rc.ov.grid', JSON.stringify(ovState.grid)); } catch (e) {}
+}
+function ovUpdateGrid() {
+  const g = ovState.gridEl;
+  if (!g) return;
+  if (!ovState.grid.show) { g.style.backgroundImage = 'none'; return; }
+  const sz = Math.max(1, ovState.grid.size | 0);
+  const minor = 'rgba(120,170,255,.16)', major = 'rgba(120,170,255,.34)';
+  const lines = (c, s) =>
+    'repeating-linear-gradient(0deg,' + c + ' 0 1px,transparent 1px ' + s + 'px),' +
+    'repeating-linear-gradient(90deg,' + c + ' 0 1px,transparent 1px ' + s + 'px)';
+  // major listed first => painted on top of the minor grid
+  g.style.backgroundImage = lines(major, sz * 10) + ',' + lines(minor, sz);
+}
+function ovSnap(v) {
+  if (!ovState.grid || !ovState.grid.snap) return v;
+  const s = Math.max(1, ovState.grid.size | 0);
+  return Math.round(v / s) * s;
+}
+function ovGridToggle(on) { ovState.grid.show = !!on; ovGridSave(); ovUpdateGrid(); }
+function ovGridSetSize(v) {
+  ovState.grid.size = Math.max(1, parseInt(v, 10) || 1);
+  if ($('ov-grid-size')) $('ov-grid-size').value = ovState.grid.size;
+  ovGridSave(); ovUpdateGrid();
+}
+function ovGridSnap(on) { ovState.grid.snap = !!on; ovGridSave(); }
+function ovGridSyncControls() {
+  if ($('ov-grid-show')) $('ov-grid-show').checked = ovState.grid.show;
+  if ($('ov-grid-size')) $('ov-grid-size').value = ovState.grid.size;
+  if ($('ov-grid-snap')) $('ov-grid-snap').checked = ovState.grid.snap;
+}
+
 function ovFitCanvas() {
   const wrap = $('ov-stage').parentElement;
   // The Profile view starts display:none (clientWidth 0); a ResizeObserver
@@ -2993,7 +3119,7 @@ function ovFitCanvas() {
     });
     ovState.ro.observe(wrap);
   }
-  const s = (wrap.clientWidth || 1) / 1920;
+  const s = (wrap.clientWidth || 1) / OV_CANVAS_W;
   ovState.scale = s;
   $('ov-stage').style.transform = 'scale(' + s + ')';
 }
@@ -3024,12 +3150,14 @@ function ovStartDrag(e) {
   ovSelect(id);
   const sx = e.clientX, sy = e.clientY, sl = el.offsetLeft, st = el.offsetTop;
   function move(ev) {
-    ovSetProp(id, 'left', sl + Math.round((ev.clientX - sx) / ovState.scale));
-    ovSetProp(id, 'top', st + Math.round((ev.clientY - sy) / ovState.scale));
+    ovSetProp(id, 'left', ovSnap(sl + Math.round((ev.clientX - sx) / ovState.scale)));
+    ovSetProp(id, 'top', ovSnap(st + Math.round((ev.clientY - sy) / ovState.scale)));
   }
   function up() {
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
+    const e2 = ovState.shadow.getElementById(id);
+    if (e2 && (e2.offsetLeft !== sl || e2.offsetTop !== st)) ovCommit();
   }
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
@@ -3045,12 +3173,13 @@ function ovStartResize(e) {
   function move(ev) {
     const dx = Math.round((ev.clientX - sx) / ovState.scale);
     const dy = Math.round((ev.clientY - sy) / ovState.scale);
-    if (dir === 'se' || dir === 'e') ovSetProp(id, 'width', Math.max(8, sw + dx));
-    if (dir === 'se' || dir === 's') ovSetProp(id, 'height', Math.max(8, sh + dy));
+    if (dir === 'se' || dir === 'e') ovSetProp(id, 'width', Math.max(8, ovSnap(sw + dx)));
+    if (dir === 'se' || dir === 's') ovSetProp(id, 'height', Math.max(8, ovSnap(sh + dy)));
   }
   function up() {
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
+    if (el.offsetWidth !== sw || el.offsetHeight !== sh) ovCommit();
   }
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
@@ -3102,7 +3231,7 @@ function ovPopulateFontSelect(sel, current, emptyLabel, onpick) {
     .forEach(f => add(f, f, g2, true));
   sel.appendChild(g2);
   sel.value = current || '';
-  sel.onchange = () => onpick(sel.value, sel);
+  sel.onchange = () => { onpick(sel.value, sel); ovCommit(); };
 }
 
 // Apply a font pick. prop 'bodyFont' targets the global body font; else the slot.
@@ -3111,12 +3240,47 @@ function ovPickFont(prop, value) {
   else ovSetProp(ovState.sel, prop, value);
 }
 
+// Align the selected slot to the canvas (center on an axis, or pin to an edge).
+// Size is read from the rendered shadow element (cascade ground-truth, correct
+// whether or not width/height are overridden). Each action goes through ovSetProp
+// (so the canvas, selection box, and number fields sync) + ovCommit (one undo step).
+function ovAlignBtn(label, title, fn) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'ov-align-btn'; b.textContent = label;
+  b.title = title; b.onclick = fn;
+  return b;
+}
+
+function ovAlignRow(id, hasH, hasV) {
+  const wrap = document.createElement('div');
+  const l = document.createElement('label'); l.textContent = 'Align to canvas';
+  wrap.appendChild(l);
+  const row = document.createElement('div'); row.className = 'ov-alignrow';
+  const el = () => ovState.shadow.getElementById(id);
+  const set = (prop, val) => { ovSetProp(id, prop, val); ovCommit(); };
+  if (hasH) row.append(
+    ovAlignBtn('⇤', 'Align left edge', () => set('left', 0)),
+    ovAlignBtn('H', 'Center horizontally',
+      () => set('left', Math.round((OV_CANVAS_W - el().offsetWidth) / 2))),
+    ovAlignBtn('⇥', 'Align right edge',
+      () => set('left', OV_CANVAS_W - el().offsetWidth)));
+  if (hasV) row.append(
+    ovAlignBtn('⤒', 'Align top edge', () => set('top', 0)),
+    ovAlignBtn('V', 'Center vertically',
+      () => set('top', Math.round((OV_CANVAS_H - el().offsetHeight) / 2))),
+    ovAlignBtn('⤓', 'Align bottom edge',
+      () => set('top', OV_CANVAS_H - el().offsetHeight)));
+  wrap.appendChild(row);
+  return wrap;
+}
+
 function ovNumField(prop, label, ov) {
   const wrap = document.createElement('div');
   const l = document.createElement('label'); l.textContent = label; wrap.appendChild(l);
   const i = document.createElement('input'); i.type = 'number';
   i.value = (ov[prop] !== undefined ? ov[prop] : '');
   i.oninput = () => ovSetProp(ovState.sel, prop, i.value === '' ? '' : Number(i.value));
+  i.onchange = () => ovCommit();
   ovState.fields[prop] = i; wrap.appendChild(i);
   return wrap;
 }
@@ -3130,7 +3294,9 @@ function ovColorField(prop, label, ov) {
   t.value = ov[prop] || '';
   if (/^#[0-9a-fA-F]{6}$/.test(ov[prop] || '')) c.value = ov[prop];
   c.oninput = () => { t.value = c.value; ovSetProp(ovState.sel, prop, c.value); };
+  c.onchange = () => ovCommit();
   t.oninput = () => ovSetProp(ovState.sel, prop, t.value);
+  t.onchange = () => ovCommit();
   ovState.fields[prop] = t;
   row.append(c, t); wrap.appendChild(row);
   return wrap;
@@ -3145,7 +3311,7 @@ function ovSelectField(prop, label, opts, ov) {
     op.value = o.v; op.textContent = o.t; s.appendChild(op);
   });
   s.value = ov[prop] || '';
-  s.onchange = () => ovSetProp(ovState.sel, prop, s.value);
+  s.onchange = () => { ovSetProp(ovState.sel, prop, s.value); ovCommit(); };
   ovState.fields[prop] = s; wrap.appendChild(s);
   return wrap;
 }
@@ -3175,6 +3341,7 @@ function ovShadowField(ov) {
     const i = document.createElement('input'); i.type = 'number';
     i.placeholder = ph; i.value = (val !== undefined ? val : '');
     i.oninput = () => ovSetShadow(ovState.sel, key, i.value);
+    i.onchange = () => ovCommit();
     return i;
   };
   row.append(numIn('x', 'Offset X', s.x), numIn('y', 'Offset Y', s.y),
@@ -3182,6 +3349,7 @@ function ovShadowField(ov) {
   const c = document.createElement('input'); c.type = 'color';
   if (/^#[0-9a-fA-F]{6}$/.test(s.color || '')) c.value = s.color;
   c.oninput = () => ovSetShadow(ovState.sel, 'color', c.value);
+  c.onchange = () => ovCommit();
   row.appendChild(c);
   wrap.appendChild(row);
   return wrap;
@@ -3242,7 +3410,7 @@ function ovRenderPanel() {
     cb.checked = ov.visible !== false;                 // shown unless explicitly hidden
     const lab = document.createElement('label'); lab.textContent = 'Visible';
     lab.style.margin = '0 0 0 6px';
-    cb.onchange = () => ovSetProp(id, 'visible', cb.checked ? '' : false);
+    cb.onchange = () => { ovSetProp(id, 'visible', cb.checked ? '' : false); ovCommit(); };
     wrap.append(cb, lab); panel.appendChild(wrap);
   }
   const grid = () => { const g = document.createElement('div'); g.className = 'ovgrid2'; return g; };
@@ -3251,6 +3419,7 @@ function ovRenderPanel() {
     if (has('left')) g.appendChild(ovNumField('left', 'Left (px)', view));
     if (has('top')) g.appendChild(ovNumField('top', 'Top (px)', view));
     panel.appendChild(g);
+    panel.appendChild(ovAlignRow(id, has('left'), has('top')));
   }
   if (has('width') || has('height') || has('padding')) {
     const g = grid();
@@ -3347,6 +3516,7 @@ function ovResetSlot(id) {
   if (el) { el.removeAttribute('style'); el.style.cursor = 'move'; ovStyleSlot(id); }
   ovPositionSel();
   ovRenderPanel();
+  ovCommit();
 }
 
 function ovRefreshFontUI() {
@@ -3459,6 +3629,22 @@ function closeBuilderModal() {
 // Esc closes the modal (only when it's open).
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('ov-modal').hidden) closeBuilderModal();
+});
+
+// Undo/redo shortcuts — only when the builder canvas exists and focus is NOT in a
+// form field (so number/color inputs and the Advanced-CSS textarea keep native undo).
+window.addEventListener('keydown', e => {
+  if (!ovState.shadow) return;
+  // Only when the builder is actually on screen (Profile view active or the
+  // pop-out modal open) — otherwise Ctrl/Cmd-Z on another view would silently
+  // mutate the hidden builder's layout.
+  if (currentView !== 'profile' && $('ov-modal').hidden) return;
+  const tn = e.target && e.target.tagName;
+  if (tn === 'INPUT' || tn === 'TEXTAREA' || tn === 'SELECT') return;
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); ovUndo(); }
+  else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); ovRedo(); }
 });
 
 // Reuse the exact OBS browser-source refresh the Apps view uses (obs-refresh op,
