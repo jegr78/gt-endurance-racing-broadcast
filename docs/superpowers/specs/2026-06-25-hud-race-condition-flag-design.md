@@ -75,7 +75,17 @@ assets). To avoid confusion this feature uses:
 - `tick()`: a small `setFlag(id, value)` helper sets `textContent`, toggles `.empty`,
   and sets `el.dataset.state = flagSlug(value)` (empty → remove the attribute).
   `flagSlug` = lowercase, non-alphanumeric runs → `-`, trimmed (e.g. "Full Course
-  Yellow" → `full-course-yellow`, "Safety Car" → `safety-car`).
+  Yellow" → `full-course-yellow`, "Safety Car" → `safety-car`), then resolved through a
+  small **abbreviation alias map** so common short forms land on a canonical slug:
+  ```javascript
+  const FLAG_ALIASES = {
+    "sc": "safety-car",
+    "fcy": "full-course-yellow",
+    "vsc": "full-course-yellow",   // virtual safety car reuses the FCY amber treatment
+  };
+  ```
+  (A league wanting a distinct VSC look adds a `customCss` rule.) Unaliased slugs pass
+  through unchanged.
 - Base CSS: a neutral default `#flag-status { … }` plus per-state colors keyed on the
   canonical slugs:
   - `green-flag` → green bg, light text
