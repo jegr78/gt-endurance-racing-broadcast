@@ -619,6 +619,28 @@ def t_graphic_file_traversal_and_missing_are_404():
             srv.shutdown()
 
 
+def t_all_console_pages_strip_token_from_url():
+    # Every /console page can be reached with `?t=<token>` (racecast links emits
+    # `/console?t=…`); the response sets the rc_console cookie, so the page must
+    # then strip the token from the address bar + history (no lingering auth token
+    # in screen-shares / browser history). All token-bearing pages must keep this
+    # in lock-step — the launcher, director panel and Companion-buttons wrapper
+    # used to drift from their three siblings.
+    pages = [
+        ("console", "console.html"),          # the racecast-links launcher target
+        ("cockpit", "cockpit.html"),
+        ("console", "health-monitor.html"),
+        ("racecontrol", "race-control.html"),
+        ("director", "director-panel.html"),  # /console/panel?t=
+        ("console", "buttons.html"),          # /console/buttons?t=
+    ]
+    for d, fn in pages:
+        with open(os.path.join(ROOT, "src", d, fn), encoding="utf-8") as fh:
+            page = fh.read()
+        assert "history.replaceState" in page, f"{fn} does not strip the URL token"
+        assert "location.pathname" in page, f"{fn} strip target is not the bare path"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

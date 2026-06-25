@@ -18,6 +18,13 @@
     var _f = window.fetch;
     window.fetch = function (u, o) { return _f(window.RC_API(u), o); };
   })();
+  // The auth cookie was set by the response that served this page, so the token
+  // in the URL (`?t=…` from the racecast-links launcher) is no longer needed —
+  // strip it from the address bar + history so it does not linger in
+  // screen-shares / browser history. Sub-requests use the cookie.
+  if (location.search) {
+    try { history.replaceState({}, '', location.pathname); } catch (e) { /* noop */ }
+  }
 </script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

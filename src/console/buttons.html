@@ -12,6 +12,13 @@
     if (p.indexOf(b + "/") === 0 || p === b) return p;   // already prefixed
     return b + p;
   };
+  // The auth cookie was set by the response that served this page, so a token in
+  // the URL (`?t=…` on a /console/buttons link) is no longer needed — strip it
+  // from the address bar + history so it does not linger in screen-shares /
+  // browser history. Sub-requests use the cookie.
+  if (location.search) {
+    try { history.replaceState({}, '', location.pathname); } catch (e) { /* noop */ }
+  }
 </script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
