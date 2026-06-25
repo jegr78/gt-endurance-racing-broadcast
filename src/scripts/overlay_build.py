@@ -66,8 +66,8 @@ KIND_PROPS = {"text": KIND_TEXT, "box": KIND_BOX}
 _UNSAFE_VALUE = re.compile(r"[;{}<>]|/\*|\*/")
 
 # Sample content for the same-origin builder canvas (so the operator positions
-# slots against realistic text). Each team is three slots now (logo/number/name,
-# issue #136): the number + name carry text; the logo is an image. Image slots
+# slots against realistic text). Each team is four slots now (logo/number/name/brand,
+# issue #136): the number + name + brand carry text; the logo is an image. Image slots
 # (the round flag + each team logo) carry a {"flag"/"brand": key} entry so the
 # offline canvas previews them from bundled src/assets/ (served by the Control
 # Center at /api/overlay/asset/{flags,brands}/<key>).
@@ -230,6 +230,8 @@ def _declaration(prop, value):
         return _text_shadow_decl(value)
     if prop == "visible":
         # Only an explicit False hides the slot; True/anything-else = default shown.
+        # Must precede _safe_value: bool is an int subclass, so _safe_value(False)
+        # returns False (not None) and would fall through to a no-op.
         return "display: none" if value is False else None
     value = _safe_value(value)
     if value is None:

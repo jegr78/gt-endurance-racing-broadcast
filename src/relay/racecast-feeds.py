@@ -851,7 +851,9 @@ def _crew_truthy(v):
 
 
 def parse_config_roster(text):
-    """Configuration tab CSV -> roster {team_name: {"number": str, "brandKey": str}}.
+    """Configuration tab CSV -> roster {team_name: {"number": str, "brandKey": str,
+    "brandName": str}}. brandName = the "Brand Name Override" cell or, when blank, the
+    verbatim brand text; brandKey (the logo) is always asset_key(brand) regardless.
     The team name is always stripped of a trailing '#NNN' (split_team_label); the
     Number column wins over that embedded token, which is only the fallback. Columns
     are located by header name so positions stay free. A missing team-name header ->
@@ -973,7 +975,7 @@ def team_entry(raw, roster):
 
 
 def build_hud_data(overlay, roster):
-    """Combine an Overlay map + roster {team: {number, brandKey}} into /hud/data."""
+    """Combine an Overlay map + roster {team: {number, brandKey, brandName}} into /hud/data."""
     return {
         "stint": overlay.get("stint", ""),
         "streamer": overlay.get("streamer", ""),
