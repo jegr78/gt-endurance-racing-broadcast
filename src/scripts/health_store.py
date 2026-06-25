@@ -13,7 +13,7 @@ import math
 import sqlite3
 import time
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SAMPLE_INTERVAL_S = 30          # heartbeat tick = sample cadence
 LIVE_WINDOW_S = 900            # default range when no from/to given (15 min)
@@ -76,7 +76,18 @@ CREATE TABLE IF NOT EXISTS samples (
     feed_a_quality TEXT, feed_b_quality TEXT, pov_quality TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_samples_ts ON samples (ts);
+
+-- v4: discrete annotations (producer takeover, OBS stream start/stop), separate
+-- from the numeric `samples` time series. Redaction-safe: no URL/sheet columns.
+CREATE TABLE IF NOT EXISTS events (
+    ts REAL NOT NULL,
+    type TEXT NOT NULL,
+    label TEXT, producer TEXT, metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_events_ts ON events (ts);
 """
+
+EVENT_COLUMNS = ("ts", "type", "label", "producer", "metadata")
 
 # v3 columns, added via ALTER TABLE to pre-v3 DBs (fresh DBs get them from _CREATE).
 _V3_COLUMNS = (
@@ -139,6 +150,37 @@ def record(conn, snapshot, kind, now=None):
     stored = {c: s.get(c) for c in COLUMNS}
     stored["health_reasons"] = snapshot.get("health_reasons") or []
     return stored
+
+
+def _event_row_to_dict(row):
+    d = dict(row)
+    raw = d.get("metadata")
+    try:
+        d["metadata"] = json.loads(raw) if raw else None
+    except (ValueError, TypeError):
+        d["metadata"] = None
+    return d
+
+
+def record_event(conn, ts, event_type, label="", producer="", metadata=None):
+    """Insert one discrete annotation into the `events` table (producer takeover,
+    OBS stream start/stop) — separate from the numeric `samples` series. metadata
+    (a dict) is JSON-encoded; an empty/None metadata stores NULL. Returns the
+    stored row as a dict (metadata parsed back)."""
+    meta_json = json.dumps(metadata) if metadata else None
+    conn.execute("INSERT INTO events (ts, type, label, producer, metadata) "
+                 "VALUES (?,?,?,?,?)",
+                 (ts, event_type, label or "", producer or "", meta_json))
+    conn.commit()
+    return {"ts": ts, "type": event_type, "label": label or "",
+            "producer": producer or "", "metadata": metadata or None}
+
+
+def query_events(conn, frm, to):
+    """Events with frm <= ts <= to, ascending. metadata parsed back to a dict/None."""
+    cur = conn.execute("SELECT ts, type, label, producer, metadata FROM events "
+                       "WHERE ts>=? AND ts<=? ORDER BY ts ASC", (frm, to))
+    return [_event_row_to_dict(r) for r in cur.fetchall()]
 
 
 def query_range(conn, frm, to):
@@ -228,18 +270,36 @@ def export_jsonl_line(row):
     return json.dumps(r, ensure_ascii=False)
 
 
+def export_event_jsonl_line(row):
+    """Serialize one event dict to a JSON line tagged `"_kind":"event"` so
+    import_jsonl routes it to the events table (one body carries samples + events)."""
+    return json.dumps({"_kind": "event", "ts": row.get("ts"), "type": row.get("type"),
+                       "label": row.get("label") or "",
+                       "producer": row.get("producer") or "",
+                       "metadata": row.get("metadata")}, ensure_ascii=False)
+
+
+def export_events_jsonl(conn, frm=0):
+    """All events with ts >= frm as tagged JSON lines, ascending."""
+    cur = conn.execute("SELECT ts, type, label, producer, metadata FROM events "
+                       "WHERE ts>=? ORDER BY ts ASC", (frm,))
+    return [export_event_jsonl_line(_event_row_to_dict(r)) for r in cur.fetchall()]
+
+
 def export_jsonl(conn, frm=0):
-    """All samples with ts >= frm as JSON lines, ascending."""
+    """All samples with ts >= frm as JSON lines (ascending), FOLLOWED BY the events
+    (tagged `_kind=event`) so a single body carries both for takeover/export."""
     cur = conn.execute("SELECT * FROM samples WHERE ts>=? ORDER BY ts ASC", (frm,))
-    out = []
-    for row in cur.fetchall():
-        out.append(export_jsonl_line(_row_to_dict(row)))
+    out = [export_jsonl_line(_row_to_dict(row)) for row in cur.fetchall()]
+    out.extend(export_events_jsonl(conn, frm))
     return out
 
 
 def import_jsonl(conn, lines):
-    """Merge JSON-Lines samples into the DB, deduplicated by (ts, kind). Malformed
-    lines are skipped (never fatal). Returns the number of rows newly inserted."""
+    """Merge JSON-Lines into the DB. Sample lines dedup by (ts, kind); event lines
+    (tagged `"_kind":"event"`) route to the events table, dedup by (ts, type).
+    Malformed lines are skipped (never fatal). Returns the number of rows newly
+    inserted (samples + events)."""
     inserted = 0
     placeholders = ",".join("?" for _ in COLUMNS)
     for line in lines:
@@ -250,7 +310,24 @@ def import_jsonl(conn, lines):
             obj = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(obj, dict) or obj.get("ts") is None or obj.get("kind") is None:
+        if not isinstance(obj, dict):
+            continue
+        if obj.get("_kind") == "event":
+            if obj.get("ts") is None or obj.get("type") is None:
+                continue
+            dup = conn.execute("SELECT 1 FROM events WHERE ts=? AND type=? LIMIT 1",
+                               (obj["ts"], obj["type"])).fetchone()
+            if dup:
+                continue
+            meta = obj.get("metadata")
+            conn.execute("INSERT INTO events (ts, type, label, producer, metadata) "
+                         "VALUES (?,?,?,?,?)",
+                         (obj["ts"], obj["type"], obj.get("label") or "",
+                          obj.get("producer") or "",
+                          json.dumps(meta) if meta else None))
+            inserted += 1
+            continue
+        if obj.get("ts") is None or obj.get("kind") is None:
             continue
         dup = conn.execute("SELECT 1 FROM samples WHERE ts=? AND kind=? LIMIT 1",
                            (obj["ts"], obj["kind"])).fetchone()

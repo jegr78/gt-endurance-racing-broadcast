@@ -95,6 +95,7 @@ import console_auth   # talent-cockpit token auth (#191); pure, src/scripts on s
 import console_admin  # talent-cockpit revocation version store (#191)
 import discord_oauth  # Discord OAuth2 helpers for /console/login
 import cockpit_submissions  # talent stream-link submission store (#193)
+import notify   # pure Discord payload builders for producer events (#317)
 import console_policy  # /console authorization matrix + decision (#216)
 import console_proxy      # pure /console/buttons proxy plumbing (#236)
 import install_apps       # companion_http_version for the buttons health probe (#236)
@@ -259,14 +260,15 @@ def health_should_notify(prev, cur):
     return prev != cur
 
 
-def discord_health_payload(level, reasons, prev_level=None, event_title=""):
+def discord_health_payload(level, reasons, prev_level=None, event_title="", producer=""):
     """Discord webhook JSON for a health transition. Pure → unit-tested. A return
     to green reads as a recovery; otherwise it announces the degraded state and
     lists the reasons. Every health change (degraded AND recovery) carries an
     @here ping so the crew is pulled in even if the panel pill goes unnoticed —
     the mention MUST sit in top-level `content` with allowed_mentions permitting
-    it, because Discord ignores mentions inside an embed. A non-empty event_title
-    (#207) is shown as the embed footer; empty -> the embed is unchanged."""
+    it, because Discord ignores mentions inside an embed. The footer shows
+    `<event_title> · <producer>` (#207/#317 — which host raised it); empty -> no
+    footer."""
     if level == "green":
         title = "✅ Broadcast health recovered — all systems green"
         desc = "Recovered from a previous issue." if prev_level and prev_level != "green" \
@@ -275,12 +277,26 @@ def discord_health_payload(level, reasons, prev_level=None, event_title=""):
         title = f"⚠️ Broadcast health: {_HEALTH_LABEL[level]}"
         desc = "\n".join(f"• {r}" for r in reasons) or _HEALTH_LABEL[level]
     embed = {"title": title, "description": desc, "color": HEALTH_COLORS[level]}
-    if event_title:
-        embed["footer"] = {"text": event_title}
+    footer = notify._footer(event_title, producer)
+    if footer:
+        embed["footer"] = {"text": footer}
     return {"username": "GT Racecast",
             "content": "@here",
             "allowed_mentions": {"parse": ["everyone"]},
             "embeds": [embed]}
+
+
+def stream_transition(prev, cur):
+    """The OBS stream start/stop event implied by a stream_active change, or None.
+    Only genuine bool transitions count: False->True = 'started', True->False =
+    'stopped'. A None on either side (unknown / OBS unreachable / first sample)
+    yields None, so a startup baseline or a reachability blip never fires a false
+    event. Pure → unit-tested."""
+    if prev is False and cur is True:
+        return "started"
+    if prev is True and cur is False:
+        return "stopped"
+    return None
 # Sheet ID is NOT hardcoded — it comes from RACECAST_SHEET_ID (injected by the CLI
 # from the active profile). Override per-run with --sheet-id.
 DEFAULT_SHEET_TAB = "Schedule"
@@ -1862,6 +1878,17 @@ class HealthStore:
             self._last_key = key
             return health_store.record(self.conn, snapshot, kind, now=now)
 
+    def record_event(self, ts, event_type, label="", producer="", metadata=None):
+        """Persist a discrete annotation (takeover, OBS stream start/stop) to the
+        events table. Best-effort caller contract — guarded by the same lock."""
+        with self.lock:
+            return health_store.record_event(self.conn, ts, event_type, label=label,
+                                              producer=producer, metadata=metadata)
+
+    def events(self, frm, to):
+        with self.lock:
+            return health_store.query_events(self.conn, frm, to)
+
     def query(self, frm, to):
         with self.lock:
             return health_store.query_range(self.conn, frm, to)
@@ -3402,11 +3429,13 @@ class Relay:
     def __init__(self, source, ports, logdir, cookies=None, pov_source=None,
                  pov_port=None, start_stint=1, cookie_dir=None,
                  qual_source=None, mode="race", discord_webhook_url=None,
-                 sheet_id=None, event_title_store=None, league_name=""):
+                 sheet_id=None, event_title_store=None, league_name="",
+                 producer_name=""):
         self.race_source = source
         self.qual_source = qual_source
         self.sheet_id = sheet_id          # league identity, surfaced in /status for takeover
         self.league_name = league_name    # display name injected from the active profile (#236)
+        self.producer_name = producer_name  # who runs this machine — on events/status (#317)
         self.event_title_store = event_title_store   # free-text event title for Discord footers (#207)
         # Active schedule is race by default; qualifying only when a qual source
         # exists. self.source (property below) returns whichever is active, so
@@ -3434,6 +3463,7 @@ class Relay:
         self.funnel_expected = False      # latched True once the Funnel is seen up
         self.stream_expected = False      # latched True once OBS is seen streaming
                                           # (off-air alarm only fires after this)
+        self._stream_active_prev = None   # last bool stream_active, for start/stop events (#317)
         # POV is a THIRD, independent feed — not part of the A/B index. Starts
         # paused (off) until the Director calls /pov/reload.
         self.pov_source = pov_source
@@ -3599,25 +3629,35 @@ class Relay:
                 "feed_b_quality": _q(self.feeds["B"]),
                 "pov_quality": _q(self.pov) if self.pov else None}
 
-    def _send_health_webhook(self, level, reasons, prev):
-        """POST a Discord health alert. Fully best-effort: no URL or any failure
-        logs one line and returns — never breaks the heartbeat."""
+    def _discord_post(self, payload, what):
+        """Best-effort fire-and-forget POST of a Discord webhook payload; a no-op
+        when no webhook is configured. *what* names the event for the failure log.
+        Discord is behind Cloudflare, which 403s the default urllib
+        "Python-urllib/x.y" User-Agent — without an explicit UA the post silently
+        never arrives, so we match the UA the rest of the relay sends."""
         url = self.discord_webhook_url
         if not url:
             return
         try:
-            event_title = self.event_title_store.get() if self.event_title_store else ""
-            data = json.dumps(discord_health_payload(level, reasons, prev,
-                                                     event_title)).encode()
-            # Discord is behind Cloudflare, which 403s the default urllib
-            # "Python-urllib/x.y" User-Agent — without an explicit UA the alert
-            # silently never arrives. Match the UA the rest of the relay sends.
+            data = json.dumps(payload).encode()
             req = Request(url, data=data, method="POST",
                           headers={"Content-Type": "application/json",
                                    "User-Agent": "racecast-feeds/1.0"})
             urlopen(req, timeout=5).read()   # noqa: S310 — operator-configured webhook
         except Exception as e:                # noqa: BLE001 — best effort
-            LOG.warning("Discord health webhook failed: %s: %s", type(e).__name__, e)
+            LOG.warning("Discord %s webhook failed: %s: %s", what, type(e).__name__, e)
+
+    def _event_title(self):
+        """The current free-text event title (#207) for Discord footers, or ""."""
+        return self.event_title_store.get() if self.event_title_store else ""
+
+    def _send_health_webhook(self, level, reasons, prev):
+        """POST a Discord health alert. Fully best-effort — never breaks the
+        heartbeat. The footer names this producer (#317)."""
+        self._discord_post(
+            discord_health_payload(level, reasons, prev, self._event_title(),
+                                   self.producer_name),
+            "health")
 
     def _heartbeat_loop(self):
         """Background tick: refresh health and push to Discord on a level change
@@ -3676,6 +3716,7 @@ class Relay:
         live = self.live_feed()
         out["live"] = {"feed": live, "stint": self.feeds[live].idx + 1, "mode": self.mode}
         out["league"] = {"sheet_id": self.sheet_id, "name": self.league_name}
+        out["producer"] = self.producer_name   # who runs this machine (#317 — for takeover)
         self._refresh_health(now)            # keep the displayed level fresh (2 s poll)
         out["health"] = {"level": self.health_level, "reasons": self.health_reasons,
                          "since_s": round(now - self.health_since, 1)}
@@ -3789,6 +3830,7 @@ class Relay:
             kbps = _obs_ws.stream_kbps(self._obs_last_bytes, self._obs_last_bytes_ts,
                                        stats.get("output_bytes"), now,
                                        stats.get("stream_active"))
+            transition = None
             with self._obs_lock:
                 self.obs_reachable = reachable
                 self.obs_note = note or None
@@ -3798,11 +3840,36 @@ class Relay:
                 redacted = {k: v for k, v in stats.items() if k != "output_bytes"}
                 redacted["stream_kbps"] = kbps
                 self.obs_stats = redacted
-                if stats.get("stream_active"):       # latch once OBS goes live
+                active = stats.get("stream_active")    # True / False / None
+                prev = self._stream_active_prev
+                if active is not None:                 # ignore unreachable blips
+                    self._stream_active_prev = active
+                if active:                             # latch once OBS goes live
                     self.stream_expected = True
+                transition = stream_transition(prev, active)
+            # Off-thread I/O OUTSIDE the lock: a Discord push + Health-Monitor marker.
+            if transition:
+                self._on_stream_transition(transition, now)
         except Exception:                                # noqa: BLE001 — best-effort
             with self._obs_lock:
                 self._obs_probe_running = False
+
+    def _on_stream_transition(self, transition, now):
+        """Emit an OBS stream start/stop event (#317): a best-effort Discord push
+        plus a persisted Health-Monitor marker. Both name this producer."""
+        started = transition == "started"
+        self._discord_post(
+            notify.obs_stream_discord_payload(started, self.producer_name,
+                                              self._event_title()),
+            "obs-stream")
+        if self.health_store is not None:
+            try:
+                self.health_store.record_event(
+                    now, "obs_stream_start" if started else "obs_stream_stop",
+                    label="OBS stream started" if started else "OBS stream stopped",
+                    producer=self.producer_name)
+            except Exception:    # noqa: BLE001 — best-effort
+                pass
 
     def _sample_connectivity(self):
         """Sample Funnel/Tailscale/Companion reachability into self.conn_state and
@@ -4700,6 +4767,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     "current": self._health_current(),
                     "bands": store.bands(frm, to),
                     "incidents": store.incidents(frm, to),
+                    "events": store.events(frm, to),   # discrete markers (#317)
                     "series": store.series(frm, to, maxn)}
 
         def _health_raw_payload(self):
@@ -4790,6 +4858,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         "live": full.get("live"),
                         "league": full.get("league"),
                         "mode": full.get("mode"),
+                        "producer": full.get("producer"),   # #317 — name A for the takeover
                         "event_title": event_store.get() if event_store else "",
                         "timer": timer_store.summary() if timer_store else None,
                     })
@@ -5736,7 +5805,8 @@ def main():
                   discord_webhook_url=os.environ.get("RACECAST_DISCORD_WEBHOOK_URL"),
                   sheet_id=args.sheet_id,
                   event_title_store=event_store,
-                  league_name=args.league_name)
+                  league_name=args.league_name,
+                  producer_name=os.environ.get("RACECAST_PRODUCER_NAME", ""))
     relay.health_store = _health_store_obj
     relay.timer_store = timer_store
     relay.start()

@@ -252,7 +252,7 @@ def t_migrate_v2_to_v3_is_lossless():
     try:
         hs.migrate(conn)
         ver = conn.execute("PRAGMA user_version").fetchone()[0]
-        assert ver == 3, ver
+        assert ver == hs.SCHEMA_VERSION, ver
         cols = {r[1] for r in conn.execute("PRAGMA table_info(samples)").fetchall()}
         for f in ("stream_active", "funnel_ok", "stream_kbps", "obs_cpu_pct",
                   "feed_a_quality", "pov_quality"):
@@ -287,6 +287,82 @@ def t_new_fields_round_trip():
         assert "stream_kbps" in series and "obs_cpu_pct" in series
     finally:
         conn.close()
+
+
+def t_migrate_creates_events_table_and_bumps_version():
+    with tempfile.TemporaryDirectory() as d:
+        conn = hs.open_db(os.path.join(d, "h.db")); hs.migrate(conn)
+        try:
+            assert conn.execute("PRAGMA user_version").fetchone()[0] == hs.SCHEMA_VERSION
+            assert hs.SCHEMA_VERSION >= 4
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(events)").fetchall()}
+            assert {"ts", "type", "label", "producer", "metadata"} <= cols, cols
+        finally:
+            conn.close()
+
+
+def t_record_event_then_query_roundtrip():
+    with tempfile.TemporaryDirectory() as d:
+        conn = hs.open_db(os.path.join(d, "h.db")); hs.migrate(conn)
+        try:
+            hs.record_event(conn, 100.0, "takeover", label="B took over",
+                            producer="Bob", metadata={"from": "Alice", "stint": 7})
+            hs.record_event(conn, 50.0, "obs_stream_start", label="started",
+                            producer="Bob")
+            rows = hs.query_events(conn, 0, 1e12)
+            assert [r["ts"] for r in rows] == [50.0, 100.0]            # ascending
+            tk = rows[1]
+            assert tk["type"] == "takeover" and tk["producer"] == "Bob"
+            assert tk["label"] == "B took over"
+            assert tk["metadata"] == {"from": "Alice", "stint": 7}     # JSON parsed back
+            assert rows[0]["metadata"] is None                         # no metadata -> None
+        finally:
+            conn.close()
+
+
+def t_query_events_filters_window():
+    with tempfile.TemporaryDirectory() as d:
+        conn = hs.open_db(os.path.join(d, "h.db")); hs.migrate(conn)
+        try:
+            for ts in (10.0, 100.0, 200.0):
+                hs.record_event(conn, ts, "obs_stream_stop")
+            assert [r["ts"] for r in hs.query_events(conn, 50.0, 150.0)] == [100.0]
+        finally:
+            conn.close()
+
+
+def t_events_ride_along_export_import_and_dedup():
+    with tempfile.TemporaryDirectory() as d:
+        a = hs.open_db(os.path.join(d, "a.db")); hs.migrate(a)
+        b = hs.open_db(os.path.join(d, "b.db")); hs.migrate(b)
+        try:
+            hs.record(a, _snap(ts=100.0, level="green"), "periodic")
+            hs.record_event(a, 120.0, "takeover", label="x", producer="Bob",
+                            metadata={"stint": 3})
+            lines = hs.export_jsonl(a)                       # samples + tagged event lines
+            assert any('"_kind": "event"' in ln for ln in lines), lines
+            n = hs.import_jsonl(b, lines)
+            assert n == 2                                    # one sample + one event
+            assert [r["ts"] for r in hs.query_range(b, 0, 1e12)] == [100.0]
+            ev = hs.query_events(b, 0, 1e12)
+            assert len(ev) == 1 and ev[0]["type"] == "takeover"
+            assert ev[0]["metadata"] == {"stint": 3}
+            assert hs.import_jsonl(b, lines) == 0            # re-import is a no-op (dedup)
+        finally:
+            a.close(); b.close()
+
+
+def t_export_jsonl_orders_samples_before_events():
+    import json as _json
+    with tempfile.TemporaryDirectory() as d:
+        conn = hs.open_db(os.path.join(d, "h.db")); hs.migrate(conn)
+        try:
+            hs.record(conn, _snap(ts=100.0), "periodic")
+            hs.record_event(conn, 50.0, "obs_stream_start")
+            kinds = [(_json.loads(ln).get("_kind") or "sample") for ln in hs.export_jsonl(conn)]
+            assert kinds == ["sample", "event"], kinds   # samples first, events appended
+        finally:
+            conn.close()
 
 
 m = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))
@@ -348,6 +424,19 @@ def t_relay_health_snapshot_has_no_urls_and_all_columns():
     assert "timer_remaining_s" not in snap   # clean break: replaced by timer_push
     blob = repr(snap).lower()
     assert "http" not in blob and "youtu" not in blob   # redaction
+
+
+def t_healthstore_wrapper_record_event_and_query():
+    with tempfile.TemporaryDirectory() as d:
+        store = m.HealthStore(os.path.join(d, "h.db"))
+        try:
+            store.record_event(120.0, "takeover", label="B took over", producer="Bob",
+                               metadata={"stint": 4})
+            evs = store.events(0, 1e12)
+            assert len(evs) == 1 and evs[0]["type"] == "takeover"
+            assert evs[0]["producer"] == "Bob" and evs[0]["metadata"] == {"stint": 4}
+        finally:
+            store.close()
 
 
 if __name__ == "__main__":

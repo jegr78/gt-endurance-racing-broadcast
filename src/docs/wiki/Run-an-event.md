@@ -220,6 +220,15 @@ is fine.
 > A's tailnet. The tailnet form `racecast event takeover <A-tailscale-ip>` is unchanged.
 > Details: [Remote access](Remote-access#producer-takeover-over-the-funnel).
 
+> **Takeover announcement.** A `racecast event takeover` posts a **Discord** alert (with an
+> `@here` ping) naming the incoming and outgoing producer and the stint, and drops a
+> **takeover** marker on the [Health Monitor](Health-Monitor#events) timeline of the
+> incoming machine. Producer names come from the league Sheet's **`Producer`** tab
+> (`Part | Producer | MagicDNS`): each machine reverse-resolves its own MagicDNS name to a
+> display name, falling back to the hostname when the tab has no matching row. The same
+> mechanism also posts a Discord alert + Health-Monitor marker when **OBS starts or stops
+> streaming**.
+
 Typo, or forgot `--stint`? Fix it **before going live**:
 `http://127.0.0.1:8088/set/stint/<N>` repositions both feeds. Like the other
 `/set` endpoints it tears a running feed off its stream — not for mid-program

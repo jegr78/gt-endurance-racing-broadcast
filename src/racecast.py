@@ -50,6 +50,7 @@ import console_auth as cpa
 import console_admin as cpadm
 import cue_admin as cue
 import health_store as hsmod
+import notify   # pure Discord payload builders for producer events (#317)
 import overlay_build as ob
 import fonts_bundle as fb
 import ports as pt
@@ -1787,6 +1788,9 @@ def relay_start(rest):
         print(f"WARNING: feed port(s) {', '.join(map(str, busy))} already in use — "
               f"that feed may fail to bind. Free them first: racecast freeport")
     _ensure_active_console_secret()   # zero-config console: provision + inject the secret
+    # Resolve + inject the producer name (#317) so the relay can tag its OBS-stream
+    # events and /status; the child inherits it via the environment.
+    os.environ["RACECAST_PRODUCER_NAME"] = _resolve_producer_name()
     _write_relay_profile_stamp()      # record the running profile before spawn (#273)
     argv = _relay_daemon_argv(rest, IS_FROZEN)
     newpid = sv.start_detached(argv, _relay_boot_log_path(), _relay_pid_path(),
@@ -2503,6 +2507,32 @@ def _takeover_event_title(status):
     return title if isinstance(title, str) else None
 
 
+def _announce_takeover(status, plan, a_title):
+    """Announce a producer takeover (#317): a Discord push + a Health-Monitor marker
+    on THIS machine, both naming the producers (B = us via _resolve_producer_name,
+    A = the outgoing one from /status). Fully best-effort — any failure prints one
+    note and returns, never blocking the bring-up. Own function so the takeover
+    tests stub its network/DB I/O."""
+    try:
+        b_name = _resolve_producer_name()
+        a_name = _takeover_producer(status)
+        mode_label = "qualifying mode" if plan["qualifying"] else "race mode"
+        webhook, _league = _active_discord_webhook()
+        if webhook:
+            _post_discord_webhook(webhook, notify.takeover_discord_payload(
+                b_name, a_name, plan["stint"], mode_label,
+                event_title=(a_title or "")))
+        conn = hsmod.open_db(_health_db_path()); hsmod.migrate(conn)
+        hsmod.record_event(conn, time.time(), "takeover",
+                           label=(f"{b_name} took over from {a_name}" if a_name
+                                  else f"{b_name} took over"),
+                           producer=b_name,
+                           metadata={"from": a_name, "stint": plan["stint"]})
+        conn.close()
+    except Exception as exc:  # noqa: BLE001 — best-effort, never blocks the bring-up
+        print(f"note: takeover announcement failed ({type(exc).__name__}) — continuing.")
+
+
 def _event_gate_results(ev, pf):
     """The static preconditions `racecast event start` cannot fix by launching
     services: the active league's .env/SHEET_ID, the broadcast graphics/media,
@@ -2923,6 +2953,11 @@ def event_takeover(rest):
           f"{plan['source']})" + (" — qualifying mode" if plan["qualifying"] else "") + ".")
     print("When ready, switch the broadcast output (stream key) to this machine "
           "per your crew procedure.\n")
+
+    # Announce the takeover (#317) BEFORE event_start (which exits with the readiness
+    # code). Its own helper so the takeover tests stub the network/DB I/O cleanly.
+    _announce_takeover(status, plan, a_title)
+
     es_args = ["--stint", str(plan["stint"])]
     if plan["qualifying"]:
         es_args.append("--qualifying")
@@ -3949,6 +3984,47 @@ def _active_discord_webhook():
         return rc.discord_webhook_url or "", rc.name or ""
     except Exception:  # noqa: BLE001 — best effort
         return "", ""
+
+
+_PRODUCER_NAME_CACHE = None
+
+
+def _resolve_producer_name():
+    """This machine's producer display name for events (#317): the `Producer` Sheet
+    tab reverse-resolved from our own MagicDNS name, else a manual
+    RACECAST_PRODUCER_NAME override, else the hostname. Best-effort + cached (one
+    Sheet fetch per process); never raises. Injected as RACECAST_PRODUCER_NAME into
+    the relay child at start, and used for the takeover announcement."""
+    global _PRODUCER_NAME_CACHE
+    if _PRODUCER_NAME_CACHE is not None:
+        return _PRODUCER_NAME_CACHE
+    import socket
+    name = ""
+    try:
+        data = producer_schedule_data()
+        for r in data.get("rows", []):
+            if r.get("self") and r.get("producer"):
+                name = r["producer"]
+                break
+    except Exception:  # noqa: BLE001 — best-effort (no sheet / Tailscale down)
+        name = ""
+    if not name:
+        name = (os.environ.get("RACECAST_PRODUCER_NAME") or "").strip()
+    if not name:
+        try:
+            name = socket.gethostname() or ""
+        except OSError:
+            name = ""
+    _PRODUCER_NAME_CACHE = name
+    return name
+
+
+def _takeover_producer(status):
+    """Producer A's display name from its /status (tailnet) or redacted takeover
+    status (funnel), or "" when absent (older relay / unreachable)."""
+    if not isinstance(status, dict):
+        return ""
+    return (status.get("producer") or "").strip()
 
 
 def _post_discord_webhook(url, payload):

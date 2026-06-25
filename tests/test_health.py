@@ -151,6 +151,49 @@ def t_status_league_sheet_id_none_when_unset():
         assert r.status()["league"] == {"sheet_id": None, "name": ""}
 
 
+def t_status_includes_producer_name():
+    # #317: the takeover names the outgoing producer A from /status.
+    with tempfile.TemporaryDirectory() as td:
+        r = _mk_relay(td, ["a", "b"])
+        assert r.status()["producer"] == ""        # default: unset -> hostname elsewhere
+        r.producer_name = "Bob"
+        assert r.status()["producer"] == "Bob"
+
+
+def t_stream_transition_only_genuine_bool_changes():
+    assert m.stream_transition(False, True) == "started"
+    assert m.stream_transition(True, False) == "stopped"
+    # None on either side (baseline / OBS-unreachable blip) = no event
+    for prev, cur in ((None, True), (True, None), (None, False), (None, None),
+                      (True, True), (False, False)):
+        assert m.stream_transition(prev, cur) is None, (prev, cur)
+
+
+def t_discord_health_payload_producer_in_footer():
+    p = m.discord_health_payload("red", ["Feed A down"], prev_level="green",
+                                 event_title="GTEC R4", producer="Bob")
+    assert p["embeds"][0]["footer"]["text"] == "GTEC R4 · Bob"
+    only_prod = m.discord_health_payload("red", ["x"], producer="Bob")
+    assert only_prod["embeds"][0]["footer"]["text"] == "Bob"
+    neither = m.discord_health_payload("red", ["x"])
+    assert "footer" not in neither["embeds"][0]
+
+
+def t_on_stream_transition_records_health_event_with_producer():
+    with tempfile.TemporaryDirectory() as td:
+        r = _mk_relay(td, ["a", "b"])
+        r.producer_name = "Bob"                    # no webhook URL -> _discord_post no-ops
+        r.health_store = m.HealthStore(os.path.join(td, "h.db"))
+        try:
+            r._on_stream_transition("started", now=1000.0)
+            r._on_stream_transition("stopped", now=2000.0)
+            evs = r.health_store.events(0, 1e12)
+            assert [e["type"] for e in evs] == ["obs_stream_start", "obs_stream_stop"]
+            assert all(e["producer"] == "Bob" for e in evs)
+        finally:
+            r.health_store.close()
+
+
 def t_status_cookies_health_no_cookies():
     with tempfile.TemporaryDirectory() as td:
         r = _mk_relay(td, ["https://youtu.be/a"])

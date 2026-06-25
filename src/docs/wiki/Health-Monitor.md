@@ -123,6 +123,27 @@ to yellow or red, with a start time, end time (or "ongoing"), duration, and the
 reasons that were active. Each incident is a single row; open it for the full
 reason list at that moment.
 
+### Events
+
+Below the incidents, an **Events** list records discrete moments — not health-level
+changes, but notable actions — with the time, an event badge, a short detail, and the
+**producer** (which host/operator triggered it). Each event is also drawn as a thin
+dashed vertical line across the numeric charts, so you can line a takeover or a stream
+start/stop up against the metrics.
+
+| Event | When it fires |
+|---|---|
+| **Takeover** | Another producer took over the broadcast (`racecast event takeover`). The detail names the incoming and outgoing producer; the producer column is the new (incoming) host. |
+| **Stream start** | OBS started streaming to the broadcast platform. |
+| **Stream stop** | OBS stopped streaming (the broadcast went off air). |
+
+The same three events are also pushed to the league's **Discord** webhook (if
+configured): a takeover and a stream stop carry an `@here` ping; a stream start is a
+quiet informational post. Every post footer names the producer, so the crew can see at
+a glance which host raised it. Events ride along with the health history on
+[producer handover](#export-import-and-producer-handover), so the incoming producer's
+monitor shows the takeover marker too.
+
 ## Time-range controls
 
 Preset buttons at the top of the page select the window to display:
