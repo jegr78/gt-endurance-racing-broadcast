@@ -2794,7 +2794,10 @@ const OV_SHADOW_CSS =
   'border:4px solid #fff;border-radius:50%;box-sizing:border-box;pointer-events:auto}' +
   '.ov-h-se{right:-13px;bottom:-13px;cursor:nwse-resize}' +
   '.ov-h-e{right:-13px;top:50%;transform:translateY(-50%);cursor:ew-resize}' +
-  '.ov-h-s{bottom:-13px;left:50%;transform:translateX(-50%);cursor:ns-resize}';
+  '.ov-h-s{bottom:-13px;left:50%;transform:translateX(-50%);cursor:ns-resize}' +
+  '.ov-hidden{opacity:.32!important;outline:2px dashed #f59e0b!important;outline-offset:-1px}' +
+  '.ov-hidden::after{content:"hidden";position:absolute;top:0;left:0;z-index:60;' +
+  'font:700 9px/1.4 system-ui,sans-serif;background:#f59e0b;color:#111;padding:0 3px;border-radius:2px}';
 
 async function loadOverlay() {
   $('overlay-err').hidden = true;
@@ -2933,6 +2936,10 @@ function ovApplyProp(el, prop, value) {
       : '';
     return;
   }
+  if (prop === 'visible') {
+    el.classList.toggle('ov-hidden', value === false);   // canvas: dim, don't remove
+    return;
+  }
   if (value === undefined || value === null || value === '') {
     el.style.removeProperty(name);
     if (prop === 'teamNameMax' && nameEl) nameEl.style.removeProperty('font-size');
@@ -2960,6 +2967,7 @@ function ovStyleSlot(id) {
   const ov = (ovState.layout.slots && ovState.layout.slots[id]) || {};
   Object.keys(OV_CSSNAME).forEach(p => ovApplyProp(el, p, ov[p]));
   ovApplyProp(el, 'textShadow', ov.textShadow);
+  ovApplyProp(el, 'visible', ov.visible);
 }
 
 function ovSetProp(id, prop, value) {
@@ -3225,6 +3233,15 @@ function ovRenderPanel() {
   const props = meta.props || [];
   const has = p => props.includes(p);
   const h = document.createElement('h4'); h.textContent = meta.label; panel.appendChild(h);
+  if (has('visible')) {
+    const wrap = document.createElement('div'); wrap.className = 'ovinline';
+    const cb = document.createElement('input'); cb.type = 'checkbox';
+    cb.checked = ov.visible !== false;                 // shown unless explicitly hidden
+    const lab = document.createElement('label'); lab.textContent = 'Visible';
+    lab.style.margin = '0 0 0 6px';
+    cb.onchange = () => ovSetProp(id, 'visible', cb.checked ? '' : false);
+    wrap.append(cb, lab); panel.appendChild(wrap);
+  }
   const grid = () => { const g = document.createElement('div'); g.className = 'ovgrid2'; return g; };
   if (has('left') || has('top')) {
     const g = grid();
