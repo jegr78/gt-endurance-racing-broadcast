@@ -4349,7 +4349,7 @@
      "0": {
       "type": "button",
       "style": {
-       "text": "FLAG\\nGREEN",
+       "text": "FLAG\nGREEN",
        "textExpression": false,
        "size": "14",
        "png64": null,
@@ -4408,7 +4408,7 @@
      "1": {
       "type": "button",
       "style": {
-       "text": "FLAG\\nYELLOW",
+       "text": "FLAG\nYELLOW",
        "textExpression": false,
        "size": "14",
        "png64": null,
@@ -4467,7 +4467,7 @@
      "2": {
       "type": "button",
       "style": {
-       "text": "SAFETY\\nCAR",
+       "text": "SAFETY\nCAR",
        "textExpression": false,
        "size": "14",
        "png64": null,
@@ -4585,7 +4585,7 @@
      "4": {
       "type": "button",
       "style": {
-       "text": "RED\\nFLAG",
+       "text": "RED\nFLAG",
        "textExpression": false,
        "size": "14",
        "png64": null,
@@ -4644,7 +4644,7 @@
      "5": {
       "type": "button",
       "style": {
-       "text": "CLEAR\\nFLAG",
+       "text": "CLEAR\nFLAG",
        "textExpression": false,
        "size": "14",
        "png64": null,
