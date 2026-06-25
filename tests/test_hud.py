@@ -200,14 +200,36 @@ def t_parse_config_vocab():
 
 def t_parse_config_vocab_missing_columns_safe():
     v = m.parse_config_vocab("a,b\n1,2\n")
-    assert v == {"stint": [], "streamer": [], "session": [], "racecontrol": []}
+    assert v == {"stint": [], "streamer": [], "session": [], "racecontrol": [], "flag": []}
     assert m.parse_config_vocab("") == {"stint": [], "streamer": [],
-                                        "session": [], "racecontrol": []}
+                                        "session": [], "racecontrol": [], "flag": []}
 
 
 def t_parse_config_vocab_dedupes_keeps_order():
     v = m.parse_config_vocab("Streamers\nB\nA\nB\n\nA\n")
     assert v["streamer"] == ["B", "A"], v
+
+
+FLAG_OVERLAY_CSV = (",Flag,Safety Car,,,,,,,\n")
+def t_parse_overlay_flag():
+    assert m.parse_overlay(FLAG_OVERLAY_CSV)["flag"] == "Safety Car"
+
+def t_build_hud_data_flag():
+    d = m.build_hud_data(m.parse_overlay(FLAG_OVERLAY_CSV), {})
+    assert d["flag"] == "Safety Car"
+
+def t_build_hud_data_flag_default_empty():
+    d = m.build_hud_data(m.parse_overlay(",Stint,X,,,,,,,\n"), {})
+    assert d["flag"] == ""
+
+FLAG_CONFIG_CSV = ("Stints,Flag,Race Control\n"
+                   "Stint 1,Yellow Flag,Formation Lap\n"
+                   "Stint 2,Safety Car,Final Lap\n")
+def t_parse_config_vocab_flag():
+    assert m.parse_config_vocab(FLAG_CONFIG_CSV)["flag"] == ["Yellow Flag", "Safety Car"]
+
+def t_hudsource_empty_has_flag():
+    assert m.HudSource.EMPTY["flag"] == ""
 
 
 def t_hudsource_vocab_from_refresh():
@@ -217,7 +239,7 @@ def t_hudsource_vocab_from_refresh():
                      _os.path.join(d, "hud.cache.json"))
     hs._fetch = lambda url, timeout=10: OVERLAY_CSV if url == "http://overlay" else CONFIG_CSV
     assert hs.vocab() == {"stint": [], "streamer": [], "session": [],
-                          "racecontrol": []}   # before any refresh
+                          "racecontrol": [], "flag": []}   # before any refresh
     hs.refresh()
     assert hs.vocab()["streamer"] == ["JeGr", "GT45"]
 
