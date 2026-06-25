@@ -3029,12 +3029,12 @@ function ovSetProp(id, prop, value) {
 // textarea keeps its own native browser undo and is never tracked here. Invariant:
 // ovState.undo's top always equals the last committed layout, so undo reverts to
 // the new top and redo reapplies — no per-prop inverse operations.
-function ovSnap_() { return JSON.parse(JSON.stringify(ovState.layout || {})); }
+function ovHistSnap_() { return JSON.parse(JSON.stringify(ovState.layout || {})); }
 
-function ovHistInit() { ovState.undo = [ovSnap_()]; ovState.redo = []; ovHistButtons(); }
+function ovHistInit() { ovState.undo = [ovHistSnap_()]; ovState.redo = []; ovHistButtons(); }
 
 function ovCommit() {                       // call after ONE logical edit completes
-  ovState.undo.push(ovSnap_());
+  ovState.undo.push(ovHistSnap_());
   if (ovState.undo.length > 50) ovState.undo.shift();
   ovState.redo = [];
   ovHistButtons();
@@ -3079,11 +3079,13 @@ function ovGridLoad() {
 function ovGridSave() {
   try { localStorage.setItem('rc.ov.grid', JSON.stringify(ovState.grid)); } catch (e) {}
 }
+// Grid spacing in px — parsed/clamped identically to the write sites (one source).
+function ovGridSize() { return Math.max(1, parseInt(ovState.grid.size, 10) || 1); }
 function ovUpdateGrid() {
   const g = ovState.gridEl;
   if (!g) return;
   if (!ovState.grid.show) { g.style.backgroundImage = 'none'; return; }
-  const sz = Math.max(1, ovState.grid.size | 0);
+  const sz = ovGridSize();
   const minor = 'rgba(120,170,255,.16)', major = 'rgba(120,170,255,.34)';
   const lines = (c, s) =>
     'repeating-linear-gradient(0deg,' + c + ' 0 1px,transparent 1px ' + s + 'px),' +
@@ -3093,7 +3095,7 @@ function ovUpdateGrid() {
 }
 function ovSnap(v) {
   if (!ovState.grid || !ovState.grid.snap) return v;
-  const s = Math.max(1, ovState.grid.size | 0);
+  const s = ovGridSize();
   return Math.round(v / s) * s;
 }
 function ovGridToggle(on) { ovState.grid.show = !!on; ovGridSave(); ovUpdateGrid(); }
