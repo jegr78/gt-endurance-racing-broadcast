@@ -441,6 +441,7 @@
   <section class="bus"><div class="cap">HUD</div>
     <div class="body">
       <div class="setrow" id="setupRow"></div>
+      <div class="setrow" id="teamRow"></div>
       <div class="setrow" id="condRow"></div>
       <div class="hint" id="setupInfo">HUD: connecting to relay…</div>
     </div>
@@ -1300,7 +1301,7 @@ TEAM_FIELDS.forEach(([key,label])=>{
   const w = document.createElement("div"); w.className = "fld";
   w.innerHTML = `<label>${label}</label><select data-team="${key}" disabled></select>`;
   w.querySelector("select").addEventListener("change", e=>teamSet(key, e.target.value));
-  $("#setupRow").appendChild(w);
+  $("#teamRow").appendChild(w);
 });
 
 async function teamSet(slot, value){
