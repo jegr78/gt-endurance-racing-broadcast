@@ -91,7 +91,8 @@ A header row (row 1) plus one row per team. Columns are located **by header text
 |---|---|---|
 | `Teams` *(or `Team Name`)* | yes | Team label; a trailing `#NNN` is stripped to a car number |
 | `Number` | optional | Car number (wins over an embedded `#NNN`) |
-| `Brand Key` *(or `Brand Name` / `Brand`)* | optional | Manufacturer key → brand logo on the HUD |
+| `Brand Key` *(or `Brand Name` / `Brand`)* | optional | Manufacturer key → brand logo on the HUD; its text is also the team's **Brand Name** HUD element unless overridden below |
+| `Brand Name Override` | optional | Text shown as the team's **Brand Name** HUD element instead of the `Brand Key`/`Brand Name`/`Brand` value. Does **not** change which brand **logo** is used. Leave blank to show the brand text verbatim |
 | `Stints` | optional | Dropdown options for the panel's **Stint** field |
 | `Streamers` | optional | Dropdown options for the panel's **Streamer** field |
 | `Session` | optional | Dropdown options for the panel's **Session** field |

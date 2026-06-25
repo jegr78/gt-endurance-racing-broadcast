@@ -70,9 +70,9 @@ CONFIG_CSV = (
 
 def t_parse_config_roster():
     r = m.parse_config_roster(CONFIG_CSV)
-    assert r["OVO eSports"] == {"number": "111", "brandKey": "porsche"}, r
-    assert r["Feel Good Racing"] == {"number": "303", "brandKey": "porsche"}, r
-    assert r["NWR Motorsport"] == {"number": "224", "brandKey": "ferrari"}, r
+    assert r["OVO eSports"] == {"number": "111", "brandKey": "porsche", "brandName": "Porsche"}, r
+    assert r["Feel Good Racing"] == {"number": "303", "brandKey": "porsche", "brandName": "Porsche"}, r
+    assert r["NWR Motorsport"] == {"number": "224", "brandKey": "ferrari", "brandName": "Ferrari"}, r
 
 
 def t_parse_config_roster_missing_team_header_safe():
@@ -91,15 +91,34 @@ CONFIG_CSV_BRANDNAME = (
 
 def t_parse_config_roster_accepts_brand_name_header():
     r = m.parse_config_roster(CONFIG_CSV_BRANDNAME)
-    assert r["OVO eSports"] == {"number": "111", "brandKey": "porsche"}, r
-    assert r["Elite Racing Squad"] == {"number": "73", "brandKey": "bmw"}, r
-    assert r["Alien Motorsports"] == {"number": "999", "brandKey": "amg"}, r
+    assert r["OVO eSports"] == {"number": "111", "brandKey": "porsche", "brandName": "Porsche"}, r
+    assert r["Elite Racing Squad"] == {"number": "73", "brandKey": "bmw", "brandName": "BMW"}, r
+    assert r["Alien Motorsports"] == {"number": "999", "brandKey": "amg", "brandName": "AMG"}, r
+
+
+# New "Brand Name Override" column: when present it wins for the DISPLAY name,
+# but never changes the logo mapping (brandKey stays the asset_key of Brand).
+CONFIG_CSV_BRAND_OVERRIDE = (
+    "Teams,Brand Name,Brand Name Override,Race Control\n"
+    "OVO eSports #111,Porsche,Porsche 963,Formation Lap\n"   # override wins for text
+    "Elite Racing Squad #73,BMW,,Final Lap\n"                 # blank override -> verbatim
+)
+
+
+def t_parse_config_roster_brand_name_override():
+    r = m.parse_config_roster(CONFIG_CSV_BRAND_OVERRIDE)
+    # override wins for the display name; brandKey still maps from Brand ("porsche")
+    assert r["OVO eSports"] == {
+        "number": "111", "brandKey": "porsche", "brandName": "Porsche 963"}, r
+    # empty override falls back to the verbatim brand text
+    assert r["Elite Racing Squad"] == {
+        "number": "73", "brandKey": "bmw", "brandName": "BMW"}, r
 
 
 def t_parse_config_roster_ignores_image_columns():
     # team header present, only image brand columns -> brandKey blank, number from #1
     assert m.parse_config_roster("Teams,Brand Logo,Brands\nX #1,,\n") == {
-        "X": {"number": "1", "brandKey": ""}}
+        "X": {"number": "1", "brandKey": "", "brandName": ""}}
 
 
 def t_build_hud_data():
@@ -112,15 +131,15 @@ def t_build_hud_data():
     assert d["round"]["top"] == "Round 4: Nurburgring 24hrs"
     assert d["round"]["country"] == "GERMANY"
     assert d["round"]["flagKey"] == "germany"
-    assert d["teams"][0] == {"name": "OVO eSports", "number": "111", "brandKey": "porsche"}
-    assert d["teams"][2] == {"name": "NWR Motorsport", "number": "224", "brandKey": "ferrari"}
+    assert d["teams"][0] == {"name": "OVO eSports", "number": "111", "brandKey": "porsche", "brandName": "Porsche"}
+    assert d["teams"][2] == {"name": "NWR Motorsport", "number": "224", "brandKey": "ferrari", "brandName": "Ferrari"}
     assert d["raceControl"] == ""
 
 
 def t_build_hud_data_unknown_brand_blank():
     overlay = m.parse_overlay(",Teams P1,,,Mystery Team #0,,,,,\n")
     d = m.build_hud_data(overlay, {})
-    assert d["teams"][0] == {"name": "Mystery Team", "number": "0", "brandKey": ""}
+    assert d["teams"][0] == {"name": "Mystery Team", "number": "0", "brandKey": "", "brandName": ""}
 
 
 def t_hudsource_data_uses_builders():
@@ -292,17 +311,17 @@ ROSTER_CSV_BOTH = (
 
 def t_roster_number_column():
     r = m.parse_config_roster(ROSTER_CSV_WITH_NUMBER)
-    assert r == {"OVO eSports": {"number": "111", "brandKey": "porsche"},
-                 "Feel Good": {"number": "303", "brandKey": "bmw"}}, r
+    assert r == {"OVO eSports": {"number": "111", "brandKey": "porsche", "brandName": "Porsche"},
+                 "Feel Good": {"number": "303", "brandKey": "bmw", "brandName": "BMW"}}, r
 
 def t_roster_embedded_fallback():
     r = m.parse_config_roster(ROSTER_CSV_EMBEDDED_ONLY)
-    assert r["OVO eSports"] == {"number": "111", "brandKey": "porsche"}
-    assert r["Apex Racing"] == {"number": "7", "brandKey": "audi"}
+    assert r["OVO eSports"] == {"number": "111", "brandKey": "porsche", "brandName": "Porsche"}
+    assert r["Apex Racing"] == {"number": "7", "brandKey": "audi", "brandName": "Audi"}
 
 def t_roster_column_wins_over_embedded():
     r = m.parse_config_roster(ROSTER_CSV_BOTH)
-    assert r == {"OVO eSports": {"number": "111", "brandKey": "porsche"}}, r
+    assert r == {"OVO eSports": {"number": "111", "brandKey": "porsche", "brandName": "Porsche"}}, r
 
 def t_roster_no_teams_header_is_empty():
     assert m.parse_config_roster("Foo,Bar\n1,2\n") == {}
@@ -324,17 +343,17 @@ def t_team_full_labels_no_teams_header_is_empty():
     assert m.parse_team_full_labels("Foo,Bar\n1,2\n") == {}
 
 def t_build_hud_data_team_number_and_strip():
-    roster = {"OVO eSports": {"number": "111", "brandKey": "porsche"}}
+    roster = {"OVO eSports": {"number": "111", "brandKey": "porsche", "brandName": "Porsche"}}
     overlay = {"teams": ["OVO eSports #999", "Unknown #5", ""]}
     d = m.build_hud_data(overlay, roster)
-    assert d["teams"][0] == {"name": "OVO eSports", "number": "111", "brandKey": "porsche"}
-    assert d["teams"][1] == {"name": "Unknown", "number": "5", "brandKey": ""}
-    assert d["teams"][2] == {"name": "", "number": "", "brandKey": ""}
+    assert d["teams"][0] == {"name": "OVO eSports", "number": "111", "brandKey": "porsche", "brandName": "Porsche"}
+    assert d["teams"][1] == {"name": "Unknown", "number": "5", "brandKey": "", "brandName": ""}
+    assert d["teams"][2] == {"name": "", "number": "", "brandKey": "", "brandName": ""}
 
 
 def t_parse_config_roster_team_name_header():
     r = m.parse_config_roster("Team Name,Number,Brand\nOVO eSports,111,Porsche\n")
-    assert r == {"OVO eSports": {"number": "111", "brandKey": "porsche"}}, r
+    assert r == {"OVO eSports": {"number": "111", "brandKey": "porsche", "brandName": "Porsche"}}, r
 
 
 def t_hudsource_roster_preserved_on_failure():
@@ -364,9 +383,9 @@ def _roster_hud():
 def t_hud_roster_names_and_resolve():
     hs = _roster_hud()
     assert hs.roster_names() == ["OVO eSports", "Feel Good"]
-    assert hs.resolve_team("OVO eSports") == {"name": "OVO eSports", "number": "111", "brandKey": "porsche"}
+    assert hs.resolve_team("OVO eSports") == {"name": "OVO eSports", "number": "111", "brandKey": "porsche", "brandName": "Porsche"}
     # unknown -> stripped name, blank number/logo (embedded #9 used as fallback number)
-    assert hs.resolve_team("Ghost #9") == {"name": "Ghost", "number": "9", "brandKey": ""}
+    assert hs.resolve_team("Ghost #9") == {"name": "Ghost", "number": "9", "brandKey": "", "brandName": ""}
 
 def t_hud_team_override_echo_and_pending():
     hs = _roster_hud()
