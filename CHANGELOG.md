@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.1.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.0.1...v1.1.0) (2026-06-25)
+
+
+### Features
+
+* **cockpit:** compact two-column cockpit layout ([#310](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/310)) ([55b1e73](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/55b1e732ea93968785ed896f9a9c83f06ec7207f))
+* **console:** On-air stint/streamer banner on the Race Control desk ([#299](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/299)) ([4ea70ae](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/4ea70aefc0db0b3b9ba24ebf7d3a3f48cb91e2cb))
+* **console:** read-only YouTube broadcast-chat in /console pages ([#296](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/296)) ([57c4e73](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/57c4e73d18f68cc0c2b63af77a3eca8fee55b470))
+* **console:** Twitch support for the broadcast-chat reader ([#297](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/297)) ([ba3478f](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/ba3478f089358060bd0c2d865ae0fcadc1365266))
+* **events:** producer takeover + OBS stream start/stop notifications ([#317](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/317)) ([#323](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/323)) ([e6aeebe](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e6aeebe6cb0fcfeff201fe23cd76e20e77a53111))
+* Health Monitor dashboard (relay-served, SQLite time-series, /console) ([#282](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/282)) ([4cf6ac6](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/4cf6ac6e8dfeb025f25f46aa5fab1222c88ae6ed))
+* **health:** Health Monitor extensions — OBS stats, connectivity, feed quality ([#283](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/283)) ([0ce12ad](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/0ce12ad4ee41fe64bca384b2beb4844f861a8609))
+* **obs:** bake 300 ms Fade show/hide into POV feed + Stint graphics ([#293](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/293)) ([8858c10](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/8858c10e8d417d867eb412562ca6227a03e52b58)), closes [#291](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/291)
+* **panel:** Start/Stop the OBS stream from the Director Panel ([#295](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/295)) ([#298](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/298)) ([33170f8](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/33170f859eed241a7248aea891873919ffccf54e))
+* **preview:** embed probable next release version in preview identity ([#286](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/286)) ([a3b54a1](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/a3b54a15dfac4ae91fb0ef84a5cadbfea2dab779))
+* **relay:** self-healing relay start (converge to one current relay on 8088) ([#289](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/289)) ([e3456c9](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e3456c927c7693ea3475f28b84e025492398d13a))
+* **ui:** Funnel takeover toggle on the Control Center Home ([#288](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/288)) ([e57ff5f](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e57ff5fdde033721b0e226697d1af7f17ca9536b))
+* **ui:** Kill stale relay button (Control Center) ([#284](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/284)) ([2e3a697](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/2e3a6973ab531e1bde8ded8ac28506a0c706066f))
+* **ui:** persist Control Center action output to runtime/logs/app.log ([#316](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/316)) ([94a300a](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/94a300a129223c3d80445971091f0cd0e215c79c))
+* **ui:** Producer schedule + one-click takeover on the Control Center Home ([#292](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/292)) ([2706e4a](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/2706e4a0f02682117318fb015d4cf3c0342cdfa4))
+
+
+### Bug Fixes
+
+* **build:** tolerate a transient localhost timeout in the racecast-ui smoke test ([#315](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/315)) ([41e9e98](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/41e9e98b251fddca1ce632c079ab34b4e0e71964))
+* **console:** add Health Monitor card to the /console launcher ([#290](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/290)) ([839e4f2](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/839e4f2e605031a24fd1a48652544dcc52971f0d))
+* **console:** fixed-height scrolling chat boxes + cockpit side-by-side layout ([#309](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/309)) ([d2fa742](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/d2fa742c076646f971a8faf91406dab0160c248c))
+* **console:** strip the auth token from the URL on all token-bearing pages ([#325](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/325)) ([e75e543](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e75e543a98176f8b6a9170def0e38a277f5cc6dc))
+* **logs:** throttle + URL-shorten the streamlink pump (stops 662 MB feed-log flood) ([#318](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/318)) ([8738a3c](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/8738a3cc114c55c79cad2c26dfae18e1ef1a095f))
+* **obs:** clean obs-websocket closing handshake (1000, not 1006) ([#321](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/321)) ([8aaf1ee](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/8aaf1ee575cfd14f40c0a99d6911772147df0509))
+* **panel:** pin director chat rail to fixed-height, no-shrink boxes ([#311](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/311)) ([4661752](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/4661752db0f62d4a396d5f3ef849673028c8bd56))
+* **preview:** force-move the rolling tag so previews sort correctly ([#287](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/287)) ([6ff9880](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/6ff988023f86e2a0e5a2d33894b94f3707c02318))
+* **racecast:** silence CodeQL dead-store on producer-name cache ([#326](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/326)) ([dc0f5c1](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/dc0f5c144709385a3c954801fdc5c2ee3657b64b))
+* **relay:** debounce false CRITICAL feed-down health pings ([#280](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/280)) ([40a4289](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/40a42893cb2b195fd7721dc905041a07b445363f)), closes [#278](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/278)
+* **relay:** escalating backoff + idle-after-N for dead stint serves ([#320](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/320)) ([dc453bc](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/dc453bc1647c927fd64193315f0eecc524ccb050))
+* **relay:** probe the control port before startup work; show league in start log ([#319](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/319)) ([5a911ac](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/5a911acb230f7ba56b21cecbdae7aa2343827ee2))
+* **security:** close code scanning alerts (response splitting + repeated import) ([#285](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/285)) ([04b0bcc](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/04b0bccd9c1c99e62a520b4dd4de524b2488f604))
+* **takeover:** authorize /console/takeover/* by the step-up secret alone ([#312](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/312)) ([3e66592](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/3e665929d7221ca62e2ed8970298ab6288f85700))
+* **ui:** drop stale OBS credentials from the Director Panel link ([#322](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/322)) ([4fab4bd](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/4fab4bd69ababacf6e7c83284bd6e3f1216ae42e))
+
 ## [1.0.1](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.0.0...v1.0.1) (2026-06-22)
 
 
