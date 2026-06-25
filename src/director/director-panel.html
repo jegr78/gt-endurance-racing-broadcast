@@ -1153,7 +1153,7 @@ async function timerPoll(){
    as a live-correction override; the next handover re-asserts the schedule. */
 const SETUP_FIELDS = [
   ["stint","STINT LABEL"], ["streamer","STREAMER"],
-  ["session","SESSION"], ["racecontrol","RACE CONTROL"],
+  ["session","SESSION"], ["racecontrol","RACE CONTROL"], ["flag","FLAG"],
 ];
 // Configuration vocab for the Schedule editor's Streamer/Stint dropdowns,
 // cached from /setup/data (the same lists the Setup dropdowns use).
@@ -1331,7 +1331,7 @@ async function setupPoll(){
   for (const [key] of SETUP_FIELDS){
     const sel = document.querySelector(`select[data-setup="${key}"]`);
     if (!sel || sel === document.activeElement) continue;   // never yank an open menu
-    const opts = (key === "racecontrol" ? [""] : []).concat(d.options[key] || []);
+    const opts = (["racecontrol","flag"].includes(key) ? [""] : []).concat(d.options[key] || []);
     const sig = JSON.stringify(opts);
     if (sel.dataset.sig !== sig){
       sel.innerHTML = opts.map(o=>`<option value="${escapeHtml(o)}">${o===""?"— none —":escapeHtml(o)}</option>`).join("");
