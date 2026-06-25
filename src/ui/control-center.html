@@ -313,6 +313,11 @@
              border:1px solid var(--line); border-radius:6px; background:#232C42; }
   .ovgrid2 { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
   .ovinline { display:flex; gap:6px; align-items:center; }
+  .ov-alignrow { display:flex; gap:4px; margin:6px 0 0; }
+  .ov-align-btn { flex:1 1 0; min-width:0; background:#232C42; color:var(--txt);
+             border:1px solid var(--line); border-radius:6px; padding:4px 0;
+             font:12px var(--mono); cursor:pointer; }
+  .ov-align-btn:hover { border-color:var(--accent); }
   .ovadv { margin:10px 0 0; border:1px solid var(--line); border-radius:8px;
            padding:6px 10px; }
   .ovadv summary { cursor:pointer; font:12px var(--mono); color:var(--dim); }
@@ -3164,6 +3169,40 @@ function ovPickFont(prop, value) {
   else ovSetProp(ovState.sel, prop, value);
 }
 
+// Align the selected slot to the canvas (center on an axis, or pin to an edge).
+// Size is read from the rendered shadow element (cascade ground-truth, correct
+// whether or not width/height are overridden). Each action goes through ovSetProp
+// (so the canvas, selection box, and number fields sync) + ovCommit (one undo step).
+function ovAlignBtn(label, title, fn) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'ov-align-btn'; b.textContent = label;
+  b.title = title; b.onclick = fn;
+  return b;
+}
+
+function ovAlignRow(id, hasH, hasV) {
+  const wrap = document.createElement('div');
+  const l = document.createElement('label'); l.textContent = 'Align to canvas';
+  wrap.appendChild(l);
+  const row = document.createElement('div'); row.className = 'ov-alignrow';
+  const el = () => ovState.shadow.getElementById(id);
+  const set = (prop, val) => { ovSetProp(id, prop, val); ovCommit(); };
+  if (hasH) row.append(
+    ovAlignBtn('⇤', 'Align left edge', () => set('left', 0)),
+    ovAlignBtn('H', 'Center horizontally',
+      () => set('left', Math.round((OV_CANVAS_W - el().offsetWidth) / 2))),
+    ovAlignBtn('⇥', 'Align right edge',
+      () => set('left', OV_CANVAS_W - el().offsetWidth)));
+  if (hasV) row.append(
+    ovAlignBtn('⤒', 'Align top edge', () => set('top', 0)),
+    ovAlignBtn('V', 'Center vertically',
+      () => set('top', Math.round((OV_CANVAS_H - el().offsetHeight) / 2))),
+    ovAlignBtn('⤓', 'Align bottom edge',
+      () => set('top', OV_CANVAS_H - el().offsetHeight)));
+  wrap.appendChild(row);
+  return wrap;
+}
+
 function ovNumField(prop, label, ov) {
   const wrap = document.createElement('div');
   const l = document.createElement('label'); l.textContent = label; wrap.appendChild(l);
@@ -3309,6 +3348,7 @@ function ovRenderPanel() {
     if (has('left')) g.appendChild(ovNumField('left', 'Left (px)', view));
     if (has('top')) g.appendChild(ovNumField('top', 'Top (px)', view));
     panel.appendChild(g);
+    panel.appendChild(ovAlignRow(id, has('left'), has('top')));
   }
   if (has('width') || has('height') || has('padding')) {
     const g = grid();
