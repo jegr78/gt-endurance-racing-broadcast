@@ -45,7 +45,7 @@ PROP_ORDER = ("left", "top", "width", "height", "padding",
               "teamNameMax", "teamNameMin", "fontFamily", "color",
               "background", "borderColor", "borderStyle",
               "align", "valign", "textTransform", "opacity",
-              "rotation", "textShadow")
+              "rotation", "textShadow", "visible")
 
 # Slot kinds (standard properties for all slots; spec
 # docs/superpowers/specs/2026-06-15-overlay-builder-standard-properties-design.md).
@@ -55,7 +55,7 @@ PROP_ORDER = ("left", "top", "width", "height", "padding",
 # position, size, fill, border, opacity, rotation; text adds the type properties).
 KIND_BOX = ("left", "top", "width", "height", "padding",
             "background", "borderWidth", "borderStyle", "borderColor",
-            "borderRadius", "opacity", "rotation")
+            "borderRadius", "opacity", "rotation", "visible")
 KIND_TEXT = KIND_BOX + ("fontSize", "lineHeight", "letterSpacing",
                         "fontFamily", "color", "align", "valign",
                         "textTransform", "textShadow")
@@ -66,8 +66,8 @@ KIND_PROPS = {"text": KIND_TEXT, "box": KIND_BOX}
 _UNSAFE_VALUE = re.compile(r"[;{}<>]|/\*|\*/")
 
 # Sample content for the same-origin builder canvas (so the operator positions
-# slots against realistic text). Each team is three slots now (logo/number/name,
-# issue #136): the number + name carry text; the logo is an image. Image slots
+# slots against realistic text). Each team is four slots now (logo/number/name/brand,
+# issue #136): the number + name + brand carry text; the logo is an image. Image slots
 # (the round flag + each team logo) carry a {"flag"/"brand": key} entry so the
 # offline canvas previews them from bundled src/assets/ (served by the Control
 # Center at /api/overlay/asset/{flags,brands}/<key>).
@@ -76,9 +76,9 @@ SAMPLE = {
         "stint": "STINT 3", "session": "Race",
         "streamer": "twitch.tv/commentary",
         "round-top": "Round 4", "round-country": "Belgium",
-        "team1-num": "7", "team1-name": "Team Redline",
-        "team2-num": "23", "team2-name": "Apex Racing",
-        "team3-num": "99", "team3-name": "Night Shift Motorsport",
+        "team1-num": "7", "team1-name": "Team Redline", "team1-brand": "BMW",
+        "team2-num": "23", "team2-name": "Apex Racing", "team2-brand": "Porsche",
+        "team3-num": "99", "team3-name": "Night Shift Motorsport", "team3-brand": "Ferrari",
         "race-control": "FCY — Full Course Yellow",
         "clock": "1:23:45",
         "round-flag": {"flag": "belgium"},
@@ -228,6 +228,11 @@ def _declaration(prop, value):
     """CSS 'name: value' for one (prop, value), or None when unsupported/unsafe."""
     if prop == "textShadow":
         return _text_shadow_decl(value)
+    if prop == "visible":
+        # Only an explicit False hides the slot; True/anything-else = default shown.
+        # Must precede _safe_value: bool is an int subclass, so _safe_value(False)
+        # returns False (not None) and would fall through to a no-op.
+        return "display: none" if value is False else None
     value = _safe_value(value)
     if value is None:
         return None
