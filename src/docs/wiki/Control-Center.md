@@ -181,8 +181,10 @@ so this view is **zero-config**.
 
 - **Public access (Tailscale Funnel)** — `/console` is reachable over the tailnet by default;
   flip the **Funnel ON** to also expose **only** `/console` publicly (so crew off the tailnet
-  can open their link). **Auto-enable on event start** turns it on with every event. **Copy
-  Link** / **Post to Discord** distribute the shared launcher link in one click.
+  can open their link). **Auto-enable on event start** turns it on with every event — and is
+  **checked by default** (opt-out), since the Funnel is the preferred produce path; uncheck it
+  to keep a machine tailnet/loopback-only. **Copy Link** / **Post to Discord** distribute the
+  shared launcher link in one click.
 - **Crew links** — one row per person (the Crew tab ∪ the live schedule), for the per-person
   fallback (leagues without Discord login). **Copy funnel link** copies their public HTTPS
   link, **Copy internal link** the tailnet/loopback one, and **Revoke** rotates a single

@@ -13,12 +13,14 @@ public internet. See the [Console launcher](Console) page for a card-by-card ove
 
 ## The default: the public Funnel
 
-**The standard way crew connect is the public Tailscale Funnel.** One producer command —
-`racecast funnel on` — publishes the `/console` page at `https://<magicdns-host>/console`,
-and from then on a commentator, a remote director, or a takeover producer just opens the
-Console link and **signs in with Discord**. **They need no Tailscale account and nothing
-installed** — which is the whole point: more people can help without each joining the
-tailnet (and it stays inside the Tailscale free tier).
+**The standard way crew connect is the public Tailscale Funnel.** It is **on by default**:
+after the one-time tailnet setup, `racecast event start` publishes the `/console` page at
+`https://<magicdns-host>/console` **automatically** (opt-out — set `RACECAST_FUNNEL=false`
+or uncheck **Auto-enable on event start** to keep a machine tailnet-only; `racecast funnel
+on`/`off` still toggle it by hand). From then on a commentator, a remote director, or a
+takeover producer just opens the Console link and **signs in with Discord**. **They need no
+Tailscale account and nothing installed** — which is the whole point: more people can help
+without each joining the tailnet (and it stays inside the Tailscale free tier).
 
 Being **directly on the tailnet** is the *alternative*, kept for the producer's own trusted
 devices (the producer's PC, a second machine, a phone with the Tailscale app). On the

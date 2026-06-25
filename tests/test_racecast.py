@@ -1925,10 +1925,13 @@ def t_route_funnel():
 
 
 def t_funnel_auto_enabled_gate():
-    # _funnel_auto_enabled gates `event start` auto-bringup on the opt-in flag
-    # AND a usable cockpit. The gate reads console_status_data(), whose real
-    # shape is {ok, has_secret, ...} — there is NO "enabled" key (#216 fix: a
-    # stale gate on st["enabled"] made the whole auto-enable path dead).
+    # _funnel_auto_enabled gates `event start` auto-bringup. The Funnel is now
+    # OPT-OUT: it auto-enables by default and only stays down when the machine
+    # flag RACECAST_FUNNEL (legacy RACECAST_COCKPIT_FUNNEL) is explicitly falsey
+    # (false/0/no/off). It still requires a usable cockpit. The gate reads
+    # console_status_data(), whose real shape is {ok, has_secret, ...} — there is
+    # NO "enabled" key (#216 fix: a stale gate on st["enabled"] made the whole
+    # auto-enable path dead).
     import tempfile
     orig_env_file = m._env_file
     orig_status = m.console_status_data
@@ -1937,27 +1940,42 @@ def t_funnel_auto_enabled_gate():
             epath = os.path.join(d, ".env")
             m._env_file = lambda: epath
             usable = {"ok": True, "has_secret": True}
+            m.console_status_data = lambda: usable
 
-            # Opt-in flag set + usable console -> True (the fix; would be False
-            # under the old st["enabled"] gate).
+            # Flag absent entirely (empty .env) + usable console -> True
+            # (opt-out default).
+            with open(epath, "w", encoding="utf-8") as fh:
+                fh.write("")
+            assert m._funnel_auto_enabled() is True
+
+            # No .env file at all + usable console -> True (same opt-out default).
+            os.remove(epath)
+            assert m._funnel_auto_enabled() is True
+
+            # Empty value -> True (treated as absent, not a falsey override).
+            with open(epath, "w", encoding="utf-8") as fh:
+                fh.write("RACECAST_FUNNEL=\n")
+            assert m._funnel_auto_enabled() is True
+
+            # Explicit truthy flag -> True.
             with open(epath, "w", encoding="utf-8") as fh:
                 fh.write("RACECAST_FUNNEL=true\n")
-            m.console_status_data = lambda: usable
             assert m._funnel_auto_enabled() is True
 
-            # Legacy env name still honored (one-release fallback).
-            with open(epath, "w", encoding="utf-8") as fh:
-                fh.write("RACECAST_COCKPIT_FUNNEL=on\n")
-            assert m._funnel_auto_enabled() is True
+            # Every falsey form explicitly opts OUT -> False.
+            for falsey in ("false", "0", "no", "off", "FALSE", "Off"):
+                with open(epath, "w", encoding="utf-8") as fh:
+                    fh.write("RACECAST_FUNNEL=%s\n" % falsey)
+                assert m._funnel_auto_enabled() is False, falsey
 
-            # Flag absent -> False regardless of cockpit usability.
+            # Legacy env name still honored as the opt-out lever.
             with open(epath, "w", encoding="utf-8") as fh:
-                fh.write("RACECAST_FUNNEL=false\n")
+                fh.write("RACECAST_COCKPIT_FUNNEL=off\n")
             assert m._funnel_auto_enabled() is False
 
-            # Flag set but console not usable (no secret) -> False.
+            # Default-on but console not usable (no secret) -> False.
             with open(epath, "w", encoding="utf-8") as fh:
-                fh.write("RACECAST_FUNNEL=true\n")
+                fh.write("")
             m.console_status_data = lambda: {"ok": True, "has_secret": False}
             assert m._funnel_auto_enabled() is False
     finally:
