@@ -56,6 +56,11 @@
   #team3-logo { left: 1212px; top: 1013px; }
   #team3-num  { left: 1274px; top: 1014px; }
   #team3-name { left: 1340px; top: 1010px; width: 250px; }
+  .team-brand { height: 22px; width: 250px; font-size: 16px; color: #cfd6df;
+    overflow: hidden; white-space: nowrap; }
+  #team1-brand { left: 453px; top: 1064px; }
+  #team2-brand { left: 896px; top: 1064px; }
+  #team3-brand { left: 1340px; top: 1064px; }
 
   /* POV picture-in-picture frame (issue #141): aligned to the OBS "Feed POV"
      scene item (pos 1496,644, bounds 384x216). Transparent by default — set a
@@ -102,12 +107,15 @@
   <div id="team1-logo" class="el team-logo" data-edit="Team 1 logo" data-edit-kind="box"><img alt=""></div>
   <div id="team1-num" class="el team-num white" data-edit="Team 1 number" data-edit-kind="text"></div>
   <div id="team1-name" class="el team-name white" data-edit="Team 1 name" data-edit-kind="text" data-edit-props="teamNameMax,teamNameMin"></div>
+  <div id="team1-brand" class="el team-brand white" data-edit="Team 1 brand name" data-edit-kind="text"></div>
   <div id="team2-logo" class="el team-logo" data-edit="Team 2 logo" data-edit-kind="box"><img alt=""></div>
   <div id="team2-num" class="el team-num white" data-edit="Team 2 number" data-edit-kind="text"></div>
   <div id="team2-name" class="el team-name white" data-edit="Team 2 name" data-edit-kind="text" data-edit-props="teamNameMax,teamNameMin"></div>
+  <div id="team2-brand" class="el team-brand white" data-edit="Team 2 brand name" data-edit-kind="text"></div>
   <div id="team3-logo" class="el team-logo" data-edit="Team 3 logo" data-edit-kind="box"><img alt=""></div>
   <div id="team3-num" class="el team-num white" data-edit="Team 3 number" data-edit-kind="text"></div>
   <div id="team3-name" class="el team-name white" data-edit="Team 3 name" data-edit-kind="text" data-edit-props="teamNameMax,teamNameMin"></div>
+  <div id="team3-brand" class="el team-brand white" data-edit="Team 3 brand name" data-edit-kind="text"></div>
   <div id="race-control" class="el white" data-edit="Race control" data-edit-kind="text"></div>
   <div id="pov" class="el" data-edit="POV box" data-edit-kind="box"></div>
   <div id="pov-name" class="el" data-edit="POV name" data-edit-kind="text"></div>
@@ -177,6 +185,10 @@
     const nameEl = document.getElementById("team" + n + "-name");
     nameEl.textContent = name;
     nameEl.classList.toggle("empty", !name);
+    const brandEl = document.getElementById("team" + n + "-brand");
+    const brandName = (team && team.brandName) || "";
+    brandEl.textContent = brandName;
+    brandEl.classList.toggle("empty", !brandName);
     const logoEl = document.getElementById("team" + n + "-logo");
     const img = logoEl.querySelector("img");
     if (team && team.brandKey) { img.src = `/hud/assets/brands/${team.brandKey}`; logoEl.classList.remove("empty"); }
