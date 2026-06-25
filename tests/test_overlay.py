@@ -229,7 +229,7 @@ def t_ob_extract_slots_from_real_hud():
                    "team1-logo", "team1-num", "team1-name", "team1-brand",
                    "team2-logo", "team2-num", "team2-name", "team2-brand",
                    "team3-logo", "team3-num", "team3-name", "team3-brand",
-                   "race-control", "pov", "pov-name", "clock"]
+                   "race-control", "flag-status", "pov", "pov-name", "clock"]
     by_id = {s["id"]: s for s in slots}
     assert by_id["stint"]["label"] == "Stint banner"
     # default props (no data-edit-props) include the text set, not the team-only keys
