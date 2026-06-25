@@ -290,6 +290,7 @@
   textarea.css-editor:focus-visible { outline:2px solid var(--accent);
                    outline-offset:2px; }
   textarea.css-editor:disabled { opacity:.5; cursor:not-allowed; }
+  #overlay-undo:disabled, #overlay-redo:disabled { opacity:.4; cursor:not-allowed; }
   /* Overlay visual builder */
   .ovbuild { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap;
              margin:0 0 8px; }
@@ -688,6 +689,8 @@
               <svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Pop out ↗</button>
             <select id="ov-slotpick" class="ov-slotpick" onchange="if(this.value)ovSelect(this.value)"
               title="Jump to a slot" aria-label="Jump to slot"></select>
+            <button id="overlay-undo" onclick="ovUndo()" disabled title="Undo (Ctrl/Cmd-Z)">↶ Undo</button>
+            <button id="overlay-redo" onclick="ovRedo()" disabled title="Redo (Ctrl/Cmd-Shift-Z)">↷ Redo</button>
             <button id="overlay-save" onclick="saveOverlay()">
               <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button>
             <button id="overlay-apply" onclick="applyOverlay()" title="Reload the relay-served HUD/timer browser sources in OBS (needs the relay up + obs-websocket)">
@@ -2774,7 +2777,7 @@ let overlayPage = 'hud';
 const OV_CANVAS_W = 1920, OV_CANVAS_H = 1080;
 const ovState = {page: 'hud', slots: [], sample: {}, baseCss: '', body: '',
                  layout: null, fonts: [], library: [], scale: 1, sel: null,
-                 shadow: null, selBox: null, fields: {}};
+                 shadow: null, selBox: null, fields: {}, undo: [], redo: []};
 
 // prop -> CSS property; mirrors src/scripts/overlay_build.py (the canonical map).
 const OV_CSSNAME = {left: 'left', top: 'top', width: 'width', height: 'height',
@@ -2839,6 +2842,7 @@ async function loadOverlay() {
   ovRenderPanel();
   ovPopulateSlotPicker();
   ovRefreshFontUI();
+  ovHistInit();
 }
 
 // Populate the "jump to slot" dropdown (issue #140) from the page's slot list,
@@ -2986,6 +2990,49 @@ function ovSetProp(id, prop, value) {
   ovPositionSel();
 }
 
+// ----- Undo/redo (issue: builder editor aids) -----
+// Snapshot stacks of the in-memory layout. VISUAL edits only — the Advanced-CSS
+// textarea keeps its own native browser undo and is never tracked here. Invariant:
+// ovState.undo's top always equals the last committed layout, so undo reverts to
+// the new top and redo reapplies — no per-prop inverse operations.
+function ovSnap_() { return JSON.parse(JSON.stringify(ovState.layout || {})); }
+
+function ovHistInit() { ovState.undo = [ovSnap_()]; ovState.redo = []; ovHistButtons(); }
+
+function ovCommit() {                       // call after ONE logical edit completes
+  ovState.undo.push(ovSnap_());
+  if (ovState.undo.length > 50) ovState.undo.shift();
+  ovState.redo = [];
+  ovHistButtons();
+}
+
+function ovUndo() {
+  if (!ovState.undo || ovState.undo.length < 2) return;
+  ovState.redo.push(ovState.undo.pop());
+  ovState.layout = JSON.parse(JSON.stringify(ovState.undo[ovState.undo.length - 1]));
+  ovReloadCanvasFromLayout();
+}
+
+function ovRedo() {
+  if (!ovState.redo || !ovState.redo.length) return;
+  const s = ovState.redo.pop();
+  ovState.undo.push(s);
+  ovState.layout = JSON.parse(JSON.stringify(s));
+  ovReloadCanvasFromLayout();
+}
+
+function ovReloadCanvasFromLayout() {
+  ovBuildCanvas();
+  if (ovState.sel && !ovState.shadow.getElementById(ovState.sel)) ovState.sel = null;
+  ovRenderPanel(); ovPositionSel(); ovHistButtons();
+}
+
+function ovHistButtons() {
+  const u = $('overlay-undo'), r = $('overlay-redo');
+  if (u) u.disabled = !ovState.undo || ovState.undo.length < 2;
+  if (r) r.disabled = !ovState.redo || !ovState.redo.length;
+}
+
 function ovFitCanvas() {
   const wrap = $('ov-stage').parentElement;
   // The Profile view starts display:none (clientWidth 0); a ResizeObserver
@@ -3033,6 +3080,8 @@ function ovStartDrag(e) {
   function up() {
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
+    const e2 = ovState.shadow.getElementById(id);
+    if (e2 && (e2.offsetLeft !== sl || e2.offsetTop !== st)) ovCommit();
   }
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
@@ -3054,6 +3103,7 @@ function ovStartResize(e) {
   function up() {
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
+    if (el.offsetWidth !== sw || el.offsetHeight !== sh) ovCommit();
   }
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
@@ -3105,7 +3155,7 @@ function ovPopulateFontSelect(sel, current, emptyLabel, onpick) {
     .forEach(f => add(f, f, g2, true));
   sel.appendChild(g2);
   sel.value = current || '';
-  sel.onchange = () => onpick(sel.value, sel);
+  sel.onchange = () => { onpick(sel.value, sel); ovCommit(); };
 }
 
 // Apply a font pick. prop 'bodyFont' targets the global body font; else the slot.
@@ -3120,6 +3170,7 @@ function ovNumField(prop, label, ov) {
   const i = document.createElement('input'); i.type = 'number';
   i.value = (ov[prop] !== undefined ? ov[prop] : '');
   i.oninput = () => ovSetProp(ovState.sel, prop, i.value === '' ? '' : Number(i.value));
+  i.onchange = () => ovCommit();
   ovState.fields[prop] = i; wrap.appendChild(i);
   return wrap;
 }
@@ -3133,7 +3184,9 @@ function ovColorField(prop, label, ov) {
   t.value = ov[prop] || '';
   if (/^#[0-9a-fA-F]{6}$/.test(ov[prop] || '')) c.value = ov[prop];
   c.oninput = () => { t.value = c.value; ovSetProp(ovState.sel, prop, c.value); };
+  c.onchange = () => ovCommit();
   t.oninput = () => ovSetProp(ovState.sel, prop, t.value);
+  t.onchange = () => ovCommit();
   ovState.fields[prop] = t;
   row.append(c, t); wrap.appendChild(row);
   return wrap;
@@ -3148,7 +3201,7 @@ function ovSelectField(prop, label, opts, ov) {
     op.value = o.v; op.textContent = o.t; s.appendChild(op);
   });
   s.value = ov[prop] || '';
-  s.onchange = () => ovSetProp(ovState.sel, prop, s.value);
+  s.onchange = () => { ovSetProp(ovState.sel, prop, s.value); ovCommit(); };
   ovState.fields[prop] = s; wrap.appendChild(s);
   return wrap;
 }
@@ -3178,6 +3231,7 @@ function ovShadowField(ov) {
     const i = document.createElement('input'); i.type = 'number';
     i.placeholder = ph; i.value = (val !== undefined ? val : '');
     i.oninput = () => ovSetShadow(ovState.sel, key, i.value);
+    i.onchange = () => ovCommit();
     return i;
   };
   row.append(numIn('x', 'Offset X', s.x), numIn('y', 'Offset Y', s.y),
@@ -3185,6 +3239,7 @@ function ovShadowField(ov) {
   const c = document.createElement('input'); c.type = 'color';
   if (/^#[0-9a-fA-F]{6}$/.test(s.color || '')) c.value = s.color;
   c.oninput = () => ovSetShadow(ovState.sel, 'color', c.value);
+  c.onchange = () => ovCommit();
   row.appendChild(c);
   wrap.appendChild(row);
   return wrap;
@@ -3245,7 +3300,7 @@ function ovRenderPanel() {
     cb.checked = ov.visible !== false;                 // shown unless explicitly hidden
     const lab = document.createElement('label'); lab.textContent = 'Visible';
     lab.style.margin = '0 0 0 6px';
-    cb.onchange = () => ovSetProp(id, 'visible', cb.checked ? '' : false);
+    cb.onchange = () => { ovSetProp(id, 'visible', cb.checked ? '' : false); ovCommit(); };
     wrap.append(cb, lab); panel.appendChild(wrap);
   }
   const grid = () => { const g = document.createElement('div'); g.className = 'ovgrid2'; return g; };
@@ -3350,6 +3405,7 @@ function ovResetSlot(id) {
   if (el) { el.removeAttribute('style'); el.style.cursor = 'move'; ovStyleSlot(id); }
   ovPositionSel();
   ovRenderPanel();
+  ovCommit();
 }
 
 function ovRefreshFontUI() {
@@ -3462,6 +3518,18 @@ function closeBuilderModal() {
 // Esc closes the modal (only when it's open).
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('ov-modal').hidden) closeBuilderModal();
+});
+
+// Undo/redo shortcuts — only when the builder canvas exists and focus is NOT in a
+// form field (so number/color inputs and the Advanced-CSS textarea keep native undo).
+window.addEventListener('keydown', e => {
+  if (!ovState.shadow) return;
+  const tn = e.target && e.target.tagName;
+  if (tn === 'INPUT' || tn === 'TEXTAREA' || tn === 'SELECT') return;
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); ovUndo(); }
+  else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); ovRedo(); }
 });
 
 // Reuse the exact OBS browser-source refresh the Apps view uses (obs-refresh op,
