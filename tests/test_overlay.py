@@ -570,6 +570,21 @@ def t_ob_compile_text_shadow():
         {"textShadow": {"x": 1, "y": 1, "blur": 1, "color": "red; } body{x:1"}})
 
 
+def t_ob_compile_visible():
+    # false -> display:none; true/absent -> no display rule; non-bool dropped
+    assert "display: none" in _css_x({"visible": False})
+    assert "display" not in _css_x({"visible": True})
+    assert "display" not in _css_x({})
+    assert "display" not in _css_x({"visible": "no"})
+    assert "display" not in _css_x({"visible": 0})
+
+
+def t_ob_visible_is_a_box_prop():
+    # every slot (box + text) accepts visible
+    assert "visible" in ob.KIND_BOX
+    assert "visible" in ob.KIND_TEXT
+
+
 def t_shipped_demo_overlay_css_matches_its_layout():
     # The demo profile ships a builder-authored HUD overlay: layout-hud.json is
     # the source, hud.css is its compiled output (what the relay serves). Guard

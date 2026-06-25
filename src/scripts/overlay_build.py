@@ -45,7 +45,7 @@ PROP_ORDER = ("left", "top", "width", "height", "padding",
               "teamNameMax", "teamNameMin", "fontFamily", "color",
               "background", "borderColor", "borderStyle",
               "align", "valign", "textTransform", "opacity",
-              "rotation", "textShadow")
+              "rotation", "textShadow", "visible")
 
 # Slot kinds (standard properties for all slots; spec
 # docs/superpowers/specs/2026-06-15-overlay-builder-standard-properties-design.md).
@@ -55,7 +55,7 @@ PROP_ORDER = ("left", "top", "width", "height", "padding",
 # position, size, fill, border, opacity, rotation; text adds the type properties).
 KIND_BOX = ("left", "top", "width", "height", "padding",
             "background", "borderWidth", "borderStyle", "borderColor",
-            "borderRadius", "opacity", "rotation")
+            "borderRadius", "opacity", "rotation", "visible")
 KIND_TEXT = KIND_BOX + ("fontSize", "lineHeight", "letterSpacing",
                         "fontFamily", "color", "align", "valign",
                         "textTransform", "textShadow")
@@ -228,6 +228,9 @@ def _declaration(prop, value):
     """CSS 'name: value' for one (prop, value), or None when unsupported/unsafe."""
     if prop == "textShadow":
         return _text_shadow_decl(value)
+    if prop == "visible":
+        # Only an explicit False hides the slot; True/anything-else = default shown.
+        return "display: none" if value is False else None
     value = _safe_value(value)
     if value is None:
         return None
