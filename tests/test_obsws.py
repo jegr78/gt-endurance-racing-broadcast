@@ -1086,6 +1086,48 @@ def t_stream_kbps():
     assert m.stream_kbps(0, 101.0, 125000, 101.0, True) is None     # dt == 0
 
 
+def t_pov_scene_item_transform_maps_box():
+    assert m.pov_scene_item_transform(
+        {"left": 1516, "top": 600, "width": 384, "height": 216}) == {
+            "positionX": 1516, "positionY": 600,
+            "boundsType": 2, "boundsAlignment": 0, "alignment": 5,
+            "boundsWidth": 384, "boundsHeight": 216}
+
+
+def t_set_scene_item_transform_sends_request():
+    sess = _FakeSession({"GetSceneItemId": {"sceneItemId": 7}})
+    orig, m._connect = m._connect, lambda *a, **k: (sess, "")
+    try:
+        tf = m.pov_scene_item_transform(
+            {"left": 1516, "top": 600, "width": 384, "height": 216})
+        ok, note = m.set_scene_item_transform("Stint", "Feed POV", tf)
+    finally:
+        m._connect = orig
+    assert ok is True and note == ""
+    assert ("SetSceneItemTransform",
+            {"sceneName": "Stint", "sceneItemId": 7,
+             "sceneItemTransform": tf}) in sess.sent
+
+
+def t_set_scene_item_transform_missing_item():
+    sess = _FakeSession({"GetSceneItemId": {}})        # no sceneItemId
+    orig, m._connect = m._connect, lambda *a, **k: (sess, "")
+    try:
+        ok, note = m.set_scene_item_transform("Stint", "Feed POV", {})
+    finally:
+        m._connect = orig
+    assert ok is False and "not found" in note
+
+
+def t_set_scene_item_transform_unreachable():
+    orig, m._connect = m._connect, lambda *a, **k: (None, "OBS not running")
+    try:
+        assert m.set_scene_item_transform("Stint", "Feed POV", {}) == \
+            (False, "OBS not running")
+    finally:
+        m._connect = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

@@ -80,6 +80,16 @@ def feed_state_intents(live, do_cut, feeds=("A", "B"),
     return intents
 
 
+def pov_scene_item_transform(box):
+    """Map a full POV box {left,top,width,height} to an obs-websocket
+    sceneItemTransform. The Feed POV item is top-left anchored (alignment 5) with
+    SCALE_INNER bounds (boundsType 2); all fields are sent explicitly so the
+    result is idempotent regardless of the item's current bounds settings."""
+    return {"positionX": box["left"], "positionY": box["top"],
+            "boundsType": 2, "boundsAlignment": 0, "alignment": 5,
+            "boundsWidth": box["width"], "boundsHeight": box["height"]}
+
+
 # --------------------------------------------------------------------------
 # WebSocket plumbing (RFC 6455) — pure functions, unit-tested
 # --------------------------------------------------------------------------
@@ -782,6 +792,31 @@ def set_scene_item_enabled(scene, source, enabled, host="127.0.0.1", port=None,
         session.request("SetSceneItemEnabled",
                         {"sceneName": scene, "sceneItemId": sid,
                          "sceneItemEnabled": bool(enabled)})
+        return True, ""
+    except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        return False, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
+def set_scene_item_transform(scene, source, transform, host="127.0.0.1", port=None,
+                             password=None, timeout=2.0):
+    """Set a scene item's transform (best effort). `transform` is the
+    obs-websocket sceneItemTransform dict (see pov_scene_item_transform).
+    Mirrors set_scene_item_enabled: GetSceneItemId -> SetSceneItemTransform.
+    Returns (ok, note); (False, reason) on any failure — OBS closed, wrong
+    password, item missing — NEVER an exception."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return False, note
+    try:
+        sid = session.request("GetSceneItemId",
+                              {"sceneName": scene, "sourceName": source}).get("sceneItemId")
+        if sid is None:
+            return False, f"scene item '{source}' not found in scene '{scene}'"
+        session.request("SetSceneItemTransform",
+                        {"sceneName": scene, "sceneItemId": sid,
+                         "sceneItemTransform": dict(transform)})
         return True, ""
     except Exception as exc:                         # noqa: BLE001 — best-effort contract
         return False, str(exc) or exc.__class__.__name__
