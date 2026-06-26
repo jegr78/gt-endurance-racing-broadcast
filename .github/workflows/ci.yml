@@ -1,9 +1,14 @@
 name: CI
 
-# Test gate. Runs the stdlib test suite on all three target OSes (the racecast
-# binary ships for Windows/macOS/Linux) across supported Python versions, plus
-# the build self-verify (tokenization, blanked password, no secrets shipped).
-# Public repo: Actions minutes are free, macOS runners included.
+# Test gate. Runs the stdlib test suite + build self-verify (tokenization,
+# blanked password, no secrets shipped). Two orthogonal axes, NOT a full cross
+# product: the Python-version axis (3.12/3.13) runs on ubuntu only (fast/free,
+# catches version-specific stdlib drift), while the OS axis (Windows/macOS —
+# the binary ships for all three) runs on the pinned ship version (3.12) only,
+# catching OS-specific path/process bugs (#97). macOS runners are the slow,
+# scarce ones, so they get exactly one job, not three. NB: the matrix job names
+# below ("test (<os>, <ver>)") are the ruleset's required status checks — if you
+# change a combo, update Protect main's required checks to match or PRs deadlock.
 on:
   push:
     branches: [main]
@@ -38,7 +43,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.12", "3.13"]
+        # Full version sweep on ubuntu only; the slow Windows/macOS runners run
+        # just the pinned ship version (3.12). 4 jobs instead of a 6-job cross
+        # product (and one macOS job, not three). exclude (not include) keeps the
+        # job names as "test (<os>, <ver>)" so the ruleset's required checks match.
+        exclude:
+          - os: windows-latest
+            python-version: "3.13"
+          - os: macos-latest
+            python-version: "3.13"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
