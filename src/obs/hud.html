@@ -98,13 +98,51 @@
     font-size: 28px; font-weight: 700; background: #243039; padding: 10px;
     border-radius: 8px; color: #eef0f2; }
   #flag-status[data-state="green-flag"] { background: #1f8a3b; color: #fff; }
-  #flag-status[data-state="yellow-flag"] { background: #f2c014; color: #111; }
-  #flag-status[data-state="double-yellow"] { background: #f2c014; color: #111; }
-  #flag-status[data-state="full-course-yellow"] { background: #e6a700; color: #111; }
-  #flag-status[data-state="code-60"] { background: #e2761b; color: #111; }
-  #flag-status[data-state="safety-car"] { background: #eef0f2; color: #111; }
+  /* Yellow Flag, Safety Car, Virtual Safety Car and Full Course Yellow all signal
+     the same caution, so they share the one yellow. */
+  #flag-status[data-state="yellow-flag"],
+  #flag-status[data-state="double-yellow"],
+  #flag-status[data-state="safety-car"],
+  #flag-status[data-state="virtual-safety-car"],
+  #flag-status[data-state="full-course-yellow"] { background: #f2c014; color: #111; }
+  /* Code 60: the pink Code-60 flag rendered as a left emblem (white ring carrying
+     "60" over a white diagonal cross) next to the label. The emblem is pure CSS —
+     a radial-gradient ring with a pink core that masks the X centre, over two
+     diagonal linear-gradients. data-state is removed when empty (see setFlag), so
+     display:flex here never defeats `.el.empty { display:none }`. */
+  #flag-status[data-state="code-60"] {
+    color: #fff;
+    background-color: #d6177e;
+    display: flex; align-items: center; gap: 12px;
+    text-shadow: 0 0 3px #000, 1px 1px 2px #000;
+  }
+  #flag-status[data-state="code-60"]::before {
+    content: "60";
+    flex: 0 0 auto; width: 34px; height: 34px; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 800; line-height: 1; letter-spacing: -1px;
+    color: #fff; text-shadow: none; border-radius: 6px;
+    background-color: #d6177e;
+    background-image:
+      radial-gradient(circle at 50% 50%, #d6177e 0 9px, #fff 9px 12px, transparent 12px),
+      linear-gradient(to top right,    transparent calc(50% - 2px), #fff calc(50% - 2px), #fff calc(50% + 2px), transparent calc(50% + 2px)),
+      linear-gradient(to bottom right, transparent calc(50% - 2px), #fff calc(50% - 2px), #fff calc(50% + 2px), transparent calc(50% + 2px));
+  }
   #flag-status[data-state="red-flag"] { background: #c62121; color: #fff; }
-  #flag-status[data-state="checkered-flag"] { background: #111; color: #fff; }
+  /* Checkered flag: black/white checkerboard pattern; the text outline keeps the
+     label legible over the busy background. */
+  #flag-status[data-state="checkered-flag"] {
+    color: #fff;
+    background-color: #fff;
+    background-image:
+      linear-gradient(45deg, #111 25%, transparent 25%),
+      linear-gradient(-45deg, #111 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #111 75%),
+      linear-gradient(-45deg, transparent 75%, #111 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+    text-shadow: 0 0 4px #000, 1px 1px 2px #000, -1px -1px 2px #000;
+  }
 </style>
 <link rel="stylesheet" href="/hud/override.css">
 </head>
@@ -174,7 +212,7 @@
     el.classList.toggle("empty", !value);
   }
   const FLAG_ALIASES = {
-    "sc": "safety-car", "fcy": "full-course-yellow", "vsc": "full-course-yellow",
+    "sc": "safety-car", "fcy": "full-course-yellow", "vsc": "virtual-safety-car",
   };
   function flagSlug(value) {
     const s = (value || "").toLowerCase().replace(/[^a-z0-9]+/g, "-")
