@@ -295,11 +295,16 @@
   .ovbuild { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap;
              margin:0 0 8px; }
   .ovcanvas-wrap { flex:1 1 520px; min-width:300px; background:#0b0f1a;
-             border:1px solid var(--line); border-radius:10px; overflow:hidden;
-             aspect-ratio:16/9; position:relative;
-             background-size:cover; background-position:center; }
+             border:1px solid var(--line); border-radius:10px; overflow:auto;
+             aspect-ratio:16/9; position:relative; }
+  .ov-sizer { position:absolute; top:0; left:0; width:100%; height:100%;
+             pointer-events:none; }
   .ovcanvas { position:absolute; top:0; left:0; width:1920px; height:1080px;
-             transform-origin:top left; }
+             transform-origin:top left; background-size:100% 100%;
+             background-repeat:no-repeat; }
+  .ovgridbar .ov-zoomval { min-width:42px; text-align:center; color:var(--txt); }
+  .ovgridbar .ov-zoomsep { width:1px; align-self:stretch; background:var(--line);
+             margin:0 2px; }
   .ovpanel { flex:0 0 256px; background:#151C2E; border:1px solid var(--line);
              border-radius:10px; padding:10px 12px; align-self:stretch; }
   .ovpanel h4 { margin:0 0 6px; font:600 13px var(--mono); color:var(--txt); }
@@ -719,11 +724,21 @@
             <button type="button" class="ov-gpreset" onclick="ovGridSetSize(10)">10</button>
             <button type="button" class="ov-gpreset" onclick="ovGridSetSize(20)">20</button>
             <label><input type="checkbox" id="ov-grid-snap" onchange="ovGridSnap(this.checked)"> Snap to grid</label>
+            <span class="ov-zoomsep"></span>
+            <label>Zoom</label>
+            <button type="button" class="ov-gpreset" onclick="ovZoomStep(-1)">−</button>
+            <span class="ov-zoomval" id="ov-zoomval">Fit</span>
+            <button type="button" class="ov-gpreset" onclick="ovZoomStep(1)">+</button>
+            <button type="button" class="ov-gpreset" onclick="ovZoomSet('fit')">Fit</button>
+            <button type="button" class="ov-gpreset" onclick="ovZoomSet(0.5)">50%</button>
+            <button type="button" class="ov-gpreset" onclick="ovZoomSet(1)">100%</button>
+            <button type="button" class="ov-gpreset" onclick="ovZoomSet(1.5)">150%</button>
+            <button type="button" class="ov-gpreset" onclick="ovZoomSet(2)">200%</button>
           </div>
           <div class="enverr" id="overlay-err" hidden></div>
           <div class="envhint" id="overlay-migrated" hidden></div>
           <div class="ovbuild">
-            <div class="ovcanvas-wrap"><div class="ovcanvas" id="ov-stage"></div></div>
+            <div class="ovcanvas-wrap"><div class="ov-sizer" id="ov-sizer"></div><div class="ovcanvas" id="ov-stage"></div></div>
             <div class="ovpanel" id="ov-panel">
               <p class="envhint" id="ov-pick" style="margin-top:0">Click a slot on the canvas to edit its position and style.</p>
             </div>
@@ -2798,10 +2813,12 @@ let overlayPage = 'hud';
 // Canvas is a fixed 1920x1080 design space (origin top-left); single source for
 // the align toolbar and the snap grid.
 const OV_CANVAS_W = 1920, OV_CANVAS_H = 1080;
+const OV_ZOOM_LADDER = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 const ovState = {page: 'hud', slots: [], sample: {}, baseCss: '', body: '',
                  layout: null, fonts: [], library: [], scale: 1, sel: null,
                  shadow: null, selBox: null, fields: {}, undo: [], redo: [],
-                 grid: {show: false, size: 10, snap: false}, gridEl: null};
+                 grid: {show: false, size: 10, snap: false}, gridEl: null,
+                 zoom: 'fit'};
 
 // prop -> CSS property; mirrors src/scripts/overlay_build.py (the canonical map).
 const OV_CSSNAME = {left: 'left', top: 'top', width: 'width', height: 'height',
@@ -2862,7 +2879,7 @@ async function loadOverlay() {
     e.textContent = 'Imported your existing hand-written CSS into “Fonts & advanced CSS” below — slots start from the base look on top of it.';
     e.hidden = false;
   }
-  $('ov-stage').parentElement.style.backgroundImage = "url('/api/overlay/bg?t=" + Date.now() + "')";
+  $('ov-stage').style.backgroundImage = "url('/api/overlay/bg?t=" + Date.now() + "')";
   ovBuildCanvas();
   ovRenderPanel();
   ovPopulateSlotPicker();
@@ -2944,7 +2961,7 @@ function ovBuildCanvas() {
     el.addEventListener('pointerdown', ovStartDrag);
     ovStyleSlot(s.id);
   });
-  ovFitCanvas();
+  ovApplyZoom();
   ovPositionSel();
 }
 
@@ -3137,19 +3154,49 @@ function ovGridSyncControls() {
   if ($('ov-grid-snap')) $('ov-grid-snap').checked = ovState.grid.snap;
 }
 
-function ovFitCanvas() {
+function ovApplyZoom() {
   const wrap = $('ov-stage').parentElement;
   // The Profile view starts display:none (clientWidth 0); a ResizeObserver
-  // refits the instant it becomes visible, so the canvas is never stuck at ~0.
+  // refits the instant it becomes visible — but only while in Fit mode (a numeric
+  // zoom is a fixed scale; a wrap resize there just changes what scrolls into view).
   if (!ovState.ro && 'ResizeObserver' in window) {
     ovState.ro = new ResizeObserver(() => {
-      if (wrap.clientWidth) { ovFitCanvas(); ovPositionSel(); }
+      if (wrap.clientWidth && ovState.zoom === 'fit') { ovApplyZoom(); ovPositionSel(); }
     });
     ovState.ro.observe(wrap);
   }
-  const s = (wrap.clientWidth || 1) / OV_CANVAS_W;
+  const s = ovState.zoom === 'fit'
+    ? (wrap.clientWidth || 1) / OV_CANVAS_W
+    : ovState.zoom;
   ovState.scale = s;
   $('ov-stage').style.transform = 'scale(' + s + ')';
+  const sizer = $('ov-sizer');
+  if (sizer) {
+    sizer.style.width = (OV_CANVAS_W * s) + 'px';
+    sizer.style.height = (OV_CANVAS_H * s) + 'px';
+  }
+  const vEl = $('ov-zoomval');
+  if (vEl) vEl.textContent = ovState.zoom === 'fit' ? 'Fit' : Math.round(s * 100) + '%';
+}
+
+function ovZoomSet(z) {
+  ovState.zoom = z;                     // 'fit' or a numeric factor
+  ovApplyZoom();
+  ovPositionSel();
+}
+
+function ovZoomStep(dir) {
+  // From Fit, step onto the ladder nearest the current fit scale; otherwise step
+  // one rung. dir = +1 (in) / -1 (out).
+  const cur = ovState.scale || 1;
+  let i = OV_ZOOM_LADDER.findIndex(z => z >= cur - 1e-3);
+  if (i < 0) i = OV_ZOOM_LADDER.length - 1;
+  if (ovState.zoom !== 'fit') {
+    const j = OV_ZOOM_LADDER.indexOf(ovState.zoom);
+    if (j >= 0) i = j;
+  }
+  i = Math.min(Math.max(i + dir, 0), OV_ZOOM_LADDER.length - 1);
+  ovZoomSet(OV_ZOOM_LADDER[i]);
 }
 
 function ovPositionSel() {
@@ -3635,7 +3682,7 @@ async function saveOverlay() {
 // Refit the scaled canvas to the (now resized) container; keep the selection box
 // aligned. Registered once — harmless when the builder isn't on screen.
 window.addEventListener('resize', () => {
-  if (ovState.shadow) { ovFitCanvas(); ovPositionSel(); }
+  if (ovState.shadow) { ovApplyZoom(); ovPositionSel(); }
 });
 
 // Pop the builder into a modal laid over the Control Center for more room than
@@ -3651,7 +3698,7 @@ function openBuilderModal() {
   $('ov-modal').hidden = false;
   document.body.classList.add('ovmodal');
   // settle the larger layout, then refit the scaled canvas to its new width
-  setTimeout(() => { if (ovState.shadow) { ovFitCanvas(); ovPositionSel(); } }, 0);
+  setTimeout(() => { if (ovState.shadow) { ovApplyZoom(); ovPositionSel(); } }, 0);
 }
 
 function closeBuilderModal() {
@@ -3659,7 +3706,7 @@ function closeBuilderModal() {
   if (ovModalHome.parent) ovModalHome.parent.insertBefore(sec, ovModalHome.next);
   $('ov-modal').hidden = true;
   document.body.classList.remove('ovmodal');
-  setTimeout(() => { if (ovState.shadow) { ovFitCanvas(); ovPositionSel(); } }, 0);
+  setTimeout(() => { if (ovState.shadow) { ovApplyZoom(); ovPositionSel(); } }, 0);
 }
 
 // Esc closes the modal (only when it's open).
