@@ -1840,17 +1840,20 @@ def _sync_pov_transform(set_transform=None):
                 overrides = overlay_build.pov_box_from_css(fh.read())
         except OSError:
             overrides = {}
-    box = {**base, **overrides}
-    source = overlay_build.OVERLAY_SLOT_OBS_SOURCES["pov"]
-    if set_transform is None:
+    try:
         import obs_ws
-        set_transform = obs_ws.set_scene_item_transform
-    import obs_ws
-    transform = obs_ws.pov_scene_item_transform(box)
-    ok, note = set_transform(obs_ws.STINT_SCENE, source, transform)
-    if ok:
-        print(f"obs: POV box synced to '{source}' "
-              f"({box['left']},{box['top']} {box['width']}x{box['height']}).")
+        box = {**base, **overrides}
+        source = overlay_build.OVERLAY_SLOT_OBS_SOURCES["pov"]
+        if set_transform is None:
+            set_transform = obs_ws.set_scene_item_transform
+        transform = obs_ws.pov_scene_item_transform(box)
+        ok, note = set_transform(obs_ws.STINT_SCENE, source, transform)
+        if ok:
+            print(f"obs: POV box synced to '{source}' "
+                  f"({box['left']},{box['top']} {box['width']}x{box['height']}).")
+    except Exception as exc:  # noqa: BLE001 — best-effort contract
+        print(f"obs: POV box sync skipped ({exc}).")
+        return
 
 
 def _refresh_obs_pages(force=False, wait=0):
