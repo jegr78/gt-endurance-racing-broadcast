@@ -43,7 +43,7 @@ DEFAULT_PROPS = ("left", "top", "width", "height", "fontSize",
 # Stable emit order within a slot rule (independent of dict insertion order).
 PROP_ORDER = ("left", "top", "width", "height", "padding",
               "fontSize", "lineHeight", "letterSpacing",
-              "borderWidth", "borderRadius",
+              "borderWidth", "borderRadius", "slant",
               "teamNameMax", "teamNameMin", "fontFamily", "fontWeight",
               "fontStyle", "color", "background", "borderColor", "borderStyle",
               "align", "valign", "textTransform", "opacity",
@@ -57,7 +57,7 @@ PROP_ORDER = ("left", "top", "width", "height", "padding",
 # position, size, fill, border, opacity, rotation; text adds the type properties).
 KIND_BOX = ("left", "top", "width", "height", "padding",
             "background", "borderWidth", "borderStyle", "borderColor",
-            "borderRadius", "opacity", "rotation", "visible")
+            "borderRadius", "slant", "opacity", "rotation", "visible")
 KIND_TEXT = KIND_BOX + ("fontSize", "lineHeight", "letterSpacing",
                         "fontFamily", "fontWeight", "fontStyle", "color",
                         "align", "valign", "textTransform", "textShadow")
@@ -256,6 +256,24 @@ def _text_shadow_decl(value):
     return f"text-shadow: {nums[0]}px {nums[1]}px {nums[2]}px {color}"
 
 
+def _slant_decl(value):
+    """A 'clip-path: polygon(...)' parallelogram from a signed px slant, or None.
+    Sign = lean direction (+ leans '/', - leans '\\'); |value| is the horizontal
+    edge offset. Both vertical edges slant equally, so text content stays upright.
+    0 / out-of-range (|value| > 400) / non-number / bool -> None (no clip)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value == 0 or not -400 <= value <= 400:
+        return None
+    a = abs(value)
+    a = int(a) if float(a).is_integer() else a
+    if value > 0:
+        poly = f"polygon({a}px 0, 100% 0, calc(100% - {a}px) 100%, 0 100%)"
+    else:
+        poly = f"polygon(0 0, calc(100% - {a}px) 0, 100% 100%, {a}px 100%)"
+    return f"clip-path: {poly}"
+
+
 def _declaration(prop, value):
     """CSS 'name: value' for one (prop, value), or None when unsupported/unsafe."""
     if prop == "textShadow":
@@ -265,6 +283,8 @@ def _declaration(prop, value):
         # Must precede _safe_value: bool is an int subclass, so _safe_value(False)
         # returns False (not None) and would fall through to a no-op.
         return "display: none" if value is False else None
+    if prop == "slant":
+        return _slant_decl(value)
     value = _safe_value(value)
     if value is None:
         return None

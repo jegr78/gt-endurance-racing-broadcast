@@ -547,6 +547,23 @@ def t_ob_compile_rotation():
     assert "transform" not in _css_x({"rotation": "x"})
 
 
+def t_ob_compile_slant_clip_path():
+    # positive slant leans "/"; text is untouched (no transform)
+    assert ("clip-path: polygon(40px 0, 100% 0, calc(100% - 40px) 100%, 0 100%)"
+            in _css_x({"slant": 40}))
+    # negative slant leans "\"
+    assert ("clip-path: polygon(0 0, calc(100% - 30px) 0, 100% 100%, 30px 100%)"
+            in _css_x({"slant": -30}))
+
+
+def t_ob_compile_slant_rejects():
+    assert "clip-path" not in _css_x({"slant": 0})       # zero = no clip
+    assert "clip-path" not in _css_x({"slant": 401})     # over +400
+    assert "clip-path" not in _css_x({"slant": -401})    # under -400
+    assert "clip-path" not in _css_x({"slant": "x"})     # non-number
+    assert "clip-path" not in _css_x({"slant": True})    # bool rejected
+
+
 def t_ob_compile_valign_and_text_transform():
     assert "align-items: center" in _css_x({"valign": "middle"})
     assert "align-items: flex-end" in _css_x({"valign": "bottom"})
