@@ -651,6 +651,47 @@ def t_example_overlay_matches_demo_standard():
         "example layout-hud.json != demo standard"
 
 
+def t_pov_box_from_css_full_rule():
+    css = "#pov { left: 1516px; top: 600px; width: 384px; height: 216px; }"
+    assert ob.pov_box_from_css(css) == {"left": 1516, "top": 600,
+                                        "width": 384, "height": 216}
+
+
+def t_pov_box_from_css_partial_keeps_only_present():
+    assert ob.pov_box_from_css("#pov { left: 1516px; top: 600px; }") == \
+        {"left": 1516, "top": 600}
+
+
+def t_pov_box_from_css_absent_is_empty():
+    assert ob.pov_box_from_css("#stint { left: 5px; }") == {}
+    assert ob.pov_box_from_css("") == {}
+    assert ob.pov_box_from_css(None) == {}
+
+
+def t_pov_box_from_css_cascade_later_rule_wins_per_prop():
+    # base rule then a customCss override appended later -> left overridden,
+    # the other props retained from the earlier rule (per-property cascade).
+    css = ("#pov { left: 1496px; top: 644px; width: 384px; height: 216px; }\n"
+           "#pov { left: 1600px; }")
+    assert ob.pov_box_from_css(css) == {"left": 1600, "top": 644,
+                                        "width": 384, "height": 216}
+
+
+def t_pov_box_from_css_ignores_pov_name_and_non_px():
+    assert ob.pov_box_from_css("#pov-name { left: 99px; top: 10px; }") == {}
+    # non-px value (e.g. a percentage) is skipped; px sibling still read.
+    assert ob.pov_box_from_css("#pov { left: 50%; top: 600px; }") == {"top": 600}
+    assert ob.pov_box_from_css("#pov {") == {}        # malformed: no closing brace
+
+
+def t_pov_box_from_css_float_value():
+    assert ob.pov_box_from_css("#pov { left: 1516.5px; }") == {"left": 1516.5}
+
+
+def t_overlay_slot_obs_sources_constant():
+    assert ob.OVERLAY_SLOT_OBS_SOURCES == {"pov": "Feed POV"}
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
