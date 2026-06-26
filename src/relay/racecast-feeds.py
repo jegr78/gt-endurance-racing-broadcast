@@ -851,13 +851,17 @@ def _crew_truthy(v):
 
 
 def parse_config_roster(text):
-    """Configuration tab CSV -> roster {team_name: {"number": str, "brandKey": str,
-    "brandName": str}}. brandName = the "Brand Name Override" cell or, when blank, the
-    verbatim brand text; brandKey (the logo) is always asset_key(brand) regardless.
-    The team name is always stripped of a trailing '#NNN' (split_team_label); the
-    Number column wins over that embedded token, which is only the fallback. Columns
-    are located by header name so positions stay free. A missing team-name header ->
-    {}. A missing Brand/Number column just yields '' for that field."""
+    """Configuration tab CSV -> roster {team_label: {"number": str, "brandKey": str,
+    "brandName": str}}. The dict KEY is the VERBATIM team label (e.g.
+    'Scuderia #14'), so two cars sharing a name but differing in number stay
+    distinct entries — the stripped name is NOT a unique identity. The embedded
+    '#NNN' is peeled off only to derive the fallback car number (split_team_label);
+    the displayed name is stripped later, at HUD render time. brandName = the
+    "Brand Name Override" cell or, when blank, the verbatim brand text; brandKey
+    (the logo) is always asset_key(brand) regardless. The Number column wins over
+    the embedded token, which is only the fallback. Columns are located by header
+    name so positions stay free. A missing team-name header -> {}. A missing
+    Brand/Number column just yields '' for that field."""
     rows = list(csv.reader(io.StringIO(text)))
     if not rows:
         return {}
@@ -872,15 +876,16 @@ def parse_config_roster(text):
     for row in rows[1:]:
         if len(row) <= ti:
             continue
-        name, embedded = split_team_label(row[ti])
-        if not name:
+        label = (row[ti] or "").strip()
+        _name, embedded = split_team_label(label)
+        if not _name:
             continue
         col_num = (row[ni].strip() if ni is not None and len(row) > ni else "")
         brand_raw = (row[bi].strip() if bi is not None and len(row) > bi else "")
         override = (row[oi].strip() if oi is not None and len(row) > oi else "")
-        out[name] = {"number": col_num or embedded,
-                     "brandKey": asset_key(brand_raw),
-                     "brandName": override or brand_raw}
+        out[label] = {"number": col_num or embedded,
+                      "brandKey": asset_key(brand_raw),
+                      "brandName": override or brand_raw}
     return out
 
 
@@ -963,16 +968,22 @@ def parse_cue_presets(text):
 
 
 def team_entry(raw, roster):
-    """One /hud/data team object from an Overlay slot value + the roster. Name is
-    always the stripped form; number/logo come from the roster (Number column
-    precedence already baked in), with the slot's own embedded #NNN as the only
-    fallback when the team is absent from the roster."""
+    """One /hud/data team object from an Overlay slot value + the roster. The
+    roster is keyed by the VERBATIM label, so the lookup uses the raw slot value
+    first (the per-car identity); a stripped-name fallback covers a bare slot
+    value against a roster whose number lives in a separate Number column.
+    Displayed 'name' is the stripped form; 'number'/logo come from the roster
+    (Number column precedence already baked in), with the slot's own embedded
+    #NNN as the fallback. 'label' carries the verbatim value (with #NNN) so the
+    panel dropdown can offer/select the exact car — the HUD ignores it."""
+    raw = (raw or "").strip()
     name, embedded = split_team_label(raw)
-    info = roster.get(name, {})
+    info = roster.get(raw) or roster.get(name) or {}
     return {"name": name,
             "number": info.get("number") or embedded,
             "brandKey": info.get("brandKey", ""),
-            "brandName": info.get("brandName", "")}
+            "brandName": info.get("brandName", ""),
+            "label": raw}
 
 
 def build_hud_data(overlay, roster):
@@ -2788,7 +2799,7 @@ class HudSource:
     with last-good caching (mirrors ScheduleSource robustness)."""
     EMPTY = {"stint": "", "streamer": "", "session": "",
              "round": {"top": "", "country": "", "flagKey": ""},
-             "teams": [{"name": "", "number": "", "brandKey": "", "brandName": ""} for _ in range(3)],
+             "teams": [{"name": "", "number": "", "brandKey": "", "brandName": "", "label": ""} for _ in range(3)],
              "raceControl": "", "flag": ""}
 
     def __init__(self, overlay_url, config_url, cache_path):
@@ -2882,7 +2893,7 @@ class HudSource:
             if self.team_overrides:
                 teams = [dict(t) for t in out.get("teams", [])]
                 while len(teams) < 3:
-                    teams.append({"name": "", "number": "", "brandKey": "", "brandName": ""})
+                    teams.append({"name": "", "number": "", "brandKey": "", "brandName": "", "label": ""})
                 for s, (e, _exp) in self.team_overrides.items():
                     if 0 <= s < len(teams):
                         teams[s] = dict(e)
@@ -2902,24 +2913,33 @@ class HudSource:
         with self.lock:
             return list(self._roster.keys())
 
-    def resolve_team(self, name):
-        """A /hud/data team entry for a roster name (or a stripped unknown name)."""
-        name, embedded = split_team_label(name)
+    def resolve_team(self, label):
+        """A /hud/data team entry for a roster label (the verbatim '#NNN' value the
+        panel dropdown sends) or an unknown label. Looks up the verbatim label
+        first (per-car identity), then a stripped-name fallback; the entry carries
+        the verbatim 'label' back for the panel's optimistic echo."""
+        label = (label or "").strip()
+        name, embedded = split_team_label(label)
         with self.lock:
-            info = self._roster.get(name, {})
+            info = self._roster.get(label) or self._roster.get(name) or {}
         return {"name": name,
                 "number": info.get("number") or embedded,
                 "brandKey": info.get("brandKey", ""),
-                "brandName": info.get("brandName", "")}
+                "brandName": info.get("brandName", ""),
+                "label": label}
 
     def full_team_name(self, name):
-        """The verbatim Configuration team label (e.g. 'OVO eSports #111') for a
-        panel-supplied roster name — what the Setup tab dropdown expects. Falls
-        back to the given name when the team is unknown (or the config has no
-        embedded number, in which case the verbatim label IS the bare name)."""
-        bare, _embedded = split_team_label(name)
+        """The verbatim Configuration team label (e.g. 'OVO eSports #111') to write
+        into the Setup cell — what the Setup tab dropdown expects. The panel now
+        sends the verbatim label directly (a roster key), so it passes through
+        unchanged; a bare name from an older panel is mapped back via roster_full,
+        and an unknown value falls through to itself (never a KeyError)."""
+        name = (name or "").strip()
         with self.lock:
-            return self._roster_full.get(bare) or (name or "").strip()
+            if name in self._roster:
+                return name                       # already the verbatim label
+            bare, _embedded = split_team_label(name)
+            return self._roster_full.get(bare) or name
 
     def set_team_override(self, slot, entry, now=None):
         """Optimistic echo for a panel team write into podium slot 0..2."""
@@ -3204,7 +3224,10 @@ class SetupControl:
         out_pending = sorted(k for k, (_h, hk) in SETUP_FIELDS.items() if hk in pending)
         for key, slot in TEAM_SLOTS.items():
             i = slot - 1
-            fields[key] = teams[i]["name"] if i < len(teams) else ""
+            # The verbatim '#NNN' label (not the stripped name) so the panel's
+            # <select> current value matches one of the verbatim roster options.
+            fields[key] = (teams[i].get("label") or teams[i].get("name", "")
+                           if i < len(teams) else "")
             options[key] = list(names)
             if i in team_pending:
                 out_pending.append(key)

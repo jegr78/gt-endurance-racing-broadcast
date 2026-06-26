@@ -958,6 +958,56 @@ def t_full_team_name_falls_back_for_unknown_team():
     finally:
         m.post_webhook = orig
 
+TEAM_CONFIG_CSV_DUP = ("Teams,Brand Name\n"
+                       "Track Design Racing #2,Ferrari\n"
+                       "Track Design Racing #4,AMG\n")
+
+def _team_ctl_dup(pushes, overlay):
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    hs = m.HudSource("http://overlay", "http://config", _os.path.join(d, "h.json"))
+    hs._fetch = lambda url, timeout=10: (overlay if url == "http://overlay"
+                                         else TEAM_CONFIG_CSV_DUP)
+    hs.refresh()
+    ctl = m.SetupControl("http://push", hs)
+    def fake_post(url, payload, timeout=10):
+        pushes.append(payload)
+        return b'{"ok": true, "action": "teams", "v": 2}'
+    m.post_webhook, orig = fake_post, m.post_webhook
+    return ctl, hs, orig
+
+def t_setup_data_keeps_duplicate_team_numbers_in_dropdown():
+    # Same name, different number: the dropdown must keep BOTH verbatim options
+    # (regression — they collapsed to one, losing the #4 car), and the current
+    # slot value must be the verbatim label so the <select> selects it.
+    pushes = []
+    ctl, hs, orig = _team_ctl_dup(
+        pushes, ",Teams P1,Track Design Racing #4,,\n,Teams P2,,,\n,Teams P3,,,\n")
+    try:
+        d = ctl.data()
+        assert d["options"]["p1"] == ["Track Design Racing #2",
+                                      "Track Design Racing #4"], d["options"]["p1"]
+        assert d["fields"]["p1"] == "Track Design Racing #4", d["fields"]["p1"]
+    finally:
+        m.post_webhook = orig
+
+def t_set_team_distinct_cars_write_distinct_verbatim_labels():
+    # Both same-name cars are assignable; each writes its OWN verbatim '#NNN'.
+    pushes = []
+    ctl, hs, orig = _team_ctl_dup(
+        pushes, ",Teams P1,,,\n,Teams P2,,,\n,Teams P3,,,\n")
+    try:
+        assert ctl.set_team("p1", "Track Design Racing #2", now=1000.0).get("ok")
+        assert ctl.set_team("p2", "Track Design Racing #4", now=1000.0).get("ok")
+        assert hs.data(now=1001.0)["teams"][0]["number"] == "2"
+        assert hs.data(now=1001.0)["teams"][1]["number"] == "4"
+        ctl._push_team(1, "Track Design Racing #2")
+        ctl._push_team(2, "Track Design Racing #4")
+        assert pushes[-2] == {"action": "teams", "slot": 1, "name": "Track Design Racing #2"}
+        assert pushes[-1] == {"action": "teams", "slot": 2, "name": "Track Design Racing #4"}
+    finally:
+        m.post_webhook = orig
+
 def t_setup_data_includes_teams():
     ctl, hs, orig = _team_ctl([])
     try:
