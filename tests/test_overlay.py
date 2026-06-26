@@ -783,6 +783,20 @@ def t_control_center_has_preview_data_panel():
         assert needle in html, "control-center.html missing: %s" % needle
 
 
+def t_preview_panel_is_outside_slot_panel():
+    """#ov-panel is wiped by ovRenderPanel() (panel.textContent=''), so the
+    session-only Preview-data panel must live OUTSIDE it or it is destroyed at
+    runtime. Regression guard for that placement bug."""
+    def _read(*parts):
+        with open(os.path.join(*parts), encoding="utf-8") as fh:
+            return fh.read()
+    html = _read(ROOT, "src", "ui", "control-center.html")
+    i = html.index('id="ov-panel"')
+    j = html.index("</div>", i)          # first close tag = the #ov-panel close
+    assert 'id="ov-preview"' not in html[i:j], \
+        "Preview-data panel must not be inside #ov-panel (ovRenderPanel clears it)"
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
