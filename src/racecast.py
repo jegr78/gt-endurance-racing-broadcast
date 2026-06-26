@@ -533,13 +533,15 @@ def _relay_daemon_argv(rest, frozen):
         return [sys.executable, "relay", "run"] + list(rest)
     return [sys.executable, _relay_script()] + _relay_runtime_args() + list(rest)
 
-def _oneshot_extra(command, rest, runtime_dir, base_dir):
+def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None):
     """Extra argv for a one-shot. The asset writers (graphics/media/setup) get a
     profile-scoped --out (+ setup's --media/--graphics) so their output lands
     under runtime/<profile>/ in every run mode -- those are baked into the OBS
     collection as absolute paths. The machine-level one-shots that take
     --runtime-dir (preflight, cookies) get the un-scoped BASE runtime, so the
-    shared cookie jar stays at runtime/yt-cookies.txt. The user's own --out wins."""
+    shared cookie jar stays at runtime/yt-cookies.txt. The user's own --out wins.
+    overlay_css: when given and the file exists, injected as --overlay-css for
+    setup (so the OBS collection bakes the active POV-box geometry)."""
     extra = []
     if command in RUNTIME_DIR_ONESHOTS:
         extra += ["--runtime-dir", base_dir]
@@ -553,6 +555,9 @@ def _oneshot_extra(command, rest, runtime_dir, base_dir):
         for flag, sub in (("--media", "media"), ("--graphics", "graphics")):
             if flag not in rest:
                 extra += [flag, os.path.join(runtime_dir, sub)]
+    if (command == "setup" and overlay_css and "--overlay-css" not in rest
+            and os.path.isfile(overlay_css)):
+        extra += ["--overlay-css", overlay_css]
     return extra
 
 def _relay_script():
@@ -1811,6 +1816,43 @@ def _obs_pages_hash_path():
     return os.path.join(_runtime_dir(), "obs-pages.hash")
 
 
+def _sync_pov_transform(set_transform=None):
+    """Best-effort live sibling of the setup-time POV bake: push the active
+    profile's POV-box position/size onto the OBS 'Feed POV' scene item. Reads the
+    profile override CSS, merges over the hud.html base (so an override of only
+    some props keeps the rest at the base), and calls SetSceneItemTransform.
+    Silent on any miss — OBS unreachable, no overlay, item absent. `set_transform`
+    is a test seam (defaults to obs_ws.set_scene_item_transform)."""
+    import overlay_build
+    try:
+        with open(os.path.join(HERE, "obs", "hud.html"), encoding="utf-8") as fh:
+            base = overlay_build.pov_box_from_css(overlay_build.base_style(fh.read()))
+    except OSError:
+        return
+    if not base:                       # base page lost its #pov rule -> nothing to anchor
+        return
+    overrides = {}
+    od = _active_overlay_dir()
+    css = os.path.join(od, "hud.css") if od else None
+    if css and os.path.isfile(css):
+        try:
+            with open(css, encoding="utf-8") as fh:
+                overrides = overlay_build.pov_box_from_css(fh.read())
+        except OSError:
+            overrides = {}
+    box = {**base, **overrides}
+    source = overlay_build.OVERLAY_SLOT_OBS_SOURCES["pov"]
+    if set_transform is None:
+        import obs_ws
+        set_transform = obs_ws.set_scene_item_transform
+    import obs_ws
+    transform = obs_ws.pov_scene_item_transform(box)
+    ok, note = set_transform(obs_ws.STINT_SCENE, source, transform)
+    if ok:
+        print(f"obs: POV box synced to '{source}' "
+              f"({box['left']},{box['top']} {box['width']}x{box['height']}).")
+
+
 def _refresh_obs_pages(force=False, wait=0):
     """Refresh the relay-served OBS browser sources (HUD, which includes the race timer) when
     the pages changed since the last successful refresh — replaces the manual
@@ -1842,6 +1884,7 @@ def _refresh_obs_pages(force=False, wait=0):
         return
     print(f"obs: refreshed browser sources {', '.join(names)}." if names
           else "obs: no relay browser sources in OBS — nothing to refresh.")
+    _sync_pov_transform()              # live POV-box position sibling (best effort)
 
 
 def app_launch_cmd(rest):
@@ -3106,7 +3149,9 @@ def _oneshot_code(command, rest):
             os.environ.setdefault(key, val)
     if command == "cookies":
         rest = _cookies_oneshot_args(rest)
-    extra = _oneshot_extra(command, rest, _runtime_dir(), _runtime_base_dir())
+    _od = _active_overlay_dir()
+    extra = _oneshot_extra(command, rest, _runtime_dir(), _runtime_base_dir(),
+                           overlay_css=os.path.join(_od, "hud.css") if _od else None)
     if command == "update" and "--current" not in rest:
         extra += ["--current", version()]
     return _run_script(ONESHOT_MAP[command], list(rest) + extra)
