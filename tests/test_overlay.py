@@ -737,6 +737,38 @@ def t_ob_compile_slant_shear_gated_by_props():
     assert "clip-path" not in css and "transform" not in css
 
 
+def t_ob_sample_covers_every_text_slot():
+    """Every text-kind HUD slot has a non-empty SAMPLE entry so the builder
+    canvas renders something for it. Box slots (images, the POV frame) are
+    exempt — they carry an asset sample or are a frame with no text."""
+    def _read(*parts):
+        with open(os.path.join(*parts), encoding="utf-8") as fh:
+            return fh.read()
+    html = _read(ROOT, "src", "obs", "hud.html")
+    slots = ob.extract_slots(html)
+    sample = ob.SAMPLE["hud"]
+    # A text slot is one whose prop set includes the text-only "fontSize"
+    # (KIND_TEXT adds it; KIND_BOX does not).
+    text_ids = [s["id"] for s in slots if "fontSize" in s["props"]]
+    missing = [sid for sid in text_ids if not sample.get(sid)]
+    assert not missing, "text slots missing a SAMPLE entry: %r" % missing
+
+
+def t_ob_flag_presets_match_hud_states():
+    """Every FLAG_PRESETS state is a real #flag-status[data-state="..."] hook
+    in hud.html, so the builder's flag picker can colour the canvas. Guards
+    drift if a state is renamed or removed from the page CSS."""
+    def _read(*parts):
+        with open(os.path.join(*parts), encoding="utf-8") as fh:
+            return fh.read()
+    html = _read(ROOT, "src", "obs", "hud.html")
+    assert ob.FLAG_PRESETS, "FLAG_PRESETS must not be empty"
+    for p in ob.FLAG_PRESETS:
+        assert p.get("label"), "flag preset missing label: %r" % (p,)
+        needle = 'data-state="%s"' % p["state"]
+        assert needle in html, "flag state not a data-state hook in hud.html: %s" % p["state"]
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):

@@ -85,6 +85,8 @@ SAMPLE = {
         "team3-num": "99", "team3-name": "Night Shift Motorsport", "team3-brand": "Ferrari",
         "race-control": "FCY — Full Course Yellow",
         "clock": "1:23:45",
+        "pov-name": "Max Mustermann",
+        "flag-status": "Safety Car",
         "round-flag": {"flag": "belgium"},
         "team1-logo": {"brand": "bmw"},
         "team2-logo": {"brand": "porsche"},
@@ -92,6 +94,22 @@ SAMPLE = {
     },
 }
 
+# Flag states offered in the builder's session-only preview picker. Each entry
+# is {state, label}: `state` is the #flag-status[data-state="..."] CSS hook in
+# src/obs/hud.html (the canvas sets it to preview the colour), `label` is the
+# banner text shown. Every `state` MUST exist as a data-state rule in hud.html
+# — tests/test_overlay.py::t_ob_flag_presets_match_hud_states guards drift.
+FLAG_PRESETS = (
+    {"state": "green-flag", "label": "Green Flag"},
+    {"state": "yellow-flag", "label": "Yellow Flag"},
+    {"state": "double-yellow", "label": "Double Yellow"},
+    {"state": "safety-car", "label": "Safety Car"},
+    {"state": "virtual-safety-car", "label": "Virtual Safety Car"},
+    {"state": "full-course-yellow", "label": "Full Course Yellow"},
+    {"state": "code-60", "label": "Code 60"},
+    {"state": "red-flag", "label": "Red Flag"},
+    {"state": "checkered-flag", "label": "Checkered Flag"},
+)
 
 # Curated free Google Fonts offered in the builder. Single source for the UI
 # list AND the server-side download allow-list (the SSRF gate — only these names
