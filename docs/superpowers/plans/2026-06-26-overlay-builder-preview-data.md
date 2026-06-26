@@ -73,7 +73,7 @@ In `src/scripts/overlay_build.py`, add two entries to the `SAMPLE["hud"]` dict (
 ```python
         "race-control": "FCY — Full Course Yellow",
         "clock": "1:23:45",
-        "pov-name": "Max Mustermann",
+        "pov-name": "John Doe",
         "flag-status": "Safety Car",
         "round-flag": {"flag": "belgium"},
 ```

@@ -69,7 +69,7 @@ Rejected alternatives:
 
 1. **Complete `SAMPLE["hud"]`** so every **text-kind** slot has a non-empty entry.
    Add:
-   - `"pov-name": "Max Mustermann"`
+   - `"pov-name": "John Doe"`
    - `"flag-status": "Safety Car"` (the canvas overrides this from the flag picker,
      but the entry keeps the completeness invariant simple)
    Box-kind slots are exempt: image boxes (`round-flag`, `teamN-logo`) keep their

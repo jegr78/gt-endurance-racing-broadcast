@@ -85,7 +85,7 @@ SAMPLE = {
         "team3-num": "99", "team3-name": "Night Shift Motorsport", "team3-brand": "Ferrari",
         "race-control": "FCY — Full Course Yellow",
         "clock": "1:23:45",
-        "pov-name": "Max Mustermann",
+        "pov-name": "John Doe",
         "flag-status": "Safety Car",
         "round-flag": {"flag": "belgium"},
         "team1-logo": {"brand": "bmw"},
