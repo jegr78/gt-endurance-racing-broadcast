@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.2.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.1.0...v1.2.0) (2026-06-26)
+
+
+### Features
+
+* **builder:** align toolbar, undo/redo, and snap grid for the overlay builder ([#333](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/333)) ([afc7873](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/afc78739f8b0d192aa8ccf27ae604f930db600bb))
+* **builder:** Bold / Italic font controls in the overlay builder ([#330](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/330)) ([756cf3b](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/756cf3b6645356b120373f056a86763ff9389f38))
+* **console:** Funnel auto-enable defaults on (opt-out) ([#332](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/332)) ([ba1f469](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/ba1f469d5c814533fc4e73d9b04a3a4d35e9abff))
+* **hud:** color-coded race-condition flag (Sheet / Panel / Companion) ([#331](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/331)) ([aeed4b8](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/aeed4b8e2e8808482fe77512cdad490d2b1909d6))
+* **hud:** per-team Brand Name element + builder hide/show toggle ([#328](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/328)) ([6824f92](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/6824f92227c49d8bbb51acf3722e9bf934add796))
+* **overlay:** align caution flag colors + checkered pattern + Code 60 emblem ([#339](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/339)) ([a2e6d7f](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/a2e6d7f49e21a54732ae6c73f3bda8ee838b2b18))
+* **overlay:** canvas zoom + slanted (parallelogram) builder edges ([#338](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/338)) ([842ed2a](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/842ed2a4a4810a55190f18ff9e39a4d7ff200718))
+* **overlay:** editable Clock field in the builder Preview-data panel ([#343](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/343)) ([acb035e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/acb035e6df75e7798a9c7b1a2d4eb88f9b54b076))
+* **overlay:** editable Preview-data panel in the visual builder ([#340](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/340)) ([df9dd0e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/df9dd0e541a18d5a5f29064c9683fb32822f1524))
+* **overlay:** sync the per-league POV box to the OBS Feed POV source ([#337](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/337)) ([c25a32a](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c25a32aec90b66286d3b031bdd056ac3336986ba))
+
+
+### Bug Fixes
+
+* **overlay:** self-host true font weights & styles (real bold/italic) ([#342](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/342)) ([9c3be3c](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/9c3be3c159c01b13b71b2b472fc3c20a1c740a4c))
+* **panel:** keep car number in team dropdowns; strip only in HUD ([#341](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/341)) ([70c0b05](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/70c0b05a120c6224558fcadc81e8e497c45dfb47))
+* **sheet:** make the race-condition Flag setup-write deployable ([#336](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/336)) ([d8b9d15](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/d8b9d151b58c7ca49c2326be4def182d239a113a))
+
 ## [1.1.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.0.1...v1.1.0) (2026-06-25)
 
 
