@@ -769,6 +769,20 @@ def t_ob_flag_presets_match_hud_states():
         assert needle in html, "flag state not a data-state hook in hud.html: %s" % p["state"]
 
 
+def t_control_center_has_preview_data_panel():
+    """The overlay builder ships the session-only Preview-data panel + the
+    editable preview model the canvas renders from."""
+    def _read(*parts):
+        with open(os.path.join(*parts), encoding="utf-8") as fh:
+            return fh.read()
+    html = _read(ROOT, "src", "ui", "control-center.html")
+    for needle in ('id="ov-preview-states"', 'id="ov-preview-fields"',
+                   'ovState.preview', 'function ovFillSample',
+                   'function ovPreviewReset', 'function ovFitName',
+                   'flagPresets', "'overlay-preview:'"):
+        assert needle in html, "control-center.html missing: %s" % needle
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
