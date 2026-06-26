@@ -554,6 +554,11 @@ def t_ob_compile_slant_clip_path():
     # negative slant leans "\"
     assert ("clip-path: polygon(0 0, calc(100% - 30px) 0, 100% 100%, 30px 100%)"
             in _css_x({"slant": -30}))
+    # inclusive ±400 boundary is ACCEPTED (the mirror-critical clamp edge)
+    assert "polygon(400px 0," in _css_x({"slant": 400})
+    assert "100%, 400px 100%)" in _css_x({"slant": -400})
+    # a fractional slant keeps its decimals (no spurious .0 normalization)
+    assert "polygon(40.5px 0," in _css_x({"slant": 40.5})
 
 
 def t_ob_compile_slant_rejects():

@@ -43,6 +43,8 @@ DEFAULT_PROPS = ("left", "top", "width", "height", "fontSize",
 # Stable emit order within a slot rule (independent of dict insertion order).
 PROP_ORDER = ("left", "top", "width", "height", "padding",
               "fontSize", "lineHeight", "letterSpacing",
+              # slant (clip-path) emits after the border props, before the
+              # text-sizing vars; shear rides with rotation in the combined transform.
               "borderWidth", "borderRadius", "slant",
               "teamNameMax", "teamNameMin", "fontFamily", "fontWeight",
               "fontStyle", "color", "background", "borderColor", "borderStyle",

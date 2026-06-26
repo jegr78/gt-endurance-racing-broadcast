@@ -2813,6 +2813,8 @@ let overlayPage = 'hud';
 // Canvas is a fixed 1920x1080 design space (origin top-left); single source for
 // the align toolbar and the snap grid.
 const OV_CANVAS_W = 1920, OV_CANVAS_H = 1080;
+// Zoom rungs the −/+ buttons step through. The labelled toolbar buttons
+// (50/100/150/200%) are a subset — keep them in sync with this ladder.
 const OV_ZOOM_LADDER = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 const ovState = {page: 'hud', slots: [], sample: {}, baseCss: '', body: '',
                  layout: null, fonts: [], library: [], scale: 1, sel: null,
@@ -3682,7 +3684,9 @@ async function saveOverlay() {
 // Refit the scaled canvas to the (now resized) container; keep the selection box
 // aligned. Registered once — harmless when the builder isn't on screen.
 window.addEventListener('resize', () => {
-  if (ovState.shadow) { ovApplyZoom(); ovPositionSel(); }
+  // Only Fit mode re-derives scale from the wrap width; a numeric zoom is a fixed
+  // factor, so a window resize there just changes what scrolls into view.
+  if (ovState.shadow && ovState.zoom === 'fit') { ovApplyZoom(); ovPositionSel(); }
 });
 
 // Pop the builder into a modal laid over the Control Center for more room than
