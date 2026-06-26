@@ -106,27 +106,25 @@
   #flag-status[data-state="virtual-safety-car"],
   #flag-status[data-state="full-course-yellow"] { background: #f2c014; color: #111; }
   /* Code 60: the pink Code-60 flag rendered as a left emblem (white ring carrying
-     "60" over a white diagonal cross) next to the label. The emblem is pure CSS —
-     a radial-gradient ring with a pink core that masks the X centre, over two
-     diagonal linear-gradients. data-state is removed when empty (see setFlag), so
-     display:flex here never defeats `.el.empty { display:none }`. */
+     "60" over a white diagonal cross) next to the label. The emblem is an inline
+     SVG, so the ring, cross and "60" scale crisply together. align-self:stretch +
+     aspect-ratio:1 size it to the box height, and the reduced vertical padding sets
+     a constant top/bottom gap — so it adapts to any per-league box height (e.g. a
+     slim 34px box) with no override needed. data-state is removed when empty (see
+     setFlag), so display:flex here never defeats `.el.empty { display:none }`. */
   #flag-status[data-state="code-60"] {
     color: #fff;
     background-color: #d6177e;
-    display: flex; align-items: center; gap: 12px;
+    display: flex; align-items: center; gap: .35em;
+    padding: 4px 10px;
     text-shadow: 0 0 3px #000, 1px 1px 2px #000;
   }
   #flag-status[data-state="code-60"]::before {
-    content: "60";
-    flex: 0 0 auto; width: 34px; height: 34px; box-sizing: border-box;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 14px; font-weight: 800; line-height: 1; letter-spacing: -1px;
-    color: #fff; text-shadow: none; border-radius: 6px;
-    background-color: #d6177e;
-    background-image:
-      radial-gradient(circle at 50% 50%, #d6177e 0 9px, #fff 9px 12px, transparent 12px),
-      linear-gradient(to top right,    transparent calc(50% - 2px), #fff calc(50% - 2px), #fff calc(50% + 2px), transparent calc(50% + 2px)),
-      linear-gradient(to bottom right, transparent calc(50% - 2px), #fff calc(50% - 2px), #fff calc(50% + 2px), transparent calc(50% + 2px));
+    content: "";
+    flex: 0 0 auto; align-self: stretch; aspect-ratio: 1;
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='6' fill='%23d6177e'/%3E%3Cg stroke='%23fff' stroke-width='5' stroke-linecap='round'%3E%3Cline x1='5' y1='5' x2='35' y2='35'/%3E%3Cline x1='35' y1='5' x2='5' y2='35'/%3E%3C/g%3E%3Ccircle cx='20' cy='20' r='13' fill='%23d6177e' stroke='%23fff' stroke-width='3'/%3E%3Ctext x='20' y='21' fill='%23fff' font-family='Arial,sans-serif' font-size='15' font-weight='bold' text-anchor='middle' dominant-baseline='central'%3E60%3C/text%3E%3C/svg%3E")
+      center/contain no-repeat;
   }
   #flag-status[data-state="red-flag"] { background: #c62121; color: #fff; }
   /* Checkered flag: black/white checkerboard pattern; the text outline keeps the
