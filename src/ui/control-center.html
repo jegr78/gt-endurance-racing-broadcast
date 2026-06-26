@@ -2812,8 +2812,7 @@ const OV_CSSNAME = {left: 'left', top: 'top', width: 'width', height: 'height',
   borderColor: 'border-color', borderStyle: 'border-style',
   fontFamily: 'font-family', fontWeight: 'font-weight', fontStyle: 'font-style',
   align: 'justify-content', valign: 'align-items',
-  textTransform: 'text-transform', opacity: 'opacity',
-  rotation: 'transform'};
+  textTransform: 'text-transform', opacity: 'opacity'};
 const OV_PX = new Set(['left', 'top', 'width', 'height', 'padding', 'fontSize',
                        'letterSpacing', 'borderWidth', 'borderRadius',
                        'teamNameMax', 'teamNameMin']);
@@ -2967,6 +2966,31 @@ function ovFillSample() {
   });
 }
 
+// Mirror of overlay_build._slant_decl: a clip-path polygon for a signed px slant,
+// or '' (no clip). + leans '/', - leans '\'; |v| is the edge offset; 0/out-of-range
+// clears. Text content is untouched, so it stays upright (the ERF parallelogram look).
+function ovSlantClip(value) {
+  const v = parseFloat(value);
+  if (!isFinite(v) || v === 0 || v < -400 || v > 400) return '';
+  const a = Math.abs(v);
+  return v > 0
+    ? 'polygon(' + a + 'px 0, 100% 0, calc(100% - ' + a + 'px) 100%, 0 100%)'
+    : 'polygon(0 0, calc(100% - ' + a + 'px) 0, 100% 100%, ' + a + 'px 100%)';
+}
+
+// Mirror of overlay_build._transform_decl: write ONE combined transform from the
+// slot's rotation + shear overrides (rotate before skewX), so neither clobbers the
+// other. el.id is the slot id; reads the live override map.
+function ovApplyTransform(el) {
+  const ov = (ovState.layout.slots && ovState.layout.slots[el.id]) || {};
+  const parts = [];
+  const r = parseFloat(ov.rotation);
+  if (isFinite(r) && r >= -360 && r <= 360) parts.push('rotate(' + r + 'deg)');
+  const k = parseFloat(ov.shear);
+  if (isFinite(k) && k >= -89 && k <= 89) parts.push('skewX(' + k + 'deg)');
+  el.style.transform = parts.join(' ');
+}
+
 function ovApplyProp(el, prop, value) {
   if (!el) return;
   const name = OV_CSSNAME[prop];
@@ -2984,6 +3008,8 @@ function ovApplyProp(el, prop, value) {
     el.classList.toggle('ov-hidden', value === false);   // canvas: dim, don't remove
     return;
   }
+  if (prop === 'slant') { el.style.clipPath = ovSlantClip(value); return; }
+  if (prop === 'rotation' || prop === 'shear') { ovApplyTransform(el); return; }
   if (value === undefined || value === null || value === '') {
     el.style.removeProperty(name);
     if (prop === 'teamNameMax' && nameEl) nameEl.style.removeProperty('font-size');
@@ -2998,8 +3024,6 @@ function ovApplyProp(el, prop, value) {
     el.style.justifyContent = OV_ALIGN[value] || '';
   } else if (prop === 'valign') {
     el.style.alignItems = OV_VALIGN[value] || '';
-  } else if (prop === 'rotation') {
-    el.style.transform = 'rotate(' + value + 'deg)';
   } else {
     el.style.setProperty(name, value);
   }
@@ -3012,6 +3036,8 @@ function ovStyleSlot(id) {
   Object.keys(OV_CSSNAME).forEach(p => ovApplyProp(el, p, ov[p]));
   ovApplyProp(el, 'textShadow', ov.textShadow);
   ovApplyProp(el, 'visible', ov.visible);
+  ovApplyProp(el, 'slant', ov.slant);
+  ovApplyTransform(el);
 }
 
 function ovSetProp(id, prop, value) {
@@ -3501,6 +3527,14 @@ function ovRenderPanel() {
   if (has('rotation')) {
     panel.appendChild(ovNumField('rotation', 'Rotation (°)', view));
     Object.assign(ovState.fields.rotation, {min: -360, max: 360, step: 1});
+  }
+  if (has('slant')) {
+    panel.appendChild(ovNumField('slant', 'Slant (px, ±)', view));
+    Object.assign(ovState.fields.slant, {min: -400, max: 400, step: 1});
+  }
+  if (has('shear')) {
+    panel.appendChild(ovNumField('shear', 'Shear (°, ±)', view));
+    Object.assign(ovState.fields.shear, {min: -89, max: 89, step: 1});
   }
   if (has('textShadow')) panel.appendChild(ovShadowField(ov));
   const reset = document.createElement('button');
