@@ -4203,7 +4203,7 @@ def _css_has_rules(text):
 def overlay_slots_data(page):
     """The base page's editable slots + base <style> + slot markup + sample data,
     so the Control Center renders a same-origin WYSIWYG canvas.
-    {ok, page, slots, css, body, sample} or {ok:false, error}."""
+    {ok, page, slots, css, body, sample, flagPresets} or {ok:false, error}."""
     try:
         if page != "hud":
             return {"ok": False, "error": "invalid page"}
@@ -4212,7 +4212,8 @@ def overlay_slots_data(page):
             return {"ok": False, "error": "base page not bundled"}
         return {"ok": True, "page": page, "slots": ob.extract_slots(html),
                 "css": ob.base_style(html), "body": ob.base_body(html),
-                "sample": ob.SAMPLE.get(page, {})}
+                "sample": ob.SAMPLE.get(page, {}),
+                "flagPresets": [dict(p) for p in ob.FLAG_PRESETS]}
     except Exception as exc:
         return {"ok": False, "error": f"could not read overlay slots: {exc}"}
 

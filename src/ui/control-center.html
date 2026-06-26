@@ -283,6 +283,11 @@
   .ov-slotpick { background:#232C42; color:var(--txt);
                  border:1px solid var(--line); border-radius:8px;
                  padding:6px 8px; font:12px var(--mono); max-width:180px; }
+  .ovprev { margin:.4em 0; border:1px solid #2A3550; border-radius:6px; padding:.2em .5em; }
+  .ovprev > summary { cursor:pointer; font-weight:600; }
+  .ovprev-row { display:flex; align-items:center; gap:.4em; margin:.25em 0; font-size:.85em; }
+  .ovprev-row input[type="text"], .ovprev-row select { flex:1; min-width:0; background:#232C42;
+    color:var(--txt); border:1px solid #2A3550; border-radius:4px; padding:.15em .3em; }
   textarea.css-editor { width:100%; box-sizing:border-box; resize:vertical;
                    background:#232C42; color:var(--txt);
                    border:1px solid var(--line); border-radius:8px;
@@ -743,6 +748,13 @@
               <p class="envhint" id="ov-pick" style="margin-top:0">Click a slot on the canvas to edit its position and style.</p>
             </div>
           </div>
+          <details class="ovprev" id="ov-preview">
+            <summary>Preview data</summary>
+            <p class="envhint" style="margin:.3em 0">Session-only — try how your own content looks. Not saved to the profile; verify live in OBS with Preview.</p>
+            <div id="ov-preview-states"></div>
+            <div id="ov-preview-fields"></div>
+            <button type="button" class="ov-gpreset" onclick="ovPreviewReset()">Reset preview data</button>
+          </details>
           <details class="ovadv">
             <summary>Fonts &amp; advanced CSS</summary>
             <div class="ovfonts">
@@ -762,7 +774,7 @@
             plus a <b>layout-&lt;page&gt;.json</b> it owns. <b>Save</b> writes both; <b>Apply in OBS</b> reloads the
             HUD/Timer browser sources (needs the relay up + obs-websocket). First override on a profile that had no
             overlay yet? Restart the relay once (<b>racecast relay restart</b>) to activate it; later edits apply
-            live via Apply in OBS. The canvas shows sample data over your <b>Overlay.png</b> frame — verify live with Preview.</p>
+            live via Apply in OBS. The canvas shows your editable <b>Preview data</b> over your <b>Overlay.png</b> frame — verify live in OBS with Preview.</p>
         </section>
 
         <section>
@@ -2816,7 +2828,8 @@ const OV_CANVAS_W = 1920, OV_CANVAS_H = 1080;
 // Zoom rungs the −/+ buttons step through. The labelled toolbar buttons
 // (50/100/150/200%) are a subset — keep them in sync with this ladder.
 const OV_ZOOM_LADDER = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
-const ovState = {page: 'hud', slots: [], sample: {}, baseCss: '', body: '',
+const ovState = {page: 'hud', active: '', slots: [], sample: {}, flagPresets: [], preview: null,
+                 baseCss: '', body: '',
                  layout: null, fonts: [], library: [], scale: 1, sel: null,
                  shadow: null, selBox: null, fields: {}, undo: [], redo: [],
                  grid: {show: false, size: 10, snap: false}, gridEl: null,
@@ -2866,6 +2879,9 @@ async function loadOverlay() {
   ovState.page = overlayPage;
   ovState.slots = slotsR.slots || [];
   ovState.sample = slotsR.sample || {};
+  ovState.flagPresets = slotsR.flagPresets || [];
+  ovState.active = layoutR.active || '';
+  ovPreviewInit();
   ovState.baseCss = slotsR.css || '';
   ovState.body = slotsR.body || '';
   ovState.layout = layoutR.layout || {version: 1, page: overlayPage, slots: {}, fonts: [], customCss: ''};
@@ -2884,6 +2900,7 @@ async function loadOverlay() {
   $('ov-stage').style.backgroundImage = "url('/api/overlay/bg?t=" + Date.now() + "')";
   ovBuildCanvas();
   ovRenderPanel();
+  ovRenderPreviewPanel();
   ovPopulateSlotPicker();
   ovRefreshFontUI();
   ovHistInit();
@@ -2956,34 +2973,149 @@ function ovBuildCanvas() {
   });
   sh.appendChild(sel);
   ovState.selBox = sel;
-  ovFillSample();
   ovState.slots.forEach(s => {
     const el = sh.getElementById(s.id);
     if (!el) return;
     el.addEventListener('pointerdown', ovStartDrag);
     ovStyleSlot(s.id);
   });
+  ovFillSample();
   ovApplyZoom();
   ovPositionSel();
 }
 
 function ovFillSample() {
-  const sd = ovState.sample || {};
+  const pv = ovState.preview || ovPreviewDefaults();
+  const vals = pv.values || {};
   ovState.slots.forEach(s => {
     const el = ovState.shadow.getElementById(s.id);
     if (!el) return;
-    const v = sd[s.id];               // string (text), {flag|brand} (image), or absent
     const img = el.querySelector('img');
-    if (img && v && typeof v === 'object') {
+    // Flag status: colour from the picked state (data-state), text from its label.
+    if (s.id === 'flag-status') {
+      const preset = (ovState.flagPresets || []).find(p => p.state === pv.flagState);
+      el.textContent = preset ? preset.label : '';
+      if (preset) el.dataset.state = preset.state; else el.removeAttribute('data-state');
+      el.classList.toggle('empty', !preset);
+      return;
+    }
+    // POV frame + name follow the POV-active toggle (mirrors runtime povActive).
+    if (s.id === 'pov') { el.classList.toggle('empty', !pv.povActive); return; }
+    if (s.id === 'pov-name') {
+      const nm = vals['pov-name'] || '';
+      el.textContent = pv.povActive ? nm : '';
+      el.classList.toggle('empty', !pv.povActive || !nm);
+      return;
+    }
+    const v = vals[s.id];
+    if (img && v && typeof v === 'object') {       // image slot: {flag|brand: key}
       const sub = v.flag ? 'flags' : (v.brand ? 'brands' : null);
       const key = v.flag || v.brand;
       if (sub && key) img.src = '/api/overlay/asset/' + sub + '/' + encodeURIComponent(key);
-    } else if (typeof v === 'string' && !img) {
+      el.classList.remove('empty');
+    } else if (typeof v === 'string' && !img) {    // text slot
       el.textContent = v;
+      el.classList.toggle('empty', !v);
+      if (/^team\d-name$/.test(s.id)) ovFitName(el);   // mirror hud.html auto-fit
+    } else {
+      el.classList.remove('empty');
     }
-    el.classList.remove('empty');
   });
 }
+
+// Mirror of hud.html::fitName — shrink a team name from --team-name-max toward
+// --team-name-min until it fits, so the canvas previews a long name the way the
+// live overlay renders it (not as raw overflow).
+function ovFitName(el) {
+  const cs = getComputedStyle(el);
+  const max = parseFloat(cs.getPropertyValue('--team-name-max')) || 30;
+  const min = parseFloat(cs.getPropertyValue('--team-name-min')) || 16;
+  let size = max;
+  el.style.fontSize = size + 'px';
+  while (size > min && el.scrollWidth > el.clientWidth) { size -= 1; el.style.fontSize = size + 'px'; }
+}
+
+// Session-only preview model: an editable copy of the server SAMPLE defaults,
+// mirrored to localStorage per profile+page. NEVER written to profile files —
+// it only changes what content the offline canvas shows.
+function ovPreviewKey() { return 'overlay-preview:' + (ovState.active || '') + ':' + ovState.page; }
+
+function ovPreviewDefaults() {
+  const values = {};
+  Object.keys(ovState.sample || {}).forEach(k => {
+    const v = ovState.sample[k];
+    values[k] = (v && typeof v === 'object') ? Object.assign({}, v) : v;
+  });
+  const flag0 = (ovState.flagPresets[0] && ovState.flagPresets[0].state) || '';
+  return { values: values, flagState: flag0, povActive: true };
+}
+
+function ovPreviewInit() {
+  ovState.preview = ovPreviewDefaults();
+  try {
+    const saved = JSON.parse(localStorage.getItem(ovPreviewKey()) || 'null');
+    if (saved && typeof saved === 'object') {
+      if (saved.values && typeof saved.values === 'object')
+        Object.assign(ovState.preview.values, saved.values);
+      if (typeof saved.flagState === 'string') ovState.preview.flagState = saved.flagState;
+      if (typeof saved.povActive === 'boolean') ovState.preview.povActive = saved.povActive;
+    }
+  } catch (e) { /* malformed/old -> seeded defaults */ }
+}
+
+function ovPreviewSave() {
+  try { localStorage.setItem(ovPreviewKey(), JSON.stringify(ovState.preview)); } catch (e) {}
+}
+
+function ovPreviewReset() {
+  try { localStorage.removeItem(ovPreviewKey()); } catch (e) {}
+  ovState.preview = ovPreviewDefaults();
+  ovRenderPreviewPanel();
+  ovFillSample();
+}
+
+function ovRenderPreviewPanel() {
+  const pv = ovState.preview || ovPreviewDefaults();
+  const sc = $('ov-preview-states'); if (!sc) return;
+  sc.textContent = '';
+  if ((ovState.flagPresets || []).length) {
+    const row = document.createElement('label'); row.className = 'ovprev-row';
+    row.appendChild(document.createTextNode('Flag'));
+    const sel = document.createElement('select');
+    const off = document.createElement('option'); off.value = ''; off.textContent = 'Off';
+    sel.appendChild(off);
+    ovState.flagPresets.forEach(p => {
+      const o = document.createElement('option'); o.value = p.state; o.textContent = p.label;
+      if (p.state === pv.flagState) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.onchange = () => ovPreviewFlag(sel.value);
+    row.appendChild(sel); sc.appendChild(row);
+  }
+  const povRow = document.createElement('label'); povRow.className = 'ovprev-row';
+  const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!pv.povActive;
+  cb.onchange = () => ovPreviewPov(cb.checked);
+  povRow.appendChild(cb); povRow.appendChild(document.createTextNode('POV active'));
+  sc.appendChild(povRow);
+
+  const ff = $('ov-preview-fields'); ff.textContent = '';
+  // One text field per text slot (those with the text-only fontSize prop), except
+  // flag-status (driven by the picker above) and clock (the live race timer).
+  ovState.slots.filter(s => s.props.indexOf('fontSize') !== -1
+      && s.id !== 'flag-status' && s.id !== 'clock').forEach(s => {
+    const row = document.createElement('label'); row.className = 'ovprev-row';
+    row.appendChild(document.createTextNode(s.label));
+    const inp = document.createElement('input'); inp.type = 'text';
+    const v = pv.values[s.id];
+    inp.value = (typeof v === 'string') ? v : '';
+    inp.oninput = () => ovPreviewText(s.id, inp.value);
+    row.appendChild(inp); ff.appendChild(row);
+  });
+}
+
+function ovPreviewText(id, value) { ovState.preview.values[id] = value; ovPreviewSave(); ovFillSample(); }
+function ovPreviewFlag(state) { ovState.preview.flagState = state; ovPreviewSave(); ovFillSample(); }
+function ovPreviewPov(on) { ovState.preview.povActive = !!on; ovPreviewSave(); ovFillSample(); }
 
 // Mirror of overlay_build._slant_decl: a clip-path polygon for a signed px slant,
 // or '' (no clip). + leans '/', - leans '\'; |v| is the edge offset; 0/out-of-range

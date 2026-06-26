@@ -658,6 +658,18 @@ def t_hud_base_is_the_demo_standard():
     assert "left: 712px" in stint, "stint not at the side-by-side position"
 
 
+def t_flag_status_default_is_top_centered():
+    # The base default places the flag-status banner at the top edge, just below
+    # the stint/clock row, horizontally centred on the 1920-wide frame (x=960 ->
+    # left 780 for the 360px box) with centred content. Locks the placement so it
+    # can't silently drift back to the old lower-left default.
+    with open(os.path.join(ROOT, "src", "obs", "hud.html"), encoding="utf-8") as f:
+        style = ob.base_style(f.read())
+    rule = re.search(r"#flag-status\s*\{[^}]*\}", style).group(0)
+    assert "left: 780px" in rule and "top: 96px" in rule, "flag-status not top-centered"
+    assert "justify-content: center" in rule, "flag-status content not centred"
+
+
 def t_example_overlay_matches_demo_standard():
     # New leagues scaffold from `example` (profile_admin.create_profile), so the
     # example overlay must carry the SAME standard as the demo — otherwise a stale
@@ -735,6 +747,66 @@ def t_ob_compile_slant_shear_gated_by_props():
     css = ob.compile_overlay_css(
         {"slots": {"x": {"slant": 40, "shear": 12, "rotation": 5}}}, slots)
     assert "clip-path" not in css and "transform" not in css
+
+
+def t_ob_sample_covers_every_text_slot():
+    """Every text-kind HUD slot has a non-empty SAMPLE entry so the builder
+    canvas renders something for it. Box slots (images, the POV frame) are
+    exempt — they carry an asset sample or are a frame with no text."""
+    def _read(*parts):
+        with open(os.path.join(*parts), encoding="utf-8") as fh:
+            return fh.read()
+    html = _read(ROOT, "src", "obs", "hud.html")
+    slots = ob.extract_slots(html)
+    sample = ob.SAMPLE["hud"]
+    # A text slot is one whose prop set includes the text-only "fontSize"
+    # (KIND_TEXT adds it; KIND_BOX does not).
+    text_ids = [s["id"] for s in slots if "fontSize" in s["props"]]
+    missing = [sid for sid in text_ids if not sample.get(sid)]
+    assert not missing, "text slots missing a SAMPLE entry: %r" % missing
+
+
+def t_ob_flag_presets_match_hud_states():
+    """Every FLAG_PRESETS state is a real #flag-status[data-state="..."] hook
+    in hud.html, so the builder's flag picker can colour the canvas. Guards
+    drift if a state is renamed or removed from the page CSS."""
+    def _read(*parts):
+        with open(os.path.join(*parts), encoding="utf-8") as fh:
+            return fh.read()
+    html = _read(ROOT, "src", "obs", "hud.html")
+    assert ob.FLAG_PRESETS, "FLAG_PRESETS must not be empty"
+    for p in ob.FLAG_PRESETS:
+        assert p.get("label"), "flag preset missing label: %r" % (p,)
+        needle = 'data-state="%s"' % p["state"]
+        assert needle in html, "flag state not a data-state hook in hud.html: %s" % p["state"]
+
+
+def t_control_center_has_preview_data_panel():
+    """The overlay builder ships the session-only Preview-data panel + the
+    editable preview model the canvas renders from."""
+    def _read(*parts):
+        with open(os.path.join(*parts), encoding="utf-8") as fh:
+            return fh.read()
+    html = _read(ROOT, "src", "ui", "control-center.html")
+    for needle in ('id="ov-preview-states"', 'id="ov-preview-fields"',
+                   'ovState.preview', 'function ovFillSample',
+                   'function ovPreviewReset', 'function ovFitName',
+                   'flagPresets', "'overlay-preview:'"):
+        assert needle in html, "control-center.html missing: %s" % needle
+
+
+def t_preview_panel_is_outside_slot_panel():
+    """#ov-panel is wiped by ovRenderPanel() (panel.textContent=''), so the
+    session-only Preview-data panel must live OUTSIDE it or it is destroyed at
+    runtime. Regression guard for that placement bug."""
+    def _read(*parts):
+        with open(os.path.join(*parts), encoding="utf-8") as fh:
+            return fh.read()
+    html = _read(ROOT, "src", "ui", "control-center.html")
+    i = html.index('id="ov-panel"')
+    j = html.index("</div>", i)          # first close tag = the #ov-panel close
+    assert 'id="ov-preview"' not in html[i:j], \
+        "Preview-data panel must not be inside #ov-panel (ovRenderPanel clears it)"
 
 
 if __name__ == "__main__":

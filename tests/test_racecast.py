@@ -1350,6 +1350,15 @@ def t_overlay_slots_data_from_real_hud():
     assert "#stint" in r["css"] and r["sample"]["stint"]
 
 
+def t_overlay_slots_data_includes_flag_presets():
+    r = m.overlay_slots_data("hud")
+    assert r["ok"], r
+    fp = r["flagPresets"]
+    assert isinstance(fp, list) and fp, "flagPresets must be a non-empty list"
+    assert all(isinstance(p, dict) and "state" in p and "label" in p for p in fp)
+    assert "safety-car" in [p["state"] for p in fp]
+
+
 def t_overlay_fonts_upload_then_list_and_serve():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
