@@ -40,11 +40,28 @@ def _http(url, headers=None, binary=False, timeout=30):
 
 
 def fetch_family(name, css_fetch=None, bin_fetch=None):
-    """Return the woff2 bytes for a Google font family (bold weight first, then the
-    family's default face), or None if it yields no gstatic woff2. Fetchers are
-    injectable for tests."""
+    """Return {filename: woff2-bytes} for a Google family: the four overlay cuts
+    (regular/bold/italic/bold-italic, whichever the family has) so the bundled
+    baseline renders TRUE bold/italic — same self-host model as the live "add a font"
+    download. Falls back to a single base file when the cuts request yields no latin
+    face. Empty dict if the family yields no gstatic woff2. Fetchers injectable."""
     css_fetch = css_fetch or (lambda u: _http(u, headers={"User-Agent": _UA}))
     bin_fetch = bin_fetch or (lambda u: _http(u, binary=True))
+    out = {}
+    try:
+        cuts_css = css_fetch(ob.google_font_cuts_url(name))
+    except Exception:
+        cuts_css = ""
+    for (style, weight), url in sorted(ob.parse_google_font_cuts(cuts_css or "").items()):
+        try:
+            data = bin_fetch(url)
+        except Exception:
+            continue
+        if data:
+            out[ob.google_font_cut_filename(name, style, weight)] = data
+    if out:
+        return out
+    # Fallback: single-cut (bold weight first, then the family's default face).
     for url in (ob.google_font_css_url(name), ob.google_font_css_url(name, weight=None)):
         try:
             css = css_fetch(url)
@@ -54,8 +71,8 @@ def fetch_family(name, css_fetch=None, bin_fetch=None):
         if m:
             data = bin_fetch(m.group(1))
             if data:
-                return data
-    return None
+                return {ob.google_font_filename(name): data}
+    return {}
 
 
 def build(out_path, version="dev", families=None, css_fetch=None, bin_fetch=None):
@@ -63,9 +80,9 @@ def build(out_path, version="dev", families=None, css_fetch=None, bin_fetch=None
     families = ob.GOOGLE_FONTS if families is None else families
     fonts, missing = {}, []
     for fam in families:
-        data = fetch_family(fam, css_fetch=css_fetch, bin_fetch=bin_fetch)
-        if data:
-            fonts[ob.google_font_filename(fam)] = data
+        files = fetch_family(fam, css_fetch=css_fetch, bin_fetch=bin_fetch)
+        if files:
+            fonts.update(files)                    # each family contributes its cuts
         else:
             missing.append(fam)
     if not fonts:

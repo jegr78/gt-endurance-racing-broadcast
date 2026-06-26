@@ -2391,17 +2391,23 @@ async function loadFontLibrary() {
     p.textContent = 'No fonts in the library yet — add one above.'; list.appendChild(p);
     return;
   }
-  d.fonts.forEach(name => {
-    const stem = name.replace(/\.[^.]+$/, '');
+  // One row per BASE family — a downloaded family is up to four cut files
+  // (-Bold/-Italic/-BoldItalic); collapse them so the list shows the family once.
+  // Remove deletes the whole family server-side (any member filename works).
+  ovFontFamilies(d.fonts).forEach(fam => {
+    const file = d.fonts.find(n => {
+      const stem = n.replace(/\.[^.]+$/, ''), c = ovFontCut(stem);
+      return (c ? c.base : stem) === fam;
+    }) || (fam + '.woff2');
     const row = document.createElement('div'); row.className = 'row';
     // One column: the family name rendered IN its own font (issue #145) — no
     // separate plain-text name column to overlap it. The plain name stays
     // available on hover for hard-to-read display faces.
     const prev = document.createElement('span'); prev.className = 'fontprev grow';
-    prev.textContent = stem; prev.style.fontFamily = '"' + stem + '"';   // live preview
-    prev.title = stem;
+    prev.textContent = fam; prev.style.fontFamily = '"' + fam + '"';   // live preview
+    prev.title = fam;
     const del = document.createElement('button'); del.className = 'danger';
-    del.textContent = 'Remove'; del.onclick = () => deleteLibFont(name);
+    del.textContent = 'Remove'; del.onclick = () => deleteLibFont(file);
     row.append(prev, del); list.appendChild(row);
   });
 }
@@ -2925,6 +2931,49 @@ function ovPopulateSlotPicker() {
   sp.value = ovState.sel || '';
 }
 
+// --- Self-hosted font cuts (mirror of overlay_build.font_cut / _font_faces — keep
+// in sync). A downloaded Google family lands as up to four files: <Stem>.woff2 plus
+// -Bold/-Italic/-BoldItalic. They group under the base family with style/weight
+// descriptors so the canvas preview and the picker match the relay-served CSS. ---
+const OV_CUT_RE = /-(bolditalic|italic|bold)$/i;
+function ovFontCut(stem) {                 // -> {base, style, weight} | null
+  const m = stem.match(OV_CUT_RE);
+  if (!m || stem.length <= m[0].length) return null;
+  const kind = m[1].toLowerCase();
+  return {base: stem.slice(0, stem.length - m[0].length),
+          style: kind === 'bold' ? 'normal' : 'italic',
+          weight: (kind === 'bold' || kind === 'bolditalic') ? '700' : '1 1000'};
+}
+function ovFontFamilies(files) {           // base families a picker should offer
+  const stems = (files || []).map(n => n.replace(/\.[^.]+$/, ''));
+  const set = new Set(stems), out = [];
+  stems.forEach(s => {
+    const c = ovFontCut(s);
+    const fam = (c && set.has(c.base)) ? c.base : s;
+    if (out.indexOf(fam) < 0) out.push(fam);
+  });
+  return out;
+}
+function ovFontFaceRules(files) {          // grouped @font-face strings (with cut descriptors)
+  const url = n => '/api/overlay/font/' + encodeURIComponent(n);
+  const seen = {}, uniq = (files || []).filter(n => seen[n] ? false : (seen[n] = 1));
+  const groups = {}, plain = [], absorbed = {};
+  uniq.forEach(n => {
+    const stem = n.replace(/\.[^.]+$/, ''), c = ovFontCut(stem);
+    if (c) (groups[c.base] = groups[c.base] || []).push({n: n, style: c.style, weight: c.weight});
+    else plain.push({stem: stem, n: n});
+  });
+  plain.forEach(p => { if (groups[p.stem]) {
+    groups[p.stem].unshift({n: p.n, style: 'normal', weight: '1 1000'}); absorbed[p.n] = 1; } });
+  const out = [];
+  plain.forEach(p => { if (!absorbed[p.n])
+    out.push('@font-face{font-family:"' + p.stem + '";src:url(' + url(p.n) + ')}'); });
+  Object.keys(groups).forEach(base => groups[base].forEach(m =>
+    out.push('@font-face{font-family:"' + base + '";src:url(' + url(m.n) +
+             ');font-style:' + m.style + ';font-weight:' + m.weight + '}')));
+  return out;
+}
+
 function ovFontFaceCss() {
   const baseFont = ovState.page === 'timer'
     ? '"SF Mono","Cascadia Mono","Consolas","Menlo",monospace'
@@ -2933,14 +2982,8 @@ function ovFontFaceCss() {
   // @font-face for every font the canvas might preview: the profile's own fonts
   // plus the machine library (served same-origin; font_serve falls back to the
   // library, so a library font previews before it is copied into the profile).
-  const seen = {};
-  (ovState.fonts || []).concat(ovState.library || []).forEach(n => {
-    const fam = n.replace(/\.[^.]+$/, '');
-    if (seen[fam]) return;
-    seen[fam] = 1;
-    css += '@font-face{font-family:"' + fam + '";src:url(/api/overlay/font/' +
-      encodeURIComponent(n) + ')}\n';
-  });
+  const rules = ovFontFaceRules((ovState.fonts || []).concat(ovState.library || []));
+  if (rules.length) css += rules.join('\n') + '\n';
   if (ovState.layout && ovState.layout.bodyFont) {
     css += '\n:host{font-family:"' + ovState.layout.bodyFont + '"}';
   }
@@ -3423,14 +3466,15 @@ function ovPopulateFontSelect(sel, current, emptyLabel, onpick) {
     if (preview) o.style.fontFamily = '"' + v + '"';     // dropdown self-preview
     (parent || sel).appendChild(o);
   };
-  const stems = arr => arr.map(n => n.replace(/\.[^.]+$/, ''));
   add('', emptyLabel);
-  const uploaded = stems(ovState.fonts);
+  // Offer only BASE families — cut siblings (-Bold/-Italic) live under the base and
+  // would be unmatchable if picked directly (see ovFontFamilies / _font_faces).
+  const uploaded = ovFontFamilies(ovState.fonts);
   if (uploaded.length) {
     const g = document.createElement('optgroup'); g.label = 'Profile fonts';
     uploaded.forEach(f => add(f, f, g, true)); sel.appendChild(g);
   }
-  const lib = stems(ovState.library).filter(f => uploaded.indexOf(f) < 0).sort();
+  const lib = ovFontFamilies(ovState.library).filter(f => uploaded.indexOf(f) < 0).sort();
   if (lib.length) {
     const g = document.createElement('optgroup'); g.label = 'Font library';
     lib.forEach(f => add(f, f, g, true)); sel.appendChild(g);

@@ -99,9 +99,36 @@ def t_fetch_build_assembles_zip_from_injected_fetchers():
         assert "Oswald.woff2" in man["fonts"] and "SairaCondensed.woff2" in man["fonts"]
 
 
-def t_fetch_family_returns_none_without_woff2():
+def t_fetch_family_returns_empty_without_woff2():
     assert fetch_fonts.fetch_family(
-        "Nope", css_fetch=lambda u: "no urls here", bin_fetch=lambda u: b"x") is None
+        "Nope", css_fetch=lambda u: "no urls here", bin_fetch=lambda u: b"x") == {}
+
+
+def t_fetch_family_returns_all_cuts():
+    # A css2 response with the four latin cuts -> the four self-host files (so the
+    # bundled baseline renders true bold/italic, not synthesized).
+    def cut(style, weight, fn, latin=True):
+        ur = "U+0000-00FF, U+0131" if latin else "U+0400-045F"
+        return ("@font-face { font-family:'Nunito Sans'; font-style:%s; font-weight:%s;"
+                " src: url(https://fonts.gstatic.com/s/ns/%s) format('woff2');"
+                " unicode-range: %s; }" % (style, weight, fn, ur))
+    css = "\n".join([cut("normal", "400", "cyr.woff2", latin=False),
+                     cut("normal", "400", "reg.woff2"),
+                     cut("normal", "700", "bold.woff2"),
+                     cut("italic", "400", "ital.woff2"),
+                     cut("italic", "700", "bi.woff2")])
+    files = fetch_fonts.fetch_family(
+        "Nunito Sans", css_fetch=lambda u: css, bin_fetch=lambda u: b"WOFF2")
+    assert set(files) == {"NunitoSans.woff2", "NunitoSans-Bold.woff2",
+                          "NunitoSans-Italic.woff2", "NunitoSans-BoldItalic.woff2"}
+
+
+def t_fetch_family_single_cut_fallback():
+    # A response without latin subset blocks still yields one base file (back-compat).
+    files = fetch_fonts.fetch_family(
+        "Oswald", css_fetch=lambda u: "url(https://fonts.gstatic.com/x.woff2)",
+        bin_fetch=lambda u: b"DATA")
+    assert files == {"Oswald.woff2": b"DATA"}
 
 
 if __name__ == "__main__":

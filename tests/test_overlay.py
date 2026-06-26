@@ -399,6 +399,92 @@ def t_ob_google_font_css_url():
     assert "wght@700" in u
 
 
+def t_ob_font_cut_recognizes_suffixes():
+    # base (no recognized suffix) -> None; cut suffixes parse to (family, style, weight)
+    assert ob.font_cut("NunitoSans.woff2") is None
+    assert ob.font_cut("My-Font.woff2") is None            # hyphen but not a cut word
+    assert ob.font_cut("NunitoSans-Bold.woff2") == ("NunitoSans", "normal", "700")
+    assert ob.font_cut("NunitoSans-Italic.woff2") == ("NunitoSans", "italic", "1 1000")
+    assert ob.font_cut("NunitoSans-BoldItalic.woff2") == ("NunitoSans", "italic", "700")
+    # case-insensitive on the suffix; must leave a non-empty base
+    assert ob.font_cut("Oswald-bold.woff2") == ("Oswald", "normal", "700")
+    assert ob.font_cut("-Bold.woff2") is None
+
+
+def t_ob_compile_lone_font_unchanged():
+    # A single file with no cut sibling stays the LEGACY descriptor-less face
+    # (byte-identical to before — no font-weight/font-style descriptors).
+    css = ob.compile_overlay_css({"slots": {}, "fonts": ["League.woff2"]}, SLOTS)
+    assert '@font-face { font-family: "League"; src: url(/overlay/fonts/League.woff2); }' in css
+    assert "font-weight" not in css and "font-style" not in css
+
+
+def t_ob_compile_groups_cut_siblings_with_descriptors():
+    # base + italic sibling -> two faces under ONE family, with style/weight descriptors;
+    # the base gets a weight RANGE so a variable roman renders true bold.
+    css = ob.compile_overlay_css(
+        {"slots": {}, "fonts": ["NunitoSans.woff2", "NunitoSans-Italic.woff2"]}, SLOTS)
+    assert css.count('font-family: "NunitoSans"') == 2
+    assert 'url(/overlay/fonts/NunitoSans.woff2)' in css
+    assert 'url(/overlay/fonts/NunitoSans-Italic.woff2)' in css
+    assert "font-style: italic" in css and "font-weight: 1 1000" in css
+    # no stray "NunitoSans-Italic" family (sibling lives under the base family)
+    assert 'font-family: "NunitoSans-Italic"' not in css
+
+
+def t_ob_compile_groups_four_static_cuts():
+    css = ob.compile_overlay_css(
+        {"slots": {}, "fonts": ["Roboto.woff2", "Roboto-Bold.woff2",
+                                "Roboto-Italic.woff2", "Roboto-BoldItalic.woff2"]}, SLOTS)
+    assert css.count('font-family: "Roboto"') == 4
+    assert "font-weight: 700" in css        # the -Bold / -BoldItalic exact weight
+    assert "font-style: italic" in css
+    assert 'font-family: "Roboto-Bold"' not in css
+
+
+def t_ob_font_families_collapses_cut_siblings():
+    fams = ob.font_families(["NunitoSans.woff2", "NunitoSans-Italic.woff2",
+                             "NunitoSans-Bold.woff2", "League.woff2"])
+    assert fams == ["League", "NunitoSans"]          # siblings collapsed, sorted
+    # a lone sibling with no base is kept (still selectable)
+    assert ob.font_families(["Solo-Italic.woff2"]) == ["Solo-Italic"]
+
+
+def t_ob_google_font_cuts_url():
+    u = ob.google_font_cuts_url("Nunito Sans")
+    assert u.startswith("https://fonts.googleapis.com/css2?family=Nunito+Sans:")
+    assert "ital,wght@0,400;0,700;1,400;1,700" in u
+
+
+def t_ob_google_font_cut_filename():
+    assert ob.google_font_cut_filename("Nunito Sans", "normal", "400") == "NunitoSans.woff2"
+    assert ob.google_font_cut_filename("Nunito Sans", "normal", "700") == "NunitoSans-Bold.woff2"
+    assert ob.google_font_cut_filename("Nunito Sans", "italic", "400") == "NunitoSans-Italic.woff2"
+    assert ob.google_font_cut_filename("Nunito Sans", "italic", "700") == "NunitoSans-BoldItalic.woff2"
+
+
+def t_ob_parse_google_font_cuts_latin_only():
+    css = """
+/* cyrillic */
+@font-face { font-family:'X'; font-style:normal; font-weight:400;
+  src: url(https://fonts.gstatic.com/s/x/cyr400.woff2) format('woff2');
+  unicode-range: U+0301, U+0400-045F; }
+/* latin */
+@font-face { font-family:'X'; font-style:normal; font-weight:400;
+  src: url(https://fonts.gstatic.com/s/x/lat400.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131; }
+/* latin */
+@font-face { font-family:'X'; font-style:italic; font-weight:700;
+  src: url(https://fonts.gstatic.com/s/x/lat700i.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131; }
+"""
+    cuts = ob.parse_google_font_cuts(css)
+    # only the latin blocks (U+0000-00FF) are kept, keyed by (style, weight)
+    assert cuts[("normal", "400")].endswith("lat400.woff2")
+    assert cuts[("italic", "700")].endswith("lat700i.woff2")
+    assert ("normal", "400") in cuts and len(cuts) == 2     # the cyrillic block dropped
+
+
 def t_ob_is_google_font_name():
     # valid families (incl. ones outside the curated catalog) pass
     for ok in ("Oswald", "Exo 2", "Roboto Condensed", "Big Shoulders Display", "A1"):

@@ -160,6 +160,87 @@ def google_font_css_url(name, weight=700):
             + name.strip().replace(" ", "+") + spec + "&display=swap")
 
 
+def google_font_cuts_url(name):
+    """The css2 URL requesting the four overlay cuts (regular/bold/italic/bold-italic)
+    as the named-instance set `ital,wght@0,400;0,700;1,400;1,700`. This form NEVER
+    errors — Google returns exactly the cuts the family actually has (a family with
+    no italic simply omits the italic blocks), so it is a safe generic request."""
+    return ("https://fonts.googleapis.com/css2?family="
+            + name.strip().replace(" ", "+")
+            + ":ital,wght@0,400;0,700;1,400;1,700&display=swap")
+
+
+def google_font_cut_filename(name, style, weight):
+    """Deterministic self-host filename for one downloaded Google cut:
+    `<Stem>.woff2` (regular), `<Stem>-Bold.woff2` (700), `<Stem>-Italic.woff2`
+    (italic 400), `<Stem>-BoldItalic.woff2` (italic 700). The suffix is what
+    `font_cut()`/`_font_faces()` group back together under the base family."""
+    stem = re.sub(r"[^A-Za-z0-9]", "", name)
+    bold = str(weight) == "700"
+    ital = style == "italic"
+    suffix = ("-BoldItalic" if (bold and ital)
+              else "-Italic" if ital else "-Bold" if bold else "")
+    return stem + suffix + ".woff2"
+
+
+def parse_google_font_cuts(css):
+    """Map {(style, weight): gstatic-woff2-url} for the **latin** subset blocks of a
+    css2 response (the block whose unicode-range includes U+0000-00FF). Other subsets
+    (cyrillic/vietnamese/…) are dropped — the overlay is latin-only and one file per
+    cut keeps the self-host tiny. Defensive: only gstatic woff2 URLs are accepted."""
+    out = {}
+    for block in re.split(r"@font-face", css or "")[1:]:
+        if "U+0000-00FF" not in block:                # latin subset only
+            continue
+        style = re.search(r"font-style:\s*(normal|italic)", block)
+        weight = re.search(r"font-weight:\s*(\d+)", block)
+        url = re.search(r"url\((https://fonts\.gstatic\.com/[^)]+\.woff2)\)", block)
+        if style and weight and url:
+            out[(style.group(1), weight.group(1))] = url.group(1)
+    return out
+
+
+# Recognized cut suffixes on a self-hosted font file, longest first so
+# "-BoldItalic" wins over "-Italic"/"-Bold". Each maps to (font-style, font-weight).
+_FONT_CUT_SUFFIXES = (
+    ("-bolditalic", ("italic", "700")),
+    ("-italic", ("italic", "1 1000")),
+    ("-bold", ("normal", "700")),
+)
+
+
+def font_cut(filename):
+    """For a self-hosted cut file, return (base_family, font-style, font-weight);
+    None for a plain base file (no recognized suffix, so a hyphenated family like
+    'My-Font' is NOT mis-split). The base cut uses a weight RANGE so a single variable
+    roman renders true bold; -Bold/-BoldItalic pin the exact 700 cut."""
+    stem = font_family(filename)
+    low = stem.lower()
+    for suf, (style, weight) in _FONT_CUT_SUFFIXES:
+        if low.endswith(suf) and len(stem) > len(suf):
+            return (stem[:-len(suf)], style, weight)
+    return None
+
+
+def _good_font_name(name):
+    """A syntactically valid, servable font filename (whitelist + known extension)."""
+    return (isinstance(name, str) and bool(FONT_NAME_RE.match(name)) and "." in name
+            and name.rsplit(".", 1)[1].lower() in FONT_EXTS)
+
+
+def font_families(filenames):
+    """Sorted unique family names a picker should offer: cut siblings collapse onto
+    their base family when the base is present (so 'NunitoSans-Italic' is not offered
+    as a separate, unmatchable family); a lone sibling with no base stays selectable."""
+    valid = [n for n in (filenames or []) if _good_font_name(n)]
+    stems = {font_family(n) for n in valid}
+    out = set()
+    for n in valid:
+        cut = font_cut(n)
+        out.add(cut[0] if (cut and cut[0] in stems) else font_family(n))
+    return sorted(out)
+
+
 def empty_layout(page):
     """A fresh, no-override layout for `page` (base look preserved)."""
     return {"version": 1, "page": page, "slots": {}, "fonts": [], "customCss": ""}
@@ -394,15 +475,38 @@ def _slot_rule(slot_id, overrides, allowed):
 
 
 def _font_faces(fonts):
-    """@font-face blocks for the valid uploaded fonts the layout references."""
+    """@font-face blocks for the valid fonts the layout references. Files that carry a
+    cut suffix (-Bold/-Italic/-BoldItalic) group under their base family and emit
+    font-style/font-weight descriptors, so a self-hosted family renders TRUE bold and
+    TRUE italic instead of the browser synthesizing them. A single base file with no
+    cut sibling stays the legacy descriptor-less face (byte-identical to before — no
+    regression for existing single-font profiles)."""
+    valid = [n for n in (fonts or []) if _good_font_name(n)]
+    groups = {}                       # base family -> [(filename, style, weight)]
+    plain = []                        # (stem, filename) with no recognized cut suffix
+    for n in valid:
+        cut = font_cut(n)
+        if cut:
+            groups.setdefault(cut[0], []).append((n, cut[1], cut[2]))
+        else:
+            plain.append((font_family(n), n))
+    # A plain file whose stem matches a group IS that group's base (normal, range).
+    absorbed = set()
+    for stem, n in plain:
+        if stem in groups:
+            groups[stem].insert(0, (n, "normal", "1 1000"))
+            absorbed.add(n)
     out = []
-    for name in fonts or []:
-        if not isinstance(name, str) or not FONT_NAME_RE.match(name) or "." not in name:
+    for stem, n in plain:
+        if n in absorbed:
             continue
-        if name.rsplit(".", 1)[1].lower() not in FONT_EXTS:
-            continue
-        out.append(f'@font-face {{ font-family: "{font_family(name)}"; '
-                   f"src: url(/overlay/fonts/{name}); }}\n")
+        out.append(f'@font-face {{ font-family: "{stem}"; '
+                   f"src: url(/overlay/fonts/{n}); }}\n")
+    for base, members in groups.items():
+        for n, style, weight in members:
+            out.append(f'@font-face {{ font-family: "{base}"; '
+                       f"src: url(/overlay/fonts/{n}); "
+                       f"font-style: {style}; font-weight: {weight}; }}\n")
     return out
 
 

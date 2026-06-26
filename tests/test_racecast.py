@@ -1398,6 +1398,103 @@ def t_machine_font_download_into_library():
         assert "Oswald.woff2" in ov["library"] and "Oswald.woff2" not in ov["fonts"]
 
 
+def _latin_cuts_css():
+    """A css2 response with the four latin cuts (regular/bold/italic/bold-italic)
+    plus a cyrillic block that must be dropped (no U+0000-00FF)."""
+    def block(style, weight, fn, latin=True):
+        ur = "U+0000-00FF, U+0131" if latin else "U+0400-045F"
+        return ("@font-face { font-family:'Nunito Sans'; font-style:%s; font-weight:%s;"
+                " src: url(https://fonts.gstatic.com/s/ns/%s) format('woff2');"
+                " unicode-range: %s; }" % (style, weight, fn, ur))
+    return "\n".join([
+        block("normal", "400", "cyr.woff2", latin=False),
+        block("normal", "400", "reg.woff2"),
+        block("normal", "700", "bold.woff2"),
+        block("italic", "400", "ital.woff2"),
+        block("italic", "700", "bolditalic.woff2"),
+    ])
+
+
+def t_machine_font_download_saves_all_cuts():
+    # The cuts path self-hosts regular + bold + italic + bold-italic so a slot can
+    # render TRUE bold/italic; the base name is returned for the library entry.
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        try:
+            d = m.machine_font_download_data(
+                "Nunito Sans",
+                css_fetch=lambda u: _latin_cuts_css(),
+                bin_fetch=lambda u: b"WOFF2")
+            lib = m.machine_fonts_list_data()["fonts"]
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert d["ok"] is True and d["name"] == "NunitoSans.woff2"
+        fdir = os.path.join(td, "runtime", "fonts")
+        for fn in ("NunitoSans.woff2", "NunitoSans-Bold.woff2",
+                   "NunitoSans-Italic.woff2", "NunitoSans-BoldItalic.woff2"):
+            assert os.path.exists(os.path.join(fdir, fn)), fn
+            assert fn in lib
+        assert "NunitoSanscyr.woff2" not in lib              # cyrillic block dropped
+
+
+def t_machine_font_download_single_cut_fallback():
+    # A response without latin subset blocks (the legacy/stub shape) still self-hosts
+    # one file — back-compat for families the cuts request can't satisfy.
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        try:
+            d = m.machine_font_download_data(
+                "Oswald", css_fetch=lambda u: "url(https://fonts.gstatic.com/x.woff2)",
+                bin_fetch=lambda u: b"DATA")
+            lib = m.machine_fonts_list_data()["fonts"]
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert d["ok"] is True and d["name"] == "Oswald.woff2"
+        assert lib == ["Oswald.woff2"]
+
+
+def t_machine_font_delete_removes_whole_family():
+    # Deleting a base family also removes its cut siblings (else a half-deleted family
+    # would break — a slot referencing it loses its bold/italic faces).
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        try:
+            m.machine_font_download_data(
+                "Nunito Sans", css_fetch=lambda u: _latin_cuts_css(),
+                bin_fetch=lambda u: b"WOFF2")
+            d = m.machine_font_delete_data("NunitoSans.woff2")
+            after = m.machine_fonts_list_data()["fonts"]
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert d["ok"] is True
+        assert after == []                                   # base + all siblings gone
+
+
+def t_overlay_save_copies_font_cut_siblings_into_profile():
+    # Copy-on-save pulls the WHOLE family (base + bold + italic) into the profile so
+    # `profile export` carries true bold/italic offline, and the CSS groups them.
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        orig = _mk_active_profile(td)
+        try:
+            m.machine_font_download_data(
+                "Nunito Sans", css_fetch=lambda u: _latin_cuts_css(),
+                bin_fetch=lambda u: b"WOFF2")
+            w = m.overlay_layout_write_data(
+                "hud", {"page": "hud", "slots": {"stint": {"fontFamily": "NunitoSans"}}})
+        finally:
+            m._env_base, m._runtime_base_dir = orig
+        assert w["ok"] is True
+        pdir = os.path.join(td, "profiles", "demo", "overlay", "fonts")
+        for fn in ("NunitoSans.woff2", "NunitoSans-Bold.woff2",
+                   "NunitoSans-Italic.woff2", "NunitoSans-BoldItalic.woff2"):
+            assert os.path.exists(os.path.join(pdir, fn)), fn
+        assert 'font-family: "NunitoSans"' in w["css"] and "font-style: italic" in w["css"]
+
+
 def t_machine_font_download_rejects_unsafe_name():
     # SSRF gate: a name with path/host tricks is rejected before any fetch.
     hit = {"n": 0}
