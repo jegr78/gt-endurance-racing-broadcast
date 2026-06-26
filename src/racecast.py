@@ -4293,13 +4293,20 @@ def _materialize_overlay_fonts(layout):
     if layout.get("bodyFont"):
         referenced.add(layout["bodyFont"])
     lib = _machine_fonts_dir()
+    lib_files = _list_fonts(lib)
     for stem in referenced:
-        if stem in present_stems:
-            continue
-        src = _font_path(lib, stem + ".woff2")
-        if src:
-            os.makedirs(fdir, exist_ok=True)
-            shutil.copy2(src, os.path.join(fdir, stem + ".woff2"))
+        # Copy the base file AND any cut siblings (-Bold/-Italic/-BoldItalic) of the
+        # referenced family, so `profile export` carries the full family (true
+        # bold/italic offline) and the generated CSS can group them.
+        for fn in lib_files:
+            cut = ob.font_cut(fn)
+            base = cut[0] if cut else ob.font_family(fn)
+            if base != stem or ob.font_family(fn) in present_stems:
+                continue
+            src = _font_path(lib, fn)
+            if src:
+                os.makedirs(fdir, exist_ok=True)
+                shutil.copy2(src, os.path.join(fdir, fn))
     return _list_fonts(fdir)
 
 
@@ -4495,8 +4502,30 @@ def machine_font_download_data(name, css_fetch=None, bin_fetch=None):
         css_fetch = css_fetch or (lambda u: _http_get(
             u, headers={"User-Agent": _GOOGLE_FONT_UA}))
         bin_fetch = bin_fetch or (lambda u: _http_get(u, binary=True))
-        # Try the bold weight first, then fall back to the family's default face
-        # (display fonts without a 700 weight 400 a `:wght@700` request).
+        fdir = _machine_fonts_dir()
+        # Preferred: fetch the four overlay cuts (regular/bold/italic/bold-italic) and
+        # self-host EACH latin face, so a slot renders TRUE bold/italic instead of the
+        # browser synthesizing them from one mislabeled cut (the issue this fixes).
+        try:
+            cuts_css = css_fetch(ob.google_font_cuts_url(name))
+        except Exception:
+            cuts_css = ""
+        saved = []
+        for (style, weight), url in sorted(ob.parse_google_font_cuts(cuts_css or "").items()):
+            try:
+                data = bin_fetch(url)
+            except Exception:
+                continue
+            if not data:
+                continue
+            ok, res = _write_font(fdir, ob.google_font_cut_filename(name, style, weight), data)
+            if ok:
+                saved.append(res)
+        if saved:
+            base = ob.google_font_filename(name)
+            return {"ok": True, "name": base if base in saved else saved[0]}
+        # Fallback: a single-cut fetch for families/edge cases the cuts request can't
+        # satisfy. Try the bold weight first, then the family's default face.
         m = None
         for url in (ob.google_font_css_url(name),
                     ob.google_font_css_url(name, weight=None)):
@@ -4513,20 +4542,35 @@ def machine_font_download_data(name, css_fetch=None, bin_fetch=None):
         data = bin_fetch(m.group(1))
         if not data:
             return {"ok": False, "error": "empty font download"}
-        ok, res = _write_font(_machine_fonts_dir(), ob.google_font_filename(name), data)
+        ok, res = _write_font(fdir, ob.google_font_filename(name), data)
         return {"ok": True, "name": res} if ok else {"ok": False, "error": res}
     except Exception as exc:
         return {"ok": False, "error": f"google font download failed: {exc}"}
 
 
 def machine_font_delete_data(name):
-    """Remove a font from the machine-wide library. {ok, removed} or {ok:false, error}."""
+    """Remove a font family from the machine-wide library. Deleting a base file also
+    removes its cut siblings (-Bold/-Italic/-BoldItalic) so a family is never left
+    half-deleted (which would strip a slot's bold/italic faces). {ok, removed} or
+    {ok:false, error}."""
     try:
-        path = _font_path(_machine_fonts_dir(), name)
+        fdir = _machine_fonts_dir()
+        path = _font_path(fdir, name)
         if not path:
             return {"ok": False, "error": "font not found"}
-        os.remove(path)
-        return {"ok": True, "removed": name}
+        cut = ob.font_cut(name)
+        family = cut[0] if cut else ob.font_family(name)
+        removed = []
+        for fn in _list_fonts(fdir):
+            fcut = ob.font_cut(fn)
+            fbase = fcut[0] if fcut else ob.font_family(fn)
+            if fbase != family:
+                continue
+            fp = _font_path(fdir, fn)
+            if fp:
+                os.remove(fp)
+                removed.append(fn)
+        return {"ok": True, "removed": removed}
     except Exception as exc:
         return {"ok": False, "error": f"could not delete font: {exc}"}
 
