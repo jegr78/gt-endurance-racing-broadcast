@@ -658,6 +658,18 @@ def t_hud_base_is_the_demo_standard():
     assert "left: 712px" in stint, "stint not at the side-by-side position"
 
 
+def t_flag_status_default_is_top_centered():
+    # The base default places the flag-status banner at the top edge, just below
+    # the stint/clock row, horizontally centred on the 1920-wide frame (x=960 ->
+    # left 780 for the 360px box) with centred content. Locks the placement so it
+    # can't silently drift back to the old lower-left default.
+    with open(os.path.join(ROOT, "src", "obs", "hud.html"), encoding="utf-8") as f:
+        style = ob.base_style(f.read())
+    rule = re.search(r"#flag-status\s*\{[^}]*\}", style).group(0)
+    assert "left: 780px" in rule and "top: 96px" in rule, "flag-status not top-centered"
+    assert "justify-content: center" in rule, "flag-status content not centred"
+
+
 def t_example_overlay_matches_demo_standard():
     # New leagues scaffold from `example` (profile_admin.create_profile), so the
     # example overlay must carry the SAME standard as the demo — otherwise a stale
