@@ -98,13 +98,52 @@
     font-size: 28px; font-weight: 700; background: #243039; padding: 10px;
     border-radius: 8px; color: #eef0f2; }
   #flag-status[data-state="green-flag"] { background: #1f8a3b; color: #fff; }
-  #flag-status[data-state="yellow-flag"] { background: #f2c014; color: #111; }
-  #flag-status[data-state="double-yellow"] { background: #f2c014; color: #111; }
-  #flag-status[data-state="full-course-yellow"] { background: #e6a700; color: #111; }
-  #flag-status[data-state="code-60"] { background: #e2761b; color: #111; }
-  #flag-status[data-state="safety-car"] { background: #eef0f2; color: #111; }
+  /* Yellow Flag, Safety Car, Virtual Safety Car and Full Course Yellow all signal
+     the same caution, so they share the one yellow. */
+  #flag-status[data-state="yellow-flag"],
+  #flag-status[data-state="double-yellow"],
+  #flag-status[data-state="safety-car"],
+  #flag-status[data-state="virtual-safety-car"],
+  #flag-status[data-state="full-course-yellow"] { background: #f2c014; color: #111; }
+  /* Code 60: the pink Code-60 flag rendered as a left emblem (white ring carrying
+     "60" over a white diagonal cross) next to the label. The emblem is an inline
+     SVG, so the ring, cross and "60" scale crisply together. align-self:stretch +
+     aspect-ratio:1 size it to the box height, and the reduced vertical padding sets
+     a constant top/bottom gap — so it adapts to any per-league box height (e.g. a
+     slim 34px box) with no override needed. data-state is removed when empty (see
+     setFlag), so display:flex here never defeats `.el.empty { display:none }`. */
+  #flag-status[data-state="code-60"] {
+    color: #fff;
+    background-color: #d6177e;
+    display: flex; align-items: center; gap: .35em;
+    padding: 4px 10px;
+    text-shadow: 0 0 3px #000, 1px 1px 2px #000;
+  }
+  #flag-status[data-state="code-60"]::before {
+    content: "";
+    flex: 0 0 auto; align-self: stretch; aspect-ratio: 1;
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='6' fill='%23d6177e'/%3E%3Cg stroke='%23fff' stroke-width='5' stroke-linecap='round'%3E%3Cline x1='5' y1='5' x2='35' y2='35'/%3E%3Cline x1='35' y1='5' x2='5' y2='35'/%3E%3C/g%3E%3Ccircle cx='20' cy='20' r='13' fill='%23d6177e' stroke='%23fff' stroke-width='3'/%3E%3Ctext x='20' y='21' fill='%23fff' font-family='Arial,sans-serif' font-size='15' font-weight='bold' text-anchor='middle' dominant-baseline='central'%3E60%3C/text%3E%3C/svg%3E")
+      center/contain no-repeat;
+  }
   #flag-status[data-state="red-flag"] { background: #c62121; color: #fff; }
-  #flag-status[data-state="checkered-flag"] { background: #111; color: #fff; }
+  /* Checkered flag: a checkered emblem (inline SVG, sized to the box like the Code
+     60 emblem) next to the label on a dark ground — keeps the text legible instead
+     of fighting a full-box checkerboard. data-state is removed when empty (see
+     setFlag), so display:flex here never defeats `.el.empty { display:none }`. */
+  #flag-status[data-state="checkered-flag"] {
+    color: #fff;
+    background-color: #171717;
+    display: flex; align-items: center; gap: .4em;
+    padding: 4px 10px;
+    text-shadow: 0 1px 2px #000;
+  }
+  #flag-status[data-state="checkered-flag"]::before {
+    content: ""; flex: 0 0 auto; align-self: stretch; aspect-ratio: 1; border-radius: 4px;
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' fill='%23fff'/%3E%3Cg fill='%23111'%3E%3Crect x='0' y='0' width='10' height='10'/%3E%3Crect x='20' y='0' width='10' height='10'/%3E%3Crect x='10' y='10' width='10' height='10'/%3E%3Crect x='30' y='10' width='10' height='10'/%3E%3Crect x='0' y='20' width='10' height='10'/%3E%3Crect x='20' y='20' width='10' height='10'/%3E%3Crect x='10' y='30' width='10' height='10'/%3E%3Crect x='30' y='30' width='10' height='10'/%3E%3C/g%3E%3C/svg%3E")
+      center/contain no-repeat;
+  }
 </style>
 <link rel="stylesheet" href="/hud/override.css">
 </head>
@@ -174,7 +213,7 @@
     el.classList.toggle("empty", !value);
   }
   const FLAG_ALIASES = {
-    "sc": "safety-car", "fcy": "full-course-yellow", "vsc": "full-course-yellow",
+    "sc": "safety-car", "fcy": "full-course-yellow", "vsc": "virtual-safety-car",
   };
   function flagSlug(value) {
     const s = (value || "").toLowerCase().replace(/[^a-z0-9]+/g, "-")
