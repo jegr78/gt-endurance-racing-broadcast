@@ -547,6 +547,28 @@ def t_ob_compile_rotation():
     assert "transform" not in _css_x({"rotation": "x"})
 
 
+def t_ob_compile_slant_clip_path():
+    # positive slant leans "/"; text is untouched (no transform)
+    assert ("clip-path: polygon(40px 0, 100% 0, calc(100% - 40px) 100%, 0 100%)"
+            in _css_x({"slant": 40}))
+    # negative slant leans "\"
+    assert ("clip-path: polygon(0 0, calc(100% - 30px) 0, 100% 100%, 30px 100%)"
+            in _css_x({"slant": -30}))
+    # inclusive ±400 boundary is ACCEPTED (the mirror-critical clamp edge)
+    assert "polygon(400px 0," in _css_x({"slant": 400})
+    assert "100%, 400px 100%)" in _css_x({"slant": -400})
+    # a fractional slant keeps its decimals (no spurious .0 normalization)
+    assert "polygon(40.5px 0," in _css_x({"slant": 40.5})
+
+
+def t_ob_compile_slant_rejects():
+    assert "clip-path" not in _css_x({"slant": 0})       # zero = no clip
+    assert "clip-path" not in _css_x({"slant": 401})     # over +400
+    assert "clip-path" not in _css_x({"slant": -401})    # under -400
+    assert "clip-path" not in _css_x({"slant": "x"})     # non-number
+    assert "clip-path" not in _css_x({"slant": True})    # bool rejected
+
+
 def t_ob_compile_valign_and_text_transform():
     assert "align-items: center" in _css_x({"valign": "middle"})
     assert "align-items: flex-end" in _css_x({"valign": "bottom"})
@@ -690,6 +712,29 @@ def t_pov_box_from_css_float_value():
 
 def t_overlay_slot_obs_sources_constant():
     assert ob.OVERLAY_SLOT_OBS_SOURCES == {"pov": "Feed POV"}
+
+
+def t_ob_compile_shear_skewx():
+    assert "transform: skewX(12deg)" in _css_x({"shear": 12})
+    assert "transform: skewX(-20deg)" in _css_x({"shear": -20})
+    assert "transform" not in _css_x({"shear": 90})      # 90 is degenerate
+    assert "transform" not in _css_x({"shear": "x"})
+    assert "transform" not in _css_x({"shear": True})
+
+
+def t_ob_compile_rotation_and_shear_combine():
+    css = _css_x({"rotation": 15, "shear": 10})
+    # ONE combined transform, rotate before skewX
+    assert "transform: rotate(15deg) skewX(10deg)" in css
+    assert css.count("transform:") == 1
+
+
+def t_ob_compile_slant_shear_gated_by_props():
+    # a slot whose props lack slant/shear drops them (no injection)
+    slots = [{"id": "x", "label": "X", "props": ["left", "top"]}]
+    css = ob.compile_overlay_css(
+        {"slots": {"x": {"slant": 40, "shear": 12, "rotation": 5}}}, slots)
+    assert "clip-path" not in css and "transform" not in css
 
 
 if __name__ == "__main__":
