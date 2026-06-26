@@ -47,7 +47,7 @@ PROP_ORDER = ("left", "top", "width", "height", "padding",
               "teamNameMax", "teamNameMin", "fontFamily", "fontWeight",
               "fontStyle", "color", "background", "borderColor", "borderStyle",
               "align", "valign", "textTransform", "opacity",
-              "rotation", "textShadow", "visible")
+              "rotation", "shear", "textShadow", "visible")
 
 # Slot kinds (standard properties for all slots; spec
 # docs/superpowers/specs/2026-06-15-overlay-builder-standard-properties-design.md).
@@ -57,7 +57,7 @@ PROP_ORDER = ("left", "top", "width", "height", "padding",
 # position, size, fill, border, opacity, rotation; text adds the type properties).
 KIND_BOX = ("left", "top", "width", "height", "padding",
             "background", "borderWidth", "borderStyle", "borderColor",
-            "borderRadius", "slant", "opacity", "rotation", "visible")
+            "borderRadius", "slant", "opacity", "rotation", "shear", "visible")
 KIND_TEXT = KIND_BOX + ("fontSize", "lineHeight", "letterSpacing",
                         "fontFamily", "fontWeight", "fontStyle", "color",
                         "align", "valign", "textTransform", "textShadow")
@@ -322,23 +322,52 @@ def _declaration(prop, value):
             return None
         num = int(value) if float(value).is_integer() else value
         return f"line-height: {num}"
-    if prop == "rotation":
-        if not isinstance(value, (int, float)) or not -360 <= value <= 360:
-            return None
-        num = int(value) if float(value).is_integer() else value
-        return f"transform: rotate({num}deg)"
     return None
 
 
+def _num_in_range(value, lo, hi):
+    """A normalized number (int when integral) if `value` is a real number in
+    [lo, hi], else None. bool is rejected (it is an int subclass)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not lo <= value <= hi:
+        return None
+    return int(value) if float(value).is_integer() else value
+
+
+def _transform_decl(overrides, allowed):
+    """One combined 'transform: rotate(Rdeg) skewX(Kdeg)' from a slot's rotation +
+    shear overrides (each gated by `allowed` and its range), or None when neither
+    applies. Merging both into a SINGLE declaration prevents one transform from
+    silently overriding the other (two `transform:` lines -> the later wins)."""
+    parts = []
+    if "rotation" in allowed:
+        r = _num_in_range(overrides.get("rotation"), -360, 360)
+        if r is not None:
+            parts.append(f"rotate({r}deg)")
+    if "shear" in allowed:
+        k = _num_in_range(overrides.get("shear"), -89, 89)
+        if k is not None:
+            parts.append(f"skewX({k}deg)")
+    return f"transform: {' '.join(parts)}" if parts else None
+
+
 def _slot_rule(slot_id, overrides, allowed):
-    """A '#id { ... }' rule for one slot's overrides, gated by its allowed props."""
+    """A '#id { ... }' rule for one slot's overrides, gated by its allowed props.
+    rotation + shear are emitted together as one combined transform (see
+    _transform_decl), so they are skipped in the per-prop loop."""
     decls = []
     for prop in PROP_ORDER:
+        if prop in ("rotation", "shear"):
+            continue
         if prop not in allowed or prop not in overrides:
             continue
         decl = _declaration(prop, overrides[prop])
         if decl:
             decls.append(decl)
+    tdecl = _transform_decl(overrides, allowed)
+    if tdecl:
+        decls.append(tdecl)
     if not decls:
         return ""
     return f"#{slot_id} {{ {'; '.join(decls)}; }}\n"

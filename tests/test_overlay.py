@@ -709,6 +709,29 @@ def t_overlay_slot_obs_sources_constant():
     assert ob.OVERLAY_SLOT_OBS_SOURCES == {"pov": "Feed POV"}
 
 
+def t_ob_compile_shear_skewx():
+    assert "transform: skewX(12deg)" in _css_x({"shear": 12})
+    assert "transform: skewX(-20deg)" in _css_x({"shear": -20})
+    assert "transform" not in _css_x({"shear": 90})      # 90 is degenerate
+    assert "transform" not in _css_x({"shear": "x"})
+    assert "transform" not in _css_x({"shear": True})
+
+
+def t_ob_compile_rotation_and_shear_combine():
+    css = _css_x({"rotation": 15, "shear": 10})
+    # ONE combined transform, rotate before skewX
+    assert "transform: rotate(15deg) skewX(10deg)" in css
+    assert css.count("transform:") == 1
+
+
+def t_ob_compile_slant_shear_gated_by_props():
+    # a slot whose props lack slant/shear drops them (no injection)
+    slots = [{"id": "x", "label": "X", "props": ["left", "top"]}]
+    css = ob.compile_overlay_css(
+        {"slots": {"x": {"slant": 40, "shear": 12, "rotation": 5}}}, slots)
+    assert "clip-path" not in css and "transform" not in css
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
