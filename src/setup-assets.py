@@ -13,6 +13,9 @@ import argparse, json, os, re, sys
 # is a tiny pure stdlib helper — importing it does not pull in the heavy resolver.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
 import discord_web  # noqa: E402
+import overlay_build  # noqa: E402  (pure stdlib helper — no heavy resolver pulled in)
+
+POV_SOURCE_NAME = overlay_build.OVERLAY_SLOT_OBS_SOURCES["pov"]
 
 ASSETS_TOKEN = "__RACECAST_ASSETS__"
 SHEET_TOKEN = "__RACECAST_SHEET__"
@@ -101,6 +104,39 @@ def apply_collection_name(collection, name):
     return collection
 
 
+def apply_pov_transform(collection, overrides):
+    """Set pos/bounds of EVERY scene item named POV_SOURCE_NAME ('Feed POV'),
+    anywhere in the collection tree, from `overrides` (a pov_box_from_css dict:
+    any subset of left/top/width/height). Unset keys keep the item's existing
+    value, so a partial override leaves the rest at the template base. No-op on
+    falsy `overrides`. Mutates and returns `collection` (same contract as
+    apply_collection_name / localize_discord_audio)."""
+    if not overrides:
+        return collection
+
+    def visit(node):
+        if isinstance(node, dict):
+            if (node.get("name") == POV_SOURCE_NAME
+                    and isinstance(node.get("pos"), dict)
+                    and isinstance(node.get("bounds"), dict)):
+                if "left" in overrides:
+                    node["pos"]["x"] = overrides["left"]
+                if "top" in overrides:
+                    node["pos"]["y"] = overrides["top"]
+                if "width" in overrides:
+                    node["bounds"]["x"] = overrides["width"]
+                if "height" in overrides:
+                    node["bounds"]["y"] = overrides["height"]
+            for v in node.values():
+                visit(v)
+        elif isinstance(node, list):
+            for v in node:
+                visit(v)
+
+    visit(collection)
+    return collection
+
+
 def load_dotenv(start):
     """Load KEY=VALUE pairs from a .env at the script dir or the project root
     into os.environ. Real environment variables win (setdefault). No dependency.
@@ -164,6 +200,9 @@ def main():
     ap.add_argument("--collection", default=os.environ.get("RACECAST_OBS_COLLECTION"),
                     help="OBS scene-collection display name written into the import "
                          "JSON. Default: env RACECAST_OBS_COLLECTION (active profile).")
+    ap.add_argument("--overlay-css", default=None,
+                    help="Profile overlay hud.css whose #pov box position/size is "
+                         "synced onto the OBS 'Feed POV' scene item. Default: none.")
     a = ap.parse_args()
 
     tpl = a.template
@@ -220,6 +259,14 @@ def main():
         os.environ, discord_web.detect_running_browser() if web else None)
     swapped = localize_discord_audio(localized, sys.platform, web=web, browser=browser)
     apply_collection_name(localized, a.collection)
+    pov = {}
+    if a.overlay_css and os.path.isfile(a.overlay_css):
+        try:
+            with open(a.overlay_css, encoding="utf-8") as fh:
+                pov = overlay_build.pov_box_from_css(fh.read())
+        except OSError as e:
+            print(f"  NOTE: could not read overlay CSS {a.overlay_css}: {e}")
+        apply_pov_transform(localized, pov)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as fh:
         json.dump(localized, fh, ensure_ascii=False, indent=4)
@@ -234,6 +281,8 @@ def main():
         print(f"  Graphics dir: {a.graphics}")
     if a.collection:
         print(f"  OBS collection name: {a.collection}")
+    if pov:
+        print(f"  POV box synced to OBS '{POV_SOURCE_NAME}': {pov}")
     if swapped:
         print(f"  Discord audio source: {swapped}")
         if web:

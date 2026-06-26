@@ -453,6 +453,54 @@ def t_oneshot_extra():
         "setup", ["--out", "z", "--media", "m", "--graphics", "g"], R, B) == []
     assert m._oneshot_extra("graphics", ["--out", "z"], R, B) == []
 
+    # --overlay-css is injected for `setup` only when the passed path exists.
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        css = os.path.join(d, "hud.css")
+        assert m._oneshot_extra("setup", [], R, B, overlay_css=css) == \
+            ["--out", os.path.join(R, "GT_Endurance.import.json"),
+             "--media", os.path.join(R, "media"),
+             "--graphics", os.path.join(R, "graphics")]            # file absent -> skipped
+        with open(css, "w") as fh:
+            fh.write("#pov { left: 1516px; }")
+        assert m._oneshot_extra("setup", [], R, B, overlay_css=css) == \
+            ["--out", os.path.join(R, "GT_Endurance.import.json"),
+             "--media", os.path.join(R, "media"),
+             "--graphics", os.path.join(R, "graphics"),
+             "--overlay-css", css]                                 # file present -> added
+        # explicit --overlay-css in rest wins: the auto one is not appended.
+        assert m._oneshot_extra("setup", ["--overlay-css", "x"], R, B,
+                                overlay_css=css).count("--overlay-css") == 0
+
+
+def t_sync_pov_transform_calls_setter_with_merged_box():
+    import tempfile
+    captured = {}
+
+    def fake_set(scene, source, transform):
+        captured["scene"] = scene
+        captured["source"] = source
+        captured["transform"] = transform
+        return True, ""
+
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "hud.css"), "w") as fh:
+            # override only left/top; width/height fall back to the hud.html base.
+            fh.write("#pov { left: 1516px; top: 600px; }")
+        orig = m._active_overlay_dir
+        m._active_overlay_dir = lambda: d
+        try:
+            m._sync_pov_transform(set_transform=fake_set)
+        finally:
+            m._active_overlay_dir = orig
+
+    assert captured["scene"] == "Stint"
+    assert captured["source"] == "Feed POV"
+    tf = captured["transform"]
+    assert tf["positionX"] == 1516 and tf["positionY"] == 600   # from the override
+    assert tf["boundsWidth"] == 384 and tf["boundsHeight"] == 216  # from the base
+    assert tf["boundsType"] == 2 and tf["alignment"] == 5
+
 
 def t_run_module_exit_codes():
     import contextlib, io, sys as _sys, tempfile

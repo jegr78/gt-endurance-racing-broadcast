@@ -142,6 +142,56 @@ def t_canonicalize_name_resets_to_constant():
     assert tk.CANONICAL_COLLECTION_NAME == "GT Endurance Racing"
 
 
+def _coll_with_pov(pos=(1496.0, 644.0), bounds=(384.0, 216.0)):
+    # Scenes are stored as `sources` entries with id "scene"; their items
+    # (carrying pos/bounds) live in settings.items — mirrors GT_Endurance.json.
+    return {"sources": [
+        {"name": "Stint", "id": "scene", "settings": {"items": [
+            {"name": "Feed POV",
+             "pos": {"x": pos[0], "y": pos[1]},
+             "bounds": {"x": bounds[0], "y": bounds[1]}},
+        ]}},
+    ]}
+
+
+def _pov_item(coll):
+    return coll["sources"][0]["settings"]["items"][0]
+
+
+def t_pov_source_name_matches_overlay_build():
+    assert sa.POV_SOURCE_NAME == "Feed POV"
+
+
+def t_apply_pov_transform_full():
+    coll = _coll_with_pov()
+    sa.apply_pov_transform(coll, {"left": 1516, "top": 600,
+                                  "width": 384, "height": 216})
+    it = _pov_item(coll)
+    assert it["pos"] == {"x": 1516, "y": 600}
+    assert it["bounds"] == {"x": 384, "y": 216}
+
+
+def t_apply_pov_transform_partial_keeps_existing():
+    coll = _coll_with_pov()
+    sa.apply_pov_transform(coll, {"left": 1516, "top": 600})   # no width/height
+    it = _pov_item(coll)
+    assert it["pos"] == {"x": 1516, "y": 600}
+    assert it["bounds"] == {"x": 384.0, "y": 216.0}            # untouched base
+
+
+def t_apply_pov_transform_empty_is_noop():
+    coll = _coll_with_pov()
+    sa.apply_pov_transform(coll, {})
+    assert _pov_item(coll)["pos"] == {"x": 1496.0, "y": 644.0}
+
+
+def t_apply_pov_transform_no_pov_item_is_noop():
+    coll = {"sources": [{"name": "Feed A", "id": "ffmpeg_source",
+                         "settings": {"input": "http://127.0.0.1:53001"}}]}
+    sa.apply_pov_transform(coll, {"left": 1516})              # must not raise
+    assert coll["sources"][0]["name"] == "Feed A"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

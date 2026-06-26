@@ -328,6 +328,15 @@ freeport 8088`).
   tab `Intro Video`/`Outro Video` labels, or `RACECAST_INTRO_URL`/`RACECAST_OUTRO_URL`
   env overrides) into `runtime/<profile>/media/`; the `Intro`/`Outro` OBS scenes play
   them looping with audio.
+  The localized export also **syncs the per-league POV-box position**: `setup-assets.py`
+  reads the active profile's `overlay/hud.css` (`--overlay-css`, passed by the CLI) and
+  applies its `#pov` box (`left/top/width/height`) onto the OBS **"Feed POV"** scene item
+  (`pos`/`bounds` — the 1:1 overlay-frame↔PiP mapping). The same box is pushed **live** to
+  a running OBS by the `racecast obs refresh` / `relay start` / `event start` hook
+  (`_sync_pov_transform` → `obs_ws.set_scene_item_transform`), so a builder edit aligns the
+  PiP immediately without a re-import. POV-only (`overlay_build.OVERLAY_SLOT_OBS_SOURCES`);
+  best-effort — a missing overlay/OBS leaves today's behavior. Pure parser:
+  `overlay_build.pov_box_from_css`. Spec: `docs/superpowers/specs/2026-06-26-pov-box-obs-sync-design.md`.
 - **Broadcast graphics are pure-runtime** (same model as the Intro/Outro clips): the
   still-graphics (Overlay, Standings, Schedule, Race/Quali Results, the three weather
   overlays, Standby, …) are **never committed**. `python3 src/relay/get-graphics.py`
