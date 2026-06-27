@@ -142,6 +142,17 @@ def t_get_graphics_obs_template_dir_is_sibling():
         os.path.join(ROOT, "src", "obs")
 
 
+def t_get_media_seeds_placeholder_clip():
+    gm = _load_script("relay/get-media.py")
+    with tempfile.TemporaryDirectory() as tmp:
+        seeded = gm.seed_missing_media(tmp, {"intro", "outro"})
+        assert sorted(seeded) == ["intro.mp4", "outro.mp4"]
+        with open(MP4, "rb") as a, open(os.path.join(tmp, "intro.mp4"), "rb") as b:
+            assert a.read() == b.read()
+        # already-present clip is not overwritten / re-listed
+        assert gm.seed_missing_media(tmp, {"intro"}) == []
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
