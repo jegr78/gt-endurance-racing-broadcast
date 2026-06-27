@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for get-media.py. Run: python3 tests/test_media.py"""
-import importlib.util, os
+import importlib.util, os, subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -94,6 +94,77 @@ def t_download_rejects_non_http_url():
         except ValueError:
             raised = True
         assert raised, bad
+
+
+# ---------- transient-403 retry loop (#344) -------------------------------------
+
+class _Runner:
+    """Fake subprocess.run: each call pops the next item from `results`; an
+    Exception is raised, anything else is returned (success)."""
+    def __init__(self, results):
+        self.results = list(results)
+        self.calls = 0
+
+    def __call__(self, cmd, check=True, timeout=None, env=None):
+        self.calls += 1
+        r = self.results.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+
+class _Sleeper:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, delay):
+        self.calls.append(delay)
+
+
+def t_run_download_first_try_no_retry():
+    run, sl = _Runner(["OK"]), _Sleeper()
+    assert m.run_download(["yt-dlp"], runner=run, sleeper=sl) == "OK"
+    assert run.calls == 1 and sl.calls == [], (run.calls, sl.calls)
+
+
+def t_run_download_retries_then_succeeds():
+    err = subprocess.CalledProcessError(1, "yt-dlp")
+    run, sl = _Runner([err, "OK"]), _Sleeper()
+    assert m.run_download(["yt-dlp"], runner=run, sleeper=sl) == "OK"
+    # one failed attempt -> one retry -> one backoff sleep
+    assert run.calls == 2 and len(sl.calls) == 1, (run.calls, sl.calls)
+
+
+def t_run_download_gives_up_after_attempts():
+    err = subprocess.CalledProcessError(1, "yt-dlp")
+    run, sl = _Runner([err, err, err]), _Sleeper()
+    raised = False
+    try:
+        m.run_download(["yt-dlp"], attempts=3, runner=run, sleeper=sl)
+    except subprocess.CalledProcessError:
+        raised = True
+    # all attempts used, a sleep between each (attempts-1), error re-raised
+    assert raised and run.calls == 3 and len(sl.calls) == 2, (run.calls, sl.calls)
+
+
+def t_run_download_does_not_retry_missing_ytdlp():
+    run, sl = _Runner([FileNotFoundError()]), _Sleeper()
+    raised = False
+    try:
+        m.run_download(["yt-dlp"], runner=run, sleeper=sl)
+    except FileNotFoundError:
+        raised = True
+    assert raised and run.calls == 1 and sl.calls == [], (run.calls, sl.calls)
+
+
+def t_run_download_does_not_retry_timeout():
+    run, sl = _Runner([subprocess.TimeoutExpired("yt-dlp", 600)]), _Sleeper()
+    raised = False
+    try:
+        m.run_download(["yt-dlp"], runner=run, sleeper=sl)
+    except subprocess.TimeoutExpired:
+        raised = True
+    assert raised and run.calls == 1 and sl.calls == [], (run.calls, sl.calls)
 
 
 if __name__ == "__main__":
