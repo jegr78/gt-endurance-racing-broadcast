@@ -161,6 +161,13 @@ def t_build_binary_freezes_placeholders():
         "import it; PyInstaller's static scan cannot see that)"
 
 
+def t_fill_missing_skips_path_traversal_names():
+    with tempfile.TemporaryDirectory() as tmp:
+        written = ph.fill_missing(["../evil.png", "sub/x.png", "ok.png"], tmp, PNG)
+        assert written == ["ok.png"]
+        assert os.listdir(tmp) == ["ok.png"]   # nothing escaped, no subdir created
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):

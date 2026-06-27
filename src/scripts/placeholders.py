@@ -70,6 +70,8 @@ def fill_missing(expected_names, directory, src_path):
         return []
     written = []
     for name in expected_names:
+        if name != os.path.basename(name):   # reject path separators / traversal
+            continue
         if name in have:
             continue
         dst = os.path.join(directory, name)
