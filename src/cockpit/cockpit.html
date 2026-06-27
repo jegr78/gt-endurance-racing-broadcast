@@ -338,9 +338,13 @@ async function pollTally() {
 }
 
 // --- Read-only stint plan (right column) ---
+let lastStintPlanSig = null;   // signature of last rendered d.schedule; skip rebuild when unchanged
 function renderStintPlan(d) {
   const box = $('stintPlan');
   const rows = d.schedule || [];
+  const sig = JSON.stringify(rows);
+  if (sig === lastStintPlanSig) return;   // unchanged — preserve scroll position + text selection
+  lastStintPlanSig = sig;
   box.textContent = '';
   if (!rows.length) {
     const e = document.createElement('div');
@@ -364,7 +368,10 @@ function renderStintPlan(d) {
     }
     box.appendChild(row);
   }
-  if (onAirEl) onAirEl.scrollIntoView({ block: 'nearest' });
+  // Scroll ONLY the card's own container (not the page/viewport) to reveal the
+  // on-air row — scrollIntoView() would tug every scrollable ancestor including
+  // the page itself, which drags the viewport on every handover.
+  if (onAirEl) box.scrollTop = Math.max(0, onAirEl.offsetTop - box.offsetTop);
 }
 
 // --- Stream-link submission (#193) ---
