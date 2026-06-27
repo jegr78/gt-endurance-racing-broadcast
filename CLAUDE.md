@@ -533,7 +533,7 @@ The relay also serves a **talent-facing Commentator Cockpit** (issue #191) under
 auth-gated `/cockpit/*` namespace: a live program monitor (reusing
 `get_program_screenshot`), an "ON AIR / UP NEXT" tally (`cockpit_tally`, derived from the
 on-air feed + the live schedule via `asset_key`-normalised streamer names), the embedded
-crew chat (identity forced to the token's streamer), and a read-only timer. It is exposed
+crew chat (identity forced to the token's streamer), and a read-only timer. A read-only **stint plan** (right column, below the timer) lists the full running order (stint label + streamer name) from a redacted `schedule` field on `/cockpit/data` — no stream URLs (the same Funnel redaction boundary as `/console/takeover/status`); the on-air stint and the viewer's own stints are highlighted (pure `cockpit_schedule`). It is exposed
 **publicly via Tailscale Funnel**, which maps **only** the `/console` path prefix to
 `127.0.0.1:8088` — the rest of the relay stays tailnet/loopback-only and is **never**
 funnelled (the security boundary). `/console/buttons` reverse-proxies (HTTP + a raw-WebSocket
