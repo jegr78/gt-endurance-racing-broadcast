@@ -70,9 +70,29 @@ def t_runs_to_text_joins_text_runs():
 
 
 def t_runs_to_text_emoji_uses_shortcut():
+    # No emojiId glyph available -> fall back to the shortcut (current behaviour).
     msg = {"runs": [{"text": "gg "},
                     {"emoji": {"shortcuts": [":smile:"], "isCustomEmoji": False}}]}
     assert bc.runs_to_text(msg) == "gg :smile:"
+
+
+def t_runs_to_text_standard_emoji_uses_glyph():
+    # A standard emoji carries its Unicode glyph in emojiId -> render the glyph,
+    # not the :shortcut: text.
+    msg = {"runs": [{"text": "low stigs "},
+                    {"emoji": {"emojiId": "\U0001f605",
+                               "shortcuts": [":grinning_face_with_sweat:"],
+                               "isCustomEmoji": False}}]}
+    assert bc.runs_to_text(msg) == "low stigs \U0001f605"
+
+
+def t_runs_to_text_custom_emoji_keeps_shortcut():
+    # A custom channel emote has no Unicode glyph (emojiId is an internal id) ->
+    # keep the :shortcut: text.
+    msg = {"runs": [{"emoji": {"emojiId": "UCabc123/deadbeef",
+                               "shortcuts": [":pog:"],
+                               "isCustomEmoji": True}}]}
+    assert bc.runs_to_text(msg) == ":pog:"
 
 
 def t_runs_to_text_simpletext_fallback():
