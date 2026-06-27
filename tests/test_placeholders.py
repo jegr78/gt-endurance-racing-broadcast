@@ -29,6 +29,68 @@ def t_bundled_media_clip_is_a_small_mp4():
     assert os.path.getsize(MP4) < 2 * 1024 * 1024, "clip unexpectedly large (>2 MB)"
 
 
+import sys, tempfile
+
+sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
+import placeholders as ph  # noqa: E402
+
+
+def t_expected_graphics_extracts_sorted_unique():
+    text = ('{"a":"__RACECAST_GRAPHICS__/Weather Sunny.png",'
+            '"b":"__RACECAST_GRAPHICS__/Overlay.png",'
+            '"c":"__RACECAST_GRAPHICS__/Overlay.png",'
+            '"d":"__RACECAST_MEDIA__/intro.mp4"}')
+    assert ph.expected_graphics_from_template(text) == ["Overlay.png", "Weather Sunny.png"]
+
+
+def t_expected_graphics_empty_when_no_refs():
+    assert ph.expected_graphics_from_template('{"x":"y"}') == []
+
+
+def t_find_obs_template_prefers_template_then_json():
+    with tempfile.TemporaryDirectory() as tmp:
+        assert ph.find_obs_template(tmp) is None
+        open(os.path.join(tmp, "GT_Endurance.json"), "w").close()
+        assert ph.find_obs_template(tmp).endswith("GT_Endurance.json")
+        open(os.path.join(tmp, "GT_Endurance.template.json"), "w").close()
+        assert ph.find_obs_template(tmp).endswith("GT_Endurance.template.json")
+
+
+def t_placeholder_paths_resolve_to_bundled_files():
+    assert ph.graphic_placeholder_path() == PNG
+    assert ph.media_placeholder_path() == MP4
+
+
+def t_fill_missing_writes_only_absent_byte_identical():
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(PNG, "rb") as fh:
+            src_bytes = fh.read()
+        # one already present -> must not be touched / re-listed
+        with open(os.path.join(tmp, "Overlay.png"), "wb") as fh:
+            fh.write(b"REAL")
+        written = ph.fill_missing(["Overlay.png", "Weather Sunny.png"], tmp, PNG)
+        assert written == ["Weather Sunny.png"]
+        with open(os.path.join(tmp, "Overlay.png"), "rb") as fh:
+            assert fh.read() == b"REAL"          # untouched
+        with open(os.path.join(tmp, "Weather Sunny.png"), "rb") as fh:
+            assert fh.read() == src_bytes        # byte-identical to the bundle
+        assert not any(n.endswith(".part") for n in os.listdir(tmp))  # atomic, no temp left
+
+
+def t_fill_missing_is_idempotent_and_creates_dir():
+    with tempfile.TemporaryDirectory() as tmp:
+        target = os.path.join(tmp, "gfx")        # does not exist yet
+        first = ph.fill_missing(["A.png"], target, PNG)
+        assert first == ["A.png"] and os.path.isfile(os.path.join(target, "A.png"))
+        assert ph.fill_missing(["A.png"], target, PNG) == []   # second run: nothing
+
+
+def t_fill_missing_tolerates_absent_source():
+    with tempfile.TemporaryDirectory() as tmp:
+        assert ph.fill_missing(["A.png"], tmp, None) == []
+        assert ph.fill_missing(["A.png"], tmp, os.path.join(tmp, "nope.png")) == []
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
