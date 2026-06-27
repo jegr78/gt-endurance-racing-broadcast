@@ -6,7 +6,7 @@ Works from the repo (src/) or the distributed package — same ./obs ./assets la
 
 Usage: python3 setup-assets.py [--out PATH] [--assets DIR] [--template FILE]
 """
-import argparse, json, os, re, sys
+import argparse, json, os, sys
 
 # Load the sibling decision helper (scripts/ sits next to this script in both
 # the repo and the package). setup-assets stays config.py-free, but discord_web
@@ -14,6 +14,7 @@ import argparse, json, os, re, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
 import discord_web  # noqa: E402
 import overlay_build  # noqa: E402  (pure stdlib helper — no heavy resolver pulled in)
+import placeholders  # noqa: E402  (pure stdlib helper — fills missing assets)
 
 POV_SOURCE_NAME = overlay_build.OVERLAY_SLOT_OBS_SOURCES["pov"]
 
@@ -235,20 +236,21 @@ def main():
         mapping[SHEET_TOKEN] = a.sheet_id
     if MEDIA_TOKEN in raw:
         mapping[MEDIA_TOKEN] = a.media
-        missing = [f for f in ("intro.mp4", "outro.mp4")
-                   if not os.path.isfile(os.path.join(a.media, f))]
-        if missing:
-            print(f"  WARNING: Intro/Outro clip(s) missing in {a.media}: "
-                  f"{', '.join(missing)} — run get-media.py (OBS will show black "
-                  "until then).")
+        filled = placeholders.fill_missing(
+            ["intro.mp4", "outro.mp4"], a.media, placeholders.media_placeholder_path())
+        if filled:
+            print(f"  NOTE: wrote neutral placeholder clip for missing "
+                  f"{', '.join(filled)} in {a.media} (no real Intro/Outro configured "
+                  "— run get-media.py to replace).")
     if GRAPHICS_TOKEN in raw:
         mapping[GRAPHICS_TOKEN] = a.graphics
-        refs = sorted(set(re.findall(r"__RACECAST_GRAPHICS__/([^\"\\]+\.png)", raw)))
-        missing = [f for f in refs if not os.path.isfile(os.path.join(a.graphics, f))]
-        if missing:
-            print(f"  WARNING: graphic(s) missing in {a.graphics}: "
-                  f"{', '.join(missing)} — run get-graphics.py (OBS shows black "
-                  "until then).")
+        refs = placeholders.expected_graphics_from_template(raw)
+        filled = placeholders.fill_missing(
+            refs, a.graphics, placeholders.graphic_placeholder_path())
+        if filled:
+            print(f"  NOTE: wrote transparent placeholder for missing graphic(s) in "
+                  f"{a.graphics}: {', '.join(filled)} (no real asset configured — "
+                  "run get-graphics.py to replace).")
 
     localized = replace_tokens(collection, mapping)
     web = discord_web.use_web(sys.platform, os.environ)

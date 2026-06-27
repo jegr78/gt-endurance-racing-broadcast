@@ -25,6 +25,7 @@ for _cand in (os.path.join(_HERE, "..", "scripts"),
     if os.path.isdir(_cand) and _cand not in sys.path:
         sys.path.insert(0, _cand)
 from services import external_tool_env  # de-PyInstaller the env for the yt-dlp spawn
+import placeholders  # noqa: E402  (pure stdlib helper — fills a missing clip)
 
 
 # Single muxed MP4 with audio, capped at 1080p (falls back to best available).
@@ -95,6 +96,14 @@ def media_dir(here):
     if os.path.basename(here) == "relay" and os.path.basename(os.path.dirname(here)) == "src":
         return os.path.join(os.path.dirname(os.path.dirname(here)), "runtime", "media")
     return os.path.join(os.path.dirname(here), "media")
+
+
+def seed_missing_media(out_dir, which):
+    """Drop the neutral placeholder clip for any of intro.mp4/outro.mp4 named in
+    `which` (a set of 'intro'/'outro') still missing in out_dir. Best-effort;
+    returns the sorted names written."""
+    names = [f"{k}.mp4" for k in sorted(which)]
+    return placeholders.fill_missing(names, out_dir, placeholders.media_placeholder_path())
 
 
 def resolve_urls(which, cli, env, csv_text):
@@ -220,6 +229,11 @@ def main():
         except Exception as e:
             print(f"WARNING: download failed for {key}: {e}")
             failed.append(key)
+
+    seeded = seed_missing_media(a.out, which)
+    if seeded:
+        print(f"Wrote neutral placeholder clip for {len(seeded)} missing: "
+              f"{', '.join(seeded)}")
 
     if failed:
         sys.exit(f"Incomplete: {', '.join(sorted(failed))} not downloaded.")

@@ -3,12 +3,21 @@
 Produces dist/GT_Racecast_Package/ + dist/GT_Racecast_Package.zip.
 Usage: python3 tools/build.py
 """
-import json, os, re, shutil, subprocess, sys, zipfile
+import filecmp, json, os, re, shutil, subprocess, sys, zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src")
 DIST = os.path.join(ROOT, "dist")
 PKG = os.path.join(DIST, "GT_Racecast_Package")
+
+sys.path.insert(0, os.path.join(SRC, "scripts"))
+import placeholders  # noqa: E402  (pure stdlib helper; seeds neutral package placeholders)
+
+
+def _is_placeholder(path, ph_path):
+    """True iff `path` exists and is byte-identical to the bundled placeholder
+    `ph_path` (so a placeholder is detected no matter which script wrote it)."""
+    return bool(ph_path) and os.path.isfile(path) and filecmp.cmp(path, ph_path, shallow=False)
 
 
 # The SHEET_PUSH_URL (an Apps Script webhook) is the one league secret most
@@ -150,6 +159,14 @@ def main():
 
     with open(os.path.join(PKG, "obs", "GT_Endurance.template.json"), encoding="utf-8") as fh:
         tpl = fh.read()
+    # Seed neutral placeholders for any clip/graphic not fetched above, so the
+    # shipped artifact is never broken even before a producer downloads real
+    # assets. fill_missing only writes the ones still absent (real downloads win).
+    placeholders.fill_missing(
+        ["intro.mp4", "outro.mp4"], media_dst, placeholders.media_placeholder_path())
+    placeholders.fill_missing(
+        placeholders.expected_graphics_from_template(tpl), graphics_dst,
+        placeholders.graphic_placeholder_path())
     with open(os.path.join(PKG, "relay", "racecast-feeds.py"), encoding="utf-8") as fh:
         relay = fh.read()
     # Re-read the SHIPPED companion config from disk (not the in-memory cfg) so the
@@ -230,14 +247,24 @@ def main():
     print(f"ZIP   {zip_path}  ({os.path.getsize(zip_path)//1024} KB)")
     for k, v in checks.items():
         print(f"  [{'OK' if v else 'FAIL'}] {k}")
+    m_ph = placeholders.media_placeholder_path()
     for clip in ("intro.mp4", "outro.mp4"):
-        ok = os.path.isfile(os.path.join(PKG, "media", clip))
-        print(f"  [{'OK' if ok else 'warn'}] media {clip} "
-              f"{'present' if ok else 'MISSING (run get-media.py before release)'}")
-    for fn in sorted(set(re.findall(r"__RACECAST_GRAPHICS__/([^\"\\]+\.png)", tpl))):
-        ok = os.path.isfile(os.path.join(PKG, "graphics", fn))
-        print(f"  [{'OK' if ok else 'warn'}] graphic {fn} "
-              f"{'present' if ok else 'MISSING (run get-graphics.py before release)'}")
+        path = os.path.join(PKG, "media", clip)
+        if _is_placeholder(path, m_ph):
+            print(f"  [placeholder] media {clip} (neutral placeholder — real clip not bundled)")
+        elif os.path.isfile(path):
+            print(f"  [OK] media {clip} present")
+        else:
+            print(f"  [warn] media {clip} MISSING (run get-media.py before release)")
+    g_ph = placeholders.graphic_placeholder_path()
+    for fn in placeholders.expected_graphics_from_template(tpl):
+        path = os.path.join(PKG, "graphics", fn)
+        if _is_placeholder(path, g_ph):
+            print(f"  [placeholder] graphic {fn} (neutral placeholder — real asset not bundled)")
+        elif os.path.isfile(path):
+            print(f"  [OK] graphic {fn} present")
+        else:
+            print(f"  [warn] graphic {fn} MISSING (run get-graphics.py before release)")
     if bad:
         sys.exit("BUILD VERIFY FAILED: " + ", ".join(bad))
 
