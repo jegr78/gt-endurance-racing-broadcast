@@ -5111,6 +5111,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                       # (#193); empty -> the cockpit hides the form.
                                       "submit_enabled": submission_store is not None,
                                       "my_stints": cockpit_own_stints(rows, me),
+                                      # read-only redacted stint plan for the
+                                      # right-column card (no stream URLs).
+                                      "schedule": cockpit_schedule(rows, live_idx, me),
                                       "my_pending": my_pending})
                         return self._send(tally)
                     if p == ["cockpit", "program"]:
