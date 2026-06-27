@@ -291,7 +291,8 @@
            border-radius:6px;padding:0 5px;margin-left:6px}
   .bcompose { float: right; font: inherit; font-size: 11px; line-height: 1.4;
     padding: 2px 8px; border: 1px solid #3a4250; border-radius: 5px;
-    background: #1f2630; color: #cdd3da; cursor: pointer; }
+    background: #1f2630; color: #cdd3da; cursor: pointer;
+    pointer-events: auto; }  /* the #bchatBox summary sets pointer-events:none (no collapse) — re-enable it on the button so it stays clickable */
   .bcompose:hover { background: #2a323d; }
   .bcompose[hidden] { display: none; }
   .chatname{display:flex;align-items:center;gap:8px;margin-bottom:6px}
