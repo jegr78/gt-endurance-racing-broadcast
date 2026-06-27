@@ -4171,6 +4171,15 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            # Restrict where inline images may load from (#351 broadcast-chat
+            # emotes). Only `img-src` is set -- with no default-src the page's
+            # inline scripts/styles are untouched; `'self'` covers same-origin
+            # program stills + HUD flag/brand assets, the two CDNs cover YouTube
+            # and Twitch emotes. Defense in depth atop the builder host allowlist.
+            self.send_header(
+                "Content-Security-Policy",
+                "img-src 'self' data: https://static-cdn.jtvnw.net "
+                "https://yt3.ggpht.com https://yt4.ggpht.com")
             if cookie_token is not None and cookie_path:
                 # `Secure` only behind the HTTPS Funnel (X-Forwarded-Proto); browsers
                 # drop a Secure cookie over plain http, which would break the tailnet

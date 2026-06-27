@@ -285,6 +285,7 @@
   /* Broadcast chat (#294): read-only mirror, amber author + source badge. */
   #bchatLog .who{color:var(--amber)}
   #bchatLog .src{color:#667;font-size:10px;margin-left:4px}
+  #bchatLog .emote{height:1.25em;width:auto;vertical-align:-0.25em;margin:0 1px}
   #bchatLog .bempty{color:var(--muted);font-size:11px}
   .robadge{font-size:10px;font-weight:500;color:var(--muted);border:1px solid #2a2f3a;
            border-radius:6px;padding:0 5px;margin-left:6px}
@@ -1248,6 +1249,22 @@ function bchatSrcBadge(source){
   const s = String(source || "");
   return s.indexOf("twitch:") === 0 ? "TW:" + s.slice(7) : "YT:" + s.slice(-4);
 }
+function bchatBody(parent, msg){
+  // Render an image-emote message (#351): text nodes + <img> emotes, no innerHTML.
+  // Falls back to the flat text when no tokens are present or an emote fails to load.
+  const toks = Array.isArray(msg.tokens) ? msg.tokens : null;
+  if (!toks){ parent.appendChild(document.createTextNode(msg.text || "")); return; }
+  for (const tk of toks){
+    if (tk && tk.t === "emote" && typeof tk.url === "string"){
+      const img = document.createElement("img");
+      img.className = "emote"; img.src = tk.url; img.alt = tk.alt || ""; img.loading = "lazy";
+      img.onerror = () => img.replaceWith(document.createTextNode(tk.alt || ""));
+      parent.appendChild(img);
+    } else if (tk && tk.t === "text"){
+      parent.appendChild(document.createTextNode(tk.v || ""));
+    }
+  }
+}
 function bchatRender(messages){
   const el = $("#bchatLog");
   const stick = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
@@ -1264,7 +1281,7 @@ function bchatRender(messages){
     t.textContent = new Date(msg.ts * 1000).toLocaleTimeString();
     const who = document.createElement("span"); who.className = "who";
     who.textContent = (msg.user || "Viewer") + ":";
-    const body = document.createElement("span"); body.textContent = msg.text;  // textContent => no HTML injection
+    const body = document.createElement("span"); bchatBody(body, msg);  // text + <img> emotes, no innerHTML
     line.append(t, who, body);
     if (multi && msg.source){
       const s = document.createElement("span"); s.className = "src";

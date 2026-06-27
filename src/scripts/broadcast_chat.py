@@ -23,11 +23,36 @@ not broadcast-critical, so every parser degrades to "empty" rather than raising.
 import csv
 import io
 import re
+from urllib.parse import urlsplit
 
 MAX_MESSAGES = 500      # ring-buffer / display cap (oldest dropped)
 MAX_TEXT = 500          # per-message character cap
 MAX_NAME = 60           # author-name character cap (YT names run long)
+MAX_TOKENS = 80         # per-message token cap (#351); over it -> flat text only
 DEFAULT_NAME = "Viewer"  # fallback when no/blank author name is supplied
+
+# --- image-emote URL allowlist (#351) ---------------------------------------
+# Inline emote <img> sources are validated against these hosts BEFORE they reach
+# the front-end (defense in depth alongside the page CSP). The YouTube emote URL
+# comes from Google's payload, so it must be checked; the Twitch URL is built
+# from a validated id but is checked the same way. The check parses the URL and
+# compares the host component structurally -- never a substring of the raw URL
+# (which would match an attacker's `https://evil/yt3.ggpht.com/...`).
+_EMOTE_HOST_EXACT = ("static-cdn.jtvnw.net",)   # Twitch CDN
+_EMOTE_HOST_SUFFIX = (".ggpht.com",)            # YouTube emote CDN (yt3/yt4.…)
+
+
+def emote_url_ok(url):
+    """True iff `url` is an https URL whose host is an allowlisted emote CDN."""
+    if not isinstance(url, str):
+        return False
+    parts = urlsplit(url)
+    if parts.scheme != "https":
+        return False
+    host = (parts.hostname or "").lower()
+    if host in _EMOTE_HOST_EXACT:
+        return True
+    return any(host.endswith(sfx) for sfx in _EMOTE_HOST_SUFFIX)
 
 # Innertube WEB client used for the get_live_chat POST. The exact version is
 # refreshed from the page bootstrap; this is only the fallback.
@@ -56,18 +81,64 @@ def _is_num(value):
 
 
 def sanitize_message(raw, source=None):
-    """Coerce one raw message into {ts, user, text, source} or None if unusable.
+    """Coerce one raw message into {ts, user, text, source[, tokens]} or None.
     ts must be numeric; text must be non-empty after cleaning; user falls back to
     DEFAULT_NAME. `source` tags which live stream the message came from (the
-    videoId) so a handover overlap can be shown/merged."""
+    videoId) so a handover overlap can be shown/merged. `tokens` (#351) is added
+    only when the message carries at least one valid image emote -- otherwise the
+    flat `text` is the whole display and no tokens are sent."""
     if not isinstance(raw, dict) or not _is_num(raw.get("ts")):
         return None
     text = _clean_text(raw.get("text")).strip()
     if not text:
         return None
     user = _clean_text(raw.get("user")).strip() or DEFAULT_NAME
-    return {"ts": float(raw["ts"]), "user": user[:MAX_NAME],
-            "text": text[:MAX_TEXT], "source": source}
+    msg = {"ts": float(raw["ts"]), "user": user[:MAX_NAME],
+           "text": text[:MAX_TEXT], "source": source}
+    tokens = sanitize_tokens(raw.get("tokens"))
+    if tokens is not None:
+        msg["tokens"] = tokens
+    return msg
+
+
+def _append_text(tokens, value):
+    """Append `value` as a text token, merging into a trailing text token."""
+    if not value:
+        return
+    if tokens and tokens[-1].get("t") == "text":
+        tokens[-1]["v"] += value
+    else:
+        tokens.append({"t": "text", "v": value})
+
+
+def sanitize_tokens(raw_tokens):
+    """A raw token list -> a cleaned [{t:text,v}|{t:emote,url,alt}] list, or None.
+
+    Returns None unless the list contains at least one valid emote token (a flat
+    `text` field then suffices). An emote whose URL fails `emote_url_ok` degrades
+    to a text token of its `alt`; text tokens are control-stripped and merged.
+    Over MAX_TOKENS tokens -> None (the absurd case falls back to flat text)."""
+    if not isinstance(raw_tokens, list):
+        return None
+    out = []
+    has_emote = False
+    for tok in raw_tokens:
+        if not isinstance(tok, dict):
+            continue
+        kind = tok.get("t")
+        if kind == "emote":
+            url = tok.get("url")
+            alt = _clean_text(tok.get("alt")).strip()[:MAX_NAME]
+            if isinstance(url, str) and emote_url_ok(url):
+                out.append({"t": "emote", "url": url, "alt": alt})
+                has_emote = True
+            else:
+                _append_text(out, alt)
+        elif kind == "text":
+            _append_text(out, _clean_text(tok.get("v")))
+    if not has_emote or len(out) > MAX_TOKENS:
+        return None
+    return out
 
 
 # --- Innertube message rendering -------------------------------------------
@@ -118,6 +189,62 @@ def _emoji_to_text(emoji):
     return ""
 
 
+def _emoji_image_url(emoji):
+    """The largest thumbnail URL of a YouTube emoji run, or "" if absent.
+    YouTube lists thumbnails smallest-first, so the last entry is the largest."""
+    image = emoji.get("image")
+    thumbs = image.get("thumbnails") if isinstance(image, dict) else None
+    if isinstance(thumbs, list) and thumbs and isinstance(thumbs[-1], dict):
+        url = thumbs[-1].get("url")
+        if isinstance(url, str) and url:
+            return url
+    return ""
+
+
+def _emoji_to_token(emoji):
+    """One YouTube emoji run -> a single token.
+
+    A STANDARD emoji is its Unicode glyph (a text token, matching #345). A CUSTOM
+    channel emote becomes an `emote` token from its image thumbnail when one
+    exists; without an image it degrades to a `:shortcut:` text token. The URL is
+    validated later (sanitize_tokens), so the host allowlist lives in one place."""
+    emoji_id = emoji.get("emojiId")
+    if (not emoji.get("isCustomEmoji")
+            and isinstance(emoji_id, str)
+            and any(ord(ch) > 0x7F for ch in emoji_id)):
+        return {"t": "text", "v": emoji_id}
+    url = _emoji_image_url(emoji)
+    if url:
+        return {"t": "emote", "url": url, "alt": _emoji_to_text(emoji)}
+    return {"t": "text", "v": _emoji_to_text(emoji)}
+
+
+def runs_to_tokens(message):
+    """A YouTube chat `message` -> a token list [{t:text,v}|{t:emote,url,alt}],
+    or None when the message has no image emote (the flat text is the whole
+    display). Mirrors `runs_to_text` but preserves custom-emote image URLs."""
+    if not isinstance(message, dict):
+        return None
+    runs = message.get("runs")
+    if not isinstance(runs, list):
+        return None        # simpleText / unexpected -> flat text suffices
+    tokens = []
+    has_emote = False
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        if isinstance(run.get("text"), str):
+            _append_text(tokens, run["text"])
+        elif isinstance(run.get("emoji"), dict):
+            tok = _emoji_to_token(run["emoji"])
+            if tok["t"] == "emote":
+                has_emote = True
+                tokens.append(tok)
+            else:
+                _append_text(tokens, tok["v"])
+    return tokens if has_emote else None
+
+
 _CHAT_RENDERERS = ("liveChatTextMessageRenderer", "liveChatPaidMessageRenderer")
 
 
@@ -141,13 +268,19 @@ def parse_chat_action(action):
             break
     else:
         return None
-    text = runs_to_text(renderer.get("message") or {})
+    message = renderer.get("message") or {}
+    text = runs_to_text(message)
+    tokens = runs_to_tokens(message)
     if paid:
         amount = ""
         amt = renderer.get("purchaseAmountText")
         if isinstance(amt, dict):
             amount = amt.get("simpleText") or ""
-        text = (f"[{amount}] {text}".strip() if amount else text).strip()
+        if amount:
+            text = f"[{amount}] {text}".strip()
+            if tokens is not None:
+                tokens = [{"t": "text", "v": f"[{amount}] "}] + tokens
+        text = text.strip()
     if not text:
         return None
     author = renderer.get("authorName")
@@ -158,7 +291,10 @@ def parse_chat_action(action):
         ts = int(usec) / 1_000_000
     except (TypeError, ValueError):
         ts = None
-    return {"id": renderer.get("id"), "user": user, "text": text, "ts": ts}
+    out = {"id": renderer.get("id"), "user": user, "text": text, "ts": ts}
+    if tokens is not None:
+        out["tokens"] = tokens
+    return out
 
 
 _CONTINUATION_KEYS = (
@@ -348,6 +484,59 @@ def parse_channel_tab(text):
 # the relay (like the YouTube network).
 
 _TWITCH_LOGIN_RE = re.compile(r"^[a-z0-9_]{1,25}$")
+# An emote id is interpolated into a CDN URL, so it is validated to Twitch's own
+# id charset (digits, or the `emotesv2_<hex>` form) -- never a `/` or space.
+_TWITCH_EMOTE_ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
+
+
+def twitch_emote_url(emote_id):
+    """A validated Twitch emote id -> its 1.0 dark-theme CDN URL (#351)."""
+    return (f"https://static-cdn.jtvnw.net/emoticons/v2/{emote_id}"
+            "/default/dark/1.0")
+
+
+def splice_twitch_emotes(text, emotes_tag):
+    """Twitch PRIVMSG text + its IRC `emotes` tag -> a token list, or None.
+
+    The tag is `<id>:<s>-<e>[,<s>-<e>][/<id>:…]` with INCLUSIVE **codepoint**
+    offsets into `text` (Python str indexing counts codepoints the same way). The
+    spans are spliced in order; the gaps become text tokens and each span an
+    `emote` token (alt = the matched word). A malformed/out-of-range span, an id
+    outside `[A-Za-z0-9_]`, or an overlap is skipped. Returns None when no emote
+    parsed, so the caller keeps the flat text."""
+    if not isinstance(text, str) or not isinstance(emotes_tag, str) or not emotes_tag:
+        return None
+    chars = list(text)
+    n = len(chars)
+    spans = []                       # (start, end_inclusive, id)
+    for group in emotes_tag.split("/"):
+        eid, sep, ranges = group.partition(":")
+        if not sep or not _TWITCH_EMOTE_ID_RE.match(eid):
+            continue
+        for rng in ranges.split(","):
+            a, dash, b = rng.partition("-")
+            if not dash:
+                continue
+            try:
+                start, end = int(a), int(b)
+            except ValueError:
+                continue
+            if 0 <= start <= end < n:
+                spans.append((start, end, eid))
+    if not spans:
+        return None
+    spans.sort()
+    tokens = []
+    cursor = 0
+    for start, end, eid in spans:
+        if start < cursor:           # overlapping/duplicate span -> skip
+            continue
+        _append_text(tokens, "".join(chars[cursor:start]))
+        tokens.append({"t": "emote", "url": twitch_emote_url(eid),
+                       "alt": "".join(chars[start:end + 1])})
+        cursor = end + 1
+    _append_text(tokens, "".join(chars[cursor:]))
+    return tokens
 
 
 def twitch_login(channel):
@@ -396,4 +585,8 @@ def parse_twitch_privmsg(line):
             ts = int(sent) / 1000.0
         except (TypeError, ValueError):
             ts = None
-    return {"id": tags.get("id") or None, "user": user, "text": text, "ts": ts}
+    out = {"id": tags.get("id") or None, "user": user, "text": text, "ts": ts}
+    tokens = splice_twitch_emotes(text, tags.get("emotes", ""))
+    if tokens is not None:
+        out["tokens"] = tokens
+    return out

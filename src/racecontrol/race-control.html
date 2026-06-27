@@ -86,6 +86,7 @@
   #bchatlog .msg { margin-bottom: 6px; overflow-wrap: anywhere; }
   #bchatlog .u { font-weight: 600; color: #f0a868; }
   #bchatlog .src { font-size: 10px; color: #8a929c; margin-left: 6px; }
+  #bchatlog .emote { height: 1.25em; width: auto; vertical-align: -0.25em; margin: 0 1px; }
   h2 .ro { font-size: 11px; font-weight: 500; color: #8a929c; border: 1px solid #2a3038;
            border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
   .chatbar { display: flex; gap: 6px; padding: 8px; border-top: 1px solid #232830; }
@@ -315,6 +316,22 @@ $('chatsend').addEventListener('click', sendChat);
 $('chatin').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
 
 // --- Broadcast chat (#294): read-only mirror of the public stream chat ---
+function bchatBody(row, msg) {
+  // Render an image-emote message (#351): text nodes + <img> emotes, no innerHTML.
+  // Falls back to the flat text when no tokens are present or an emote fails to load.
+  const toks = Array.isArray(msg.tokens) ? msg.tokens : null;
+  if (!toks) { row.appendChild(document.createTextNode(msg.text || '')); return; }
+  toks.forEach(tk => {
+    if (tk && tk.t === 'emote' && typeof tk.url === 'string') {
+      const img = document.createElement('img');
+      img.className = 'emote'; img.src = tk.url; img.alt = tk.alt || ''; img.loading = 'lazy';
+      img.onerror = () => img.replaceWith(document.createTextNode(tk.alt || ''));
+      row.appendChild(img);
+    } else if (tk && tk.t === 'text') {
+      row.appendChild(document.createTextNode(tk.v || ''));
+    }
+  });
+}
 async function pollBroadcastChat() {
   try {
     const d = await j('/broadcast-chat/data');
@@ -336,7 +353,7 @@ async function pollBroadcastChat() {
         const u = document.createElement('span');
         u.className = 'u'; u.textContent = (msg.user || 'Viewer') + ': ';
         row.appendChild(t); row.appendChild(u);
-        row.appendChild(document.createTextNode(msg.text || ''));   // XSS-safe
+        bchatBody(row, msg);   // text nodes + <img> emotes, XSS-safe
         if (multi && msg.source) {
           const s = document.createElement('span');
           s.className = 'src'; s.textContent = srcBadge(msg.source);
