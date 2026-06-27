@@ -79,67 +79,101 @@ acceptable **as long as the audio indicator is preserved**.
 
 ## Design
 
-### Principle: heavy decode stays server-side; only cheap stills leave
+### Principle: source each tile the cheapest way; heavy work stays server-side
+
+A feed tile is sourced from **OBS when OBS is already decoding that feed**, and only falls
+back to a decoupled low-res pull for the **off-air feed OBS cannot render**. This is the
+key cost reduction — see "Source per tile" below. In all cases the relay keeps a per-tile
+**latest still (+ level)** cache, refreshed ~1/s, and every director just polls the cache
+(so delivery cost is flat in the number of directors).
 
 ```
-                         (only while ≥1 director is viewing a feed tile)
- upstream (YT/Twitch) ──► ONE shared low-res (360p) pull per feed  ──┐
-   (≈1 Mbps/feed,                                                    │  (in-process)
-    flat vs. #directors)        ├─ JPEG snapshot ~1/s ─► latest-frame cache ─┐
-                                └─ ebur128 audio level (continuous) ─► level  │
-                                                                              ▼
- directors  ◄── cheap poll (~1 s): <img> still + small JSON levels ◄── relay cache
-   (≈0.2 Mbps/tile/director)
+ ON-AIR feed / active POV ─► OBS GetSourceScreenshot (~1/s, cached) ─┐
+   (OBS already decodes it; no pull, no audio meter — audible on air) │
+                                                                      ├─► per-tile
+ OFF-AIR feed ─► ONE decoupled low-res (360p) pull (only this feed)   │   latest-still
+   (OBS can't render it; loopback port held single-consumer)          │   (+ level)
+        ├─ JPEG snapshot ~1/s ─────────────────────────────────────────┤   cache
+        └─ ebur128 audio level (continuous) ───────────────────────────┘     │
+                                                                             ▼
+ directors ◄── cheap poll (~1 s): <img> still + small JSON levels ◄── relay cache
+   (≈0.2 Mbps/tile/director, flat vs. #directors)
 ```
 
-The continuous low-res pull and the audio analysis run **once per feed**, shared across
-all viewers. Directors only poll the cached latest frame + the current level — so
-delivery cost is tiny and multi-director-safe.
+In steady state only **one** decoupled pull runs (the single off-air feed); during the
+Splitscreen window **both** feeds are active in OBS → **no** pull at all. Each shared
+source (OBS screenshot or the off-air pull) is fetched once per ~1 s regardless of how
+many directors watch.
 
 ### Components
 
-1. **`PreviewPullManager`** (new, in the relay). One worker per **previewed** feed
-   (`A`, `B`, and `POV` when the PiP is active). Each worker:
-   - resolves + starts a single low-res (360p) decode of the feed (see "Source per
-     platform"),
-   - keeps the **latest JPEG frame** (sampled ~1/s) in memory,
-   - keeps the **current audio level** (continuous `ebur128`/`astats` parse) in memory,
-   - is **reference-counted**: started when the first director opens that feed tile,
+1. **Per-tile still cache** (new, in the relay). For each feed tile the relay holds the
+   **latest JPEG (+ level, ts)**, refreshed ~1/s from the source chosen by the pure
+   `preview_source` selector (extended — see "Source per tile"):
+   - **active source (on-air feed / active POV):** an **OBS `GetSourceScreenshot`** of
+     `Feed A|B|POV`, taken once per ~1 s and cached. No pull, no audio meter.
+   - **off-air feed:** served from the `PreviewPullManager` worker (below).
+   The OBS screenshot is also shared/cached (one screenshot per source per ~1 s regardless
+   of director count), so OBS load is bounded.
+
+2. **`PreviewPullManager`** (new, in the relay) — runs **only for the off-air feed**
+   (typically one at a time; none during the Splitscreen window). Its worker:
+   - resolves + starts a single low-res (360p) decode of that feed (see "Source per tile"),
+   - keeps the **latest JPEG frame** (sampled ~1/s) and the **current audio level**
+     (continuous `ebur128`/`astats` parse) in memory,
+   - is **reference-counted**: started when the first director opens that off-air tile,
      stopped after a short idle (no poll for ~N s) so the pull/decode/bot-check only run
-     while someone is actually watching.
+     while someone is actually watching,
    - manages its child process(es) like the feed workers do (no orphan ffmpeg; killed on
      stop), and is **best-effort**: any failure marks the tile "unavailable" and **never**
      affects the real feed.
+   When the off-air feed becomes active (a swap/`/next`), the selector flips it to the OBS
+   source and the now-redundant pull idles out.
 
-2. **Relay endpoints** (read-only; mirror the existing preview/cockpit auth model):
-   - `GET /preview/feed/{A|B|POV}` → latest cached JPEG (still), or `503` with a note when
-     unavailable. Polling this (with a cache-bust query) is what marks a viewer "active"
-     and keeps the worker alive.
-   - `GET /preview/levels` → small JSON `{ "A": {level, ts}, "B": {...}, "POV": {...} }`
-     with the current audio level per feed (0..1 or dBFS), polled ~1/s.
+3. **Relay endpoints** (read-only; mirror the existing preview/cockpit auth model):
+   - `GET /preview/feed/{A|B|POV}` → latest cached JPEG (still, from OBS or the off-air
+     pull as selected), or `503` with a note when unavailable. Polling this (with a
+     cache-bust query) marks a viewer "active" and keeps an off-air worker alive.
+   - `GET /preview/levels` → small JSON with the current audio level **for the off-air
+     feed** (the only one with a pull), e.g. `{ "B": {level, ts} }`; active feeds carry no
+     level (audible on air), polled ~1/s.
    - Funnel-reachable equivalents under the existing `/console` mount
      (`GET /console/preview/feed/{…}`, `GET /console/preview/levels`) — **no new public
      surface**; gated like the other `/console` endpoints.
    - The Program tile keeps using the existing `GET /preview/program` (OBS screenshot,
      ~1.5 s poll) unchanged.
-   - The current click-grab path (`/preview/feed/{X}` via `preview_source` →
-     `feed_grab_cmd`/OBS screenshot) is **replaced** by the cache-backed endpoint above;
-     `feed_grab_cmd` / the loopback-port grab is removed (it never worked off-air).
+   - The current click-grab path (`feed_grab_cmd` / the loopback-port grab) is **removed**
+     (it never worked off-air); the OBS-screenshot branch of today's `preview_source` is
+     reused for active tiles.
 
-3. **Frontend** (`src/director/director-panel.html`): the feed tiles become
+4. **Frontend** (`src/director/director-panel.html`): the feed tiles become
    **auto-polling still tiles** (default ~1 s) with:
-   - an **audio level bar** per tile, driven by `/preview/levels`,
+   - an **audio level bar** on the **off-air** tile (driven by `/preview/levels`); the
+     on-air tile shows an **"ON AIR"** marker instead of a meter (it is audible in the
+     program),
    - the existing on-air outline + program label,
-   - **per-tile play/pause** (pausing stops that tile's polling → its worker idles out),
-     fixing "can't dismiss a single tile".
-   - graceful "unavailable" state per tile (worker not running / source failed) without
-     red-erroring the whole section.
+   - **per-tile play/pause** (pausing stops that tile's polling → an off-air worker idles
+     out), fixing "can't dismiss a single tile",
+   - graceful "unavailable" state per tile (source failed) without red-erroring the whole
+     section.
 
-### Source per platform (the 360p second view, decoupled from OBS)
+### Source per tile (a pure selector, extending today's `preview_source`)
 
-The preview pull is **independent** of the feed's OBS loopback port (that is what fixes
-the off-air "Unavailable"); it selects a **low rendition at the source**, so we never
-download 1080p:
+`preview_source(target, live, pov_active, …)` already classifies a tile; it is extended to
+return one of:
+
+- **`obs`** — for the **on-air feed** (`target == live`) and the **active POV**: OBS is
+  decoding the source, so a cached `GetSourceScreenshot` of `Feed A|B|POV` is the still.
+  No pull, no audio level. *(This is the "get it from the normal feed, via OBS" path.)*
+- **`pull`** — for the **off-air feed**: OBS isn't decoding it **and** its loopback port is
+  held single-consumer by OBS, so the only way to see it is a decoupled low-res pull. This
+  is the tile the director most needs (the upcoming feed) and the only one that carries an
+  audio meter.
+- **`placeholder`** — feed off / POV inactive (unchanged).
+
+The decoupled **off-air pull** is **independent** of the loopback port (that is what fixes
+the "Unavailable") and selects a **low rendition at the source**, so we never download
+1080p:
 
 - **Twitch feed:** `streamlink <twitch-url> 360p` piped to `ffmpeg` → 360p directly from
   Twitch's named qualities. **No yt-dlp, no bot-check.**
@@ -147,8 +181,9 @@ download 1080p:
   --cookies …` returns YouTube's 360p rendition URL — then served via the **same
   streamlink context as the real feed** (browser User-Agent + cookies file, the #345
   fix) into `ffmpeg`. This is one extra, **isolated, best-effort** resolve (the one
-  bot-check), run only while the preview is open and shared across directors. A failure
-  shows "unavailable" on the tile and never touches the live feed.
+  bot-check) — run **only when the off-air feed is YouTube and being previewed**, shared
+  across directors. A failure shows "unavailable" on the tile and never touches the live
+  feed.
 
 `ffmpeg` produces both outputs from the single decode: a ~1 fps JPEG (`-vf fps=1`,
 scaled) for the latest-frame cache and an `ebur128` audio measurement (parsed from
@@ -157,10 +192,12 @@ sampled still + the level number are exposed.
 
 ### Multi-director behaviour (the safety contract)
 
-- **Download/CPU is flat:** one shared pull + decode per feed, never per director.
+- **Download/CPU is flat:** at most one decoupled pull (the off-air feed), shared across
+  all directors; active tiles reuse one cached OBS screenshot per source per ~1 s. Never
+  per director.
 - **Egress is bounded and tiny:** directors poll cached stills (~0.2 Mbps/tile each).
-- A modest hard cap on concurrent preview pulls (feeds × 1) and a per-tile idle-stop keep
-  resource use bounded; no per-director process is ever spawned.
+- A hard cap of one pull per feed plus a per-tile idle-stop keeps resource use bounded; no
+  per-director process is ever spawned.
 
 ### Security / Funnel
 
@@ -181,11 +218,13 @@ feed workers or the relay.
 Pure, stdlib, runnable-script tests (the repo convention), e.g. extend
 `tests/test_pov.py` / a new `tests/test_preview.py`:
 
-- argv builders for the Twitch and YouTube 360p pulls (pinned, like `feed_grab_cmd` is
-  today),
+- the extended pure `preview_source` selector (on-air/POV → `obs`, off-air → `pull`,
+  off/inactive → `placeholder`, and the flip when a swap makes the off-air feed active),
+- argv builders for the Twitch and YouTube 360p off-air pulls (pinned, like `feed_grab_cmd`
+  is today),
 - `ebur128`/`astats` stderr → level parser,
 - `PreviewPullManager` reference-count / idle-stop state machine (start on first viewer,
-  stop after idle, never spawn per-director),
+  stop after idle / after the feed goes on air, never spawn per-director),
 - endpoint routing + auth gating (`tests/test_racecast.py` / `tests/test_ui_server.py`
   style) including the `/console/preview/*` Funnel mount and the `503`/"unavailable"
   shape.
@@ -199,13 +238,15 @@ change (CLAUDE.md hard rule), via the `wiki-screenshots` skill.
 
 ## Risks
 
-- **YouTube low-res resolve = one extra bot-check** while preview is open (memory:
-  "YouTube feed 403 = streamlink context"). Mitigation: isolated/best-effort, cookie +
-  UA reuse via the proven streamlink path, shared across directors, resolved once and
-  reused until expiry, and a failure degrades to "unavailable" without touching the live
-  feed. Twitch has no such cost.
-- **Producer CPU:** one extra 360p decode per previewed feed while open. Bounded by the
-  feed count and the idle-stop; acceptable on a broadcast machine.
+- **YouTube low-res resolve = one extra bot-check** — only when the **off-air feed is
+  YouTube** and someone is previewing it (memory: "YouTube feed 403 = streamlink
+  context"). Mitigation: isolated/best-effort, cookie + UA reuse via the proven streamlink
+  path, shared across directors, resolved once and reused until expiry, and a failure
+  degrades to "unavailable" without touching the live feed. Twitch has no such cost; active
+  tiles use OBS screenshots and incur no resolve at all.
+- **Producer CPU:** at most one extra 360p decode (the off-air feed) while previewed, plus
+  cheap periodic OBS screenshots for active tiles. Bounded by the idle-stop; acceptable on
+  a broadcast machine.
 - **Latency:** stills are ~live (platform floor + segment latency); the user accepted that
   a 1 s still is enough for the swap decision.
 
