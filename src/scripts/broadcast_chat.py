@@ -75,9 +75,10 @@ def sanitize_message(raw, source=None):
 def runs_to_text(message):
     """A YouTube chat `message` object -> a flat display string.
 
-    Handles the `runs[]` form (text runs + emoji runs, where an emoji is shown
-    as its first shortcut like `:smile:`) and the `simpleText` form. Anything
-    unexpected yields ""."""
+    Handles the `runs[]` form (text runs + emoji runs) and the `simpleText`
+    form. A STANDARD emoji is rendered as its Unicode glyph (carried in
+    `emojiId`); a CUSTOM channel emote (no Unicode equivalent) falls back to its
+    first shortcut like `:pog:`. Anything unexpected yields ""."""
     if not isinstance(message, dict):
         return ""
     if isinstance(message.get("simpleText"), str):
@@ -92,13 +93,29 @@ def runs_to_text(message):
         if isinstance(run.get("text"), str):
             parts.append(run["text"])
         elif isinstance(run.get("emoji"), dict):
-            emoji = run["emoji"]
-            shortcuts = emoji.get("shortcuts")
-            if isinstance(shortcuts, list) and shortcuts:
-                parts.append(str(shortcuts[0]))
-            elif isinstance(emoji.get("emojiId"), str):
-                parts.append(emoji["emojiId"])
+            parts.append(_emoji_to_text(run["emoji"]))
     return "".join(parts)
+
+
+def _emoji_to_text(emoji):
+    """One YouTube emoji run -> its display string.
+
+    Prefers the Unicode glyph from `emojiId` for a standard emoji (not
+    `isCustomEmoji`, and the id is an actual glyph i.e. contains a non-ASCII
+    character). Otherwise falls back to the first `:shortcut:`, then to a bare
+    `emojiId` string. The non-ASCII guard keeps a custom emote's internal id
+    (e.g. `UCabc/def`) from leaking through as text."""
+    emoji_id = emoji.get("emojiId")
+    if (not emoji.get("isCustomEmoji")
+            and isinstance(emoji_id, str)
+            and any(ord(ch) > 0x7F for ch in emoji_id)):
+        return emoji_id
+    shortcuts = emoji.get("shortcuts")
+    if isinstance(shortcuts, list) and shortcuts:
+        return str(shortcuts[0])
+    if isinstance(emoji_id, str):
+        return emoji_id
+    return ""
 
 
 _CHAT_RENDERERS = ("liveChatTextMessageRenderer", "liveChatPaidMessageRenderer")
