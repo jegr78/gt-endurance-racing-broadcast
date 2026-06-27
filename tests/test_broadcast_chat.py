@@ -735,6 +735,51 @@ def t_endpoint_returns_tokens():
         srv.shutdown()
 
 
+def t_store_target_default_none():
+    s = m.BroadcastChatStore()
+    assert s.data().get("target") is None
+
+
+def t_store_set_target_reflected_in_data():
+    s = m.BroadcastChatStore()
+    s.set_target({"platform": "youtube", "url": "https://x/live_chat?v=vid1"})
+    assert s.data()["target"]["platform"] == "youtube"
+
+
+def t_store_reset_clears_target():
+    s = m.BroadcastChatStore()
+    s.set_target({"platform": "twitch", "url": "https://x/popout/y/chat"})
+    s.reset()
+    assert s.data()["target"] is None
+
+
+def t_bc_endpoint_includes_target():
+    s = m.BroadcastChatStore()
+    s.set_target({"platform": "twitch", "url": "https://www.twitch.tv/popout/x/chat"})
+    srv, get = _bc_client(s)
+    try:
+        code, body = get("/broadcast-chat/data")
+        assert code == 200
+        assert body["target"]["platform"] == "twitch"
+    finally:
+        srv.shutdown()
+
+
+def t_supervisor_sets_primary_target():
+    class _StubReader:
+        ended = False
+        def start(self): return self
+        def alive(self): return True
+        def stop(self): pass
+    s = m.BroadcastChatStore()
+    sup = m.BroadcastChatSupervisor(s, None, None)
+    sup.channel_source = type("C", (), {"refresh": lambda self: True})()
+    sup._desired = lambda: {"vidAAAAAAAA": (lambda: _StubReader()),
+                            "twitch:foo": (lambda: _StubReader())}
+    sup._cycle()
+    assert s.data()["target"]["platform"] == "youtube"   # YouTube key is first
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):

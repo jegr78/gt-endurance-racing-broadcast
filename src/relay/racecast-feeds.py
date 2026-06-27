@@ -1583,6 +1583,7 @@ class BroadcastChatStore:
         self.messages = []          # [{ts, user, text, source}], ts-ordered
         self._seen = set()          # chat-item ids already stored
         self._seen_order = []       # FIFO of ids for bounded eviction
+        self._target = None         # {platform, url} compose popup target, or None
 
     def add_many(self, video_id, raw_msgs):
         """Sanitize + append new messages from one stream; dedup by id, re-sort
@@ -1611,15 +1612,20 @@ class BroadcastChatStore:
                 del self._seen_order[:overflow]
         return added
 
+    def set_target(self, target):
+        with self.lock:
+            self._target = target
+
     def data(self):
         with self.lock:
-            return {"messages": list(self.messages)}
+            return {"messages": list(self.messages), "target": self._target}
 
     def reset(self):
         with self.lock:
             self.messages = []
             self._seen.clear()
             self._seen_order.clear()
+            self._target = None
 
 
 class ChannelSource:
@@ -1867,6 +1873,8 @@ class BroadcastChatSupervisor:
     def _cycle(self):
         self.channel_source.refresh()
         desired = self._desired()
+        # Publish the primary compose-popup target (KISS: first live source).
+        self.store.set_target(broadcast_chat.primary_chat_target(list(desired)))
         # Stop readers that are no longer desired (stream gone / channel removed).
         for key in list(self._readers):
             if key not in desired:
