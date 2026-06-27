@@ -83,5 +83,5 @@ def fill_missing(expected_names, directory, src_path):
                 if os.path.exists(tmp):
                     os.remove(tmp)
             except OSError:
-                pass
+                pass  # temp file already gone or never created — ignore
     return sorted(written)

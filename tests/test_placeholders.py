@@ -91,6 +91,29 @@ def t_fill_missing_tolerates_absent_source():
         assert ph.fill_missing(["A.png"], tmp, os.path.join(tmp, "nope.png")) == []
 
 
+def t_setup_assets_fills_placeholders_for_missing():
+    import json, subprocess
+    with tempfile.TemporaryDirectory() as tmp:
+        tpl = os.path.join(tmp, "tpl.json")
+        with open(tpl, "w", encoding="utf-8") as fh:
+            json.dump({"name": "T", "sources": [
+                {"settings": {"file": "__RACECAST_GRAPHICS__/Weather Sunny.png"}},
+                {"settings": {"local_file": "__RACECAST_MEDIA__/intro.mp4"}},
+            ]}, fh)
+        gfx, med = os.path.join(tmp, "gfx"), os.path.join(tmp, "med")
+        out = os.path.join(tmp, "import.json")
+        r = subprocess.run(
+            [sys.executable, os.path.join(ROOT, "src", "setup-assets.py"),
+             "--template", tpl, "--assets", os.path.join(ROOT, "src", "assets"),
+             "--graphics", gfx, "--media", med, "--out", out, "--sheet-id", "x"],
+            capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert os.path.isfile(os.path.join(gfx, "Weather Sunny.png")), r.stdout
+        assert os.path.isfile(os.path.join(med, "intro.mp4")), r.stdout
+        assert os.path.isfile(os.path.join(med, "outro.mp4")), r.stdout
+        assert "placeholder" in r.stdout.lower(), r.stdout
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
