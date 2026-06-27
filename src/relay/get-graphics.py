@@ -14,6 +14,16 @@ import argparse, csv, io, os, re, sys
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
+# Pure stdlib placeholder helper from src/scripts (resolved both from source and
+# the frozen bundle, mirroring get-media.py). It is NOT config.py, so the relay's
+# dependency-light contract holds.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _cand in (os.path.join(_HERE, "..", "scripts"),
+              os.path.join(getattr(sys, "_MEIPASS", _HERE), "src", "scripts")):
+    if os.path.isdir(_cand) and _cand not in sys.path:
+        sys.path.insert(0, _cand)
+import placeholders  # noqa: E402
+
 
 def load_dotenv(start):
     """Load KEY=VALUE pairs from a .env at the script dir or the project root into
@@ -104,6 +114,29 @@ def graphics_dir(here):
     return os.path.join(os.path.dirname(here), "graphics")
 
 
+def obs_template_dir(here):
+    """Dir holding the bundled OBS collection template, a sibling of this script's
+    parent in every layout: repo src/relay -> src/obs ; package relay/ -> ../obs ;
+    frozen _MEIPASS/src/relay -> _MEIPASS/src/obs."""
+    return os.path.join(os.path.dirname(here), "obs")
+
+
+def seed_missing_graphics(out_dir, here):
+    """Drop the transparent placeholder for any OBS-collection-referenced graphic
+    still missing in out_dir — covers graphics a league never put in the Sheet
+    (e.g. weather overlays). Best-effort; returns the sorted names written."""
+    tpl = placeholders.find_obs_template(obs_template_dir(here))
+    if not tpl:
+        return []
+    try:
+        with open(tpl, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return []
+    refs = placeholders.expected_graphics_from_template(text)
+    return placeholders.fill_missing(refs, out_dir, placeholders.graphic_placeholder_path())
+
+
 def fetch_assets_csv(sheet_id, tab, timeout=15):
     """Fetch the Assets tab as CSV via the public gviz endpoint (no API key)."""
     url = (f"https://docs.google.com/spreadsheets/d/{sheet_id}"
@@ -179,6 +212,11 @@ def main():
         except Exception as e:
             print(f"WARNING: download failed for {label}: {e}")
             failed.append(label)
+
+    seeded = seed_missing_graphics(a.out, here)
+    if seeded:
+        print(f"Wrote transparent placeholder for {len(seeded)} graphic(s) still "
+              f"missing (no Sheet asset): {', '.join(seeded)}")
 
     if failed:
         sys.exit(f"Incomplete: {', '.join(sorted(failed))} not downloaded.")

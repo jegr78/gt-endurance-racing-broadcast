@@ -114,6 +114,34 @@ def t_setup_assets_fills_placeholders_for_missing():
         assert "placeholder" in r.stdout.lower(), r.stdout
 
 
+import importlib.util
+
+
+def _load_script(rel):
+    """Import a hyphen-named src script (e.g. relay/get-graphics.py) by path."""
+    name = os.path.basename(rel).replace("-", "_").replace(".py", "")
+    spec = importlib.util.spec_from_file_location(name, os.path.join(ROOT, "src", rel))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def t_get_graphics_seeds_from_real_template():
+    gg = _load_script("relay/get-graphics.py")
+    here = os.path.join(ROOT, "src", "relay")
+    with tempfile.TemporaryDirectory() as tmp:
+        seeded = gg.seed_missing_graphics(tmp, here)
+        assert seeded, "expected placeholders for collection-referenced graphics"
+        with open(PNG, "rb") as a, open(os.path.join(tmp, seeded[0]), "rb") as b:
+            assert a.read() == b.read()          # byte-identical to the bundle
+
+
+def t_get_graphics_obs_template_dir_is_sibling():
+    gg = _load_script("relay/get-graphics.py")
+    assert gg.obs_template_dir(os.path.join(ROOT, "src", "relay")) == \
+        os.path.join(ROOT, "src", "obs")
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
