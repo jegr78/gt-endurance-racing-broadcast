@@ -495,7 +495,16 @@ tagged by source — videoId or `twitch:<login>`) — **never persisted, no writ
 `GET /broadcast-chat/data` (tailnet/loopback) + `GET /console/broadcast-chat/data`
 (Funnel, **ANY-auth under the existing `/console` mount → no new public surface**), both
 read-only. The data is already public on the platform, so mirroring it leaks nothing; if the
-reader is disabled the endpoints 404 and the front-end card self-hides. **Backend
+reader is disabled the endpoints 404 and the front-end card self-hides. A read-only
+`target` (`{platform, url}`) field on `/broadcast-chat/data` (and the Funnel
+`/console/broadcast-chat/data`) carries the current primary live source so each console
+card can show a **"Write in chat ↗"** button that `window.open`s the native YouTube/Twitch
+popout chat — the crew posts under their **own browser account**; the relay adds **no write
+path** and stays read-only/ephemeral. The target is computed each supervisor cycle (pure
+`primary_chat_target` in `broadcast_chat.py`, from the already-resolved live set, KISS:
+first live source) and exposed via `BroadcastChatStore.set_target`; the front-end gates the
+button on a non-null `target` and validates the URL client-side (`bchatUrlOk`: https +
+platform host, mirroring `emote_url_ok`) before opening. **Backend
 choice (YouTube):** a native Innertube poller (no new dependency) over `chat-downloader`,
 because the product ships as a single binary and broadcast chat is a non-critical
 convenience panel that degrades gracefully (fragile vs. YouTube changes → empty, never

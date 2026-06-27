@@ -262,6 +262,50 @@ def t_api_url_includes_key():
     assert "key=AIzaX" in bc.get_live_chat_api_url("AIzaX")
 
 
+# --- compose targets (popup) ------------------------------------------------
+
+def t_youtube_video_id_valid():
+    assert bc.youtube_video_id("dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+
+
+def t_youtube_video_id_rejects_wrong_length():
+    assert bc.youtube_video_id("short") is None
+    assert bc.youtube_video_id("a" * 12) is None
+
+
+def t_youtube_video_id_rejects_illegal_chars_and_nonstr():
+    assert bc.youtube_video_id("abc/def?xss") is None
+    assert bc.youtube_video_id(None) is None
+
+
+def t_twitch_popout_chat_url():
+    assert bc.twitch_popout_chat_url("gtmaster") == \
+        "https://www.twitch.tv/popout/gtmaster/chat"
+
+
+def t_primary_chat_target_youtube_first():
+    t = bc.primary_chat_target(["dQw4w9WgXcQ", "twitch:gtmaster"])
+    assert t["platform"] == "youtube"
+    assert "v=dQw4w9WgXcQ" in t["url"]
+
+
+def t_primary_chat_target_twitch():
+    assert bc.primary_chat_target(["twitch:gtmaster"]) == {
+        "platform": "twitch",
+        "url": "https://www.twitch.tv/popout/gtmaster/chat"}
+
+
+def t_primary_chat_target_empty_is_none():
+    assert bc.primary_chat_target([]) is None
+    assert bc.primary_chat_target(None) is None
+
+
+def t_primary_chat_target_skips_invalid_then_picks_next():
+    # a malformed first key (not 11-char videoId, not twitch:) is skipped
+    t = bc.primary_chat_target(["bad/key", "twitch:gtmaster"])
+    assert t["platform"] == "twitch"
+
+
 # --- live_set_diff (producer handover) --------------------------------------
 
 def t_live_set_diff_start_and_stop():
@@ -689,6 +733,51 @@ def t_endpoint_returns_tokens():
         assert body["messages"][0]["tokens"][0]["alt"] == ":p:"
     finally:
         srv.shutdown()
+
+
+def t_store_target_default_none():
+    s = m.BroadcastChatStore()
+    assert s.data().get("target") is None
+
+
+def t_store_set_target_reflected_in_data():
+    s = m.BroadcastChatStore()
+    s.set_target({"platform": "youtube", "url": "https://x/live_chat?v=vid1"})
+    assert s.data()["target"]["platform"] == "youtube"
+
+
+def t_store_reset_clears_target():
+    s = m.BroadcastChatStore()
+    s.set_target({"platform": "twitch", "url": "https://x/popout/y/chat"})
+    s.reset()
+    assert s.data()["target"] is None
+
+
+def t_bc_endpoint_includes_target():
+    s = m.BroadcastChatStore()
+    s.set_target({"platform": "twitch", "url": "https://www.twitch.tv/popout/x/chat"})
+    srv, get = _bc_client(s)
+    try:
+        code, body = get("/broadcast-chat/data")
+        assert code == 200
+        assert body["target"]["platform"] == "twitch"
+    finally:
+        srv.shutdown()
+
+
+def t_supervisor_sets_primary_target():
+    class _StubReader:
+        ended = False
+        def start(self): return self
+        def alive(self): return True
+        def stop(self): pass
+    s = m.BroadcastChatStore()
+    sup = m.BroadcastChatSupervisor(s, None, None)
+    sup.channel_source = type("C", (), {"refresh": lambda self: True})()
+    sup._desired = lambda: {"vidAAAAAAAA": (lambda: _StubReader()),
+                            "twitch:foo": (lambda: _StubReader())}
+    sup._cycle()
+    assert s.data()["target"]["platform"] == "youtube"   # YouTube key is first
 
 
 if __name__ == "__main__":
