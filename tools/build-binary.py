@@ -95,6 +95,7 @@ def build_target(launcher, workdir, version_file, sep, entry, name, windowed):
            "--hidden-import", "speedtest",
            "--hidden-import", "install_apps", "--hidden-import", "obs_ws",
            "--hidden-import", "overlay_build",
+           "--hidden-import", "placeholders",
            "--hidden-import", "tailscale", "--hidden-import", "init_setup",
            "--hidden-import", "native_dialog",
            "--hidden-import", "backup_admin", "--hidden-import", "profile_io",

@@ -153,6 +153,14 @@ def t_get_media_seeds_placeholder_clip():
         assert gm.seed_missing_media(tmp, {"intro"}) == []
 
 
+def t_build_binary_freezes_placeholders():
+    with open(os.path.join(ROOT, "tools", "build-binary.py"), encoding="utf-8") as fh:
+        src = fh.read()
+    assert '"placeholders"' in src, \
+        "build-binary.py must --hidden-import placeholders (importlib-loaded scripts " \
+        "import it; PyInstaller's static scan cannot see that)"
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
