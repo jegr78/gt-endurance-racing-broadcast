@@ -223,6 +223,36 @@ def t_race_control_schedule_empty():
     assert m.race_control_schedule([], {}) == []
 
 
+def t_cockpit_schedule_flags_on_air_and_mine():
+    # me = "alpha-racing"; on-air feed is row 1 (Beta). Alpha's rows (0, 2) are
+    # "mine"; only row 1 is on_air.
+    sched = m.cockpit_schedule(_rows(), 1, "alpha-racing")
+    assert sched == [
+        {"stint": "S1", "streamer": "Alpha Racing", "on_air": False, "mine": True},
+        {"stint": "S2", "streamer": "Beta", "on_air": True, "mine": False},
+        {"stint": "S3", "streamer": "Alpha Racing", "on_air": False, "mine": True},
+        {"stint": "S4", "streamer": "Gamma", "on_air": False, "mine": False}], sched
+
+
+def t_cockpit_schedule_redacts_url():
+    # Reachable over the Funnel -> never a stream URL (the takeover redaction line).
+    sched = m.cockpit_schedule(_rows(), 0, "beta")
+    for row in sched:
+        assert "url" not in row, row
+    assert "u0" not in json.dumps(sched) and "http" not in json.dumps(sched).lower()
+
+
+def t_cockpit_schedule_live_idx_none():
+    # No feed on air yet -> no row is on_air; mine flags still resolve.
+    sched = m.cockpit_schedule(_rows(), None, "alpha-racing")
+    assert all(r["on_air"] is False for r in sched)
+    assert [r["mine"] for r in sched] == [True, False, True, False]
+
+
+def t_cockpit_schedule_empty():
+    assert m.cockpit_schedule([], 0, "anyone") == []
+
+
 def _seed_graphics(d):
     """Write a few dummy PNGs (+ one non-PNG) into dir d; return it."""
     for fn in ("Standings.png", "Schedule.png", "Race Results.png", "notes.txt"):
