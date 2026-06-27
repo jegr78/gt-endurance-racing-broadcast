@@ -161,6 +161,14 @@ def t_build_binary_freezes_placeholders():
         "import it; PyInstaller's static scan cannot see that)"
 
 
+def t_build_py_seeds_and_relabels_placeholders():
+    with open(os.path.join(ROOT, "tools", "build.py"), encoding="utf-8") as fh:
+        src = fh.read()
+    assert "import placeholders" in src
+    assert "placeholders.fill_missing(" in src
+    assert "[placeholder]" in src
+
+
 def t_fill_missing_skips_path_traversal_names():
     with tempfile.TemporaryDirectory() as tmp:
         written = ph.fill_missing(["../evil.png", "sub/x.png", "ok.png"], tmp, PNG)

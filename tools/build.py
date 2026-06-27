@@ -10,6 +10,9 @@ SRC = os.path.join(ROOT, "src")
 DIST = os.path.join(ROOT, "dist")
 PKG = os.path.join(DIST, "GT_Racecast_Package")
 
+sys.path.insert(0, os.path.join(SRC, "scripts"))
+import placeholders  # noqa: E402  (pure stdlib helper; seeds neutral package placeholders)
+
 
 # The SHEET_PUSH_URL (an Apps Script webhook) is the one league secret most
 # likely to leak into a committed artifact (e.g. the OBS json). The verify
@@ -150,6 +153,15 @@ def main():
 
     with open(os.path.join(PKG, "obs", "GT_Endurance.template.json"), encoding="utf-8") as fh:
         tpl = fh.read()
+    # Seed neutral placeholders for any clip/graphic not fetched above, so the
+    # shipped artifact is never broken even before a producer downloads real
+    # assets. fill_missing only writes the ones still absent (real downloads win)
+    # and returns the names it placeholdered — used to label the verify output.
+    seeded_media = placeholders.fill_missing(
+        ["intro.mp4", "outro.mp4"], media_dst, placeholders.media_placeholder_path())
+    seeded_graphics = placeholders.fill_missing(
+        placeholders.expected_graphics_from_template(tpl), graphics_dst,
+        placeholders.graphic_placeholder_path())
     with open(os.path.join(PKG, "relay", "racecast-feeds.py"), encoding="utf-8") as fh:
         relay = fh.read()
     # Re-read the SHIPPED companion config from disk (not the in-memory cfg) so the
@@ -231,13 +243,19 @@ def main():
     for k, v in checks.items():
         print(f"  [{'OK' if v else 'FAIL'}] {k}")
     for clip in ("intro.mp4", "outro.mp4"):
-        ok = os.path.isfile(os.path.join(PKG, "media", clip))
-        print(f"  [{'OK' if ok else 'warn'}] media {clip} "
-              f"{'present' if ok else 'MISSING (run get-media.py before release)'}")
-    for fn in sorted(set(re.findall(r"__RACECAST_GRAPHICS__/([^\"\\]+\.png)", tpl))):
-        ok = os.path.isfile(os.path.join(PKG, "graphics", fn))
-        print(f"  [{'OK' if ok else 'warn'}] graphic {fn} "
-              f"{'present' if ok else 'MISSING (run get-graphics.py before release)'}")
+        if clip in seeded_media:
+            print(f"  [placeholder] media {clip} (neutral placeholder — real clip not bundled)")
+        elif os.path.isfile(os.path.join(PKG, "media", clip)):
+            print(f"  [OK] media {clip} present")
+        else:
+            print(f"  [warn] media {clip} MISSING (run get-media.py before release)")
+    for fn in placeholders.expected_graphics_from_template(tpl):
+        if fn in seeded_graphics:
+            print(f"  [placeholder] graphic {fn} (neutral placeholder — real asset not bundled)")
+        elif os.path.isfile(os.path.join(PKG, "graphics", fn)):
+            print(f"  [OK] graphic {fn} present")
+        else:
+            print(f"  [warn] graphic {fn} MISSING (run get-graphics.py before release)")
     if bad:
         sys.exit("BUILD VERIFY FAILED: " + ", ".join(bad))
 
