@@ -12,7 +12,7 @@ under src/, never committed.
 Usage: python3 get-media.py [--which intro|outro|both] [--out DIR]
        [--sheet-id ID] [--assets-tab NAME] [--intro-url U] [--outro-url U]
 """
-import argparse, csv, io, os, subprocess, sys
+import argparse, csv, io, os, subprocess, sys, time
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
@@ -29,6 +29,14 @@ from services import external_tool_env  # de-PyInstaller the env for the yt-dlp 
 
 # Single muxed MP4 with audio, capped at 1080p (falls back to best available).
 YTDLP_FORMAT = "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b"
+
+# Transient-failure retry (#344). YouTube intermittently throws "HTTP Error 403:
+# Forbidden" on the media-data fetch (throttling / an expired signed format URL),
+# preferentially on the 2nd clip of a batch. A *fresh* yt-dlp invocation
+# re-extracts new signed URLs, which is what actually clears the 403, so we retry
+# the whole download a few times with a short backoff rather than skipping the clip.
+DOWNLOAD_ATTEMPTS = 3                 # total yt-dlp invocations before giving up
+RETRY_BACKOFF_SECONDS = (3, 8)        # sleep before retry 2, retry 3, then last value
 
 # Sheet label cell -> output key.
 MEDIA_LABELS = {"intro video": "intro", "outro video": "outro"}
@@ -122,15 +130,39 @@ def build_download_cmd(url, out_path, cookies=None):
     return cmd
 
 
+def run_download(cmd, *, attempts=DOWNLOAD_ATTEMPTS, backoff=RETRY_BACKOFF_SECONDS,
+                 runner=None, sleeper=time.sleep, timeout=600, env=None):
+    """Run the yt-dlp download `cmd`, retrying a transient failure (a non-zero
+    exit such as YouTube's intermittent 'HTTP Error 403' on the media data —
+    each fresh invocation re-extracts new signed format URLs, which is what
+    clears the 403). `FileNotFoundError` (yt-dlp not installed) and
+    `TimeoutExpired` are NOT retried (the latter would mean up to attempts×timeout
+    of stall). Returns the runner's result; re-raises the last error after the
+    final attempt. `runner`/`sleeper` are injectable for tests."""
+    runner = runner or subprocess.run
+    for i in range(attempts):
+        try:
+            return runner(cmd, check=True, timeout=timeout, env=env)
+        except subprocess.CalledProcessError:
+            if i + 1 >= attempts:
+                raise                       # final attempt: propagate the live error
+            delay = backoff[min(i, len(backoff) - 1)]
+            print(f"  transient download failure (attempt {i + 1}/{attempts}); "
+                  f"retrying in {delay}s")
+            sleeper(delay)
+    raise ValueError("attempts must be >= 1")   # only reachable if attempts <= 0
+
+
 def download(url, out_path, cookies=None):
     """Download `url` to `out_path` as a single muxed MP4 (audio included).
     Uses yt-cookies.txt if it exists (YouTube bot-check parity with the relay).
     The URL comes from the (multi-editor, semi-trusted) Sheet Assets tab, so it
-    must be a real http(s) URL — never a file:// path or a flag-like value."""
+    must be a real http(s) URL — never a file:// path or a flag-like value.
+    Retries a transient yt-dlp failure (e.g. an intermittent HTTP 403)."""
     if not (url.startswith("http://") or url.startswith("https://")):
         raise ValueError(f"refusing non-http(s) media URL: {url!r}")
     cmd = build_download_cmd(url, out_path, cookies)
-    subprocess.run(cmd, check=True, timeout=600, env=external_tool_env())
+    run_download(cmd, env=external_tool_env())
 
 
 def main():
