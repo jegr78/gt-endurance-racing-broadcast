@@ -117,6 +117,13 @@ LOG = logging.getLogger("racecast.relay")
 YTDLP_FORMAT = "b[height<=1080]/b"   # prefer <=1080p, auto-fall back to lower
 YTDLP_FORMAT_POV = "b[height<=720]/b"  # driver-POV is shown small (PiP) -> cap at 720p
 STREAMLINK_SERVE = ["--ringbuffer-size", "64M", "--hls-live-edge", "4"]
+# yt-dlp resolves the YouTube manifest with a browser UA; streamlink then re-fetches
+# that URL in a SEPARATE process. YouTube 403s the bare re-fetch of a protected live
+# manifest unless it carries the same browser UA (and, for unlisted/members streams,
+# the same cookies). This is the canonical streamlink+YouTube remedy and matches the
+# UA the Innertube poller already uses (_YT_CHAT_UA). (#345 — first-live-event 403.)
+STREAMLINK_YT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 # Twitch is served DIRECTLY by Streamlink's twitch plugin (no yt-dlp hop), so its
 # plugin options apply: low-latency prefetch + a tighter live edge. Ad filtering is
 # automatic in current Streamlink (the old --twitch-disable-ads is deprecated).
@@ -2106,11 +2113,17 @@ def ytdlp_resolve_cmd(url, cookies, fmt=YTDLP_FORMAT):
     return cmd
 
 
-def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None):
+def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None,
+                         cookies=None, user_agent=STREAMLINK_YT_UA):
     """Argv for serving a stream to one OBS client. YouTube gets a resolved HLS
     URL (generic plugin); Twitch gets the twitch.tv URL itself so the Twitch
     plugin handles resolution, automatic ad-filtering and low-latency. `--`
-    separates the positional URL/stream so neither can be parsed as a flag."""
+    separates the positional URL/stream so neither can be parsed as a flag.
+
+    For YouTube the resolved manifest is re-fetched by streamlink out-of-process,
+    so it must carry the same session context yt-dlp used on the resolve — a browser
+    User-Agent (always) and the cookies file (when present) — or YouTube 403s a
+    protected live manifest (#345). Twitch resolves in-process and gets neither."""
     base = ["streamlink", "--player-external-http", "--player-external-http-port", str(port)]
     if platform == "twitch":
         base += STREAMLINK_TWITCH
@@ -2118,6 +2131,10 @@ def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None):
             base += ["--twitch-api-header", f"Authorization=OAuth {twitch_token}"]
     else:
         base += STREAMLINK_SERVE
+        if user_agent:
+            base += ["--http-header", f"User-Agent={user_agent}"]
+        if cookies:
+            base += ["--http-cookies-file", cookies]
     return base + ["--", target, "best"]
 
 
@@ -3383,7 +3400,8 @@ class Feed:
                 token, target, serve_platform = None, hls, "youtube"
 
             self.log.info("serving stint %d (%s)", i + 1, serve_platform)
-            cmd = streamlink_serve_cmd(target, self.port, serve_platform, token)
+            cmd = streamlink_serve_cmd(target, self.port, serve_platform, token,
+                                       cookies=self.cookies)
             try:
                 self.proc = subprocess.Popen(
                     cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
