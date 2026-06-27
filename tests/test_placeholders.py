@@ -176,6 +176,22 @@ def t_fill_missing_skips_path_traversal_names():
         assert os.listdir(tmp) == ["ok.png"]   # nothing escaped, no subdir created
 
 
+def t_build_is_placeholder_detects_byte_identity():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "buildmod", os.path.join(ROOT, "tools", "build.py"))
+    bm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bm)
+    with tempfile.TemporaryDirectory() as tmp:
+        ph.fill_missing(["a.png"], tmp, PNG)          # tmp/a.png is byte-identical to the bundle
+        real = os.path.join(tmp, "real.png")
+        with open(real, "wb") as fh:
+            fh.write(b"REALPNGDATA")
+        assert bm._is_placeholder(os.path.join(tmp, "a.png"), PNG) is True
+        assert bm._is_placeholder(real, PNG) is False
+        assert bm._is_placeholder(os.path.join(tmp, "absent.png"), PNG) is False
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
