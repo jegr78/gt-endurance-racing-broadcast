@@ -424,6 +424,39 @@ def get_live_chat_api_url(api_key):
             f"?key={api_key}&prettyPrint=false")
 
 
+def youtube_video_id(value):
+    """A YouTube videoId validated to `[A-Za-z0-9_-]{11}`, else None.
+    SECURITY: the id is interpolated into the popout URL handed to the browser."""
+    return value if isinstance(value, str) and _YT_VIDEO_ID_RE.match(value) else None
+
+
+def twitch_popout_chat_url(login):
+    """A validated Twitch login -> its popout chat URL (carries a compose box for
+    a signed-in user). `login` is constrained by twitch_login()."""
+    return f"https://www.twitch.tv/popout/{login}/chat"
+
+
+def primary_chat_target(keys):
+    """The first compose target from an ordered list of supervisor reader keys
+    (a YouTube videoId, or "twitch:<login>"), as {"platform", "url"}, or None.
+
+    KISS: a broadcast stays on one channel/platform; during an A->B producer
+    handover two YouTube videoIds are briefly live and the FIRST is used. Pure;
+    mirrors the key convention of BroadcastChatSupervisor._desired()."""
+    for key in keys or []:
+        if not isinstance(key, str):
+            continue
+        if key.startswith("twitch:"):
+            login = twitch_login(key[len("twitch:"):])
+            if login:
+                return {"platform": "twitch", "url": twitch_popout_chat_url(login)}
+        else:
+            vid = youtube_video_id(key)
+            if vid:
+                return {"platform": "youtube", "url": live_chat_page_url(vid)}
+    return None
+
+
 # --- live-set diff (producer handover) --------------------------------------
 
 def live_set_diff(prev_ids, cur_ids):
@@ -484,6 +517,10 @@ def parse_channel_tab(text):
 # the relay (like the YouTube network).
 
 _TWITCH_LOGIN_RE = re.compile(r"^[a-z0-9_]{1,25}$")
+# A YouTube videoId is interpolated into the popout URL handed to the browser,
+# so it is validated to YouTube's own 11-char id charset (defense vs. URL
+# injection, mirroring _TWITCH_LOGIN_RE).
+_YT_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 # An emote id is interpolated into a CDN URL, so it is validated to Twitch's own
 # id charset (digits, or the `emotesv2_<hex>` form) -- never a `/` or space.
 _TWITCH_EMOTE_ID_RE = re.compile(r"^[A-Za-z0-9_]+$")

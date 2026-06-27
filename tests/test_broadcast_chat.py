@@ -262,6 +262,50 @@ def t_api_url_includes_key():
     assert "key=AIzaX" in bc.get_live_chat_api_url("AIzaX")
 
 
+# --- compose targets (popup) ------------------------------------------------
+
+def t_youtube_video_id_valid():
+    assert bc.youtube_video_id("dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+
+
+def t_youtube_video_id_rejects_wrong_length():
+    assert bc.youtube_video_id("short") is None
+    assert bc.youtube_video_id("a" * 12) is None
+
+
+def t_youtube_video_id_rejects_illegal_chars_and_nonstr():
+    assert bc.youtube_video_id("abc/def?xss") is None
+    assert bc.youtube_video_id(None) is None
+
+
+def t_twitch_popout_chat_url():
+    assert bc.twitch_popout_chat_url("gtmaster") == \
+        "https://www.twitch.tv/popout/gtmaster/chat"
+
+
+def t_primary_chat_target_youtube_first():
+    t = bc.primary_chat_target(["dQw4w9WgXcQ", "twitch:gtmaster"])
+    assert t["platform"] == "youtube"
+    assert "v=dQw4w9WgXcQ" in t["url"]
+
+
+def t_primary_chat_target_twitch():
+    assert bc.primary_chat_target(["twitch:gtmaster"]) == {
+        "platform": "twitch",
+        "url": "https://www.twitch.tv/popout/gtmaster/chat"}
+
+
+def t_primary_chat_target_empty_is_none():
+    assert bc.primary_chat_target([]) is None
+    assert bc.primary_chat_target(None) is None
+
+
+def t_primary_chat_target_skips_invalid_then_picks_next():
+    # a malformed first key (not 11-char videoId, not twitch:) is skipped
+    t = bc.primary_chat_target(["bad/key", "twitch:gtmaster"])
+    assert t["platform"] == "twitch"
+
+
 # --- live_set_diff (producer handover) --------------------------------------
 
 def t_live_set_diff_start_and_stop():
