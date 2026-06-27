@@ -392,6 +392,12 @@ def t_page_sets_cookie_and_serves_html():
             assert "rc_console=" in setc and "HttpOnly" in setc and "SameSite=Lax" in setc
             # plain-http (tailnet) request -> NO Secure, else the browser drops it
             assert "Secure" not in setc
+            # #351: an img-src CSP allowlists the broadcast-chat emote CDNs;
+            # only img-src is set so inline scripts/styles stay unaffected.
+            # (dotless fragments below dodge the URL-substring CodeQL heuristic)
+            csp = headers.get("Content-Security-Policy", "")
+            assert "img-src" in csp and "jtvnw" in csp
+            assert "ggpht" in csp and "default-src" not in csp
         finally:
             srv.shutdown()
 

@@ -393,6 +393,176 @@ def t_parse_twitch_privmsg_garbage():
     assert bc.parse_twitch_privmsg(None) is None
 
 
+# --- image emotes: emote_url_ok (#351) --------------------------------------
+
+def t_emote_url_ok_youtube_ggpht():
+    assert bc.emote_url_ok("https://yt3.ggpht.com/abc/def-s48-w48") is True
+
+
+def t_emote_url_ok_twitch_jtvnw():
+    assert bc.emote_url_ok(
+        "https://static-cdn.jtvnw.net/emoticons/v2/25/default/dark/1.0") is True
+
+
+def t_emote_url_ok_rejects_http():
+    assert bc.emote_url_ok("http://yt3.ggpht.com/abc") is False
+
+
+def t_emote_url_ok_rejects_foreign_host():
+    # A look-alike that merely contains an allowed host as a substring must fail.
+    assert bc.emote_url_ok("https://evil.example/yt3.ggpht.com/x") is False
+    assert bc.emote_url_ok("https://ggpht.com.evil.example/x") is False
+
+
+def t_emote_url_ok_rejects_non_string():
+    assert bc.emote_url_ok(None) is False
+    assert bc.emote_url_ok(123) is False
+
+
+# --- image emotes: runs_to_tokens (YouTube, #351) ---------------------------
+
+def t_runs_to_tokens_none_for_plain_text():
+    assert bc.runs_to_tokens({"runs": [{"text": "hello world"}]}) is None
+
+
+def t_runs_to_tokens_none_for_simpletext():
+    assert bc.runs_to_tokens({"simpleText": "plain"}) is None
+
+
+def t_runs_to_tokens_standard_emoji_stays_text():
+    # A standard emoji is a glyph (#345), not an image -> no tokens.
+    msg = {"runs": [{"text": "gg "},
+                    {"emoji": {"emojiId": "\U0001f605", "isCustomEmoji": False,
+                               "shortcuts": [":sweat:"]}}]}
+    assert bc.runs_to_tokens(msg) is None
+
+
+def t_runs_to_tokens_custom_emote_image():
+    msg = {"runs": [
+        {"text": "nice "},
+        {"emoji": {"emojiId": "UCabc/deadbeef", "isCustomEmoji": True,
+                   "shortcuts": [":_pog:"],
+                   "image": {"thumbnails": [
+                       {"url": "https://yt3.ggpht.com/s/24"},
+                       {"url": "https://yt3.ggpht.com/s/48"}]}}},
+        {"text": "!"}]}
+    toks = bc.runs_to_tokens(msg)
+    assert toks == [
+        {"t": "text", "v": "nice "},
+        {"t": "emote", "url": "https://yt3.ggpht.com/s/48", "alt": ":_pog:"},
+        {"t": "text", "v": "!"}]
+
+
+def t_runs_to_tokens_custom_emote_no_image_falls_back():
+    # No image thumbnail -> nothing to render as <img>, flat text suffices.
+    msg = {"runs": [{"emoji": {"emojiId": "UCabc/x", "isCustomEmoji": True,
+                               "shortcuts": [":_pog:"]}}]}
+    assert bc.runs_to_tokens(msg) is None
+
+
+def t_parse_chat_action_attaches_tokens_for_custom_emote():
+    action = {"addChatItemAction": {"item": {"liveChatTextMessageRenderer": {
+        "id": "e1", "authorName": {"simpleText": "Al"},
+        "message": {"runs": [
+            {"text": "go "},
+            {"emoji": {"emojiId": "UCx/y", "isCustomEmoji": True,
+                       "shortcuts": [":_go:"],
+                       "image": {"thumbnails": [{"url": "https://yt3.ggpht.com/g"}]}}}]},
+        "timestampUsec": "1700000000000000",
+    }}}}
+    msg = bc.parse_chat_action(action)
+    assert msg["text"] == "go :_go:"            # flat fallback unchanged
+    assert msg["tokens"][1] == {
+        "t": "emote", "url": "https://yt3.ggpht.com/g", "alt": ":_go:"}
+
+
+# --- image emotes: splice_twitch_emotes (#351) ------------------------------
+
+def t_splice_twitch_emotes_none_without_tag():
+    assert bc.splice_twitch_emotes("Kappa", "") is None
+    assert bc.splice_twitch_emotes("Kappa", None) is None
+
+
+def t_splice_twitch_emotes_single():
+    toks = bc.splice_twitch_emotes("Kappa", "25:0-4")
+    assert toks == [{"t": "emote",
+                     "url": "https://static-cdn.jtvnw.net/emoticons/v2/25/default/dark/1.0",
+                     "alt": "Kappa"}]
+
+
+def t_splice_twitch_emotes_text_around():
+    toks = bc.splice_twitch_emotes("lol Kappa yes", "25:4-8")
+    assert toks == [
+        {"t": "text", "v": "lol "},
+        {"t": "emote",
+         "url": "https://static-cdn.jtvnw.net/emoticons/v2/25/default/dark/1.0",
+         "alt": "Kappa"},
+        {"t": "text", "v": " yes"}]
+
+
+def t_splice_twitch_emotes_multiple_ranges_same_id():
+    toks = bc.splice_twitch_emotes("Kappa Kappa", "25:0-4,6-10")
+    assert [t["t"] for t in toks] == ["emote", "text", "emote"]
+    assert toks[1] == {"t": "text", "v": " "}
+
+
+def t_splice_twitch_emotes_rejects_bad_id():
+    # An id outside [A-Za-z0-9_] would corrupt the CDN URL -> span stays text.
+    assert bc.splice_twitch_emotes("Kappa", "ev.il:0-4") is None
+    assert bc.splice_twitch_emotes("Kappa", "a b:0-4") is None
+
+
+def t_splice_twitch_emotes_skips_out_of_range():
+    assert bc.splice_twitch_emotes("hi", "25:0-99") is None
+
+
+def t_parse_twitch_privmsg_attaches_emote_tokens():
+    line = ("@display-name=Bob;emotes=25:4-8 "
+            ":bob!bob@bob.tmi.twitch.tv PRIVMSG #chan :lol Kappa")
+    m = bc.parse_twitch_privmsg(line)
+    assert m["text"] == "lol Kappa"
+    assert m["tokens"] == [
+        {"t": "text", "v": "lol "},
+        {"t": "emote",
+         "url": "https://static-cdn.jtvnw.net/emoticons/v2/25/default/dark/1.0",
+         "alt": "Kappa"}]
+
+
+def t_parse_twitch_privmsg_no_emotes_no_tokens():
+    line = "@display-name=Bob;emotes= :bob!bob@bob.tmi.twitch.tv PRIVMSG #chan :hi"
+    assert "tokens" not in bc.parse_twitch_privmsg(line)
+
+
+# --- image emotes: sanitize_message carries/validates tokens (#351) ----------
+
+def _emote_tok(url, alt):
+    return {"t": "emote", "url": url, "alt": alt}
+
+
+def t_sanitize_message_carries_valid_tokens():
+    raw = {"id": "1", "user": "Bob", "text": "hi :p:", "ts": 10.0,
+           "tokens": [{"t": "text", "v": "hi "},
+                      _emote_tok("https://yt3.ggpht.com/x", ":p:")]}
+    out = bc.sanitize_message(raw, source="v")
+    assert out["tokens"] == [{"t": "text", "v": "hi "},
+                             {"t": "emote", "url": "https://yt3.ggpht.com/x", "alt": ":p:"}]
+
+
+def t_sanitize_message_drops_tokens_without_emote():
+    raw = {"id": "1", "user": "Bob", "text": "hi", "ts": 10.0,
+           "tokens": [{"t": "text", "v": "hi"}]}
+    assert "tokens" not in bc.sanitize_message(raw, source="v")
+
+
+def t_sanitize_message_degrades_blocked_host_to_text():
+    # An emote whose URL fails the host allowlist degrades to its alt text; with
+    # no surviving emote token the flat text suffices, so no tokens are attached.
+    raw = {"id": "1", "user": "Bob", "text": "hi :p:", "ts": 10.0,
+           "tokens": [{"t": "text", "v": "hi "},
+                      _emote_tok("https://evil.example/x", ":p:")]}
+    assert "tokens" not in bc.sanitize_message(raw, source="v")
+
+
 # --- relay BroadcastChatStore + endpoint -----------------------------------
 
 m = _load("irofeeds_bc", ("src", "relay", "racecast-feeds.py"))
@@ -493,6 +663,30 @@ def t_endpoint_404_when_disabled():
         code, body = get("/broadcast-chat/data")
         assert code == 404
         assert "error" in body
+    finally:
+        srv.shutdown()
+
+
+def t_store_carries_tokens_through_to_data():
+    s = m.BroadcastChatStore()
+    raw = {"id": "1", "user": "Bob", "text": "hi :p:", "ts": 10.0,
+           "tokens": [{"t": "text", "v": "hi "},
+                      {"t": "emote", "url": "https://yt3.ggpht.com/x", "alt": ":p:"}]}
+    s.add_many("v", [raw])
+    msg = s.data()["messages"][0]
+    assert msg["tokens"][1]["url"] == "https://yt3.ggpht.com/x"
+
+
+def t_endpoint_returns_tokens():
+    s = m.BroadcastChatStore()
+    s.add_many("v", [{"id": "1", "user": "Bob", "text": "hi :p:", "ts": 10.0,
+                      "tokens": [{"t": "emote", "url": "https://yt3.ggpht.com/x",
+                                  "alt": ":p:"}]}])
+    srv, get = _bc_client(s)
+    try:
+        code, body = get("/broadcast-chat/data")
+        assert code == 200
+        assert body["messages"][0]["tokens"][0]["alt"] == ":p:"
     finally:
         srv.shutdown()
 
