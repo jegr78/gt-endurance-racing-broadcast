@@ -9,12 +9,58 @@ most setup problems (tools, ports, cookies) before they bite you live.
 |---------|-----|
 | Feed says *"Sign in to confirm you're not a bot"* | Refresh cookies (`racecast cookies firefox`) and make sure **deno** is installed — the feeds need both. |
 | Cookie export from Chrome/Edge/Brave says FAILED | On **Windows** these browsers cannot be exported at all — their cookies are app-bound encrypted (Chrome 127+). Log into YouTube in **Firefox** and run `racecast cookies firefox` (works even while Firefox is running). On macOS/Linux: close the browser completely first — it locks its cookie database while running — then re-run. |
-| A feed just won't appear | Is the commentator actually live right now? Update the tools (`racecast install-tools --update`) and try again. |
+| A feed just won't appear | First: is the commentator actually live right now? If their stream is live but the feed stays *connecting* or its log shows `403 Forbidden`, see [Keep the broadcast up when a feed fails mid-event](#keep-the-broadcast-up-when-a-feed-fails-mid-event). **Do not** `racecast install-tools --update` during or just before an event — a tool version bump right before going live has 403'd a YouTube feed through a whole production; update only with ≥ 48 h to re-test. |
 | Nothing happens when you open a feed's address in a browser | That's normal — each feed serves only OBS, not browsers. Not a fault. |
 | A feed stays *connecting* and its log says *"Address already in use"* | A stale/orphaned process is holding that feed port. Run `racecast freeport` (or **Free feed ports** in the Control Center's Relay view) to clear ports 53001–53003, then start the relay. It refuses to touch a *running* relay/streams, so it's safe to run anytime. |
 | The handover didn't switch feeds | Press **Feeds Next** once **after** cutting to the new feed; the off-air feed only advances on Feeds Next, never mid-stint. |
 | POV PiP is black after **POV Toggle** | Shown too early — the pull wasn't ready yet. Open `http://<producer-tailscale-ip>:8088/status`: the `pov` block must say `serving` (`connecting` = still resolving, or the driver isn't live yet — the relay retries every 15 s on its own). Hide the PiP, wait for `serving`, toggle again. Full timing: [Director guide](Director#showing-a-driver-pov-plan-ahead). |
 | `racecast update` says binaries are still building | The release was just cut and CI is still uploading — retry in a few minutes. |
+
+## Keep the broadcast up when a feed fails mid-event
+
+The single most important rule: **never restart the whole relay to fix one feed.**
+Feed A (on air) and Feed B (preparing the next stint) are independent — a dead Feed B
+does not touch what is on air. You have time. A panic relay-restart took down the first
+live production that the failing feed alone would not have.
+
+**What you control is the producer side, not the streamer.** You usually cannot tell a
+commentator to switch platform or change their encoder, and a spare stream rarely
+exists — so those are not real contingencies. The realistic levers are all on your side:
+
+1. **Leave the on-air feed alone.** It keeps serving regardless of the other feed's state.
+2. **Give the stuck feed time.** The relay re-resolves and retries on its own (escalating
+   backoff). A transient YouTube hiccup often clears within a minute or two with no action.
+3. **Reload, don't restart.** Press **Feeds Reload** (panel) / hit `/reload`: it re-reads
+   the schedule and re-resolves the stuck feed *without* disturbing the on-air feed.
+   A whole-relay restart is almost never the right move.
+4. **Cut to Standby for dead air.** If a stint genuinely cannot be pulled, switch OBS to
+   your **Standby** scene instead of showing a frozen/black feed — that keeps the stream
+   alive and buys time. Hold the previous commentator longer if they are willing.
+5. **Last resort — relay really wedged.** Only if the relay *process* itself is
+   unresponsive: `racecast relay restart`. If it then reports **control port 8088 already
+   in use**, run `racecast freeport 8088`, then `racecast relay start`. (Free the feed
+   ports separately with `racecast freeport`.)
+
+> You cannot always rescue one specific feed in the moment — but you can always keep the
+> rest of the broadcast on air. Decide fast: rescue, or route around it.
+
+### A feed loads in testing but 403s live (YouTube)
+
+Symptom: the feed resolves, then the log shows `403 Client Error: Forbidden` on every
+attempt — on a stream that worked in your tests. This is a YouTube-side rejection, **not**
+a network or bandwidth problem (a Twitch feed on the same line is unaffected, because it
+never goes through yt-dlp).
+
+- **Do not update tools on event day.** A `yt-dlp` version change minutes before going
+  live is what turned a working YouTube path into a wall of 403s. Freeze your toolchain
+  and only run `racecast install-tools --update` with **≥ 48 h** to re-test afterwards.
+- **For a stream you control yourself** (e.g. your own backup re-stream from a second PC):
+  a **1080p60** source forces YouTube's `itag 301` live manifest, the most fragile
+  rendition. Set that encoder to **1080p30 or 720p** to avoid it. This lever only applies
+  to *your own* source — you cannot impose it on a guest commentator.
+- Confirm cookies are fresh (`racecast cookies firefox`); a stale jar fails YouTube
+  specifically. (The relay now hands streamlink the same User-Agent + cookies yt-dlp used,
+  which closes the most common cause of this 403 — but the freeze rule above still stands.)
 
 ## The HUD / overlay is blank or stale
 

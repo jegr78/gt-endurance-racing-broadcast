@@ -26,6 +26,40 @@ def t_serve_cmd_youtube():
     assert "--" in cmd and cmd.index("--") < cmd.index("https://hls.example/x.m3u8")
 
 
+def t_serve_cmd_youtube_browser_ua():
+    # streamlink re-fetches the yt-dlp-resolved manifest in a SEPARATE process; it must
+    # carry a browser User-Agent or YouTube 403s the bare re-fetch of a protected live
+    # manifest (the #345 first-live-event failure — yt-dlp resolved itag 301 fine, then
+    # streamlink got 403). yt-dlp sends a browser UA on the resolve; streamlink must too.
+    cmd = feeds.streamlink_serve_cmd("https://hls.example/x.m3u8", 53001)
+    i = cmd.index("--http-header")
+    assert cmd[i + 1].startswith("User-Agent=")
+    assert "Mozilla/" in cmd[i + 1]
+    assert i < cmd.index("--")                          # header is an option, before the URL
+
+
+def t_serve_cmd_youtube_cookies():
+    # the same cookies yt-dlp authenticated the resolve with must be handed to
+    # streamlink's fetch (unlisted/members streams bind the manifest to the session).
+    cmd = feeds.streamlink_serve_cmd("https://hls.example/x.m3u8", 53001,
+                                     cookies="/tmp/yt-cookies.txt")
+    i = cmd.index("--http-cookies-file")
+    assert cmd[i + 1] == "/tmp/yt-cookies.txt"
+    assert i < cmd.index("--")                          # option before the URL
+    # absent when there is no cookies file (public stream, no auth)
+    cmd2 = feeds.streamlink_serve_cmd("https://hls.example/x.m3u8", 53001)
+    assert "--http-cookies-file" not in cmd2
+
+
+def t_serve_cmd_twitch_no_youtube_context():
+    # the Twitch plugin resolves and fetches in-process; it must NOT inherit the
+    # YouTube browser-UA override or the yt cookies file.
+    cmd = feeds.streamlink_serve_cmd("https://www.twitch.tv/chan", 53002,
+                                     platform="twitch", cookies="/tmp/yt-cookies.txt")
+    assert "--http-cookies-file" not in cmd
+    assert "--http-header" not in cmd
+
+
 def t_serve_cmd_twitch():
     cmd = feeds.streamlink_serve_cmd("https://www.twitch.tv/chan", 53002, platform="twitch")
     assert "--twitch-low-latency" in cmd
@@ -157,7 +191,7 @@ def t_failure_hint_default_platform_is_youtube():
 
 
 if __name__ == "__main__":
-    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); t_ssai_markers(); t_cookies_for(); t_migrate_legacy(); t_twitch_oauth(); t_cookie_target()
+    t_platform_of(); t_serve_cmd_youtube(); t_serve_cmd_youtube_browser_ua(); t_serve_cmd_youtube_cookies(); t_serve_cmd_twitch_no_youtube_context(); t_serve_cmd_twitch(); t_serve_cmd_twitch_token(); t_ssai_markers(); t_cookies_for(); t_migrate_legacy(); t_twitch_oauth(); t_cookie_target()
     t_failure_hint_twitch_no_profile(); t_failure_hint_twitch_generic_mentions_twitch()
     t_failure_hint_twitch_decrypt_suggests_twitch_command(); t_failure_hint_youtube_decrypt_keeps_original_command()
     t_failure_hint_default_platform_is_youtube()
