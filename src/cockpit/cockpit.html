@@ -574,9 +574,21 @@ function renderBroadcastChat(msgs) {
   });
   if (stick) log.scrollTop = log.scrollHeight;
 }
+function bchatUrlOk(url, platform) {
+  // Defense-in-depth (mirrors emote_url_ok): only https on the expected
+  // platform host reaches window.open — rejects javascript:/data: and
+  // off-platform hosts even though target.url is server-built.
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return false;
+    const host = u.hostname.toLowerCase();
+    const dom = platform === 'twitch' ? 'twitch.tv' : 'youtube.com';
+    return host === dom || host.endsWith('.' + dom);
+  } catch (_) { return false; }
+}
 function bchatTarget(target) {
   const btn = $('bchatCompose'); if (!btn) return;
-  if (!target || !target.url) { btn.hidden = true; return; }
+  if (!target || !target.url || !bchatUrlOk(target.url, target.platform)) { btn.hidden = true; return; }
   const plat = target.platform === 'twitch' ? 'Twitch' : 'YouTube';
   btn.textContent = '✍ Write in ' + plat + ' chat ↗';
   btn.hidden = false;
