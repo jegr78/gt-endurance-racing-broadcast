@@ -2367,18 +2367,126 @@ def _decode_lines(byte_iter):
         yield raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else raw
 
 
+class _PreviewRingTap:
+    """Preview worker that taps a FeedRing instead of spawning a second streamlink
+    pull. One ffmpeg subprocess receives ring bytes on stdin; its stdout (MJPEG) and
+    stderr (ebur128) are pumped by the same helpers as _PreviewPullWorker. The ring
+    is read from its current live edge so only recently-buffered data is consumed —
+    no rewinding to stream start. Best effort: any spawn/read failure leaves .ok
+    False and the manager shows the tile 'unavailable'; nothing here can affect the
+    live feed workers. `spawn` is injectable for tests."""
+
+    def __init__(self, ring, target, log, spawn=None):
+        self.ring = ring
+        self.target = target
+        self.log = log
+        self._spawn = spawn or self._spawn_real
+        self._proc = None
+        self._frame = None
+        self._level = 0.0
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self.ok = True
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+        return self
+
+    def latest_frame(self):
+        with self._lock:
+            return self._frame
+
+    def latest_level(self):
+        with self._lock:
+            return self._level
+
+    def _spawn_real(self, _worker):
+        ff_cmd = preview_ffmpeg_cmd()
+        ff = subprocess.Popen(ff_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=False,
+                              env=external_tool_env(), **_no_window_kwargs())
+        self._proc = ff
+        stderr_iter = _decode_lines(iter(ff.stderr.readline, b""))
+        return ff, ff.stdin, ff.stdout, stderr_iter
+
+    def _run(self):
+        try:
+            proc, stdin, video, stderr_iter = self._spawn(self)
+        except Exception as e:                       # noqa: BLE001 best-effort
+            self.ok = False
+            self.log.info("preview ring tap %s spawn error: %s", self.target, e)
+            return
+        if proc is None or video is None:
+            self.ok = False
+            return
+        self._proc = proc
+        threading.Thread(target=self._pump_levels, args=(stderr_iter,), daemon=True).start()
+        threading.Thread(target=self._feed_stdin, args=(stdin,), daemon=True).start()
+        buf = b""
+        while not self._stop.is_set():
+            chunk = video.read(65536)
+            if not chunk:
+                break
+            frames, buf = split_mjpeg_frames(buf + chunk)
+            if frames:
+                with self._lock:
+                    self._frame = frames[-1]
+        self._kill()
+
+    def _feed_stdin(self, stdin):
+        """Pump ring bytes into ffmpeg stdin; join at the current live edge."""
+        cursor = self.ring.live_offset() if hasattr(self.ring, "live_offset") else 0
+        try:
+            while not self._stop.is_set() and not self.ring.closed:
+                data, cursor = self.ring.read(cursor, 1.0)
+                if data:
+                    stdin.write(data)
+                    stdin.flush()
+        except OSError:
+            pass  # ffmpeg stdin closed (process gone) — ring pump exits cleanly
+        finally:
+            try:
+                stdin.close()
+            except OSError:
+                pass  # already closed
+
+    def _pump_levels(self, stderr_iter):
+        for line in stderr_iter:
+            if self._stop.is_set():
+                break
+            lufs = parse_ebur128_momentary(line)
+            if lufs is not None:
+                with self._lock:
+                    self._level = lufs_to_meter(lufs)
+
+    def _kill(self):
+        p = getattr(self, "_proc", None)
+        try:
+            if p and p.poll() is None:
+                p.kill()
+        except Exception:                        # noqa: BLE001
+            pass
+
+    def stop(self):
+        self._stop.set()
+        self._kill()
+
+
 PREVIEW_FEEDS = ("A", "B", "POV")        # tiles the Director Panel can request
 
 
-def preview_source(target, live, pov_active, feed_keys):
+def preview_source(target, live, pov_active, feed_keys, fanout=False):
     """Pure: how to source a feed preview tile.
 
     target      'A' | 'B' | 'POV'
     live        the on-air feed ('A' | 'B') from Relay.live_feed()
     pov_active  Relay.pov_active()
     feed_keys   the configured feed keys, e.g. {'A','B'} (+'POV' when a POV feed exists)
+    fanout      when True the off-air feed is read from the relay's FeedRing
+                ('ring') instead of a decoupled second pull ('pull').
 
-    Returns ('obs', source_name) | ('pull', feed_key) | ('placeholder', reason).
+    Returns ('obs', source_name) | ('pull', feed_key) | ('ring', feed_key)
+            | ('placeholder', reason).
     The on-air feed and the active POV are decoding in OBS, so screenshot the
     source directly. The off-air feed is NOT decoded by OBS and its loopback port
     is held single-consumer by OBS, so it needs a decoupled low-res pull (handled
@@ -2390,7 +2498,7 @@ def preview_source(target, live, pov_active, feed_keys):
             return ("placeholder", "feed off")
         if target == live:
             return ("obs", "Feed " + target)
-        return ("pull", target)
+        return ("ring", target) if fanout else ("pull", target)
     return ("placeholder", "unknown feed")
 
 
@@ -2509,11 +2617,12 @@ class FeedFanoutServer:
 class PreviewManager:
     """Director Panel preview source-of-truth. Active tiles (on-air feed / active
     POV) are served from a short-TTL OBS-screenshot cache; the single off-air feed
-    is served from one reference-counted _PreviewPullWorker. All directors poll
-    this shared state, so cost is flat in viewer count. Best effort throughout."""
+    is served from one reference-counted _PreviewPullWorker (fan-out off) or a
+    _PreviewRingTap (fan-out on). All directors poll this shared state, so cost is
+    flat in viewer count. Best effort throughout."""
 
     def __init__(self, relay, obs_ws_get, log, obs_ttl=1.0, idle_timeout=8.0,
-                 worker_factory=None):
+                 worker_factory=None, ring_factory=None):
         self.relay = relay
         self._obs_get = obs_ws_get
         self.log = log
@@ -2522,8 +2631,10 @@ class PreviewManager:
         self._factory = worker_factory or (
             lambda target, channel, cookies, log: _PreviewPullWorker(
                 target, channel, cookies, log).start())
+        self._ring_factory = ring_factory or (
+            lambda ring, target, log: _PreviewRingTap(ring, target, log).start())
         self._obs_cache = {}              # source_name -> (monotonic_ts, jpeg); not locked — CPython GIL keeps dict ops atomic, a concurrent cold-miss only causes a benign double OBS fetch
-        self._pull = None                 # current _PreviewPullWorker or None
+        self._pull = None                 # current _PreviewPullWorker / _PreviewRingTap or None
         self._last_touch = 0.0
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -2536,12 +2647,16 @@ class PreviewManager:
 
     def still(self, target):
         target = target.upper()
+        fanout = getattr(self.relay, "fanout", False)
         kind, ref = preview_source(target, self.relay.live_feed(),
-                                   self.relay.pov_active(), self._feed_keys())
+                                   self.relay.pov_active(), self._feed_keys(),
+                                   fanout=fanout)
         if kind == "placeholder":
             return None, ref
         if kind == "obs":
             return self._obs_still(ref)
+        if kind == "ring":
+            return self._ring_still(target)
         return self._pull_still(target)    # kind == "pull"
 
     def _obs_still(self, source_name):
@@ -2570,6 +2685,23 @@ class PreviewManager:
                     return None, "feed off"
                 self._pull = self._factory(
                     target, ch, self.relay.feeds[target].cookies, self.log)
+            worker = self._pull
+        frame = worker.latest_frame()
+        if frame is None:
+            return None, ("unavailable" if not worker.ok else "starting")
+        return frame, ""
+
+    def _ring_still(self, target):
+        with self._lock:
+            self._last_touch = time.monotonic()
+            if self._pull is None or self._pull.target != target:
+                if self._pull is not None:
+                    self._pull.stop()
+                ring = getattr(self.relay.feeds.get(target), "ring", None)
+                if ring is None:
+                    self._pull = None
+                    return None, "unavailable"
+                self._pull = self._ring_factory(ring, target, self.log)
             worker = self._pull
         frame = worker.latest_frame()
         if frame is None:

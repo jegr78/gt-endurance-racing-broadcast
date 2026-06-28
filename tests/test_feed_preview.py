@@ -230,6 +230,122 @@ def t_endpoint_feed_b_returns_jpeg():
         srv.shutdown()
 
 
+# ── Task 8: fan-out ring-tap routing and worker ─────────────────────────────
+
+def t_preview_source_ring_when_fanout_and_offair():
+    """Off-air feed with fan-out on → ('ring', key), not ('pull', key)."""
+    kind, ref = m.preview_source("B", "A", False, {"A", "B"}, fanout=True)
+    assert (kind, ref) == ("ring", "B")
+
+
+def t_preview_source_pull_when_fanout_off():
+    """Fan-out off → classic ('pull', key) for the off-air feed."""
+    kind, ref = m.preview_source("B", "A", False, {"A", "B"}, fanout=False)
+    assert (kind, ref) == ("pull", "B")
+
+
+def t_preview_source_onair_still_obs_with_fanout():
+    """On-air feed is always OBS regardless of the fan-out flag."""
+    assert m.preview_source("A", "A", False, {"A", "B"}, fanout=True) == ("obs", "Feed A")
+
+
+class _FakeRing:
+    """Minimal FeedRing stand-in for unit tests: returns pre-baked bytes once."""
+
+    def __init__(self, data=b""):
+        self._data = data
+        self.closed = False
+
+    def start_offset(self):
+        return 0
+
+    def read(self, cursor, timeout):
+        if cursor >= len(self._data):
+            return b"", cursor
+        data = self._data[cursor:]
+        return data, len(self._data)
+
+
+def t_preview_ring_tap_collects_frame_and_level():
+    """_PreviewRingTap exposes latest_frame / latest_level via the spawn seam."""
+    soi, eoi = b"\xff\xd8", b"\xff\xd9"
+    frame = soi + b"RINGTAP" + eoi
+    proc = _FakeProc()
+
+    def fake_spawn(worker):
+        video = [frame, b""]
+        def vread(n=65536):
+            return video.pop(0) if video else b""
+        class _V:
+            read = staticmethod(vread)
+        class _Stdin:
+            def write(self, data): pass
+            def flush(self): pass
+            def close(self): pass
+        stderr = iter(["[Parsed_ebur128_1] M: -18.5 S: -22.0\n"])
+        return proc, _Stdin(), _V(), stderr
+
+    ring = _FakeRing(b"stream bytes")
+    w = m._PreviewRingTap(ring, "B", _quiet_log(), spawn=fake_spawn)
+    w.start()
+    _wait(lambda: w.latest_frame() == frame, 2.0)
+    assert w.latest_frame() == frame
+    _wait(lambda: w.latest_level() > 0.0, 2.0)
+    assert 0.0 < w.latest_level() <= 1.0
+    w.stop()
+
+
+class _FakeFeedWithRing(_FakeFeed):
+    """_FakeFeed extended with a `.ring` attribute."""
+
+    def __init__(self, ch, ring=None):
+        super().__init__(ch)
+        self.ring = ring
+
+
+class _FakeRelayWithFanout:
+    """Relay stub with fanout=True and feeds that carry a ring."""
+
+    def __init__(self, live="A"):
+        ring_a = _FakeRing(b"A stream")
+        ring_b = _FakeRing(b"B stream")
+        self.feeds = {
+            "A": _FakeFeedWithRing("https://twitch.tv/a", ring_a),
+            "B": _FakeFeedWithRing("https://twitch.tv/b", ring_b),
+        }
+        self._live = live
+        self.pov = None
+        self.fanout = True
+
+    def live_feed(self):
+        return self._live
+
+    def pov_active(self):
+        return False
+
+
+def t_manager_offair_uses_ring_tap_when_fanout():
+    """PreviewManager routes off-air feed to the ring-tap worker when fanout is on."""
+    started = {}
+
+    def ring_factory(ring, target, log):
+        class _W:
+            def __init__(s): s.target = target; s.ok = True
+            def start(s): started["t"] = target; return s
+            def stop(s): started["stopped"] = True
+            def latest_frame(s): return b"\xff\xd8R\xff\xd9"
+            def latest_level(s): return 0.8
+        return _W().start()
+
+    relay = _FakeRelayWithFanout(live="A")
+    mgr = m.PreviewManager(relay, lambda: _FakeObs(), _quiet_log(),
+                           ring_factory=ring_factory)
+    data, note = mgr.still("B")        # B is off-air; fanout=True
+    assert data == b"\xff\xd8R\xff\xd9", f"unexpected data: {data!r}"
+    assert started.get("t") == "B"
+    assert mgr.levels() == {"B": 0.8}
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
