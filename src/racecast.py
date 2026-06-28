@@ -1888,6 +1888,16 @@ def _refresh_obs_pages(force=False, wait=0):
     print(f"obs: refreshed browser sources {', '.join(names)}." if names
           else "obs: no relay browser sources in OBS — nothing to refresh.")
     _sync_pov_transform()              # live POV-box position sibling (best effort)
+    _fanout = _machine_env_value("RACECAST_FEED_FANOUT").strip().lower() in {"1", "true", "yes", "on"}
+    if _fanout:
+        try:
+            import obs_ws
+            note = obs_ws.set_feed_close_when_inactive(
+                list(obs_ws.FEED_SOURCES.values()) + [obs_ws.POV_SOURCE])
+            if note:
+                print("obs: " + note)
+        except Exception as exc:  # noqa: BLE001 — best-effort contract
+            print(f"obs: close_when_inactive skipped ({exc}).")
 
 
 def app_launch_cmd(rest):
