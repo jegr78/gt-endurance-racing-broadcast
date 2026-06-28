@@ -1148,6 +1148,24 @@ def t_set_feed_close_when_inactive_builds_setinputsettings():
         assert d.get("overlay") is True       # merge, not replace
 
 
+def t_set_feed_close_when_inactive_revert_to_false():
+    """value=False reverts A/B so the direct-serve fallback is safe (no stale backlog)."""
+    sess = _FakeSession()
+    orig, m._connect = m._connect, lambda *a, **k: (sess, "")
+    try:
+        note = m.set_feed_close_when_inactive(["Feed A", "Feed B"], False)
+    finally:
+        m._connect = orig
+    assert note == "", note
+    reqs = [{"requestType": rt, "requestData": rd}
+            for rt, rd in sess.sent if rt == "SetInputSettings"]
+    assert len(reqs) == 2
+    for r in reqs:
+        d = r["requestData"]
+        assert d["inputSettings"]["close_when_inactive"] is False
+        assert d.get("overlay") is True       # merge, not replace
+
+
 def t_set_feed_close_when_inactive_unreachable_is_note_not_crash():
     orig, m._connect = m._connect, lambda *a, **k: (None, "OBS not running")
     try:

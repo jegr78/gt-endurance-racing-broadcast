@@ -1888,15 +1888,18 @@ def _refresh_obs_pages(force=False, wait=0):
     print(f"obs: refreshed browser sources {', '.join(names)}." if names
           else "obs: no relay browser sources in OBS — nothing to refresh.")
     _sync_pov_transform()              # live POV-box position sibling (best effort)
+    # Feed A/B ship close_when_inactive=False; fan-out needs True (OBS disconnects
+    # off-air so no stale backlog forms → kills the ~2 s stale-on-activation glitch).
+    # Set it to track the flag UNCONDITIONALLY so a fallback to direct-serve (flag
+    # off) reverts A/B to False — the coexistence guarantee. POV ships True (correct
+    # in both modes) and is deliberately left untouched. Best effort.
     _fanout = _machine_env_value("RACECAST_FEED_FANOUT").strip().lower() in {"1", "true", "yes", "on"}
-    if _fanout:
-        try:
-            note = obs_ws.set_feed_close_when_inactive(
-                list(obs_ws.FEED_SOURCES.values()) + [obs_ws.POV_SOURCE])
-            if note:
-                print("obs: " + note)
-        except Exception as exc:  # noqa: BLE001 — best-effort contract
-            print(f"obs: close_when_inactive skipped ({exc}).")
+    try:
+        note = obs_ws.set_feed_close_when_inactive(list(obs_ws.FEED_SOURCES.values()), _fanout)
+        if note:
+            print("obs: " + note)
+    except Exception as exc:  # noqa: BLE001 — best-effort contract
+        print(f"obs: close_when_inactive skipped ({exc}).")
 
 
 def app_launch_cmd(rest):
