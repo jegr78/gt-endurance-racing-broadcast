@@ -1843,6 +1843,8 @@ function pvStartFeed(tile){
   const feed = tile.dataset.feed;
   if(pvFeedTimers[feed]) return;
   tile.classList.remove("paused");
+  const btn = tile.querySelector(".pvtoggle");
+  if(btn) btn.textContent = "PAUSE";
   pvPollFeed(tile);
   pvFeedTimers[feed] = setInterval(() => pvPollFeed(tile), PV_FEED_MS);
 }
