@@ -132,8 +132,9 @@ def service_launcher(binary, python=None, script=None):
 # ---------------------------------------------------------------------------
 Ctx = collections.namedtuple(
     "Ctx",
-    "relay_url disabled_relay_url ui_url token streamer_key expect own_stint")
-Ctx.__new__.__defaults__ = (None,)  # own_stint optional (stub-relay unit tests)
+    "relay_url disabled_relay_url ui_url token streamer_key expect own_stint"
+    " fanout_feed_port")
+Ctx.__new__.__defaults__ = (None, None)  # own_stint, fanout_feed_port optional
 
 
 def _get_json(url, headers=None):
@@ -404,6 +405,66 @@ def check_enable_preserves_keys(_ctx=None):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _fanout_http_ok(response_bytes):
+    """Pure: parse a raw HTTP/1.0 response (bytes) and return (ok, msg).
+
+    ok=True iff the status line contains '200' AND a header line contains
+    'video/mp2t' (case-insensitive). Called by check_fanout_feed_port_bound so
+    the decision logic is unit-testable without a real socket."""
+    text = response_bytes.decode("latin-1", errors="replace")
+    lines = text.split("\r\n")
+    if not lines or "200" not in lines[0]:
+        status = lines[0] if lines else "<empty>"
+        return False, f"status line: {status!r}"
+    for line in lines[1:]:
+        if not line:
+            break   # end of headers
+        if "video/mp2t" in line.lower():
+            return True, ""
+    return False, f"no video/mp2t header in response headers: {lines[1:8]!r}"
+
+
+def check_fanout_feed_port_bound(ctx):
+    """Fan-out mode: the relay (not streamlink) must own the feed-A port and
+    serve HTTP/1.0 200 with Content-Type: video/mp2t.
+
+    Connects raw TCP to ctx.fanout_feed_port, sends a minimal GET, reads the
+    response headers, and asserts the relay owns the port and emits the right
+    Content-Type.  The body will be empty (the no-op stub streamlink produces
+    no TS) — that is expected; the header proves ownership.
+
+    Skips when ctx.fanout_feed_port is None (no fan-out relay in this run,
+    e.g. a stub-relay unit test that omits the field)."""
+    port = getattr(ctx, "fanout_feed_port", None)
+    if port is None:
+        return CheckResult("fanout_feed_port_bound", "skip", "no fanout relay")
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(5)
+        try:
+            s.connect(("127.0.0.1", port))
+            s.sendall(b"GET / HTTP/1.0\r\n\r\n")
+            # Read until the header/body boundary; the body will be empty/minimal.
+            data = b""
+            while len(data) < 4096:
+                chunk = s.recv(1024)
+                if not chunk:
+                    break
+                data += chunk
+                if b"\r\n\r\n" in data:
+                    break
+        finally:
+            s.close()
+    except OSError as exc:
+        return CheckResult("fanout_feed_port_bound", "fail",
+                           f"TCP connect to 127.0.0.1:{port} failed: {exc}")
+    ok, msg = _fanout_http_ok(data)
+    if not ok:
+        return CheckResult("fanout_feed_port_bound", "fail", msg)
+    return CheckResult("fanout_feed_port_bound", "pass",
+                       f"relay owns port {port}, Content-Type: video/mp2t")
+
+
 def check_health_monitor_v3(ctx):
     """Health Monitor /health-monitor/data must include the v3 band + series fields.
 
@@ -445,6 +506,7 @@ SYNTHETIC_CHECKS = [
     check_cc_api_cockpit,
     check_enable_preserves_keys,
     check_health_monitor_v3,
+    check_fanout_feed_port_bound,
 ]
 
 # Real-league mode (local only): the safe subset for a copied profile. Read-only
