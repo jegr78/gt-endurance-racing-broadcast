@@ -100,10 +100,14 @@ key cost reduction — see "Source per tile" below. In all cases the relay keeps
    (≈0.2 Mbps/tile/director, flat vs. #directors)
 ```
 
-In steady state only **one** decoupled pull runs (the single off-air feed); during the
-Splitscreen window **both** feeds are active in OBS → **no** pull at all. Each shared
-source (OBS screenshot or the off-air pull) is fetched once per ~1 s regardless of how
-many directors watch.
+In steady state only **one** decoupled pull runs — the selector keys off `live_feed()`
+(the single on-air feed), so the one non-live feed is the pull. (During the Splitscreen
+window OBS is decoding *both* feeds, so a splitscreen-aware selector could drop that pull
+too; the current selector does not special-case it, so one pull still runs there — the
+single-pull cap and idle-stop bound the cost, and it never affects the live feeds. A
+splitscreen-aware optimization is a possible future refinement.) Each shared source (OBS
+screenshot or the off-air pull) is fetched once per ~1 s regardless of how many directors
+watch.
 
 ### Components
 
@@ -117,7 +121,7 @@ many directors watch.
    of director count), so OBS load is bounded.
 
 2. **`PreviewPullManager`** (new, in the relay) — runs **only for the off-air feed**
-   (typically one at a time; none during the Splitscreen window). Its worker:
+   (the non-`live_feed()` feed; at most one pull at a time). Its worker:
    - resolves + starts a single low-res (360p) decode of that feed (see "Source per tile"),
    - keeps the **latest JPEG frame** (sampled ~1/s) and the **current audio level**
      (continuous `ebur128`/`astats` parse) in memory,
