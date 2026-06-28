@@ -2373,6 +2373,58 @@ def preview_source(target, live, pov_active, feed_keys):
     return ("placeholder", "unknown feed")
 
 
+class FeedRing:
+    """A bounded byte ring for one feed: a single live writer (the streamlink
+    reader) and many readers (OBS, preview), each tracking its own absolute
+    offset. The writer NEVER blocks — when the window overflows the oldest bytes
+    drop and a lagging reader is snapped forward to the live edge. Pure stdlib;
+    unit-testable with no real stream."""
+
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self._buf = bytearray()
+        self._base = 0                 # absolute offset of self._buf[0]
+        self._cond = threading.Condition()
+        self.closed = False
+
+    def write(self, data):
+        if not data:
+            return
+        with self._cond:
+            self._buf += data
+            overflow = len(self._buf) - self.capacity
+            if overflow > 0:
+                del self._buf[:overflow]
+                self._base += overflow
+            self._cond.notify_all()
+
+    def live_offset(self):
+        with self._cond:
+            return self._base + len(self._buf)
+
+    def start_offset(self):
+        with self._cond:
+            return self._base
+
+    def read(self, cursor, timeout):
+        with self._cond:
+            live = self._base + len(self._buf)
+            if cursor >= live and not self.closed:
+                self._cond.wait(timeout)
+                live = self._base + len(self._buf)
+            if cursor < self._base:        # fell behind the window → snap to live edge
+                cursor = self._base
+            if cursor >= live:
+                return b"", cursor
+            data = bytes(self._buf[cursor - self._base:])
+            return data, live
+
+    def close(self):
+        with self._cond:
+            self.closed = True
+            self._cond.notify_all()
+
+
 class PreviewManager:
     """Director Panel preview source-of-truth. Active tiles (on-air feed / active
     POV) are served from a short-TTL OBS-screenshot cache; the single off-air feed
