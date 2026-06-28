@@ -4399,7 +4399,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  console_page_path=None, companion_url=None, logo_path=None,
                  buttons_page_path=None, race_control_page_path=None,
                  health_store=None, health_monitor_page_path=None, uplot_dir=None,
-                 broadcast_chat_store=None):
+                 broadcast_chat_store=None, preview_manager=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -5271,29 +5271,17 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     target = p[2].upper()
                     if target not in PREVIEW_FEEDS:
                         return self._send({"error": "unknown feed", "feed": p[2]}, 404)
-                    feed_keys = set(relay.feeds)
-                    if relay.pov:
-                        feed_keys.add("POV")
-                    kind, ref = preview_source(target, relay.live_feed(),
-                                               relay.pov_active(), feed_keys)
-                    if kind == "placeholder":
-                        return self._send({"error": "preview unavailable",
-                                           "note": ref}, 503)
-                    if kind == "obs":
-                        if _obs_ws is None:
-                            return self._send({"error": "obs unavailable"}, 503)
-                        data, note = _obs_ws.get_source_screenshot(ref, width=480)
-                        if data is None:
-                            return self._send({"error": "preview unavailable",
-                                               "note": note}, 503)
-                        return self._send_jpeg(data)
-                    # kind == "pull": ref is a feed key; grab a frame from its port
-                    port = relay.feeds[ref].port
-                    data = grab_feed_frame(port, width=480)
+                    if preview_manager is None:
+                        return self._send({"error": "preview disabled"}, 404)
+                    data, note = preview_manager.still(target)
                     if data is None:
                         return self._send({"error": "preview unavailable",
-                                           "note": "grab failed"}, 503)
+                                           "note": note}, 503)
                     return self._send_jpeg(data)
+                if p == ["preview", "levels"]:
+                    if preview_manager is None:
+                        return self._send({"error": "preview disabled"}, 404)
+                    return self._send(preview_manager.levels())
                 if p == ["splitscreen"]:
                     if not splitscreen_path:
                         return self._send({"error": "splitscreen page not found"}, 404)
@@ -6223,6 +6211,8 @@ def main():
     submission_store = SubmissionStore(
         os.path.join(runtime, "cockpit-pending.json"),
         os.path.join(runtime, "cockpit-submissions.log"))
+    preview_manager = PreviewManager(relay, lambda: _obs_ws, LOG)
+    threading.Thread(target=preview_manager.run, daemon=True).start()
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
                            timer_store, setup_ctl,
                            overlay_dir=args.overlay_dir, chat_store=chat_store,
@@ -6244,7 +6234,8 @@ def main():
                            uplot_dir=uplot_dir,
                            crew_source=crew_source,
                            broadcast_chat_store=broadcast_chat_store,
-                           logo_path=args.logo)
+                           logo_path=args.logo,
+                           preview_manager=preview_manager)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []

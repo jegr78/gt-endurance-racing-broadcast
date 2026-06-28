@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for the Director Panel live preview. Run: python3 tests/test_feed_preview.py"""
-import importlib.util, os, time
+import importlib.util, json, os, threading, time, urllib.error, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -166,6 +166,63 @@ def t_manager_placeholder_when_pov_off():
     mgr = m.PreviewManager(_FakeRelay(live="A", pov=None), lambda: _FakeObs(), _quiet_log())
     data, note = mgr.still("POV")
     assert data is None and note == "pov off"
+
+
+def _make_min_relay_for_preview():
+    """Minimal Relay for endpoint tests — two stints, temp log dir."""
+    return _FakeRelay(live="A")
+
+
+def _serve_with_manager(mgr):
+    relay = mgr.relay
+    srv = m.ThreadingHTTPServer(("127.0.0.1", 0),
+                                m.make_handler(relay, preview_manager=mgr))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def t_endpoint_preview_levels_json():
+    # off-air pull via fake factory returns level 0.5
+    def fake_factory(target, channel, cookies, log):
+        class _W:
+            ok = True
+            def __init__(s): s.target = target
+            def stop(s): pass
+            def latest_frame(s): return b"\xff\xd8P\xff\xd9"
+            def latest_level(s): return 0.5
+        return _W()
+    relay = _make_min_relay_for_preview()
+    mgr = m.PreviewManager(relay, lambda: None, _quiet_log(), worker_factory=fake_factory)
+    mgr.still("B")                          # start the off-air pull
+    srv = _serve_with_manager(mgr)
+    port = srv.server_address[1]
+    body = urllib.request.urlopen(
+        "http://127.0.0.1:%d/preview/levels" % port, timeout=3).read()
+    assert json.loads(body) == {"B": 0.5}
+    srv.shutdown()
+
+
+def t_endpoint_feed_b_returns_jpeg():
+    # off-air pull via fake factory returns a known JPEG frame
+    _FRAME = b"\xff\xd8" + b"DATA" + b"\xff\xd9"
+
+    def fake_factory(target, channel, cookies, log):
+        class _W:
+            ok = True
+            def __init__(s): s.target = target
+            def stop(s): pass
+            def latest_frame(s): return _FRAME
+            def latest_level(s): return 0.5
+        return _W()
+    relay = _make_min_relay_for_preview()
+    mgr = m.PreviewManager(relay, lambda: None, _quiet_log(), worker_factory=fake_factory)
+    srv = _serve_with_manager(mgr)
+    port = srv.server_address[1]
+    resp = urllib.request.urlopen(
+        "http://127.0.0.1:%d/preview/feed/B" % port, timeout=3)
+    assert resp.status == 200
+    assert resp.read() == _FRAME
+    srv.shutdown()
 
 
 if __name__ == "__main__":

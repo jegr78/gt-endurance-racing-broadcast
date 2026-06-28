@@ -531,48 +531,70 @@ def t_obs_stream_503_when_obs_down():
         srv.shutdown(); m._obs_ws = old
 
 
+def _serve_mgr(relay, mgr):
+    """Serve relay + preview_manager; return the running server."""
+    srv = m.ThreadingHTTPServer(("127.0.0.1", 0),
+                                m.make_handler(relay, preview_manager=mgr))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
 def t_preview_feed_onair_uses_obs_not_grab():
+    # On-air feed: PreviewManager uses OBS screenshot (obs path, not pull).
+    import logging
     r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)   # A on air (idx 0)
 
     class FakeObs:
+        def __init__(self): self.name = None
         def get_source_screenshot(self, name, **kw):
             self.name = name; return (b"\xff\xd8ONAIR\xff\xd9", "")
 
-    fo = FakeObs(); old = m._obs_ws; m._obs_ws = fo
-    old_grab = m.grab_feed_frame
-    def _boom(*a, **k): raise AssertionError("grab used for on-air feed")
-    m.grab_feed_frame = _boom; srv = _serve(r)
+    fo = FakeObs()
+    lg = logging.getLogger("test.pov.onair"); lg.addHandler(logging.NullHandler())
+    mgr = m.PreviewManager(r, lambda: fo, lg)
+    srv = _serve_mgr(r, mgr)
     try:
         port = srv.server_address[1]
         body = urllib.request.urlopen(f"http://127.0.0.1:{port}/preview/feed/A", timeout=5).read()
         assert body == b"\xff\xd8ONAIR\xff\xd9" and fo.name == "Feed A"
     finally:
-        srv.shutdown(); m._obs_ws = old; m.grab_feed_frame = old_grab
+        srv.shutdown()
 
 
 def t_preview_feed_offair_uses_grab_not_obs():
+    # Off-air feed: PreviewManager uses pull worker (not OBS); worker returns a frame.
+    import logging
     r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)   # B off air (idx 1)
     calls = {}
-    def fake_grab(port, width=480, timeout=8.0):
-        calls["port"] = port; calls["width"] = width; return b"\xff\xd8GRB\xff\xd9"
 
-    class FakeObs:
-        def get_source_screenshot(self, *a, **k): raise AssertionError("obs used for off-air grab")
+    def fake_factory(target, channel, cookies, log):
+        class _W:
+            ok = True
+            def __init__(s): s.target = target
+            def stop(s): pass
+            def latest_frame(s): calls["target"] = target; return b"\xff\xd8GRB\xff\xd9"
+            def latest_level(s): return 0.5
+        return _W()
 
-    old = m._obs_ws; m._obs_ws = FakeObs()
-    old_grab = m.grab_feed_frame; m.grab_feed_frame = fake_grab; srv = _serve(r)
+    lg = logging.getLogger("test.pov.offair"); lg.addHandler(logging.NullHandler())
+    mgr = m.PreviewManager(r, lambda: None, lg, worker_factory=fake_factory)
+    srv = _serve_mgr(r, mgr)
     try:
         port = srv.server_address[1]
         body = urllib.request.urlopen(f"http://127.0.0.1:{port}/preview/feed/B", timeout=5).read()
         assert body == b"\xff\xd8GRB\xff\xd9"
-        assert calls["port"] == 53002 and calls["width"] == 480
+        assert calls.get("target") == "B"
     finally:
-        srv.shutdown(); m._obs_ws = old; m.grab_feed_frame = old_grab
+        srv.shutdown()
 
 
 def t_preview_feed_pov_paused_is_503():
+    # No POV configured: preview_source returns placeholder → still() → (None, "pov off") → 503.
+    import logging
     r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)   # no POV configured
-    srv = _serve(r)
+    lg = logging.getLogger("test.pov.pov"); lg.addHandler(logging.NullHandler())
+    mgr = m.PreviewManager(r, lambda: None, lg)
+    srv = _serve_mgr(r, mgr)
     try:
         port = srv.server_address[1]
         try:
@@ -599,20 +621,40 @@ def t_preview_feed_unknown_is_404():
 
 
 def t_preview_feed_grab_failure_is_503():
+    # still() returning None yields 503; preview_manager=None (disabled) yields 404.
+    import logging
     r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)   # B off air
-    class FakeObs:
-        def get_source_screenshot(self, *a, **k): return (None, "x")
-    old = m._obs_ws; m._obs_ws = FakeObs()
-    old_grab = m.grab_feed_frame; m.grab_feed_frame = lambda *a, **k: None; srv = _serve(r)
+    lg = logging.getLogger("test.pov.preview"); lg.addHandler(logging.NullHandler())
+
+    class _StillNoneManager:
+        relay = r
+        def still(self, target): return (None, "unavailable")
+        def levels(self): return {}
+
+    srv_mgr = m.ThreadingHTTPServer(("127.0.0.1", 0),
+                                    m.make_handler(r, preview_manager=_StillNoneManager()))
+    threading.Thread(target=srv_mgr.serve_forever, daemon=True).start()
     try:
-        port = srv.server_address[1]
+        port = srv_mgr.server_address[1]
         try:
             urllib.request.urlopen(f"http://127.0.0.1:{port}/preview/feed/B", timeout=5)
             raise AssertionError("expected HTTP 503")
         except urllib.error.HTTPError as e:
             assert e.code == 503
+        # preview_manager=None -> 404 "preview disabled"
+        srv_off = m.ThreadingHTTPServer(("127.0.0.1", 0), m.make_handler(r))
+        threading.Thread(target=srv_off.serve_forever, daemon=True).start()
+        try:
+            port2 = srv_off.server_address[1]
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port2}/preview/feed/B", timeout=5)
+                raise AssertionError("expected HTTP 404")
+            except urllib.error.HTTPError as e:
+                assert e.code == 404
+        finally:
+            srv_off.shutdown()
     finally:
-        srv.shutdown(); m._obs_ws = old; m.grab_feed_frame = old_grab
+        srv_mgr.shutdown()
 
 
 def t_aggregate_stream_not_active_is_red():
