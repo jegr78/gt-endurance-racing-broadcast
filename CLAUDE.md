@@ -400,6 +400,8 @@ through Streamlink's Twitch plugin (no yt-dlp hop); gated feeds optionally use
 `twitch-cookies.txt`. (`curl`-ing a feed port returns nothing — it serves a single
 consumer; that is not a failure.)
 
+**Feed fan-out (`RACECAST_FEED_FANOUT=1`, machine `.env`, default off).** When on, the relay becomes the single `streamlink --stdout` consumer per feed and re-serves the byte stream via an in-relay `FeedFanoutServer` (`FeedRing` bounded byte ring on the same loopback feed port) to OBS *and* the Director Panel preview simultaneously — eliminating the ~2 s stale-on-activation glitch and making the preview tap free (no second pull). Health moves from "serve process exited" to "bytes stopped flowing": an 8 s byte-stall watchdog drives the DROP state. When fan-out is on, the relay also sets each OBS feed input's `close_when_inactive=True` live via obs-websocket at start (best-effort, reverted to OBS default when off) so the off-air source disconnects and holds no stale backlog. The proven `--player-external-http` direct-serve path (one streamlink process → one OBS consumer) remains the default and is unchanged behind the flag — a transport choice, not a league setting. Fan-out is live-UAT-gated: validate against real YouTube + Twitch streams, a full swap, and no on-air regression before trusting it in production. See `docs/superpowers/specs/2026-06-28-relay-feed-fanout-design.md`.
+
 Control is an **unauthenticated** `ThreadingHTTPServer` on port `8088` exposing GET
 endpoints (`/next`, `/reload`, `/set/A/<n>`, `/pov/reload`, `/timer/*`, `/status`,
 `/panel`, plus the served pages `/hud`, `/splitscreen` and the per-league overlay assets
