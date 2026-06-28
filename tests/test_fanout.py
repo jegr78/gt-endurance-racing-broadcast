@@ -157,6 +157,39 @@ def t_streamlink_fanout_cmd_twitch_uses_plugin_no_ua():
     assert cmd[-2:] == ["https://twitch.tv/foo", "best"]
 
 
+def t_fanout_eof_is_drop_when_not_stopped_or_advancing():
+    # streamlink EOF mid-serve in fan-out mode, not a stop/handover → a real DROP.
+    # The fan-out path reads the same exit-classification predicate as direct-serve.
+    assert m.serve_exit_is_drop(False, False) is True
+    assert m.serve_exit_is_drop(True, False) is False   # stop → not a drop
+    assert m.serve_exit_is_drop(False, True) is False   # advance/handover → not a drop
+
+
+def t_fanout_fast_eof_counts_as_dead_serve():
+    # A fan-out reader that returns near-instantly (403 / expired manifest) is a
+    # fast exit: feed_fast_exit_error produces an error string, and
+    # should_idle_dead_serves trips once DEAD_SERVE_IDLE_AFTER consecutive fast
+    # exits accumulate — same dead-serve path as direct-serve.
+    err = m.feed_fast_exit_error(0.2, 1)
+    assert err                                           # non-empty error string
+    assert m.should_idle_dead_serves(m.DEAD_SERVE_IDLE_AFTER) is True
+
+
+def t_fanout_watchdog_kill_condition_is_feed_stalled():
+    # The byte-stall watchdog's kill decision is exactly feed_stalled(last_byte_ts, now).
+    # A stale timestamp (no bytes for > FANOUT_STALL_S) trips the kill condition;
+    # a fresh timestamp (bytes arrived recently) does not.
+    now = 1000.0
+    stale_ts = now - m.FANOUT_STALL_S - 0.1   # bytes arrived too long ago
+    fresh_ts = now - m.FANOUT_STALL_S + 0.1   # bytes arrived recently
+    assert m.feed_stalled(stale_ts, now) is True    # watchdog WOULD kill
+    assert m.feed_stalled(fresh_ts, now) is False   # watchdog would NOT kill
+    # NOTE: The closure's wiring (predicate → _kill_proc) lives inside
+    # Feed._serve_fanout and is not separately callable without a live streamlink
+    # subprocess.  Integration coverage is provided by the live-UAT
+    # (racecast-local-uat skill), not a unit test — that is the honest boundary.
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
