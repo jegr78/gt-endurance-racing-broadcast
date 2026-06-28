@@ -2146,56 +2146,308 @@ def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None,
     return base + ["--", target, "best"]
 
 
+# --- Director Panel off-air preview pull (decoupled from OBS / the loopback port) ---
+PREVIEW_FMT_YT = "b[height<=360]/w"     # yt-dlp: pick YouTube's 360p rendition (worst fallback)
+PREVIEW_QUALITY_YT = "best"             # the resolved YT URL is already the 360p rendition
+PREVIEW_QUALITY_TW = "360p,480p,worst"  # Twitch named qualities (low first)
+PREVIEW_STILL_WIDTH = 480               # JPEG width of a preview still
+
+
+def preview_pull_streamlink_cmd(target, platform, quality,
+                                cookies=None, user_agent=STREAMLINK_YT_UA):
+    """Argv: stream a LOW-res copy of a feed to stdout for the preview ffmpeg.
+    Decoupled from the feed's loopback port (single-consumer, held by OBS). For
+    YouTube `target` is a pre-resolved 360p HLS URL and needs the same browser
+    UA + cookies context as the real feed (#345); Twitch gets the twitch.tv URL
+    and its plugin picks the named quality. `--` guards the positional URL."""
+    cmd = ["streamlink", "--stdout"]
+    if platform != "twitch":
+        if user_agent:
+            cmd += ["--http-header", "User-Agent=" + user_agent]
+        if cookies:
+            cmd += ["--http-cookies-file", cookies]
+    return cmd + ["--", target, quality]
+
+
+def preview_ffmpeg_cmd(width=PREVIEW_STILL_WIDTH):
+    """Argv: read the streamlink pipe on stdin, emit a 1 fps scaled MJPEG on
+    stdout (latest-frame source) AND run ebur128 on the audio (its per-second
+    measurements print to stderr at loglevel info -> parsed for the level bar).
+    Audio is optional (`0:a:0?`) so a video-only feed still yields stills."""
+    return ["ffmpeg", "-nostdin", "-loglevel", "info", "-i", "pipe:0",
+            "-map", "0:v:0", "-vf", "fps=1,scale=%d:-2" % width,
+            "-f", "mjpeg", "pipe:1",
+            "-map", "0:a:0?", "-af", "ebur128", "-f", "null", "-"]
+
+
+_JPEG_SOI = b"\xff\xd8"
+_JPEG_EOI = b"\xff\xd9"
+_EBUR128_M = re.compile(r"\bM:\s*(-?\d+(?:\.\d+)?)")
+PREVIEW_LUFS_FLOOR = -60.0
+PREVIEW_LUFS_CEIL = -10.0
+
+
+def split_mjpeg_frames(buf):
+    """Pure: pull every COMPLETE JPEG (SOI..EOI) out of an MJPEG byte buffer.
+    Returns (frames, remainder); remainder is the trailing incomplete bytes to
+    prepend to the next read. Leading junk before the first SOI is discarded."""
+    frames = []
+    while True:
+        start = buf.find(_JPEG_SOI)
+        if start < 0:
+            return frames, b""
+        end = buf.find(_JPEG_EOI, start + 2)
+        if end < 0:
+            return frames, buf[start:]
+        frames.append(buf[start:end + 2])
+        buf = buf[end + 2:]
+
+
+def parse_ebur128_momentary(line):
+    """Pure: the momentary loudness (LUFS) from one ffmpeg ebur128 log line, or
+    None when the line carries no finite `M:` value (e.g. '-inf' on silence)."""
+    mt = _EBUR128_M.search(line)
+    if not mt:
+        return None
+    try:
+        return float(mt.group(1))
+    except ValueError:
+        return None
+
+
+def lufs_to_meter(lufs):
+    """Pure: map momentary LUFS to a 0.0..1.0 bar over [floor, ceil]. None -> 0."""
+    if lufs is None:
+        return 0.0
+    frac = (lufs - PREVIEW_LUFS_FLOOR) / (PREVIEW_LUFS_CEIL - PREVIEW_LUFS_FLOOR)
+    return max(0.0, min(1.0, frac))
+
+
+class _PreviewPullWorker:
+    """One decoupled low-res pull of a single (off-air) feed. Produces the latest
+    JPEG still + a 0..1 audio level. Best effort: a resolve/spawn failure leaves
+    .ok False and the manager shows the tile 'unavailable'; nothing here can
+    affect the live feed workers. `spawn` is injectable for tests."""
+
+    def __init__(self, target, channel, cookies, log, spawn=None):
+        self.target = target
+        self.channel = channel
+        self.cookies = cookies
+        self.log = log
+        self._spawn = spawn or self._spawn_real
+        self._proc = None
+        self._frame = None
+        self._level = 0.0
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self.ok = True
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+        return self
+
+    def latest_frame(self):
+        with self._lock:
+            return self._frame
+
+    def latest_level(self):
+        with self._lock:
+            return self._level
+
+    def _spawn_real(self, _worker):
+        url = channel_url(self.channel)
+        plat = platform_of(url)
+        if plat == "twitch":
+            target, quality = url, PREVIEW_QUALITY_TW
+        else:
+            hls, err = resolve_hls(url, self.cookies, self.log, PREVIEW_FMT_YT)
+            if not hls:
+                self.log.info("preview resolve failed for %s: %s", self.target, err)
+                return None, None, iter(())
+            target, quality = hls, PREVIEW_QUALITY_YT
+        sl_cmd = preview_pull_streamlink_cmd(target, plat, quality, cookies=self.cookies)
+        ff_cmd = preview_ffmpeg_cmd()
+        sl = subprocess.Popen(sl_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              env=external_tool_env(), **_no_window_kwargs())
+        ff = subprocess.Popen(ff_cmd, stdin=sl.stdout, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=False,
+                              env=external_tool_env(), **_no_window_kwargs())
+        if sl.stdout:
+            sl.stdout.close()   # ffmpeg owns the pipe now
+        self._sl = sl
+        stderr_iter = iter(ff.stderr.readline, b"")
+        return ff, ff.stdout, _decode_lines(stderr_iter)
+
+    def _run(self):
+        try:
+            proc, video, stderr_iter = self._spawn(self)
+        except Exception as e:                       # noqa: BLE001 best-effort
+            self.ok = False
+            self.log.info("preview pull %s spawn error: %s", self.target, e)
+            return
+        if proc is None or video is None:
+            self.ok = False
+            return
+        self._proc = proc
+        threading.Thread(target=self._pump_levels, args=(stderr_iter,), daemon=True).start()
+        buf = b""
+        while not self._stop.is_set():
+            chunk = video.read(65536)
+            if not chunk:
+                break
+            frames, buf = split_mjpeg_frames(buf + chunk)
+            if frames:
+                with self._lock:
+                    self._frame = frames[-1]
+        self._kill()
+
+    def _pump_levels(self, stderr_iter):
+        for line in stderr_iter:
+            if self._stop.is_set():
+                break
+            lufs = parse_ebur128_momentary(line)
+            if lufs is not None:
+                with self._lock:
+                    self._level = lufs_to_meter(lufs)
+
+    def _kill(self):
+        for p in (getattr(self, "_proc", None), getattr(self, "_sl", None)):
+            try:
+                if p and p.poll() is None:
+                    p.kill()
+            except Exception:                        # noqa: BLE001
+                pass
+
+    def stop(self):
+        self._stop.set()
+        self._kill()
+
+
+def _decode_lines(byte_iter):
+    """Yield ffmpeg stderr lines as str (best effort), from a bytes line iterator."""
+    for raw in byte_iter:
+        yield raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else raw
+
+
 PREVIEW_FEEDS = ("A", "B", "POV")        # tiles the Director Panel can request
 
 
-def preview_source(target, live, pov_active, feed_ports):
+def preview_source(target, live, pov_active, feed_keys):
     """Pure: how to source a feed preview tile.
 
     target      'A' | 'B' | 'POV'
     live        the on-air feed ('A' | 'B') from Relay.live_feed()
     pov_active  Relay.pov_active()
-    feed_ports  {'A': 53001, 'B': 53002, 'POV': 53003}
+    feed_keys   the configured feed keys, e.g. {'A','B'} (+'POV' when a POV feed exists)
 
-    Returns ('obs', source_name) | ('grab', port) | ('placeholder', reason).
+    Returns ('obs', source_name) | ('pull', feed_key) | ('placeholder', reason).
     The on-air feed and the active POV are decoding in OBS, so screenshot the
-    source directly; an off-air feed is not decoding (and its port is free of
-    OBS), so grab one frame from its loopback port; a paused POV / absent port
-    has nothing to show."""
+    source directly. The off-air feed is NOT decoded by OBS and its loopback port
+    is held single-consumer by OBS, so it needs a decoupled low-res pull (handled
+    by PreviewManager). A paused POV / unconfigured feed has nothing to show."""
     if target == "POV":
         return ("obs", "Feed POV") if pov_active else ("placeholder", "pov off")
     if target in ("A", "B"):
+        if target not in feed_keys:
+            return ("placeholder", "feed off")
         if target == live:
             return ("obs", "Feed " + target)
-        port = feed_ports.get(target)
-        return ("grab", port) if port else ("placeholder", "feed off")
+        return ("pull", target)
     return ("placeholder", "unknown feed")
 
 
-def feed_grab_cmd(port, width=480):
-    """ffmpeg: grab ONE frame from a feed's loopback HTTP server and emit a
-    scaled JPEG on stdout. Pinned byte-for-byte by tests/test_pov.py."""
-    return ["ffmpeg", "-nostdin", "-loglevel", "error",
-            "-i", "http://127.0.0.1:%d" % port,
-            "-frames:v", "1", "-vf", "scale=%d:-2" % width,
-            "-f", "mjpeg", "pipe:1"]
+class PreviewManager:
+    """Director Panel preview source-of-truth. Active tiles (on-air feed / active
+    POV) are served from a short-TTL OBS-screenshot cache; the single off-air feed
+    is served from one reference-counted _PreviewPullWorker. All directors poll
+    this shared state, so cost is flat in viewer count. Best effort throughout."""
 
+    def __init__(self, relay, obs_ws_get, log, obs_ttl=1.0, idle_timeout=8.0,
+                 worker_factory=None):
+        self.relay = relay
+        self._obs_get = obs_ws_get
+        self.log = log
+        self.obs_ttl = obs_ttl
+        self.idle_timeout = idle_timeout
+        self._factory = worker_factory or (
+            lambda target, channel, cookies, log: _PreviewPullWorker(
+                target, channel, cookies, log).start())
+        self._obs_cache = {}              # source_name -> (monotonic_ts, jpeg); not locked — CPython GIL keeps dict ops atomic, a concurrent cold-miss only causes a benign double OBS fetch
+        self._pull = None                 # current _PreviewPullWorker or None
+        self._last_touch = 0.0
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
 
-def grab_feed_frame(port, width=480, timeout=8.0):
-    """Run feed_grab_cmd and return the JPEG bytes, or None on any failure /
-    timeout. Best effort — never raises; the grab subprocess is killed on
-    timeout so a stuck upstream can't hang a relay worker thread."""
-    try:
-        proc = subprocess.run(
-            feed_grab_cmd(port, width),
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            timeout=timeout, env=external_tool_env(),
-            **_no_window_kwargs(os.name))
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-    if proc.returncode != 0 or not proc.stdout:
-        return None
-    return proc.stdout
+    def _feed_keys(self):
+        keys = set(self.relay.feeds)
+        if self.relay.pov:
+            keys.add("POV")
+        return keys
+
+    def still(self, target):
+        target = target.upper()
+        kind, ref = preview_source(target, self.relay.live_feed(),
+                                   self.relay.pov_active(), self._feed_keys())
+        if kind == "placeholder":
+            return None, ref
+        if kind == "obs":
+            return self._obs_still(ref)
+        return self._pull_still(target)    # kind == "pull"
+
+    def _obs_still(self, source_name):
+        now = time.monotonic()  # captured before the OBS call: TTL measured from fetch start, so a slow OBS response shortens the effective window — intentional, conservative
+        hit = self._obs_cache.get(source_name)
+        if hit and now - hit[0] < self.obs_ttl:
+            return hit[1], ""
+        obs = self._obs_get()
+        if obs is None:
+            return None, "obs unavailable"
+        data, note = obs.get_source_screenshot(source_name, width=PREVIEW_STILL_WIDTH)
+        if data is None:
+            return None, note
+        self._obs_cache[source_name] = (now, data)
+        return data, ""
+
+    def _pull_still(self, target):
+        with self._lock:
+            self._last_touch = time.monotonic()
+            if self._pull is None or self._pull.target != target:
+                if self._pull is not None:
+                    self._pull.stop()
+                ch, _ = self.relay.feeds[target].current_channel()
+                if not ch:
+                    self._pull = None
+                    return None, "feed off"
+                self._pull = self._factory(
+                    target, ch, self.relay.feeds[target].cookies, self.log)
+            worker = self._pull
+        frame = worker.latest_frame()
+        if frame is None:
+            return None, ("unavailable" if not worker.ok else "starting")
+        return frame, ""
+
+    def levels(self):
+        with self._lock:
+            w = self._pull
+        if w is None:
+            return {}
+        return {w.target: w.latest_level()}
+
+    def run(self):
+        """Idle reaper: stop the off-air pull when no one has polled it recently."""
+        while not self._stop.wait(2.0):
+            with self._lock:
+                if (self._pull is not None
+                        and time.monotonic() - self._last_touch > self.idle_timeout):
+                    self._pull.stop()
+                    self._pull = None
+
+    def shutdown(self):
+        self._stop.set()
+        with self._lock:
+            if self._pull is not None:
+                self._pull.stop()
+                self._pull = None
 
 
 def resolve_hls(url, cookies, logger, fmt=YTDLP_FORMAT):
@@ -4121,7 +4373,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  console_page_path=None, companion_url=None, logo_path=None,
                  buttons_page_path=None, race_control_page_path=None,
                  health_store=None, health_monitor_page_path=None, uplot_dir=None,
-                 broadcast_chat_store=None):
+                 broadcast_chat_store=None, preview_manager=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -4993,27 +5245,17 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     target = p[2].upper()
                     if target not in PREVIEW_FEEDS:
                         return self._send({"error": "unknown feed", "feed": p[2]}, 404)
-                    ports = {k: f.port for k, f in relay.feeds.items()}
-                    if relay.pov:
-                        ports["POV"] = relay.pov.port
-                    kind, ref = preview_source(target, relay.live_feed(),
-                                               relay.pov_active(), ports)
-                    if kind == "placeholder":
-                        return self._send({"error": "preview unavailable",
-                                           "note": ref}, 503)
-                    if kind == "obs":
-                        if _obs_ws is None:
-                            return self._send({"error": "obs unavailable"}, 503)
-                        data, note = _obs_ws.get_source_screenshot(ref, width=480)
-                        if data is None:
-                            return self._send({"error": "preview unavailable",
-                                               "note": note}, 503)
-                        return self._send_jpeg(data)
-                    data = grab_feed_frame(ref, width=480)   # kind == "grab"
+                    if preview_manager is None:
+                        return self._send({"error": "preview disabled"}, 404)
+                    data, note = preview_manager.still(target)
                     if data is None:
                         return self._send({"error": "preview unavailable",
-                                           "note": "grab failed"}, 503)
+                                           "note": note}, 503)
                     return self._send_jpeg(data)
+                if p == ["preview", "levels"]:
+                    if preview_manager is None:
+                        return self._send({"error": "preview disabled"}, 404)
+                    return self._send(preview_manager.levels())
                 if p == ["splitscreen"]:
                     if not splitscreen_path:
                         return self._send({"error": "splitscreen page not found"}, 404)
@@ -5943,6 +6185,8 @@ def main():
     submission_store = SubmissionStore(
         os.path.join(runtime, "cockpit-pending.json"),
         os.path.join(runtime, "cockpit-submissions.log"))
+    preview_manager = PreviewManager(relay, lambda: _obs_ws, LOG)
+    threading.Thread(target=preview_manager.run, daemon=True).start()
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
                            timer_store, setup_ctl,
                            overlay_dir=args.overlay_dir, chat_store=chat_store,
@@ -5964,7 +6208,8 @@ def main():
                            uplot_dir=uplot_dir,
                            crew_source=crew_source,
                            broadcast_chat_store=broadcast_chat_store,
-                           logo_path=args.logo)
+                           logo_path=args.logo,
+                           preview_manager=preview_manager)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []

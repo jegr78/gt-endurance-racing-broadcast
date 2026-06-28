@@ -301,7 +301,7 @@ def _cockpit_client(secret="sek", rows=None, live_idx=0,
                     versions_path=None, chat_store=None, timer_store=None,
                     page_path=None, graphics_dir=None,
                     console_page_path=None, discord_client_id=None,
-                    discord_client_secret=None):
+                    discord_client_secret=None, preview_manager=None):
     """Stand up make_handler over a real ThreadingHTTPServer on an ephemeral port.
     Returns (server, get, post); caller must srv.shutdown() in a finally block."""
     import threading as _t
@@ -340,7 +340,8 @@ def _cockpit_client(secret="sek", rows=None, live_idx=0,
                              graphics_dir=graphics_dir,
                              console_page_path=console_page_path,
                              discord_client_id=discord_client_id,
-                             discord_client_secret=discord_client_secret)
+                             discord_client_secret=discord_client_secret,
+                             preview_manager=preview_manager)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     _t.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -653,6 +654,30 @@ def t_graphic_file_traversal_and_missing_are_404():
             assert get("/cockpit/graphics/..%2Fsecret.png?t=" + tok)[0] == 404
         finally:
             srv.shutdown()
+
+
+def t_console_preview_levels_any_auth():
+    """GET /console/preview/levels is reachable by any authenticated /console
+    subject (any-auth), and is denied without a valid token."""
+    import logging as _logging
+
+    class _MinRelay:
+        """Minimal stub: PreviewManager.__init__ stores relay but levels()
+        returns {} immediately when no pull worker is active — no methods called."""
+
+    pm = m.PreviewManager(_MinRelay(), lambda: None, _logging.getLogger("test"))
+    srv, get, _post = _cockpit_client(preview_manager=pm)
+    try:
+        tok = ca.mint_token("sek", "alpha-racing")
+        # Authenticated: must be 200 with a JSON body.
+        code, _h, body = get("/console/preview/levels", cookie="rc_console=" + tok)
+        assert code == 200, code
+        json.loads(body)  # must be valid JSON (e.g. {})
+        # Unauthenticated: must be denied (401), NOT 404 and NOT 200.
+        code, _h, _b = get("/console/preview/levels")
+        assert code == 401, code
+    finally:
+        srv.shutdown()
 
 
 def t_all_console_pages_strip_token_from_url():
