@@ -33,6 +33,36 @@ def t_preview_ffmpeg_cmd_pinned():
         "-map", "0:a:0?", "-af", "ebur128", "-f", "null", "-"]
 
 
+def t_split_mjpeg_frames_extracts_complete_jpegs():
+    soi, eoi = b"\xff\xd8", b"\xff\xd9"
+    a = soi + b"AAAA" + eoi
+    b = soi + b"BBBB" + eoi
+    frames, rem = m.split_mjpeg_frames(b"\x00\x00" + a + b + soi + b"CC")
+    assert frames == [a, b]
+    assert rem == soi + b"CC"          # incomplete trailing frame is kept
+
+
+def t_split_mjpeg_frames_no_complete_frame():
+    frames, rem = m.split_mjpeg_frames(b"\xff\xd8partial")
+    assert frames == []
+    assert rem == b"\xff\xd8partial"
+
+
+def t_parse_ebur128_momentary():
+    line = "[Parsed_ebur128_1 @ 0x55] t: 3   TARGET:-23 LUFS    M: -20.1 S: -22.0 ..."
+    assert abs(m.parse_ebur128_momentary(line) - (-20.1)) < 1e-6
+    assert m.parse_ebur128_momentary("frame= 10 fps=1.0") is None
+    assert m.parse_ebur128_momentary("[Parsed_ebur128_1] M: -inf S: -inf") is None
+
+
+def t_lufs_to_meter_maps_range():
+    assert m.lufs_to_meter(None) == 0.0
+    assert m.lufs_to_meter(-60.0) == 0.0          # at/below floor
+    assert m.lufs_to_meter(-10.0) == 1.0          # at/above ceiling
+    mid = m.lufs_to_meter(-35.0)                   # halfway (-60..-10)
+    assert 0.49 < mid < 0.51
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

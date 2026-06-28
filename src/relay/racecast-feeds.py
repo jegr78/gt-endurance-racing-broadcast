@@ -2180,6 +2180,49 @@ def preview_ffmpeg_cmd(width=PREVIEW_STILL_WIDTH):
             "-map", "0:a:0?", "-af", "ebur128", "-f", "null", "-"]
 
 
+_JPEG_SOI = b"\xff\xd8"
+_JPEG_EOI = b"\xff\xd9"
+_EBUR128_M = re.compile(r"\bM:\s*(-?\d+(?:\.\d+)?)")
+PREVIEW_LUFS_FLOOR = -60.0
+PREVIEW_LUFS_CEIL = -10.0
+
+
+def split_mjpeg_frames(buf):
+    """Pure: pull every COMPLETE JPEG (SOI..EOI) out of an MJPEG byte buffer.
+    Returns (frames, remainder); remainder is the trailing incomplete bytes to
+    prepend to the next read. Leading junk before the first SOI is discarded."""
+    frames = []
+    while True:
+        start = buf.find(_JPEG_SOI)
+        if start < 0:
+            return frames, b""
+        end = buf.find(_JPEG_EOI, start + 2)
+        if end < 0:
+            return frames, buf[start:]
+        frames.append(buf[start:end + 2])
+        buf = buf[end + 2:]
+
+
+def parse_ebur128_momentary(line):
+    """Pure: the momentary loudness (LUFS) from one ffmpeg ebur128 log line, or
+    None when the line carries no finite `M:` value (e.g. '-inf' on silence)."""
+    mt = _EBUR128_M.search(line)
+    if not mt:
+        return None
+    try:
+        return float(mt.group(1))
+    except ValueError:
+        return None
+
+
+def lufs_to_meter(lufs):
+    """Pure: map momentary LUFS to a 0.0..1.0 bar over [floor, ceil]. None -> 0."""
+    if lufs is None:
+        return 0.0
+    frac = (lufs - PREVIEW_LUFS_FLOOR) / (PREVIEW_LUFS_CEIL - PREVIEW_LUFS_FLOOR)
+    return max(0.0, min(1.0, frac))
+
+
 PREVIEW_FEEDS = ("A", "B", "POV")        # tiles the Director Panel can request
 
 
