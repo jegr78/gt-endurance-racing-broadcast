@@ -225,7 +225,7 @@
       </div>
       <div class="card" id="bchatCard">
         <div id="bchat">
-          <h2>Broadcast chat <span class="ro">read-only</span><button id="bchatCompose" class="bcompose" hidden></button></h2>
+          <h2>Broadcast chat <span class="ro">read-only</span><button id="bchatCompose" class="bcompose" hidden></button><button id="bchatRefresh" class="bcompose" title="Reconnect the chat reader and refresh">⟳ Refresh</button></h2>
           <div id="bchatlog"><div class="empty">Waiting for the broadcast stream…</div></div>
         </div>
       </div>
@@ -613,6 +613,20 @@ async function pollBroadcastChat() {
   }
   setTimeout(pollBroadcastChat, 4000);
 }
+// Manual refresh (#294): if the YouTube reader froze on a transient hiccup, the
+// store stops updating and even a page reload shows nothing new — the fix lives
+// server-side, so this kicks /broadcast-chat/reload to re-arm the reader, then
+// re-renders the (echoed) current mirror immediately.
+async function refreshBroadcastChat() {
+  const btn = $('bchatRefresh');
+  if (btn) btn.disabled = true;
+  try {
+    const d = await j('/broadcast-chat/reload');
+    renderBroadcastChat(d.messages || []);
+    bchatTarget(d.target);
+  } catch (e) { /* transient/404 — the 4 s poller handles card teardown */ }
+  if (btn) setTimeout(() => { btn.disabled = false; }, 1200);
+}
 
 // --- Director cues (#243) ---
 const _shownInfo = new Set();   // info cue ids already toasted (avoid re-toasting each poll)
@@ -697,6 +711,7 @@ async function loadGraphics() {
 }
 $('gfxRefresh').addEventListener('click', loadGraphics);
 
+{ const br = $('bchatRefresh'); if (br) br.addEventListener('click', refreshBroadcastChat); }
 pollTally(); pollProgram(); pollTimer(); pollChat(); pollCues(); loadGraphics();
 pollBroadcastChat();
 </script>

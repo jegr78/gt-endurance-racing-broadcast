@@ -575,7 +575,7 @@
   </details>
 
   <details class="bus chat" id="bchatBox" open>
-    <summary>Broadcast chat <span class="robadge">read-only</span><button id="bchatCompose" class="bcompose" hidden></button></summary>
+    <summary>Broadcast chat <span class="robadge">read-only</span><button id="bchatCompose" class="bcompose" hidden></button><button id="bchatRefresh" class="bcompose" title="Reconnect the chat reader and refresh">⟳ Refresh</button></summary>
     <div class="body">
       <div id="bchatLog" class="chatlog"><div class="bempty">Waiting for the broadcast stream…</div></div>
       <div class="hint">Read-only mirror of the event's public YouTube/Twitch broadcast
@@ -1341,6 +1341,22 @@ async function bchatPoll(){
     bchatTarget(d.target);
   }catch(e){ /* relay unreachable: leave the last view in place */ }
 }
+// Manual refresh (#294): a transient hiccup can freeze the server-side YouTube
+// reader so the store stops updating — a page reload alone won't recover it.
+// This kicks /broadcast-chat/reload to re-arm the reader, then re-renders now.
+async function bchatRefresh(e){
+  if (e){ e.preventDefault(); e.stopPropagation(); }   // don't toggle the <details>
+  const btn = $("#bchatRefresh"); if (btn) btn.disabled = true;
+  try{
+    const r = await fetch("/broadcast-chat/reload", {cache:"no-store"});
+    if (r.ok){
+      const d = await r.json();
+      if (!d.error){ bchatRender(d.messages || []); bchatTarget(d.target); }
+    }
+  }catch(e){ /* relay unreachable: leave the last view in place */ }
+  if (btn) setTimeout(()=>{ btn.disabled = false; }, 1200);
+}
+{ const br = $("#bchatRefresh"); if (br) br.addEventListener("click", bchatRefresh); }
 
 SETUP_FIELDS.forEach(([key,label])=>{
   const w = document.createElement("div"); w.className = "fld";
