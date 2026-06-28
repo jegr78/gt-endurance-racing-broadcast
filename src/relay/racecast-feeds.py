@@ -2372,7 +2372,7 @@ class PreviewManager:
         self._factory = worker_factory or (
             lambda target, channel, cookies, log: _PreviewPullWorker(
                 target, channel, cookies, log).start())
-        self._obs_cache = {}              # source_name -> (monotonic_ts, jpeg)
+        self._obs_cache = {}              # source_name -> (monotonic_ts, jpeg); not locked — CPython GIL keeps dict ops atomic, a concurrent cold-miss only causes a benign double OBS fetch
         self._pull = None                 # current _PreviewPullWorker or None
         self._last_touch = 0.0
         self._lock = threading.Lock()
@@ -2395,7 +2395,7 @@ class PreviewManager:
         return self._pull_still(target)    # kind == "pull"
 
     def _obs_still(self, source_name):
-        now = time.monotonic()
+        now = time.monotonic()  # captured before the OBS call: TTL measured from fetch start, so a slow OBS response shortens the effective window — intentional, conservative
         hit = self._obs_cache.get(source_name)
         if hit and now - hit[0] < self.obs_ttl:
             return hit[1], ""
