@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for the Director Panel live preview. Run: python3 tests/test_feed_preview.py"""
-import importlib.util, os
+import importlib.util, os, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -63,7 +63,6 @@ def t_lufs_to_meter_maps_range():
     assert 0.49 < mid < 0.51
 
 
-import time  # noqa: E402  (used by _wait below)
 
 
 class _FakeProc:
