@@ -183,6 +183,24 @@ HEALTH_COLORS = {                # Discord embed sidebar colour per level
     "green": 0x2ECC71, "yellow": 0xF1C40F, "red": 0xE74C3C}
 _HEALTH_LABEL = {"green": "OK", "yellow": "DEGRADED", "red": "CRITICAL"}
 
+# ---------- Feed fan-out stall detection (relay feed multiplexing, #358) --------
+FANOUT_STALL_S = 8.0   # seconds without a byte from streamlink before a fan-out reader is "stalled"
+FANOUT_RING_BYTES = 8 * 1024 * 1024   # per-feed ring window (bounded; ≈ a few seconds at typical feed bitrate)
+_FANOUT_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def fanout_enabled(environ):
+    """True iff RACECAST_FEED_FANOUT is a truthy token. Default off → today's
+    direct-serve path. Pure so the switch is unit-testable."""
+    return str(environ.get("RACECAST_FEED_FANOUT", "")).strip().lower() in _FANOUT_TRUTHY
+
+
+def feed_stalled(last_byte_ts, now, stall_s=FANOUT_STALL_S):
+    """True iff a fan-out live reader has produced bytes before but none for
+    `stall_s`. A None timestamp (never produced) is NOT a stall — that startup
+    case is handled by the existing dead_serves path, not the watchdog."""
+    return last_byte_ts is not None and (now - last_byte_ts) > stall_s
+
 
 def feed_health_state(dropped, dropped_since, served_ok, now,
                       grace_s=HEALTH_DROP_GRACE_S):
@@ -2146,6 +2164,26 @@ def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None,
     return base + ["--", target, "best"]
 
 
+def streamlink_fanout_cmd(target, platform="youtube", twitch_token=None,
+                          cookies=None, user_agent=STREAMLINK_YT_UA):
+    """Argv for the fan-out live reader: same resolution rules as
+    streamlink_serve_cmd, but the sink is --stdout (the relay reads it and
+    re-serves to many consumers) instead of --player-external-http. `--` guards
+    the positional URL/stream."""
+    base = ["streamlink", "--stdout"]
+    if platform == "twitch":
+        base += STREAMLINK_TWITCH
+        if twitch_token:
+            base += ["--twitch-api-header", f"Authorization=OAuth {twitch_token}"]
+    else:
+        base += STREAMLINK_SERVE
+        if user_agent:
+            base += ["--http-header", f"User-Agent={user_agent}"]
+        if cookies:
+            base += ["--http-cookies-file", cookies]
+    return base + ["--", target, "best"]
+
+
 # --- Director Panel off-air preview pull (decoupled from OBS / the loopback port) ---
 PREVIEW_FMT_YT = "b[height<=360]/w"     # yt-dlp: pick YouTube's 360p rendition (worst fallback)
 PREVIEW_QUALITY_YT = "best"             # the resolved YT URL is already the 360p rendition
@@ -2329,18 +2367,126 @@ def _decode_lines(byte_iter):
         yield raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else raw
 
 
+class _PreviewRingTap:
+    """Preview worker that taps a FeedRing instead of spawning a second streamlink
+    pull. One ffmpeg subprocess receives ring bytes on stdin; its stdout (MJPEG) and
+    stderr (ebur128) are pumped by the same helpers as _PreviewPullWorker. The ring
+    is read from its current live edge so only recently-buffered data is consumed —
+    no rewinding to stream start. Best effort: any spawn/read failure leaves .ok
+    False and the manager shows the tile 'unavailable'; nothing here can affect the
+    live feed workers. `spawn` is injectable for tests."""
+
+    def __init__(self, ring, target, log, spawn=None):
+        self.ring = ring
+        self.target = target
+        self.log = log
+        self._spawn = spawn or self._spawn_real
+        self._proc = None
+        self._frame = None
+        self._level = 0.0
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self.ok = True
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+        return self
+
+    def latest_frame(self):
+        with self._lock:
+            return self._frame
+
+    def latest_level(self):
+        with self._lock:
+            return self._level
+
+    def _spawn_real(self, _worker):
+        ff_cmd = preview_ffmpeg_cmd()
+        ff = subprocess.Popen(ff_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=False,
+                              env=external_tool_env(), **_no_window_kwargs())
+        self._proc = ff
+        stderr_iter = _decode_lines(iter(ff.stderr.readline, b""))
+        return ff, ff.stdin, ff.stdout, stderr_iter
+
+    def _run(self):
+        try:
+            proc, stdin, video, stderr_iter = self._spawn(self)
+        except Exception as e:                       # noqa: BLE001 best-effort
+            self.ok = False
+            self.log.info("preview ring tap %s spawn error: %s", self.target, e)
+            return
+        if proc is None or video is None:
+            self.ok = False
+            return
+        self._proc = proc
+        threading.Thread(target=self._pump_levels, args=(stderr_iter,), daemon=True).start()
+        threading.Thread(target=self._feed_stdin, args=(stdin,), daemon=True).start()
+        buf = b""
+        while not self._stop.is_set():
+            chunk = video.read(65536)
+            if not chunk:
+                break
+            frames, buf = split_mjpeg_frames(buf + chunk)
+            if frames:
+                with self._lock:
+                    self._frame = frames[-1]
+        self._kill()
+
+    def _feed_stdin(self, stdin):
+        """Pump ring bytes into ffmpeg stdin; join at the current live edge."""
+        cursor = self.ring.live_offset() if hasattr(self.ring, "live_offset") else 0
+        try:
+            while not self._stop.is_set() and not self.ring.closed:
+                data, cursor = self.ring.read(cursor, 1.0)
+                if data:
+                    stdin.write(data)
+                    stdin.flush()
+        except OSError:
+            pass  # ffmpeg stdin closed (process gone) — ring pump exits cleanly
+        finally:
+            try:
+                stdin.close()
+            except OSError:
+                pass  # already closed
+
+    def _pump_levels(self, stderr_iter):
+        for line in stderr_iter:
+            if self._stop.is_set():
+                break
+            lufs = parse_ebur128_momentary(line)
+            if lufs is not None:
+                with self._lock:
+                    self._level = lufs_to_meter(lufs)
+
+    def _kill(self):
+        p = getattr(self, "_proc", None)
+        try:
+            if p and p.poll() is None:
+                p.kill()
+        except Exception:                        # noqa: BLE001
+            pass
+
+    def stop(self):
+        self._stop.set()
+        self._kill()
+
+
 PREVIEW_FEEDS = ("A", "B", "POV")        # tiles the Director Panel can request
 
 
-def preview_source(target, live, pov_active, feed_keys):
+def preview_source(target, live, pov_active, feed_keys, fanout=False):
     """Pure: how to source a feed preview tile.
 
     target      'A' | 'B' | 'POV'
     live        the on-air feed ('A' | 'B') from Relay.live_feed()
     pov_active  Relay.pov_active()
     feed_keys   the configured feed keys, e.g. {'A','B'} (+'POV' when a POV feed exists)
+    fanout      when True the off-air feed is read from the relay's FeedRing
+                ('ring') instead of a decoupled second pull ('pull').
 
-    Returns ('obs', source_name) | ('pull', feed_key) | ('placeholder', reason).
+    Returns ('obs', source_name) | ('pull', feed_key) | ('ring', feed_key)
+            | ('placeholder', reason).
     The on-air feed and the active POV are decoding in OBS, so screenshot the
     source directly. The off-air feed is NOT decoded by OBS and its loopback port
     is held single-consumer by OBS, so it needs a decoupled low-res pull (handled
@@ -2352,18 +2498,131 @@ def preview_source(target, live, pov_active, feed_keys):
             return ("placeholder", "feed off")
         if target == live:
             return ("obs", "Feed " + target)
-        return ("pull", target)
+        return ("ring", target) if fanout else ("pull", target)
     return ("placeholder", "unknown feed")
+
+
+class FeedRing:
+    """A bounded byte ring for one feed: a single live writer (the streamlink
+    reader) and many readers (OBS, preview), each tracking its own absolute
+    offset. The writer NEVER blocks — when a reader falls behind the retained
+    window, it snaps to the oldest retained byte, so it receives the full window
+    and loses only overflowed bytes. Pure stdlib; unit-testable with no real stream."""
+
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self._buf = bytearray()
+        self._base = 0                 # absolute offset of self._buf[0]
+        self._cond = threading.Condition()
+        self.closed = False
+
+    def write(self, data):
+        if not data:
+            return
+        with self._cond:
+            self._buf += data
+            overflow = len(self._buf) - self.capacity
+            if overflow > 0:
+                del self._buf[:overflow]
+                self._base += overflow
+            self._cond.notify_all()
+
+    def live_offset(self):
+        with self._cond:
+            return self._base + len(self._buf)
+
+    def start_offset(self):
+        with self._cond:
+            return self._base
+
+    def read(self, cursor, timeout):
+        with self._cond:
+            live = self._base + len(self._buf)
+            if cursor >= live and not self.closed:
+                self._cond.wait(timeout)
+                live = self._base + len(self._buf)
+            if cursor < self._base:        # fell behind → snap to oldest retained byte (lose only overflowed)
+                cursor = self._base
+            if cursor >= live:
+                return b"", cursor
+            data = bytes(self._buf[cursor - self._base:])
+            return data, live
+
+    def close(self):
+        with self._cond:
+            self.closed = True
+            self._cond.notify_all()
+
+
+class FeedFanoutServer:
+    """Serve one FeedRing to many HTTP consumers (OBS + preview) on a loopback
+    port. One accept loop + one handler thread per consumer. A slow/stuck socket
+    stalls only its own handler; the ring writer is never touched. Best effort:
+    a handler error closes that socket and returns."""
+
+    def __init__(self, host, port, ring, log):
+        self.host = host
+        self.port = port
+        self.ring = ring
+        self.log = log
+        self._sock = None
+        self._stop = False
+
+    def start(self):
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind((self.host, self.port))
+        self.port = self._sock.getsockname()[1]
+        self._sock.listen(8)
+        threading.Thread(target=self._accept_loop, daemon=True).start()
+        return self
+
+    def _accept_loop(self):
+        while not self._stop:
+            try:
+                conn, _ = self._sock.accept()
+            except OSError:
+                return                          # socket closed by stop()
+            threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
+
+    def _serve(self, conn):
+        try:
+            conn.recv(65536)                    # consume the request line/headers
+            conn.sendall(b"HTTP/1.0 200 OK\r\n"
+                         b"Content-Type: video/mp2t\r\n"
+                         b"Connection: close\r\n\r\n")
+            cursor = self.ring.live_offset()    # join at the live edge
+            while not self._stop and not self.ring.closed:
+                data, cursor = self.ring.read(cursor, timeout=1.0)
+                if data:
+                    conn.sendall(data)
+        except OSError:
+            pass                                # consumer went away / slow send aborted
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass  # already closed
+
+    def stop(self):
+        self._stop = True
+        self.ring.close()
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except OSError:
+                pass  # already closed
 
 
 class PreviewManager:
     """Director Panel preview source-of-truth. Active tiles (on-air feed / active
     POV) are served from a short-TTL OBS-screenshot cache; the single off-air feed
-    is served from one reference-counted _PreviewPullWorker. All directors poll
-    this shared state, so cost is flat in viewer count. Best effort throughout."""
+    is served from one reference-counted _PreviewPullWorker (fan-out off) or a
+    _PreviewRingTap (fan-out on). All directors poll this shared state, so cost is
+    flat in viewer count. Best effort throughout."""
 
     def __init__(self, relay, obs_ws_get, log, obs_ttl=1.0, idle_timeout=8.0,
-                 worker_factory=None):
+                 worker_factory=None, ring_factory=None):
         self.relay = relay
         self._obs_get = obs_ws_get
         self.log = log
@@ -2372,8 +2631,10 @@ class PreviewManager:
         self._factory = worker_factory or (
             lambda target, channel, cookies, log: _PreviewPullWorker(
                 target, channel, cookies, log).start())
+        self._ring_factory = ring_factory or (
+            lambda ring, target, log: _PreviewRingTap(ring, target, log).start())
         self._obs_cache = {}              # source_name -> (monotonic_ts, jpeg); not locked — CPython GIL keeps dict ops atomic, a concurrent cold-miss only causes a benign double OBS fetch
-        self._pull = None                 # current _PreviewPullWorker or None
+        self._pull = None                 # current _PreviewPullWorker / _PreviewRingTap or None
         self._last_touch = 0.0
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -2386,12 +2647,16 @@ class PreviewManager:
 
     def still(self, target):
         target = target.upper()
+        fanout = getattr(self.relay, "fanout", False)
         kind, ref = preview_source(target, self.relay.live_feed(),
-                                   self.relay.pov_active(), self._feed_keys())
+                                   self.relay.pov_active(), self._feed_keys(),
+                                   fanout=fanout)
         if kind == "placeholder":
             return None, ref
         if kind == "obs":
             return self._obs_still(ref)
+        if kind == "ring":
+            return self._ring_still(target)
         return self._pull_still(target)    # kind == "pull"
 
     def _obs_still(self, source_name):
@@ -2420,6 +2685,23 @@ class PreviewManager:
                     return None, "feed off"
                 self._pull = self._factory(
                     target, ch, self.relay.feeds[target].cookies, self.log)
+            worker = self._pull
+        frame = worker.latest_frame()
+        if frame is None:
+            return None, ("unavailable" if not worker.ok else "starting")
+        return frame, ""
+
+    def _ring_still(self, target):
+        with self._lock:
+            self._last_touch = time.monotonic()
+            if self._pull is None or self._pull.target != target:
+                if self._pull is not None:
+                    self._pull.stop()
+                ring = getattr(self.relay.feeds.get(target), "ring", None)
+                if ring is None:
+                    self._pull = None
+                    return None, "unavailable"
+                self._pull = self._ring_factory(ring, target, self.log)
             worker = self._pull
         frame = worker.latest_frame()
         if frame is None:
@@ -3583,6 +3865,8 @@ class Feed:
         # _clear_drop_health() (that runs every serve-start, which would zero it).
         self.dead_serves = 0
         self.quality = None               # last streamlink-selected quality (e.g. "720p")
+        self.ring = None              # set by the relay when fan-out is enabled (#358); None → direct-serve
+        self.last_byte_ts = None      # monotonic ts of the last byte pumped into the ring (fan-out health)
 
     def current_channel(self):
         if self.paused:
@@ -3646,6 +3930,52 @@ class Feed:
         self.advance.set(); self._kill_proc()
         return True
 
+    def _serve_fanout(self, target, serve_platform, token):
+        """Fan-out serve: stream `streamlink --stdout` into self.ring, tracking
+        last_byte_ts so the stall watchdog and EOF both surface. Returns
+        (serve_elapsed, serve_rc) like the direct-serve proc.wait() so Feed.run's
+        classification tail is shared. A separate watchdog kills streamlink on a
+        byte-stall (the reader is parked in read1() and can't self-check); stop /
+        advance / EOF end the loop directly."""
+        cmd = streamlink_fanout_cmd(target, serve_platform, token, cookies=self.cookies)
+        self.proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            env=external_tool_env(), **_no_window_kwargs())
+        self._set_phase("serving")
+        self._clear_drop_health()
+        self.last_byte_ts = None
+        serve_started = time.monotonic()
+        stdout = self.proc.stdout
+        watchdog_stop = threading.Event()
+
+        def _watchdog():
+            # The reader blocks in read1() while bytes flow; a true stall
+            # (streamlink alive, zero bytes) can't be caught inline, so this
+            # thread kills the proc when last_byte_ts goes stale, unblocking the
+            # read with EOF. A never-produced byte (last_byte_ts None) is left to
+            # the existing dead_serves/EOF path, per the spec.
+            while not watchdog_stop.wait(1.0):
+                if self.stop or self.advance.is_set():
+                    return
+                if feed_stalled(self.last_byte_ts, time.monotonic()):
+                    self.log.warning("fan-out stall on %s — killing reader", self.name)
+                    self._kill_proc()
+                    return
+
+        wd = threading.Thread(target=_watchdog, daemon=True)
+        wd.start()
+        try:
+            while not self.stop and not self.advance.is_set():
+                chunk = stdout.read1(65536)
+                if not chunk:
+                    break                    # EOF (ended / 403 / expired) or watchdog kill
+                self.ring.write(chunk)
+                self.last_byte_ts = time.monotonic()
+        finally:
+            watchdog_stop.set()
+            self._kill_proc()
+        return time.monotonic() - serve_started, (self.proc.returncode or 0)
+
     def run(self):
         while not self.stop:
             ch, i = self.current_channel()
@@ -3673,31 +4003,39 @@ class Feed:
                 token, target, serve_platform = None, hls, "youtube"
 
             self.log.info("serving stint %d (%s)", i + 1, serve_platform)
-            cmd = streamlink_serve_cmd(target, self.port, serve_platform, token,
-                                       cookies=self.cookies)
-            try:
-                self.proc = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, encoding="utf-8", errors="replace",
-                    env=external_tool_env(), **_no_window_kwargs())
-                pump = threading.Thread(
-                    target=logsetup.pump_subprocess,
-                    args=(self.proc.stdout, self.log, "streamlink"),
-                    kwargs={"on_line": self._observe_streamlink_line},
-                    daemon=True)
-                pump.start()
-                if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
-                    self.last_error = None
-                self._set_phase("serving")
-                self._clear_drop_health()     # live picture -> any prior alarm clears; re-earn served_ok
-                serve_started = time.monotonic()
-                self.proc.wait()
-                serve_elapsed = time.monotonic() - serve_started
-                serve_rc = self.proc.returncode
-            except FileNotFoundError:
-                self.log.warning("streamlink not found on PATH — retrying")
-                self.proc = None
-                time.sleep(RETRY_SLEEP); continue
+            if self.ring is not None:
+                try:
+                    serve_elapsed, serve_rc = self._serve_fanout(target, serve_platform, token)
+                except FileNotFoundError:
+                    self.log.warning("streamlink not found on PATH — retrying")
+                    self.proc = None
+                    time.sleep(RETRY_SLEEP); continue
+            else:
+                cmd = streamlink_serve_cmd(target, self.port, serve_platform, token,
+                                           cookies=self.cookies)
+                try:
+                    self.proc = subprocess.Popen(
+                        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, encoding="utf-8", errors="replace",
+                        env=external_tool_env(), **_no_window_kwargs())
+                    pump = threading.Thread(
+                        target=logsetup.pump_subprocess,
+                        args=(self.proc.stdout, self.log, "streamlink"),
+                        kwargs={"on_line": self._observe_streamlink_line},
+                        daemon=True)
+                    pump.start()
+                    if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
+                        self.last_error = None
+                    self._set_phase("serving")
+                    self._clear_drop_health()     # live picture -> any prior alarm clears; re-earn served_ok
+                    serve_started = time.monotonic()
+                    self.proc.wait()
+                    serve_elapsed = time.monotonic() - serve_started
+                    serve_rc = self.proc.returncode
+                except FileNotFoundError:
+                    self.log.warning("streamlink not found on PATH — retrying")
+                    self.proc = None
+                    time.sleep(RETRY_SLEEP); continue
             self._set_phase("connecting")
             # The just-ended serve "earned" served_ok if it lasted long enough —
             # only then can a future drop be classified a genuine live-picture loss
@@ -3803,6 +4141,8 @@ class Relay:
             self.pov = Feed("POV", pov_port, 0, pov_source.get, logdir, cookies,
                             fmt=YTDLP_FORMAT_POV, cookie_dir=cookie_dir)
             self.pov.paused = True
+        self.fanout = fanout_enabled(os.environ)
+        self._fanout_servers = []
         # Live health heartbeat: displayed level (refreshed on every /status and
         # every tick) + the notification baseline (advanced ONLY by the heartbeat
         # tick so a 2 s /status refresh never "consumes" a transition before the
@@ -3834,6 +4174,14 @@ class Relay:
         return self.active_source()
 
     def start(self):
+        if self.fanout:
+            live = list(self.feeds.items()) + ([("POV", self.pov)] if self.pov else [])
+            for _name, f in live:
+                f.ring = FeedRing(FANOUT_RING_BYTES)
+                srv = FeedFanoutServer("127.0.0.1", f.port, f.ring,
+                                       logging.getLogger("racecast.fanout." + f.name))
+                srv.start()
+                self._fanout_servers.append(srv)
         for f in self.feeds.values():
             threading.Thread(target=f.run, daemon=True).start()
         if self.pov:
@@ -4316,6 +4664,7 @@ class Relay:
     def shutdown(self):
         for f in self.feeds.values(): f.shutdown()
         if self.pov: self.pov.shutdown()
+        for srv in self._fanout_servers: srv.stop()
 
 
 def _push_live_schedule(relay, setup_ctl):

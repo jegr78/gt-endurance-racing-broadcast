@@ -370,10 +370,39 @@ def run_synthetic(args):
         ui_url = f"http://127.0.0.1:{ui_port}"
         _wait_ready(ui_url + "/api/ping", args.timeout, ui, ui_log)
 
-        # 6. run checks
+        # 6. fan-out relay — a third relay with RACECAST_FEED_FANOUT=1 on explicit
+        #    free feed ports.  In fan-out mode the relay itself binds the feed
+        #    ports (FeedRing + FeedFanoutServer in Relay.start), so once /status
+        #    is up the feed-A port is already bound and serving HTTP.  The two
+        #    existing relays run in direct-serve mode and never bind feed ports
+        #    (the no-op stub streamlink exits immediately), so allocating fresh
+        #    free ports guarantees no collision.
+        fanout_feed_a = E.free_port()
+        fanout_feed_b = E.free_port()
+        fanout_pov = E.free_port()
+        fanout_http = E.free_port()
+        fanout_runtime = os.path.join(tmp, "runtime-fanout")
+        os.makedirs(fanout_runtime, exist_ok=True)
+        env4 = dict(env); env4["RACECAST_FEED_FANOUT"] = "1"
+        fanout_log = os.path.join(tmp, "relay-fanout.log")
+        fanout_relay = _spawn(
+            launcher + ["relay", "run", "--bind", "127.0.0.1",
+                        "--http-port", str(fanout_http),
+                        "--sheet-csv-url", csv_url,
+                        "--cookies", dummy_cookies,
+                        "--runtime-dir", fanout_runtime,
+                        "--ports", f"{fanout_feed_a},{fanout_feed_b}",
+                        "--pov-port", str(fanout_pov)],
+            env4, fanout_log, cwd=run_cwd)
+        procs.append(fanout_relay)
+        _wait_ready(f"http://127.0.0.1:{fanout_http}/status",
+                    args.timeout, fanout_relay, fanout_log)
+
+        # 7. run checks
         ctx = E.Ctx(relay_url=relay_url, disabled_relay_url=dis_url, ui_url=ui_url,
                     token=token, streamer_key=key, own_stint="Stint 1",
-                    expect={"schedule_len": 2, "live_stint": 1})
+                    expect={"schedule_len": 2, "live_stint": 1},
+                    fanout_feed_port=fanout_feed_a)
         results, code = E.run_checks(E.SYNTHETIC_CHECKS, ctx)
         if args.playwright:
             # Optional, gated: append the rendered-check results AFTER the API

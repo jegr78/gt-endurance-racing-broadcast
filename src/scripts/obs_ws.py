@@ -776,6 +776,30 @@ def reflect_feed_state(live, do_cut, scene=STINT_SCENE, sources=None,
         session.close()
 
 
+def set_feed_close_when_inactive(inputs, value=True, host="127.0.0.1", port=None,
+                                  password=None, timeout=2.0):
+    """Set close_when_inactive on each named feed media input (best effort).
+    When fan-out is enabled, OBS disconnects off-air sources so no stale
+    backlog forms and the ~2 s stale-on-activation glitch is eliminated.
+    `inputs` is a list of OBS input names (e.g. FEED_SOURCES.values() +
+    [POV_SOURCE]). Returns "" on success or a short note on any failure;
+    never raises."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return note
+    try:
+        for name in inputs:
+            session.request("SetInputSettings",
+                            {"inputName": name,
+                             "inputSettings": {"close_when_inactive": bool(value)},
+                             "overlay": True})
+        return ""
+    except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        return str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
 def set_scene_item_enabled(scene, source, enabled, host="127.0.0.1", port=None,
                            password=None, timeout=2.0):
     """Enable/disable a scene item (best effort). Returns (ok, note); (False,

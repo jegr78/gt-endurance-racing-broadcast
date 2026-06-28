@@ -511,6 +511,99 @@ def t_rendered_skip_does_not_change_exit_code():
         driver._playwright_available = saved
 
 
+def t_fanout_http_ok_pass():
+    """_fanout_http_ok: a well-formed HTTP/1.0 200 with video/mp2t returns True."""
+    raw = (b"HTTP/1.0 200 OK\r\n"
+           b"Content-Type: video/mp2t\r\n"
+           b"Connection: close\r\n\r\n")
+    ok, msg = e._fanout_http_ok(raw)
+    assert ok, f"expected ok=True, msg={msg!r}"
+    assert msg == "", msg
+
+
+def t_fanout_http_ok_fail_non_200():
+    """_fanout_http_ok: a non-200 status line returns False."""
+    raw = b"HTTP/1.0 404 Not Found\r\nContent-Type: text/html\r\n\r\n"
+    ok, _ = e._fanout_http_ok(raw)
+    assert not ok
+
+
+def t_fanout_http_ok_fail_no_content_type():
+    """_fanout_http_ok: 200 but no video/mp2t header returns False."""
+    raw = (b"HTTP/1.0 200 OK\r\n"
+           b"Content-Type: text/html\r\n"
+           b"Connection: close\r\n\r\n")
+    ok, msg = e._fanout_http_ok(raw)
+    assert not ok
+    assert "video/mp2t" in msg
+
+
+def t_fanout_http_ok_case_insensitive():
+    """_fanout_http_ok: video/mp2t match is case-insensitive."""
+    raw = (b"HTTP/1.0 200 OK\r\n"
+           b"content-type: Video/MP2T\r\n\r\n")
+    ok, _ = e._fanout_http_ok(raw)
+    assert ok
+
+
+def t_check_fanout_feed_port_bound_skip_when_no_port():
+    """check_fanout_feed_port_bound skips when fanout_feed_port is None."""
+    ctx = e.Ctx(relay_url=None, disabled_relay_url=None, ui_url=None,
+                token="t", streamer_key="alice", expect={})
+    r = e.check_fanout_feed_port_bound(ctx)
+    assert r.status == "skip", r
+    assert r.name == "fanout_feed_port_bound"
+
+
+def t_check_fanout_feed_port_bound_with_stub_server():
+    """check_fanout_feed_port_bound passes against a stub TCP server serving the
+    exact FeedFanoutServer response (HTTP/1.0 200 + Content-Type: video/mp2t)."""
+    import threading
+
+    port = e.free_port()
+    srv_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv_sock.bind(("127.0.0.1", port))
+    srv_sock.listen(5)
+    srv_sock.settimeout(5)
+
+    def _serve():
+        try:
+            conn, _ = srv_sock.accept()
+            conn.recv(65536)  # consume the request
+            conn.sendall(b"HTTP/1.0 200 OK\r\n"
+                         b"Content-Type: video/mp2t\r\n"
+                         b"Connection: close\r\n\r\n")
+            conn.close()
+        except OSError:
+            pass  # client disconnected or timeout — nothing to do
+        finally:
+            srv_sock.close()
+
+    threading.Thread(target=_serve, daemon=True).start()
+    ctx = e.Ctx(relay_url=None, disabled_relay_url=None, ui_url=None,
+                token="t", streamer_key="alice", expect={}, fanout_feed_port=port)
+    r = e.check_fanout_feed_port_bound(ctx)
+    assert r.status == "pass", r
+
+
+def t_check_fanout_feed_port_bound_fail_connect_refused():
+    """check_fanout_feed_port_bound returns fail (not exception) when no server listens."""
+    # Use a port that's free (nothing listening) so the connect is immediately refused.
+    port = e.free_port()   # port is released; nothing binds it before we call the check
+    ctx = e.Ctx(relay_url=None, disabled_relay_url=None, ui_url=None,
+                token="t", streamer_key="alice", expect={}, fanout_feed_port=port)
+    r = e.check_fanout_feed_port_bound(ctx)
+    assert r.status == "fail", r
+    assert "127.0.0.1" in r.message
+
+
+def t_check_fanout_feed_port_bound_registration():
+    """check_fanout_feed_port_bound is registered in SYNTHETIC_CHECKS and callable."""
+    assert e.check_fanout_feed_port_bound in e.SYNTHETIC_CHECKS
+    assert callable(e.check_fanout_feed_port_bound)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
