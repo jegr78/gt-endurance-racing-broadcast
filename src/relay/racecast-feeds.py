@@ -4933,6 +4933,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return None
                 self._send(broadcast_chat_store.data())
                 return None
+            # Read-only Director-Panel preview mirror: any authenticated /console
+            # subject may poll the cached stills + audio levels. Funnelled under the
+            # existing /console mount — no new public surface; the data is a low-res
+            # still of already-public platform video, never persisted.
+            if method == "GET" and (sub == ["preview", "levels"]
+                    or (len(sub) == 3 and sub[:2] == ["preview", "feed"])):
+                return sub      # -> root /preview/... handler in do_GET
             # /console/buttons/* -> reverse-proxy to the local Companion (#236), director only.
             # 'buttons/health' is served by the relay (launcher availability probe) and shadows
             # that one upstream path (Companion's UI does not use /health).
