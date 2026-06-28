@@ -368,7 +368,10 @@
   .pvfeeds{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px}
   .pvlabel{font-size:11px;opacity:.85;margin-top:2px;display:flex;justify-content:space-between;align-items:center;gap:6px}
   .pvtile.onair .pvframe{outline:2px solid #4ade80;outline-offset:-1px}
-  .pvrefresh{padding:0 8px}
+  .pvbar{height:6px;background:#1a1f27;border-radius:3px;margin-top:4px;overflow:hidden}
+  .pvbarfill{display:block;height:100%;width:0;background:#4ade80;transition:width .2s}
+  .pvtile.paused .pvframe{opacity:.4}
+  .pvtile.onair .pvbar{display:none}
 </style>
 </head>
 <body>
@@ -425,15 +428,18 @@
         <div class="pvtile" data-feed="A">
           <div class="pvframe"><img alt="Feed A">
             <div class="pvph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="12" rx="2"></rect><path d="M10 8.5l4.5 2.5-4.5 2.5z" fill="currentColor" stroke="none"></path><path d="M8.5 20h7"></path><path d="M12 16.5V20"></path></svg><span class="pvphtxt">Load still</span></div></div>
-          <div class="pvlabel"><span>FEED A</span><button class="k pvrefresh">↻</button></div></div>
+          <div class="pvbar"><span class="pvbarfill"></span></div>
+          <div class="pvlabel"><span>FEED A</span><button class="k pvtoggle" data-feed="A">PAUSE</button></div></div>
         <div class="pvtile" data-feed="B">
           <div class="pvframe"><img alt="Feed B">
             <div class="pvph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="12" rx="2"></rect><path d="M10 8.5l4.5 2.5-4.5 2.5z" fill="currentColor" stroke="none"></path><path d="M8.5 20h7"></path><path d="M12 16.5V20"></path></svg><span class="pvphtxt">Load still</span></div></div>
-          <div class="pvlabel"><span>FEED B</span><button class="k pvrefresh">↻</button></div></div>
+          <div class="pvbar"><span class="pvbarfill"></span></div>
+          <div class="pvlabel"><span>FEED B</span><button class="k pvtoggle" data-feed="B">PAUSE</button></div></div>
         <div class="pvtile" data-feed="POV">
           <div class="pvframe"><img alt="POV">
             <div class="pvph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="12" rx="2"></rect><path d="M10 8.5l4.5 2.5-4.5 2.5z" fill="currentColor" stroke="none"></path><path d="M8.5 20h7"></path><path d="M12 16.5V20"></path></svg><span class="pvphtxt">Load still</span></div></div>
-          <div class="pvlabel"><span>POV</span><button class="k pvrefresh">↻</button></div></div>
+          <div class="pvbar"><span class="pvbarfill"></span></div>
+          <div class="pvlabel"><span>POV</span><button class="k pvtoggle" data-feed="POV">PAUSE</button></div></div>
       </div>
     </div>
   </section>
@@ -1792,7 +1798,10 @@ document.getElementById("cueText").addEventListener("keydown", e=>{
 
 // ---- Live Preview ---------------------------------------------------------
 const PV_KEY = "rc_preview_open";
+const PV_FEED_MS = 1000;
+const pvFeedTimers = {};
 let pvTimer = null;
+let pvLevelTimer = null;
 function pvSetProgram(){
   const frame = $("#pvProgramFrame"), img = $("#pvProgram");
   const ph = frame.querySelector(".pvph"), txt = ph.querySelector(".pvphtxt");
@@ -1805,31 +1814,57 @@ function pvSetProgram(){
 function pvStart(){
   $("#pvBody").hidden = false; $("#pvToggle").textContent = "HIDE";
   pvSetProgram(); pvTimer = setInterval(pvSetProgram, 1500);
+  document.querySelectorAll(".pvtile").forEach(pvStartFeed);
+  pvLevelTimer = setInterval(pvPollLevels, PV_FEED_MS); pvPollLevels();
 }
 function pvStop(){
   $("#pvBody").hidden = true; $("#pvToggle").textContent = "SHOW";
   if(pvTimer){ clearInterval(pvTimer); pvTimer = null; }
+  document.querySelectorAll(".pvtile").forEach(pvStopFeed);
+  if(pvLevelTimer){ clearInterval(pvLevelTimer); pvLevelTimer = null; }
 }
 $("#pvToggle").onclick = () => {
   const opening = $("#pvBody").hidden;
   if(opening){ pvStart(); } else { pvStop(); }
   try{ localStorage.setItem(PV_KEY, opening ? "1" : "0"); }catch(e){}
 };
-function pvGrabFeed(tile){
+function pvPollFeed(tile){
   const feed = tile.dataset.feed, frame = tile.querySelector(".pvframe"),
         img = frame.querySelector("img"), ph = frame.querySelector(".pvph"),
-        txt = ph.querySelector(".pvphtxt"), btn = tile.querySelector(".pvrefresh");
-  btn.disabled = true; btn.textContent = "…";
-  // Show the stand-in while grabbing, never a broken image.
-  frame.classList.remove("loaded"); ph.classList.remove("err"); txt.textContent = "Loading …";
-  const done = () => { btn.disabled = false; btn.textContent = "↻"; };
-  img.onload = () => { frame.classList.add("loaded"); done(); };
-  img.onerror = () => { img.removeAttribute("src");
-    frame.classList.remove("loaded"); ph.classList.add("err"); txt.textContent = "Unavailable"; done(); };
-  img.src = RC_API("/preview/feed/" + feed) + "?ts=" + Date.now();
+        txt = ph.querySelector(".pvphtxt");
+  const probe = new Image();
+  probe.onload = () => { img.src = probe.src; frame.classList.add("loaded");
+                         ph.classList.remove("err"); };
+  probe.onerror = () => { frame.classList.remove("loaded");
+                          ph.classList.add("err"); txt.textContent = "Unavailable"; };
+  probe.src = RC_API("/preview/feed/" + feed) + "?ts=" + Date.now();
 }
-document.querySelectorAll(".pvtile .pvrefresh").forEach(btn => {
-  btn.onclick = () => pvGrabFeed(btn.closest(".pvtile"));
+function pvStartFeed(tile){
+  const feed = tile.dataset.feed;
+  if(pvFeedTimers[feed]) return;
+  tile.classList.remove("paused");
+  pvPollFeed(tile);
+  pvFeedTimers[feed] = setInterval(() => pvPollFeed(tile), PV_FEED_MS);
+}
+function pvStopFeed(tile){
+  const feed = tile.dataset.feed;
+  if(pvFeedTimers[feed]){ clearInterval(pvFeedTimers[feed]); delete pvFeedTimers[feed]; }
+  tile.classList.add("paused");
+}
+function pvPollLevels(){
+  fetch(RC_API("/preview/levels")).then(r => r.ok ? r.json() : {}).then(map => {
+    document.querySelectorAll(".pvtile").forEach(t => {
+      const fill = t.querySelector(".pvbarfill");
+      if(fill) fill.style.width = Math.round(100 * (map[t.dataset.feed] || 0)) + "%";
+    });
+  }).catch(() => {});
+}
+document.querySelectorAll(".pvtile .pvtoggle").forEach(btn => {
+  btn.onclick = () => {
+    const tile = btn.closest(".pvtile");
+    if(pvFeedTimers[tile.dataset.feed]){ pvStopFeed(tile); btn.textContent = "PLAY"; }
+    else { pvStartFeed(tile); btn.textContent = "PAUSE"; }
+  };
 });
 function pvMarkOnAir(feed){
   document.querySelectorAll(".pvtile").forEach(
