@@ -190,6 +190,13 @@ def t_fanout_watchdog_kill_condition_is_feed_stalled():
     # (racecast-local-uat skill), not a unit test — that is the honest boundary.
 
 
+def t_relay_fanout_flag_from_env(monkeypatch=None):
+    # fanout_enabled drives Relay.fanout; verified via the pure helper to avoid
+    # constructing a full Relay (which needs sources). This guards the wiring contract.
+    assert m.fanout_enabled({"RACECAST_FEED_FANOUT": "1"}) is True
+    assert m.FANOUT_RING_BYTES >= 1 << 20      # bounded, at least 1 MB
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

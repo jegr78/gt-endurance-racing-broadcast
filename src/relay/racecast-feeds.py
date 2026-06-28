@@ -185,6 +185,7 @@ _HEALTH_LABEL = {"green": "OK", "yellow": "DEGRADED", "red": "CRITICAL"}
 
 # ---------- Feed fan-out stall detection (relay feed multiplexing, #358) --------
 FANOUT_STALL_S = 8.0   # seconds without a byte from streamlink before a fan-out reader is "stalled"
+FANOUT_RING_BYTES = 8 * 1024 * 1024   # per-feed ring window (bounded; ≈ a few seconds at typical feed bitrate)
 _FANOUT_TRUTHY = {"1", "true", "yes", "on"}
 
 
@@ -4008,6 +4009,8 @@ class Relay:
             self.pov = Feed("POV", pov_port, 0, pov_source.get, logdir, cookies,
                             fmt=YTDLP_FORMAT_POV, cookie_dir=cookie_dir)
             self.pov.paused = True
+        self.fanout = fanout_enabled(os.environ)
+        self._fanout_servers = []
         # Live health heartbeat: displayed level (refreshed on every /status and
         # every tick) + the notification baseline (advanced ONLY by the heartbeat
         # tick so a 2 s /status refresh never "consumes" a transition before the
@@ -4039,6 +4042,14 @@ class Relay:
         return self.active_source()
 
     def start(self):
+        if self.fanout:
+            live = list(self.feeds.items()) + ([("POV", self.pov)] if self.pov else [])
+            for _name, f in live:
+                f.ring = FeedRing(FANOUT_RING_BYTES)
+                srv = FeedFanoutServer("127.0.0.1", f.port, f.ring,
+                                       logging.getLogger("racecast.fanout." + f.name))
+                srv.start()
+                self._fanout_servers.append(srv)
         for f in self.feeds.values():
             threading.Thread(target=f.run, daemon=True).start()
         if self.pov:
@@ -4521,6 +4532,7 @@ class Relay:
     def shutdown(self):
         for f in self.feeds.values(): f.shutdown()
         if self.pov: self.pov.shutdown()
+        for srv in self._fanout_servers: srv.stop()
 
 
 def _push_live_schedule(relay, setup_ctl):
