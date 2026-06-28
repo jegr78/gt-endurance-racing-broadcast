@@ -1145,7 +1145,7 @@ def t_set_feed_close_when_inactive_builds_setinputsettings():
     for r in reqs:
         d = r["requestData"]
         assert d["inputSettings"]["close_when_inactive"] is True
-        assert d.get("overlay", True) is True       # merge, not replace
+        assert d.get("overlay") is True       # merge, not replace
 
 
 def t_set_feed_close_when_inactive_unreachable_is_note_not_crash():

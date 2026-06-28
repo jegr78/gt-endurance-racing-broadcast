@@ -1891,7 +1891,6 @@ def _refresh_obs_pages(force=False, wait=0):
     _fanout = _machine_env_value("RACECAST_FEED_FANOUT").strip().lower() in {"1", "true", "yes", "on"}
     if _fanout:
         try:
-            import obs_ws
             note = obs_ws.set_feed_close_when_inactive(
                 list(obs_ws.FEED_SOURCES.values()) + [obs_ws.POV_SOURCE])
             if note:
