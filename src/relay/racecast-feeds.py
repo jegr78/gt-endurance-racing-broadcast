@@ -2450,32 +2450,6 @@ class PreviewManager:
                 self._pull = None
 
 
-def feed_grab_cmd(port, width=480):
-    """ffmpeg: grab ONE frame from a feed's loopback HTTP server and emit a
-    scaled JPEG on stdout. Pinned byte-for-byte by tests/test_pov.py."""
-    return ["ffmpeg", "-nostdin", "-loglevel", "error",
-            "-i", "http://127.0.0.1:%d" % port,
-            "-frames:v", "1", "-vf", "scale=%d:-2" % width,
-            "-f", "mjpeg", "pipe:1"]
-
-
-def grab_feed_frame(port, width=480, timeout=8.0):
-    """Run feed_grab_cmd and return the JPEG bytes, or None on any failure /
-    timeout. Best effort — never raises; the grab subprocess is killed on
-    timeout so a stuck upstream can't hang a relay worker thread."""
-    try:
-        proc = subprocess.run(
-            feed_grab_cmd(port, width),
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            timeout=timeout, env=external_tool_env(),
-            **_no_window_kwargs(os.name))
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-    if proc.returncode != 0 or not proc.stdout:
-        return None
-    return proc.stdout
-
-
 def resolve_hls(url, cookies, logger, fmt=YTDLP_FORMAT):
     """Resolve a YouTube live URL to a direct HLS manifest URL via yt-dlp
     (handles cookies + the bot-check). Returns (url, None) on success or

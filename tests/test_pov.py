@@ -92,14 +92,6 @@ def t_preview_source_unknown_target_is_placeholder():
     assert m.preview_source("X", "A", False, {"A", "B"}) == ("placeholder", "unknown feed")
 
 
-def t_feed_grab_cmd_pinned():
-    assert m.feed_grab_cmd(53002, 480) == [
-        "ffmpeg", "-nostdin", "-loglevel", "error",
-        "-i", "http://127.0.0.1:53002",
-        "-frames:v", "1", "-vf", "scale=480:-2",
-        "-f", "mjpeg", "pipe:1"]
-
-
 def t_feed_paused_returns_none():
     f = m.Feed("POV", 53003, 0, lambda: ["https://youtu.be/x"], LOGDIR)
     f.paused = True
