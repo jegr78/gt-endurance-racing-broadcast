@@ -2376,9 +2376,9 @@ def preview_source(target, live, pov_active, feed_keys):
 class FeedRing:
     """A bounded byte ring for one feed: a single live writer (the streamlink
     reader) and many readers (OBS, preview), each tracking its own absolute
-    offset. The writer NEVER blocks — when the window overflows the oldest bytes
-    drop and a lagging reader is snapped forward to the live edge. Pure stdlib;
-    unit-testable with no real stream."""
+    offset. The writer NEVER blocks — when a reader falls behind the retained
+    window, it snaps to the oldest retained byte, so it receives the full window
+    and loses only overflowed bytes. Pure stdlib; unit-testable with no real stream."""
 
     def __init__(self, capacity):
         self.capacity = capacity
@@ -2412,7 +2412,7 @@ class FeedRing:
             if cursor >= live and not self.closed:
                 self._cond.wait(timeout)
                 live = self._base + len(self._buf)
-            if cursor < self._base:        # fell behind the window → snap to live edge
+            if cursor < self._base:        # fell behind → snap to oldest retained byte (lose only overflowed)
                 cursor = self._base
             if cursor >= live:
                 return b"", cursor
