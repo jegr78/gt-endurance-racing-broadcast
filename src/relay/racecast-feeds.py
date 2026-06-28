@@ -183,6 +183,23 @@ HEALTH_COLORS = {                # Discord embed sidebar colour per level
     "green": 0x2ECC71, "yellow": 0xF1C40F, "red": 0xE74C3C}
 _HEALTH_LABEL = {"green": "OK", "yellow": "DEGRADED", "red": "CRITICAL"}
 
+# ---------- Feed fan-out stall detection (relay feed multiplexing, #358) --------
+FANOUT_STALL_S = 8.0   # seconds without a byte from streamlink before a fan-out reader is "stalled"
+_FANOUT_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def fanout_enabled(environ):
+    """True iff RACECAST_FEED_FANOUT is a truthy token. Default off → today's
+    direct-serve path. Pure so the switch is unit-testable."""
+    return str(environ.get("RACECAST_FEED_FANOUT", "")).strip().lower() in _FANOUT_TRUTHY
+
+
+def feed_stalled(last_byte_ts, now, stall_s=FANOUT_STALL_S):
+    """True iff a fan-out live reader has produced bytes before but none for
+    `stall_s`. A None timestamp (never produced) is NOT a stall — that startup
+    case is handled by the existing dead_serves path, not the watchdog."""
+    return last_byte_ts is not None and (now - last_byte_ts) > stall_s
+
 
 def feed_health_state(dropped, dropped_since, served_ok, now,
                       grace_s=HEALTH_DROP_GRACE_S):
