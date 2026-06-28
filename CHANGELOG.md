@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.3.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.2.0...v1.3.0) (2026-06-28)
+
+
+### Features
+
+* **assets:** neutral placeholders for missing OBS graphics/clips ([#357](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/357)) ([ecffd3c](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/ecffd3c0fe7f9eb7e057f0c36cb7bd119477310a))
+* **broadcast-chat:** compose-popup button (native YouTube/Twitch chat) ([#355](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/355)) ([b19b195](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/b19b195d23c56e4fe1b1befdd980bab181183a9c))
+* **broadcast-chat:** render custom/image emotes (YouTube + Twitch first-party) ([#353](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/353)) ([b83df0c](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/b83df0c2e4e953ed651a19330e106bb9a8256c3e))
+* **broadcast-chat:** render standard YouTube emoji as Unicode glyphs ([#345](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/345)) ([fab2739](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/fab273979c34116e390dcb571948fff88d51958a))
+* **cockpit:** read-only stint plan below the race timer ([#354](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/354)) ([86946b2](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/86946b2bc666b3360f9a8be6582a8822326df959))
+* **preview:** usable Director Panel live preview — per-second stills + off-air audio meter ([#359](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/359)) ([1b7fc58](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/1b7fc58848961f84fd8304201a04c8a88f5688ba))
+
+
+### Bug Fixes
+
+* **broadcast-chat:** make the /panel compose button clickable on desktop ([#356](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/356)) ([e2ddff4](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e2ddff4e03a020a5909cc3b0533fdc9819d1fd1f))
+* **media:** retry get-media downloads on transient YouTube HTTP 403 ([#348](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/348)) ([ce45c93](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/ce45c93f89e966ceaae7ea18c579df0990882e5a)), closes [#344](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/344)
+* **relay:** give streamlink yt-dlp's UA + cookies on the YouTube serve ([#350](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/350)) ([385bde2](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/385bde29b42f2ab6aeb9a95d7a36a355f658973d))
+
 ## [1.2.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.1.0...v1.2.0) (2026-06-26)
 
 
