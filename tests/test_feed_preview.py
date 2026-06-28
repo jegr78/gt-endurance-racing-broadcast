@@ -109,6 +109,65 @@ def t_preview_pull_worker_collects_frame_and_level():
     w.stop()
 
 
+class _FakeFeed:
+    def __init__(self, ch): self._ch = ch; self.cookies = None
+    def current_channel(self): return (self._ch, 0)
+
+
+class _FakeRelay:
+    def __init__(self, live="A", pov=None):
+        self.feeds = {"A": _FakeFeed("https://twitch.tv/a"),
+                      "B": _FakeFeed("https://twitch.tv/b")}
+        self._live = live; self.pov = pov
+    def live_feed(self): return self._live
+    def pov_active(self): return bool(self.pov)
+
+
+class _FakeObs:
+    def get_source_screenshot(self, name, width=480):
+        return (b"\xff\xd8OBS" + name.encode() + b"\xff\xd9", "")
+
+
+def t_manager_onair_returns_obs_screenshot():
+    mgr = m.PreviewManager(_FakeRelay(live="A"), lambda: _FakeObs(), _quiet_log())
+    data, note = mgr.still("A")
+    assert data == b"\xff\xd8OBSFeed A\xff\xd9" and note == ""
+
+
+def t_manager_obs_cache_reuses_within_ttl():
+    calls = {"n": 0}
+    class _CountObs:
+        def get_source_screenshot(self, name, width=480):
+            calls["n"] += 1; return (b"\xff\xd8x\xff\xd9", "")
+    mgr = m.PreviewManager(_FakeRelay(live="A"), lambda: _CountObs(), _quiet_log(), obs_ttl=60.0)
+    mgr.still("A"); mgr.still("A")
+    assert calls["n"] == 1          # second call served from cache
+
+
+def t_manager_offair_starts_pull_and_levels():
+    started = {}
+    def fake_factory(target, channel, cookies, log):
+        class _W:
+            def __init__(s): s.target = target; s.ok = True
+            def start(s): started["t"] = target; return s
+            def stop(s): started["stopped"] = True
+            def latest_frame(s): return b"\xff\xd8P\xff\xd9"
+            def latest_level(s): return 0.7
+        return _W().start()
+    mgr = m.PreviewManager(_FakeRelay(live="A"), lambda: _FakeObs(), _quiet_log(),
+                           worker_factory=fake_factory)
+    data, note = mgr.still("B")     # B is off-air
+    assert data == b"\xff\xd8P\xff\xd9"
+    assert started["t"] == "B"
+    assert mgr.levels() == {"B": 0.7}
+
+
+def t_manager_placeholder_when_pov_off():
+    mgr = m.PreviewManager(_FakeRelay(live="A", pov=None), lambda: _FakeObs(), _quiet_log())
+    data, note = mgr.still("POV")
+    assert data is None and note == "pov off"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

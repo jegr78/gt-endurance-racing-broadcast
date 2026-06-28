@@ -2356,6 +2356,100 @@ def preview_source(target, live, pov_active, feed_keys):
     return ("placeholder", "unknown feed")
 
 
+class PreviewManager:
+    """Director Panel preview source-of-truth. Active tiles (on-air feed / active
+    POV) are served from a short-TTL OBS-screenshot cache; the single off-air feed
+    is served from one reference-counted _PreviewPullWorker. All directors poll
+    this shared state, so cost is flat in viewer count. Best effort throughout."""
+
+    def __init__(self, relay, obs_ws_get, log, obs_ttl=1.0, idle_timeout=8.0,
+                 worker_factory=None):
+        self.relay = relay
+        self._obs_get = obs_ws_get
+        self.log = log
+        self.obs_ttl = obs_ttl
+        self.idle_timeout = idle_timeout
+        self._factory = worker_factory or (
+            lambda target, channel, cookies, log: _PreviewPullWorker(
+                target, channel, cookies, log).start())
+        self._obs_cache = {}              # source_name -> (monotonic_ts, jpeg)
+        self._pull = None                 # current _PreviewPullWorker or None
+        self._last_touch = 0.0
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+
+    def _feed_keys(self):
+        keys = set(self.relay.feeds)
+        if self.relay.pov:
+            keys.add("POV")
+        return keys
+
+    def still(self, target):
+        target = target.upper()
+        kind, ref = preview_source(target, self.relay.live_feed(),
+                                   self.relay.pov_active(), self._feed_keys())
+        if kind == "placeholder":
+            return None, ref
+        if kind == "obs":
+            return self._obs_still(ref)
+        return self._pull_still(target)    # kind == "pull"
+
+    def _obs_still(self, source_name):
+        now = time.monotonic()
+        hit = self._obs_cache.get(source_name)
+        if hit and now - hit[0] < self.obs_ttl:
+            return hit[1], ""
+        obs = self._obs_get()
+        if obs is None:
+            return None, "obs unavailable"
+        data, note = obs.get_source_screenshot(source_name, width=PREVIEW_STILL_WIDTH)
+        if data is None:
+            return None, note
+        self._obs_cache[source_name] = (now, data)
+        return data, ""
+
+    def _pull_still(self, target):
+        with self._lock:
+            self._last_touch = time.monotonic()
+            if self._pull is None or self._pull.target != target:
+                if self._pull is not None:
+                    self._pull.stop()
+                ch, _ = self.relay.feeds[target].current_channel()
+                if not ch:
+                    self._pull = None
+                    return None, "feed off"
+                self._pull = self._factory(
+                    target, ch, self.relay.feeds[target].cookies, self.log)
+            worker = self._pull
+        frame = worker.latest_frame()
+        if frame is None:
+            return None, ("unavailable" if not worker.ok else "starting")
+        return frame, ""
+
+    def levels(self):
+        with self._lock:
+            w = self._pull
+        if w is None:
+            return {}
+        return {w.target: w.latest_level()}
+
+    def run(self):
+        """Idle reaper: stop the off-air pull when no one has polled it recently."""
+        while not self._stop.wait(2.0):
+            with self._lock:
+                if (self._pull is not None
+                        and time.monotonic() - self._last_touch > self.idle_timeout):
+                    self._pull.stop()
+                    self._pull = None
+
+    def shutdown(self):
+        self._stop.set()
+        with self._lock:
+            if self._pull is not None:
+                self._pull.stop()
+                self._pull = None
+
+
 def feed_grab_cmd(port, width=480):
     """ffmpeg: grab ONE frame from a feed's loopback HTTP server and emit a
     scaled JPEG on stdout. Pinned byte-for-byte by tests/test_pov.py."""
