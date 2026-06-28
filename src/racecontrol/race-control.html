@@ -152,7 +152,7 @@
       </div>
     </div>
     <div class="card" id="bchatCard" style="margin-top:12px;">
-      <h2>Broadcast chat <span class="ro">read-only</span><button id="bchatCompose" class="bcompose" hidden></button></h2>
+      <h2>Broadcast chat <span class="ro">read-only</span><button id="bchatCompose" class="bcompose" hidden></button><button id="bchatRefresh" class="bcompose" title="Reconnect the chat reader and refresh">⟳ Refresh</button></h2>
       <div id="bchat">
         <div id="bchatlog"><div class="empty">Waiting for the broadcast stream…</div></div>
       </div>
@@ -362,38 +362,40 @@ function bchatTarget(target) {
     if (w) { try { w.opener = null; } catch (_) {} }
   };
 }
+function renderBroadcastChat(msgs) {
+  const log = $('bchatlog');
+  const stick = atBottom(log);             // preserve scroll-back position
+  log.textContent = '';
+  if (!msgs.length) {
+    const e = document.createElement('div');
+    e.className = 'empty'; e.textContent = 'Waiting for the broadcast stream…';
+    log.appendChild(e);
+    return;
+  }
+  const multi = new Set(msgs.map(m => m.source)).size > 1;   // handover overlap
+  msgs.forEach(msg => {
+    const row = document.createElement('div');
+    row.className = 'msg';
+    const t = document.createElement('span');
+    t.className = 'ts'; t.textContent = fmtTs(msg.ts);
+    const u = document.createElement('span');
+    u.className = 'u'; u.textContent = (msg.user || 'Viewer') + ': ';
+    row.appendChild(t); row.appendChild(u);
+    bchatBody(row, msg);   // text nodes + <img> emotes, XSS-safe
+    if (multi && msg.source) {
+      const s = document.createElement('span');
+      s.className = 'src'; s.textContent = srcBadge(msg.source);
+      row.appendChild(s);
+    }
+    log.appendChild(row);
+  });
+  if (stick) log.scrollTop = log.scrollHeight;
+}
 async function pollBroadcastChat() {
   try {
     const d = await j('/broadcast-chat/data');
     bchatTarget(d.target);
-    const msgs = d.messages || [];
-    const log = $('bchatlog');
-    const stick = atBottom(log);             // preserve scroll-back position
-    log.textContent = '';
-    if (!msgs.length) {
-      const e = document.createElement('div');
-      e.className = 'empty'; e.textContent = 'Waiting for the broadcast stream…';
-      log.appendChild(e);
-    } else {
-      const multi = new Set(msgs.map(m => m.source)).size > 1;   // handover overlap
-      msgs.forEach(msg => {
-        const row = document.createElement('div');
-        row.className = 'msg';
-        const t = document.createElement('span');
-        t.className = 'ts'; t.textContent = fmtTs(msg.ts);
-        const u = document.createElement('span');
-        u.className = 'u'; u.textContent = (msg.user || 'Viewer') + ': ';
-        row.appendChild(t); row.appendChild(u);
-        bchatBody(row, msg);   // text nodes + <img> emotes, XSS-safe
-        if (multi && msg.source) {
-          const s = document.createElement('span');
-          s.className = 'src'; s.textContent = srcBadge(msg.source);
-          row.appendChild(s);
-        }
-        log.appendChild(row);
-      });
-      if (stick) log.scrollTop = log.scrollHeight;
-    }
+    renderBroadcastChat(d.messages || []);
   } catch (e) {
     if (String(e.message) === '404') {     // reader disabled — remove the card
       const c = $('bchatCard'); if (c) c.style.display = 'none';
@@ -403,6 +405,19 @@ async function pollBroadcastChat() {
   }
   setTimeout(pollBroadcastChat, 4000);
 }
+// Manual refresh (#294): re-arm a frozen server-side reader, then re-render the
+// echoed mirror at once. A page reload alone can't help — the store is frozen.
+async function refreshBroadcastChat() {
+  const btn = $('bchatRefresh');
+  if (btn) btn.disabled = true;
+  try {
+    const d = await j('/broadcast-chat/reload');
+    bchatTarget(d.target);
+    renderBroadcastChat(d.messages || []);
+  } catch (e) { /* transient/404 — the 4 s poller handles card teardown */ }
+  if (btn) setTimeout(() => { btn.disabled = false; }, 1200);
+}
+{ const br = $('bchatRefresh'); if (br) br.addEventListener('click', refreshBroadcastChat); }
 
 pollSchedule(); pollProgram(); pollTimer(); pollChat(); pollBroadcastChat();
 </script>

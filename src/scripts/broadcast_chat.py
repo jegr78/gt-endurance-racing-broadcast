@@ -345,6 +345,35 @@ def parse_live_chat(payload):
     return out
 
 
+# --- get_live_chat poll classification (#294 freeze fix) --------------------
+# The reader must tell a TRANSIENT failure apart from a GENUINE stream end. The
+# POST helper returns None on EVERY error (network/timeout/429/5xx/non-JSON), so
+# a None must NOT tombstone the reader — the live chat is almost certainly still
+# going. Only a well-formed response that carries no next continuation is a real
+# end. Before this split a transient None and a real end both surfaced as
+# continuation=None, so a single hiccup set ended=True and froze the YouTube
+# mirror for the rest of the stream (no recovery, even on a page reload).
+POLL_TRANSIENT = "transient"   # no usable response -> retry, never tombstone
+POLL_OK = "ok"                 # messages + a next continuation to follow
+POLL_ENDED = "ended"           # well-formed, no continuation -> chat genuinely closed
+
+# Consecutive transient misses a reader tolerates before giving up its
+# continuation and returning WITHOUT ending, so the supervisor re-bootstraps it.
+MAX_POLL_MISSES = 5
+
+
+def classify_live_chat_poll(raw):
+    """(status, parsed) for one get_live_chat POST result — see POLL_* above.
+
+    `raw` is the decoded JSON dict, or None when the HTTP call failed. None is
+    TRANSIENT (retry, never tombstone). A dict is run through `parse_live_chat`:
+    a present next continuation -> OK, an absent one -> ENDED."""
+    if raw is None:
+        return POLL_TRANSIENT, {"messages": [], "continuation": None, "timeout_ms": None}
+    parsed = parse_live_chat(raw)
+    return (POLL_OK if parsed["continuation"] else POLL_ENDED), parsed
+
+
 # --- page bootstrap + POST body --------------------------------------------
 
 _API_KEY_RE = re.compile(r'"INNERTUBE_API_KEY":"([^"]+)"')

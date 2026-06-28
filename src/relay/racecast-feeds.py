@@ -1727,16 +1727,28 @@ class _BroadcastReader:
             return                       # not live yet / blocked: transient, no tombstone
         api_url = broadcast_chat.get_live_chat_api_url(api_key)
         client_version = bs["client_version"]
+        misses = 0
         while not self.stop_evt.is_set():
             body = broadcast_chat.build_get_live_chat_body(cont, client_version)
-            parsed = broadcast_chat.parse_live_chat(_yt_chat_post_json(api_url, body))
+            raw = _yt_chat_post_json(api_url, body)
+            status, parsed = broadcast_chat.classify_live_chat_poll(raw)
+            if status == broadcast_chat.POLL_TRANSIENT:
+                # A transient HTTP/network miss is NOT a stream end (#294): retry
+                # a few times with a short backoff, then give up WITHOUT setting
+                # ended, so the supervisor restarts (re-bootstraps) this reader
+                # next cycle instead of tombstoning it for the whole broadcast.
+                misses += 1
+                if misses >= broadcast_chat.MAX_POLL_MISSES:
+                    return
+                self.stop_evt.wait(min(2.0 * misses, 10.0))
+                continue
+            misses = 0
             if parsed["messages"]:
                 self.store.add_many(self.video_id, parsed["messages"])
-            nxt = parsed["continuation"]
-            if not nxt:
-                self.ended = True        # chat closed / stream ended -> do not restart
+            if status == broadcast_chat.POLL_ENDED:
+                self.ended = True        # genuine end (well-formed, no continuation)
                 return
-            cont = nxt
+            cont = parsed["continuation"]
             wait_s = (parsed["timeout_ms"] or 5000) / 1000.0
             self.stop_evt.wait(min(max(wait_s, 1.0), 10.0))
 
@@ -1857,10 +1869,24 @@ class BroadcastChatSupervisor:
         self.interval = interval
         self.logger = logger
         self.stop_evt = threading.Event()
+        self._wake = threading.Event()  # set by stop()/rearm() to end the cadence wait early
+        self._lock = threading.Lock()   # guards _readers (the run thread + rearm callers)
         self._readers = {}              # stable key -> reader (BroadcastReader/_TwitchReader)
 
     def stop(self):
         self.stop_evt.set()
+        self._wake.set()
+
+    def rearm(self):
+        """Manual recovery (the console 'Refresh' button, #294): clear every
+        reader's tombstone so the next reconcile restarts dead/ended ones, and
+        wake the loop to run that reconcile NOW instead of waiting out the ~30 s
+        cadence. A healthy live reader is left in place by the reconcile.
+        Best-effort and idempotent — safe to call when nothing is frozen."""
+        with self._lock:
+            for reader in self._readers.values():
+                reader.ended = False
+        self._wake.set()
 
     def run(self):
         while not self.stop_evt.is_set():
@@ -1870,9 +1896,11 @@ class BroadcastChatSupervisor:
                 if self.logger:
                     self.logger.warning("broadcast-chat supervisor cycle failed: %s: %s",
                                         type(e).__name__, e)
-            self.stop_evt.wait(self.interval)
-        for reader in self._readers.values():
-            reader.stop()
+            self._wake.wait(self.interval)   # rearm()/stop() cut this short
+            self._wake.clear()
+        with self._lock:
+            for reader in self._readers.values():
+                reader.stop()
 
     def _desired(self):
         """{stable_key: zero-arg factory} of the readers that SHOULD be running."""
@@ -1890,22 +1918,23 @@ class BroadcastChatSupervisor:
 
     def _cycle(self):
         self.channel_source.refresh()
-        desired = self._desired()
+        desired = self._desired()        # network (yt-dlp resolve); kept off the lock
         # Publish the primary compose-popup target (KISS: first live source).
         self.store.set_target(broadcast_chat.primary_chat_target(list(desired)))
-        # Stop readers that are no longer desired (stream gone / channel removed).
-        for key in list(self._readers):
-            if key not in desired:
-                self._readers.pop(key).stop()
-        # Start brand-new readers; retry ones that died but are NOT tombstoned.
-        for key, make in desired.items():
-            reader = self._readers.get(key)
-            if reader is None:
-                self._readers[key] = make().start()
-                if self.logger:
-                    self.logger.info("broadcast-chat: following %s", key)
-            elif not reader.alive() and not reader.ended:
-                self._readers[key] = make().start()
+        with self._lock:                 # rearm() mutates _readers from a request thread
+            # Stop readers that are no longer desired (stream gone / channel removed).
+            for key in list(self._readers):
+                if key not in desired:
+                    self._readers.pop(key).stop()
+            # Start brand-new readers; retry ones that died but are NOT tombstoned.
+            for key, make in desired.items():
+                reader = self._readers.get(key)
+                if reader is None:
+                    self._readers[key] = make().start()
+                    if self.logger:
+                        self.logger.info("broadcast-chat: following %s", key)
+                elif not reader.alive() and not reader.ended:
+                    self._readers[key] = make().start()
 
 
 class HealthStore:
@@ -4722,7 +4751,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  console_page_path=None, companion_url=None, logo_path=None,
                  buttons_page_path=None, race_control_page_path=None,
                  health_store=None, health_monitor_page_path=None, uplot_dir=None,
-                 broadcast_chat_store=None, preview_manager=None):
+                 broadcast_chat_store=None, broadcast_chat_supervisor=None,
+                 preview_manager=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -5256,6 +5286,17 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return None
                 self._send(broadcast_chat_store.data())
                 return None
+            # Manual recovery (#294): re-arm a frozen reader. ANY authenticated
+            # /console subject may kick it (idempotent, read-only side effect) —
+            # no new public surface beyond the existing /console mount.
+            if sub == ["broadcast-chat", "reload"] and method == "GET":
+                if not broadcast_chat_store:
+                    self._send({"error": "broadcast chat disabled"}, 404)
+                    return None
+                if broadcast_chat_supervisor is not None:
+                    broadcast_chat_supervisor.rearm()
+                self._send(broadcast_chat_store.data())
+                return None
             # /console/buttons/* -> reverse-proxy to the local Companion (#236), director only.
             # 'buttons/health' is served by the relay (launcher availability probe) and shadows
             # that one upstream path (Companion's UI does not use /health).
@@ -5664,6 +5705,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if not broadcast_chat_store:
                         return self._send({"error": "broadcast chat disabled"}, 404)
                     if p == ["broadcast-chat", "data"]:
+                        return self._send(broadcast_chat_store.data())
+                    if p == ["broadcast-chat", "reload"]:
+                        # Manual recovery (#294): re-arm any frozen YouTube reader,
+                        # then echo the current mirror so the card re-renders now.
+                        if broadcast_chat_supervisor is not None:
+                            broadcast_chat_supervisor.rearm()
                         return self._send(broadcast_chat_store.data())
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if p[:1] == ["cues"]:
@@ -6515,6 +6562,7 @@ def main():
     # Broadcast-chat reader (#294): resolve the channel's live videoId set and
     # poll each stream's chat. Its own ~30 s resolve cadence (not args.poll —
     # yt-dlp resolution is heavier than a CSV fetch). Best-effort daemon.
+    _bc_supervisor = None
     if broadcast_chat_store is not None and channel_source is not None:
         _bc_supervisor = BroadcastChatSupervisor(
             broadcast_chat_store, channel_source, cookies, interval=30, logger=LOG)
@@ -6557,6 +6605,7 @@ def main():
                            uplot_dir=uplot_dir,
                            crew_source=crew_source,
                            broadcast_chat_store=broadcast_chat_store,
+                           broadcast_chat_supervisor=_bc_supervisor,
                            logo_path=args.logo,
                            preview_manager=preview_manager)
     bind_addrs = resolve_bind_addresses(

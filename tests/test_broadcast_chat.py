@@ -199,6 +199,44 @@ def t_parse_live_chat_tolerates_garbage():
     assert out["continuation"] is None
 
 
+# --- classify_live_chat_poll (#294 freeze fix: transient != end) ------------
+
+def t_classify_none_is_transient():
+    # A failed POST (network/timeout/429/5xx/non-JSON) returns None. It must be
+    # TRANSIENT, never ENDED — this is the whole #294 bug: a hiccup froze the
+    # mirror for the rest of the stream.
+    status, parsed = bc.classify_live_chat_poll(None)
+    assert status == bc.POLL_TRANSIENT
+    assert parsed["continuation"] is None
+    assert parsed["messages"] == []
+
+
+def t_classify_ok_when_continuation_present():
+    actions = [{"addChatItemAction": {"item": {"liveChatTextMessageRenderer": {
+        "id": "m1", "authorName": {"simpleText": "Al"},
+        "message": {"runs": [{"text": "hi"}]},
+        "timestampUsec": "1700000000000000"}}}}]
+    status, parsed = bc.classify_live_chat_poll(_live_chat_payload(actions))
+    assert status == bc.POLL_OK
+    assert parsed["continuation"] == "CONT2"
+    assert parsed["messages"][0]["text"] == "hi"
+
+
+def t_classify_ended_when_wellformed_without_continuation():
+    # A real HTTP 200 dict that carries no next continuation -> the live chat
+    # genuinely closed (stream over) -> ENDED, the reader may tombstone.
+    payload = {"continuationContents": {"liveChatContinuation": {"actions": []}}}
+    status, parsed = bc.classify_live_chat_poll(payload)
+    assert status == bc.POLL_ENDED
+    assert parsed["continuation"] is None
+
+
+def t_classify_distinguishes_transient_from_ended():
+    # The crux: a None and a well-formed-but-ended response are DIFFERENT now.
+    ended = {"continuationContents": {"liveChatContinuation": {"actions": []}}}
+    assert bc.classify_live_chat_poll(None)[0] != bc.classify_live_chat_poll(ended)[0]
+
+
 # --- parse_bootstrap (the live_chat page HTML) ------------------------------
 
 SAMPLE_PAGE = (
@@ -657,7 +695,7 @@ def t_store_drops_unusable_rows():
     assert s.data()["messages"] == []
 
 
-def _bc_client(broadcast_chat_store):
+def _bc_client(broadcast_chat_store, supervisor=None):
     """make_handler over a real ThreadingHTTPServer; returns (srv, get).
     Mirrors tests/test_chat.py's fixture."""
     import json as _json
@@ -673,7 +711,8 @@ def _bc_client(broadcast_chat_store):
         def __init__(self):
             self.feeds = {"A": _StubFeed(0), "B": _StubFeed(1)}
 
-    handler = m.make_handler(_StubRelay(), broadcast_chat_store=broadcast_chat_store)
+    handler = m.make_handler(_StubRelay(), broadcast_chat_store=broadcast_chat_store,
+                             broadcast_chat_supervisor=supervisor)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     _t.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -778,6 +817,71 @@ def t_supervisor_sets_primary_target():
                             "twitch:foo": (lambda: _StubReader())}
     sup._cycle()
     assert s.data()["target"]["platform"] == "youtube"   # YouTube key is first
+
+
+# --- rearm (#294 Refresh button: recover a frozen reader without waiting) ----
+
+class _CountingReader:
+    """A reader stub recording start()s; alive() follows the last start/stop."""
+    def __init__(self, ended=False):
+        self.ended = ended
+        self._alive = not ended
+        self.starts = 0
+    def start(self): self.starts += 1; self._alive = True; return self
+    def alive(self): return self._alive
+    def stop(self): self._alive = False
+
+
+def t_rearm_clears_tombstones():
+    s = m.BroadcastChatStore()
+    sup = m.BroadcastChatSupervisor(s, None, None)
+    frozen = _CountingReader(ended=True)   # the #294 freeze: dead + tombstoned
+    frozen._alive = False
+    sup._readers = {"vidAAAAAAAAA": frozen}
+    sup.rearm()
+    assert frozen.ended is False           # tombstone dropped -> eligible to restart
+
+
+def t_rearm_then_cycle_restarts_dead_reader():
+    s = m.BroadcastChatStore()
+    sup = m.BroadcastChatSupervisor(s, None, None)
+    frozen = _CountingReader(ended=True)
+    frozen._alive = False
+    sup._readers = {"vidAAAAAAAAA": frozen}
+    sup.rearm()
+    # The stream is still desired (live); the reconcile must now restart it.
+    sup.channel_source = type("C", (), {"refresh": lambda self: True})()
+    fresh = _CountingReader(ended=False)
+    sup._desired = lambda: {"vidAAAAAAAAA": (lambda: fresh)}
+    sup._cycle()
+    assert fresh.starts == 1                # a live, healthy reader is back
+
+
+def t_reload_endpoint_triggers_rearm_and_returns_data():
+    s = m.BroadcastChatStore()
+    s.add_many("v", [_raw("1", "Bob", "hello", 10.0)])
+    calls = []
+
+    class _Sup:
+        def rearm(self): calls.append(1)
+
+    srv, get = _bc_client(s, supervisor=_Sup())
+    try:
+        code, body = get("/broadcast-chat/reload")
+        assert code == 200
+        assert body["messages"][0]["text"] == "hello"   # current mirror echoed back
+        assert calls == [1]                               # server re-armed
+    finally:
+        srv.shutdown()
+
+
+def t_reload_endpoint_404_when_disabled():
+    srv, get = _bc_client(None)
+    try:
+        code, _ = get("/broadcast-chat/reload")
+        assert code == 404
+    finally:
+        srv.shutdown()
 
 
 if __name__ == "__main__":
