@@ -2223,6 +2223,112 @@ def lufs_to_meter(lufs):
     return max(0.0, min(1.0, frac))
 
 
+class _PreviewPullWorker:
+    """One decoupled low-res pull of a single (off-air) feed. Produces the latest
+    JPEG still + a 0..1 audio level. Best effort: a resolve/spawn failure leaves
+    .ok False and the manager shows the tile 'unavailable'; nothing here can
+    affect the live feed workers. `spawn` is injectable for tests."""
+
+    def __init__(self, target, channel, cookies, log, spawn=None):
+        self.target = target
+        self.channel = channel
+        self.cookies = cookies
+        self.log = log
+        self._spawn = spawn or self._spawn_real
+        self._proc = None
+        self._frame = None
+        self._level = 0.0
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self.ok = True
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+        return self
+
+    def latest_frame(self):
+        with self._lock:
+            return self._frame
+
+    def latest_level(self):
+        with self._lock:
+            return self._level
+
+    def _spawn_real(self, _worker):
+        url = channel_url(self.channel)
+        plat = platform_of(url)
+        if plat == "twitch":
+            target, quality = url, PREVIEW_QUALITY_TW
+        else:
+            hls, err = resolve_hls(url, self.cookies, self.log, PREVIEW_FMT_YT)
+            if not hls:
+                self.log.info("preview resolve failed for %s: %s", self.target, err)
+                return None, None, iter(())
+            target, quality = hls, PREVIEW_QUALITY_YT
+        sl_cmd = preview_pull_streamlink_cmd(target, plat, quality, cookies=self.cookies)
+        ff_cmd = preview_ffmpeg_cmd()
+        sl = subprocess.Popen(sl_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              env=external_tool_env(), **_no_window_kwargs())
+        ff = subprocess.Popen(ff_cmd, stdin=sl.stdout, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=False,
+                              env=external_tool_env(), **_no_window_kwargs())
+        if sl.stdout:
+            sl.stdout.close()   # ffmpeg owns the pipe now
+        self._sl = sl
+        stderr_iter = iter(ff.stderr.readline, b"")
+        return ff, ff.stdout, _decode_lines(stderr_iter)
+
+    def _run(self):
+        try:
+            proc, video, stderr_iter = self._spawn(self)
+        except Exception as e:                       # noqa: BLE001 best-effort
+            self.ok = False
+            self.log.info("preview pull %s spawn error: %s", self.target, e)
+            return
+        if proc is None or video is None:
+            self.ok = False
+            return
+        self._proc = proc
+        threading.Thread(target=self._pump_levels, args=(stderr_iter,), daemon=True).start()
+        buf = b""
+        while not self._stop.is_set():
+            chunk = video.read(65536)
+            if not chunk:
+                break
+            frames, buf = split_mjpeg_frames(buf + chunk)
+            if frames:
+                with self._lock:
+                    self._frame = frames[-1]
+        self._kill()
+
+    def _pump_levels(self, stderr_iter):
+        for line in stderr_iter:
+            if self._stop.is_set():
+                break
+            lufs = parse_ebur128_momentary(line)
+            if lufs is not None:
+                with self._lock:
+                    self._level = lufs_to_meter(lufs)
+
+    def _kill(self):
+        for p in (getattr(self, "_proc", None), getattr(self, "_sl", None)):
+            try:
+                if p and p.poll() is None:
+                    p.kill()
+            except Exception:                        # noqa: BLE001
+                pass
+
+    def stop(self):
+        self._stop.set()
+        self._kill()
+
+
+def _decode_lines(byte_iter):
+    """Yield ffmpeg stderr lines as str (best effort), from a bytes line iterator."""
+    for raw in byte_iter:
+        yield raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else raw
+
+
 PREVIEW_FEEDS = ("A", "B", "POV")        # tiles the Director Panel can request
 
 

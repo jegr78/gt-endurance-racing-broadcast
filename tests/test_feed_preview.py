@@ -63,6 +63,53 @@ def t_lufs_to_meter_maps_range():
     assert 0.49 < mid < 0.51
 
 
+import time  # noqa: E402  (used by _wait below)
+
+
+class _FakeProc:
+    def __init__(self): self._alive = True
+    def poll(self): return None if self._alive else 0
+    def kill(self): self._alive = False
+    def wait(self, timeout=None): self._alive = False
+
+
+def _quiet_log():
+    import logging
+    lg = logging.getLogger("test.preview"); lg.addHandler(logging.NullHandler()); return lg
+
+
+def _wait(pred, timeout):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if pred(): return
+        time.sleep(0.02)
+
+
+def t_preview_pull_worker_collects_frame_and_level():
+    soi, eoi = b"\xff\xd8", b"\xff\xd9"
+    frame = soi + b"IMG" + eoi
+    proc = _FakeProc()
+
+    def fake_spawn(worker):
+        # video: one complete JPEG then EOF; stderr: one ebur128 line then EOF
+        video = [frame, b""]
+        def vread(n=65536):
+            return video.pop(0) if video else b""
+        class _V:  # minimal read() interface
+            read = staticmethod(vread)
+        stderr = iter(["[Parsed_ebur128_1] M: -20.0 S: -22.0\n"])
+        return proc, _V(), stderr
+
+    w = m._PreviewPullWorker("B", "https://twitch.tv/x", None,
+                             _quiet_log(), spawn=fake_spawn)
+    w.start()
+    _wait(lambda: w.latest_frame() == frame, 2.0)
+    assert w.latest_frame() == frame
+    _wait(lambda: w.latest_level() > 0.0, 2.0)
+    assert 0.0 < w.latest_level() <= 1.0
+    w.stop()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
