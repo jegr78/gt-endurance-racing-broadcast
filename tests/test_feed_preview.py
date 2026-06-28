@@ -196,10 +196,12 @@ def t_endpoint_preview_levels_json():
     mgr.still("B")                          # start the off-air pull
     srv = _serve_with_manager(mgr)
     port = srv.server_address[1]
-    body = urllib.request.urlopen(
-        "http://127.0.0.1:%d/preview/levels" % port, timeout=3).read()
-    assert json.loads(body) == {"B": 0.5}
-    srv.shutdown()
+    try:
+        body = urllib.request.urlopen(
+            "http://127.0.0.1:%d/preview/levels" % port, timeout=3).read()
+        assert json.loads(body) == {"B": 0.5}
+    finally:
+        srv.shutdown()
 
 
 def t_endpoint_feed_b_returns_jpeg():
@@ -218,11 +220,14 @@ def t_endpoint_feed_b_returns_jpeg():
     mgr = m.PreviewManager(relay, lambda: None, _quiet_log(), worker_factory=fake_factory)
     srv = _serve_with_manager(mgr)
     port = srv.server_address[1]
-    resp = urllib.request.urlopen(
-        "http://127.0.0.1:%d/preview/feed/B" % port, timeout=3)
-    assert resp.status == 200
-    assert resp.read() == _FRAME
-    srv.shutdown()
+    try:
+        resp = urllib.request.urlopen(
+            "http://127.0.0.1:%d/preview/feed/B" % port, timeout=3)
+        assert resp.status == 200
+        assert resp.headers["Content-Type"] == "image/jpeg"
+        assert resp.read() == _FRAME
+    finally:
+        srv.shutdown()
 
 
 if __name__ == "__main__":
