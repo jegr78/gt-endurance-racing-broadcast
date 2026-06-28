@@ -139,6 +139,24 @@ def t_fanout_server_writer_unblocked_by_dead_consumer():
         srv.stop()
 
 
+def t_streamlink_fanout_cmd_youtube_has_stdout_ua_cookies():
+    cmd = m.streamlink_fanout_cmd("https://hls.example/x.m3u8", "youtube",
+                                  cookies="/tmp/yt.txt", user_agent="UA/9")
+    assert cmd[0] == "streamlink" and "--stdout" in cmd
+    assert "--player-external-http" not in cmd
+    assert "--http-header" in cmd and "User-Agent=UA/9" in cmd
+    assert "--http-cookies-file" in cmd and "/tmp/yt.txt" in cmd
+    assert cmd[-2:] == ["https://hls.example/x.m3u8", "best"]
+
+
+def t_streamlink_fanout_cmd_twitch_uses_plugin_no_ua():
+    cmd = m.streamlink_fanout_cmd("https://twitch.tv/foo", "twitch",
+                                  twitch_token="tok")
+    assert "--stdout" in cmd and "--http-header" not in cmd
+    assert "--twitch-api-header" in cmd
+    assert cmd[-2:] == ["https://twitch.tv/foo", "best"]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

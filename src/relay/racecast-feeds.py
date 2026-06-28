@@ -2163,6 +2163,26 @@ def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None,
     return base + ["--", target, "best"]
 
 
+def streamlink_fanout_cmd(target, platform="youtube", twitch_token=None,
+                          cookies=None, user_agent=STREAMLINK_YT_UA):
+    """Argv for the fan-out live reader: same resolution rules as
+    streamlink_serve_cmd, but the sink is --stdout (the relay reads it and
+    re-serves to many consumers) instead of --player-external-http. `--` guards
+    the positional URL/stream."""
+    base = ["streamlink", "--stdout"]
+    if platform == "twitch":
+        base += STREAMLINK_TWITCH
+        if twitch_token:
+            base += ["--twitch-api-header", f"Authorization=OAuth {twitch_token}"]
+    else:
+        base += STREAMLINK_SERVE
+        if user_agent:
+            base += ["--http-header", f"User-Agent={user_agent}"]
+        if cookies:
+            base += ["--http-cookies-file", cookies]
+    return base + ["--", target, "best"]
+
+
 # --- Director Panel off-air preview pull (decoupled from OBS / the loopback port) ---
 PREVIEW_FMT_YT = "b[height<=360]/w"     # yt-dlp: pick YouTube's 360p rendition (worst fallback)
 PREVIEW_QUALITY_YT = "best"             # the resolved YT URL is already the 360p rendition
@@ -3712,6 +3732,8 @@ class Feed:
         # _clear_drop_health() (that runs every serve-start, which would zero it).
         self.dead_serves = 0
         self.quality = None               # last streamlink-selected quality (e.g. "720p")
+        self.ring = None              # set by the relay when fan-out is enabled (#358); None → direct-serve
+        self.last_byte_ts = None      # monotonic ts of the last byte pumped into the ring (fan-out health)
 
     def current_channel(self):
         if self.paused:
@@ -3775,6 +3797,52 @@ class Feed:
         self.advance.set(); self._kill_proc()
         return True
 
+    def _serve_fanout(self, target, serve_platform, token):
+        """Fan-out serve: stream `streamlink --stdout` into self.ring, tracking
+        last_byte_ts so the stall watchdog and EOF both surface. Returns
+        (serve_elapsed, serve_rc) like the direct-serve proc.wait() so Feed.run's
+        classification tail is shared. A separate watchdog kills streamlink on a
+        byte-stall (the reader is parked in read1() and can't self-check); stop /
+        advance / EOF end the loop directly."""
+        cmd = streamlink_fanout_cmd(target, serve_platform, token, cookies=self.cookies)
+        self.proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            env=external_tool_env(), **_no_window_kwargs())
+        self._set_phase("serving")
+        self._clear_drop_health()
+        self.last_byte_ts = None
+        serve_started = time.monotonic()
+        stdout = self.proc.stdout
+        watchdog_stop = threading.Event()
+
+        def _watchdog():
+            # The reader blocks in read1() while bytes flow; a true stall
+            # (streamlink alive, zero bytes) can't be caught inline, so this
+            # thread kills the proc when last_byte_ts goes stale, unblocking the
+            # read with EOF. A never-produced byte (last_byte_ts None) is left to
+            # the existing dead_serves/EOF path, per the spec.
+            while not watchdog_stop.wait(1.0):
+                if self.stop or self.advance.is_set():
+                    return
+                if feed_stalled(self.last_byte_ts, time.monotonic()):
+                    self.log.warning("fan-out stall on %s — killing reader", self.name)
+                    self._kill_proc()
+                    return
+
+        wd = threading.Thread(target=_watchdog, daemon=True)
+        wd.start()
+        try:
+            while not self.stop and not self.advance.is_set():
+                chunk = stdout.read1(65536)
+                if not chunk:
+                    break                    # EOF (ended / 403 / expired) or watchdog kill
+                self.ring.write(chunk)
+                self.last_byte_ts = time.monotonic()
+        finally:
+            watchdog_stop.set()
+            self._kill_proc()
+        return time.monotonic() - serve_started, (self.proc.returncode or 0)
+
     def run(self):
         while not self.stop:
             ch, i = self.current_channel()
@@ -3802,31 +3870,39 @@ class Feed:
                 token, target, serve_platform = None, hls, "youtube"
 
             self.log.info("serving stint %d (%s)", i + 1, serve_platform)
-            cmd = streamlink_serve_cmd(target, self.port, serve_platform, token,
-                                       cookies=self.cookies)
-            try:
-                self.proc = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, encoding="utf-8", errors="replace",
-                    env=external_tool_env(), **_no_window_kwargs())
-                pump = threading.Thread(
-                    target=logsetup.pump_subprocess,
-                    args=(self.proc.stdout, self.log, "streamlink"),
-                    kwargs={"on_line": self._observe_streamlink_line},
-                    daemon=True)
-                pump.start()
-                if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
-                    self.last_error = None
-                self._set_phase("serving")
-                self._clear_drop_health()     # live picture -> any prior alarm clears; re-earn served_ok
-                serve_started = time.monotonic()
-                self.proc.wait()
-                serve_elapsed = time.monotonic() - serve_started
-                serve_rc = self.proc.returncode
-            except FileNotFoundError:
-                self.log.warning("streamlink not found on PATH — retrying")
-                self.proc = None
-                time.sleep(RETRY_SLEEP); continue
+            if self.ring is not None:
+                try:
+                    serve_elapsed, serve_rc = self._serve_fanout(target, serve_platform, token)
+                except FileNotFoundError:
+                    self.log.warning("streamlink not found on PATH — retrying")
+                    self.proc = None
+                    time.sleep(RETRY_SLEEP); continue
+            else:
+                cmd = streamlink_serve_cmd(target, self.port, serve_platform, token,
+                                           cookies=self.cookies)
+                try:
+                    self.proc = subprocess.Popen(
+                        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, encoding="utf-8", errors="replace",
+                        env=external_tool_env(), **_no_window_kwargs())
+                    pump = threading.Thread(
+                        target=logsetup.pump_subprocess,
+                        args=(self.proc.stdout, self.log, "streamlink"),
+                        kwargs={"on_line": self._observe_streamlink_line},
+                        daemon=True)
+                    pump.start()
+                    if serve_platform != "youtube":   # YouTube keeps ssai_warning() result as last_error
+                        self.last_error = None
+                    self._set_phase("serving")
+                    self._clear_drop_health()     # live picture -> any prior alarm clears; re-earn served_ok
+                    serve_started = time.monotonic()
+                    self.proc.wait()
+                    serve_elapsed = time.monotonic() - serve_started
+                    serve_rc = self.proc.returncode
+                except FileNotFoundError:
+                    self.log.warning("streamlink not found on PATH — retrying")
+                    self.proc = None
+                    time.sleep(RETRY_SLEEP); continue
             self._set_phase("connecting")
             # The just-ended serve "earned" served_ok if it lasted long enough —
             # only then can a future drop be classified a genuine live-picture loss
