@@ -2149,26 +2149,27 @@ def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None,
 PREVIEW_FEEDS = ("A", "B", "POV")        # tiles the Director Panel can request
 
 
-def preview_source(target, live, pov_active, feed_ports):
+def preview_source(target, live, pov_active, feed_keys):
     """Pure: how to source a feed preview tile.
 
     target      'A' | 'B' | 'POV'
     live        the on-air feed ('A' | 'B') from Relay.live_feed()
     pov_active  Relay.pov_active()
-    feed_ports  {'A': 53001, 'B': 53002, 'POV': 53003}
+    feed_keys   the configured feed keys, e.g. {'A','B'} (+'POV' when a POV feed exists)
 
-    Returns ('obs', source_name) | ('grab', port) | ('placeholder', reason).
+    Returns ('obs', source_name) | ('pull', feed_key) | ('placeholder', reason).
     The on-air feed and the active POV are decoding in OBS, so screenshot the
-    source directly; an off-air feed is not decoding (and its port is free of
-    OBS), so grab one frame from its loopback port; a paused POV / absent port
-    has nothing to show."""
+    source directly. The off-air feed is NOT decoded by OBS and its loopback port
+    is held single-consumer by OBS, so it needs a decoupled low-res pull (handled
+    by PreviewManager). A paused POV / unconfigured feed has nothing to show."""
     if target == "POV":
         return ("obs", "Feed POV") if pov_active else ("placeholder", "pov off")
     if target in ("A", "B"):
+        if target not in feed_keys:
+            return ("placeholder", "feed off")
         if target == live:
             return ("obs", "Feed " + target)
-        port = feed_ports.get(target)
-        return ("grab", port) if port else ("placeholder", "feed off")
+        return ("pull", target)
     return ("placeholder", "unknown feed")
 
 
@@ -4993,11 +4994,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     target = p[2].upper()
                     if target not in PREVIEW_FEEDS:
                         return self._send({"error": "unknown feed", "feed": p[2]}, 404)
-                    ports = {k: f.port for k, f in relay.feeds.items()}
+                    feed_keys = set(relay.feeds)
                     if relay.pov:
-                        ports["POV"] = relay.pov.port
+                        feed_keys.add("POV")
                     kind, ref = preview_source(target, relay.live_feed(),
-                                               relay.pov_active(), ports)
+                                               relay.pov_active(), feed_keys)
                     if kind == "placeholder":
                         return self._send({"error": "preview unavailable",
                                            "note": ref}, 503)
@@ -5009,7 +5010,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             return self._send({"error": "preview unavailable",
                                                "note": note}, 503)
                         return self._send_jpeg(data)
-                    data = grab_feed_frame(ref, width=480)   # kind == "grab"
+                    # kind == "pull": ref is a feed key; grab a frame from its port
+                    port = relay.feeds[ref].port
+                    data = grab_feed_frame(port, width=480)
                     if data is None:
                         return self._send({"error": "preview unavailable",
                                            "note": "grab failed"}, 503)

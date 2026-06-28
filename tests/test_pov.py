@@ -67,29 +67,29 @@ def t_pov_format_constant():
 
 
 def t_preview_source_onair_uses_obs():
-    ports = {"A": 53001, "B": 53002}
-    assert m.preview_source("A", "A", False, ports) == ("obs", "Feed A")
-    assert m.preview_source("B", "B", False, ports) == ("obs", "Feed B")
+    keys = {"A", "B"}
+    assert m.preview_source("A", "A", False, keys) == ("obs", "Feed A")
+    assert m.preview_source("B", "B", False, keys) == ("obs", "Feed B")
 
 
-def t_preview_source_offair_grabs_port():
-    ports = {"A": 53001, "B": 53002}
-    assert m.preview_source("B", "A", False, ports) == ("grab", 53002)
-    assert m.preview_source("A", "B", False, ports) == ("grab", 53001)
+def t_preview_source_offair_uses_pull():
+    keys = {"A", "B"}
+    assert m.preview_source("B", "A", False, keys) == ("pull", "B")
+    assert m.preview_source("A", "B", False, keys) == ("pull", "A")
 
 
 def t_preview_source_pov_active_vs_paused():
-    ports = {"A": 53001, "B": 53002, "POV": 53003}
-    assert m.preview_source("POV", "A", True, ports) == ("obs", "Feed POV")
-    assert m.preview_source("POV", "A", False, ports) == ("placeholder", "pov off")
+    keys = {"A", "B", "POV"}
+    assert m.preview_source("POV", "A", True, keys) == ("obs", "Feed POV")
+    assert m.preview_source("POV", "A", False, keys) == ("placeholder", "pov off")
 
 
-def t_preview_source_missing_port_is_placeholder():
-    assert m.preview_source("B", "A", False, {"A": 53001}) == ("placeholder", "feed off")
+def t_preview_source_unconfigured_feed_is_placeholder():
+    assert m.preview_source("B", "A", False, {"A"}) == ("placeholder", "feed off")
 
 
 def t_preview_source_unknown_target_is_placeholder():
-    assert m.preview_source("X", "A", False, {"A": 53001}) == ("placeholder", "unknown feed")
+    assert m.preview_source("X", "A", False, {"A", "B"}) == ("placeholder", "unknown feed")
 
 
 def t_feed_grab_cmd_pinned():
