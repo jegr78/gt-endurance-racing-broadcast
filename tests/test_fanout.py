@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for relay feed fan-out. Run: python3 tests/test_fanout.py"""
-import importlib.util, os, time
+import importlib.util, os, socket, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -74,6 +74,69 @@ def t_ring_writer_never_blocks_on_absent_reader():
         r.write(b"x" * 1024)
     assert time.monotonic() - t0 < 1.0    # never blocked
     assert r.live_offset() == 1000 * 1024
+
+
+def _http_get_body(port, nbytes, deadline=2.0):
+    s = socket.create_connection(("127.0.0.1", port), timeout=deadline)
+    s.sendall(b"GET / HTTP/1.0\r\n\r\n")
+    buf = b""
+    s.settimeout(deadline)
+    while True:
+        # count only body bytes (after \r\n\r\n) so we don't exit early on the header
+        sep = buf.find(b"\r\n\r\n")
+        body_len = len(buf) - (sep + 4) if sep >= 0 else 0
+        if body_len >= nbytes:
+            break
+        try:
+            chunk = s.recv(4096)
+        except socket.timeout:
+            break
+        if not chunk:
+            break
+        buf += chunk
+    s.close()
+    # strip headers
+    sep = buf.find(b"\r\n\r\n")
+    return buf[sep + 4:] if sep >= 0 else buf
+
+
+def t_fanout_server_streams_ring_to_two_consumers():
+    ring = m.FeedRing(1 << 20)
+    srv = m.FeedFanoutServer("127.0.0.1", 0, ring, m.logging.getLogger("t"))
+    srv.start()
+    try:
+        bodies = {}
+
+        def grab(idx):
+            bodies[idx] = _http_get_body(srv.port, 10)
+        t1 = threading.Thread(target=grab, args=(1,)); t1.start()
+        t2 = threading.Thread(target=grab, args=(2,)); t2.start()
+        time.sleep(0.2)                       # let both connect
+        for i in range(10):
+            ring.write(bytes([65 + i]))       # b"A".."J"
+            time.sleep(0.01)
+        t1.join(3); t2.join(3)
+        assert bodies[1] == b"ABCDEFGHIJ"
+        assert bodies[2] == b"ABCDEFGHIJ"
+    finally:
+        srv.stop()
+
+
+def t_fanout_server_writer_unblocked_by_dead_consumer():
+    # A consumer that connects then never reads must not stop the ring writer.
+    ring = m.FeedRing(4096)
+    srv = m.FeedFanoutServer("127.0.0.1", 0, ring, m.logging.getLogger("t"))
+    srv.start()
+    try:
+        s = socket.create_connection(("127.0.0.1", srv.port), timeout=2.0)
+        s.sendall(b"GET / HTTP/1.0\r\n\r\n")   # connect, then never recv
+        t0 = time.monotonic()
+        for _ in range(2000):
+            ring.write(b"y" * 4096)            # 8 MB through a 4 KB ring
+        assert time.monotonic() - t0 < 2.0     # writer never blocked
+        s.close()
+    finally:
+        srv.stop()
 
 
 if __name__ == "__main__":

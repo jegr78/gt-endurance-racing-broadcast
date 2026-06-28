@@ -2425,6 +2425,66 @@ class FeedRing:
             self._cond.notify_all()
 
 
+class FeedFanoutServer:
+    """Serve one FeedRing to many HTTP consumers (OBS + preview) on a loopback
+    port. One accept loop + one handler thread per consumer. A slow/stuck socket
+    stalls only its own handler; the ring writer is never touched. Best effort:
+    a handler error closes that socket and returns."""
+
+    def __init__(self, host, port, ring, log):
+        self.host = host
+        self.port = port
+        self.ring = ring
+        self.log = log
+        self._sock = None
+        self._stop = False
+
+    def start(self):
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind((self.host, self.port))
+        self.port = self._sock.getsockname()[1]
+        self._sock.listen(8)
+        threading.Thread(target=self._accept_loop, daemon=True).start()
+        return self
+
+    def _accept_loop(self):
+        while not self._stop:
+            try:
+                conn, _ = self._sock.accept()
+            except OSError:
+                return                          # socket closed by stop()
+            threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
+
+    def _serve(self, conn):
+        try:
+            conn.recv(65536)                    # consume the request line/headers
+            conn.sendall(b"HTTP/1.0 200 OK\r\n"
+                         b"Content-Type: video/mp2t\r\n"
+                         b"Connection: close\r\n\r\n")
+            cursor = self.ring.live_offset()    # join at the live edge
+            while not self._stop and not self.ring.closed:
+                data, cursor = self.ring.read(cursor, timeout=1.0)
+                if data:
+                    conn.sendall(data)
+        except OSError:
+            pass                                # consumer went away / slow send aborted
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass  # already closed
+
+    def stop(self):
+        self._stop = True
+        self.ring.close()
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except OSError:
+                pass  # already closed
+
+
 class PreviewManager:
     """Director Panel preview source-of-truth. Active tiles (on-air feed / active
     POV) are served from a short-TTL OBS-screenshot cache; the single off-air feed
