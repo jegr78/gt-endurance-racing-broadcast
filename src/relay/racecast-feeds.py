@@ -2146,6 +2146,40 @@ def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None,
     return base + ["--", target, "best"]
 
 
+# --- Director Panel off-air preview pull (decoupled from OBS / the loopback port) ---
+PREVIEW_FMT_YT = "b[height<=360]/w"     # yt-dlp: pick YouTube's 360p rendition (worst fallback)
+PREVIEW_QUALITY_YT = "best"             # the resolved YT URL is already the 360p rendition
+PREVIEW_QUALITY_TW = "360p,480p,worst"  # Twitch named qualities (low first)
+PREVIEW_STILL_WIDTH = 480               # JPEG width of a preview still
+
+
+def preview_pull_streamlink_cmd(target, platform, quality,
+                                cookies=None, user_agent=STREAMLINK_YT_UA):
+    """Argv: stream a LOW-res copy of a feed to stdout for the preview ffmpeg.
+    Decoupled from the feed's loopback port (single-consumer, held by OBS). For
+    YouTube `target` is a pre-resolved 360p HLS URL and needs the same browser
+    UA + cookies context as the real feed (#345); Twitch gets the twitch.tv URL
+    and its plugin picks the named quality. `--` guards the positional URL."""
+    cmd = ["streamlink", "--stdout"]
+    if platform != "twitch":
+        if user_agent:
+            cmd += ["--http-header", "User-Agent=" + user_agent]
+        if cookies:
+            cmd += ["--http-cookies-file", cookies]
+    return cmd + ["--", target, quality]
+
+
+def preview_ffmpeg_cmd(width=PREVIEW_STILL_WIDTH):
+    """Argv: read the streamlink pipe on stdin, emit a 1 fps scaled MJPEG on
+    stdout (latest-frame source) AND run ebur128 on the audio (its per-second
+    measurements print to stderr at loglevel info -> parsed for the level bar).
+    Audio is optional (`0:a:0?`) so a video-only feed still yields stills."""
+    return ["ffmpeg", "-nostdin", "-loglevel", "info", "-i", "pipe:0",
+            "-map", "0:v:0", "-vf", "fps=1,scale=%d:-2" % width,
+            "-f", "mjpeg", "pipe:1",
+            "-map", "0:a:0?", "-af", "ebur128", "-f", "null", "-"]
+
+
 PREVIEW_FEEDS = ("A", "B", "POV")        # tiles the Director Panel can request
 
 
