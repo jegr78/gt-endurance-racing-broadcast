@@ -257,5 +257,5 @@ without a second pull, both require decoupling `streamlink`'s lifecycle from OBS
 **relay-side fan-out** where the relay is the persistent single consumer and re-serves the
 stream to OBS **and** preview. That is a rewrite of the most live-critical, fragile path
 (TS passthrough to multiple consumers, keyframe/buffer handling, slow-consumer policy) and
-must be planned + live-tested on its own. **Tracked as a new GitHub issue**, not part of
+must be planned + live-tested on its own. **Tracked as GitHub issue #358**, not part of
 this spec. This spec deliberately leaves the feed/OBS path untouched.
