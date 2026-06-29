@@ -129,6 +129,19 @@ def t_obs_unreachable_is_ok_not_crash():
         assert st.get() == "yellow"
 
 
+cp = _load("console_policy", ("src", "scripts", "console_policy.py"))
+
+
+def t_console_policy_gates_obs_flag_as_director():
+    # The flag-graphic routes live under /obs, which console_policy maps to
+    # DIRECTOR — so the Funnel /console/panel director controls reach them and
+    # commentators do not. Guards that mapping against a future refactor.
+    for seg in (["obs", "flag", "data"], ["obs", "flag", "set", "green"],
+                ["obs", "flag", "clear"]):
+        assert cp.decide({"director"}, seg, "GET") == cp.ALLOW, seg
+        assert cp.decide({"commentator"}, seg, "GET") == cp.FORBIDDEN, seg
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
