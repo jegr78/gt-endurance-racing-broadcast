@@ -94,7 +94,16 @@ _HEALTH_CONST = health_store  # stable module alias: make_handler's `health_stor
 # (DEFAULT_MAX_POINTS / LIVE_WINDOW_S) are reached via this un-shadowed alias.
 import console_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
 import console_admin  # talent-cockpit revocation version store (#191)
+import app_version   # shared build-version helper (single source of truth)
 import discord_oauth  # Discord OAuth2 helpers for /console/login
+
+# Running build version, resolved like racecast.py: the VERSION file is stamped
+# into the source-tree root by tools/build-binary.py (frozen: <_MEIPASS>/src),
+# absent in a repo checkout -> 'dev'. Injected into served pages as __RC_VERSION__.
+_SRC_BASE = (os.path.join(sys._MEIPASS, "src") if getattr(sys, "frozen", False)
+             else os.path.join(_REL_HERE, ".."))
+APP_VERSION = app_version.read_version(_SRC_BASE)
+VERSION_LABEL = ("v" + APP_VERSION) if APP_VERSION != "dev" else "dev"
 import cockpit_submissions  # talent stream-link submission store (#193)
 import notify   # pure Discord payload builders for producer events (#317)
 import console_policy  # /console authorization matrix + decision (#216)
@@ -4893,7 +4902,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  health_store=None, health_monitor_page_path=None, uplot_dir=None,
                  broadcast_chat_store=None, broadcast_chat_supervisor=None,
                  preview_manager=None, brands_dir=None,
-                 flag_graphic_store=None):
+                 flag_graphic_store=None, app_version="dev"):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -4960,6 +4969,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             body = body.replace(b"__RC_API_BASE__", (api_base or "").encode())
             oauth_flag = b"1" if (discord_client_id and discord_client_secret) else b""
             body = body.replace(b"__RC_OAUTH__", oauth_flag)
+            body = body.replace(b"__RC_VERSION__", (app_version or "dev").encode())
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -6793,6 +6803,7 @@ def main():
                            broadcast_chat_supervisor=_bc_supervisor,
                            logo_path=args.logo,
                            preview_manager=preview_manager,
+                           app_version=VERSION_LABEL,
                            flag_graphic_store=flag_graphic_store)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
