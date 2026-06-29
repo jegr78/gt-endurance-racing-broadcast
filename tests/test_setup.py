@@ -1226,6 +1226,15 @@ def t_setup_fields_parity_relay_vs_apps_script():
         "array in src/docs/wiki/Sheet-Webhook.md and redeploy the script.")
 
 
+# ---------- setup-assets media fill: template-driven scan ----------
+
+def t_setup_media_fill_uses_template_scan():
+    import placeholders as ph
+    raw = '"file":"__RACECAST_MEDIA__/intermission.mp3"'
+    assert "intermission.mp3" in ph.expected_media_from_template(raw)
+    assert ph.media_placeholder_for("intermission.mp3") == ph.music_placeholder_path()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

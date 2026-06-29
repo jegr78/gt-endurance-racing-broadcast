@@ -92,6 +92,9 @@ def t_fill_missing_tolerates_absent_source():
 
 
 def t_setup_assets_fills_placeholders_for_missing():
+    # Template-driven scan: each __RACECAST_MEDIA__/<name> reference gets the
+    # correct placeholder (video for .mp4, ambient loop for .mp3). intro.mp4
+    # and outro.mp4 still get the neutral clip; intermission.mp3 gets the loop.
     import json, subprocess
     with tempfile.TemporaryDirectory() as tmp:
         tpl = os.path.join(tmp, "tpl.json")
@@ -99,6 +102,8 @@ def t_setup_assets_fills_placeholders_for_missing():
             json.dump({"name": "T", "sources": [
                 {"settings": {"file": "__RACECAST_GRAPHICS__/Weather Sunny.png"}},
                 {"settings": {"local_file": "__RACECAST_MEDIA__/intro.mp4"}},
+                {"settings": {"local_file": "__RACECAST_MEDIA__/outro.mp4"}},
+                {"settings": {"local_file": "__RACECAST_MEDIA__/intermission.mp3"}},
             ]}, fh)
         gfx, med = os.path.join(tmp, "gfx"), os.path.join(tmp, "med")
         out = os.path.join(tmp, "import.json")
@@ -111,6 +116,7 @@ def t_setup_assets_fills_placeholders_for_missing():
         assert os.path.isfile(os.path.join(gfx, "Weather Sunny.png")), r.stdout
         assert os.path.isfile(os.path.join(med, "intro.mp4")), r.stdout
         assert os.path.isfile(os.path.join(med, "outro.mp4")), r.stdout
+        assert os.path.isfile(os.path.join(med, "intermission.mp3")), r.stdout
         assert "placeholder" in r.stdout.lower(), r.stdout
 
 

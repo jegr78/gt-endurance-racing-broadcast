@@ -236,12 +236,12 @@ def main():
         mapping[SHEET_TOKEN] = a.sheet_id
     if MEDIA_TOKEN in raw:
         mapping[MEDIA_TOKEN] = a.media
-        filled = placeholders.fill_missing(
-            ["intro.mp4", "outro.mp4"], a.media, placeholders.media_placeholder_path())
-        if filled:
-            print(f"  NOTE: wrote neutral placeholder clip for missing "
-                  f"{', '.join(filled)} in {a.media} (no real Intro/Outro configured "
-                  "— run get-media.py to replace).")
+        for name in placeholders.expected_media_from_template(raw):
+            filled = placeholders.fill_missing(
+                [name], a.media, placeholders.media_placeholder_for(name))
+            if filled:
+                print(f"  NOTE: wrote neutral placeholder for missing media in "
+                      f"{a.media}: {', '.join(filled)}")
     if GRAPHICS_TOKEN in raw:
         mapping[GRAPHICS_TOKEN] = a.graphics
         refs = placeholders.expected_graphics_from_template(raw)
