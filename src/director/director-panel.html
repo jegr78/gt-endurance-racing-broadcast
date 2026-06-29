@@ -464,6 +464,8 @@
 
   <section class="bus"><div class="cap">Gfx</div><div class="keys" id="gfxBus"></div></section>
 
+  <section class="bus"><div class="cap">Flag Gfx</div><div class="keys" id="flagGfxBus"></div></section>
+
   <section class="bus"><div class="cap">Timer</div>
     <div class="body">
       <div class="keys" id="timerBus"></div>
@@ -782,6 +784,41 @@ CONFIG.graphics.forEach(item=>{
   const b = mkKey(item.label, item.scene, ()=>toggleSource(item, b));
   b._item = item; toggleKeys.push(b); $("#gfxBus").appendChild(b);
 });
+
+/* ---------- Flag-status GRAPHIC bus (#flag-graphic) ----------
+   Exactly-one-active OBS overlay toggle, PARALLEL to the flag-TEXT chip on
+   #condRow. Drives /obs/flag/* (relay-mediated OBS visibility); the active flag
+   is highlighted from /obs/flag/data. Distinct from the Gfx bus (independent
+   toggles) — these five are mutually exclusive. */
+const FLAG_GFX = [
+  ["GREEN","green"], ["YELLOW","yellow"], ["RED","red"],
+  ["SAFETY CAR","safety-car"], ["VSC","virtual-safety-car"],
+];
+const flagGfxKeys = {};          // key -> button
+async function flagGfxSet(key){  // key "" clears
+  const path = key ? "obs/flag/set/" + key : "obs/flag/clear";
+  try{
+    const r = await fetch("/" + path, {cache:"no-store"});
+    const d = await r.json();
+    if (d.error){ log("Flag gfx: " + d.error, "err"); toast("Flag gfx: " + d.error); }
+    else { log("Flag gfx → " + (key || "(cleared)")); flagGfxRender(d.active || ""); }
+  }catch(e){ log("Flag gfx failed (relay reachable?): " + e, "err"); toast("Flag gfx failed — relay unreachable"); }
+}
+function flagGfxRender(active){
+  for (const [key, btn] of Object.entries(flagGfxKeys)) btn.classList.toggle("on", key === active);
+}
+FLAG_GFX.forEach(([label, key])=>{
+  const b = mkKey(label, "flaggfx", ()=>flagGfxSet(key));
+  flagGfxKeys[key] = b; $("#flagGfxBus").appendChild(b);
+});
+$("#flagGfxBus").appendChild(mkKey("CLEAR", "stop", ()=>flagGfxSet("")));
+async function flagGfxPoll(){
+  try{
+    const r = await fetch("/obs/flag/data", {cache:"no-store"});
+    const d = await r.json();
+    if (!d.error) flagGfxRender(d.active || "");
+  }catch(e){ /* relay unreachable: leave the last highlight in place */ }
+}
 
 TIMER_ACTIONS.forEach(([label, path])=>{
   $("#timerBus").appendChild(mkKey(label, "timer", ()=>timerCall(path), false));
@@ -1915,9 +1952,10 @@ $("#obsStreamBtn").addEventListener("click", async ()=>{
   if (live && !confirm("End the live broadcast?")) return;
   const d = await obsStream(!live);
   if (!d.ok) log("OBS stream: " + (d.error || "failed"), "err");
-  obsStatePoll();
+  obsStatePoll(); flagGfxPoll();
 });
 obsStatePoll(); setInterval(obsStatePoll, 2000);
+flagGfxPoll(); setInterval(flagGfxPoll, 2000);
 loadCuePresets(); loadCueTargets(); pollCueRecent(); setInterval(pollCueRecent, 2000);
 </script>
 </body>

@@ -46,6 +46,7 @@ one muscle memory:
 | **HUD** | the Stint label, Streamer, Session and Race Control dropdowns — they update the HUD live and write back to the Setup tab |
 | **SCN·VIS** | raw scene switches and feed visibility toggles |
 | **GFX** | graphics toggles (HUD, standings, schedule, results, weather, covers) |
+| **FLAG GFX** | mutually exclusive flag-status graphic overlays — exactly one active at a time (or none); distinct from the flag-text chip in the HUD |
 | **TIMER** | the race timer ([Race Timer](Race-Timer)) |
 | **AUDIO** | per-source dB sliders, 0 dB reset and mutes; includes an **Intermission Music** fader for the music track in the Intermission scene |
 | **URLs** | collapsible editor for the schedule and POV URLs |
@@ -298,13 +299,19 @@ flips between them. Everything below is a single tap.
 | Row | Buttons |
 |-----|---------|
 | **Flag** | `FLAG GREEN`, `FLAG YELLOW`, `SAFETY CAR`, `FCY` (Full Course Yellow), `RED FLAG`, `CLEAR FLAG` — each sets (or clears) the colour-coded **race-condition flag** HUD element (`/setup/set/flag/<state>`, `CLEAR FLAG` → `/setup/clear/flag`). The flag's vocabulary comes from the sheet's Configuration **Flag** column; these buttons cover the canonical states |
+| **Flag Gfx** | `GFX GREEN`, `GFX YELLOW`, `GFX SC`, `GFX VSC`, `GFX RED`, `GFX CLEAR` — toggles a full-screen flag-status **graphic overlay** in the Stint and Splitscreen scenes (`/obs/flag/set/<key>`, `GFX CLEAR` → `/obs/flag/clear`). Exactly one is active at a time; pressing a new one hides the previous. These are the *graphic* alternative to the Flag row above — the two controls are independent |
 
-> This is a **separate** element from the page-1 `RED FLAG` combo (which drives the
-> Race Control banner + the Standby cover). The race-condition flag is shown
+> The **Flag** row (text chip) is a **separate** element from the page-1 `RED FLAG` combo (which drives the
+> Race Control banner + the Standby cover). The race-condition flag text chip is shown
 > color-coded in the HUD, is hidden until set, and **persists across stint
-> handovers** until you clear it. Same control is on the panel's **FLAG** dropdown.
+> handovers** until you clear it. Same text control is on the panel's **FLAG** dropdown.
+>
+> The **Flag Gfx** row drives relay-mediated OBS source visibility (`/obs/flag/*`) and
+> requires the five optional `Flag …` PNGs from the Sheet **Assets** tab
+> (see [Sheet template](Sheet-Template#assets-tab)). A missing PNG is non-fatal — OBS
+> shows nothing for that state. The panel's **Flag Gfx** row is the equivalent control.
 
-![Companion page 3 — race-condition flag: set Green / Yellow / Safety Car / FCY / Red, or clear](images/companion-page3-flags.png)
+![Companion page 3 — race-condition flag: text row (Green / Yellow / Safety Car / FCY / Red / Clear) and graphic row (GFX Green / Yellow / SC / VSC / Red / Clear)](images/companion-page3-flags.png)
 
 How the board is imported and built: [Companion](Companion).
 

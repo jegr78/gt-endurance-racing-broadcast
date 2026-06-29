@@ -87,6 +87,7 @@ except Exception:                                # noqa: BLE001 — reflection i
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
 import broadcast_chat  # read-only YouTube broadcast-chat reader (#294); pure parsers
 import cue_admin   # director text-cue channel (#243)
+import flag_graphic   # flag-status graphics: value->source + persisted store (#flag-graphic)
 import health_store  # health-history SQLite store (task 7; src/scripts on sys.path)
 _HEALTH_CONST = health_store  # stable module alias: make_handler's `health_store`
 # PARAMETER shadows the module name inside its closure, so the constants
@@ -4814,7 +4815,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  buttons_page_path=None, race_control_page_path=None,
                  health_store=None, health_monitor_page_path=None, uplot_dir=None,
                  broadcast_chat_store=None, broadcast_chat_supervisor=None,
-                 preview_manager=None, brands_dir=None):
+                 preview_manager=None, brands_dir=None,
+                 flag_graphic_store=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -5760,6 +5762,20 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if len(p) == 3 and p[1] == "clear":
                         return self._send(setup_ctl.set_field(p[2].lower(), ""))
                     return self._send({"error": "unknown", "path": self.path}, 404)
+                if p[:2] == ["obs", "flag"]:
+                    # Flag-status GRAPHIC toggle (parallel to the flag-text chip).
+                    # GET so Companion's Generic-HTTP module hits it directly; the
+                    # tailnet is the trust boundary. Funnel reaches it via the
+                    # /console mount, director-gated by console_policy ('obs').
+                    if not flag_graphic_store:
+                        return self._send({"error": "flag graphic disabled"}, 404)
+                    if p == ["obs", "flag", "data"]:
+                        return self._send(flag_graphic_store.data())
+                    if len(p) == 4 and p[2] == "set":
+                        return self._send(flag_graphic_store.set(unquote(p[3])))
+                    if p == ["obs", "flag", "clear"]:
+                        return self._send(flag_graphic_store.clear())
+                    return self._send({"error": "unknown", "path": self.path}, 404)
                 if p[:1] == ["chat"]:
                     if not chat_store:
                         return self._send({"error": "chat disabled"}, 404)
@@ -6577,6 +6593,15 @@ def main():
 
     chat_store = ChatStore(os.path.join(runtime, "chat.json"))
     cue_store = CueStore(os.path.join(runtime, "cues.json"))
+    def _flag_graphic_apply(scene, source, enabled):
+        # Best-effort OBS apply; _obs_ws is None when the obs_ws import failed or
+        # OBS is unreachable. Same contract as the POV/feed reflect calls.
+        if _obs_ws is None:
+            return False, "obs unavailable"
+        return _obs_ws.set_scene_item_enabled(scene, source, enabled)
+    flag_graphic_store = flag_graphic.FlagGraphicStore(
+        os.path.join(runtime, "flag-graphic.json"), apply_fn=_flag_graphic_apply)
+    flag_graphic_store.reassert()   # re-push the saved flag to OBS (best-effort)
     _health_store_obj = HealthStore(
         os.path.join(runtime, "health-history.db"),
         retention_days=int(os.environ.get("RACECAST_HEALTH_RETENTION_DAYS",
@@ -6688,7 +6713,8 @@ def main():
                            broadcast_chat_store=broadcast_chat_store,
                            broadcast_chat_supervisor=_bc_supervisor,
                            logo_path=args.logo,
-                           preview_manager=preview_manager)
+                           preview_manager=preview_manager,
+                           flag_graphic_store=flag_graphic_store)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []
