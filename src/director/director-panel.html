@@ -801,8 +801,7 @@ async function flagGfxSet(key){  // key "" clears
     const r = await fetch("/" + path, {cache:"no-store"});
     const d = await r.json();
     if (d.error){ log("Flag gfx: " + d.error, "err"); toast("Flag gfx: " + d.error); }
-    else log("Flag gfx → " + (key || "(cleared)"));
-    flagGfxRender(d.active || "");
+    else { log("Flag gfx → " + (key || "(cleared)")); flagGfxRender(d.active || ""); }
   }catch(e){ log("Flag gfx failed (relay reachable?): " + e, "err"); toast("Flag gfx failed — relay unreachable"); }
 }
 function flagGfxRender(active){

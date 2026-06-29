@@ -5767,6 +5767,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     # GET so Companion's Generic-HTTP module hits it directly; the
                     # tailnet is the trust boundary. Funnel reaches it via the
                     # /console mount, director-gated by console_policy ('obs').
+                    if not flag_graphic_store:
+                        return self._send({"error": "flag graphic disabled"}, 404)
                     if p == ["obs", "flag", "data"]:
                         return self._send(flag_graphic_store.data())
                     if len(p) == 4 and p[2] == "set":
