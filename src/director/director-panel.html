@@ -173,6 +173,7 @@
     min-width:150px;outline:none}
   .fld select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(58,160,255,.18)}
   .fld select.pending{border-color:var(--amber);box-shadow:0 0 0 3px var(--amber-glow)}
+  .fld select.staged{border-color:var(--blue);box-shadow:0 0 0 3px rgba(58,160,255,.18)}
   .fld select:disabled{opacity:.45}
 
   /* ---------- URLs section ---------- */
@@ -1412,12 +1413,82 @@ SETUP_FIELDS.forEach(([key,label])=>{
   b.className = "pill stop"; b.textContent = "CLEAR RC"; b.id = "clearRc";
   b.addEventListener("click", ()=>setupSet("racecontrol",""));
   $("#condRow").appendChild(b); }
+/* ---------- Top-3 teams: batch (default) vs live single-slot ----------
+   Batch ON (default): a dropdown change only STAGES locally; "Apply Top 3"
+   commits all three atomically via POST /setup/teams (one relay request -> the
+   HUD never shows a transient duplicate). Batch OFF: each dropdown pushes live
+   through teamSet (the pre-existing behavior). */
+const TOP3_BATCH_KEY = "racecast.top3.batch";
+let top3Batch = (localStorage.getItem(TOP3_BATCH_KEY) ?? "1") !== "0";   // default ON
+let lastSetupRO = false;                  // read-only state from the last setup poll
+const top3Staged = {};                    // slot key -> staged (unapplied) value
+
 TEAM_FIELDS.forEach(([key,label])=>{
   const w = document.createElement("div"); w.className = "fld";
   w.innerHTML = `<label>${label}</label><select data-team="${key}" disabled></select>`;
-  w.querySelector("select").addEventListener("change", e=>teamSet(key, e.target.value));
+  w.querySelector("select").addEventListener("change", e=>teamChange(key, e.target.value));
   $("#teamRow").appendChild(w);
 });
+{ const w = document.createElement("div"); w.className = "fld";
+  w.innerHTML = `<label><input type="checkbox" id="top3BatchTgl"> Batch</label>` +
+                `<button class="pill go" id="top3Apply" disabled>Apply Top 3</button>`;
+  $("#teamRow").appendChild(w); }
+$("#top3BatchTgl").checked = top3Batch;
+$("#top3BatchTgl").addEventListener("change", e=>{
+  top3Batch = e.target.checked;
+  try{ localStorage.setItem(TOP3_BATCH_KEY, top3Batch ? "1" : "0"); }catch(_){}
+  for (const k in top3Staged) delete top3Staged[k];   // discard unapplied staging
+  top3SyncControls();
+  setupPoll();                                         // re-sync selects from the sheet
+});
+$("#top3Apply").addEventListener("click", top3Apply);
+
+function top3SyncControls(){
+  const dirty = Object.keys(top3Staged).length > 0;
+  $("#top3BatchTgl").disabled = lastSetupRO;   // spec §4: toggle + Apply both off in read-only
+  $("#top3Apply").hidden = !top3Batch;
+  $("#top3Apply").disabled = lastSetupRO || !dirty;
+  for (const [key] of TEAM_FIELDS){
+    const sel = document.querySelector(`select[data-team="${key}"]`);
+    if (!sel) continue;
+    const staged = key in top3Staged;
+    sel.classList.toggle("staged", staged);
+    if (staged) sel.classList.remove("pending");
+  }
+}
+
+// A dropdown change stages locally in batch mode, pushes live otherwise.
+function teamChange(slot, value){
+  if (top3Batch){
+    if (!value) return;
+    top3Staged[slot] = value;
+    top3SyncControls();
+    return;
+  }
+  teamSet(slot, value);
+}
+
+async function top3Apply(){
+  if (!Object.keys(top3Staged).length) return;
+  // Submit the complete top-3: staged where changed, current selection otherwise.
+  const teams = {};
+  for (const [key] of TEAM_FIELDS){
+    const sel = document.querySelector(`select[data-team="${key}"]`);
+    const v = (key in top3Staged) ? top3Staged[key] : (sel ? sel.value : "");
+    if (v) teams[key] = v;
+  }
+  $("#top3Apply").disabled = true;   // in-flight guard: no double-submit while the POST is pending
+  try{
+    const r = await fetch("/setup/teams", {method:"POST", cache:"no-store",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({teams})});
+    const d = await r.json();
+    if (d.error){ log("Top-3: " + d.error, "err"); toast("Top-3: " + d.error); top3SyncControls(); return; }
+    log("Top-3 applied → " + Object.values(teams).join(" / "));
+    for (const k in top3Staged) delete top3Staged[k];
+    top3SyncControls();
+    setupPoll();
+  }catch(e){ log("Top-3 apply failed (relay reachable?): " + e, "err"); toast("Top-3 apply failed — relay unreachable"); top3SyncControls(); }
+}
 
 async function teamSet(slot, value){
   if (!value) return;                         // teams are never cleared to empty
@@ -1474,11 +1545,19 @@ async function setupPoll(){
       sel.innerHTML = opts.map(o=>`<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join("");
       sel.dataset.sig = sig;
     }
+    sel.disabled = ro;
+    if (key in top3Staged){                   // staged-but-unapplied: keep the pick
+      // If the option list was just rebuilt, the <select> reset to option 0;
+      // re-assert the staged value so the dropdown still shows what's staged.
+      if ([...sel.options].some(o=>o.value===top3Staged[key])) sel.value = top3Staged[key];
+      continue;
+    }
     const cur = d.fields[key] || "";
     if ([...sel.options].some(o=>o.value===cur)) sel.value = cur;
     sel.classList.toggle("pending", d.pending.includes(key));
-    sel.disabled = ro;
   }
+  lastSetupRO = ro;
+  top3SyncControls();
   $("#clearRc").disabled = ro;
   if (d.push === "failed")
     setBanner("sync", "red", "SHEET SYNC FAILED — panel HUD/URL changes are not reaching the sheet");

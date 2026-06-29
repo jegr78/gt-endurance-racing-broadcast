@@ -3593,6 +3593,18 @@ class HudSource:
         with self.lock:
             self.team_overrides[slot] = (entry, now + OVERRIDE_TTL)
 
+    def set_teams_override(self, entries, now=None):
+        """Optimistic echo for a BATCH panel team write: set multiple podium-slot
+        overrides (0-based slot -> entry) under a SINGLE lock acquisition, so the
+        /hud/data reader (same lock) never observes a partial top-3. The per-call
+        set_team_override would let a poll interleave between slots — the exact
+        duplication this batch path removes."""
+        now = time.time() if now is None else now
+        exp = now + OVERRIDE_TTL
+        with self.lock:
+            for slot, entry in entries.items():
+                self.team_overrides[slot] = (entry, exp)
+
     def team_pending(self, now=None):
         """Slot indices with an unconfirmed (and unexpired) optimistic team override."""
         now = time.time() if now is None else now
@@ -3706,6 +3718,64 @@ class SetupControl:
                               "teams")
         if ok:
             self.hud.refresh()
+
+    # -- batch team apply (Director Panel "Apply Top 3"): all slots atomic ----
+    def set_teams(self, teams, now=None):
+        """Set all given podium slots ATOMICALLY (one HudSource lock -> the
+        broadcast HUD never shows a partial/duplicated standing), then write each
+        slot back to the Sheet via the existing single-slot `teams` webhook action
+        (no Apps Script change). Validation is all-or-nothing: any bad slot key or
+        non-roster value applies nothing and writes nothing."""
+        if not isinstance(teams, dict):
+            return {"error": "teams must be an object like {\"p1\":\"…\"}"}
+        if not self.push_url:
+            return {"error": "webhook not configured — set RACECAST_SHEET_PUSH_URL "
+                             "in the active profile or .env (wiki: Sheet-Webhook)"}
+        roster = self.hud.roster_names()
+        resolved = {}                       # 0-based slot index -> (slot_key, name)
+        for slot_key, name in teams.items():
+            if slot_key not in TEAM_SLOTS:
+                return {"error": f"unknown team slot: {slot_key!r} "
+                                 f"(one of {', '.join(sorted(TEAM_SLOTS))})"}
+            name = (name or "").strip()
+            if name not in roster:
+                return {"error": f"not in the team roster: {name!r} "
+                                 "(add it to the Configuration tab first)"}
+            resolved[TEAM_SLOTS[slot_key] - 1] = (slot_key, name)
+        if not resolved:
+            return {"error": "no team slots given"}
+        entries = {idx: self.hud.resolve_team(name)
+                   for idx, (_k, name) in resolved.items()}
+        self.hud.set_teams_override(entries, now)
+        writes = [(idx + 1, name) for idx, (_k, name) in sorted(resolved.items())]
+        threading.Thread(target=self._push_teams, args=(writes,),
+                         daemon=True).start()
+        return {"ok": True,
+                "slots": [k for _i, (k, _n) in sorted(resolved.items())],
+                "pending": True}
+
+    def _push_teams(self, writes):
+        """Sheet write-back for a batch apply: one webhook call per slot (the
+        single-slot `teams` action, reused), then a single hud.refresh() once all
+        slots are written. `writes` is a list of (1-based slot, roster name)."""
+        ok_all = True
+        first_err = None
+        for slot, name in writes:
+            full = self.hud.full_team_name(name)
+            ok, err = self._push({"action": "teams", "slot": slot, "name": full},
+                                 "teams")
+            if not ok:
+                ok_all = False
+                if first_err is None:
+                    first_err = err
+        if ok_all:
+            self.hud.refresh()
+        else:
+            # A later slot's success must not mask an earlier slot's failure:
+            # _push sets push_status per call, so without this the panel would
+            # read "sheet sync OK" while a slot silently reverted after the TTL.
+            self.push_status = "failed"
+            self.last_error = first_err
 
     # -- URL writes (synchronous) --------------------------------------------
     def schedule_set(self, row, url=None, name=None, stint=None):
@@ -6201,6 +6271,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["pov", "set"]:
                     return self._send(setup_ctl.pov_set(body.get("url"),
                                                         body.get("name")))
+                if p == ["setup", "teams"]:
+                    return self._send(setup_ctl.set_teams(body.get("teams")))
                 return self._send({"error": "unknown", "path": self.path}, 404)
             except ConnectionError:
                 return None              # client hung up mid-response — benign (issue #25)
