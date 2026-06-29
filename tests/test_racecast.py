@@ -880,6 +880,15 @@ def t_oneshot_extra_paths():
     assert m._oneshot_extra("graphics", ["--out", "X"], rd, base) == []  # user override respected
 
 
+def t_brands_oneshot_mapping_and_out():
+    assert m.ONESHOT_MAP["brands"] == "relay/get-brands.py"
+    assert "brands" in m.ONESHOTS
+    extra = m._oneshot_extra("brands", [], os.path.join("/rt", "demo"), "/rt")
+    assert extra == ["--out", os.path.join("/rt", "demo", "brands")], extra
+    # an explicit --out from the user wins (no injected default)
+    assert m._oneshot_extra("brands", ["--out", "/x"], os.path.join("/rt", "demo"), "/rt") == []
+
+
 def t_profile_env_vars_filters_empty():
     rc = m.pcfg.ResolvedConfig(
         profile="demo", name="Demo", sheet_id="abc",

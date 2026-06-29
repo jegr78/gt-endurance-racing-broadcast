@@ -26,7 +26,7 @@
   racecast backup    {create|list|restore|delete} <label>   # named look snapshots (overlay+graphics+media)
   racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
   racecast freeport [PORT...] [--force]       # free a stuck feed port (default 53001-53003); kills orphaned holders, refuses a running relay/streams
-  racecast preflight | speedtest [--json] | cookies [twitch] [browser] | graphics | media | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
+  racecast preflight | speedtest [--json] | cookies [twitch] [browser] | graphics | media | brands | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   racecast obs-browser [--yes]               # Linux/ARM64: build & install OBS's Browser Source plugin from source (needed for the relay HUD)
   racecast export companion [--out PATH]     # write the Companion button config
   racecast init [--browser NAME] [--skip-installs] [--force]   # guided first-time setup
@@ -548,6 +548,7 @@ def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None):
     if "--out" not in rest:
         out = {"graphics": os.path.join(runtime_dir, "graphics"),
                "media": os.path.join(runtime_dir, "media"),
+               "brands": os.path.join(runtime_dir, "brands"),
                "setup": os.path.join(runtime_dir, "GT_Endurance.import.json")}.get(command)
         if out:
             extra += ["--out", out]
@@ -874,7 +875,7 @@ EXTRA_VERBS = {
 }
 # Internal verbs: routed but never advertised (frozen feed children use run-feed).
 HIDDEN_VERBS = {"streams": ("run-feed",)}
-ONESHOTS = ("preflight", "speedtest", "cookies", "graphics", "media", "setup", "install-tools", "install-apps", "obs-browser", "update")
+ONESHOTS = ("preflight", "speedtest", "cookies", "graphics", "media", "brands", "setup", "install-tools", "install-apps", "obs-browser", "update")
 EVENT_VERBS = ("status", "start", "stop", "takeover")
 TAILSCALE_VERBS = ("up", "down", "status", "logs")
 OBS_VERBS = ("refresh", "collection", "logs")
@@ -3131,6 +3132,7 @@ ONESHOT_MAP = {
     "cookies":       "relay/get-cookies.py",
     "graphics":      "relay/get-graphics.py",
     "media":         "relay/get-media.py",
+    "brands":        "relay/get-brands.py",
     "setup":         "setup-assets.py",
     "install-tools": "scripts/install_tools.py",
     "install-apps":  "scripts/install_apps.py",
