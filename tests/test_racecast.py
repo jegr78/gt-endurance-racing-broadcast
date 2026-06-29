@@ -1600,7 +1600,8 @@ def t_overlay_bg_path_present_and_absent():
 
 def t_obs_page_paths_include_overrides():
     assert m.OBS_PAGE_PATHS == ("/hud", "/hud/override.css",
-                                "/splitscreen", "/splitscreen/override.css")
+                                "/splitscreen", "/splitscreen/override.css",
+                                "/intermission", "/intermission/override.css")
 
 
 def t_relay_runtime_args_adds_overlay_when_dir_exists():

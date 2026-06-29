@@ -895,6 +895,34 @@ def t_preview_panel_is_outside_slot_panel():
         "Preview-data panel must not be inside #ov-panel (ovRenderPanel clears it)"
 
 
+def t_intermission_is_an_overlay_page():
+    assert "intermission" in feeds.OVERLAY_PAGES
+
+
+def t_intermission_in_obs_page_paths():
+    assert "/intermission" in feeds.OBS_PAGE_PATHS
+    assert "/intermission/override.css" in feeds.OBS_PAGE_PATHS
+
+
+def t_read_overlay_css_intermission_present():
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as od:
+        with open(os.path.join(od, "intermission.css"), "w") as fh:
+            fh.write("#ichat{right:0}")
+        assert feeds.read_overlay_css(od, "intermission") == b"#ichat{right:0}"
+
+
+def t_intermission_page_polls_broadcast_chat_and_links_override():
+    import os
+    path = os.path.join(ROOT, "src", "obs", "intermission.html")
+    assert os.path.exists(path), "src/obs/intermission.html missing"
+    with open(path, encoding="utf-8") as fh:
+        html = fh.read()
+    assert "/broadcast-chat/data" in html         # reuses the existing endpoint
+    assert "/intermission/override.css" in html   # per-league override link
+    assert 'id="ichat"' in html and 'id="ichat-log"' in html
+
+
 if __name__ == "__main__":
     for n, fn in sorted(globals().items()):
         if n.startswith("t_") and callable(fn):
