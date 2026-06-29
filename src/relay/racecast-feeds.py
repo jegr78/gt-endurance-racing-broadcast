@@ -179,6 +179,7 @@ HEARTBEAT_INTERVAL_S = 30        # how often the relay re-evaluates health
 HEALTH_CONNECTING_S = 45         # a feed connecting longer than this (not down) = yellow
 HEALTH_DROP_GRACE_S = 30         # a dropped feed must stay down this long (one heartbeat) before it escalates to red
 HEALTH_SERVED_OK_S = 10          # a serve must last this long to count as a stable live picture (turns served_ok sticky)
+HEALTH_CONNECTING_SETTLE_S = 15  # a just-dropped served feed must stay down this long before it's a NOTIFIABLE "stuck connecting" — a quicker reconnect (e.g. a fan-out EOF/stall re-serve) is a silent blip, no @here. Below the red grace so a longer stall still surfaces yellow before red.
 HEALTH_COLORS = {                # Discord embed sidebar colour per level
     "green": 0x2ECC71, "yellow": 0xF1C40F, "red": 0xE74C3C}
 _HEALTH_LABEL = {"green": "OK", "yellow": "DEGRADED", "red": "CRITICAL"}
@@ -224,6 +225,25 @@ def feed_health_state(dropped, dropped_since, served_ok, now,
     if dropped_since is None or (now - dropped_since) < grace_s:
         return "connecting"
     return "down"
+
+
+def drop_connecting_notifiable(dropped, dropped_since, now,
+                               settle_s=HEALTH_CONNECTING_SETTLE_S):
+    """Whether a feed in the 'connecting' health state should surface as a
+    NOTIFIABLE 'stuck connecting' (the yellow reason that drives a Discord @here)
+    yet. Pure → unit-tested.
+
+    A SERVED feed that just dropped is a silent blip until it has stayed down past
+    `settle_s` — so a reconnect that self-heals within a heartbeat (the fan-out
+    EOF-churn / byte-stall re-serve on a VOD) never pages the crew. A feed that
+    is not dropped (a never-served startup connect) is notifiable immediately, so
+    this only changes the just-dropped case. Red escalation is unaffected: a drop
+    past the grace window is classified 'down' by feed_health_state, not here."""
+    if not dropped:
+        return True
+    if dropped_since is None:
+        return False                 # treat a missing stamp as just-dropped → blip
+    return (now - dropped_since) >= settle_s
 
 
 def aggregate_health(facts):
@@ -3968,9 +3988,21 @@ class Feed:
         byte-stall (the reader is parked in read1() and can't self-check); stop /
         advance / EOF end the loop directly."""
         cmd = streamlink_fanout_cmd(target, serve_platform, token, cookies=self.cookies)
+        # stdout is the raw video byte stream (read into the ring); stderr is
+        # streamlink's ONLY diagnostic channel here, so it must be PIPEd and pumped
+        # — unlike direct-serve (which merges stderr into a text stdout), discarding
+        # it left every fan-out stall/EOF unexplained in feed_X.log. The pump thread
+        # also keeps the stderr pipe drained so streamlink can never block on a full
+        # pipe (parity with direct-serve; #294-class diagnostics).
         self.proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=external_tool_env(), **_no_window_kwargs())
+        stderr_text = io.TextIOWrapper(self.proc.stderr, encoding="utf-8", errors="replace")
+        threading.Thread(
+            target=logsetup.pump_subprocess,
+            args=(stderr_text, self.log, "streamlink"),
+            kwargs={"on_line": self._observe_streamlink_line},
+            daemon=True).start()
         self._set_phase("serving")
         self._clear_drop_health()
         self.last_byte_ts = None
@@ -4234,7 +4266,12 @@ class Relay:
             if state == "down":
                 feeds_down.append(name)
             elif state == "connecting":
-                connecting_long.append(name)
+                # A just-dropped served feed is a silent blip until it has stayed
+                # down past the settle window — so a reconnect that self-heals
+                # within a heartbeat (fan-out EOF-churn / byte-stall re-serve on a
+                # VOD) never pages @here. A never-served connect is unchanged.
+                if drop_connecting_notifiable(f.dropped, f.dropped_since, now):
+                    connecting_long.append(name)
             elif f.phase == "connecting" and (now - f.phase_since) > HEALTH_CONNECTING_S:
                 connecting_long.append(name)
         try:
