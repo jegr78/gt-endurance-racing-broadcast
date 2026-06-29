@@ -554,9 +554,12 @@ def t_preview_feed_onair_uses_obs_not_grab():
 
 
 def t_preview_feed_offair_uses_grab_not_obs():
-    # Off-air feed: PreviewManager uses pull worker (not OBS); worker returns a frame.
+    # Off-air feed, DIRECT-SERVE mode (fan-out off): PreviewManager uses the pull
+    # worker (not OBS); worker returns a frame. (Fan-out on routes to the ring tap —
+    # preview_source routing is covered in test_feed_preview.py.)
     import logging
     r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)   # B off air (idx 1)
+    r.fanout = False                                           # pin the direct-serve pull path
     calls = {}
 
     def fake_factory(target, channel, cookies, log):

@@ -186,13 +186,14 @@ _HEALTH_LABEL = {"green": "OK", "yellow": "DEGRADED", "red": "CRITICAL"}
 # ---------- Feed fan-out stall detection (relay feed multiplexing, #358) --------
 FANOUT_STALL_S = 8.0   # seconds without a byte from streamlink before a fan-out reader is "stalled"
 FANOUT_RING_BYTES = 8 * 1024 * 1024   # per-feed ring window (bounded; ≈ a few seconds at typical feed bitrate)
-_FANOUT_TRUTHY = {"1", "true", "yes", "on"}
+_FANOUT_FALSEY = {"0", "false", "no", "off"}
 
 
 def fanout_enabled(environ):
-    """True iff RACECAST_FEED_FANOUT is a truthy token. Default off → today's
-    direct-serve path. Pure so the switch is unit-testable."""
-    return str(environ.get("RACECAST_FEED_FANOUT", "")).strip().lower() in _FANOUT_TRUTHY
+    """True unless RACECAST_FEED_FANOUT is an explicit falsey token. Default ON
+    (#358, live-verified 2026-06-29); set RACECAST_FEED_FANOUT=0 to fall back to
+    the proven direct-serve path. Pure so the switch is unit-testable."""
+    return str(environ.get("RACECAST_FEED_FANOUT", "")).strip().lower() not in _FANOUT_FALSEY
 
 
 def feed_stalled(last_byte_ts, now, stall_s=FANOUT_STALL_S):
