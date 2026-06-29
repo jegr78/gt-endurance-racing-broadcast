@@ -36,6 +36,12 @@
   #who { opacity: .7; font-size: 13px; }
   #eventTitle { font-size: 13px; font-weight: 600; color: #ffb454; }
   #eventTitle:not(:empty)::before { content: "· "; opacity: .5; font-weight: 400; }
+  .appmeta { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .appmeta a { display: inline-flex; align-items: center; gap: 5px; text-decoration: none;
+    color: #e7edf3; background: #0c0f13; border: 1px solid #2a2f37; border-radius: 8px;
+    padding: 6px 10px; font-size: 12px; font-weight: 600; }
+  .appmeta a:hover { border-color: #3da9fc; }
+  .appmeta .ver { color: #ffb454; font-variant-numeric: tabular-nums; }
   .wrap { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; padding: 12px;
           align-items: start; }   /* don't stretch the preview row to the tall right column */
   /* Grid items default to min-width:auto, so a long unbreakable chat token (e.g. a
@@ -201,6 +207,12 @@
   <h1>Commentator Cockpit</h1>
   <span id="eventTitle"></span>
   <span id="who"></span>
+  <div class="appmeta">
+    <a class="ver" href="https://github.com/jegr78/gt-endurance-racing-broadcast/releases"
+       target="_blank" rel="noopener" title="Running racecast version — view releases">__RC_VERSION__ ↗</a>
+    <a class="help" href="https://jegr78.github.io/gt-endurance-racing-broadcast/commentator.html"
+       target="_blank" rel="noopener">? Help</a>
+  </div>
 </header>
 <script>
   // Show the "← Console" back link only when served under the /console mount

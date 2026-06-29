@@ -71,6 +71,12 @@
     background:#0c0f13;border:1px solid var(--edge);border-radius:8px;padding:7px 11px;
     font:inherit;font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:none}
   a.back:hover{border-color:var(--live)}
+  .appmeta{display:flex;align-items:center;gap:8px;margin-left:auto}
+  .appmeta a{display:inline-flex;align-items:center;gap:5px;text-decoration:none;color:#e7edf3;
+    background:#0c0f13;border:1px solid var(--edge);border-radius:8px;padding:7px 11px;
+    font:inherit;font-size:12px;font-weight:600;letter-spacing:.04em}
+  .appmeta a:hover{border-color:var(--live)}
+  .appmeta .ver{color:var(--amber);font-variant-numeric:tabular-nums}
   .brand{font-family:var(--head);font-weight:700;letter-spacing:.16em;font-size:24px;text-transform:uppercase}
   .brand small{color:var(--amber);display:flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.32em;margin-top:-2px}
   .brand-edit{background:none;border:0;color:var(--amber);opacity:.5;cursor:pointer;font-size:11px;padding:0 2px;line-height:1}
@@ -395,6 +401,12 @@
     </div>
     <div class="led"><span class="dot" id="ledObs"></span>OBS</div>
     <div class="led"><span class="dot" id="ledRelay"></span>Relay</div>
+    <div class="appmeta">
+      <a class="ver" href="https://github.com/jegr78/gt-endurance-racing-broadcast/releases"
+         target="_blank" rel="noopener" title="Running racecast version — view releases">__RC_VERSION__ ↗</a>
+      <a class="help" href="https://jegr78.github.io/gt-endurance-racing-broadcast/director.html"
+         target="_blank" rel="noopener">? Help</a>
+    </div>
   </header>
   <script>
     // Show the "← Console" back link only under the /console mount (RC_API_BASE set);

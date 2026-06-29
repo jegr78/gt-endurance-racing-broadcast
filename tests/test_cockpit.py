@@ -299,7 +299,7 @@ def t_resolve_graphic_rejects_traversal_and_non_png():
 
 def _cockpit_client(secret="sek", rows=None, live_idx=0,
                     versions_path=None, chat_store=None, timer_store=None,
-                    page_path=None, graphics_dir=None,
+                    page_path=None, graphics_dir=None, app_version="v9.9.9-test",
                     console_page_path=None, discord_client_id=None,
                     discord_client_secret=None, preview_manager=None):
     """Stand up make_handler over a real ThreadingHTTPServer on an ephemeral port.
@@ -336,6 +336,7 @@ def _cockpit_client(secret="sek", rows=None, live_idx=0,
 
     handler = m.make_handler(_Relay(), chat_store=chat_store, timer_store=timer_store,
                              cockpit_page_path=page_path, console_secret=secret,
+                             app_version=app_version,
                              console_versions_path=versions_path,
                              graphics_dir=graphics_dir,
                              console_page_path=console_page_path,
@@ -429,6 +430,22 @@ def t_page_sets_cookie_and_serves_html():
             csp = headers.get("Content-Security-Policy", "")
             assert "img-src" in csp and "jtvnw" in csp
             assert "ggpht" in csp and "default-src" not in csp
+        finally:
+            srv.shutdown()
+
+
+def t_page_substitutes_version():
+    with tempfile.TemporaryDirectory() as d:
+        page = os.path.join(d, "cockpit.html")
+        with open(page, "w") as fh:
+            fh.write("<!doctype html><title>cockpit</title><span>__RC_VERSION__</span>")
+        srv, get, _post = _cockpit_client(page_path=page, app_version="v9.9.9-test")
+        try:
+            tok = ca.mint_token("sek", "alpha-racing")
+            code, _headers, body = get("/cockpit?t=" + tok)
+            assert code == 200, code
+            assert b"v9.9.9-test" in body, body
+            assert b"__RC_VERSION__" not in body, body   # placeholder fully replaced
         finally:
             srv.shutdown()
 
