@@ -1893,7 +1893,8 @@ def _refresh_obs_pages(force=False, wait=0):
     # Set it to track the flag UNCONDITIONALLY so a fallback to direct-serve (flag
     # off) reverts A/B to False — the coexistence guarantee. POV ships True (correct
     # in both modes) and is deliberately left untouched. Best effort.
-    _fanout = _machine_env_value("RACECAST_FEED_FANOUT").strip().lower() in {"1", "true", "yes", "on"}
+    # Default ON, set =0 to fall back (mirror of fanout_enabled in racecast-feeds.py).
+    _fanout = _machine_env_value("RACECAST_FEED_FANOUT").strip().lower() not in {"0", "false", "no", "off"}
     try:
         note = obs_ws.set_feed_close_when_inactive(list(obs_ws.FEED_SOURCES.values()), _fanout)
         if note:

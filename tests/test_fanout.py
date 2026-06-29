@@ -14,9 +14,15 @@ def t_fanout_enabled_truthy_tokens():
         assert m.fanout_enabled({"RACECAST_FEED_FANOUT": v}) is True, v
 
 
-def t_fanout_enabled_default_off():
-    assert m.fanout_enabled({}) is False
-    for v in ("0", "false", "no", "", "off"):
+def t_fanout_enabled_default_on():
+    # Default ON (#358 live-verified 2026-06-29): absent or empty -> fan-out.
+    assert m.fanout_enabled({}) is True
+    assert m.fanout_enabled({"RACECAST_FEED_FANOUT": ""}) is True
+
+
+def t_fanout_enabled_explicit_falsey_disables():
+    # Only an explicit falsey token falls back to the direct-serve path.
+    for v in ("0", "false", "FALSE", "no", "off"):
         assert m.fanout_enabled({"RACECAST_FEED_FANOUT": v}) is False, v
 
 

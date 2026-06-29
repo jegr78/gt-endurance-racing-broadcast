@@ -332,7 +332,14 @@ def run_synthetic(args):
         # 3. cockpit relay (a secret in the env -> /cockpit/* is served, token-gated)
         relay_port = E.free_port()
         env = dict(os.environ)
-        env.update(RACECAST_CONSOLE_SECRET=secret, RACECAST_PROFILE="e2e")
+        # Fan-out is the product default (on), but the two cockpit relays below share
+        # the host default feed ports — two fan-out relays would collide binding them.
+        # Pin them to direct-serve (=0) so they keep exercising the fallback path and
+        # never bind feed ports; the dedicated fan-out relay (#6) overrides this to 1
+        # on its own explicit free ports. Also neutralizes any RACECAST_FEED_FANOUT
+        # leaked from the operator's shell, keeping synthetic e2e deterministic.
+        env.update(RACECAST_CONSOLE_SECRET=secret, RACECAST_PROFILE="e2e",
+                   RACECAST_FEED_FANOUT="0")
         env["PATH"] = stub_bin + os.pathsep + env.get("PATH", "")
         relay_log = os.path.join(tmp, "relay.log")
         relay = _spawn(launcher + ["relay", "run", "--bind", "127.0.0.1",
