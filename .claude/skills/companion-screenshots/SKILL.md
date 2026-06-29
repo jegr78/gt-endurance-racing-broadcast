@@ -23,18 +23,55 @@ After a Companion button is added, renamed, recolored, or moved — the wiki ima
 Pages and their files:
 - **Page 1** → `companion-page1-show-control.png` (combos, scenes, feeds & POV, graphics)
 - **Page 2** → `companion-page2-timer-audio.png` (race timer + mute + per-source volume)
+- **Page 3** → `companion-page3-flags.png` (race-condition FLAGS: text row + graphic row)
 
 Only regenerate the page(s) you actually changed.
 
 ## Prerequisites
 
-- **Companion is running** on `http://localhost:8000` with the current config imported
-  (the button you just built must be visible in its web UI). Import the repo config with
-  `python3 src/racecast.py export companion` → import the written `.companionconfig`.
+- **Companion is running** with the current config imported (the button you just built
+  must be visible in its web UI). If it does not yet show your change, import it — the
+  **autonomous, non-destructive recipe is below** (you do NOT need the user to do it).
+  **Bind address:** `racecast companion start` binds Companion to this machine's **Tailscale
+  IP**, not localhost — so the admin/web-buttons UI is at `http://<tailscale-ip>:8000`, and
+  `http://localhost:8000` is often **not** bound. Find the real address with
+  `lsof -nP -iTCP:8000 -sTCP:LISTEN` (the `100.64.0.0/10` address) and use it for every
+  `browser_navigate` below.
 - **Playwright MCP** available (the `mcp__plugin_playwright_playwright__*` tools).
 - **ffmpeg** + **ffprobe** on PATH (`ffmpeg -version`). Both ship together; `ffprobe`
   replaces the old macOS-only `sips` dimension check, so this skill runs on Windows too.
 - Working directory: the repo root.
+
+## Getting the current config into Companion (autonomous, non-destructive)
+
+When the running Companion shows an **old** version of the page (your button change is not
+visible yet), import it yourself via the web UI — **page-scoped, preserving connections**.
+This was verified live on Companion **v4.3.4**. It does NOT reset the producer's
+connections (OBS-WebSocket etc.) or other pages — only the one destination page's buttons
+are replaced.
+
+1. **Export** the repo config: `python3 src/racecast.py export companion` → it writes
+   `runtime/<profile>/racecast-buttons.companionconfig` (the importable file). The FLAGS
+   button URLs are loopback (`127.0.0.1:8088`), so the active profile doesn't matter for a
+   screenshot.
+2. `browser_navigate` → `http://<tailscale-ip>:8000/import-export`.
+3. Click the **“Import configuration”** control (`browser_snapshot` to get its ref), which
+   opens a file chooser (modal state) → `browser_file_upload` with the absolute path to the
+   exported `.companionconfig`. (file_upload only works once the chooser modal is open.)
+4. In the import wizard, click the **“Buttons”** tab (NOT “Full Import” — Full Import
+   replaces connections). The Buttons tab does a single-page import.
+5. Set **Source Page** to the page you changed (step the ▶ arrow until the label reads e.g.
+   `3 (FLAGS)`) and **Destination Page** to the same live page (step its ▶ arrow; confirm the
+   live label matches, e.g. `3 (FLAGS)`, so you replace the right page).
+6. The **“Import Connections Behavior”** table defaults each connection to **“Link to …”**
+   (links to the existing connection) — leave it; that is what preserves the producer's OBS
+   connection. Do **not** choose “Create new connection”.
+7. Click **“Replace page N with imported page”** (tag it first if the ref is unstable:
+   `browser_evaluate` to set a known `id`, then `browser_click` that selector).
+8. The live page is updated instantly — proceed to capture (the `/tablet` view reflects it).
+
+The `.companionconfig` page indices are 1-based and match the page numbers
+(`1 PAGE 1`, `2 PAGE 2`, `3 FLAGS`).
 
 ## The grid geometry (measured, stable)
 
@@ -104,15 +141,21 @@ Do this per page that changed. Example shown for **page 1**.
 
 ## Caveat: page 2+ has a navigation column
 
-`/tablet` (no params) shows **page 1** with real buttons in column 0 (no nav). Adding
-`?pages=N` renders a left **UP / PAGE n / DOWN** navigation column, shifting the buttons one
-column right — this matches the existing `companion-page2-timer-audio.png` framing, so it's
-the correct view for page 2. Keep using the same URL form that produced the existing image
-for that page so the framing stays consistent.
+`/tablet` (no params) shows **page 1** with real buttons in column 0 (no nav). The nav-column
+behaviour depends on the URL form and Companion version, so the rule is: **match the framing
+of the existing image for that page.** Observed forms:
+- `companion-page2-timer-audio.png` was shot with a left **UP / PAGE n / DOWN** nav column
+  (buttons shifted one column right).
+- `?pages=3` on Companion **v4.3.4** renders the single page **without** a nav column (buttons
+  start in column 0), which matches the existing `companion-page3-flags.png` framing — so it
+  is the correct URL for page 3.
+
+Before re-shooting a page, `Read` its existing image and reproduce the same framing (nav
+column or not, buttons start column) and the same `1280×632` crop.
 
 ## Notes
 
-- Both pages are shot with this recipe at `1280×632`.
+- All three pages are shot with this recipe at `1280×632`.
 - Companion renders buttons as positioned `div`s (not `<img>`/`<canvas>`), and the
   `.buttons-holder` wrapper has height 0 — that's why we screenshot the **viewport** and
   crop, rather than screenshotting an element.
