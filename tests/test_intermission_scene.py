@@ -21,26 +21,42 @@ def _collection():
         return json.load(fh)
 
 
+# Sources the tool creates. The background image source is "Intermission
+# Background", NOT "Intermission" — OBS source/scene names share one global
+# namespace, so naming the image "Intermission" collided with the scene and made
+# SetCurrentProgramScene("Intermission") resolve to the image (error 602).
+_INTERMISSION_SOURCES = ("Intermission Background", "Intermission Chat", "Intermission Music")
+
+
 def t_adds_scene_and_three_sources():
     d = copy.deepcopy(_collection())
     # start from a collection WITHOUT the scene to prove the tool creates it
     d["sources"] = [s for s in d["sources"]
-                    if s.get("name") not in ("Intermission", "Intermission Chat", "Intermission Music")]
+                    if s.get("name") not in ("Intermission",) + _INTERMISSION_SOURCES]
     changed = tool.add_intermission_scene(d)
     assert changed is True
     names = {s.get("name") for s in d["sources"]}
-    assert {"Intermission", "Intermission Chat", "Intermission Music"} <= names
+    assert set(_INTERMISSION_SOURCES) <= names
     scene = next(s for s in d["sources"] if s.get("name") == "Intermission" and s.get("id") == "scene")
     item_names = {it.get("name") for it in scene["settings"]["items"]}
-    assert {"Intermission", "Intermission Chat", "Intermission Music"} <= item_names
+    assert set(_INTERMISSION_SOURCES) <= item_names
+
+
+def t_no_duplicate_source_names():
+    # OBS requires globally-unique source/scene names; a collision breaks the
+    # name->object lookup (SetCurrentProgramScene 602). Guard the whole template.
+    names = [s.get("name") for s in _collection()["sources"]]
+    dups = sorted({n for n in names if names.count(n) > 1})
+    assert not dups, f"duplicate source names in GT_Endurance.json: {dups}"
 
 
 def t_tokens_and_url_are_correct():
     d = copy.deepcopy(_collection())
     d["sources"] = [s for s in d["sources"]
-                    if s.get("name") not in ("Intermission", "Intermission Chat", "Intermission Music")]
+                    if s.get("name") not in ("Intermission",) + _INTERMISSION_SOURCES]
     tool.add_intermission_scene(d)
-    img = next(s for s in d["sources"] if s.get("name") == "Intermission" and s.get("id") != "scene")
+    img = next(s for s in d["sources"]
+               if s.get("name") == "Intermission Background" and s.get("id") != "scene")
     assert img["settings"]["file"] == "__RACECAST_GRAPHICS__/Intermission.png"
     music = next(s for s in d["sources"] if s.get("name") == "Intermission Music")
     assert music["settings"]["local_file"] == "__RACECAST_MEDIA__/intermission.mp3"
@@ -59,7 +75,7 @@ def t_idempotent():
 def t_committed_collection_already_has_scene():
     # after Step 4 regenerates + commits, the shipped template must contain it
     names = {s.get("name") for s in _collection()["sources"]}
-    assert {"Intermission", "Intermission Chat", "Intermission Music"} <= names
+    assert ({"Intermission"} | set(_INTERMISSION_SOURCES)) <= names
 
 
 if __name__ == "__main__":

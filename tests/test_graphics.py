@@ -47,6 +47,19 @@ def t_graphics_from_csv_picks_drive_skips_youtube():
         "Schedule": "https://drive.google.com/file/d/SCH/view"}, m.graphics_from_csv(rows)
 
 
+def t_graphics_from_csv_excludes_media_labels():
+    # Media rows (handled by get-media.py) must NOT be grabbed as PNG graphics —
+    # a Drive-hosted Intermission Music MP3 would otherwise be downloaded as
+    # 'Intermission Music.png' and fail the PNG signature check (#368 follow-up).
+    # Intro/Outro escape only when YouTube-hosted; a Drive-hosted clip would break too.
+    rows = [["Intermission Music", "https://drive.google.com/file/d/MUS/view"],
+            ["Intro Video", "https://drive.google.com/file/d/INTRO/view"],
+            ["Outro Video", "https://drive.google.com/file/d/OUTRO/view"],
+            ["Intermission", "https://drive.google.com/file/d/BG/view"]]
+    assert m.graphics_from_csv(rows) == {
+        "Intermission": "https://drive.google.com/file/d/BG/view"}, m.graphics_from_csv(rows)
+
+
 def t_graphics_from_csv_label_verbatim_and_empty():
     rows = [["Race Weather 1", "https://drive.google.com/file/d/W1/view"],
             ["", "https://drive.google.com/file/d/X/view"],

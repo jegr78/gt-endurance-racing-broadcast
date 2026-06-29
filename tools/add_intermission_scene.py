@@ -23,6 +23,11 @@ MUSIC_UUID  = "cccccccc-0000-4000-8000-000000000004"
 IMAGE_FILE  = "__RACECAST_GRAPHICS__/Intermission.png"
 CHAT_URL    = "http://127.0.0.1:8088/intermission"
 MUSIC_FILE  = "__RACECAST_MEDIA__/intermission.mp3"
+# OBS source/scene names share ONE global namespace, so the background image must
+# NOT be named "Intermission" (the scene name) — the collision made OBS resolve
+# SetCurrentProgramScene("Intermission") to the image source (error 602, "not a
+# scene") and the Director Panel INTERMISSION macro did nothing.
+IMAGE_SOURCE = "Intermission Background"
 CHAT_SOURCE = "Intermission Chat"
 MUSIC_SOURCE = "Intermission Music"
 
@@ -42,7 +47,7 @@ def add_intermission_scene(d):
 
     # --- 1. Image source: full-screen background graphic ---
     img_src = copy.deepcopy(thumbnail)
-    img_src["name"]     = SCENE_NAME
+    img_src["name"]     = IMAGE_SOURCE
     img_src["uuid"]     = IMAGE_UUID
     img_src["settings"] = {"file": IMAGE_FILE}
     srcs.append(img_src)
@@ -91,7 +96,7 @@ def add_intermission_scene(d):
 
     # Bottom-to-top layer order: image, chat overlay, music (audio-only)
     items = [
-        _item(SCENE_NAME,   IMAGE_UUID, 1),
+        _item(IMAGE_SOURCE, IMAGE_UUID, 1),
         _item(CHAT_SOURCE,  CHAT_UUID,  2),
         _item(MUSIC_SOURCE, MUSIC_UUID, 3),
     ]

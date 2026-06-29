@@ -86,15 +86,24 @@ def safe_filename(label):
     return f"{name}.png"
 
 
+# Asset labels owned by get-media.py (downloaded as MP4/MP3, NOT graphics). They
+# must be skipped here even when their value cell is a Drive link: a Drive-hosted
+# Intermission Music MP3 would otherwise be downloaded as 'Intermission Music.png'
+# and fail the PNG signature check. Intro/Outro only escape incidentally when
+# YouTube-hosted. KEEP IN SYNC with MEDIA_LABELS + MUSIC_LABEL in get-media.py.
+MEDIA_LABELS = {"intro video", "outro video", "intermission music"}
+
+
 def graphics_from_csv(rows):
     """Assets-tab rows -> {label: drive_url} for every row whose first non-empty value
-    cell is a Google-Drive link. YouTube / non-Drive rows are skipped. Label verbatim."""
+    cell is a Google-Drive link. YouTube / non-Drive rows and get-media.py's own
+    MEDIA_LABELS rows are skipped. Label verbatim."""
     out = {}
     for row in rows:
         if not row:
             continue
         label = (row[0] or "").strip()
-        if not label:
+        if not label or label.lower() in MEDIA_LABELS:
             continue
         for cell in row[1:]:
             v = (cell or "").strip()

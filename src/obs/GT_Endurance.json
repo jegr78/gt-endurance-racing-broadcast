@@ -2422,7 +2422,7 @@
         },
         {
             "prev_ver": 536936450,
-            "name": "Intermission",
+            "name": "Intermission Background",
             "uuid": "cccccccc-0000-4000-8000-000000000002",
             "id": "image_source",
             "versioned_id": "image_source",
@@ -2535,7 +2535,7 @@
                 "id_counter": 4,
                 "items": [
                     {
-                        "name": "Intermission",
+                        "name": "Intermission Background",
                         "source_uuid": "cccccccc-0000-4000-8000-000000000002",
                         "visible": true,
                         "locked": true,
