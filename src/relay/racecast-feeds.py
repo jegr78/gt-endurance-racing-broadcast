@@ -809,6 +809,11 @@ def resolve_roles(crew_rows, schedule_keys, subject, crew_commentator_keys=froze
     - "race_control" iff subject carries the Crew Race Control flag.
     An unknown subject (no crew row, not in the schedule) yields the empty set.
     Roles are additive (a person may be e.g. both director and race_control).
+    A producer oversees the whole event, so "producer" IMPLIES "director"
+    (broadcast control) and "race_control" (read-only monitoring): a producer can
+    follow and, if needed, steer the event from the /console pages without a
+    separate Crew flag. The producer-only step-up ops (set/stint, mode, takeover)
+    stay independently step-up-gated in console_policy regardless.
     Identity != authorization: this is the only place roles are derived, per the
     role-based-funnel-access spec (#216)."""
     roles = set()
@@ -823,6 +828,8 @@ def resolve_roles(crew_rows, schedule_keys, subject, crew_commentator_keys=froze
             roles.add("director")
         if is_prod:
             roles.add("producer")
+    if "producer" in roles:
+        roles.update(("director", "race_control"))
     return roles
 
 
