@@ -1,12 +1,28 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for get-media.py. Run: python3 tests/test_media.py"""
-import importlib.util, os, subprocess
+import importlib.util, inspect, os, subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 spec = importlib.util.spec_from_file_location(
     "getmedia", os.path.join(ROOT, "src", "relay", "get-media.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+
+def _load(name, rel):
+    s = importlib.util.spec_from_file_location(name, os.path.join(ROOT, rel))
+    mod = importlib.util.module_from_spec(s)
+    s.loader.exec_module(mod)
+    return mod
+
+
+import sys as _sys
+_sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))  # for graphics load
+media = m  # alias for the intermission-music tests below
+graphics = _load("get_graphics", os.path.join("src", "relay", "get-graphics.py"))
+
+DRIVE = "https://drive.google.com/file/d/ABC123def456/view?usp=sharing"
+YT = "https://www.youtube.com/watch?v=abc12345"
 
 
 def t_urls_basic():
@@ -165,6 +181,43 @@ def t_run_download_does_not_retry_timeout():
     except subprocess.TimeoutExpired:
         raised = True
     assert raised and run.calls == 1 and sl.calls == [], (run.calls, sl.calls)
+
+
+# ---------- intermission-music helpers (Task B3) ---------------------------------
+
+def t_music_url_from_csv_picks_value():
+    rows = [["Overlay", "https://drive.google.com/file/d/x/view"],
+            ["Intermission Music", DRIVE],
+            ["Intro Video", YT]]
+    assert media.music_url_from_csv(rows) == DRIVE
+
+
+def t_music_download_kind():
+    assert media.music_download_kind(DRIVE) == "drive"
+    assert media.music_download_kind(YT) == "ytdlp"
+    assert media.music_download_kind("file:///etc/passwd") == "invalid"
+    assert media.music_download_kind("ftp://x/y") == "invalid"
+
+
+def t_build_music_cmd_is_audio_extract_and_guarded():
+    argv = media.build_music_cmd(YT, "/out/intermission.mp3")
+    assert argv[0] == "yt-dlp"
+    assert "-x" in argv
+    i = argv.index("--audio-format"); assert argv[i + 1] == "mp3"
+    assert "--" in argv and argv.index("--") < argv.index(YT)   # flag-injection guard
+    assert argv[-1] == YT
+
+
+def t_build_music_cmd_output_stem_is_intermission():
+    argv = media.build_music_cmd(YT, "/out/intermission.mp3")
+    o = argv.index("-o")
+    assert os.path.basename(argv[o + 1]).startswith("intermission.")
+
+
+def t_drive_helpers_match_get_graphics():
+    for fn in ("is_drive_url", "drive_id", "to_download_url"):
+        assert inspect.getsource(getattr(media, fn)) == inspect.getsource(getattr(graphics, fn)), \
+            f"{fn} drifted between get-media and get-graphics"
 
 
 if __name__ == "__main__":
