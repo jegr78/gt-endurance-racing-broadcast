@@ -317,7 +317,7 @@ def t_app_version_linux_dispatch():
 
 def t_installed_apps_report_aligns_and_marks_unknown():
     lines = m.installed_apps_report(["obs", "discord"],
-                                    lambda a: {"obs": "31.0.2"}.get(a))
+                                    {"obs": "31.0.2"}.get)
     assert lines[0].startswith("  obs") and "31.0.2" in lines[0]
     # version probe returned None -> a readable placeholder, never an empty column
     assert "(version unavailable)" in lines[1] and lines[1].lstrip().startswith("discord")

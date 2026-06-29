@@ -562,10 +562,10 @@ def t_preview_feed_offair_uses_grab_not_obs():
     def fake_factory(target, channel, cookies, log):
         class _W:
             ok = True
-            def __init__(s): s.target = target
-            def stop(s): pass
-            def latest_frame(s): calls["target"] = target; return b"\xff\xd8GRB\xff\xd9"
-            def latest_level(s): return 0.5
+            def __init__(self): self.target = target
+            def stop(self): pass
+            def latest_frame(self): calls["target"] = target; return b"\xff\xd8GRB\xff\xd9"
+            def latest_level(self): return 0.5
         return _W()
 
     lg = logging.getLogger("test.pov.offair"); lg.addHandler(logging.NullHandler())

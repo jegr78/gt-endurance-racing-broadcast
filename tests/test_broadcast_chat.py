@@ -813,8 +813,8 @@ def t_supervisor_sets_primary_target():
     s = m.BroadcastChatStore()
     sup = m.BroadcastChatSupervisor(s, None, None)
     sup.channel_source = type("C", (), {"refresh": lambda self: True})()
-    sup._desired = lambda: {"vidAAAAAAAA": (lambda: _StubReader()),
-                            "twitch:foo": (lambda: _StubReader())}
+    sup._desired = lambda: {"vidAAAAAAAA": (_StubReader),
+                            "twitch:foo": (_StubReader)}
     sup._cycle()
     assert s.data()["target"]["platform"] == "youtube"   # YouTube key is first
 

@@ -16,22 +16,22 @@ def t_osascript_argv_quotes_and_titles():
 
 def t_notify_darwin_runs_osascript():
     calls = []
-    nd.notify("boom", platform="darwin", run=lambda a: calls.append(a))
+    nd.notify("boom", platform="darwin", run=calls.append)
     assert calls and calls[0][0] == "osascript"
 
 
 def t_notify_windows_calls_msgbox():
     calls = []
     nd.notify("boom", platform="win32", run=lambda a: None,
-              msgbox=lambda m: calls.append(m))
+              msgbox=calls.append)
     assert calls == ["boom"]
 
 
 def t_notify_linux_falls_back_to_stderr():
     # no run/msgbox invoked on linux; message goes to stderr
     ran = []
-    nd.notify("boom", platform="linux", run=lambda a: ran.append(a),
-              msgbox=lambda m: ran.append(m))
+    nd.notify("boom", platform="linux", run=ran.append,
+              msgbox=ran.append)
     assert ran == []
 
 

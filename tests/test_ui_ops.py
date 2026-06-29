@@ -265,7 +265,7 @@ def t_build_argv_rejects_unknown_params():
 def t_cookies_status_data_shape():
     class R:
         level, detail = "PASS", "fresh (1 h old)"
-    d = rc.cookies_status_data(status=lambda: R())
+    d = rc.cookies_status_data(status=R)
     assert d == {"level": "PASS", "detail": "fresh (1 h old)"}
 
 

@@ -129,7 +129,7 @@ class _FakeObs:
 
 
 def t_manager_onair_returns_obs_screenshot():
-    mgr = m.PreviewManager(_FakeRelay(live="A"), lambda: _FakeObs(), _quiet_log())
+    mgr = m.PreviewManager(_FakeRelay(live="A"), _FakeObs, _quiet_log())
     data, note = mgr.still("A")
     assert data == b"\xff\xd8OBSFeed A\xff\xd9" and note == ""
 
@@ -139,7 +139,7 @@ def t_manager_obs_cache_reuses_within_ttl():
     class _CountObs:
         def get_source_screenshot(self, name, width=480):
             calls["n"] += 1; return (b"\xff\xd8x\xff\xd9", "")
-    mgr = m.PreviewManager(_FakeRelay(live="A"), lambda: _CountObs(), _quiet_log(), obs_ttl=60.0)
+    mgr = m.PreviewManager(_FakeRelay(live="A"), _CountObs, _quiet_log(), obs_ttl=60.0)
     mgr.still("A"); mgr.still("A")
     assert calls["n"] == 1          # second call served from cache
 
@@ -148,13 +148,13 @@ def t_manager_offair_starts_pull_and_levels():
     started = {}
     def fake_factory(target, channel, cookies, log):
         class _W:
-            def __init__(s): s.target = target; s.ok = True
-            def start(s): started["t"] = target; return s
-            def stop(s): started["stopped"] = True
-            def latest_frame(s): return b"\xff\xd8P\xff\xd9"
-            def latest_level(s): return 0.7
+            def __init__(self): self.target = target; self.ok = True
+            def start(self): started["t"] = target; return self
+            def stop(self): started["stopped"] = True
+            def latest_frame(self): return b"\xff\xd8P\xff\xd9"
+            def latest_level(self): return 0.7
         return _W().start()
-    mgr = m.PreviewManager(_FakeRelay(live="A"), lambda: _FakeObs(), _quiet_log(),
+    mgr = m.PreviewManager(_FakeRelay(live="A"), _FakeObs, _quiet_log(),
                            worker_factory=fake_factory)
     data, note = mgr.still("B")     # B is off-air
     assert data == b"\xff\xd8P\xff\xd9"
@@ -163,7 +163,7 @@ def t_manager_offair_starts_pull_and_levels():
 
 
 def t_manager_placeholder_when_pov_off():
-    mgr = m.PreviewManager(_FakeRelay(live="A", pov=None), lambda: _FakeObs(), _quiet_log())
+    mgr = m.PreviewManager(_FakeRelay(live="A", pov=None), _FakeObs, _quiet_log())
     data, note = mgr.still("POV")
     assert data is None and note == "pov off"
 
@@ -186,10 +186,10 @@ def t_endpoint_preview_levels_json():
     def fake_factory(target, channel, cookies, log):
         class _W:
             ok = True
-            def __init__(s): s.target = target
-            def stop(s): pass
-            def latest_frame(s): return b"\xff\xd8P\xff\xd9"
-            def latest_level(s): return 0.5
+            def __init__(self): self.target = target
+            def stop(self): pass
+            def latest_frame(self): return b"\xff\xd8P\xff\xd9"
+            def latest_level(self): return 0.5
         return _W()
     relay = _make_min_relay_for_preview()
     mgr = m.PreviewManager(relay, lambda: None, _quiet_log(), worker_factory=fake_factory)
@@ -211,10 +211,10 @@ def t_endpoint_feed_b_returns_jpeg():
     def fake_factory(target, channel, cookies, log):
         class _W:
             ok = True
-            def __init__(s): s.target = target
-            def stop(s): pass
-            def latest_frame(s): return _FRAME
-            def latest_level(s): return 0.5
+            def __init__(self): self.target = target
+            def stop(self): pass
+            def latest_frame(self): return _FRAME
+            def latest_level(self): return 0.5
         return _W()
     relay = _make_min_relay_for_preview()
     mgr = m.PreviewManager(relay, lambda: None, _quiet_log(), worker_factory=fake_factory)
@@ -330,15 +330,15 @@ def t_manager_offair_uses_ring_tap_when_fanout():
 
     def ring_factory(ring, target, log):
         class _W:
-            def __init__(s): s.target = target; s.ok = True
-            def start(s): started["t"] = target; return s
-            def stop(s): started["stopped"] = True
-            def latest_frame(s): return b"\xff\xd8R\xff\xd9"
-            def latest_level(s): return 0.8
+            def __init__(self): self.target = target; self.ok = True
+            def start(self): started["t"] = target; return self
+            def stop(self): started["stopped"] = True
+            def latest_frame(self): return b"\xff\xd8R\xff\xd9"
+            def latest_level(self): return 0.8
         return _W().start()
 
     relay = _FakeRelayWithFanout(live="A")
-    mgr = m.PreviewManager(relay, lambda: _FakeObs(), _quiet_log(),
+    mgr = m.PreviewManager(relay, _FakeObs, _quiet_log(),
                            ring_factory=ring_factory)
     data, note = mgr.still("B")        # B is off-air; fanout=True
     assert data == b"\xff\xd8R\xff\xd9", f"unexpected data: {data!r}"

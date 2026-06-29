@@ -127,7 +127,7 @@ def t_export_done():
 
 def t_gate_pause_interactive_prompts():
     seen = []
-    m.gate_pause("Fill in .env", True, ask=lambda msg: seen.append(msg))
+    m.gate_pause("Fill in .env", True, ask=seen.append)
     assert seen and "Fill in .env" in seen[0] and "Enter" in seen[0]
 
 

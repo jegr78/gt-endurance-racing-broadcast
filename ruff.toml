@@ -25,4 +25,6 @@ select = [
     "SIM115",  # open() without a context manager  (CodeQL py/file-not-closed)
     "RET503",  # missing explicit return at end of value-returning function
                #                                   (CodeQL py/mixed-returns)
+    "N805",    # first method argument must be 'self' (CodeQL py/not-named-self)
+    "PLW0108", # unnecessary lambda                  (CodeQL py/unnecessary-lambda)
 ]
