@@ -54,15 +54,20 @@ collection.
   the chat panel's appearance (see [HUD overlays](HUD-Overlays)).
 
 > **Broadcast graphics are local files.** The still-graphics image sources — Overlay,
-> Standings, Schedule, Race Results, Quali Results, Standby, Standby Cover, and the three
-> **weather** overlays (**Race Weather 1**, **Race Weather 2**, **Quali Weather**) — read from
+> Standings, Schedule, Race Results, Quali Results, Standby, Standby Cover, the three
+> **weather** overlays (**Race Weather 1**, **Race Weather 2**, **Quali Weather**), and the five
+> optional **flag-status graphics** (**Flag Green**, **Flag Yellow**, **Flag Red**,
+> **Flag Safety Car**, **Flag Virtual Safety Car**) — read from
 > `runtime/graphics/<Label>.png`. They are tokenised `__RACECAST_GRAPHICS__` in the collection
 > and resolved by `setup-assets.py`. Download them from the Sheet **Assets** tab with
 > `racecast graphics` (one PNG per Assets row, the Sheet label is the
 > filename); a source whose file is missing shows black until you fetch it. The three
 > weather graphics are **hidden full-screen overlays in the Stint scene**, each switchable
 > by its own Companion toggle (`Weather Race (1) Toggle` / `Weather Race (2) Toggle` / `Weather Quali Toggle` — see
-> [Director guide](Director)), exactly like the Standings/Results toggles.
+> [Director guide](Director)), exactly like the Standings/Results toggles. The five flag-status
+> graphics are **hidden full-screen overlays in the Stint and Splitscreen scenes**, toggled
+> mutually exclusively from the panel's **Flag Gfx** row or the Companion **FLAGS** page's
+> graphic row — they are the *graphic* parallel to the flag-text chip and are fully optional.
 
 ## 3. Media Sources (the feeds)
 

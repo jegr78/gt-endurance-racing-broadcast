@@ -316,10 +316,25 @@ Race Weather 2       | <Drive link>
 Quali Weather        | <Drive link>
 Post Race Interviews | <Drive link>
 Intermission         | <Drive link>
+Flag Green           | <Drive link>
+Flag Yellow          | <Drive link>
+Flag Red             | <Drive link>
+Flag Safety Car      | <Drive link>
+Flag Virtual Safety Car | <Drive link>
 Intro Video          | https://www.youtube.com/watch?v=SAMPLE0INTRO
 Outro Video          | https://www.youtube.com/watch?v=SAMPLE0OUTRO
 Intermission Music   | <Drive link or YouTube URL>
 ```
+
+The five **`Flag …`** rows are **optional**. Each is a full-screen transparent 1080p PNG
+placed as an image source in the **Stint** and **Splitscreen** OBS scenes. They are the
+*graphic* alternative to the flag-status **text** chip in the HUD (`Flag` field in the
+Setup tab): the text chip and the graphic overlay are independent controls — you can use
+one, both, or neither depending on your broadcast design. Exactly one flag graphic is
+active at a time (or none); switching to a new one hides the previous. The director
+controls them from the panel's **Flag Gfx** row or the Companion **FLAGS** page's
+graphic row (see [Director](Director#the-companion-web-buttons-board)). A missing
+graphic file is non-fatal — OBS shows a transparent placeholder until you fetch it.
 
 A missing graphic is non-fatal — `racecast setup` warns and OBS shows black until you
 run `racecast graphics`. The graphics/clips are **never committed**; they always come
