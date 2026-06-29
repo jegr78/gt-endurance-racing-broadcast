@@ -1031,6 +1031,70 @@ def t_endpoint_setup_team_sets_slot():
         srv.shutdown(); m.post_webhook = orig
 
 
+def t_set_teams_override_atomic_present():
+    # All given slot overrides are visible after a single batch call.
+    _ctl_unused, hs, orig = _team_ctl([])
+    try:
+        hs.set_teams_override({0: hs.resolve_team("OVO eSports"),
+                               2: hs.resolve_team("Feel Good")}, now=1000.0)
+        assert hs.team_pending(now=1001.0) == {0, 2}
+        d = hs.data(now=1001.0)
+        assert d["teams"][0]["name"] == "OVO eSports"
+        assert d["teams"][2]["name"] == "Feel Good"
+    finally:
+        m.post_webhook = orig
+
+
+def t_set_teams_validates_all_or_nothing():
+    pushes = []
+    ctl, hs, orig = _team_ctl(pushes)
+    try:
+        # one bad value in the batch -> nothing applied, nothing written
+        r = ctl.set_teams({"p1": "OVO eSports", "p2": "Not A Team"}, now=1000.0)
+        assert "error" in r
+        assert hs.team_pending(now=1001.0) == set()
+        assert pushes == []
+        assert "error" in ctl.set_teams({"p9": "OVO eSports"})   # bad slot key
+        assert "error" in ctl.set_teams(None)                    # not a dict
+    finally:
+        m.post_webhook = orig
+
+
+def t_set_teams_atomic_echo_and_pushes():
+    pushes = []
+    ctl, hs, orig = _team_ctl(pushes)
+    try:
+        r = ctl.set_teams({"p1": "OVO eSports", "p2": "Feel Good",
+                           "p3": "OVO eSports"}, now=1000.0)
+        assert r.get("ok") and r.get("pending"), r
+        assert hs.team_pending(now=1001.0) == {0, 1, 2}          # all three atomic
+        d = hs.data(now=1001.0)
+        assert [t["name"] for t in d["teams"][:3]] == \
+            ["OVO eSports", "Feel Good", "OVO eSports"]
+        ctl._push_teams([(1, "OVO eSports"), (2, "Feel Good"),
+                         (3, "OVO eSports")])                    # thread body, run sync
+        assert {"action": "teams", "slot": 1, "name": "OVO eSports"} in pushes
+        assert {"action": "teams", "slot": 2, "name": "Feel Good"} in pushes
+        assert {"action": "teams", "slot": 3, "name": "OVO eSports"} in pushes
+        assert ctl.push_status == "ok"
+    finally:
+        m.post_webhook = orig
+
+
+def t_endpoints_setup_teams_post():
+    pushes = []
+    ctl, hs, orig = _team_ctl(pushes)
+    srv, get, post = _client(ctl)
+    try:
+        r = post("/setup/teams", {"teams": {"p1": "OVO eSports",
+                                            "p2": "Feel Good", "p3": "OVO eSports"}})
+        assert r.get("ok") and r.get("pending"), r
+        assert hs.team_pending() == {0, 1, 2}
+        assert "error" in post("/setup/teams", {"teams": {"p1": "Not A Team"}})
+    finally:
+        srv.shutdown(); m.post_webhook = orig
+
+
 # ---------- is_channel host allow-list + argv separators (SSRF/arg-injection #4) ----
 
 def t_is_channel_accepts_youtube_and_twitch():
