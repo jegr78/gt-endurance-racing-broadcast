@@ -3759,13 +3759,23 @@ class SetupControl:
         single-slot `teams` action, reused), then a single hud.refresh() once all
         slots are written. `writes` is a list of (1-based slot, roster name)."""
         ok_all = True
+        first_err = None
         for slot, name in writes:
             full = self.hud.full_team_name(name)
-            ok, _err = self._push({"action": "teams", "slot": slot, "name": full},
-                                  "teams")
-            ok_all = ok_all and ok
+            ok, err = self._push({"action": "teams", "slot": slot, "name": full},
+                                 "teams")
+            if not ok:
+                ok_all = False
+                if first_err is None:
+                    first_err = err
         if ok_all:
             self.hud.refresh()
+        else:
+            # A later slot's success must not mask an earlier slot's failure:
+            # _push sets push_status per call, so without this the panel would
+            # read "sheet sync OK" while a slot silently reverted after the TTL.
+            self.push_status = "failed"
+            self.last_error = first_err
 
     # -- URL writes (synchronous) --------------------------------------------
     def schedule_set(self, row, url=None, name=None, stint=None):

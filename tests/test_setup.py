@@ -1081,6 +1081,26 @@ def t_set_teams_atomic_echo_and_pushes():
         m.post_webhook = orig
 
 
+def t_push_teams_partial_failure_marks_failed():
+    # A later slot's success must not mask an earlier slot's failed Sheet write
+    # (without the explicit override push_status would read "ok" and the panel
+    # would show "sheet sync OK" while slot 1 silently reverts after the TTL).
+    pushes = []
+    ctl, hs, orig = _team_ctl(pushes)
+    def fake_post(url, payload, timeout=10):
+        pushes.append(payload)
+        if payload.get("slot") == 1:                 # slot 1 fails, 2 & 3 succeed
+            return b'{"ok": false, "error": "boom"}'
+        return b'{"ok": true, "action": "teams", "v": 2}'
+    m.post_webhook = fake_post
+    try:
+        ctl._push_teams([(1, "OVO eSports"), (2, "Feel Good"), (3, "OVO eSports")])
+        assert ctl.push_status == "failed", ctl.push_status
+        assert ctl.last_error                          # carries the first failure
+    finally:
+        m.post_webhook = orig
+
+
 def t_endpoints_setup_teams_post():
     pushes = []
     ctl, hs, orig = _team_ctl(pushes)

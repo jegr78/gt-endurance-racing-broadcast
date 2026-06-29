@@ -1477,16 +1477,17 @@ async function top3Apply(){
     const v = (key in top3Staged) ? top3Staged[key] : (sel ? sel.value : "");
     if (v) teams[key] = v;
   }
+  $("#top3Apply").disabled = true;   // in-flight guard: no double-submit while the POST is pending
   try{
     const r = await fetch("/setup/teams", {method:"POST", cache:"no-store",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify({teams})});
     const d = await r.json();
-    if (d.error){ log("Top-3: " + d.error, "err"); toast("Top-3: " + d.error); return; }
+    if (d.error){ log("Top-3: " + d.error, "err"); toast("Top-3: " + d.error); top3SyncControls(); return; }
     log("Top-3 applied → " + Object.values(teams).join(" / "));
     for (const k in top3Staged) delete top3Staged[k];
     top3SyncControls();
     setupPoll();
-  }catch(e){ log("Top-3 apply failed (relay reachable?): " + e, "err"); toast("Top-3 apply failed — relay unreachable"); }
+  }catch(e){ log("Top-3 apply failed (relay reachable?): " + e, "err"); toast("Top-3 apply failed — relay unreachable"); top3SyncControls(); }
 }
 
 async function teamSet(slot, value){
@@ -1545,7 +1546,12 @@ async function setupPoll(){
       sel.dataset.sig = sig;
     }
     sel.disabled = ro;
-    if (key in top3Staged) continue;          // staged-but-unapplied: leave the pick
+    if (key in top3Staged){                   // staged-but-unapplied: keep the pick
+      // If the option list was just rebuilt, the <select> reset to option 0;
+      // re-assert the staged value so the dropdown still shows what's staged.
+      if ([...sel.options].some(o=>o.value===top3Staged[key])) sel.value = top3Staged[key];
+      continue;
+    }
     const cur = d.fields[key] || "";
     if ([...sel.options].some(o=>o.value===cur)) sel.value = cur;
     sel.classList.toggle("pending", d.pending.includes(key));
