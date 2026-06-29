@@ -1604,6 +1604,16 @@ def t_obs_page_paths_include_overrides():
                                 "/intermission", "/intermission/override.css")
 
 
+def t_obs_page_paths_relay_mirror_in_sync():
+    # OBS_PAGE_PATHS lives in racecast.py (the obs-refresh hash gate reads it); the
+    # relay keeps a mirror constant only for test discoverability. Pin the two equal
+    # so a future overlay page added to one can never silently drift from the other.
+    spec2 = importlib.util.spec_from_file_location(
+        "feeds_opp", os.path.join(ROOT, "src", "relay", "racecast-feeds.py"))
+    feeds = importlib.util.module_from_spec(spec2); spec2.loader.exec_module(feeds)
+    assert tuple(feeds.OBS_PAGE_PATHS) == tuple(m.OBS_PAGE_PATHS)
+
+
 def t_relay_runtime_args_adds_overlay_when_dir_exists():
     import tempfile, os
     with tempfile.TemporaryDirectory() as tmp:
