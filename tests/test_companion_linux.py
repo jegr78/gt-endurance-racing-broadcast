@@ -122,7 +122,7 @@ def t_detect_unit_none_when_absent():
 
 # --- is_enabled (idempotency) ------------------------------------------------
 def _reader_for(files):
-    return lambda path: files.get(path)
+    return files.get
 
 
 def t_is_enabled_true_when_all_match():
@@ -187,7 +187,7 @@ def t_enable_control_already_enabled_is_noop():
     }
     run = _FakeRun()
     rc = cl.enable_control(platform="linux", run=run, which=lambda n: "/usr/bin/" + n,
-                           getuser=lambda: "jegr", read_text=lambda p: files.get(p),
+                           getuser=lambda: "jegr", read_text=files.get,
                            write_temp=lambda c: "/tmp/x", exists=lambda p: False,
                            log=lambda *a: None)
     assert rc == 0

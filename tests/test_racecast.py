@@ -150,7 +150,7 @@ def t_sheet_url_cmd_prints_url(capsys=None):
     old_url, old_open = m._active_sheet_url, m._open_url
     opened = []
     m._active_sheet_url = lambda: "https://docs.google.com/spreadsheets/d/X/edit"
-    m._open_url = lambda u: opened.append(u)
+    m._open_url = opened.append
     try:
         m.sheet_open_cmd([])
         assert opened == ["https://docs.google.com/spreadsheets/d/X/edit"]
