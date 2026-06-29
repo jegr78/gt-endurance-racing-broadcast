@@ -131,11 +131,14 @@ flagged Race Control (the demo Crew tab "RC 2" has Race Control = TRUE).
 
 ### B3. (Optional) seed chat for a fuller shot
 
-- **Crew chat:** `POST` a few lines so the chat card isn't empty:
+- **Crew chat:** `POST` a few lines so the chat card isn't empty. The endpoint wants a
+  **JSON body** with a **`user`** key (NOT a form field, NOT `name=`); the author shows in
+  the chat exactly as `user`:
   ```bash
-  curl -s "http://127.0.0.1:8088/chat/send" --data-urlencode "name=Director" \
-       --data-urlencode "text=Welcome to the demo broadcast" >/dev/null
+  curl -s -X POST "http://127.0.0.1:8088/chat/send" -H "Content-Type: application/json" \
+       -d '{"user":"Director","text":"Welcome to the demo broadcast"}' >/dev/null
   ```
+  (A form-encoded `name=…` is ignored and the message is stored as the generic "Crew".)
 - **Broadcast chat (read-only mirror):** there is **no write endpoint** — the store is
   in-memory and read-only. The demo `Channel` tab is `@LofiGirl` (always live), so a live
   relay would fill the card with **real third-party viewers** — off-theme and inappropriate to
@@ -155,9 +158,16 @@ flagged Race Control (the demo Crew tab "RC 2" has Race Control = TRUE).
           {"id": "d4", "ts": now-20,  "user": "Lena_K",       "text": "Great commentary!"},
       ])
   ```
-  Run the relay with `RACECAST_SEED_BROADCAST=1`, capture, then
-  **`git checkout -- src/relay/racecast-feeds.py`** to revert. (`add_many` takes
-  `{id, ts, user, text}` dicts; ts as `time.time() - N`.)
+  Run the relay with `RACECAST_SEED_BROADCAST=1`, capture, then **revert the seed block
+  only** — delete exactly the lines you added (surgically, with an editor/`Edit`), NOT with
+  a whole-file `git checkout`. (`add_many` takes `{id, ts, user, text}` dicts; ts as
+  `time.time() - N`.)
+
+  > ⚠️ **Never `git checkout -- src/relay/racecast-feeds.py` to drop this block.** A
+  > whole-file checkout discards **every** uncommitted change in that file — if you are
+  > also editing the relay (the common case: you changed a relay surface and are now
+  > refreshing its screenshot), it silently destroys that work. Branch + commit before you
+  > start so any slip is recoverable, and remove the temporary block with a targeted edit.
 
 ### B4. Capture
 
@@ -183,9 +193,14 @@ copy to `src/docs/slides/assets/img/<name>.png`. Read the PNG back and eyeball i
 ```bash
 python3 src/racecast.py relay stop ; pkill -f "obs-sim.py" ; pkill -f "racecast.py ui"
 rm -f runtime/yt-cookies.txt                       # the stub cookies
-git checkout -- src/relay/racecast-feeds.py        # only if you added the seed block
+# Seed block (B3): delete ONLY the lines you added — surgically, with an editor/Edit.
+# Do NOT `git checkout -- src/relay/racecast-feeds.py`: it wipes ALL uncommitted changes
+# in that file, including any relay edit you are screenshotting (see the ⚠️ in B3).
 git checkout -- profiles/demo/profile.env          # CONSOLE_SECRET gotcha (see below)
 ```
+(`git checkout -- profiles/demo/profile.env` is safe — that file is config you never edit
+here; the relay only injects a secret into it. The relay **source** file is the one to
+revert surgically.)
 
 - **`profiles/demo/profile.env` is git-tracked and must ship secret-free.** Starting the demo
   relay makes `_ensure_active_cockpit_secret` write a real `CONSOLE_SECRET` into it;
