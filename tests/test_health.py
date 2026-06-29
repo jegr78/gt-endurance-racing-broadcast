@@ -455,6 +455,73 @@ def t_health_grace_is_one_heartbeat_interval():
     assert m.HEALTH_SERVED_OK_S == 10
 
 
+def t_connecting_settle_is_below_grace():
+    # The yellow "stuck connecting" settle window must sit BELOW the red grace so
+    # a drop still surfaces yellow before it escalates to red (settle < grace).
+    assert 0 < m.HEALTH_CONNECTING_SETTLE_S < m.HEALTH_DROP_GRACE_S
+
+
+def t_drop_connecting_notifiable_blip_suppressed():
+    # A served feed that JUST dropped is a silent blip — not yet a notifiable
+    # "stuck connecting" — until it has stayed down past the settle window. This
+    # is what stops a reconnect that self-heals within a heartbeat from pinging.
+    now = 1000.0
+    s = m.HEALTH_CONNECTING_SETTLE_S
+    # within the settle window -> silent (NOT notifiable)
+    assert m.drop_connecting_notifiable(True, now - (s - 1), now) is False
+    # past the settle window -> a genuinely stuck reconnect -> notifiable
+    assert m.drop_connecting_notifiable(True, now - (s + 1), now) is True
+    # a never-served / not-yet-dropped connecting feed is unchanged (notifiable)
+    assert m.drop_connecting_notifiable(False, None, now) is True
+    # missing timestamp is treated as just-dropped -> still a blip
+    assert m.drop_connecting_notifiable(True, None, now) is False
+
+
+def t_health_facts_quick_reconnect_blip_not_yellow():
+    # A served feed that dropped a few seconds ago (a reconnect in progress) must
+    # NOT surface as "stuck connecting" — so the heartbeat does not @here a blip
+    # that self-heals within a heartbeat (the VOD EOF-churn / fan-out case).
+    orig = m.detect_tailscale_ip
+    m.detect_tailscale_ip = lambda: "100.64.0.9"
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
+            r._maybe_probe_obs = lambda now: None
+            r.obs_reachable = True
+            now = time.time()
+            r.A.dropped = True
+            r.A.served_ok = True                       # HAD a stable picture
+            r.A.dropped_since = now - 3                 # dropped 3 s ago (reconnecting)
+            facts = r._health_facts(now)
+            assert "A" not in facts["feeds_connecting_long"]
+            assert m.aggregate_health(facts)["level"] == "green"
+    finally:
+        m.detect_tailscale_ip = orig
+
+
+def t_health_facts_stuck_reconnect_past_settle_is_yellow():
+    # A served feed still not reconnected past the settle window (but inside the
+    # red grace) IS a genuine "stuck connecting" -> yellow (early warning before
+    # the loss escalates to red).
+    orig = m.detect_tailscale_ip
+    m.detect_tailscale_ip = lambda: "100.64.0.9"
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["https://youtu.be/a", "https://youtu.be/b"])
+            r._maybe_probe_obs = lambda now: None
+            r.obs_reachable = True
+            now = time.time()
+            r.A.dropped = True
+            r.A.served_ok = True
+            r.A.dropped_since = now - (m.HEALTH_CONNECTING_SETTLE_S + 2)
+            facts = r._health_facts(now)
+            assert "A" in facts["feeds_connecting_long"]
+            assert "A" not in facts["feeds_down"]       # not yet red
+            assert m.aggregate_health(facts)["level"] == "yellow"
+    finally:
+        m.detect_tailscale_ip = orig
+
+
 def t_health_facts_demo_feed_never_red():
     # A feed whose serve never lasted long enough (served_ok False) and has been
     # "dropped" for a long time must NOT land in feeds_down -> no CRITICAL.
