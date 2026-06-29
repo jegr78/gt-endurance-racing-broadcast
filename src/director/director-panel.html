@@ -1445,6 +1445,7 @@ $("#top3Apply").addEventListener("click", top3Apply);
 
 function top3SyncControls(){
   const dirty = Object.keys(top3Staged).length > 0;
+  $("#top3BatchTgl").disabled = lastSetupRO;   // spec §4: toggle + Apply both off in read-only
   $("#top3Apply").hidden = !top3Batch;
   $("#top3Apply").disabled = lastSetupRO || !dirty;
   for (const [key] of TEAM_FIELDS){
