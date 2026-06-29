@@ -1840,6 +1840,129 @@
        }
       },
       "localVariables": []
+     },
+     "4": {
+      "type": "button",
+      "style": {
+       "text": "Intermission",
+       "textExpression": false,
+       "size": "18",
+       "png64": null,
+       "alignment": "center:center",
+       "pngalignment": "center:center",
+       "color": 16777215,
+       "bgcolor": 0,
+       "show_topbar": "default"
+      },
+      "options": {
+       "stepProgression": "auto",
+       "stepExpression": "",
+       "rotaryActions": false
+      },
+      "feedbacks": [
+       {
+        "id": "IntmSceneProgramFdbkA",
+        "definitionId": "sceneProgram",
+        "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+        "options": {
+         "scene": {
+          "value": "Intermission",
+          "isExpression": false
+         }
+        },
+        "type": "feedback",
+        "style": {
+         "color": 16777215,
+         "bgcolor": 13107200
+        },
+        "isInverted": {
+         "value": false,
+         "isExpression": false
+        },
+        "upgradeIndex": 8
+       }
+      ],
+      "steps": {
+       "0": {
+        "action_sets": {
+         "down": [
+          {
+           "id": "IntmSetSceneActionBBB",
+           "definitionId": "set_scene",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "scene": {
+             "value": "Intermission",
+             "isExpression": false
+            },
+            "customSceneName": {
+             "value": "",
+             "isExpression": false
+            }
+           },
+           "type": "action",
+           "upgradeIndex": 8
+          },
+          {
+           "id": "IntmMuteDiscordCaptCC",
+           "definitionId": "set_source_mute",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "source": {
+             "value": "Discord Audio Capture",
+             "isExpression": false
+            },
+            "mute": {
+             "value": "true",
+             "isExpression": false
+            }
+           },
+           "type": "action",
+           "upgradeIndex": 8
+          },
+          {
+           "id": "IntmMuteFeedAAction1D",
+           "definitionId": "set_source_mute",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "source": {
+             "value": "Feed A",
+             "isExpression": false
+            },
+            "mute": {
+             "value": "true",
+             "isExpression": false
+            }
+           },
+           "type": "action",
+           "upgradeIndex": 8
+          },
+          {
+           "id": "IntmMuteFeedBAction1E",
+           "definitionId": "set_source_mute",
+           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
+           "options": {
+            "source": {
+             "value": "Feed B",
+             "isExpression": false
+            },
+            "mute": {
+             "value": "true",
+             "isExpression": false
+            }
+           },
+           "type": "action",
+           "upgradeIndex": 8
+          }
+         ],
+         "up": []
+        },
+        "options": {
+         "runWhileHeld": []
+        }
+       }
+      },
+      "localVariables": []
      }
     },
     "2": {
