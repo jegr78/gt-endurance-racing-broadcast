@@ -10,6 +10,7 @@ Usage: tokenize-obs.py IN [OUT]
 import argparse, json, os, re
 
 TOKEN = "__RACECAST_GRAPHICS__"
+MEDIA_TOKEN = "__RACECAST_MEDIA__"
 SHEET_TOKEN = "__RACECAST_SHEET__"
 # Any /spreadsheets/d/<id>/ — the {20,} length guard skips the short token itself.
 SHEET_RE = re.compile(r"(/spreadsheets/d/)[A-Za-z0-9_-]{20,}(/)")
@@ -83,6 +84,19 @@ def main():
         if isinstance(f, str) and f and not f.startswith("__RACECAST_"):
             st["file"] = f"{TOKEN}/{base(f)}"
             n += 1
+    # Intro/Outro clips are ffmpeg_source local_file paths -> __RACECAST_MEDIA__.
+    # (Feed A/B/POV are ffmpeg_source too but use a loopback `input` URL, no
+    # local_file, so they are left untouched.) setup-assets.py replaces the token
+    # back with the runtime media dir; without this a re-export leaks /Users/...
+    m = 0
+    for s in d.get("sources", []):
+        if s.get("id") != "ffmpeg_source":
+            continue
+        st = s.get("settings") or {}
+        f = st.get("local_file")
+        if isinstance(f, str) and f and not f.startswith("__RACECAST_"):
+            st["local_file"] = f"{MEDIA_TOKEN}/{base(f)}"
+            m += 1
     sheet_count = [0]
     d = tokenize_sheets(d, sheet_count)
     if canonicalize_discord_audio(d):
@@ -91,7 +105,8 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(d, fh, ensure_ascii=False, indent=4)
-    print(f"tokenized {n} asset path(s) + {sheet_count[0]} sheet URL(s) -> {out}")
+    print(f"tokenized {n} graphics + {m} media path(s) + "
+          f"{sheet_count[0]} sheet URL(s) -> {out}")
 
 
 if __name__ == "__main__":
