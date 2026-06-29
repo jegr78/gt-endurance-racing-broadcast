@@ -63,10 +63,9 @@ def add_intermission_scene(d):
     music_src = copy.deepcopy(intro_video)
     music_src["name"] = MUSIC_SOURCE
     music_src["uuid"] = MUSIC_UUID
-    # Deep-copy Intro Video settings (ffmpeg_source uses local_file, not file)
-    # then override only the media path so all other keys (hw_decode, buffering_mb,
-    # is_local_file, looping, clear_on_media_end, …) are inherited verbatim.
-    music_src["settings"] = copy.deepcopy(intro_video["settings"])
+    # Override only the media path; all other keys (hw_decode, buffering_mb,
+    # is_local_file, looping, clear_on_media_end, …) are already inherited
+    # verbatim from the deep-copy above.
     music_src["settings"]["local_file"] = MUSIC_FILE
     srcs.append(music_src)
 

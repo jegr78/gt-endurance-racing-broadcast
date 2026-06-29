@@ -37,6 +37,8 @@ def t_adds_scene_and_three_sources():
 
 def t_tokens_and_url_are_correct():
     d = copy.deepcopy(_collection())
+    d["sources"] = [s for s in d["sources"]
+                    if s.get("name") not in ("Intermission", "Intermission Chat", "Intermission Music")]
     tool.add_intermission_scene(d)
     img = next(s for s in d["sources"] if s.get("name") == "Intermission" and s.get("id") != "scene")
     assert img["settings"]["file"] == "__RACECAST_GRAPHICS__/Intermission.png"
