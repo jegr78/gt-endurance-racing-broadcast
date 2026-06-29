@@ -483,6 +483,39 @@ def t_hud_team_override_cleared_when_sheet_confirms():
     assert hs.team_pending(now=1001.0) == set(), "confirmed override must be pruned"
 
 
+def t_resolve_brand_override_direct_base():
+    import tempfile, os as _os
+    bd = tempfile.mkdtemp()
+    with open(_os.path.join(bd, "cupra.png"), "w") as fh:
+        fh.write("x")
+    # brands_dir is the base DIRECTLY (no 'brands' sub-level, unlike resolve_asset)
+    path, ctype = m.resolve_brand_override(bd, "cupra")
+    assert path.endswith("cupra.png") and ctype == "image/png", (path, ctype)
+    assert m.resolve_brand_override(bd, "bmw") is None        # not overridden here
+    assert m.resolve_brand_override(bd, "../secret") is None   # traversal rejected
+    assert m.resolve_brand_override("", "cupra") is None       # no dir
+    assert m.resolve_brand_override(bd, "BadKey") is None       # bad key shape
+
+
+def t_brand_override_wins_over_base():
+    """The exact precedence expression _send_asset uses for sub=='brands'."""
+    import tempfile, os as _os
+    bd = tempfile.mkdtemp()                       # runtime override dir
+    ad = tempfile.mkdtemp()                       # base assets dir (src/assets shape)
+    _os.makedirs(_os.path.join(ad, "brands"))
+    with open(_os.path.join(bd, "bmw.png"), "w") as fh:
+        fh.write("override")
+    with open(_os.path.join(ad, "brands", "bmw.png"), "w") as fh:
+        fh.write("base")
+    hit = m.resolve_brand_override(bd, "bmw") or m.resolve_asset(ad, "brands", "bmw")
+    assert hit[0].startswith(_os.path.realpath(bd)), hit          # override path wins
+    # a key present only in the base still resolves through the fallback
+    with open(_os.path.join(ad, "brands", "audi.png"), "w") as fh:
+        fh.write("base")
+    hit2 = m.resolve_brand_override(bd, "audi") or m.resolve_asset(ad, "brands", "audi")
+    assert hit2[0].endswith("audi.png") and hit2[0].startswith(_os.path.realpath(ad)), hit2
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

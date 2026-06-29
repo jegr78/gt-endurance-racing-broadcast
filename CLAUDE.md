@@ -183,6 +183,7 @@ python3 src/racecast.py cookies firefox          # refresh YouTube cookies befor
 python3 src/racecast.py cookies twitch firefox   # refresh Twitch cookies (only needed for gated sub/follower-only Twitch feeds)
 python3 src/racecast.py graphics          # download broadcast graphics -> runtime/<profile>/graphics/
 python3 src/racecast.py media             # download Intro/Outro clips -> runtime/<profile>/media/
+python3 src/racecast.py brands            # download per-league brand-logo overrides (Sheet "Brands" tab) -> runtime/<profile>/brands/
 python3 src/racecast.py setup --out runtime/<profile>/GT_Endurance.import.json   # localize OBS collection
 python3 src/racecast.py install-tools     # install yt-dlp/streamlink/ffmpeg/deno (winget/brew/apt — Linux apt runs via sudo; deno has no apt pkg so it's a pinned, SHA-256-verified GitHub-release download into runtime/bin, which racecast adds to PATH; bootstraps brew on macOS); --update also upgrades installed ones (pre-event)
 python3 src/racecast.py install-apps      # install OBS/Companion/Tailscale/Discord (winget/brew/apt+official installers); --update upgrades installed ones (Linux: prints per-app guide)
@@ -263,20 +264,21 @@ downloaders read a flat environment and stay profile-agnostic. `racecast profile
 list|show|use|new|export|import [--from/--no-assets/--out/--force]` manages profiles;
 global `--profile NAME` runs one command against a non-active profile. `racecast
 profile export NAME` packages the entire `profiles/<name>/` tree (including
-`SHEET_PUSH_URL` in `profile.env`) plus the optional runtime `graphics/` and `media/`
+`SHEET_PUSH_URL` in `profile.env`) plus the optional runtime `graphics/`, `media/`, and `brands/`
 into a single zip that can be imported on another machine with `racecast profile
 import FILE` — this is the onboarding path for handing a league to a new producer.
 This is distinct from `racecast backup …` (`backup_admin.py`), which is a
 profile-internal named snapshot of the overlay CSS + graphics + media only and never
 crosses machines.
 
-A small bounded `load_dotenv()` is **duplicated** in the four self-contained scripts
+A small bounded `load_dotenv()` is **duplicated** in the five self-contained scripts
 that can run standalone — `src/relay/racecast-feeds.py`, `src/setup-assets.py`,
-`src/relay/get-media.py`, and `src/relay/get-graphics.py` — reading a `.env` only from
+`src/relay/get-media.py`, `src/relay/get-graphics.py`, and `src/relay/get-brands.py`
+(`get-brands.py` also duplicates `asset_key`) — reading a `.env` only from
 the script dir or the project root (marker: `.git`/`.env.example`), never an unrelated
 parent; real environment variables take precedence. These deliberately do NOT import
 `config.py` (the relay stays dependency-light), but the canonical loader for everything
-else is `src/scripts/config.py`. Keep the four `load_dotenv` copies in sync if you
+else is `src/scripts/config.py`. Keep the five `load_dotenv` copies in sync if you
 touch one.
 
 ### Profile-scoped runtime
@@ -346,7 +348,10 @@ freeport 8088`).
   `__RACECAST_GRAPHICS__/<Label>.png` in the collection and resolved by
   `setup-assets.py` (which warns, never fails, on a missing file → OBS shows black until
   you run `get-graphics.py`). `src/assets/` therefore holds **only** the HUD `flags/` +
-  `brands/` logos (still committed, relay-served).
+  `brands/` logos (still committed, relay-served). Brand logos are served **override-first**:
+  `runtime/<profile>/brands/<asset_key>.png` (downloaded from the Sheet `Brands` tab by
+  `get-brands.py`) wins over the committed `src/assets/brands/` base; the override directory
+  travels in `profile export` as a third asset section alongside `graphics/` and `media/`.
 - **Companion.** Export the config into the gitignored `incoming/` folder, then
   `tools/strip_companion_pass.py` blanks the WebSocket password and writes
   `src/companion/racecast-buttons.companionconfig`. `build.py` re-strips defensively.

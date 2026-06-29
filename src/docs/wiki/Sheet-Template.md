@@ -40,6 +40,7 @@ with **no leading blank rows**. Most tabs locate their columns **by header text*
 | [Crew](#crew-tab) | `Crew` | `--crew-tab` | relay | Director / producer / commentator / race-control roster |
 | [Producer](#producer-tab) | `Producer` | — | Control Center | Producer-handover schedule with one-click Funnel takeover |
 | [Assets](#assets-tab) | `Assets` | `--assets-tab` | `racecast graphics` / `media` | Links to the broadcast graphics + intro/outro clips |
+| [Brands](#brands-tab) | `Brands` | — | `racecast brands` | Per-league brand-logo overrides for the HUD (optional) |
 
 ---
 
@@ -323,6 +324,27 @@ Intermission Music   | <Drive link or YouTube URL>
 A missing graphic is non-fatal — `racecast setup` warns and OBS shows black until you
 run `racecast graphics`. The graphics/clips are **never committed**; they always come
 from the Sheet. See [Configuration](Configuration#sheet-driven-graphics).
+
+---
+
+## Brands tab
+
+**Optional.** Overrides or adds manufacturer (brand) logos shown in the HUD. Without this tab the committed base logos in `src/assets/brands/` serve for all leagues. Add rows only for manufacturers you want to override or that the base set does not include.
+
+Header row in row 1, two columns:
+
+| Column header | Meaning |
+|---|---|
+| `Brand` | Manufacturer name; normalized the same way as the Configuration tab's `Brand Key`/`Brand Name`/`Brand` column: lowercased, runs of whitespace replaced by a single hyphen, and any character outside `a–z 0–9 -` removed. So `BMW` → `bmw`, `Aston Martin` → `aston-martin`, `Mercedes-AMG` → `mercedes-amg`; `BMW` overrides the built-in `bmw` logo and a new `Cupra` adds `cupra` |
+| `Logo` | A Google-Drive **share link** to the logo image (`File → Share → Copy link`), the same format as the Assets-tab graphics |
+
+```
+Brand   | Logo
+BMW     | https://drive.google.com/file/d/<ID>/view?usp=sharing
+Cupra   | https://drive.google.com/file/d/<ID>/view?usp=sharing
+```
+
+`racecast brands` downloads each logo into `runtime/<profile>/brands/<key>.png`. The relay serves `/hud/assets/brands/<key>` from that directory first; if a key is not found there it falls back to the committed `src/assets/brands/` base set. Run `racecast brands` (or the Control Center **Profile** view → **Brands → Download**) before an event whenever logos change.
 
 ---
 

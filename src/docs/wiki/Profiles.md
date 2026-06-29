@@ -135,15 +135,20 @@ use the profile export/import path.
 
 ```bash
 racecast profile export <name>              # writes <name>-profile.zip in the current directory
-racecast profile export <name> --no-assets  # omit graphics/media (re-fetchable on the target)
+racecast profile export <name> --no-assets  # omit graphics/media/brands (re-fetchable on the target)
 racecast profile export <name> --out /tmp/my-league.zip   # custom output path
 ```
 
 The bundle contains the entire `profiles/<name>/` tree — `profile.env` (including
 `SHEET_PUSH_URL` **and the auto-generated `CONSOLE_SECRET`**, so the new producer shares the
 league's crew-token secret), overlay CSS, any logo — and, unless `--no-assets`, the runtime
-`graphics/` and `media/` for that profile. Send the zip to the other producer by any
+`graphics/`, `media/`, and `brands/` for that profile. Send the zip to the other producer by any
 means (file share, USB drive, etc.).
+
+> **Compatibility note:** a bundle that includes a `brands/` section requires a build at
+> the same version or newer to import. Older builds will reject the bundle with an
+> "unexpected entry in bundle" error; re-export with `--no-assets` if you need to import into an
+> older installation, then run `racecast brands` on the target to re-fetch the logos.
 
 **On the target machine:**
 
@@ -156,12 +161,13 @@ If a profile with the same slug already exists, the import prints an error; add
 `--force` to replace it. After importing, the CLI prints the `racecast profile use
 <slug>` hint — the active profile is **not** switched automatically.
 
-If the bundle was exported without assets (or the graphics/media have since changed),
+If the bundle was exported without assets (or the graphics/media/brands have since changed),
 re-fetch them on the target machine:
 
 ```bash
 racecast graphics    # download broadcast graphics from the sheet
 racecast media       # download Intro/Outro clips
+racecast brands      # download per-league brand-logo overrides from the sheet
 ```
 
 **Control Center alternative:** in the Profile view, click **Import profile** and pick
@@ -170,12 +176,16 @@ the zip file. Each profile row has an **Export** button with an **assets** check
 
 ![Control Center — Profile view: Import profile button, per-profile Export with an Include-assets checkbox](images/cc-profile.png)
 
+The Profile view also shows a **Graphics**, **Media**, and **Brands** download card so you can re-fetch any of the three asset sets without the CLI:
+
+![Control Center — Profile view Assets section: Graphics, Media, and the per-league Brands override card](images/cc-profile-assets.png)
+
 ## The Control Center Profile view
 
 The Control Center's **Profile** view exposes all of the above in one place: a switcher
 for the active league, a **New profile** dialog that copies an existing profile, a
 `profile.env` editor (with masked secrets), the per-league **overlay-CSS** editor (HUD and
-Timer — see [HUD overlays](HUD-Overlays)), and the profile-scoped graphics/media. Each
+Timer — see [HUD overlays](HUD-Overlays)), and the profile-scoped graphics/media/brands. Each
 profile row has an **Export** button (with an **assets** checkbox) and the card header
 has an **Import profile** button — see [Onboard a new producer](#onboard-a-new-producer)
 above.

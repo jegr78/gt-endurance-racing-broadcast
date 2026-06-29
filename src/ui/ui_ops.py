@@ -34,6 +34,7 @@ OPS = {
     "cookies-twitch": ["cookies", "twitch"],
     "graphics": ["graphics"],
     "media": ["media"],
+    "brands": ["brands"],
     "setup": ["setup"],
     "preflight": ["preflight"],
     "speedtest": ["speedtest"],
