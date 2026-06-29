@@ -3606,7 +3606,8 @@ def assets_files_data(roots=None, profile=None):
         if roots is None:
             rt = _runtime_dir()
             roots = {"graphics": os.path.join(rt, "graphics"),
-                     "media": os.path.join(rt, "media")}
+                     "media": os.path.join(rt, "media"),
+                     "brands": os.path.join(rt, "brands")}
 
         def listing(d, exts):
             if not os.path.isdir(d):
@@ -3621,7 +3622,8 @@ def assets_files_data(roots=None, profile=None):
         return {"ok": True,
                 "profile": profile,
                 "graphics": listing(roots["graphics"], IMG),
-                "media": listing(roots["media"], VID)}
+                "media": listing(roots["media"], VID),
+                "brands": listing(roots.get("brands", ""), IMG)}
     except Exception as exc:
         return {"ok": False, "error": f"asset listing failed: {exc}"}
 
@@ -3636,7 +3638,8 @@ def asset_roots_data():
     settled per-request value, and would also bite a runtime profile switch (#55)."""
     rt = _runtime_dir()
     return {"graphics": os.path.join(rt, "graphics"),
-            "media": os.path.join(rt, "media")}
+            "media": os.path.join(rt, "media"),
+            "brands": os.path.join(rt, "brands")}
 
 
 _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")

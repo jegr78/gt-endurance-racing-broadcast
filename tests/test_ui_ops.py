@@ -976,6 +976,11 @@ def t_obs_collection_data_failure_is_not_ok():
     assert d == {"ok": False, "note": "OBS not reachable"}
 
 
+def t_brands_op_argv():
+    assert ui_ops.OPS["brands"] == ["brands"]
+    assert ui_ops.build_argv("brands", {}) == ["brands"]
+
+
 def t_cookies_twitch_op():
     assert "cookies-twitch" in ui_ops.OPS
     argv = ui_ops.build_argv("cookies-twitch", {"browser": "firefox"})

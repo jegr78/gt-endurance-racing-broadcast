@@ -797,7 +797,7 @@
         </section>
 
         <div class="viewhead"><h3>Assets</h3>
-          <span class="sub">graphics + media for the active profile</span>
+          <span class="sub">graphics + media + brand overrides for the active profile</span>
           <span class="spacer"></span>
           <button onclick="checkAssets()">
             <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Check vs sheet</button></div>
@@ -816,6 +816,13 @@
             <button onclick="op('media')">
               <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
           <div class="gallery" id="media-gallery"></div>
+        </section>
+        <section>
+          <div class="row"><span class="name">Brands</span>
+            <span class="dim grow" id="d-brands">per-league logo overrides (Sheet "Brands" tab)</span>
+            <button onclick="op('brands')">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>Download</button></div>
+          <div class="gallery" id="brands-gallery"></div>
         </section>
       </div>
 
@@ -1897,7 +1904,7 @@ function watchJob(name, id, onDone) {
                                           : 'failed (exit ' + e.data + ')');
     jobES.close();
     refresh();
-    if (name === 'graphics' || name === 'media') fetchAssetFiles();
+    if (name === 'graphics' || name === 'media' || name === 'brands') fetchAssetFiles();
     if (name === 'install-tools' || name === 'install-apps') fetchSetup();
     if (name === 'obs-collection-set') fetchObsCollection();
     // wizard: record the outcome and re-render so the step's chip updates the
@@ -2115,6 +2122,7 @@ async function fetchAssetFiles() {
   setCountBadge('media', d.media.length, d.media.length === 1 ? 'file' : 'files');
   renderGallery('gfx-gallery', 'graphics', d.graphics, false);
   renderGallery('media-gallery', 'media', d.media, true);
+  renderGallery('brands-gallery', 'brands', d.brands || [], false);
   setTile('assets', d.graphics.length > 0 ? 'ok' : 'warn',
           d.graphics.length + ' graphics · ' + d.media.length + ' media');
 }
