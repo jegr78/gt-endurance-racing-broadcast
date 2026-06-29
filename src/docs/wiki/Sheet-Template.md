@@ -335,7 +335,7 @@ Header row in row 1, two columns:
 
 | Column header | Meaning |
 |---|---|
-| `Brand` | Manufacturer name; normalized the same way as the Configuration tab's `Brand Key`/`Brand Name`/`Brand` column (lowercase, spaces and hyphens stripped), so `BMW` overrides the built-in `bmw` logo and a new `Cupra` adds `cupra` |
+| `Brand` | Manufacturer name; normalized the same way as the Configuration tab's `Brand Key`/`Brand Name`/`Brand` column: lowercased, runs of whitespace replaced by a single hyphen, and any character outside `a–z 0–9 -` removed. So `BMW` → `bmw`, `Aston Martin` → `aston-martin`, `Mercedes-AMG` → `mercedes-amg`; `BMW` overrides the built-in `bmw` logo and a new `Cupra` adds `cupra` |
 | `Logo` | A Google-Drive **share link** to the logo image (`File → Share → Copy link`), the same format as the Assets-tab graphics |
 
 ```

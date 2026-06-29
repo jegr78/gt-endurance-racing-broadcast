@@ -264,7 +264,7 @@ downloaders read a flat environment and stay profile-agnostic. `racecast profile
 list|show|use|new|export|import [--from/--no-assets/--out/--force]` manages profiles;
 global `--profile NAME` runs one command against a non-active profile. `racecast
 profile export NAME` packages the entire `profiles/<name>/` tree (including
-`SHEET_PUSH_URL` in `profile.env`) plus the optional runtime `graphics/` and `media/`
+`SHEET_PUSH_URL` in `profile.env`) plus the optional runtime `graphics/`, `media/`, and `brands/`
 into a single zip that can be imported on another machine with `racecast profile
 import FILE` — this is the onboarding path for handing a league to a new producer.
 This is distinct from `racecast backup …` (`backup_admin.py`), which is a

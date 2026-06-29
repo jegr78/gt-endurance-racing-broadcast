@@ -135,7 +135,7 @@ use the profile export/import path.
 
 ```bash
 racecast profile export <name>              # writes <name>-profile.zip in the current directory
-racecast profile export <name> --no-assets  # omit graphics/media (re-fetchable on the target)
+racecast profile export <name> --no-assets  # omit graphics/media/brands (re-fetchable on the target)
 racecast profile export <name> --out /tmp/my-league.zip   # custom output path
 ```
 
@@ -147,7 +147,7 @@ means (file share, USB drive, etc.).
 
 > **Compatibility note:** a bundle that includes a `brands/` section requires a build at
 > the same version or newer to import. Older builds will reject the bundle with an
-> "unknown section" error; re-export with `--no-assets` if you need to import into an
+> "unexpected entry in bundle" error; re-export with `--no-assets` if you need to import into an
 > older installation, then run `racecast brands` on the target to re-fetch the logos.
 
 **On the target machine:**
@@ -185,7 +185,7 @@ The Profile view also shows a **Graphics**, **Media**, and **Brands** download c
 The Control Center's **Profile** view exposes all of the above in one place: a switcher
 for the active league, a **New profile** dialog that copies an existing profile, a
 `profile.env` editor (with masked secrets), the per-league **overlay-CSS** editor (HUD and
-Timer — see [HUD overlays](HUD-Overlays)), and the profile-scoped graphics/media. Each
+Timer — see [HUD overlays](HUD-Overlays)), and the profile-scoped graphics/media/brands. Each
 profile row has an **Export** button (with an **assets** checkbox) and the card header
 has an **Import profile** button — see [Onboard a new producer](#onboard-a-new-producer)
 above.
