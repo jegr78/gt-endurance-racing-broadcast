@@ -90,8 +90,25 @@ def t_resolve_commentator_from_schedule_only():
 
 def t_resolve_director_and_producer_from_crew():
     crew = [("Alice", True, True), ("Bob", True, False)]
-    assert m.resolve_roles(crew, set(), "alice") == {"director", "producer"}
+    # Alice is producer -> producer implies director + race_control (additive).
+    assert m.resolve_roles(crew, set(), "alice") == {
+        "director", "producer", "race_control"}
     assert m.resolve_roles(crew, set(), "bob") == {"director"}
+
+
+def t_resolve_producer_implies_director_and_race_control():
+    # A pure producer (no Director/Race-Control Crew flag, not in the schedule)
+    # still oversees the whole event: producer grants director (control) and
+    # race_control (read-only monitoring) so they can follow and steer the
+    # broadcast from the /console pages.
+    crew = [("Alice", False, True)]
+    assert m.resolve_roles(crew, set(), "alice") == {
+        "producer", "director", "race_control"}
+    # A producer also in the schedule additionally keeps commentator.
+    assert m.resolve_roles(crew, {"alice"}, "alice") == {
+        "producer", "director", "race_control", "commentator"}
+    # A non-producer is unaffected (no implication leaks to plain directors).
+    assert m.resolve_roles([("Bob", True, False)], set(), "bob") == {"director"}
 
 
 def t_resolve_multi_role_union_commentator_plus_director():
@@ -103,7 +120,10 @@ def t_resolve_name_normalized_via_asset_key():
     # "Alice O'Brien" normalizes to the same key the token carries.
     subject = m.asset_key("Alice O'Brien")
     crew = [("Alice O'Brien", False, True)]
-    assert m.resolve_roles(crew, set(), subject) == {"producer"}
+    # producer implies director + race_control (see
+    # t_resolve_producer_implies_director_and_race_control).
+    assert m.resolve_roles(crew, set(), subject) == {
+        "producer", "director", "race_control"}
 
 
 def t_resolve_unknown_subject_is_empty():

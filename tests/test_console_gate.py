@@ -391,8 +391,11 @@ def t_console_obs_scene_requires_director():
     srv = _serve(); port = srv.server_address[1]
     try:
         assert _post(port, "/console/obs/scene", body={"scene": "Stint"})[0] == 401   # no token
-        assert _post(port, "/console/obs/scene", _tok("carol"),                        # producer, not director
+        assert _post(port, "/console/obs/scene", _tok("alice"),                        # commentator, not director
                      body={"scene": "Stint"})[0] == 403
+        # A producer implies director -> OBS control is allowed for carol.
+        assert _post(port, "/console/obs/scene", _tok("carol"),
+                     body={"scene": "Stint"})[0] in (200, 503)
         code, _ = _post(port, "/console/obs/scene", _tok("bob"), body={"scene": "Stint"})
         assert code in (200, 503), code   # director allowed (200 ok, or 503 when no OBS in the test)
     finally:

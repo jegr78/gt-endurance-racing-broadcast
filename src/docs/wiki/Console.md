@@ -32,10 +32,17 @@ security model.
 | Card | Path | Who sees it |
 |---|---|---|
 | **Commentator Cockpit** | `/console/cockpit` | commentators (on the schedule or flagged **Commentator**) |
-| **Race Control** | `/console/race-control` | crew flagged **Race Control** |
-| **Director Panel** | `/console/panel` | directors |
-| **Web Buttons** | `/console/buttons` | directors (requires Companion ≥ v4.1.0) |
+| **Race Control** | `/console/race-control` | crew flagged **Race Control** — and every **producer** |
+| **Director Panel** | `/console/panel` | directors — and every **producer** |
+| **Web Buttons** | `/console/buttons` | directors / producers (requires Companion ≥ v4.1.0) |
 | **Health Monitor** | `/console/health-monitor` | any authenticated person |
+
+A **producer oversees the whole event**, so the **Producer** crew flag automatically
+grants the **Director** and **Race Control** roles too: a producer always sees the
+Director Panel, Web Buttons and Race Control cards and can both monitor and steer the
+broadcast — without a separate Director or Race Control flag. (The producer-only
+broadcast-control operations — stint takeover, race/qualifying mode — still require the
+shared producer step-up secret.)
 
 Each card leads to the same page as its tailnet equivalent — `/cockpit`, `/panel`, and
 the Companion Web Buttons board at `:8000/tablet` respectively — but reached through
