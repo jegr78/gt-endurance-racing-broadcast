@@ -3,8 +3,8 @@
     "groups": [
         {
             "prev_ver": 536936450,
-            "name": "HUD",
-            "uuid": "ba75a604-f69e-4a47-80a9-1a80b6f97fbb",
+            "name": "Split HUD",
+            "uuid": "eaf19c66-74ce-4d00-9fcb-58f5ef20e0f6",
             "id": "group",
             "versioned_id": "group",
             "settings": {
@@ -31,7 +31,7 @@
                         "crop_top": 0,
                         "crop_right": 0,
                         "crop_bottom": 0,
-                        "id": 3,
+                        "id": 21,
                         "group_item_backup": false,
                         "pos": {
                             "x": 0.0,
@@ -60,7 +60,168 @@
                         "name": "HUD Overlay",
                         "source_uuid": "0ad0fee0-0000-4000-8000-000000000001",
                         "visible": true,
-                        "locked": false,
+                        "locked": true,
+                        "rot": 0.0,
+                        "scale_ref": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 22,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "duration": 0
+                        },
+                        "hide_transition": {
+                            "duration": 0
+                        },
+                        "private_settings": {}
+                    },
+                    {
+                        "name": "Splitscreen Labels",
+                        "source_uuid": "0ad0fee0-0000-4000-8000-000000000002",
+                        "visible": true,
+                        "locked": true,
+                        "rot": 0.0,
+                        "scale_ref": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 23,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "duration": 0
+                        },
+                        "hide_transition": {
+                            "duration": 0
+                        },
+                        "private_settings": {}
+                    }
+                ]
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "canvas_uuid": "6c69626f-6273-4c00-9d88-c5136d61696e",
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Stint HUD",
+            "uuid": "f468754c-6161-46ba-afd2-bcf3720612ef",
+            "id": "group",
+            "versioned_id": "group",
+            "settings": {
+                "id_counter": 0,
+                "custom_size": true,
+                "cx": 1920,
+                "cy": 1080,
+                "items": [
+                    {
+                        "name": "Overlay",
+                        "source_uuid": "f792cb8e-c6fe-4883-8003-fd2d00fa661d",
+                        "visible": true,
+                        "locked": true,
+                        "rot": 0.0,
+                        "scale_ref": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 25,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "duration": 0
+                        },
+                        "hide_transition": {
+                            "duration": 0
+                        },
+                        "private_settings": {}
+                    },
+                    {
+                        "name": "HUD Overlay",
+                        "source_uuid": "0ad0fee0-0000-4000-8000-000000000001",
+                        "visible": true,
+                        "locked": true,
                         "rot": 0.0,
                         "scale_ref": {
                             "x": 1920.0,
@@ -143,8 +304,8 @@
             "name": "Discord"
         }
     ],
-    "current_scene": "Stint",
-    "current_program_scene": "Stint",
+    "current_scene": "Splitscreen",
+    "current_program_scene": "Splitscreen",
     "canvases": [],
     "current_transition": "Fade",
     "transition_duration": 300,
@@ -168,14 +329,20 @@
     "saved_projectors": [],
     "preview_locked": false,
     "scaling_enabled": false,
-    "scaling_level": -4,
+    "scaling_level": -2,
     "scaling_off_x": 0.0,
     "scaling_off_y": 0.0,
     "virtual-camera": {
         "type2": 3
     },
     "modules": {
-        "scripts-tool": [],
+        "auto-scene-switcher": {
+            "interval": 300,
+            "non_matching_scene": "",
+            "switch_if_not_matching": false,
+            "active": false,
+            "switches": []
+        },
         "output-timer": {
             "streamTimerHours": 0,
             "streamTimerMinutes": 0,
@@ -187,13 +354,7 @@
             "autoStartRecordTimer": false,
             "pauseRecordTimer": false
         },
-        "auto-scene-switcher": {
-            "interval": 300,
-            "non_matching_scene": "",
-            "switch_if_not_matching": false,
-            "active": false,
-            "switches": []
-        }
+        "scripts-tool": []
     },
     "version": 1,
     "sources": [
@@ -204,8 +365,8 @@
             "id": "scene",
             "versioned_id": "scene",
             "settings": {
-                "id_counter": 1,
                 "custom_size": false,
+                "id_counter": 1,
                 "items": [
                     {
                         "name": "Discord Audio Capture",
@@ -277,8 +438,8 @@
             "id": "sck_audio_capture",
             "versioned_id": "sck_audio_capture",
             "settings": {
-                "type": 1,
-                "application": "com.hnc.Discord"
+                "application": "com.hnc.Discord",
+                "type": 1
             },
             "mixers": 255,
             "sync": 0,
@@ -388,6 +549,83 @@
         },
         {
             "prev_ver": 536936450,
+            "name": "Feed POV",
+            "uuid": "aaaaaaa3-0000-4000-8000-000000000003",
+            "id": "ffmpeg_source",
+            "versioned_id": "ffmpeg_source",
+            "settings": {
+                "close_when_inactive": true,
+                "hw_decode": true,
+                "input": "http://127.0.0.1:53003",
+                "is_local_file": false,
+                "clear_on_media_end": false,
+                "restart_on_activate": true,
+                "reconnect_delay_sec": 10,
+                "buffering_mb": 8
+            },
+            "mixers": 255,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": true,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {
+                "libobs.mute": [],
+                "libobs.unmute": [],
+                "libobs.push-to-mute": [],
+                "libobs.push-to-talk": [],
+                "MediaSource.Restart": [],
+                "MediaSource.Play": [],
+                "MediaSource.Pause": [],
+                "MediaSource.Stop": []
+            },
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "HUD Overlay",
+            "uuid": "0ad0fee0-0000-4000-8000-000000000001",
+            "id": "browser_source",
+            "versioned_id": "browser_source",
+            "settings": {
+                "url": "http://127.0.0.1:8088/hud",
+                "width": 1920,
+                "height": 1080,
+                "restart_when_active": true
+            },
+            "mixers": 255,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {
+                "libobs.mute": [],
+                "libobs.unmute": [],
+                "libobs.push-to-mute": [],
+                "libobs.push-to-talk": [],
+                "ObsBrowser.Refresh": []
+            },
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
             "name": "Interview",
             "uuid": "33333333-3333-4333-8333-333333333333",
             "id": "scene",
@@ -489,15 +727,247 @@
             "push-to-talk-delay": 0,
             "hotkeys": {
                 "OBSBasic.SelectScene": [],
-                "libobs.show_scene_item.1": [],
-                "libobs.hide_scene_item.1": [],
                 "libobs.show_scene_item.3": [],
-                "libobs.hide_scene_item.3": []
+                "libobs.hide_scene_item.3": [],
+                "libobs.show_scene_item.1": [],
+                "libobs.hide_scene_item.1": []
             },
             "deinterlace_mode": 0,
             "deinterlace_field_order": 0,
             "monitoring_type": 0,
             "canvas_uuid": "6c69626f-6273-4c00-9d88-c5136d61696e",
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Intro",
+            "uuid": "77777777-7777-4777-8777-777777777777",
+            "id": "scene",
+            "versioned_id": "scene",
+            "settings": {
+                "custom_size": false,
+                "id_counter": 2,
+                "items": [
+                    {
+                        "name": "Intro Video",
+                        "source_uuid": "7a7a7a7a-0000-4000-8000-000000000071",
+                        "visible": true,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 0,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 1,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "duration": 300
+                        },
+                        "hide_transition": {
+                            "duration": 300
+                        },
+                        "private_settings": {}
+                    }
+                ]
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {
+                "OBSBasic.SelectScene": [],
+                "libobs.show_scene_item.1": [],
+                "libobs.hide_scene_item.1": []
+            },
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "canvas_uuid": "6c69626f-6273-4c00-9d88-c5136d61696e",
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Intro Video",
+            "uuid": "7a7a7a7a-0000-4000-8000-000000000071",
+            "id": "ffmpeg_source",
+            "versioned_id": "ffmpeg_source",
+            "settings": {
+                "close_when_inactive": true,
+                "hw_decode": true,
+                "local_file": "__RACECAST_MEDIA__/intro.mp4",
+                "is_local_file": true,
+                "looping": true,
+                "clear_on_media_end": false,
+                "restart_on_activate": true,
+                "buffering_mb": 8,
+                "speed_percent": 100
+            },
+            "mixers": 255,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {
+                "libobs.mute": [],
+                "libobs.unmute": [],
+                "libobs.push-to-mute": [],
+                "libobs.push-to-talk": [],
+                "MediaSource.Restart": [],
+                "MediaSource.Play": [],
+                "MediaSource.Pause": [],
+                "MediaSource.Stop": []
+            },
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Outro",
+            "uuid": "99999999-9999-4999-8999-999999999999",
+            "id": "scene",
+            "versioned_id": "scene",
+            "settings": {
+                "custom_size": false,
+                "id_counter": 2,
+                "items": [
+                    {
+                        "name": "Outro Video",
+                        "source_uuid": "9a9a9a9a-0000-4000-8000-000000000091",
+                        "visible": true,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 0,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 1,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "duration": 300
+                        },
+                        "hide_transition": {
+                            "duration": 300
+                        },
+                        "private_settings": {}
+                    }
+                ]
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {
+                "OBSBasic.SelectScene": [],
+                "libobs.show_scene_item.1": [],
+                "libobs.hide_scene_item.1": []
+            },
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "canvas_uuid": "6c69626f-6273-4c00-9d88-c5136d61696e",
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Outro Video",
+            "uuid": "9a9a9a9a-0000-4000-8000-000000000091",
+            "id": "ffmpeg_source",
+            "versioned_id": "ffmpeg_source",
+            "settings": {
+                "close_when_inactive": true,
+                "hw_decode": true,
+                "local_file": "__RACECAST_MEDIA__/outro.mp4",
+                "is_local_file": true,
+                "looping": true,
+                "clear_on_media_end": false,
+                "restart_on_activate": true,
+                "buffering_mb": 8,
+                "speed_percent": 100
+            },
+            "mixers": 255,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {
+                "libobs.mute": [],
+                "libobs.unmute": [],
+                "libobs.push-to-mute": [],
+                "libobs.push-to-talk": [],
+                "MediaSource.Restart": [],
+                "MediaSource.Play": [],
+                "MediaSource.Pause": [],
+                "MediaSource.Stop": []
+            },
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
             "private_settings": {}
         },
         {
@@ -585,12 +1055,96 @@
         },
         {
             "prev_ver": 536936450,
+            "name": "Quali Weather",
+            "uuid": "c3c3c3c3-0000-4000-8000-000000000003",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Quali Weather.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
             "name": "Race Results",
             "uuid": "dddddd03-0000-4000-8000-000000000003",
             "id": "image_source",
             "versioned_id": "image_source",
             "settings": {
                 "file": "__RACECAST_GRAPHICS__/Race Results.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Race Weather 1",
+            "uuid": "c1c1c1c1-0000-4000-8000-000000000001",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Race Weather 1.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Race Weather 2",
+            "uuid": "c2c2c2c2-0000-4000-8000-000000000002",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Race Weather 2.png",
                 "unload": false,
                 "linear_alpha": true
             },
@@ -647,47 +1201,8 @@
             "versioned_id": "scene",
             "settings": {
                 "custom_size": false,
-                "id_counter": 20,
+                "id_counter": 24,
                 "items": [
-                    {
-                        "name": "Splitscreen Labels",
-                        "source_uuid": "0ad0fee0-0000-4000-8000-000000000002",
-                        "visible": true,
-                        "locked": false,
-                        "rot": 0.0,
-                        "align": 5,
-                        "bounds_type": 2,
-                        "bounds_align": 0,
-                        "bounds_crop": false,
-                        "crop_left": 0,
-                        "crop_top": 0,
-                        "crop_right": 0,
-                        "crop_bottom": 0,
-                        "id": 27,
-                        "group_item_backup": true,
-                        "pos": {
-                            "x": 0.0,
-                            "y": 0.0
-                        },
-                        "scale": {
-                            "x": 1.0,
-                            "y": 1.0
-                        },
-                        "bounds": {
-                            "x": 1920.0,
-                            "y": 1080.0
-                        },
-                        "scale_filter": "disable",
-                        "blend_method": "default",
-                        "blend_type": "normal",
-                        "show_transition": {
-                            "duration": 0
-                        },
-                        "hide_transition": {
-                            "duration": 0
-                        },
-                        "private_settings": {}
-                    },
                     {
                         "name": "Discord",
                         "source_uuid": "9c7de73b-adec-41aa-9394-af084853dff2",
@@ -819,7 +1334,7 @@
                         "crop_top": 0,
                         "crop_right": 0,
                         "crop_bottom": 0,
-                        "id": 3,
+                        "id": 21,
                         "group_item_backup": true,
                         "pos": {
                             "x": 0.0,
@@ -848,7 +1363,7 @@
                         "name": "HUD Overlay",
                         "source_uuid": "0ad0fee0-0000-4000-8000-000000000001",
                         "visible": true,
-                        "locked": false,
+                        "locked": true,
                         "rot": 0.0,
                         "align": 5,
                         "bounds_type": 2,
@@ -858,7 +1373,7 @@
                         "crop_top": 0,
                         "crop_right": 0,
                         "crop_bottom": 0,
-                        "id": 26,
+                        "id": 22,
                         "group_item_backup": true,
                         "pos": {
                             "x": 0.0,
@@ -884,10 +1399,49 @@
                         "private_settings": {}
                     },
                     {
-                        "name": "HUD",
-                        "source_uuid": "ba75a604-f69e-4a47-80a9-1a80b6f97fbb",
+                        "name": "Splitscreen Labels",
+                        "source_uuid": "0ad0fee0-0000-4000-8000-000000000002",
                         "visible": true,
-                        "locked": false,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 23,
+                        "group_item_backup": true,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "duration": 0
+                        },
+                        "hide_transition": {
+                            "duration": 0
+                        },
+                        "private_settings": {}
+                    },
+                    {
+                        "name": "Split HUD",
+                        "source_uuid": "eaf19c66-74ce-4d00-9fcb-58f5ef20e0f6",
+                        "visible": true,
+                        "locked": true,
                         "rot": 0.0,
                         "align": 5,
                         "bounds_type": 0,
@@ -897,7 +1451,7 @@
                         "crop_top": 0,
                         "crop_right": 0,
                         "crop_bottom": 0,
-                        "id": 20,
+                        "id": 24,
                         "group_item_backup": false,
                         "pos": {
                             "x": 0.0,
@@ -915,10 +1469,10 @@
                         "blend_method": "default",
                         "blend_type": "normal",
                         "show_transition": {
-                            "duration": 300
+                            "duration": 0
                         },
                         "hide_transition": {
-                            "duration": 300
+                            "duration": 0
                         },
                         "private_settings": {
                             "collapsed": true
@@ -939,19 +1493,60 @@
             "push-to-talk-delay": 0,
             "hotkeys": {
                 "OBSBasic.SelectScene": [],
+                "libobs.show_scene_item.19": [],
+                "libobs.hide_scene_item.19": [],
                 "libobs.show_scene_item.1": [],
                 "libobs.hide_scene_item.1": [],
                 "libobs.show_scene_item.2": [],
                 "libobs.hide_scene_item.2": [],
-                "libobs.show_scene_item.19": [],
-                "libobs.hide_scene_item.19": [],
-                "libobs.show_scene_item.20": [],
-                "libobs.hide_scene_item.20": []
+                "libobs.show_scene_item.21": [],
+                "libobs.hide_scene_item.21": [],
+                "libobs.show_scene_item.22": [],
+                "libobs.hide_scene_item.22": [],
+                "libobs.show_scene_item.23": [],
+                "libobs.hide_scene_item.23": [],
+                "libobs.show_scene_item.24": [],
+                "libobs.hide_scene_item.24": []
             },
             "deinterlace_mode": 0,
             "deinterlace_field_order": 0,
             "monitoring_type": 0,
             "canvas_uuid": "6c69626f-6273-4c00-9d88-c5136d61696e",
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Splitscreen Labels",
+            "uuid": "0ad0fee0-0000-4000-8000-000000000002",
+            "id": "browser_source",
+            "versioned_id": "browser_source",
+            "settings": {
+                "url": "http://127.0.0.1:8088/splitscreen",
+                "width": 1920,
+                "height": 1080,
+                "restart_when_active": true
+            },
+            "mixers": 255,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {
+                "libobs.mute": [],
+                "libobs.unmute": [],
+                "libobs.push-to-mute": [],
+                "libobs.push-to-talk": [],
+                "ObsBrowser.Refresh": []
+            },
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
             "private_settings": {}
         },
         {
@@ -1029,6 +1624,32 @@
         },
         {
             "prev_ver": 536936450,
+            "name": "Standby Cover",
+            "uuid": "bbbbbbb1-0000-4000-8000-000000000001",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Standby Cover.png"
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
             "name": "Standings",
             "uuid": "dddddd01-0000-4000-8000-000000000001",
             "id": "image_source",
@@ -1063,7 +1684,7 @@
             "versioned_id": "scene",
             "settings": {
                 "custom_size": false,
-                "id_counter": 24,
+                "id_counter": 28,
                 "items": [
                     {
                         "name": "Discord",
@@ -1186,7 +1807,7 @@
                         "name": "Feed POV",
                         "source_uuid": "aaaaaaa3-0000-4000-8000-000000000003",
                         "visible": false,
-                        "locked": false,
+                        "locked": true,
                         "rot": 0.0,
                         "align": 5,
                         "bounds_type": 2,
@@ -1233,7 +1854,7 @@
                         "name": "Standby Cover",
                         "source_uuid": "bbbbbbb1-0000-4000-8000-000000000001",
                         "visible": false,
-                        "locked": false,
+                        "locked": true,
                         "rot": 0.0,
                         "align": 5,
                         "bounds_type": 2,
@@ -1290,7 +1911,7 @@
                         "crop_top": 0,
                         "crop_right": 0,
                         "crop_bottom": 0,
-                        "id": 3,
+                        "id": 25,
                         "group_item_backup": true,
                         "pos": {
                             "x": 0.0,
@@ -1319,7 +1940,7 @@
                         "name": "HUD Overlay",
                         "source_uuid": "0ad0fee0-0000-4000-8000-000000000001",
                         "visible": true,
-                        "locked": false,
+                        "locked": true,
                         "rot": 0.0,
                         "align": 5,
                         "bounds_type": 2,
@@ -1355,10 +1976,10 @@
                         "private_settings": {}
                     },
                     {
-                        "name": "HUD",
-                        "source_uuid": "ba75a604-f69e-4a47-80a9-1a80b6f97fbb",
+                        "name": "Stint HUD",
+                        "source_uuid": "f468754c-6161-46ba-afd2-bcf3720612ef",
                         "visible": true,
-                        "locked": false,
+                        "locked": true,
                         "rot": 0.0,
                         "align": 5,
                         "bounds_type": 0,
@@ -1368,7 +1989,7 @@
                         "crop_top": 0,
                         "crop_right": 0,
                         "crop_bottom": 0,
-                        "id": 24,
+                        "id": 28,
                         "group_item_backup": false,
                         "pos": {
                             "x": 0.0,
@@ -1391,15 +2012,13 @@
                         "hide_transition": {
                             "duration": 0
                         },
-                        "private_settings": {
-                            "collapsed": true
-                        }
+                        "private_settings": {}
                     },
                     {
                         "name": "Standings",
                         "source_uuid": "dddddd01-0000-4000-8000-000000000001",
                         "visible": false,
-                        "locked": false,
+                        "locked": true,
                         "rot": 0.0,
                         "align": 5,
                         "bounds_type": 2,
@@ -1446,7 +2065,7 @@
                         "name": "Schedule",
                         "source_uuid": "dddddd02-0000-4000-8000-000000000002",
                         "visible": false,
-                        "locked": false,
+                        "locked": true,
                         "rot": 0.0,
                         "align": 5,
                         "bounds_type": 2,
@@ -1493,7 +2112,7 @@
                         "name": "Race Results",
                         "source_uuid": "dddddd03-0000-4000-8000-000000000003",
                         "visible": false,
-                        "locked": false,
+                        "locked": true,
                         "rot": 0.0,
                         "align": 5,
                         "bounds_type": 2,
@@ -1540,7 +2159,7 @@
                         "name": "Quali Results",
                         "source_uuid": "dddddd04-0000-4000-8000-000000000004",
                         "visible": false,
-                        "locked": false,
+                        "locked": true,
                         "rot": 0.0,
                         "align": 5,
                         "bounds_type": 2,
@@ -1587,7 +2206,7 @@
                         "name": "Race Weather 1",
                         "source_uuid": "c1c1c1c1-0000-4000-8000-000000000001",
                         "visible": false,
-                        "locked": false,
+                        "locked": true,
                         "rot": 0.0,
                         "align": 5,
                         "bounds_type": 2,
@@ -1634,7 +2253,7 @@
                         "name": "Race Weather 2",
                         "source_uuid": "c2c2c2c2-0000-4000-8000-000000000002",
                         "visible": false,
-                        "locked": false,
+                        "locked": true,
                         "rot": 0.0,
                         "align": 5,
                         "bounds_type": 2,
@@ -1681,7 +2300,7 @@
                         "name": "Quali Weather",
                         "source_uuid": "c3c3c3c3-0000-4000-8000-000000000003",
                         "visible": false,
-                        "locked": false,
+                        "locked": true,
                         "rot": 0.0,
                         "align": 5,
                         "bounds_type": 2,
@@ -1739,40 +2358,16 @@
             "push-to-talk-delay": 0,
             "hotkeys": {
                 "OBSBasic.SelectScene": [],
+                "libobs.show_scene_item.23": [],
+                "libobs.hide_scene_item.23": [],
                 "libobs.show_scene_item.1": [],
                 "libobs.hide_scene_item.1": [],
                 "libobs.show_scene_item.2": [],
                 "libobs.hide_scene_item.2": [],
-                "libobs.show_scene_item.3": [],
-                "libobs.hide_scene_item.3": [],
-                "libobs.show_scene_item.4": [],
-                "libobs.hide_scene_item.4": [],
-                "libobs.show_scene_item.5": [],
-                "libobs.hide_scene_item.5": [],
-                "libobs.show_scene_item.6": [],
-                "libobs.hide_scene_item.6": [],
-                "libobs.show_scene_item.7": [],
-                "libobs.hide_scene_item.7": [],
-                "libobs.show_scene_item.8": [],
-                "libobs.hide_scene_item.8": [],
-                "libobs.show_scene_item.9": [],
-                "libobs.hide_scene_item.9": [],
-                "libobs.show_scene_item.10": [],
-                "libobs.hide_scene_item.10": [],
-                "libobs.show_scene_item.11": [],
-                "libobs.hide_scene_item.11": [],
-                "libobs.show_scene_item.12": [],
-                "libobs.hide_scene_item.12": [],
-                "libobs.show_scene_item.13": [],
-                "libobs.hide_scene_item.13": [],
-                "libobs.show_scene_item.14": [],
-                "libobs.hide_scene_item.14": [],
-                "libobs.show_scene_item.15": [],
-                "libobs.hide_scene_item.15": [],
-                "libobs.show_scene_item.16": [],
-                "libobs.hide_scene_item.16": [],
-                "libobs.show_scene_item.17": [],
-                "libobs.hide_scene_item.17": [],
+                "libobs.show_scene_item.25": [],
+                "libobs.hide_scene_item.25": [],
+                "libobs.show_scene_item.27": [],
+                "libobs.hide_scene_item.27": [],
                 "libobs.show_scene_item.18": [],
                 "libobs.hide_scene_item.18": [],
                 "libobs.show_scene_item.19": [],
@@ -1781,10 +2376,14 @@
                 "libobs.hide_scene_item.20": [],
                 "libobs.show_scene_item.21": [],
                 "libobs.hide_scene_item.21": [],
-                "libobs.show_scene_item.23": [],
-                "libobs.hide_scene_item.23": [],
-                "libobs.show_scene_item.24": [],
-                "libobs.hide_scene_item.24": []
+                "libobs.show_scene_item.28": [],
+                "libobs.hide_scene_item.28": [],
+                "libobs.show_scene_item.29": [],
+                "libobs.hide_scene_item.29": [],
+                "libobs.show_scene_item.30": [],
+                "libobs.hide_scene_item.30": [],
+                "libobs.show_scene_item.26": [],
+                "libobs.hide_scene_item.26": []
             },
             "deinterlace_mode": 0,
             "deinterlace_field_order": 0,
@@ -1800,462 +2399,6 @@
             "versioned_id": "image_source",
             "settings": {
                 "file": "__RACECAST_GRAPHICS__/Standby.png"
-            },
-            "mixers": 0,
-            "sync": 0,
-            "flags": 0,
-            "volume": 1.0,
-            "balance": 0.5,
-            "enabled": true,
-            "muted": false,
-            "push-to-mute": false,
-            "push-to-mute-delay": 0,
-            "push-to-talk": false,
-            "push-to-talk-delay": 0,
-            "hotkeys": {},
-            "deinterlace_mode": 0,
-            "deinterlace_field_order": 0,
-            "monitoring_type": 0,
-            "private_settings": {}
-        },
-        {
-            "prev_ver": 536936450,
-            "name": "Feed POV",
-            "uuid": "aaaaaaa3-0000-4000-8000-000000000003",
-            "id": "ffmpeg_source",
-            "versioned_id": "ffmpeg_source",
-            "settings": {
-                "close_when_inactive": true,
-                "hw_decode": true,
-                "input": "http://127.0.0.1:53003",
-                "is_local_file": false,
-                "clear_on_media_end": false,
-                "restart_on_activate": true,
-                "reconnect_delay_sec": 10,
-                "buffering_mb": 8
-            },
-            "mixers": 255,
-            "sync": 0,
-            "flags": 0,
-            "volume": 1.0,
-            "balance": 0.5,
-            "enabled": true,
-            "muted": true,
-            "push-to-mute": false,
-            "push-to-mute-delay": 0,
-            "push-to-talk": false,
-            "push-to-talk-delay": 0,
-            "hotkeys": {
-                "libobs.mute": [],
-                "libobs.unmute": [],
-                "libobs.push-to-mute": [],
-                "libobs.push-to-talk": [],
-                "MediaSource.Restart": [],
-                "MediaSource.Play": [],
-                "MediaSource.Pause": [],
-                "MediaSource.Stop": []
-            },
-            "deinterlace_mode": 0,
-            "deinterlace_field_order": 0,
-            "monitoring_type": 0,
-            "private_settings": {}
-        },
-        {
-            "prev_ver": 536936450,
-            "name": "HUD Overlay",
-            "uuid": "0ad0fee0-0000-4000-8000-000000000001",
-            "id": "browser_source",
-            "versioned_id": "browser_source",
-            "settings": {
-                "url": "http://127.0.0.1:8088/hud",
-                "width": 1920,
-                "height": 1080,
-                "restart_when_active": true
-            },
-            "mixers": 255,
-            "sync": 0,
-            "flags": 0,
-            "volume": 1.0,
-            "balance": 0.5,
-            "enabled": true,
-            "muted": false,
-            "push-to-mute": false,
-            "push-to-mute-delay": 0,
-            "push-to-talk": false,
-            "push-to-talk-delay": 0,
-            "hotkeys": {
-                "libobs.mute": [],
-                "libobs.unmute": [],
-                "libobs.push-to-mute": [],
-                "libobs.push-to-talk": [],
-                "ObsBrowser.Refresh": []
-            },
-            "deinterlace_mode": 0,
-            "deinterlace_field_order": 0,
-            "monitoring_type": 0,
-            "private_settings": {},
-            "filters": []
-        },
-        {
-            "prev_ver": 536936450,
-            "name": "Splitscreen Labels",
-            "uuid": "0ad0fee0-0000-4000-8000-000000000002",
-            "id": "browser_source",
-            "versioned_id": "browser_source",
-            "settings": {
-                "url": "http://127.0.0.1:8088/splitscreen",
-                "width": 1920,
-                "height": 1080,
-                "restart_when_active": true
-            },
-            "mixers": 255,
-            "sync": 0,
-            "flags": 0,
-            "volume": 1.0,
-            "balance": 0.5,
-            "enabled": true,
-            "muted": false,
-            "push-to-mute": false,
-            "push-to-mute-delay": 0,
-            "push-to-talk": false,
-            "push-to-talk-delay": 0,
-            "hotkeys": {
-                "libobs.mute": [],
-                "libobs.unmute": [],
-                "libobs.push-to-mute": [],
-                "libobs.push-to-talk": [],
-                "ObsBrowser.Refresh": []
-            },
-            "deinterlace_mode": 0,
-            "deinterlace_field_order": 0,
-            "monitoring_type": 0,
-            "private_settings": {},
-            "filters": []
-        },
-        {
-            "prev_ver": 536936450,
-            "name": "Standby Cover",
-            "uuid": "bbbbbbb1-0000-4000-8000-000000000001",
-            "id": "image_source",
-            "versioned_id": "image_source",
-            "settings": {
-                "file": "__RACECAST_GRAPHICS__/Standby Cover.png"
-            },
-            "mixers": 0,
-            "sync": 0,
-            "flags": 0,
-            "volume": 1.0,
-            "balance": 0.5,
-            "enabled": true,
-            "muted": false,
-            "push-to-mute": false,
-            "push-to-mute-delay": 0,
-            "push-to-talk": false,
-            "push-to-talk-delay": 0,
-            "hotkeys": {},
-            "deinterlace_mode": 0,
-            "deinterlace_field_order": 0,
-            "monitoring_type": 0,
-            "private_settings": {}
-        },
-        {
-            "prev_ver": 536936450,
-            "name": "Intro Video",
-            "uuid": "7a7a7a7a-0000-4000-8000-000000000071",
-            "id": "ffmpeg_source",
-            "versioned_id": "ffmpeg_source",
-            "settings": {
-                "close_when_inactive": true,
-                "hw_decode": true,
-                "local_file": "__RACECAST_MEDIA__/intro.mp4",
-                "is_local_file": true,
-                "looping": true,
-                "clear_on_media_end": false,
-                "restart_on_activate": true,
-                "buffering_mb": 8,
-                "speed_percent": 100
-            },
-            "mixers": 255,
-            "sync": 0,
-            "flags": 0,
-            "volume": 1.0,
-            "balance": 0.5,
-            "enabled": true,
-            "muted": false,
-            "push-to-mute": false,
-            "push-to-mute-delay": 0,
-            "push-to-talk": false,
-            "push-to-talk-delay": 0,
-            "hotkeys": {
-                "libobs.mute": [],
-                "libobs.unmute": [],
-                "libobs.push-to-mute": [],
-                "libobs.push-to-talk": [],
-                "MediaSource.Restart": [],
-                "MediaSource.Play": [],
-                "MediaSource.Pause": [],
-                "MediaSource.Stop": []
-            },
-            "deinterlace_mode": 0,
-            "deinterlace_field_order": 0,
-            "monitoring_type": 0,
-            "private_settings": {}
-        },
-        {
-            "prev_ver": 536936450,
-            "name": "Outro Video",
-            "uuid": "9a9a9a9a-0000-4000-8000-000000000091",
-            "id": "ffmpeg_source",
-            "versioned_id": "ffmpeg_source",
-            "settings": {
-                "close_when_inactive": true,
-                "hw_decode": true,
-                "local_file": "__RACECAST_MEDIA__/outro.mp4",
-                "is_local_file": true,
-                "looping": true,
-                "clear_on_media_end": false,
-                "restart_on_activate": true,
-                "buffering_mb": 8,
-                "speed_percent": 100
-            },
-            "mixers": 255,
-            "sync": 0,
-            "flags": 0,
-            "volume": 1.0,
-            "balance": 0.5,
-            "enabled": true,
-            "muted": false,
-            "push-to-mute": false,
-            "push-to-mute-delay": 0,
-            "push-to-talk": false,
-            "push-to-talk-delay": 0,
-            "hotkeys": {
-                "libobs.mute": [],
-                "libobs.unmute": [],
-                "libobs.push-to-mute": [],
-                "libobs.push-to-talk": [],
-                "MediaSource.Restart": [],
-                "MediaSource.Play": [],
-                "MediaSource.Pause": [],
-                "MediaSource.Stop": []
-            },
-            "deinterlace_mode": 0,
-            "deinterlace_field_order": 0,
-            "monitoring_type": 0,
-            "private_settings": {}
-        },
-        {
-            "prev_ver": 536936450,
-            "name": "Intro",
-            "uuid": "77777777-7777-4777-8777-777777777777",
-            "id": "scene",
-            "versioned_id": "scene",
-            "settings": {
-                "custom_size": false,
-                "id_counter": 2,
-                "items": [
-                    {
-                        "name": "Intro Video",
-                        "source_uuid": "7a7a7a7a-0000-4000-8000-000000000071",
-                        "visible": true,
-                        "locked": true,
-                        "rot": 0.0,
-                        "align": 5,
-                        "bounds_type": 0,
-                        "bounds_align": 0,
-                        "bounds_crop": false,
-                        "crop_left": 0,
-                        "crop_top": 0,
-                        "crop_right": 0,
-                        "crop_bottom": 0,
-                        "id": 1,
-                        "group_item_backup": false,
-                        "pos": {
-                            "x": 0.0,
-                            "y": 0.0
-                        },
-                        "scale": {
-                            "x": 1.0,
-                            "y": 1.0
-                        },
-                        "bounds": {
-                            "x": 0.0,
-                            "y": 0.0
-                        },
-                        "scale_filter": "disable",
-                        "blend_method": "default",
-                        "blend_type": "normal",
-                        "show_transition": {
-                            "duration": 300
-                        },
-                        "hide_transition": {
-                            "duration": 300
-                        },
-                        "private_settings": {}
-                    }
-                ]
-            },
-            "mixers": 0,
-            "sync": 0,
-            "flags": 0,
-            "volume": 1.0,
-            "balance": 0.5,
-            "enabled": true,
-            "muted": false,
-            "push-to-mute": false,
-            "push-to-mute-delay": 0,
-            "push-to-talk": false,
-            "push-to-talk-delay": 0,
-            "hotkeys": {
-                "OBSBasic.SelectScene": [],
-                "libobs.show_scene_item.1": [],
-                "libobs.hide_scene_item.1": []
-            },
-            "deinterlace_mode": 0,
-            "deinterlate_field_order": 0,
-            "monitoring_type": 0,
-            "canvas_uuid": "6c69626f-6273-4c00-9d88-c5136d61696e",
-            "private_settings": {}
-        },
-        {
-            "prev_ver": 536936450,
-            "name": "Outro",
-            "uuid": "99999999-9999-4999-8999-999999999999",
-            "id": "scene",
-            "versioned_id": "scene",
-            "settings": {
-                "custom_size": false,
-                "id_counter": 2,
-                "items": [
-                    {
-                        "name": "Outro Video",
-                        "source_uuid": "9a9a9a9a-0000-4000-8000-000000000091",
-                        "visible": true,
-                        "locked": true,
-                        "rot": 0.0,
-                        "align": 5,
-                        "bounds_type": 0,
-                        "bounds_align": 0,
-                        "bounds_crop": false,
-                        "crop_left": 0,
-                        "crop_top": 0,
-                        "crop_right": 0,
-                        "crop_bottom": 0,
-                        "id": 1,
-                        "group_item_backup": false,
-                        "pos": {
-                            "x": 0.0,
-                            "y": 0.0
-                        },
-                        "scale": {
-                            "x": 1.0,
-                            "y": 1.0
-                        },
-                        "bounds": {
-                            "x": 0.0,
-                            "y": 0.0
-                        },
-                        "scale_filter": "disable",
-                        "blend_method": "default",
-                        "blend_type": "normal",
-                        "show_transition": {
-                            "duration": 300
-                        },
-                        "hide_transition": {
-                            "duration": 300
-                        },
-                        "private_settings": {}
-                    }
-                ]
-            },
-            "mixers": 0,
-            "sync": 0,
-            "flags": 0,
-            "volume": 1.0,
-            "balance": 0.5,
-            "enabled": true,
-            "muted": false,
-            "push-to-mute": false,
-            "push-to-mute-delay": 0,
-            "push-to-talk": false,
-            "push-to-talk-delay": 0,
-            "hotkeys": {
-                "OBSBasic.SelectScene": [],
-                "libobs.show_scene_item.1": [],
-                "libobs.hide_scene_item.1": []
-            },
-            "deinterlace_mode": 0,
-            "deinterlate_field_order": 0,
-            "monitoring_type": 0,
-            "canvas_uuid": "6c69626f-6273-4c00-9d88-c5136d61696e",
-            "private_settings": {}
-        },
-        {
-            "prev_ver": 536936450,
-            "name": "Race Weather 1",
-            "uuid": "c1c1c1c1-0000-4000-8000-000000000001",
-            "id": "image_source",
-            "versioned_id": "image_source",
-            "settings": {
-                "file": "__RACECAST_GRAPHICS__/Race Weather 1.png",
-                "unload": false,
-                "linear_alpha": true
-            },
-            "mixers": 0,
-            "sync": 0,
-            "flags": 0,
-            "volume": 1.0,
-            "balance": 0.5,
-            "enabled": true,
-            "muted": false,
-            "push-to-mute": false,
-            "push-to-mute-delay": 0,
-            "push-to-talk": false,
-            "push-to-talk-delay": 0,
-            "hotkeys": {},
-            "deinterlace_mode": 0,
-            "deinterlace_field_order": 0,
-            "monitoring_type": 0,
-            "private_settings": {}
-        },
-        {
-            "prev_ver": 536936450,
-            "name": "Race Weather 2",
-            "uuid": "c2c2c2c2-0000-4000-8000-000000000002",
-            "id": "image_source",
-            "versioned_id": "image_source",
-            "settings": {
-                "file": "__RACECAST_GRAPHICS__/Race Weather 2.png",
-                "unload": false,
-                "linear_alpha": true
-            },
-            "mixers": 0,
-            "sync": 0,
-            "flags": 0,
-            "volume": 1.0,
-            "balance": 0.5,
-            "enabled": true,
-            "muted": false,
-            "push-to-mute": false,
-            "push-to-mute-delay": 0,
-            "push-to-talk": false,
-            "push-to-talk-delay": 0,
-            "hotkeys": {},
-            "deinterlace_mode": 0,
-            "deinterlace_field_order": 0,
-            "monitoring_type": 0,
-            "private_settings": {}
-        },
-        {
-            "prev_ver": 536936450,
-            "name": "Quali Weather",
-            "uuid": "c3c3c3c3-0000-4000-8000-000000000003",
-            "id": "image_source",
-            "versioned_id": "image_source",
-            "settings": {
-                "file": "__RACECAST_GRAPHICS__/Quali Weather.png",
-                "unload": false,
-                "linear_alpha": true
             },
             "mixers": 0,
             "sync": 0,

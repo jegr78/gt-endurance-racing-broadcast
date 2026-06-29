@@ -117,6 +117,84 @@ def t_stint_graphics_carry_fade_transitions():
                 f"{name} {key} duration != {FADE_DURATION_MS} ({tr!r})"
 
 
+def _all_scene_items():
+    """(scene_name, item) for every scene item in the collection."""
+    with open(OBS_COLLECTION, encoding="utf-8") as fh:
+        coll = json.load(fh)
+    out = []
+    for src in coll["sources"]:
+        if src.get("id") == "scene":
+            for it in src.get("settings", {}).get("items", []):
+                out.append((src["name"], it))
+    return coll, out
+
+
+def _all_groups(coll):
+    """Group sources, whether stored in the OBS 31+ top-level `groups` array or
+    inline in `sources` with id=='group'."""
+    return list(coll.get("groups", [])) + [
+        s for s in coll["sources"] if s.get("id") == "group"]
+
+
+def t_no_orphaned_group_item_backup():
+    # OBS sets group_item_backup=true only on a scene item that belongs to a
+    # GROUP (it is the backup of that group membership). When the group is
+    # absent, OBS treats the item as an orphaned group backup and DROPS it on
+    # import — the "Splitscreen Labels" CURRENT/NEXT labels silently vanished
+    # from a fresh import this way (it carried the flag but was never a member of
+    # the HUD group). Every flagged item must be a member of some group.
+    coll, items = _all_scene_items()
+    members = {m["name"] for g in _all_groups(coll)
+               for m in g.get("settings", {}).get("items", [])}
+    orphaned = [f"{scene}/{it['name']}" for scene, it in items
+                if it.get("group_item_backup") and it["name"] not in members]
+    assert not orphaned, (
+        "scene items flagged group_item_backup=true without a parent group — "
+        f"OBS drops these on import: {orphaned}")
+
+
+# The per-scene HUD groups (issue: separate Stint/Splitscreen groups so the
+# Splitscreen group can carry the CURRENT/NEXT labels and the Stint one cannot).
+HUD_GROUPS = {
+    "Stint HUD": {"Overlay", "HUD Overlay"},
+    "Split HUD": {"Overlay", "HUD Overlay", "Splitscreen Labels"},
+}
+
+
+def t_hud_groups_present_with_members():
+    coll, _ = _all_scene_items()
+    groups = {g["name"]: {m["name"] for m in g.get("settings", {}).get("items", [])}
+              for g in _all_groups(coll)}
+    for name, want in HUD_GROUPS.items():
+        assert name in groups, f"group {name!r} missing from the collection"
+        assert groups[name] == want, \
+            f"group {name!r} members {groups[name]} != expected {want}"
+
+
+def t_director_panel_targets_existing_hud_groups():
+    # The Director Panel toggles the HUD group by name per scene; those names
+    # must match the groups in the collection or the toggle silently no-ops.
+    with open(os.path.join(ROOT, "src", "director", "director-panel.html"),
+              encoding="utf-8") as fh:
+        panel = fh.read()
+    assert 'scene:"Stint",       source:"Stint HUD"' in panel \
+        or 'source:"Stint HUD"' in panel, "panel does not target 'Stint HUD'"
+    assert 'source:"Split HUD"' in panel, "panel does not target 'Split HUD'"
+    assert 'source:"HUD"' not in panel, "panel still targets the removed 'HUD' group"
+
+
+def t_all_scene_and_group_items_locked():
+    # Every source is edit-locked in the shipped collection so a producer can't
+    # nudge a placed source by accident; adopted as the standard going forward.
+    coll, items = _all_scene_items()
+    unlocked = [f"{scene}/{it['name']}" for scene, it in items if not it.get("locked")]
+    for g in _all_groups(coll):
+        for m in g.get("settings", {}).get("items", []):
+            if not m.get("locked"):
+                unlocked.append(f"group {g['name']}/{m['name']}")
+    assert not unlocked, f"scene/group items not edit-locked: {unlocked}"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

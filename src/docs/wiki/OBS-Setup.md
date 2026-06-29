@@ -24,13 +24,15 @@ collection.
 
 - **Stint** — the active feed full-screen + HUD overlay (POV PiP lives only here). It also
   holds a hidden **Standby Cover** (the dedicated `Standby Cover.png` graphic — a neutral
-  cover, distinct from the Standby scene's `Standby.png` thumbnail) **below the HUD group**,
+  cover, distinct from the Standby scene's `Standby.png` thumbnail) **below the `Stint HUD` group**,
   so showing it hides the feeds and the POV PiP while the Race Control banner and timer stay
   on top. The director toggles it with the Companion **Standby Toggle** button (a
   *Set Source Visibility* toggle on `Stint / Standby Cover`, with a *Source Visible*
   feedback so it lights while active). Re-add the source after a rebuild with
   `python3 tools/add_standby_cover.py src/obs/GT_Endurance.json`.
-- **Splitscreen** — two feeds side by side, for the ~10-minute handover.
+- **Splitscreen** — two feeds side by side, for the ~10-minute handover. Its `Split HUD`
+  group adds **CURRENT/NEXT** labels above the on-air and waiting feed (the on-air feed reads
+  CURRENT); these are relay-driven (`/splitscreen`).
 - **Interview** — interview graphic + Discord audio.
 - **Standby / BRB** — for breaks.
 - **Intro** / **Outro** — full-screen stream-open and stream-close clips that **loop with

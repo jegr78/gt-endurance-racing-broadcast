@@ -597,7 +597,9 @@
    - macros:   PGM bus, exact Companion page-1 row-0 semantics
    - scenes:   raw scene switches
    - vis:      feed visibility toggles (scene items)
-   - graphics: overlay toggles (scene items; "HUD" is an OBS group — valid)
+   - graphics: overlay toggles (scene items; "Stint HUD"/"Split HUD" are the
+               per-scene OBS groups that hold Overlay + HUD Overlay (+ the
+               Splitscreen Labels in Splitscreen) — toggling the group hides all)
    - audio:    OBS audio inputs for the dB rows
    ======================================================================= */
 const CONFIG = {
@@ -630,8 +632,8 @@ const CONFIG = {
     {label:"POV",    scene:"Stint", source:"Feed POV", relay:"pov"},
   ],
   graphics: [
-    {label:"HUD",           scene:"Stint",       source:"HUD"},
-    {label:"HUD",           scene:"Splitscreen", source:"HUD"},
+    {label:"HUD",           scene:"Stint",       source:"Stint HUD"},
+    {label:"HUD",           scene:"Splitscreen", source:"Split HUD"},
     {label:"STANDINGS",     scene:"Stint",       source:"Standings"},
     {label:"SCHEDULE",      scene:"Stint",       source:"Schedule"},
     {label:"RACE RESULTS",  scene:"Stint",       source:"Race Results"},
