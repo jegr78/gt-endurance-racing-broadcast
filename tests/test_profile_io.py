@@ -25,12 +25,16 @@ def _profile(d, name="iro-gtec", with_logo=True):
             f.write(b"PNG")
     gdir = os.path.join(d, "runtime", name, "graphics")
     mdir = os.path.join(d, "runtime", name, "media")
+    bdir = os.path.join(d, "runtime", name, "brands")
     os.makedirs(gdir, exist_ok=True); os.makedirs(mdir, exist_ok=True)
+    os.makedirs(bdir, exist_ok=True)
     with open(os.path.join(gdir, "Overlay.png"), "wb") as f:
         f.write(b"PNG")
     with open(os.path.join(mdir, "Intro.mp4"), "wb") as f:
         f.write(b"MP4")
-    sources = {"profile_dir": pdir, "graphics": gdir, "media": mdir}
+    with open(os.path.join(bdir, "cupra.png"), "wb") as f:
+        f.write(b"PNG")
+    sources = {"profile_dir": pdir, "graphics": gdir, "media": mdir, "brands": bdir}
     roots = {"profiles_root": os.path.join(d, "profiles"),
              "runtime_root": os.path.join(d, "runtime")}
     return sources, roots
@@ -51,6 +55,8 @@ def t_export_with_assets():
         assert "profile/logo.png" in names
         assert "graphics/Overlay.png" in names
         assert "media/Intro.mp4" in names
+        assert "brands/cupra.png" in names
+        assert man["counts"].get("brands") == 1
 
 
 def t_export_without_assets():
@@ -91,6 +97,7 @@ def t_round_trip():
     assert os.path.isfile(os.path.join(pdir, "logo.png"))
     assert os.path.isfile(os.path.join(e, "runtime", "iro-gtec", "graphics", "Overlay.png"))
     assert os.path.isfile(os.path.join(e, "runtime", "iro-gtec", "media", "Intro.mp4"))
+    assert os.path.isfile(os.path.join(e, "runtime", "iro-gtec", "brands", "cupra.png"))
 
 
 def _bundle_with(d, members, manifest=None):
@@ -194,6 +201,17 @@ def t_import_exists_needs_force():
     except FileExistsError:
         pass
     pio.import_profile(bundle, roots, force=True)   # replaces, no raise
+
+
+def t_export_without_brands_dir_is_fine():
+    d = tempfile.mkdtemp(); sources, _ = _profile(d)
+    import shutil
+    shutil.rmtree(sources["brands"])   # league never ran `racecast brands`
+    path = pio.export_profile("iro-gtec", sources, include_assets=True, dest=d)
+    with zipfile.ZipFile(path) as z:
+        names = set(z.namelist())
+        assert not any(n.startswith("brands/") for n in names)
+        assert json.loads(z.read("manifest.json"))["counts"].get("brands", 0) == 0
 
 
 if __name__ == "__main__":

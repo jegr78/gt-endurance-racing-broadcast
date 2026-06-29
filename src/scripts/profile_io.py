@@ -20,7 +20,7 @@ import zipfile
 
 KIND = "profile-export"
 SCHEMA = 1
-ASSET_SECTIONS = ("graphics", "media")   # top-level subtrees beside profile/
+ASSET_SECTIONS = ("graphics", "media", "brands")   # top-level subtrees beside profile/
 _SLUG_RE = re.compile(r"[^a-z0-9_-]+")
 # Defense-in-depth (#99): reject a decompression-bomb bundle before extraction.
 # A real profile is a handful of CSS/PNG files + the two Intro/Outro clips, so

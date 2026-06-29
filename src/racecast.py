@@ -4686,7 +4686,8 @@ def profile_export_data(name=None, include_assets=True, dest=None):
         rt = _profile_runtime(_runtime_base_dir(), slug)
         sources = {"profile_dir": profile_dir,
                    "graphics": os.path.join(rt, "graphics"),
-                   "media": os.path.join(rt, "media")}
+                   "media": os.path.join(rt, "media"),
+                   "brands": os.path.join(rt, "brands")}
         if dest is None:
             fd, dest = tempfile.mkstemp(prefix="profexport-", suffix=".zip")
             os.close(fd)
