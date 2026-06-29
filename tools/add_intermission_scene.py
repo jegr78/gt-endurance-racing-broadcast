@@ -60,17 +60,14 @@ def add_intermission_scene(d):
     srcs.append(chat_src)
 
     # --- 3. Music source: looping audio track ---
-    orig_s = intro_video.get("settings", {})
     music_src = copy.deepcopy(intro_video)
     music_src["name"] = MUSIC_SOURCE
     music_src["uuid"] = MUSIC_UUID
-    music_src["settings"] = {
-        "file":                orig_s.get("file", MUSIC_FILE),   # path key
-        "looping":             orig_s.get("looping", True),
-        "restart_on_activate": orig_s.get("restart_on_activate", True),
-        "close_when_inactive": orig_s.get("close_when_inactive", True),
-    }
-    music_src["settings"]["file"] = MUSIC_FILE   # always override to the mp3 path
+    # Deep-copy Intro Video settings (ffmpeg_source uses local_file, not file)
+    # then override only the media path so all other keys (hw_decode, buffering_mb,
+    # is_local_file, looping, clear_on_media_end, …) are inherited verbatim.
+    music_src["settings"] = copy.deepcopy(intro_video["settings"])
+    music_src["settings"]["local_file"] = MUSIC_FILE
     srcs.append(music_src)
 
     # --- 4. Scene: deep-copy Intro skeleton, replace items ---

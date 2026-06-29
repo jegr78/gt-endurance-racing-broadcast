@@ -41,7 +41,8 @@ def t_tokens_and_url_are_correct():
     img = next(s for s in d["sources"] if s.get("name") == "Intermission" and s.get("id") != "scene")
     assert img["settings"]["file"] == "__RACECAST_GRAPHICS__/Intermission.png"
     music = next(s for s in d["sources"] if s.get("name") == "Intermission Music")
-    assert music["settings"]["file"] == "__RACECAST_MEDIA__/intermission.mp3"
+    assert music["settings"]["local_file"] == "__RACECAST_MEDIA__/intermission.mp3"
+    assert music["settings"].get("is_local_file") is True
     assert music["settings"].get("looping") is True
     chat = next(s for s in d["sources"] if s.get("name") == "Intermission Chat")
     assert chat["settings"]["url"] == "http://127.0.0.1:8088/intermission"

@@ -2488,10 +2488,15 @@
             "id": "ffmpeg_source",
             "versioned_id": "ffmpeg_source",
             "settings": {
-                "file": "__RACECAST_MEDIA__/intermission.mp3",
+                "close_when_inactive": true,
+                "hw_decode": true,
+                "local_file": "__RACECAST_MEDIA__/intermission.mp3",
+                "is_local_file": true,
                 "looping": true,
+                "clear_on_media_end": false,
                 "restart_on_activate": true,
-                "close_when_inactive": true
+                "buffering_mb": 8,
+                "speed_percent": 100
             },
             "mixers": 255,
             "sync": 0,
