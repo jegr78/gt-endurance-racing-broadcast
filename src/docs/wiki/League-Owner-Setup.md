@@ -152,6 +152,12 @@ relay after adding them).
 
 ---
 
+## Custom brand logos
+
+A league can supply its own manufacturer logos for the HUD by adding a **Brands** tab to the Google Sheet (header `Brand | Logo`). Each row maps a manufacturer name to a Google-Drive share link. Run `racecast brands` (or the Control Center **Profile** view → **Brands → Download**) before an event to download them into `runtime/<profile>/brands/`. The relay then serves these per-league logos instead of the committed base set. Without the Brands tab the built-in logos are used unchanged. Full tab spec: [Sheet template — Brands tab](Sheet-Template#brands-tab).
+
+---
+
 ## Further reading
 
 - [Console](Console) — the role model, the Funnel boundary, and the card structure.
