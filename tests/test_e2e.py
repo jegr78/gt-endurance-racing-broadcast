@@ -604,6 +604,12 @@ def t_check_fanout_feed_port_bound_registration():
     assert callable(e.check_fanout_feed_port_bound)
 
 
+def t_intermission_check_registered():
+    names = [c.__name__ for c in e.SYNTHETIC_CHECKS]
+    assert "check_intermission_page" in names, \
+        f"check_intermission_page not in SYNTHETIC_CHECKS; found: {names}"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

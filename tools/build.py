@@ -71,6 +71,7 @@ def main():
     cp("obs/hud.html", "hud.html")
     cp("obs/hud-preview.html", "hud-preview.html")
     cp("obs/splitscreen.html", "splitscreen.html")
+    cp("obs/intermission.html", "intermission.html")  # /intermission chat-box overlay
     cp("cockpit/cockpit.html", "cockpit.html")
     cp("racecontrol/race-control.html", "race-control.html")
     cp("console/console.html", "console.html")        # /console launcher (#216)

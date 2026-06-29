@@ -493,6 +493,14 @@ def check_health_monitor_v3(ctx):
     return CheckResult("health_monitor_v3", "pass", "")
 
 
+def check_intermission_page(ctx):
+    """GET /intermission serves the chat-box overlay page (id="ichat" marker)."""
+    st, body, _ = http_request(ctx.relay_url + "/intermission")
+    ok = st == 200 and b'id="ichat"' in body
+    return CheckResult("intermission_page", "pass" if ok else "fail",
+                       "" if ok else f"status={st}")
+
+
 SYNTHETIC_CHECKS = [
     check_status_ok,
     check_cockpit_requires_token,
@@ -507,6 +515,7 @@ SYNTHETIC_CHECKS = [
     check_enable_preserves_keys,
     check_health_monitor_v3,
     check_fanout_feed_port_bound,
+    check_intermission_page,
 ]
 
 # Real-league mode (local only): the safe subset for a copied profile. Read-only
