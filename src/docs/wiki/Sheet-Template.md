@@ -295,6 +295,10 @@ column A and a link in the first non-empty cell to its right.
 - The rows labelled **`Intro Video`** / **`Outro Video`** hold a **YouTube** URL and are
   downloaded by `racecast media` into `runtime/<profile>/media/` (the relay skips them
   for graphics).
+- The row labelled **`Intermission Music`** holds a Google-Drive MP3 link **or** a
+  YouTube/URL and is downloaded by `racecast media` into
+  `runtime/<profile>/media/intermission.mp3`. A synthetic ambient-loop placeholder
+  plays in the OBS scene if the row is absent or the file has not been downloaded yet.
 
 The OBS scene collection expects these graphic labels:
 
@@ -310,8 +314,10 @@ Race Weather 1       | <Drive link>
 Race Weather 2       | <Drive link>
 Quali Weather        | <Drive link>
 Post Race Interviews | <Drive link>
+Intermission         | <Drive link>
 Intro Video          | https://www.youtube.com/watch?v=SAMPLE0INTRO
 Outro Video          | https://www.youtube.com/watch?v=SAMPLE0OUTRO
+Intermission Music   | <Drive link or YouTube URL>
 ```
 
 A missing graphic is non-fatal — `racecast setup` warns and OBS shows black until you

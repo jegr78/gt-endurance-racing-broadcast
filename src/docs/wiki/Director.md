@@ -41,13 +41,13 @@ one muscle memory:
 
 | Bus | What's on it |
 |---|---|
-| **PGM** | one-press program looks — `STINT A/B`, `SPLIT`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO`, `RED FLAG` (same behavior as the Companion combos below) |
+| **PGM** | one-press program looks — `STINT A/B`, `SPLIT`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO`, `INTERMISSION`, `RED FLAG` (same behavior as the Companion combos below) |
 | **FEEDS** | `NEXT` (the handover), per-feed reloads, POV reload/stop, `FEEDS → STINT…` |
 | **HUD** | the Stint label, Streamer, Session and Race Control dropdowns — they update the HUD live and write back to the Setup tab |
 | **SCN·VIS** | raw scene switches and feed visibility toggles |
 | **GFX** | graphics toggles (HUD, standings, schedule, results, weather, covers) |
 | **TIMER** | the race timer ([Race Timer](Race-Timer)) |
-| **AUDIO** | per-source dB sliders, 0 dB reset and mutes |
+| **AUDIO** | per-source dB sliders, 0 dB reset and mutes; includes an **Intermission Music** fader for the music track in the Intermission scene |
 | **URLs** | collapsible editor for the schedule and POV URLs |
 
 All controls — scenes, sources, audio, feeds, timer, HUD, and URLs — work
@@ -267,7 +267,7 @@ flips between them. Everything below is a single tap.
 
 | Row | Buttons |
 |-----|---------|
-| **Combos** | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO` — one press sets a whole look (the scene **and** the right feeds and audio). `SPLIT` also sets **Race Control → *Driver Swaps***; `STINT A` / `STINT B` **clear Race Control** on the way back — unconditionally, whatever it currently shows — as does the `Feeds Next` handover when it cuts the program back to **Stint**. `INTRO` / `OUTRO` cut to the looping intro/outro clip (with its own audio) and mute the live feeds; they light while on air. `RED FLAG` is a toggle: first press shows the Standby Cover in the Stint scene **and** sets Race Control to *Red Flag - Race Suspended*; second press hides the cover and clears Race Control. It lights red while the cover is up |
+| **Combos** | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO`, `INTERMISSION` — one press sets a whole look (the scene **and** the right feeds and audio). `SPLIT` also sets **Race Control → *Driver Swaps***; `STINT A` / `STINT B` **clear Race Control** on the way back — unconditionally, whatever it currently shows — as does the `Feeds Next` handover when it cuts the program back to **Stint**. `INTRO` / `OUTRO` cut to the looping intro/outro clip (with its own audio) and mute the live feeds; they light while on air. `INTERMISSION` cuts to the **Intermission** scene (the full-screen background graphic, looping music track, and read-only broadcast-chat panel) and mutes the live feeds; when to use it is up to the team. `RED FLAG` is a toggle: first press shows the Standby Cover in the Stint scene **and** sets Race Control to *Red Flag - Race Suspended*; second press hides the cover and clears Race Control. It lights red while the cover is up |
 | **Scenes + relay** | `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Next` (the handover), `Feeds Reload`, `Feeds Status` |
 | **Feeds & reloads** | `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Feed A Reload` (reconnect only Feed A → `/reload/A`), `Feed B Reload` (→ `/reload/B`), `POV Reload`, `POV Stop` |
 | **Graphics & weather** | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle` (incident cover — see [The race](#through-the-broadcast-scene--hud-cues)), `Weather Race (1) Toggle`, `Weather Race (2) Toggle`, `Weather Quali Toggle` — the three weather buttons are full-screen Stint overlays, each an independent toggle like Standings/Results |

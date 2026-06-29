@@ -41,6 +41,17 @@ collection.
   tokenised as `__RACECAST_MEDIA__` in the collection and resolved by `setup-assets.py`; download
   or refresh the clips from the Sheet **Assets** tab with `racecast media`
   (see [Configuration](Configuration)). If the clips are missing the scene shows black.
+- **Intermission** — three sources in one scene: a full-screen league background graphic
+  (`runtime/<profile>/graphics/Intermission.png`, Sheet label **`Intermission`**, downloaded
+  by `racecast graphics`); a **looping music** track (`runtime/<profile>/media/intermission.mp3`,
+  Sheet label **`Intermission Music`**, downloaded by `racecast media` — a synthetic
+  ambient-loop placeholder plays if the file is absent); and a read-only **broadcast-chat
+  panel** (a Browser Source pointed at `http://127.0.0.1:8088/intermission`, served by the
+  relay — it mirrors the public YouTube/Twitch broadcast chat and auto-scrolls; the relay
+  must be running for it to render). The director cuts to this scene with the Companion
+  **INTERMISSION** button or the panel's **INTERMISSION** macro; when to use it is up to
+  the team. The per-league overlay file `profiles/<name>/overlay/intermission.css` overrides
+  the chat panel's appearance (see [HUD overlays](HUD-Overlays)).
 
 > **Broadcast graphics are local files.** The still-graphics image sources — Overlay,
 > Standings, Schedule, Race Results, Quali Results, Standby, Standby Cover, and the three

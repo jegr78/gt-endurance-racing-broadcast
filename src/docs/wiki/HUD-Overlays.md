@@ -15,20 +15,23 @@ override (and optional fonts) in its profile.
 A league's overlay styling sits in its profile folder:
 
 ```
-profiles/<name>/overlay/hud.css      # restyle the HUD (incl. the race timer)
-profiles/<name>/overlay/fonts/       # optional custom font files
+profiles/<name>/overlay/hud.css           # restyle the HUD (incl. the race timer)
+profiles/<name>/overlay/intermission.css  # restyle the Intermission broadcast-chat panel
+profiles/<name>/overlay/fonts/            # optional custom font files
 ```
 
-`profiles/example/overlay/` ships as a commented template. `hud.css` is **optional**:
+`profiles/example/overlay/` ships as a commented template. All CSS files are **optional**:
 an empty or missing file means the base look is used unchanged.
 
 ## How it works
 
-The base `hud.html` stays shared. The relay serves the active league's CSS at a fixed path:
+The base `hud.html` and `intermission.html` stay shared. The relay serves the active
+league's CSS at fixed paths:
 
 - **`/hud/override.css`** ← `profiles/<name>/overlay/hud.css`
+- **`/intermission/override.css`** ← `profiles/<name>/overlay/intermission.css`
 
-The base page links its override **last** in `<head>`, so any rule in the league CSS
+Each base page links its override **last** in `<head>`, so any rule in the league CSS
 **wins the cascade** over the page's own styles. The CSS is read **per request**, so editor
 saves apply without restarting the relay (with one first-time caveat below).
 
