@@ -55,6 +55,26 @@ def write_mp4(path, width, height, seconds):
     print(f"OK -> {path} ({os.path.getsize(path)} bytes)")
 
 
+def write_music_loop(path, seconds=24):
+    """A seamless, low-volume synthetic ambient loop (royalty-free because
+    generated). Integer-Hz partials over an integer duration loop click-free."""
+    cmd = ["ffmpeg", "-y",
+           "-f", "lavfi", "-i", f"sine=frequency=110:duration={seconds}",
+           "-f", "lavfi", "-i", f"sine=frequency=164:duration={seconds}",
+           "-f", "lavfi", "-i", f"sine=frequency=220:duration={seconds}",
+           "-filter_complex",
+           "[0][1][2]amix=inputs=3:normalize=0,volume=0.10,lowpass=f=800[a]",
+           "-map", "[a]", "-c:a", "libmp3lame", "-b:a", "128k", "-ar", "44100", path]
+    print("Running:", " ".join(cmd))
+    try:
+        subprocess.run(cmd, check=True)
+    except FileNotFoundError:
+        sys.exit("ERROR: ffmpeg not found (brew install ffmpeg).")
+    except subprocess.CalledProcessError as e:
+        sys.exit(f"ERROR: ffmpeg failed: {e}")
+    print(f"OK -> {path} ({os.path.getsize(path)} bytes)")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--width", type=int, default=1920)
@@ -64,6 +84,7 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     write_png(os.path.join(OUT_DIR, "transparent-1080p.png"), a.width, a.height)
     write_mp4(os.path.join(OUT_DIR, "neutral-5s-1080p.mp4"), a.width, a.height, a.seconds)
+    write_music_loop(os.path.join(OUT_DIR, "neutral-ambient-loop.mp3"), a.seconds if a.seconds >= 8 else 24)
 
 
 if __name__ == "__main__":

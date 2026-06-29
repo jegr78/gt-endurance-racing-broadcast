@@ -14,8 +14,10 @@ import os, re, shutil
 
 GRAPHIC_PLACEHOLDER = "transparent-1080p.png"
 MEDIA_PLACEHOLDER = "neutral-5s-1080p.mp4"
+MUSIC_PLACEHOLDER = "neutral-ambient-loop.mp3"
 
 _GRAPHICS_REF_RE = re.compile(r"__RACECAST_GRAPHICS__/([^\"\\]+\.png)")
+_MEDIA_REF_RE = re.compile(r"__RACECAST_MEDIA__/([^\"\\]+\.(?:mp4|mp3|m4a|wav|ogg))")
 _OBS_TEMPLATE_NAMES = ("GT_Endurance.template.json", "GT_Endurance.json")
 
 
@@ -38,10 +40,28 @@ def media_placeholder_path():
     return p if os.path.isfile(p) else None
 
 
+def music_placeholder_path():
+    """Absolute path of the bundled synthetic ambient loop, or None when absent."""
+    p = os.path.join(_placeholders_dir(), MUSIC_PLACEHOLDER)
+    return p if os.path.isfile(p) else None
+
+
+def media_placeholder_for(name):
+    """Pick the right bundled placeholder for a media filename: the ambient loop
+    for an audio (.mp3) file, the neutral clip for everything else."""
+    return music_placeholder_path() if name.lower().endswith(".mp3") else media_placeholder_path()
+
+
 def expected_graphics_from_template(text):
     """Sorted unique '<name>.png' from every __RACECAST_GRAPHICS__/<name>.png
     reference in the (raw JSON) collection text."""
     return sorted(set(_GRAPHICS_REF_RE.findall(text)))
+
+
+def expected_media_from_template(text):
+    """Sorted unique '<name>' from every __RACECAST_MEDIA__/<name> reference in
+    the (raw JSON) collection text (intro.mp4 / outro.mp4 / intermission.mp3 / …)."""
+    return sorted(set(_MEDIA_REF_RE.findall(text)))
 
 
 def find_obs_template(obs_dir):

@@ -624,6 +624,9 @@ const CONFIG = {
      unmute:[], mute:["Feed A","Feed B","Discord Audio Capture"]},
     {label:"OUTRO", scene:"Outro", show:[], hide:[],
      unmute:[], mute:["Feed A","Feed B","Discord Audio Capture"]},
+    {label:"INTERMISSION", scene:"Intermission", show:[], hide:[],
+     unmute:[], mute:[]},   // pure scene switch: feeds/Discord aren't in this scene,
+                            // so muting them here would only force a manual reset later
   ],
   scenes: ["Stint","Splitscreen","Interview","Standby"],
   vis: [
@@ -649,6 +652,7 @@ const CONFIG = {
     {label:"Feed B",  input:"Feed B"},
     {label:"POV",     input:"Feed POV"},
     {label:"Discord", input:"Discord Audio Capture"},
+    {label:"Intermission", input:"Intermission Music"},
   ],
 };
 

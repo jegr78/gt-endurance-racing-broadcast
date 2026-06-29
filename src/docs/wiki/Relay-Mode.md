@@ -166,6 +166,13 @@ manufacturer via a `Brand Name` column) and exposes:
   `http://127.0.0.1:8088/hud` (1920×1080, transparent).
 - `GET /hud/data` — the live values as JSON; the page polls it every ~2.5 s, so editing
   the sheet updates the overlay with **no manual reload**.
+- `GET /intermission` — a read-only broadcast-chat panel for the **Intermission** OBS
+  scene: always-visible, auto-scrolling, mirrors the same public YouTube/Twitch broadcast
+  chat as the crew console's broadcast-chat card. Point the Intermission scene's chat
+  Browser Source at `http://127.0.0.1:8088/intermission`. The relay must be running for
+  it to render; if broadcast-chat is disabled the page shows an empty panel. The per-league
+  override CSS is at `/intermission/override.css` (from
+  `profiles/<name>/overlay/intermission.css`).
 
 Flags and brand logos are bundled assets resolved from text: the Country text →
 `flags/<country>.svg`, a team's `Brand Name` → `brands/<key>.png`. Add a new round's

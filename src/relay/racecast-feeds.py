@@ -609,7 +609,12 @@ def resolve_uplot_asset(uplot_dir, name):
 # Per-profile overlay overrides (profiles/<name>/overlay/). Override CSS is read
 # fresh per request (so a Control Center edit applies on the next OBS refresh
 # without a relay restart); fonts reuse the resolve_asset security pattern.
-OVERLAY_PAGES = ("hud", "splitscreen")
+OVERLAY_PAGES = ("hud", "splitscreen", "intermission")
+# Paths the relay serves as OBS browser sources (mirrored in src/racecast.py for
+# the served-pages hash gate that drives the OBS auto-refresh; keep in sync).
+OBS_PAGE_PATHS = ("/hud", "/hud/override.css",
+                  "/splitscreen", "/splitscreen/override.css",
+                  "/intermission", "/intermission/override.css")
 FONT_CTYPES = {"woff2": "font/woff2", "woff": "font/woff",
                "ttf": "font/ttf", "otf": "font/otf"}
 # Identity whitelist (same role as ASSET_CTYPES): the handler re-derives the
@@ -4782,7 +4787,8 @@ _CONSOLE_PAGE_GETS = frozenset({(), ("cockpit",), ("panel",),
 def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_dir=None,
                  timer_store=None, setup_ctl=None, overlay_dir=None,
                  chat_store=None, cue_store=None, preview_path=None, graphics_dir=None,
-                 splitscreen_path=None, cockpit_page_path=None, console_secret=None,
+                 splitscreen_path=None, intermission_path=None,
+                 cockpit_page_path=None, console_secret=None,
                  discord_client_id=None, discord_client_secret=None,
                  console_versions_path=None,
                  submission_store=None, event_store=None, crew_source=None,
@@ -5692,6 +5698,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send(relay.splitscreen_state())
                 if p == ["splitscreen", "override.css"]:
                     return self._send_css(read_overlay_css(overlay_dir, "splitscreen"))
+                if p == ["intermission"]:
+                    if not intermission_path:
+                        return self._send({"error": "intermission page not found"}, 404)
+                    return self._send_file(intermission_path, "text/html; charset=utf-8")
+                if p == ["intermission", "override.css"]:
+                    return self._send_css(read_overlay_css(overlay_dir, "intermission"))
                 if len(p) == 3 and p[:2] == ["overlay", "fonts"]:
                     return self._send_font(overlay_dir, p[2])
                 if p[:1] == ["timer"]:
@@ -6467,6 +6479,14 @@ def main():
             splitscreen_path = os.path.abspath(cand); break
     if not splitscreen_path:
         LOG.warning("splitscreen.html not found — /splitscreen will 404.")
+    intermission_path = None
+    for cand in (os.path.join(here, "intermission.html"),
+                 os.path.join(here, "..", "intermission.html"),
+                 os.path.join(here, "..", "obs", "intermission.html")):
+        if os.path.exists(cand):
+            intermission_path = os.path.abspath(cand); break
+    if not intermission_path:
+        LOG.warning("intermission.html not found — /intermission will 404.")
     cockpit_page_path = None
     for cand in (os.path.join(here, "cockpit.html"),
                  os.path.join(here, "..", "cockpit.html"),
@@ -6628,6 +6648,7 @@ def main():
                            cue_store=cue_store,
                            preview_path=preview_path, graphics_dir=graphics_dir,
                            splitscreen_path=splitscreen_path,
+                           intermission_path=intermission_path,
                            cockpit_page_path=cockpit_page_path,
                            console_secret=console_secret,
                            discord_client_id=discord_client_id,

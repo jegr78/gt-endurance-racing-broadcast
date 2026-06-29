@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
-"""Download the stream Intro/Outro clips for OBS from YouTube.
+"""Download the stream Intro/Outro clips and Intermission Music for OBS.
 
 URL resolution priority per clip:  --intro-url/--outro-url  >  env
 RACECAST_INTRO_URL/RACECAST_OUTRO_URL  >  Google Sheet 'Assets' tab (a cell whose
 text is 'Intro Video'/'Outro Video', URL in the next non-empty cell to its right).
 
-Clips are written as intro.mp4 / outro.mp4 into the media dir (repo:
-<repo>/runtime/media ; distributed package: <package>/media). Never stored
+Intermission Music (--music-url / env RACECAST_INTERMISSION_MUSIC_URL / Assets tab
+label 'Intermission Music') is downloaded as intermission.mp3. Accepts a Google
+Drive share link (direct download) or any http(s) URL (yt-dlp audio extraction).
+A missing music URL is a WARNING, not a failure — the neutral ambient-loop
+placeholder is seeded instead.
+
+Clips are written as intro.mp4 / outro.mp4 / intermission.mp3 into the media dir
+(repo: <repo>/runtime/media ; distributed package: <package>/media). Never stored
 under src/, never committed.
 
-Usage: python3 get-media.py [--which intro|outro|both] [--out DIR]
+Usage: python3 get-media.py [--which intro|outro|music|both|all] [--out DIR]
        [--sheet-id ID] [--assets-tab NAME] [--intro-url U] [--outro-url U]
+       [--music-url U]
 """
-import argparse, csv, io, os, subprocess, sys, time
-from urllib.parse import quote
+import argparse, csv, io, os, re, subprocess, sys, time
+from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
 # src/scripts holds the shared external_tool_env(); add it to sys.path the way
@@ -41,6 +48,10 @@ RETRY_BACKOFF_SECONDS = (3, 8)        # sleep before retry 2, retry 3, then last
 
 # Sheet label cell -> output key.
 MEDIA_LABELS = {"intro video": "intro", "outro video": "outro"}
+
+# Music asset constants.
+MUSIC_LABEL = "intermission music"   # Assets-tab label
+MUSIC_KEY = "intermission"           # output basename stem -> intermission.mp3
 
 
 def load_dotenv(start):
@@ -71,6 +82,34 @@ def load_dotenv(start):
     return None
 
 
+# Drive helpers — copied verbatim from get-graphics.py (kept in sync; the test
+# t_drive_helpers_match_get_graphics asserts byte-identical source). Do NOT move
+# these into src/scripts/ — see the "duplicated load_dotenv ×4" philosophy.
+
+def is_drive_url(url):
+    """True iff the URL's HOST is drive.google.com (or a subdomain). A plain
+    substring check would also match e.g. https://evil.example/?drive.google.com."""
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+    return host == "drive.google.com" or host.endswith(".drive.google.com")
+
+
+def drive_id(url):
+    """Extract a Google-Drive file ID from a share or download URL, else None."""
+    if not url:
+        return None
+    m = (re.search(r"/file/d/([A-Za-z0-9_-]+)", url)
+         or re.search(r"[?&]id=([A-Za-z0-9_-]+)", url))
+    return m.group(1) if m else None
+
+
+def to_download_url(file_id):
+    """Direct-download endpoint for a Drive file ID (no API key)."""
+    return f"https://drive.google.com/uc?export=download&id={file_id}"
+
+
 def media_urls_from_csv(rows):
     """Assets-tab rows -> {'intro': url, 'outro': url} (only found keys).
     Located by label cell so column positions can move: a cell equal (trimmed,
@@ -90,6 +129,39 @@ def media_urls_from_csv(rows):
     return out
 
 
+def music_url_from_csv(rows):
+    """Assets-tab rows -> the Intermission-Music URL (Drive link OR YouTube/URL),
+    located by a label cell == MUSIC_LABEL (trimmed, case-insensitive); value is
+    the next non-empty cell. None if absent."""
+    for row in rows:
+        for i, cell in enumerate(row):
+            if (cell or "").strip().lower() != MUSIC_LABEL:
+                continue
+            for nxt in row[i + 1:]:
+                v = (nxt or "").strip()
+                if v:
+                    return v
+    return None
+
+
+def music_download_kind(url):
+    """'drive' (direct download), 'ytdlp' (audio extract), or 'invalid'."""
+    if not (url or "").startswith(("http://", "https://")):
+        return "invalid"
+    return "drive" if (is_drive_url(url) and drive_id(url)) else "ytdlp"
+
+
+def build_music_cmd(url, out_path, cookies=None):
+    """Argv to extract audio to an mp3 at out_path's dir, stem 'intermission'.
+    `--` precedes the URL so a sheet cell starting with '-' cannot be a flag."""
+    stem = os.path.join(os.path.dirname(out_path), "intermission.%(ext)s")
+    cmd = ["yt-dlp", "-x", "--audio-format", "mp3", "--no-warnings", "-o", stem]
+    if cookies and os.path.exists(cookies):
+        cmd += ["--cookies", cookies]
+    cmd += ["--", url]
+    return cmd
+
+
 def media_dir(here):
     """Where clips live when --out is not given. Mirrors default_runtime_dir():
     repo layout (src/relay/) -> <repo>/runtime/media ; package (relay/) -> <pkg>/media."""
@@ -98,12 +170,18 @@ def media_dir(here):
     return os.path.join(os.path.dirname(here), "media")
 
 
-def seed_missing_media(out_dir, which):
-    """Drop the neutral placeholder clip for any of intro.mp4/outro.mp4 named in
-    `which` (a set of 'intro'/'outro') still missing in out_dir. Best-effort;
-    returns the sorted names written."""
-    names = [f"{k}.mp4" for k in sorted(which)]
-    return placeholders.fill_missing(names, out_dir, placeholders.media_placeholder_path())
+def seed_missing_media(out_dir, which, want_music=False):
+    """Drop the right neutral placeholder for any missing intro.mp4/outro.mp4 (in
+    `which`) and intermission.mp3 (when want_music). Returns sorted names written."""
+    written = []
+    for k in sorted(which):
+        written += placeholders.fill_missing(
+            [f"{k}.mp4"], out_dir, placeholders.media_placeholder_for(f"{k}.mp4"))
+    if want_music:
+        written += placeholders.fill_missing(
+            ["intermission.mp3"], out_dir,
+            placeholders.media_placeholder_for("intermission.mp3"))
+    return sorted(written)
 
 
 def resolve_urls(which, cli, env, csv_text):
@@ -174,31 +252,90 @@ def download(url, out_path, cookies=None):
     run_download(cmd, env=external_tool_env())
 
 
+def download_drive_file(url, out_path, timeout=120):
+    """GET a Drive file to out_path (binary). Handles the large-file confirm
+    interstitial. Atomic write. (Music variant of get-graphics.download — no PNG check.)"""
+    req = Request(url, headers={"User-Agent": "racecast-media/1.0"})
+    with urlopen(req, timeout=timeout) as resp:
+        ctype = resp.headers.get("Content-Type", "")
+        data = resp.read()
+    if ctype.startswith("text/html"):
+        m = re.search(rb"confirm=([0-9A-Za-z_-]+)", data)
+        if not m:
+            raise RuntimeError("Drive returned an HTML interstitial with no confirm token")
+        req2 = Request(url + "&confirm=" + m.group(1).decode(),
+                       headers={"User-Agent": "racecast-media/1.0"})
+        with urlopen(req2, timeout=timeout) as resp2:
+            data = resp2.read()
+    tmp = out_path + ".part"
+    with open(tmp, "wb") as fh:
+        fh.write(data)
+    os.replace(tmp, out_path)
+
+
+def download_music(url, out_path, cookies=None):
+    """Download intermission music to out_path (intermission.mp3). Drive link ->
+    direct download; otherwise yt-dlp audio extraction. Retries the transient
+    yt-dlp failure like the video path."""
+    kind = music_download_kind(url)
+    if kind == "invalid":
+        raise ValueError(f"refusing non-http(s) music URL: {url!r}")
+    if kind == "drive":
+        download_drive_file(to_download_url(drive_id(url)), out_path)
+    else:
+        run_download(build_music_cmd(url, out_path, cookies), env=external_tool_env())
+
+
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     load_dotenv(here)
     ap = argparse.ArgumentParser()
-    ap.add_argument("--which", choices=["intro", "outro", "both"], default="both")
+    ap.add_argument("--which", choices=["intro", "outro", "music", "both", "all"],
+                    default="all",
+                    help="Which assets to fetch: intro, outro, music, both (=intro+outro), "
+                         "all (=intro+outro+music, default).")
     ap.add_argument("--out", default=media_dir(here),
-                    help="Target dir for intro.mp4 / outro.mp4 (default: media_dir).")
+                    help="Target dir for intro.mp4 / outro.mp4 / intermission.mp3 "
+                         "(default: media_dir).")
     ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
                     help="Google Sheet ID holding the Assets tab. Default: env RACECAST_SHEET_ID.")
     ap.add_argument("--assets-tab", default="Assets")
     ap.add_argument("--intro-url", default=None)
     ap.add_argument("--outro-url", default=None)
+    ap.add_argument("--music-url", default=None,
+                    help="Intermission Music URL (Drive link or yt-dlp-compatible). "
+                         "Default: env RACECAST_INTERMISSION_MUSIC_URL or Assets tab.")
     a = ap.parse_args()
 
-    which = {"intro", "outro"} if a.which == "both" else {a.which}
+    # Determine video clip set and music flag.
+    if a.which in ("both", "all"):
+        which = {"intro", "outro"}
+    elif a.which == "music":
+        which = set()
+    else:
+        which = {a.which}
+    want_music = a.which in ("all", "music")
+
     cli = {"intro": a.intro_url, "outro": a.outro_url}
 
     # Only hit the sheet if a CLI/env URL is missing for something we need.
     csv_text = None
-    need_sheet = any(not (cli.get(k) or os.environ.get(f"RACECAST_{k.upper()}_URL")) for k in which)
+    need_sheet = (
+        any(not (cli.get(k) or os.environ.get(f"RACECAST_{k.upper()}_URL")) for k in which)
+        or (want_music and not (a.music_url or os.environ.get("RACECAST_INTERMISSION_MUSIC_URL")))
+    )
     if need_sheet and a.sheet_id:
         try:
             csv_text = fetch_assets_csv(a.sheet_id, a.assets_tab)
         except Exception as e:
             print(f"WARNING: could not read sheet Assets tab: {e}")
+
+    # Resolve music URL: CLI > env > sheet.
+    music_url = (
+        a.music_url
+        or os.environ.get("RACECAST_INTERMISSION_MUSIC_URL")
+        or (music_url_from_csv(list(csv.reader(io.StringIO(csv_text)))) if csv_text else None)
+    )
 
     urls = resolve_urls(which, cli, os.environ, csv_text)
     os.makedirs(a.out, exist_ok=True)
@@ -230,9 +367,28 @@ def main():
             print(f"WARNING: download failed for {key}: {e}")
             failed.append(key)
 
-    seeded = seed_missing_media(a.out, which)
+    # Download intermission music (missing URL -> WARNING only, placeholder seeded below).
+    if want_music:
+        out_music = os.path.join(a.out, "intermission.mp3")
+        if not music_url:
+            print("WARNING: no Intermission Music URL "
+                  "(sheet label 'Intermission Music' / --music-url / "
+                  "RACECAST_INTERMISSION_MUSIC_URL); placeholder will be seeded.")
+        else:
+            print(f"Downloading intermission music: {music_url}")
+            try:
+                download_music(music_url, out_music, cookies)
+                print(f"OK -> {out_music}")
+            except FileNotFoundError:
+                sys.exit("ERROR: yt-dlp not found (brew install yt-dlp / pip install -U yt-dlp).")
+            except subprocess.TimeoutExpired:
+                print("WARNING: intermission music download timed out (600 s).")
+            except Exception as e:
+                print(f"WARNING: intermission music download failed: {e}")
+
+    seeded = seed_missing_media(a.out, which, want_music=want_music)
     if seeded:
-        print(f"Wrote neutral placeholder clip for {len(seeded)} missing: "
+        print(f"Wrote neutral placeholder for {len(seeded)} missing: "
               f"{', '.join(seeded)}")
 
     if failed:

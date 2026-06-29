@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intermission — Broadcast Chat</title>
+<style>
+  :root {
+    --ichat-w: 460px;
+    --ichat-h: 640px;
+    --ichat-right: 64px;
+    --ichat-bottom: 96px;
+    --ichat-bg: rgba(12, 16, 22, 0.55);
+    --ichat-fg: #eef2f6;
+    --ichat-author: #f0a868;
+    --ichat-meta: #9aa3ad;
+    --ichat-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  html, body {
+    margin: 0; padding: 0; width: 1920px; height: 1080px;
+    background: transparent; overflow: hidden;
+    font-family: var(--ichat-font);
+  }
+  /* Fixed-height, no-scrollbar chat box. Older messages scroll up and clip out. */
+  #ichat {
+    position: absolute;
+    right: var(--ichat-right);
+    bottom: var(--ichat-bottom);
+    width: var(--ichat-w);
+    height: var(--ichat-h);
+    box-sizing: border-box;
+    padding: 14px 18px;
+    background: var(--ichat-bg);
+    border-radius: 14px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    color: var(--ichat-fg);
+    overflow: hidden;                 /* never a scrollbar */
+    display: flex;
+    flex-direction: column;
+  }
+  #ichat-head {
+    flex: 0 0 auto;
+    margin-bottom: 8px;
+    font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ichat-meta);
+  }
+  /* Log fills remaining height and bottom-aligns, so new lines push older ones up. */
+  #ichat-log {
+    flex: 1 1 auto;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    overflow: hidden;
+  }
+  #ichat-log .msg { margin-top: 6px; line-height: 1.32; font-size: 19px; overflow-wrap: anywhere; }
+  #ichat-log .ts  { color: var(--ichat-meta); font-size: 12px; margin-right: 6px; }
+  #ichat-log .u   { font-weight: 700; color: var(--ichat-author); margin-right: 6px; }
+  #ichat-log .src { color: var(--ichat-meta); font-size: 12px; margin-left: 6px; }
+  #ichat-log .emote { height: 1.2em; width: auto; vertical-align: -0.2em; }
+</style>
+<link rel="stylesheet" href="/intermission/override.css">
+</head>
+<body>
+  <div id="ichat">
+    <div id="ichat-head">Live Chat</div>
+    <div id="ichat-log"></div>
+  </div>
+<script>
+  "use strict";
+  const POLL_MS = 4000;
+  const MAX_ROWS = 50;                  // trim DOM so older lines scroll up and out
+  const log = document.getElementById('ichat-log');
+
+  function fmtTs(ts) {
+    const n = Number(ts);
+    if (!n) return '';
+    const d = new Date(n < 1e12 ? n * 1000 : n);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  function srcBadge(source) {
+    if (!source) return '';
+    if (source.indexOf('twitch:') === 0) return 'TW:' + source.slice(7);
+    return 'YT:' + String(source).slice(-4);
+  }
+  // Render one message body: text nodes + <img> emotes, never innerHTML (XSS-safe).
+  function body(row, msg) {
+    const toks = Array.isArray(msg.tokens) ? msg.tokens : null;
+    if (!toks) { row.appendChild(document.createTextNode(msg.text || '')); return; }
+    toks.forEach(function (tk) {
+      if (tk && tk.t === 'emote' && typeof tk.url === 'string') {
+        const img = document.createElement('img');
+        img.className = 'emote'; img.src = tk.url; img.alt = tk.alt || ''; img.loading = 'lazy';
+        img.onerror = function () { img.replaceWith(document.createTextNode(tk.alt || '')); };
+        row.appendChild(img);
+      } else if (tk && tk.t === 'text') {
+        row.appendChild(document.createTextNode(tk.v || ''));
+      }
+    });
+  }
+  function render(msgs) {
+    const multi = new Set(msgs.map(function (m) { return m.source; }).filter(Boolean)).size > 1;
+    log.textContent = '';
+    msgs.slice(-MAX_ROWS).forEach(function (msg) {
+      const r = document.createElement('div'); r.className = 'msg';
+      const t = document.createElement('span'); t.className = 'ts'; t.textContent = fmtTs(msg.ts);
+      const u = document.createElement('span'); u.className = 'u'; u.textContent = (msg.user || 'Viewer') + ':';
+      r.appendChild(t); r.appendChild(u); body(r, msg);
+      if (multi && msg.source) {
+        const s = document.createElement('span'); s.className = 'src'; s.textContent = srcBadge(msg.source);
+        r.appendChild(s);
+      }
+      log.appendChild(r);
+    });
+  }
+  async function poll() {
+    try {
+      const res = await fetch('/broadcast-chat/data', { cache: 'no-store' });
+      if (res.ok) {
+        const d = await res.json();
+        render(Array.isArray(d.messages) ? d.messages : []);
+      }
+      // 404 (reader disabled) -> leave the box empty; NO auto-hide.
+    } catch (e) { /* transient — keep the last render */ }
+    setTimeout(poll, POLL_MS);
+  }
+  poll();
+</script>
+</body>
+</html>

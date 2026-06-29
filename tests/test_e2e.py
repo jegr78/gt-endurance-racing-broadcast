@@ -604,6 +604,12 @@ def t_check_fanout_feed_port_bound_registration():
     assert callable(e.check_fanout_feed_port_bound)
 
 
+def t_intermission_check_registered():
+    """check_intermission_page is in SYNTHETIC_CHECKS but not REAL_LEAGUE_CHECKS."""
+    assert e.check_intermission_page in e.SYNTHETIC_CHECKS
+    assert e.check_intermission_page not in e.REAL_LEAGUE_CHECKS
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
