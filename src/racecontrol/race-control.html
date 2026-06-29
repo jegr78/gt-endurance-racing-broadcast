@@ -409,13 +409,14 @@ async function pollBroadcastChat() {
 // echoed mirror at once. A page reload alone can't help — the store is frozen.
 async function refreshBroadcastChat() {
   const btn = $('bchatRefresh');
-  if (btn) btn.disabled = true;
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Refreshing…'; }
   try {
     const d = await j('/broadcast-chat/reload');
     bchatTarget(d.target);
     renderBroadcastChat(d.messages || []);
   } catch (e) { /* transient/404 — the 4 s poller handles card teardown */ }
-  if (btn) setTimeout(() => { btn.disabled = false; }, 1200);
+  // Restore after a short min-visible delay so the label doesn't flicker.
+  if (btn) setTimeout(() => { btn.disabled = false; btn.textContent = '⟳ Refresh'; }, 600);
 }
 { const br = $('bchatRefresh'); if (br) br.addEventListener('click', refreshBroadcastChat); }
 

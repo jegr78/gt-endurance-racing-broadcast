@@ -1346,7 +1346,7 @@ async function bchatPoll(){
 // This kicks /broadcast-chat/reload to re-arm the reader, then re-renders now.
 async function bchatRefresh(e){
   if (e){ e.preventDefault(); e.stopPropagation(); }   // don't toggle the <details>
-  const btn = $("#bchatRefresh"); if (btn) btn.disabled = true;
+  const btn = $("#bchatRefresh"); if (btn){ btn.disabled = true; btn.textContent = "⟳ Refreshing…"; }
   try{
     const r = await fetch("/broadcast-chat/reload", {cache:"no-store"});
     if (r.ok){
@@ -1354,7 +1354,8 @@ async function bchatRefresh(e){
       if (!d.error){ bchatRender(d.messages || []); bchatTarget(d.target); }
     }
   }catch(e){ /* relay unreachable: leave the last view in place */ }
-  if (btn) setTimeout(()=>{ btn.disabled = false; }, 1200);
+  // Restore after a short min-visible delay so the label doesn't flicker.
+  if (btn) setTimeout(()=>{ btn.disabled = false; btn.textContent = "⟳ Refresh"; }, 600);
 }
 { const br = $("#bchatRefresh"); if (br) br.addEventListener("click", bchatRefresh); }
 
