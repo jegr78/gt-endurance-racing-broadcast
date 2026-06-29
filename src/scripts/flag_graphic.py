@@ -8,6 +8,10 @@ Sheet Assets label equals the PNG basename (e.g. key 'safety-car' -> 'Flag Safet
 Car' -> 'Flag Safety Car.png'). Flags are mutually exclusive: at most one graphic
 is visible, in BOTH the Stint and Splitscreen scenes, or none."""
 
+import json
+import os
+import threading
+
 # Scenes that carry the flag-graphic scene items (both get all five, kept in
 # sync so a scene switch preserves the shown flag). Mirrors the OBS collection.
 FLAG_GRAPHIC_SCENES = ("Stint", "Splitscreen")
@@ -49,3 +53,76 @@ def flag_graphic_intents(active):
         for source in FLAG_GRAPHIC_SOURCES.values():
             out.append((scene, source, source == shown))
     return out
+
+
+def _noop_apply(scene, source, enabled):
+    return False, "obs unavailable"
+
+
+class FlagGraphicStore:
+    """Active flag-graphic state: in-memory + JSON file (restart-safe) + OBS apply
+    via an injected apply_fn (the relay passes obs_ws.set_scene_item_enabled).
+    Mirrors EventTitleStore's local-file layer; NO sheet sync (this is OBS source
+    visibility, not a HUD value). Selecting a flag shows its source and hides the
+    other four in both scenes; clear hides all. Best-effort throughout: an OBS
+    failure degrades to a note, the state is still stored and persisted."""
+
+    def __init__(self, path, apply_fn=None):
+        self.path = path
+        self.apply_fn = apply_fn or _noop_apply
+        self.lock = threading.Lock()
+        self.active = ""                         # canonical key or ""
+        try:
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        except OSError:
+            pass  # fresh layout; _save_file degrades per-write if the dir is missing
+        self._load_file()
+
+    # -- persistence ------------------------------------------------------
+    def _load_file(self):
+        try:
+            with open(self.path, encoding="utf-8") as fh:
+                saved = json.load(fh)
+        except (OSError, ValueError):
+            return  # no/corrupt file -> keep default ""
+        if isinstance(saved, dict) and saved.get("active") in FLAG_GRAPHIC_SOURCES:
+            self.active = saved["active"]
+
+    def _save_file(self):
+        try:
+            with open(self.path, "w", encoding="utf-8") as fh:
+                json.dump({"active": self.active}, fh)
+        except OSError:
+            pass  # best-effort, same contract as the timer/event caches
+
+    # -- read -------------------------------------------------------------
+    def get(self):
+        with self.lock:
+            return self.active
+
+    def data(self):
+        return {"active": self.get()}
+
+    # -- write ------------------------------------------------------------
+    def set(self, raw):
+        key = normalize_flag_value(raw)
+        if key is None:
+            return {"error": f"unknown flag graphic: {raw!r} "
+                             f"(one of {', '.join(FLAG_GRAPHIC_SOURCES)})"}
+        with self.lock:
+            self.active = key
+            self._save_file()
+            self._apply_locked()
+            return {"ok": True, "active": self.active}
+
+    def clear(self):
+        return self.set("")
+
+    def reassert(self):
+        """Re-push the persisted active flag to OBS (best-effort)."""
+        with self.lock:
+            self._apply_locked()
+
+    def _apply_locked(self):
+        for scene, source, enabled in flag_graphic_intents(self.active):
+            self.apply_fn(scene, source, enabled)   # (ok, note) ignored — best-effort
