@@ -54,6 +54,7 @@ import notify   # pure Discord payload builders for producer events (#317)
 import overlay_build as ob
 import fonts_bundle as fb
 import ports as pt
+import app_version as _app_version
 
 # PyInstaller marks the frozen binary with sys.frozen and unpacks bundled data
 # (the whole src/ tree) to sys._MEIPASS. Repo + package mode stay subprocess-based.
@@ -3181,13 +3182,10 @@ def oneshot(command, rest):
 
 
 def version():
-    """Build version: a VERSION file is stamped into the bundle by
-    tools/build-binary.py; a repo checkout has none -> 'dev'."""
-    try:
-        with open(resource_path("VERSION"), encoding="utf-8") as fh:
-            return fh.read().strip() or "dev"
-    except OSError:
-        return "dev"
+    """Build version via the shared app_version helper (single source of truth).
+    A VERSION file is stamped into the bundle by tools/build-binary.py; a repo
+    checkout has none -> 'dev'."""
+    return _app_version.read_version(resource_path(""))
 
 
 def update_check_data(fetch=None, current=None, platform=None, frozen=None):
