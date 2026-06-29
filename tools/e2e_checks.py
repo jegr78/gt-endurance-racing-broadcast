@@ -497,8 +497,13 @@ def check_intermission_page(ctx):
     """GET /intermission serves the chat-box overlay page (id="ichat" marker)."""
     st, body, _ = http_request(ctx.relay_url + "/intermission")
     ok = st == 200 and b'id="ichat"' in body
-    return CheckResult("intermission_page", "pass" if ok else "fail",
-                       "" if ok else f"status={st}")
+    if ok:
+        msg = ""
+    elif st != 200:
+        msg = f"status={st}"
+    else:
+        msg = 'marker id="ichat" missing'
+    return CheckResult("intermission_page", "pass" if ok else "fail", msg)
 
 
 SYNTHETIC_CHECKS = [

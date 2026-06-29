@@ -605,9 +605,9 @@ def t_check_fanout_feed_port_bound_registration():
 
 
 def t_intermission_check_registered():
-    names = [c.__name__ for c in e.SYNTHETIC_CHECKS]
-    assert "check_intermission_page" in names, \
-        f"check_intermission_page not in SYNTHETIC_CHECKS; found: {names}"
+    """check_intermission_page is in SYNTHETIC_CHECKS but not REAL_LEAGUE_CHECKS."""
+    assert e.check_intermission_page in e.SYNTHETIC_CHECKS
+    assert e.check_intermission_page not in e.REAL_LEAGUE_CHECKS
 
 
 if __name__ == "__main__":
