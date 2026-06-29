@@ -538,6 +538,24 @@ def resolve_asset(assets_dir, sub, key):
     return None
 
 
+def resolve_brand_override(brands_dir, key):
+    """Resolve a per-league brand-logo override by key (no extension) to
+    (path, content_type), or None. Unlike resolve_asset, `brands_dir`
+    (runtime/<profile>/brands) is treated DIRECTLY as the base — there is no
+    'brands' sub-level. Same safety contract: strict key regex + the ASSET_EXTS
+    extension whitelist + realpath containment (no path traversal)."""
+    if not brands_dir or not ASSET_KEY_RE.match(key):
+        return None
+    base = os.path.realpath(brands_dir)
+    for ext, ctype in ASSET_EXTS:
+        path = os.path.realpath(os.path.join(base, f"{key}.{ext}"))
+        if not path.startswith(base + os.sep):
+            return None
+        if os.path.exists(path):
+            return path, ctype
+    return None
+
+
 def list_graphics(graphics_dir):
     """Sorted list of the broadcast still-graphics (*.png) in graphics_dir as
     [{"name": <Sheet label>, "file": <label>.png}, ...] for the cockpit browser.
@@ -4796,7 +4814,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  buttons_page_path=None, race_control_page_path=None,
                  health_store=None, health_monitor_page_path=None, uplot_dir=None,
                  broadcast_chat_store=None, broadcast_chat_supervisor=None,
-                 preview_manager=None):
+                 preview_manager=None, brands_dir=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -4911,7 +4929,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.end_headers(); self.wfile.write(body)
             return None
         def _send_asset(self, assets_dir, sub, key):
-            hit = resolve_asset(assets_dir, sub, key)
+            hit = resolve_brand_override(brands_dir, key) if sub == "brands" else None
+            if not hit:
+                hit = resolve_asset(assets_dir, sub, key)
             if not hit:
                 return self._send({"error": "asset not found", "key": key}, 404)
             path, ctype = hit
@@ -6470,6 +6490,7 @@ def main():
     hud_path = None
     preview_path = None
     graphics_dir = os.path.join(runtime, "graphics")   # Overlay.png frame for /hud/preview
+    brands_dir = os.path.join(runtime, "brands")   # per-league brand-logo overrides
     assets_dir = os.path.abspath(os.path.join(here, "..", "assets"))
     splitscreen_path = None
     for cand in (os.path.join(here, "splitscreen.html"),
@@ -6662,6 +6683,7 @@ def main():
                            health_store=relay.health_store,
                            health_monitor_page_path=health_monitor_page_path,
                            uplot_dir=uplot_dir,
+                           brands_dir=brands_dir,
                            crew_source=crew_source,
                            broadcast_chat_store=broadcast_chat_store,
                            broadcast_chat_supervisor=_bc_supervisor,
