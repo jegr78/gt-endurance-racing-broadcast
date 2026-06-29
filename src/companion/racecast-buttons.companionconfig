@@ -1902,57 +1902,6 @@
            },
            "type": "action",
            "upgradeIndex": 8
-          },
-          {
-           "id": "IntmMuteDiscordCaptCC",
-           "definitionId": "set_source_mute",
-           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
-           "options": {
-            "source": {
-             "value": "Discord Audio Capture",
-             "isExpression": false
-            },
-            "mute": {
-             "value": "true",
-             "isExpression": false
-            }
-           },
-           "type": "action",
-           "upgradeIndex": 8
-          },
-          {
-           "id": "IntmMuteFeedAAction1D",
-           "definitionId": "set_source_mute",
-           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
-           "options": {
-            "source": {
-             "value": "Feed A",
-             "isExpression": false
-            },
-            "mute": {
-             "value": "true",
-             "isExpression": false
-            }
-           },
-           "type": "action",
-           "upgradeIndex": 8
-          },
-          {
-           "id": "IntmMuteFeedBAction1E",
-           "definitionId": "set_source_mute",
-           "connectionId": "dv_e1zuVb_6XgPv0eRibl",
-           "options": {
-            "source": {
-             "value": "Feed B",
-             "isExpression": false
-            },
-            "mute": {
-             "value": "true",
-             "isExpression": false
-            }
-           },
-           "type": "action",
-           "upgradeIndex": 8
           }
          ],
          "up": []
