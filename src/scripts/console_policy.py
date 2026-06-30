@@ -135,7 +135,8 @@ def min_capability(segments, method="GET"):
              ["cockpit", "timer"], ["cockpit", "chat", "data"],
              ["cockpit", "chat", "send"],
              ["cockpit", "cues"], ["cockpit", "cues", "ack"],
-             ["cockpit", "rc-notes"]):     # RC->commentator notes read (#376)
+             ["cockpit", "rc-notes"],      # RC->commentator notes read (#376)
+             ["cockpit", "cue-back"]):     # commentator->director cue-back send (#377)
         return Requirement(ANY, False)
 
     # Cockpit graphics browser: read-only list + file serve, any authenticated

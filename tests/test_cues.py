@@ -275,6 +275,70 @@ def t_parse_rc_note_presets_absent_column():
     assert _relay.parse_rc_note_presets("Stints,Streamers\nStint 1,JeGr\n") == []
 
 
+# --- Commentator -> director cue-back (#377) ---
+# The reverse direction: origin="commentator", shown only on the Director Panel.
+
+def t_active_cues_excludes_every_non_director_origin():
+    # Director toasts/banners show ONLY plain director cues (no origin key).
+    cues = [{"id": 1, "ts": 1.0, "target": "max", "level": "info", "text": "rc",
+             "from": "Race Control", "ack": None, "origin": "race_control"},
+            {"id": 2, "ts": 1.0, "target": "director", "level": "info", "text": "ready",
+             "from": "Max", "ack": None, "origin": "commentator"},
+            {"id": 3, "ts": 1.0, "target": "max", "level": "info", "text": "dir",
+             "from": "Director", "ack": None}]
+    assert [c["id"] for c in cu.active_cues_for(cues, "max", 1.0, info_ttl=30)] == [3]
+
+
+def t_cue_backs_selector():
+    cues = [{"id": 1, "ts": 1.0, "target": "director", "level": "info", "text": "ready",
+             "from": "Max", "ack": None, "origin": "commentator"},
+            {"id": 2, "ts": 2.0, "target": "max", "level": "info", "text": "go",
+             "from": "Director", "ack": None},                          # director cue
+            {"id": 3, "ts": 3.0, "target": "all", "level": "info", "text": "rc",
+             "from": "Race Control", "ack": None, "origin": "race_control"},
+            {"id": 4, "ts": 4.0, "target": "director", "level": "info", "text": "need 2 min",
+             "from": "Ann", "ack": None, "origin": "commentator"}]
+    got = cu.cue_backs(cues)
+    assert [(c["id"], c["from"]) for c in got] == [(1, "Max"), (4, "Ann")]
+
+
+def t_cue_backs_show_cap():
+    cues = [{"id": i, "ts": float(i), "target": "director", "level": "info",
+             "text": str(i), "from": "Max", "ack": None, "origin": "commentator"}
+            for i in range(1, cu.CUE_BACK_SHOW + 6)]
+    got = cu.cue_backs(cues)
+    assert len(got) == cu.CUE_BACK_SHOW
+    assert got[-1]["id"] == cu.CUE_BACK_SHOW + 5      # most-recent window
+
+
+def t_prune_keeps_cue_backs_in_a_separate_window():
+    # A flood of RC notes must NOT evict cue-backs (independent per-origin windows).
+    rc = [{"id": i, "ts": 1.0, "target": "all", "level": "info", "text": "rc",
+           "from": "Race Control", "ack": None, "origin": "race_control"}
+          for i in range(1, cu.RC_NOTE_KEEP + 5)]
+    backs = [{"id": 1000 + i, "ts": 1.0, "target": "director", "level": "info",
+              "text": "cb", "from": "Max", "ack": None, "origin": "commentator"}
+             for i in range(3)]
+    kept = cu.prune(rc + backs, now=1e9, info_ttl=30)
+    kept_backs = [c for c in kept if c.get("origin") == "commentator"]
+    kept_rc = [c for c in kept if c.get("origin") == "race_control"]
+    assert len(kept_backs) == 3                       # all cue-backs survive
+    assert len(kept_rc) == cu.RC_NOTE_KEEP            # RC flood capped, not the backs
+
+
+def t_cuestore_cue_back_round_trip():
+    with tempfile.TemporaryDirectory() as d:
+        store = _relay.CueStore(os.path.join(d, "cues.json"))
+        r = store.add(target="director", level="info", text="ready",
+                      from_name="Max Power", origin="commentator", now=100.0)
+        assert r["ok"] and r["cue"]["origin"] == "commentator"
+        assert r["cue"]["from"] == "Max Power"
+        assert [c["id"] for c in cu.cue_backs(store.list())] == [1]
+        # Never a director toast and never an RC note:
+        assert cu.active_cues_for(store.list(), "max", 100.0) == []
+        assert cu.race_control_notes_for(store.list(), "max") == []
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
