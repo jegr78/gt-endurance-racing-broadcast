@@ -195,6 +195,24 @@
                animation: cue-fadein .25s ease; }
   @keyframes cue-fadein { from { opacity: 0; transform: translateY(8px); }
                           to   { opacity: 1; transform: translateY(0); } }
+  /* --- Race Control notes (#376) --- */
+  /* A rolling reference card (not a one-shot toast): RC info like a DC/rejoin or
+     "retired" is context the commentator looks back at. The newest one also
+     flashes as an amber toast, distinct from the blue director-info toast. */
+  #rcCard h2 .ro { font-size: 11px; font-weight: 500; color: #d6932f;
+                   border: 1px solid #5a4220; border-radius: 6px; padding: 1px 6px;
+                   margin-left: 6px; vertical-align: middle; }
+  #rcNotes .note { padding: 8px 12px; border-bottom: 1px solid #1c2027; overflow-wrap: anywhere; }
+  #rcNotes .note:last-child { border-bottom: 0; }
+  #rcNotes .note .ts { color: #5f6772; font-size: 10px; margin-right: 6px;
+                       font-variant-numeric: tabular-nums; }
+  .rc-toast { background: #b45309; color: #fff;
+              padding: 10px 14px; border-radius: 8px;
+              font-size: 14px; font-weight: 600;
+              box-shadow: 0 4px 12px rgba(0,0,0,.5);
+              animation: cue-fadein .25s ease; }
+  .rc-toast .lbl { display: block; font-size: 11px; font-weight: 900;
+                   letter-spacing: .08em; opacity: .85; margin-bottom: 2px; }
 </style>
 </head>
 <body>
@@ -271,6 +289,10 @@
   </div>
   <div>
     <div class="card"><h2>Race timer</h2><div id="timer"><div class="t">—</div></div></div>
+    <div class="card" id="rcCard" style="margin-top:12px;" hidden>
+      <h2>Race Control <span class="ro">info</span></h2>
+      <div id="rcNotes"><div class="empty">No notes.</div></div>
+    </div>
     <div class="card" style="margin-top:12px;"><h2>Stint plan</h2>
       <div id="stintPlan"><div class="empty">Loading…</div></div></div>
     <div class="card" style="margin-top:12px;">
@@ -688,6 +710,58 @@ async function pollCues() {
   setTimeout(pollCues, 3000);
 }
 
+// --- Race Control notes (#376) ---
+// A rolling card of Race Control heads-ups (DC/rejoin, retired, "jump to driver
+// X"). Unlike director cues these are reference context — they persist in the
+// card; the newest unseen one also flashes once as an amber toast.
+const _shownRc = new Set();
+let _rcInit = true;          // don't toast the backlog already present on load
+async function pollRcNotes() {
+  let notes = [];
+  try {
+    const d = await j('/cockpit/rc-notes');
+    notes = d.notes || [];
+  } catch (e) {
+    if (String(e.message) === '404') {     // cues disabled -> remove the card
+      const c = $('rcCard'); if (c) c.hidden = true;
+      return;
+    }
+    setTimeout(pollRcNotes, 3000); return;
+  }
+  const card = $('rcCard'); if (card) card.hidden = false;
+  const box = $('rcNotes');
+  box.textContent = '';
+  if (!notes.length) {
+    const e = document.createElement('div');
+    e.className = 'empty'; e.textContent = 'No notes.';
+    box.appendChild(e);
+  } else {
+    notes.forEach(n => {
+      const row = document.createElement('div');
+      row.className = 'note';
+      const t = document.createElement('span');
+      t.className = 'ts'; t.textContent = fmtTs(n.ts);
+      row.appendChild(t);
+      row.appendChild(document.createTextNode(n.text || ''));   // XSS-safe
+      box.appendChild(row);
+    });
+  }
+  notes.filter(n => !_shownRc.has(n.id)).forEach(n => {
+    _shownRc.add(n.id);
+    if (_rcInit) return;                   // skip the initial backlog
+    const to = document.createElement('div');
+    to.className = 'rc-toast';
+    const lbl = document.createElement('span');
+    lbl.className = 'lbl'; lbl.textContent = 'RACE CONTROL';
+    to.appendChild(lbl);
+    to.appendChild(document.createTextNode(n.text || ''));      // XSS-safe
+    $('cueToasts').appendChild(to);
+    setTimeout(() => to.remove(), 9000);
+  });
+  _rcInit = false;
+  setTimeout(pollRcNotes, 3000);
+}
+
 // --- Graphics browser ---
 // List the broadcast still-graphics; clicking one opens it in a new tab. The
 // file URL MUST go through RC_API() so it resolves under the /console mount over
@@ -725,7 +799,7 @@ async function loadGraphics() {
 $('gfxRefresh').addEventListener('click', loadGraphics);
 
 { const br = $('bchatRefresh'); if (br) br.addEventListener('click', refreshBroadcastChat); }
-pollTally(); pollProgram(); pollTimer(); pollChat(); pollCues(); loadGraphics();
+pollTally(); pollProgram(); pollTimer(); pollChat(); pollCues(); pollRcNotes(); loadGraphics();
 pollBroadcastChat();
 </script>
 </body>

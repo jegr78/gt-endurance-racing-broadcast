@@ -183,6 +183,98 @@ def t_cuestore_rejects_bad_level():
         assert "error" in store.add(target="max", level="loud", text="x")
 
 
+# --- Race Control -> commentator notes (#376) ---
+# RC notes ride the same cue store but carry origin="race_control"; a director cue
+# keeps the exact 7-key shape (no origin key) so the on-disk shape is unchanged.
+
+def t_sanitize_cue_origin_director_default_absent():
+    c = cu.sanitize_cue({"id": 1, "ts": 1.0, "target": "max", "level": "info", "text": "x"})
+    assert "origin" not in c                       # director cue: shape unchanged
+    bad = cu.sanitize_cue({"id": 1, "ts": 1.0, "target": "max", "level": "info",
+                           "text": "x", "origin": "bogus"})
+    assert "origin" not in bad                      # unknown origin -> dropped
+
+
+def t_sanitize_cue_origin_race_control_preserved():
+    c = cu.sanitize_cue({"id": 5, "ts": 1.0, "target": "max", "level": "info",
+                         "text": "team 5 retired", "origin": "race_control"})
+    assert c["origin"] == "race_control"
+
+
+def t_active_cues_excludes_race_control():
+    # An RC note must NEVER surface as a director toast/banner.
+    cues = [{"id": 1, "ts": 1.0, "target": "max", "level": "info", "text": "rc",
+             "from": "Race Control", "ack": None, "origin": "race_control"},
+            {"id": 2, "ts": 1.0, "target": "max", "level": "info", "text": "dir",
+             "from": "Director", "ack": None}]
+    got = cu.active_cues_for(cues, "max", 1.0, info_ttl=30)
+    assert [c["id"] for c in got] == [2]
+
+
+def t_prune_keeps_race_control_past_ttl():
+    cues = [{"id": 1, "ts": 1.0, "target": "max", "level": "info", "text": "old rc",
+             "from": "Race Control", "ack": None, "origin": "race_control"}]
+    kept = cu.prune(cues, now=1e9, info_ttl=30)        # long past the info TTL
+    assert [c["id"] for c in kept] == [1]               # RC note survives
+
+
+def t_prune_caps_race_control_notes():
+    n = cu.RC_NOTE_KEEP + 4
+    cues = [{"id": i, "ts": 1.0, "target": "max", "level": "info", "text": str(i),
+             "from": "Race Control", "ack": None, "origin": "race_control"}
+            for i in range(1, n + 1)]
+    kept = cu.prune(cues, now=1e9, info_ttl=30)
+    assert len(kept) == cu.RC_NOTE_KEEP
+    assert kept[-1]["id"] == n                          # newest retained, order preserved
+
+
+def t_race_control_notes_for_target_scope_and_limit():
+    cues = [{"id": 1, "ts": 1.0, "target": "max", "level": "info", "text": "a",
+             "from": "Race Control", "ack": None, "origin": "race_control"},
+            {"id": 2, "ts": 2.0, "target": "all", "level": "info", "text": "b",
+             "from": "Race Control", "ack": None, "origin": "race_control"},
+            {"id": 3, "ts": 3.0, "target": "ann", "level": "info", "text": "c",
+             "from": "Race Control", "ack": None, "origin": "race_control"},
+            {"id": 4, "ts": 4.0, "target": "max", "level": "info", "text": "d",
+             "from": "Director", "ack": None}]      # director cue, not an RC note
+    got = cu.race_control_notes_for(cues, "max")
+    assert [c["id"] for c in got] == [1, 2]         # max + all, not ann, not director
+
+
+def t_race_control_notes_for_show_cap():
+    cues = [{"id": i, "ts": float(i), "target": "all", "level": "info", "text": str(i),
+             "from": "Race Control", "ack": None, "origin": "race_control"}
+            for i in range(1, 12)]
+    got = cu.race_control_notes_for(cues, "max")
+    assert len(got) == cu.RC_NOTE_SHOW
+    assert got[-1]["id"] == 11                      # most-recent window
+
+
+def t_cuestore_race_control_note_round_trip():
+    with tempfile.TemporaryDirectory() as d:
+        store = _relay.CueStore(os.path.join(d, "cues.json"))
+        r = store.add(target="max", level="info", text="team DC — rejoin next stint",
+                      from_name=cu.RACE_CONTROL_FROM, origin="race_control", now=100.0)
+        assert r["ok"] and r["cue"]["origin"] == "race_control"
+        assert r["cue"]["from"] == "Race Control"
+        # never a director toast, always an RC note:
+        assert cu.active_cues_for(store.list(), "max", 100.0) == []
+        assert [c["id"] for c in cu.race_control_notes_for(store.list(), "max")] == [1]
+
+
+def t_parse_rc_note_presets_by_header():
+    csv_text = ("Stints,Streamers,RC Note\n"
+                "Stint 1,JeGr,Jump to leader\n"
+                "Stint 2,Ann,Team DC — rejoin next stint\n"
+                ",,Jump to leader\n")          # duplicate dropped, blanks skipped
+    assert _relay.parse_rc_note_presets(csv_text) == ["Jump to leader",
+                                                       "Team DC — rejoin next stint"]
+
+
+def t_parse_rc_note_presets_absent_column():
+    assert _relay.parse_rc_note_presets("Stints,Streamers\nStint 1,JeGr\n") == []
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

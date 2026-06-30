@@ -297,11 +297,34 @@ def t_resolve_graphic_rejects_traversal_and_non_png():
         assert m.resolve_graphic(None, "Standings.png") is None
 
 
+class _FakeCrew:
+    """Minimal CrewSource stand-in for role resolution in the HTTP harness:
+    get() yields the 3-tuple view resolve_roles unpacks; the *_keys() helpers
+    drive commentator / race_control membership."""
+    def __init__(self, rows=(), commentator_keys=(), race_control_keys=()):
+        self._rows = list(rows)
+        self._ck = frozenset(commentator_keys)
+        self._rck = frozenset(race_control_keys)
+
+    def get(self):
+        return list(self._rows)
+
+    def commentator_keys(self):
+        return self._ck
+
+    def race_control_keys(self):
+        return self._rck
+
+    def discord_map(self):
+        return {}
+
+
 def _cockpit_client(secret="sek", rows=None, live_idx=0,
                     versions_path=None, chat_store=None, timer_store=None,
                     page_path=None, graphics_dir=None, app_version="v9.9.9-test",
                     console_page_path=None, discord_client_id=None,
-                    discord_client_secret=None, preview_manager=None):
+                    discord_client_secret=None, preview_manager=None,
+                    cue_store=None, crew_source=None):
     """Stand up make_handler over a real ThreadingHTTPServer on an ephemeral port.
     Returns (server, get, post); caller must srv.shutdown() in a finally block."""
     import threading as _t
@@ -342,7 +365,8 @@ def _cockpit_client(secret="sek", rows=None, live_idx=0,
                              console_page_path=console_page_path,
                              discord_client_id=discord_client_id,
                              discord_client_secret=discord_client_secret,
-                             preview_manager=preview_manager)
+                             preview_manager=preview_manager,
+                             cue_store=cue_store, crew_source=crew_source)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     _t.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -407,6 +431,51 @@ def t_data_authed_tally():
         assert "schedule_len" not in body.decode()
     finally:
         srv.shutdown()
+
+
+def t_rc_note_send_and_cockpit_read_round_trip():
+    # RC -> commentator notes (#376): a race_control subject sends a note to the
+    # on-air commentator over /console; the commentator reads it from the rolling
+    # cockpit RC card, and it does NOT leak into the director-cue stream.
+    with tempfile.TemporaryDirectory() as d:
+        store = m.CueStore(os.path.join(d, "cues.json"))
+        crew = _FakeCrew(race_control_keys={"rcdesk"})
+        srv, get, post = _cockpit_client(cue_store=store, crew_source=crew)
+        try:
+            rc_tok = ca.mint_token("sek", "rcdesk")
+            code, _h, body = post("/console/race-control/cues?t=" + rc_tok,
+                                  {"target": "on-air", "text": "team 5 DC — rejoin next stint"})
+            assert code == 200, (code, body)
+            r = json.loads(body)
+            assert r["ok"] and r["cue"]["origin"] == "race_control"
+            assert r["cue"]["from"] == "Race Control"
+            # The on-air commentator (Alpha Racing, schedule -> commentator) reads it.
+            ct = ca.mint_token("sek", "alpha-racing")
+            code, _h, body = get("/cockpit/rc-notes?t=" + ct)
+            assert code == 200, code
+            notes = json.loads(body)["notes"]
+            assert [n["text"] for n in notes] == ["team 5 DC — rejoin next stint"]
+            # ...and it never appears as a director cue.
+            code, _h, body = get("/cockpit/cues?t=" + ct)
+            assert json.loads(body)["cues"] == []
+        finally:
+            srv.shutdown()
+
+
+def t_rc_note_send_forbidden_for_commentator():
+    # A bare commentator may not drive the RC -> commentator channel.
+    with tempfile.TemporaryDirectory() as d:
+        store = m.CueStore(os.path.join(d, "cues.json"))
+        crew = _FakeCrew()           # alpha-racing has no race_control flag
+        srv, _get, post = _cockpit_client(cue_store=store, crew_source=crew)
+        try:
+            tok = ca.mint_token("sek", "alpha-racing")
+            code, _h, _b = post("/console/race-control/cues?t=" + tok,
+                                {"target": "all", "text": "nope"})
+            assert code == 403, code
+            assert store.list() == []
+        finally:
+            srv.shutdown()
 
 
 def t_page_sets_cookie_and_serves_html():

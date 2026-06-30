@@ -1037,11 +1037,28 @@ CUE_PRESET_HEADERS = ("cue preset", "cue presets", "cue")
 
 def parse_cue_presets(text):
     """Configuration tab CSV -> [preset strings] for the panel's cue buttons."""
+    return _parse_preset_column(text, CUE_PRESET_HEADERS)
+
+
+# Configuration-tab column of Race Control quick-note presets (#376), located by
+# header like the cue presets; same admin-managed, read-only vocabulary model.
+RC_NOTE_PRESET_HEADERS = ("rc note", "rc notes", "race control note",
+                          "race control notes")
+
+
+def parse_rc_note_presets(text):
+    """Configuration tab CSV -> [preset strings] for the Race Control desk's
+    quick-note buttons (#376). Same shape as parse_cue_presets."""
+    return _parse_preset_column(text, RC_NOTE_PRESET_HEADERS)
+
+
+def _parse_preset_column(text, headers):
+    """Shared: first matching header column -> de-duped, non-blank values in order."""
     rows = list(csv.reader(io.StringIO(text)))
     if not rows:
         return []
     header = [(h or "").strip().lower() for h in rows[0]]
-    i = next((header.index(h) for h in CUE_PRESET_HEADERS if h in header), None)
+    i = next((header.index(h) for h in headers if h in header), None)
     if i is None:
         return []
     out, seen = [], set()
@@ -2082,13 +2099,15 @@ class CueStore:
             pass  # best-effort: load_cues() below tolerates a missing/unwritable dir
         self.cues = cue_admin.prune(cue_admin.load_cues(self.path), time.time())
 
-    def add(self, target, level, text, from_name=cue_admin.DEFAULT_FROM, now=None):
+    def add(self, target, level, text, from_name=cue_admin.DEFAULT_FROM, now=None,
+            origin=cue_admin.ORIGIN_DIRECTOR):
         now = time.time() if now is None else now
         with self.lock:
             nid = max([0] + [c["id"] for c in self.cues]) + 1
             entry = cue_admin.sanitize_cue({"id": nid, "ts": now, "target": target,
                                             "level": level, "text": text,
-                                            "from": from_name, "ack": None})
+                                            "from": from_name, "ack": None,
+                                            "origin": origin})
             if entry is None:
                 return {"error": "cue needs target, level (info|critical) and text"}
             self.cues.append(entry)
@@ -3472,6 +3491,7 @@ class HudSource:
         self._data = None
         self._vocab = {k: [] for k in VOCAB_COLUMNS}
         self._cue_presets = []
+        self._rc_note_presets = []
         self._roster = {}
         self._roster_full = {}   # stripped team name -> verbatim Configuration label
         self.overrides = {}   # hud-data key -> (value, expires_ts)
@@ -3501,6 +3521,7 @@ class HudSource:
             roster_full = parse_team_full_labels(config_text)
             vocab = parse_config_vocab(config_text)
             cue_presets = parse_cue_presets(config_text)
+            rc_note_presets = parse_rc_note_presets(config_text)
             data = build_hud_data(overlay, roster)
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e}"
@@ -3509,6 +3530,7 @@ class HudSource:
             self._data = data
             self._vocab = vocab
             self._cue_presets = cue_presets
+            self._rc_note_presets = rc_note_presets
             self._roster = roster
             self._roster_full = roster_full
             # a sheet poll that already shows the pushed value = confirmation
@@ -3569,6 +3591,10 @@ class HudSource:
     def cue_presets(self):
         with self.lock:
             return list(self._cue_presets)
+
+    def rc_note_presets(self):
+        with self.lock:
+            return list(self._rc_note_presets)
 
     def roster_names(self):
         """Team names from the Configuration roster, in sheet order (panel vocab)."""
@@ -5506,6 +5532,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         "event_title": event_store.get() if event_store else "",
                         "mode": relay.mode,
                         "on_air": live_schedule_row(rows, live_idx)})
+                # RC -> commentator quick-note presets (#376), admin-managed.
+                if sub == ["race-control", "presets"] and method == "GET":
+                    return self._send({"presets": hud_source.rc_note_presets()
+                                       if hud_source else []})
+                # RC -> commentator note send (#376). Fall through to do_POST,
+                # which reads the request body before dispatch (authorized here).
+                if sub == ["race-control", "cues"] and method == "POST":
+                    return ["race-control", "cues"]
                 return self._send({"error": "not found"}, 404)
             # Health-monitor dashboard (#health): a read-only page + ONE data
             # endpoint, any authenticated subject. Redacted by construction
@@ -5965,6 +5999,16 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             return self._send({"error": "cues disabled"}, 404)
                         return self._send({"cues": cue_admin.active_cues_for(
                             cue_store.list(), me, time.time())})
+                    if p == ["cockpit", "rc-notes"]:
+                        # RC -> commentator notes (#376): identity-scoped rolling
+                        # window for the cockpit's "Race Control" card.
+                        me = self._console_auth()
+                        if me is None:
+                            return None
+                        if not cue_store:
+                            return self._send({"error": "cues disabled"}, 404)
+                        return self._send({"notes": cue_admin.race_control_notes_for(
+                            cue_store.list(), me)})
                     if p == ["cockpit", "versions"]:
                         # Producer-to-producer takeover pull. This path SITS UNDER
                         # /cockpit, so it IS reachable via Funnel — it must therefore
@@ -6181,6 +6225,26 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send(cue_store.add(
                         target=target, level=(body.get("level") or "").strip(),
                         text=body.get("text")))
+                if p == ["race-control", "cues"]:
+                    # RC -> commentator note (#376). Authorized in _console_gate
+                    # (race_control capability); reachable only under /console.
+                    # Stored as an info-level cue with origin="race_control" so it
+                    # renders in the cockpit's rolling RC card, never as a director
+                    # toast. Target resolves like a director cue (on-air/all/name).
+                    if not cue_store:
+                        return self._send({"error": "cues disabled"}, 404)
+                    rows = relay.source.get_rows()
+                    live_idx = relay.feeds[relay.live_feed()].idx
+                    cur = live_schedule_row(rows, live_idx)
+                    on_air_key = asset_key(cur["streamer"]) if cur else None
+                    target = cue_admin.resolve_target(body.get("target"),
+                                                      on_air_key, asset_key)
+                    if not target:
+                        return self._send({"error": "unknown target (nobody on air?)"}, 400)
+                    return self._send(cue_store.add(
+                        target=target, level="info", text=body.get("text"),
+                        from_name=cue_admin.RACE_CONTROL_FROM,
+                        origin=cue_admin.ORIGIN_RACE_CONTROL))
                 if p[:1] == ["submissions"]:
                     # Director approve/reject (issue #193). Tailnet-only (not
                     # funnelled). Reject needs no webhook; approve writes the

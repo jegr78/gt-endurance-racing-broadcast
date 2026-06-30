@@ -95,10 +95,12 @@ def min_capability(segments, method="GET"):
     if p and p[0] == "cues":                    # /cues/send|data|presets|reload
         return Requirement(DIRECTOR, False)
 
-    # --- race control: read-only monitoring desk (#244) ---
-    # Page + its redacted-schedule data endpoint. The desk reuses the ANY cockpit
-    # monitors (program/timer/chat) below; only these two are race_control-gated.
-    if p == ["race-control"] or p == ["race-control", "data"]:
+    # --- race control: read-only monitoring desk (#244) + RC->commentator notes (#376) ---
+    # Page + its redacted-schedule data endpoint, plus the #376 quick-note send
+    # (POST cues) and its presets. The desk reuses the ANY cockpit monitors
+    # (program/timer/chat) below; only these are race_control-gated.
+    if p == ["race-control"] or (len(p) == 2 and p[0] == "race-control"
+                                 and p[1] in ("data", "cues", "presets")):
         return Requirement(RACE_CONTROL, False)
 
     # --- health monitor: read-only dashboard, any authenticated subject (#health) ---
@@ -132,7 +134,8 @@ def min_capability(segments, method="GET"):
     if p in (["cockpit"], ["cockpit", "data"], ["cockpit", "program"],
              ["cockpit", "timer"], ["cockpit", "chat", "data"],
              ["cockpit", "chat", "send"],
-             ["cockpit", "cues"], ["cockpit", "cues", "ack"]):
+             ["cockpit", "cues"], ["cockpit", "cues", "ack"],
+             ["cockpit", "rc-notes"]):     # RC->commentator notes read (#376)
         return Requirement(ANY, False)
 
     # Cockpit graphics browser: read-only list + file serve, any authenticated

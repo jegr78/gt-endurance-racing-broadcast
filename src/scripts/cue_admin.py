@@ -16,6 +16,18 @@ INFO_CUE_TTL_S = 30     # info-cue auto-expiry window (seconds)
 LEVELS = ("info", "critical")
 DEFAULT_FROM = "Director"
 
+# Race Control -> commentator notes (#376). They ride the same store but carry
+# origin="race_control": they never render as a director toast/banner, never
+# expire by the info TTL (reference context the commentator looks back at), and
+# are kept as a rolling window instead. A director cue has NO origin key, so the
+# on-disk shape is unchanged. ORIGIN_DIRECTOR is the implicit default (omitted).
+ORIGIN_DIRECTOR = "director"
+ORIGIN_RACE_CONTROL = "race_control"
+ORIGINS = (ORIGIN_DIRECTOR, ORIGIN_RACE_CONTROL)
+RACE_CONTROL_FROM = "Race Control"      # sender label stamped on an RC note
+RC_NOTE_KEEP = 30       # RC notes retained on disk (across all targets) by prune
+RC_NOTE_SHOW = 5        # RC notes shown per commentator in the cockpit card
+
 
 def _clean_text(value):
     """Strip control characters, fold every line/paragraph separator to one
@@ -59,9 +71,14 @@ def sanitize_cue(raw):
         ack = None
     else:
         ack = {"ts": float(ack["ts"])}
-    return {"id": int(raw["id"]), "ts": float(raw["ts"]),
-            "target": target[:MAX_NAME], "level": raw["level"],
-            "text": text[:MAX_CUE_TEXT], "from": frm[:MAX_NAME], "ack": ack}
+    out = {"id": int(raw["id"]), "ts": float(raw["ts"]),
+           "target": target[:MAX_NAME], "level": raw["level"],
+           "text": text[:MAX_CUE_TEXT], "from": frm[:MAX_NAME], "ack": ack}
+    # An RC note carries origin="race_control"; a director cue omits the key so
+    # the legacy 7-key shape (and every existing cues.json) is unchanged.
+    if raw.get("origin") == ORIGIN_RACE_CONTROL:
+        out["origin"] = ORIGIN_RACE_CONTROL
+    return out
 
 
 def resolve_target(raw_target, on_air_key, normalize):
@@ -82,6 +99,8 @@ def active_cues_for(cues, streamer_key, now, info_ttl=INFO_CUE_TTL_S):
     unacked."""
     out = []
     for c in cues:
+        if c.get("origin") == ORIGIN_RACE_CONTROL:
+            continue                     # RC notes never render as a director cue
         if c.get("target") not in (streamer_key, "all"):
             continue
         if c.get("level") == "critical":
@@ -92,12 +111,30 @@ def active_cues_for(cues, streamer_key, now, info_ttl=INFO_CUE_TTL_S):
     return out
 
 
+def race_control_notes_for(cues, streamer_key, limit=RC_NOTE_SHOW):
+    """The Race Control notes a given commentator should see: origin
+    'race_control', target their key or 'all'. Reference context (no TTL) — the
+    most-recent *limit*, in id order. Backs the cockpit's rolling RC card."""
+    out = [c for c in cues
+           if c.get("origin") == ORIGIN_RACE_CONTROL
+           and c.get("target") in (streamer_key, "all")]
+    return out[-limit:]
+
+
 def prune(cues, now, info_ttl=INFO_CUE_TTL_S):
     """Drop expired info + acked critical cues; bound to MAX_CUES. Applied on
-    load and on a takeover pull (a restart/handover carries no stale cues)."""
+    load and on a takeover pull (a restart/handover carries no stale cues).
+    Race Control notes (origin='race_control') are reference context, so they
+    survive the TTL — kept as a rolling window of the most-recent RC_NOTE_KEEP
+    (across all targets), in original order."""
+    rc_ids = [c["id"] for c in cues if c.get("origin") == ORIGIN_RACE_CONTROL]
+    keep_rc = set(rc_ids[-RC_NOTE_KEEP:])
     keep = []
     for c in cues:
-        if c.get("level") == "critical":
+        if c.get("origin") == ORIGIN_RACE_CONTROL:
+            if c["id"] in keep_rc:
+                keep.append(c)
+        elif c.get("level") == "critical":
             if c.get("ack") is None:
                 keep.append(c)
         elif now < c.get("ts", 0) + info_ttl:

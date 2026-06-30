@@ -192,6 +192,25 @@ def t_decide_race_control_allowed_commentator_forbidden():
     assert cp.decide({cp.DIRECTOR, cp.RACE_CONTROL}, ["race-control"]) == cp.ALLOW
 
 
+def t_race_control_cues_and_presets_require_race_control():
+    # RC -> commentator notes (#376): the send + preset endpoints sit under the
+    # race-control desk, gated on the race_control capability (no step-up).
+    for seg in (["race-control", "cues"], ["race-control", "presets"]):
+        assert cp.min_capability(seg) == cp.Requirement(cp.RACE_CONTROL, False), seg
+        assert cp.decide({cp.RACE_CONTROL}, seg, "POST", False) == cp.ALLOW, seg
+        assert cp.decide({cp.COMMENTATOR}, seg, "POST", False) == cp.FORBIDDEN, seg
+        assert cp.decide({cp.DIRECTOR}, seg, "GET", False) == cp.FORBIDDEN, seg
+
+
+def t_policy_cockpit_rc_notes_any_auth():
+    # A commentator reads their RC notes via the identity-scoped cockpit endpoint;
+    # any authenticated subject may reach it (the read is target-scoped server-side).
+    seg = ["cockpit", "rc-notes"]
+    assert cp.min_capability(seg) == cp.Requirement(cp.ANY, False)
+    assert cp.decide({cp.COMMENTATOR}, seg, "GET", False) == cp.ALLOW
+    assert cp.decide(set(), seg, "GET", False) == cp.ALLOW
+
+
 def t_policy_cues_director_only():
     # Director may send/read cues; a bare commentator may not.
     for seg in (["cues", "send"], ["cues", "data"], ["cues", "presets"], ["cues", "reload"]):
