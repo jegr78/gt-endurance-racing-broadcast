@@ -38,6 +38,7 @@ RELAY_PORTS = (53001, 53002, 53003)
 CLOSE_DRAIN_TIMEOUT_S = 1.0   # max seconds to wait for OBS's close echo before closing the socket
 
 STINT_SCENE = "Stint"                       # single-cam scene holding both feeds
+INTERMISSION_SCENE = "Intermission"          # the safe holding scene (#371); auto-failover target (#378)
 POV_SOURCE = "Feed POV"                      # the Stint-scene driver-POV PiP scene item
 FEED_SOURCES = {"A": "Feed A", "B": "Feed B"}   # scene-item name == audio input name
 
@@ -616,6 +617,27 @@ def get_program_screenshot(width=640, fmt="jpg", quality=60,
         if data is None:
             return None, "OBS returned no image data"
         return data, ""
+    except Exception as exc:                          # noqa: BLE001 — best-effort contract
+        return None, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
+def get_current_program_scene(host="127.0.0.1", port=None,
+                              password=None, timeout=2.0):
+    """The name of the current OBS program scene (what viewers see), or None.
+    Returns (scene_name, "") or (None, note). Best effort — never raises (same
+    contract as get_program_screenshot). Used by the auto-failover guard (#378)
+    to fire ONLY while OBS is still on the on-air feed scene."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return None, note
+    try:
+        cur = session.request("GetCurrentProgramScene", {})
+        scene = cur.get("currentProgramSceneName") or cur.get("sceneName")
+        if not scene:
+            return None, "OBS returned no program scene"
+        return scene, ""
     except Exception as exc:                          # noqa: BLE001 — best-effort contract
         return None, str(exc) or exc.__class__.__name__
     finally:

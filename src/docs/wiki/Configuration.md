@@ -121,6 +121,12 @@ RACECAST_PROFILE=
   (`racecast ui`); set only when another app already occupies the default `8089`.
 - **`RACECAST_PROFILE`** *(optional)* — the default active league when neither `--profile`
   nor the `runtime/active-profile` pointer applies. Leave unset if you keep one profile.
+- **`RACECAST_AUTO_FAILOVER`** *(optional, default off)* — when set to `1`, the relay
+  automatically switches OBS to the **Intermission** scene if the **on-air** feed stays
+  down past the red grace window, so viewers see a clean holding card instead of a frozen
+  or black frame. It fires **once** and pings Discord (`@here`); the **return is manual** —
+  the producer/director re-takes the feed when it recovers. It only fires while OBS is still
+  on the on-air feed scene (it never yanks a program you already cut to Intermission/Intro).
 - **`RACECAST_UI_PASSWORD`** *(reserved)* — for the future Control-Center-over-Tailscale
   feature; not read by any current version, leave commented out.
 

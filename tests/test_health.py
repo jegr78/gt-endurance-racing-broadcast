@@ -685,6 +685,206 @@ def t_send_health_webhook_sets_user_agent():
         assert ua and "racecast" in ua.lower(), ua
 
 
+# --------------------------------------------------------------------------
+# Auto-failover to the Intermission scene on confirmed on-air feed loss (#378)
+# --------------------------------------------------------------------------
+def t_auto_failover_disabled_by_default():
+    # Opt-in: absent / empty / falsey -> OFF; only an explicit truthy token arms it.
+    assert m.auto_failover_enabled({}) is False
+    assert m.auto_failover_enabled({"RACECAST_AUTO_FAILOVER": ""}) is False
+    for off in ("0", "false", "no", "off", "  Off "):
+        assert m.auto_failover_enabled({"RACECAST_AUTO_FAILOVER": off}) is False, off
+    for on in ("1", "true", "YES", "on", " On "):
+        assert m.auto_failover_enabled({"RACECAST_AUTO_FAILOVER": on}) is True, on
+
+
+def t_should_failover_fires_on_confirmed_on_air_loss():
+    # armed + on-air feed confirmed down + OBS still on the on-air scene + not yet
+    # failed over -> flip.
+    assert m.should_failover(True, True, "Stint",
+                             on_air_scene="Stint", already_failed_over=False) is True
+
+
+def t_should_failover_quiet_when_disabled():
+    assert m.should_failover(False, True, "Stint",
+                             on_air_scene="Stint", already_failed_over=False) is False
+
+
+def t_should_failover_quiet_when_on_air_not_down():
+    assert m.should_failover(True, False, "Stint",
+                             on_air_scene="Stint", already_failed_over=False) is False
+
+
+def t_should_failover_quiet_when_obs_not_on_air_scene():
+    # Don't yank the program if the producer already moved OBS off the feed scene
+    # (Intermission/Intro/replay/…). This is also why a second tick won't re-fire.
+    assert m.should_failover(True, True, "Intermission",
+                             on_air_scene="Stint", already_failed_over=False) is False
+    assert m.should_failover(True, True, None,
+                             on_air_scene="Stint", already_failed_over=False) is False
+
+
+def t_should_failover_quiet_when_already_failed_over():
+    # Fire ONCE: the latch blocks a re-fire until a manual return re-arms it.
+    assert m.should_failover(True, True, "Stint",
+                             on_air_scene="Stint", already_failed_over=True) is False
+
+
+def t_discord_failover_payload_has_here_ping_and_names_scene():
+    p = m.discord_failover_payload("A", "Intermission",
+                                   event_title="6h Spa", producer="Bob")
+    assert p["content"] == "@here"
+    assert p["allowed_mentions"] == {"parse": ["everyone"]}
+    embed = p["embeds"][0]
+    assert "Intermission" in embed["description"]
+    assert "Feed A" in embed["description"]
+    assert embed["footer"]["text"] == "6h Spa · Bob"
+
+
+class _FailoverObs:
+    """obs_ws stand-in for the auto-failover path: records the program scene and
+    the scene switches. `scene` is the current program scene; set_current_program_scene
+    mutates it (so the next read reflects the flip)."""
+    STINT_SCENE = "Stint"
+    INTERMISSION_SCENE = "Intermission"
+
+    def __init__(self, scene="Stint", reachable=True):
+        self.scene = scene
+        self.reachable = reachable
+        self.switches = []
+
+    def get_current_program_scene(self, *a, **k):
+        if not self.reachable:
+            return None, "OBS not running?"
+        return self.scene, ""
+
+    def set_current_program_scene(self, scene, *a, **k):
+        if not self.reachable:
+            return False, "OBS not running?"
+        self.switches.append(scene)
+        self.scene = scene
+        return True, ""
+
+
+def _arm_on_air_down(r):
+    """Put feed A (on air) into the confirmed-down ('down') health state."""
+    r.A._set_phase("serving")
+    r.A.served_ok = True
+    r.A.dropped = True
+    r.A.dropped_since = time.time() - (m.HEALTH_DROP_GRACE_S + 5)
+    r.A.paused = False
+
+
+def t_auto_failover_flips_to_intermission_once_and_notifies():
+    orig = m._obs_ws
+    posts = []
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["a", "b"])      # A on air (idx0)
+            r.auto_failover = True
+            r._discord_post = lambda payload, what: posts.append((what, payload))
+            fake = _FailoverObs(scene="Stint")
+            m._obs_ws = fake
+            _arm_on_air_down(r)
+            r._maybe_auto_failover(time.time())
+            assert fake.switches == ["Intermission"]
+            assert r._failed_over is True
+            assert posts and posts[0][1]["content"] == "@here"
+            # A second tick must NOT re-fire (latched; and OBS is now on Intermission)
+            r._maybe_auto_failover(time.time())
+            assert fake.switches == ["Intermission"]
+            assert len(posts) == 1
+    finally:
+        m._obs_ws = orig
+
+
+def t_auto_failover_does_not_fire_when_disabled():
+    orig = m._obs_ws
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["a", "b"])
+            r.auto_failover = False
+            fake = _FailoverObs(scene="Stint")
+            m._obs_ws = fake
+            _arm_on_air_down(r)
+            r._maybe_auto_failover(time.time())
+            assert fake.switches == []
+            assert r._failed_over is False
+    finally:
+        m._obs_ws = orig
+
+
+def t_auto_failover_quiet_when_obs_already_off_feed_scene():
+    orig = m._obs_ws
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["a", "b"])
+            r.auto_failover = True
+            fake = _FailoverObs(scene="Intermission")   # producer already moved off
+            m._obs_ws = fake
+            _arm_on_air_down(r)
+            r._maybe_auto_failover(time.time())
+            assert fake.switches == []
+            assert r._failed_over is False
+    finally:
+        m._obs_ws = orig
+
+
+def t_auto_failover_re_arms_after_manual_return():
+    orig = m._obs_ws
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["a", "b"])
+            r.auto_failover = True
+            r._discord_post = lambda *a, **k: None
+            fake = _FailoverObs(scene="Stint")
+            m._obs_ws = fake
+            _arm_on_air_down(r)
+            r._maybe_auto_failover(time.time())
+            assert fake.switches == ["Intermission"] and r._failed_over is True
+            # Producer manually returns to the feed scene; feed has recovered.
+            fake.scene = "Stint"
+            r.A.dropped = False
+            r._maybe_auto_failover(time.time())
+            assert r._failed_over is False            # re-armed
+            # Feed dies again -> a fresh failover is allowed.
+            _arm_on_air_down(r)
+            r._maybe_auto_failover(time.time())
+            assert fake.switches == ["Intermission", "Intermission"]
+    finally:
+        m._obs_ws = orig
+
+
+def t_auto_failover_obs_unreachable_is_quiet_no_crash():
+    orig = m._obs_ws
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["a", "b"])
+            r.auto_failover = True
+            fake = _FailoverObs(scene="Stint", reachable=False)
+            m._obs_ws = fake
+            _arm_on_air_down(r)
+            r._maybe_auto_failover(time.time())        # must not raise
+            assert fake.switches == []
+            assert r._failed_over is False
+    finally:
+        m._obs_ws = orig
+
+
+def t_auto_failover_noop_without_obs_module():
+    orig = m._obs_ws
+    m._obs_ws = None
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = _mk_relay(td, ["a", "b"])
+            r.auto_failover = True
+            _arm_on_air_down(r)
+            r._maybe_auto_failover(time.time())        # must not raise
+            assert r._failed_over is False
+    finally:
+        m._obs_ws = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
