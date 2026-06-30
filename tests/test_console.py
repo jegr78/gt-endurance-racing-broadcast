@@ -263,6 +263,14 @@ def t_takeover_health_is_producer_step_up():
     assert cp.decide({cp.PRODUCER}, ["takeover", "health"], has_step_up=True) == cp.ALLOW
 
 
+def t_event_notes_any_authenticated():
+    # Any authenticated subject (even role-less) may read the notes...
+    assert cp.decide(set(), ["event-notes", "data"], "GET") == cp.ALLOW
+    assert cp.decide({"commentator"}, ["event-notes", "data"], "GET") == cp.ALLOW
+    # ...and it is NOT a recognized POST/write route.
+    assert cp.decide({"director"}, ["event-notes", "send"], "GET") == cp.NOT_FOUND
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

@@ -41,6 +41,7 @@ with **no leading blank rows**. Most tabs locate their columns **by header text*
 | [Producer](#producer-tab) | `Producer` | — | Control Center | Producer-handover schedule with one-click Funnel takeover |
 | [Assets](#assets-tab) | `Assets` | `--assets-tab` | `racecast graphics` / `media` | Links to the broadcast graphics + intro/outro clips |
 | [Brands](#brands-tab) | `Brands` | — | `racecast brands` | Per-league brand-logo overrides for the HUD (optional) |
+| [Event Notes](#event-notes-tab) | `Event Notes` | `--event-notes-tab` | relay | League-owner notes shown as a modal in the console pages (optional) |
 
 ---
 
@@ -360,6 +361,29 @@ Cupra   | https://drive.google.com/file/d/<ID>/view?usp=sharing
 ```
 
 `racecast brands` downloads each logo into `runtime/<profile>/brands/<key>.png`. The relay serves `/hud/assets/brands/<key>` from that directory first; if a key is not found there it falls back to the committed `src/assets/brands/` base set. Run `racecast brands` (or the Control Center **Profile** view → **Brands → Download**) before an event whenever logos change.
+
+---
+
+## Event Notes tab
+
+**Optional.** League-owner notes shown as a toggleable `📋 Notes` modal in the Director Panel, Commentator Cockpit, and Race Control desk. The tab is read-only / admin-owned — the league owner maintains it directly in the Sheet per event, and it is never written from the consoles. If the tab is absent or contains no notes, the modal button self-hides.
+
+Header row in row 1, three columns:
+
+| Column header | Required? | Meaning |
+|---|---|---|
+| `Heading` | optional | A bold label line shown above its note |
+| `Note` | required | The note text; rows with an empty Note are skipped |
+| `Priority` | optional | `Important` highlights the note with accent styling and a left border; empty / `Info` / anything else = normal styling |
+
+```
+Heading        | Note                                    | Priority
+Safety Brief   | Check brake temps before first stint   | Important
+Pit Strategy   | Box on even hours for driver swap      |
+Weather        | Rain expected after hour 2             | Info
+```
+
+The relay reads this tab via `--event-notes-tab` (default `Event Notes`). Disable the modal with `--no-event-notes`, or a custom `--sheet-csv-url` also disables it (same as the Channel and Crew tabs).
 
 ---
 

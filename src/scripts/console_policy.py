@@ -112,6 +112,13 @@ def min_capability(segments, method="GET"):
        (len(p) == 3 and p[:2] == ["health-monitor", "assets"]):
         return Requirement(ANY, False)
 
+    # --- event notes: read-only league-owner notes, any authenticated subject ---
+    # One shared list for Director/Commentator/Race Control. Read-only, no stream
+    # URLs -> same tier as the cockpit monitors. Mirrored from the root branch via
+    # the gate's generic ALLOW fall-through (return sub).
+    if p == ["event-notes", "data"]:
+        return Requirement(ANY, False)
+
     # --- commentator: own-row stream-link submission ---
     if p == ["submit"] or p == ["cockpit", "submit"]:
         return Requirement(COMMENTATOR, False)

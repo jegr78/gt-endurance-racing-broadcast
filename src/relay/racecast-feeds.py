@@ -86,6 +86,7 @@ except Exception:                                # noqa: BLE001 — reflection i
 
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
 import broadcast_chat  # read-only YouTube broadcast-chat reader (#294); pure parsers
+import event_notes   # noqa: E402  (pure Event Notes tab parser)
 import cue_admin   # director text-cue channel (#243)
 import flag_graphic   # flag-status graphics: value->source + persisted store (#flag-graphic)
 import health_store  # health-history SQLite store (task 7; src/scripts on sys.path)
@@ -1797,6 +1798,46 @@ class ChannelSource:
         if text is None:
             return False
         rows = broadcast_chat.parse_channel_tab(text)
+        with self.lock:
+            self.rows = rows
+            self.last_error = None
+        return True
+
+    def get(self):
+        with self.lock:
+            return list(self.rows)
+
+
+class EventNotesSource:
+    """Reads the Sheet `Event Notes` tab (CSV) -> [{heading, note, priority}].
+
+    Thin fetch+parse wrapper (parsing is the pure event_notes.parse_event_notes).
+    A missing/empty/unreachable tab is non-fatal -- it simply yields no notes, so
+    the console modal button self-hides."""
+
+    def __init__(self, csv_url, cache_path=None):
+        self.csv_url = csv_url
+        self.cache_path = cache_path
+        self.lock = threading.Lock()
+        self.rows = []
+        self.last_error = None
+
+    def _fetch_text(self, timeout=15):
+        if not self.csv_url:
+            return None
+        try:
+            req = Request(self.csv_url, headers={"User-Agent": "racecast-feeds/1.0"})
+            with urlopen(req, timeout=timeout) as resp:
+                return resp.read().decode("utf-8", "replace")
+        except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
+            return None
+
+    def refresh(self, timeout=15):
+        text = self._fetch_text(timeout)
+        if text is None:
+            return False
+        rows = event_notes.parse_event_notes(text)
         with self.lock:
             self.rows = rows
             self.last_error = None
@@ -5016,6 +5057,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  discord_client_id=None, discord_client_secret=None,
                  console_versions_path=None,
                  submission_store=None, event_store=None, crew_source=None,
+                 event_notes_source=None,
                  console_page_path=None, companion_url=None, logo_path=None,
                  buttons_page_path=None, race_control_page_path=None,
                  health_store=None, health_monitor_page_path=None, uplot_dir=None,
@@ -6161,6 +6203,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                          "commentator": bool(c), "race_control": bool(rc),
                          "discord": x or ""}
                         for (n, d, pr, c, rc, x) in rows]})
+                if p == ["event-notes", "data"]:
+                    # League-owner notes shown as a modal in the three console
+                    # pages. Read-only; one shared list for all roles. Mirrored
+                    # at /console/event-notes/data (ANY-auth) via the gate's
+                    # generic ALLOW fall-through. Disabled -> available:false ->
+                    # the front-end hides the button.
+                    notes = event_notes_source.get() if event_notes_source else []
+                    return self._send({"available": bool(notes), "notes": notes})
                 if p == ["qualifying", "data"]:
                     qs = relay.qual_source
                     if not qs:
@@ -6576,6 +6626,12 @@ def main():
                          "custom --sheet-csv-url or --no-broadcast-chat.")
     ap.add_argument("--no-broadcast-chat", action="store_true",
                     help="Disable the read-only YouTube broadcast-chat reader (#294).")
+    ap.add_argument("--event-notes-tab", default="Event Notes",
+                    help="Sheet tab name for the Event Notes modal "
+                         "(default 'Event Notes'). Disabled by a custom "
+                         "--sheet-csv-url or --no-event-notes.")
+    ap.add_argument("--no-event-notes", action="store_true",
+                    help="Disable the Event Notes reader/modal.")
     ap.add_argument("--qualifying", action="store_true",
                     help="Start in QUALIFYING mode: serve the qualifying tab on "
                          "Feed A instead of the race schedule (different-day "
@@ -6739,6 +6795,17 @@ def main():
         channel_cache = os.path.join(runtime, "channel.cache.txt")
         channel_source = ChannelSource(channel_csv_url, channel_cache)
         broadcast_chat_store = BroadcastChatStore()
+
+    # Event Notes (#owner-notes): a read-only league-owner notes tab shown as a
+    # modal in the three console pages. Derived from sheet-id/tab like the crew
+    # roster, so a custom --sheet-csv-url (or --no-event-notes) disables it.
+    event_notes_source = None
+    if not args.sheet_csv_url and not args.no_event_notes:
+        event_notes_csv_url = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
+                               f"/gviz/tq?tqx=out:csv&sheet={quote(args.event_notes_tab)}")
+        event_notes_cache = os.path.join(runtime, "event-notes.cache.txt")
+        event_notes_source = EventNotesSource(event_notes_csv_url, event_notes_cache)
+        event_notes_source.refresh()   # non-fatal: empty/unreachable = no notes
 
     # Optionally auto-export cookies from a logged-in browser first (yt-dlp)
     if args.cookies_from_browser:
@@ -6927,6 +6994,9 @@ def main():
     if crew_source:
         threading.Thread(target=poller, args=(crew_source, args.poll, stop_evt),
                          daemon=True).start()
+    if event_notes_source:
+        threading.Thread(target=poller, args=(event_notes_source, args.poll, stop_evt),
+                         daemon=True).start()
     if hud_source:
         threading.Thread(target=poller, args=(hud_source, args.hud_poll, stop_evt),
                          daemon=True).start()
@@ -6980,6 +7050,7 @@ def main():
                            uplot_dir=uplot_dir,
                            brands_dir=brands_dir,
                            crew_source=crew_source,
+                           event_notes_source=event_notes_source,
                            broadcast_chat_store=broadcast_chat_store,
                            broadcast_chat_supervisor=_bc_supervisor,
                            logo_path=args.logo,
