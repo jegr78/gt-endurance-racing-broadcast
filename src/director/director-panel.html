@@ -272,6 +272,14 @@
   #cueRecent li:first-child{border-top:0}
   #cueRecent li.cue-critical{color:#ffd361}
   #cueRecent li.cue-acked{color:var(--muted)}
+  /* commentator -> director cue-backs (#377) */
+  .cueback-cap{font-family:var(--head);font-size:11px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--muted);margin:12px 0 4px}
+  #cueBackList{list-style:none;margin:0;padding:0;font-size:12px;line-height:1.45}
+  #cueBackList li{padding:4px 0;border-top:1px dashed var(--edge);word-break:break-word;color:var(--ink)}
+  #cueBackList li:first-child{border-top:0}
+  #cueBackList li .who{color:#7fb2ff;font-weight:700}
+  #cueBackList li .ts{color:var(--muted);font-size:10px;margin-right:6px;font-variant-numeric:tabular-nums}
 
   /* ---------- two-pane layout: scrolling controls + persistent chat ------- */
   .panes{display:block}
@@ -563,7 +571,11 @@
         <button id="cueSend" type="button">SEND CUE</button>
       </div>
       <ul id="cueRecent"></ul>
-      <div class="hint" id="cueHint">Send a text cue to a commentator or all talent. Critical cues require acknowledgement in the cockpit.</div>
+      <div class="cueback" id="cueBackWrap" hidden>
+        <div class="cueback-cap">From commentators</div>
+        <ul id="cueBackList"></ul>
+      </div>
+      <div class="hint" id="cueHint">Send a text cue to a commentator or all commentators. Critical cues require acknowledgement in the cockpit. Commentator replies appear under “From commentators”.</div>
     </div>
   </section>
 
@@ -1932,11 +1944,39 @@ async function pollCueRecent(){
     const d = await r.json();
     const ul = document.getElementById("cueRecent");
     ul.replaceChildren();
-    (d.cues || []).slice(-12).reverse().forEach(c=>{
+    // Only the director's OWN sent cues here — inbound RC notes (#376) and
+    // commentator cue-backs (#377) carry an `origin` and have their own surfaces.
+    (d.cues || []).filter(c => !c.origin).slice(-12).reverse().forEach(c=>{
       const li = document.createElement("li");
       const seen = c.ack ? " ✓ seen" : (c.level === "critical" ? " …pending" : "");
       li.textContent = "[" + c.level + "] → " + c.target + ": " + c.text + seen;  // textContent: XSS-safe
       if (c.level === "critical") li.classList.add(c.ack ? "cue-acked" : "cue-critical");
+      ul.appendChild(li);
+    });
+  }catch(e){ /* transient; next poll retries */ }
+}
+
+// Commentator -> director cue-backs (#377): incoming commentator replies. Hidden
+// until at least one arrives; survives reload + takeover (server-side store).
+async function pollCueBacks(){
+  try{
+    const r = await fetch("/cues/back", {cache:"no-store"});
+    if(!r.ok) return;                       // disabled/forbidden — leave hidden
+    const d = await r.json();
+    const wrap = document.getElementById("cueBackWrap");
+    const ul = document.getElementById("cueBackList");
+    const backs = (d.cueBacks || []).slice(-12).reverse();
+    ul.replaceChildren();
+    if(!backs.length){ wrap.hidden = true; return; }
+    wrap.hidden = false;
+    backs.forEach(c=>{
+      const li = document.createElement("li");
+      const ts = document.createElement("span"); ts.className = "ts";
+      try{ ts.textContent = new Date(c.ts*1000).toLocaleTimeString(); }catch(e){ ts.textContent = ""; }
+      const who = document.createElement("span"); who.className = "who";
+      who.textContent = (c.from || "Talent") + ": ";          // XSS-safe
+      li.appendChild(ts); li.appendChild(who);
+      li.appendChild(document.createTextNode(c.text || ""));   // XSS-safe
       ul.appendChild(li);
     });
   }catch(e){ /* transient; next poll retries */ }
@@ -2048,6 +2088,7 @@ $("#obsStreamBtn").addEventListener("click", async ()=>{
 obsStatePoll(); setInterval(obsStatePoll, 2000);
 flagGfxPoll(); setInterval(flagGfxPoll, 2000);
 loadCuePresets(); loadCueTargets(); pollCueRecent(); setInterval(pollCueRecent, 2000);
+pollCueBacks(); setInterval(pollCueBacks, 2000);
 </script>
 </body>
 </html>

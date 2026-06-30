@@ -4955,6 +4955,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
     # the shared proxy IP. The director SEND has no limiter (director-gated /
     # tailnet-trusted, like /next).
     _cockpit_cue_ack_rl = console_auth.RateLimiter(limit=30, window_s=60)
+    # Cue-back (#377) is a funnelled commentator write; key on the authed identity
+    # (like chat) so one commentator can't exhaust the crew's quota.
+    _cockpit_cueback_rl = console_auth.RateLimiter(limit=12, window_s=60)
 
     class H(BaseHTTPRequestHandler):
         def _send(self, obj, code=200):
@@ -5930,6 +5933,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                            if hud_source else []})
                     if p == ["cues", "reload"]:
                         return self._send(cue_store.reload())
+                    if p == ["cues", "back"]:
+                        # Commentator -> director cue-backs (#377), director-gated
+                        # like the rest of /cues; shown on the Director Panel.
+                        return self._send({"cueBacks": cue_admin.cue_backs(cue_store.list())})
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if p[:1] == ["cockpit"]:
                     if not self._cockpit_active():
@@ -6205,6 +6212,23 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         except (TypeError, ValueError):
                             return self._send({"error": "id must be an integer"}, 400)
                         return self._send(cue_store.ack(cid, me))
+                    if p == ["cockpit", "cue-back"]:
+                        # Commentator -> director cue-back (#377). Identity-scoped
+                        # (the sender name is the token's streamer, never client-
+                        # declared, like chat); stored as origin="commentator" so it
+                        # surfaces only on the Director Panel, never in any cockpit.
+                        me = self._console_auth()
+                        if me is None:
+                            return None
+                        if not cue_store:
+                            return self._send({"error": "cues disabled"}, 404)
+                        if not _cockpit_cueback_rl.allow(me):
+                            return self._send({"error": "rate limited"}, 429)
+                        name = cockpit_display_name(relay.source.get_rows(), me)
+                        return self._send(cue_store.add(
+                            target=cue_admin.CUE_BACK_TARGET, level="info",
+                            text=body.get("text"), from_name=name,
+                            origin=cue_admin.ORIGIN_COMMENTATOR))
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["chat", "send"]:
                     if not chat_store:

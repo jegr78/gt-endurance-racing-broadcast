@@ -478,6 +478,35 @@ def t_rc_note_send_forbidden_for_commentator():
             srv.shutdown()
 
 
+def t_cue_back_round_trip_and_identity_forced():
+    # Commentator -> director cue-back (#377): the commentator posts; it surfaces
+    # on the Director Panel feed (/cues/back) tagged with the token's display name,
+    # and never leaks into the commentator's own cockpit cues/RC notes.
+    with tempfile.TemporaryDirectory() as d:
+        store = m.CueStore(os.path.join(d, "cues.json"))
+        srv, get, post = _cockpit_client(cue_store=store)
+        try:
+            tok = ca.mint_token("sek", "alpha-racing")
+            code, _h, body = post("/console/cockpit/cue-back?t=" + tok,
+                                  {"text": "ready in 2", "from": "spoofed"})
+            assert code == 200, (code, body)
+            r = json.loads(body)
+            assert r["ok"] and r["cue"]["origin"] == "commentator"
+            assert r["cue"]["from"] == "Alpha Racing"   # identity forced, not "spoofed"
+            # Director Panel read (root /cues/back is tailnet-trusted, no auth).
+            code, _h, body = get("/cues/back")
+            assert code == 200, code
+            backs = json.loads(body)["cueBacks"]
+            assert [(c["from"], c["text"]) for c in backs] == [("Alpha Racing", "ready in 2")]
+            # Not echoed back into the sender's own cockpit surfaces.
+            code, _h, body = get("/cockpit/cues?t=" + tok)
+            assert json.loads(body)["cues"] == []
+            code, _h, body = get("/cockpit/rc-notes?t=" + tok)
+            assert json.loads(body)["notes"] == []
+        finally:
+            srv.shutdown()
+
+
 def t_page_sets_cookie_and_serves_html():
     with tempfile.TemporaryDirectory() as d:
         page = os.path.join(d, "cockpit.html")

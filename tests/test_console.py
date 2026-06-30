@@ -202,6 +202,17 @@ def t_race_control_cues_and_presets_require_race_control():
         assert cp.decide({cp.DIRECTOR}, seg, "GET", False) == cp.FORBIDDEN, seg
 
 
+def t_cue_back_send_any_auth_read_director():
+    # Commentator -> director cue-back (#377): the commentator send is ANY-auth +
+    # identity-scoped; the director read sits under /cues, so it stays director-gated.
+    assert cp.min_capability(["cockpit", "cue-back"]) == cp.Requirement(cp.ANY, False)
+    assert cp.decide({cp.COMMENTATOR}, ["cockpit", "cue-back"], "POST", False) == cp.ALLOW
+    assert cp.decide(set(), ["cockpit", "cue-back"], "POST", False) == cp.ALLOW
+    assert cp.min_capability(["cues", "back"]) == cp.Requirement(cp.DIRECTOR, False)
+    assert cp.decide({cp.DIRECTOR}, ["cues", "back"], "GET", False) == cp.ALLOW
+    assert cp.decide({cp.COMMENTATOR}, ["cues", "back"], "GET", False) == cp.FORBIDDEN
+
+
 def t_policy_cockpit_rc_notes_any_auth():
     # A commentator reads their RC notes via the identity-scoped cockpit endpoint;
     # any authenticated subject may reach it (the read is target-scoped server-side).

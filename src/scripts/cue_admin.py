@@ -23,10 +23,18 @@ DEFAULT_FROM = "Director"
 # on-disk shape is unchanged. ORIGIN_DIRECTOR is the implicit default (omitted).
 ORIGIN_DIRECTOR = "director"
 ORIGIN_RACE_CONTROL = "race_control"
-ORIGINS = (ORIGIN_DIRECTOR, ORIGIN_RACE_CONTROL)
+# Commentator -> director cue-back (#377): the reverse direction. Same store, but
+# shown ONLY on the Director Panel (never in any cockpit), 'from' is the sender's
+# commentator name (identity-forced server-side, like chat).
+ORIGIN_COMMENTATOR = "commentator"
+ORIGINS = (ORIGIN_DIRECTOR, ORIGIN_RACE_CONTROL, ORIGIN_COMMENTATOR)
+# Origins that carry the key (everything except the implicit director default).
+NOTE_ORIGINS = (ORIGIN_RACE_CONTROL, ORIGIN_COMMENTATOR)
 RACE_CONTROL_FROM = "Race Control"      # sender label stamped on an RC note
-RC_NOTE_KEEP = 30       # RC notes retained on disk (across all targets) by prune
+CUE_BACK_TARGET = "director"            # sentinel target for a cue-back (all directors)
+RC_NOTE_KEEP = 30       # per-origin note retention on disk (rolling window) by prune
 RC_NOTE_SHOW = 5        # RC notes shown per commentator in the cockpit card
+CUE_BACK_SHOW = 20      # cue-backs shown on the Director Panel
 
 
 def _clean_text(value):
@@ -74,10 +82,11 @@ def sanitize_cue(raw):
     out = {"id": int(raw["id"]), "ts": float(raw["ts"]),
            "target": target[:MAX_NAME], "level": raw["level"],
            "text": text[:MAX_CUE_TEXT], "from": frm[:MAX_NAME], "ack": ack}
-    # An RC note carries origin="race_control"; a director cue omits the key so
-    # the legacy 7-key shape (and every existing cues.json) is unchanged.
-    if raw.get("origin") == ORIGIN_RACE_CONTROL:
-        out["origin"] = ORIGIN_RACE_CONTROL
+    # A note-style cue (RC note / cue-back) carries its origin; a director cue
+    # omits the key so the legacy 7-key shape (and every existing cues.json) is
+    # unchanged.
+    if raw.get("origin") in NOTE_ORIGINS:
+        out["origin"] = raw["origin"]
     return out
 
 
@@ -99,8 +108,8 @@ def active_cues_for(cues, streamer_key, now, info_ttl=INFO_CUE_TTL_S):
     unacked."""
     out = []
     for c in cues:
-        if c.get("origin") == ORIGIN_RACE_CONTROL:
-            continue                     # RC notes never render as a director cue
+        if c.get("origin"):
+            continue                     # only plain director cues render here
         if c.get("target") not in (streamer_key, "all"):
             continue
         if c.get("level") == "critical":
@@ -121,18 +130,32 @@ def race_control_notes_for(cues, streamer_key, limit=RC_NOTE_SHOW):
     return out[-limit:]
 
 
+def cue_backs(cues, limit=CUE_BACK_SHOW):
+    """The commentator->director cue-backs for the Director Panel: origin
+    'commentator', most-recent *limit*, in id order. Each carries 'from' (the
+    sender's name) and 'ts'. Reference context (no TTL)."""
+    out = [c for c in cues if c.get("origin") == ORIGIN_COMMENTATOR]
+    return out[-limit:]
+
+
 def prune(cues, now, info_ttl=INFO_CUE_TTL_S):
     """Drop expired info + acked critical cues; bound to MAX_CUES. Applied on
     load and on a takeover pull (a restart/handover carries no stale cues).
-    Race Control notes (origin='race_control') are reference context, so they
-    survive the TTL — kept as a rolling window of the most-recent RC_NOTE_KEEP
-    (across all targets), in original order."""
-    rc_ids = [c["id"] for c in cues if c.get("origin") == ORIGIN_RACE_CONTROL]
-    keep_rc = set(rc_ids[-RC_NOTE_KEEP:])
+    Note-style cues (RC notes, cue-backs) are reference context, so they survive
+    the TTL — each origin kept as its OWN rolling window of the most-recent
+    RC_NOTE_KEEP, in original order (a flood of one origin never evicts another)."""
+    per_origin = {}
+    for c in cues:
+        o = c.get("origin")
+        if o:
+            per_origin.setdefault(o, []).append(c["id"])
+    keep_ids = set()
+    for ids in per_origin.values():
+        keep_ids.update(ids[-RC_NOTE_KEEP:])
     keep = []
     for c in cues:
-        if c.get("origin") == ORIGIN_RACE_CONTROL:
-            if c["id"] in keep_rc:
+        if c.get("origin"):
+            if c["id"] in keep_ids:
                 keep.append(c)
         elif c.get("level") == "critical":
             if c.get("ack") is None:
