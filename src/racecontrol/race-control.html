@@ -105,6 +105,24 @@
                    border: 1px solid #2a3038; border-radius: 6px; }
   .chatbar button { padding: 8px 12px; background: #1d4ed8; color: #fff; border: 0;
                     border-radius: 6px; cursor: pointer; }
+  /* --- Note to commentator (#376) --- */
+  .rcsend { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .rcsend select, .rcsend input { width: 100%; padding: 8px; background: #0b0d10;
+    color: #e8eaed; border: 1px solid #2a3038; border-radius: 6px; font: inherit; }
+  .rcrow { display: flex; gap: 6px; }
+  .rcrow input { flex: 1; }
+  .rcrow button { padding: 8px 14px; background: #b45309; color: #fff; border: 0;
+    border-radius: 6px; cursor: pointer; font-weight: 600; white-space: nowrap; }
+  .rcrow button:hover { background: #c2620a; }
+  .rcrow button:disabled { opacity: .5; cursor: default; }
+  .rcpresets { display: flex; flex-wrap: wrap; gap: 6px; }
+  .rcpresets button { font: inherit; font-size: 12px; padding: 4px 9px; cursor: pointer;
+    background: #1f2630; color: #cdd3da; border: 1px solid #3a4250; border-radius: 999px; }
+  .rcpresets button:hover { background: #2a323d; border-color: #b45309; }
+  .rcpresets:empty { display: none; }
+  .rcmsg { font-size: 12px; min-height: 14px; }
+  .rcmsg.ok { color: #2bd66a; }
+  .rcmsg.err { color: #ff6b6b; }
 </style>
 </head>
 <body>
@@ -152,7 +170,19 @@
     </div>
   </div>
   <div>
-    <div class="card"><h2>Race timer</h2><div id="timer"><div class="t">—</div></div></div>
+    <div class="card" id="rcSendCard">
+      <h2>Note to commentator</h2>
+      <div class="rcsend">
+        <select id="rcTarget" aria-label="Send to"></select>
+        <div id="rcPresets" class="rcpresets"></div>
+        <div class="rcrow">
+          <input id="rcText" placeholder="Short note — e.g. jump to car 5…" maxlength="200">
+          <button id="rcSend">Send</button>
+        </div>
+        <div id="rcMsg" class="rcmsg" role="status"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px;"><h2>Race timer</h2><div id="timer"><div class="t">—</div></div></div>
     <div class="card" style="margin-top:12px;">
       <h2>Crew chat</h2>
       <div id="chat">
@@ -250,12 +280,76 @@ function renderSchedule(d) {
     body.appendChild(tr);
   });
   $('schedEmpty').textContent = rows.length ? '' : 'No stints scheduled yet.';
+  rebuildTargets(rows.map(s => s.streamer));      // keep the note composer in sync
 }
 async function pollSchedule() {
   try { renderSchedule(await j('/race-control/data')); }
   catch (e) { /* transient */ }
   setTimeout(pollSchedule, 3000);
 }
+
+// --- Note to commentator (#376): the desk's one write action ---
+// A short heads-up to the on-air commentator / all talent / a specific person
+// (jump-to-driver, DC/rejoin, retired). It is stored server-side as an RC note
+// and shown in that commentator's cockpit "Race Control" card — never a penalty
+// or flag (no live stewarding in GT7), just a text heads-up.
+let _targetSig = '';
+function rebuildTargets(streamers) {
+  // Rebuild the dropdown only when the streamer set changes, so the 3 s schedule
+  // poll never resets the operator's current selection.
+  const uniq = [...new Set((streamers || []).filter(Boolean))];
+  const sig = uniq.join('|');
+  if (sig === _targetSig) return;
+  _targetSig = sig;
+  const sel = $('rcTarget'), prev = sel.value;
+  sel.textContent = '';
+  const add = (v, label) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = label;          // XSS-safe
+    sel.appendChild(o);
+  };
+  add('on-air', 'On air');
+  add('all', 'All talent');
+  uniq.forEach(s => add(s, s));   // value is the display name; the server normalizes it
+  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+}
+async function loadRcPresets() {
+  let presets = [];
+  try { presets = (await j('/race-control/presets')).presets || []; }
+  catch (e) { /* none configured / transient */ }
+  const box = $('rcPresets');
+  box.textContent = '';
+  presets.forEach(p => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = p;        // XSS-safe (Sheet value)
+    b.addEventListener('click', () => { const t = $('rcText'); t.value = p; t.focus(); });
+    box.appendChild(b);
+  });
+}
+async function sendRcNote() {
+  const sel = $('rcTarget'), inp = $('rcText'), btn = $('rcSend'), msg = $('rcMsg');
+  const text = inp.value.trim();
+  if (!text) return;
+  btn.disabled = true; msg.className = 'rcmsg'; msg.textContent = '';
+  try {
+    const r = await fetch('/race-control/cues', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: sel.value, text }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.ok) {
+      inp.value = '';
+      msg.className = 'rcmsg ok'; msg.textContent = 'Sent.';
+      setTimeout(() => { if (msg.textContent === 'Sent.') { msg.textContent = ''; msg.className = 'rcmsg'; } }, 2500);
+    } else {
+      msg.className = 'rcmsg err';
+      msg.textContent = (d && d.error) ? d.error : ('Failed (' + r.status + ')');
+    }
+  } catch (e) {
+    msg.className = 'rcmsg err'; msg.textContent = 'Network error.';
+  } finally { btn.disabled = false; }
+}
+$('rcSend').addEventListener('click', sendRcNote);
+$('rcText').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendRcNote(); });
 
 // --- Program monitor (JPEG stills, cache-busted) — reuses the cockpit endpoint ---
 function pollProgram() {
@@ -432,7 +526,7 @@ async function refreshBroadcastChat() {
 }
 { const br = $('bchatRefresh'); if (br) br.addEventListener('click', refreshBroadcastChat); }
 
-pollSchedule(); pollProgram(); pollTimer(); pollChat(); pollBroadcastChat();
+pollSchedule(); pollProgram(); pollTimer(); pollChat(); pollBroadcastChat(); loadRcPresets();
 </script>
 </body>
 </html>
