@@ -2,7 +2,6 @@
 """Unit checks for the Event Notes Sheet-tab parser (pure, stdlib only)."""
 import importlib.util
 import os
-import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 _path = os.path.join(HERE, "..", "src", "scripts", "event_notes.py")
@@ -57,4 +56,4 @@ def run():
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    run()
