@@ -4,7 +4,7 @@
 
 ![Commentator Cockpit — the on-air tally, live program monitor, race timer, stream-link submission, crew chat and the graphics browser](images/console-cockpit.png)
 
-A **talent-facing** page served by the relay — the counterpart to the Director
+A **commentator-facing** page served by the relay — the counterpart to the Director
 Panel, but for the **commentators**. Each commentator opens the Console and signs in
 (with Discord) to get a self-contained cockpit:
 
@@ -39,7 +39,7 @@ text-only stand-in for an earpiece. Two levels:
 Cues are **visual only — there is no sound or pop-up alert**. Keep the cockpit open on a
 screen you can glance at so you don't miss a critical banner.
 
-You only receive cues addressed to you by name or to **All talent** — cues sent to
+You only receive cues addressed to you by name or to **All commentators** — cues sent to
 other individual commentators are never shown in your cockpit.
 
 ## Submit your stream link

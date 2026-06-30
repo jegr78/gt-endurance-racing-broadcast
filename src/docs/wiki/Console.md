@@ -90,7 +90,7 @@ re-issuing the link.
   redirect URIs, and maintain the Crew tab so crew members can log in with Discord.
 - [Remote access & the Funnel boundary](Remote-access) — security model, the Funnel
   mount, and how roles are authorised.
-- [Commentator Cockpit](Commentator-Cockpit) — the talent-facing cockpit in detail.
+- [Commentator Cockpit](Commentator-Cockpit) — the commentator-facing cockpit in detail.
 - [Director guide](Director) — the full Director Panel reference.
 - [Companion (button config)](Companion) — the Web Buttons board and how to configure
   Companion buttons.

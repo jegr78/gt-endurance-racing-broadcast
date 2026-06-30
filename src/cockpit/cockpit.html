@@ -363,7 +363,7 @@ function srcBadge(source) {
 
 // --- Tally ---
 function renderTally(d) {
-  // Read-only event title for talent (#207). textContent -> XSS-safe, like #who.
+  // Read-only event title for the commentator (#207). textContent -> XSS-safe, like #who.
   const title = (d.event_title || '').trim();
   $('eventTitle').textContent = title;
   document.title = title ? (title + ' · Commentator Cockpit') : 'Commentator Cockpit';

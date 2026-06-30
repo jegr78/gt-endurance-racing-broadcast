@@ -229,7 +229,7 @@ the producer's machine.
 
 ## Cues
 
-The panel has a collapsible **Cues** section — a director→talent text-cue channel
+The panel has a collapsible **Cues** section — a director→commentator text-cue channel
 (a text-only stand-in for an earpiece). It lets you send a short on-screen message
 directly to one or more commentators without leaving the panel.
 
@@ -237,7 +237,7 @@ directly to one or more commentators without leaving the panel.
 
 1. Pick a **target** from the dropdown:
    - a specific commentator by name (from the Crew/schedule roster),
-   - **All talent** — sent to every commentator's cockpit, or
+   - **All commentators** — sent to every commentator's cockpit, or
    - **On air** — the relay resolves this server-side to whoever is currently on the
      live feed at the moment you press Send.
 2. Pick a **level**:

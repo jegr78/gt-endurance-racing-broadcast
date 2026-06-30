@@ -1481,7 +1481,7 @@ def _ensure_active_console_secret():
 
 def console_cmd(rest):
     """`racecast console token|setup-funnel|pull-versions` — manage the
-    talent Commentator Cockpit (issue #191). The console is zero-config: a per-league
+    Commentator Cockpit (issue #191). The console is zero-config: a per-league
     CONSOLE_SECRET is auto-generated on first relay start and the relay serves
     /cockpit whenever one exists (token-gated). PUBLIC exposure is the top-level
     `racecast funnel` command. Console links (Crew ∪ Schedule) are issued via the

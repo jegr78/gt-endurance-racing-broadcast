@@ -294,7 +294,7 @@ def check_submission_pending(ctx):
 
 def check_event_title_round_trip(ctx):
     """#207: POST /event/title sets the free-text event title; it must then surface
-    in BOTH /status (director panel) and /cockpit/data (talent). Relay-local state
+    in BOTH /status (director panel) and /cockpit/data (commentator). Relay-local state
     (event.json), no external push -> safe in synthetic AND real-league mode."""
     title = "E2E - Round 7 - Spa 24h"
     payload = _json.dumps({"title": title}).encode()

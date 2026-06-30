@@ -289,7 +289,7 @@ async function pollSchedule() {
 }
 
 // --- Note to commentator (#376): the desk's one write action ---
-// A short heads-up to the on-air commentator / all talent / a specific person
+// A short heads-up to the on-air commentator / all commentators / a specific person
 // (jump-to-driver, DC/rejoin, retired). It is stored server-side as an RC note
 // and shown in that commentator's cockpit "Race Control" card — never a penalty
 // or flag (no live stewarding in GT7), just a text heads-up.
@@ -309,7 +309,7 @@ function rebuildTargets(streamers) {
     sel.appendChild(o);
   };
   add('on-air', 'On air');
-  add('all', 'All talent');
+  add('all', 'All commentators');
   uniq.forEach(s => add(s, s));   // value is the display name; the server normalizes it
   if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
 }
