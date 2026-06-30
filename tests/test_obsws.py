@@ -376,6 +376,10 @@ def _fake_obs_server(server_sock, password, state):
         elif rtype == "GetCurrentProgramScene":
             resp = {"currentProgramSceneName": state.get("program_scene", "Stint"),
                     "sceneName": state.get("program_scene", "Stint")}
+        elif rtype == "SetCurrentProgramScene":
+            state["set_scene"] = rdata["sceneName"]
+            state["program_scene"] = rdata["sceneName"]
+            resp = {}
         elif rtype == "GetSourceScreenshot":
             state.setdefault("shot_requests", []).append(rdata)
             raw = state.get("shot_bytes", b"\xff\xd8\xff\xd9")
@@ -753,6 +757,35 @@ def t_get_source_screenshot_unreachable_is_quiet():
     free = sock.getsockname()[1]; sock.close()
     data, note = m.get_source_screenshot("Feed A", port=free, password="x", timeout=0.5)
     assert data is None and note
+
+
+# --------------------------------------------------------------------------
+# get_current_program_scene / set_current_program_scene — auto-failover (#378)
+# --------------------------------------------------------------------------
+def t_get_current_program_scene_reads_current():
+    state = {"program_scene": "Intermission"}
+    port, srv = _start_fake_obs(state)
+    scene, note = m.get_current_program_scene(port=port, password="supersecret", timeout=5)
+    srv.close()
+    assert note == "" and scene == "Intermission"
+
+
+def t_get_current_program_scene_unreachable_is_note_not_crash():
+    sock = socket.socket(); sock.bind(("127.0.0.1", 0))
+    free = sock.getsockname()[1]; sock.close()
+    scene, note = m.get_current_program_scene(port=free, password="x", timeout=0.5)
+    assert scene is None and note
+
+
+def t_set_current_program_scene_switches_to_intermission():
+    state = {"program_scene": "Stint"}
+    port, srv = _start_fake_obs(state)
+    ok, note = m.set_current_program_scene(m.INTERMISSION_SCENE, port=port,
+                                           password="supersecret", timeout=5)
+    srv.close()
+    assert ok and note == "", note
+    assert state["set_scene"] == "Intermission"
+    assert m.INTERMISSION_SCENE == "Intermission"
 
 
 # --------------------------------------------------------------------------

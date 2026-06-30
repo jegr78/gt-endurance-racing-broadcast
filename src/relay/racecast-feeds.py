@@ -207,6 +207,30 @@ def fanout_enabled(environ):
     return str(environ.get("RACECAST_FEED_FANOUT", "")).strip().lower() not in _FANOUT_FALSEY
 
 
+# ---------- Auto-failover to the Intermission scene (#378) ------------------
+_FAILOVER_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def auto_failover_enabled(environ):
+    """True only when RACECAST_AUTO_FAILOVER is an explicit truthy token. OFF by
+    default (opt-in): a frozen/black on-air frame is bad, but silently yanking the
+    program is a producer's call to enable. Pure so the switch is unit-testable."""
+    return str(environ.get("RACECAST_AUTO_FAILOVER", "")).strip().lower() in _FAILOVER_TRUTHY
+
+
+def should_failover(enabled, on_air_down, program_scene,
+                    on_air_scene="Stint", already_failed_over=False):
+    """Whether to auto-switch OBS to the Intermission scene right now. Pure →
+    unit-tested. Fires iff: the feature is armed, the on-air feed is CONFIRMED
+    down (feed_health_state == 'down', i.e. a lost picture past the red grace),
+    OBS is STILL on the on-air feed scene (never yank a producer who already cut
+    to Intermission/Intro/replay/…), and we have not already failed over this
+    outage (fire once; a manual return to the feed scene re-arms it)."""
+    if not enabled or already_failed_over or not on_air_down:
+        return False
+    return program_scene == on_air_scene
+
+
 def feed_stalled(last_byte_ts, now, stall_s=FANOUT_STALL_S):
     """True iff a fan-out live reader has produced bytes before but none for
     `stall_s`. A None timestamp (never produced) is NOT a stall — that startup
@@ -333,6 +357,25 @@ def discord_health_payload(level, reasons, prev_level=None, event_title="", prod
         title = f"⚠️ Broadcast health: {_HEALTH_LABEL[level]}"
         desc = "\n".join(f"• {r}" for r in reasons) or _HEALTH_LABEL[level]
     embed = {"title": title, "description": desc, "color": HEALTH_COLORS[level]}
+    footer = notify._footer(event_title, producer)
+    if footer:
+        embed["footer"] = {"text": footer}
+    return {"username": "GT Racecast",
+            "content": "@here",
+            "allowed_mentions": {"parse": ["everyone"]},
+            "embeds": [embed]}
+
+
+def discord_failover_payload(on_air_feed, scene, event_title="", producer=""):
+    """Discord webhook JSON for an auto-failover (#378). Pure → unit-tested. Loud
+    by design: the @here ping sits in top-level `content` (Discord ignores
+    mentions inside an embed) so the crew is pulled in the instant the program is
+    auto-switched. The footer shows `<event_title> · <producer>` (#207/#317)."""
+    desc = (f"The on-air feed (Feed {on_air_feed}) stayed down past the grace "
+            f"window — OBS was automatically switched to the **{scene}** scene. "
+            "Return is manual: re-take the feed once it recovers.")
+    embed = {"title": "🛟 Auto-failover — switched to Intermission",
+             "description": desc, "color": HEALTH_COLORS["red"]}
     footer = notify._footer(event_title, producer)
     if footer:
         embed["footer"] = {"text": footer}
@@ -4341,6 +4384,11 @@ class Relay:
             self.pov.paused = True
         self.fanout = fanout_enabled(os.environ)
         self._fanout_servers = []
+        # Auto-failover to the Intermission scene on confirmed on-air feed loss
+        # (#378): opt-in via RACECAST_AUTO_FAILOVER; fires once per outage and
+        # re-arms on a manual return to the on-air feed scene. Return is manual.
+        self.auto_failover = auto_failover_enabled(os.environ)
+        self._failed_over = False
         # Live health heartbeat: displayed level (refreshed on every /status and
         # every tick) + the notification baseline (advanced ONLY by the heartbeat
         # tick so a 2 s /status refresh never "consumes" a transition before the
@@ -4561,7 +4609,52 @@ class Relay:
             if health_should_notify(self._notified_level, level):
                 self._send_health_webhook(level, self.health_reasons, self._notified_level)
                 self._notified_level = level
+            self._maybe_auto_failover(now)
             self._hb_stop.wait(HEARTBEAT_INTERVAL_S)
+
+    def _maybe_auto_failover(self, now):
+        """Auto-switch OBS to the Intermission scene when the ON-AIR feed is
+        confirmed down (#378). Best-effort: never raises, never blocks. Opt-in
+        (RACECAST_AUTO_FAILOVER); only fires while OBS is still on the on-air feed
+        scene; fires once + notifies loudly; a manual return to the feed scene
+        re-arms it. Return to the feed is always the producer's call."""
+        if not self.auto_failover or _obs_ws is None:
+            return
+        live = self.live_feed()
+        f = self.feeds[live]
+        on_air_down = (not f.paused and
+                       feed_health_state(f.dropped, f.dropped_since, f.served_ok, now) == "down")
+        # Nothing to do unless we are either down (maybe flip) or latched (maybe re-arm).
+        if not on_air_down and not self._failed_over:
+            return
+        on_air_scene = getattr(_obs_ws, "STINT_SCENE", "Stint")
+        intermission = getattr(_obs_ws, "INTERMISSION_SCENE", "Intermission")
+        try:
+            scene, note = _obs_ws.get_current_program_scene()
+        except Exception as e:                            # noqa: BLE001 — best effort
+            self.obs_note = f"{type(e).__name__}: {e}"
+            return
+        if scene is None:                                 # OBS unreachable — one note, no crash
+            self.obs_note = note or self.obs_note
+            return
+        # Re-arm once the producer has manually returned to the on-air feed scene.
+        if self._failed_over and scene == on_air_scene:
+            self._failed_over = False
+        if not should_failover(self.auto_failover, on_air_down, scene,
+                               on_air_scene=on_air_scene,
+                               already_failed_over=self._failed_over):
+            return
+        ok, note = _obs_ws.set_current_program_scene(intermission)
+        if not ok:                                        # leave un-latched so the next tick retries
+            self.obs_note = note or self.obs_note
+            return
+        self._failed_over = True
+        LOG.warning("Auto-failover: on-air feed %s confirmed down -> switched OBS to %s",
+                    live, intermission)
+        self._discord_post(
+            discord_failover_payload(live, intermission, self._event_title(),
+                                     self.producer_name),
+            "auto-failover")
 
     def status(self):
         now = time.time()
