@@ -529,23 +529,23 @@ live channel's chat standalone (YouTube via yt-dlp+Innertube, or `--twitch` / a
 `twitch.tv` URL via anonymous IRC) — the way to validate the real path against a live
 stream.
 
-The relay also provides a **director→talent text-cue channel** (an IFB-lite, text-only
+The relay also provides a **director→commentator text-cue channel** (an IFB-lite, text-only
 stand-in for an earpiece): the Director Panel's **Cues** section lets a director pick a
-target (a specific commentator, **All talent**, or **On air** — resolved server-side at
+target (a specific commentator, **All commentators**, or **On air** — resolved server-side at
 send time), choose a level, and send a short cue. **`Info`** cues auto-expire after 30 s
-and appear as a brief toast in the talent's cockpit; **`Critical`** cues are sticky banners
+and appear as a brief toast in the commentator's cockpit; **`Critical`** cues are sticky banners
 the commentator must **Acknowledge** — after which the director sees a **✓ seen** stamp.
 Quick-cue **presets** come from a `Cue Preset` column in the Sheet's **Configuration** tab
 (same admin-managed vocabulary model as Race Control); free text is always available and
 is the only option when the Configuration tab is unreachable. Endpoints `POST /cues/send`,
-`GET /cues/data`, `GET /cues/presets`, `GET /cues/reload` are **director**-gated; talent
+`GET /cues/data`, `GET /cues/presets`, `GET /cues/reload` are **director**-gated; commentator
 endpoints `GET /cockpit/cues` + `POST /cockpit/cues/ack` are identity-scoped to the
 token's own commentator. All are reachable via Funnel only through the existing `/console`
 mount — no new public surface. Persisted to `runtime/<profile>/cues.json`; producer
 takeover (tailnet + `--funnel`) pulls A's still-active cues via `/console/takeover/cues`.
 Pure logic: `src/scripts/cue_admin.py`. Tests: `tests/test_cues.py`.
 
-The relay also serves a **talent-facing Commentator Cockpit** (issue #191) under an
+The relay also serves a **commentator-facing Commentator Cockpit** (issue #191) under an
 auth-gated `/cockpit/*` namespace: a live program monitor (reusing
 `get_program_screenshot`), an "ON AIR / UP NEXT" tally (`cockpit_tally`, derived from the
 on-air feed + the live schedule via `asset_key`-normalised streamer names), the embedded
@@ -574,7 +574,7 @@ rides in the `…/console?t=` link once, then an `HttpOnly; Secure; SameSite=Lax
 the same `rc_console` token. The Crew tab gained `Commentator` and `Discord` columns;
 `resolve_roles` is an A1 union (Schedule OR Crew Commentator flag). Auth core:
 `src/scripts/console_auth.py`; revocation store: `src/scripts/console_admin.py`;
-talent page: `src/cockpit/cockpit.html`; CLI: `racecast console …`; takeover pulls A's
+commentator page: `src/cockpit/cockpit.html`; CLI: `racecast console …`; takeover pulls A's
 versions over the tailnet (like `chat pull`). Tests: `tests/test_cockpit.py`. The crew
 roster (Crew tab ∪ live Schedule) is exposed via a tailnet-only `GET /crew/data` endpoint
 (root path, **never** funnelled — only `/console` is mounted); `racecast links` unions Crew

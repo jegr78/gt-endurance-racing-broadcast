@@ -92,8 +92,8 @@ import health_store  # health-history SQLite store (task 7; src/scripts on sys.p
 _HEALTH_CONST = health_store  # stable module alias: make_handler's `health_store`
 # PARAMETER shadows the module name inside its closure, so the constants
 # (DEFAULT_MAX_POINTS / LIVE_WINDOW_S) are reached via this un-shadowed alias.
-import console_auth   # talent-cockpit token auth (#191); pure, src/scripts on sys.path
-import console_admin  # talent-cockpit revocation version store (#191)
+import console_auth   # commentator-cockpit token auth (#191); pure, src/scripts on sys.path
+import console_admin  # commentator-cockpit revocation version store (#191)
 import app_version   # shared build-version helper (single source of truth)
 import discord_oauth  # Discord OAuth2 helpers for /console/login
 
@@ -104,7 +104,7 @@ _SRC_BASE = (os.path.join(sys._MEIPASS, "src") if getattr(sys, "frozen", False)
              else os.path.join(_REL_HERE, ".."))
 APP_VERSION = app_version.read_version(_SRC_BASE)
 VERSION_LABEL = ("v" + APP_VERSION) if APP_VERSION != "dev" else "dev"
-import cockpit_submissions  # talent stream-link submission store (#193)
+import cockpit_submissions  # commentator stream-link submission store (#193)
 import notify   # pure Discord payload builders for producer events (#317)
 import console_policy  # /console authorization matrix + decision (#216)
 import console_proxy      # pure /console/buttons proxy plumbing (#236)
@@ -292,7 +292,7 @@ def aggregate_health(facts):
     if facts.get("obs_reachable") and facts.get("stream_reconnecting"):
         yellow.append("OBS stream reconnecting — upstream unstable")
     if facts.get("funnel_down"):
-        yellow.append("Funnel down — talent cannot reach the cockpit")
+        yellow.append("Funnel down — commentators cannot reach the cockpit")
     if facts.get("sheet_push_failing"):
         yellow.append("Sheet webhook failing — panel writes are not saved")
     if facts.get("cookies_stale"):
@@ -2087,7 +2087,7 @@ class HealthStore:
 class CueStore:
     """Director text-cue ring buffer + best-effort JSON file
     (runtime/<profile>/cues.json), loaded + pruned on construction. Mirrors
-    ChatStore. add() is the director write; ack() is the talent write (scoped to
+    ChatStore. add() is the director write; ack() is the commentator write (scoped to
     the cue's target); reload() re-reads the file (takeover). ts is server clock."""
 
     def __init__(self, path):
@@ -2891,7 +2891,7 @@ def live_schedule_row(rows, live_idx):
 
 
 def cockpit_tally(rows, live_idx, me_key):
-    """Talent tally for a commentator identified by *me_key* (a streamer_key).
+    """Tally for a commentator identified by *me_key* (a streamer_key).
     Pure — unit-testable without a running relay. *rows* are ScheduleSource
     4-tuples (url, streamer, stint, line); *live_idx* is the on-air feed's index.
       on_air   = the on-air row's streamer normalizes to me_key
@@ -4934,7 +4934,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
     # the single proxy address — so it is a COARSE GLOBAL cap on failed cockpit
     # auths, not a per-client control. That is acceptable: valid tokens never reach
-    # this limiter (only the failure branch does, so legit talent is never locked
+    # this limiter (only the failure branch does, so legit commentators are never locked
     # out), and the 128-bit HMAC signature makes brute force infeasible regardless
     # — this is pure defense-in-depth. X-Forwarded-For is deliberately NOT trusted
     # for the key (spoofable over the public ingress, which would weaken it).
@@ -4951,7 +4951,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
     # crew's quota; a low cap — a human submits a link a handful of times, not
     # dozens per minute.
     _cockpit_submit_rl = console_auth.RateLimiter(limit=5, window_s=60)
-    # Talent ack is a funnelled write; key on the authed identity (like chat), not
+    # Commentator ack is a funnelled write; key on the authed identity (like chat), not
     # the shared proxy IP. The director SEND has no limiter (director-gated /
     # tailnet-trusted, like /next).
     _cockpit_cue_ack_rl = console_auth.RateLimiter(limit=30, window_s=60)
@@ -5965,7 +5965,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                       if submission_store else [])
                         tally.update({"me": me, "mode": relay.mode,
                                       "program_available": _obs_ws is not None,
-                                      # read-only event title for the talent header (#207)
+                                      # read-only event title for the commentator header (#207)
                                       "event_title": event_store.get() if event_store else "",
                                       # own stints for the link-submission picker
                                       # (#193); empty -> the cockpit hides the form.
@@ -6019,7 +6019,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if p == ["cockpit", "versions"]:
                         # Producer-to-producer takeover pull. This path SITS UNDER
                         # /cockpit, so it IS reachable via Funnel — it must therefore
-                        # authenticate, not rely on obscurity. Talent tokens are
+                        # authenticate, not rely on obscurity. Commentator tokens are
                         # per-commentator; this is gated on the shared league secret
                         # (every producer of the league holds it), constant-time.
                         presented = self.headers.get("X-Console-Secret")

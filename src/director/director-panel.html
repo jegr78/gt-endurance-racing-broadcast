@@ -1974,7 +1974,7 @@ async function pollCueBacks(){
       const ts = document.createElement("span"); ts.className = "ts";
       try{ ts.textContent = new Date(c.ts*1000).toLocaleTimeString(); }catch(e){ ts.textContent = ""; }
       const who = document.createElement("span"); who.className = "who";
-      who.textContent = (c.from || "Talent") + ": ";          // XSS-safe
+      who.textContent = (c.from || "Commentator") + ": ";     // XSS-safe
       li.appendChild(ts); li.appendChild(who);
       li.appendChild(document.createTextNode(c.text || ""));   // XSS-safe
       ul.appendChild(li);

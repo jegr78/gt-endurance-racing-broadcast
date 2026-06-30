@@ -2,7 +2,7 @@
 
 > How the crew — commentators, directors and a takeover producer — reach the show
 > from anywhere, and the security boundary that keeps everything else private.
-> The talent specifics live in [Commentator Cockpit](Commentator-Cockpit); the
+> The commentator specifics live in [Commentator Cockpit](Commentator-Cockpit); the
 > panel specifics in the [Director guide](Director).
 
 Everyone who helps run an event opens the same **Console link** — `/console`, a single
@@ -191,5 +191,5 @@ Companion's native admin port stays tailnet-only (never funnelled). See [Compani
 
 ---
 
-Talent details: [Commentator Cockpit](Commentator-Cockpit). Panel details:
+Commentator details: [Commentator Cockpit](Commentator-Cockpit). Panel details:
 [Director guide](Director). The wider picture: [Architecture](Architecture).

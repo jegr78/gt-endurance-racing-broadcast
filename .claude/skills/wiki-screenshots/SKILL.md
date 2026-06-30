@@ -1,6 +1,6 @@
 ---
 name: wiki-screenshots
-description: Regenerate the wiki/slide screenshots of the relay- and UI-served pages — the Control Center (cc-*.png), the /console pages (launcher, cockpit, race-control, director panel) and the talent cockpit. Use when a Control Center view, a /console page, the Director Panel, or the Commentator Cockpit changed and its image under src/docs/wiki/images/ (and src/docs/slides/assets/img/) is stale. Covers HOW to populate the pages with reproducible fake content via the demo profile + the obs-sim OBS stand-in (no real OBS, no real league). NOT for Companion buttons — see companion-screenshots.
+description: Regenerate the wiki/slide screenshots of the relay- and UI-served pages — the Control Center (cc-*.png), the /console pages (launcher, cockpit, race-control, director panel) and the commentator cockpit. Use when a Control Center view, a /console page, the Director Panel, or the Commentator Cockpit changed and its image under src/docs/wiki/images/ (and src/docs/slides/assets/img/) is stale. Covers HOW to populate the pages with reproducible fake content via the demo profile + the obs-sim OBS stand-in (no real OBS, no real league). NOT for Companion buttons — see companion-screenshots.
 ---
 
 # Wiki / slide screenshots (Control Center + /console pages)
@@ -37,7 +37,7 @@ slide deck, write the **identical** file to both paths. Only refresh the surface
 changed.
 
 > The CLAUDE.md "refresh the screenshot in the same change" hard rule is blocking for the
-> **Control Center**, **Director Panel** and **Companion** surfaces. The talent **Cockpit**
+> **Control Center**, **Director Panel** and **Companion** surfaces. The commentator **Cockpit**
 > and **Race Control** pages are not covered by that rule — refresh them as good practice,
 > not as a release blocker.
 
