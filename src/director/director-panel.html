@@ -387,6 +387,18 @@
   .pvbarfill{display:block;height:100%;width:0;background:#4ade80;transition:width .2s}
   .pvtile.paused .pvframe{opacity:.4}
   .pvtile.onair .pvbar{display:none}
+  .notesbtn { font: inherit; cursor: pointer; background: transparent;
+    border: 1px solid currentColor; border-radius: 6px; padding: 2px 8px; color: inherit; }
+  .notesmodal { max-width: 560px; width: 90vw; border: none; border-radius: 10px;
+    padding: 20px; background: #1c1f26; color: #e8eaed; }
+  .notesmodal::backdrop { background: rgba(0,0,0,.45); }
+  .notesmodal h3 { margin: 0 0 12px; }
+  .notesbody { display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow: auto; }
+  .noteitem { padding-left: 10px; border-left: 3px solid transparent; }
+  .noteitem.important { border-left-color: #f5a623; }
+  .notehd { font-weight: 700; margin-bottom: 2px; }
+  .notetxt { white-space: pre-wrap; }
+  .notesactions { display: flex; justify-content: flex-end; margin-top: 16px; }
 </style>
 </head>
 <body>
@@ -412,6 +424,7 @@
     <div class="appmeta">
       <a class="ver" href="https://github.com/jegr78/gt-endurance-racing-broadcast/releases"
          target="_blank" rel="noopener" title="Running racecast version — view releases">__RC_VERSION__ ↗</a>
+      <button type="button" id="notesBtn" class="notesbtn" hidden onclick="openNotes()">📋 Notes</button>
       <a class="help" href="https://jegr78.github.io/gt-endurance-racing-broadcast/director.html"
          target="_blank" rel="noopener">? Help</a>
     </div>
@@ -2087,8 +2100,44 @@ $("#obsStreamBtn").addEventListener("click", async ()=>{
 });
 obsStatePoll(); setInterval(obsStatePoll, 2000);
 flagGfxPoll(); setInterval(flagGfxPoll, 2000);
+  function openNotes() { document.getElementById('notesModal').showModal(); }
+  function closeNotes() { document.getElementById('notesModal').close(); }
+  function renderNotes(d) {
+    const notes = (d && d.available && Array.isArray(d.notes)) ? d.notes : [];
+    document.getElementById('notesBtn').hidden = notes.length === 0;
+    const body = document.getElementById('notesBody');
+    body.textContent = '';
+    notes.forEach(function (n) {
+      const item = document.createElement('div');
+      item.className = 'noteitem' + (n.priority === 'important' ? ' important' : '');
+      if (n.heading) {
+        const h = document.createElement('div');
+        h.className = 'notehd';
+        h.textContent = n.heading;
+        item.appendChild(h);
+      }
+      const t = document.createElement('div');
+      t.className = 'notetxt';
+      t.textContent = n.note;
+      item.appendChild(t);
+      body.appendChild(item);
+    });
+  }
+  async function pollNotes() {
+    try {
+      const r = await fetch('/event-notes/data', { cache: 'no-store' });
+      if (r.ok) renderNotes(await r.json());
+    } catch (e) { /* transient — keep last state */ }
+    setTimeout(pollNotes, 30000);
+  }
+  pollNotes();
 loadCuePresets(); loadCueTargets(); pollCueRecent(); setInterval(pollCueRecent, 2000);
 pollCueBacks(); setInterval(pollCueBacks, 2000);
 </script>
+<dialog id="notesModal" class="notesmodal">
+  <h3>Event Notes</h3>
+  <div id="notesBody" class="notesbody"></div>
+  <div class="notesactions"><button type="button" onclick="closeNotes()" autofocus>Close</button></div>
+</dialog>
 </body>
 </html>
