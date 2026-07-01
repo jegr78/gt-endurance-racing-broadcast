@@ -74,13 +74,14 @@ def find_obs_template(obs_dir):
     return None
 
 
-def fill_missing(expected_names, directory, src_path):
-    """Copy `src_path` to `directory/<name>` for every name in `expected_names` not
-    already present. Returns the sorted list of names actually written.
+def _place_placeholders(names, directory, src_path, *, overwrite):
+    """Copy `src_path` onto `directory/<name>` for each name. With `overwrite`
+    False an already-present file is left untouched (fill-missing); with True it
+    is replaced. Returns the sorted list of names actually written.
 
     Best-effort: a falsy/absent `src_path`, an uncreatable/unreadable `directory`,
     or a per-file copy error is skipped, never raised. Writes atomically
-    (`.part` -> os.replace). Idempotent. Creates `directory`."""
+    (`.part` -> os.replace). Creates `directory`."""
     if not src_path or not os.path.isfile(src_path):
         return []
     try:
@@ -89,10 +90,10 @@ def fill_missing(expected_names, directory, src_path):
     except OSError:
         return []
     written = []
-    for name in expected_names:
+    for name in names:
         if name != os.path.basename(name):   # reject path separators / traversal
             continue
-        if name in have:
+        if name in have and not overwrite:
             continue
         dst = os.path.join(directory, name)
         tmp = dst + ".part"
@@ -107,3 +108,18 @@ def fill_missing(expected_names, directory, src_path):
             except OSError:
                 pass  # temp file already gone or never created — ignore
     return sorted(written)
+
+
+def fill_missing(expected_names, directory, src_path):
+    """Copy `src_path` to `directory/<name>` for every name in `expected_names`
+    not already present. Returns the sorted list of names actually written.
+    Idempotent, best-effort, atomic — see _place_placeholders."""
+    return _place_placeholders(expected_names, directory, src_path, overwrite=False)
+
+
+def reset_placeholders(names, directory, src_path):
+    """Copy `src_path` onto `directory/<name>` for every name, REPLACING any
+    existing file. Returns the sorted list of names actually written. Used to
+    revert an asset to its placeholder when the Sheet no longer links it
+    (issue #387). Best-effort, atomic — see _place_placeholders."""
+    return _place_placeholders(names, directory, src_path, overwrite=True)

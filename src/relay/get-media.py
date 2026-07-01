@@ -213,6 +213,22 @@ def seed_missing_media(out_dir, which, want_music=False):
     return sorted(written)
 
 
+def reset_unlinked_media(out_dir, which, want_music=False):
+    """Overwrite the neutral placeholder onto intro.mp4/outro.mp4 (in `which`) and
+    intermission.mp3 (when want_music) that the Sheet no longer links, so a
+    removed/absent link reverts a stale clip (issue #387). Unlike
+    seed_missing_media this REPLACES an existing file. Returns sorted names."""
+    written = []
+    for k in sorted(which):
+        written += placeholders.reset_placeholders(
+            [f"{k}.mp4"], out_dir, placeholders.media_placeholder_for(f"{k}.mp4"))
+    if want_music:
+        written += placeholders.reset_placeholders(
+            ["intermission.mp3"], out_dir,
+            placeholders.media_placeholder_for("intermission.mp3"))
+    return sorted(written)
+
+
 def resolve_urls(which, cli, env, csv_text):
     """Resolve a URL per key in `which` (a set of 'intro'/'outro').
     Priority: cli[key]  >  env['RACECAST_<KEY>_URL']  >  sheet label lookup.
@@ -374,12 +390,14 @@ def main():
     cookies = _ck if os.path.exists(_ck) else os.path.join(os.path.dirname(media_dir(here)), "cookies.txt")
 
     failed = []
+    unlinked = set()   # clips the Sheet has no link for -> reset to placeholder (#387)
     for key in sorted(which):
         url = urls.get(key)
         if not url:
-            print(f"WARNING: no URL for {key} "
-                  f"(sheet label '{key.title()} Video' / --{key}-url / RACECAST_{key.upper()}_URL)")
-            failed.append(key)
+            print(f"No URL for {key} "
+                  f"(sheet label '{key.title()} Video' / --{key}-url / "
+                  f"RACECAST_{key.upper()}_URL); resetting to placeholder.")
+            unlinked.add(key)
             continue
         out_path = os.path.join(a.out, f"{key}.mp4")
         print(f"Downloading {key}: {url}")
@@ -395,13 +413,15 @@ def main():
             print(f"WARNING: download failed for {key}: {e}")
             failed.append(key)
 
-    # Download intermission music (missing URL -> WARNING only, placeholder seeded below).
+    # Download intermission music (no URL -> reset to placeholder below, #387).
+    music_unlinked = False
     if want_music:
         out_music = os.path.join(a.out, "intermission.mp3")
         if not music_url:
-            print("WARNING: no Intermission Music URL "
+            print("No Intermission Music URL "
                   "(sheet label 'Intermission Music' / --music-url / "
-                  "RACECAST_INTERMISSION_MUSIC_URL); placeholder will be seeded.")
+                  "RACECAST_INTERMISSION_MUSIC_URL); resetting to placeholder.")
+            music_unlinked = True
         else:
             print(f"Downloading intermission music: {music_url}")
             try:
@@ -414,6 +434,14 @@ def main():
             except Exception as e:
                 print(f"WARNING: intermission music download failed: {e}")
 
+    # Reset unlinked assets to their placeholder (overwrites a stale clip), then
+    # backfill any still-missing one (e.g. a linked clip whose download failed).
+    # Download failures are NOT reset, so a transient error never clobbers a good
+    # clip.
+    reset = reset_unlinked_media(a.out, unlinked, want_music=music_unlinked)
+    if reset:
+        print(f"Reset {len(reset)} asset(s) with no link to the placeholder: "
+              f"{', '.join(reset)}")
     seeded = seed_missing_media(a.out, which, want_music=want_music)
     if seeded:
         print(f"Wrote neutral placeholder for {len(seeded)} missing: "
