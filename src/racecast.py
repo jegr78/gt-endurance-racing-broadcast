@@ -2213,7 +2213,7 @@ def _apply_stream_target(part, fetch=None, post=None, apply_obs=None,
     if err:
         return False, err
     ok, note = apply_obs(platform, key)
-    del key                                            # drop the secret promptly
+    del key  # drop our last named reference to the key (do not carry it into the return path)
     if not ok:
         return False, note
     return True, f"stream target set for Part {part} on {platform} — stream key set"

@@ -187,8 +187,9 @@ if (body.action === 'get_stream_key') {
 
 > **Note:** the snippet above uses `out(…)` to match the output helper in the
 > script shown under [One-time setup](#one-time-setup-per-sheet). The `action`
-> field is always echoed in the response — the relay treats a missing echo as
-> "webhook script outdated — redeploy".
+> field is always echoed in the response — on a **successful** (`ok: true`) response,
+> a missing echo tells the relay the webhook script is outdated and needs redeploying.
+> An `ok: false` error response without the echo is still accepted as a normal error.
 
 **Request / response contract:**
 

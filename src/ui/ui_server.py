@@ -626,8 +626,8 @@ def make_handler(ctx):
             if path == "/api/obs/stream-target":
                 body = self._body_json()
                 if body is None:
-                    return self._json({"ok": False, "error": "malformed JSON body"},
-                                      code=400)
+                    return self._json({"ok": False, "error": "malformed JSON body",
+                                       "note": "malformed request"}, code=400)
                 try:
                     result = ctx["obs_stream_target"]((body.get("part") or "").strip())
                 except Exception as exc:               # noqa: BLE001 — provider is best-effort

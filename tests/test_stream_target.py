@@ -52,6 +52,11 @@ def t_parse_stream_key_response_malformed_json_is_error_not_crash():
     assert key == "" and err
 
 
+def t_parse_stream_key_response_non_dict_json_is_error():
+    key, err = st.parse_stream_key_response(b"123")   # valid JSON, not a dict
+    assert key == "" and err
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

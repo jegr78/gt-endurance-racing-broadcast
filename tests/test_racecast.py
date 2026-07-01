@@ -3101,41 +3101,77 @@ def t_apply_stream_target_happy_path_sets_service_and_hides_key():
         seen["platform"], seen["key"] = platform, key
         return True, ""
 
-    os.environ["RACECAST_SHEET_ID"] = "SID"
-    os.environ["RACECAST_SHEET_PUSH_URL"] = "https://script.example/exec"
-    ok, note = m._apply_stream_target("1", fetch=fetch, post=post,
-                                      apply_obs=apply_obs, refresh_env=lambda: None)
-    assert ok is True, note
-    assert seen == {"platform": "twitch", "key": "SECRET"}
-    assert "SECRET" not in note                       # key never surfaced
+    _saved_id = os.environ.get("RACECAST_SHEET_ID")
+    _saved_push = os.environ.get("RACECAST_SHEET_PUSH_URL")
+    try:
+        os.environ["RACECAST_SHEET_ID"] = "SID"
+        os.environ["RACECAST_SHEET_PUSH_URL"] = "https://script.example/exec"
+        ok, note = m._apply_stream_target("1", fetch=fetch, post=post,
+                                          apply_obs=apply_obs, refresh_env=lambda: None)
+        assert ok is True, note
+        assert seen == {"platform": "twitch", "key": "SECRET"}
+        assert "SECRET" not in note                       # key never surfaced
+    finally:
+        if _saved_id is None:
+            os.environ.pop("RACECAST_SHEET_ID", None)
+        else:
+            os.environ["RACECAST_SHEET_ID"] = _saved_id
+        if _saved_push is None:
+            os.environ.pop("RACECAST_SHEET_PUSH_URL", None)
+        else:
+            os.environ["RACECAST_SHEET_PUSH_URL"] = _saved_push
 
 
 def t_apply_stream_target_no_ref_is_clear_error():
     producer_csv = "Part,Producer,MagicDNS,Stream Key\r\n1,Alice,a.ts.net,\r\n"
     channel_csv = "Platform,Channel\r\ntwitch,x\r\n"
-    os.environ["RACECAST_SHEET_ID"] = "SID"
-    os.environ["RACECAST_SHEET_PUSH_URL"] = "https://script.example/exec"
-    ok, note = m._apply_stream_target(
-        "1", fetch=lambda u: producer_csv if "Producer" in u else channel_csv,
-        post=lambda u, o: b"{}", apply_obs=lambda p, k: (True, ""),
-        refresh_env=lambda: None)
-    assert ok is False and "reference" in note.lower()
+    _saved_id = os.environ.get("RACECAST_SHEET_ID")
+    _saved_push = os.environ.get("RACECAST_SHEET_PUSH_URL")
+    try:
+        os.environ["RACECAST_SHEET_ID"] = "SID"
+        os.environ["RACECAST_SHEET_PUSH_URL"] = "https://script.example/exec"
+        ok, note = m._apply_stream_target(
+            "1", fetch=lambda u: producer_csv if "Producer" in u else channel_csv,
+            post=lambda u, o: b"{}", apply_obs=lambda p, k: (True, ""),
+            refresh_env=lambda: None)
+        assert ok is False and "reference" in note.lower()
+    finally:
+        if _saved_id is None:
+            os.environ.pop("RACECAST_SHEET_ID", None)
+        else:
+            os.environ["RACECAST_SHEET_ID"] = _saved_id
+        if _saved_push is None:
+            os.environ.pop("RACECAST_SHEET_PUSH_URL", None)
+        else:
+            os.environ["RACECAST_SHEET_PUSH_URL"] = _saved_push
 
 
 def t_apply_stream_target_webhook_error_surfaces_and_skips_obs():
     producer_csv = "Part,Producer,MagicDNS,Stream Key\r\n1,Alice,a.ts.net,key1\r\n"
     channel_csv = "Platform,Channel\r\ntwitch,x\r\n"
-    os.environ["RACECAST_SHEET_ID"] = "SID"
-    os.environ["RACECAST_SHEET_PUSH_URL"] = "https://script.example/exec"
+    _saved_id = os.environ.get("RACECAST_SHEET_ID")
+    _saved_push = os.environ.get("RACECAST_SHEET_PUSH_URL")
     called = {"obs": 0}
     def apply_obs(p, k):
         called["obs"] += 1; return True, ""
-    ok, note = m._apply_stream_target(
-        "1", fetch=lambda u: producer_csv if "Producer" in u else channel_csv,
-        post=lambda u, o: b'{"ok": false, "error": "no key for ref \'key1\'"}',
-        apply_obs=apply_obs, refresh_env=lambda: None)
-    assert ok is False and "no key" in note
-    assert called["obs"] == 0                          # never touched OBS
+    try:
+        os.environ["RACECAST_SHEET_ID"] = "SID"
+        os.environ["RACECAST_SHEET_PUSH_URL"] = "https://script.example/exec"
+        ok, note = m._apply_stream_target(
+            "1", fetch=lambda u: producer_csv if "Producer" in u else channel_csv,
+            post=lambda u, o: b'{"ok": false, "error": "no key for ref \'key1\'"}',
+            apply_obs=apply_obs, refresh_env=lambda: None)
+        assert ok is False and "no key" in note
+        assert called["obs"] == 0                          # never touched OBS
+    finally:
+        if _saved_id is None:
+            os.environ.pop("RACECAST_SHEET_ID", None)
+        else:
+            os.environ["RACECAST_SHEET_ID"] = _saved_id
+        if _saved_push is None:
+            os.environ.pop("RACECAST_SHEET_PUSH_URL", None)
+        else:
+            os.environ["RACECAST_SHEET_PUSH_URL"] = _saved_push
 
 
 if __name__ == "__main__":

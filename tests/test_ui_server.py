@@ -1674,6 +1674,22 @@ def t_event_title_post_validation_error_is_400():
         httpd.shutdown()
 
 
+def t_post_obs_stream_target_malformed_body_is_400():
+    httpd, port = _serve(_ctx())
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/obs/stream-target", method="POST",
+            data=b"{not json", headers={"Content-Type": "application/json"})
+        try:
+            with _urlopen(req, timeout=5) as r:
+                code = r.status
+        except urllib.error.HTTPError as e:
+            code = e.code
+        assert code == 400
+    finally:
+        httpd.shutdown()
+
+
 def t_post_obs_stream_target_routes_to_provider():
     calls = {}
     def provider(part):
