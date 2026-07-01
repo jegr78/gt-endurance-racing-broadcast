@@ -133,8 +133,8 @@ bottom.
 ### Transition
 
 The **TRANS** bar sets the OBS transition used the next time the panel or a
-macro switches the active scene. It is **sticky** — the choice persists until
-you change it and survives page reloads.
+macro switches the active scene. It is **sticky** — the choice persists across
+takes until you change it (a page reload resets it to the default, Fade).
 
 | Choice | Behaviour |
 |---|---|
