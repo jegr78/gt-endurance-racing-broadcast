@@ -184,7 +184,11 @@ def disk_level(free_bytes):
 # ---------- per-OS real readers (OS-gated; not unit-tested with real calls) ----------
 
 def _read_cpu():
-    """-> ('counter', busy, total) | ('percent', pct) | None."""
+    """-> ('counter', busy, total) | ('percent', pct, None) | None.
+
+    All tuple returns are length 3 (the 'percent' variant pads a None) so the
+    shape is uniform — CodeQL's py/mixed-tuple-returns; the consumer (_cpu)
+    keys off element [0] and never reads the pad."""
     try:
         if IS_LINUX:
             with open("/proc/stat") as fh:
@@ -205,7 +209,7 @@ def _read_cpu():
                                  capture_output=True, text=True, timeout=6,
                                  **no_window_kwargs()).stdout
             pct = parse_top_cpu(out)
-            return ("percent", pct) if pct is not None else None
+            return ("percent", pct, None) if pct is not None else None
     except (OSError, ValueError, subprocess.SubprocessError):
         return None
     return None

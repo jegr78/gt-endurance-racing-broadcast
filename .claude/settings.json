@@ -18,6 +18,18 @@
             "statusMessage": "portability guard (no machine paths)"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(gh pr merge*)",
+            "command": "printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"A merge to main just completed. Before treating the task as done, do the repository security follow-up: (1) Wait for the CodeQL run this merge triggered on main to finish (poll: gh run list --workflow=CodeQL --branch=main --limit=3, then gh run watch the newest id). (2) List OPEN Code Scanning alerts: gh api repos/:owner/:repo/code-scanning/alerts --paginate, and keep the ones whose state is open. (3) For each open alert, judge whether it is a real issue or a false positive. Fix the REAL ones under src/ on a NEW branch and open a PR (run python3 tools/run-tests.py and python3 tools/lint.py first); never commit to main directly. Record any false positives in the PR body instead of auto-dismissing them. If there are zero open alerts, report that briefly and stop.\"}}'",
+            "timeout": 10,
+            "statusMessage": "post-merge security-alert reminder"
+          }
+        ]
       }
     ]
   }
