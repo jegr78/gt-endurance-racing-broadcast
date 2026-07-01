@@ -23,6 +23,8 @@
   racecast profile   list | show [<name>] | use <name> | new <name> [--from <source>] | export <name> [--no-assets] [--out PATH] | import <file> [--force]
   racecast --profile <name> <command>        # run one command against a non-active profile
   racecast chat      clear | pull <ip> [--port N] | import <file> | export [--out PATH]
+  racecast report                            # generate the post-event report (last session) -> runtime/<profile>/reports/
+  racecast report send [FILE]                # send the newest (or given) report to the league Discord as an attachment
   racecast backup    {create|list|restore|delete} <label>   # named look snapshots (overlay+graphics+media)
   racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
   racecast freeport [PORT...] [--force]       # free a stuck feed port (default 53001-53003); kills orphaned holders, refuses a running relay/streams
@@ -50,6 +52,7 @@ import console_auth as cpa
 import console_admin as cpadm
 import cue_admin as cue
 import health_store as hsmod
+import report_build as rbuild
 import notify   # pure Discord payload builders for producer events (#317)
 import overlay_build as ob
 import fonts_bundle as fb
@@ -940,6 +943,8 @@ def route(argv):
         return {"kind": "chat", "rest": rest}
     if cmd == "health":
         return {"kind": "health", "rest": rest}
+    if cmd == "report":
+        return {"kind": "report", "rest": rest}
     if cmd == "console":
         if not rest or rest[0] not in CONSOLE_VERBS:
             raise ValueError(f"usage: racecast console {{{'|'.join(CONSOLE_VERBS)}}}")
@@ -1144,6 +1149,167 @@ def health_cmd(rest):
         conn.close()
         print(f"Pulled {n} new samples from {host}.")
         return None
+
+
+REPORT_VERBS = ("generate", "send")
+
+
+def _reports_dir():
+    return os.path.join(_runtime_dir(), "reports")
+
+
+def _report_event_title():
+    """Active profile's event title from runtime/<profile>/event.json ('' if absent)."""
+    try:
+        with open(os.path.join(_runtime_dir(), "event.json"), encoding="utf-8") as fh:
+            return (json.load(fh).get("title") or "").strip()
+    except (OSError, ValueError):
+        return ""
+
+
+def _report_name_map():
+    """{stint_index (1-based): commentator name} from the LOCAL relay's /schedule/data
+    (which runs the canonical schedule parser). Only the `name` field is used — the
+    `url` is ignored (redaction). Empty dict when the relay is unreachable."""
+    try:
+        data = _relay_fetch_json(f"http://127.0.0.1:{RELAY_PORT}/schedule/data")
+        return {r["row"]: (r.get("name") or "").strip()
+                for r in (data.get("rows") or [])
+                if isinstance(r.get("row"), int) and (r.get("name") or "").strip()}
+    except Exception:  # noqa: BLE001 — best-effort; names degrade gracefully
+        return {}
+
+
+def _build_report_file(frm=None, to=None, gap=None, out=None):
+    """Core generator. Returns {'path','html','summary'}. Raises ValueError when the
+    selected window has no samples."""
+    gap = rbuild.SESSION_GAP_S if gap is None else gap
+    conn = hsmod.open_db(_health_db_path())
+    hsmod.migrate(conn)
+    try:
+        if frm is None or to is None:
+            all_ts = [r["ts"] for r in
+                      conn.execute("SELECT ts FROM samples ORDER BY ts ASC").fetchall()]
+            s, e = rbuild.select_session(all_ts, gap)
+            frm = s if frm is None else frm
+            to = e if to is None else to
+        if frm is None or to is None:
+            raise ValueError("no health data for that window")
+        samples = hsmod.query_range(conn, frm, to)
+        events = hsmod.query_events(conn, frm, to)
+    finally:
+        conn.close()
+    if not samples:
+        raise ValueError("no health data for that window")
+    bucketed = rbuild.bucket_samples(samples)
+    title = _report_event_title()
+    report = rbuild.build_report(bucketed, events, _report_name_map(), title,
+                                 (frm, to), time.time())
+    html = rbuild.render_html(report)
+    os.makedirs(_reports_dir(), exist_ok=True)
+    date_str = time.strftime("%Y-%m-%d", time.localtime(frm))
+    path = out or os.path.join(_reports_dir(), rbuild.report_filename(title, date_str))
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(html)
+    return {"path": path, "html": html, "summary": rbuild.render_summary_text(report)}
+
+
+def _latest_report():
+    try:
+        files = [os.path.join(_reports_dir(), f) for f in os.listdir(_reports_dir())
+                 if f.endswith(".html")]
+    except OSError:
+        return None
+    return max(files, key=os.path.getmtime) if files else None
+
+
+def _send_report_core(path):
+    """Attach the report .html to the league Discord. Raises on any failure."""
+    if not path:
+        raise ValueError("no report found — run `racecast report` first")
+    with open(path, "rb") as fh:
+        content = fh.read()
+    webhook, league = _active_discord_webhook()
+    if not webhook:
+        raise ValueError("No DISCORD_WEBHOOK_URL configured for this league")
+    title = _report_event_title() or league or "Event"
+    fields = {"payload_json": json.dumps({"content": f"\U0001F4CA Post-event report — {title}"})}
+    files = [("files[0]", os.path.basename(path), content, "text/html")]
+    http_util.post_multipart(webhook, fields=fields, files=files, timeout=15)
+
+
+def report_generate_data():
+    try:
+        r = _build_report_file()
+        return {"ok": True, "path": r["path"], "html": r["html"], "summary": r["summary"]}
+    except Exception as exc:  # noqa: BLE001 — surface the message to the UI
+        return {"ok": False, "error": str(exc)}
+
+
+def report_send_data(path=None):
+    try:
+        _send_report_core(path or _latest_report())
+        return {"ok": True}
+    except Exception as exc:  # noqa: BLE001 — surface the message to the UI
+        return {"ok": False, "error": str(exc)}
+
+
+def _report_parse_args(args):
+    frm = to = out = None
+    gap = None
+
+    def _num(flag):
+        i = args.index(flag)
+        try:
+            return args[i + 1]
+        except IndexError:
+            sys.exit(f"racecast: {flag} requires a value")
+
+    if "--from" in args:
+        try:
+            frm = float(_num("--from"))
+        except ValueError:
+            sys.exit("racecast: --from requires a numeric epoch value")
+    if "--to" in args:
+        try:
+            to = float(_num("--to"))
+        except ValueError:
+            sys.exit("racecast: --to requires a numeric epoch value")
+    if "--session-gap" in args:
+        try:
+            gap = float(_num("--session-gap"))
+        except ValueError:
+            sys.exit("racecast: --session-gap requires a numeric seconds value")
+    if "--out" in args:
+        out = _num("--out")
+    return frm, to, gap, out
+
+
+def report_cmd(rest):
+    """`racecast report [generate] [--from TS --to TS --session-gap S --out PATH]`
+    | `racecast report send [FILE]` — generate/send the post-event report."""
+    verb = rest[0] if rest and rest[0] in REPORT_VERBS else "generate"
+    args = rest[1:] if (rest and rest[0] in REPORT_VERBS) else rest
+
+    if verb == "send":
+        path = args[0] if args and not args[0].startswith("--") else _latest_report()
+        try:
+            _send_report_core(path)
+        except (OSError, ValueError) as exc:
+            sys.exit(f"racecast: {exc}")
+        except Exception as exc:  # noqa: BLE001 — network/HTTP
+            sys.exit(f"racecast: Discord send failed — {type(exc).__name__}: {exc}")
+        print(f"Sent {os.path.basename(path)} to the league Discord.")
+        return None
+
+    frm, to, gap, out = _report_parse_args(args)
+    try:
+        result = _build_report_file(frm, to, gap, out)
+    except ValueError as exc:
+        sys.exit(f"racecast: {exc} — nothing to report.")
+    print(result["summary"])
+    print(f"Report written -> {result['path']}")
+    return None
 
 
 def _cues_path():
@@ -5596,6 +5762,8 @@ def main(argv=None):
         return chat_cmd(action["rest"])
     if action["kind"] == "health":
         return health_cmd(action["rest"])
+    if action["kind"] == "report":
+        return report_cmd(action["rest"])
     if action["kind"] == "console":
         return console_cmd(action["rest"])
     if action["kind"] == "funnel":
