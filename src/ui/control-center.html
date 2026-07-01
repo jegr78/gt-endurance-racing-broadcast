@@ -728,8 +728,8 @@
             <span class="sub">drag &amp; style the HUD + Timer slots</span><span class="spacer"></span>
             <button id="overlay-popout" onclick="openBuilderModal()" title="Open the builder in a larger pop-out modal for more room to work">
               <svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Pop out ↗</button>
-            <select id="ov-slotpick" class="ov-slotpick" onchange="if(this.value)ovSelect(this.value)"
-              title="Jump to a slot" aria-label="Jump to slot"></select>
+            <select id="ov-slotpick" class="ov-slotpick" onchange="ovSelect(this.value || null)"
+              title="Jump to a slot (pick the placeholder to deselect)" aria-label="Jump to slot"></select>
             <button id="overlay-undo" onclick="ovUndo()" disabled title="Undo (Ctrl/Cmd-Z)">↶ Undo</button>
             <button id="overlay-redo" onclick="ovRedo()" disabled title="Redo (Ctrl/Cmd-Shift-Z)">↷ Redo</button>
             <button id="overlay-save" onclick="saveOverlay()">
@@ -3097,6 +3097,18 @@ function ovBuildCanvas() {
     el.addEventListener('pointerdown', ovStartDrag);
     ovStyleSlot(s.id);
   });
+  // A pointerdown on empty canvas (not on a slot or resize handle) deselects.
+  // Slot/handle presses bubble here too but return early, so selecting/dragging a
+  // slot is unaffected. The selection box is pointer-events:none, so clicking a
+  // selected slot passes through to the slot and keeps it selected.
+  sh.addEventListener('pointerdown', e => {
+    const ids = new Set(ovState.slots.map(s => s.id));
+    for (let n = e.target; n && n !== sh; n = n.parentNode) {
+      if ((n.id && ids.has(n.id)) ||
+          (n.classList && n.classList.contains('ov-handle'))) return;
+    }
+    ovDeselect();
+  });
   ovFillSample();
   ovApplyZoom();
   ovPositionSel();
@@ -3479,12 +3491,18 @@ function ovPositionSel() {
 }
 
 function ovSelect(id) {
-  ovState.sel = id;
+  ovState.sel = id || null;
   const sp = $('ov-slotpick');
-  if (sp) sp.value = id || '';
-  ovPositionSel();
-  ovRenderPanel();
+  if (sp) sp.value = ovState.sel || '';
+  ovPositionSel();          // hides the selection box when nothing is selected
+  ovRenderPanel();          // shows the "click a slot…" hint when nothing is selected
 }
+
+// Back to the initial "nothing selected" state (empty properties panel, no
+// selection box). Reachable via Esc, a click on empty canvas, or the slot
+// picker's placeholder — a slot selection is no longer sticky (issue: could not
+// deselect once a slot was picked).
+function ovDeselect() { ovSelect(null); }
 
 function ovStartDrag(e) {
   e.preventDefault();
@@ -3979,9 +3997,16 @@ function closeBuilderModal() {
   setTimeout(() => { if (ovState.shadow) { ovApplyZoom(); ovPositionSel(); } }, 0);
 }
 
-// Esc closes the modal (only when it's open).
+// Esc: first blur an active field, then drop the slot selection (back to the
+// initial "nothing selected" state); only when nothing is selected does Esc close
+// the pop-out modal.
 window.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && !$('ov-modal').hidden) closeBuilderModal();
+  if (e.key !== 'Escape') return;
+  const tn = e.target && e.target.tagName;
+  if (tn === 'INPUT' || tn === 'TEXTAREA' || tn === 'SELECT') { e.target.blur(); return; }
+  const onScreen = ovState.shadow && (currentView === 'profile' || !$('ov-modal').hidden);
+  if (onScreen && ovState.sel) { e.preventDefault(); ovDeselect(); return; }
+  if (!$('ov-modal').hidden) closeBuilderModal();
 });
 
 // Undo/redo shortcuts — only when the builder canvas exists and focus is NOT in a
