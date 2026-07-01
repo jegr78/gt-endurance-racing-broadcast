@@ -31,6 +31,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/ui_visual_verify_gate.py",
+            "timeout": 20,
+            "statusMessage": "UI visual-verification gate"
+          }
+        ]
+      }
     ]
   }
 }
