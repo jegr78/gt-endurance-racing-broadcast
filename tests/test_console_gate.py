@@ -402,6 +402,32 @@ def t_console_obs_scene_requires_director():
         srv.shutdown()
 
 
+def t_obs_scene_forwards_transition_and_clamps_duration():
+    # The /obs/scene endpoint must forward transition + a clamped duration_ms to
+    # _obs_ws.set_current_program_scene and return {"ok": True} (or the note).
+    srv = _serve(); port = srv.server_address[1]
+    calls = {}
+
+    class _FakeObs:
+        def set_current_program_scene(self, scene, transition=None, duration_ms=None):
+            calls["args"] = (scene, transition, duration_ms)
+            return True, ""
+
+    orig, m._obs_ws = m._obs_ws, _FakeObs()
+    try:
+        code, body = _post(port, "/console/obs/scene", _tok("bob"),
+                           body={"scene": "Stint", "transition": "fade",
+                                 "duration": 999999})
+        assert code == 200, (code, body)
+        assert "args" in calls, "set_current_program_scene was not called"
+        assert calls["args"][0] == "Stint", calls["args"]
+        assert calls["args"][1] == "fade", calls["args"]
+        assert calls["args"][2] == 10000, calls["args"]   # clamped to 0..10000 ceiling
+    finally:
+        m._obs_ws = orig
+        srv.shutdown()
+
+
 def t_takeover_chat_and_versions_gated_and_routed():
     srv = _serve(); port = srv.server_address[1]
     try:

@@ -6465,9 +6465,19 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["obs", "scene"]:
                     if _obs_ws is None:
                         return self._send({"error": "obs unavailable"}, 503)
-                    ok, note = _obs_ws.set_current_program_scene(body.get("scene"))
-                    return self._send({"ok": True} if ok
-                                      else {"ok": False, "error": note}, 200 if ok else 503)
+                    transition = body.get("transition")
+                    duration = body.get("duration")
+                    if duration is not None:
+                        try:
+                            duration = max(0, min(10000, int(duration)))
+                        except (TypeError, ValueError):
+                            duration = None
+                    ok, note = _obs_ws.set_current_program_scene(
+                        body.get("scene"), transition=transition, duration_ms=duration)
+                    if not ok:
+                        return self._send({"ok": False, "error": note}, 503)
+                    return self._send({"ok": True, "note": note} if note
+                                      else {"ok": True})
                 if p == ["obs", "source"]:
                     if _obs_ws is None:
                         return self._send({"error": "obs unavailable"}, 503)
