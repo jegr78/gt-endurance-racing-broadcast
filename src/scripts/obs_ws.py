@@ -772,6 +772,33 @@ def set_stream(active, host="127.0.0.1", port=None,
         session.close()
 
 
+def set_stream_service(platform, key, host="127.0.0.1", port=None,
+                       password=None, timeout=2.0):
+    """Set OBS's stream service + key for a single-channel event (best effort).
+    HARD GUARD: refuses while OBS is streaming — a live service/key change is
+    unsafe — returning (False, "OBS is streaming — stop the broadcast before
+    changing the stream target."). Unknown platform / unreachable OBS -> (False,
+    note). The key is applied to OBS and NEVER logged. (ok, note); never raises."""
+    try:
+        data = stream_service_payload(platform, key)
+    except ValueError as exc:
+        return False, str(exc)
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return False, note
+    try:
+        status = parse_stream_status(session.request("GetStreamStatus", {}))
+        if status.get("stream_active"):
+            return False, ("OBS is streaming — stop the broadcast before "
+                           "changing the stream target.")
+        session.request("SetStreamServiceSettings", data)
+        return True, ""
+    except Exception as exc:                       # noqa: BLE001 — best-effort contract
+        return False, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
 def read_obs_state(sources, inputs, host="127.0.0.1", port=None,
                    password=None, timeout=2.0):
     """One-session panel-refresh snapshot: current program scene + the enabled state

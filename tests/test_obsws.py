@@ -427,6 +427,9 @@ def _fake_obs_server(server_sock, password, state):
             state.setdefault("stream_calls", []).append("stop")
             state["stream_active"] = False
             resp = {}
+        elif rtype == "SetStreamServiceSettings":
+            state.setdefault("service_settings", []).append(rdata)
+            resp = {}
         else:
             resp = {}
         _srv_send_json(conn, {"op": 7, "d": {
@@ -1308,6 +1311,47 @@ def t_stream_service_payload_unknown_platform_raises():
         assert "kick" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+# --------------------------------------------------------------------------
+# set_stream_service — Sheet-driven OBS stream target (guarded)
+# --------------------------------------------------------------------------
+def t_set_stream_service_applies_when_offline():
+    state = {"stream_active": False}
+    port, srv = _start_fake_obs(state)
+    ok, note = m.set_stream_service("twitch", "sk_live", port=port,
+                                    password="supersecret", timeout=5)
+    assert ok and note == "", note
+    assert state["service_settings"] == [
+        {"streamServiceType": "rtmp_common",
+         "streamServiceSettings": {"service": "Twitch", "server": "auto",
+                                   "key": "sk_live"}}]
+    srv.close()
+
+
+def t_set_stream_service_refused_while_streaming():
+    state = {"stream_active": True}
+    port, srv = _start_fake_obs(state)
+    ok, note = m.set_stream_service("youtube", "sk", port=port,
+                                    password="supersecret", timeout=5)
+    assert ok is False
+    assert "streaming" in note
+    assert "service_settings" not in state          # nothing applied
+    srv.close()
+
+
+def t_set_stream_service_unknown_platform_is_note_not_crash():
+    ok, note = m.set_stream_service("kick", "sk", port=1, password="x", timeout=0.5)
+    assert ok is False
+    assert "kick" in note                           # short-circuits before connect
+
+
+def t_set_stream_service_unreachable_is_note_not_crash():
+    sock = socket.socket(); sock.bind(("127.0.0.1", 0))
+    free_port = sock.getsockname()[1]; sock.close()
+    ok, note = m.set_stream_service("twitch", "sk", port=free_port,
+                                    password="x", timeout=0.5)
+    assert ok is False and note
 
 
 if __name__ == "__main__":
