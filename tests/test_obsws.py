@@ -1285,6 +1285,31 @@ def t_set_scene_no_transition_is_plain_switch():
     assert ("SetCurrentProgramScene", {"sceneName": "Stint"}) in sess.sent
 
 
+# --------------------------------------------------------------------------
+# stream_service_payload — Sheet-driven OBS stream target (per Producer Part)
+# --------------------------------------------------------------------------
+def t_stream_service_payload_youtube():
+    d = m.stream_service_payload("youtube", "live_abc")
+    assert d == {"streamServiceType": "rtmp_common",
+                 "streamServiceSettings": {"service": "YouTube - RTMPS",
+                                           "server": "auto", "key": "live_abc"}}
+
+
+def t_stream_service_payload_twitch_case_insensitive():
+    d = m.stream_service_payload("  Twitch ", "sk_1")
+    assert d["streamServiceSettings"]["service"] == "Twitch"
+    assert d["streamServiceSettings"]["key"] == "sk_1"
+
+
+def t_stream_service_payload_unknown_platform_raises():
+    try:
+        m.stream_service_payload("kick", "x")
+    except ValueError as exc:
+        assert "kick" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

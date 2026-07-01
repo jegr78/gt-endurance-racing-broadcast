@@ -478,6 +478,23 @@ def parse_stream_status(payload):
     }
 
 
+# Single-channel event -> OBS rtmp_common service name. Platform values come from
+# the Sheet `Channel` tab (broadcast_chat.parse_channel_tab), lowercased.
+OBS_STREAM_SERVICE_NAMES = {"youtube": "YouTube - RTMPS", "twitch": "Twitch"}
+
+
+def stream_service_payload(platform, key):
+    """Build SetStreamServiceSettings request data for a single-channel event.
+    `platform` is the Channel-tab value ('youtube'/'twitch', case-insensitive);
+    unknown -> ValueError (the caller turns it into a producer-facing note, never
+    a crash). The key is passed through verbatim and never logged."""
+    name = OBS_STREAM_SERVICE_NAMES.get((platform or "").strip().lower())
+    if not name:
+        raise ValueError(f"unknown stream platform: {platform!r}")
+    return {"streamServiceType": "rtmp_common",
+            "streamServiceSettings": {"service": name, "server": "auto", "key": key}}
+
+
 def get_health_stats(host="127.0.0.1", port=None, password=None, timeout=2.0):
     """One obs-websocket session -> (reachable, stats, note). `stats` is the merged
     parse_obs_stats + parse_stream_status dict (empty {} when the requests fail but
