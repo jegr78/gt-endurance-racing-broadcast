@@ -20,9 +20,26 @@ import sys as _sys
 _sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))  # for graphics load
 media = m  # alias for the intermission-music tests below
 graphics = _load("get_graphics", os.path.join("src", "relay", "get-graphics.py"))
+brands = _load("get_brands", os.path.join("src", "relay", "get-brands.py"))
 
 DRIVE = "https://drive.google.com/file/d/ABC123def456/view?usp=sharing"
 YT = "https://www.youtube.com/watch?v=abc12345"
+
+# A modern Google-Drive large-file interstitial: a <form> that GETs the
+# drive.usercontent.google.com/download endpoint with hidden inputs. The old
+# code looked for a `confirm=<token>` query param, which this format lacks
+# (`confirm` is a hidden input valued "t") — the #386 failure mode.
+FORM_INTERSTITIAL = (
+    b"<!DOCTYPE html><html><head><title>Google Drive - Virus scan warning</title>"
+    b"</head><body>"
+    b'<form id="download-form" action="https://drive.usercontent.google.com/download" '
+    b'method="get">'
+    b'<input type="hidden" name="id" value="FILEID123">'
+    b'<input type="hidden" name="export" value="download">'
+    b'<input type="hidden" name="authuser" value="0">'
+    b'<input type="hidden" name="confirm" value="t">'
+    b'<input type="hidden" name="uuid" value="abcd-uuid-1234">'
+    b"</form></body></html>")
 
 
 def t_urls_basic():
@@ -215,9 +232,54 @@ def t_build_music_cmd_output_stem_is_intermission():
 
 
 def t_drive_helpers_match_get_graphics():
-    for fn in ("is_drive_url", "drive_id", "to_download_url"):
+    for fn in ("is_drive_url", "drive_id", "to_download_url", "drive_confirm_url"):
         assert inspect.getsource(getattr(media, fn)) == inspect.getsource(getattr(graphics, fn)), \
             f"{fn} drifted between get-media and get-graphics"
+
+
+def t_drive_helpers_match_get_brands():
+    for fn in ("is_drive_url", "drive_id", "to_download_url", "drive_confirm_url"):
+        assert inspect.getsource(getattr(media, fn)) == inspect.getsource(getattr(brands, fn)), \
+            f"{fn} drifted between get-media and get-brands"
+
+
+def t_drive_confirm_url_form_interstitial():
+    """The modern <form> interstitial resolves to a usercontent GET with all
+    hidden inputs carried through (the #386 fix)."""
+    from urllib.parse import urlparse, parse_qs
+    url = media.to_download_url("FILEID123")
+    got = media.drive_confirm_url(url, FORM_INTERSTITIAL)
+    p = urlparse(got)
+    assert (p.scheme, p.netloc, p.path) == (
+        "https", "drive.usercontent.google.com", "/download"), got
+    q = parse_qs(p.query)
+    assert q["id"] == ["FILEID123"]
+    assert q["export"] == ["download"]
+    assert q["confirm"] == ["t"]
+    assert q["uuid"] == ["abcd-uuid-1234"]
+
+
+def t_drive_confirm_url_legacy_token():
+    """The legacy inline `confirm=<token>` link still resolves (back-compat)."""
+    url = media.to_download_url("XYZ")
+    body = b'<a href="/uc?export=download&confirm=AbC_9-tok&id=XYZ">Download</a>'
+    assert media.drive_confirm_url(url, body) == url + "&confirm=AbC_9-tok"
+
+
+def t_drive_confirm_url_none_when_neither():
+    assert media.drive_confirm_url("u", b"<html><body>nothing here</body></html>") is None
+
+
+def t_drive_confirm_url_input_attr_order_independent():
+    """value-before-name inputs still parse (attribute order must not matter)."""
+    from urllib.parse import urlparse, parse_qs
+    body = (
+        b'<form action="https://drive.usercontent.google.com/download">'
+        b'<input value="ID9" name="id" type="hidden">'
+        b'<input type="hidden" name="confirm" value="t"></form>')
+    got = media.drive_confirm_url("u", body)
+    q = parse_qs(urlparse(got).query)
+    assert q["id"] == ["ID9"] and q["confirm"] == ["t"]
 
 
 if __name__ == "__main__":
