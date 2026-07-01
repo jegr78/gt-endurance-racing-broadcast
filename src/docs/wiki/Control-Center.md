@@ -57,6 +57,15 @@ the `racecast` services down. The sidebar also shows the **active league profile
 (click it to jump to the Profile view). From here you also open the Director panel
 and copy the director / Web Buttons links.
 
+#### System
+
+A live machine-resource card shows the producer machine's **CPU %**, **RAM** (used /
+total and a percentage), **Network ↑/↓**, and **Disk free**. Readings are color-coded:
+CPU turns yellow above 75 % and red at 90 % or above; RAM turns yellow above 80 % and
+red at 92 % or above; Disk free turns yellow below 5 GB and red below 2 GB. Network
+throughput is informational and carries no color. The card updates while the relay is
+running; it shows no data when the relay is stopped.
+
 > **CLI alternative:** `racecast status`, `racecast event start [--stint N]`, `racecast event stop`.
 
 ### Profile
