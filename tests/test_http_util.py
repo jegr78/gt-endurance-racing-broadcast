@@ -99,6 +99,39 @@ def t_httperror_is_reexported_and_propagates():
         h.urlopen = orig
 
 
+def t_post_multipart_frames_body_and_ua():
+    captured = {}
+
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b"ok"
+
+    def _fake_urlopen(req, timeout=None):
+        captured["ct"] = req.headers.get("Content-type")
+        captured["ua"] = req.headers.get("User-agent")
+        captured["body"] = req.data
+        return _Resp()
+
+    orig = h.urlopen
+    h.urlopen = _fake_urlopen
+    try:
+        out = h.post_multipart(
+            "https://example.invalid/hook",
+            fields={"payload_json": '{"content":"hi"}'},
+            files=[("files[0]", "report.html", b"<!doctype html>", "text/html")])
+    finally:
+        h.urlopen = orig
+    assert out == b"ok"
+    assert captured["ua"] == "racecast/1.0", captured
+    assert captured["ct"].startswith("multipart/form-data; boundary="), captured
+    body = captured["body"]
+    assert b'name="payload_json"' in body
+    assert b'{"content":"hi"}' in body
+    assert b'filename="report.html"' in body
+    assert b"<!doctype html>" in body
+
+
 # The covered modules must not issue a bare urllib request — everything goes
 # through http_util so the User-Agent can never be forgotten. urllib.parse /
 # urllib.error stay allowed; only `urlopen` and `urllib.request` are banned.
