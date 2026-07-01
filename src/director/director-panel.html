@@ -154,8 +154,14 @@
   button.k.stream.recon{border-color:#d68910;background:linear-gradient(180deg,#332611,#261d10);
     color:#ffcf80;box-shadow:0 0 0 1px #d68910,0 0 18px rgba(214,137,16,.35)}
   .pgm button.k{min-width:110px;min-height:62px;font-weight:600;font-size:14px}
-  #txBar .txdur { margin-left: 8px; font-size: 12px; opacity: .85; }
-  #txBar .txdur input { width: 64px; }
+  #txBar .txdur{display:flex;align-items:center;gap:6px;margin-left:8px;
+    font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.04em}
+  #txBar .txdur input{width:64px;background:#0c0f13;border:1px solid var(--edge);
+    color:var(--ink);font-family:var(--mono);font-size:13px;text-align:center;
+    padding:8px;border-radius:8px;outline:none;
+    transition:border-color .15s,box-shadow .15s}
+  #txBar .txdur input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(58,160,255,.18)}
+  #txBar .txdur input:disabled{opacity:.4;cursor:not-allowed}
 
   /* ---------- audio rows ---------- */
   .arow{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px dashed var(--edge)}
