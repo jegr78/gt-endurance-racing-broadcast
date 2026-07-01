@@ -623,6 +623,16 @@ def make_handler(ctx):
                                        "error": f"could not set event title: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/obs/stream-target":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["obs_stream_target"]((body.get("part") or "").strip())
+                except Exception as exc:               # noqa: BLE001 — provider is best-effort
+                    return self._json({"ok": False, "note": str(exc)}, code=400)
+                return self._json(result, code=200 if result.get("ok") else 400)
             if path == "/api/report/generate":
                 try:
                     return self._json(ctx["report_generate"]())

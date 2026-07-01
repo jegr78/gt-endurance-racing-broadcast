@@ -3649,6 +3649,13 @@ def obs_collection_data(get=None):
     return {"ok": True, **status}
 
 
+def obs_stream_target_data(part):
+    """Control Center action: set OBS's stream service+key for a Producer Part.
+    Wraps _apply_stream_target -> {"ok", "note"} (note never carries the key)."""
+    ok, note = _apply_stream_target(part or "")
+    return {"ok": ok, "note": note}
+
+
 _LOGO_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg")
 
 
@@ -5697,6 +5704,7 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "event_title_write": event_title_write_data,
         "tailscale_peers": _tailscale_peers,
         "obs_collection": obs_collection_data,
+        "obs_stream_target": obs_stream_target_data,
         "update_check": update_check_cached,
         "previews": preview_list_cached,
         "streams_read": streams_config_data,
