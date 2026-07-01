@@ -130,6 +130,30 @@ def t_report_filename():
     assert rb.report_filename("", "2026-07-01") == "2026-07-01-report.html"
 
 
+def t_feed_stats_interval_weighted_downtime():
+    # ts 0, 30, 60 with feed_a_down=0,1,0 → down band [30,60] → downtime 30s
+    samples = [_sample(0.0, feed_a_down=0), _sample(30.0, feed_a_down=1),
+               _sample(60.0, feed_a_down=0)]
+    rep = rb.build_report(samples, [], {}, "E", (0.0, 60.0), now=1000.0)
+    feed_a = next(f for f in rep["feeds"] if f["feed"] == "A")
+    assert feed_a["drops"] == 1, feed_a
+    assert feed_a["downtime_s"] == 30.0, feed_a
+    assert feed_a["longest_outage_s"] == 30.0, feed_a
+
+
+def t_build_report_no_mutation_on_repeated_call():
+    # build_report must not mutate shared state: two calls on the same samples must
+    # yield identical health_bands (no accumulating dict mutation).
+    samples = [_sample(0.0), _sample(30.0, health_level="yellow"),
+               _sample(60.0, health_level="green"), _sample(90.0)]
+    rep1 = rb.build_report(samples, [], {}, "E", (0.0, 90.0), now=1000.0)
+    snapshot = [dict(b) for b in rep1["health_bands"]]
+    rep2 = rb.build_report(samples, [], {}, "E", (0.0, 90.0), now=1000.0)
+    assert rep1["health_bands"] == rep2["health_bands"], (
+        "second call produced different health_bands", rep1["health_bands"], rep2["health_bands"])
+    assert rep1["health_bands"] == snapshot, "first call's health_bands were mutated by second call"
+
+
 def run():
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

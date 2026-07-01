@@ -51,21 +51,26 @@ def bucket_samples(samples, bucket_s=hs.SAMPLE_INTERVAL_S):
     return out
 
 
-def _uptime_pct(bands, duration_s):
+def _fill_gaps(bands):
+    """Return NEW bands where each band's end extends to the next band's start
+    (interval-weighted: a sample's state persists until the next sample). The last
+    band is left as-is. Does not mutate the input list or its dicts."""
+    out = [dict(b) for b in bands]
+    for i in range(len(out) - 1):
+        out[i]["to"] = out[i + 1]["from"]
+    return out
+
+
+def _uptime_pct(filled_bands, duration_s):
     if duration_s <= 0:
         return 0.0
-    # Extend bands to be contiguous: if a band's end is less than the next band's start,
-    # extend it to fill the gap (the state persists until the next state change).
-    extended = list(bands)
-    for i in range(len(extended) - 1):
-        if extended[i]["to"] < extended[i + 1]["from"]:
-            extended[i]["to"] = extended[i + 1]["from"]
-    green = sum(b["to"] - b["from"] for b in extended if b["state"] == "green")
+    green = sum(b["to"] - b["from"] for b in filled_bands if b["state"] == "green")
     return round(green / duration_s * 100, 1)
 
 
 def _feed_stats(samples, down_field):
-    bands = hs.collapse_bands([(s["ts"], 1 if s.get(down_field) else 0) for s in samples])
+    bands = _fill_gaps(hs.collapse_bands(
+        [(s["ts"], 1 if s.get(down_field) else 0) for s in samples]))
     down = [b for b in bands if b["state"] == 1]
     downtime = sum(b["to"] - b["from"] for b in down)
     longest = max((b["to"] - b["from"] for b in down), default=0.0)
@@ -102,15 +107,10 @@ def _quality(samples):
 
 
 def _on_air(samples, name_for_stint):
-    bands = hs.collapse_bands([(s["ts"], s.get("live_stint")) for s in samples])
-    # Extend bands to be contiguous: fill gaps so state persists until the next state change.
-    extended = list(bands)
-    for i in range(len(extended) - 1):
-        if extended[i]["to"] < extended[i + 1]["from"]:
-            extended[i]["to"] = extended[i + 1]["from"]
+    bands = _fill_gaps(hs.collapse_bands([(s["ts"], s.get("live_stint")) for s in samples]))
     agg = {}          # name -> [seconds, set(stints)]
     resolved = bool(name_for_stint)
-    for b in extended:
+    for b in bands:
         st = b["state"]
         if st is None:
             continue
@@ -119,7 +119,7 @@ def _on_air(samples, name_for_stint):
         entry = agg.setdefault(name, [0.0, set()])
         entry[0] += b["to"] - b["from"]
         entry[1].add(st)
-    non_null = [int(b["state"]) for b in extended if b["state"] is not None]
+    non_null = [int(b["state"]) for b in bands if b["state"] is not None]
     handovers = sum(1 for i in range(1, len(non_null)) if non_null[i] != non_null[i - 1])
     commentators = sorted(
         ({"name": n, "seconds": round(v[0], 1), "stints": len(v[1])} for n, v in agg.items()),
@@ -133,7 +133,8 @@ def build_report(samples, events, name_for_stint, event_title, window, now):
     `window` = (from_ts, to_ts). `samples` is assumed non-empty (the caller guards)."""
     frm, to = window
     duration_s = max(0.0, (to or 0) - (frm or 0))
-    health_bands = hs.collapse_bands([(s["ts"], s.get("health_level")) for s in samples])
+    health_bands = _fill_gaps(hs.collapse_bands(
+        [(s["ts"], s.get("health_level")) for s in samples]))
     on_air = _on_air(samples, name_for_stint)
     on_air["resolved_at"] = now
     feeds = [{"feed": "A", **_feed_stats(samples, "feed_a_down")},
