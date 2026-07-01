@@ -141,6 +141,17 @@ def t_feed_stats_interval_weighted_downtime():
     assert feed_a["longest_outage_s"] == 30.0, feed_a
 
 
+def t_fill_gaps_does_not_bridge_relay_down_gap():
+    # Contiguous green [0,30], then a ~11-min relay-down hole, then green [700,730],
+    # all within one session. The hole must NOT count as green -> uptime well below 100%.
+    samples = [_sample(0.0), _sample(30.0),
+               _sample(700.0), _sample(730.0)]
+    rep = rb.build_report(samples, [], {}, "E", (0.0, 730.0), now=1000.0)
+    assert rep["header"]["uptime_pct"] < 100.0, rep["header"]
+    # green wall-clock is the two contiguous 30s intervals (~60s of 730s), NOT the whole span
+    assert rep["header"]["uptime_pct"] <= 20.0, rep["header"]
+
+
 def t_build_report_no_mutation_on_repeated_call():
     # build_report must not mutate shared state: two calls on the same samples must
     # yield identical health_bands (no accumulating dict mutation).

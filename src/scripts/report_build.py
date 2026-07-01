@@ -51,13 +51,17 @@ def bucket_samples(samples, bucket_s=hs.SAMPLE_INTERVAL_S):
     return out
 
 
-def _fill_gaps(bands):
-    """Return NEW bands where each band's end extends to the next band's start
-    (interval-weighted: a sample's state persists until the next sample). The last
-    band is left as-is. Does not mutate the input list or its dicts."""
+def _fill_gaps(bands, gap_s=hs.GAP_S):
+    """Return NEW bands where each band's end extends to the next band's start —
+    but only across a normal sampling interval. A hole larger than gap_s means the
+    relay was down (collapse_bands split there); that gap is NOT bridged, so a
+    blackout is correctly excluded from the pre-gap state's duration. Does not
+    mutate the input."""
     out = [dict(b) for b in bands]
     for i in range(len(out) - 1):
-        out[i]["to"] = out[i + 1]["from"]
+        nxt = out[i + 1]["from"]
+        if nxt - out[i]["to"] <= gap_s:
+            out[i]["to"] = nxt
     return out
 
 

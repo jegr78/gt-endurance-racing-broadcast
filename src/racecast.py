@@ -1305,7 +1305,7 @@ def report_cmd(rest):
     frm, to, gap, out = _report_parse_args(args)
     try:
         result = _build_report_file(frm, to, gap, out)
-    except ValueError as exc:
+    except (OSError, ValueError) as exc:
         sys.exit(f"racecast: {exc} — nothing to report.")
     print(result["summary"])
     print(f"Report written -> {result['path']}")

@@ -1211,7 +1211,7 @@ async function reportGenerate() {
     frame.srcdoc = data.html; frame.hidden = false;
     const dl = $('report-dl');
     dl.href = 'data:text/html;charset=utf-8,' + encodeURIComponent(data.html);
-    dl.download = (data.path || 'report.html').split('/').pop();
+    dl.download = (data.path || 'report.html').split(/[\\/]/).pop();
     dl.hidden = false;
     $('report-send').hidden = false;
     msg.textContent = 'Written to ' + data.path;
