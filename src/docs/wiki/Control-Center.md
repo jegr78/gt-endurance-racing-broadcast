@@ -63,8 +63,9 @@ A live machine-resource card shows the producer machine's **CPU %**, **RAM** (us
 total and a percentage), **Network ↑/↓**, and **Disk free**. Readings are color-coded:
 CPU turns yellow above 75 % and red at 90 % or above; RAM turns yellow above 80 % and
 red at 92 % or above; Disk free turns yellow below 5 GB and red below 2 GB. Network
-throughput is informational and carries no color. The card updates while the relay is
-running; it shows no data when the relay is stopped.
+throughput is informational and carries no color. The card updates whenever the Control
+Center is open, whether or not the relay is running — the machine-resource history charts
+in the [Health Monitor](Health-Monitor), by contrast, are recorded by the relay.
 
 > **CLI alternative:** `racecast status`, `racecast event start [--stint N]`, `racecast event stop`.
 
