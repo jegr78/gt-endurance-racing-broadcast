@@ -3077,6 +3077,67 @@ def t_resolve_producer_name_tolerates_fetch_failure():
         m._PRODUCER_NAME_CACHE = None
 
 
+def t_route_obs_stream_target_is_accepted():
+    action = m.route(["obs", "stream-target", "1"])
+    assert action["command"] == "obs" and action["verb"] == "stream-target"
+    assert action["rest"] == ["1"]
+
+
+def t_apply_stream_target_happy_path_sets_service_and_hides_key():
+    # Seams: fetch(url)->csv text by tab, post(url,obj)->webhook bytes,
+    # apply_obs(platform,key)->(ok,note). refresh_env no-op.
+    producer_csv = "Part,Producer,MagicDNS,Stream Key\r\n1,Alice,a.ts.net,key1\r\n"
+    channel_csv = "Platform,Channel\r\ntwitch,https://twitch.tv/foo\r\n"
+
+    def fetch(url):
+        return producer_csv if "Producer" in url else channel_csv
+
+    def post(url, obj):
+        assert obj == {"action": "get_stream_key", "ref": "key1"}
+        return b'{"ok": true, "action": "get_stream_key", "key": "SECRET"}'
+
+    seen = {}
+    def apply_obs(platform, key):
+        seen["platform"], seen["key"] = platform, key
+        return True, ""
+
+    os.environ["RACECAST_SHEET_ID"] = "SID"
+    os.environ["RACECAST_SHEET_PUSH_URL"] = "https://script.example/exec"
+    ok, note = m._apply_stream_target("1", fetch=fetch, post=post,
+                                      apply_obs=apply_obs, refresh_env=lambda: None)
+    assert ok is True, note
+    assert seen == {"platform": "twitch", "key": "SECRET"}
+    assert "SECRET" not in note                       # key never surfaced
+
+
+def t_apply_stream_target_no_ref_is_clear_error():
+    producer_csv = "Part,Producer,MagicDNS,Stream Key\r\n1,Alice,a.ts.net,\r\n"
+    channel_csv = "Platform,Channel\r\ntwitch,x\r\n"
+    os.environ["RACECAST_SHEET_ID"] = "SID"
+    os.environ["RACECAST_SHEET_PUSH_URL"] = "https://script.example/exec"
+    ok, note = m._apply_stream_target(
+        "1", fetch=lambda u: producer_csv if "Producer" in u else channel_csv,
+        post=lambda u, o: b"{}", apply_obs=lambda p, k: (True, ""),
+        refresh_env=lambda: None)
+    assert ok is False and "reference" in note.lower()
+
+
+def t_apply_stream_target_webhook_error_surfaces_and_skips_obs():
+    producer_csv = "Part,Producer,MagicDNS,Stream Key\r\n1,Alice,a.ts.net,key1\r\n"
+    channel_csv = "Platform,Channel\r\ntwitch,x\r\n"
+    os.environ["RACECAST_SHEET_ID"] = "SID"
+    os.environ["RACECAST_SHEET_PUSH_URL"] = "https://script.example/exec"
+    called = {"obs": 0}
+    def apply_obs(p, k):
+        called["obs"] += 1; return True, ""
+    ok, note = m._apply_stream_target(
+        "1", fetch=lambda u: producer_csv if "Producer" in u else channel_csv,
+        post=lambda u, o: b'{"ok": false, "error": "no key for ref \'key1\'"}',
+        apply_obs=apply_obs, refresh_env=lambda: None)
+    assert ok is False and "no key" in note
+    assert called["obs"] == 0                          # never touched OBS
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

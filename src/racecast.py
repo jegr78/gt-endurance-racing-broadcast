@@ -16,6 +16,7 @@
   racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
   racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD incl. timer)
   racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
+  racecast obs stream-target <part>          # set OBS stream service+key for a Producer Part (OBS must be stopped)
   racecast obs logs | tailscale logs         # tail OBS's log dir / the Tailscale status-snapshot log (same -f/--list/--archive flags)
   racecast sheet     url | open              # print / open the active league's Google Sheet (built from its SHEET_ID)
   racecast app launch|quit obs|discord|tailscale   # start / gracefully quit a GUI app (Control Center buttons)
@@ -883,7 +884,7 @@ HIDDEN_VERBS = {"streams": ("run-feed",)}
 ONESHOTS = ("preflight", "speedtest", "cookies", "graphics", "media", "brands", "setup", "install-tools", "install-apps", "obs-browser", "update")
 EVENT_VERBS = ("status", "start", "stop", "takeover")
 TAILSCALE_VERBS = ("up", "down", "status", "logs")
-OBS_VERBS = ("refresh", "collection", "logs")
+OBS_VERBS = ("refresh", "collection", "logs", "stream-target")
 SHEET_VERBS = ("url", "open")           # active league's Google Sheet (from SHEET_ID)
 APP_VERBS = ("launch", "quit")          # GUI app control for the Control Center
 APP_CONTROLLED = ("obs", "discord", "tailscale")   # GUI apps racecast can launch + quit
@@ -2160,6 +2161,76 @@ def obs_collection_cmd(rest):
              f"with `racecast setup`.")
 
 
+CHANNEL_TAB = "Channel"               # single-event platform (YT/Twitch)
+
+
+def _gviz_csv_url(sheet_id, tab):
+    from urllib.parse import quote
+    return ("https://docs.google.com/spreadsheets/d/%s/gviz/tq?tqx=out:csv&sheet=%s"
+            % (sheet_id, quote(tab)))
+
+
+def _apply_stream_target(part, fetch=None, post=None, apply_obs=None,
+                         refresh_env=None):
+    """Resolve a Producer Part -> (platform from Channel tab, key from the
+    get_stream_key webhook) and apply it to OBS via set_stream_service. Returns
+    (ok, note); `note` NEVER contains the key. Seams (fetch/post/apply_obs/
+    refresh_env) are test hooks — production uses http_util + obs_ws. The OBS
+    apply is only reached after a key is obtained; the stopped-stream guard lives
+    in set_stream_service."""
+    import producer as prod
+    import broadcast_chat as bc
+    import stream_target as st
+    import obs_ws
+    (refresh_env or _apply_active_profile_env)()
+    sheet_id = os.environ.get("RACECAST_SHEET_ID") or ""
+    if not sheet_id:
+        return False, "no SHEET_ID set for the active profile"
+    push_url = os.environ.get("RACECAST_SHEET_PUSH_URL") or ""
+    if not push_url:
+        return False, ("no SHEET_PUSH_URL in the active profile — the stream-key "
+                       "webhook is required")
+    fetch = fetch or (lambda u: http_util.get_bytes(u, timeout=15)
+                      .decode("utf-8", "replace"))
+    post = post or (lambda u, o: http_util.post_json(u, o, timeout=15))
+    apply_obs = apply_obs or obs_ws.set_stream_service
+    try:
+        prod_rows = prod.parse_producer_rows(fetch(_gviz_csv_url(sheet_id, PRODUCER_TAB)))
+        chan_rows = bc.parse_channel_tab(fetch(_gviz_csv_url(sheet_id, CHANNEL_TAB)))
+    except Exception as exc:                           # noqa: BLE001 — tolerant fetch
+        return False, f"sheet fetch failed: {type(exc).__name__}"
+    ref = st.resolve_part_ref(prod_rows, part)
+    if not ref:
+        return False, f"no stream-key reference for Part {part!r} (Producer tab)"
+    platform = st.event_platform(chan_rows)
+    if not platform:
+        return False, "no channel/platform configured (Channel tab)"
+    try:
+        body = post(push_url, {"action": "get_stream_key", "ref": ref})
+    except Exception as exc:                           # noqa: BLE001 — tolerant webhook
+        return False, f"stream-key webhook failed: {type(exc).__name__}"
+    key, err = st.parse_stream_key_response(body)
+    if err:
+        return False, err
+    ok, note = apply_obs(platform, key)
+    del key                                            # drop the secret promptly
+    if not ok:
+        return False, note
+    return True, f"stream target set for Part {part} on {platform} — stream key set"
+
+
+def obs_stream_target_cmd(rest):
+    """`racecast obs stream-target <part>`: set OBS's stream service+key for a
+    Producer Part. Only works while OBS is NOT streaming; the key is fetched from
+    the Sheet webhook and never printed."""
+    if len(rest) != 1:
+        sys.exit("usage: racecast obs stream-target <part>")
+    ok, note = _apply_stream_target(rest[0])
+    if not ok:
+        sys.exit(f"obs: stream target not set — {note}")
+    print(f"obs: {note} ✓")
+
+
 def _active_sheet_url():
     """The active league's Google-Sheet edit URL, or '' when no profile resolves
     or its SHEET_ID is unset. Tolerant: any resolution failure -> ''."""
@@ -3289,6 +3360,7 @@ DISPATCH = {
     ("tailscale", "up"): tailscale_up_cmd, ("tailscale", "down"): tailscale_down_cmd,
     ("tailscale", "status"): tailscale_status_cmd,
     ("obs", "refresh"): obs_refresh_cmd, ("obs", "collection"): obs_collection_cmd,
+    ("obs", "stream-target"): obs_stream_target_cmd,
     ("obs", "logs"): obs_logs, ("tailscale", "logs"): tailscale_logs,
     ("sheet", "url"): sheet_url_cmd, ("sheet", "open"): sheet_open_cmd,
     ("app", "launch"): app_launch_cmd, ("app", "quit"): app_quit_cmd,
