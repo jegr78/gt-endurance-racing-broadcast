@@ -45,6 +45,7 @@ one muscle memory:
 | **FEEDS** | `NEXT` (the handover), per-feed reloads, POV reload/stop, `FEEDS → STINT…` |
 | **HUD** | the Stint label, Streamer, Session and Race Control dropdowns — they update the HUD live and write back to the Setup tab |
 | **SCN·VIS** | raw scene switches and feed visibility toggles |
+| **TRANS** | transition selector for the next scene switch — **Cut**, **Fade** (default), or **Stinger** |
 | **GFX** | graphics toggles (HUD, standings, schedule, results, weather, covers) |
 | **FLAG GFX** | mutually exclusive flag-status graphic overlays — exactly one active at a time (or none); distinct from the flag-text chip in the HUD |
 | **TIMER** | the race timer ([Race Timer](Race-Timer)) |
@@ -128,6 +129,27 @@ bottom.
 > corrections/takeovers. **STINT LABEL** (HUD bus) only changes the text
 > viewers see on the overlay — harmless. Advancing to the next commentator
 > stream is `NEXT`.
+
+### Transition
+
+The **TRANS** bar sets the OBS transition used the next time the panel or a
+macro switches the active scene. It is **sticky** — the choice persists across
+takes until you change it (a page reload resets it to the default, Fade).
+
+| Choice | Behaviour |
+|---|---|
+| **Cut** | Instant — no transition effect |
+| **Fade** | Cross-fade; the duration field (in ms) controls how long it lasts — **default** |
+| **Stinger** | Plays the Stinger transition configured in OBS; falls back to a cut if no Stinger is configured, with a note in the log |
+
+The transition applies to **scene switches** only — buttons on the **PGM** and
+**SCN·VIS** busses and the scene-switch step inside macros. It does **not**
+apply to **source toggles** (show/hide on the GFX, FLAG GFX, or SCN·VIS rows)
+— an OBS-WebSocket limitation.
+
+**Cut and Fade always work.** Stinger requires the producer to have a Stinger
+transition configured in OBS (with a media file set in the transition's
+settings); if none is present the take falls back to a cut.
 
 ## Director panel — HUD row
 

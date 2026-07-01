@@ -154,6 +154,8 @@
   button.k.stream.recon{border-color:#d68910;background:linear-gradient(180deg,#332611,#261d10);
     color:#ffcf80;box-shadow:0 0 0 1px #d68910,0 0 18px rgba(214,137,16,.35)}
   .pgm button.k{min-width:110px;min-height:62px;font-weight:600;font-size:14px}
+  #txBar .txdur { margin-left: 8px; font-size: 12px; opacity: .85; }
+  #txBar .txdur input { width: 64px; }
 
   /* ---------- audio rows ---------- */
   .arow{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px dashed var(--edge)}
@@ -491,6 +493,17 @@
       <div class="setrow" id="teamRow"></div>
       <div class="setrow" id="condRow"></div>
       <div class="hint" id="setupInfo">HUD: connecting to relay…</div>
+    </div>
+  </section>
+
+  <section class="bus" id="txBar" title="Transition applied to the next scene switch">
+    <div class="cap">Transition</div>
+    <div class="keys">
+      <button class="k tx" data-tx="cut">CUT</button>
+      <button class="k tx" data-tx="fade">FADE</button>
+      <button class="k tx" data-tx="stinger">STINGER</button>
+      <label class="txdur">dur <input id="txDur" type="number" min="0" max="10000"
+             step="50" value="300"> ms</label>
     </div>
   </section>
 
@@ -899,7 +912,28 @@ async function obsPost(path, body){
   obsLed(r.ok && d.ok ? "ok" : "err");
   return d;
 }
-const obsScene  = (scene)           => obsPost("scene",  {scene});
+let activeTransition = "fade";
+let activeDuration = 300;
+
+function renderTxBar(){
+  document.querySelectorAll('#txBar .tx').forEach(b =>
+    b.classList.toggle('on', b.dataset.tx === activeTransition));
+  const dur = $("#txDur");
+  if (dur) dur.disabled = (activeTransition === "cut");
+}
+document.querySelectorAll('#txBar .tx').forEach(b =>
+  b.addEventListener('click', () => { activeTransition = b.dataset.tx; renderTxBar(); }));
+{ const d = $("#txDur"); if (d) d.addEventListener('change', () => {
+    const v = parseInt(d.value, 10);
+    activeDuration = isNaN(v) ? 300 : Math.max(0, Math.min(10000, v)); d.value = activeDuration; }); }
+renderTxBar();
+
+async function obsScene(scene){
+  const d = await obsPost("scene", {scene, transition: activeTransition,
+    duration: activeTransition === "cut" ? 0 : activeDuration});
+  if (d && d.note) log(d.note, "warn");     // e.g. stinger not configured -> used cut
+  return d;
+}
 const obsSource = (scene,source,on) => obsPost("source", {scene, source, on});
 const obsVol    = (input,db)        => obsPost("audio",  {input, db});
 const obsMute   = (input,muted)     => obsPost("audio",  {input, mute:muted});

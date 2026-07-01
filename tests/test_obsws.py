@@ -1208,6 +1208,83 @@ def t_set_feed_close_when_inactive_unreachable_is_note_not_crash():
     assert note == "OBS not running"
 
 
+# --------------------------------------------------------------------------
+# resolve_transition — director transition choice resolver (Task 1)
+# --------------------------------------------------------------------------
+def t_resolve_transition_by_kind_and_fallback():
+    tlist = [{"transitionName": "Cut", "transitionKind": "cut_transition"},
+             {"transitionName": "Fade", "transitionKind": "fade_transition"},
+             {"transitionName": "My Wipe", "transitionKind": "stinger_transition"}]
+    assert m.resolve_transition("cut", tlist) == ("Cut", "")
+    assert m.resolve_transition("fade", tlist) == ("Fade", "")
+    # stinger resolves by KIND regardless of the name
+    assert m.resolve_transition("stinger", tlist) == ("My Wipe", "")
+    # name fallback when kind missing (older OBS payloads without kinds)
+    nokind = [{"transitionName": "Fade", "transitionKind": ""}]
+    assert m.resolve_transition("fade", nokind) == ("Fade", "")
+    # stinger absent -> None + note
+    name, note = m.resolve_transition("stinger", [{"transitionName": "Cut",
+                                                   "transitionKind": "cut_transition"}])
+    assert name is None and "Stinger" in note
+
+
+def t_set_scene_with_fade_sets_transition_then_switches():
+    sess = _FakeSession(responses={"GetSceneTransitionList": {"transitions": [
+        {"transitionName": "Fade", "transitionKind": "fade_transition"},
+        {"transitionName": "Cut", "transitionKind": "cut_transition"}]}})
+    orig, m._connect = m._connect, lambda *a, **k: (sess, "")
+    try:
+        ok, note = m.set_current_program_scene("Stint", transition="fade", duration_ms=500)
+    finally:
+        m._connect = orig
+    assert ok is True and note == ""
+    types = [t for t, _ in sess.sent]
+    # order: list transitions, set transition, set duration, then switch
+    assert types.index("SetCurrentSceneTransition") < types.index("SetCurrentProgramScene")
+    assert ("SetCurrentSceneTransition", {"transitionName": "Fade"}) in sess.sent
+    assert ("SetCurrentSceneTransitionDuration", {"transitionDuration": 500}) in sess.sent
+    assert ("SetCurrentProgramScene", {"sceneName": "Stint"}) in sess.sent
+
+
+def t_set_scene_cut_sets_cut_no_duration():
+    sess = _FakeSession(responses={"GetSceneTransitionList": {"transitions": [
+        {"transitionName": "Cut", "transitionKind": "cut_transition"}]}})
+    orig, m._connect = m._connect, lambda *a, **k: (sess, "")
+    try:
+        m.set_current_program_scene("Stint", transition="cut", duration_ms=500)
+    finally:
+        m._connect = orig
+    assert ("SetCurrentSceneTransition", {"transitionName": "Cut"}) in sess.sent
+    # cut is instant — no duration call
+    assert all(t != "SetCurrentSceneTransitionDuration" for t, _ in sess.sent)
+
+
+def t_set_scene_stinger_absent_degrades_to_cut_with_note():
+    sess = _FakeSession(responses={"GetSceneTransitionList": {"transitions": [
+        {"transitionName": "Cut", "transitionKind": "cut_transition"},
+        {"transitionName": "Fade", "transitionKind": "fade_transition"}]}})
+    orig, m._connect = m._connect, lambda *a, **k: (sess, "")
+    try:
+        ok, note = m.set_current_program_scene("Stint", transition="stinger", duration_ms=300)
+    finally:
+        m._connect = orig
+    assert ok is True and "Stinger" in note
+    assert ("SetCurrentSceneTransition", {"transitionName": "Cut"}) in sess.sent   # fell back
+    assert ("SetCurrentProgramScene", {"sceneName": "Stint"}) in sess.sent
+
+
+def t_set_scene_no_transition_is_plain_switch():
+    sess = _FakeSession()
+    orig, m._connect = m._connect, lambda *a, **k: (sess, "")
+    try:
+        m.set_current_program_scene("Stint")
+    finally:
+        m._connect = orig
+    types = [t for t, _ in sess.sent]
+    assert "GetSceneTransitionList" not in types and "SetCurrentSceneTransition" not in types
+    assert ("SetCurrentProgramScene", {"sceneName": "Stint"}) in sess.sent
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
