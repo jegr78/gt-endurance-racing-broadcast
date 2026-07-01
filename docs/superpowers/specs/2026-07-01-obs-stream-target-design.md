@@ -30,7 +30,7 @@ league Sheet; only the league owner is an editor).
 
 | Store | Who can read it | What lives there |
 |---|---|---|
-| Sheet cells (CSV export) | anyone with the Sheet/CSV link — **incl. viewers** | Part → **key reference** (e.g. `part1`), plaintext, non-secret |
+| Sheet cells (CSV export) | anyone with the Sheet/CSV link — **incl. viewers** | Part → **key reference** (e.g. `key1`), plaintext, non-secret |
 | Apps Script Script Properties | **editors only** (Extensions → Apps Script) = league owner | `ref → stream key` (the secret) |
 | `SHEET_PUSH_URL` (capability URL) | whoever holds the URL — in `profile.env`, gitignored, **not** in the Sheet | the bearer secret that gates `get_stream_key` |
 | OBS `service.json` | the producer's own machine | the applied key (unavoidable; replaces the Discord DM) |
@@ -61,7 +61,7 @@ URL). The first/only row's platform is the event's OBS service. No change to tha
 parser; racecast reads it to pick the service.
 
 ### Apps Script Script Properties — owner-maintained
-`ref → key`, e.g. `part1 = live_xxx`, `part2 = live_yyy`. Only the reference and the
+`ref → key`, e.g. `key1 = live_xxx`, `key2 = live_yyy`. Only the reference and the
 key; **no platform** (platform comes from `Channel`). Maintained by the owner in the
 Apps Script UI (Project Settings → Script Properties).
 
@@ -72,14 +72,14 @@ It is protected exactly like today's write actions: knowledge of the capability 
 
 Request (POST JSON, same shape as existing pushes):
 ```json
-{ "action": "get_stream_key", "ref": "part1" }
+{ "action": "get_stream_key", "ref": "key1" }
 ```
 Response (echoes the action, per `check_webhook_response`):
 ```json
 { "ok": true, "action": "get_stream_key", "key": "live_xxx" }
 ```
 Failure modes returned as `{ "ok": false, "action": "get_stream_key", "error": "..." }`:
-- unknown `ref` → `"no key for ref 'part1'"`
+- unknown `ref` → `"no key for ref 'key1'"`
 - outdated script (no action echo) → handled by existing `check_webhook_response`
   ("webhook script outdated — redeploy").
 
@@ -100,10 +100,12 @@ is returned over HTTPS and is **never echoed into any Sheet cell**.
    3. Resolve `ref` from the selected Part row; `POST get_stream_key{ref}` to
       `SHEET_PUSH_URL` → `key`.
    4. `SetStreamServiceSettings(rtmp_common, {service, server:"auto", key})` on OBS.
-   5. Report success (service + Part label + a **redacted** key, e.g. `live_…xxx`).
+   5. Report success (service + Part label + **"stream key set ✓"** — the key value
+      is **never** displayed, only the confirmation that one was applied).
 3. The producer goes live in OBS deliberately.
 4. **Two Parts back-to-back:** after Part 1, the producer stops the broadcast and
-   re-runs Set Stream Target selecting `part2` — one takeover, two key applies.
+   re-runs Set Stream Target selecting their next Part (ref `key2`) — one takeover,
+   two key applies.
 
 ## Code changes
 
@@ -123,7 +125,8 @@ is returned over HTTPS and is **never echoed into any Sheet cell**.
   (POST `{action, ref}`, parse via `check_webhook_response`, return the key or an
   error). Relay-side, dependency-light, its own UA — consistent with `post_webhook`.
 - `racecast stream set <part>` CLI: resolve part → ref (Producer tab) + platform
-  (Channel tab), run the guard, fetch key, apply. Prints redacted diagnostics only.
+  (Channel tab), run the guard, fetch key, apply. Prints the service + Part label +
+  a "stream key set ✓" confirmation only — never the key value.
 
 ### Control Center (`src/ui/`, `src/racecast_ui.py`)
 - A **Set Stream Target** action on the Home/takeover surface, using the already-shown
@@ -137,7 +140,8 @@ is returned over HTTPS and is **never echoed into any Sheet cell**.
 ## Security invariants (must hold)
 
 - The stream key is **never** written to any Sheet cell, log line, or racecast state
-  file. CLI/UI/log output shows a redacted form only.
+  file. CLI/UI/log output **never** shows the key value — only a "stream key set ✓"
+  confirmation.
 - `get_stream_key` returns exactly one ref's key and only to a caller holding the
   `SHEET_PUSH_URL`. No enumeration endpoint.
 - Service/key are applied **only** when OBS streaming is stopped (hard guard).
