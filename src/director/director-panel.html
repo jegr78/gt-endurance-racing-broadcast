@@ -451,6 +451,31 @@
 
   <section class="bus pgm"><div class="cap">PGM</div><div class="keys" id="pgmBus"></div></section>
 
+  <section class="bus" id="cuesBus">
+    <div class="cap">Cues</div>
+    <div class="body">
+      <div id="cuePresets"></div>
+      <div class="cue-compose">
+        <select id="cueTarget" aria-label="Cue target">
+          <option value="all">All</option>
+          <option value="on-air">On air</option>
+        </select>
+        <select id="cueLevel" aria-label="Cue level">
+          <option value="info">Info</option>
+          <option value="critical">Critical</option>
+        </select>
+        <input id="cueText" type="text" maxlength="200" placeholder="Cue text…">
+        <button id="cueSend" type="button">SEND CUE</button>
+      </div>
+      <ul id="cueRecent"></ul>
+      <div class="cueback" id="cueBackWrap" hidden>
+        <div class="cueback-cap">From commentators</div>
+        <ul id="cueBackList"></ul>
+      </div>
+      <div class="hint" id="cueHint">Send a text cue to a commentator or all commentators. Critical cues require acknowledgement in the cockpit. Commentator replies appear under “From commentators”.</div>
+    </div>
+  </section>
+
   <section class="bus preview" id="previewSec">
     <div class="cap">Live Preview
       <button class="k" id="pvToggle">SHOW</button>
@@ -582,31 +607,6 @@
         this row. Edits write the <b>Qualifying</b> tab in the Sheet.</div>
     </div>
   </details>
-
-  <section class="bus" id="cuesBus">
-    <div class="cap">Cues</div>
-    <div class="body">
-      <div id="cuePresets"></div>
-      <div class="cue-compose">
-        <select id="cueTarget" aria-label="Cue target">
-          <option value="all">All</option>
-          <option value="on-air">On air</option>
-        </select>
-        <select id="cueLevel" aria-label="Cue level">
-          <option value="info">Info</option>
-          <option value="critical">Critical</option>
-        </select>
-        <input id="cueText" type="text" maxlength="200" placeholder="Cue text…">
-        <button id="cueSend" type="button">SEND CUE</button>
-      </div>
-      <ul id="cueRecent"></ul>
-      <div class="cueback" id="cueBackWrap" hidden>
-        <div class="cueback-cap">From commentators</div>
-        <ul id="cueBackList"></ul>
-      </div>
-      <div class="hint" id="cueHint">Send a text cue to a commentator or all commentators. Critical cues require acknowledgement in the cockpit. Commentator replies appear under “From commentators”.</div>
-    </div>
-  </section>
 
   <div id="log">Ready. All controls work relay-only — no OBS connection needed.</div>
 
