@@ -121,7 +121,7 @@ def t_sampler_counter_deltas():
 
 def t_sampler_percent_and_rate_passthrough():
     readers = _fake_readers([
-        {"cpu": ("percent", 42.0), "net": ("rate", 500.0, 700.0),
+        {"cpu": ("percent", 42.0, None), "net": ("rate", 500.0, 700.0),
          "mem": (4 * 1024**3, 8 * 1024**3), "disk": 50 * 1024**3},
     ])
     s = r.ResourceSampler(readers=readers)
