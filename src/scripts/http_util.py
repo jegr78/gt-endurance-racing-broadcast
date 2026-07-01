@@ -8,6 +8,7 @@ through here makes "forgetting the UA" structurally impossible (enforced by
 tests/test_http_util.py). The relay and the self-contained get-*/setup-assets
 scripts keep their own UA — they are intentionally dependency-light and excluded."""
 import json
+import uuid
 import urllib.error
 from urllib.request import Request, urlopen   # module-level so tests can patch http_util.urlopen
 
@@ -42,4 +43,33 @@ def post_json(url, obj, *, headers=None, timeout=DEFAULT_TIMEOUT):
         merged.update(headers)
     with open_url(url, data=json.dumps(obj).encode("utf-8"), headers=merged,
                   method="POST", timeout=timeout) as r:
+        return r.read()
+
+
+def post_multipart(url, fields=None, files=None, *, headers=None, timeout=DEFAULT_TIMEOUT):
+    """POST a multipart/form-data body (RACECAST_UA always set — Discord is
+    Cloudflare-fronted and 403s the default urllib UA). `fields` is {name: str};
+    `files` is [(field_name, filename, content_bytes_or_str, content_type)]."""
+    boundary = "----racecast" + uuid.uuid4().hex
+    body = bytearray()
+
+    def _w(text):
+        body.extend(text.encode("utf-8"))
+
+    for name, value in (fields or {}).items():
+        _w(f"--{boundary}\r\n")
+        _w(f'Content-Disposition: form-data; name="{name}"\r\n\r\n')
+        _w(f"{value}\r\n")
+    for field_name, filename, content, ctype in (files or []):
+        _w(f"--{boundary}\r\n")
+        _w(f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n')
+        _w(f"Content-Type: {ctype}\r\n\r\n")
+        body.extend(content.encode("utf-8") if isinstance(content, str) else content)
+        _w("\r\n")
+    _w(f"--{boundary}--\r\n")
+
+    merged = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+    if headers:
+        merged.update(headers)
+    with open_url(url, data=bytes(body), headers=merged, method="POST", timeout=timeout) as r:
         return r.read()

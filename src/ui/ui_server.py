@@ -618,6 +618,25 @@ def make_handler(ctx):
                                        "error": f"could not set event title: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/report/generate":
+                try:
+                    return self._json(ctx["report_generate"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not generate report: {exc}"},
+                                      code=500)
+            if path == "/api/report/send":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["report_send"](body.get("path"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not send report: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
             if path == "/api/streams":
                 body = self._body_json()
                 if body is None:

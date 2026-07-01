@@ -189,6 +189,25 @@ No setup is required. The Health Monitor is active whenever the relay is running
 there is no enable/disable command. The SQLite database is created automatically on
 the first relay start.
 
+## Post-Event Report
+
+The relay's health history also powers a **post-event report** — a static, self-contained
+HTML file summarising the last broadcast session: commentators per stint, Feed A / Feed B
+activity, incidents and quality metrics. It can be generated and sent to Discord from the
+[Control Center Report view](Control-Center#post-event-report) or via the CLI:
+
+```
+racecast report               # generate the report for the last session into runtime/<profile>/reports/
+racecast report send [FILE]   # send the newest (or given) report to the league Discord as an attachment
+```
+
+**Name resolution:** commentator names in the report come from the running relay's schedule.
+If the relay is not running at generation time, the report falls back to stint indices.
+
+**Discord:** `report send` requires `DISCORD_WEBHOOK_URL` in the active league's `profile.env`
+— the same key that health alerts use. See [Configuration](Configuration) or [Profiles](Profiles)
+for how to add it.
+
 The dashboard depends on no external services: it reads only from the local DB and the
 relay's live `/health-monitor/data` endpoint. The charting library
 ([uPlot](https://github.com/leeoniya/uPlot), MIT licence) is bundled with the relay

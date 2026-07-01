@@ -208,6 +208,23 @@ the Google Sheet and both feeds bound, with the HUD and Director-panel URLs list
 
 > **CLI alternative:** `racecast relay logs -f` (and `companion` / `streams`).
 
+### Post-Event Report
+
+![Control Center — Post-Event Report](images/cc-report.png)
+
+A summary of the last broadcast session — commentators per stint, Feed A / Feed B
+activity, incidents and quality metrics — generated from the relay's health history.
+The artifact is a **self-contained HTML file** (all assets inline) that opens in any
+browser without a server.
+
+Click **Generate** to build the report. The preview panel shows a formatted text
+summary. **Download .html** saves the file to your machine; **Send to Discord** posts
+the HTML file as an attachment to the league's Discord webhook channel — Discord shows
+it as a downloadable attachment that recipients open in a browser.
+
+> **CLI alternative:** `racecast report` (generate into `runtime/<profile>/reports/`),
+> `racecast report send [FILE]` (send the newest or a given file to Discord).
+
 ### Help & Docs
 
 ![Control Center — Help & Docs](images/cc-help.png)
