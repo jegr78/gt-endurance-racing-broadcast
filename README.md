@@ -178,6 +178,8 @@ racecast console token revoke <streamer>  # rotate one commentator's link
 racecast health export [--from TS] [--out PATH]   # dump health history to JSON Lines
 racecast health import <file.jsonl>               # merge a health-history dump (dedup by ts)
 racecast health pull <ip> [--port N] [--from TS]  # pull another producer's health history (takeover helper)
+racecast report                                   # generate the post-event report (last session) into runtime/<profile>/reports/
+racecast report send [FILE]                       # send the newest (or given) report to the league Discord as an attachment
 ```
 
 For live debugging, run the relay in the foreground: `racecast relay run`.
