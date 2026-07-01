@@ -644,15 +644,57 @@ def get_current_program_scene(host="127.0.0.1", port=None,
         session.close()
 
 
+_TRANSITION_KIND = {"cut": "cut_transition", "fade": "fade_transition",
+                    "stinger": "stinger_transition"}
+_TRANSITION_NAME_FALLBACK = {"cut": "cut", "fade": "fade"}
+
+
+def resolve_transition(choice, transitions):
+    """Resolve a director choice ('cut'|'fade'|'stinger') to a concrete OBS
+    transition NAME, matched by kind against a GetSceneTransitionList payload
+    (list of {transitionName, transitionKind}); falls back to a case-insensitive
+    name match for cut/fade. Returns (name|None, note). Stinger with none
+    configured -> (None, note). Pure; never raises."""
+    kind = _TRANSITION_KIND.get(choice)
+    for t in transitions or []:
+        if kind and t.get("transitionKind") == kind:
+            return (t.get("transitionName"), "")
+    fb = _TRANSITION_NAME_FALLBACK.get(choice)
+    if fb:
+        for t in transitions or []:
+            if (t.get("transitionName") or "").lower() == fb:
+                return (t.get("transitionName"), "")
+    if choice == "stinger":
+        return (None, "no Stinger configured in OBS; used Cut")
+    return (None, "")
+
+
 def set_current_program_scene(scene, host="127.0.0.1", port=None,
-                              password=None, timeout=2.0):
-    """Switch the OBS program scene (best effort). (ok, note); never raises."""
+                              password=None, timeout=2.0,
+                              transition=None, duration_ms=None):
+    """Switch the OBS program scene (best effort). When `transition`
+    ('cut'|'fade'|'stinger') is given, set that transition (resolved by kind via
+    GetSceneTransitionList) + duration first, then switch — so a director take
+    uses the chosen transition. Stinger with none configured degrades to Cut and
+    returns a note. (ok, note); never raises."""
     session, note = _connect(host, port, password, timeout)
     if session is None:
         return False, note
+    out_note = ""
     try:
+        if transition:
+            tlist = session.request("GetSceneTransitionList", {}).get("transitions", [])
+            name, resolve_note = resolve_transition(transition, tlist)
+            if name is None and transition == "stinger":
+                name, _ = resolve_transition("cut", tlist)     # degrade to a cut
+                out_note = resolve_note
+            if name:
+                session.request("SetCurrentSceneTransition", {"transitionName": name})
+                if transition != "cut" and duration_ms is not None:
+                    session.request("SetCurrentSceneTransitionDuration",
+                                    {"transitionDuration": int(duration_ms)})
         session.request("SetCurrentProgramScene", {"sceneName": scene})
-        return True, ""
+        return True, out_note
     except Exception as exc:                          # noqa: BLE001 — best-effort contract
         return False, str(exc) or exc.__class__.__name__
     finally:
