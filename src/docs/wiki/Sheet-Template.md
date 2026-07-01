@@ -272,6 +272,7 @@ in the Sheet — no write-back from the app.
 | `Part` | Human label for the segment (e.g. `1`, `2`, `Night 1`) |
 | `Producer` | The producer's name |
 | `MagicDNS` | That producer's machine's **full Tailscale MagicDNS FQDN** (e.g. `producer-a.tailXXXX.ts.net`). Must be the full `*.ts.net` name — a bare hostname will not match the self-guard |
+| `Stream Key` | **Optional.** A short reference label (e.g. `key1`) for the OBS stream key to use during this Part — the real key is stored as a Script Property, never in a cell. See [Sheet-Webhook — Stream keys](Sheet-Webhook#stream-keys-per-producer-part). |
 
 Duplicate rows are allowed and meaningful: a producer covering two consecutive segments
 → repeat the row with the same Producer and MagicDNS.

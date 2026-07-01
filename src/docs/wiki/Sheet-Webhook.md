@@ -118,6 +118,106 @@ roster after the delete.
 > banner. A script predating the **Race Control** column ignores the extra field and
 > appends the column on the next write. Nothing crashes.
 
+## Stream keys (per Producer Part)
+
+> **This is a read action, not a write.** `get_stream_key` fetches a stream key
+> from the Apps Script's **Script Properties** on demand — the key never lands in
+> any Sheet cell or CSV export. The existing `SHEET_PUSH_URL` credential is reused;
+> no new secret is needed.
+
+For events where different producers use different OBS stream keys (e.g. a 12 h /
+24 h event split across multiple YouTube streams), the relay can set OBS's stream
+service and key automatically when the producer selects their Part on the Control
+Center Home view.
+
+### Producer tab — optional `Stream Key` column
+
+Add an optional **`Stream Key`** column to the **Producer** tab
+(see [Sheet template — Producer tab](Sheet-Template#producer-tab)). Each cell holds
+a short **reference label** (`key1`, `key2`, …) — **never the real key**. The relay
+reads only the reference; the real key stays in Script Properties where viewers
+cannot see it.
+
+| Column header | Meaning |
+|---|---|
+| `Stream Key` | **Optional.** Short reference label (e.g. `key1`) identifying the OBS stream key for this Part. Leave blank if this Part shares the key already in OBS. |
+
+Example:
+
+```
+Part  | Producer          | MagicDNS                        | Stream Key
+1     | Sample Producer A | producer-a.tailnet-demo.ts.net  | key1
+2     | Sample Producer B | producer-b.tailnet-demo.ts.net  | key2
+3     | Sample Producer A | producer-a.tailnet-demo.ts.net  | key1
+```
+
+### Store the real keys in Script Properties
+
+In the Apps Script editor: **Project Settings → Script Properties**. Add one
+property per reference:
+
+| Name (property key) | Value |
+|---|---|
+| `key1` | the real OBS stream key for Producer A |
+| `key2` | the real OBS stream key for Producer B |
+
+Script Properties are visible only to Sheet **editors** (the league owner) — viewers
+cannot see them, and they never appear in any CSV export or gviz fetch. The relay
+retrieves the key at switch time over HTTPS and passes it straight to OBS; it is
+never logged or written back to any cell.
+
+### Apps Script handler
+
+Paste this block inside `doPost`, after the existing action checks (e.g. after
+the `if (action === 'crew') …` clause), then **redeploy** (see
+[Updating the script later](#updating-the-script-later)):
+
+```javascript
+// inside doPost(e), after parsing the body:
+if (body.action === 'get_stream_key') {
+  var ref = String(body.ref || '');
+  var key = PropertiesService.getScriptProperties().getProperty(ref);
+  if (!key) {
+    return out({ ok: false, action: 'get_stream_key',
+                 error: "no key for ref '" + ref + "'" });
+  }
+  return out({ ok: true, action: 'get_stream_key', key: key });
+}
+```
+
+> **Note:** the snippet above uses `out(…)` to match the output helper in the
+> script shown under [One-time setup](#one-time-setup-per-sheet). The `action`
+> field is always echoed in the response — the relay treats a missing echo as
+> "webhook script outdated — redeploy".
+
+**Request / response contract:**
+
+| | JSON |
+|---|---|
+| Request | `{"action": "get_stream_key", "ref": "<reference>"}` |
+| Success | `{"ok": true, "action": "get_stream_key", "key": "<key>"}` |
+| Unknown ref | `{"ok": false, "action": "get_stream_key", "error": "no key for ref '<ref>'"}` |
+
+### Set the stream target
+
+Once the Producer tab has a `Stream Key` column and the Script Properties are
+populated, the producer sets OBS's stream target before going live:
+
+- **Control Center Home:** each Producer Part row with a `Stream Key` reference
+  shows a **Set target** button. Click it to fetch the key for that Part and apply
+  it to OBS's stream settings.
+- **CLI:** `racecast obs stream-target <part>` (e.g.
+  `racecast obs stream-target 1`).
+
+> **OBS must not be streaming.** `set target` only works while OBS is not live —
+> it writes the service and key to OBS's stream settings. To switch between two
+> back-to-back Parts: **stop the broadcast** → set the target for the next Part →
+> go live again.
+
+A Part with no `Stream Key` reference (blank cell) reports "no reference for
+this Part" — OBS's current stream settings are left unchanged. This is normal for
+events where all Parts share one key already configured in OBS.
+
 ## One-time setup (per sheet)
 
 1. Open the broadcast Google Sheet → **Extensions → Apps Script**.
