@@ -475,6 +475,8 @@
         <svg viewBox="0 0 24 24"><path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>Crew Console</button>
       <button class="navitem" data-nav="logs" onclick="showView('logs')">
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>Logs</button>
+      <button class="navitem" data-nav="report" onclick="showView('report')">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/><line x1="8" y1="9" x2="10" y2="9"/></svg>Report</button>
       <button class="navitem" data-nav="help" onclick="showView('help')">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Help &amp; Docs</button>
     </div>
@@ -1079,6 +1081,23 @@
           <div id="prevlist" hidden></div>
         </section>
       </div>
+
+      <!-- ===== Post-Event Report ===== -->
+      <div class="view" data-view="report" hidden>
+        <div class="viewhead"><h2>Post-Event Report</h2></div>
+        <p class="muted">Generate a report of the last session from the health history —
+          uptime, feed reliability, incidents, on-air time per commentator. Send it to the
+          league Discord as an attachment.</p>
+        <div class="row">
+          <button id="report-gen" class="btn" onclick="reportGenerate()">Generate report</button>
+          <a id="report-dl" class="btn" download hidden>Download .html</a>
+          <button id="report-send" class="btn" onclick="reportSend()" hidden>Send to Discord</button>
+        </div>
+        <p id="report-msg" class="muted"></p>
+        <iframe id="report-frame" title="Report preview"
+                style="width:100%;height:70vh;border:1px solid #ddd;border-radius:8px;background:#fff"
+                hidden></iframe>
+      </div>
     </main>
 
     <!-- ===== docked console (job output) ===== -->
@@ -1175,6 +1194,40 @@ function showView(name) {
   if (name === 'home') fetchProducerSchedule();
   // entering Home: load the current event title (works relay up or down)
   if (name === 'home') fetchEventTitle();
+}
+
+let _reportPath = null;
+async function reportGenerate() {
+  const btn = $('report-gen');
+  const msg = $('report-msg');
+  btn.disabled = true; msg.textContent = 'Generating…';
+  try {
+    const r = await fetch('/api/report/generate', {method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: '{}'});
+    const data = await r.json();
+    if (!data.ok) { msg.textContent = 'Error: ' + (data.error || 'failed'); return; }
+    _reportPath = data.path;
+    const frame = $('report-frame');
+    frame.srcdoc = data.html; frame.hidden = false;
+    const dl = $('report-dl');
+    dl.href = 'data:text/html;charset=utf-8,' + encodeURIComponent(data.html);
+    dl.download = (data.path || 'report.html').split('/').pop();
+    dl.hidden = false;
+    $('report-send').hidden = false;
+    msg.textContent = 'Written to ' + data.path;
+  } catch (e) { msg.textContent = 'Error: ' + e; }
+  finally { btn.disabled = false; }
+}
+async function reportSend() {
+  const msg = $('report-msg');
+  msg.textContent = 'Sending…';
+  try {
+    const r = await fetch('/api/report/send', {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({path: _reportPath})});
+    const data = await r.json();
+    msg.textContent = data.ok ? 'Sent to Discord.' : ('Error: ' + (data.error || 'failed'));
+  } catch (e) { msg.textContent = 'Error: ' + e; }
 }
 
 function toggleConsole(force) {

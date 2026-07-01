@@ -5655,6 +5655,8 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "backup_delete": backup_delete_data,
         "profile_export": profile_export_data,
         "profile_import": profile_import_data,
+        "report_generate": report_generate_data,
+        "report_send": report_send_data,
         "jobs": jobs_mod.JobManager(
             lambda op_args: ops_mod.job_argv(op_args, IS_FROZEN,
                                              _rc_job_executable(),

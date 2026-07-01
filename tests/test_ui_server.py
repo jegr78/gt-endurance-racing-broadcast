@@ -217,7 +217,12 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "crew_write": lambda row, name, director, producer, commentator=None, race_control=None, discord=None: {
                 "ok": True, "row": row,
                 "_got": (row, name, director, producer, commentator, race_control, discord)},
-            "crew_delete": lambda row: {"ok": True, "row": row, "_got": row}}
+            "crew_delete": lambda row: {"ok": True, "row": row, "_got": row},
+            "report_generate": lambda: {"ok": True,
+                                        "html": "<!doctype html><html></html>",
+                                        "path": "/x/report.html",
+                                        "summary": "1 session, 2 feeds"},
+            "report_send": lambda path=None: {"ok": True}}
 
 
 def _serve(ctx):
@@ -1698,6 +1703,25 @@ def t_api_crew_delete_post():
         code, body = _post_json(port, "/api/crew/delete", {"row": 3})
         data = json.loads(body)
         assert code == 200 and data["_got"] == 3
+    finally:
+        httpd.shutdown()
+
+
+def t_report_generate_and_send_routes():
+    calls = {}
+    ctx = _ctx()
+    ctx["report_generate"] = lambda: {"ok": True, "html": "<!doctype html><html></html>",
+                                      "path": "/x/r.html", "summary": "sum"}
+    ctx["report_send"] = lambda path=None: calls.update(send=path) or {"ok": True}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/report/generate", {})
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True and "<!doctype html>" in data["html"]
+        code, body = _post_json(port, "/api/report/send", {"path": "/x/r.html"})
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert calls["send"] == "/x/r.html"
     finally:
         httpd.shutdown()
 
