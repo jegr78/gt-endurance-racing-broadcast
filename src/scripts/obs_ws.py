@@ -478,6 +478,23 @@ def parse_stream_status(payload):
     }
 
 
+# Single-channel event -> OBS rtmp_common service name. Platform values come from
+# the Sheet `Channel` tab (broadcast_chat.parse_channel_tab), lowercased.
+OBS_STREAM_SERVICE_NAMES = {"youtube": "YouTube - RTMPS", "twitch": "Twitch"}
+
+
+def stream_service_payload(platform, key):
+    """Build SetStreamServiceSettings request data for a single-channel event.
+    `platform` is the Channel-tab value ('youtube'/'twitch', case-insensitive);
+    unknown -> ValueError (the caller turns it into a producer-facing note, never
+    a crash). The key is passed through verbatim and never logged."""
+    name = OBS_STREAM_SERVICE_NAMES.get((platform or "").strip().lower())
+    if not name:
+        raise ValueError(f"unknown stream platform: {platform!r}")
+    return {"streamServiceType": "rtmp_common",
+            "streamServiceSettings": {"service": name, "server": "auto", "key": key}}
+
+
 def get_health_stats(host="127.0.0.1", port=None, password=None, timeout=2.0):
     """One obs-websocket session -> (reachable, stats, note). `stats` is the merged
     parse_obs_stats + parse_stream_status dict (empty {} when the requests fail but
@@ -748,6 +765,33 @@ def set_stream(active, host="127.0.0.1", port=None,
         if status.get("stream_active") == bool(active):
             return True, ""                       # already in the desired state
         session.request("StartStream" if active else "StopStream", {})
+        return True, ""
+    except Exception as exc:                       # noqa: BLE001 — best-effort contract
+        return False, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
+def set_stream_service(platform, key, host="127.0.0.1", port=None,
+                       password=None, timeout=2.0):
+    """Set OBS's stream service + key for a single-channel event (best effort).
+    HARD GUARD: refuses while OBS is streaming — a live service/key change is
+    unsafe — returning (False, "OBS is streaming — stop the broadcast before
+    changing the stream target."). Unknown platform / unreachable OBS -> (False,
+    note). The key is applied to OBS and NEVER logged. (ok, note); never raises."""
+    try:
+        data = stream_service_payload(platform, key)
+    except ValueError as exc:
+        return False, str(exc)
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return False, note
+    try:
+        status = parse_stream_status(session.request("GetStreamStatus", {}))
+        if status.get("stream_active"):
+            return False, ("OBS is streaming — stop the broadcast before "
+                           "changing the stream target.")
+        session.request("SetStreamServiceSettings", data)
         return True, ""
     except Exception as exc:                       # noqa: BLE001 — best-effort contract
         return False, str(exc) or exc.__class__.__name__

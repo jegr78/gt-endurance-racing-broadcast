@@ -14,8 +14,8 @@ def t_header_mode_parses_three_columns():
             "1,Alice,producer-a.tail1234.ts.net\r\n"
             "2,Bob,producer-b.tail1234.ts.net\r\n")
     assert p.parse_producer_rows(text) == [
-        {"part": "1", "producer": "Alice", "magicdns": "producer-a.tail1234.ts.net"},
-        {"part": "2", "producer": "Bob", "magicdns": "producer-b.tail1234.ts.net"},
+        {"part": "1", "producer": "Alice", "magicdns": "producer-a.tail1234.ts.net", "stream_key": ""},
+        {"part": "2", "producer": "Bob", "magicdns": "producer-b.tail1234.ts.net", "stream_key": ""},
     ]
 
 
@@ -23,13 +23,13 @@ def t_header_synonyms_and_reordered_columns():
     text = ("MagicDNS,Magic-DNS-IGNORED,Producer,Part\r\n"  # first match wins for magicdns
             "host-x.ts.net,zzz,Carol,3\r\n")
     rows = p.parse_producer_rows(text)
-    assert rows == [{"part": "3", "producer": "Carol", "magicdns": "host-x.ts.net"}], rows
+    assert rows == [{"part": "3", "producer": "Carol", "magicdns": "host-x.ts.net", "stream_key": ""}], rows
 
 
 def t_magic_dns_spaced_header_synonym():
     text = "Part,Producer,Magic DNS\r\n1,Dan,d.ts.net\r\n"
     assert p.parse_producer_rows(text) == [
-        {"part": "1", "producer": "Dan", "magicdns": "d.ts.net"}]
+        {"part": "1", "producer": "Dan", "magicdns": "d.ts.net", "stream_key": ""}]
 
 
 def t_duplicates_preserved():
@@ -43,13 +43,13 @@ def t_duplicates_preserved():
 def t_empty_magicdns_cell_kept():
     text = "Part,Producer,MagicDNS\r\n4,Eve,\r\n"
     assert p.parse_producer_rows(text) == [
-        {"part": "4", "producer": "Eve", "magicdns": ""}]
+        {"part": "4", "producer": "Eve", "magicdns": "", "stream_key": ""}]
 
 
 def t_blank_spacer_rows_dropped():
     text = "Part,Producer,MagicDNS\r\n,,\r\n5,Frank,f.ts.net\r\n"
     assert p.parse_producer_rows(text) == [
-        {"part": "5", "producer": "Frank", "magicdns": "f.ts.net"}]
+        {"part": "5", "producer": "Frank", "magicdns": "f.ts.net", "stream_key": ""}]
 
 
 def t_missing_header_returns_empty():
@@ -103,6 +103,27 @@ def t_resolve_producer_name_skips_empty_magicdns_and_empty_producer():
             {"part": "2", "producer": "", "magicdns": "host.ts.net"}]   # self but no name
     assert p.resolve_producer_name(rows, "") == ""
     assert p.resolve_producer_name(rows, "host.ts.net") == ""           # matched row has no producer
+
+
+def t_parse_producer_rows_reads_optional_stream_key():
+    text = ("Part,Producer,MagicDNS,Stream Key\r\n"
+            "1,Alice,alice.ts.net,key1\r\n"
+            "2,Bob,bob.ts.net,key2\r\n")
+    rows = p.parse_producer_rows(text)
+    assert [r["stream_key"] for r in rows] == ["key1", "key2"]
+
+
+def t_parse_producer_rows_stream_key_absent_defaults_blank():
+    text = "Part,Producer,MagicDNS\r\n1,Alice,alice.ts.net\r\n"
+    rows = p.parse_producer_rows(text)
+    assert rows[0]["stream_key"] == ""
+    assert rows[0]["part"] == "1" and rows[0]["producer"] == "Alice"
+
+
+def t_parse_producer_rows_still_requires_core_trio():
+    # Missing MagicDNS header -> empty (unchanged behaviour), even with Stream Key.
+    text = "Part,Producer,Stream Key\r\n1,Alice,key1\r\n"
+    assert p.parse_producer_rows(text) == []
 
 
 if __name__ == "__main__":

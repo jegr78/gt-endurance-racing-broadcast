@@ -1916,6 +1916,30 @@ function renderProducerSchedule(d) {
       btn.onclick = () => op('event-takeover', true, {ip: host, funnel: true});
       tdAct.appendChild(btn);
     }
+    if (r.part) {
+      const setBtn = document.createElement('button');
+      setBtn.textContent = 'Set target';
+      setBtn.style.marginLeft = '4px';
+      const noteSpan = document.createElement('span');
+      noteSpan.className = 'dim'; noteSpan.style.marginLeft = '4px';
+      noteSpan.style.fontSize = '0.85em';
+      const part = r.part;
+      setBtn.onclick = async () => {
+        setBtn.disabled = true; noteSpan.textContent = '';
+        try {
+          const res = await (await fetch('/api/obs/stream-target', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({part})})).json();
+          noteSpan.textContent = res.note || '';
+          noteSpan.style.color = res.ok ? '#4ADE80' : '#F87171';
+        } catch (e) {
+          noteSpan.textContent = 'request failed';
+          noteSpan.style.color = '#F87171';
+        } finally { setBtn.disabled = false; }
+      };
+      tdAct.appendChild(setBtn); tdAct.appendChild(noteSpan);
+    }
     tr.append(tdPart, tdProd, tdDns, tdAct);
     body.appendChild(tr);
   }

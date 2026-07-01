@@ -1674,6 +1674,54 @@ def t_event_title_post_validation_error_is_400():
         httpd.shutdown()
 
 
+def t_post_obs_stream_target_malformed_body_is_400():
+    httpd, port = _serve(_ctx())
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/obs/stream-target", method="POST",
+            data=b"{not json", headers={"Content-Type": "application/json"})
+        try:
+            with _urlopen(req, timeout=5) as r:
+                code = r.status
+        except urllib.error.HTTPError as e:
+            code = e.code
+        assert code == 400
+    finally:
+        httpd.shutdown()
+
+
+def t_post_obs_stream_target_routes_to_provider():
+    calls = {}
+    def provider(part):
+        calls["part"] = part
+        return {"ok": True, "note": "stream target set for Part 1 on twitch — stream key set"}
+    ctx = _ctx()
+    ctx["obs_stream_target"] = provider
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/obs/stream-target", {"part": "1"})
+        d = json.loads(body)
+        assert code == 200 and d["ok"] is True
+        assert calls["part"] == "1"
+        assert "key set" in d["note"] and "SECRET" not in d["note"]
+    finally:
+        httpd.shutdown()
+
+
+def t_post_obs_stream_target_error_is_400():
+    ctx = _ctx()
+    ctx["obs_stream_target"] = lambda part: {
+        "ok": False,
+        "note": "OBS is streaming — stop the broadcast before changing the stream target."}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/obs/stream-target", {"part": "1"})
+        d = json.loads(body)
+        assert code == 400 and d["ok"] is False
+    finally:
+        httpd.shutdown()
+
+
 def t_api_crew_get_returns_entries():
     httpd, port = _serve(_ctx())
     try:

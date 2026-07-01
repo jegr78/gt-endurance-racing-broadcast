@@ -13,6 +13,7 @@ import io
 PRODUCER_PART_HEADERS = ("part",)
 PRODUCER_PRODUCER_HEADERS = ("producer",)
 PRODUCER_MAGICDNS_HEADERS = ("magicdns", "magic-dns", "magicdns name", "magic dns")
+PRODUCER_STREAMKEY_HEADERS = ("stream key", "streamkey", "key ref", "stream key ref")
 
 
 def _find(header, names):
@@ -51,12 +52,13 @@ def resolve_producer_name(rows, self_magicdns):
 
 
 def parse_producer_rows(text):
-    """Parse the `Producer` tab CSV into [{"part","producer","magicdns"}, ...].
+    """Parse the `Producer` tab CSV into [{"part","producer","magicdns","stream_key"}, ...].
 
-    Header REQUIRED: returns [] unless all three columns are located in row 1 by
-    case-insensitive header match. Order and duplicate rows are preserved (one
-    producer may do consecutive parts). Cells are trimmed; a row whose Producer
-    AND MagicDNS are both blank is dropped (spacer rows), but a present Producer
+    Header REQUIRED: returns [] unless all three columns (part, producer, magicdns) are
+    located in row 1 by case-insensitive header match. The stream key column is optional;
+    when absent, stream_key defaults to empty string. Order and duplicate rows are
+    preserved (one producer may do consecutive parts). Cells are trimmed; a row whose
+    Producer AND MagicDNS are both blank is dropped (spacer rows), but a present Producer
     with an empty MagicDNS is kept (the UI renders it with a disabled action)."""
     rows = list(csv.reader(io.StringIO(text or "")))
     if not rows:
@@ -67,10 +69,13 @@ def parse_producer_rows(text):
     mi = _find(header, PRODUCER_MAGICDNS_HEADERS)
     if pi is None or ri is None or mi is None:
         return []
+    ki = _find(header, PRODUCER_STREAMKEY_HEADERS)   # optional -> None if absent
     out = []
     for row in rows[1:]:
         part, prod, magic = _cell(row, pi), _cell(row, ri), _cell(row, mi)
         if not prod and not magic:
             continue
-        out.append({"part": part, "producer": prod, "magicdns": magic})
+        skey = _cell(row, ki) if ki is not None else ""
+        out.append({"part": part, "producer": prod, "magicdns": magic,
+                    "stream_key": skey})
     return out
