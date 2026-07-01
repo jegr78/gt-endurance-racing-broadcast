@@ -13,7 +13,7 @@ import math
 import sqlite3
 import time
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SAMPLE_INTERVAL_S = 30          # heartbeat tick = sample cadence
 LIVE_WINDOW_S = 900            # default range when no from/to given (15 min)
@@ -39,6 +39,9 @@ COLUMNS = (
     "obs_cpu_pct", "obs_mem_mb", "obs_fps", "obs_render_skipped_pct",
     "obs_disk_free_mb",
     "feed_a_quality", "feed_b_quality", "pov_quality",
+    # v5: machine (host) resources — distinct from the obs_* process stats above
+    "sys_cpu_pct", "sys_mem_pct", "sys_net_up_kbps", "sys_net_down_kbps",
+    "sys_disk_free_mb",
 )
 
 BAND_FIELDS = ("health_level", "feed_a_state", "feed_b_state",
@@ -48,7 +51,9 @@ BAND_FIELDS = ("health_level", "feed_a_state", "feed_b_state",
 NUMERIC_FIELDS = ("source_last_ok_age_s", "cookies_age_h",
                   "stream_kbps", "stream_dropped_pct", "stream_congestion",
                   "obs_cpu_pct", "obs_mem_mb", "obs_fps",
-                  "obs_render_skipped_pct", "obs_disk_free_mb")
+                  "obs_render_skipped_pct", "obs_disk_free_mb",
+                  "sys_cpu_pct", "sys_mem_pct", "sys_net_up_kbps",
+                  "sys_net_down_kbps", "sys_disk_free_mb")
 STATE_KEY_FIELDS = ("health_level", "feed_a_state", "feed_a_down",
                     "feed_b_state", "feed_b_down", "pov_state", "obs_reachable",
                     "timer_push",
@@ -73,7 +78,9 @@ CREATE TABLE IF NOT EXISTS samples (
     stream_kbps REAL, stream_dropped_pct REAL, stream_congestion REAL,
     obs_cpu_pct REAL, obs_mem_mb REAL, obs_fps REAL,
     obs_render_skipped_pct REAL, obs_disk_free_mb REAL,
-    feed_a_quality TEXT, feed_b_quality TEXT, pov_quality TEXT
+    feed_a_quality TEXT, feed_b_quality TEXT, pov_quality TEXT,
+    sys_cpu_pct REAL, sys_mem_pct REAL, sys_net_up_kbps REAL,
+    sys_net_down_kbps REAL, sys_disk_free_mb REAL
 );
 CREATE INDEX IF NOT EXISTS idx_samples_ts ON samples (ts);
 
@@ -102,6 +109,12 @@ _V3_COLUMNS = (
     ("pov_quality", "TEXT"),
 )
 
+_V5_COLUMNS = (
+    ("sys_cpu_pct", "REAL"), ("sys_mem_pct", "REAL"),
+    ("sys_net_up_kbps", "REAL"), ("sys_net_down_kbps", "REAL"),
+    ("sys_disk_free_mb", "REAL"),
+)
+
 
 def open_db(path):
     """Open (creating the file/dirs as needed) with WAL + a busy timeout so the
@@ -114,11 +127,11 @@ def open_db(path):
 
 
 def migrate(conn):
-    """Create the schema, add any missing v3 columns (lossless upgrade from v2),
+    """Create the schema, add any missing v3 and v5 columns (lossless upgrade from v2/v3),
     and stamp user_version. Idempotent and version-agnostic."""
     conn.executescript(_CREATE)
     have = {r["name"] for r in conn.execute("PRAGMA table_info(samples)").fetchall()}
-    for name, decl in _V3_COLUMNS:
+    for name, decl in _V3_COLUMNS + _V5_COLUMNS:
         if name not in have:
             conn.execute(f"ALTER TABLE samples ADD COLUMN {name} {decl}")
     conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")

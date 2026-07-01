@@ -442,6 +442,9 @@
              border-bottom: 1px solid var(--line, #273349); }
   .prevrow .meta { flex: 1; font-size: 13px; }
   .prevrow .sub { color: var(--dim, #94A3B8); font: 12px var(--mono); }
+  .badge.lvl-green .dot { background: #2e7d32; }
+  .badge.lvl-yellow .dot { background: #f9a825; }
+  .badge.lvl-red .dot { background: #c62828; }
 </style>
 </head>
 <body>
@@ -639,6 +642,17 @@
             <thead><tr><th>Part</th><th>Producer</th><th>MagicDNS</th><th></th></tr></thead>
             <tbody id="prod-body"></tbody>
           </table>
+        </section>
+        <section id="home-system">
+          <div class="viewhead"><h3>System</h3></div>
+          <div class="row"><span class="name">CPU</span>
+            <span class="badge" id="sys-cpu"><span class="dot"></span><span>…</span></span></div>
+          <div class="row"><span class="name">Memory</span>
+            <span class="badge" id="sys-mem"><span class="dot"></span><span>…</span></span></div>
+          <div class="row"><span class="name">Network</span>
+            <span class="dim" id="sys-net">…</span></div>
+          <div class="row"><span class="name">Disk free</span>
+            <span class="badge" id="sys-disk"><span class="dot"></span><span>…</span></span></div>
         </section>
         <p class="evnote">Start brings up Tailscale, Discord, OBS, relay and Companion (optional stint = mid-event takeover). Stop only stops the racecast services — OBS, Discord and Tailscale keep running; quit them manually if needed. Use <b>Copy link</b> to share the Companion tablet and Director panel URLs with your directors (they reach them over Tailscale).</p>
       </div>
@@ -4459,8 +4473,31 @@ async function quitConfirm() {
   blankAndQuit();
 }
 
+function _mbps(bps) { return bps == null ? '—' : (bps / 1e6).toFixed(2) + ' Mbps'; }
+function _lvlText(el, level, text) {
+  const b = $(el); if (!b) return;
+  b.className = 'badge' + (level ? ' lvl-' + level : '');
+  b.querySelector('span:last-child').textContent = text;
+}
+async function refreshResources() {
+  let d;
+  try { d = await (await fetch('/api/resources', {cache: 'no-store'})).json(); }
+  catch (e) { return; }
+  if (!d || !d.available) { return; }
+  _lvlText('sys-cpu', d.cpu_level, d.cpu_pct == null ? '—' : d.cpu_pct.toFixed(0) + ' %');
+  const memTxt = (d.mem_used && d.mem_total)
+    ? (d.mem_used / 1073741824).toFixed(1) + ' / ' + (d.mem_total / 1073741824).toFixed(0)
+      + ' GB · ' + (d.mem_pct == null ? '—' : d.mem_pct.toFixed(0) + '%')
+    : '—';
+  _lvlText('sys-mem', d.mem_level, memTxt);
+  $('sys-net').textContent = '↑ ' + _mbps(d.net_up_bps) + '   ↓ ' + _mbps(d.net_down_bps);
+  _lvlText('sys-disk', d.disk_level,
+           d.disk_free == null ? '—' : (d.disk_free / 1073741824).toFixed(1) + ' GB free');
+}
 refresh();
 setInterval(refresh, 3000);
+refreshResources();
+setInterval(refreshResources, 2000);
 setInterval(renderTimer, 1000);          // tick the Home race-timer clock locally
 checkUpdate();                           // one-shot GitHub release check (cached server-side)
 // Populate the active-league sidebar badge regardless of which view opens first.

@@ -105,6 +105,20 @@ Line charts plot scalar metrics over time, grouped by subsystem:
 | **Render skipped %** | Percentage of frames skipped by the OBS renderer |
 | **Disk free (MB)** | Free disk space on the OBS recording drive |
 
+#### System (machine)
+
+| Chart | What it tracks |
+|---|---|
+| **CPU %** | Producer machine CPU utilisation |
+| **Memory %** | Producer machine RAM utilisation |
+| **Net up (kbps)** | Upload throughput in kilobits per second |
+| **Net down (kbps)** | Download throughput in kilobits per second |
+| **Disk free (MB)** | Free disk space on the machine's primary drive |
+
+These metrics are sampled every ~30 s in the relay heartbeat alongside the
+[OBS Resources](#obs-resources) series. History recorded before this feature was
+added will show no data points for this group — that is expected.
+
 #### Legacy series (always present)
 
 | Chart | What it tracks |

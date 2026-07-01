@@ -53,6 +53,7 @@ import console_admin as cpadm
 import cue_admin as cue
 import health_store as hsmod
 import report_build as rbuild
+import resources
 import notify   # pure Discord payload builders for producer events (#317)
 import overlay_build as ob
 import fonts_bundle as fb
@@ -3672,6 +3673,30 @@ def ui_status_payload(relay=None, companion=None, streams=None, tailscale=None,
             "apps_running": (apps_running or running_apps_data)()}
 
 
+_resource_monitor = None
+
+
+def resources_data():
+    """Latest machine-resource snapshot + color levels for the Control Center System card.
+    {available:false} until the monitor has a first sample; never raises."""
+    if _resource_monitor is None:
+        return {"available": False}
+    snap = _resource_monitor.latest()
+    if snap is None:
+        return {"available": False}
+    return {"available": True,
+            "cpu_pct": snap["cpu_pct"],
+            "cpu_level": resources.cpu_level(snap["cpu_pct"]),
+            "mem_used": snap["mem_used"],
+            "mem_total": snap["mem_total"],
+            "mem_pct": snap["mem_pct"],
+            "mem_level": resources.mem_level(snap["mem_pct"]),
+            "net_up_bps": snap["net_up_bps"],
+            "net_down_bps": snap["net_down_bps"],
+            "disk_free": snap["disk_free"],
+            "disk_level": resources.disk_level(snap["disk_free"])}
+
+
 def cookies_status_data(status=None):
     """Local cookie-jar freshness (no network — safe for the 3 s poll;
     never raises — a broken probe must not 500 the status poll)."""
@@ -5663,7 +5688,11 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
                                              os.path.join(HERE, "racecast.py")),
             env=_frozen_child_env(), logger=_app_logger),
         "log_sources": _log_sources(),
+        "resources": resources_data,
     }
+    global _resource_monitor
+    _resource_monitor = resources.ResourceMonitor(interval=2.0)
+    _resource_monitor.start()
     try:
         httpd = srv.serve(ctx, "127.0.0.1", port)
     except OSError as exc:
