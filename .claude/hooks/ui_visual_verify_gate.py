@@ -88,6 +88,7 @@ def main():
     try:
         json.load(sys.stdin)  # drain/parse the Stop payload; fields unused here
     except Exception:
+        # Best-effort: a missing/malformed payload must not crash the gate.
         pass
 
     changed = _changed_ui_files()
