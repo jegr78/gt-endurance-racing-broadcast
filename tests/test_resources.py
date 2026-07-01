@@ -89,11 +89,16 @@ def _fake_readers(seq):
     def adv():
         state["i"] += 1
 
+    def read_disk():
+        val = nextt()["disk"]
+        adv()  # noqa: PLE0001 - intentional side effect for state advance
+        return val
+
     return {
         "cpu": lambda: nextt()["cpu"],
         "net": lambda: nextt()["net"],
         "mem": lambda: nextt()["mem"],
-        "disk": lambda: (nextt()["disk"], adv())[0],   # disk called last each tick -> advance
+        "disk": read_disk,
     }
 
 
