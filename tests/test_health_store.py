@@ -365,6 +365,53 @@ def t_export_jsonl_orders_samples_before_events():
             conn.close()
 
 
+def t_v5_sys_columns_present_and_charted():
+    cols = set(hs.COLUMNS)
+    for c in ("sys_cpu_pct", "sys_mem_pct", "sys_net_up_kbps",
+              "sys_net_down_kbps", "sys_disk_free_mb"):
+        assert c in cols, c
+        assert c in hs.NUMERIC_FIELDS, c
+    assert hs.SCHEMA_VERSION >= 5
+
+
+def t_v5_migration_adds_sys_columns_losslessly():
+    import sqlite3
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "old.db")
+        # simulate a pre-v5 DB: create samples WITHOUT the sys_* columns, one row
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE samples (ts REAL NOT NULL, kind TEXT NOT NULL, "
+                     "health_level TEXT)")
+        conn.execute("INSERT INTO samples (ts, kind, health_level) VALUES (1.0,'periodic','green')")
+        conn.commit(); conn.close()
+        conn = hs.open_db(path)
+        hs.migrate(conn)                                  # must add sys_* without loss
+        try:
+            have = {r["name"] for r in conn.execute("PRAGMA table_info(samples)").fetchall()}
+            assert {"sys_cpu_pct", "sys_disk_free_mb"} <= have, have
+            rows = conn.execute("SELECT ts, health_level FROM samples").fetchall()
+            assert len(rows) == 1 and rows[0]["health_level"] == "green"   # old row survived
+            assert conn.execute("PRAGMA user_version").fetchone()[0] == hs.SCHEMA_VERSION
+        finally:
+            conn.close()
+
+
+def t_v5_sys_fields_roundtrip_and_series():
+    with tempfile.TemporaryDirectory() as d:
+        conn = hs.open_db(os.path.join(d, "h.db")); hs.migrate(conn)
+        try:
+            hs.record(conn, _snap(ts=0.0) | {"sys_cpu_pct": 40.0, "sys_mem_pct": 55.0,
+                                             "sys_net_up_kbps": 2.0, "sys_net_down_kbps": 1.0,
+                                             "sys_disk_free_mb": 100.0}, "periodic")
+            hs.record(conn, _snap(ts=30.0) | {"sys_cpu_pct": 60.0}, "periodic")
+            rows = hs.query_range(conn, 0, 1e12)
+            assert rows[0]["sys_cpu_pct"] == 40.0 and rows[0]["sys_disk_free_mb"] == 100.0
+            series = hs.numeric_series(rows)
+            assert series["sys_cpu_pct"]["v"] == [40.0, 60.0], series["sys_cpu_pct"]
+        finally:
+            conn.close()
+
+
 m = _load("irofeeds", ("src", "relay", "racecast-feeds.py"))
 
 LOGDIR = tempfile.mkdtemp(prefix="racecast-test-health-")
@@ -418,6 +465,9 @@ def t_relay_health_snapshot_has_no_urls_and_all_columns():
     snap = relay._health_snapshot(now=123.0)
     for col in hs.COLUMNS:
         if col in ("ts", "kind"):
+            continue
+        # sys_* columns are populated by Task 3 (relay resource collection)
+        if col.startswith("sys_"):
             continue
         assert col in snap, col
     assert "timer_push" in snap
