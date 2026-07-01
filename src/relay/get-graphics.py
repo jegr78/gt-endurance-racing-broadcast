@@ -11,7 +11,7 @@ Usage: python3 get-graphics.py [--out DIR] [--sheet-id ID] [--assets-tab NAME]
        [--only "Label[,Label...]"]
 """
 import argparse, csv, io, os, re, sys
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 # Pure stdlib placeholder helper from src/scripts (resolved both from source and
@@ -75,6 +75,35 @@ def drive_id(url):
 def to_download_url(file_id):
     """Direct-download endpoint for a Drive file ID (no API key)."""
     return f"https://drive.google.com/uc?export=download&id={file_id}"
+
+
+def drive_confirm_url(url, data):
+    """Resolve the real file URL from a Drive large-file interstitial.
+
+    `data` is the HTML body (bytes) Drive returned instead of the file. Drive
+    has two interstitial formats: the current one is a <form> that GETs the
+    drive.usercontent.google.com/download endpoint with hidden inputs (id,
+    export, authuser, confirm, uuid); the legacy one embeds a `confirm=<token>`
+    query param in a download link. Returns the URL to GET the file, or None if
+    the body carries neither (the caller then raises)."""
+    text = data.decode("utf-8", "replace")
+    form = re.search(r"<form[^>]*\baction=\"([^\"]+)\"", text)
+    if form:
+        action = form.group(1).replace("&amp;", "&")
+        params = {}
+        for tag in re.findall(r"<input\b[^>]*>", text):
+            name = re.search(r"name=\"([^\"]*)\"", tag)
+            if not (name and name.group(1)):
+                continue
+            value = re.search(r"value=\"([^\"]*)\"", tag)
+            params[name.group(1)] = value.group(1).replace("&amp;", "&") if value else ""
+        if params:
+            sep = "&" if "?" in action else "?"
+            return action + sep + urlencode(params)
+    m = re.search(r"confirm=([0-9A-Za-z_-]+)", text)
+    if m:
+        return url + "&confirm=" + m.group(1)
+    return None
 
 
 def safe_filename(label):
@@ -163,11 +192,10 @@ def download(url, out_path, timeout=60):
         ctype = resp.headers.get("Content-Type", "")
         data = resp.read()
     if ctype.startswith("text/html"):
-        m = re.search(rb"confirm=([0-9A-Za-z_-]+)", data)
-        if not m:
+        confirm_url = drive_confirm_url(url, data)
+        if not confirm_url:
             raise RuntimeError("Drive returned an HTML interstitial with no confirm token")
-        req2 = Request(url + "&confirm=" + m.group(1).decode(),
-                       headers={"User-Agent": "racecast-graphics/1.0"})
+        req2 = Request(confirm_url, headers={"User-Agent": "racecast-graphics/1.0"})
         with urlopen(req2, timeout=timeout) as resp2:
             data = resp2.read()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
