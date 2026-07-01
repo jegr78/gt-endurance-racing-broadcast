@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.4.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.3.0...v1.4.0) (2026-07-01)
+
+
+### Features
+
+* **brands:** per-league brand-logo override via Sheet + profile export ([#370](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/370)) ([e1b5d78](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e1b5d786106a4b07a4b87b544690fc0e5fe8dac0))
+* **cockpit:** commentator → director cue-back ([#377](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/377)) ([#380](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/380)) ([6136b58](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/6136b583021be1b7ff1451a787c0fbbe75516bc0))
+* **console:** event notes — Sheet tab + toggleable modal in director panel, cockpit & race control ([#383](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/383)) ([6179e83](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/6179e8338f66975670974135e3a1e4fbe9beac48))
+* **console:** producer role implies director + race_control ([#374](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/374)) ([0acf1bf](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/0acf1bfbd04ce8e7bca0067eec2f293cade3f051))
+* **console:** version badge + Help button on Director Panel, Cockpit & Race Control ([#375](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/375)) ([3778bdd](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/3778bdd541879a1e3875d3044666d30a44a1a7df))
+* flag-status graphics (parallel to the flag-text chip) ([#372](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/372)) ([cdb9b85](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/cdb9b85c935c0d85f1989a24e06d5ab879eba27e))
+* Intermission scene — graphic + looping music + broadcast-chat box ([#368](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/368)) ([f4e3f28](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/f4e3f28ef38e2d43889ac5b91312456ebfc45e93))
+* **obs:** director per-take transitions — Cut/Fade/Stinger on the Director Panel ([#390](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/390)) ([b06ed8e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/b06ed8e3140d42d62e7877c0a9419f6cda5572f9))
+* **obs:** Sheet-driven OBS stream target (service + key per Producer Part) ([#399](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/399)) ([44d7606](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/44d7606723f3e8eb296061a34c1e95737f078bbd))
+* **panel:** batch-apply Top-3 teams in one action (no live duplication) ([#373](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/373)) ([fcb648a](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/fcb648a8c1043742b8016ed8c0d091d423d92372))
+* **panel:** move Cues to the top, between PGM and Live Preview ([#392](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/392)) ([a2649f5](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/a2649f581288e7beef725b7dbf20be12303bdc80)), closes [#385](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/385)
+* **race-control:** Race Control → commentator info channel ([#376](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/376)) ([#379](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/379)) ([5167c71](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/5167c71c34dff88312f91525e60d678bdeb74295))
+* **relay:** auto-failover to the Intermission scene on confirmed on-air feed loss ([#382](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/382)) ([11c6335](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/11c63350622a46b2a3239b1dc337ce85986a12f4)), closes [#378](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/378)
+* **relay:** default RACECAST_FEED_FANOUT to on (live-verified), keep the switch ([#365](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/365)) ([21ea8f3](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/21ea8f328de805efa2e498e4af9c14db08a56ea6))
+* **relay:** relay-side feed fan-out — fix stale-on-activation glitch + free preview ([#358](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/358)) ([#360](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/360)) ([49df8f7](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/49df8f78a2d5db7bfd3cef02597ce4ee3a3bdf4a))
+* **report:** post-event report — CLI + Control Center view + Discord send ([#388](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/388)) ([f593219](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/f593219288d250f737c9c0b795518e0cfd07ab12))
+* **ui:** live resource monitor — Control Center System card + health-history charts ([#389](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/389)) ([f2755d3](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/f2755d33252aad141171ea399e7fe0faa487f0d4))
+
+
+### Bug Fixes
+
+* **assets:** handle Google Drive's modern &lt;form&gt; download interstitial ([#393](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/393)) ([308b1f9](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/308b1f9db936568cc18878a22e82e5e8df263b33)), closes [#386](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/386)
+* **assets:** reset graphics/media to placeholder when the Sheet drops a link ([#394](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/394)) ([b500567](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/b5005670dd7b15b9ade15cb5c6aa2d9b90e48d37)), closes [#387](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/387)
+* **broadcast-chat:** recover a frozen YouTube reader + Refresh button ([#294](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/294)) ([#362](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/362)) ([5d1f1c3](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/5d1f1c33311e0871dcec767a13da6fe105b6181f))
+* **broadcast-chat:** Refresh button shows a "Refreshing…" state ([#363](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/363)) ([0200a00](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/0200a0046d0881cc8a7e5d1af15eda822cb1ce43))
+* **console:** style the Event Notes modal Close button ([#391](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/391)) ([e74e375](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e74e3758d33fc34e2661a437c277c62d6af45d52)), closes [#384](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/384)
+* **director:** style transition Duration input + add UI visual-verification gate ([#397](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/397)) ([#401](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/401)) ([c228c29](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c228c298207f94571741e92180b9304c668dd533))
+* **intermission:** rename background source off scene-name collision; skip music in get-graphics ([#371](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/371)) ([c72d191](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c72d191212eb94bb07c5c4e5a5e75af72f47ca7c))
+* **obs:** per-scene HUD groups so splitscreen CURRENT/NEXT labels survive import ([#366](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/366)) ([1957463](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/19574639cfaa8456ef942b52ef0ff295e034b444))
+* **overlay-builder:** allow deselecting a slot (back to nothing-selected) ([#396](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/396)) ([2dc1942](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/2dc194272574dd922a08154c1dd70d6077001c09))
+* **relay:** silence self-healed fan-out reconnect health pings + log streamlink stderr ([#367](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/367)) ([0165cc0](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/0165cc02096c02cc595e68d5b188c5662a646fc7))
+* **resources:** resolve CodeQL py/mixed-tuple-returns + post-merge security-check hook ([#400](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/400)) ([82426c5](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/82426c546af02a24ac341d7b47ed529e76d630ef))
+* **tooling:** self-gate the post-merge reminder hook on the Bash command ([#402](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/402)) ([418ca7f](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/418ca7f424ef20408f8c53b699e69d453dddb8aa))
+* **ui:** stop overlay-builder Fit-mode scrollbar jitter on Windows ([#369](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/369)) ([44a276a](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/44a276a3e22e4901479a37a2d167b99911087974))
+
 ## [1.3.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.2.0...v1.3.0) (2026-06-28)
 
 
