@@ -168,28 +168,26 @@ never logged or written back to any cell.
 
 ### Apps Script handler
 
-Paste this block inside `doPost`, after the existing action checks (e.g. after
-the `if (action === 'crew') …` clause), then **redeploy** (see
+`get_stream_key` is one clause in the main `doPost` dispatcher — it already ships in
+the [One-time setup](#one-time-setup-per-sheet) script below (alongside `timer`,
+`schedule`, `crew`, …). If you paste that script fresh, there is nothing extra to do.
+
+If you are **upgrading an existing sheet**, add this one `else if` to your `doPost`
+dispatcher (it uses the same parsed `p` payload and `out()` helper as every other
+action), then **redeploy** (see
 [Updating the script later](#updating-the-script-later)):
 
 ```javascript
-// inside doPost(e), after parsing the body:
-if (body.action === 'get_stream_key') {
-  var ref = String(body.ref || '');
-  var key = PropertiesService.getScriptProperties().getProperty(ref);
-  if (!key) {
-    return out({ ok: false, action: 'get_stream_key',
-                 error: "no key for ref '" + ref + "'" });
-  }
-  return out({ ok: true, action: 'get_stream_key', key: key });
+else if (action === 'get_stream_key') {
+  const key = PropertiesService.getScriptProperties().getProperty(String(p.ref || ''));
+  return key
+    ? out({ok: true, action: 'get_stream_key', key: key})
+    : out({ok: false, action: 'get_stream_key', error: "no key for ref '" + String(p.ref || '') + "'"});
 }
 ```
 
-> **Note:** the snippet above uses `out(…)` to match the output helper in the
-> script shown under [One-time setup](#one-time-setup-per-sheet). The `action`
-> field is always echoed in the response — on a **successful** (`ok: true`) response,
-> a missing echo tells the relay the webhook script is outdated and needs redeploying.
-> An `ok: false` error response without the echo is still accepted as a normal error.
+The response always echoes `action`, and the key is returned only over HTTPS — it is
+never written back to any cell.
 
 **Request / response contract:**
 
@@ -246,6 +244,12 @@ events where all Parts share one key already configured in OBS.
        else if (action === 'pov') writePov(ss, p);
        else if (action === 'teams') writeTeams(ss, p);
        else if (action === 'crew') writeCrew(ss, p);
+       else if (action === 'get_stream_key') {
+         const key = PropertiesService.getScriptProperties().getProperty(String(p.ref || ''));
+         return key
+           ? out({ok: true, action: 'get_stream_key', key: key})
+           : out({ok: false, action: 'get_stream_key', error: "no key for ref '" + String(p.ref || '') + "'"});
+       }
        else return out({error: 'unknown action: ' + action});
        return out({ok: true, action: action, v: 7});
      } catch (err) { return out({error: String(err)}); }
