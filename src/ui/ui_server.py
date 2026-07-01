@@ -275,6 +275,11 @@ def make_handler(ctx):
                     return self._json({"ok": True, **ctx["status"]()})
                 except Exception as exc:        # a broken probe must not 500-hang the poll
                     return self._json({"ok": False, "error": f"status failed: {exc}"}, code=500)
+            if path == "/api/resources":
+                try:
+                    return self._json(ctx["resources"]())
+                except Exception as exc:
+                    return self._json({"available": False, "error": str(exc)}, code=500)
             if path == "/api/assets":
                 try:
                     return self._json(ctx["assets"]())

@@ -222,7 +222,8 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
                                         "html": "<!doctype html><html></html>",
                                         "path": "/x/report.html",
                                         "summary": "1 session, 2 feeds"},
-            "report_send": lambda path=None: {"ok": True}}
+            "report_send": lambda path=None: {"ok": True},
+            "resources": lambda: {"available": False}}
 
 
 def _serve(ctx):
@@ -1738,6 +1739,23 @@ def t_panel_link_has_no_obs_credential_fragment():
     assert "f.set('pw'" not in page            # no password into the panel URL
     assert "obsWs" not in page                 # the whole creds plumbing is gone
     assert "/panel" in page                    # but the plain panel link still exists
+
+
+def t_api_resources_route():
+    ctx = _ctx()
+    ctx["resources"] = lambda: {"available": True, "cpu_pct": 42.0, "cpu_level": "green",
+                                "mem_used": 8, "mem_total": 16, "mem_pct": 50.0,
+                                "mem_level": "green", "net_up_bps": 2000.0,
+                                "net_down_bps": 1000.0, "disk_free": 100,
+                                "disk_level": "green"}
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/resources")
+        data = json.loads(body)
+        assert code == 200 and data["available"] is True
+        assert data["cpu_pct"] == 42.0 and data["disk_level"] == "green"
+    finally:
+        httpd.shutdown()
 
 
 if __name__ == "__main__":
