@@ -159,6 +159,41 @@ def obs_template_dir(here):
     return os.path.join(os.path.dirname(here), "obs")
 
 
+def unlinked_graphic_targets(expected, linked, only_labels=None):
+    """The OBS-referenced graphics the Sheet has NO link for -> reset to the
+    placeholder (issue #387). `expected` is the '<name>.png' list from the OBS
+    collection; `linked` is the Sheet's {label: url} for linked graphics; a
+    graphic counts as linked iff its '<label>.png' matches. When `only_labels`
+    is given (a --only run), the reset is scoped to those labels. Returns the
+    sorted target names."""
+    linked_names = {safe_filename(lbl) for lbl in linked}
+    linked_names.discard(None)
+    targets = [n for n in expected if n not in linked_names]
+    if only_labels is not None:
+        only_names = {safe_filename(lbl) for lbl in only_labels}
+        only_names.discard(None)
+        targets = [n for n in targets if n in only_names]
+    return sorted(targets)
+
+
+def reset_unlinked_graphics(out_dir, here, linked, only_labels=None):
+    """Overwrite the transparent placeholder onto every OBS-referenced graphic the
+    Sheet has no link for, so a removed/absent link reverts a stale real graphic
+    (issue #387). Best-effort; returns the sorted names written."""
+    tpl = placeholders.find_obs_template(obs_template_dir(here))
+    if not tpl:
+        return []
+    try:
+        with open(tpl, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return []
+    targets = unlinked_graphic_targets(
+        placeholders.expected_graphics_from_template(text), linked, only_labels)
+    return placeholders.reset_placeholders(
+        targets, out_dir, placeholders.graphic_placeholder_path())
+
+
 def seed_missing_graphics(out_dir, here):
     """Drop the transparent placeholder for any OBS-collection-referenced graphic
     still missing in out_dir — covers graphics a league never put in the Sheet
@@ -226,12 +261,14 @@ def main():
     except Exception as e:
         sys.exit(f"ERROR: could not read sheet Assets tab: {e}")
 
-    graphics = graphics_from_csv(list(csv.reader(io.StringIO(csv_text))))
+    all_graphics = graphics_from_csv(list(csv.reader(io.StringIO(csv_text))))
+    if not all_graphics:
+        sys.exit("ERROR: no graphic (Drive-link) rows found in the Assets tab.")
+    wanted = None
+    graphics = all_graphics
     if a.only:
         wanted = {x.strip() for x in a.only.split(",") if x.strip()}
-        graphics = {k: v for k, v in graphics.items() if k in wanted}
-    if not graphics:
-        sys.exit("ERROR: no graphic (Drive-link) rows found in the Assets tab.")
+        graphics = {k: v for k, v in all_graphics.items() if k in wanted}
 
     os.makedirs(a.out, exist_ok=True)
     failed = []
@@ -249,6 +286,15 @@ def main():
         except Exception as e:
             print(f"WARNING: download failed for {label}: {e}")
             failed.append(label)
+
+    # Reset any OBS-referenced graphic the Sheet no longer links to its placeholder,
+    # so a removed/absent link replaces a stale real graphic (issue #387). Download
+    # failures stay in `all_graphics` (they are linked) so a transient error never
+    # clobbers a good file; scoped to --only when that filter is active.
+    reset = reset_unlinked_graphics(a.out, here, all_graphics, wanted)
+    if reset:
+        print(f"Reset {len(reset)} graphic(s) with no Sheet link to the placeholder: "
+              f"{', '.join(reset)}")
 
     seeded = seed_missing_graphics(a.out, here)
     if seeded:

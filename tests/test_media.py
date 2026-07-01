@@ -231,6 +231,37 @@ def t_build_music_cmd_output_stem_is_intermission():
     assert os.path.basename(argv[o + 1]).startswith("intermission.")
 
 
+def _read(path):
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def t_reset_unlinked_media_overwrites_stale_clip():
+    # A stale intro.mp4 (from a prior download) must be replaced by the neutral
+    # placeholder when the Sheet no longer links it (issue #387); a not-requested
+    # clip (outro) is left alone.
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(os.path.join(tmp, "intro.mp4"), "wb") as fh:
+            fh.write(b"STALE-INTRO")
+        written = media.reset_unlinked_media(tmp, {"intro"}, want_music=False)
+        assert written == ["intro.mp4"]
+        neutral = _read(media.placeholders.media_placeholder_for("intro.mp4"))
+        assert _read(os.path.join(tmp, "intro.mp4")) == neutral
+        assert not os.path.exists(os.path.join(tmp, "outro.mp4"))
+
+
+def t_reset_unlinked_media_music():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(os.path.join(tmp, "intermission.mp3"), "wb") as fh:
+            fh.write(b"STALE-MUSIC")
+        written = media.reset_unlinked_media(tmp, set(), want_music=True)
+        assert written == ["intermission.mp3"]
+        loop = _read(media.placeholders.media_placeholder_for("intermission.mp3"))
+        assert _read(os.path.join(tmp, "intermission.mp3")) == loop
+
+
 def t_drive_helpers_match_get_graphics():
     for fn in ("is_drive_url", "drive_id", "to_download_url", "drive_confirm_url"):
         assert inspect.getsource(getattr(media, fn)) == inspect.getsource(getattr(graphics, fn)), \

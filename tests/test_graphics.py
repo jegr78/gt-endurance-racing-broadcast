@@ -68,6 +68,29 @@ def t_graphics_from_csv_label_verbatim_and_empty():
         "Race Weather 1": "https://drive.google.com/file/d/W1/view"}
 
 
+def t_unlinked_targets_are_expected_minus_linked():
+    # Sheet links Overlay + Standings; the OBS collection also expects the three
+    # weather overlays. The unlinked ones (no Sheet link) reset to the placeholder.
+    expected = ["Overlay.png", "Standings.png", "Race Weather 1.png",
+                "Race Weather 2.png", "Quali Weather.png"]
+    linked = {"Overlay": "u1", "Standings": "u2"}
+    assert m.unlinked_graphic_targets(expected, linked) == [
+        "Quali Weather.png", "Race Weather 1.png", "Race Weather 2.png"]
+
+
+def t_unlinked_targets_empty_when_all_linked():
+    expected = ["Overlay.png", "Standings.png"]
+    linked = {"Overlay": "u1", "Standings": "u2"}
+    assert m.unlinked_graphic_targets(expected, linked) == []
+
+
+def t_unlinked_targets_scoped_to_only():
+    # A --only run must not reset graphics outside the requested label set.
+    expected = ["Overlay.png", "Standings.png", "Race Weather 1.png"]
+    linked = {"Overlay": "u1"}   # Standings + Race Weather 1 are unlinked
+    assert m.unlinked_graphic_targets(expected, linked, {"Standings"}) == ["Standings.png"]
+
+
 def t_graphics_dir_repo():
     # expected via os.path.join: separators differ when this test runs on Windows
     got = m.graphics_dir(os.path.join("/x", "src", "relay"))

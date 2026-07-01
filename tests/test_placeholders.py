@@ -91,6 +91,29 @@ def t_fill_missing_tolerates_absent_source():
         assert ph.fill_missing(["A.png"], tmp, os.path.join(tmp, "nope.png")) == []
 
 
+def t_reset_placeholders_overwrites_existing_byte_identical():
+    # Unlike fill_missing, reset_placeholders REPLACES a stale real asset with the
+    # placeholder (issue #387): a removed Sheet link must not leave the old file.
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(PNG, "rb") as fh:
+            src_bytes = fh.read()
+        with open(os.path.join(tmp, "Standings.png"), "wb") as fh:
+            fh.write(b"STALE-REAL-GRAPHIC")
+        written = ph.reset_placeholders(["Standings.png", "Weather Sunny.png"], tmp, PNG)
+        assert written == ["Standings.png", "Weather Sunny.png"]   # both written
+        with open(os.path.join(tmp, "Standings.png"), "rb") as fh:
+            assert fh.read() == src_bytes    # stale file replaced by the placeholder
+        with open(os.path.join(tmp, "Weather Sunny.png"), "rb") as fh:
+            assert fh.read() == src_bytes    # absent one written too
+        assert not any(n.endswith(".part") for n in os.listdir(tmp))  # atomic
+
+
+def t_reset_placeholders_tolerates_absent_source():
+    with tempfile.TemporaryDirectory() as tmp:
+        assert ph.reset_placeholders(["A.png"], tmp, None) == []
+        assert ph.reset_placeholders(["A.png"], tmp, os.path.join(tmp, "nope.png")) == []
+
+
 def t_setup_assets_fills_placeholders_for_missing():
     # Template-driven scan: each __RACECAST_MEDIA__/<name> reference gets the
     # correct placeholder (video for .mp4, ambient loop for .mp3). intro.mp4
