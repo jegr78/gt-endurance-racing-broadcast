@@ -466,9 +466,6 @@ def t_relay_health_snapshot_has_no_urls_and_all_columns():
     for col in hs.COLUMNS:
         if col in ("ts", "kind"):
             continue
-        # sys_* columns are populated by Task 3 (relay resource collection)
-        if col.startswith("sys_"):
-            continue
         assert col in snap, col
     assert "timer_push" in snap
     assert "timer_remaining_s" not in snap   # clean break: replaced by timer_push

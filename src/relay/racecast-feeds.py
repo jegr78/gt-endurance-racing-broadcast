@@ -87,6 +87,7 @@ except Exception:                                # noqa: BLE001 — reflection i
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
 import broadcast_chat  # read-only YouTube broadcast-chat reader (#294); pure parsers
 import event_notes   # noqa: E402  (pure Event Notes tab parser)
+import resources  # noqa: E402, F401 - machine resource sampler (health history)
 import cue_admin   # director text-cue channel (#243)
 import flag_graphic   # flag-status graphics: value->source + persisted store (#flag-graphic)
 import health_store  # health-history SQLite store (task 7; src/scripts on sys.path)
@@ -4444,6 +4445,7 @@ class Relay:
         self.health_store = None  # assigned by bootstrap (Task 13); always exists
         self.timer_store = None  # assigned by bootstrap; sampled best-effort for timer_push
         self._last_prune = 0  # epoch of last health-history prune (daily, in heartbeat)
+        self._resource_sampler = resources.ResourceSampler()
 
     def active_source(self):
         """The schedule the A/B feeds currently serve: qualifying when in
@@ -4561,6 +4563,11 @@ class Relay:
         def _q(f):
             return getattr(f, "quality", None)
 
+        try:
+            sys_res = resources.to_health_fields(self._resource_sampler.sample(now))
+        except Exception:  # noqa: BLE001 - best-effort; never break the heartbeat
+            sys_res = resources.to_health_fields({})   # all-None, keys still present
+
         return {"ts": now,
                 "health_level": self.health_level, "health_reasons": self.health_reasons,
                 "feed_a_state": a_state, "feed_a_down": a_down, "feed_a_stint": a_stint,
@@ -4597,7 +4604,8 @@ class Relay:
                 # v3 feed quality
                 "feed_a_quality": _q(self.feeds["A"]),
                 "feed_b_quality": _q(self.feeds["B"]),
-                "pov_quality": _q(self.pov) if self.pov else None}
+                "pov_quality": _q(self.pov) if self.pov else None,
+                **sys_res}
 
     def _discord_post(self, payload, what):
         """Best-effort fire-and-forget POST of a Discord webhook payload; a no-op
