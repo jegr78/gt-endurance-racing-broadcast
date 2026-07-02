@@ -157,7 +157,7 @@ def t_encoder_tick_noop_when_unchanged():
     svc = _svc(relay, spawns)
     svc.acquire()
     prev = svc._encoder_tick(None)
-    prev = svc._encoder_tick(prev)      # same feed -> no respawn
+    svc._encoder_tick(prev)             # same feed -> no respawn (return value unused)
     assert len(spawns) == 1
     svc.shutdown()
 
