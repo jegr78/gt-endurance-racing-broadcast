@@ -31,15 +31,20 @@ the browser.
    scratch spike script is fine) or simply the copy-pasteable commands in this runbook.
    - **If GO, the image is a provider VM snapshot, not Docker** — precisely because of
      OBS/NVENC/desktop-audio.
-3. **Provider selection (locked):**
-   - **Stage 1 (CPU, IP-reputation test) → three deliberately different AS characters:**
-     **Hetzner CX22** (EU, AS24940, budget VPS, ~€0.007/h, seconds to provision) +
-     **DigitalOcean droplet** (US, AS14061, mid-tier, different reputation pool) +
-     **the Stage-2 GPU provider's IP itself** (the only one that ultimately matters).
-   - **Stage 2–4 (GPU, one provider) → Paperspace** (GPU **with desktop templates**,
-     on-demand, least friction for a GUI-first spike). **AWS `g4dn.xlarge`** (T4, ~$0.53/h,
-     NICE DCV, "production-like") is the documented alternative — **but its GPU quota needs
-     days of lead time, so if we switch to AWS the quota request is step 0.**
+3. **Provider selection — updated 2026-07-02 after the live run (see Session log):**
+   - **The whole spike runs on GCP.** Stage 1 confirmed the **GCP datacenter IP passes the
+     YouTube *and* Twitch feed pull** (resolve + sustained), so — per the coupling below — the
+     GPU box stays on the same validated provider/IP. GCP also has documented OBS + T4 + NVENC
+     support and lets us pick the OS (Ubuntu 24.04, so the amd64 binary just runs).
+   - **Stage 1 (CPU, IP-reputation test):** done on a **GCP free-tier `e2-micro` (us-central1,
+     Ubuntu 24.04)** for ~€0. *(Superseded from the original plan: Hetzner = new-account ID
+     verification, declined; Paperspace Core = stock templates only Ubuntu 20.04 / CentOS 7,
+     too old for the toolchain — deno needs glibc ≥2.35, the binary needs 2.38.)*
+   - **Stage 2–4 (GPU):** a **GCP T4 (`n1` + T4) or L4 (`g2`)** in `us-central1` with a desktop,
+     reached over remote access (Chrome Remote Desktop / VNC / NoMachine). **GCP grants new
+     accounts 0 GPU quota → request a T4/L4 quota increase up front (step 0); approval can take
+     hours to a couple of business days.** AWS `g4dn.xlarge` remains the documented fallback
+     (same quota-lead-time caveat).
 
 ## The coupling that the original issue under-specified
 
@@ -94,13 +99,14 @@ moves to cloud") **before** spending on GPU.
 **Record per provider:** pass/fail, 403/429 count over 15 min, any throttle/reconnect pattern,
 resolved-URL latency. → *Stage-1 findings table* (template at the end).
 
-## Stage 2 — OBS on a GPU desktop VM (Paperspace) (~half to full day first time, ~$3–5)
+## Stage 2 — OBS on a GPU desktop VM (GCP T4/L4) (~half to full day first time, ~$3–5)
 
 > Rewritten from the issue's "headless OBS PoC". No Xvfb, no EGL. OBS runs on a **real desktop**
 > you connect to and operate normally.
 
-1. Spin up a **Paperspace GPU VM with a desktop template** (T4). Connect via its remote desktop
-   (Parsec/VNC/NoMachine, or NICE DCV on AWS).
+1. Spin up a **GCP GPU VM** (`n1-standard-4` + a **T4**, or a `g2` **L4**) in `us-central1`,
+   **Ubuntu 24.04**, and add a desktop reachable over remote access (Chrome Remote Desktop /
+   VNC / NoMachine). Requires the GPU quota from step 0. Install the NVIDIA driver.
 2. `racecast install-tools` + `racecast install-apps` (OBS). **On x86-64 Linux the OBS PPA
    ships the Browser Source plugin — `racecast obs-browser` is only needed on aarch64, which we
    avoid by choosing an x86-64 GPU VM.** On a no-GPU/VM host also disable Browser-Source
@@ -197,14 +203,54 @@ entire value of the staged structure: buy the cheapest information first.
 
 ---
 
+## Session log — 2026-07-02 (Stage 0 + Stage 1 core)
+
+**Result: Stage 0 + the Stage-1 K.-o. gate PASS on GCP, for ~€0.** The dominant risk
+(datacenter IP vs. YouTube bot-check) **did not fire** — see the table below.
+
+- **amd64 software (never confirmed since pre-v1.0.0):** racecast v1.4.0 amd64 binary runs
+  on Ubuntu 24.04 (glibc 2.38 ok); deno 2.8.3 installs + runs on amd64/24.04.
+- **GCP datacenter IP `35.202.91.202` (us-central1) resolves YouTube via `yt-dlp -g` +
+  cookies + deno for BOTH a VOD and a real LIVE stream** (`source/yt_live_broadcast`,
+  `live/1`) → HLS `index.m3u8`. No 403 / no "not a bot" / no "only images". Cookies were
+  exported on a home IP and used from the datacenter IP (the session-origin-mismatch factor)
+  and it still worked. **This contradicts the "all cloud IPs are blocked" web-research
+  assumption** — GCP + cookies + deno works. The earlier "only images" failure was purely
+  **missing deno on PATH**, not the IP.
+- **Provider pivots:** Hetzner = new-account ID verification (declined). Paperspace Core =
+  stock templates only Ubuntu 20.04 / CentOS 7 → too old (Python 3.8, glibc 2.31); the amd64
+  binary needs glibc 2.38, deno needs ≥2.35, current yt-dlp needs Python ≥3.10. Not viable.
+  → GCP is the working provider.
+- **Product bug found:** `racecast install-tools` runs `apt-get install` with **no preceding
+  `apt-get update`** → "Unable to locate package" on a fresh cloud image. Filed as an issue.
+- **GCP free-tier gotchas:** the create-instance estimator shows gross list price (never the
+  free-tier credit); the default "Balanced" boot disk is not free → pick **Standard pd ≤30 GB**.
+
+**Stage-1B sustained pull — DONE (PASS):** a 15-min streamlink pull (the relay's real client)
+of a real 1080p live stream (itag 96) from the GCP IP ran the full 900 s with **0
+403/429/reconnect/errors** and ~1.4 Mbps steady ingest. The YouTube path of Stage 1 is now
+**fully green for GCP** (resolve VOD+live + sustained 1080p pull). Note: the relay's main-feed
+format is `-f "b[height<=1080]/b"` (POV capped 720p) — the test used yt-dlp's default which
+also landed on 1080p, so it is production-representative.
+
+**Twitch — DONE (PASS):** a 5-min streamlink Twitch-plugin pull of a live 1080p60 channel from
+the GCP IP ran the full 300 s with **0 errors**, ~9.5 Mbps steady; ads were auto-skipped
+(`Will skip ad segments`) as expected — no blocking. **Stage 1 is now fully green on GCP for
+BOTH YouTube and Twitch** (resolve + sustained pull), for ~€0. The dominant K.-o. risk
+(datacenter IP vs. platform bot-check) is **retired for GCP.**
+
+**Still open (not the K.-o. risk):** an **unlisted** commentator URL (identical mechanism;
+unlisted is a cookie-access, not IP, question), and — belt-and-suspenders — a full
+`racecast relay run` with a real profile. Both can ride the real Stage-2 box.
+
 ## Findings tables (fill during the run)
 
 ### Stage 1 — Datacenter-IP feed pull
 | Provider / region | ASN | Raw `yt-dlp -g` | streamlink bytes | Relay ≥15 min | 403/429 count | Twitch (if used) | Verdict |
 |---|---|---|---|---|---|---|---|
-| Hetzner CX22 / EU | 24940 | | | | | | |
-| DigitalOcean / US | 14061 | | | | | | |
-| Paperspace (GPU IP) | | | | | | | |
+| **GCP e2-micro / us-central1** | 15169 | **PASS** (VOD + LIVE) | **PASS** (1080p, ~1.4 Mbps) | **PASS** (15 min raw streamlink) | **0** | **PASS** (5 min 1080p60) | **PASS (YouTube + Twitch)** |
+| Hetzner CX22 / EU | 24940 | — (ID-verify blocked signup) | | | | | n/a |
+| Paperspace Core | — | — (OS templates too old: 20.04/CentOS7) | | | | | n/a |
 
 ### Stage 2 — OBS on GPU desktop VM
 | Check | Result | Notes |
