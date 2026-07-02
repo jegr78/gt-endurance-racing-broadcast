@@ -493,6 +493,12 @@
           <div class="pvph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="12" rx="2"></rect><path d="M10 8.5l4.5 2.5-4.5 2.5z" fill="currentColor" stroke="none"></path><path d="M8.5 20h7"></path><path d="M12 16.5V20"></path></svg><span class="pvphtxt">Program loading …</span></div>
         </div>
         <div class="pvlabel" id="pvProgramLabel"><span>PROGRAM</span></div>
+        <div id="pgmAudioBar" style="display:none; align-items:center; gap:8px; margin-top:6px;">
+          <button class="k" id="pgmAudioBtn" type="button" aria-pressed="false" title="Listen to on-air audio">🔇 Audio</button>
+          <input id="pgmAudioVol" type="range" min="0" max="1" step="0.05" value="0.8"
+                 aria-label="Program audio volume" style="width:110px;">
+          <audio id="pgmAudio" preload="none" style="display:none;"></audio>
+        </div>
       </div>
       <div class="pvfeeds">
         <div class="pvtile" data-feed="A">
@@ -2058,6 +2064,36 @@ function pvSetProgram(){
     frame.classList.remove("loaded"); ph.classList.add("err"); txt.textContent = "OBS unreachable"; };
   img.src = RC_API("/preview/program") + "?ts=" + Date.now();
 }
+function pgmAudioInit(endpoint) {
+  var bar = document.getElementById('pgmAudioBar');
+  var btn = document.getElementById('pgmAudioBtn');
+  var vol = document.getElementById('pgmAudioVol');
+  var au  = document.getElementById('pgmAudio');
+  if (!bar || !btn || !au) return;
+  var url = RC_API(endpoint);
+  // Probe: show the control only if the endpoint exists (feature on + fan-out on).
+  fetch(url, { method: 'HEAD' }).then(function (r) {
+    if (r.status === 404) return;            // disabled -> stay hidden
+    bar.style.display = 'flex';
+  }).catch(function () { /* leave hidden */ });
+  au.volume = parseFloat(vol.value);
+  vol.addEventListener('input', function () { au.volume = parseFloat(vol.value); });
+  var on = false;
+  btn.addEventListener('click', function () {
+    on = !on;
+    if (on) {
+      au.src = url + (url.indexOf('?') < 0 ? '?' : '&') + 'ts=' + Date.now();
+      au.play().catch(function () { on = false; setBtn(); });  // gesture satisfies autoplay
+    } else {
+      au.pause(); au.removeAttribute('src'); au.load();        // drop the connection -> relay reaps encoder
+    }
+    setBtn();
+  });
+  function setBtn() {
+    btn.textContent = (on ? '🔊' : '🔇') + ' Audio';
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+}
 function pvStart(){
   $("#pvBody").hidden = false; $("#pvToggle").textContent = "HIDE";
   pvSetProgram(); pvTimer = setInterval(pvSetProgram, 1500);
@@ -2122,6 +2158,7 @@ function pvMarkOnAir(feed){
   if(lbl) lbl.firstElementChild.textContent = feed ? ("PROGRAM (Feed " + feed + " on air)") : "PROGRAM";
 }
 if((localStorage.getItem(PV_KEY) || "0") === "1"){ pvStart(); }
+pgmAudioInit("/preview/program-audio");
 
 /* ---------- boot ---------- */
 renderAir({});
