@@ -220,6 +220,20 @@ def auto_failover_enabled(environ):
     return str(environ.get("RACECAST_AUTO_FAILOVER", "")).strip().lower() in _FAILOVER_TRUTHY
 
 
+# ---------- On-air program-audio monitor (#program-audio) ------------------
+_PROGRAM_AUDIO_FALSEY = {"0", "false", "no", "off"}
+
+
+def program_audio_enabled(environ):
+    """True unless RACECAST_PROGRAM_AUDIO is an explicit falsey token. Default ON:
+    the feature is offered (endpoints + toggle live) whenever fan-out runs; the
+    encoder is on-demand so it costs nothing until someone listens. Set
+    RACECAST_PROGRAM_AUDIO=0 to disable entirely. Pure so the switch is
+    unit-testable. Audio being default-muted is a front-end/gesture property, not
+    this flag."""
+    return str(environ.get("RACECAST_PROGRAM_AUDIO", "")).strip().lower() not in _PROGRAM_AUDIO_FALSEY
+
+
 def should_failover(enabled, on_air_down, program_scene,
                     on_air_scene="Stint", already_failed_over=False):
     """Whether to auto-switch OBS to the Intermission scene right now. Pure →
@@ -2419,6 +2433,71 @@ PREVIEW_LUFS_FLOOR = -60.0
 PREVIEW_LUFS_CEIL = -10.0
 
 
+# --- On-air program-audio monitor: encode the on-air feed's audio to MP3 -----
+# Codec/params live in constants so switching to AAC-ADTS (audio/aac, "-c:a aac
+# -f adts") is a one-line edit. MP3 is the default for universal <audio>
+# decodability (Firefox on Linux may lack system AAC codecs). Fixed sample-rate
+# + channel count guarantee frame compatibility across a handover ffmpeg restart
+# (both feeds encode to identical params -> the client MP3 stream splices).
+PROGRAM_AUDIO_CODEC = "libmp3lame"
+PROGRAM_AUDIO_BITRATE = "96k"
+PROGRAM_AUDIO_FORMAT = "mp3"
+PROGRAM_AUDIO_CONTENT_TYPE = "audio/mpeg"
+PROGRAM_AUDIO_SAMPLE_RATE = "44100"
+PROGRAM_AUDIO_CHANNELS = "1"
+PROGRAM_AUDIO_RING_BYTES = 512 * 1024   # encoded MP3 is low-bitrate; a small ring is ample
+
+
+def program_audio_ffmpeg_cmd():
+    """Argv: read the on-air feed's MPEG-TS on stdin, drop video, encode the
+    (optional) audio stream to a fixed-param MP3 on stdout for endless HTTP
+    streaming. `0:a:0?` makes audio optional so a video-only feed just yields
+    silence rather than an ffmpeg error."""
+    return ["ffmpeg", "-nostdin", "-loglevel", "warning", "-i", "pipe:0",
+            "-vn", "-map", "0:a:0?",
+            "-ar", PROGRAM_AUDIO_SAMPLE_RATE, "-ac", PROGRAM_AUDIO_CHANNELS,
+            "-c:a", PROGRAM_AUDIO_CODEC, "-b:a", PROGRAM_AUDIO_BITRATE,
+            "-f", PROGRAM_AUDIO_FORMAT, "pipe:1"]
+
+
+def should_retarget(prev_live, cur_live, serving):
+    """The program-audio encoder should re-point (restart ffmpeg on the new
+    feed's ring) only when the on-air feed changed AND the new feed is actually
+    serving bytes. Guards against tapping a not-yet-serving / absent feed at a
+    handover (mirrors the cut=True guard in Relay.next_auto)."""
+    return bool(serving) and cur_live is not None and cur_live != prev_live
+
+
+def _program_audio_is_probe(path):
+    """Pure: True when a program-audio GET carries ?probe=1 (an availability check
+    that must return WITHOUT acquiring the listener / spinning up the encoder). Any
+    other value (absent, probe=0, probe=) is a real stream request."""
+    return parse_qs(urlparse(path).query).get("probe", ["0"])[0] == "1"
+
+
+def _program_audio_stream_ring(handler, ring, content_type, service):
+    """Write an endless byte stream from a FeedRing to an HTTP client. Shared core
+    of the H._stream_ring method (module-level so it is unit-testable without a
+    socket). No Content-Length: the client reads until it disconnects, which makes
+    handler.wfile.write raise (caught) -> the caller's finally releases the
+    listener."""
+    cursor = ring.live_offset() if hasattr(ring, "live_offset") else 0
+    try:
+        handler.send_response(200)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Cache-Control", "no-store")
+        handler.send_header("Connection", "close")
+        handler.end_headers()
+        while not getattr(ring, "closed", False):
+            data, cursor = ring.read(cursor, 1.0)
+            if data:
+                handler.wfile.write(data)
+            service.touch()
+    except (OSError, ValueError):
+        pass                       # client disconnected mid-write
+    return None
+
+
 def split_mjpeg_frames(buf):
     """Pure: pull every COMPLETE JPEG (SOI..EOI) out of an MJPEG byte buffer.
     Returns (frames, remainder); remainder is the trailing incomplete bytes to
@@ -2924,6 +3003,197 @@ class PreviewManager:
             if self._pull is not None:
                 self._pull.stop()
                 self._pull = None
+
+
+class ProgramAudioService:
+    """On-demand MP3 encoder of the ON-AIR feed's audio, re-served to many HTTP
+    listeners from one output FeedRing. Reference-counted: the encoder starts on
+    the first listener (acquire) and a supervisor thread idle-reaps it when the
+    last one leaves (release). It follows the on-air feed across handovers by
+    restarting ffmpeg on the new feed's ring while keeping the SAME output ring
+    (MP3 frames are self-contained -> the client stream splices, only a brief
+    silence gap). Requires fan-out (the in-process feed bytes only exist then);
+    acquire() returns None otherwise. Best effort throughout: a spawn/read failure
+    leaves the output silent and never raises. `spawn`/`ring_factory` injectable
+    for tests."""
+
+    def __init__(self, relay, log, idle_timeout=8.0, spawn=None, ring_factory=None):
+        self.relay = relay
+        self.log = log
+        self.idle_timeout = idle_timeout
+        self._spawn = spawn or self._spawn_real
+        self._ring_factory = ring_factory or (lambda: FeedRing(PROGRAM_AUDIO_RING_BYTES))
+        self._out = None            # output FeedRing (encoded MP3), shared by all listeners
+        self._proc = None           # current ffmpeg subprocess
+        self._enc_target = None     # feed name the encoder is currently pointed at
+        self._listeners = 0
+        self._last_touch = 0.0
+        self._running = False
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+
+    # ---- listener lifecycle (called by the HTTP streaming handler) ----
+    def acquire(self):
+        """Register a listener and return the shared output ring to stream from,
+        or None if the feature can't run (fan-out off)."""
+        with self._lock:
+            if not getattr(self.relay, "fanout", False):
+                return None
+            self._listeners += 1
+            self._last_touch = time.monotonic()
+            if not self._running:
+                self._out = self._ring_factory()
+                self._running = True
+                self._stop.clear()
+                threading.Thread(target=self._supervise, daemon=True).start()
+            return self._out
+
+    def release(self):
+        with self._lock:
+            if self._listeners > 0:
+                self._listeners -= 1
+            self._last_touch = time.monotonic()
+
+    def touch(self):
+        with self._lock:
+            self._last_touch = time.monotonic()
+
+    # ---- encoder supervisor ----
+    def _supervise(self):
+        prev = None
+        while not self._stop.is_set():
+            with self._lock:
+                idle = (self._listeners == 0
+                        and time.monotonic() - self._last_touch > self.idle_timeout)
+            if idle:
+                break
+            prev = self._encoder_tick(prev)
+            self._stop.wait(1.0)
+        self._teardown()
+
+    def _encoder_tick(self, prev_live):
+        """One supervisor step: (re)spawn the encoder for the current on-air feed
+        when needed. Returns the feed name now encoding (or prev_live unchanged).
+        The test seam — pure of threads/sleeps."""
+        live = self.relay.live_feed()
+        feed = self.relay.feeds.get(live) if live else None
+        ring = getattr(feed, "ring", None)
+        serving = ring is not None
+        dead = self._proc is not None and self._proc.poll() is not None
+        if self._proc is None or dead or should_retarget(self._enc_target, live, serving):
+            if serving:
+                self._restart_encoder(live, ring)
+                return live
+        return prev_live if self._enc_target is None else self._enc_target
+
+    def _restart_encoder(self, live, ring):
+        self._kill_proc()
+        try:
+            proc, stdin, stdout = self._spawn()
+        except Exception as e:                     # noqa: BLE001 best-effort
+            self.log.info("program-audio spawn error: %s", e)
+            self._proc = None
+            self._enc_target = None
+            return
+        self._proc = proc
+        self._enc_target = live
+        # Pass THIS generation's proc into the pumps so a later handover
+        # (which reassigns self._proc) can't blind the old pump to its own
+        # process dying — each pump checks the proc it was born with.
+        threading.Thread(target=self._feed_stdin, args=(stdin, ring, proc), daemon=True).start()
+        threading.Thread(target=self._pump_stdout, args=(stdout, proc), daemon=True).start()
+
+    def _spawn_real(self):
+        ff = subprocess.Popen(program_audio_ffmpeg_cmd(), stdin=subprocess.PIPE,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=False, env=external_tool_env(), **_no_window_kwargs())
+        threading.Thread(target=self._pump_stderr, args=(ff.stderr,), daemon=True).start()
+        return ff, ff.stdin, ff.stdout
+
+    def _feed_stdin(self, stdin, ring, proc):
+        """Pump on-air ring bytes into THIS encoder generation's ffmpeg stdin;
+        join at the ring's current live edge (only recent data, no rewind).
+        *proc* is the process this thread owns — checked instead of the shared
+        self._proc, which a handover reassigns to the NEXT generation."""
+        cursor = ring.live_offset() if hasattr(ring, "live_offset") else 0
+        try:
+            while not self._stop.is_set() and not getattr(ring, "closed", False):
+                data, cursor = ring.read(cursor, 1.0)
+                if data:
+                    stdin.write(data); stdin.flush()
+                if proc is None or proc.poll() is not None:
+                    break                          # THIS encoder gone (killed on handover)
+        except OSError:
+            pass                                   # ffmpeg stdin closed
+        finally:
+            try:
+                stdin.close()
+            except OSError:
+                pass                               # already closed by the OS side
+
+    def _pump_stdout(self, stdout, proc):
+        """Pump encoded MP3 bytes from THIS generation's ffmpeg stdout into the
+        shared output ring. *proc* is this thread's own process (see
+        _feed_stdin); a stdout EOF on kill ends the loop, and the proc check is
+        the belt-and-suspenders exit for a ring that stalls without EOF."""
+        out = self._out
+        try:
+            while not self._stop.is_set():
+                chunk = stdout.read(65536)
+                if not chunk:
+                    break                          # encoder EOF (killed / died)
+                if out is not None:
+                    out.write(chunk)
+                if proc is None or proc.poll() is not None:
+                    break                          # THIS encoder gone (killed on handover)
+        except OSError:
+            pass                                   # ffmpeg stdout closed (process killed)
+
+    def _pump_stderr(self, stderr):
+        for line in _decode_lines(iter(stderr.readline, b"")):
+            if self._stop.is_set():
+                break
+            line = line.strip()
+            if line:
+                self.log.info("[program-audio ffmpeg] %s", line)
+
+    def _kill_proc(self):
+        p = self._proc
+        try:
+            if p and p.poll() is None:
+                p.kill()
+        except Exception:                          # noqa: BLE001
+            pass
+
+    def _teardown(self):
+        # Always stop THIS (reaped) generation's encoder first, outside the lock
+        # (kill must never block while holding it). The re-armed supervisor will
+        # spawn a fresh one on its next _encoder_tick.
+        self._kill_proc()
+        self._proc = None
+        self._enc_target = None
+        with self._lock:
+            # TOCTOU guard: a listener can slip in via acquire() between the
+            # supervisor's idle check and here (it saw _running True, so it did
+            # NOT start a supervisor and got the still-live self._out). If so,
+            # DON'T finalize — keep the output ring and re-arm a fresh
+            # supervisor so that listener keeps a live encoder. Only a genuine
+            # shutdown (self._stop set) or a truly idle service finalizes.
+            if self._listeners > 0 and not self._stop.is_set():
+                self._running = True
+                threading.Thread(target=self._supervise, daemon=True).start()
+                return
+            self._running = False
+            if self._out is not None:
+                try:
+                    self._out.close()
+                except Exception:                  # noqa: BLE001
+                    pass
+                self._out = None
+
+    def shutdown(self):
+        self._stop.set()
+        self._teardown()
 
 
 def resolve_hls(url, cookies, logger, fmt=YTDLP_FORMAT):
@@ -4425,6 +4695,7 @@ class Relay:
                             fmt=YTDLP_FORMAT_POV, cookie_dir=cookie_dir)
             self.pov.paused = True
         self.fanout = fanout_enabled(os.environ)
+        self.program_audio = program_audio_enabled(os.environ)
         self._fanout_servers = []
         # Auto-failover to the Intermission scene on confirmed on-air feed loss
         # (#378): opt-in via RACECAST_AUTO_FAILOVER; fires once per outage and
@@ -5070,7 +5341,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  buttons_page_path=None, race_control_page_path=None,
                  health_store=None, health_monitor_page_path=None, uplot_dir=None,
                  broadcast_chat_store=None, broadcast_chat_supervisor=None,
-                 preview_manager=None, brands_dir=None,
+                 preview_manager=None, program_audio_service=None, brands_dir=None,
                  flag_graphic_store=None, app_version="dev"):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
@@ -5182,6 +5453,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Cache-Control", "no-store")
             self.end_headers(); self.wfile.write(body)
             return None
+        def _stream_ring(self, ring, content_type, service):
+            return _program_audio_stream_ring(self, ring, content_type, service)
         def _send_text(self, text, code=200):
             body = (text or "").encode("utf-8")
             self.send_response(code)
@@ -5964,6 +6237,23 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send({"error": "preview unavailable",
                                            "note": note}, 503)
                     return self._send_jpeg(data)
+                if p == ["preview", "program-audio"]:
+                    if program_audio_service is None:
+                        return self._send({"error": "program audio disabled"}, 404)
+                    # ?probe=1 -> availability only (front-end self-hide). Must NOT
+                    # acquire() -> never spins up the encoder / touches the listener count.
+                    if _program_audio_is_probe(self.path):
+                        if not getattr(relay, "fanout", False):
+                            return self._send({"error": "program audio unavailable"}, 404)
+                        return self._send({"available": True})
+                    ring = program_audio_service.acquire()
+                    if ring is None:               # fan-out off -> no in-process feed bytes
+                        return self._send({"error": "program audio unavailable"}, 404)
+                    try:
+                        return self._stream_ring(ring, PROGRAM_AUDIO_CONTENT_TYPE,
+                                                 program_audio_service)
+                    finally:
+                        program_audio_service.release()
                 if len(p) == 3 and p[:2] == ["preview", "feed"]:
                     target = p[2].upper()
                     if target not in PREVIEW_FEEDS:
@@ -6129,6 +6419,25 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             return self._send({"error": "preview unavailable",
                                                "note": note}, 503)
                         return self._send_jpeg(data)
+                    if p == ["cockpit", "program-audio"]:
+                        if self._console_auth() is None:
+                            return None
+                        if program_audio_service is None:
+                            return self._send({"error": "program audio disabled"}, 404)
+                        # ?probe=1 -> availability only (still auth-gated above). Must NOT
+                        # acquire() -> never spins up the encoder / touches the listener count.
+                        if _program_audio_is_probe(self.path):
+                            if not getattr(relay, "fanout", False):
+                                return self._send({"error": "program audio unavailable"}, 404)
+                            return self._send({"available": True})
+                        ring = program_audio_service.acquire()
+                        if ring is None:
+                            return self._send({"error": "program audio unavailable"}, 404)
+                        try:
+                            return self._stream_ring(ring, PROGRAM_AUDIO_CONTENT_TYPE,
+                                                     program_audio_service)
+                        finally:
+                            program_audio_service.release()
                     if p == ["cockpit", "timer"]:
                         if self._console_auth() is None:
                             return None
@@ -7046,6 +7355,8 @@ def main():
         os.path.join(runtime, "cockpit-submissions.log"))
     preview_manager = PreviewManager(relay, lambda: _obs_ws, LOG)
     threading.Thread(target=preview_manager.run, daemon=True).start()
+    program_audio_service = (ProgramAudioService(relay, LOG)
+                             if relay.program_audio else None)
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
                            timer_store, setup_ctl,
                            overlay_dir=args.overlay_dir, chat_store=chat_store,
@@ -7073,6 +7384,7 @@ def main():
                            broadcast_chat_supervisor=_bc_supervisor,
                            logo_path=args.logo,
                            preview_manager=preview_manager,
+                           program_audio_service=program_audio_service,
                            app_version=VERSION_LABEL,
                            flag_graphic_store=flag_graphic_store)
     bind_addrs = resolve_bind_addresses(

@@ -153,6 +153,13 @@ def t_cockpit_chat_send_is_any_read():
     assert _cap(["cockpit", "chat", "send"], "POST") == ("any", False)
 
 
+def t_program_audio_endpoints_are_any():
+    # Cockpit + Race Control desk stream (funnelled under /console/cockpit/...)
+    assert cp.min_capability(["cockpit", "program-audio"]) == cp.Requirement(cp.ANY, False)
+    # Director Panel stream (tailnet /preview/... and /console/preview/... via gate)
+    assert cp.min_capability(["preview", "program-audio"]) == cp.Requirement(cp.ANY, False)
+
+
 def t_obs_routes_require_director():
     for seg in (["obs", "scene"], ["obs", "source"], ["obs", "audio"],
                 ["obs", "state"], ["obs", "stream"]):

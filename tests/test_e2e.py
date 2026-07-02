@@ -610,6 +610,81 @@ def t_intermission_check_registered():
     assert e.check_intermission_page not in e.REAL_LEAGUE_CHECKS
 
 
+def t_program_audio_check_registered():
+    """check_program_audio_stream is in SYNTHETIC_CHECKS (not REAL_LEAGUE_CHECKS —
+    only the dedicated synthetic fan-out relay exercises the probe)."""
+    names = [c.__name__ for c in e.SYNTHETIC_CHECKS]
+    assert "check_program_audio_stream" in names
+    assert e.check_program_audio_stream not in e.REAL_LEAGUE_CHECKS
+
+
+def t_check_program_audio_stream_skip_when_no_fanout_relay():
+    """No fanout_relay_url in ctx (e.g. a stub-relay unit test) -> skip, not fail."""
+    ctx = e.Ctx(relay_url=None, disabled_relay_url=None, ui_url=None,
+                token="t", streamer_key="alice", expect={})
+    r = e.check_program_audio_stream(ctx)
+    assert r.status == "skip", r
+    assert r.name == "program_audio_stream"
+
+
+def t_check_program_audio_stream_passes_against_stub_probe():
+    """Stub server serving exactly the probe endpoint's finite JSON body
+    (`GET /preview/program-audio?probe=1` -> 200 {"available": true}) — the
+    real relay's probe route never starts the encoder, so this stub never
+    needs to simulate streaming."""
+    import json, threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            if self.path == "/preview/program-audio?probe=1":
+                body = json.dumps({"available": True}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self.send_response(404); self.end_headers()
+
+    srv = ThreadingHTTPServer(("127.0.0.1", e.free_port()), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        ctx = e.Ctx(relay_url=None, disabled_relay_url=None, ui_url=None,
+                    token="t", streamer_key="alice", expect={},
+                    fanout_relay_url=base)
+        r = e.check_program_audio_stream(ctx)
+        assert r.status == "pass", r
+    finally:
+        srv.shutdown()
+
+
+def t_check_program_audio_stream_fails_when_unavailable():
+    """A 404 (feature disabled / fan-out off) is a fail CheckResult, never an
+    uncaught exception — the disabled-path 404 itself is unit-tested in
+    tests/test_program_audio.py + tests/test_console.py, not re-derived here."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            self.send_response(404); self.end_headers()
+
+    srv = ThreadingHTTPServer(("127.0.0.1", e.free_port()), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        ctx = e.Ctx(relay_url=None, disabled_relay_url=None, ui_url=None,
+                    token="t", streamer_key="alice", expect={},
+                    fanout_relay_url=base)
+        r = e.check_program_audio_stream(ctx)
+        assert r.status == "fail", r
+    finally:
+        srv.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

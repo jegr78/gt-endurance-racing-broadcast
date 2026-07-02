@@ -284,6 +284,12 @@
       <div class="card progwrap">
         <span class="badge">PROGRAM</span>
         <img id="program" alt="program monitor">
+        <div id="pgmAudioBar" style="display:none; align-items:center; gap:8px; margin-top:6px;">
+          <button id="pgmAudioBtn" class="bcompose" type="button" aria-pressed="false" title="Listen to on-air audio">🔇 Audio</button>
+          <input id="pgmAudioVol" type="range" min="0" max="1" step="0.05" value="0.8"
+                 aria-label="Program audio volume" style="width:110px;">
+          <audio id="pgmAudio" preload="none" style="display:none;"></audio>
+        </div>
       </div>
       <div class="card" id="bchatCard">
         <div id="bchat">
@@ -529,6 +535,38 @@ function pollProgram() {
   next.onload = () => { img.src = next.src; setTimeout(pollProgram, 1500); };
   next.onerror = () => setTimeout(pollProgram, 3000);
   next.src = RC_API('/cockpit/program') + '?_=' + Date.now();
+}
+
+// --- On-air program audio (hidden until probed available; default muted) ---
+function pgmAudioInit(endpoint) {
+  var bar = document.getElementById('pgmAudioBar');
+  var btn = document.getElementById('pgmAudioBtn');
+  var vol = document.getElementById('pgmAudioVol');
+  var au  = document.getElementById('pgmAudio');
+  if (!bar || !btn || !au) return;
+  var url = RC_API(endpoint);
+  // Probe: show the control only if the endpoint reports available (feature on +
+  // fan-out on). GET ?probe=1 returns 200 without acquiring/streaming (HEAD is
+  // unsupported by the relay's control server).
+  var probeUrl = url + (url.indexOf('?') < 0 ? '?' : '&') + 'probe=1';
+  fetch(probeUrl).then(function (r) { if (r.ok) bar.style.display = 'flex'; }).catch(function () { /* leave hidden */ });
+  au.volume = parseFloat(vol.value);
+  vol.addEventListener('input', function () { au.volume = parseFloat(vol.value); });
+  var on = false;
+  btn.addEventListener('click', function () {
+    on = !on;
+    if (on) {
+      au.src = url + (url.indexOf('?') < 0 ? '?' : '&') + 'ts=' + Date.now();
+      au.play().catch(function () { on = false; setBtn(); });  // gesture satisfies autoplay
+    } else {
+      au.pause(); au.removeAttribute('src'); au.load();        // drop the connection -> relay reaps encoder
+    }
+    setBtn();
+  });
+  function setBtn() {
+    btn.textContent = (on ? '🔊' : '🔇') + ' Audio';
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
 }
 
 // --- Timer (mirrors the broadcast HUD clock in src/obs/hud.html) ---
@@ -913,6 +951,7 @@ $('gfxRefresh').addEventListener('click', loadGraphics);
   }
   pollNotes();
 pollTally(); pollProgram(); pollTimer(); pollChat(); pollCues(); pollRcNotes(); loadGraphics();
+pgmAudioInit("/cockpit/program-audio");
 pollBroadcastChat();
 </script>
 <dialog id="notesModal" class="notesmodal">

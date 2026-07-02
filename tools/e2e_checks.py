@@ -133,8 +133,9 @@ def service_launcher(binary, python=None, script=None):
 Ctx = collections.namedtuple(
     "Ctx",
     "relay_url disabled_relay_url ui_url token streamer_key expect own_stint"
-    " fanout_feed_port")
-Ctx.__new__.__defaults__ = (None, None)  # own_stint, fanout_feed_port optional
+    " fanout_feed_port fanout_relay_url")
+Ctx.__new__.__defaults__ = (None, None, None)  # own_stint, fanout_feed_port,
+                                                # fanout_relay_url optional
 
 
 def _get_json(url, headers=None):
@@ -506,6 +507,45 @@ def check_intermission_page(ctx):
     return CheckResult("intermission_page", "pass" if ok else "fail", msg)
 
 
+def check_program_audio_stream(ctx):
+    """On-air program-audio monitor: assert the lightweight availability PROBE
+    (`GET /preview/program-audio?probe=1`) — NOT the real stream endpoint.
+
+    The probe returns a FINITE JSON body `{"available": true}` (HTTP 200) when
+    the feature is available (service present AND fan-out on) without ever
+    starting the encoder or streaming. The real (non-probe) endpoint is an
+    ENDLESS audio/mpeg response — under the no-op streamlink stubs no audio
+    ever flows, so its body never ends; reading it would hang this harness.
+    Hence: probe only, never a body-read of the stream itself.
+
+    The main synthetic relay (ctx.relay_url) runs direct-serve (fan-out off),
+    so its probe always 404s; this check instead targets the dedicated
+    fan-out relay (ctx.fanout_relay_url, fan-out on) where the feature is
+    genuinely available. Skips when that relay isn't part of this run (e.g. a
+    stub-relay unit test that omits the field).
+
+    The disabled/404 path (feature off, or fan-out off) is covered by the pure
+    unit tests in tests/test_program_audio.py (t_program_audio_is_probe_true_
+    only_for_one / t_program_audio_is_probe_false_otherwise) and the console-
+    auth tests in tests/test_console.py — not re-derived here."""
+    base = getattr(ctx, "fanout_relay_url", None)
+    if base is None:
+        return CheckResult("program_audio_stream", "skip", "no fanout relay")
+    st, body, headers = http_request(base + "/preview/program-audio?probe=1")
+    if st != 200:
+        return CheckResult("program_audio_stream", "fail",
+                           f"expected 200, got {st}")
+    try:
+        data = _json.loads(body or b"null")
+    except (ValueError, TypeError):
+        return CheckResult("program_audio_stream", "fail",
+                           f"non-JSON probe body: {body[:120]!r}")
+    if not isinstance(data, dict) or data.get("available") is not True:
+        return CheckResult("program_audio_stream", "fail",
+                           f"unexpected probe body: {data!r}")
+    return CheckResult("program_audio_stream", "pass", "probe reports available")
+
+
 SYNTHETIC_CHECKS = [
     check_status_ok,
     check_cockpit_requires_token,
@@ -521,6 +561,7 @@ SYNTHETIC_CHECKS = [
     check_health_monitor_v3,
     check_fanout_feed_port_bound,
     check_intermission_page,
+    check_program_audio_stream,
 ]
 
 # Real-league mode (local only): the safe subset for a copied profile. Read-only

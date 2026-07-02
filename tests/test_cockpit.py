@@ -324,7 +324,8 @@ def _cockpit_client(secret="sek", rows=None, live_idx=0,
                     page_path=None, graphics_dir=None, app_version="v9.9.9-test",
                     console_page_path=None, discord_client_id=None,
                     discord_client_secret=None, preview_manager=None,
-                    cue_store=None, crew_source=None):
+                    cue_store=None, crew_source=None,
+                    program_audio_service=None, fanout=False):
     """Stand up make_handler over a real ThreadingHTTPServer on an ephemeral port.
     Returns (server, get, post); caller must srv.shutdown() in a finally block."""
     import threading as _t
@@ -350,6 +351,7 @@ def _cockpit_client(secret="sek", rows=None, live_idx=0,
             self.source = _Source(rows if rows is not None else _rows())
             self.mode = "race"
             self.feeds = {"A": _Feed(live_idx), "B": _Feed(live_idx + 1)}
+            self.fanout = fanout
 
         def live_feed(self):
             return "A"
@@ -366,7 +368,8 @@ def _cockpit_client(secret="sek", rows=None, live_idx=0,
                              discord_client_id=discord_client_id,
                              discord_client_secret=discord_client_secret,
                              preview_manager=preview_manager,
-                             cue_store=cue_store, crew_source=crew_source)
+                             cue_store=cue_store, crew_source=crew_source,
+                             program_audio_service=program_audio_service)
     srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     _t.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -815,6 +818,37 @@ def t_all_console_pages_strip_token_from_url():
             page = fh.read()
         assert "history.replaceState" in page, f"{fn} does not strip the URL token"
         assert "location.pathname" in page, f"{fn} strip target is not the bare path"
+
+
+def t_program_audio_probe_enforces_auth_before_availability():
+    # Security-relevant sequencing: /cockpit/program-audio must run
+    # _console_auth() BEFORE the ?probe=1 availability branch, so an
+    # unauthenticated probe can never leak whether the feature is available.
+    # Service present + fan-out on => an AUTHED probe returns 200 {"available": true};
+    # the SAME probe WITHOUT a token is 401 and reveals nothing.
+    srv, get, _post = _cockpit_client(program_audio_service=object(), fanout=True)
+    try:
+        code, _h, body = get("/cockpit/program-audio?probe=1")
+        assert code == 401, code                      # auth rejected before the probe branch
+        assert b"available" not in body, body         # no availability leak pre-auth
+        tok = ca.mint_token("sek", "alpha-racing")
+        code, _h, body = get("/cockpit/program-audio?probe=1&t=" + tok)
+        assert code == 200, code                       # auth passes, probe answers
+        assert json.loads(body).get("available") is True
+    finally:
+        srv.shutdown()
+
+
+def t_program_audio_probe_authed_but_service_disabled_is_404():
+    # Auth passes but no ProgramAudioService wired -> 404 (feature disabled),
+    # confirming the ordering: auth first, THEN the program-audio gate.
+    srv, get, _post = _cockpit_client(program_audio_service=None, fanout=True)
+    try:
+        tok = ca.mint_token("sek", "alpha-racing")
+        code, _h, _b = get("/cockpit/program-audio?probe=1&t=" + tok)
+        assert code == 404, code
+    finally:
+        srv.shutdown()
 
 
 if __name__ == "__main__":
