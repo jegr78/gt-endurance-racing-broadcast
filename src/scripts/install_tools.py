@@ -238,8 +238,13 @@ def install_commands(manager, tools, brew_path="brew", sudo=False):
         return [[brew_path, "install"] + list(tools)] if tools else []
     if manager == "apt":
         pkgs = [APT_PACKAGES[t] for t in tools if t in APT_PACKAGES]
-        return [(["sudo"] if sudo else []) + ["apt-get", "install", "-y"] + pkgs] \
-            if pkgs else []
+        if not pkgs:
+            return []
+        pre = ["sudo"] if sudo else []
+        # `apt-get update` first — a fresh/stale index (e.g. a just-created cloud
+        # VM) can't locate the packages otherwise (issue #408).
+        return [pre + ["apt-get", "update"],
+                pre + ["apt-get", "install", "-y"] + pkgs]
     return []
 
 
@@ -256,8 +261,12 @@ def update_commands(manager, tools, brew_path="brew", sudo=False):
         return [[brew_path, "upgrade"] + list(tools)] if tools else []
     if manager == "apt":
         pkgs = [APT_PACKAGES[t] for t in tools if t in APT_PACKAGES]
-        return [(["sudo"] if sudo else []) + ["apt-get", "install", "-y",
-                "--only-upgrade"] + pkgs] if pkgs else []
+        if not pkgs:
+            return []
+        pre = ["sudo"] if sudo else []
+        # refresh the index before upgrading (issue #408, same reason as install)
+        return [pre + ["apt-get", "update"],
+                pre + ["apt-get", "install", "-y", "--only-upgrade"] + pkgs]
     return []
 
 

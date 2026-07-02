@@ -455,7 +455,10 @@ def linux_install_steps(apps, which=shutil.which, machine=None):
     if "obs" in apps:
         if which("add-apt-repository"):
             steps.append(("run", ["sudo", "add-apt-repository", "-y", OBS_PPA]))
-            steps.append(("run", ["sudo", "apt-get", "update"]))
+        # `apt-get update` before the install regardless of the PPA path — a fresh
+        # image (empty/stale index) can't locate obs-studio otherwise (issue #408).
+        # After add-apt-repository it also picks up the newly-added PPA.
+        steps.append(("run", ["sudo", "apt-get", "update"]))
         steps.append(("run", ["sudo", "apt-get", "install", "-y", "obs-studio"]))
     if "tailscale" in apps:
         steps.append(("script", TAILSCALE_INSTALLER, ["sh"]))
