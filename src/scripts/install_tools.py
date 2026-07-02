@@ -26,8 +26,9 @@ TOOLS = ("yt-dlp", "streamlink", "ffmpeg", "deno")
 
 WINGET_IDS = {"yt-dlp": "yt-dlp.yt-dlp", "streamlink": "Streamlink.Streamlink",
               "ffmpeg": "Gyan.FFmpeg", "deno": "DenoLand.Deno"}
-APT_PACKAGES = {"yt-dlp": "yt-dlp", "streamlink": "streamlink", "ffmpeg": "ffmpeg"}
-# deno ships no apt package — Linux users get a pointer in manual_guide().
+APT_PACKAGES = {"streamlink": "streamlink", "ffmpeg": "ffmpeg"}
+# deno and yt-dlp ship no usable apt package — Linux gets pinned managed
+# downloads (see install_deno_binary / install_ytdlp_binary).
 
 # The Ookla speedtest CLI (used by `racecast speedtest`). It is a first-class
 # tool the producer installs via `install-tools` / the Control Center "Install
@@ -336,12 +337,13 @@ def manual_guide(platform):
         return ("Install manually:  brew install yt-dlp streamlink ffmpeg deno\n"
                 "  bandwidth speed test (Ookla CLI): download the macOS build from\n"
                 "  https://www.speedtest.net/apps/cli and put `speedtest` on your PATH")
-    return ("Install manually:  sudo apt-get install -y yt-dlp streamlink ffmpeg\n"
-            "deno has no apt package — install-tools downloads it automatically; manually:\n"
-            "  https://docs.deno.com/runtime/getting_started/installation/\n"
+    return ("Install manually:  sudo apt-get update && sudo apt-get install -y streamlink ffmpeg\n"
+            "yt-dlp and deno have no usable apt package — install-tools downloads them\n"
+            "automatically (pinned, checksum-verified). Manually:\n"
+            "  yt-dlp: https://github.com/yt-dlp/yt-dlp#installation\n"
+            "  deno:   https://docs.deno.com/runtime/getting_started/installation/\n"
             "bandwidth speed test (Ookla CLI): download the Linux build from\n"
-            "  https://www.speedtest.net/apps/cli and put `speedtest` on your PATH\n"
-            "NOTE: apt's yt-dlp lags upstream; for a current build: pip install -U yt-dlp")
+            "  https://www.speedtest.net/apps/cli and put `speedtest` on your PATH")
 
 
 def _which_with_managed_bin(managed_dir, brew=None):
@@ -487,6 +489,23 @@ def main():
                 print("  deno installed.")
             except Exception as exc:   # network/checksum/extract — report, don't crash
                 failed.append(f"deno download ({exc})")
+
+    # yt-dlp on Linux: current pinned binary, not apt (apt's lags upstream and
+    # fails YouTube's bot-check). Refreshed on --update too, so the before-event
+    # `install-tools --update` bumps it to the pinned-current version (#409).
+    if manager == "apt" and ("yt-dlp" in missing or a.update):
+        tag = ytdlp_asset_tag(sys.platform, _platform.machine())
+        if tag is None:
+            print("NOTE: no prebuilt yt-dlp for this OS/arch — install it manually:")
+            print("  https://github.com/yt-dlp/yt-dlp#installation")
+        else:
+            dest = st.managed_bin_dir(runtime_dir)
+            print(f"Installing yt-dlp v{YTDLP_VERSION} -> {dest} ...")
+            try:
+                install_ytdlp_binary(dest, tag)
+                print("  yt-dlp installed.")
+            except Exception as exc:   # network/checksum/write — report, don't crash
+                failed.append(f"yt-dlp download ({exc})")
 
     managed_bin = st.managed_bin_dir(runtime_dir)
     if manager == "winget":
