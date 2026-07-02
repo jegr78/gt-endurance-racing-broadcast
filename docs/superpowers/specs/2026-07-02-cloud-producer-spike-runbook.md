@@ -227,18 +227,22 @@ of a real 1080p live stream (itag 96) from the GCP IP ran the full 900 s with **
 format is `-f "b[height<=1080]/b"` (POV capped 720p) — the test used yt-dlp's default which
 also landed on 1080p, so it is production-representative.
 
-**Still open (not the K.-o. risk; next session):** the **Twitch** streamlink path (Twitch is
-far more datacenter-IP-tolerant than YouTube — main risk is ads, not blocking), and an
-**unlisted** commentator URL (identical mechanism; unlisted is a cookie-access, not IP,
-question). A full `racecast relay run` with a real profile is the belt-and-suspenders version
-but the raw streamlink pull already covers the sustained-pull criterion.
+**Twitch — DONE (PASS):** a 5-min streamlink Twitch-plugin pull of a live 1080p60 channel from
+the GCP IP ran the full 300 s with **0 errors**, ~9.5 Mbps steady; ads were auto-skipped
+(`Will skip ad segments`) as expected — no blocking. **Stage 1 is now fully green on GCP for
+BOTH YouTube and Twitch** (resolve + sustained pull), for ~€0. The dominant K.-o. risk
+(datacenter IP vs. platform bot-check) is **retired for GCP.**
+
+**Still open (not the K.-o. risk):** an **unlisted** commentator URL (identical mechanism;
+unlisted is a cookie-access, not IP, question), and — belt-and-suspenders — a full
+`racecast relay run` with a real profile. Both can ride the real Stage-2 box.
 
 ## Findings tables (fill during the run)
 
 ### Stage 1 — Datacenter-IP feed pull
 | Provider / region | ASN | Raw `yt-dlp -g` | streamlink bytes | Relay ≥15 min | 403/429 count | Twitch (if used) | Verdict |
 |---|---|---|---|---|---|---|---|
-| **GCP e2-micro / us-central1** | 15169 | **PASS** (VOD + LIVE) | **PASS** (1080p, ~1.4 Mbps) | **PASS** (15 min raw streamlink) | **0** | pending | **PASS (YouTube)** |
+| **GCP e2-micro / us-central1** | 15169 | **PASS** (VOD + LIVE) | **PASS** (1080p, ~1.4 Mbps) | **PASS** (15 min raw streamlink) | **0** | **PASS** (5 min 1080p60) | **PASS (YouTube + Twitch)** |
 | Hetzner CX22 / EU | 24940 | — (ID-verify blocked signup) | | | | | n/a |
 | Paperspace Core | — | — (OS templates too old: 20.04/CentOS7) | | | | | n/a |
 
