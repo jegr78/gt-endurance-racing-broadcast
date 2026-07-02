@@ -135,12 +135,42 @@ def t_linux_plan_obs_without_ppa_tool():
 
 def t_linux_plan_scripts():
     steps = m.linux_install_steps(["tailscale", "companion"], which=lambda n: "/usr/bin/" + n)
+    # companion-pi's bundled node needs libatomic.so.1, absent on a fresh minimal
+    # Ubuntu 24.04 — install it (after refreshing the index) BEFORE the vendor
+    # installer so node can start and the service comes up (issue #413).
     assert steps == [
         ("script", "https://tailscale.com/install.sh", ["sh"]),
+        ("run", ["sudo", "apt-get", "update"]),
+        ("run", ["sudo", "apt-get", "install", "-y", "libatomic1"]),
         ("script",
          "https://raw.githubusercontent.com/bitfocus/companion-pi/main/install.sh",
          ["sudo", "bash"]),
     ]
+
+
+def t_linux_plan_companion_libatomic1_precedes_installer():
+    # The libatomic1 install must come strictly before the companion-pi script.
+    steps = m.linux_install_steps(["companion"], which=lambda n: "/usr/bin/" + n)
+    lib = steps.index(("run", ["sudo", "apt-get", "install", "-y", "libatomic1"]))
+    script = next(i for i, s in enumerate(steps) if s[0] == "script")
+    assert lib < script
+    # and it is preceded by an index refresh (fresh-image safety, issue #408/#413)
+    assert ("run", ["sudo", "apt-get", "update"]) in steps[:lib]
+
+
+def t_linux_plan_obs_and_companion_share_one_update():
+    # obs already refreshes the index; the companion libatomic1 step must reuse it,
+    # not queue a second `apt-get update`.
+    steps = m.linux_install_steps(["obs", "companion"], which=lambda n: "/usr/bin/" + n)
+    updates = [s for s in steps if s == ("run", ["sudo", "apt-get", "update"])]
+    assert len(updates) == 1
+    assert ("run", ["sudo", "apt-get", "install", "-y", "libatomic1"]) in steps
+
+
+def t_linux_plan_no_libatomic1_without_companion():
+    steps = m.linux_install_steps(["obs", "tailscale", "discord"],
+                                  which=lambda n: "/usr/bin/" + n, machine="x86_64")
+    assert all("libatomic1" not in (s[1] if s[0] == "run" else []) for s in steps)
 
 
 def t_linux_plan_discord_deb_on_amd64():
