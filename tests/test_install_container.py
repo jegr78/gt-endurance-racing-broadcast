@@ -17,8 +17,11 @@ def t_build_command_shape():
     assert "ubuntu:24.04" in cmd
     assert cmd[-3] == "bash" and cmd[-2] == "-lc"
     script = cmd[-1]
-    # runs the REAL install path from source, into the isolated runtime dir
-    assert "python3 src/racecast.py install-tools --runtime-dir /tmp/rt" in script
+    # Runs install_tools.py DIRECTLY (not via `racecast install-tools`): racecast
+    # forces its own --runtime-dir (RUNTIME_DIR_ONESHOTS), which would override ours
+    # and drop the tools in the mounted repo instead of the isolated runtime dir.
+    assert "python3 src/scripts/install_tools.py --runtime-dir /tmp/rt" in script
+    assert "src/racecast.py" not in script    # not the wrapper — it overrides --runtime-dir
     assert "/tmp/rt/bin" in script            # managed bin on PATH for the asserts
     # asserts every tool is actually runnable
     for probe in ("yt-dlp --version", "deno --version",

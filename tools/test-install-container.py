@@ -26,11 +26,18 @@ def build_container_command(engine, image, repo_dir, runtime_dir="/tmp/rc-rt",
     `platform` (e.g. "linux/amd64") forces the container arch — the way to exercise
     the amd64 install path on an arm64 host (Apple Silicon + Docker/Rosetta). Inside
     an amd64 container `platform.machine()` reports x86_64, so install-tools pulls the
-    amd64 yt-dlp/deno binaries; the in-container script is identical either way."""
+    amd64 yt-dlp/deno binaries; the in-container script is identical either way.
+
+    Note: this runs `install_tools.py` DIRECTLY, not `racecast install-tools` — the
+    racecast wrapper injects its own --runtime-dir (install-tools is a
+    RUNTIME_DIR_ONESHOT), which overrides ours and drops the managed binaries in the
+    mounted repo's runtime/bin instead of the isolated <runtime_dir>. Calling the
+    module directly honours --runtime-dir, so the download lands where PATH points and
+    the host mount stays clean."""
     script = (
         "set -euo pipefail; "
         "apt-get update && apt-get install -y python3 curl ca-certificates; "
-        f"cd /repo && python3 src/racecast.py install-tools --runtime-dir {runtime_dir}; "
+        f"cd /repo && python3 src/scripts/install_tools.py --runtime-dir {runtime_dir}; "
         f"export PATH={runtime_dir}/bin:$PATH; "
         "yt-dlp --version && deno --version && "
         "streamlink --version && ffmpeg -version"
