@@ -2975,6 +2975,173 @@ class PreviewManager:
                 self._pull = None
 
 
+class ProgramAudioService:
+    """On-demand MP3 encoder of the ON-AIR feed's audio, re-served to many HTTP
+    listeners from one output FeedRing. Reference-counted: the encoder starts on
+    the first listener (acquire) and a supervisor thread idle-reaps it when the
+    last one leaves (release). It follows the on-air feed across handovers by
+    restarting ffmpeg on the new feed's ring while keeping the SAME output ring
+    (MP3 frames are self-contained -> the client stream splices, only a brief
+    silence gap). Requires fan-out (the in-process feed bytes only exist then);
+    acquire() returns None otherwise. Best effort throughout: a spawn/read failure
+    leaves the output silent and never raises. `spawn`/`ring_factory` injectable
+    for tests."""
+
+    def __init__(self, relay, log, idle_timeout=8.0, spawn=None, ring_factory=None):
+        self.relay = relay
+        self.log = log
+        self.idle_timeout = idle_timeout
+        self._spawn = spawn or self._spawn_real
+        self._ring_factory = ring_factory or (lambda: FeedRing(PROGRAM_AUDIO_RING_BYTES))
+        self._out = None            # output FeedRing (encoded MP3), shared by all listeners
+        self._proc = None           # current ffmpeg subprocess
+        self._enc_target = None     # feed name the encoder is currently pointed at
+        self._listeners = 0
+        self._last_touch = 0.0
+        self._running = False
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+
+    # ---- listener lifecycle (called by the HTTP streaming handler) ----
+    def acquire(self):
+        """Register a listener and return the shared output ring to stream from,
+        or None if the feature can't run (fan-out off)."""
+        with self._lock:
+            if not getattr(self.relay, "fanout", False):
+                return None
+            self._listeners += 1
+            self._last_touch = time.monotonic()
+            if not self._running:
+                self._out = self._ring_factory()
+                self._running = True
+                self._stop.clear()
+                threading.Thread(target=self._supervise, daemon=True).start()
+            return self._out
+
+    def release(self):
+        with self._lock:
+            if self._listeners > 0:
+                self._listeners -= 1
+            self._last_touch = time.monotonic()
+
+    def touch(self):
+        with self._lock:
+            self._last_touch = time.monotonic()
+
+    # ---- encoder supervisor ----
+    def _supervise(self):
+        prev = None
+        while not self._stop.is_set():
+            with self._lock:
+                idle = (self._listeners == 0
+                        and time.monotonic() - self._last_touch > self.idle_timeout)
+            if idle:
+                break
+            prev = self._encoder_tick(prev)
+            self._stop.wait(1.0)
+        self._teardown()
+
+    def _encoder_tick(self, prev_live):
+        """One supervisor step: (re)spawn the encoder for the current on-air feed
+        when needed. Returns the feed name now encoding (or prev_live unchanged).
+        The test seam — pure of threads/sleeps."""
+        live = self.relay.live_feed()
+        feed = self.relay.feeds.get(live) if live else None
+        ring = getattr(feed, "ring", None)
+        serving = ring is not None
+        if self._proc is None or should_retarget(self._enc_target, live, serving):
+            if serving:
+                self._restart_encoder(live, ring)
+                return live
+        return prev_live if self._enc_target is None else self._enc_target
+
+    def _restart_encoder(self, live, ring):
+        self._kill_proc()
+        try:
+            proc, stdin, stdout = self._spawn()
+        except Exception as e:                     # noqa: BLE001 best-effort
+            self.log.info("program-audio spawn error: %s", e)
+            self._proc = None
+            self._enc_target = None
+            return
+        self._proc = proc
+        self._enc_target = live
+        threading.Thread(target=self._feed_stdin, args=(stdin, ring), daemon=True).start()
+        threading.Thread(target=self._pump_stdout, args=(stdout,), daemon=True).start()
+
+    def _spawn_real(self):
+        ff = subprocess.Popen(program_audio_ffmpeg_cmd(), stdin=subprocess.PIPE,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=False, env=external_tool_env(), **_no_window_kwargs())
+        threading.Thread(target=self._pump_stderr, args=(ff.stderr,), daemon=True).start()
+        return ff, ff.stdin, ff.stdout
+
+    def _feed_stdin(self, stdin, ring):
+        """Pump on-air ring bytes into this encoder's ffmpeg stdin; join at the
+        ring's current live edge (only recent data, no rewind)."""
+        cursor = ring.live_offset() if hasattr(ring, "live_offset") else 0
+        try:
+            while not self._stop.is_set() and not getattr(ring, "closed", False):
+                data, cursor = ring.read(cursor, 1.0)
+                if data:
+                    stdin.write(data); stdin.flush()
+                if self._proc is None or self._proc.poll() is not None:
+                    break                          # encoder gone (killed on handover)
+        except OSError:
+            pass                                   # ffmpeg stdin closed
+        finally:
+            try:
+                stdin.close()
+            except OSError:
+                pass                               # already closed by the OS side
+
+    def _pump_stdout(self, stdout):
+        """Pump encoded MP3 bytes from ffmpeg stdout into the shared output ring."""
+        out = self._out
+        try:
+            while not self._stop.is_set():
+                chunk = stdout.read(65536)
+                if not chunk:
+                    break                          # encoder EOF (killed / died)
+                if out is not None:
+                    out.write(chunk)
+        except OSError:
+            pass                                   # ffmpeg stdout closed (process killed)
+
+    def _pump_stderr(self, stderr):
+        for line in _decode_lines(iter(stderr.readline, b"")):
+            if self._stop.is_set():
+                break
+            line = line.strip()
+            if line:
+                self.log.info("[program-audio ffmpeg] %s", line)
+
+    def _kill_proc(self):
+        p = self._proc
+        try:
+            if p and p.poll() is None:
+                p.kill()
+        except Exception:                          # noqa: BLE001
+            pass
+
+    def _teardown(self):
+        self._kill_proc()
+        self._proc = None
+        self._enc_target = None
+        with self._lock:
+            self._running = False
+            if self._out is not None:
+                try:
+                    self._out.close()
+                except Exception:                  # noqa: BLE001
+                    pass
+                self._out = None
+
+    def shutdown(self):
+        self._stop.set()
+        self._teardown()
+
+
 def resolve_hls(url, cookies, logger, fmt=YTDLP_FORMAT):
     """Resolve a YouTube live URL to a direct HLS manifest URL via yt-dlp
     (handles cookies + the bot-check). Returns (url, None) on success or

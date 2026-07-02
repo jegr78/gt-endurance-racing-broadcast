@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for the on-air program-audio monitor (relay tap).
 Run: python3 tests/test_program_audio.py"""
-import importlib.util, os
+import importlib.util, io, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -57,6 +57,107 @@ def t_should_retarget_guards():
     assert m.should_retarget("A", "B", False) is False   # new feed not serving yet
     assert m.should_retarget("A", None, True) is False    # no on-air feed
     assert m.should_retarget(None, "A", True) is True     # first target counts
+
+
+# --- ProgramAudioService: refcount, idle reaper, handover restart (thread-free) --
+class _FakeRing:
+    def __init__(self):
+        self.closed = False
+    def live_offset(self):
+        return 0
+    def read(self, cursor, timeout):
+        return b"", cursor          # never yields in tests; we don't run pumps
+
+
+class _FakeFeed:
+    def __init__(self, ring):
+        self.ring = ring
+
+
+class _FakeRelay:
+    def __init__(self, fanout=True, live="A"):
+        self.fanout = fanout
+        self._live = live
+        self.feeds = {"A": _FakeFeed(_FakeRing()), "B": _FakeFeed(_FakeRing())}
+    def live_feed(self):
+        return self._live
+
+
+class _FakeProc:
+    def __init__(self):
+        self.killed = False
+        self.stdin = io.BytesIO()
+        self.stdout = io.BytesIO()
+    def poll(self):
+        return 0 if self.killed else None
+    def kill(self):
+        self.killed = True
+
+
+def _svc(relay, spawns):
+    def spawn():
+        p = _FakeProc(); spawns.append(p); return p, p.stdin, p.stdout
+    return m.ProgramAudioService(relay, _Log(), idle_timeout=0.01,
+                                 spawn=spawn, ring_factory=_FakeRing)
+
+
+class _Log:
+    def info(self, *a, **k):
+        pass
+
+
+def t_acquire_none_when_fanout_off():
+    svc = _svc(_FakeRelay(fanout=False), [])
+    assert svc.acquire() is None
+    assert svc._listeners == 0
+
+
+def t_acquire_returns_output_ring_and_counts():
+    svc = _svc(_FakeRelay(), [])
+    ring = svc.acquire()
+    assert ring is not None and ring is svc._out
+    assert svc._listeners == 1
+    ring2 = svc.acquire()
+    assert ring2 is svc._out            # same shared output ring
+    assert svc._listeners == 2
+    svc.release(); svc.release()
+    assert svc._listeners == 0
+    svc.shutdown()
+
+
+def t_encoder_tick_spawns_for_on_air_feed():
+    relay = _FakeRelay(live="A"); spawns = []
+    svc = _svc(relay, spawns)
+    svc.acquire()
+    target = svc._encoder_tick(None)
+    assert target == "A"
+    assert len(spawns) == 1
+    assert svc._enc_target == "A"
+    svc.shutdown()
+
+
+def t_encoder_tick_reencodes_on_handover():
+    relay = _FakeRelay(live="A"); spawns = []
+    svc = _svc(relay, spawns)
+    svc.acquire()
+    prev = svc._encoder_tick(None)      # spawns for A
+    relay._live = "B"                    # handover
+    prev = svc._encoder_tick(prev)      # should kill A's proc, spawn for B
+    assert prev == "B"
+    assert len(spawns) == 2
+    assert spawns[0].killed is True      # old encoder killed
+    assert svc._enc_target == "B"
+    svc.shutdown()
+
+
+def t_encoder_tick_noop_when_unchanged():
+    relay = _FakeRelay(live="A"); spawns = []
+    svc = _svc(relay, spawns)
+    svc.acquire()
+    prev = svc._encoder_tick(None)
+    prev = svc._encoder_tick(prev)      # same feed -> no respawn
+    assert len(spawns) == 1
+    svc.shutdown()
 
 
 if __name__ == "__main__":
