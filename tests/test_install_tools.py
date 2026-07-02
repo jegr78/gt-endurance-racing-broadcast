@@ -38,9 +38,12 @@ def t_install_commands_brew_single_batch():
     assert m.install_commands("brew", []) == []
 
 
-def t_install_commands_apt_skips_deno():
+def t_install_commands_apt_updates_then_skips_deno():
+    # apt-get update runs BEFORE install so a fresh/stale index can locate the
+    # packages (issue #408); deno has no apt package and is skipped.
     cmds = m.install_commands("apt", ["yt-dlp", "deno"])
-    assert cmds == [["apt-get", "install", "-y", "yt-dlp"]]
+    assert cmds == [["apt-get", "update"], ["apt-get", "install", "-y", "yt-dlp"]]
+    # nothing installable via apt -> no commands (no pointless update either)
     assert m.install_commands("apt", ["deno"]) == []
 
 
@@ -82,7 +85,8 @@ def t_update_commands_brew_single_batch():
 
 def t_update_commands_apt_only_upgrade_skips_deno():
     cmds = m.update_commands("apt", ["yt-dlp", "deno"])
-    assert cmds == [["apt-get", "install", "-y", "--only-upgrade", "yt-dlp"]]
+    assert cmds == [["apt-get", "update"],
+                    ["apt-get", "install", "-y", "--only-upgrade", "yt-dlp"]]
     assert m.update_commands("apt", ["deno"]) == []
 
 
@@ -167,23 +171,27 @@ def t_manual_guide_mentions_speedtest():
 
 
 def t_install_commands_apt_sudo_prefix():
-    # default (no sudo) stays byte-identical — keeps the existing apt tests valid
-    assert m.install_commands("apt", ["yt-dlp"]) == [["apt-get", "install", "-y", "yt-dlp"]]
-    # sudo=True prepends sudo (Linux non-root) — mirrors installer_common.install_remote_deb
+    # apt path = update then install; both get the sudo prefix (Linux non-root)
+    assert m.install_commands("apt", ["yt-dlp"]) == \
+        [["apt-get", "update"], ["apt-get", "install", "-y", "yt-dlp"]]
+    # sudo=True prepends sudo to BOTH apt steps — mirrors installer_common.install_remote_deb
     assert m.install_commands("apt", ["yt-dlp", "ffmpeg"], sudo=True) == \
-        [["sudo", "apt-get", "install", "-y", "yt-dlp", "ffmpeg"]]
+        [["sudo", "apt-get", "update"],
+         ["sudo", "apt-get", "install", "-y", "yt-dlp", "ffmpeg"]]
     # sudo only affects apt, never winget/brew
     assert m.install_commands("brew", ["ffmpeg"], sudo=True) == [["brew", "install", "ffmpeg"]]
     assert m.install_commands("winget", ["deno"], sudo=True)[0][0] == "winget"
-    # nothing to install -> no command even with sudo
+    # nothing to install -> no command even with sudo (no pointless update)
     assert m.install_commands("apt", ["deno"], sudo=True) == []   # deno has no apt pkg
 
 
 def t_update_commands_apt_sudo_prefix():
     assert m.update_commands("apt", ["yt-dlp"], sudo=True) == \
-        [["sudo", "apt-get", "install", "-y", "--only-upgrade", "yt-dlp"]]
+        [["sudo", "apt-get", "update"],
+         ["sudo", "apt-get", "install", "-y", "--only-upgrade", "yt-dlp"]]
     assert m.update_commands("apt", ["yt-dlp"]) == \
-        [["apt-get", "install", "-y", "--only-upgrade", "yt-dlp"]]
+        [["apt-get", "update"],
+         ["apt-get", "install", "-y", "--only-upgrade", "yt-dlp"]]
 
 
 def t_deno_asset_tag_per_os_arch():

@@ -124,9 +124,13 @@ def t_linux_plan_obs_with_ppa():
 
 
 def t_linux_plan_obs_without_ppa_tool():
+    # Debian (no add-apt-repository): still refresh the index before installing so
+    # a fresh/stale apt cache can locate obs-studio (issue #408 symmetry).
     no_ppa = lambda n: None if n == "add-apt-repository" else "/usr/bin/" + n
-    assert m.linux_install_steps(["obs"], which=no_ppa) == \
-        [("run", ["sudo", "apt-get", "install", "-y", "obs-studio"])]
+    assert m.linux_install_steps(["obs"], which=no_ppa) == [
+        ("run", ["sudo", "apt-get", "update"]),
+        ("run", ["sudo", "apt-get", "install", "-y", "obs-studio"]),
+    ]
 
 
 def t_linux_plan_scripts():
