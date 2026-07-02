@@ -197,14 +197,42 @@ entire value of the staged structure: buy the cheapest information first.
 
 ---
 
+## Session log — 2026-07-02 (Stage 0 + Stage 1 core)
+
+**Result: Stage 0 + the Stage-1 K.-o. gate PASS on GCP, for ~€0.** The dominant risk
+(datacenter IP vs. YouTube bot-check) **did not fire** — see the table below.
+
+- **amd64 software (never confirmed since pre-v1.0.0):** racecast v1.4.0 amd64 binary runs
+  on Ubuntu 24.04 (glibc 2.38 ok); deno 2.8.3 installs + runs on amd64/24.04.
+- **GCP datacenter IP `35.202.91.202` (us-central1) resolves YouTube via `yt-dlp -g` +
+  cookies + deno for BOTH a VOD and a real LIVE stream** (`source/yt_live_broadcast`,
+  `live/1`) → HLS `index.m3u8`. No 403 / no "not a bot" / no "only images". Cookies were
+  exported on a home IP and used from the datacenter IP (the session-origin-mismatch factor)
+  and it still worked. **This contradicts the "all cloud IPs are blocked" web-research
+  assumption** — GCP + cookies + deno works. The earlier "only images" failure was purely
+  **missing deno on PATH**, not the IP.
+- **Provider pivots:** Hetzner = new-account ID verification (declined). Paperspace Core =
+  stock templates only Ubuntu 20.04 / CentOS 7 → too old (Python 3.8, glibc 2.31); the amd64
+  binary needs glibc 2.38, deno needs ≥2.35, current yt-dlp needs Python ≥3.10. Not viable.
+  → GCP is the working provider.
+- **Product bug found:** `racecast install-tools` runs `apt-get install` with **no preceding
+  `apt-get update`** → "Unable to locate package" on a fresh cloud image. Filed as an issue.
+- **GCP free-tier gotchas:** the create-instance estimator shows gross list price (never the
+  free-tier credit); the default "Balanced" boot disk is not free → pick **Standard pd ≤30 GB**.
+
+**Still open to close Stage 1 fully (next session, needs a live stream up):** the **≥15-min
+sustained pull** (throttle/403-churn over time, via streamlink — the relay's real client),
+an **unlisted** commentator URL (identical mechanism; unlisted is a cookie-access, not IP,
+question), and the **Twitch** streamlink path.
+
 ## Findings tables (fill during the run)
 
 ### Stage 1 — Datacenter-IP feed pull
 | Provider / region | ASN | Raw `yt-dlp -g` | streamlink bytes | Relay ≥15 min | 403/429 count | Twitch (if used) | Verdict |
 |---|---|---|---|---|---|---|---|
-| Hetzner CX22 / EU | 24940 | | | | | | |
-| DigitalOcean / US | 14061 | | | | | | |
-| Paperspace (GPU IP) | | | | | | | |
+| **GCP e2-micro / us-central1** | 15169 | **PASS** (VOD + LIVE) | pending (Stage-1B) | pending | 0 so far | pending | **PASS (core)** |
+| Hetzner CX22 / EU | 24940 | — (ID-verify blocked signup) | | | | | n/a |
+| Paperspace Core | — | — (OS templates too old: 20.04/CentOS7) | | | | | n/a |
 
 ### Stage 2 — OBS on GPU desktop VM
 | Check | Result | Notes |
