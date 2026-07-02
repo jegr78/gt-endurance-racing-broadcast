@@ -67,6 +67,8 @@ class _FakeRing:
         return 0
     def read(self, cursor, timeout):
         return b"", cursor          # never yields in tests; we don't run pumps
+    def close(self):
+        self.closed = True
 
 
 class _FakeFeed:
@@ -158,6 +160,49 @@ def t_encoder_tick_noop_when_unchanged():
     prev = svc._encoder_tick(prev)      # same feed -> no respawn
     assert len(spawns) == 1
     svc.shutdown()
+
+
+# --- Fix wave: teardown re-arm race (Finding 1) + per-generation stdin (Finding 2) --
+def t_teardown_rearms_when_listener_slips_in():
+    # A listener slipped in during the idle-reap window: teardown must NOT close
+    # the output ring and must re-arm a fresh supervisor. relay.live_feed()=None
+    # so the re-armed supervisor has nothing to encode (stays thread-quiet).
+    relay = _FakeRelay(); relay._live = None
+    svc = _svc(relay, [])
+    out = _FakeRing()
+    svc._out = out
+    svc._running = True
+    svc._listeners = 1
+    svc._teardown()
+    assert svc._out is out               # ring kept — same object, not nulled
+    assert out.closed is False           # and NOT closed
+    assert svc._running is True          # re-armed, still running
+    svc.shutdown()
+    assert out.closed is True            # genuine shutdown finalizes
+
+
+def t_teardown_finalizes_when_no_listeners():
+    relay = _FakeRelay()
+    svc = _svc(relay, [])
+    out = _FakeRing()
+    svc._out = out
+    svc._running = True
+    svc._listeners = 0
+    svc._teardown()
+    assert out.closed is True            # normal idle teardown closes the ring
+    assert svc._out is None
+    assert svc._running is False
+
+
+def t_feed_stdin_exits_on_own_dead_proc_after_reassign():
+    # The old generation's _feed_stdin must exit when ITS OWN proc dies, even
+    # after a handover reassigned self._proc to a new live process. If it checked
+    # the shared self._proc (alive), this call would loop forever and hang.
+    svc = _svc(_FakeRelay(), [])
+    mine = _FakeProc(); mine.kill()          # this thread's own proc is dead
+    svc._proc = _FakeProc()                   # handover installed a NEW live proc
+    svc._feed_stdin(io.BytesIO(), _FakeRing(), mine)   # must return (checks `mine`)
+    assert svc._proc.poll() is None           # the reassigned proc is untouched/alive
 
 
 if __name__ == "__main__":

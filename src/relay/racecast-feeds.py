@@ -3066,8 +3066,11 @@ class ProgramAudioService:
             return
         self._proc = proc
         self._enc_target = live
-        threading.Thread(target=self._feed_stdin, args=(stdin, ring), daemon=True).start()
-        threading.Thread(target=self._pump_stdout, args=(stdout,), daemon=True).start()
+        # Pass THIS generation's proc into the pumps so a later handover
+        # (which reassigns self._proc) can't blind the old pump to its own
+        # process dying — each pump checks the proc it was born with.
+        threading.Thread(target=self._feed_stdin, args=(stdin, ring, proc), daemon=True).start()
+        threading.Thread(target=self._pump_stdout, args=(stdout, proc), daemon=True).start()
 
     def _spawn_real(self):
         ff = subprocess.Popen(program_audio_ffmpeg_cmd(), stdin=subprocess.PIPE,
@@ -3076,17 +3079,19 @@ class ProgramAudioService:
         threading.Thread(target=self._pump_stderr, args=(ff.stderr,), daemon=True).start()
         return ff, ff.stdin, ff.stdout
 
-    def _feed_stdin(self, stdin, ring):
-        """Pump on-air ring bytes into this encoder's ffmpeg stdin; join at the
-        ring's current live edge (only recent data, no rewind)."""
+    def _feed_stdin(self, stdin, ring, proc):
+        """Pump on-air ring bytes into THIS encoder generation's ffmpeg stdin;
+        join at the ring's current live edge (only recent data, no rewind).
+        *proc* is the process this thread owns — checked instead of the shared
+        self._proc, which a handover reassigns to the NEXT generation."""
         cursor = ring.live_offset() if hasattr(ring, "live_offset") else 0
         try:
             while not self._stop.is_set() and not getattr(ring, "closed", False):
                 data, cursor = ring.read(cursor, 1.0)
                 if data:
                     stdin.write(data); stdin.flush()
-                if self._proc is None or self._proc.poll() is not None:
-                    break                          # encoder gone (killed on handover)
+                if proc is None or proc.poll() is not None:
+                    break                          # THIS encoder gone (killed on handover)
         except OSError:
             pass                                   # ffmpeg stdin closed
         finally:
@@ -3095,8 +3100,11 @@ class ProgramAudioService:
             except OSError:
                 pass                               # already closed by the OS side
 
-    def _pump_stdout(self, stdout):
-        """Pump encoded MP3 bytes from ffmpeg stdout into the shared output ring."""
+    def _pump_stdout(self, stdout, proc):
+        """Pump encoded MP3 bytes from THIS generation's ffmpeg stdout into the
+        shared output ring. *proc* is this thread's own process (see
+        _feed_stdin); a stdout EOF on kill ends the loop, and the proc check is
+        the belt-and-suspenders exit for a ring that stalls without EOF."""
         out = self._out
         try:
             while not self._stop.is_set():
@@ -3105,6 +3113,8 @@ class ProgramAudioService:
                     break                          # encoder EOF (killed / died)
                 if out is not None:
                     out.write(chunk)
+                if proc is None or proc.poll() is not None:
+                    break                          # THIS encoder gone (killed on handover)
         except OSError:
             pass                                   # ffmpeg stdout closed (process killed)
 
@@ -3125,10 +3135,23 @@ class ProgramAudioService:
             pass
 
     def _teardown(self):
+        # Always stop THIS (reaped) generation's encoder first, outside the lock
+        # (kill must never block while holding it). The re-armed supervisor will
+        # spawn a fresh one on its next _encoder_tick.
         self._kill_proc()
         self._proc = None
         self._enc_target = None
         with self._lock:
+            # TOCTOU guard: a listener can slip in via acquire() between the
+            # supervisor's idle check and here (it saw _running True, so it did
+            # NOT start a supervisor and got the still-live self._out). If so,
+            # DON'T finalize — keep the output ring and re-arm a fresh
+            # supervisor so that listener keeps a live encoder. Only a genuine
+            # shutdown (self._stop set) or a truly idle service finalizes.
+            if self._listeners > 0 and not self._stop.is_set():
+                self._running = True
+                threading.Thread(target=self._supervise, daemon=True).start()
+                return
             self._running = False
             if self._out is not None:
                 try:
