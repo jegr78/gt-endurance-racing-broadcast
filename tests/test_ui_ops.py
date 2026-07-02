@@ -457,6 +457,23 @@ def t_assets_files_data_lists(tmp):
     assert [f["name"] for f in d["media"]] == ["intro.mp4"]
 
 
+def t_assets_files_data_media_includes_audio(tmp):
+    # #398: the Intermission Music mp3 lands in runtime/<profile>/media/ but the
+    # gallery only listed VIDEO extensions, so the audio file never appeared.
+    # Media now lists audio too, and tags each item kind=audio|video so the
+    # Control Center can render an <audio> vs a <video> tile.
+    m = os.path.join(tmp, "media398")
+    os.makedirs(m)
+    open(os.path.join(m, "intro.mp4"), "w").close()
+    open(os.path.join(m, "intermission.mp3"), "w").close()
+    open(os.path.join(m, "notes.txt"), "w").close()      # non-media: ignored
+    d = rc.assets_files_data(roots={"graphics": os.path.join(tmp, "g398"),
+                                    "media": m}, profile="alpha")
+    assert d["ok"] is True
+    media = {f["name"]: f["kind"] for f in d["media"]}
+    assert media == {"intermission.mp3": "audio", "intro.mp4": "video"}
+
+
 def t_assets_files_data_cache_token(tmp):
     # Each file carries a per-profile, per-mtime cache token so the Control
     # Center gallery busts the browser <img> decode-cache on a profile switch

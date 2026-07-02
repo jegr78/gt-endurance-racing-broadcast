@@ -125,6 +125,10 @@ def make_handler(ctx):
                    ".gif": "image/gif", ".svg": "image/svg+xml",
                    ".mp4": "video/mp4",
                    ".webm": "video/webm", ".mov": "video/quicktime",
+                   ".mp3": "audio/mpeg", ".m4a": "audio/mp4",
+                   ".aac": "audio/aac", ".ogg": "audio/ogg",
+                   ".oga": "audio/ogg", ".wav": "audio/wav",
+                   ".flac": "audio/flac",
                    ".html": "text/html; charset=utf-8",
                    ".md": "text/plain; charset=utf-8",
                    ".txt": "text/plain; charset=utf-8"}
