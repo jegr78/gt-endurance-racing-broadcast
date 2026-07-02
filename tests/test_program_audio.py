@@ -43,6 +43,22 @@ def t_program_audio_defaults_are_mp3():
     assert m.PROGRAM_AUDIO_CONTENT_TYPE == "audio/mpeg"
 
 
+# --- should_retarget: re-point the encoder only on a real, serving handover ---
+def t_should_retarget_on_handover():
+    assert m.should_retarget("A", "B", True) is True
+    assert m.should_retarget("B", "A", True) is True
+
+
+def t_should_retarget_no_change():
+    assert m.should_retarget("A", "A", True) is False
+
+
+def t_should_retarget_guards():
+    assert m.should_retarget("A", "B", False) is False   # new feed not serving yet
+    assert m.should_retarget("A", None, True) is False    # no on-air feed
+    assert m.should_retarget(None, "A", True) is True     # first target counts
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

@@ -2460,6 +2460,14 @@ def program_audio_ffmpeg_cmd():
             "-f", PROGRAM_AUDIO_FORMAT, "pipe:1"]
 
 
+def should_retarget(prev_live, cur_live, serving):
+    """The program-audio encoder should re-point (restart ffmpeg on the new
+    feed's ring) only when the on-air feed changed AND the new feed is actually
+    serving bytes. Guards against tapping a not-yet-serving / absent feed at a
+    handover (mirrors the cut=True guard in Relay.next_auto)."""
+    return bool(serving) and cur_live is not None and cur_live != prev_live
+
+
 def split_mjpeg_frames(buf):
     """Pure: pull every COMPLETE JPEG (SOI..EOI) out of an MJPEG byte buffer.
     Returns (frames, remainder); remainder is the trailing incomplete bytes to
