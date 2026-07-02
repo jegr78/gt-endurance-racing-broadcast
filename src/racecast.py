@@ -3868,6 +3868,10 @@ def assets_files_data(roots=None, profile=None):
     test seams."""
     IMG = (".png", ".jpg", ".jpeg", ".webp", ".gif")
     VID = (".mp4", ".webm", ".mov")
+    # Media is not only video: the Intermission Music track is an MP3 (#398).
+    # List audio too and tag each media item kind=audio|video so the Control
+    # Center renders an <audio> vs a <video> tile.
+    AUD = (".mp3", ".m4a", ".aac", ".ogg", ".oga", ".wav", ".flac")
     try:
         if profile is None:
             profile = _active_profile_name() or ""
@@ -3877,20 +3881,24 @@ def assets_files_data(roots=None, profile=None):
                      "media": os.path.join(rt, "media"),
                      "brands": os.path.join(rt, "brands")}
 
-        def listing(d, exts):
+        def listing(d, exts, media=False):
             if not os.path.isdir(d):
                 return []
             out = []
             for f in sorted(os.listdir(d)):
                 full = os.path.join(d, f)
                 if f.lower().endswith(exts) and os.path.isfile(full):
-                    out.append({"name": f,
-                                "v": f"{profile}-{int(os.path.getmtime(full))}"})
+                    item = {"name": f,
+                            "v": f"{profile}-{int(os.path.getmtime(full))}"}
+                    if media:
+                        item["kind"] = ("audio" if f.lower().endswith(AUD)
+                                        else "video")
+                    out.append(item)
             return out
         return {"ok": True,
                 "profile": profile,
                 "graphics": listing(roots["graphics"], IMG),
-                "media": listing(roots["media"], VID),
+                "media": listing(roots["media"], VID + AUD, media=True),
                 "brands": listing(roots.get("brands", ""), IMG)}
     except Exception as exc:
         return {"ok": False, "error": f"asset listing failed: {exc}"}
