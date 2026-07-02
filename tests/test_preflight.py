@@ -237,6 +237,19 @@ def t_pipewire_audio_present_uses_exists_over_candidates():
     assert not m.pipewire_audio_present(cands, exists=lambda p: False)
 
 
+def t_classify_glibc_levels():
+    assert m.classify_glibc((2, 31)).level == "FAIL"   # below deno floor
+    assert m.classify_glibc((2, 35)).level == "WARN"   # runs; below binary floor
+    assert m.classify_glibc((2, 37)).level == "WARN"
+    assert m.classify_glibc((2, 38)).level == "PASS"   # Ubuntu 24.04
+    assert m.classify_glibc((2, 39)).level == "PASS"
+    # undeterminable glibc (musl/unknown) -> no row
+    assert m.classify_glibc(None) is None
+    # FAIL/WARN detail names the concrete requirement
+    assert "2.35" in m.classify_glibc((2, 31)).detail
+    assert "24.04" in m.classify_glibc((2, 35)).detail
+
+
 def t_gather_linux_includes_pipewire_audio_check():
     # On Linux the Applications section carries the plugin result.
     if not sys.platform.startswith("linux"):

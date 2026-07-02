@@ -426,6 +426,28 @@ def classify_pipewire_audio(platform_name, present):
                   "Install it (see the OBS Setup wiki).")
 
 
+# glibc floors mirror install_tools.MIN_GLIBC_TOOLS / MIN_GLIBC_BINARY (kept in
+# sync deliberately — preflight must not import the installer module).
+PF_MIN_GLIBC_TOOLS = (2, 35)
+PF_MIN_GLIBC_BINARY = (2, 38)
+
+
+def classify_glibc(libc_tuple):
+    """Linux glibc gate. FAIL below 2.35 (deno won't run), WARN below 2.38 (the
+    racecast binary needs Ubuntu 24.04), else PASS. None (undeterminable / non-glibc)
+    -> None (no row)."""
+    if libc_tuple is None:
+        return None
+    have = f"{libc_tuple[0]}.{libc_tuple[1]}"
+    if libc_tuple < PF_MIN_GLIBC_TOOLS:
+        return Result(FAIL, "glibc", f"{have} — below 2.35; deno/the toolchain "
+                      "won't run. Use Ubuntu 24.04 LTS.")
+    if libc_tuple < PF_MIN_GLIBC_BINARY:
+        return Result(WARN, "glibc", f"{have} — works from source; the racecast "
+                      "binary needs 2.38 (Ubuntu 24.04).")
+    return Result(PASS, "glibc", have)
+
+
 # --------------------------------------------------------------------------
 # Reporter / CLI / orchestration
 # --------------------------------------------------------------------------
@@ -482,6 +504,15 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
     py = sys.version.split()[0]
     tools.append(Result(PASS, "python3", py) if sys.version_info >= (3, 8)
                  else Result(FAIL, "python3", f"{py} — need 3.8+"))
+    if sys.platform.startswith("linux"):   # OS floor (deno glibc 2.35 / binary 2.38)
+        try:
+            import platform as _pf
+            import install_tools as _it
+            g = classify_glibc(_it.glibc_version(_pf.libc_ver()))
+            if g is not None:
+                tools.append(g)
+        except Exception:
+            pass  # never let the glibc probe break the report
     here = os.path.dirname(os.path.abspath(preflight_file))
     try:
         import discord_web
