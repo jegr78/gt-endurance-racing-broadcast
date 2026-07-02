@@ -426,6 +426,7 @@ def apps_manual_guide(platform):
         lines.append("    curl -fsSL https://tailscale.com/install.sh | sh")
         lines.append("    sudo tailscale up")
         lines.append("  Companion  (https://bitfocus.io/companion) — headless/service, Debian/Ubuntu x64/arm64:")
+        lines.append("    sudo apt-get install -y libatomic1   # companion-pi's node needs it (missing on minimal 24.04)")
         lines.append("    curl -fsSL https://raw.githubusercontent.com/bitfocus/companion-pi/main/install.sh | sudo bash")
         lines.append("  Discord  (https://discord.com/download):")
         lines.append("    curl -fsSL 'https://discord.com/api/download?platform=linux&format=deb' -o /tmp/discord.deb")
@@ -452,17 +453,29 @@ def linux_install_steps(apps, which=shutil.which, machine=None):
         import platform as _pf
         machine = _pf.machine()
     steps = []
+    updated = [False]   # queue `apt-get update` at most once, before the first install
+
+    def _ensure_update():
+        # A fresh image (empty/stale index) can't locate a package otherwise
+        # (issue #408); refresh once and let later apt-get installs reuse it.
+        if not updated[0]:
+            steps.append(("run", ["sudo", "apt-get", "update"]))
+            updated[0] = True
+
     if "obs" in apps:
         if which("add-apt-repository"):
             steps.append(("run", ["sudo", "add-apt-repository", "-y", OBS_PPA]))
-        # `apt-get update` before the install regardless of the PPA path — a fresh
-        # image (empty/stale index) can't locate obs-studio otherwise (issue #408).
-        # After add-apt-repository it also picks up the newly-added PPA.
-        steps.append(("run", ["sudo", "apt-get", "update"]))
+        # update after add-apt-repository so it also picks up the newly-added PPA.
+        _ensure_update()
         steps.append(("run", ["sudo", "apt-get", "install", "-y", "obs-studio"]))
     if "tailscale" in apps:
         steps.append(("script", TAILSCALE_INSTALLER, ["sh"]))
     if "companion" in apps:
+        # companion-pi's bundled node needs libatomic.so.1, which is absent on a
+        # fresh minimal Ubuntu 24.04, so its node can't start and no service is
+        # created. Install libatomic1 BEFORE the vendor installer (issue #413).
+        _ensure_update()
+        steps.append(("run", ["sudo", "apt-get", "install", "-y", "libatomic1"]))
         steps.append(("script", COMPANION_INSTALLER, ["sudo", "bash"]))
     if "discord" in apps:
         if (machine or "").lower() in AMD64_MACHINES:
