@@ -545,11 +545,11 @@ function pgmAudioInit(endpoint) {
   var au  = document.getElementById('pgmAudio');
   if (!bar || !btn || !au) return;
   var url = RC_API(endpoint);
-  // Probe: show the control only if the endpoint exists (feature on + fan-out on).
-  fetch(url, { method: 'HEAD' }).then(function (r) {
-    if (r.status === 404) return;            // disabled -> stay hidden
-    bar.style.display = 'flex';
-  }).catch(function () { /* leave hidden */ });
+  // Probe: show the control only if the endpoint reports available (feature on +
+  // fan-out on). GET ?probe=1 returns 200 without acquiring/streaming (HEAD is
+  // unsupported by the relay's control server).
+  var probeUrl = url + (url.indexOf('?') < 0 ? '?' : '&') + 'probe=1';
+  fetch(probeUrl).then(function (r) { if (r.ok) bar.style.display = 'flex'; }).catch(function () { /* leave hidden */ });
   au.volume = parseFloat(vol.value);
   vol.addEventListener('input', function () { au.volume = parseFloat(vol.value); });
   var on = false;

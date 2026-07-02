@@ -2468,6 +2468,13 @@ def should_retarget(prev_live, cur_live, serving):
     return bool(serving) and cur_live is not None and cur_live != prev_live
 
 
+def _program_audio_is_probe(path):
+    """Pure: True when a program-audio GET carries ?probe=1 (an availability check
+    that must return WITHOUT acquiring the listener / spinning up the encoder). Any
+    other value (absent, probe=0, probe=) is a real stream request."""
+    return parse_qs(urlparse(path).query).get("probe", ["0"])[0] == "1"
+
+
 def _program_audio_stream_ring(handler, ring, content_type, service):
     """Write an endless byte stream from a FeedRing to an HTTP client. Shared core
     of the H._stream_ring method (module-level so it is unit-testable without a
@@ -6232,6 +6239,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["preview", "program-audio"]:
                     if program_audio_service is None:
                         return self._send({"error": "program audio disabled"}, 404)
+                    # ?probe=1 -> availability only (front-end self-hide). Must NOT
+                    # acquire() -> never spins up the encoder / touches the listener count.
+                    if _program_audio_is_probe(self.path):
+                        if not getattr(relay, "fanout", False):
+                            return self._send({"error": "program audio unavailable"}, 404)
+                        return self._send({"available": True})
                     ring = program_audio_service.acquire()
                     if ring is None:               # fan-out off -> no in-process feed bytes
                         return self._send({"error": "program audio unavailable"}, 404)
@@ -6410,6 +6423,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             return None
                         if program_audio_service is None:
                             return self._send({"error": "program audio disabled"}, 404)
+                        # ?probe=1 -> availability only (still auth-gated above). Must NOT
+                        # acquire() -> never spins up the encoder / touches the listener count.
+                        if _program_audio_is_probe(self.path):
+                            if not getattr(relay, "fanout", False):
+                                return self._send({"error": "program audio unavailable"}, 404)
+                            return self._send({"available": True})
                         ring = program_audio_service.acquire()
                         if ring is None:
                             return self._send({"error": "program audio unavailable"}, 404)

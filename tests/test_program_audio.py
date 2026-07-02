@@ -261,6 +261,19 @@ def t_stream_ring_headers_and_body():
     assert b"".join(h.wfile.chunks) == b"MP3aMP3b"
 
 
+# --- _program_audio_is_probe: ?probe=1 availability check (no acquire) ---------
+def t_program_audio_is_probe_true_only_for_one():
+    assert m._program_audio_is_probe("/preview/program-audio?probe=1") is True
+    assert m._program_audio_is_probe("/cockpit/program-audio?probe=1&ts=9") is True
+
+
+def t_program_audio_is_probe_false_otherwise():
+    assert m._program_audio_is_probe("/preview/program-audio") is False
+    assert m._program_audio_is_probe("/preview/program-audio?ts=123") is False
+    assert m._program_audio_is_probe("/preview/program-audio?probe=0") is False
+    assert m._program_audio_is_probe("/preview/program-audio?probe=") is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
