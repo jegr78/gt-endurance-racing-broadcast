@@ -139,6 +139,7 @@ def min_capability(segments, method="GET"):
     if p in (["chat", "data"], ["chat", "reload"], ["chat", "send"]):
         return Requirement(ANY, False)
     if p in (["cockpit"], ["cockpit", "data"], ["cockpit", "program"],
+             ["cockpit", "program-audio"],  # on-air program-audio MP3 stream (ANY, read-only)
              ["cockpit", "timer"], ["cockpit", "chat", "data"],
              ["cockpit", "chat", "send"],
              ["cockpit", "cues"], ["cockpit", "cues", "ack"],
