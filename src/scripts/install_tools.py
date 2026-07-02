@@ -24,6 +24,12 @@ def _common():
 
 TOOLS = ("yt-dlp", "streamlink", "ffmpeg", "deno")
 
+# Minimum glibc: deno needs >= 2.35 (Ubuntu 22.04+) to run at all, so install-tools
+# hard-fails below it; the frozen racecast binary needs 2.38 (Ubuntu 24.04), which
+# preflight warns about. Two real failure points, one clear story (#409).
+MIN_GLIBC_TOOLS = (2, 35)
+MIN_GLIBC_BINARY = (2, 38)
+
 WINGET_IDS = {"yt-dlp": "yt-dlp.yt-dlp", "streamlink": "Streamlink.Streamlink",
               "ffmpeg": "Gyan.FFmpeg", "deno": "DenoLand.Deno"}
 APT_PACKAGES = {"streamlink": "streamlink", "ffmpeg": "ffmpeg"}
@@ -244,6 +250,32 @@ def install_ytdlp_binary(dest_dir, tag, opener=None, downloads=None):
     return binpath
 
 
+def glibc_version(libc_ver_output):
+    """Parse platform.libc_ver()'s (lib, version) tuple into a (major, minor)
+    int pair, or None when the C library is not glibc (musl/unknown) or the
+    version does not parse. None means 'cannot tell' -> callers must not block."""
+    lib, ver = (libc_ver_output or ("", ""))
+    if lib != "glibc" or not ver:
+        return None
+    parts = ver.split(".")
+    try:
+        return (int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+    except (ValueError, IndexError):
+        return None
+
+
+def min_os_error(libc_tuple, floor=MIN_GLIBC_TOOLS):
+    """A clear multi-line 'unsupported OS' message when `libc_tuple` is below
+    `floor`, else None. None `libc_tuple` (undeterminable) -> None (never block)."""
+    if libc_tuple is None or libc_tuple >= floor:
+        return None
+    have = f"{libc_tuple[0]}.{libc_tuple[1]}"
+    need = f"{floor[0]}.{floor[1]}"
+    return (f"Unsupported OS: glibc {have} < {need}.\n"
+            "deno requires glibc >= 2.35 (Ubuntu 22.04+); the racecast binary needs "
+            "2.38 (Ubuntu 24.04).\nUse Ubuntu 24.04 LTS. Aborting.")
+
+
 def pick_manager(platform, which=shutil.which):
     """Package manager for this platform, or None (-> manual guide)."""
     if platform.startswith("win"):
@@ -404,6 +436,13 @@ def main():
     a = ap.parse_args()
 
     import platform as _platform
+    # Fail fast on an OS too old to run the toolchain (deno's glibc floor) — a
+    # clear message beats a cryptic loader error mid-download (#409).
+    if sys.platform.startswith("linux"):
+        err = min_os_error(glibc_version(_platform.libc_ver()))
+        if err:
+            sys.exit(err)
+
     import speedtest as st
     runtime_dir = a.runtime_dir or st.default_runtime_dir(
         os.path.dirname(os.path.abspath(__file__)))

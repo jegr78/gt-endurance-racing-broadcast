@@ -292,6 +292,29 @@ def t_install_ytdlp_binary_rejects_bad_checksum():
     raise AssertionError("expected a checksum-mismatch RuntimeError")
 
 
+def t_glibc_version_parses_glibc_only():
+    assert m.glibc_version(("glibc", "2.39")) == (2, 39)
+    assert m.glibc_version(("glibc", "2.35")) == (2, 35)
+    # non-glibc (musl / undeterminable) -> None ("cannot tell, do not block")
+    assert m.glibc_version(("", "")) is None
+    assert m.glibc_version(("musl", "1.2.4")) is None
+    assert m.glibc_version(("glibc", "")) is None
+    assert m.glibc_version(("glibc", "garbage")) is None
+
+
+def t_min_os_error_below_at_above_floor():
+    # below the deno floor -> a clear, actionable message
+    msg = m.min_os_error((2, 31))
+    assert msg is not None
+    assert "2.31" in msg and "2.35" in msg and "24.04" in msg
+    # at/above the floor -> None (no error)
+    assert m.min_os_error((2, 35)) is None
+    assert m.min_os_error((2, 39)) is None
+    # undeterminable glibc must never block
+    assert m.min_os_error(None) is None
+    assert m.MIN_GLIBC_TOOLS == (2, 35) and m.MIN_GLIBC_BINARY == (2, 38)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
