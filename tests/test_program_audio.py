@@ -162,6 +162,23 @@ def t_encoder_tick_noop_when_unchanged():
     svc.shutdown()
 
 
+def t_encoder_tick_respawns_dead_proc():
+    # ffmpeg died on its own mid-stint (not a handover): live feed is still "A",
+    # should_retarget("A", "A", True) is False, but the current proc has exited
+    # -> the tick must still respawn so the output ring doesn't go silent forever.
+    relay = _FakeRelay(live="A"); spawns = []
+    svc = _svc(relay, spawns)
+    svc.acquire()
+    prev = svc._encoder_tick(None)      # spawns for A
+    assert len(spawns) == 1
+    spawns[0].killed = True             # simulate ffmpeg exiting on its own (poll() != None)
+    prev = svc._encoder_tick(prev)      # SAME live feed ("A") -> must still respawn
+    assert len(spawns) == 2             # a NEW proc was spawned
+    assert svc._enc_target == "A"
+    assert prev == "A"
+    svc.shutdown()
+
+
 # --- Fix wave: teardown re-arm race (Finding 1) + per-generation stdin (Finding 2) --
 def t_teardown_rearms_when_listener_slips_in():
     # A listener slipped in during the idle-reap window: teardown must NOT close

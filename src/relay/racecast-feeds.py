@@ -2481,13 +2481,13 @@ def _program_audio_stream_ring(handler, ring, content_type, service):
     socket). No Content-Length: the client reads until it disconnects, which makes
     handler.wfile.write raise (caught) -> the caller's finally releases the
     listener."""
-    handler.send_response(200)
-    handler.send_header("Content-Type", content_type)
-    handler.send_header("Cache-Control", "no-store")
-    handler.send_header("Connection", "close")
-    handler.end_headers()
     cursor = ring.live_offset() if hasattr(ring, "live_offset") else 0
     try:
+        handler.send_response(200)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Cache-Control", "no-store")
+        handler.send_header("Connection", "close")
+        handler.end_headers()
         while not getattr(ring, "closed", False):
             data, cursor = ring.read(cursor, 1.0)
             if data:
@@ -3079,7 +3079,8 @@ class ProgramAudioService:
         feed = self.relay.feeds.get(live) if live else None
         ring = getattr(feed, "ring", None)
         serving = ring is not None
-        if self._proc is None or should_retarget(self._enc_target, live, serving):
+        dead = self._proc is not None and self._proc.poll() is not None
+        if self._proc is None or dead or should_retarget(self._enc_target, live, serving):
             if serving:
                 self._restart_encoder(live, ring)
                 return live
