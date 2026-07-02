@@ -186,6 +186,63 @@ def install_deno_binary(dest_dir, tag, opener=None, downloads=None):
     return binpath
 
 
+# yt-dlp on Linux: apt's package lags upstream badly and cannot pass YouTube's
+# current bot-check. So — like deno — Linux gets a pinned, SHA-256-verified
+# standalone binary straight from yt-dlp's GitHub releases, into the managed bin
+# dir. The release asset is a BARE executable (no archive), so there is no
+# extraction step. Windows (winget) and macOS (brew) keep their yt-dlp package.
+YTDLP_VERSION = "2026.06.09"
+YTDLP_BIN_NAME = "yt-dlp"
+YTDLP_URL_TMPL = ("https://github.com/yt-dlp/yt-dlp/releases/download/"
+                  "{ver}/yt-dlp_{tag}")
+# tag -> sha256 of the official release asset (from the release's SHA2-256SUMS).
+YTDLP_DOWNLOADS = {
+    "linux":         "bf8aac79b72287a6d2043074415132558b43743a8f9461a22b0141e90f16ce66",
+    "linux_aarch64": "cabd246445bdfde0eda0dfe68bbe90354be83f3fdbbf077df11a2ea55f41cdbd",
+}
+
+
+def ytdlp_asset_tag(platform, machine):
+    """Map (sys.platform, platform.machine()) -> a YTDLP_DOWNLOADS tag, or None for
+    Windows/macOS (their package managers ship yt-dlp) and unsupported arches. Pure."""
+    if platform.startswith("linux"):
+        m = (machine or "").lower()
+        if m in ("x86_64", "amd64"):
+            return "linux"
+        if m in ("aarch64", "arm64"):
+            return "linux_aarch64"
+    return None
+
+
+def ytdlp_download_url(tag, ver=YTDLP_VERSION):
+    return YTDLP_URL_TMPL.format(ver=ver, tag=tag)
+
+
+def install_ytdlp_binary(dest_dir, tag, opener=None, downloads=None):
+    """Download yt-dlp's standalone Linux binary for `tag`, verify its SHA-256
+    against the pinned value, write it to dest_dir/yt-dlp, and make it executable.
+    Returns the binary path. Raises on a checksum mismatch. The asset is a bare
+    executable (no archive) — simpler than install_deno_binary. `opener` (url ->
+    bytes) is injectable for tests; defaults to a stdlib HTTPS GET."""
+    import hashlib
+    downloads = downloads or YTDLP_DOWNLOADS
+    want = downloads[tag]
+    if opener is None:
+        def opener(url):
+            return http_util.get_bytes(url, timeout=120)   # nosec - pinned GitHub host, checksum-verified
+    blob = opener(ytdlp_download_url(tag))
+    got = hashlib.sha256(blob).hexdigest()
+    if got != want:
+        raise RuntimeError(
+            f"yt-dlp download checksum mismatch for {tag}: {got} != {want}")
+    os.makedirs(dest_dir, exist_ok=True)
+    binpath = os.path.join(dest_dir, YTDLP_BIN_NAME)
+    with open(binpath, "wb") as out:
+        out.write(blob)
+    os.chmod(binpath, 0o700)   # owner rwx only — racecast runs the binary as the producer
+    return binpath
+
+
 def pick_manager(platform, which=shutil.which):
     """Package manager for this platform, or None (-> manual guide)."""
     if platform.startswith("win"):

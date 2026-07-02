@@ -249,6 +249,50 @@ def t_install_deno_binary_rejects_bad_checksum():
     raise AssertionError("expected a checksum-mismatch RuntimeError")
 
 
+def t_ytdlp_asset_tag_per_os_arch():
+    assert m.ytdlp_asset_tag("linux", "x86_64") == "linux"
+    assert m.ytdlp_asset_tag("linux", "amd64") == "linux"
+    assert m.ytdlp_asset_tag("linux", "aarch64") == "linux_aarch64"
+    assert m.ytdlp_asset_tag("linux", "arm64") == "linux_aarch64"
+    assert m.ytdlp_asset_tag("darwin", "arm64") is None     # brew ships yt-dlp
+    assert m.ytdlp_asset_tag("win32", "AMD64") is None       # winget ships yt-dlp
+    assert m.ytdlp_asset_tag("linux", "ppc64") is None       # unsupported arch
+
+
+def t_ytdlp_download_url():
+    url = m.ytdlp_download_url("linux")
+    assert url == ("https://github.com/yt-dlp/yt-dlp/releases/download/"
+                   f"{m.YTDLP_VERSION}/yt-dlp_linux")
+    assert m.ytdlp_download_url("linux_aarch64").endswith("/yt-dlp_linux_aarch64")
+
+
+def t_install_ytdlp_binary_verifies_and_writes():
+    import hashlib, tempfile
+    blob = b"#!/usr/bin/env python3\n# yt-dlp standalone\n"
+    sha = hashlib.sha256(blob).hexdigest()
+    d = tempfile.mkdtemp()
+    path = m.install_ytdlp_binary(
+        d, "linux", opener=lambda url: blob, downloads={"linux": sha})
+    assert path == os.path.join(d, "yt-dlp")
+    with open(path, "rb") as fh:
+        assert fh.read() == blob
+    if os.name != "nt":                          # the +x bit is POSIX-only
+        import stat
+        assert os.stat(path).st_mode & stat.S_IXUSR
+
+
+def t_install_ytdlp_binary_rejects_bad_checksum():
+    import tempfile
+    try:
+        m.install_ytdlp_binary(
+            tempfile.mkdtemp(), "linux",
+            opener=lambda url: b"x", downloads={"linux": "deadbeef"})
+    except RuntimeError as exc:
+        assert "checksum mismatch" in str(exc)
+        return
+    raise AssertionError("expected a checksum-mismatch RuntimeError")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
