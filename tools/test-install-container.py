@@ -7,6 +7,7 @@ downloaded/installed and probed with `<tool> --version`.
 Network-heavy (real apt + GitHub downloads) and needs Docker or Podman, so it is
 opt-in and NOT part of CI. The command builder below is pure and unit-tested
 (tests/test_install_container.py); only main() touches Docker."""
+import argparse
 import os
 import shutil
 import subprocess
@@ -15,11 +16,17 @@ import sys
 IMAGE = "ubuntu:24.04"
 
 
-def build_container_command(engine, image, repo_dir, runtime_dir="/tmp/rc-rt"):
+def build_container_command(engine, image, repo_dir, runtime_dir="/tmp/rc-rt",
+                            platform=None):
     """The `<engine> run` argv that installs the toolchain from source inside the
     container and asserts each tool is runnable. Pure — no Docker touched here.
     Root in the container => install-tools' apt steps take no sudo (correct: the
-    base image has no sudo binary), and yt-dlp/deno land in <runtime_dir>/bin."""
+    base image has no sudo binary), and yt-dlp/deno land in <runtime_dir>/bin.
+
+    `platform` (e.g. "linux/amd64") forces the container arch — the way to exercise
+    the amd64 install path on an arm64 host (Apple Silicon + Docker/Rosetta). Inside
+    an amd64 container `platform.machine()` reports x86_64, so install-tools pulls the
+    amd64 yt-dlp/deno binaries; the in-container script is identical either way."""
     script = (
         "set -euo pipefail; "
         "apt-get update && apt-get install -y python3 curl ca-certificates; "
@@ -28,7 +35,8 @@ def build_container_command(engine, image, repo_dir, runtime_dir="/tmp/rc-rt"):
         "yt-dlp --version && deno --version && "
         "streamlink --version && ffmpeg -version"
     )
-    return [engine, "run", "--rm", "-v", f"{repo_dir}:/repo", image,
+    plat = [f"--platform={platform}"] if platform else []
+    return [engine, "run"] + plat + ["--rm", "-v", f"{repo_dir}:/repo", image,
             "bash", "-lc", script]
 
 
@@ -40,15 +48,25 @@ def _pick_engine(which=shutil.which):
 
 
 def main():
+    ap = argparse.ArgumentParser(prog="test-install-container", add_help=True)
+    ap.add_argument("--amd64", action="store_true",
+                    help="force linux/amd64 (test the amd64 install path on an "
+                         "arm64 host, e.g. Apple Silicon + Docker/Rosetta)")
+    ap.add_argument("--image", default=IMAGE,
+                    help=f"base image (default {IMAGE})")
+    a = ap.parse_args()
+
     repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     engine = _pick_engine()
     if engine is None:
         sys.exit("Needs Docker or Podman on PATH — neither found.")
-    cmd = build_container_command(engine, IMAGE, repo_dir)
-    print("Running:", " ".join(cmd[:6]), "...")
+    platform = "linux/amd64" if a.amd64 else None
+    cmd = build_container_command(engine, a.image, repo_dir, platform=platform)
+    print("Running:", " ".join(cmd[:7]), "...")
     rc = subprocess.call(cmd)
     if rc == 0:
-        print("PASS: all tools installed and runnable in", IMAGE)
+        print("PASS: all tools installed and runnable in", a.image,
+              "(linux/amd64)" if platform else "")
     else:
         print("FAIL: container install test exited", rc)
     sys.exit(rc)
