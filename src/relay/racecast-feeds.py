@@ -220,6 +220,20 @@ def auto_failover_enabled(environ):
     return str(environ.get("RACECAST_AUTO_FAILOVER", "")).strip().lower() in _FAILOVER_TRUTHY
 
 
+# ---------- On-air program-audio monitor (#program-audio) ------------------
+_PROGRAM_AUDIO_FALSEY = {"0", "false", "no", "off"}
+
+
+def program_audio_enabled(environ):
+    """True unless RACECAST_PROGRAM_AUDIO is an explicit falsey token. Default ON:
+    the feature is offered (endpoints + toggle live) whenever fan-out runs; the
+    encoder is on-demand so it costs nothing until someone listens. Set
+    RACECAST_PROGRAM_AUDIO=0 to disable entirely. Pure so the switch is
+    unit-testable. Audio being default-muted is a front-end/gesture property, not
+    this flag."""
+    return str(environ.get("RACECAST_PROGRAM_AUDIO", "")).strip().lower() not in _PROGRAM_AUDIO_FALSEY
+
+
 def should_failover(enabled, on_air_down, program_scene,
                     on_air_scene="Stint", already_failed_over=False):
     """Whether to auto-switch OBS to the Intermission scene right now. Pure →
@@ -4425,6 +4439,7 @@ class Relay:
                             fmt=YTDLP_FORMAT_POV, cookie_dir=cookie_dir)
             self.pov.paused = True
         self.fanout = fanout_enabled(os.environ)
+        self.program_audio = program_audio_enabled(os.environ)
         self._fanout_servers = []
         # Auto-failover to the Intermission scene on confirmed on-air feed loss
         # (#378): opt-in via RACECAST_AUTO_FAILOVER; fires once per outage and
