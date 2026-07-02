@@ -2468,6 +2468,29 @@ def should_retarget(prev_live, cur_live, serving):
     return bool(serving) and cur_live is not None and cur_live != prev_live
 
 
+def _program_audio_stream_ring(handler, ring, content_type, service):
+    """Write an endless byte stream from a FeedRing to an HTTP client. Shared core
+    of the H._stream_ring method (module-level so it is unit-testable without a
+    socket). No Content-Length: the client reads until it disconnects, which makes
+    handler.wfile.write raise (caught) -> the caller's finally releases the
+    listener."""
+    handler.send_response(200)
+    handler.send_header("Content-Type", content_type)
+    handler.send_header("Cache-Control", "no-store")
+    handler.send_header("Connection", "close")
+    handler.end_headers()
+    cursor = ring.live_offset() if hasattr(ring, "live_offset") else 0
+    try:
+        while not getattr(ring, "closed", False):
+            data, cursor = ring.read(cursor, 1.0)
+            if data:
+                handler.wfile.write(data)
+            service.touch()
+    except (OSError, ValueError):
+        pass                       # client disconnected mid-write
+    return None
+
+
 def split_mjpeg_frames(buf):
     """Pure: pull every COMPLETE JPEG (SOI..EOI) out of an MJPEG byte buffer.
     Returns (frames, remainder); remainder is the trailing incomplete bytes to
@@ -5310,7 +5333,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  buttons_page_path=None, race_control_page_path=None,
                  health_store=None, health_monitor_page_path=None, uplot_dir=None,
                  broadcast_chat_store=None, broadcast_chat_supervisor=None,
-                 preview_manager=None, brands_dir=None,
+                 preview_manager=None, program_audio_service=None, brands_dir=None,
                  flag_graphic_store=None, app_version="dev"):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
@@ -5422,6 +5445,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             self.send_header("Cache-Control", "no-store")
             self.end_headers(); self.wfile.write(body)
             return None
+        def _stream_ring(self, ring, content_type, service):
+            return _program_audio_stream_ring(self, ring, content_type, service)
         def _send_text(self, text, code=200):
             body = (text or "").encode("utf-8")
             self.send_response(code)
@@ -6204,6 +6229,17 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send({"error": "preview unavailable",
                                            "note": note}, 503)
                     return self._send_jpeg(data)
+                if p == ["preview", "program-audio"]:
+                    if program_audio_service is None:
+                        return self._send({"error": "program audio disabled"}, 404)
+                    ring = program_audio_service.acquire()
+                    if ring is None:               # fan-out off -> no in-process feed bytes
+                        return self._send({"error": "program audio unavailable"}, 404)
+                    try:
+                        return self._stream_ring(ring, PROGRAM_AUDIO_CONTENT_TYPE,
+                                                 program_audio_service)
+                    finally:
+                        program_audio_service.release()
                 if len(p) == 3 and p[:2] == ["preview", "feed"]:
                     target = p[2].upper()
                     if target not in PREVIEW_FEEDS:
@@ -6369,6 +6405,19 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             return self._send({"error": "preview unavailable",
                                                "note": note}, 503)
                         return self._send_jpeg(data)
+                    if p == ["cockpit", "program-audio"]:
+                        if self._console_auth() is None:
+                            return None
+                        if program_audio_service is None:
+                            return self._send({"error": "program audio disabled"}, 404)
+                        ring = program_audio_service.acquire()
+                        if ring is None:
+                            return self._send({"error": "program audio unavailable"}, 404)
+                        try:
+                            return self._stream_ring(ring, PROGRAM_AUDIO_CONTENT_TYPE,
+                                                     program_audio_service)
+                        finally:
+                            program_audio_service.release()
                     if p == ["cockpit", "timer"]:
                         if self._console_auth() is None:
                             return None
@@ -7286,6 +7335,8 @@ def main():
         os.path.join(runtime, "cockpit-submissions.log"))
     preview_manager = PreviewManager(relay, lambda: _obs_ws, LOG)
     threading.Thread(target=preview_manager.run, daemon=True).start()
+    program_audio_service = (ProgramAudioService(relay, LOG)
+                             if relay.program_audio else None)
     handler = make_handler(relay, panel_path, hud_source, hud_path, assets_dir,
                            timer_store, setup_ctl,
                            overlay_dir=args.overlay_dir, chat_store=chat_store,
@@ -7313,6 +7364,7 @@ def main():
                            broadcast_chat_supervisor=_bc_supervisor,
                            logo_path=args.logo,
                            preview_manager=preview_manager,
+                           program_audio_service=program_audio_service,
                            app_version=VERSION_LABEL,
                            flag_graphic_store=flag_graphic_store)
     bind_addrs = resolve_bind_addresses(

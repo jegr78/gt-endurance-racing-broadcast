@@ -205,6 +205,62 @@ def t_feed_stdin_exits_on_own_dead_proc_after_reassign():
     assert svc._proc.poll() is None           # the reassigned proc is untouched/alive
 
 
+# --- _program_audio_stream_ring: header contract + streaming loop (thread-free) --
+class _CapturingWFile:
+    def __init__(self):
+        self.chunks = []
+    def write(self, b):
+        self.chunks.append(bytes(b))
+
+
+class _ScriptRing:
+    """Yields a fixed set of chunks then reports closed (ends the stream loop)."""
+    def __init__(self, chunks):
+        self._chunks = list(chunks)
+        self.closed = False
+    def live_offset(self):
+        return 0
+    def read(self, cursor, timeout):
+        if self._chunks:
+            return self._chunks.pop(0), cursor + 1
+        self.closed = True
+        return b"", cursor
+
+
+class _FakeHandler:
+    """Minimal stand-in exposing just what _stream_ring touches. We bind the real
+    unbound method to it so we test the shipped code path."""
+    def __init__(self):
+        self.status = None
+        self.headers_sent = {}
+        self.ended = False
+        self.wfile = _CapturingWFile()
+    def send_response(self, code):
+        self.status = code
+    def send_header(self, k, v):
+        self.headers_sent[k] = v
+    def end_headers(self):
+        self.ended = True
+
+
+class _SvcStub:
+    def touch(self):
+        pass
+
+
+def t_stream_ring_headers_and_body():
+    h = _FakeHandler()
+    ring = _ScriptRing([b"MP3a", b"MP3b"])
+    # Bind the real _stream_ring implementation onto our fake handler.
+    m._program_audio_stream_ring(h, ring, m.PROGRAM_AUDIO_CONTENT_TYPE, _SvcStub())
+    assert h.status == 200
+    assert h.headers_sent["Content-Type"] == "audio/mpeg"
+    assert h.headers_sent["Cache-Control"] == "no-store"
+    assert "Content-Length" not in h.headers_sent      # endless stream
+    assert h.ended is True
+    assert b"".join(h.wfile.chunks) == b"MP3aMP3b"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
