@@ -220,17 +220,25 @@ entire value of the staged structure: buy the cheapest information first.
 - **GCP free-tier gotchas:** the create-instance estimator shows gross list price (never the
   free-tier credit); the default "Balanced" boot disk is not free → pick **Standard pd ≤30 GB**.
 
-**Still open to close Stage 1 fully (next session, needs a live stream up):** the **≥15-min
-sustained pull** (throttle/403-churn over time, via streamlink — the relay's real client),
-an **unlisted** commentator URL (identical mechanism; unlisted is a cookie-access, not IP,
-question), and the **Twitch** streamlink path.
+**Stage-1B sustained pull — DONE (PASS):** a 15-min streamlink pull (the relay's real client)
+of a real 1080p live stream (itag 96) from the GCP IP ran the full 900 s with **0
+403/429/reconnect/errors** and ~1.4 Mbps steady ingest. The YouTube path of Stage 1 is now
+**fully green for GCP** (resolve VOD+live + sustained 1080p pull). Note: the relay's main-feed
+format is `-f "b[height<=1080]/b"` (POV capped 720p) — the test used yt-dlp's default which
+also landed on 1080p, so it is production-representative.
+
+**Still open (not the K.-o. risk; next session):** the **Twitch** streamlink path (Twitch is
+far more datacenter-IP-tolerant than YouTube — main risk is ads, not blocking), and an
+**unlisted** commentator URL (identical mechanism; unlisted is a cookie-access, not IP,
+question). A full `racecast relay run` with a real profile is the belt-and-suspenders version
+but the raw streamlink pull already covers the sustained-pull criterion.
 
 ## Findings tables (fill during the run)
 
 ### Stage 1 — Datacenter-IP feed pull
 | Provider / region | ASN | Raw `yt-dlp -g` | streamlink bytes | Relay ≥15 min | 403/429 count | Twitch (if used) | Verdict |
 |---|---|---|---|---|---|---|---|
-| **GCP e2-micro / us-central1** | 15169 | **PASS** (VOD + LIVE) | pending (Stage-1B) | pending | 0 so far | pending | **PASS (core)** |
+| **GCP e2-micro / us-central1** | 15169 | **PASS** (VOD + LIVE) | **PASS** (1080p, ~1.4 Mbps) | **PASS** (15 min raw streamlink) | **0** | pending | **PASS (YouTube)** |
 | Hetzner CX22 / EU | 24940 | — (ID-verify blocked signup) | | | | | n/a |
 | Paperspace Core | — | — (OS templates too old: 20.04/CentOS7) | | | | | n/a |
 
