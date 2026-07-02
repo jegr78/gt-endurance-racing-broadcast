@@ -23,6 +23,26 @@ def t_program_audio_killswitch():
         assert m.program_audio_enabled({"RACECAST_PROGRAM_AUDIO": tok}) is False
 
 
+# --- program_audio_ffmpeg_cmd: audio-only MP3 to stdout, params from consts ---
+def t_program_audio_ffmpeg_cmd_shape():
+    cmd = m.program_audio_ffmpeg_cmd()
+    assert cmd[0] == "ffmpeg"
+    assert "-vn" in cmd                       # no video
+    assert cmd[cmd.index("-map") + 1] == "0:a:0?"   # optional audio stream
+    assert cmd[cmd.index("-ar") + 1] == m.PROGRAM_AUDIO_SAMPLE_RATE
+    assert cmd[cmd.index("-ac") + 1] == m.PROGRAM_AUDIO_CHANNELS
+    assert cmd[cmd.index("-c:a") + 1] == m.PROGRAM_AUDIO_CODEC
+    assert cmd[cmd.index("-b:a") + 1] == m.PROGRAM_AUDIO_BITRATE
+    assert cmd[cmd.index("-f") + 1] == m.PROGRAM_AUDIO_FORMAT
+    assert cmd[-1] == "pipe:1"                 # emit to stdout
+
+
+def t_program_audio_defaults_are_mp3():
+    assert m.PROGRAM_AUDIO_CODEC == "libmp3lame"
+    assert m.PROGRAM_AUDIO_FORMAT == "mp3"
+    assert m.PROGRAM_AUDIO_CONTENT_TYPE == "audio/mpeg"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

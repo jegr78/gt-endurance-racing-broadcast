@@ -2433,6 +2433,33 @@ PREVIEW_LUFS_FLOOR = -60.0
 PREVIEW_LUFS_CEIL = -10.0
 
 
+# --- On-air program-audio monitor: encode the on-air feed's audio to MP3 -----
+# Codec/params live in constants so switching to AAC-ADTS (audio/aac, "-c:a aac
+# -f adts") is a one-line edit. MP3 is the default for universal <audio>
+# decodability (Firefox on Linux may lack system AAC codecs). Fixed sample-rate
+# + channel count guarantee frame compatibility across a handover ffmpeg restart
+# (both feeds encode to identical params -> the client MP3 stream splices).
+PROGRAM_AUDIO_CODEC = "libmp3lame"
+PROGRAM_AUDIO_BITRATE = "96k"
+PROGRAM_AUDIO_FORMAT = "mp3"
+PROGRAM_AUDIO_CONTENT_TYPE = "audio/mpeg"
+PROGRAM_AUDIO_SAMPLE_RATE = "44100"
+PROGRAM_AUDIO_CHANNELS = "1"
+PROGRAM_AUDIO_RING_BYTES = 512 * 1024   # encoded MP3 is low-bitrate; a small ring is ample
+
+
+def program_audio_ffmpeg_cmd():
+    """Argv: read the on-air feed's MPEG-TS on stdin, drop video, encode the
+    (optional) audio stream to a fixed-param MP3 on stdout for endless HTTP
+    streaming. `0:a:0?` makes audio optional so a video-only feed just yields
+    silence rather than an ffmpeg error."""
+    return ["ffmpeg", "-nostdin", "-loglevel", "warning", "-i", "pipe:0",
+            "-vn", "-map", "0:a:0?",
+            "-ar", PROGRAM_AUDIO_SAMPLE_RATE, "-ac", PROGRAM_AUDIO_CHANNELS,
+            "-c:a", PROGRAM_AUDIO_CODEC, "-b:a", PROGRAM_AUDIO_BITRATE,
+            "-f", PROGRAM_AUDIO_FORMAT, "pipe:1"]
+
+
 def split_mjpeg_frames(buf):
     """Pure: pull every COMPLETE JPEG (SOI..EOI) out of an MJPEG byte buffer.
     Returns (frames, remainder); remainder is the trailing incomplete bytes to
