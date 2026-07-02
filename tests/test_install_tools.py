@@ -38,13 +38,14 @@ def t_install_commands_brew_single_batch():
     assert m.install_commands("brew", []) == []
 
 
-def t_install_commands_apt_updates_then_skips_deno():
-    # apt-get update runs BEFORE install so a fresh/stale index can locate the
-    # packages (issue #408); deno has no apt package and is skipped.
-    cmds = m.install_commands("apt", ["yt-dlp", "deno"])
-    assert cmds == [["apt-get", "update"], ["apt-get", "install", "-y", "yt-dlp"]]
-    # nothing installable via apt -> no commands (no pointless update either)
+def t_install_commands_apt_updates_then_skips_managed():
+    # apt handles ONLY streamlink + ffmpeg now. yt-dlp (bot-check-sensitive) and
+    # deno are pinned managed downloads, not apt packages (#409).
+    cmds = m.install_commands("apt", ["yt-dlp", "streamlink", "deno"])
+    assert cmds == [["apt-get", "update"], ["apt-get", "install", "-y", "streamlink"]]
+    assert m.install_commands("apt", ["yt-dlp"]) == []
     assert m.install_commands("apt", ["deno"]) == []
+    assert "yt-dlp" not in m.APT_PACKAGES
 
 
 def t_manual_guide_mentions_deno_on_linux():
@@ -83,11 +84,12 @@ def t_update_commands_brew_single_batch():
         "/opt/homebrew/bin/brew"
 
 
-def t_update_commands_apt_only_upgrade_skips_deno():
-    cmds = m.update_commands("apt", ["yt-dlp", "deno"])
+def t_update_commands_apt_only_upgrade_skips_managed():
+    cmds = m.update_commands("apt", ["streamlink", "deno", "yt-dlp"])
     assert cmds == [["apt-get", "update"],
-                    ["apt-get", "install", "-y", "--only-upgrade", "yt-dlp"]]
+                    ["apt-get", "install", "-y", "--only-upgrade", "streamlink"]]
     assert m.update_commands("apt", ["deno"]) == []
+    assert m.update_commands("apt", ["yt-dlp"]) == []
 
 
 def t_speedtest_install_commands_winget_only():
@@ -172,26 +174,23 @@ def t_manual_guide_mentions_speedtest():
 
 def t_install_commands_apt_sudo_prefix():
     # apt path = update then install; both get the sudo prefix (Linux non-root)
-    assert m.install_commands("apt", ["yt-dlp"]) == \
-        [["apt-get", "update"], ["apt-get", "install", "-y", "yt-dlp"]]
-    # sudo=True prepends sudo to BOTH apt steps — mirrors installer_common.install_remote_deb
-    assert m.install_commands("apt", ["yt-dlp", "ffmpeg"], sudo=True) == \
+    assert m.install_commands("apt", ["streamlink"]) == \
+        [["apt-get", "update"], ["apt-get", "install", "-y", "streamlink"]]
+    assert m.install_commands("apt", ["streamlink", "ffmpeg"], sudo=True) == \
         [["sudo", "apt-get", "update"],
-         ["sudo", "apt-get", "install", "-y", "yt-dlp", "ffmpeg"]]
-    # sudo only affects apt, never winget/brew
+         ["sudo", "apt-get", "install", "-y", "streamlink", "ffmpeg"]]
     assert m.install_commands("brew", ["ffmpeg"], sudo=True) == [["brew", "install", "ffmpeg"]]
     assert m.install_commands("winget", ["deno"], sudo=True)[0][0] == "winget"
-    # nothing to install -> no command even with sudo (no pointless update)
     assert m.install_commands("apt", ["deno"], sudo=True) == []   # deno has no apt pkg
 
 
 def t_update_commands_apt_sudo_prefix():
-    assert m.update_commands("apt", ["yt-dlp"], sudo=True) == \
+    assert m.update_commands("apt", ["streamlink"], sudo=True) == \
         [["sudo", "apt-get", "update"],
-         ["sudo", "apt-get", "install", "-y", "--only-upgrade", "yt-dlp"]]
-    assert m.update_commands("apt", ["yt-dlp"]) == \
+         ["sudo", "apt-get", "install", "-y", "--only-upgrade", "streamlink"]]
+    assert m.update_commands("apt", ["streamlink"]) == \
         [["apt-get", "update"],
-         ["apt-get", "install", "-y", "--only-upgrade", "yt-dlp"]]
+         ["apt-get", "install", "-y", "--only-upgrade", "streamlink"]]
 
 
 def t_deno_asset_tag_per_os_arch():
@@ -247,6 +246,73 @@ def t_install_deno_binary_rejects_bad_checksum():
         assert "checksum mismatch" in str(exc)
         return
     raise AssertionError("expected a checksum-mismatch RuntimeError")
+
+
+def t_ytdlp_asset_tag_per_os_arch():
+    assert m.ytdlp_asset_tag("linux", "x86_64") == "linux"
+    assert m.ytdlp_asset_tag("linux", "amd64") == "linux"
+    assert m.ytdlp_asset_tag("linux", "aarch64") == "linux_aarch64"
+    assert m.ytdlp_asset_tag("linux", "arm64") == "linux_aarch64"
+    assert m.ytdlp_asset_tag("darwin", "arm64") is None     # brew ships yt-dlp
+    assert m.ytdlp_asset_tag("win32", "AMD64") is None       # winget ships yt-dlp
+    assert m.ytdlp_asset_tag("linux", "ppc64") is None       # unsupported arch
+
+
+def t_ytdlp_download_url():
+    url = m.ytdlp_download_url("linux")
+    assert url == ("https://github.com/yt-dlp/yt-dlp/releases/download/"
+                   f"{m.YTDLP_VERSION}/yt-dlp_linux")
+    assert m.ytdlp_download_url("linux_aarch64").endswith("/yt-dlp_linux_aarch64")
+
+
+def t_install_ytdlp_binary_verifies_and_writes():
+    import hashlib, tempfile
+    blob = b"#!/usr/bin/env python3\n# yt-dlp standalone\n"
+    sha = hashlib.sha256(blob).hexdigest()
+    d = tempfile.mkdtemp()
+    path = m.install_ytdlp_binary(
+        d, "linux", opener=lambda url: blob, downloads={"linux": sha})
+    assert path == os.path.join(d, "yt-dlp")
+    with open(path, "rb") as fh:
+        assert fh.read() == blob
+    if os.name != "nt":                          # the +x bit is POSIX-only
+        import stat
+        assert os.stat(path).st_mode & stat.S_IXUSR
+
+
+def t_install_ytdlp_binary_rejects_bad_checksum():
+    import tempfile
+    try:
+        m.install_ytdlp_binary(
+            tempfile.mkdtemp(), "linux",
+            opener=lambda url: b"x", downloads={"linux": "deadbeef"})
+    except RuntimeError as exc:
+        assert "checksum mismatch" in str(exc)
+        return
+    raise AssertionError("expected a checksum-mismatch RuntimeError")
+
+
+def t_glibc_version_parses_glibc_only():
+    assert m.glibc_version(("glibc", "2.39")) == (2, 39)
+    assert m.glibc_version(("glibc", "2.35")) == (2, 35)
+    # non-glibc (musl / undeterminable) -> None ("cannot tell, do not block")
+    assert m.glibc_version(("", "")) is None
+    assert m.glibc_version(("musl", "1.2.4")) is None
+    assert m.glibc_version(("glibc", "")) is None
+    assert m.glibc_version(("glibc", "garbage")) is None
+
+
+def t_min_os_error_below_at_above_floor():
+    # below the deno floor -> a clear, actionable message
+    msg = m.min_os_error((2, 31))
+    assert msg is not None
+    assert "2.31" in msg and "2.35" in msg and "24.04" in msg
+    # at/above the floor -> None (no error)
+    assert m.min_os_error((2, 35)) is None
+    assert m.min_os_error((2, 39)) is None
+    # undeterminable glibc must never block
+    assert m.min_os_error(None) is None
+    assert m.MIN_GLIBC_TOOLS == (2, 35) and m.MIN_GLIBC_BINARY == (2, 38)
 
 
 if __name__ == "__main__":

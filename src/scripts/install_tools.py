@@ -24,10 +24,17 @@ def _common():
 
 TOOLS = ("yt-dlp", "streamlink", "ffmpeg", "deno")
 
+# Minimum glibc: deno needs >= 2.35 (Ubuntu 22.04+) to run at all, so install-tools
+# hard-fails below it; the frozen racecast binary needs 2.38 (Ubuntu 24.04), which
+# preflight warns about. Two real failure points, one clear story (#409).
+MIN_GLIBC_TOOLS = (2, 35)
+MIN_GLIBC_BINARY = (2, 38)
+
 WINGET_IDS = {"yt-dlp": "yt-dlp.yt-dlp", "streamlink": "Streamlink.Streamlink",
               "ffmpeg": "Gyan.FFmpeg", "deno": "DenoLand.Deno"}
-APT_PACKAGES = {"yt-dlp": "yt-dlp", "streamlink": "streamlink", "ffmpeg": "ffmpeg"}
-# deno ships no apt package — Linux users get a pointer in manual_guide().
+APT_PACKAGES = {"streamlink": "streamlink", "ffmpeg": "ffmpeg"}
+# deno and yt-dlp ship no usable apt package — Linux gets pinned managed
+# downloads (see install_deno_binary / install_ytdlp_binary).
 
 # The Ookla speedtest CLI (used by `racecast speedtest`). It is a first-class
 # tool the producer installs via `install-tools` / the Control Center "Install
@@ -186,6 +193,89 @@ def install_deno_binary(dest_dir, tag, opener=None, downloads=None):
     return binpath
 
 
+# yt-dlp on Linux: apt's package lags upstream badly and cannot pass YouTube's
+# current bot-check. So — like deno — Linux gets a pinned, SHA-256-verified
+# standalone binary straight from yt-dlp's GitHub releases, into the managed bin
+# dir. The release asset is a BARE executable (no archive), so there is no
+# extraction step. Windows (winget) and macOS (brew) keep their yt-dlp package.
+YTDLP_VERSION = "2026.06.09"
+YTDLP_BIN_NAME = "yt-dlp"
+YTDLP_URL_TMPL = ("https://github.com/yt-dlp/yt-dlp/releases/download/"
+                  "{ver}/yt-dlp_{tag}")
+# tag -> sha256 of the official release asset (from the release's SHA2-256SUMS).
+YTDLP_DOWNLOADS = {
+    "linux":         "bf8aac79b72287a6d2043074415132558b43743a8f9461a22b0141e90f16ce66",
+    "linux_aarch64": "cabd246445bdfde0eda0dfe68bbe90354be83f3fdbbf077df11a2ea55f41cdbd",
+}
+
+
+def ytdlp_asset_tag(platform, machine):
+    """Map (sys.platform, platform.machine()) -> a YTDLP_DOWNLOADS tag, or None for
+    Windows/macOS (their package managers ship yt-dlp) and unsupported arches. Pure."""
+    if platform.startswith("linux"):
+        m = (machine or "").lower()
+        if m in ("x86_64", "amd64"):
+            return "linux"
+        if m in ("aarch64", "arm64"):
+            return "linux_aarch64"
+    return None
+
+
+def ytdlp_download_url(tag, ver=YTDLP_VERSION):
+    return YTDLP_URL_TMPL.format(ver=ver, tag=tag)
+
+
+def install_ytdlp_binary(dest_dir, tag, opener=None, downloads=None):
+    """Download yt-dlp's standalone Linux binary for `tag`, verify its SHA-256
+    against the pinned value, write it to dest_dir/yt-dlp, and make it executable.
+    Returns the binary path. Raises on a checksum mismatch. The asset is a bare
+    executable (no archive) — simpler than install_deno_binary. `opener` (url ->
+    bytes) is injectable for tests; defaults to a stdlib HTTPS GET."""
+    import hashlib
+    downloads = downloads or YTDLP_DOWNLOADS
+    want = downloads[tag]
+    if opener is None:
+        def opener(url):
+            return http_util.get_bytes(url, timeout=120)   # nosec - pinned GitHub host, checksum-verified
+    blob = opener(ytdlp_download_url(tag))
+    got = hashlib.sha256(blob).hexdigest()
+    if got != want:
+        raise RuntimeError(
+            f"yt-dlp download checksum mismatch for {tag}: {got} != {want}")
+    os.makedirs(dest_dir, exist_ok=True)
+    binpath = os.path.join(dest_dir, YTDLP_BIN_NAME)
+    with open(binpath, "wb") as out:
+        out.write(blob)
+    os.chmod(binpath, 0o700)   # owner rwx only — racecast runs the binary as the producer
+    return binpath
+
+
+def glibc_version(libc_ver_output):
+    """Parse platform.libc_ver()'s (lib, version) tuple into a (major, minor)
+    int pair, or None when the C library is not glibc (musl/unknown) or the
+    version does not parse. None means 'cannot tell' -> callers must not block."""
+    lib, ver = (libc_ver_output or ("", ""))
+    if lib != "glibc" or not ver:
+        return None
+    parts = ver.split(".")
+    try:
+        return (int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+    except (ValueError, IndexError):
+        return None
+
+
+def min_os_error(libc_tuple, floor=MIN_GLIBC_TOOLS):
+    """A clear multi-line 'unsupported OS' message when `libc_tuple` is below
+    `floor`, else None. None `libc_tuple` (undeterminable) -> None (never block)."""
+    if libc_tuple is None or libc_tuple >= floor:
+        return None
+    have = f"{libc_tuple[0]}.{libc_tuple[1]}"
+    need = f"{floor[0]}.{floor[1]}"
+    return (f"Unsupported OS: glibc {have} < {need}.\n"
+            "deno requires glibc >= 2.35 (Ubuntu 22.04+); the racecast binary needs "
+            "2.38 (Ubuntu 24.04).\nUse Ubuntu 24.04 LTS. Aborting.")
+
+
 def pick_manager(platform, which=shutil.which):
     """Package manager for this platform, or None (-> manual guide)."""
     if platform.startswith("win"):
@@ -279,12 +369,13 @@ def manual_guide(platform):
         return ("Install manually:  brew install yt-dlp streamlink ffmpeg deno\n"
                 "  bandwidth speed test (Ookla CLI): download the macOS build from\n"
                 "  https://www.speedtest.net/apps/cli and put `speedtest` on your PATH")
-    return ("Install manually:  sudo apt-get install -y yt-dlp streamlink ffmpeg\n"
-            "deno has no apt package — install-tools downloads it automatically; manually:\n"
-            "  https://docs.deno.com/runtime/getting_started/installation/\n"
+    return ("Install manually:  sudo apt-get update && sudo apt-get install -y streamlink ffmpeg\n"
+            "yt-dlp and deno have no usable apt package — install-tools downloads them\n"
+            "automatically (pinned, checksum-verified). Manually:\n"
+            "  yt-dlp: https://github.com/yt-dlp/yt-dlp#installation\n"
+            "  deno:   https://docs.deno.com/runtime/getting_started/installation/\n"
             "bandwidth speed test (Ookla CLI): download the Linux build from\n"
-            "  https://www.speedtest.net/apps/cli and put `speedtest` on your PATH\n"
-            "NOTE: apt's yt-dlp lags upstream; for a current build: pip install -U yt-dlp")
+            "  https://www.speedtest.net/apps/cli and put `speedtest` on your PATH")
 
 
 def _which_with_managed_bin(managed_dir, brew=None):
@@ -345,6 +436,13 @@ def main():
     a = ap.parse_args()
 
     import platform as _platform
+    # Fail fast on an OS too old to run the toolchain (deno's glibc floor) — a
+    # clear message beats a cryptic loader error mid-download (#409).
+    if sys.platform.startswith("linux"):
+        err = min_os_error(glibc_version(_platform.libc_ver()))
+        if err:
+            sys.exit(err)
+
     import speedtest as st
     runtime_dir = a.runtime_dir or st.default_runtime_dir(
         os.path.dirname(os.path.abspath(__file__)))
@@ -430,6 +528,23 @@ def main():
                 print("  deno installed.")
             except Exception as exc:   # network/checksum/extract — report, don't crash
                 failed.append(f"deno download ({exc})")
+
+    # yt-dlp on Linux: current pinned binary, not apt (apt's lags upstream and
+    # fails YouTube's bot-check). Refreshed on --update too, so the before-event
+    # `install-tools --update` bumps it to the pinned-current version (#409).
+    if manager == "apt" and ("yt-dlp" in missing or a.update):
+        tag = ytdlp_asset_tag(sys.platform, _platform.machine())
+        if tag is None:
+            print("NOTE: no prebuilt yt-dlp for this OS/arch — install it manually:")
+            print("  https://github.com/yt-dlp/yt-dlp#installation")
+        else:
+            dest = st.managed_bin_dir(runtime_dir)
+            print(f"Installing yt-dlp v{YTDLP_VERSION} -> {dest} ...")
+            try:
+                install_ytdlp_binary(dest, tag)
+                print("  yt-dlp installed.")
+            except Exception as exc:   # network/checksum/write — report, don't crash
+                failed.append(f"yt-dlp download ({exc})")
 
     managed_bin = st.managed_bin_dir(runtime_dir)
     if manager == "winget":
