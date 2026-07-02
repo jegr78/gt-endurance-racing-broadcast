@@ -545,6 +545,22 @@ mount — no new public surface. Persisted to `runtime/<profile>/cues.json`; pro
 takeover (tailnet + `--funnel`) pulls A's still-active cues via `/console/takeover/cues`.
 Pure logic: `src/scripts/cue_admin.py`. Tests: `tests/test_cues.py`.
 
+The relay also serves an optional **on-air program-audio monitor**: the on-air
+feed's audio, encoded to an endless MP3 stream and offered as a toggle next to the
+silent program still on the Director Panel, Commentator Cockpit, and Race Control
+desk. Endpoints `GET /preview/program-audio` (director; ANY) and
+`GET /console/cockpit/program-audio` (cockpit + race-control; ANY, funnelled under
+the existing `/console` mount — no new public surface). One on-demand ffmpeg
+(`libmp3lame`, codec parameterized via `PROGRAM_AUDIO_*` constants) taps the feed
+fan-out ring and is re-served to many listeners from one output `FeedRing`
+(`ProgramAudioService`, reference-counted + idle-reaped — zero cost when nobody
+listens); it follows the on-air feed across handovers by restarting on the new
+feed's ring (MP3 frames splice, brief silence gap). Requires fan-out (endpoints
+404 otherwise; the front-end card self-hides). Default ON; kill-switch
+`RACECAST_PROGRAM_AUDIO=0`. NOT the full OBS program mix — feed-audio only (see
+`docs/superpowers/specs/2026-07-02-program-audio-monitor-design.md`). Tests:
+`tests/test_program_audio.py`.
+
 The relay also serves a **commentator-facing Commentator Cockpit** (issue #191) under an
 auth-gated `/cockpit/*` namespace: a live program monitor (reusing
 `get_program_screenshot`), an "ON AIR / UP NEXT" tally (`cockpit_tally`, derived from the
