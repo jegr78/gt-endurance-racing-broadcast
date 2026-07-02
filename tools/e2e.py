@@ -409,7 +409,8 @@ def run_synthetic(args):
         ctx = E.Ctx(relay_url=relay_url, disabled_relay_url=dis_url, ui_url=ui_url,
                     token=token, streamer_key=key, own_stint="Stint 1",
                     expect={"schedule_len": 2, "live_stint": 1},
-                    fanout_feed_port=fanout_feed_a)
+                    fanout_feed_port=fanout_feed_a,
+                    fanout_relay_url=f"http://127.0.0.1:{fanout_http}")
         results, code = E.run_checks(E.SYNTHETIC_CHECKS, ctx)
         if args.playwright:
             # Optional, gated: append the rendered-check results AFTER the API
