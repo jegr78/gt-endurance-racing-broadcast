@@ -102,6 +102,46 @@ def t_graphics_dir_pkg():
     assert got == os.path.join("/x/GT_Racecast_Package", "graphics"), got
 
 
+def t_internal_from_csv_checkbox_true():
+    rows = [["Name", "Link", "Internal"],
+            ["Standings", "https://drive.google.com/file/d/S/view", "FALSE"],
+            ["Standby", "https://drive.google.com/file/d/B/view", "TRUE"],
+            ["Weather Rain", "", "TRUE"]]   # ticked, no link -> still internal
+    assert m.internal_from_csv(rows) == {"Standby", "Weather Rain"}, m.internal_from_csv(rows)
+
+
+def t_internal_from_csv_various_truthy_and_header_aliases():
+    rows = [["Label", "Link", "OBS only"],
+            ["A", "x", "x"], ["B", "x", "✓"], ["C", "x", "yes"],
+            ["D", "x", ""], ["E", "x", "false"]]
+    assert m.internal_from_csv(rows) == {"A", "B", "C"}, m.internal_from_csv(rows)
+
+
+def t_internal_from_csv_no_header_or_no_column_is_empty():
+    # header-less (today's sheets) -> no Internal column -> empty
+    assert m.internal_from_csv([["Standings", "https://drive.google.com/file/d/S/view"]]) == set()
+    # header present but no Internal column -> empty
+    assert m.internal_from_csv([["Name", "Link"], ["Standings", "x"]]) == set()
+    assert m.internal_from_csv([]) == set()
+
+
+def t_write_manifest_shape():
+    import json as _json, tempfile, os as _os
+    with tempfile.TemporaryDirectory() as d:
+        m.write_manifest(d, {"Standby", "Weather Rain"})
+        with open(_os.path.join(d, "manifest.json"), encoding="utf-8") as fh:
+            data = _json.load(fh)
+        assert data == {"internal": ["Standby", "Weather Rain"]}, data  # sorted
+
+
+def t_graphics_from_csv_ignores_header_row():
+    # A header row must not become a bogus graphic: "Link" is not a Drive URL -> skipped.
+    rows = [["Name", "Link", "Internal"],
+            ["Standings", "https://drive.google.com/file/d/S/view", "FALSE"]]
+    assert m.graphics_from_csv(rows) == {
+        "Standings": "https://drive.google.com/file/d/S/view"}, m.graphics_from_csv(rows)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
