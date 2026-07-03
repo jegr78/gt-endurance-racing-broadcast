@@ -6521,6 +6521,19 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             return self._send({"error": "graphic not found"}, 404)
                         return self._send_file(hit[0], "image/png")
                     return self._send({"error": "unknown", "path": self.path}, 404)
+                if p == ["graphics"]:
+                    # Root graphics browser: same read-only list as /cockpit/graphics
+                    # but WITHOUT console auth, so the Director Panel widget loads on
+                    # the token-less tailnet /panel too. Reached via /console/graphics
+                    # as well (the gate authorizes it ANY, then falls through here).
+                    # The tailnet is the trust boundary (like /status, /schedule/data);
+                    # only /console is funnelled, so this never leaves the tailnet.
+                    return self._send({"graphics": list_graphics(graphics_dir)})
+                if len(p) == 2 and p[0] == "graphics":
+                    hit = resolve_graphic(graphics_dir, unquote(p[1]))
+                    if not hit:
+                        return self._send({"error": "graphic not found"}, 404)
+                    return self._send_file(hit[0], "image/png")
                 if p == ["submissions"]:
                     # Director pending-submissions list (issue #193). Tailnet-only:
                     # it is NOT under the funnelled /cockpit prefix, so the public

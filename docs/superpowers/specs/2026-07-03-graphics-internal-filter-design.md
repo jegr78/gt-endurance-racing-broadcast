@@ -181,3 +181,28 @@ Every piece is additive and degrades to today's behaviour:
 - `src/docs/wiki/Sheet-Template.md` — document the Assets `Internal` checkbox column.
 - `tests/` — new pure tests for get-graphics internal parsing + `list_graphics` filter.
 - `src/docs/wiki/images/…` — refreshed screenshots.
+
+## Addendum (implementation): tailnet-open `/graphics` endpoint
+
+During implementation, live verification surfaced a gap the original design missed: the
+Director Panel is served **both** at the authed `/console/panel` (Funnel, per-person
+token) **and** at the token-less `/panel` (tailnet). `/cockpit/graphics` requires console
+auth unconditionally, so on the tailnet `/panel` the new director widget got a `401`.
+
+Resolution (chosen by the operator): add a **tailnet-open root endpoint** rather than
+degrade the widget — mirroring the broadcast-chat pattern (root `/broadcast-chat/data`
+open on the tailnet + `/console/broadcast-chat/data` gated under the mount):
+
+- **Relay:** new root `GET /graphics` (list) and `GET /graphics/<file>` (PNG) in
+  `racecast-feeds.py`, served **without** console auth — the tailnet is the trust boundary
+  (like `/status`, `/schedule/data`). They reuse the same `list_graphics` / `resolve_graphic`
+  (so the `Internal` manifest filter still applies) and are **never funnelled** (only
+  `/console` is), so nothing new is exposed publicly.
+- **Policy:** `console_policy.py` classifies `["graphics"]` and `["graphics", <file>]` as
+  `Requirement(ANY, False)`, so `/console/graphics` also works for any authenticated
+  subject via the gate's generic ALLOW fall-through (the Funnel path).
+- **Front-end:** all three pages now fetch `/graphics` (the global `window.fetch`→`RC_API`
+  patch resolves it to `/graphics` on the tailnet and `/console/graphics` under the mount);
+  the `<a href>` uses `RC_API('/graphics/<file>')`. The interim director self-hide-on-401
+  is removed — the widget now loads in every context.
+- Tests: `tests/test_console.py` asserts the two new routes are ANY-authenticated.

@@ -891,7 +891,7 @@ async function sendCueBack(text) {
 async function loadGraphics() {
   const box = $('gfxList');
   try {
-    const d = await j('/cockpit/graphics');
+    const d = await j('/graphics');
     const list = d.graphics || [];
     box.textContent = '';
     if (!list.length) {
@@ -903,7 +903,7 @@ async function loadGraphics() {
     }
     list.forEach(g => {
       const a = document.createElement('a');
-      a.href = RC_API('/cockpit/graphics/' + encodeURIComponent(g.file));
+      a.href = RC_API('/graphics/' + encodeURIComponent(g.file));
       a.target = '_blank';
       a.rel = 'noopener';
       a.textContent = g.name;                 // XSS-safe (Sheet label)

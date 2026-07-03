@@ -156,6 +156,18 @@ def min_capability(segments, method="GET"):
     if len(p) == 3 and p[:2] == ["cockpit", "graphics"]:
         return Requirement(ANY, False)
 
+    # Root graphics browser: the same read-only list + file serve as
+    # /cockpit/graphics, but reached as the tailnet-open /graphics (no /cockpit
+    # prefix) so the Director Panel widget also loads on the token-less tailnet
+    # /panel. Under /console it must be ANY (like the cockpit graphics routes) so
+    # the gate's generic ALLOW fall-through serves it for any authenticated subject.
+    # The file route is 2 segments (["graphics",<filename>]); the filename is
+    # validated server-side by resolve_graphic, not here.
+    if p == ["graphics"]:
+        return Requirement(ANY, False)
+    if len(p) == 2 and p[0] == "graphics":
+        return Requirement(ANY, False)
+
     return None
 
 

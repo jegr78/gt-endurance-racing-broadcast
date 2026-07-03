@@ -2181,12 +2181,7 @@ async function loadGraphics() {
   const box = document.getElementById('gfxList');
   if (!box) return;
   try {
-    const r = await fetch('/cockpit/graphics', { cache: 'no-store' });
-    if (r.status === 401 || r.status === 403) {  // token-less tailnet /panel: no console auth -> hide the card
-      const sec = document.getElementById('gfxBrowseBox');
-      if (sec) sec.style.display = 'none';
-      return;
-    }
+    const r = await fetch('/graphics', { cache: 'no-store' });  // tailnet-open; works on /panel and /console/panel
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
     const list = d.graphics || [];
@@ -2198,7 +2193,7 @@ async function loadGraphics() {
     }
     list.forEach(g => {
       const a = document.createElement('a');
-      a.href = RC_API('/cockpit/graphics/' + encodeURIComponent(g.file));
+      a.href = RC_API('/graphics/' + encodeURIComponent(g.file));
       a.target = '_blank'; a.rel = 'noopener';
       a.textContent = g.name;                 // XSS-safe (Sheet label)
       box.appendChild(a);
