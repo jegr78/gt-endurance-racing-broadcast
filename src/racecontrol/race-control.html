@@ -44,6 +44,18 @@
   .appmeta a:hover { border-color: #3da9fc; }
   .appmeta .ver { color: #ffb454; font-variant-numeric: tabular-nums; }
   .wrap { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; padding: 12px; }
+  .schedgfx { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  @media (max-width: 640px) { .schedgfx { grid-template-columns: 1fr; } }
+  #gfxHead { display: flex; align-items: center; justify-content: space-between; }
+  #gfxRefresh { background: none; border: 0; color: #8ab4f8; cursor: pointer;
+                font: inherit; font-size: 12px; padding: 0; }
+  #gfxList { display: flex; flex-direction: column; gap: 4px;
+             max-height: 260px; overflow-y: auto; }
+  #gfxList a { display: block; text-decoration: none; color: #e8eaed;
+               background: #1b1f25; border: 1px solid #2a3038; border-radius: 6px;
+               padding: 7px 10px; font-size: 14px; }
+  #gfxList a:hover { border-color: #3b82f6; }
+  #gfxList .empty { font-size: 13px; opacity: .6; padding: 2px 0; }
   /* Grid items default to min-width:auto, so a long unbreakable chat token (e.g. a
      Twitch username/URL) would blow the 1fr column past its track and squeeze the
      2fr preview column. min-width:0 lets the columns honour their fr ratio; the chat
@@ -182,13 +194,21 @@
         <audio id="pgmAudio" preload="none" style="display:none;"></audio>
       </div>
     </div>
-    <div class="card" style="margin-top:12px;">
-      <h2>Schedule</h2>
-      <div id="schedEmpty">Loading…</div>
-      <table>
-        <thead><tr><th style="width:90px">Stint</th><th>Streamer</th><th style="width:80px">On air</th></tr></thead>
-        <tbody id="schedRows"></tbody>
-      </table>
+    <div class="schedgfx">
+      <div class="card">
+        <h2>Schedule</h2>
+        <div id="schedEmpty">Loading…</div>
+        <table>
+          <thead><tr><th style="width:90px">Stint</th><th>Streamer</th><th style="width:80px">On air</th></tr></thead>
+          <tbody id="schedRows"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2 id="gfxHead">Graphics
+          <button id="gfxRefresh" type="button" title="Reload the graphics list">Refresh</button>
+        </h2>
+        <div id="gfxList"><div class="empty">Loading…</div></div>
+      </div>
     </div>
   </div>
   <div>
@@ -580,6 +600,33 @@ async function refreshBroadcastChat() {
 }
 { const br = $('bchatRefresh'); if (br) br.addEventListener('click', refreshBroadcastChat); }
 
+async function loadGraphics() {
+  const box = $('gfxList');
+  try {
+    const d = await j('/cockpit/graphics');
+    const list = d.graphics || [];
+    box.textContent = '';
+    if (!list.length) {
+      const e = document.createElement('div');
+      e.className = 'empty'; e.textContent = 'No graphics available.';
+      box.appendChild(e); return;
+    }
+    list.forEach(g => {
+      const a = document.createElement('a');
+      a.href = RC_API('/cockpit/graphics/' + encodeURIComponent(g.file));
+      a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = g.name;                 // XSS-safe (Sheet label)
+      box.appendChild(a);
+    });
+  } catch (e) {
+    box.textContent = '';
+    const er = document.createElement('div');
+    er.className = 'empty'; er.textContent = 'Could not load graphics.';
+    box.appendChild(er);
+  }
+}
+$('gfxRefresh').addEventListener('click', loadGraphics);
+
   function openNotes() { document.getElementById('notesModal').showModal(); }
   function closeNotes() { document.getElementById('notesModal').close(); }
   function renderNotes(d) {
@@ -611,7 +658,7 @@ async function refreshBroadcastChat() {
     setTimeout(pollNotes, 30000);
   }
   pollNotes();
-pollSchedule(); pollProgram(); pollTimer(); pollChat(); pollBroadcastChat(); loadRcPresets();
+pollSchedule(); pollProgram(); pollTimer(); pollChat(); pollBroadcastChat(); loadRcPresets(); loadGraphics();
 pgmAudioInit("/cockpit/program-audio");
 </script>
 <dialog id="notesModal" class="notesmodal">
