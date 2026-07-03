@@ -2217,6 +2217,10 @@ class HealthStore:
         with self.lock:
             return health_store.query_events(self.conn, frm, to)
 
+    def annotate_latest_event(self, event_type, patch):
+        with self.lock:
+            return health_store.annotate_latest_event(self.conn, event_type, patch)
+
     def query(self, frm, to):
         with self.lock:
             return health_store.query_range(self.conn, frm, to)

@@ -487,6 +487,43 @@ def t_healthstore_wrapper_record_event_and_query():
             store.close()
 
 
+def t_annotate_latest_event():
+    with tempfile.TemporaryDirectory() as d:
+        conn = hs.open_db(os.path.join(d, "h.db")); hs.migrate(conn)
+        try:
+            hs.record_event(conn, 100.0, "feed_substitution", metadata={"feed": "A", "stint": 2})
+            hs.record_event(conn, 200.0, "feed_substitution", metadata={"feed": "B", "stint": 4})
+            hs.record_event(conn, 300.0, "takeover", metadata={"stint": 5})
+            out = hs.annotate_latest_event(conn, "feed_substitution", {"reason": "A dropped"})
+            assert out["ts"] == 200.0 and out["metadata"] == {"feed": "B", "stint": 4, "reason": "A dropped"}
+            # only the latest substitution got the reason; the earlier one is untouched
+            evs = hs.query_events(conn, 0, 1e12)
+            subs = [e for e in evs if e["type"] == "feed_substitution"]
+            assert subs[0]["metadata"] == {"feed": "A", "stint": 2}       # no reason
+            assert subs[1]["metadata"].get("reason") == "A dropped"
+            # the takeover event is untouched
+            assert [e for e in evs if e["type"] == "takeover"][0]["metadata"] == {"stint": 5}
+            # None when no such event
+            assert hs.annotate_latest_event(conn, "nope", {"reason": "x"}) is None
+        finally:
+            conn.close()
+
+
+def t_healthstore_wrapper_annotate_latest_event():
+    with tempfile.TemporaryDirectory() as d:
+        store = m.HealthStore(os.path.join(d, "h.db"))
+        try:
+            store.record_event(100.0, "feed_substitution", metadata={"feed": "A"})
+            store.record_event(200.0, "feed_substitution", metadata={"feed": "B"})
+            out = store.annotate_latest_event("feed_substitution", {"reason": "A dropped"})
+            assert out["ts"] == 200.0
+            assert out["metadata"] == {"feed": "B", "reason": "A dropped"}
+            evs = store.events(0, 1e12)
+            assert evs[0]["metadata"] == {"feed": "A"}          # earlier event untouched
+        finally:
+            store.close()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

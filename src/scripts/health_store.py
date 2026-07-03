@@ -196,6 +196,25 @@ def query_events(conn, frm, to):
     return [_event_row_to_dict(r) for r in cur.fetchall()]
 
 
+def annotate_latest_event(conn, event_type, patch):
+    """Merge dict `patch` into the metadata of the MOST RECENT event of
+    `event_type` (by ts, then rowid). Returns the updated event as a dict (metadata
+    parsed back), or None when no such event exists. Used to attach a reason to the
+    latest stream substitution."""
+    row = conn.execute(
+        "SELECT rowid, ts, type, label, producer, metadata FROM events "
+        "WHERE type=? ORDER BY ts DESC, rowid DESC LIMIT 1", (event_type,)).fetchone()
+    if row is None:
+        return None
+    rowid, ts, etype, label, producer, raw = row
+    md = json.loads(raw) if raw else {}
+    md.update(patch)
+    conn.execute("UPDATE events SET metadata=? WHERE rowid=?", (json.dumps(md), rowid))
+    conn.commit()
+    return {"ts": ts, "type": etype, "label": label or "",
+            "producer": producer or "", "metadata": md}
+
+
 def query_range(conn, frm, to):
     """Samples with frm <= ts <= to, ascending. health_reasons parsed to a list."""
     cur = conn.execute("SELECT * FROM samples WHERE ts>=? AND ts<=? ORDER BY ts ASC",
