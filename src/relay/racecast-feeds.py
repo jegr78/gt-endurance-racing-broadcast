@@ -5497,6 +5497,11 @@ class Relay:
         # on-air feed's URL then pressed Reload, so the on-air feed's URL changes
         # at the SAME stint across the schedule refresh. Captured before feeds
         # actually reconnect; best-effort, never blocks the reload.
+        # NOTE: detection is index-scoped (URL changed at the on-air feed's index).
+        # The documented flow edits the on-air URL cell in place; inserting/deleting
+        # rows ABOVE the on-air row in the same reload shifts that index onto a
+        # different stint's URL and would read as a substitution — an accepted edge
+        # of the "URL change at unchanged stint index" definition, not the real flow.
         live = self.live_feed()
         old_url, old_idx = self.feeds[live].current_channel()
         self.source.refresh(timeout=6)

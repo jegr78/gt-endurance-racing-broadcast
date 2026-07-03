@@ -2086,7 +2086,7 @@ document.getElementById("cueText").addEventListener("keydown", e=>{
    (mirrors pollCueRecent/sendCue above). Self-hides like the broadcast-chat
    card when there is nothing to show; never overwrites the reason input
    while the director is actively typing in it. */
-async function subPoll(){
+async function substitutionPoll(){
   try{
     const r = await fetch("/substitution/latest", {cache:"no-store"});
     const d = await r.json();
@@ -2111,7 +2111,7 @@ document.getElementById("subSave").addEventListener("click", async ()=>{
     const d = await r.json();
     if (d && d.error){ log("Substitution: " + d.error, "err"); toast("Substitution note failed: " + d.error); }
     else { log("Substitution reason saved"); }
-    await subPoll();
+    await substitutionPoll();
   }catch(e){ log("Substitution note failed (relay reachable?): " + e, "err"); toast("Substitution note failed — relay unreachable"); }
   finally{ btn.disabled = false; }
 });
@@ -2271,7 +2271,7 @@ loadGraphics();
 setInterval(schedPoll, 2000);
 setInterval(qualPoll, 2000);
 subsPoll(); setInterval(subsPoll, 2000);
-subPoll(); setInterval(subPoll, 2000);
+substitutionPoll(); setInterval(substitutionPoll, 2000);
 $("#obsStreamBtn").addEventListener("click", async ()=>{
   const live = $("#obsStreamBtn").dataset.live === "1";
   if (live && !confirm("End the live broadcast?")) return;

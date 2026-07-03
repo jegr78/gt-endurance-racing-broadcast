@@ -298,7 +298,9 @@ def render_html(report):
         parts.append("<h2>Stream substitutions</h2>")
         parts.append("<p class='note'>Ad-hoc on-air stream swaps (the on-air feed was "
                      "pointed at an alternative source mid-stint).</p>")
-        srows = [(_fmt_clock(s["ts"]), s["feed"], s["stint"], s["streamer"], s["reason"])
+        srows = [(_fmt_clock(s["ts"]), s["feed"],
+                  s["stint"] if s["stint"] is not None else "—",
+                  s["streamer"], s["reason"])
                  for s in report["substitutions"]]
         parts.append(_table(["Time", "Feed", "Stint", "Commentator", "Reason"], srows))
 
