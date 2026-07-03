@@ -221,7 +221,9 @@ class _StubSource:
     def get_rows(self): return list(self._rows)
     def refresh(self, timeout=6): return True
     def health(self): return {"count": len(self._items), "last_ok_age_s": 0, "last_error": None}
-    def add(self, url): self._items.append(url)
+    def add(self, url):
+        self._items.append(url)
+        self._rows.append((url, "", "", len(self._items)))
 
 
 def _relay(items):
@@ -310,6 +312,43 @@ def t_on_air_row_tracks_feed_in_normal_operation():
     # the HUD row follows the displayed on-air row
     rows = r.source.get_rows()
     assert m.live_schedule_row(rows, r.on_air_row_idx())["stint"] == r.live_schedule_row()["stint"]
+
+
+def t_back_to_back_no_dup_pull_no_cut():
+    rows = [("uA", "A", "Stint 1", 1), ("uB", "B", "Stint 2", 2),
+            ("uB", "B", "Stint 3", 3), ("uD", "D", "Stint 4", 4)]
+    r = m.Relay(_StubSource(["uA", "uB", "uB", "uD"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    # make both feeds report "serving" so cut/continuation is exercised
+    for f in r.feeds.values(): f.phase = "serving"
+
+    def pulled():
+        return {k: f.current_channel()[0] for k, f in r.feeds.items()}
+
+    # start: A=uA on air (row0), B preloads uB (row1)
+    assert r.on_air_row_idx() == 0 and r.live_feed() == "A"
+    assert pulled() == {"A": "uA", "B": "uB"}
+
+    # Next -> stint 2 (real handover): B(uB) on air; freed A must skip the
+    # duplicate uB run and preload uD -> NO second uB pull anywhere.
+    out1 = r.next_auto()
+    assert out1["continuation"] is False and out1["obs_cut"] is True
+    assert r.on_air_row_idx() == 1 and r.live_feed() == "B"
+    assert pulled() == {"A": "uD", "B": "uB"}
+    assert list(pulled().values()).count("uB") == 1        # no duplicate uB
+
+    # Next -> stint 3 (continuation): same feed, same pull, NO cut, label advances
+    out2 = r.next_auto()
+    assert out2["continuation"] is True and out2["obs_cut"] is False
+    assert r.on_air_row_idx() == 2 and r.live_feed() == "B"
+    assert pulled() == {"A": "uD", "B": "uB"}               # untouched
+    assert r.live_schedule_row() == {"streamer": "B", "stint": "Stint 3"}
+
+    # Next -> stint 4 (real handover): cut to A(uD)
+    out3 = r.next_auto()
+    assert out3["continuation"] is False and out3["obs_cut"] is True
+    assert r.on_air_row_idx() == 3 and r.live_feed() == "A"
+    assert r.live_schedule_row() == {"streamer": "D", "stint": "Stint 4"}
 
 
 def _relay_q(items, qual_items, qual_rows=None, mode="race"):

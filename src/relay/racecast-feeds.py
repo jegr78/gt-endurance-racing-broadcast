@@ -5359,16 +5359,47 @@ class Relay:
 
     def next_auto(self):
         self.source.refresh(timeout=6)               # fresh sheet data at handover (bounded wait)
+        rows = self.source.get_rows()
+        slots = pull_slots(rows)
+        cur = self.on_air_row_idx()
+        nxt = cur + 1
+
+        # Same-URL back-to-back: keep the on-air pull, advance the LABEL only.
+        if is_continuation(slots, nxt):
+            self.on_air_row = nxt
+            LOG.info("continuation -> stint %d stays on feed %s (no cut)",
+                     nxt + 1, self.live_feed())
+            return {"changed": False, "feed": self.live_feed(),
+                    "continuation": True, "obs_cut": False, **self.status()}
+
+        # Past the last stint: idle over-press (unchanged behavior).
+        if nxt >= len(rows):
+            new_live = self.live_after_next()
+            target = "A" if new_live == "B" else "B"
+            result = self.advance(target, +2)
+            cut = self.feeds[new_live].phase == "serving"
+            if cut:
+                self._reflect(new_live, cut=True)
+            self.on_air_row = self.feeds[new_live].idx
+            return {**result, "continuation": False, "obs_cut": cut}
+
+        # Real handover to the pre-warmed off-air feed, walking SLOTS (not +2) so a
+        # freed feed skips a continuation run instead of duplicating the on-air pull.
         new_live = self.live_after_next()
-        target = "A" if new_live == "B" else "B"     # advance the OTHER (currently on-air) feed
-        result = self.advance(target, +2)
-        cut = self.feeds[new_live].phase == "serving"  # only hand over to a feed that is actually live
+        freed = "A" if new_live == "B" else "B"
+        # Reconcile the incoming feed's preload against fresh slots (a Sheet edit may
+        # have moved the boundary): it must sit on the next slot after the current row.
+        self.feeds[new_live].set_index(next_slot_first_row(slots, cur))
+        cut = self.feeds[new_live].phase == "serving"
         if cut:
-            self._reflect(new_live, cut=True)        # never flip visibility/audio onto a black/not-yet-serving feed
+            self._reflect(new_live, cut=True)         # only flip onto a feed that is actually live
+        # Advance the freed feed to the slot AFTER the new on-air row.
+        self.feeds[freed].set_index(next_slot_first_row(slots, nxt))
+        self.on_air_row = nxt
         nf = self.feeds[new_live]
-        self.on_air_row = nf.idx                      # keep display row == on-air pull (Task 3 makes it diverge)
-        LOG.info("handover -> feed %s now on air (stint index %d)", nf.name, nf.idx + 1)
-        return {**result, "obs_cut": cut}
+        LOG.info("handover -> feed %s now on air (stint %d)", nf.name, nxt + 1)
+        return {"changed": True, "feed": new_live,
+                "continuation": False, "obs_cut": cut, **self.status()}
 
     def advance(self, which, delta):
         f = self.feeds.get(which.upper())
