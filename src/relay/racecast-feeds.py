@@ -5414,14 +5414,18 @@ class Relay:
 
     def set_stint(self, stint):
         """Producer-takeover correction: 1-based stint <stint> is on air NOW ->
-        Feed A serves it, Feed B preloads the next one. Tears a running feed off
-        its stream (like /set) — use BEFORE going live, not mid-program."""
+        Feed A serves the HEAD of that stint's slot (a takeover onto a back-to-back's
+        second row still pulls the single stream once), Feed B preloads the next
+        slot. The DISPLAY row is set to <stint>. Tears a running feed off its stream
+        (like /set) — use BEFORE going live, not mid-program."""
         self.source.refresh(timeout=6)      # clamp against fresh sheet data
-        a_idx, b_idx = stint_start_indices(stint, len(self.source.get()))
+        rows = self.source.get_rows()
+        a_idx, b_idx = slot_start_indices(stint, rows)
         self.A.set_index(a_idx)
         self.B.set_index(b_idx)
-        self.on_air_row = a_idx
-        LOG.info("set_stint -> Feed A stint %d, Feed B stint %d", a_idx + 1, b_idx + 1)
+        self.on_air_row = min(max(1, int(stint)) - 1, max(0, len(rows) - 1))
+        LOG.info("set_stint -> Feed A slot-head %d, Feed B %d, display stint %d",
+                 a_idx + 1, b_idx + 1, self.on_air_row + 1)
         self._reflect(self.live_feed(), cut=False)   # set visibility/audio; director picks the scene
         return self.status()
 
@@ -5439,7 +5443,8 @@ class Relay:
         self.mode = mode
         LOG.info("mode -> %s", self.mode)
         self.active_source().refresh(timeout=6)        # fresh rows for the schedule we switch to
-        a_idx, b_idx = stint_start_indices(1, len(self.active_source().get()))
+        rows = self.active_source().get_rows()
+        a_idx, b_idx = slot_start_indices(1, rows)
         self.A.set_index(a_idx)
         self.B.set_index(b_idx)
         self.on_air_row = a_idx

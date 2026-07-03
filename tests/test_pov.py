@@ -278,6 +278,37 @@ def t_set_stint_reflects_live_feed_without_cut():
     assert calls == [("A", False)]
 
 
+def t_set_stint_slot_aware_on_back_to_back():
+    rows = [("uA", "A", "Stint 1", 1), ("uB", "B", "Stint 2", 2),
+            ("uB", "B", "Stint 3", 3), ("uD", "D", "Stint 4", 4)]
+    r = m.Relay(_StubSource(["uA", "uB", "uB", "uD"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    # Takeover: stint 3 (second half of B's back-to-back) is on air NOW.
+    r.set_stint(3)
+    # Feed A parks on the slot head (row1 = the single uB pull), B preloads uD (row3).
+    assert (r.A.idx, r.B.idx) == (1, 3)
+    assert r.A.current_channel()[0] == "uB" and r.B.current_channel()[0] == "uD"
+    # ...but the DISPLAY shows stint 3.
+    assert r.on_air_row_idx() == 2
+    assert r.live_schedule_row() == {"streamer": "B", "stint": "Stint 3"}
+
+
+def t_race_control_map_follows_displayed_stint_on_continuation():
+    rows = [("uA", "A", "Stint 1", 1), ("uB", "B", "Stint 2", 2),
+            ("uB", "B", "Stint 3", 3), ("uD", "D", "Stint 4", 4)]
+    r = m.Relay(_StubSource(["uA", "uB", "uB", "uD"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    for f in r.feeds.values(): f.phase = "serving"
+    r.next_auto()                       # stint 2 (B on air, uB pull on B row1)
+    r.next_auto()                       # stint 3 continuation: label at row2, pull at row1
+    assert r.on_air_row_idx() == 2
+    live = r.live_row_map()
+    # the RC/stint-plan highlight is on the DISPLAYED stint (row2), not the pull row (1)
+    sched = m.race_control_schedule(rows, live)
+    assert sched[2]["live"] == "B"      # stint 3 marked live
+    assert sched[1]["live"] is None     # stint 2 no longer highlighted
+
+
 def t_live_schedule_row_pure():
     rows = [("https://youtu.be/a", "JeGr", "Stint 1", 1),
             ("https://youtu.be/b", "GT45", "Stint 2", 2)]
