@@ -960,6 +960,62 @@ def t_sanitize_reason():
     assert len(m.sanitize_reason("x" * 500)) == m.SUBSTITUTION_REASON_MAX
 
 
+def t_reload_records_substitution_on_url_swap():
+    import tempfile
+    # a stub whose refresh() applies a staged URL change (mimics the operator
+    # editing the on-air row's URL then pressing Reload)
+    class _Staged(_StubSource):
+        def __init__(self, items):
+            super().__init__(items)
+            self._pending = None
+        def stage(self, idx, url): self._pending = (idx, url)
+        def refresh(self, timeout=6):
+            if self._pending:
+                i, u = self._pending
+                self._items[i] = u
+                self._rows[i] = (u,) + tuple(self._rows[i][1:])
+                self._pending = None
+            return True
+
+    td = tempfile.mkdtemp()
+    r = m.Relay(_Staged(["uA", "uB"]), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    posts = []
+    r._discord_post = lambda payload, what: posts.append((what, payload))
+    r.health_store = m.HealthStore(os.path.join(td, "h.db"))
+    try:
+        assert r.live_feed() == "A"                    # A (uA, idx0) on air
+        r.source.stage(0, "uALT")                      # on-air row gets a new URL
+        r.reload()                                     # operator force-reload
+        subs = [e for e in r.health_store.events(0, 1e12) if e["type"] == "feed_substitution"]
+        assert len(subs) == 1
+        assert subs[0]["metadata"] == {"feed": "A", "stint": 1}   # feed+stint only, NO url
+        assert posts and posts[0][0] == "feed-substitution"       # Discord fired
+        # a same-URL reload records nothing more
+        r.reload()
+        subs2 = [e for e in r.health_store.events(0, 1e12) if e["type"] == "feed_substitution"]
+        assert len(subs2) == 1
+    finally:
+        r.health_store.close()
+
+
+def t_latest_and_annotate_substitution():
+    import tempfile
+    td = tempfile.mkdtemp()
+    r = _relay(["uA", "uB"])
+    r.health_store = m.HealthStore(os.path.join(td, "h.db"))
+    try:
+        assert r.latest_substitution() is None
+        assert r.annotate_substitution_reason("x")["error"]        # nothing to annotate
+        r.health_store.record_event(111.0, "feed_substitution", metadata={"feed": "A", "stint": 1})
+        assert r.latest_substitution() == {"ts": 111.0, "feed": "A", "stint": 1, "reason": ""}
+        out = r.annotate_substitution_reason("  stream A\ndropped  ")
+        assert out["reason"] == "stream A dropped"                  # sanitized
+        assert r.latest_substitution()["reason"] == "stream A dropped"
+    finally:
+        r.health_store.close()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

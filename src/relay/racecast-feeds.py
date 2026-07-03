@@ -5493,13 +5493,71 @@ class Relay:
         return self.status()
 
     def reload(self, which=None):
+        # Detect an ad-hoc on-air stream substitution: the operator edited the
+        # on-air feed's URL then pressed Reload, so the on-air feed's URL changes
+        # at the SAME stint across the schedule refresh. Captured before feeds
+        # actually reconnect; best-effort, never blocks the reload.
+        live = self.live_feed()
+        old_url, old_idx = self.feeds[live].current_channel()
         self.source.refresh(timeout=6)
+        new_url, new_idx = self.feeds[live].current_channel()
+        if (which is None or which.upper() == live) and \
+                is_substitution(old_url, old_idx, new_url, new_idx):
+            self._record_substitution(live, new_idx)
         targets = [which.upper()] if which else list(self.feeds)
         for t in targets:
             if t in self.feeds: self.feeds[t].reload()
         LOG.info("reload: schedule re-read (%d stints), feeds %s",
                  len(self.source.get()), ",".join(targets))
         return {"reloaded": targets, **self.status()}
+
+    def _record_substitution(self, feed, idx):
+        """Record + announce an ad-hoc on-air stream substitution (best-effort):
+        a discrete Health event (feed + 1-based stint only, NO url) plus a Discord
+        post. A missing health_store or webhook is a silent no-op."""
+        stint = idx + 1
+        if self.health_store is not None:
+            try:
+                self.health_store.record_event(
+                    time.time(), "feed_substitution", producer=self.producer_name,
+                    metadata={"feed": feed, "stint": stint})
+            except Exception:                # noqa: BLE001 — best-effort
+                pass
+        self._discord_post(
+            notify.substitution_discord_payload(feed, stint, self.producer_name,
+                                                 self._event_title()),
+            "feed-substitution")
+        LOG.info("stream substitution recorded: Feed %s stint %d", feed, stint)
+
+    def latest_substitution(self):
+        """The most recent feed_substitution event as
+        {"ts","feed","stint","reason"}, or None. Read side for the Director Panel's
+        substitution section."""
+        if self.health_store is None:
+            return None
+        try:
+            events = self.health_store.events(0, time.time())
+        except Exception:                    # noqa: BLE001 — best-effort read
+            return None
+        subs = [e for e in events if e.get("type") == "feed_substitution"]
+        if not subs:
+            return None
+        e = subs[-1]                         # events() is ascending -> last = newest
+        md = e.get("metadata") or {}
+        return {"ts": e.get("ts"), "feed": md.get("feed") or "",
+                "stint": md.get("stint"), "reason": md.get("reason") or ""}
+
+    def annotate_substitution_reason(self, reason):
+        """Attach a sanitized free-text reason to the latest feed_substitution
+        event (director action from the panel). Returns the updated
+        latest_substitution() shape, or {"error": ...} when disabled/absent."""
+        if self.health_store is None:
+            return {"error": "health history disabled"}
+        updated = self.health_store.annotate_latest_event(
+            "feed_substitution", {"reason": sanitize_reason(reason)})
+        if updated is None:
+            return {"error": "no substitution to annotate"}
+        return self.latest_substitution()
 
     def pov_reload(self):
         if not self.pov:
