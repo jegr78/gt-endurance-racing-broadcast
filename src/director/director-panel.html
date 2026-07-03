@@ -310,6 +310,13 @@
   #bchatLog .src{color:#667;font-size:10px;margin-left:4px}
   #bchatLog .emote{height:1.25em;width:auto;vertical-align:-0.25em;margin:0 1px}
   #bchatLog .bempty{color:var(--muted);font-size:11px}
+  #gfxBrowseBox #gfxList { display: flex; flex-direction: column; gap: 4px;
+                           max-height: 220px; overflow-y: auto; }
+  #gfxBrowseBox #gfxList a { display: block; text-decoration: none; color: var(--fg, #e8eaed);
+                             background: #14181d; border: 1px solid #2a3038;
+                             border-radius: 6px; padding: 6px 9px; font-size: 13px; }
+  #gfxBrowseBox #gfxList a:hover { border-color: #3b82f6; }
+  #gfxBrowseBox #gfxList .bempty { color: var(--muted); font-size: 11px; }
   .robadge{font-size:10px;font-weight:500;color:var(--muted);border:1px solid #2a2f3a;
            border-radius:6px;padding:0 5px;margin-left:6px}
   .bcompose { float: right; font: inherit; font-size: 11px; line-height: 1.4;
@@ -649,6 +656,15 @@
       <div class="hint">Read-only mirror of the event's public YouTube/Twitch broadcast
         chat (the <code>Channel</code> tab). During a producer handover both live streams
         are merged here.</div>
+    </div>
+  </details>
+
+  <details class="bus chat" id="gfxBrowseBox" open>
+    <summary>Graphics<button id="gfxRefresh" class="bcompose" title="Reload the graphics list">⟳ Refresh</button></summary>
+    <div class="body">
+      <div id="gfxList" class="chatlog"><div class="bempty">Loading…</div></div>
+      <div class="hint">Read-only: the broadcast still-graphics (Sheet Assets tab).
+        Click one to open it in a new tab. OBS-only assets are hidden.</div>
     </div>
   </details>
   </div><!-- /.rail -->
@@ -2160,6 +2176,38 @@ function pvMarkOnAir(feed){
 if((localStorage.getItem(PV_KEY) || "0") === "1"){ pvStart(); }
 pgmAudioInit("/preview/program-audio");
 
+/* ---------- Graphics browser (read-only Sheet-assets list) ---------- */
+async function loadGraphics() {
+  const box = document.getElementById('gfxList');
+  if (!box) return;
+  try {
+    const r = await fetch('/cockpit/graphics', { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    const list = d.graphics || [];
+    box.textContent = '';
+    if (!list.length) {
+      const e = document.createElement('div');
+      e.className = 'bempty'; e.textContent = 'No graphics available.';
+      box.appendChild(e); return;
+    }
+    list.forEach(g => {
+      const a = document.createElement('a');
+      a.href = RC_API('/cockpit/graphics/' + encodeURIComponent(g.file));
+      a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = g.name;                 // XSS-safe (Sheet label)
+      box.appendChild(a);
+    });
+  } catch (e) {
+    box.textContent = '';
+    const er = document.createElement('div');
+    er.className = 'bempty'; er.textContent = 'Could not load graphics.';
+    box.appendChild(er);
+  }
+}
+{ const gr = document.getElementById('gfxRefresh');
+  if (gr) gr.addEventListener('click', loadGraphics); }
+
 /* ---------- boot ---------- */
 renderAir({});
 relayPoll(); timerPoll();
@@ -2168,6 +2216,7 @@ setInterval(timerPoll, 2000);
 setupPoll(); setInterval(setupPoll, 2000);
 chatPoll(); setInterval(chatPoll, 2000);
 bchatPoll(); bchatTimer = setInterval(bchatPoll, 4000);
+loadGraphics();
 setInterval(schedPoll, 2000);
 setInterval(qualPoll, 2000);
 subsPoll(); setInterval(subsPoll, 2000);
