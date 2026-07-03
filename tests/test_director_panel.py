@@ -106,6 +106,19 @@ def t_shortcut_guards_typing():
     assert "isContentEditable" in h
 
 
+def t_tx_chip_present_and_wired():
+    h = _html()
+    # chip lives in the PGM section
+    assert 'id="txArmed"' in h
+    pgm = h.find('class="bus pgm"')
+    assert pgm != -1 and h.find('id="txArmed"') > pgm
+    assert h.find('id="txArmed"') < h.find('id="cuesBus"'), "chip must be inside PGM section"
+    # renderTxBar updates the chip text
+    assert 'chip.textContent = "TX: " + activeTransition.toUpperCase()' in h
+    # clicking the chip switches to the SETUP tab
+    assert 'chip.addEventListener("click", () => setTab("setup"))' in h
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

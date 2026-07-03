@@ -146,6 +146,10 @@
     background:var(--air);color:#fff;font-family:var(--mono);font-weight:700;
     font-size:11px;letter-spacing:0}
   .tabbadge[hidden]{display:none}
+  .txarmed{align-self:center;flex:0 0 auto;cursor:pointer;font-family:var(--mono);
+    font-size:11px;letter-spacing:.08em;color:var(--ink);background:#0c0f13;
+    border:1px solid var(--edge);border-radius:8px;padding:7px 10px;white-space:nowrap}
+  .txarmed:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
   /* ---------- keys ---------- */
   button.k{
@@ -532,7 +536,9 @@
     </div>
   </section>
 
-  <section class="bus pgm"><div class="cap">PGM</div><div class="keys" id="pgmBus"></div></section>
+  <section class="bus pgm"><div class="cap">PGM</div><div class="keys" id="pgmBus"></div><button
+    class="txarmed" id="txArmed" type="button"
+    title="Armed transition — click to change it on the SETUP tab">TX: FADE</button></section>
 
   <section class="bus" id="cuesBus">
     <div class="cap">Cues</div>
@@ -1003,6 +1009,8 @@ function renderTxBar(){
     b.classList.toggle('on', b.dataset.tx === activeTransition));
   const dur = $("#txDur");
   if (dur) dur.disabled = (activeTransition === "cut");
+  const chip = document.getElementById("txArmed");
+  if (chip) chip.textContent = "TX: " + activeTransition.toUpperCase();
 }
 document.querySelectorAll('#txBar .tx').forEach(b =>
   b.addEventListener('click', () => { activeTransition = b.dataset.tx; renderTxBar(); }));
@@ -1010,6 +1018,8 @@ document.querySelectorAll('#txBar .tx').forEach(b =>
     const v = parseInt(d.value, 10);
     activeDuration = isNaN(v) ? 300 : Math.max(0, Math.min(10000, v)); d.value = activeDuration; }); }
 renderTxBar();
+{ const chip = document.getElementById("txArmed");
+  if (chip) chip.addEventListener("click", () => setTab("setup")); }
 
 async function obsScene(scene){
   const d = await obsPost("scene", {scene, transition: activeTransition,
