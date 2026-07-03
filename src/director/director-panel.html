@@ -2182,6 +2182,11 @@ async function loadGraphics() {
   if (!box) return;
   try {
     const r = await fetch('/cockpit/graphics', { cache: 'no-store' });
+    if (r.status === 401 || r.status === 403) {  // token-less tailnet /panel: no console auth -> hide the card
+      const sec = document.getElementById('gfxBrowseBox');
+      if (sec) sec.style.display = 'none';
+      return;
+    }
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
     const list = d.graphics || [];
