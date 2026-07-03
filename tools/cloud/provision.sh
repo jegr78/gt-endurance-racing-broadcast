@@ -99,7 +99,7 @@ fi
 # ---------------------------------------------------------------------------
 log "4/10  Firefox (deb from Mozilla APT, not snap — snap confinement breaks cookie export)"
 ff="$(command -v firefox || true)"
-if [ -n "$ff" ] && ! readlink -f "$ff" | grep -q '/snap/'; then
+if [ -n "$ff" ] && ! readlink -f "$ff" | grep '/snap/' >/dev/null; then
   ok "non-snap Firefox already present"
 else
   install -d -m 0755 /etc/apt/keyrings
@@ -161,10 +161,11 @@ else
     url="https://github.com/${RACECAST_REPO}/releases/download/${tag}/${asset}"
   fi
   user_home="$(getent passwd "$USER_NAME" | cut -d: -f6)"
+  user_group="$(id -gn "$USER_NAME")"   # not necessarily == USER_NAME (non-UPG distros)
   curl -fsSL "$url" -o /tmp/racecast.tar.gz
-  install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$user_home/racecast"
+  install -d -o "$USER_NAME" -g "$user_group" -m 0755 "$user_home/racecast"
   tar -xzf /tmp/racecast.tar.gz -C "$user_home/racecast"
-  chown -R "$USER_NAME:$USER_NAME" "$user_home/racecast"
+  chown -R "$USER_NAME:$user_group" "$user_home/racecast"
   ln -sf "$user_home/racecast/racecast" /usr/local/bin/racecast
   ok "racecast installed at $user_home/racecast ($(sudo -u "$USER_NAME" racecast --version 2>/dev/null | head -1))"
 fi
@@ -209,7 +210,7 @@ if nvidia-smi >/dev/null 2>&1; then ok "nvidia-smi: GPU present"; else warn "nvi
 if have ffmpeg && ffmpeg -hide_banner -encoders 2>/dev/null | grep nvenc >/dev/null; then ok "ffmpeg: NVENC encoders present"; else warn "ffmpeg NVENC: FAIL"; rc=1; fi
 if ldconfig -p | grep nvidia-encode >/dev/null; then ok "libnvidia-encode present"; else warn "libnvidia-encode: not found (NVENC needs it)"; fi
 ff2="$(command -v firefox || true)"
-if [ -n "$ff2" ] && ! readlink -f "$ff2" | grep -q '/snap/'; then ok "firefox: deb build"; else warn "firefox: missing or snap"; rc=1; fi
+if [ -n "$ff2" ] && ! readlink -f "$ff2" | grep '/snap/' >/dev/null; then ok "firefox: deb build"; else warn "firefox: missing or snap"; rc=1; fi
 if have racecast; then ok "racecast: $(racecast --version 2>/dev/null | head -1)"; else warn "racecast: FAIL"; rc=1; fi
 if have obs; then ok "obs: installed"; else warn "obs: not on PATH (check install-apps output)"; fi
 if tailscale status >/dev/null 2>&1; then ok "tailscale: up"; else warn "tailscale: not joined (run tailscale up)"; fi
