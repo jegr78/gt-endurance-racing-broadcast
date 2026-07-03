@@ -83,6 +83,14 @@ def t_preview_default_shown():
     assert 'localStorage.getItem(PV_KEY) || "1"' in h
 
 
+def t_setup_badge_hidden_rule():
+    # The badge carries `hidden` until Task 4 wires it; an unconditional
+    # display: on .tabbadge would override the UA [hidden] rule, so a
+    # [hidden] override must exist to keep it invisible.
+    h = _html()
+    assert ".tabbadge[hidden]" in h, "badge must honor the hidden attribute"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
