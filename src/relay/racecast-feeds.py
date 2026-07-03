@@ -3296,6 +3296,28 @@ def stint_start_indices(stint, schedule_len):
     return a, a + 1
 
 
+SUBSTITUTION_REASON_MAX = 200
+
+
+def is_substitution(served_url, served_idx, new_url, new_idx):
+    """True when the on-air feed swaps to a DIFFERENT non-empty URL at the SAME
+    stint index (an operator reload after editing the on-air URL) — an ad-hoc
+    stream substitution. A same-URL reconnect or a stint change is not one. Pure."""
+    return (bool(new_url) and bool(served_url)
+            and new_idx == served_idx and new_url != served_url)
+
+
+def sanitize_reason(text):
+    """Clean a free-text substitution reason: non-str -> ''; strip control chars,
+    collapse all whitespace to single spaces, trim, cap at SUBSTITUTION_REASON_MAX.
+    Rendered via textContent client-side, but sanitized here too (defense in depth).
+    Pure."""
+    if not isinstance(text, str):
+        return ""
+    kept = "".join(ch if ch >= " " else " " for ch in text)   # \n\t and other controls -> space
+    return " ".join(kept.split())[:SUBSTITUTION_REASON_MAX].strip()
+
+
 def pull_slots(rows):
     """Slot id per row: maximal runs of CONSECUTIVE rows with the same non-empty
     URL share one slot, so a single feed pull serves the whole run — a commentator

@@ -945,6 +945,21 @@ def t_slot_start_indices():
     assert m.slot_start_indices(1, []) == (0, 1)
 
 
+def t_is_substitution():
+    assert m.is_substitution("uA", 1, "uB", 1) is True      # same stint, new URL
+    assert m.is_substitution("uA", 1, "uA", 1) is False     # same URL -> reconnect, not a swap
+    assert m.is_substitution("uA", 1, "uB", 2) is False     # different stint -> handover, not a swap
+    assert m.is_substitution("", 1, "uB", 1) is False       # no prior served URL
+    assert m.is_substitution("uA", 1, "", 1) is False       # cleared URL, not a swap
+
+
+def t_sanitize_reason():
+    assert m.sanitize_reason("  stream A dropped  ") == "stream A dropped"
+    assert m.sanitize_reason("line1\nline2\tx") == "line1 line2 x"   # control chars -> single spaces
+    assert m.sanitize_reason(None) == "" and m.sanitize_reason(123) == ""
+    assert len(m.sanitize_reason("x" * 500)) == m.SUBSTITUTION_REASON_MAX
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

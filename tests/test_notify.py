@@ -62,6 +62,16 @@ def t_no_footer_when_neither_title_nor_producer():
     assert "footer" not in e
 
 
+def t_substitution_payload():
+    p = n.substitution_discord_payload("A", 3, "JeGr", event_title="6h Spa")
+    assert p["username"] == n.USERNAME
+    assert "content" not in p                       # ping=False: no @here
+    e = p["embeds"][0]
+    assert e["color"] == n.COLOR_SUBSTITUTION
+    assert "Feed A" in e["description"] and "stint 3" in e["description"]
+    assert e["footer"]["text"] == "6h Spa · JeGr"   # event_title · producer
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
