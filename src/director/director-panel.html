@@ -534,6 +534,20 @@
     </div>
   </section>
 
+  <section class="bus" id="subSec" style="display:none">
+    <div class="cap">Substitution</div>
+    <div class="body">
+      <div class="hint" id="subInfo"></div>
+      <div class="setrow">
+        <div class="fld">
+          <label>Reason</label>
+          <input id="subReason" type="text" maxlength="200" placeholder="reason (optional)">
+        </div>
+        <button class="pill go" id="subSave">SAVE</button>
+      </div>
+    </div>
+  </section>
+
   <section class="bus"><div class="cap">HUD</div>
     <div class="body">
       <div class="setrow" id="setupRow"></div>
@@ -2065,6 +2079,43 @@ document.getElementById("cueText").addEventListener("keydown", e=>{
   if (e.key === "Enter") sendCue();
 });
 
+/* ---------- Ad-hoc stream substitution -------------------------------------
+   GET /substitution/latest -> {substitution:{ts,feed,stint,reason}|null}
+   POST /substitution/note {reason} -> re-poll to reflect the saved value.
+   Plain fetch() throughout — the global patch already prefixes RC_API_BASE
+   (mirrors pollCueRecent/sendCue above). Self-hides like the broadcast-chat
+   card when there is nothing to show; never overwrites the reason input
+   while the director is actively typing in it. */
+async function subPoll(){
+  try{
+    const r = await fetch("/substitution/latest", {cache:"no-store"});
+    const d = await r.json();
+    const s = d && d.substitution;
+    const sec = document.getElementById("subSec");
+    if (!s){ sec.style.display = "none"; return; }
+    sec.style.display = "";
+    const when = new Date((s.ts || 0) * 1000).toLocaleTimeString();
+    document.getElementById("subInfo").textContent =
+      "Feed " + s.feed + " · " + when + " · Stint " + s.stint;   // textContent: XSS-safe
+    const inp = document.getElementById("subReason");
+    if (document.activeElement !== inp) inp.value = s.reason || "";
+  }catch(e){ /* transient; next poll retries */ }
+}
+document.getElementById("subSave").addEventListener("click", async ()=>{
+  const btn = document.getElementById("subSave");
+  btn.disabled = true;
+  try{
+    const r = await fetch("/substitution/note", {method:"POST", cache:"no-store",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({reason: document.getElementById("subReason").value})});
+    const d = await r.json();
+    if (d && d.error){ log("Substitution: " + d.error, "err"); toast("Substitution note failed: " + d.error); }
+    else { log("Substitution reason saved"); }
+    await subPoll();
+  }catch(e){ log("Substitution note failed (relay reachable?): " + e, "err"); toast("Substitution note failed — relay unreachable"); }
+  finally{ btn.disabled = false; }
+});
+
 // ---- Live Preview ---------------------------------------------------------
 const PV_KEY = "rc_preview_open";
 const PV_FEED_MS = 1000;
@@ -2220,6 +2271,7 @@ loadGraphics();
 setInterval(schedPoll, 2000);
 setInterval(qualPoll, 2000);
 subsPoll(); setInterval(subsPoll, 2000);
+subPoll(); setInterval(subPoll, 2000);
 $("#obsStreamBtn").addEventListener("click", async ()=>{
   const live = $("#obsStreamBtn").dataset.live === "1";
   if (live && !confirm("End the live broadcast?")) return;
