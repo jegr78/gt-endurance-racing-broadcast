@@ -169,10 +169,43 @@ tailnet-only.
 | 4 | End-to-end dry run, latency, decision | same GPU VM | ~1–2 h | ~$1–2 |
 | **Total spike** | | | | **< ~$15** |
 
-**Production running cost (post-GO, for context):** T4 on-demand ~$0.20–0.55/h → a 6 h event
-≈ **$2–4**; 2 events/month ≈ **~$5–10/month**, billed only while running. Bandwidth (~10 GB/h,
-~60 GB/event) is a non-issue. **On-demand, never spot** for a live run (spot can be reclaimed
-mid-event).
+### Production cost model — running vs. fixed (verified GCP pricing, us-central1 on-demand, 2026-07)
+
+**Recommended instance: T4** (`n1-standard-4` + 1× T4), not L4 — a single 1080p60 NVENC encode
+is well within a T4, datacenter T4s have **no NVENC session cap**, and it is ~25 % cheaper than
+an L4. L4 (`g2-standard-4`) is the documented alternative if a T4 proves short.
+
+**Baseline event weekend:** an **8 h race event** + a **1.5 h qualifying session the day before**
+= **9.5 h billable**, plus ~1 h boot / scene-import / test overhead ≈ **~10.5 h** wall-time.
+
+*Running cost (accrues ONLY while the VM is running):*
+
+| Component | T4 combo | L4 combo | Notes |
+|---|---|---|---|
+| Compute (VM + GPU) | ~$0.54/h | $0.71/h | n1-standard-4 $0.19 + T4 ~$0.35; g2-standard-4 bundles 1× L4 |
+| Egress (OBS output → YouTube/Twitch) | ~$0.43/h | ~$0.43/h | 1080p60 ≈ 8 Mbps ≈ 3.6 GB/h × $0.12/GB — **measure in Stage 4**; feed *pulls* in are free |
+| Ephemeral external IPv4 | $0.004/h | $0.004/h | only while running |
+| **All-in active** | **~$0.98/h** | **~$1.15/h** | |
+
+- **Qualifying (1.5 h):** ~$1.5 · **Event (8 h):** ~$7.8 · **per weekend (9.5 h + ~1 h setup):
+  ~$10 (T4)** / ~$11 (L4).
+- Egress is **not** negligible (~$3–4 of a weekend) — the earlier "bandwidth is a non-issue"
+  note was optimistic; only the *outbound* broadcast is billed, feed ingress is free.
+
+*Fixed cost (accrues even while the VM is STOPPED between events):*
+
+| Component | Price | 50 GB / month |
+|---|---|---|
+| Boot disk (pd-standard) — persists as long as the disk exists | $0.04/GB/mo | **~$2/mo** (pd-balanced would be $5) |
+| Reserved static IP — **only if** you pin one IP | $0.01/h idle | +$7.30/mo — **skip it**: Stage 1 showed GCP IPs pass generally, an ephemeral IP is fine |
+| Snapshot / baked VM image (post-GO) | $0.026/GB/mo | ~$0.5–0.8/mo |
+
+- **Idle baseline: ~$2/month** (just the stopped boot disk, no static IP).
+- **2 event weekends/month, all-in:** ~$20 active + ~$2 fixed ≈ **~$22/month**, billed only while
+  running. **On-demand, never spot** for a live run (spot can be reclaimed mid-event).
+- **Quota is free** — it is an allocation *ceiling*, not a reservation or charge; you pay only for
+  resources actually created and running. (Distinct from Reservations / Committed-Use, which *do*
+  cost — not needed here.)
 
 **The real cost driver is not the instance (< $15 for the whole spike) — it's engineering hours
 on Stage 2.** And the whole thing can die at Stage 1 in ~1 h for < €1. That ordering is the
@@ -200,6 +233,141 @@ entire value of the staged structure: buy the cheapest information first.
 3. **Operator runbook:** "spin up → run event → tear down."
 4. *(De-prioritized / maybe never)* Headless hardening as a cost optimization — only if the
    idle-desktop cost ever proves to matter.
+
+---
+
+## Appendix A — GCP T4 provisioning commands (copy-paste)
+
+Recommended box: **T4** — `n1-standard-4` + 1× NVIDIA T4, `us-central1`, Ubuntu 24.04, pd-standard
+50 GB. Assumes `gcloud` is authed (`gcloud auth login`; `gcloud config set project <PROJECT_ID>`).
+
+**Step 0 — GPU quota (do FIRST; the only real lead time; quota is free).** New accounts have GPU
+quota 0. Request in the console (**IAM & Admin → Quotas & System Limits**), filter `us-central1`,
+request **≥ 1** for `NVIDIA_T4_GPUS` (region us-central1) and `GPUS_ALL_REGIONS` (global). Inspect
+from the CLI:
+```bash
+gcloud compute regions describe us-central1 \
+  --format="table(quotas.metric,quotas.limit,quotas.usage)" | grep -i gpu
+```
+Approval: hours to ~2 business days. The VM cannot be created until it lands. Quota is an
+allocation *ceiling*, not a reservation or a charge — you pay only for resources actually running
+(distinct from Reservations / Committed-Use, which do cost and are not needed here).
+
+**Step 1 — create the VM (only after quota granted).** GPU VMs cannot live-migrate →
+`--maintenance-policy=TERMINATE` is required. T4 zones in us-central1: a, b, c, f.
+```bash
+gcloud compute instances create spike-gpu \
+  --zone=us-central1-a \
+  --machine-type=n1-standard-4 \
+  --accelerator=type=nvidia-tesla-t4,count=1 \
+  --maintenance-policy=TERMINATE \
+  --provisioning-model=STANDARD \
+  --image-family=ubuntu-2404-lts-amd64 \
+  --image-project=ubuntu-os-cloud \
+  --boot-disk-type=pd-standard \
+  --boot-disk-size=50GB
+```
+`pd-standard` (not the "Balanced" default) → ~$2/mo idle disk. Ephemeral IP (Stage 1 showed GCP
+IPs pass generally — no reserved static IP). `STANDARD`, never spot, for a live run.
+
+**Step 2 — NVIDIA driver + verify.**
+```bash
+gcloud compute ssh spike-gpu --zone=us-central1-a
+sudo apt-get update
+curl -fsSL https://raw.githubusercontent.com/GoogleCloudPlatform/compute-gpu-installation/main/linux/install_gpu_driver.py | sudo python3 -
+nvidia-smi          # must list the Tesla T4
+```
+
+**Step 3 — desktop + remote access.** OBS renders to a real **X11** session (no Xvfb), so run a
+lightweight X desktop (e.g. xfce). Remote-access options:
+- **RustDesk over Tailscale (recommended)** — join the box to the tailnet (Stage 3 does this
+  anyway), enable RustDesk **Settings → Security → "Enable direct IP access"** + a permanent
+  password, and connect from the laptop straight to the box's **`100.x` Tailscale IP**. This
+  bypasses RustDesk's public rendezvous/relay servers entirely: Tailscale is transport *and* trust
+  boundary, no GCP internet ingress port opened — the same model as the Control Center/panel.
+  (Wayland screen-capture is limited → keep the session on **X11**.)
+- Chrome Remote Desktop headless (https://remotedesktop.google.com/headless) — works, but relays
+  through Google's public infrastructure. VNC / NoMachine also fine.
+
+**Step 4 — toolchain + OBS.**
+```bash
+# copy the testing profile + fresh cookies up (via gcloud compute scp):
+gcloud compute scp --recurse runtime/<profile> runtime/yt-cookies.txt spike-gpu:~/racecast/runtime/ --zone=us-central1-a
+# on the box:
+racecast install-tools      # apt-update-first + pinned yt-dlp/deno (#408/#412)
+racecast install-apps       # OBS via PPA — Browser Source plugin included on x86-64
+racecast setup              # localize scene collection -> import into OBS (GUI)
+```
+
+**Step 5 — validate with eyes on the screen (Stage 2 / NVENC #421).** HUD browser source renders;
+**NVENC encodes 1080p60** (Output → Encoder = NVENC, `nvidia-smi` shows encoder load, CPU low);
+short test encode → private/unlisted RTMP arrives; virtual audio only if Discord audio is really in
+the broadcast path (open question). Then continue Stage 3 (panel drives cloud OBS) and Stage 4.
+
+**Cost control — stop between events (idle ≈ $2/mo boot disk).**
+```bash
+gcloud compute instances stop  spike-gpu --zone=us-central1-a
+gcloud compute instances start spike-gpu --zone=us-central1-a   # ephemeral IP may change — fine
+```
+
+---
+
+## Appendix B — NVENC 1080p60 verification (#421)
+
+Goal: **prove** OBS encodes 1080p60 via the T4's NVENC and does not silently fall back to x264.
+Runs on the GPU box after the driver + OBS are up (Appendix A steps 2 + 4).
+
+**B.1 — encoder present (prereqs).**
+```bash
+nvidia-smi                                   # Tesla T4 listed, driver loaded
+ldconfig -p | grep -i nvidia-encode          # libnvidia-encode.so present
+ffmpeg -hide_banner -encoders | grep nvenc   # must list h264_nvenc / hevc_nvenc
+```
+All three must pass; a missing `libnvidia-encode` means the driver install is incomplete (redo A.2).
+
+**B.2 — OBS sees NVENC.** Settings → Output → Output Mode **Advanced** → the **Encoder** dropdown
+must offer **"NVIDIA NVENC H.264"** (x264-only = OBS can't see it). Help → Log Files → current log
+should show NVENC init, not "NVENC not available / falling back".
+
+**B.3 — configure 1080p60.** Video: base + output 1920×1080, FPS **60**. Output → Streaming:
+Encoder NVENC H.264, Rate Control **CBR**, Bitrate **~8000 kbps**, Keyframe **2 s**, Preset
+**P5/Quality**, Profile **high**.
+
+**B.4 — real encode + proof the GPU is working.** With the HUD browser source + a feed active, run
+a **~3 min** test recording (or stream to an unlisted RTMP target). In parallel on the box:
+```bash
+nvidia-smi dmon -s u      # watch the "enc" column
+```
+- **`enc` (encoder utilisation) > 0 %** = NVENC is genuinely doing the work; `nvidia-smi` also
+  lists OBS as a GPU process.
+- `htop` → **OBS CPU stays low** (software x264 1080p60 would peg several cores). **enc > 0 AND
+  low CPU together** is the proof against a silent x264 fallback.
+
+**B.5 — output integrity.** OBS Stats dock (View → Docks → Stats): **0 "skipped frames due to
+encoding lag"** across the run; the recording plays back as clean 1080p60 / the unlisted RTMP
+target shows the stream arriving at 1080p60.
+
+**Pass criteria:**
+
+| Check | OK value |
+|---|---|
+| NVENC H.264 in the OBS dropdown | present |
+| `nvidia-smi` `enc` during encode | **> 0 %** |
+| OBS CPU during encode | low (no core maxed) |
+| encoding-lag skips (OBS Stats, ~3 min) | **0** |
+| output 1080p60 | clean, arriving |
+
+**Failure → cause:**
+- x264-only / log "NVENC not available" → driver not loaded (`nvidia-smi` fails) or
+  `libnvidia-encode` missing → reinstall driver; confirm the OBS build has FFmpeg NVENC.
+- `enc` stays 0 while OBS "encodes" → silent x264 fallback → re-select NVENC, check the log.
+- encoding-lag skips climbing → on a T4 at 1080p60 this is a **config** issue, not a GPU limit →
+  lower preset/bitrate.
+- Datacenter T4 has **no NVENC session cap** (consumer GeForce: 3–8), so remote-desktop encode +
+  OBS NVENC coexist — just confirm both run, nothing to "fix".
+
+Record into the **Stage 2 findings table** ("NVENC 1080p60 headroom"): `enc` %, CPU %, skipped
+frames.
 
 ---
 
