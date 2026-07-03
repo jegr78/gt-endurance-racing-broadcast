@@ -1997,6 +1997,7 @@ async function subsPoll(){
     const badge = $("#subsCount");
     badge.textContent = pend.length; badge.hidden = pend.length === 0;
     $("#subsEmpty").style.display = pend.length ? "none" : "";
+    updateSetupBadge();
     if (!$("#subsBox").open) return;     // collapsed -> keep the badge fresh only
     const body = $("#subsBody"), seen = new Set();
     pend.forEach(e=>{
@@ -2140,8 +2141,8 @@ async function substitutionPoll(){
     const d = await r.json();
     const s = d && d.substitution;
     const sec = document.getElementById("subSec");
-    if (!s){ sec.style.display = "none"; return; }
-    sec.style.display = "";
+    if (!s){ sec.style.display = "none"; updateSetupBadge(); return; }
+    sec.style.display = ""; updateSetupBadge();
     const when = new Date((s.ts || 0) * 1000).toLocaleTimeString();
     document.getElementById("subInfo").textContent =
       "Feed " + s.feed + " · " + when + " · Stint " + s.stint;   // textContent: XSS-safe
@@ -2338,6 +2339,16 @@ document.addEventListener("keydown", e => {
   else if(e.key === "2") setTab("setup");
 });
 setTab(localStorage.getItem(TAB_KEY) || "program");
+function updateSetupBadge(){
+  const badge = document.getElementById("setupBadge");
+  if(!badge) return;
+  const sc = document.getElementById("subsCount");
+  const pending = (sc && !sc.hidden) ? (parseInt(sc.textContent, 10) || 0) : 0;
+  const subActive = document.getElementById("subSec").style.display !== "none";
+  if(pending > 0){ badge.textContent = String(pending); badge.hidden = false; }
+  else if(subActive){ badge.textContent = "•"; badge.hidden = false; }
+  else { badge.hidden = true; }
+}
 
 /* ---------- boot ---------- */
 renderAir({});

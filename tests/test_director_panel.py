@@ -119,6 +119,17 @@ def t_tx_chip_present_and_wired():
     assert 'chip.addEventListener("click", () => setTab("setup"))' in h
 
 
+def t_setup_badge_wired():
+    h = _html()
+    assert "function updateSetupBadge(" in h
+    assert 'id="setupBadge"' in h
+    # called from BOTH the submissions poll and the substitution poll
+    assert h.count("updateSetupBadge()") >= 3  # 1 def-site call chain + >=2 call sites
+    # reads the existing pending count and the substitution-visible state
+    assert 'getElementById("subsCount")' in h
+    assert 'getElementById("subSec")' in h
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
