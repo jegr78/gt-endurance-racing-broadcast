@@ -236,22 +236,26 @@ entire value of the staged structure: buy the cheapest information first.
 
 ---
 
-## Appendix A — GCP T4 provisioning commands (copy-paste)
+## Appendix A — GCP T4 provisioning (persistent instance + provision.sh)
 
-Recommended box: **T4** — `n1-standard-4` + 1× NVIDIA T4, `us-central1`, Ubuntu 24.04, pd-standard
-50 GB. Assumes `gcloud` is authed (`gcloud auth login`; `gcloud config set project <PROJECT_ID>`).
+Model: **one long-lived instance**, provisioned once with `tools/cloud/provision.sh`,
+reused for all events by switching racecast **profiles**. Stop it between events for cost;
+the tailnet IP is stable across stop/start. **No machine images/snapshots** — the script
+is the reproducibility mechanism (full detail + the per-league onboarding and cost-control
+commands live in `tools/cloud/README.md`). Assumes `gcloud` is authed
+(`gcloud auth login`; `gcloud config set project <PROJECT_ID>`).
 
-**Step 0 — GPU quota (do FIRST; the only real lead time; quota is free).** New accounts have GPU
-quota 0. Request in the console (**IAM & Admin → Quotas & System Limits**), filter `us-central1`,
-request **≥ 1** for `NVIDIA_T4_GPUS` (region us-central1) and `GPUS_ALL_REGIONS` (global). Inspect
-from the CLI:
+**Step 0 — GPU quota (do FIRST; the only real lead time; quota is free).** New accounts
+have GPU quota 0. Request in the console (**IAM & Admin → Quotas & System Limits**), filter
+`us-central1`, request **≥ 1** for `NVIDIA_T4_GPUS` (region us-central1) and
+`GPUS_ALL_REGIONS` (global). Inspect from the CLI:
 ```bash
 gcloud compute regions describe us-central1 \
   --format="table(quotas.metric,quotas.limit,quotas.usage)" | grep -i gpu
 ```
 Approval: hours to ~2 business days. The VM cannot be created until it lands. Quota is an
-allocation *ceiling*, not a reservation or a charge — you pay only for resources actually running
-(distinct from Reservations / Committed-Use, which do cost and are not needed here).
+allocation *ceiling*, not a reservation or a charge — you pay only for resources actually
+running (distinct from Reservations / Committed-Use, which do cost and are not needed here).
 
 **Step 1 — create the VM (only after quota granted).** GPU VMs cannot live-migrate →
 `--maintenance-policy=TERMINATE` is required. T4 zones in us-central1: a, b, c, f.
@@ -267,47 +271,41 @@ gcloud compute instances create spike-gpu \
   --boot-disk-type=pd-standard \
   --boot-disk-size=50GB
 ```
-`pd-standard` (not the "Balanced" default) → ~$2/mo idle disk. Ephemeral IP (Stage 1 showed GCP
-IPs pass generally — no reserved static IP). `STANDARD`, never spot, for a live run.
+`pd-standard` (not the "Balanced" default) → ~$2/mo idle disk. Ephemeral IP (Stage 1 showed
+GCP IPs pass generally — no reserved static IP). `STANDARD`, never spot, for a live run.
 
-**Step 2 — NVIDIA driver + verify.**
+**Step 2 — provision the machine layer (once).** Copy up and run the script; it installs
+the NVIDIA driver, xfce, Firefox (deb), RustDesk, passwordless sudo, joins Tailscale, and
+runs `racecast install-tools` + `racecast install-apps --yes`. Idempotent — re-run after
+any red line.
 ```bash
+gcloud compute scp tools/cloud/provision.sh spike-gpu:~/ --zone=us-central1-a
 gcloud compute ssh spike-gpu --zone=us-central1-a
-sudo apt-get update
-curl -fsSL https://raw.githubusercontent.com/GoogleCloudPlatform/compute-gpu-installation/main/linux/install_gpu_driver.py | sudo python3 -
-nvidia-smi          # must list the Tesla T4
+  $ sudo ./provision.sh
 ```
+Until the `install-tools`/`install-apps` apt fixes (#408/#412) ship in a stable release,
+install the current main preview instead: `gh workflow run preview.yml --ref main` once,
+then `sudo RACECAST_TAG=preview-main ./provision.sh`. Reproduction alternative
+(unattended, any league): pass the script as a startup-script at create time —
+`--metadata-from-file startup-script=tools/cloud/provision.sh` — and read the serial-port
+output. Both modes are documented in `tools/cloud/README.md`.
 
-**Step 3 — desktop + remote access.** OBS renders to a real **X11** session (no Xvfb), so run a
-lightweight X desktop (e.g. xfce). Remote-access options:
-- **RustDesk over Tailscale (recommended)** — join the box to the tailnet (Stage 3 does this
-  anyway), enable RustDesk **Settings → Security → "Enable direct IP access"** + a permanent
-  password, and connect from the laptop straight to the box's **`100.x` Tailscale IP**. This
-  bypasses RustDesk's public rendezvous/relay servers entirely: Tailscale is transport *and* trust
-  boundary, no GCP internet ingress port opened — the same model as the Control Center/panel.
-  (Wayland screen-capture is limited → keep the session on **X11**.)
-- Chrome Remote Desktop headless (https://remotedesktop.google.com/headless) — works, but relays
-  through Google's public infrastructure. VNC / NoMachine also fine.
+**Step 3 — finish in the GUI (once, over RustDesk on the `100.x` Tailscale IP).** Set the
+RustDesk permanent password + "Enable direct IP access". If `nvidia-smi` was not ready
+during provisioning, reboot once so the autologin X session starts (RustDesk needs it).
 
-**Step 4 — toolchain + OBS.**
-```bash
-# copy the testing profile + fresh cookies up (via gcloud compute scp):
-gcloud compute scp --recurse runtime/<profile> runtime/yt-cookies.txt spike-gpu:~/racecast/runtime/ --zone=us-central1-a
-# on the box:
-racecast install-tools      # apt-update-first + pinned yt-dlp/deno (#408/#412)
-racecast install-apps       # OBS via PPA — Browser Source plugin included on x86-64
-racecast setup              # localize scene collection -> import into OBS (GUI)
-```
+**Step 4 — onboard a league (once per league, then reuse via `racecast profile use`).**
+Copy the profile + fresh cookies up, `racecast setup` to localize the OBS scene collection,
+import it into OBS. See `tools/cloud/README.md` §4.
 
-**Step 5 — validate with eyes on the screen (Stage 2 / NVENC #421).** HUD browser source renders;
-**NVENC encodes 1080p60** (Output → Encoder = NVENC, `nvidia-smi` shows encoder load, CPU low);
-short test encode → private/unlisted RTMP arrives; virtual audio only if Discord audio is really in
-the broadcast path (open question). Then continue Stage 3 (panel drives cloud OBS) and Stage 4.
+**Step 5 — validate with eyes on the screen (Stage 2 / NVENC #421).** HUD browser source
+renders; **NVENC encodes 1080p60** (Appendix B checklist); short test encode →
+private/unlisted RTMP arrives. Then continue Stage 3 (panel drives cloud OBS) and Stage 4.
 
 **Cost control — stop between events (idle ≈ $2/mo boot disk).**
 ```bash
 gcloud compute instances stop  spike-gpu --zone=us-central1-a
-gcloud compute instances start spike-gpu --zone=us-central1-a   # ephemeral IP may change — fine
+gcloud compute instances start spike-gpu --zone=us-central1-a   # ephemeral public IP may change; tailnet IP stays
 ```
 
 ---
