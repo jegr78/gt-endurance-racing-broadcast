@@ -625,22 +625,50 @@ def resolve_brand_override(brands_dir, key):
     return None
 
 
+# Shared contract with get-graphics.py's MANIFEST_NAME (it writes this file). The two
+# cannot share code — the relay's downloaders are deliberately dependency-light — so keep
+# the literal "manifest.json" in sync.
+GRAPHICS_MANIFEST_NAME = "manifest.json"
+
+
+def _internal_graphic_labels(graphics_dir):
+    """Lowercased set of asset labels marked OBS-only (internal) in the graphics manifest
+    get-graphics.py writes. Best-effort: missing/unreadable/malformed/wrong-shape ->
+    empty set (the browser shows everything; backward compatible)."""
+    if not graphics_dir:
+        return set()
+    try:
+        with open(os.path.join(graphics_dir, GRAPHICS_MANIFEST_NAME), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return set()
+    internal = data.get("internal") if isinstance(data, dict) else None
+    if not isinstance(internal, list):
+        return set()
+    return {str(x).strip().lower() for x in internal}
+
+
 def list_graphics(graphics_dir):
     """Sorted list of the broadcast still-graphics (*.png) in graphics_dir as
     [{"name": <Sheet label>, "file": <label>.png}, ...] for the cockpit browser.
     Tolerant of an unset/missing/unreadable dir (returns []). Names are arbitrary
     Sheet labels (mixed case, spaces) so there is no key regex here — listing is
-    a plain directory read; the SECURITY check lives in resolve_graphic."""
+    a plain directory read; the SECURITY check lives in resolve_graphic. Assets
+    flagged internal in the graphics manifest are omitted."""
     if not graphics_dir:
         return []
     try:
         names = os.listdir(graphics_dir)
     except OSError:
         return []
+    internal = _internal_graphic_labels(graphics_dir)
     out = []
     for fn in names:
         if fn.lower().endswith(".png") and os.path.isfile(os.path.join(graphics_dir, fn)):
-            out.append({"name": fn[:-4], "file": fn})
+            name = fn[:-4]
+            if name.strip().lower() in internal:
+                continue
+            out.append({"name": name, "file": fn})
     out.sort(key=lambda e: e["name"].lower())
     return out
 

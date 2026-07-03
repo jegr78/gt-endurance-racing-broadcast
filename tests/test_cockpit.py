@@ -277,6 +277,39 @@ def t_list_graphics_missing_or_unset_dir_is_empty():
     assert m.list_graphics("/no/such/dir/xyz") == []
 
 
+def t_list_graphics_filters_internal_from_manifest():
+    with tempfile.TemporaryDirectory() as d:
+        _seed_graphics(d)  # Standings, Schedule, Race Results (+ notes.txt)
+        with open(os.path.join(d, "manifest.json"), "w", encoding="utf-8") as fh:
+            json.dump({"internal": ["Schedule"]}, fh)
+        got = m.list_graphics(d)
+        assert got == [
+            {"name": "Race Results", "file": "Race Results.png"},
+            {"name": "Standings", "file": "Standings.png"},
+        ], got  # Schedule hidden; manifest.json itself never listed (not a .png)
+
+
+def t_list_graphics_internal_match_is_case_insensitive():
+    with tempfile.TemporaryDirectory() as d:
+        _seed_graphics(d)
+        with open(os.path.join(d, "manifest.json"), "w", encoding="utf-8") as fh:
+            json.dump({"internal": ["  sTaNdInGs "]}, fh)  # padded + mixed case
+        got = m.list_graphics(d)
+        assert [e["name"] for e in got] == ["Race Results", "Schedule"], got
+
+
+def t_list_graphics_absent_or_malformed_manifest_shows_all():
+    with tempfile.TemporaryDirectory() as d:
+        _seed_graphics(d)
+        assert len(m.list_graphics(d)) == 3, "no manifest -> all listed"
+        with open(os.path.join(d, "manifest.json"), "w", encoding="utf-8") as fh:
+            fh.write("{ not json")
+        assert len(m.list_graphics(d)) == 3, "malformed manifest -> all listed"
+        with open(os.path.join(d, "manifest.json"), "w", encoding="utf-8") as fh:
+            json.dump({"internal": "Schedule"}, fh)  # wrong type (str, not list)
+        assert len(m.list_graphics(d)) == 3, "bad internal type -> all listed"
+
+
 def t_resolve_graphic_happy_path():
     with tempfile.TemporaryDirectory() as d:
         _seed_graphics(d)
