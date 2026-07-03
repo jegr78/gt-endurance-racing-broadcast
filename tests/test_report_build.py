@@ -152,6 +152,28 @@ def t_fill_gaps_does_not_bridge_relay_down_gap():
     assert rep["header"]["uptime_pct"] <= 20.0, rep["header"]
 
 
+def t_report_collects_and_renders_substitutions():
+    samples = [_sample(100.0), _sample(160.0)]
+    events = [
+        {"ts": 130.0, "type": "feed_substitution",
+         "metadata": {"feed": "A", "stint": 2, "reason": "A dropped"}},
+        {"ts": 150.0, "type": "feed_substitution", "metadata": {"feed": "B", "stint": 3}},
+        {"ts": 140.0, "type": "takeover", "producer": "B", "metadata": {"from": "A", "stint": 2}},
+    ]
+    names = {2: "Ann", 3: "Bob"}   # name_for_stint is a DICT, keyed 1-based
+    rep = rb.build_report(samples, events, names, "6h Spa", (100.0, 160.0), now=200.0)
+    subs = rep["substitutions"]
+    assert [s["feed"] for s in subs] == ["A", "B"]
+    assert subs[0] == {"ts": 130.0, "feed": "A", "stint": 2, "streamer": "Ann", "reason": "A dropped"}
+    assert subs[1]["streamer"] == "Bob" and subs[1]["reason"] == ""
+    html = rb.render_html(rep)
+    assert "Stream substitutions" in html and "Ann" in html and "A dropped" in html
+    # empty case renders no section
+    rep0 = rb.build_report(samples, [], {}, "", (100.0, 160.0), now=200.0)
+    assert rep0["substitutions"] == []
+    assert "Stream substitutions" not in rb.render_html(rep0)
+
+
 def t_build_report_no_mutation_on_repeated_call():
     # build_report must not mutate shared state: two calls on the same samples must
     # yield identical health_bands (no accumulating dict mutation).
