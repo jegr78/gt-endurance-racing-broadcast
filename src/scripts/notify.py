@@ -63,3 +63,17 @@ def obs_stream_discord_payload(started, producer, event_title=""):
                     "OBS has stopped streaming — the broadcast is off air.",
                     COLOR_STREAM_STOP, ping=True,
                     event_title=event_title, producer=producer)
+
+
+COLOR_SUBSTITUTION = 0xF59E0B  # amber — an ad-hoc on-air stream swap (recovery marker)
+
+
+def substitution_discord_payload(feed, stint, producer, event_title=""):
+    """Announce an ad-hoc on-air stream substitution: the producer swapped the
+    on-air commentator stream to an alternative mid-stint. `feed` is "A"/"B",
+    `stint` is 1-based. Amber, NO @here — the outage that prompted the swap already
+    pinged; this is a follow-up recovery marker. Pure."""
+    desc = (f"The on-air stream on Feed {feed} was substituted mid-stint "
+            f"(stint {stint}).")
+    return _payload("🔁 Stream substituted", desc, COLOR_SUBSTITUTION, ping=False,
+                    event_title=event_title, producer=producer)

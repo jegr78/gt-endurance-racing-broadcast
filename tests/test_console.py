@@ -280,6 +280,11 @@ def t_takeover_health_is_producer_step_up():
     assert cp.decide({cp.PRODUCER}, ["takeover", "health"], has_step_up=True) == cp.ALLOW
 
 
+def t_substitution_is_director_gated():
+    assert cp.min_capability(["substitution", "latest"]) == cp.Requirement(cp.DIRECTOR, False)
+    assert cp.min_capability(["substitution", "note"], "POST") == cp.Requirement(cp.DIRECTOR, False)
+
+
 def t_event_notes_any_authenticated():
     # Any authenticated subject (even role-less) may read the notes...
     assert cp.decide(set(), ["event-notes", "data"], "GET") == cp.ALLOW

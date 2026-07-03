@@ -2217,6 +2217,10 @@ class HealthStore:
         with self.lock:
             return health_store.query_events(self.conn, frm, to)
 
+    def annotate_latest_event(self, event_type, patch):
+        with self.lock:
+            return health_store.annotate_latest_event(self.conn, event_type, patch)
+
     def query(self, frm, to):
         with self.lock:
             return health_store.query_range(self.conn, frm, to)
@@ -3294,6 +3298,28 @@ def stint_start_indices(stint, schedule_len):
     hi = max(0, schedule_len - 1)
     a = min(stint - 1, hi)
     return a, a + 1
+
+
+SUBSTITUTION_REASON_MAX = 200
+
+
+def is_substitution(served_url, served_idx, new_url, new_idx):
+    """True when the on-air feed swaps to a DIFFERENT non-empty URL at the SAME
+    stint index (an operator reload after editing the on-air URL) — an ad-hoc
+    stream substitution. A same-URL reconnect or a stint change is not one. Pure."""
+    return (bool(new_url) and bool(served_url)
+            and new_idx == served_idx and new_url != served_url)
+
+
+def sanitize_reason(text):
+    """Clean a free-text substitution reason: non-str -> ''; strip control chars,
+    collapse all whitespace to single spaces, trim, cap at SUBSTITUTION_REASON_MAX.
+    Rendered via textContent client-side, but sanitized here too (defense in depth).
+    Pure."""
+    if not isinstance(text, str):
+        return ""
+    kept = "".join(ch if ch >= " " else " " for ch in text)   # \n\t and other controls -> space
+    return " ".join(kept.split())[:SUBSTITUTION_REASON_MAX].strip()
 
 
 def pull_slots(rows):
@@ -5467,13 +5493,76 @@ class Relay:
         return self.status()
 
     def reload(self, which=None):
+        # Detect an ad-hoc on-air stream substitution: the operator edited the
+        # on-air feed's URL then pressed Reload, so the on-air feed's URL changes
+        # at the SAME stint across the schedule refresh. Captured before feeds
+        # actually reconnect; best-effort, never blocks the reload.
+        # NOTE: detection is index-scoped (URL changed at the on-air feed's index).
+        # The documented flow edits the on-air URL cell in place; inserting/deleting
+        # rows ABOVE the on-air row in the same reload shifts that index onto a
+        # different stint's URL and would read as a substitution — an accepted edge
+        # of the "URL change at unchanged stint index" definition, not the real flow.
+        live = self.live_feed()
+        old_url, old_idx = self.feeds[live].current_channel()
         self.source.refresh(timeout=6)
+        new_url, new_idx = self.feeds[live].current_channel()
+        if (which is None or which.upper() == live) and \
+                is_substitution(old_url, old_idx, new_url, new_idx):
+            self._record_substitution(live, new_idx)
         targets = [which.upper()] if which else list(self.feeds)
         for t in targets:
             if t in self.feeds: self.feeds[t].reload()
         LOG.info("reload: schedule re-read (%d stints), feeds %s",
                  len(self.source.get()), ",".join(targets))
         return {"reloaded": targets, **self.status()}
+
+    def _record_substitution(self, feed, idx):
+        """Record + announce an ad-hoc on-air stream substitution (best-effort):
+        a discrete Health event (feed + 1-based stint only, NO url) plus a Discord
+        post. A missing health_store or webhook is a silent no-op."""
+        stint = idx + 1
+        if self.health_store is not None:
+            try:
+                self.health_store.record_event(
+                    time.time(), "feed_substitution", producer=self.producer_name,
+                    metadata={"feed": feed, "stint": stint})
+            except Exception:                # noqa: BLE001 — best-effort
+                pass
+        self._discord_post(
+            notify.substitution_discord_payload(feed, stint, self.producer_name,
+                                                 self._event_title()),
+            "feed-substitution")
+        LOG.info("stream substitution recorded: Feed %s stint %d", feed, stint)
+
+    def latest_substitution(self):
+        """The most recent feed_substitution event as
+        {"ts","feed","stint","reason"}, or None. Read side for the Director Panel's
+        substitution section."""
+        if self.health_store is None:
+            return None
+        try:
+            events = self.health_store.events(0, time.time())
+        except Exception:                    # noqa: BLE001 — best-effort read
+            return None
+        subs = [e for e in events if e.get("type") == "feed_substitution"]
+        if not subs:
+            return None
+        e = subs[-1]                         # events() is ascending -> last = newest
+        md = e.get("metadata") or {}
+        return {"ts": e.get("ts"), "feed": md.get("feed") or "",
+                "stint": md.get("stint"), "reason": md.get("reason") or ""}
+
+    def annotate_substitution_reason(self, reason):
+        """Attach a sanitized free-text reason to the latest feed_substitution
+        event (director action from the panel). Returns the updated
+        latest_substitution() shape, or {"error": ...} when disabled/absent."""
+        if self.health_store is None:
+            return {"error": "health history disabled"}
+        updated = self.health_store.annotate_latest_event(
+            "feed_substitution", {"reason": sanitize_reason(reason)})
+        if updated is None:
+            return {"error": "no substitution to annotate"}
+        return self.latest_substitution()
 
     def pov_reload(self):
         if not self.pov:
@@ -6751,6 +6840,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                                  "live": live.get(i)}
                                                 for i, (u, n, st, line) in enumerate(rows)],
                                        "source": relay.source.health()})
+                if p == ["substitution", "latest"]:
+                    # Director-panel read side for the ad-hoc stream-substitution
+                    # section. Root path; mirrored at /console/substitution/latest
+                    # (director-gated) via console_policy + the gate's ALLOW
+                    # fall-through, so a director reaches it over the Funnel.
+                    return self._send({"substitution": relay.latest_substitution()})
                 if p == ["crew", "data"]:
                     # Tailnet-only crew roster view (#216 phase 5). A ROOT path —
                     # NOT under the funnelled /console prefix, so the public
@@ -6939,6 +7034,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send({"error": "chat disabled"}, 404)
                     return self._send(chat_store.add(
                         user=body.get("user"), text=body.get("text")))
+                if p == ["substitution", "note"]:
+                    return self._send(relay.annotate_substitution_reason(body.get("reason")))
                 if p == ["cues", "send"]:
                     if not cue_store:
                         return self._send({"error": "cues disabled"}, 404)

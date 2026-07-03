@@ -144,11 +144,18 @@ def build_report(samples, events, name_for_stint, event_title, window, now):
     feeds = [{"feed": "A", **_feed_stats(samples, "feed_a_down")},
              {"feed": "B", **_feed_stats(samples, "feed_b_down")}]
     handovers = []
+    substitutions = []
     for e in events:
         if e.get("type") == "takeover":
             md = e.get("metadata") or {}
             handovers.append({"ts": e.get("ts"), "from": md.get("from") or "",
                               "to": e.get("producer") or "", "stint": md.get("stint")})
+        elif e.get("type") == "feed_substitution":
+            md = e.get("metadata") or {}
+            substitutions.append({"ts": e.get("ts"), "feed": md.get("feed") or "",
+                                  "stint": md.get("stint"),
+                                  "streamer": name_for_stint.get(md.get("stint")) or "",
+                                  "reason": md.get("reason") or ""})
     return {
         "header": {"event_title": event_title or "", "start": frm, "end": to,
                    "duration_s": round(duration_s, 1),
@@ -158,6 +165,7 @@ def build_report(samples, events, name_for_stint, event_title, window, now):
         "incidents": hs.derive_incidents(samples),
         "quality": _quality(samples),
         "producer_handovers": handovers,
+        "substitutions": substitutions,
         "overlap_approximate": bool(handovers),
         "health_bands": health_bands,
     }
@@ -284,6 +292,17 @@ def render_html(report):
                   h["stint"] if h["stint"] is not None else "—")
                  for h in report["producer_handovers"]]
         parts.append(_table(["Time", "Handover", "Stint"], hrows))
+
+    # Stream substitutions
+    if report.get("substitutions"):
+        parts.append("<h2>Stream substitutions</h2>")
+        parts.append("<p class='note'>Ad-hoc on-air stream swaps (the on-air feed was "
+                     "pointed at an alternative source mid-stint).</p>")
+        srows = [(_fmt_clock(s["ts"]), s["feed"],
+                  s["stint"] if s["stint"] is not None else "—",
+                  s["streamer"], s["reason"])
+                 for s in report["substitutions"]]
+        parts.append(_table(["Time", "Feed", "Stint", "Commentator", "Reason"], srows))
 
     # Feed reliability
     parts.append("<h2>Feed reliability</h2>")
