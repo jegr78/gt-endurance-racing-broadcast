@@ -114,6 +114,7 @@ import install_apps       # companion_http_version for the buttons health probe 
 import companion_common   # companion config.json path for bind-address resolution (#236)
 import tailscale          # detect_tailscale_ip fallback for bind-address resolution (#236)
 import logsetup  # rotating per-feed/console loggers + streamlink pump (src/scripts on sys.path)
+import placeholders  # transparent-graphic placeholder path -> hide pure-placeholder assets from the browser
 from services import external_tool_env  # de-PyInstaller the env for spawned external tools
 
 # Module-level relay logger. main() attaches the file/console handlers via
@@ -648,13 +649,45 @@ def _internal_graphic_labels(graphics_dir):
     return {str(x).strip().lower() for x in internal}
 
 
+def _placeholder_signature():
+    """(size, bytes) of the transparent graphic placeholder, or None if it cannot be
+    read. A pure-placeholder graphic (written by get-graphics' seed/reset for an
+    un-linked or un-Sheeted asset, #387) is byte-identical to this file and renders
+    blank, so it is dropped from the browser list. Best-effort: None -> no placeholder
+    filtering (the files just stay listed, today's behaviour)."""
+    try:
+        with open(placeholders.graphic_placeholder_path(), "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return None
+    return (len(data), data)
+
+
+def _is_placeholder_png(path, placeholder_sig):
+    """True iff the file at `path` is byte-identical to the graphic placeholder.
+    A cheap size pre-check avoids reading real (larger) graphics. placeholder_sig is
+    the (size, bytes) tuple from _placeholder_signature(), or None -> never a
+    placeholder (no filtering)."""
+    if not placeholder_sig:
+        return False
+    size, data = placeholder_sig
+    try:
+        if os.path.getsize(path) != size:
+            return False
+        with open(path, "rb") as fh:
+            return fh.read() == data
+    except OSError:
+        return False
+
+
 def list_graphics(graphics_dir):
     """Sorted list of the broadcast still-graphics (*.png) in graphics_dir as
     [{"name": <Sheet label>, "file": <label>.png}, ...] for the cockpit browser.
     Tolerant of an unset/missing/unreadable dir (returns []). Names are arbitrary
     Sheet labels (mixed case, spaces) so there is no key regex here — listing is
     a plain directory read; the SECURITY check lives in resolve_graphic. Assets
-    flagged internal in the graphics manifest are omitted."""
+    flagged internal in the graphics manifest, and pure-placeholder (blank) graphics,
+    are omitted."""
     if not graphics_dir:
         return []
     try:
@@ -662,11 +695,14 @@ def list_graphics(graphics_dir):
     except OSError:
         return []
     internal = _internal_graphic_labels(graphics_dir)
+    placeholder_sig = _placeholder_signature()
     out = []
     for fn in names:
         if fn.lower().endswith(".png") and os.path.isfile(os.path.join(graphics_dir, fn)):
             name = fn[:-4]
             if name.strip().lower() in internal:
+                continue
+            if _is_placeholder_png(os.path.join(graphics_dir, fn), placeholder_sig):
                 continue
             out.append({"name": name, "file": fn})
     out.sort(key=lambda e: e["name"].lower())

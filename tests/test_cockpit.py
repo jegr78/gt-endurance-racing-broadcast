@@ -310,6 +310,34 @@ def t_list_graphics_absent_or_malformed_manifest_shows_all():
         assert len(m.list_graphics(d)) == 3, "bad internal type -> all listed"
 
 
+def t_list_graphics_excludes_placeholder_pngs():
+    # A pure-placeholder graphic (transparent PNG seeded/reset for an un-linked or
+    # un-Sheeted asset, #387) renders blank -> it must NOT appear in the browser.
+    import shutil
+    with tempfile.TemporaryDirectory() as d:
+        _seed_graphics(d)  # Standings, Schedule, Race Results (real-ish PNGs)
+        shutil.copyfile(m.placeholders.graphic_placeholder_path(),
+                        os.path.join(d, "Weather Rain.png"))  # byte-identical placeholder
+        names = [e["name"] for e in m.list_graphics(d)]
+        assert "Weather Rain" not in names, names
+        assert names == ["Race Results", "Schedule", "Standings"], names
+
+
+def t_is_placeholder_png_matches_only_the_placeholder():
+    import shutil
+    sig = m._placeholder_signature()
+    assert sig is not None, "the committed transparent placeholder must be readable"
+    with tempfile.TemporaryDirectory() as d:
+        ph = os.path.join(d, "ph.png")
+        shutil.copyfile(m.placeholders.graphic_placeholder_path(), ph)
+        assert m._is_placeholder_png(ph, sig) is True
+        real = os.path.join(d, "real.png")
+        with open(real, "wb") as fh:
+            fh.write(b"\x89PNG\r\n" + b"x" * 9000)  # different size -> cheap reject
+        assert m._is_placeholder_png(real, sig) is False
+        assert m._is_placeholder_png(real, None) is False  # no signature -> never a placeholder
+
+
 def t_resolve_graphic_happy_path():
     with tempfile.TemporaryDirectory() as d:
         _seed_graphics(d)
