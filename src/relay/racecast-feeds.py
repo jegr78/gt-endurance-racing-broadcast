@@ -6835,6 +6835,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                                  "live": live.get(i)}
                                                 for i, (u, n, st, line) in enumerate(rows)],
                                        "source": relay.source.health()})
+                if p == ["substitution", "latest"]:
+                    # Director-panel read side for the ad-hoc stream-substitution
+                    # section. Root path; mirrored at /console/substitution/latest
+                    # (director-gated) via console_policy + the gate's ALLOW
+                    # fall-through, so a director reaches it over the Funnel.
+                    return self._send({"substitution": relay.latest_substitution()})
                 if p == ["crew", "data"]:
                     # Tailnet-only crew roster view (#216 phase 5). A ROOT path —
                     # NOT under the funnelled /console prefix, so the public
@@ -7023,6 +7029,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send({"error": "chat disabled"}, 404)
                     return self._send(chat_store.add(
                         user=body.get("user"), text=body.get("text")))
+                if p == ["substitution", "note"]:
+                    return self._send(relay.annotate_substitution_reason(body.get("reason")))
                 if p == ["cues", "send"]:
                     if not cue_store:
                         return self._send({"error": "cues disabled"}, 404)

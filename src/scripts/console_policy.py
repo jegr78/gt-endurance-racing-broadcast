@@ -94,6 +94,8 @@ def min_capability(segments, method="GET"):
         return Requirement(DIRECTOR, False)
     if p and p[0] == "cues":                    # /cues/send|data|presets|reload
         return Requirement(DIRECTOR, False)
+    if p and p[0] == "substitution":            # /substitution/latest (GET) + /note (POST)
+        return Requirement(DIRECTOR, False)
 
     # --- race control: read-only monitoring desk (#244) + RC->commentator notes (#376) ---
     # Page + its redacted-schedule data endpoint, plus the #376 quick-note send
