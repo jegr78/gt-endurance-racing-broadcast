@@ -47,6 +47,7 @@
     --live:#2bd66a; --live-glow:rgba(43,214,106,.45);
     --amber:#ffb000; --amber-glow:rgba(255,176,0,.4);
     --blue:#3aa0ff;
+    --tabbar-h:46px;
   }
   *{box-sizing:border-box}
   html,body{margin:0}
@@ -123,7 +124,32 @@
   .bus .keys{display:flex;flex-wrap:wrap;gap:8px;flex:1;align-items:stretch}
   .bus .body{flex:1;min-width:0}
   .sep{flex:0 0 1px;align-self:stretch;background:var(--edge);margin:2px 6px}
-  .pgm{position:sticky;top:8px;z-index:30}
+  .pgm{position:sticky;top:calc(var(--tabbar-h) + 8px);z-index:30}
+
+  /* ---------- tab bar (PROGRAM / SETUP) ---------- */
+  .tabbar{position:sticky;top:0;z-index:40;display:flex;gap:8px;
+    min-height:var(--tabbar-h);align-items:flex-end;
+    background:var(--bg);padding:8px 0 0;margin-bottom:12px;
+    border-bottom:1px solid var(--edge)}
+  .tab{appearance:none;cursor:pointer;font-family:var(--head);font-weight:700;
+    letter-spacing:.12em;text-transform:uppercase;font-size:15px;
+    padding:10px 20px;min-height:40px;border-radius:10px 10px 0 0;
+    border:1px solid var(--edge);border-bottom:none;
+    background:linear-gradient(180deg,var(--panel-2),var(--panel));
+    color:var(--muted);position:relative;display:inline-flex;align-items:center;gap:8px}
+  .tab[aria-selected="true"]{color:var(--ink)}
+  .tab[aria-selected="true"]::after{content:"";position:absolute;left:0;right:0;bottom:-1px;
+    height:2px;background:var(--amber);box-shadow:0 0 10px var(--amber-glow)}
+  .tab:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  .tabbadge{display:inline-flex;align-items:center;justify-content:center;
+    min-width:18px;height:18px;padding:0 5px;border-radius:9px;
+    background:var(--air);color:#fff;font-family:var(--mono);font-weight:700;
+    font-size:11px;letter-spacing:0}
+  .tabbadge[hidden]{display:none}
+  .txarmed{align-self:center;flex:0 0 auto;cursor:pointer;font-family:var(--mono);
+    font-size:11px;letter-spacing:.08em;color:var(--ink);background:#0c0f13;
+    border:1px solid var(--edge);border-radius:8px;padding:7px 10px;white-space:nowrap}
+  .txarmed:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
   /* ---------- keys ---------- */
   button.k{
@@ -385,6 +411,12 @@
            overflow-y:auto;min-height:0;margin-top:0}
     details.chat#chatBox .hint,details.chat#bchatBox .hint{margin-top:6px}
   }
+  /* Live Preview stacks as a full-width column: the label + SHOW/HIDE + stream
+     button sit on their own top row and the program/feeds body renders as a
+     clean row beneath — not the default .bus side-by-side, whose fixed-width
+     cap let its buttons overflow onto the body. */
+  .bus.preview{flex-direction:column;align-items:stretch}
+  .bus.preview>.cap{flex:0 0 auto;width:100%;padding-top:0}
   .preview .pvbody{margin-top:6px}
   .pvframe{position:relative;width:100%;min-height:60px;display:flex;align-items:center;justify-content:center;
     background:#0c0f14;border:1px solid #1e2630;border-radius:6px;overflow:hidden}
@@ -462,32 +494,15 @@
   <div class="panes">
   <div class="mainpane">
 
-  <section class="bus pgm"><div class="cap">PGM</div><div class="keys" id="pgmBus"></div></section>
+  <div class="tabbar" role="tablist" aria-label="Director panel sections">
+    <button class="tab" id="tabBtnProgram" role="tab" data-tab="program"
+            aria-selected="true" aria-controls="tabProgram" tabindex="0">PROGRAM</button>
+    <button class="tab" id="tabBtnSetup" role="tab" data-tab="setup"
+            aria-selected="false" aria-controls="tabSetup" tabindex="-1">SETUP<span
+            class="tabbadge" id="setupBadge" hidden>0</span></button>
+  </div>
 
-  <section class="bus" id="cuesBus">
-    <div class="cap">Cues</div>
-    <div class="body">
-      <div id="cuePresets"></div>
-      <div class="cue-compose">
-        <select id="cueTarget" aria-label="Cue target">
-          <option value="all">All</option>
-          <option value="on-air">On air</option>
-        </select>
-        <select id="cueLevel" aria-label="Cue level">
-          <option value="info">Info</option>
-          <option value="critical">Critical</option>
-        </select>
-        <input id="cueText" type="text" maxlength="200" placeholder="Cue text…">
-        <button id="cueSend" type="button">SEND CUE</button>
-      </div>
-      <ul id="cueRecent"></ul>
-      <div class="cueback" id="cueBackWrap" hidden>
-        <div class="cueback-cap">From commentators</div>
-        <ul id="cueBackList"></ul>
-      </div>
-      <div class="hint" id="cueHint">Send a text cue to a commentator or all commentators. Critical cues require acknowledgement in the cockpit. Commentator replies appear under “From commentators”.</div>
-    </div>
-  </section>
+  <div id="tabProgram" role="tabpanel" aria-labelledby="tabBtnProgram">
 
   <section class="bus preview" id="previewSec">
     <div class="cap">Live Preview
@@ -527,6 +542,35 @@
     </div>
   </section>
 
+  <section class="bus pgm"><div class="cap">PGM</div><div class="keys" id="pgmBus"></div><button
+    class="txarmed" id="txArmed" type="button"
+    title="Armed transition — click to change it on the SETUP tab">TX: FADE</button></section>
+
+  <section class="bus" id="cuesBus">
+    <div class="cap">Cues</div>
+    <div class="body">
+      <div id="cuePresets"></div>
+      <div class="cue-compose">
+        <select id="cueTarget" aria-label="Cue target">
+          <option value="all">All</option>
+          <option value="on-air">On air</option>
+        </select>
+        <select id="cueLevel" aria-label="Cue level">
+          <option value="info">Info</option>
+          <option value="critical">Critical</option>
+        </select>
+        <input id="cueText" type="text" maxlength="200" placeholder="Cue text…">
+        <button id="cueSend" type="button">SEND CUE</button>
+      </div>
+      <ul id="cueRecent"></ul>
+      <div class="cueback" id="cueBackWrap" hidden>
+        <div class="cueback-cap">From commentators</div>
+        <ul id="cueBackList"></ul>
+      </div>
+      <div class="hint" id="cueHint">Send a text cue to a commentator or all commentators. Critical cues require acknowledgement in the cockpit. Commentator replies appear under “From commentators”.</div>
+    </div>
+  </section>
+
   <section class="bus"><div class="cap">Feeds</div>
     <div class="body">
       <div class="keys" id="feedsBus"></div>
@@ -543,16 +587,9 @@
     </div>
   </section>
 
-  <section class="bus" id="txBar" title="Transition applied to the next scene switch">
-    <div class="cap">Transition</div>
-    <div class="keys">
-      <button class="k tx" data-tx="cut">CUT</button>
-      <button class="k tx" data-tx="fade">FADE</button>
-      <button class="k tx" data-tx="stinger">STINGER</button>
-      <label class="txdur">dur <input id="txDur" type="number" min="0" max="10000"
-             step="50" value="300"> ms</label>
-    </div>
-  </section>
+  </div><!-- /#tabProgram -->
+
+  <div id="tabSetup" role="tabpanel" aria-labelledby="tabBtnSetup" hidden>
 
   <section class="bus"><div class="cap">Scn·Vis</div><div class="keys" id="scnBus"></div></section>
 
@@ -568,6 +605,17 @@
   </section>
 
   <section class="bus"><div class="cap">Audio</div><div class="body" id="audio"></div></section>
+
+  <section class="bus" id="txBar" title="Transition applied to the next scene switch">
+    <div class="cap">Transition</div>
+    <div class="keys">
+      <button class="k tx" data-tx="cut">CUT</button>
+      <button class="k tx" data-tx="fade">FADE</button>
+      <button class="k tx" data-tx="stinger">STINGER</button>
+      <label class="txdur">dur <input id="txDur" type="number" min="0" max="10000"
+             step="50" value="300"> ms</label>
+    </div>
+  </section>
 
   <details class="bus urls" id="urlsBox">
     <summary>URLs · Schedule + POV</summary>
@@ -589,17 +637,6 @@
         on air. <b>CLEAR URL</b> removes only the stream link and keeps the
         Streamer + Stint slot. Streamer/Stint/URL can still be edited in the
         Sheet directly.</div>
-    </div>
-  </details>
-
-  <details class="bus urls" id="subsBox">
-    <summary>Pending stream submissions <span class="unread" id="subsCount" hidden>0</span></summary>
-    <div class="body">
-      <table><tbody id="subsBody"></tbody></table>
-      <div class="hint" id="subsEmpty">No pending submissions. Commentators can submit
-        their own stream link from the cockpit; approvals here write the Schedule
-        (Sheet) — the feed picks it up on RELOAD A/B / NEXT. Nothing a commentator
-        submits goes on air without an approval.</div>
     </div>
   </details>
 
@@ -627,6 +664,17 @@
     </div>
   </details>
 
+  <details class="bus urls" id="subsBox">
+    <summary>Pending stream submissions <span class="unread" id="subsCount" hidden>0</span></summary>
+    <div class="body">
+      <table><tbody id="subsBody"></tbody></table>
+      <div class="hint" id="subsEmpty">No pending submissions. Commentators can submit
+        their own stream link from the cockpit; approvals here write the Schedule
+        (Sheet) — the feed picks it up on RELOAD A/B / NEXT. Nothing a commentator
+        submits goes on air without an approval.</div>
+    </div>
+  </details>
+
   <section class="bus" id="subSec" style="display:none">
     <div class="cap">Substitution</div>
     <div class="body">
@@ -640,6 +688,8 @@
       </div>
     </div>
   </section>
+
+  </div><!-- /#tabSetup -->
 
   <div id="log">Ready. All controls work relay-only — no OBS connection needed.</div>
 
@@ -965,6 +1015,8 @@ function renderTxBar(){
     b.classList.toggle('on', b.dataset.tx === activeTransition));
   const dur = $("#txDur");
   if (dur) dur.disabled = (activeTransition === "cut");
+  const chip = document.getElementById("txArmed");
+  if (chip) chip.textContent = "TX: " + activeTransition.toUpperCase();
 }
 document.querySelectorAll('#txBar .tx').forEach(b =>
   b.addEventListener('click', () => { activeTransition = b.dataset.tx; renderTxBar(); }));
@@ -972,6 +1024,8 @@ document.querySelectorAll('#txBar .tx').forEach(b =>
     const v = parseInt(d.value, 10);
     activeDuration = isNaN(v) ? 300 : Math.max(0, Math.min(10000, v)); d.value = activeDuration; }); }
 renderTxBar();
+{ const chip = document.getElementById("txArmed");
+  if (chip) chip.addEventListener("click", () => setTab("setup")); }
 
 async function obsScene(scene){
   const d = await obsPost("scene", {scene, transition: activeTransition,
@@ -1949,6 +2003,7 @@ async function subsPoll(){
     const badge = $("#subsCount");
     badge.textContent = pend.length; badge.hidden = pend.length === 0;
     $("#subsEmpty").style.display = pend.length ? "none" : "";
+    updateSetupBadge();
     if (!$("#subsBox").open) return;     // collapsed -> keep the badge fresh only
     const body = $("#subsBody"), seen = new Set();
     pend.forEach(e=>{
@@ -2092,8 +2147,8 @@ async function substitutionPoll(){
     const d = await r.json();
     const s = d && d.substitution;
     const sec = document.getElementById("subSec");
-    if (!s){ sec.style.display = "none"; return; }
-    sec.style.display = "";
+    if (!s){ sec.style.display = "none"; updateSetupBadge(); return; }
+    sec.style.display = ""; updateSetupBadge();
     const when = new Date((s.ts || 0) * 1000).toLocaleTimeString();
     document.getElementById("subInfo").textContent =
       "Feed " + s.feed + " · " + when + " · Stint " + s.stint;   // textContent: XSS-safe
@@ -2224,7 +2279,7 @@ function pvMarkOnAir(feed){
   const lbl = $("#pvProgramLabel");
   if(lbl) lbl.firstElementChild.textContent = feed ? ("PROGRAM (Feed " + feed + " on air)") : "PROGRAM";
 }
-if((localStorage.getItem(PV_KEY) || "0") === "1"){ pvStart(); }
+if((localStorage.getItem(PV_KEY) || "1") === "1"){ pvStart(); }
 pgmAudioInit("/preview/program-audio");
 
 /* ---------- Graphics browser (read-only Sheet-assets list) ---------- */
@@ -2258,6 +2313,48 @@ async function loadGraphics() {
 }
 { const gr = document.getElementById('gfxRefresh');
   if (gr) gr.addEventListener('click', loadGraphics); }
+
+/* ---------- tab layout (PROGRAM / SETUP) ---------- */
+const TAB_KEY = "rc_panel_tab";
+const TAB_PANELS = { program: "tabProgram", setup: "tabSetup" };
+const TAB_BTNS   = { program: "tabBtnProgram", setup: "tabBtnSetup" };
+function setTab(name){
+  if(!TAB_PANELS[name]) name = "program";
+  for(const key in TAB_PANELS){
+    const on = key === name;
+    document.getElementById(TAB_PANELS[key]).hidden = !on;
+    const btn = document.getElementById(TAB_BTNS[key]);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+    btn.tabIndex = on ? 0 : -1;
+  }
+  try{ localStorage.setItem(TAB_KEY, name); }catch(e){}
+}
+document.querySelectorAll(".tabbar .tab").forEach(b =>
+  b.addEventListener("click", () => setTab(b.dataset.tab)));
+document.querySelector(".tabbar").addEventListener("keydown", e => {
+  if(e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault();
+  const next = e.target.dataset.tab === "program" ? "setup" : "program";
+  setTab(next); document.getElementById(TAB_BTNS[next]).focus();
+});
+document.addEventListener("keydown", e => {
+  if(e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if(t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+  if(e.key === "1") setTab("program");
+  else if(e.key === "2") setTab("setup");
+});
+setTab(localStorage.getItem(TAB_KEY) || "program");
+function updateSetupBadge(){
+  const badge = document.getElementById("setupBadge");
+  if(!badge) return;
+  const sc = document.getElementById("subsCount");
+  const pending = (sc && !sc.hidden) ? (parseInt(sc.textContent, 10) || 0) : 0;
+  const subActive = document.getElementById("subSec").style.display !== "none";
+  if(pending > 0){ badge.textContent = String(pending); badge.hidden = false; }
+  else if(subActive){ badge.textContent = "•"; badge.hidden = false; }
+  else { badge.hidden = true; }
+}
 
 /* ---------- boot ---------- */
 renderAir({});
