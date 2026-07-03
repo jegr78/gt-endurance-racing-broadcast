@@ -31,7 +31,7 @@ log()  { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
 ok()   { printf '  \033[1;32mOK\033[0m  %s\n' "$*"; }
 warn() { printf '  \033[1;33m!!\033[0m  %s\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
-has_nvidia_gpu() { lspci 2>/dev/null | grep -qi 'nvidia'; }   # false on a CPU-only dry-run box
+has_nvidia_gpu() { lspci 2>/dev/null | grep -i 'nvidia' >/dev/null; }   # SIGPIPE-safe (no -q early close under pipefail); false on a CPU-only dry-run box
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "provision.sh must run as root (use: sudo ./provision.sh)" >&2
@@ -140,9 +140,15 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-log "7/10  racecast binary"
-if have racecast; then
-  ok "racecast already on PATH ($(racecast --version 2>/dev/null | head -1))"
+log "7/10  racecast binary (installed into the login user's home — user-owned tree)"
+# The frozen binary resolves profiles/ + runtime/ next to itself, and the relay writes
+# runtime state, so the tree must be owned by the event user (NOT root). Install into
+# ~USER/racecast and run install-tools/install-apps as that user (steps 8-9), so every
+# event operation (profile switch, cookies, relay) runs without sudo.
+if [ -z "$USER_NAME" ]; then
+  warn "no login user detected — racecast install deferred (re-run under sudo after first SSH)"
+elif have racecast; then
+  ok "racecast already on PATH ($(sudo -u "$USER_NAME" racecast --version 2>/dev/null | head -1))"
 else
   case "$(uname -m)" in
     aarch64|arm64) asset="racecast-linux-arm64.tar.gz" ;;
@@ -154,22 +160,35 @@ else
   else
     url="https://github.com/${RACECAST_REPO}/releases/download/${tag}/${asset}"
   fi
+  user_home="$(getent passwd "$USER_NAME" | cut -d: -f6)"
   curl -fsSL "$url" -o /tmp/racecast.tar.gz
-  install -d -m 0755 /opt/racecast
-  tar -xzf /tmp/racecast.tar.gz -C /opt/racecast
-  ln -sf /opt/racecast/racecast /usr/local/bin/racecast
-  ok "racecast installed ($(racecast --version 2>/dev/null | head -1))"
+  install -d -o "$USER_NAME" -g "$USER_NAME" -m 0755 "$user_home/racecast"
+  tar -xzf /tmp/racecast.tar.gz -C "$user_home/racecast"
+  chown -R "$USER_NAME:$USER_NAME" "$user_home/racecast"
+  ln -sf "$user_home/racecast/racecast" /usr/local/bin/racecast
+  ok "racecast installed at $user_home/racecast ($(sudo -u "$USER_NAME" racecast --version 2>/dev/null | head -1))"
 fi
 
 # ---------------------------------------------------------------------------
-log "8/10  racecast install-tools (yt-dlp / streamlink / ffmpeg / deno)"
-racecast install-tools
-ok "toolchain installed"
+log "8/10  racecast install-tools (yt-dlp / streamlink / ffmpeg / deno) — as $USER_NAME"
+# Run as the user so the toolchain lands under the user-owned ~USER/racecast/runtime.
+if [ -n "$USER_NAME" ] && have racecast; then
+  sudo -u "$USER_NAME" -H racecast install-tools
+  ok "toolchain installed"
+else
+  warn "racecast not installed / no login user — skipping install-tools"
+fi
 
 # ---------------------------------------------------------------------------
-log "9/10  racecast install-apps (OBS + Browser Source, Tailscale, Companion, Discord)"
-racecast install-apps --yes
-ok "applications installed"
+log "9/10  racecast install-apps (OBS + Browser Source, Tailscale, Companion, Discord) — as $USER_NAME"
+# install-apps calls `sudo apt-get` internally — the passwordless sudo from step 6 makes
+# that work while keeping the racecast tree user-owned.
+if [ -n "$USER_NAME" ] && have racecast; then
+  sudo -u "$USER_NAME" -H racecast install-apps --yes
+  ok "applications installed"
+else
+  warn "racecast not installed / no login user — skipping install-apps"
+fi
 
 # ---------------------------------------------------------------------------
 log "10/10  Tailscale join"
@@ -187,8 +206,8 @@ fi
 log "verification"
 rc=0
 if nvidia-smi >/dev/null 2>&1; then ok "nvidia-smi: GPU present"; else warn "nvidia-smi: FAIL (reboot + re-run)"; rc=1; fi
-if have ffmpeg && ffmpeg -hide_banner -encoders 2>/dev/null | grep -q nvenc; then ok "ffmpeg: NVENC encoders present"; else warn "ffmpeg NVENC: FAIL"; rc=1; fi
-if ldconfig -p | grep -q nvidia-encode; then ok "libnvidia-encode present"; else warn "libnvidia-encode: not found (NVENC needs it)"; fi
+if have ffmpeg && ffmpeg -hide_banner -encoders 2>/dev/null | grep nvenc >/dev/null; then ok "ffmpeg: NVENC encoders present"; else warn "ffmpeg NVENC: FAIL"; rc=1; fi
+if ldconfig -p | grep nvidia-encode >/dev/null; then ok "libnvidia-encode present"; else warn "libnvidia-encode: not found (NVENC needs it)"; fi
 ff2="$(command -v firefox || true)"
 if [ -n "$ff2" ] && ! readlink -f "$ff2" | grep -q '/snap/'; then ok "firefox: deb build"; else warn "firefox: missing or snap"; rc=1; fi
 if have racecast; then ok "racecast: $(racecast --version 2>/dev/null | head -1)"; else warn "racecast: FAIL"; rc=1; fi
@@ -196,7 +215,7 @@ if have obs; then ok "obs: installed"; else warn "obs: not on PATH (check instal
 if tailscale status >/dev/null 2>&1; then ok "tailscale: up"; else warn "tailscale: not joined (run tailscale up)"; fi
 if pgrep -x Xorg >/dev/null 2>&1; then ok "X server: running"; else warn "X server: not running yet (reboot to start the autologin session; RustDesk needs it)"; fi
 if has_nvidia_gpu; then
-  if DISPLAY=:0 glxinfo 2>/dev/null | grep -qi nvidia; then ok "OpenGL renderer: NVIDIA (X is on the GPU)"; else warn "OpenGL renderer not NVIDIA yet — reboot so the X session starts, then re-check: DISPLAY=:0 glxinfo -B"; fi
+  if DISPLAY=:0 glxinfo 2>/dev/null | grep -i nvidia >/dev/null; then ok "OpenGL renderer: NVIDIA (X is on the GPU)"; else warn "OpenGL renderer not NVIDIA yet — reboot so the X session starts, then re-check: DISPLAY=:0 glxinfo -B"; fi
 fi
 
 echo

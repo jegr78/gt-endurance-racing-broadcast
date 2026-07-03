@@ -76,11 +76,14 @@ These cannot be scripted safely:
 
 Not part of `provision.sh` — this is the profile layer:
 
+The racecast binary lives at `~/racecast/` (user-owned), and the frozen binary looks for
+profiles + runtime **next to itself** — so copy straight into that tree:
+
 ```bash
-# from your laptop, copy the profile + fresh cookies up:
-gcloud compute scp --recurse profiles/<league> runtime/yt-cookies.txt \
-  spike-gpu:~/racecast-data/ --zone=us-central1-a
-# on the box:
+# from your laptop, copy the profile + fresh cookies into the user-owned tree:
+gcloud compute scp --recurse profiles/<league> spike-gpu:~/racecast/profiles/ --zone=us-central1-a
+gcloud compute scp runtime/yt-cookies.txt spike-gpu:~/racecast/runtime/ --zone=us-central1-a
+# on the box (no sudo — the tree is user-owned):
 racecast profile use <league>
 racecast setup            # localize the OBS scene collection for this profile
 # then import the localized collection into OBS (GUI, once per league)
@@ -117,8 +120,10 @@ else is validatable without a GPU. De-risk in three tiers:
 
 ## Notes
 
-- `provision.sh` runs as root, so the racecast toolchain lands under `/opt/racecast/runtime`
-  (world-readable; racecast adds it to its own PATH). A later `racecast install-tools --update`
-  therefore needs `sudo`.
+- `provision.sh` runs as root for the machine layer (driver, apt, sudoers) but installs
+  racecast into the login user's home (`~/racecast/`, user-owned) and runs
+  `install-tools`/`install-apps` **as that user**. So every event operation — profile
+  switch, cookie refresh, relay runtime writes, `install-tools --update` — runs without
+  `sudo`. The apt steps inside `install-apps` use the passwordless sudo the script set up.
 - NVENC proof (that OBS uses the T4 encoder, not a silent x264 fallback) is the runbook's
   Appendix B checklist (#421).

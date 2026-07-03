@@ -547,3 +547,27 @@ git commit -m "docs(runbook): point Appendix A at provision.sh; persistent-insta
 
 **Type/name consistency:** Path `tools/cloud/provision.sh`, env vars `TS_AUTHKEY`/`RACECAST_TAG`/`RUSTDESK_VERSION`, and the `--yes` flag are identical across Task 1, Task 2, and Task 3. ✓
 ```
+
+---
+
+## Post-review amendments (2026-07-03, after task reviews)
+
+The task reviews surfaced two changes to the committed deliverables. **The committed
+`tools/cloud/provision.sh` and `tools/cloud/README.md` supersede the verbatim code blocks
+in Task 1 / Task 2 above** — a re-execution should use the committed files, not re-transcribe
+those blocks:
+
+1. **Install racecast as the login user (user-owned tree)** — the frozen binary resolves
+   `profiles/` + `runtime/` next to itself and the relay writes runtime state, so a
+   root-owned `/opt/racecast` would force `sudo` on every event op and break the onboarding
+   path. provision.sh now installs the binary into `~USER/racecast` and runs
+   `install-tools`/`install-apps` via `sudo -u "$USER_NAME" -H …` (the passwordless sudo
+   from step 6 keeps `install-apps`' internal `sudo apt-get` working). README §4 onboarding
+   now scps directly into `~/racecast/profiles/` + `~/racecast/runtime/` with no sudo. (User
+   decision: user-home install.)
+2. **SIGPIPE-safe GPU probe** — `has_nvidia_gpu()` and the ffmpeg/ldconfig/glxinfo checks
+   changed `grep -q X` → `grep X >/dev/null`: under `set -o pipefail`, `grep -q` closes
+   stdin on first match, SIGPIPE-ing the upstream (`lspci`/`ldconfig -p`) and making a
+   matched pipeline report failure — which could make `has_nvidia_gpu` spuriously skip the
+   driver install on a real GPU box. `grep` without `-q` consumes the whole stream, so no
+   early close.
