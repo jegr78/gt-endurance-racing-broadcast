@@ -788,6 +788,46 @@ def t_health_facts_stream_expected_gates_off_air():
     assert relay._health_facts(1.0)["stream_expected"] is True
 
 
+def t_pull_slots_basic():
+    def rows(urls): return [(u, "", "", i + 1) for i, u in enumerate(urls)]
+    assert m.pull_slots(rows(["a", "b", "b", "d"])) == [0, 1, 1, 2]   # back-to-back b
+    assert m.pull_slots(rows(["a", "b", "a"])) == [0, 1, 2]           # non-consecutive != run
+    assert m.pull_slots(rows(["b", "b", "b"])) == [0, 0, 0]           # three in a row
+    assert m.pull_slots(rows(["", ""])) == [0, 1]                     # blanks never merge
+    assert m.pull_slots(rows(["a", "", "a"])) == [0, 1, 2]            # blank breaks the run
+    assert m.pull_slots([]) == []
+
+
+def t_slot_row_helpers():
+    slots = [0, 1, 1, 2]
+    assert m.slot_first_row(slots, 1) == 1
+    assert m.slot_first_row(slots, 2) == 3
+    assert m.slot_first_row(slots, 9) is None
+    # off-air preload / freed-feed target skips the same-URL run:
+    assert m.next_slot_first_row(slots, 0) == 1      # after slot0 -> row1 (b)
+    assert m.next_slot_first_row(slots, 1) == 3      # after slot1 (b,b) -> row3 (d), NOT row2
+    assert m.next_slot_first_row(slots, 3) == 4      # after last slot -> idle sentinel (len)
+    assert m.next_slot_first_row([], 0) == 0
+    # continuation detection:
+    assert m.is_continuation(slots, 2) is True       # row2 continues row1 (same b)
+    assert m.is_continuation(slots, 1) is False      # row1 is a new slot
+    assert m.is_continuation(slots, 0) is False      # no row -1
+    assert m.is_continuation(slots, 4) is False      # past the end
+
+
+def t_slot_start_indices():
+    def rows(urls): return [(u, "", "", i + 1) for i, u in enumerate(urls)]
+    # normal schedule: identical to stint_start_indices (every row its own slot)
+    assert m.slot_start_indices(3, rows(["a", "b", "c", "d"])) == (2, 3)
+    # takeover onto the SECOND row of a back-to-back (stint 3 = second b):
+    # Feed A parks on the slot HEAD (row1), Feed B preloads the next slot (row3)
+    assert m.slot_start_indices(3, rows(["a", "b", "b", "d"])) == (1, 3)
+    # takeover onto the FIRST b (stint 2): A row1, B skips the duplicate -> row3
+    assert m.slot_start_indices(2, rows(["a", "b", "b", "d"])) == (1, 3)
+    # empty schedule falls back
+    assert m.slot_start_indices(1, []) == (0, 1)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

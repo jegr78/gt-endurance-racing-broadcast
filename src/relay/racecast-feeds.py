@@ -3296,6 +3296,76 @@ def stint_start_indices(stint, schedule_len):
     return a, a + 1
 
 
+def pull_slots(rows):
+    """Slot id per row: maximal runs of CONSECUTIVE rows with the same non-empty
+    URL share one slot, so a single feed pull serves the whole run — a commentator
+    keeping one stream across back-to-back stints. A blank/empty URL never merges
+    (you cannot 'continue' a stream that has no link), so each blank row is its own
+    slot and a blank breaks a run. *rows* are ScheduleSource 4-tuples
+    (url, streamer, stint, line); returns a list parallel to rows. Pure."""
+    slots = []
+    prev_url = None
+    sid = -1
+    for r in rows:
+        url = (r[0] or "").strip()
+        if url and url == prev_url:
+            slots.append(sid)                 # continuation of the current run
+        else:
+            sid += 1
+            slots.append(sid)
+        prev_url = url or None                 # a blank breaks the run
+    return slots
+
+
+def slot_first_row(slots, sid):
+    """First row index belonging to slot *sid*, or None when absent. Pure."""
+    for i, s in enumerate(slots):
+        if s == sid:
+            return i
+    return None
+
+
+def next_slot_first_row(slots, row):
+    """First row of the slot AFTER the slot containing *row*, or len(slots) (the
+    idle sentinel, one past the last row) when there is none. This is where the
+    off-air feed preloads and a freed feed advances, so it always skips a same-URL
+    continuation run instead of landing a second feed on it. Pure."""
+    if not slots:
+        return 0
+    row = max(0, min(row, len(slots) - 1))
+    cur = slots[row]
+    for i in range(row + 1, len(slots)):
+        if slots[i] != cur:
+            return i
+    return len(slots)                          # no later slot -> idle past the end
+
+
+def is_continuation(slots, row):
+    """True when the Next onto 0-based *row* stays within the same slot as row-1
+    (a same-URL back-to-back) -> a label-only advance: no re-pull, no OBS cut.
+    Pure."""
+    return 1 <= row < len(slots) and slots[row] == slots[row - 1]
+
+
+def slot_start_indices(stint, rows):
+    """Slot-aware producer-takeover placement. 1-based *stint* is on air NOW: Feed
+    A pulls the HEAD of that stint's slot (so a takeover onto the second row of a
+    back-to-back pulls the single stream once, not a mid-slot offset), Feed B
+    preloads the head of the NEXT slot. Returns (a_idx, b_idx). For a normal
+    schedule (each row its own slot) this equals stint_start_indices. *rows* are
+    ScheduleSource 4-tuples. Pure; falls back to stint_start_indices on an empty
+    schedule."""
+    n = len(rows)
+    if n == 0:
+        return stint_start_indices(stint, 0)
+    stint = max(1, int(stint))
+    row = min(stint - 1, n - 1)
+    slots = pull_slots(rows)
+    a = slot_first_row(slots, slots[row])
+    b = next_slot_first_row(slots, row)
+    return a, b
+
+
 def live_schedule_row(rows, live_idx):
     """The {"streamer", "stint"} for the schedule row a feed at 0-based
     *live_idx* is serving, or None when the index has no row (the feed idles
