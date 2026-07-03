@@ -160,6 +160,16 @@ def t_program_audio_endpoints_are_any():
     assert cp.min_capability(["preview", "program-audio"]) == cp.Requirement(cp.ANY, False)
 
 
+def t_root_graphics_browser_is_any_authenticated():
+    # The tailnet-open /graphics list + file endpoints are ALSO reachable via
+    # /console/graphics for any authenticated subject, so the console pages'
+    # graphics widget works both on the tailnet /panel and under the /console mount.
+    assert _cap(["graphics"]) == ("any", False)
+    assert _cap(["graphics", "Standings.png"]) == ("any", False)
+    assert cp.decide(set(), ["graphics"]) == cp.ALLOW           # even with no roles
+    assert cp.decide(set(), ["graphics", "Standings.png"]) == cp.ALLOW
+
+
 def t_obs_routes_require_director():
     for seg in (["obs", "scene"], ["obs", "source"], ["obs", "audio"],
                 ["obs", "state"], ["obs", "stream"]):

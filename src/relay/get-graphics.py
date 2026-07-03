@@ -10,7 +10,7 @@ those are handled by get-media.py. Never stored under src/, never committed.
 Usage: python3 get-graphics.py [--out DIR] [--sheet-id ID] [--assets-tab NAME]
        [--only "Label[,Label...]"]
 """
-import argparse, csv, io, os, re, sys
+import argparse, csv, io, json, os, re, sys
 from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
@@ -121,6 +121,61 @@ def safe_filename(label):
 # and fail the PNG signature check. Intro/Outro only escape incidentally when
 # YouTube-hosted. KEEP IN SYNC with MEDIA_LABELS + MUSIC_LABEL in get-media.py.
 MEDIA_LABELS = {"intro video", "outro video", "intermission music"}
+
+# Assets tab "Internal" checkbox (OBS-only assets hidden from the console Graphics
+# browser). Located by header name — mirrors the Crew/Brand header lookup in
+# racecast-feeds.py; truthy tokens mirror its CREW_TRUTHY. A Google-Sheets checkbox
+# exports as TRUE/FALSE in the gviz CSV. Parsed independently of the download link so a
+# ticked row without a link (e.g. a placeholder-seeded graphic) is still marked. With no
+# header / no Internal column the set is empty and the browser shows everything.
+ASSET_NAME_HEADERS = ("name", "label", "asset")
+ASSET_INTERNAL_HEADERS = ("internal", "obs only", "obs-only")
+ASSET_TRUTHY = frozenset({"x", "yes", "true", "1", "y", "✓"})
+
+# Sidecar manifest the relay's list_graphics() reads to hide internal assets. The
+# filename is a shared contract with racecast-feeds.py (which cannot import this
+# dependency-light script) — keep the literal in sync.
+MANIFEST_NAME = "manifest.json"
+
+
+def _asset_truthy(v):
+    return (v or "").strip().lower() in ASSET_TRUTHY
+
+
+def internal_from_csv(rows):
+    """Set of Assets-tab labels whose 'Internal' checkbox is ticked. Requires a header
+    row with an ASSET_INTERNAL_HEADERS column; the label is read from the
+    ASSET_NAME_HEADERS column (default col 0). Empty set when there is no header / no
+    Internal column (backward compatible)."""
+    if not rows:
+        return set()
+    header = [(h or "").strip().lower() for h in rows[0]]
+    ii = next((header.index(h) for h in ASSET_INTERNAL_HEADERS if h in header), None)
+    if ii is None:
+        return set()
+    ni = next((header.index(h) for h in ASSET_NAME_HEADERS if h in header), 0)
+    out = set()
+    for row in rows[1:]:
+        if len(row) <= ii or not _asset_truthy(row[ii]):
+            continue
+        label = (row[ni] if ni < len(row) else "").strip()
+        if label:
+            out.add(label)
+    return out
+
+
+def write_manifest(out_dir, internal_labels):
+    """Write <out_dir>/manifest.json = {"internal": [<sorted labels>]} recording the
+    OBS-only assets the console Graphics browser must hide. Best-effort: an IO error is a
+    warning, never fatal. Not a *.png, so list_graphics/resolve_graphic never touch it."""
+    path = os.path.join(out_dir, MANIFEST_NAME)
+    tmp = path + ".part"
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"internal": sorted(internal_labels)}, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except OSError as e:
+        print(f"WARNING: could not write {MANIFEST_NAME}: {e}")
 
 
 def graphics_from_csv(rows):
@@ -261,7 +316,8 @@ def main():
     except Exception as e:
         sys.exit(f"ERROR: could not read sheet Assets tab: {e}")
 
-    all_graphics = graphics_from_csv(list(csv.reader(io.StringIO(csv_text))))
+    rows = list(csv.reader(io.StringIO(csv_text)))
+    all_graphics = graphics_from_csv(rows)
     if not all_graphics:
         sys.exit("ERROR: no graphic (Drive-link) rows found in the Assets tab.")
     wanted = None
@@ -271,6 +327,7 @@ def main():
         graphics = {k: v for k, v in all_graphics.items() if k in wanted}
 
     os.makedirs(a.out, exist_ok=True)
+    write_manifest(a.out, internal_from_csv(rows))
     failed = []
     for label in sorted(graphics):
         fname = safe_filename(label)

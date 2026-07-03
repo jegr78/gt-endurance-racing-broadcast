@@ -338,6 +338,38 @@ controls them from the panel's **Flag Gfx** row or the Companion **FLAGS** page'
 graphic row (see [Director](Director#the-companion-web-buttons-board)). A missing
 graphic file is non-fatal — OBS shows a transparent placeholder until you fetch it.
 
+### Hiding OBS-only assets from the crew Graphics browser (optional)
+
+The **cockpit**, **Director Panel**, and **Race Control** pages each show a read-only
+**Graphics** browser — a click-to-open list of the downloaded still-graphics so the crew
+can reference them on air. Some assets are **OBS-internal** (the `Overlay` HUD frame, the
+weather overlays, backgrounds, the flag graphics) and only clutter that list. Mark them
+with an **`Internal`** column so they are hidden from the browser but **still downloaded
+for OBS**.
+
+To use it, give the Assets tab a **header row** and add an `Internal` column — a
+Google-Sheets **checkbox** (`Insert → Checkbox`), the same style as the Crew-tab role
+boxes:
+
+```
+Name                 | Link          | Internal
+Standings            | <Drive link>  | ☐
+Overlay              | <Drive link>  | ☑
+Flag Green           | <Drive link>  | ☑
+```
+
+- A **ticked** box = internal → the asset downloads to OBS as before but is **omitted**
+  from the crew Graphics browser. Unticked/empty = shown to the crew.
+- The `Internal` flag is read **independently of the link**, so you can tick a row that
+  has **no link** (e.g. a placeholder-seeded weather overlay) purely to hide it.
+- Accepted header names: `Internal`, `OBS only`, `OBS-only`. Column A stays the label
+  (`Name`/`Label`).
+- Fully optional and backward compatible: an Assets tab with **no header row / no
+  `Internal` column** shows **every** graphic in the browser (the previous behaviour).
+- Re-run `racecast graphics` after changing the column — the flag is captured into
+  `runtime/<profile>/graphics/manifest.json` at download time (the same cadence as the
+  graphics themselves).
+
 A missing graphic is non-fatal — `racecast setup` warns and OBS shows black until you
 run `racecast graphics`. The graphics/clips are **never committed**; they always come
 from the Sheet. See [Configuration](Configuration#sheet-driven-graphics).
