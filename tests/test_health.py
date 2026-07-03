@@ -141,7 +141,8 @@ def t_status_live_and_league_block():
         st = r.status()
         assert st["live"] == {"feed": "A", "stint": 1, "mode": "race"}
         assert st["league"] == {"sheet_id": "SHEET123", "name": ""}
-        r.A.idx = 2                               # after a handover B is on air
+        r.A.idx = 2                               # after a handover B (idx1/stint2) is on air
+        r.on_air_row = 1                          # a real handover advances the DISPLAY row too
         assert r.status()["live"] == {"feed": "B", "stint": 2, "mode": "race"}
 
 

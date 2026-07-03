@@ -639,6 +639,24 @@ def t_next_handover_no_write_without_cut():
         srv.shutdown(); m.post_webhook = orig
 
 
+def t_next_handover_writes_schedule_on_continuation_without_cut():
+    # A same-URL back-to-back continuation does NOT cut OBS, but the DISPLAY
+    # stint still advances -> the HUD label must follow it (review fix: gate on
+    # should_push_live_schedule, not obs_cut alone).
+    pushes = []
+    ctl, hs, orig = _ctl(pushes)
+    live = [("https://www.youtube.com/watch?v=a", "GT45", "Stint 2", 2)]
+    srv, get, post = _client(ctl, next_result={"continuation": True, "obs_cut": False},
+                             rows=live, live_idx=0)
+    try:
+        r = get("/next")
+        assert r.get("continuation") is True and r.get("obs_cut") is False
+        assert hs.data()["streamer"] == "GT45"     # optimistic echo from the schedule row
+        assert hs.data()["stint"] == "Stint 2"
+    finally:
+        srv.shutdown(); m.post_webhook = orig
+
+
 def t_set_stint_writes_schedule_streamer_and_stint():
     # Producer takeover (/set/stint) puts a fresh stint on air -> same auto-write
     # as /next, unconditionally (the director picks the scene).

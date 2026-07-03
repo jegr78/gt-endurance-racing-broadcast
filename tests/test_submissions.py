@@ -236,6 +236,12 @@ def _client(secret=SECRET, rows=None, live_idx=0,
         def live_feed(self):
             return "A"
 
+        def on_air_row_idx(self):
+            return self.feeds[self.live_feed()].idx
+
+        def live_row_map(self):
+            return {f.idx: k for k, f in self.feeds.items()}
+
     class _Setup:
         def schedule_set(self, row, url=None, name=None, stint=None):
             calls.append({"row": row, "url": url, "name": name, "stint": stint})

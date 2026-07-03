@@ -422,6 +422,7 @@ class _FakeSrc:
     """Minimal schedule source for _make_relay — two stints, no live pulls."""
     def __init__(self, items): self.items = list(items)
     def get(self): return self.items
+    def get_rows(self): return [(u, "", "", i + 1) for i, u in enumerate(self.items)]
     def refresh(self, timeout=None): pass
     def health(self): return {"last_ok_age_s": 1.0, "count": len(self.items)}
 

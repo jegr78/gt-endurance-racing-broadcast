@@ -139,6 +139,12 @@ def _client(event_default="", event_title=None, rows=None):
         def live_feed(self):
             return "A"
 
+        def on_air_row_idx(self):
+            return self.feeds[self.live_feed()].idx
+
+        def live_row_map(self):
+            return {f.idx: k for k, f in self.feeds.items()}
+
         def status(self):
             return {"schedule_len": 1, "feeds": {}}
 

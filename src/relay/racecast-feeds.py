@@ -3296,6 +3296,76 @@ def stint_start_indices(stint, schedule_len):
     return a, a + 1
 
 
+def pull_slots(rows):
+    """Slot id per row: maximal runs of CONSECUTIVE rows with the same non-empty
+    URL share one slot, so a single feed pull serves the whole run — a commentator
+    keeping one stream across back-to-back stints. A blank/empty URL never merges
+    (you cannot 'continue' a stream that has no link), so each blank row is its own
+    slot and a blank breaks a run. *rows* are ScheduleSource 4-tuples
+    (url, streamer, stint, line); returns a list parallel to rows. Pure."""
+    slots = []
+    prev_url = None
+    sid = -1
+    for r in rows:
+        url = (r[0] or "").strip()
+        if url and url == prev_url:
+            slots.append(sid)                 # continuation of the current run
+        else:
+            sid += 1
+            slots.append(sid)
+        prev_url = url or None                 # a blank breaks the run
+    return slots
+
+
+def slot_first_row(slots, sid):
+    """First row index belonging to slot *sid*, or None when absent. Pure."""
+    for i, s in enumerate(slots):
+        if s == sid:
+            return i
+    return None
+
+
+def next_slot_first_row(slots, row):
+    """First row of the slot AFTER the slot containing *row*, or len(slots) (the
+    idle sentinel, one past the last row) when there is none. This is where the
+    off-air feed preloads and a freed feed advances, so it always skips a same-URL
+    continuation run instead of landing a second feed on it. Pure."""
+    if not slots:
+        return 0
+    row = max(0, min(row, len(slots) - 1))
+    cur = slots[row]
+    for i in range(row + 1, len(slots)):
+        if slots[i] != cur:
+            return i
+    return len(slots)                          # no later slot -> idle past the end
+
+
+def is_continuation(slots, row):
+    """True when the Next onto 0-based *row* stays within the same slot as row-1
+    (a same-URL back-to-back) -> a label-only advance: no re-pull, no OBS cut.
+    Pure."""
+    return 1 <= row < len(slots) and slots[row] == slots[row - 1]
+
+
+def slot_start_indices(stint, rows):
+    """Slot-aware producer-takeover placement. 1-based *stint* is on air NOW: Feed
+    A pulls the HEAD of that stint's slot (so a takeover onto the second row of a
+    back-to-back pulls the single stream once, not a mid-slot offset), Feed B
+    preloads the head of the NEXT slot. Returns (a_idx, b_idx). For a normal
+    schedule (each row its own slot) this equals stint_start_indices. *rows* are
+    ScheduleSource 4-tuples. Pure; falls back to stint_start_indices on an empty
+    schedule."""
+    n = len(rows)
+    if n == 0:
+        return stint_start_indices(stint, 0)
+    stint = max(1, int(stint))
+    row = min(stint - 1, n - 1)
+    slots = pull_slots(rows)
+    a = slot_first_row(slots, slots[row])
+    b = next_slot_first_row(slots, row)
+    return a, b
+
+
 def live_schedule_row(rows, live_idx):
     """The {"streamer", "stint"} for the schedule row a feed at 0-based
     *live_idx* is serving, or None when the index has no row (the feed idles
@@ -4729,7 +4799,11 @@ class Relay:
         self.mode = "qualifying" if (mode == "qualifying" and qual_source) else "race"
         self.cookies = cookies
         self.cookie_dir = cookie_dir
-        a_idx, b_idx = stint_start_indices(start_stint, len(self.active_source().get()))
+        a_idx, b_idx = slot_start_indices(start_stint, self.active_source().get_rows())
+        # 0-based DISPLAY row currently on air (drives the HUD stint label + the
+        # ON-AIR marker). Equals the on-air feed's pull index in normal operation;
+        # diverges one row ahead only during a same-URL back-to-back continuation.
+        self.on_air_row = a_idx
         # Feeds read the ACTIVE source via active_items, so a /mode switch re-points
         # both feeds without rebuilding them (the OBS Feed A/B sources never change).
         self.A = Feed("A", ports[0], a_idx, self.active_items, logdir, cookies, cookie_dir=cookie_dir)
@@ -5070,9 +5144,13 @@ class Relay:
                           "source": self.pov_source.health() if self.pov_source else None}
         out["obs"] = {"reachable": self.obs_reachable, "note": self.obs_note}
         # On-air feed/stint + league identity for producer takeover (#takeover):
-        # the on-air feed is the lower-index one (live_feed), its stint = idx+1.
+        # the on-air feed is the lower-index one (live_feed); the stint is the
+        # DISPLAY row (on_air_row_idx), not the feed's physical pull index — during
+        # a same-URL back-to-back continuation the display advances one row ahead
+        # of the still-parked pull, and a takeover/health-monitor consumer must
+        # resume/show that displayed stint, not the stale pull row.
         live = self.live_feed()
-        out["live"] = {"feed": live, "stint": self.feeds[live].idx + 1, "mode": self.mode}
+        out["live"] = {"feed": live, "stint": self.on_air_row_idx() + 1, "mode": self.mode}
         out["league"] = {"sheet_id": self.sheet_id, "name": self.league_name}
         out["producer"] = self.producer_name   # who runs this machine (#317 — for takeover)
         self._refresh_health(now)            # keep the displayed level fresh (2 s poll)
@@ -5083,6 +5161,29 @@ class Relay:
     def live_feed(self):
         """The on-air feed = the one on the lower (earlier) stint index."""
         return "A" if self.A.idx <= self.B.idx else "B"
+
+    def on_air_row_idx(self):
+        """0-based schedule row currently ON SCREEN — drives the HUD stint label
+        and the ON-AIR marker on the cockpit / stint-plan / Race Control views.
+        Equals the on-air feed's pull index in normal operation; during a same-URL
+        back-to-back continuation it sits one row ahead of the still-parked pull.
+        Clamped to the active schedule."""
+        n = len(self.source.get())
+        if not n:
+            return 0
+        return max(0, min(self.on_air_row, n))
+
+    def live_row_map(self):
+        """{row_index: feed_key} for the schedule-highlight consumers: the on-air
+        feed is keyed by the DISPLAY row (on_air_row_idx), the off-air feed by its
+        physical pull index. Equals {f.idx: key} in normal operation; during a
+        continuation the on-air marker follows the displayed stint. The on-air
+        entry is written last so it wins any (degenerate) index collision."""
+        live = self.live_feed()
+        off = "B" if live == "A" else "A"
+        row_map = {self.feeds[off].idx: off}
+        row_map[self.on_air_row_idx()] = live
+        return row_map
 
     def live_after_next(self):
         """Which feed will be on air after the next /next: the one NOT advanced."""
@@ -5135,11 +5236,10 @@ class Relay:
         threading.Thread(target=run, daemon=True).start()
 
     def live_schedule_row(self):
-        """{"streamer", "stint"} for the stint the on-air feed is serving now, or
-        None when it idles past the schedule end. Drives the handover HUD
-        auto-write (issue #112)."""
-        return live_schedule_row(self.source.get_rows(),
-                                 self.feeds[self.live_feed()].idx)
+        """{"streamer", "stint"} for the stint currently ON SCREEN, or None when it
+        idles past the schedule end. Drives the handover HUD auto-write (issue
+        #112) and follows a same-URL continuation label."""
+        return live_schedule_row(self.source.get_rows(), self.on_air_row_idx())
 
     def _reflect(self, live, cut):
         """Push the on-air feed (A/B) into OBS off-thread; never blocks the HTTP
@@ -5263,21 +5363,64 @@ class Relay:
 
     def next_auto(self):
         self.source.refresh(timeout=6)               # fresh sheet data at handover (bounded wait)
+        rows = self.source.get_rows()
+        slots = pull_slots(rows)
+        cur = self.on_air_row_idx()
+        nxt = cur + 1
+
+        # Same-URL back-to-back: keep the on-air pull, advance the LABEL only.
+        if is_continuation(slots, nxt):
+            self.on_air_row = nxt
+            LOG.info("continuation -> stint %d stays on feed %s (no cut)",
+                     nxt + 1, self.live_feed())
+            # **self.status() spread FIRST, explicit keys last: a future status()
+            # field named "continuation"/"obs_cut" can never silently override
+            # these (uniform across all three next_auto return branches).
+            return {**self.status(), "changed": False, "feed": self.live_feed(),
+                    "continuation": True, "obs_cut": False}
+
+        # Past the last stint: idle over-press (unchanged behavior).
+        if nxt >= len(rows):
+            new_live = self.live_after_next()
+            target = "A" if new_live == "B" else "B"
+            result = self.advance(target, +2)
+            cut = self.feeds[new_live].phase == "serving"
+            if cut:
+                self._reflect(new_live, cut=True)
+            self.on_air_row = self.feeds[new_live].idx
+            # `result` (from advance()) already carries status() plus "changed"/"feed";
+            # spread it first and place continuation/obs_cut last, matching the
+            # spread-first/explicit-last ordering of the other two branches above.
+            return {**result, "continuation": False, "obs_cut": cut}
+
+        # Real handover to the pre-warmed off-air feed, walking SLOTS (not +2) so a
+        # freed feed skips a continuation run instead of duplicating the on-air pull.
         new_live = self.live_after_next()
-        target = "A" if new_live == "B" else "B"     # advance the OTHER (currently on-air) feed
-        result = self.advance(target, +2)
-        cut = self.feeds[new_live].phase == "serving"  # only hand over to a feed that is actually live
+        freed = "A" if new_live == "B" else "B"
+        # Reconcile the incoming feed's preload against fresh slots (a Sheet edit may
+        # have moved the boundary): it must sit on the next slot after the current row.
+        self.feeds[new_live].set_index(next_slot_first_row(slots, cur))
+        cut = self.feeds[new_live].phase == "serving"
         if cut:
-            self._reflect(new_live, cut=True)        # never flip visibility/audio onto a black/not-yet-serving feed
+            self._reflect(new_live, cut=True)         # only flip onto a feed that is actually live
+        # Advance the freed feed to the slot AFTER the new on-air row.
+        self.feeds[freed].set_index(next_slot_first_row(slots, nxt))
+        self.on_air_row = nxt
         nf = self.feeds[new_live]
-        LOG.info("handover -> feed %s now on air (stint index %d)", nf.name, nf.idx + 1)
-        return {**result, "obs_cut": cut}
+        LOG.info("handover -> feed %s now on air (stint %d)", nf.name, nxt + 1)
+        # **self.status() spread FIRST, explicit keys last — see the continuation
+        # branch above for why (uniform across all three next_auto branches).
+        return {**self.status(), "changed": True, "feed": new_live,
+                "continuation": False, "obs_cut": cut}
 
     def advance(self, which, delta):
         f = self.feeds.get(which.upper())
         if not f: return None
         changed = f.set_index(f.idx + delta)
-        return {"changed": changed, "feed": which.upper(), **self.status()}
+        # Spread **self.status() FIRST, explicit keys last, so a future status()
+        # field named "changed"/"feed" can never silently shadow these (matches
+        # next_auto's return-dict ordering).
+        return {**self.status(), "changed": changed, "feed": which.upper()}
 
     def set_index(self, which, idx):
         f = self.feeds.get(which.upper())
@@ -5286,13 +5429,18 @@ class Relay:
 
     def set_stint(self, stint):
         """Producer-takeover correction: 1-based stint <stint> is on air NOW ->
-        Feed A serves it, Feed B preloads the next one. Tears a running feed off
-        its stream (like /set) — use BEFORE going live, not mid-program."""
+        Feed A serves the HEAD of that stint's slot (a takeover onto a back-to-back's
+        second row still pulls the single stream once), Feed B preloads the next
+        slot. The DISPLAY row is set to <stint>. Tears a running feed off its stream
+        (like /set) — use BEFORE going live, not mid-program."""
         self.source.refresh(timeout=6)      # clamp against fresh sheet data
-        a_idx, b_idx = stint_start_indices(stint, len(self.source.get()))
+        rows = self.source.get_rows()
+        a_idx, b_idx = slot_start_indices(stint, rows)
         self.A.set_index(a_idx)
         self.B.set_index(b_idx)
-        LOG.info("set_stint -> Feed A stint %d, Feed B stint %d", a_idx + 1, b_idx + 1)
+        self.on_air_row = min(max(1, int(stint)) - 1, max(0, len(rows) - 1))
+        LOG.info("set_stint -> Feed A slot-head %d, Feed B %d, display stint %d",
+                 a_idx + 1, b_idx + 1, self.on_air_row + 1)
         self._reflect(self.live_feed(), cut=False)   # set visibility/audio; director picks the scene
         return self.status()
 
@@ -5310,9 +5458,11 @@ class Relay:
         self.mode = mode
         LOG.info("mode -> %s", self.mode)
         self.active_source().refresh(timeout=6)        # fresh rows for the schedule we switch to
-        a_idx, b_idx = stint_start_indices(1, len(self.active_source().get()))
+        rows = self.active_source().get_rows()
+        a_idx, b_idx = slot_start_indices(1, rows)
         self.A.set_index(a_idx)
         self.B.set_index(b_idx)
+        self.on_air_row = a_idx
         self._reflect(self.live_feed(), cut=False)
         return self.status()
 
@@ -5360,6 +5510,15 @@ def _push_live_schedule(relay, setup_ctl):
         setup_ctl.set_field("streamer", row["streamer"])
     if row.get("stint"):
         setup_ctl.set_field("stint", row["stint"])
+
+
+def should_push_live_schedule(result):
+    """True when a next_auto() result should trigger _push_live_schedule: a real
+    cut (obs_cut) OR a same-URL back-to-back continuation — the DISPLAY stint
+    advances on a continuation even though OBS doesn't cut, so the HUD label must
+    follow it too. False only on a plain idle over-press (neither). Pure so the
+    /next gate is unit-testable without a live relay."""
+    return bool(result.get("obs_cut") or result.get("continuation"))
 
 
 def _benign_client_disconnect(exc):
@@ -6008,8 +6167,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return None
                 if sub == ["race-control", "data"] and method == "GET":
                     rows = relay.source.get_rows()
-                    live = {f.idx: k for k, f in relay.feeds.items()}
-                    live_idx = relay.feeds[relay.live_feed()].idx
+                    live = relay.live_row_map()
+                    live_idx = relay.on_air_row_idx()
                     return self._send({
                         "schedule": race_control_schedule(rows, live),
                         "event_title": event_store.get() if event_store else "",
@@ -6451,7 +6610,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         if me is None:
                             return None
                         rows = relay.source.get_rows()
-                        live_idx = relay.feeds[relay.live_feed()].idx
+                        live_idx = relay.on_air_row_idx()
                         tally = cockpit_tally(rows, live_idx, me)
                         # The commentator's OWN pending submissions (stint + id
                         # only, never a URL) so the cockpit shows live status that
@@ -6579,6 +6738,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"pending": pend})
                 if p == ["schedule", "data"]:
                     rows = relay.source.get_rows()
+                    # Deliberately the PHYSICAL pull row, NOT live_row_map()/
+                    # on_air_row_idx(): the Director Panel schedule EDITOR's "live"
+                    # marker must warn which row a feed is actually pulling (so a
+                    # director never edits a live pull's URL), which stays the
+                    # slot-head row during a same-URL back-to-back continuation.
+                    # Do not "unify" this with the display-row map used elsewhere
+                    # (RC/stint-plan/HUD) — that would regress the URL-edit safety.
                     live = {f.idx: k for k, f in relay.feeds.items()}
                     return self._send({"rows": [{"row": i + 1, "sheetRow": line,
                                                  "url": u, "name": n, "stint": st,
@@ -6633,10 +6799,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     # happened. Best-effort: set_field no-ops without the webhook.
                     if result.get("obs_cut") and setup_ctl:
                         setup_ctl.set_field("racecontrol", "")
-                        # Auto-follow the on-air stint's Streamer + Stint label
-                        # from the Schedule (issue #112), gated on a real cut so
-                        # the HUD never names the next stint while the previous
-                        # feed is still showing.
+                    # Auto-follow the on-air stint's Streamer + Stint label from the
+                    # Schedule (issue #112) on a real cut OR a same-URL continuation
+                    # — the DISPLAY stint advances on a continuation too, even
+                    # though OBS doesn't cut, so the HUD label must follow it.
+                    if should_push_live_schedule(result) and setup_ctl:
                         _push_live_schedule(relay, setup_ctl)
                     return self._send(result)
                 if p == ["reload"]:                     return self._send(relay.reload())
@@ -6776,7 +6943,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if not cue_store:
                         return self._send({"error": "cues disabled"}, 404)
                     rows = relay.source.get_rows()
-                    live_idx = relay.feeds[relay.live_feed()].idx
+                    live_idx = relay.on_air_row_idx()
                     cur = live_schedule_row(rows, live_idx)
                     on_air_key = asset_key(cur["streamer"]) if cur else None
                     target = cue_admin.resolve_target(body.get("target"),
@@ -6795,7 +6962,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if not cue_store:
                         return self._send({"error": "cues disabled"}, 404)
                     rows = relay.source.get_rows()
-                    live_idx = relay.feeds[relay.live_feed()].idx
+                    live_idx = relay.on_air_row_idx()
                     cur = live_schedule_row(rows, live_idx)
                     on_air_key = asset_key(cur["streamer"]) if cur else None
                     target = cue_admin.resolve_target(body.get("target"),

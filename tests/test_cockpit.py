@@ -417,6 +417,12 @@ def _cockpit_client(secret="sek", rows=None, live_idx=0,
         def live_feed(self):
             return "A"
 
+        def on_air_row_idx(self):
+            return self.feeds[self.live_feed()].idx
+
+        def live_row_map(self):
+            return {f.idx: k for k, f in self.feeds.items()}
+
         def status(self):
             return {"schedule_len": len(self.source.get_rows())}
 
