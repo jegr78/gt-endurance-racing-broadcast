@@ -5388,10 +5388,9 @@ class Relay:
             if cut:
                 self._reflect(new_live, cut=True)
             self.on_air_row = self.feeds[new_live].idx
-            # `result` already spreads self.status() (via advance()) before its own
-            # "changed"/"feed" keys, so continuation/obs_cut placed last here already
-            # matches the spread-first/explicit-last pattern used by the other two
-            # branches above.
+            # `result` (from advance()) already carries status() plus "changed"/"feed";
+            # spread it first and place continuation/obs_cut last, matching the
+            # spread-first/explicit-last ordering of the other two branches above.
             return {**result, "continuation": False, "obs_cut": cut}
 
         # Real handover to the pre-warmed off-air feed, walking SLOTS (not +2) so a
@@ -5418,7 +5417,10 @@ class Relay:
         f = self.feeds.get(which.upper())
         if not f: return None
         changed = f.set_index(f.idx + delta)
-        return {"changed": changed, "feed": which.upper(), **self.status()}
+        # Spread **self.status() FIRST, explicit keys last, so a future status()
+        # field named "changed"/"feed" can never silently shadow these (matches
+        # next_auto's return-dict ordering).
+        return {**self.status(), "changed": changed, "feed": which.upper()}
 
     def set_index(self, which, idx):
         f = self.feeds.get(which.upper())
