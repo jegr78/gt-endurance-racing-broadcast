@@ -4799,7 +4799,11 @@ class Relay:
         self.mode = "qualifying" if (mode == "qualifying" and qual_source) else "race"
         self.cookies = cookies
         self.cookie_dir = cookie_dir
-        a_idx, b_idx = stint_start_indices(start_stint, len(self.active_source().get()))
+        a_idx, b_idx = slot_start_indices(start_stint, self.active_source().get_rows())
+        # 0-based DISPLAY row currently on air (drives the HUD stint label + the
+        # ON-AIR marker). Equals the on-air feed's pull index in normal operation;
+        # diverges one row ahead only during a same-URL back-to-back continuation.
+        self.on_air_row = a_idx
         # Feeds read the ACTIVE source via active_items, so a /mode switch re-points
         # both feeds without rebuilding them (the OBS Feed A/B sources never change).
         self.A = Feed("A", ports[0], a_idx, self.active_items, logdir, cookies, cookie_dir=cookie_dir)
@@ -5154,6 +5158,29 @@ class Relay:
         """The on-air feed = the one on the lower (earlier) stint index."""
         return "A" if self.A.idx <= self.B.idx else "B"
 
+    def on_air_row_idx(self):
+        """0-based schedule row currently ON SCREEN — drives the HUD stint label
+        and the ON-AIR marker on the cockpit / stint-plan / Race Control views.
+        Equals the on-air feed's pull index in normal operation; during a same-URL
+        back-to-back continuation it sits one row ahead of the still-parked pull.
+        Clamped to the active schedule."""
+        n = len(self.source.get())
+        if not n:
+            return 0
+        return max(0, min(self.on_air_row, n))
+
+    def live_row_map(self):
+        """{row_index: feed_key} for the schedule-highlight consumers: the on-air
+        feed is keyed by the DISPLAY row (on_air_row_idx), the off-air feed by its
+        physical pull index. Equals {f.idx: key} in normal operation; during a
+        continuation the on-air marker follows the displayed stint. The on-air
+        entry is written last so it wins any (degenerate) index collision."""
+        live = self.live_feed()
+        off = "B" if live == "A" else "A"
+        row_map = {self.feeds[off].idx: off}
+        row_map[self.on_air_row_idx()] = live
+        return row_map
+
     def live_after_next(self):
         """Which feed will be on air after the next /next: the one NOT advanced."""
         return "B" if self.live_feed() == "A" else "A"
@@ -5205,11 +5232,10 @@ class Relay:
         threading.Thread(target=run, daemon=True).start()
 
     def live_schedule_row(self):
-        """{"streamer", "stint"} for the stint the on-air feed is serving now, or
-        None when it idles past the schedule end. Drives the handover HUD
-        auto-write (issue #112)."""
-        return live_schedule_row(self.source.get_rows(),
-                                 self.feeds[self.live_feed()].idx)
+        """{"streamer", "stint"} for the stint currently ON SCREEN, or None when it
+        idles past the schedule end. Drives the handover HUD auto-write (issue
+        #112) and follows a same-URL continuation label."""
+        return live_schedule_row(self.source.get_rows(), self.on_air_row_idx())
 
     def _reflect(self, live, cut):
         """Push the on-air feed (A/B) into OBS off-thread; never blocks the HTTP
@@ -5340,6 +5366,7 @@ class Relay:
         if cut:
             self._reflect(new_live, cut=True)        # never flip visibility/audio onto a black/not-yet-serving feed
         nf = self.feeds[new_live]
+        self.on_air_row = nf.idx                      # keep display row == on-air pull (Task 3 makes it diverge)
         LOG.info("handover -> feed %s now on air (stint index %d)", nf.name, nf.idx + 1)
         return {**result, "obs_cut": cut}
 
@@ -5362,6 +5389,7 @@ class Relay:
         a_idx, b_idx = stint_start_indices(stint, len(self.source.get()))
         self.A.set_index(a_idx)
         self.B.set_index(b_idx)
+        self.on_air_row = a_idx
         LOG.info("set_stint -> Feed A stint %d, Feed B stint %d", a_idx + 1, b_idx + 1)
         self._reflect(self.live_feed(), cut=False)   # set visibility/audio; director picks the scene
         return self.status()
@@ -5383,6 +5411,7 @@ class Relay:
         a_idx, b_idx = stint_start_indices(1, len(self.active_source().get()))
         self.A.set_index(a_idx)
         self.B.set_index(b_idx)
+        self.on_air_row = a_idx
         self._reflect(self.live_feed(), cut=False)
         return self.status()
 
@@ -6078,8 +6107,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return None
                 if sub == ["race-control", "data"] and method == "GET":
                     rows = relay.source.get_rows()
-                    live = {f.idx: k for k, f in relay.feeds.items()}
-                    live_idx = relay.feeds[relay.live_feed()].idx
+                    live = relay.live_row_map()
+                    live_idx = relay.on_air_row_idx()
                     return self._send({
                         "schedule": race_control_schedule(rows, live),
                         "event_title": event_store.get() if event_store else "",
@@ -6521,7 +6550,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         if me is None:
                             return None
                         rows = relay.source.get_rows()
-                        live_idx = relay.feeds[relay.live_feed()].idx
+                        live_idx = relay.on_air_row_idx()
                         tally = cockpit_tally(rows, live_idx, me)
                         # The commentator's OWN pending submissions (stint + id
                         # only, never a URL) so the cockpit shows live status that
@@ -6846,7 +6875,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if not cue_store:
                         return self._send({"error": "cues disabled"}, 404)
                     rows = relay.source.get_rows()
-                    live_idx = relay.feeds[relay.live_feed()].idx
+                    live_idx = relay.on_air_row_idx()
                     cur = live_schedule_row(rows, live_idx)
                     on_air_key = asset_key(cur["streamer"]) if cur else None
                     target = cue_admin.resolve_target(body.get("target"),
@@ -6865,7 +6894,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if not cue_store:
                         return self._send({"error": "cues disabled"}, 404)
                     rows = relay.source.get_rows()
-                    live_idx = relay.feeds[relay.live_feed()].idx
+                    live_idx = relay.on_air_row_idx()
                     cur = live_schedule_row(rows, live_idx)
                     on_air_key = asset_key(cur["streamer"]) if cur else None
                     target = cue_admin.resolve_target(body.get("target"),

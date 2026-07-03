@@ -36,9 +36,10 @@ def t_takeover_below_one_clamps_to_one():
 
 
 class FakeSource:
-    """Minimal stand-in for ScheduleSource: get/refresh/health only."""
+    """Minimal stand-in for ScheduleSource: get/get_rows/refresh/health only."""
     def __init__(self, items): self.items = list(items)
     def get(self): return self.items
+    def get_rows(self): return [(u, "", "", i + 1) for i, u in enumerate(self.items)]
     def refresh(self, timeout=None): pass
     def health(self): return {"ok": True}
 

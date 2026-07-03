@@ -17,6 +17,7 @@ m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 class _FakeSource:
     def __init__(self, items): self.items = list(items)
     def get(self): return self.items
+    def get_rows(self): return [(u, "", "", i + 1) for i, u in enumerate(self.items)]
     def refresh(self, timeout=None): pass
     def health(self): return {"ok": True}
 
@@ -296,6 +297,19 @@ def t_relay_live_schedule_row_tracks_on_air_feed():
     r.next_auto()                                      # B (stint 2) now on air
     assert r.live_feed() == "B"
     assert r.live_schedule_row() == {"streamer": "GT45", "stint": "Stint 2"}
+
+
+def t_on_air_row_tracks_feed_in_normal_operation():
+    r = _relay(["s1", "s2", "s3", "s4"])
+    assert r.on_air_row_idx() == 0                       # stint 1
+    assert r.live_row_map() == {0: "A", 1: "B"}          # on-air A row0, off-air B row1
+    r.next_auto()                                        # B (stint 2) on air
+    assert r.on_air_row_idx() == 1
+    assert r.live_feed() == "B"
+    assert r.live_row_map() == {1: "B", 2: "A"}          # on-air B row1, off-air A row2
+    # the HUD row follows the displayed on-air row
+    rows = r.source.get_rows()
+    assert m.live_schedule_row(rows, r.on_air_row_idx())["stint"] == r.live_schedule_row()["stint"]
 
 
 def _relay_q(items, qual_items, qual_rows=None, mode="race"):
