@@ -206,3 +206,13 @@ open on the tailnet + `/console/broadcast-chat/data` gated under the mount):
   the `<a href>` uses `RC_API('/graphics/<file>')`. The interim director self-hide-on-401
   is removed — the widget now loads in every context.
 - Tests: `tests/test_console.py` asserts the two new routes are ANY-authenticated.
+
+**Security note (extends the "Edge cases" section above).** `Internal` hides an asset from
+the browse *list*, not from direct file serve: `resolve_graphic` does not consult the
+manifest, so an internal graphic remains fetchable by its exact `<label>.png` — and via the
+new root `GET /graphics/<file>` that fetch is **unauthenticated on the tailnet**. This is
+acceptable and consistent with the design: the payload is broadcast-overlay PNG imagery (not
+secret), the tailnet is invited-members-only (the same trust boundary that already serves
+`/status` with stream URLs), and the route is never funnelled. `Internal` is a decluttering
+convenience, not an access-control boundary — as already stated for the authed
+`/cockpit/graphics/<file>` route.
