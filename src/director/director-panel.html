@@ -2314,6 +2314,19 @@ function setTab(name){
 }
 document.querySelectorAll(".tabbar .tab").forEach(b =>
   b.addEventListener("click", () => setTab(b.dataset.tab)));
+document.querySelector(".tabbar").addEventListener("keydown", e => {
+  if(e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault();
+  const next = e.target.dataset.tab === "program" ? "setup" : "program";
+  setTab(next); document.getElementById(TAB_BTNS[next]).focus();
+});
+document.addEventListener("keydown", e => {
+  if(e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if(t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+  if(e.key === "1") setTab("program");
+  else if(e.key === "2") setTab("setup");
+});
 setTab(localStorage.getItem(TAB_KEY) || "program");
 
 /* ---------- boot ---------- */

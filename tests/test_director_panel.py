@@ -91,6 +91,21 @@ def t_setup_badge_hidden_rule():
     assert ".tabbadge[hidden]" in h, "badge must honor the hidden attribute"
 
 
+def t_keyboard_shortcuts_present():
+    h = _html()
+    # global 1/2 switch tabs
+    assert 'e.key === "1"' in h and 'e.key === "2"' in h
+    # arrow-key nav on the tablist
+    assert '"ArrowLeft"' in h and '"ArrowRight"' in h
+
+
+def t_shortcut_guards_typing():
+    # 1/2 must NOT fire while typing in a field.
+    h = _html()
+    assert "/^(INPUT|TEXTAREA|SELECT)$/.test" in h
+    assert "isContentEditable" in h
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
