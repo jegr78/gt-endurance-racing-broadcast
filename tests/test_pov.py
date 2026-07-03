@@ -382,6 +382,39 @@ def t_back_to_back_no_dup_pull_no_cut():
     assert r.live_schedule_row() == {"streamer": "D", "stint": "Stint 4"}
 
 
+def t_status_live_stint_reports_display_row_on_continuation():
+    # Normal (all-distinct) schedule: /status live.stint == the physical pull index.
+    r = _relay(["s1", "s2", "s3", "s4"])
+    assert r.status()["live"]["stint"] == r.on_air_row_idx() + 1 == 1
+    r.next_auto()                                       # stint 2, real handover
+    assert r.status()["live"]["stint"] == r.on_air_row_idx() + 1 == 2
+
+    # Back-to-back continuation: the DISPLAY stint is one ahead of the still-parked
+    # physical pull — /status must report the display stint (issue: takeover/health
+    # monitor must not resume/show one stint behind).
+    rows = [("uA", "A", "Stint 1", 1), ("uB", "B", "Stint 2", 2),
+            ("uB", "B", "Stint 3", 3), ("uD", "D", "Stint 4", 4)]
+    rc = m.Relay(_StubSource(["uA", "uB", "uB", "uD"], rows), (53001, 53002), LOGDIR)
+    rc._reflect = lambda live, cut: None
+    for f in rc.feeds.values(): f.phase = "serving"
+    rc.next_auto()                                       # stint 2, real handover
+    rc.next_auto()                                       # stint 3, continuation
+    assert rc.on_air_row_idx() == 2                       # display row = stint 3
+    physical_idx = rc.feeds[rc.live_feed()].idx
+    assert physical_idx != rc.on_air_row_idx()            # the divergence this fix targets
+    assert rc.status()["live"]["stint"] == rc.on_air_row_idx() + 1 == 3
+
+
+def t_should_push_live_schedule_fires_on_cut_or_continuation():
+    # A real cut (obs_cut) always advances the HUD label; a same-URL continuation
+    # advances the DISPLAY stint without a cut, so the HUD must advance too — only
+    # a plain idle over-press (neither) must be a no-op.
+    assert m.should_push_live_schedule({"obs_cut": True})
+    assert m.should_push_live_schedule({"continuation": True, "obs_cut": False})
+    assert not m.should_push_live_schedule({"obs_cut": False})
+    assert not m.should_push_live_schedule({})
+
+
 def _relay_q(items, qual_items, qual_rows=None, mode="race"):
     race = _StubSource(items)
     qual = _StubSource(qual_items, qual_rows)

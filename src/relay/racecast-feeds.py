@@ -5144,9 +5144,13 @@ class Relay:
                           "source": self.pov_source.health() if self.pov_source else None}
         out["obs"] = {"reachable": self.obs_reachable, "note": self.obs_note}
         # On-air feed/stint + league identity for producer takeover (#takeover):
-        # the on-air feed is the lower-index one (live_feed), its stint = idx+1.
+        # the on-air feed is the lower-index one (live_feed); the stint is the
+        # DISPLAY row (on_air_row_idx), not the feed's physical pull index — during
+        # a same-URL back-to-back continuation the display advances one row ahead
+        # of the still-parked pull, and a takeover/health-monitor consumer must
+        # resume/show that displayed stint, not the stale pull row.
         live = self.live_feed()
-        out["live"] = {"feed": live, "stint": self.feeds[live].idx + 1, "mode": self.mode}
+        out["live"] = {"feed": live, "stint": self.on_air_row_idx() + 1, "mode": self.mode}
         out["league"] = {"sheet_id": self.sheet_id, "name": self.league_name}
         out["producer"] = self.producer_name   # who runs this machine (#317 — for takeover)
         self._refresh_health(now)            # keep the displayed level fresh (2 s poll)
@@ -5369,8 +5373,11 @@ class Relay:
             self.on_air_row = nxt
             LOG.info("continuation -> stint %d stays on feed %s (no cut)",
                      nxt + 1, self.live_feed())
-            return {"changed": False, "feed": self.live_feed(),
-                    "continuation": True, "obs_cut": False, **self.status()}
+            # **self.status() spread FIRST, explicit keys last: a future status()
+            # field named "continuation"/"obs_cut" can never silently override
+            # these (uniform across all three next_auto return branches).
+            return {**self.status(), "changed": False, "feed": self.live_feed(),
+                    "continuation": True, "obs_cut": False}
 
         # Past the last stint: idle over-press (unchanged behavior).
         if nxt >= len(rows):
@@ -5381,6 +5388,10 @@ class Relay:
             if cut:
                 self._reflect(new_live, cut=True)
             self.on_air_row = self.feeds[new_live].idx
+            # `result` already spreads self.status() (via advance()) before its own
+            # "changed"/"feed" keys, so continuation/obs_cut placed last here already
+            # matches the spread-first/explicit-last pattern used by the other two
+            # branches above.
             return {**result, "continuation": False, "obs_cut": cut}
 
         # Real handover to the pre-warmed off-air feed, walking SLOTS (not +2) so a
@@ -5398,8 +5409,10 @@ class Relay:
         self.on_air_row = nxt
         nf = self.feeds[new_live]
         LOG.info("handover -> feed %s now on air (stint %d)", nf.name, nxt + 1)
-        return {"changed": True, "feed": new_live,
-                "continuation": False, "obs_cut": cut, **self.status()}
+        # **self.status() spread FIRST, explicit keys last — see the continuation
+        # branch above for why (uniform across all three next_auto branches).
+        return {**self.status(), "changed": True, "feed": new_live,
+                "continuation": False, "obs_cut": cut}
 
     def advance(self, which, delta):
         f = self.feeds.get(which.upper())
@@ -5495,6 +5508,15 @@ def _push_live_schedule(relay, setup_ctl):
         setup_ctl.set_field("streamer", row["streamer"])
     if row.get("stint"):
         setup_ctl.set_field("stint", row["stint"])
+
+
+def should_push_live_schedule(result):
+    """True when a next_auto() result should trigger _push_live_schedule: a real
+    cut (obs_cut) OR a same-URL back-to-back continuation — the DISPLAY stint
+    advances on a continuation even though OBS doesn't cut, so the HUD label must
+    follow it too. False only on a plain idle over-press (neither). Pure so the
+    /next gate is unit-testable without a live relay."""
+    return bool(result.get("obs_cut") or result.get("continuation"))
 
 
 def _benign_client_disconnect(exc):
@@ -6714,6 +6736,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"pending": pend})
                 if p == ["schedule", "data"]:
                     rows = relay.source.get_rows()
+                    # Deliberately the PHYSICAL pull row, NOT live_row_map()/
+                    # on_air_row_idx(): the Director Panel schedule EDITOR's "live"
+                    # marker must warn which row a feed is actually pulling (so a
+                    # director never edits a live pull's URL), which stays the
+                    # slot-head row during a same-URL back-to-back continuation.
+                    # Do not "unify" this with the display-row map used elsewhere
+                    # (RC/stint-plan/HUD) — that would regress the URL-edit safety.
                     live = {f.idx: k for k, f in relay.feeds.items()}
                     return self._send({"rows": [{"row": i + 1, "sheetRow": line,
                                                  "url": u, "name": n, "stint": st,
@@ -6768,10 +6797,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     # happened. Best-effort: set_field no-ops without the webhook.
                     if result.get("obs_cut") and setup_ctl:
                         setup_ctl.set_field("racecontrol", "")
-                        # Auto-follow the on-air stint's Streamer + Stint label
-                        # from the Schedule (issue #112), gated on a real cut so
-                        # the HUD never names the next stint while the previous
-                        # feed is still showing.
+                    # Auto-follow the on-air stint's Streamer + Stint label from the
+                    # Schedule (issue #112) on a real cut OR a same-URL continuation
+                    # — the DISPLAY stint advances on a continuation too, even
+                    # though OBS doesn't cut, so the HUD label must follow it.
+                    if should_push_live_schedule(result) and setup_ctl:
                         _push_live_schedule(relay, setup_ctl)
                     return self._send(result)
                 if p == ["reload"]:                     return self._send(relay.reload())
