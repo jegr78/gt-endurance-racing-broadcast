@@ -27,19 +27,23 @@ VOICE_HEADER = "Discord Voice"
 
 
 def ipc_candidates(os_name, env):
-    """Ordered IPC endpoints where a running Discord client may listen.
-    Windows uses a fixed named-pipe string (NOT os.path.join — that would inject
-    backslashes wrongly and is meaningless for a pipe); POSIX joins the runtime
-    bases with the socket name (incl. snap/flatpak subdirs)."""
+    """Ordered IPC endpoints where a running Discord client may listen. Both
+    branches build fixed-OS paths with explicit separators, NOT os.path.join:
+    os.path.join uses the RUNNING OS's separator, so on the Windows CI runner it
+    would turn the POSIX candidates into backslash paths (breaking the unit test
+    and the intent). Windows = a fixed named-pipe string; POSIX = '/'-joined
+    runtime bases + the socket name (incl. snap/flatpak subdirs)."""
     if os_name == "nt":
         return [r"\\?\pipe\discord-ipc-{}".format(n) for n in range(10)]
     bases = [env.get(k) for k in ("XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP")]
     bases = [b for b in bases if b] + ["/tmp"]
     out = []
     for base in bases:
+        prefix = base.rstrip("/")
         for sub in ("", "app/com.discordapp.Discord/", "snap.discord/"):
+            dirpath = prefix + "/" + sub.rstrip("/") if sub else prefix
             for n in range(10):
-                out.append(os.path.join(base, sub, "discord-ipc-{}".format(n)))
+                out.append(dirpath + "/discord-ipc-{}".format(n))
     return out
 
 
