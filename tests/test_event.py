@@ -351,6 +351,36 @@ def t_gate_blockers_keeps_only_fails():
     assert m.gate_blockers([]) == []
 
 
+def t_launch_env_linux_ssh_sets_display():
+    env = {"HOME": "/home/op"}
+    out = m.launch_env("obs", "linux", env, exists=lambda p: p == "/home/op/.Xauthority")
+    assert out == {"DISPLAY": ":0", "XAUTHORITY": "/home/op/.Xauthority"}
+
+
+def t_launch_env_display_without_xauthority():
+    out = m.launch_env("discord", "linux", {"HOME": "/h"}, exists=lambda p: False)
+    assert out == {"DISPLAY": ":0"}
+
+
+def t_launch_env_respects_existing_display():
+    assert m.launch_env("obs", "linux", {"DISPLAY": ":1", "HOME": "/h"}) == {}
+
+
+def t_launch_env_racecast_display_override():
+    out = m.launch_env("discord", "linux",
+                       {"RACECAST_DISPLAY": ":7", "HOME": "/h"}, exists=lambda p: False)
+    assert out == {"DISPLAY": ":7"}
+
+
+def t_launch_env_noop_non_linux():
+    assert m.launch_env("obs", "darwin", {}) == {}
+    assert m.launch_env("obs", "win32", {}) == {}
+
+
+def t_launch_env_noop_non_gui():
+    assert m.launch_env("tailscale", "linux", {"HOME": "/h"}) == {}
+
+
 def _raises(fn, exc=ValueError):
     try:
         fn()

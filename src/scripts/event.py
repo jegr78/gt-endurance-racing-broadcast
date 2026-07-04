@@ -123,6 +123,35 @@ def launch_command(app, platform, env=None, exists=os.path.exists, which=shutil.
     return ([exe], None) if exe else None
 
 
+def launch_env(app, platform, env=None, exists=os.path.exists):
+    """Environment overrides for a headless GUI launch, or {} when none are
+    needed. On Linux, launching a GUI app (obs/discord) from a shell with no
+    DISPLAY (a bare SSH session) can't reach the autologin X session; point it
+    there so `racecast event start` works over SSH without RustDesk.
+    RACECAST_DISPLAY overrides the display (default ':0'); XAUTHORITY is
+    discovered from the login user's ~/.Xauthority. A non-Linux platform, a
+    non-GUI app, or an already-set DISPLAY -> {} (leave the env untouched)."""
+    env = os.environ if env is None else env
+    if not platform.startswith("linux"):
+        return {}
+    if app not in ("obs", "discord"):
+        return {}
+    if env.get("DISPLAY"):
+        return {}
+    out = {"DISPLAY": env.get("RACECAST_DISPLAY") or ":0"}
+    xauth = env.get("XAUTHORITY")
+    if not xauth:
+        home = env.get("HOME") or ""
+        # Explicit '/': this is a Linux-only path — os.path.join would inject a
+        # backslash on the Windows CI runner (CLAUDE cross-platform-paths rule).
+        cand = home + "/.Xauthority" if home else ""
+        if cand and exists(cand):
+            xauth = cand
+    if xauth:
+        out["XAUTHORITY"] = xauth
+    return out
+
+
 # Windows process image names to taskkill (the GUI app, mirroring launch_command).
 _WIN_PROC_NAMES = {"obs": "obs64.exe", "discord": "Discord.exe",
                    "tailscale": "tailscale-ipn.exe"}

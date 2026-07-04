@@ -2908,9 +2908,16 @@ def _event_launch(ev, app):
         print(f"{app}: cannot launch automatically — {hint}.")
         return False
     argv, cwd = cmd
+    overrides = ev.launch_env(app, sys.platform)
+    launch_env = None
+    if overrides:
+        launch_env = dict(os.environ)
+        launch_env.update(overrides)
+        print("{}: targeting the autologin session ({}).".format(
+            app, ", ".join("{}={}".format(k, v) for k, v in sorted(overrides.items()))))
     print(f"{app}: launching…")
     try:
-        subprocess.Popen(argv, cwd=cwd, stdout=subprocess.DEVNULL,
+        subprocess.Popen(argv, cwd=cwd, env=launch_env, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, **sv.spawn_kwargs(os.name))
     except OSError as exc:
         print(f"{app}: launch failed ({exc}).")
