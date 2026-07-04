@@ -40,16 +40,21 @@ gcloud compute instances stop  racecast-box --zone=europe-west4-c   # after — 
 Give the box ~1–2 minutes after start to reach the desktop before you SSH in. The tailnet IP
 is unchanged, so all your saved `http://100.x…` bookmarks keep working.
 
-## 2. SSH into the box
+## 2. SSH into the box (as `racecast`)
+
+Always connect **as the `racecast` user** (the `racecast@` prefix) — the event stack lives
+in its home and runs as it, so this is the only login you need. On the very first connect
+the GCP guest agent creates the `racecast` user from your SSH key.
 
 **gcloud (Terminal) — simplest, keys handled for you:**
 
 ```bash
-gcloud compute ssh racecast-box --zone=europe-west4-c
+gcloud compute ssh racecast@racecast-box --zone=europe-west4-c
 ```
 
-**Web Console:** on the VM instances list, click the **SSH** button — a browser terminal
-opens, no local key setup.
+**Web Console:** on the VM instances list, click the **SSH** button — this logs in as your
+own account, so it is only for machine-level checks; for racecast commands use the gcloud
+`racecast@` login above (or `sudo -iu racecast` from the browser shell).
 
 **Plain Terminal (direct IP or over Tailscale):** find the external IP once —
 
@@ -58,43 +63,52 @@ gcloud compute instances describe racecast-box --zone=europe-west4-c \
   --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
 ```
 
-then `ssh <user>@<EXTERNAL_IP>` (or `ssh <user>@100.x.y.z` over the tailnet once the box has
-joined — see §5).
+then `ssh racecast@<EXTERNAL_IP>` (or `ssh racecast@100.x.y.z` over the tailnet once the box
+has joined — see §5).
 
 > **First connection — go passwordless.** Install your public key once so `ssh` **and**
 > `scp` never prompt again:
 > ```bash
-> ssh-copy-id <user>@<EXTERNAL_IP>
+> ssh-copy-id racecast@<EXTERNAL_IP>
 > ```
 > After this every later `ssh`/`scp` to the box is key-based and silent. The **gcloud**
 > method already manages keys for you, so `ssh-copy-id` is only for the plain-Terminal path.
 
+> **Log in as `racecast`.** The box runs the event stack as a dedicated **`racecast`**
+> login user (home `/home/racecast`: binary, `profiles/`, `runtime/`, cookies). You connect
+> **directly as that user** — `gcloud compute ssh racecast@racecast-box` — so every command
+> below is plain `racecast <cmd>`, no `sudo`. (On first connect the GCP guest agent creates
+> the `racecast` user from your SSH key.)
+
 ## 3. Send files to the box
 
 You mainly copy in a **league profile** the first time you onboard it (cookies are handled
-on the box — see §6, no upload). The frozen binary looks for `profiles/` and `runtime/`
-**next to itself** at `~/racecast/`, so copy straight into that tree.
+on the box — see §6, no upload). Ship it as a **portable profile bundle** and import it —
+because you SSH in as `racecast`, it drops straight into the event tree:
 
 **gcloud (Terminal):**
 
 ```bash
-gcloud compute scp --recurse profiles/<league> racecast-box:~/racecast/profiles/ --zone=europe-west4-c
+racecast profile export <league> --out /tmp/<league>.zip          # on your laptop
+gcloud compute scp /tmp/<league>.zip racecast@racecast-box:~/ --zone=europe-west4-c
+gcloud compute ssh racecast@racecast-box --zone=europe-west4-c --command="\
+  racecast profile import ~/<league>.zip && racecast profile use <league>"
 ```
 
 **Plain Terminal (after `ssh-copy-id`, no password):**
 
 ```bash
-scp -r profiles/<league> <user>@<EXTERNAL_IP>:~/racecast/profiles/
+scp /tmp/<league>.zip racecast@<EXTERNAL_IP>:~/
+ssh racecast@<EXTERNAL_IP> 'racecast profile import ~/<league>.zip'
 ```
 
-**Web Console:** in the browser **SSH** window, use the **⚙ gear → Upload file** (and
-**Download file**) menu.
-
-Then on the box: `racecast profile use <league>`.
+**Web Console:** in the browser **SSH** window, use the **⚙ gear → Upload file** menu to
+drop the bundle into the `racecast` home, then `racecast profile import ~/<league>.zip`.
 
 ## 4. Run the event (SSH-only)
 
-From your laptop, once the box is up and you are SSHed in:
+From your laptop, once the box is up and you are SSHed in **as `racecast`**
+(`gcloud compute ssh racecast@racecast-box`):
 
 ```bash
 racecast profile use <league>     # pick the league for this event
@@ -171,6 +185,10 @@ over the old export-locally-and-upload flow.
 You only need a remote **desktop** for two things: the **one-time OBS scene-collection
 import** per league, and hands-on **troubleshooting**. Everything else is SSH.
 
+RustDesk mirrors the display on `:0`, which is the **`racecast` autologin session** — the
+same session OBS runs in — so the remote desktop, OBS and the install tree are all the one
+`racecast` user (no user mismatch to trip over).
+
 - One-time (during provisioning): set a **permanent password** and enable
   **RustDesk → Settings → Security → "Enable direct IP access"**.
 - Connect from your laptop's RustDesk to the box's **`100.x` Tailscale IP** (direct IP over
@@ -238,8 +256,8 @@ also generate and send it from the **Control Center → Post-Event Report** card
 | Task | gcloud | Web Console | Plain Terminal |
 |---|---|---|---|
 | Start / stop | `gcloud compute instances start\|stop …` | Compute Engine → Start/Stop | — |
-| SSH | `gcloud compute ssh …` | **SSH** button (browser) | `ssh <user>@<IP>` (after `ssh-copy-id`) |
-| Send files | `gcloud compute scp --recurse …` | SSH window → **⚙ Upload file** | `scp -r … <user>@<IP>:…` |
+| SSH | `gcloud compute ssh racecast@racecast-box …` | **SSH** button (browser) | `ssh racecast@<IP>` (after `ssh-copy-id`) |
+| Send files | `gcloud compute scp <league>.zip racecast@…:~/` (then import) | SSH window → **⚙ Upload file** | `scp <league>.zip racecast@<IP>:~/` |
 | Remote desktop | — | — | RustDesk → `100.x` IP (fallback) |
 | Discord voice | — | — | `racecast discord join\|leave` |
 

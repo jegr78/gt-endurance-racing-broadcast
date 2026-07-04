@@ -1,10 +1,17 @@
 # GPU box provisioning (cloud-producer spike, #395)
 
 `provision.sh` brings a fresh GCP GPU VM (Ubuntu 24.04, amd64) to "ready to onboard a
-league": NVIDIA driver, xfce desktop, Firefox (deb), RustDesk, passwordless sudo,
-Tailscale join, plus the racecast toolchain and applications (`install-tools` /
+league": NVIDIA driver, xfce desktop (autologin), Firefox (deb), RustDesk, passwordless
+sudo, Tailscale join, plus the racecast toolchain and applications (`install-tools` /
 `install-apps`). It installs only what racecast does not cover and delegates the rest to
 the racecast binary — it never re-implements the OBS/Tailscale installers.
+
+**Log in as `racecast`.** You connect to the box **directly as the `racecast` user**
+(`gcloud compute ssh racecast@racecast-box`); the GCP guest agent auto-creates that user on
+first connect (OS Login is off → metadata SSH keys). `provision.sh` then installs the whole
+event stack **directly into `/home/racecast`** (binary at `/home/racecast/racecast`, with
+`profiles/` + `runtime/` alongside — the home IS the install root, no nesting). Because you
+ARE `racecast`, every event command is plain `racecast <cmd>` — no `sudo`, no second user.
 
 **Model:** one long-lived instance, reused for all events by switching racecast
 **profiles** (`racecast profile use <name>`). Stop the VM between events for cost; the
@@ -37,13 +44,21 @@ T4 fallback (needs the flag): `--machine-type=n1-standard-8
 --accelerator=type=nvidia-tesla-t4,count=1` (e.g. `us-central1-a`). A create/start can hit
 `ZONE_RESOURCE_POOL_EXHAUSTED` — retry across zones.
 
+The `racecast@racecast-box` login (below) relies on **OS Login being off** so metadata SSH
+keys create the `racecast` user. That is the GCP default. If your project/org **enforces**
+OS Login (usernames are then derived from your Google identity, not `racecast`), either
+turn it off for this box — add `--metadata enable-oslogin=FALSE` to the create above — or
+keep OS Login and drive racecast through the service user with `sudo -iu racecast racecast
+<cmd>` instead of the plain login.
+
 ## 2. Provision (once)
 
-**Default — manual, with output on screen (recommended for the first setup):**
+Connect **as `racecast`** (the `racecast@` prefix — first connect creates the user), then
+run the script. **Manual, with output on screen (recommended for the first setup):**
 
 ```bash
-gcloud compute scp tools/cloud/provision.sh racecast-box:~/ --zone=europe-west4-c
-gcloud compute ssh racecast-box --zone=europe-west4-c
+gcloud compute scp tools/cloud/provision.sh racecast@racecast-box:~/ --zone=europe-west4-c
+gcloud compute ssh racecast@racecast-box --zone=europe-west4-c
   $ sudo ./provision.sh        # idempotent — re-run after any red line
 ```
 
@@ -78,32 +93,37 @@ The script ends with a green/red verification block. A red line names the step t
 These cannot be scripted safely:
 
 - RustDesk: set a permanent password + enable **Settings → Security → "Enable direct IP
-  access"**, then connect from your laptop to the box's **`100.x` Tailscale IP**.
+  access"**, then connect from your laptop to the box's **`100.x` Tailscale IP**. What you
+  see is the **`racecast` autologin session** on `:0` (RustDesk mirrors that display) — the
+  same session OBS autostarts into, so the desktop, OBS and the install tree all run as
+  `racecast`.
 - If `nvidia-smi` was not yet ready, reboot once so the autologin X session starts
   (RustDesk needs a running X server).
 
 - **Event day is SSH-only — no RustDesk needed.** The autologin xfce session
-  comes up at boot, and `provision.sh` installs autostart entries so OBS +
-  Discord launch with it. From your laptop: `gcloud compute ssh racecast-box … ` then
-  `racecast preflight` and `racecast event start` — `event start` also (re)launches
-  OBS/Discord into the running session over SSH (it sets `DISPLAY=:0`; override
-  with `RACECAST_DISPLAY`). RustDesk stays only for the one-time per-league OBS
+  comes up at boot (as `racecast`), and `provision.sh` installs autostart entries so OBS +
+  Discord launch with it. From your laptop, `gcloud compute ssh racecast@racecast-box …`
+  then plain `racecast preflight` and `racecast event start` — `event start` also
+  (re)launches OBS/Discord into the running session over SSH (it sets `DISPLAY=:0`;
+  override with `RACECAST_DISPLAY`). RustDesk stays only for the one-time per-league OBS
   scene-collection import.
 
 ## 4. Onboard a league (once per league, then reuse)
 
-Not part of `provision.sh` — this is the profile layer:
-
-The racecast binary lives at `~/racecast/` (user-owned), and the frozen binary looks for
-profiles + runtime **next to itself** — so copy straight into that tree:
+Not part of `provision.sh` — this is the profile layer. The event tree lives directly in
+`/home/racecast` (binary at `/home/racecast/racecast`, with `profiles/` + `runtime/`
+alongside). Ship the league as a portable **profile bundle** and import it on the box —
+because you SSH in as `racecast`, the whole flow is plain commands:
 
 ```bash
-# from your laptop, copy the profile into the user-owned tree:
-gcloud compute scp --recurse profiles/<league> racecast-box:~/racecast/profiles/ --zone=europe-west4-c
-# on the box (no sudo — the tree is user-owned):
+# from your laptop, export the league to a portable bundle, copy it to the box:
+racecast profile export <league> --out /tmp/<league>.zip                       # (on your laptop)
+gcloud compute scp /tmp/<league>.zip racecast@racecast-box:~/ --zone=europe-west4-c
+# on the box (logged in as racecast), import + activate + localize:
+racecast profile import ~/<league>.zip
 racecast profile use <league>
 racecast setup            # localize the OBS scene collection for this profile
-# then import the localized collection into OBS (GUI, once per league)
+# then import the localized collection into OBS (GUI over RustDesk, once per league)
 ```
 
 **Cookies live on the box** (Firefox is installed here): over RustDesk, sign in to YouTube
@@ -147,9 +167,13 @@ else is validatable without a GPU. De-risk in three tiers:
 ## Notes
 
 - `provision.sh` runs as root for the machine layer (driver, apt, sudoers) but installs
-  racecast into the login user's home (`~/racecast/`, user-owned) and runs
+  racecast **straight into the `racecast` login user's home** (`/home/racecast`, user-owned
+  — the binary at `/home/racecast/racecast`, no nested `racecast/` dir) and runs
   `install-tools`/`install-apps` **as that user**. So every event operation — profile
   switch, cookie refresh, relay runtime writes, `install-tools --update` — runs without
   `sudo`. The apt steps inside `install-apps` use the passwordless sudo the script set up.
+  Because you SSH in **as `racecast`** (`gcloud compute ssh racecast@racecast-box`; OS Login
+  is off so the guest agent creates that user from the metadata key), there is no second
+  account and no `sudo -iu` — you simply are the owner of the tree.
 - NVENC proof (that OBS uses the T4 encoder, not a silent x264 fallback) is the runbook's
   Appendix B checklist (#421).

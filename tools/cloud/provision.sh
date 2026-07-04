@@ -120,17 +120,25 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-# The human login user (for sudoers + desktop autologin). Under `sudo` that is
-# $SUDO_USER; as a boot-time startup-script no human exists yet — fall back to the
-# first real (uid>=1000) account, else defer (the GCP guest agent's google-sudoers
-# already grants NOPASSWD until a re-run under `sudo` sets the explicit rule).
-target_user() {
-  if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
-    printf '%s' "$SUDO_USER"; return 0
-  fi
-  getent passwd | awk -F: '$3>=1000 && $3<65534 {print $1; exit}'
-}
-USER_NAME="$(target_user || true)"
+# The event stack runs as a dedicated `racecast` user — the box's single operational
+# account. provision ENSURES it exists and TARGETS it for everything below, so the
+# autologin X session (which RustDesk mirrors on :0), OBS, the sudoers rule, and the
+# install tree ALL run as `racecast` deterministically — regardless of which account
+# happened to launch provision. You then log in DIRECTLY as this user at event time
+# (`gcloud compute ssh racecast@racecast-box`; OS Login off → the guest agent adds your
+# key to `racecast` on first connect), so operating the box is plain `racecast <cmd>` —
+# ONE user, no `sudo -iu`. Override the name with RACECAST_USER=... if ever needed.
+RACECAST_USER="${RACECAST_USER:-racecast}"
+if ! getent passwd "$RACECAST_USER" >/dev/null; then
+  useradd -m -s /bin/bash "$RACECAST_USER"
+  ok "created event user $RACECAST_USER (home $(getent passwd "$RACECAST_USER" | cut -d: -f6))"
+fi
+# Groups OBS/NVENC/PipeWire need: render+video (GPU /dev/nvidia* + NVENC), audio
+# (PipeWire capture). Harmless when a group is absent on this image.
+for g in video render audio plugdev; do
+  getent group "$g" >/dev/null && usermod -aG "$g" "$RACECAST_USER" || true
+done
+USER_NAME="$RACECAST_USER"
 
 # ---------------------------------------------------------------------------
 log "1/10  APT base + upgrade"
@@ -199,8 +207,10 @@ fi
 # ---------------------------------------------------------------------------
 log "3/10  xfce desktop + autologin (OBS needs a real X11 session)"
 apt-get install -y xfce4 xfce4-goodies lightdm
-# xfce as the lightdm session + autologin for the login user, so an X session comes up
-# on boot for RustDesk to attach to.
+# xfce as the lightdm session + autologin as the racecast user, so an X session for
+# `racecast` comes up on :0 at boot. This is the session RustDesk mirrors and the one OBS
+# autostarts into — so the remote desktop and OBS both run as `racecast`, matching the
+# install tree's owner. (autologin-user below = $USER_NAME = racecast.)
 if [ -n "$USER_NAME" ]; then
   install -d -m 0755 /etc/lightdm/lightdm.conf.d
   cat > /etc/lightdm/lightdm.conf.d/50-racecast-autologin.conf <<EOF
@@ -260,11 +270,13 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-log "7/10  racecast binary (installed into the login user's home — user-owned tree)"
+log "7/10  racecast binary (installed straight into the racecast user's home — user-owned tree)"
 # The frozen binary resolves profiles/ + runtime/ next to itself, and the relay writes
-# runtime state, so the tree must be owned by the event user (NOT root). Install into
-# ~USER/racecast and run install-tools/install-apps as that user (steps 8-9), so every
-# event operation (profile switch, cookies, relay) runs without sudo.
+# runtime state, so the tree must be owned by the event user (NOT root). Extract the
+# tarball DIRECTLY into ~racecast (its top level is the `racecast` binary + .env.example,
+# so the binary lands at ~racecast/racecast, with profiles/ + runtime/ created alongside
+# — no redundant ~racecast/racecast/ nesting: the HOME is the install root). Steps 8-9
+# run install-tools/install-apps as this user, so every event operation is sudo-free.
 if [ -z "$USER_NAME" ]; then
   warn "no login user detected — racecast install deferred (re-run under sudo after first SSH)"
 elif have racecast; then
@@ -283,19 +295,37 @@ else
   user_home="$(getent passwd "$USER_NAME" | cut -d: -f6)"
   user_group="$(id -gn "$USER_NAME")"   # not necessarily == USER_NAME (non-UPG distros)
   curl -fsSL "$url" -o /tmp/racecast.tar.gz
-  install -d -o "$USER_NAME" -g "$user_group" -m 0755 "$user_home/racecast"
-  tar -xzf /tmp/racecast.tar.gz -C "$user_home/racecast"
-  chown -R "$USER_NAME:$user_group" "$user_home/racecast"
-  ln -sf "$user_home/racecast/racecast" /usr/local/bin/racecast
-  ok "racecast installed at $user_home/racecast ($(sudo -u "$USER_NAME" racecast --version 2>/dev/null | head -1))"
+  tar -xzf /tmp/racecast.tar.gz -C "$user_home"
+  chown -R "$USER_NAME:$user_group" "$user_home"
+  ln -sf "$user_home/racecast" /usr/local/bin/racecast
+  ok "racecast installed in $user_home ($(sudo -u "$USER_NAME" racecast --version 2>/dev/null | head -1))"
+fi
+
+# Pre-create the FULL ~/.config/obs-studio/plugins tree (racecast-owned) BEFORE
+# install-apps runs. install-apps' obs-pipewire-audio step writes the plugin .so here
+# AS the racecast user; on the #421 live box a root sub-step of install-apps had
+# created ~/.config first (root-owned) → the plugin install EACCES'd. Owning the whole
+# leaf tree up front makes this robust: even if a later root sub-step re-owns ~/.config
+# itself, its 0755 grants SEARCH (x) to the racecast user, who still writes into the
+# racecast-owned leaf. `install -d` only sets ownership on dirs it CREATES, so a
+# pre-existing (root-owned) parent is fine as long as it stays searchable.
+if [ -n "$USER_NAME" ]; then
+  uh="$(getent passwd "$USER_NAME" | cut -d: -f6)"
+  grp="$(id -gn "$USER_NAME")"
+  install -d -o "$USER_NAME" -g "$grp" -m 0755 \
+    "$uh/.config" "$uh/.config/obs-studio" "$uh/.config/obs-studio/plugins"
 fi
 
 # ---------------------------------------------------------------------------
 log "8/10  racecast install-tools (yt-dlp / streamlink / ffmpeg / deno) — as $USER_NAME"
-# Run as the user so the toolchain lands under the user-owned ~USER/racecast/runtime.
+# Run as the user so the toolchain lands under the user-owned ~racecast/runtime.
+# `|| warn` so a partial toolchain hiccup does NOT trip `set -e` and abort provision
+# before the Tailscale step + the verification block (which report exactly what to
+# re-run). The verification block below is the source of truth for tool presence.
 if [ -n "$USER_NAME" ] && have racecast; then
-  sudo -u "$USER_NAME" -H racecast install-tools
-  ok "toolchain installed"
+  sudo -u "$USER_NAME" -H racecast install-tools \
+    || warn "install-tools reported issues — see the verification block below"
+  ok "install-tools step done"
 else
   warn "racecast not installed / no login user — skipping install-tools"
 fi
@@ -304,9 +334,18 @@ fi
 log "9/10  racecast install-apps (OBS + Browser Source + PipeWire audio plugin, Tailscale, Companion, Discord) — as $USER_NAME"
 # install-apps calls `sudo apt-get` internally — the passwordless sudo from step 6 makes
 # that work while keeping the racecast tree user-owned.
+# `|| warn`: install-apps returns non-zero when ANY optional sub-step fails (e.g. the
+# obs-pipewire-audio plugin) — that must NOT abort provision via `set -e`. The failed
+# steps are named in install-apps' own output and re-checked in the verification block.
 if [ -n "$USER_NAME" ] && have racecast; then
-  sudo -u "$USER_NAME" -H racecast install-apps --yes
-  ok "applications installed"
+  sudo -u "$USER_NAME" -H racecast install-apps --yes \
+    || warn "install-apps reported issues — see the verification block below"
+  ok "install-apps step done"
+  # Repair any root-owned droppings a sudo sub-step of install-apps may have left in
+  # the racecast tree, so every later runtime write (relay, cookies, OBS config) stays
+  # EACCES-free. Best-effort — never abort provision on a chown hiccup.
+  uh="$(getent passwd "$USER_NAME" | cut -d: -f6)"
+  chown -R "$USER_NAME:$(id -gn "$USER_NAME")" "$uh/.config" 2>/dev/null || true
 else
   warn "racecast not installed / no login user — skipping install-apps"
 fi
@@ -342,9 +381,10 @@ if [ -n "$USER_NAME" ]; then
   fi
 fi
 if [ -n "$USER_NAME" ]; then
-  # streamlink is the user-managed venv (~USER/racecast/runtime/bin), not on root's
-  # PATH — resolve it there. `racecast preflight` owns the authoritative >=8.2.0 floor.
-  sl="$pw_home/racecast/runtime/bin/streamlink"
+  # streamlink is the user-managed venv (~racecast/runtime/bin, next to the binary in
+  # HOME), not on root's PATH — resolve it there. `racecast preflight` owns the
+  # authoritative >=8.2.0 floor.
+  sl="$pw_home/runtime/bin/streamlink"
   if [ -x "$sl" ]; then ok "streamlink: $("$sl" --version 2>/dev/null | head -1) (managed venv)";
   else warn "streamlink: managed venv missing — run install-tools; then `racecast preflight`"; fi
 fi
@@ -356,7 +396,11 @@ fi
 
 echo
 if [ "$rc" -eq 0 ]; then
-  log "provision.sh complete — machine layer ready. Next: per-league onboarding (profile + cookies + racecast setup + OBS import)."
+  log "provision.sh complete — machine layer ready."
+  echo "      Event stack is owned by '$USER_NAME' (its home: $(getent passwd "$USER_NAME" | cut -d: -f6))."
+  echo "      Log in as that user directly — 'gcloud compute ssh $USER_NAME@racecast-box' —"
+  echo "      then run racecast plainly: 'racecast preflight', 'racecast event start', …"
+  echo "      Next: per-league onboarding (profile + cookies + racecast setup + OBS import)."
 else
   warn "provision.sh finished with issues above — fix and re-run (idempotent)."
 fi
