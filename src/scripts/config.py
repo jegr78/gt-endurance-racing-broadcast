@@ -159,6 +159,7 @@ class ResolvedConfig:
     console_secret: str = ""     # per-league HMAC secret signing /console identity tokens (#216)
     discord_client_id: str = ""      # per-league Discord OAuth app (console login)
     discord_client_secret: str = ""  # never leaves the producer machine
+    discord_voice_url: str = ""      # league voice channel (fallback; Sheet override wins)
     event_title: str = ""        # optional free-text event title (Panel/Cockpit/Discord, #207)
     logo_path: str = ""          # absolute path, or "" if unset/missing
     profile_dir: str = ""
@@ -215,6 +216,7 @@ def resolve_config(root, *, override=None, runtime_root=None, environ=None):
         console_secret=prof.get("CONSOLE_SECRET", ""),
         discord_client_id=prof.get("DISCORD_CLIENT_ID", ""),
         discord_client_secret=prof.get("DISCORD_CLIENT_SECRET", ""),
+        discord_voice_url=prof.get("DISCORD_VOICE_URL", ""),
         event_title=prof.get("EVENT_TITLE", ""),
         logo_path=logo_path,
         profile_dir=pdir,

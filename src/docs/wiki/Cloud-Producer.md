@@ -177,6 +177,34 @@ racecast setup                    # writes runtime/<profile>/GT_Endurance.import
 # in the OBS GUI over RustDesk: Scene Collection → Import → that file
 ```
 
+## Discord voice audio (auto-join)
+
+The producer box captures interview/commentary audio by having its **Discord desktop
+client** sit in the league's **voice channel** (OBS grabs that audio via the PipeWire
+plugin). racecast can join that voice channel for you — no clicking around in Discord over
+RustDesk.
+
+**One-time setup (per league):**
+
+1. On the league's Discord application (the same app as the `/console` OAuth —
+   `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` in `profile.env`), register
+   **`http://localhost`** as an OAuth2 redirect (Discord Developer Portal → your app →
+   OAuth2 → Redirects). This is the only manual Discord-side step.
+2. Set the voice channel — either the Sheet **`Configuration`** tab's **`Discord Voice`**
+   cell (a `https://discord.com/channels/<guild>/<channel>` link, editable without a file
+   change — this wins when set), or `DISCORD_VOICE_URL` in `profile.env` as the fallback.
+3. First run, on the box, do it once interactively so you can approve the consent:
+   `racecast discord join` → a one-time "authorize" popup appears in the box's Discord
+   (over RustDesk) → click **Authorize**. The token is cached, so every later join is
+   silent and hands-free.
+
+**Every event after that:** `racecast event start` **auto-joins** the voice channel
+(default on). Disable with `RACECAST_DISCORD_AUTOJOIN=0` in the machine `.env`.
+
+**Manual control** any time — CLI `racecast discord join` / `racecast discord leave` /
+`racecast discord status`, or the Control Center **Apps → Discord → Join voice / Leave
+voice** buttons.
+
 ## 8. Post-event report → Discord
 
 After the event, generate the report and send it to the league Discord:
@@ -199,6 +227,7 @@ also generate and send it from the **Control Center → Post-Event Report** card
 | SSH | `gcloud compute ssh …` | **SSH** button (browser) | `ssh <user>@<IP>` (after `ssh-copy-id`) |
 | Send files | `gcloud compute scp --recurse …` | SSH window → **⚙ Upload file** | `scp -r … <user>@<IP>:…` |
 | Remote desktop | — | — | RustDesk → `100.x` IP (fallback) |
+| Discord voice | — | — | `racecast discord join\|leave` |
 
 See also: [Run an event](Run-an-event) · [Remote access & the Funnel](Remote-access) ·
 [Set up the broadcast PC](Set-up-the-broadcast-PC) · [League profiles](Profiles).
