@@ -3174,6 +3174,34 @@ def t_apply_stream_target_webhook_error_surfaces_and_skips_obs():
             os.environ["RACECAST_SHEET_PUSH_URL"] = _saved_push
 
 
+def t_part_index_default_and_parse():
+    assert m._part_index([]) == 1
+    assert m._part_index(["--part", "2"]) == 2
+    assert m._part_index(["--part=3"]) == 3
+
+
+def t_part_index_rejects_bad():
+    for bad in (["--part", "0"], ["--part", "x"], ["--part=-1"]):
+        try:
+            m._part_index(bad)
+            raise AssertionError("expected SystemExit for {!r}".format(bad))
+        except SystemExit:
+            pass
+
+
+def t_write_part_reset_writes_file():
+    import json as _json, tempfile as _tf
+    d = _tf.mkdtemp()
+    orig = m._runtime_dir
+    m._runtime_dir = lambda: d
+    try:
+        m._write_part_reset(2)
+        with open(m._part_path(), encoding="utf-8") as fh:
+            assert _json.load(fh) == {"index": 2, "live": False}
+    finally:
+        m._runtime_dir = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
