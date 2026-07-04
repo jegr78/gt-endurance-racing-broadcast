@@ -98,14 +98,20 @@ The racecast binary lives at `~/racecast/` (user-owned), and the frozen binary l
 profiles + runtime **next to itself** — so copy straight into that tree:
 
 ```bash
-# from your laptop, copy the profile + fresh cookies into the user-owned tree:
+# from your laptop, copy the profile into the user-owned tree:
 gcloud compute scp --recurse profiles/<league> spike-gpu:~/racecast/profiles/ --zone=europe-west4-c
-gcloud compute scp runtime/yt-cookies.txt spike-gpu:~/racecast/runtime/ --zone=europe-west4-c
 # on the box (no sudo — the tree is user-owned):
 racecast profile use <league>
 racecast setup            # localize the OBS scene collection for this profile
 # then import the localized collection into OBS (GUI, once per league)
 ```
+
+**Cookies live on the box** (Firefox is installed here): over RustDesk, sign in to YouTube
+(and gated Twitch) in the box's Firefox with the dedicated racecast Google account, then
+export them on the box over SSH — `racecast cookies firefox` (+ `racecast cookies twitch
+firefox`). No scp from the laptop, and the cookies are created and used on the same
+datacenter IP (no session-origin mismatch). The operator-facing walkthrough is the
+**Remote producer (cloud GPU box)** wiki page.
 
 Switch between already-onboarded leagues with `racecast profile use <name>`.
 

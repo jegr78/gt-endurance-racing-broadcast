@@ -7,6 +7,7 @@
 - [The Control Center](Control-Center)
 - [Set up the broadcast PC](Set-up-the-broadcast-PC)
 - [Run an event](Run-an-event)
+- [Remote producer (cloud GPU box)](Cloud-Producer)
 - [Director setup](Director-Setup)
 - [Director guide](Director)
 - [The Console launcher](Console)
