@@ -123,8 +123,12 @@ league on one machine. After importing, switch OBS to a league's collection with
 racecast obs collection set
 ```
 
-Switching the OBS collection is always an explicit producer action (it rebuilds every
-source) — it is never automatic. See [OBS & scenes](OBS-Setup).
+`racecast event start` auto-switches OBS to the active profile's collection by default,
+so a prior league's collection can't linger on a shared box — it is safe because OBS
+refuses a switch while an output is active. Set `RACECAST_OBS_COLLECTION_SWITCH=0` for
+the old warn-only behaviour. The manual `racecast obs collection set` (above) and the
+Control Center OBS-row button remain the explicit fallback; a switch rebuilds every
+source. See [OBS & scenes](OBS-Setup).
 
 ## Onboard a new producer
 
