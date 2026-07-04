@@ -78,6 +78,32 @@ def t_tool_version_missing():
     assert m.tool_version("definitely-not-a-real-tool-xyz") is None
 
 
+def t_parse_streamlink_version():
+    # `streamlink --version` prints "streamlink X.Y.Z"; a package build may add a
+    # suffix. Parse the leading X.Y.Z; anything unrecognizable -> None.
+    assert m.parse_streamlink_version("streamlink 8.4.0") == (8, 4, 0)
+    assert m.parse_streamlink_version("streamlink 8.2.0") == (8, 2, 0)
+    assert m.parse_streamlink_version("streamlink 6.6.2-1") == (6, 6, 2)
+    assert m.parse_streamlink_version("streamlink 7.1") == (7, 1, 0)
+    assert m.parse_streamlink_version("") is None
+    assert m.parse_streamlink_version(None) is None
+    assert m.parse_streamlink_version("/usr/bin/streamlink") is None   # path fallback line
+
+
+def t_classify_streamlink_version_floor():
+    # 8.2.0 is the release that added --http-cookies-file (#350's YouTube serve
+    # relies on it). Below the floor is a FAIL; at/above is PASS; unparseable ->
+    # None (no extra row — the plain PASS from the tool loop stands).
+    assert m.classify_streamlink_version("streamlink 6.6.2-1").level == "FAIL"
+    assert "8.2.0" in m.classify_streamlink_version("streamlink 6.6.2-1").detail
+    assert m.classify_streamlink_version("streamlink 8.1.2").level == "FAIL"
+    assert m.classify_streamlink_version("streamlink 8.2.0").level == "PASS"
+    assert m.classify_streamlink_version("streamlink 8.4.0").level == "PASS"
+    assert m.classify_streamlink_version("streamlink 9.0.0").level == "PASS"
+    assert m.classify_streamlink_version("garbage") is None
+    assert m.classify_streamlink_version(None) is None
+
+
 def t_no_window_kwargs_per_os():
     # CREATE_NO_WINDOW only on Windows; a no-op (empty kwargs) everywhere else so
     # the same call site stays cross-platform (mirrors services.no_window_kwargs).

@@ -32,9 +32,14 @@ MIN_GLIBC_BINARY = (2, 38)
 
 WINGET_IDS = {"yt-dlp": "yt-dlp.yt-dlp", "streamlink": "Streamlink.Streamlink",
               "ffmpeg": "Gyan.FFmpeg", "deno": "DenoLand.Deno"}
-APT_PACKAGES = {"streamlink": "streamlink", "ffmpeg": "ffmpeg"}
-# deno and yt-dlp ship no usable apt package — Linux gets pinned managed
-# downloads (see install_deno_binary / install_ytdlp_binary).
+APT_PACKAGES = {"ffmpeg": "ffmpeg"}
+# deno, yt-dlp, and streamlink get managed installs on Linux, NOT apt:
+#   * deno / yt-dlp — no usable apt package (pinned binary downloads; see
+#     install_deno_binary / install_ytdlp_binary).
+#   * streamlink — apt's 6.6.2 (Ubuntu 24.04) predates --http-cookies-file, which
+#     the relay's YouTube serve uses to hand yt-dlp's session cookies to
+#     streamlink (#350). So Linux gets a pinned streamlink in an isolated venv
+#     (install_streamlink_venv); brew/winget already ship streamlink 8.x.
 
 # The Ookla speedtest CLI (used by `racecast speedtest`). It is a first-class
 # tool the producer installs via `install-tools` / the Control Center "Install
@@ -250,6 +255,74 @@ def install_ytdlp_binary(dest_dir, tag, opener=None, downloads=None):
     return binpath
 
 
+# streamlink on Linux: apt's package (6.6.2 on Ubuntu 24.04) is ~2 years stale and
+# lacks --http-cookies-file (added in streamlink 8.2.0, 2026-02-09), which the
+# relay's YouTube serve needs to pass yt-dlp's session cookies to streamlink's
+# manifest re-fetch (#350) — an older build aborts the feed with "unrecognized
+# arguments: --http-cookies-file". streamlink ships only as a PyPI package (no
+# standalone binary like deno/yt-dlp), so Linux installs a PINNED streamlink into
+# an isolated venv under the runtime dir and links its entrypoint into the managed
+# bin dir. macOS (brew) and Windows (winget) already ship streamlink 8.x.
+# The pin must stay at/above preflight.PF_MIN_STREAMLINK.
+STREAMLINK_VERSION = "8.4.0"
+STREAMLINK_SPEC = "streamlink==" + STREAMLINK_VERSION
+
+
+def streamlink_needs_managed_install(manager):
+    """True only for apt (Linux): its streamlink is too old. brew/winget ship 8.x.
+    Pure — mirrors the deno/yt-dlp `manager == "apt"` gate."""
+    return manager == "apt"
+
+
+def streamlink_venv_dir(runtime_dir):
+    """Where the isolated streamlink venv lives (a sibling of the managed bin dir,
+    not inside it — the bin dir holds loose executables/symlinks only)."""
+    return os.path.join(runtime_dir, "streamlink-venv")
+
+
+def system_python():
+    """A real (non-frozen) python3 to build the streamlink venv. Under PyInstaller
+    sys.executable is the frozen racecast binary (no venv/pip module), so resolve a
+    python3 on PATH instead. From source, sys.executable already is a real python."""
+    if not getattr(sys, "frozen", False):
+        return sys.executable
+    return shutil.which("python3") or shutil.which("python")
+
+
+def _relink(src, link):
+    """Point `link` at `src`, replacing any existing file/symlink (idempotent so a
+    re-run or --update re-links cleanly)."""
+    try:
+        if os.path.islink(link) or os.path.exists(link):
+            os.remove(link)
+    except OSError:
+        pass  # nothing to remove / racing re-run — os.symlink below is the real step
+    os.symlink(src, link)
+
+
+def install_streamlink_venv(managed_bin, venv_dir, spec=STREAMLINK_SPEC,
+                            python=None, run=None, symlink=None):
+    """Build (or refresh) an isolated venv holding the pinned streamlink and link
+    its entrypoint into the managed bin dir (which racecast puts on PATH). Steps:
+    create the venv with the system python, pip-install the pinned spec via the
+    venv's own python, symlink <managed_bin>/streamlink -> the venv entrypoint.
+    Returns the link path. `python`/`run`/`symlink` are injectable seams for tests.
+    Raises RuntimeError when no system python3 is available (needs python3-venv)."""
+    python = python or system_python()
+    if not python:
+        raise RuntimeError("no system python3 found to build the streamlink venv "
+                           "(install python3-venv / python3-pip)")
+    run = run or subprocess.check_call
+    symlink = symlink or _relink
+    run([python, "-m", "venv", venv_dir])
+    venv_py = os.path.join(venv_dir, "bin", "python")
+    run([venv_py, "-m", "pip", "install", "--upgrade", spec])
+    os.makedirs(managed_bin, exist_ok=True)
+    link = os.path.join(managed_bin, "streamlink")
+    symlink(os.path.join(venv_dir, "bin", "streamlink"), link)
+    return link
+
+
 def glibc_version(libc_ver_output):
     """Parse platform.libc_ver()'s (lib, version) tuple into a (major, minor)
     int pair, or None when the C library is not glibc (musl/unknown) or the
@@ -369,11 +442,13 @@ def manual_guide(platform):
         return ("Install manually:  brew install yt-dlp streamlink ffmpeg deno\n"
                 "  bandwidth speed test (Ookla CLI): download the macOS build from\n"
                 "  https://www.speedtest.net/apps/cli and put `speedtest` on your PATH")
-    return ("Install manually:  sudo apt-get update && sudo apt-get install -y streamlink ffmpeg\n"
-            "yt-dlp and deno have no usable apt package — install-tools downloads them\n"
-            "automatically (pinned, checksum-verified). Manually:\n"
-            "  yt-dlp: https://github.com/yt-dlp/yt-dlp#installation\n"
-            "  deno:   https://docs.deno.com/runtime/getting_started/installation/\n"
+    return ("Install manually:  sudo apt-get update && sudo apt-get install -y ffmpeg\n"
+            "yt-dlp, deno, and streamlink are managed installs (apt's are too old) —\n"
+            "install-tools sets them up automatically. Manually:\n"
+            "  yt-dlp:     https://github.com/yt-dlp/yt-dlp#installation\n"
+            "  deno:       https://docs.deno.com/runtime/getting_started/installation/\n"
+            "  streamlink: python3 -m venv sl && sl/bin/pip install 'streamlink>=8.2.0'\n"
+            "              (apt's 6.6.2 lacks --http-cookies-file; needs >=8.2.0)\n"
             "bandwidth speed test (Ookla CLI): download the Linux build from\n"
             "  https://www.speedtest.net/apps/cli and put `speedtest` on your PATH")
 
@@ -545,6 +620,19 @@ def main():
                 print("  yt-dlp installed.")
             except Exception as exc:   # network/checksum/write — report, don't crash
                 failed.append(f"yt-dlp download ({exc})")
+
+    # streamlink on Linux: pinned venv, not apt (apt's 6.6.2 lacks --http-cookies-file,
+    # #350). Refreshed on --update too, so the pre-event `install-tools --update`
+    # bumps it to the pinned-current version alongside yt-dlp.
+    if streamlink_needs_managed_install(manager) and ("streamlink" in missing or a.update):
+        dest = st.managed_bin_dir(runtime_dir)
+        venv = streamlink_venv_dir(runtime_dir)
+        print(f"Installing streamlink v{STREAMLINK_VERSION} (venv) -> {venv} ...")
+        try:
+            install_streamlink_venv(dest, venv)
+            print("  streamlink installed.")
+        except Exception as exc:   # no python3-venv / pip / network — report, don't crash
+            failed.append(f"streamlink venv ({exc})")
 
     managed_bin = st.managed_bin_dir(runtime_dir)
     if manager == "winget":

@@ -14,13 +14,15 @@ reproducibility mechanism instead (any league can stand up its own box the same 
 ## 1. Create the instance (once)
 
 Requires GPU quota (free; request first — see the runbook Appendix A, Step 0) and a
-`gcloud` authed to your project. T4 example:
+`gcloud` authed to your project. **L4 in `europe-west4-c`** is the validated EU default
+(T4 was capacity-exhausted across the zones tried; RTT ~20 ms vs ~110 ms to us-central1).
+The L4 is bundled into the `g2` machine type — **no `--accelerator` flag**. Size ≥ 6 vCPU
+(`g2-standard-8`) so preflight's core floor is green:
 
 ```bash
 gcloud compute instances create spike-gpu \
-  --zone=us-central1-a \
-  --machine-type=n1-standard-4 \
-  --accelerator=type=nvidia-tesla-t4,count=1 \
+  --zone=europe-west4-c \
+  --machine-type=g2-standard-8 \
   --maintenance-policy=TERMINATE \
   --provisioning-model=STANDARD \
   --image-family=ubuntu-2404-lts-amd64 \
@@ -29,13 +31,17 @@ gcloud compute instances create spike-gpu \
   --boot-disk-size=50GB
 ```
 
+T4 fallback (needs the flag): `--machine-type=n1-standard-8
+--accelerator=type=nvidia-tesla-t4,count=1` (e.g. `us-central1-a`). A create/start can hit
+`ZONE_RESOURCE_POOL_EXHAUSTED` — retry across zones.
+
 ## 2. Provision (once)
 
 **Default — manual, with output on screen (recommended for the first setup):**
 
 ```bash
-gcloud compute scp tools/cloud/provision.sh spike-gpu:~/ --zone=us-central1-a
-gcloud compute ssh spike-gpu --zone=us-central1-a
+gcloud compute scp tools/cloud/provision.sh spike-gpu:~/ --zone=europe-west4-c
+gcloud compute ssh spike-gpu --zone=europe-west4-c
   $ sudo ./provision.sh        # idempotent — re-run after any red line
 ```
 
@@ -45,7 +51,7 @@ gcloud compute ssh spike-gpu --zone=us-central1-a
 gcloud compute instances create spike-gpu ... \
   --metadata-from-file startup-script=tools/cloud/provision.sh
 # watch the log:
-gcloud compute instances get-serial-port-output spike-gpu --zone=us-central1-a
+gcloud compute instances get-serial-port-output spike-gpu --zone=europe-west4-c
 ```
 
 Optional env (never commit these):
@@ -55,10 +61,12 @@ Optional env (never commit these):
   once (fine for the single persistent box).
 - `RACECAST_TAG` — racecast release to install (default `latest` = latest **stable**).
   Set `RACECAST_TAG=preview-main` to install the current `main` preview build. Needed
-  until the `install-tools`/`install-apps` apt-update-first fixes (#408/#412) reach a
-  stable release; `latest` never picks a pre-release, so the preview is strictly opt-in.
-  Cut the preview first with `gh workflow run preview.yml --ref main` (rolling tag
-  `preview-main`, re-pointed on each run).
+  until the Linux `install-tools`/`install-apps` fixes reach a stable release —
+  apt-update-first (#408/#412) **and** the streamlink-venv (≥ 8.2.0) + obs-pipewire-audio
+  plugin installs (#395). Without them a fresh box gets a too-old streamlink (every
+  cookie'd YouTube feed aborts) and no Discord audio plugin. `latest` never picks a
+  pre-release, so the preview is strictly opt-in. Cut it with `gh workflow run preview.yml
+  --ref main` (rolling tag `preview-main`, re-pointed on each run).
 - `RUSTDESK_VERSION` — pin a RustDesk release (default in the script; bump if outdated).
 
 The script ends with a green/red verification block. A red line names the step to re-run.
@@ -81,8 +89,8 @@ profiles + runtime **next to itself** — so copy straight into that tree:
 
 ```bash
 # from your laptop, copy the profile + fresh cookies into the user-owned tree:
-gcloud compute scp --recurse profiles/<league> spike-gpu:~/racecast/profiles/ --zone=us-central1-a
-gcloud compute scp runtime/yt-cookies.txt spike-gpu:~/racecast/runtime/ --zone=us-central1-a
+gcloud compute scp --recurse profiles/<league> spike-gpu:~/racecast/profiles/ --zone=europe-west4-c
+gcloud compute scp runtime/yt-cookies.txt spike-gpu:~/racecast/runtime/ --zone=europe-west4-c
 # on the box (no sudo — the tree is user-owned):
 racecast profile use <league>
 racecast setup            # localize the OBS scene collection for this profile
@@ -94,8 +102,8 @@ Switch between already-onboarded leagues with `racecast profile use <name>`.
 ## 5. Cost control — stop between events
 
 ```bash
-gcloud compute instances stop  spike-gpu --zone=us-central1-a   # idle ≈ boot disk only
-gcloud compute instances start spike-gpu --zone=us-central1-a   # tailnet IP stays stable
+gcloud compute instances stop  spike-gpu --zone=europe-west4-c   # idle ≈ boot disk only
+gcloud compute instances start spike-gpu --zone=europe-west4-c   # tailnet IP stays stable
 ```
 
 ## Confidence-building before GPU hours
@@ -114,9 +122,11 @@ else is validatable without a GPU. De-risk in three tiers:
    (`nvidia-smi` lists Xorg as a GPU process, `pgrep Xorg`, `DISPLAY=:0 glxinfo` renderer
    is the T4 not `llvmpipe`, RustDesk shows the xfce desktop). Green = the risky part is
    proven; only then invest in OBS setup + NVENC (#421).
-3. **Fallback.** If `--allow-empty-initial-configuration` misbehaves, feed a CustomEDID
-   (fake a 1080p monitor). NVENC encoding is independent of the X display, so it is not at
-   risk even while the desktop display is being tuned.
+3. **Fallback.** The live run's headless-X recipe (`nvidia-open` has no `nvidia-xconfig`,
+   so `provision.sh` writes `/etc/X11/xorg.conf` by hand — single 1920×1080, BusID from
+   `lspci`) is proven. If X still won't start, feed a CustomEDID (fake a 1080p monitor).
+   NVENC encoding is independent of the X display, so it is never at risk while the desktop
+   display is being tuned.
 
 ## Notes
 

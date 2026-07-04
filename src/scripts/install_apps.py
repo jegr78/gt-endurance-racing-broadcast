@@ -554,11 +554,41 @@ def _install_linux(missing, assume_yes):
             print(f"  ! enable-control skipped: {exc} "
                   "(run `racecast companion enable-control` later).")
     _obs_browser_notice()
+    _pipewire_audio_setup(failed)
     if failed:
         print("\nThese steps failed — re-run `racecast install-apps` to retry them:")
         for f in failed:
             print("  -", f)
     return 1 if failed else 0
+
+
+def _pipewire_audio_setup(failed):
+    """On Linux, install the obs-pipewire-audio-capture plugin (the Discord audio
+    source's backend) into the per-user OBS plugins dir when OBS is present, the
+    plugin is missing, and this is a prebuilt (x86_64, non-flatpak) target. Prints a
+    Flathub / source-build hint otherwise. Best-effort — a download failure is
+    recorded in `failed`, never crashes the install."""
+    if not sys.platform.startswith("linux"):
+        return
+    import platform
+    try:
+        import obs_pipewire_linux as opw
+        home = os.path.expanduser("~")
+        obs_present = app_present("obs", sys.platform)
+        plugin_present = opw.plugin_installed(home)
+        flatpak = opw.is_flatpak_obs(home)
+        machine = platform.machine()
+        if obs_present and not plugin_present and not flatpak and opw.is_prebuilt_arch(machine):
+            print(f"Installing OBS PipeWire audio plugin v{opw.PLUGIN_VERSION} "
+                  "(Discord audio source) …")
+            opw.install_pipewire_audio(home)
+            print("  obs-pipewire-audio installed.")
+        else:
+            hint = opw.install_hint(machine, obs_present, plugin_present, flatpak)
+            if hint:
+                print("\n" + hint)
+    except Exception as exc:                          # noqa: BLE001
+        failed.append(f"obs-pipewire-audio ({exc})")
 
 
 def _obs_browser_notice():

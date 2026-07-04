@@ -236,7 +236,58 @@ entire value of the staged structure: buy the cheapest information first.
 
 ---
 
-## Appendix A — GCP T4 provisioning (persistent instance + provision.sh)
+## Post-GPU-run findings (2026-07-04, europe-west4 · L4)
+
+The first full GPU-box run (create → provision → onboard a league → live feed rendered
+in cloud OBS → teardown). GO on every hard unknown; it also surfaced six real gaps that
+are now fixed in the repo (do NOT re-derive them on the next box):
+
+**Region — EU is the production home (`europe-west4`), not `us-central1`.** For an EU
+operator the RTT to `europe-west4` is ~20 ms vs ~110 ms to `us-central1`; that latency is
+what RustDesk remote-control feels (it does **not** affect the feed pull or the audience).
+GPU pricing is within a few % across the two regions, and the account already carried
+`NVIDIA_T4_GPUS=1` + `NVIDIA_L4_GPUS=1` quota in `europe-west4` — so no new quota request
+was needed there. Use `europe-west4`; keep `us-central1` only as a capacity fallback.
+
+**Capacity — stop/start re-competes for the GPU.** Stopping a GPU VM releases the GPU, so
+every `start` re-acquires zonal capacity and can fail with `ZONE_RESOURCE_POOL_EXHAUSTED`.
+T4 was exhausted across **all** `us-central1` zones (a/b/c/f) **and** `europe-west4` during
+the run; **L4 (`g2-standard-4`) in `europe-west4-c` succeeded** and is the recommended
+default for the EU box. A create/start retry loop must capture gcloud's real exit code
+(don't mask it behind a pipe). Guaranteed capacity = a Reservation, which bills continuously
+— out of scope for the stop-between-events model.
+
+**vCPU floor.** `g2-standard-4` / `n1-standard-4` give **4 logical cores**, which preflight
+FLAGs (`< 6`-core minimum). It ran fine for a single-feed validation, but for a real event
+size the VM at **≥ 6 vCPU** (e.g. `g2-standard-8`) so preflight is green.
+
+**NVIDIA driver — `nvidia-open`, not the deprecated installer.** GCP's
+`install_gpu_driver.py` pins driver 550.54.15, whose proprietary modules **fail to build**
+against Ubuntu 24.04's current kernel (6.17). `provision.sh` now installs `nvidia-open`
+(open kernel modules, DKMS) from the NVIDIA CUDA apt repo. (F2)
+
+**Headless X — hand-written `xorg.conf`.** `nvidia-xconfig` is not shipped with the open
+driver. `provision.sh` writes `/etc/X11/xorg.conf` directly (BusID from `lspci`, a single
+1920×1080 mode — a larger `Virtual` desyncs RustDesk's absolute mouse mapping). (F3)
+
+**streamlink too old on Linux — the "relay bug" that wasn't.** The box's feed aborted with
+`unrecognized arguments: --http-cookies-file`. Root cause: **not** the relay (its code is
+correct) but Ubuntu 24.04's apt streamlink **6.6.2**, which predates `--http-cookies-file`
+(added in streamlink **8.2.0**). macOS/Windows producers get 8.x from brew/winget, so only
+Linux was affected. `install-tools` now installs a pinned streamlink venv (≥ 8.2.0) on
+Linux and `preflight` FAILs below the floor. (F1)
+
+**OBS PipeWire audio plugin absent.** OBS's apt/PPA package ships no
+`obs-pipewire-audio-capture`, so Discord interview audio couldn't capture until it was
+hand-installed. `install-apps` now installs the pinned upstream plugin on Linux. (F4)
+
+Because F1/F4 live in `install-tools`/`install-apps` and are unreleased, a fresh box must
+install `RACECAST_TAG=preview-main` until they ship in a stable release (see Appendix A
+step 2).
+
+---
+
+## Appendix A — GCP T4/L4 provisioning (persistent instance + provision.sh)
 
 Model: **one long-lived instance**, provisioned once with `tools/cloud/provision.sh`,
 reused for all events by switching racecast **profiles**. Stop it between events for cost;
@@ -246,11 +297,13 @@ commands live in `tools/cloud/README.md`). Assumes `gcloud` is authed
 (`gcloud auth login`; `gcloud config set project <PROJECT_ID>`).
 
 **Step 0 — GPU quota (do FIRST; the only real lead time; quota is free).** New accounts
-have GPU quota 0. Request in the console (**IAM & Admin → Quotas & System Limits**), filter
-`us-central1`, request **≥ 1** for `NVIDIA_T4_GPUS` (region us-central1) and
-`GPUS_ALL_REGIONS` (global). Inspect from the CLI:
+have GPU quota 0. Use **`europe-west4`** for an EU operator (see Post-GPU-run findings —
+~20 ms vs ~110 ms RTT for RustDesk). Request in the console (**IAM & Admin → Quotas &
+System Limits**), filter your region, request **≥ 1** for `NVIDIA_L4_GPUS` (the recommended
+GPU — see step 1) and/or `NVIDIA_T4_GPUS`, plus `GPUS_ALL_REGIONS` (global). Inspect from
+the CLI:
 ```bash
-gcloud compute regions describe us-central1 \
+gcloud compute regions describe europe-west4 \
   --format="table(quotas.metric,quotas.limit,quotas.usage)" | grep -i gpu
 ```
 Approval: hours to ~2 business days. The VM cannot be created until it lands. Quota is an
@@ -258,12 +311,15 @@ allocation *ceiling*, not a reservation or a charge — you pay only for resourc
 running (distinct from Reservations / Committed-Use, which do cost and are not needed here).
 
 **Step 1 — create the VM (only after quota granted).** GPU VMs cannot live-migrate →
-`--maintenance-policy=TERMINATE` is required. T4 zones in us-central1: a, b, c, f.
+`--maintenance-policy=TERMINATE` is required. **L4 (`g2-standard-4`) in `europe-west4-c`**
+is the validated EU default (T4 was capacity-exhausted across all tried zones — see
+findings). The L4 is bundled into the `g2` machine type, so there is **no `--accelerator`
+flag**. Size to **≥ 6 vCPU** (`g2-standard-8`) for a real event; `-4` (4 vCPU) FLAGs
+preflight's core floor.
 ```bash
 gcloud compute instances create spike-gpu \
-  --zone=us-central1-a \
-  --machine-type=n1-standard-4 \
-  --accelerator=type=nvidia-tesla-t4,count=1 \
+  --zone=europe-west4-c \
+  --machine-type=g2-standard-8 \
   --maintenance-policy=TERMINATE \
   --provisioning-model=STANDARD \
   --image-family=ubuntu-2404-lts-amd64 \
@@ -271,19 +327,24 @@ gcloud compute instances create spike-gpu \
   --boot-disk-type=pd-standard \
   --boot-disk-size=50GB
 ```
+T4 fallback (needs the `--accelerator` flag): `--machine-type=n1-standard-8
+--accelerator=type=nvidia-tesla-t4,count=1`, e.g. in `us-central1-a` (T4 zones: a, b, c, f).
 `pd-standard` (not the "Balanced" default) → ~$2/mo idle disk. Ephemeral IP (Stage 1 showed
 GCP IPs pass generally — no reserved static IP). `STANDARD`, never spot, for a live run.
+A create/start can fail with `ZONE_RESOURCE_POOL_EXHAUSTED` — retry across zones (and
+capture gcloud's real exit code, don't mask it behind a pipe).
 
 **Step 2 — provision the machine layer (once).** Copy up and run the script; it installs
 the NVIDIA driver, xfce, Firefox (deb), RustDesk, passwordless sudo, joins Tailscale, and
 runs `racecast install-tools` + `racecast install-apps --yes`. Idempotent — re-run after
 any red line.
 ```bash
-gcloud compute scp tools/cloud/provision.sh spike-gpu:~/ --zone=us-central1-a
-gcloud compute ssh spike-gpu --zone=us-central1-a
+gcloud compute scp tools/cloud/provision.sh spike-gpu:~/ --zone=europe-west4-c
+gcloud compute ssh spike-gpu --zone=europe-west4-c
   $ sudo ./provision.sh
 ```
-Until the `install-tools`/`install-apps` apt fixes (#408/#412) ship in a stable release,
+Until the Linux `install-tools`/`install-apps` fixes ship in a stable release —
+apt-update-first (#408/#412) **and** the streamlink-venv + obs-pipewire installs (#395) —
 install the current main preview instead: `gh workflow run preview.yml --ref main` once,
 then `sudo RACECAST_TAG=preview-main ./provision.sh`. Reproduction alternative
 (unattended, any league): pass the script as a startup-script at create time —
@@ -304,9 +365,12 @@ private/unlisted RTMP arrives. Then continue Stage 3 (panel drives cloud OBS) an
 
 **Cost control — stop between events (idle ≈ $2/mo boot disk).**
 ```bash
-gcloud compute instances stop  spike-gpu --zone=us-central1-a
-gcloud compute instances start spike-gpu --zone=us-central1-a   # ephemeral public IP may change; tailnet IP stays
+gcloud compute instances stop  spike-gpu --zone=europe-west4-c
+gcloud compute instances start spike-gpu --zone=europe-west4-c   # ephemeral public IP may change; tailnet IP stays
 ```
+Note: `start` re-competes for zonal GPU capacity (stopping released it) and can hit
+`ZONE_RESOURCE_POOL_EXHAUSTED` — retry, or across zones. A Reservation guarantees capacity
+but bills continuously (out of scope for stop-between-events).
 
 ---
 
