@@ -54,6 +54,49 @@ def t_parse_channel_link():
         "https://discord.com/channels/@me/222") is None                       # non-numeric guild
 
 
+def t_discord_voice_from_csv():
+    csv_text = ('"Stints","Cue Preset","Discord Voice"\r\n'
+                '"Stint 1","Formation Lap",""\r\n'
+                '"Stint 2","","https://discord.com/channels/1/2"\r\n')
+    assert m.discord_voice_from_csv(csv_text) == "https://discord.com/channels/1/2"
+    assert m.discord_voice_from_csv('"A","B"\r\n"x","y"\r\n') == ""   # header absent
+    assert m.discord_voice_from_csv("") == ""
+
+
+def t_resolve_voice_target_override_then_fallback():
+    sheet = "https://discord.com/channels/11/22"
+    env = "https://discord.com/channels/33/44"
+    assert m.resolve_voice_target(sheet, env) == ("11", "22")   # sheet wins
+    assert m.resolve_voice_target("", env) == ("33", "44")      # fall back to env
+    assert m.resolve_voice_target("garbage", env) == ("33", "44")   # bad sheet -> env
+    assert m.resolve_voice_target("", "") is None
+
+
+def t_token_cache_logic():
+    fresh = {"access_token": "a", "expires_at": 1000, "refresh_token": "r"}
+    assert m.token_valid(fresh, now=900) is True
+    assert m.token_valid(fresh, now=999) is False          # inside the 60s skew
+    assert m.token_valid({}, now=0) is False
+    expired = {"access_token": "a", "expires_at": 100, "refresh_token": "r"}
+    assert m.needs_refresh(expired, now=900) is True
+    assert m.needs_refresh({"access_token": "a", "expires_at": 100}, now=900) is False  # no refresh token
+
+
+def t_store_token_absolute_expiry():
+    resp = {"access_token": "a", "refresh_token": "r", "expires_in": 604800, "scope": "rpc identify"}
+    cache = m.store_token(resp, now=1000)
+    assert cache["access_token"] == "a" and cache["refresh_token"] == "r"
+    assert cache["expires_at"] == 1000 + 604800
+
+
+def t_oauth_bodies():
+    ex = m.token_exchange_body("cid", "sec", "code")
+    assert ex["grant_type"] == "authorization_code" and ex["redirect_uri"] == "http://localhost"
+    assert ex["code"] == "code" and ex["client_secret"] == "sec"
+    rf = m.token_refresh_body("cid", "sec", "rtok")
+    assert rf["grant_type"] == "refresh_token" and rf["refresh_token"] == "rtok"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

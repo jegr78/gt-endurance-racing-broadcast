@@ -9,6 +9,8 @@ device, where OBS's PipeWire plugin captures it. Feasibility proven live — see
 docs/superpowers/specs/2026-07-04-discord-voice-join-design.md.
 
 Secrets (client_secret, tokens) are never logged, printed, or returned."""
+import csv
+import io
 import json
 import os
 import struct
@@ -90,3 +92,55 @@ def parse_channel_link(link):
     if guild.isdigit() and channel.isdigit():
         return guild, channel
     return None
+
+
+def discord_voice_from_csv(csv_text):
+    """First non-empty `Discord Voice` cell from the Configuration-tab CSV, or ''."""
+    rows = list(csv.reader(io.StringIO(csv_text or "")))
+    if not rows:
+        return ""
+    try:
+        idx = rows[0].index(VOICE_HEADER)
+    except ValueError:
+        return ""
+    for row in rows[1:]:
+        if idx < len(row) and row[idx].strip():
+            return row[idx].strip()
+    return ""
+
+
+def resolve_voice_target(sheet_value, env_value):
+    """Sheet override wins; else the profile.env fallback. (guild, channel) | None."""
+    for value in (sheet_value, env_value):
+        target = parse_channel_link(value)
+        if target:
+            return target
+    return None
+
+
+def token_valid(cache, now, skew=60):
+    tok, exp = cache.get("access_token"), cache.get("expires_at")
+    return bool(tok) and isinstance(exp, (int, float)) and now < exp - skew
+
+
+def needs_refresh(cache, now, skew=60):
+    return (not token_valid(cache, now, skew)) and bool(cache.get("refresh_token"))
+
+
+def store_token(resp, now):
+    """OAuth token response -> cache dict with an ABSOLUTE expiry."""
+    return {"access_token": resp.get("access_token"),
+            "refresh_token": resp.get("refresh_token"),
+            "expires_at": now + int(resp.get("expires_in", 0)),
+            "scope": resp.get("scope", "")}
+
+
+def token_exchange_body(client_id, client_secret, code):
+    return {"client_id": client_id, "client_secret": client_secret,
+            "grant_type": "authorization_code", "code": code,
+            "redirect_uri": REDIRECT_URI}
+
+
+def token_refresh_body(client_id, client_secret, refresh_token):
+    return {"client_id": client_id, "client_secret": client_secret,
+            "grant_type": "refresh_token", "refresh_token": refresh_token}
