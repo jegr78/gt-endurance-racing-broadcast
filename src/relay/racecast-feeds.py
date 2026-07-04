@@ -1986,7 +1986,7 @@ class ChannelSource:
 
 class ProducerSource:
     """Reads the Sheet `Producer` tab (CSV) -> [{"part","producer","magicdns",
-    "stream_key"}] via the pure producer_mod.parse_producer_rows. Same tolerant
+    "stream_key"}] via producer_mod.parse_producer_rows (pure). Same tolerant
     fetch+lock+cache shape as ChannelSource; a missing/empty/unreachable tab
     yields no parts, so the panel falls back to the plain GO-LIVE button."""
 
@@ -6796,8 +6796,13 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send({"enabled": False})   # feature off -> panel fallback
                     if p == ["parts", "data"]:
                         rows = producer_source.get()
-                        active = None
-                        if _obs_ws is not None:
+                        # The panel forwards the OBS stream state it already polls
+                        # (via /obs/state) so we skip a redundant obs-websocket read;
+                        # a bare call (no param) still self-reconciles against OBS.
+                        qs = parse_qs(urlparse(self.path).query)
+                        active = parts_mod.stream_active_param(
+                            qs.get("stream_active", [None])[0])
+                        if active is None and _obs_ws is not None:
                             st, _n = _obs_ws.read_obs_state([], [])
                             if isinstance(st, dict) and isinstance(st.get("stream"), dict):
                                 active = bool(st["stream"].get("active"))

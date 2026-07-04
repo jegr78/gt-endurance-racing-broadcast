@@ -20,6 +20,24 @@ def parts_intent_phrase(action, index):
     return "{} PART {}".format(str(action).upper(), int(index))
 
 
+def stream_active_param(raw):
+    """Map a /parts/data `?stream_active=` query value to True/False/None.
+
+    The panel already polls OBS's stream state (via /obs/state) every cycle, so it
+    passes that truth here and /parts/data need not open a second obs-websocket
+    connection. Absent or unrecognised -> None, and the relay falls back to reading
+    OBS itself (a bare `/parts/data` call keeps its original self-reconciling
+    behaviour). Pure."""
+    if raw is None:
+        return None
+    v = str(raw).strip().lower()
+    if v in ("1", "true", "yes"):
+        return True
+    if v in ("0", "false", "no"):
+        return False
+    return None
+
+
 def parts_view_model(producer_rows, state, stream_active=None):
     """Build the /parts/data payload from the parsed Producer rows, the persisted
     part state ({"index","live"}), and the OBS live truth (stream_active; None ->

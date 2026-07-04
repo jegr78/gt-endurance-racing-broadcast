@@ -29,6 +29,18 @@ def t_normalize_intent():
     assert m.normalize_intent(None) == ""
 
 
+def t_stream_active_param():
+    # Client passes the OBS truth it already polled -> /parts/data skips its own
+    # obs-ws read. Absent/unknown -> None (relay falls back to reading OBS).
+    assert m.stream_active_param("1") is True
+    assert m.stream_active_param("true") is True
+    assert m.stream_active_param("0") is False
+    assert m.stream_active_param("false") is False
+    assert m.stream_active_param(None) is None
+    assert m.stream_active_param("") is None
+    assert m.stream_active_param("maybe") is None
+
+
 def t_view_model_ready_offers_start():
     vm = m.parts_view_model(ROWS3, {"index": 1, "live": False}, stream_active=False)
     assert vm["enabled"] and vm["count"] == 3
