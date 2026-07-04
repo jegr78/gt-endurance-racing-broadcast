@@ -156,6 +156,20 @@ def t_apply_stream_service_for_ref_no_push_url():
     assert not ok and "SHEET_PUSH_URL" in note
 
 
+def t_producer_source_empty_when_no_url():
+    assert R.ProducerSource(None).get() == []
+
+
+def t_producer_source_parses_on_refresh():
+    ps = R.ProducerSource("http://x")
+    ps._fetch_text = lambda timeout=15: (
+        "Part,Producer,MagicDNS,Stream Key\nPart 1,A,a,key1\nPart 2,B,b,key2\n")
+    assert ps.refresh() is True
+    assert ps.get() == [
+        {"part": "Part 1", "producer": "A", "magicdns": "a", "stream_key": "key1"},
+        {"part": "Part 2", "producer": "B", "magicdns": "b", "stream_key": "key2"}]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

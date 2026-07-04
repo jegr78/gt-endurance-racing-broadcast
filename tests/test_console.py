@@ -293,6 +293,12 @@ def t_event_notes_any_authenticated():
     assert cp.decide({"director"}, ["event-notes", "send"], "GET") == cp.NOT_FOUND
 
 
+def t_parts_requires_director():
+    assert cp.min_capability(["parts", "data"]) == cp.Requirement(cp.DIRECTOR, False)
+    assert cp.min_capability(["parts", "start"]) == cp.Requirement(cp.DIRECTOR, False)
+    assert cp.min_capability(["parts", "end"]) == cp.Requirement(cp.DIRECTOR, False)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
