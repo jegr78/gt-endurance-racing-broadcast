@@ -426,6 +426,46 @@ def classify_pipewire_audio(platform_name, present):
                   "Install it (see the OBS Setup wiki).")
 
 
+# streamlink floor mirrors install_tools.MIN_STREAMLINK (kept in sync deliberately;
+# preflight must not import the installer module). 8.2.0 (2026-02-09) is the release
+# that added --http-cookies-file, which the relay's YouTube serve uses to pass
+# yt-dlp's session cookies to streamlink's manifest re-fetch (#350). An older
+# streamlink (e.g. Ubuntu 24.04's apt 6.6.2) makes every cookie'd YouTube feed abort
+# with "unrecognized arguments: --http-cookies-file".
+PF_MIN_STREAMLINK = (8, 2, 0)
+
+_STREAMLINK_VER_RE = re.compile(r"streamlink\s+(\d+)\.(\d+)(?:\.(\d+))?")
+
+
+def parse_streamlink_version(version_line):
+    """Parse `streamlink --version` output ("streamlink X.Y.Z", a package build may
+    append "-N") into an (major, minor, patch) tuple. None if unrecognizable (a bare
+    path fallback, empty, or None)."""
+    if not version_line:
+        return None
+    match = _STREAMLINK_VER_RE.search(version_line)
+    if not match:
+        return None
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3) or 0))
+
+
+def classify_streamlink_version(version_line):
+    """Gate streamlink against the PF_MIN_STREAMLINK floor. FAIL below it (the
+    relay's cookie'd YouTube serve can't work), PASS at/above. None when the version
+    can't be parsed — the tool loop's plain PASS row stands, no second guess."""
+    have = parse_streamlink_version(version_line)
+    if have is None:
+        return None
+    want = ".".join(str(n) for n in PF_MIN_STREAMLINK)
+    if have < PF_MIN_STREAMLINK:
+        shown = ".".join(str(n) for n in have)
+        return Result(FAIL, "streamlink version",
+                      f"{shown} — below {want}; the relay's YouTube feed passes cookies "
+                      f"via --http-cookies-file (added in streamlink {want}). Update it: "
+                      "`racecast install-tools --update`.")
+    return Result(PASS, "streamlink version", ".".join(str(n) for n in have))
+
+
 # glibc floors mirror install_tools.MIN_GLIBC_TOOLS / MIN_GLIBC_BINARY (kept in
 # sync deliberately — preflight must not import the installer module).
 PF_MIN_GLIBC_TOOLS = (2, 35)
@@ -501,6 +541,10 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
         version = tool_version(name)
         tools.append(Result(PASS, name, version) if version
                      else Result(FAIL, name, "not found on PATH — required by the relay"))
+        if name == "streamlink" and version:
+            floor = classify_streamlink_version(version)
+            if floor is not None:
+                tools.append(floor)
     py = sys.version.split()[0]
     tools.append(Result(PASS, "python3", py) if sys.version_info >= (3, 8)
                  else Result(FAIL, "python3", f"{py} — need 3.8+"))

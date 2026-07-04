@@ -39,13 +39,69 @@ def t_install_commands_brew_single_batch():
 
 
 def t_install_commands_apt_updates_then_skips_managed():
-    # apt handles ONLY streamlink + ffmpeg now. yt-dlp (bot-check-sensitive) and
-    # deno are pinned managed downloads, not apt packages (#409).
-    cmds = m.install_commands("apt", ["yt-dlp", "streamlink", "deno"])
-    assert cmds == [["apt-get", "update"], ["apt-get", "install", "-y", "streamlink"]]
+    # apt handles ONLY ffmpeg now. yt-dlp (bot-check-sensitive), deno, and
+    # streamlink (apt's 6.6.2 predates --http-cookies-file, #350) are managed
+    # installs, not apt packages.
+    cmds = m.install_commands("apt", ["yt-dlp", "streamlink", "ffmpeg", "deno"])
+    assert cmds == [["apt-get", "update"], ["apt-get", "install", "-y", "ffmpeg"]]
     assert m.install_commands("apt", ["yt-dlp"]) == []
     assert m.install_commands("apt", ["deno"]) == []
+    assert m.install_commands("apt", ["streamlink"]) == []
     assert "yt-dlp" not in m.APT_PACKAGES
+    assert "streamlink" not in m.APT_PACKAGES
+
+
+def t_streamlink_managed_on_linux_only():
+    # apt's streamlink is too old (6.6.2 << 8.2.0) -> Linux gets a managed venv.
+    assert m.streamlink_needs_managed_install("apt") is True
+    assert m.streamlink_needs_managed_install("brew") is False    # brew ships 8.x
+    assert m.streamlink_needs_managed_install("winget") is False  # winget ships 8.x
+    # the pinned spec must be at/above preflight's 8.2.0 floor.
+    assert m.STREAMLINK_VERSION >= "8.2.0"
+    assert m.STREAMLINK_SPEC == "streamlink==" + m.STREAMLINK_VERSION
+
+
+def t_streamlink_venv_dir_under_runtime():
+    assert m.streamlink_venv_dir("/r") == os.path.join("/r", "streamlink-venv")
+
+
+def t_install_streamlink_venv_orchestration():
+    import tempfile
+    calls = []
+    links = []
+    def rec_symlink(src, dst):
+        links.append((src, dst))
+    with tempfile.TemporaryDirectory() as td:
+        managed = os.path.join(td, "bin")
+        venv = os.path.join(td, "streamlink-venv")
+        link = m.install_streamlink_venv(
+            managed, venv, python="/usr/bin/python3",
+            run=calls.append, symlink=rec_symlink)
+    # 1) build the venv with the *system* python, 2) pip-install the pinned spec
+    #    via the venv's own python, 3) link the entrypoint into the managed bin dir.
+    assert calls[0] == ["/usr/bin/python3", "-m", "venv", venv]
+    venv_py = os.path.join(venv, "bin", "python")
+    assert calls[1] == [venv_py, "-m", "pip", "install", "--upgrade", m.STREAMLINK_SPEC]
+    assert links == [(os.path.join(venv, "bin", "streamlink"),
+                      os.path.join(managed, "streamlink"))]
+    assert link == os.path.join(managed, "streamlink")
+
+
+def t_install_streamlink_venv_needs_python():
+    import tempfile
+    orig = m.system_python
+    m.system_python = lambda: None   # simulate a box with no python3 / no python3-venv
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            try:
+                m.install_streamlink_venv(os.path.join(td, "bin"),
+                                          os.path.join(td, "v"), python=None,
+                                          run=lambda a: None, symlink=lambda s, d: None)
+                raise AssertionError("expected RuntimeError when no python is found")
+            except RuntimeError as exc:
+                assert "python" in str(exc).lower()
+    finally:
+        m.system_python = orig
 
 
 def t_manual_guide_mentions_deno_on_linux():
@@ -85,11 +141,12 @@ def t_update_commands_brew_single_batch():
 
 
 def t_update_commands_apt_only_upgrade_skips_managed():
-    cmds = m.update_commands("apt", ["streamlink", "deno", "yt-dlp"])
+    cmds = m.update_commands("apt", ["ffmpeg", "streamlink", "deno", "yt-dlp"])
     assert cmds == [["apt-get", "update"],
-                    ["apt-get", "install", "-y", "--only-upgrade", "streamlink"]]
+                    ["apt-get", "install", "-y", "--only-upgrade", "ffmpeg"]]
     assert m.update_commands("apt", ["deno"]) == []
     assert m.update_commands("apt", ["yt-dlp"]) == []
+    assert m.update_commands("apt", ["streamlink"]) == []
 
 
 def t_speedtest_install_commands_winget_only():
@@ -173,24 +230,25 @@ def t_manual_guide_mentions_speedtest():
 
 
 def t_install_commands_apt_sudo_prefix():
-    # apt path = update then install; both get the sudo prefix (Linux non-root)
-    assert m.install_commands("apt", ["streamlink"]) == \
-        [["apt-get", "update"], ["apt-get", "install", "-y", "streamlink"]]
+    # apt path = update then install; both get the sudo prefix (Linux non-root).
+    # ffmpeg is the only apt-managed tool left (streamlink is now a managed venv).
+    assert m.install_commands("apt", ["ffmpeg"]) == \
+        [["apt-get", "update"], ["apt-get", "install", "-y", "ffmpeg"]]
     assert m.install_commands("apt", ["streamlink", "ffmpeg"], sudo=True) == \
         [["sudo", "apt-get", "update"],
-         ["sudo", "apt-get", "install", "-y", "streamlink", "ffmpeg"]]
+         ["sudo", "apt-get", "install", "-y", "ffmpeg"]]
     assert m.install_commands("brew", ["ffmpeg"], sudo=True) == [["brew", "install", "ffmpeg"]]
     assert m.install_commands("winget", ["deno"], sudo=True)[0][0] == "winget"
     assert m.install_commands("apt", ["deno"], sudo=True) == []   # deno has no apt pkg
 
 
 def t_update_commands_apt_sudo_prefix():
-    assert m.update_commands("apt", ["streamlink"], sudo=True) == \
+    assert m.update_commands("apt", ["ffmpeg"], sudo=True) == \
         [["sudo", "apt-get", "update"],
-         ["sudo", "apt-get", "install", "-y", "--only-upgrade", "streamlink"]]
-    assert m.update_commands("apt", ["streamlink"]) == \
+         ["sudo", "apt-get", "install", "-y", "--only-upgrade", "ffmpeg"]]
+    assert m.update_commands("apt", ["ffmpeg"]) == \
         [["apt-get", "update"],
-         ["apt-get", "install", "-y", "--only-upgrade", "streamlink"]]
+         ["apt-get", "install", "-y", "--only-upgrade", "ffmpeg"]]
 
 
 def t_deno_asset_tag_per_os_arch():
