@@ -3112,28 +3112,40 @@ def tailscale_status_cmd(_rest):
 
 
 def _check_scene_collection():
-    """Best-effort warning if OBS is on the wrong scene collection at event start.
-    Never blocks bring-up: the producer switches with `racecast obs collection set` or
-    the Control Center OBS row (a switch rebuilds all sources, so it stays manual)."""
+    """At `event start`, align OBS's scene collection with the active profile.
+    Default-on auto-switch (RACECAST_OBS_COLLECTION_SWITCH=0 -> warn-only, the old
+    behaviour). Best-effort: never blocks bring-up. Safe to automate here because OBS
+    refuses a collection switch while an output is active (set_scene_collection returns
+    (False, ...)), and no output is active during bring-up. The manual fallback stays
+    `racecast obs collection set` / the Control Center OBS row."""
     try:
         import obs_ws
         status, note = obs_ws.get_scene_collection(expected=_active_obs_collection())
     except Exception as exc:                         # noqa: BLE001 — best effort
         print(f"obs: scene collection check skipped ({exc}).")
         return
-    if status is None:
-        print(f"obs: scene collection check skipped — {note}.")
-        return
-    if status["match"]:
-        print(f"obs: scene collection '{status['current']}' active — correct.")
-        return
-    if status["expected_present"]:
-        print(f"obs: WARNING — scene collection '{status['current']}' active, expected "
-              f"'{status['expected']}'. Switch with `racecast obs collection set` (or the OBS "
-              f"row in the Control Center) before going live.")
-    else:
-        print(f"obs: WARNING — scene collection '{status['current']}' active, expected "
-              f"'{status['expected']}' not found in OBS — import it with `racecast setup` "
+    action, detail = obs_ws.scene_collection_action(
+        status, note, _collection_switch_enabled())
+    if action == "skip":
+        print(f"obs: scene collection check skipped — {detail}.")
+    elif action == "ok":
+        print(f"obs: scene collection '{detail}' active — correct.")
+    elif action == "switch":
+        ok, snote = obs_ws.set_scene_collection(name=detail)
+        if ok:
+            print(f"obs: scene collection switched to '{detail}' "
+                  f"(was '{status['current']}').")
+        else:
+            print(f"obs: WARNING — could not switch to scene collection '{detail}' — "
+                  f"{snote}. Switch with `racecast obs collection set` (or the OBS row "
+                  f"in the Control Center) before going live.")
+    elif action == "warn_present":
+        print(f"obs: WARNING — scene collection '{detail['current']}' active, expected "
+              f"'{detail['expected']}'. Switch with `racecast obs collection set` (or the "
+              f"OBS row in the Control Center) before going live.")
+    else:  # warn_absent
+        print(f"obs: WARNING — scene collection '{detail['current']}' active, expected "
+              f"'{detail['expected']}' not found in OBS — import it with `racecast setup` "
               f"before going live.")
 
 
@@ -3218,8 +3230,10 @@ def event_start(rest, _autojoin=True):
     # OBS may not have been running when relay_start's refresh hook fired
     # (event start launches OBS AFTER the relay) — retry now that both sides
     # are up. Hash-gated: a no-op when the first hook already delivered.
+    # Align OBS to the active profile's scene collection BEFORE refreshing pages — a
+    # switch rebuilds every source, so a refresh must come after it (not be overwritten).
+    _check_scene_collection()
     _refresh_obs_pages()
-    _check_scene_collection()       # warn (never switch) if the wrong collection is up
     print()
     for line in ev.director_urls(_tailscale_ip(), _companion_tablet_port(),
                                  relay_port=RELAY_PORT):
