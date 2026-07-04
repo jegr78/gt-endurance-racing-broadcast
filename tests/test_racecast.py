@@ -2136,14 +2136,34 @@ def t_discord_cmd_unknown_verb_prints_usage():
 
 
 def t_discord_cmd_requires_client_credentials():
+    # join/leave build the client and require creds; status does NOT (it is read-only).
     restore = _with_env(RACECAST_DISCORD_CLIENT_ID=None, RACECAST_DISCORD_CLIENT_SECRET=None)
     try:
-        try:
-            m.discord_cmd(["status"])
-            raise AssertionError("expected SystemExit")
-        except SystemExit as e:
-            assert "DISCORD_CLIENT_ID/SECRET" in str(e.code)
+        for verb in ("join", "leave"):
+            try:
+                m.discord_cmd([verb])
+                raise AssertionError("expected SystemExit for " + verb)
+            except SystemExit as e:
+                assert "DISCORD_CLIENT_ID/SECRET" in str(e.code)
     finally:
+        restore()
+
+
+def t_discord_cmd_status_without_credentials_is_readonly():
+    # status must never require creds / sys.exit — it reports the target and a
+    # note that the Discord app is not configured (F2).
+    import io, contextlib
+    orig_target = m._discord_voice_target
+    m._discord_voice_target = lambda: None
+    restore = _with_env(RACECAST_DISCORD_CLIENT_ID=None, RACECAST_DISCORD_CLIENT_SECRET=None)
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = m.discord_cmd(["status"])
+        assert rc == 0
+        assert "no DISCORD_CLIENT_ID/SECRET" in buf.getvalue()
+    finally:
+        m._discord_voice_target = orig_target
         restore()
 
 

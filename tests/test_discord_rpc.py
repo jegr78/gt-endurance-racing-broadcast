@@ -170,6 +170,45 @@ def t_client_join_returns_false_on_closed_socket():
     assert ok is False and isinstance(note, str)
 
 
+def t_client_autojoin_no_consent_skips_authorize():
+    # allow_consent=False (auto-join): with no cached token, join must NOT open the
+    # interactive AUTHORIZE popup — it returns (False, note) and posts nothing.
+    import tempfile
+    path = os.path.join(tempfile.mkdtemp(), "tok.json")   # empty cache
+    conn = _fake_conn([(m.OP_FRAME, {"evt": "READY", "data": {}})])   # only handshake is read
+    posted = []
+    cli = m.DiscordVoiceClient("cid", "sec", path,
+                               connect=lambda ep: conn, endpoints=["ep"],
+                               http_post_form=lambda u, f: posted.append(f) or {},
+                               now=lambda: 5000)
+    ok, note = cli.join("11", "22", allow_consent=False)
+    assert ok is False and "discord join" in note
+    assert posted == []                                    # no token-endpoint call
+    cmds = [p.get("cmd") for _, p in conn.sent if p.get("cmd")]
+    assert "AUTHORIZE" not in cmds                          # never prompted for consent
+
+
+def t_client_read_frame_times_out_instead_of_hanging():
+    # A Discord that accepts the socket but never answers must not hang: the read is
+    # bounded (watchdog for a pipe-like conn), so join returns (False, note).
+    import tempfile
+    import threading as _t
+    path = os.path.join(tempfile.mkdtemp(), "tok.json")
+
+    class Stall:                     # no settimeout() -> exercises the watchdog path
+        def __init__(self): self._c = _t.Event()
+        def sendall(self, data): pass
+        def recv(self, n): self._c.wait(5); return b""     # unblocks only on close()
+        def close(self): self._c.set()
+
+    cli = m.DiscordVoiceClient("cid", "sec", path,
+                               connect=lambda ep: Stall(), endpoints=["ep"],
+                               http_post_form=lambda u, f: {}, now=lambda: 5000,
+                               read_timeout=0.2)
+    ok, note = cli.join("11", "22")
+    assert ok is False and isinstance(note, str)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

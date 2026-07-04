@@ -15,6 +15,7 @@ import json
 import os
 import socket
 import struct
+import threading
 import time
 
 import http_util
@@ -24,6 +25,11 @@ TOKEN_URL = "https://discord.com/api/oauth2/token"
 REDIRECT_URI = "http://localhost"
 CONFIG_TAB = "Configuration"
 VOICE_HEADER = "Discord Voice"
+# Per-read timeouts (seconds) so a hung/headless Discord can never block forever.
+# Normal RPC frames answer instantly; the AUTHORIZE response waits for a human to
+# click the consent popup, so it gets the longer window.
+READ_TIMEOUT_S = 10
+CONSENT_TIMEOUT_S = 120
 
 
 def ipc_candidates(os_name, env):
@@ -127,11 +133,13 @@ def resolve_voice_target(sheet_value, env_value):
 
 
 def token_valid(cache, now, skew=60):
+    """True if the cached access token is present and not within `skew` s of expiry."""
     tok, exp = cache.get("access_token"), cache.get("expires_at")
     return bool(tok) and isinstance(exp, (int, float)) and now < exp - skew
 
 
 def needs_refresh(cache, now, skew=60):
+    """True if the access token is unusable but a refresh_token can silently renew it."""
     return (not token_valid(cache, now, skew)) and bool(cache.get("refresh_token"))
 
 
@@ -191,7 +199,7 @@ def _default_connect(endpoint):
         return _PipeConn(endpoint)              # \\?\pipe\discord-ipc-N
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.connect(endpoint)
-    sock.settimeout(10)   # a hung (not closed) Discord must not block forever
+    sock.settimeout(READ_TIMEOUT_S)   # bound connect/read; _read_frame overrides per call
     return sock
 
 
@@ -209,12 +217,15 @@ class DiscordVoiceClient:
     Every failure path returns (False, note) — never raises to the caller."""
 
     def __init__(self, client_id, client_secret, cache_path,
-                 *, connect=None, http_post_form=None, now=None, endpoints=None):
+                 *, connect=None, http_post_form=None, now=None, endpoints=None,
+                 read_timeout=None, consent_timeout=None):
         self.cid, self.sec, self.cache_path = client_id, client_secret, cache_path
         self._connect = connect or _default_connect
         self._post = http_post_form or _default_post_form
         self._now = now or time.time
         self._endpoints_override = endpoints        # tests inject a fake list
+        self._read_timeout = READ_TIMEOUT_S if read_timeout is None else read_timeout
+        self._consent_timeout = CONSENT_TIMEOUT_S if consent_timeout is None else consent_timeout
 
     def _endpoints(self):
         """Candidate IPC endpoints to try. POSIX filters to existing sockets;
@@ -236,7 +247,30 @@ class DiscordVoiceClient:
                 continue
         return None, None
 
-    def _read_frame(self, conn):
+    def _read_frame(self, conn, timeout):
+        """Read one RPC frame, bounded by `timeout` seconds so a hung or headless
+        Discord can never block forever. A socket uses its native timeout; the
+        Windows pipe (no settimeout) is bounded by a watchdog that closes it,
+        which makes the blocked read fail."""
+        if hasattr(conn, "settimeout"):
+            conn.settimeout(timeout)
+            return self._read_frame_bytes(conn)
+        watchdog = threading.Timer(timeout, self._safe_close, args=(conn,))
+        watchdog.start()
+        try:
+            return self._read_frame_bytes(conn)
+        finally:
+            watchdog.cancel()
+
+    @staticmethod
+    def _safe_close(conn):
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001 — watchdog close is best-effort
+            pass
+
+    @staticmethod
+    def _read_frame_bytes(conn):
         head = b""
         while len(head) < 8:
             chunk = conn.recv(8 - len(head))
@@ -255,9 +289,12 @@ class DiscordVoiceClient:
     def _send(self, conn, msg):
         conn.sendall(encode_frame(*msg))
 
-    def _access_token(self, conn):
-        """Return a usable access token, doing the cheapest of: cached / refresh /
-        full AUTHORIZE. Raises RuntimeError with a friendly message on failure."""
+    def _access_token(self, conn, allow_consent):
+        """Return a usable access token, cheapest first: cached -> refresh ->
+        (only when allow_consent) the interactive AUTHORIZE consent flow. Auto-join
+        passes allow_consent=False, so an unattended box never blocks on a consent
+        popup nobody will click. Raises RuntimeError with a friendly, secret-free
+        message on failure."""
         cache = load_cache(self.cache_path)
         now = self._now()
         if token_valid(cache, now):
@@ -267,9 +304,13 @@ class DiscordVoiceClient:
             if resp.get("access_token"):
                 save_cache(self.cache_path, store_token(resp, self._now()))
                 return resp["access_token"]
-        # Full consent flow (first run / refresh failed): AUTHORIZE over the socket.
+        if not allow_consent:
+            raise RuntimeError(
+                "no cached Discord authorization — run `racecast discord join` once to grant it")
+        # Interactive consent (attended first run): the AUTHORIZE response waits for
+        # the human to click, so it gets the longer consent timeout.
         self._send(conn, msg_authorize(self.cid))
-        _op, msg = self._read_frame(conn)
+        _op, msg = self._read_frame(conn, self._consent_timeout)
         code = (msg.get("data") or {}).get("code")
         if not code:
             raise RuntimeError("Discord authorization was declined or timed out")
@@ -279,21 +320,21 @@ class DiscordVoiceClient:
         save_cache(self.cache_path, store_token(resp, self._now()))
         return resp["access_token"]
 
-    def _run(self, action_msg, ok_note):
+    def _run(self, action_msg, ok_note, allow_consent):
         conn = None
         try:
             conn, endpoint = self._open()
             if conn is None:
                 return False, "Discord desktop app is not running (no IPC socket)"
             self._send(conn, msg_handshake(self.cid))
-            _op, ready = self._read_frame(conn)
+            _op, ready = self._read_frame(conn, self._read_timeout)
             if ready.get("evt") != "READY":
                 return False, "Discord did not accept the client id"
-            token = self._access_token(conn)
+            token = self._access_token(conn, allow_consent)
             self._send(conn, msg_authenticate(token))
-            self._read_frame(conn)
+            self._read_frame(conn, self._read_timeout)
             self._send(conn, action_msg)
-            _op, res = self._read_frame(conn)
+            _op, res = self._read_frame(conn, self._read_timeout)
             if res.get("evt") == "ERROR":
                 return False, str((res.get("data") or {}).get("message", "voice command failed"))
             name = (res.get("data") or {}).get("name")
@@ -304,9 +345,10 @@ class DiscordVoiceClient:
             if conn is not None:
                 conn.close()
 
-    def join(self, guild, channel):
+    def join(self, guild, channel, allow_consent=True):
         return self._run(msg_select_voice(channel),
-                         lambda name: "joined voice channel " + (name or channel))
+                         lambda name: "joined voice channel " + (name or channel),
+                         allow_consent)
 
-    def leave(self):
-        return self._run(msg_leave(), lambda name: "left the voice channel")
+    def leave(self, allow_consent=True):
+        return self._run(msg_leave(), lambda name: "left the voice channel", allow_consent)
