@@ -13,7 +13,11 @@ import csv
 import io
 import json
 import os
+import socket
 import struct
+import time
+
+import http_util
 
 OP_HANDSHAKE, OP_FRAME, OP_CLOSE = 0, 1, 2
 TOKEN_URL = "https://discord.com/api/oauth2/token"
@@ -144,3 +148,153 @@ def token_exchange_body(client_id, client_secret, code):
 def token_refresh_body(client_id, client_secret, refresh_token):
     return {"client_id": client_id, "client_secret": client_secret,
             "grant_type": "refresh_token", "refresh_token": refresh_token}
+
+
+def load_cache(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_cache(path, cache):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(cache, fh)
+    os.replace(tmp, path)
+
+
+class _PipeConn:
+    """Windows named-pipe wrapper exposing the same sendall/recv/close as a socket."""
+    def __init__(self, path):
+        self._f = open(path, "r+b", buffering=0)   # noqa: SIM115 — kept open across sendall/recv calls
+    def sendall(self, data):
+        self._f.write(data); self._f.flush()
+    def recv(self, n):
+        return self._f.read(n)
+    def close(self):
+        try:
+            self._f.close()
+        except OSError:
+            pass  # already closed/gone — close() is best-effort
+
+
+def _default_connect(endpoint):
+    if os.name == "nt":
+        return _PipeConn(endpoint)              # \\?\pipe\discord-ipc-N
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.connect(endpoint)
+    return sock
+
+
+def _default_post_form(url, form):
+    import urllib.parse
+    body = urllib.parse.urlencode(form).encode("utf-8")
+    raw = http_util.open_url(
+        url, data=body, method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded"}).read()
+    return json.loads(raw.decode("utf-8"))
+
+
+class DiscordVoiceClient:
+    """Drives the local Discord desktop client into/out of a voice channel.
+    Every failure path returns (False, note) — never raises to the caller."""
+
+    def __init__(self, client_id, client_secret, cache_path,
+                 *, connect=None, http_post_form=None, now=None, endpoints=None):
+        self.cid, self.sec, self.cache_path = client_id, client_secret, cache_path
+        self._connect = connect or _default_connect
+        self._post = http_post_form or _default_post_form
+        self._now = now or time.time
+        self._endpoints_override = endpoints        # tests inject a fake list
+
+    def _endpoints(self):
+        """Candidate IPC endpoints to try. POSIX filters to existing sockets;
+        Windows keeps every pipe path (existence isn't reliably checkable) and
+        the connect attempt in _open picks the one that opens."""
+        if self._endpoints_override is not None:
+            return self._endpoints_override
+        cands = ipc_candidates(os.name, os.environ)
+        if os.name == "nt":
+            return cands
+        return [c for c in cands if os.path.exists(c)]
+
+    def _open(self):
+        """First endpoint that actually connects, or (None, None)."""
+        for ep in self._endpoints():
+            try:
+                return self._connect(ep), ep
+            except OSError:
+                continue
+        return None, None
+
+    def _read_frame(self, conn):
+        head = b""
+        while len(head) < 8:
+            head += conn.recv(8 - len(head))
+        op, length = frame_header(head)
+        body = b""
+        while len(body) < length:
+            body += conn.recv(length - len(body))
+        return op, (json.loads(body) if body else {})
+
+    def _send(self, conn, msg):
+        conn.sendall(encode_frame(*msg))
+
+    def _access_token(self, conn):
+        """Return a usable access token, doing the cheapest of: cached / refresh /
+        full AUTHORIZE. Raises RuntimeError with a friendly message on failure."""
+        cache = load_cache(self.cache_path)
+        now = self._now()
+        if token_valid(cache, now):
+            return cache["access_token"]
+        if needs_refresh(cache, now):
+            resp = self._post(TOKEN_URL, token_refresh_body(self.cid, self.sec, cache["refresh_token"]))
+            if resp.get("access_token"):
+                save_cache(self.cache_path, store_token(resp, self._now()))
+                return resp["access_token"]
+        # Full consent flow (first run / refresh failed): AUTHORIZE over the socket.
+        self._send(conn, msg_authorize(self.cid))
+        _op, msg = self._read_frame(conn)
+        code = (msg.get("data") or {}).get("code")
+        if not code:
+            raise RuntimeError("Discord authorization was declined or timed out")
+        resp = self._post(TOKEN_URL, token_exchange_body(self.cid, self.sec, code))
+        if not resp.get("access_token"):
+            raise RuntimeError("token exchange failed (check the app's http://localhost redirect)")
+        save_cache(self.cache_path, store_token(resp, self._now()))
+        return resp["access_token"]
+
+    def _run(self, action_msg, ok_note):
+        conn, endpoint = self._open()
+        if conn is None:
+            return False, "Discord desktop app is not running (no IPC socket)"
+        try:
+            self._send(conn, msg_handshake(self.cid))
+            _op, ready = self._read_frame(conn)
+            if ready.get("evt") != "READY":
+                return False, "Discord did not accept the client id"
+            token = self._access_token(conn)
+            self._send(conn, msg_authenticate(token))
+            self._read_frame(conn)
+            self._send(conn, action_msg)
+            _op, res = self._read_frame(conn)
+            if res.get("evt") == "ERROR":
+                return False, str((res.get("data") or {}).get("message", "voice command failed"))
+            name = (res.get("data") or {}).get("name")
+            return True, ok_note(name)
+        except (OSError, RuntimeError, ValueError) as exc:
+            return False, str(exc)
+        finally:
+            if conn is not None:
+                conn.close()
+
+    def join(self, guild, channel):
+        return self._run(msg_select_voice(channel),
+                         lambda name: "joined voice channel " + (name or channel))
+
+    def leave(self):
+        return self._run(msg_leave(), lambda name: "left the voice channel")

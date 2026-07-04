@@ -97,6 +97,64 @@ def t_oauth_bodies():
     assert rf["grant_type"] == "refresh_token" and rf["refresh_token"] == "rtok"
 
 
+def _fake_conn(script):
+    """A conn whose recv() replays pre-encoded frames; records sent payloads."""
+    class C:
+        def __init__(self):
+            self.sent = []
+            self._buf = b"".join(m.encode_frame(op, p) for op, p in script)
+        def sendall(self, data):
+            # decode what the client sent so the test can assert on it
+            op, length = m.frame_header(data[:8])
+            self.sent.append((op, json.loads(data[8:8 + length])))
+        def recv(self, n):
+            chunk, self._buf = self._buf[:n], self._buf[n:]
+            return chunk
+        def close(self):
+            pass
+    return C()
+
+
+def t_client_join_with_cached_token(tmp=None):
+    import tempfile
+    path = os.path.join(tempfile.mkdtemp(), "tok.json")
+    m.save_cache(path, {"access_token": "a", "expires_at": 10_000, "refresh_token": "r"})
+    # server frames: READY, AUTHENTICATE ok, SELECT_VOICE_CHANNEL ok
+    script = [(m.OP_FRAME, {"evt": "READY", "data": {"user": {"username": "box"}}}),
+              (m.OP_FRAME, {"cmd": "AUTHENTICATE", "data": {"user": {"username": "box"}}}),
+              (m.OP_FRAME, {"cmd": "SELECT_VOICE_CHANNEL", "data": {"name": "General"}})]
+    conn = _fake_conn(script)
+    posted = []
+    cli = m.DiscordVoiceClient(
+        "cid", "sec", path,
+        connect=lambda ep: conn, endpoints=["fake-ep"],
+        http_post_form=lambda url, form: posted.append((url, form)) or {},
+        now=lambda: 5000)
+    ok, note = cli.join("11", "22")
+    assert ok is True and "General" in note
+    assert posted == []                                   # cached token -> no token endpoint call
+    cmds = [p.get("cmd") for _, p in conn.sent if p.get("cmd")]
+    assert cmds == ["AUTHENTICATE", "SELECT_VOICE_CHANNEL"]   # no AUTHORIZE when cached
+
+
+def t_client_refreshes_expired_token():
+    import tempfile
+    path = os.path.join(tempfile.mkdtemp(), "tok.json")
+    m.save_cache(path, {"access_token": "old", "expires_at": 100, "refresh_token": "r"})
+    script = [(m.OP_FRAME, {"evt": "READY", "data": {}}),
+              (m.OP_FRAME, {"cmd": "AUTHENTICATE", "data": {"user": {}}}),
+              (m.OP_FRAME, {"cmd": "SELECT_VOICE_CHANNEL", "data": {"name": "GT"}})]
+    def post(url, form):
+        assert form["grant_type"] == "refresh_token"       # refresh, not authorize
+        return {"access_token": "new", "refresh_token": "r2", "expires_in": 604800}
+    cli = m.DiscordVoiceClient("cid", "sec", path,
+                               connect=lambda ep: _fake_conn(script), endpoints=["fake-ep"],
+                               http_post_form=post, now=lambda: 9000)
+    ok, _ = cli.join("11", "22")
+    assert ok is True
+    assert m.load_cache(path)["access_token"] == "new"     # cache updated
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
