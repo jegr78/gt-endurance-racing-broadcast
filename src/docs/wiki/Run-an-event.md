@@ -147,6 +147,22 @@ panel holds no OBS credential, it also works in full over the public Funnel at
 | `4455` | OBS-WebSocket (local only — never funnelled; the relay uses it to drive OBS) |
 | `8089` | the Control Center (`racecast-ui`, local only) |
 
+### Broadcast Parts (Director Panel)
+
+Long races are split into **Parts** (each a separate YouTube broadcast with its
+own stream key, from the Sheet **Producer** tab). The Director Panel drives them —
+no producer machine access needed:
+
+1. `racecast event start` resets to **Part 1** (offline). Recovery after a mid-event
+   restart: `racecast event start --part N`.
+2. In the panel, click **Start Part N** → type the confirmation phrase
+   (`START PART N`) → the relay sets that Part's stream key and goes live.
+3. **End Part N** (type `END PART N`) stops the broadcast. If a next Part exists the
+   panel offers **Start Part N+1**; the last (or only) Part just stops.
+
+Every go-live / end requires the typed phrase — a stray tap can't change the live
+state. A league with no Producer tab keeps the plain **GO LIVE** button.
+
 ## During the race: driver changes
 
 About every two hours the driver/commentator changes. Two feeds take turns so the picture

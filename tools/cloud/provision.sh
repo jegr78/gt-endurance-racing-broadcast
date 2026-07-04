@@ -90,6 +90,31 @@ EndSection
 EOF
 }
 
+# GUI autostart so `racecast event start` over SSH finds OBS + Discord already
+# running in the autologin session (belt-and-suspenders with event start's
+# DISPLAY=:0 launch). Harmless if a binary is absent — the entry just no-ops.
+write_gui_autostart() {
+  local user_home="$1" user_name="$2"
+  install -d -o "$user_name" -g "$user_name" "$user_home/.config/autostart"
+  cat > "$user_home/.config/autostart/racecast-obs.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=OBS Studio (racecast)
+Exec=obs
+X-GNOME-Autostart-enabled=true
+EOF
+  cat > "$user_home/.config/autostart/racecast-discord.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Discord (racecast)
+Exec=discord
+X-GNOME-Autostart-enabled=true
+EOF
+  chown "$user_name:$user_name" \
+    "$user_home/.config/autostart/racecast-obs.desktop" \
+    "$user_home/.config/autostart/racecast-discord.desktop"
+}
+
 if [ "$(id -u)" -ne 0 ]; then
   echo "provision.sh must run as root (use: sudo ./provision.sh)" >&2
   exit 1
@@ -185,6 +210,8 @@ autologin-user-timeout=0
 user-session=xfce
 EOF
   ok "autologin configured for $USER_NAME"
+  write_gui_autostart "$(getent passwd "$USER_NAME" | cut -d: -f6)" "$USER_NAME"
+  log "   GUI autostart written (OBS + Discord launch with the session; takes effect next boot)"
 else
   warn "no login user detected — set autologin manually after first SSH"
 fi

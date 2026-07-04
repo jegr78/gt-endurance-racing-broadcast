@@ -621,6 +621,46 @@ def _event_title_path():
     makes the new relay adopt producer A's on-air title."""
     return os.path.join(_runtime_dir(), "event.json")
 
+def _part_index(rest):
+    """Extract + validate a --part flag ("--part 2" / "--part=2"), mirroring
+    _stint_args. Default 1. Exits on an invalid value (fail fast before the
+    detached relay is spawned)."""
+    for i, tok in enumerate(rest):
+        val = None
+        if tok == "--part" and i + 1 < len(rest):
+            val = rest[i + 1]
+        elif tok.startswith("--part="):
+            val = tok.split("=", 1)[1]
+        if val is not None:
+            if not val.isdigit() or int(val) < 1:
+                sys.exit("--part must be a 1-based Part number (got {!r}).".format(val))
+            return int(val)
+    return 1
+
+
+def _part_path():
+    """The active profile's persisted broadcast-Part pointer. The relay's
+    PartStore loads this on construction, so writing it before bring-up sets the
+    Part the relay comes up on."""
+    return os.path.join(_runtime_dir(), "part.json")
+
+
+def _write_part_reset(index):
+    """Reset the broadcast-Part pointer to Part `index`, not-live. `event start`
+    is the one reliable reset point (every event begins with it; a clean
+    last-Part-stop / event stop can't be detected). A fresh relay adopts this on
+    construction; writing while a relay already runs is inert (PartStore loads
+    once at start) — so a mid-event re-run does not disturb the live pointer, and
+    recovery is `event start --part N` + a relay restart. Best-effort."""
+    path = _part_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"index": int(index), "live": False}, fh)
+    except OSError as exc:
+        print("note: could not reset part.json ({}) — continuing.".format(exc))
+
+
 def _relay_log_path():
     return os.path.join(_running_relay_dir(), "logs", "relay.console.log")
 
@@ -2868,9 +2908,16 @@ def _event_launch(ev, app):
         print(f"{app}: cannot launch automatically — {hint}.")
         return False
     argv, cwd = cmd
+    overrides = ev.launch_env(app, sys.platform)
+    launch_env = None
+    if overrides:
+        launch_env = dict(os.environ)
+        launch_env.update(overrides)
+        print("{}: targeting the autologin session ({}).".format(
+            app, ", ".join("{}={}".format(k, v) for k, v in sorted(overrides.items()))))
     print(f"{app}: launching…")
     try:
-        subprocess.Popen(argv, cwd=cwd, stdout=subprocess.DEVNULL,
+        subprocess.Popen(argv, cwd=cwd, env=launch_env, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, **sv.spawn_kwargs(os.name))
     except OSError as exc:
         print(f"{app}: launch failed ({exc}).")
@@ -3030,7 +3077,11 @@ def event_start(rest):
     # 3. Relay (before OBS — see docstring). A takeover bring-up forwards
     # --stint so the feeds start at the stint that is on air right now;
     # --qualifying brings the stack up in qualifying mode (Feed A on the
-    # Qualifying tab); --title sets the free-text event title (#207).
+    # Qualifying tab); --title sets the free-text event title (#207). Reset the
+    # broadcast-Part pointer to Part 1 (or --part N for a mid-event recovery
+    # restart) BEFORE the relay starts, so its PartStore comes up on the right
+    # Part.
+    _write_part_reset(_part_index(rest))
     relay_start(_stint_args(rest) + _qualifying_args(rest) + _title_args(rest))
     # 4. OBS
     if ev.app_running("obs"):

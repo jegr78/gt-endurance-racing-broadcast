@@ -76,6 +76,8 @@ def min_capability(segments, method="GET"):
         return Requirement(DIRECTOR, False)
     if p and p[0] == "obs":                     # relay-mediated OBS control (scene/source/audio/state)
         return Requirement(DIRECTOR, False)
+    if p and p[0] == "parts":                   # relay-mediated broadcast Part control (#395)
+        return Requirement(DIRECTOR, False)
     if p and p[0] == "buttons":                 # /console/buttons/* -> Companion proxy (#236)
         return Requirement(DIRECTOR, False)
     if p and p[0] == "setup" and p != ["setup", "data"]:

@@ -98,6 +98,9 @@ import console_auth   # commentator-cockpit token auth (#191); pure, src/scripts
 import console_admin  # commentator-cockpit revocation version store (#191)
 import app_version   # shared build-version helper (single source of truth)
 import discord_oauth  # Discord OAuth2 helpers for /console/login
+import stream_target   # noqa: E402 — pure stream-target resolver (ref/platform/key response)
+import producer as producer_mod   # noqa: E402 — pure Producer-tab parser (name 'producer' is used as a local elsewhere)
+import parts as parts_mod         # noqa: E402 — pure Part view-model + validators (name 'parts' is a local elsewhere)
 
 # Running build version, resolved like racecast.py: the VERSION file is stamped
 # into the source-tree root by tools/build-binary.py (frozen: <_MEIPASS>/src),
@@ -1348,6 +1351,38 @@ def check_webhook_response(body, expected_action=None):
     return True, None
 
 
+def apply_stream_service_for_ref(ref, channel_csv_url, push_url, set_service,
+                                 fetch=None, post=None):
+    """Resolve the event platform (Channel tab) + the real stream key
+    (get_stream_key webhook) for a stream-key `ref`, and apply it to OBS via
+    set_service(platform, key). Returns (ok, note); `note` NEVER contains the
+    key. Relay-side twin of racecast.py::_apply_stream_target. Seams: `fetch`
+    (CSV text) and `post` (webhook) for tests."""
+    fetch = fetch or TimerStore._fetch
+    post = post or post_webhook
+    if not push_url:
+        return False, "no SHEET_PUSH_URL — the stream-key webhook is required"
+    try:
+        chan_rows = broadcast_chat.parse_channel_tab(fetch(channel_csv_url))
+    except Exception as exc:                            # noqa: BLE001 — tolerant fetch
+        return False, "channel fetch failed: {}".format(type(exc).__name__)
+    platform = stream_target.event_platform(chan_rows)
+    if not platform:
+        return False, "no channel/platform configured (Channel tab)"
+    try:
+        body = post(push_url, {"action": "get_stream_key", "ref": ref})
+    except Exception as exc:                            # noqa: BLE001 — tolerant webhook
+        return False, "stream-key webhook failed: {}".format(type(exc).__name__)
+    key, err = stream_target.parse_stream_key_response(body)
+    if err:
+        return False, err
+    ok, note = set_service(platform, key)
+    del key   # drop our last named reference to the key before returning
+    if not ok:
+        return False, note
+    return True, "stream target set on {}".format(platform)
+
+
 EVENT_TITLE_MAX = 120
 
 
@@ -1361,6 +1396,68 @@ def sanitize_event_title(raw):
         return ""
     cleaned = "".join(ch for ch in raw if ord(ch) >= 32)
     return cleaned.strip()[:EVENT_TITLE_MAX].strip()
+
+
+def default_part_state():
+    return {"index": 1, "live": False}
+
+
+class PartStore:
+    """Persisted broadcast-Part pointer at runtime/<profile>/part.json.
+
+    State {"index": N (1-based into the Producer order), "live": bool}. Reset to
+    Part 1 by `racecast event start`; End advances `index`; Start marks it live.
+    `live` is a written record only — the panel derives the authoritative live
+    state from OBS. Same best-effort, lock-guarded, type-checked-load contract as
+    TimerStore/EventTitleStore (a hand-edited file must never crash later)."""
+
+    def __init__(self, path):
+        self.path = path
+        self.lock = threading.Lock()
+        self.state = default_part_state()
+        try:
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        except OSError:
+            pass  # fresh layout; _save_file degrades per-write if the dir is missing
+        self._load_file()
+
+    def _load_file(self):
+        try:
+            with open(self.path, encoding="utf-8") as fh:
+                saved = json.load(fh)
+        except (OSError, ValueError):
+            return  # no/corrupt file -> defaults
+        st = default_part_state()
+        if isinstance(saved, dict):
+            idx = saved.get("index")
+            if isinstance(idx, int) and not isinstance(idx, bool) and idx >= 1:
+                st["index"] = idx
+            if isinstance(saved.get("live"), bool):
+                st["live"] = saved["live"]
+        self.state = st
+
+    def _save_file(self):
+        try:
+            with open(self.path, "w", encoding="utf-8") as fh:
+                json.dump(self.state, fh)
+        except OSError:
+            pass  # best-effort, same contract as the timer/event caches
+
+    def get(self):
+        with self.lock:
+            return dict(self.state)
+
+    def mark_live(self, index):
+        with self.lock:
+            self.state = {"index": int(index), "live": True}
+            self._save_file()
+            return dict(self.state)
+
+    def end(self):
+        with self.lock:
+            self.state = {"index": int(self.state["index"]) + 1, "live": False}
+            self._save_file()
+            return dict(self.state)
 
 
 class EventTitleStore:
@@ -1877,6 +1974,45 @@ class ChannelSource:
         if text is None:
             return False
         rows = broadcast_chat.parse_channel_tab(text)
+        with self.lock:
+            self.rows = rows
+            self.last_error = None
+        return True
+
+    def get(self):
+        with self.lock:
+            return list(self.rows)
+
+
+class ProducerSource:
+    """Reads the Sheet `Producer` tab (CSV) -> [{"part","producer","magicdns",
+    "stream_key"}] via the pure producer_mod.parse_producer_rows. Same tolerant
+    fetch+lock+cache shape as ChannelSource; a missing/empty/unreachable tab
+    yields no parts, so the panel falls back to the plain GO-LIVE button."""
+
+    def __init__(self, csv_url, cache_path=None):
+        self.csv_url = csv_url
+        self.cache_path = cache_path
+        self.lock = threading.Lock()
+        self.rows = []
+        self.last_error = None
+
+    def _fetch_text(self, timeout=15):
+        if not self.csv_url:
+            return None
+        try:
+            req = Request(self.csv_url, headers={"User-Agent": "racecast-feeds/1.0"})
+            with urlopen(req, timeout=timeout) as resp:
+                return resp.read().decode("utf-8", "replace")
+        except Exception as e:                          # noqa: BLE001 — tolerant
+            self.last_error = "{}: {}".format(type(e).__name__, e)
+            return None
+
+    def refresh(self, timeout=15):
+        text = self._fetch_text(timeout)
+        if text is None:
+            return False
+        rows = producer_mod.parse_producer_rows(text)
         with self.lock:
             self.rows = rows
             self.last_error = None
@@ -5654,7 +5790,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  health_store=None, health_monitor_page_path=None, uplot_dir=None,
                  broadcast_chat_store=None, broadcast_chat_supervisor=None,
                  preview_manager=None, program_audio_service=None, brands_dir=None,
-                 flag_graphic_store=None, app_version="dev"):
+                 flag_graphic_store=None, app_version="dev",
+                 channel_source=None, producer_source=None, part_store=None,
+                 channel_csv_url=None, push_url=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -6653,6 +6791,22 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if p == ["chat", "reload"]:
                         return self._send(chat_store.reload())
                     return self._send({"error": "unknown", "path": self.path}, 404)
+                if p[:1] == ["parts"]:
+                    if part_store is None or producer_source is None:
+                        return self._send({"enabled": False})   # feature off -> panel fallback
+                    if p == ["parts", "data"]:
+                        rows = producer_source.get()
+                        active = None
+                        if _obs_ws is not None:
+                            st, _n = _obs_ws.read_obs_state([], [])
+                            if isinstance(st, dict) and isinstance(st.get("stream"), dict):
+                                active = bool(st["stream"].get("active"))
+                        vm = parts_mod.parts_view_model(rows, part_store.get(), active)
+                        if channel_source is not None:
+                            vm["platform"] = stream_target.event_platform(
+                                channel_source.get()) or None
+                        return self._send(vm)
+                    return self._send({"error": "unknown", "path": self.path}, 404)
                 if p[:1] == ["broadcast-chat"]:
                     # Read-only mirror of the public YouTube broadcast chat (#294).
                     # Tailnet/loopback read; the Funnel read is the ANY-auth
@@ -7166,6 +7320,44 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if state is None:
                         return self._send({"ok": False, "error": note}, 503)
                     return self._send({"ok": True, **state})
+                if p == ["parts", "start"]:
+                    if part_store is None or producer_source is None or _obs_ws is None:
+                        return self._send({"ok": False, "error": "parts unavailable"}, 503)
+                    rows = producer_source.get()
+                    ok, res = parts_mod.validate_start(body, part_store.get(), len(rows))
+                    if not ok:
+                        return self._send({"ok": False, "error": res[0]}, res[1])
+                    idx = res
+                    st, _n = _obs_ws.read_obs_state([], [])
+                    if (isinstance(st, dict) and isinstance(st.get("stream"), dict)
+                            and st["stream"].get("active")):
+                        return self._send({"ok": False,
+                            "error": "already streaming — end the current Part first"}, 409)
+                    ref = (rows[idx - 1].get("stream_key") or "").strip()
+                    if not ref:
+                        return self._send({"ok": False,
+                            "error": "Part {} has no stream-key reference "
+                                     "(Producer tab)".format(idx)}, 400)
+                    ok2, note = apply_stream_service_for_ref(
+                        ref, channel_csv_url, push_url, _obs_ws.set_stream_service)
+                    if not ok2:
+                        return self._send({"ok": False, "error": note}, 502)
+                    ok3, note3 = _obs_ws.set_stream(True)
+                    if not ok3:
+                        return self._send({"ok": False, "error": note3}, 503)
+                    part_store.mark_live(idx)
+                    return self._send({"ok": True, "index": idx})
+                if p == ["parts", "end"]:
+                    if part_store is None or _obs_ws is None:
+                        return self._send({"ok": False, "error": "parts unavailable"}, 503)
+                    ok, res = parts_mod.validate_end(body, part_store.get())
+                    if not ok:
+                        return self._send({"ok": False, "error": res[0]}, res[1])
+                    ok2, note = _obs_ws.set_stream(False)
+                    if not ok2:
+                        return self._send({"ok": False, "error": note}, 503)
+                    part_store.end()
+                    return self._send({"ok": True, "index": res})
                 if not setup_ctl:
                     return self._send({"error": "setup control disabled"}, 404)
                 if p == ["schedule", "set"]:
@@ -7294,6 +7486,10 @@ def main():
                          "custom --sheet-csv-url or --no-broadcast-chat.")
     ap.add_argument("--no-broadcast-chat", action="store_true",
                     help="Disable the read-only YouTube broadcast-chat reader (#294).")
+    ap.add_argument("--producer-tab", default="Producer",
+                    help="Sheet tab mapping broadcast Part -> stream-key ref (#395)")
+    ap.add_argument("--no-parts", action="store_true",
+                    help="disable the Director-Panel broadcast Part control")
     ap.add_argument("--event-notes-tab", default="Event Notes",
                     help="Sheet tab name for the Event Notes modal "
                          "(default 'Event Notes'). Disabled by a custom "
@@ -7454,15 +7650,30 @@ def main():
     # Broadcast-chat reader (#294): the Channel tab + an ephemeral in-memory
     # store. Derived from sheet-id/tab like the crew roster, so a custom
     # --sheet-csv-url (or --no-broadcast-chat) disables it. The supervisor thread
-    # is started later, once cookies are resolved.
-    channel_source = None
-    broadcast_chat_store = None
-    if not args.sheet_csv_url and not args.no_broadcast_chat:
+    # is started later, once cookies are resolved. channel_csv_url is hoisted so
+    # both this reader and the Part control (#395) below can share it.
+    channel_csv_url = None
+    if not args.sheet_csv_url:
         channel_csv_url = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
                            f"/gviz/tq?tqx=out:csv&sheet={quote(args.channel_tab)}")
+    channel_source = None
+    broadcast_chat_store = None
+    if channel_csv_url and not args.no_broadcast_chat:
         channel_cache = os.path.join(runtime, "channel.cache.txt")
         channel_source = ChannelSource(channel_csv_url, channel_cache)
         broadcast_chat_store = BroadcastChatStore()
+
+    # Broadcast Part control (#395): the Producer-tab Part list + the persisted
+    # part.json pointer. Disabled under a custom --sheet-csv-url or --no-parts;
+    # part_store is always present (a missing file -> {index:1, live:False}).
+    producer_source = None
+    if channel_csv_url and not args.no_parts:
+        producer_csv_url = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
+                            f"/gviz/tq?tqx=out:csv&sheet={quote(args.producer_tab)}")
+        producer_source = ProducerSource(producer_csv_url,
+                                         os.path.join(runtime, "producer.cache.txt"))
+        producer_source.refresh()   # non-fatal: prime the Part list on startup
+    part_store = PartStore(os.path.join(runtime, "part.json"))
 
     # Event Notes (#owner-notes): a read-only league-owner notes tab shown as a
     # modal in the three console pages. Derived from sheet-id/tab like the crew
@@ -7665,6 +7876,10 @@ def main():
     if event_notes_source:
         threading.Thread(target=poller, args=(event_notes_source, args.poll, stop_evt),
                          daemon=True).start()
+    if producer_source is not None:
+        # Parts change rarely; the same cadence as the other sheet-tab readers is fine.
+        threading.Thread(target=poller, args=(producer_source, args.poll, stop_evt),
+                         daemon=True).start()
     if hud_source:
         threading.Thread(target=poller, args=(hud_source, args.hud_poll, stop_evt),
                          daemon=True).start()
@@ -7727,7 +7942,12 @@ def main():
                            preview_manager=preview_manager,
                            program_audio_service=program_audio_service,
                            app_version=VERSION_LABEL,
-                           flag_graphic_store=flag_graphic_store)
+                           flag_graphic_store=flag_graphic_store,
+                           channel_source=channel_source,
+                           producer_source=producer_source,
+                           part_store=part_store,
+                           channel_csv_url=channel_csv_url,
+                           push_url=push_url)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []

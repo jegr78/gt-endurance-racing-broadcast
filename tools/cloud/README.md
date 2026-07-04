@@ -80,6 +80,14 @@ These cannot be scripted safely:
 - If `nvidia-smi` was not yet ready, reboot once so the autologin X session starts
   (RustDesk needs a running X server).
 
+- **Event day is SSH-only — no RustDesk needed.** The autologin xfce session
+  comes up at boot, and `provision.sh` installs autostart entries so OBS +
+  Discord launch with it. From your laptop: `gcloud compute ssh spike-gpu … ` then
+  `racecast preflight` and `racecast event start` — `event start` also (re)launches
+  OBS/Discord into the running session over SSH (it sets `DISPLAY=:0`; override
+  with `RACECAST_DISPLAY`). RustDesk stays only for the one-time per-league OBS
+  scene-collection import.
+
 ## 4. Onboard a league (once per league, then reuse)
 
 Not part of `provision.sh` — this is the profile layer:
