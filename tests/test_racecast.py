@@ -3399,6 +3399,21 @@ def t_discord_autojoin_gate():
     assert m._discord_autojoin_enabled({"RACECAST_DISCORD_AUTOJOIN": "1"}) is True
 
 
+def t_collection_switch_enabled_default_on_and_optout():
+    orig = m._machine_env_value
+    try:
+        m._machine_env_value = lambda name: ""                 # unset -> default on
+        assert m._collection_switch_enabled() is True
+        for off in ("0", "false", "no", "off", " OFF ", "False"):
+            m._machine_env_value = lambda name, v=off: v
+            assert m._collection_switch_enabled() is False, off
+        for on in ("1", "true", "yes", "on", "anything"):
+            m._machine_env_value = lambda name, v=on: v
+            assert m._collection_switch_enabled() is True, on
+    finally:
+        m._machine_env_value = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

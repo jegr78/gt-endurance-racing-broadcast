@@ -4233,6 +4233,15 @@ def _machine_env_value(name):
     return ""
 
 
+def _collection_switch_enabled():
+    """Opt-OUT: `event start` auto-switches OBS to the active profile's scene
+    collection by default. Setting the machine flag RACECAST_OBS_COLLECTION_SWITCH to a
+    falsey value (0/false/no/off) restores the old warn-only behaviour; absent/empty
+    means enabled. Mirrors the RACECAST_FEED_FANOUT parse convention."""
+    return _machine_env_value("RACECAST_OBS_COLLECTION_SWITCH").strip().lower() \
+        not in {"0", "false", "no", "off"}
+
+
 def _ts_api_err(exc):
     """Compact message for a Tailscale API failure, including the HTTP error body."""
     import urllib.error
