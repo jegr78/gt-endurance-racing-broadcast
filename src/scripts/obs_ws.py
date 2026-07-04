@@ -1010,7 +1010,9 @@ def set_scene_collection(name=EXPECTED_SCENE_COLLECTION, host="127.0.0.1",
       raises ValueError on a failed requestStatus; caught here, never re-raised
     - OBS unreachable              -> (False, reason)
     Heavyweight in OBS: the switch tears down and rebuilds ALL sources (incl. the
-    relay feeds), so it is an explicit producer action, never automatic."""
+    relay feeds). `racecast event start` calls this automatically to align OBS
+    with the active profile (best-effort, gated by RACECAST_OBS_COLLECTION_SWITCH);
+    `racecast obs collection set` is the manual path."""
     session, note = _connect(host, port, password, timeout)
     if session is None:
         return False, note
