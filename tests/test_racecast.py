@@ -1823,7 +1823,7 @@ def t_event_takeover_success_calls_event_start():
         "league": {"sheet_id": "S"}, "live": {"feed": "B", "stint": 7, "mode": "race"}}
     m.chat_cmd = lambda rest: None
     captured = {}
-    m.event_start = lambda a: captured.__setitem__("args", a)
+    m.event_start = lambda a, **kw: captured.__setitem__("args", a)
     try:
         m.event_takeover(["100.64.1.2"])
         assert captured["args"] == ["--stint", "7"]
@@ -1839,7 +1839,7 @@ def t_event_takeover_qualifying_and_override_forwarded():
         "league": {"sheet_id": "S"}, "live": {"feed": "A", "stint": 2, "mode": "race"}}
     m.chat_cmd = lambda rest: None
     captured = {}
-    m.event_start = lambda a: captured.__setitem__("args", a)
+    m.event_start = lambda a, **kw: captured.__setitem__("args", a)
     try:
         m.event_takeover(["100.64.1.2", "--stint", "9", "--qualifying"])
         assert captured["args"] == ["--stint", "9", "--qualifying"]   # override wins, mode forced
@@ -1859,7 +1859,7 @@ def t_event_takeover_pulls_event_title():
         "league": {"sheet_id": "S"}, "live": {"feed": "A", "stint": 3, "mode": "race"},
         "event_title": "GTEC - Round 4 - Nürburgring"}
     m.chat_cmd = lambda rest: None
-    m.event_start = lambda a: None
+    m.event_start = lambda a, **kw: None
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "event.json")
         m._event_title_path = lambda: path
@@ -1904,7 +1904,7 @@ def t_event_takeover_funnel_auth_rejected_aborts():
         raise urllib.error.HTTPError(url, 403, "forbidden", {}, None)
     restore = _with_env(RACECAST_CONSOLE_SECRET="S", RACECAST_SHEET_ID="L1")
     orig_get, m._takeover_get = m._takeover_get, fake_get
-    orig_es, m.event_start = m.event_start, lambda a: (_ for _ in ()).throw(
+    orig_es, m.event_start = m.event_start, lambda a, **kw: (_ for _ in ()).throw(
         AssertionError("event_start must not run on auth-reject"))
     try:
         try:
@@ -1927,7 +1927,7 @@ def t_event_takeover_funnel_401_blames_old_relay_not_secret():
         raise urllib.error.HTTPError(url, 401, "unauthorized", {}, None)
     restore = _with_env(RACECAST_CONSOLE_SECRET="S", RACECAST_SHEET_ID="L1")
     orig_get, m._takeover_get = m._takeover_get, fake_get
-    orig_es, m.event_start = m.event_start, lambda a: (_ for _ in ()).throw(
+    orig_es, m.event_start = m.event_start, lambda a, **kw: (_ for _ in ()).throw(
         AssertionError("event_start must not run on auth-reject"))
     try:
         try:
@@ -1965,7 +1965,7 @@ def t_event_takeover_funnel_success_calls_event_start():
     # not profile resolution (the real _active_console_secret is covered elsewhere).
     orig_apply, m._apply_active_profile_env = m._apply_active_profile_env, lambda: None
     es = {}
-    orig_es, m.event_start = m.event_start, lambda a: es.update(args=a)
+    orig_es, m.event_start = m.event_start, lambda a, **kw: es.update(args=a)
     try:
         m.event_takeover(["producer-a.example.ts.net", "--funnel"])
     finally:
@@ -3371,6 +3371,12 @@ def t_write_part_reset_writes_file():
             assert _json.load(fh) == {"index": 2, "live": False}
     finally:
         m._runtime_dir = orig
+
+
+def t_discord_autojoin_gate():
+    assert m._discord_autojoin_enabled({}) is True                       # default on
+    assert m._discord_autojoin_enabled({"RACECAST_DISCORD_AUTOJOIN": "0"}) is False
+    assert m._discord_autojoin_enabled({"RACECAST_DISCORD_AUTOJOIN": "1"}) is True
 
 
 if __name__ == "__main__":

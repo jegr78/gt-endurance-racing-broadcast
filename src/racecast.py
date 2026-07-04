@@ -1247,6 +1247,33 @@ def discord_cmd(rest):
     return 0 if ok else 1
 
 
+def _discord_autojoin_enabled(env):
+    """Auto-join is default-on; RACECAST_DISCORD_AUTOJOIN=0 disables it."""
+    return env.get("RACECAST_DISCORD_AUTOJOIN", "1") != "0"
+
+
+def _discord_autojoin():
+    """Best-effort voice join during event start — never fatal, secrets stay quiet."""
+    if not _discord_autojoin_enabled(os.environ):
+        return
+    if not (os.environ.get("RACECAST_DISCORD_CLIENT_ID") and
+            os.environ.get("RACECAST_DISCORD_CLIENT_SECRET")):
+        return
+    try:
+        target = _discord_voice_target()
+        if not target:
+            return
+        client = _discord_voice_client()
+        ok, note = client.join(*target)
+        print("discord: " + note if ok
+              else "discord: voice auto-join skipped — " + note
+              + " (run `racecast discord join` once to consent)")
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 — auto-join must never break event start
+        print("discord: voice auto-join skipped ({})".format(type(exc).__name__))
+
+
 REPORT_VERBS = ("generate", "send")
 
 
@@ -3101,10 +3128,15 @@ def _check_scene_collection():
               f"before going live.")
 
 
-def event_start(rest):
+def event_start(rest, _autojoin=True):
     """Bring the event stack up. Order matters: Tailscale first (the Companion
     bind needs its IP), relay before OBS (the HUD browser source then connects
-    against a live relay on OBS's first load). Every step is best effort."""
+    against a live relay on OBS's first load). Every step is best effort.
+
+    `_autojoin` gates the Discord voice auto-join (best-effort) at the end of
+    the success path: True for the top-level `event start` verb, False when
+    `event_takeover` reuses this function internally (auto-join there would
+    fire twice across a handover and is not part of the takeover contract)."""
     ev, pf = _event_modules()
     # 0. Pre-flight gate — refuse to bring the stack up when a static
     # precondition is broken (missing SHEET_ID, missing graphics): those never
@@ -3183,6 +3215,10 @@ def event_start(rest):
     for line in ev.director_urls(_tailscale_ip(), _companion_tablet_port(),
                                  relay_port=RELAY_PORT):
         print(line)
+    # Discord voice auto-join (default on, RACECAST_DISCORD_AUTOJOIN=0 kills it) —
+    # best-effort, only for the top-level `event start` verb (see _autojoin docstring).
+    if _autojoin:
+        _discord_autojoin()
     print("\nEvent readiness:")
     event_status(rest)  # exit code: 0 = ready, 1 = FAILs remain
 
@@ -3367,7 +3403,7 @@ def event_takeover(rest):
     es_args = ["--stint", str(plan["stint"])]
     if plan["qualifying"]:
         es_args.append("--qualifying")
-    event_start(es_args)                    # pre-flight gate + bring-up; exits with readiness code
+    event_start(es_args, _autojoin=False)   # pre-flight gate + bring-up; exits with readiness code
 
 
 def _relay_is_alive():
