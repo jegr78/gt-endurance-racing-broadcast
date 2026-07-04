@@ -851,6 +851,42 @@ def t_scene_collection_status_empty_current():
     assert s["current"] is None
 
 
+# --------------------------------------------------------------------------
+# Pure event-start decision — scene_collection_action
+# --------------------------------------------------------------------------
+def t_scene_collection_action_skip_when_no_status():
+    assert m.scene_collection_action(None, "OBS closed", True) == ("skip", "OBS closed")
+
+
+def t_scene_collection_action_ok_when_match():
+    s = m.scene_collection_status("GT Endurance Racing", ["GT Endurance Racing"])
+    assert m.scene_collection_action(s, "", True) == ("ok", "GT Endurance Racing")
+
+
+def t_scene_collection_action_switch_when_mismatch_present_enabled():
+    s = m.scene_collection_status("Other", ["GT Endurance Racing", "Other"])
+    assert m.scene_collection_action(s, "", True) == ("switch", "GT Endurance Racing")
+
+
+def t_scene_collection_action_warn_present_when_switch_disabled():
+    s = m.scene_collection_status("Other", ["GT Endurance Racing", "Other"])
+    action, detail = m.scene_collection_action(s, "", False)
+    assert action == "warn_present" and detail is s        # dict passed through
+
+
+def t_scene_collection_action_warn_absent_when_not_imported():
+    s = m.scene_collection_status("Other", ["Other", "Foo"])
+    action, detail = m.scene_collection_action(s, "", True)
+    assert action == "warn_absent" and detail is s
+
+
+def t_scene_collection_action_never_switches_to_renamed_variant():
+    # expected exact name absent, only a "GT Endurance Racing 2" variant present
+    s = m.scene_collection_status("GT Endurance Racing 2", ["GT Endurance Racing 2"])
+    assert m.scene_collection_action(s, "", True)[0] == "warn_absent"
+    assert s["renamed_variant"] == "GT Endurance Racing 2"
+
+
 class _FakeSock:
     """Records sendall/recv/shutdown/settimeout/close for _Session.close() tests.
     recv_chunks is a list of bytes (b"" means EOF) or exceptions to raise in order."""

@@ -67,6 +67,29 @@ def scene_collection_status(current, available, expected=EXPECTED_SCENE_COLLECTI
             "renamed_variant": renamed}
 
 
+def scene_collection_action(status, note, switch_enabled):
+    """Pure: decide what `event start` should do about the OBS scene collection.
+    `status`/`note` are a get_scene_collection() result; `switch_enabled` is the
+    RACECAST_OBS_COLLECTION_SWITCH gate. Returns (action, detail):
+      ("skip", note)            OBS unreachable / no status — print note, do nothing
+      ("ok", current)           already on the expected collection
+      ("switch", expected)      mismatch, expected present, switch on -> switch to it
+      ("warn_present", status)  mismatch, expected present, switch off -> warn
+      ("warn_absent", status)   mismatch, expected not imported (incl. a renamed-only
+                                variant — we never auto-switch to a renamed variant)
+    The executor requests the switch with the exact expected name; set_scene_collection
+    re-checks presence, so a renamed variant can never be selected."""
+    if status is None:
+        return ("skip", note)
+    if status["match"]:
+        return ("ok", status["current"])
+    if not status["expected_present"]:
+        return ("warn_absent", status)
+    if not switch_enabled:
+        return ("warn_present", status)
+    return ("switch", status["expected"])
+
+
 def feed_state_intents(live, do_cut, feeds=("A", "B"),
                        scene=STINT_SCENE, sources=None):
     """Pure: the OBS intent list that makes `live` (A/B) the on-air feed in the
