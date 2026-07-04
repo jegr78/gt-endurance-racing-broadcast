@@ -217,6 +217,10 @@ A Part with no `Stream Key` reference (blank cell) reports "no reference for
 this Part" — OBS's current stream settings are left unchanged. This is normal for
 events where all Parts share one key already configured in OBS.
 
+> The relay also calls `get_stream_key` server-side when the Director Panel starts a
+> broadcast Part (#395) — the key is applied to OBS over localhost and never reaches
+> the browser.
+
 ## One-time setup (per sheet)
 
 1. Open the broadcast Google Sheet → **Extensions → Apps Script**.
