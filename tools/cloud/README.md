@@ -22,7 +22,7 @@ detects the GPU and relaxes the CPU-core floor. `g2-standard-8` below is the roo
 extra core headroom for a busy multi-feed event, not a preflight requirement:
 
 ```bash
-gcloud compute instances create spike-gpu \
+gcloud compute instances create racecast-box \
   --zone=europe-west4-c \
   --machine-type=g2-standard-8 \
   --maintenance-policy=TERMINATE \
@@ -42,18 +42,18 @@ T4 fallback (needs the flag): `--machine-type=n1-standard-8
 **Default — manual, with output on screen (recommended for the first setup):**
 
 ```bash
-gcloud compute scp tools/cloud/provision.sh spike-gpu:~/ --zone=europe-west4-c
-gcloud compute ssh spike-gpu --zone=europe-west4-c
+gcloud compute scp tools/cloud/provision.sh racecast-box:~/ --zone=europe-west4-c
+gcloud compute ssh racecast-box --zone=europe-west4-c
   $ sudo ./provision.sh        # idempotent — re-run after any red line
 ```
 
 **Reproduction one-liner — unattended startup-script (any league, from scratch):**
 
 ```bash
-gcloud compute instances create spike-gpu ... \
+gcloud compute instances create racecast-box ... \
   --metadata-from-file startup-script=tools/cloud/provision.sh
 # watch the log:
-gcloud compute instances get-serial-port-output spike-gpu --zone=europe-west4-c
+gcloud compute instances get-serial-port-output racecast-box --zone=europe-west4-c
 ```
 
 Optional env (never commit these):
@@ -84,7 +84,7 @@ These cannot be scripted safely:
 
 - **Event day is SSH-only — no RustDesk needed.** The autologin xfce session
   comes up at boot, and `provision.sh` installs autostart entries so OBS +
-  Discord launch with it. From your laptop: `gcloud compute ssh spike-gpu … ` then
+  Discord launch with it. From your laptop: `gcloud compute ssh racecast-box … ` then
   `racecast preflight` and `racecast event start` — `event start` also (re)launches
   OBS/Discord into the running session over SSH (it sets `DISPLAY=:0`; override
   with `RACECAST_DISPLAY`). RustDesk stays only for the one-time per-league OBS
@@ -99,7 +99,7 @@ profiles + runtime **next to itself** — so copy straight into that tree:
 
 ```bash
 # from your laptop, copy the profile into the user-owned tree:
-gcloud compute scp --recurse profiles/<league> spike-gpu:~/racecast/profiles/ --zone=europe-west4-c
+gcloud compute scp --recurse profiles/<league> racecast-box:~/racecast/profiles/ --zone=europe-west4-c
 # on the box (no sudo — the tree is user-owned):
 racecast profile use <league>
 racecast setup            # localize the OBS scene collection for this profile
@@ -118,8 +118,8 @@ Switch between already-onboarded leagues with `racecast profile use <name>`.
 ## 5. Cost control — stop between events
 
 ```bash
-gcloud compute instances stop  spike-gpu --zone=europe-west4-c   # idle ≈ boot disk only
-gcloud compute instances start spike-gpu --zone=europe-west4-c   # tailnet IP stays stable
+gcloud compute instances stop  racecast-box --zone=europe-west4-c   # idle ≈ boot disk only
+gcloud compute instances start racecast-box --zone=europe-west4-c   # tailnet IP stays stable
 ```
 
 ## Confidence-building before GPU hours

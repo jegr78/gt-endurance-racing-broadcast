@@ -22,7 +22,7 @@ send the report, stop the box.
 - **RustDesk is the fallback**, only for GUI work: the one-time per-league OBS
   scene-collection import, or hands-on troubleshooting.
 
-The running example below uses the instance name **`spike-gpu`** in zone
+The running example below uses the instance name **`racecast-box`** in zone
 **`europe-west4-c`** — substitute your own.
 
 ## 1. Start / stop the box
@@ -30,12 +30,12 @@ The running example below uses the instance name **`spike-gpu`** in zone
 **gcloud (Terminal):**
 
 ```bash
-gcloud compute instances start spike-gpu --zone=europe-west4-c   # before the event
-gcloud compute instances stop  spike-gpu --zone=europe-west4-c   # after — stops GPU billing
+gcloud compute instances start racecast-box --zone=europe-west4-c   # before the event
+gcloud compute instances stop  racecast-box --zone=europe-west4-c   # after — stops GPU billing
 ```
 
 **Web Console:** Google Cloud Console → **Compute Engine → VM instances** → tick
-`spike-gpu` → **Start / Resume** or **Stop** (also in the row's **⋮** menu).
+`racecast-box` → **Start / Resume** or **Stop** (also in the row's **⋮** menu).
 
 Give the box ~1–2 minutes after start to reach the desktop before you SSH in. The tailnet IP
 is unchanged, so all your saved `http://100.x…` bookmarks keep working.
@@ -45,7 +45,7 @@ is unchanged, so all your saved `http://100.x…` bookmarks keep working.
 **gcloud (Terminal) — simplest, keys handled for you:**
 
 ```bash
-gcloud compute ssh spike-gpu --zone=europe-west4-c
+gcloud compute ssh racecast-box --zone=europe-west4-c
 ```
 
 **Web Console:** on the VM instances list, click the **SSH** button — a browser terminal
@@ -54,7 +54,7 @@ opens, no local key setup.
 **Plain Terminal (direct IP or over Tailscale):** find the external IP once —
 
 ```bash
-gcloud compute instances describe spike-gpu --zone=europe-west4-c \
+gcloud compute instances describe racecast-box --zone=europe-west4-c \
   --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
 ```
 
@@ -78,7 +78,7 @@ on the box — see §6, no upload). The frozen binary looks for `profiles/` and 
 **gcloud (Terminal):**
 
 ```bash
-gcloud compute scp --recurse profiles/<league> spike-gpu:~/racecast/profiles/ --zone=europe-west4-c
+gcloud compute scp --recurse profiles/<league> racecast-box:~/racecast/profiles/ --zone=europe-west4-c
 ```
 
 **Plain Terminal (after `ssh-copy-id`, no password):**
@@ -99,10 +99,18 @@ From your laptop, once the box is up and you are SSHed in:
 ```bash
 racecast profile use <league>     # pick the league for this event
 racecast cookies firefox          # refresh feed cookies on the box (see §6)
+racecast graphics                 # refresh broadcast graphics from the Sheet's Assets tab
+racecast media                    # refresh Intro/Outro clips (only if their URLs changed)
+racecast brands                   # refresh per-league brand logos from the Sheet's Brands tab
 racecast preflight                # hardware + tool check — fix anything red
 racecast event start              # brings up relay + OBS + Discord in the box's desktop
 #   racecast event start --part 2 # mid-event recovery: resume at a later broadcast Part
 ```
+
+The three asset refreshes pull the current look from the league's Google Sheet into
+`runtime/<profile>/{graphics,media,brands}/` on the box, so a graphic, clip or brand-logo
+edit made since the last event is picked up. They are safe to re-run and cost nothing when
+nothing changed. This mirrors the same-day prep in [Run an event](Run-an-event#before-you-go-live).
 
 `event start` (re)launches OBS and Discord **into the running desktop session** over SSH
 (it sets `DISPLAY=:0`; override with `RACECAST_DISPLAY`). From there you drive everything from
@@ -114,7 +122,7 @@ When the event is over:
 
 ```bash
 racecast event stop               # stops the racecast services (GUI apps keep running)
-gcloud compute instances stop spike-gpu --zone=europe-west4-c   # then stop the box (§1)
+gcloud compute instances stop racecast-box --zone=europe-west4-c   # then stop the box (§1)
 ```
 
 ## 5. Join the tailnet

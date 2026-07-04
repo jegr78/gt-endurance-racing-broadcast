@@ -78,16 +78,21 @@ the Control Center; the CLI alternative is in italics.
    (Standings, Schedule, Race/Quali Results, the three weather overlays, Standby, …). Run
    it whenever the sheet graphics changed. The **weather** graphics are then available as
    full-screen toggles during the race (see [Director guide](Director)). *CLI: `racecast graphics`.*
-8. **Preflight → Run** — fix anything it flags. *CLI: `racecast preflight`.*
-9. **Home → Start event** brings up Tailscale, Discord, the relay, OBS and
+8. **Refresh the brand logos** (only if the league uses per-team logo overrides):
+   **Assets → Brands → Download** — pulls the per-league logo overrides from the Sheet
+   **Brands** tab into the active profile's `runtime/<profile>/brands/`, where they win
+   over the bundled defaults on the HUD. Run it whenever the Brands tab changed. *CLI:
+   `racecast brands`.*
+9. **Preflight → Run** — fix anything it flags. *CLI: `racecast preflight`.*
+10. **Home → Start event** brings up Tailscale, Discord, the relay, OBS and
    Companion in one go. If Tailscale's backend is stopped, this connects it
    automatically — no click in the Tailscale GUI needed. (Or start them individually
    from **Relay** and **Apps**.) Confirm each live feed shows up in OBS. *CLI:
    `racecast event start`, or `racecast relay start` then `racecast companion start`.*
-10. On the **Home** dashboard, make sure **Companion** is connected and a director
+11. On the **Home** dashboard, make sure **Companion** is connected and a director
    can reach the Web Buttons page (`http://<producer-tailscale-ip>:8000/tablet`) (first-time directors:
    [Director setup](Director-Setup)).
-11. **Enter the league's stream key** in OBS (**Settings → Stream**).
+12. **Enter the league's stream key** in OBS (**Settings → Stream**).
 
 ## Go live
 

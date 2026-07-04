@@ -316,11 +316,11 @@ log "10/10  Tailscale join"
 if tailscale status >/dev/null 2>&1; then
   ok "already joined the tailnet ($(tailscale ip -4 2>/dev/null | head -1))"
 elif [ -n "${TS_AUTHKEY:-}" ]; then
-  tailscale up --ssh --authkey "$TS_AUTHKEY" --hostname spike-gpu
+  tailscale up --ssh --authkey "$TS_AUTHKEY" --hostname racecast-box
   ok "joined the tailnet unattended"
 else
   warn "no TS_AUTHKEY set — run this once to join:"
-  echo "      sudo tailscale up --ssh --hostname spike-gpu"
+  echo "      sudo tailscale up --ssh --hostname racecast-box"
 fi
 
 # ---------------------------------------------------------------------------
