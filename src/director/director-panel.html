@@ -1055,12 +1055,17 @@ const obsStream = (on)              => obsPost("stream", {on});
    the Part-aware button supersedes the generic GO-LIVE button; otherwise the panel
    keeps the plain #obsStreamBtn (backward-compatible fallback). Every live-state
    change is gated by a typed-confirmation modal; the stream key never reaches here. */
-let partsEnabled = false, partsState = null;
+let partsEnabled = false, partsState = null, partModalData = null;
+// OBS stream truth that obsStatePoll already fetched; forwarded to /parts/data so
+// it reuses it instead of opening a second obs-websocket connection (null = unknown).
+let lastStreamActive = null;
 const normIntent = s => (s || "").trim().replace(/\s+/g, " ").toUpperCase();
 
 async function partsPoll(){
   let d;
-  try { d = await (await fetch(RC_API("/parts/data"), {cache:"no-store"})).json(); }
+  const q = lastStreamActive === null
+    ? "" : "?stream_active=" + (lastStreamActive ? 1 : 0);
+  try { d = await (await fetch(RC_API("/parts/data" + q), {cache:"no-store"})).json(); }
   catch(e){ return; }
   partsState = d;
   renderPartControl(d);
@@ -1091,6 +1096,7 @@ function renderPartControl(d){
 }
 
 function openPartModal(d){
+  partModalData = d;   // freeze the acted-on Part; submitPart uses this snapshot
   const isEnd = d.action === "end";
   $("#partModalTitle").textContent =
     (isEnd ? "⚠ END " : "GO LIVE — START ") + `PART ${d.index} of ${d.count}`;
@@ -1106,7 +1112,7 @@ function openPartModal(d){
 }
 
 async function submitPart(){
-  const d = partsState; if (!d || !d.action) return;
+  const d = partModalData; if (!d || !d.action) return;
   const body = { intent: normIntent($("#partModalInput").value) };
   const path = d.action === "end" ? "/parts/end" : "/parts/start";
   if (d.action === "start") body.index = d.index;
@@ -1118,7 +1124,10 @@ async function submitPart(){
   } catch(e){ res = {ok:false, error:String(e)}; }
   $("#partModal").close();
   if (!res.ok) log("Part: " + (res.error || "failed"), "err");
-  partsPoll(); obsStatePoll();
+  // After a transition, drop the cached OBS state so the next /parts/data
+  // self-reads the fresh stream truth instead of the pre-action value (N2).
+  lastStreamActive = null;
+  obsStatePoll(); partsPoll();
 }
 
 /* Reflect the real OBS stream state on the broadcast button. `s` is d.stream
@@ -1198,7 +1207,10 @@ async function obsStatePoll(){
     const inputsSpec = CONFIG.audio.map(a => a.input);
 
     const d = await obsPost("state", {sources: sourcesSpec, inputs: inputsSpec});
-    if (!d.ok){ obsLed("err"); renderStreamBtn(null); return; }
+    if (!d.ok){ obsLed("err"); renderStreamBtn(null); lastStreamActive = null; return; }
+    // Share this OBS stream read with partsPoll (N1): its next /parts/data call
+    // forwards it instead of triggering a second obs-websocket round-trip.
+    lastStreamActive = d.stream ? !!d.stream.active : null;
 
     obsState = {
       scene:   d.scene   || "",
