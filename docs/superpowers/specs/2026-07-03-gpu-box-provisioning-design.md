@@ -191,3 +191,15 @@ correct, not unnecessary.
   silently — the verification block asserts a deb build to catch this.
 - **RustDesk / OBS password + scene import** remain manual GUI one-time steps by design;
   the script cannot and should not automate them.
+
+## Post-run amendment (2026-07-04)
+
+The first full GPU-box run superseded parts of steps 2–3 above and the driver risk item.
+`provision.sh` and the runbook's "Post-GPU-run findings" section are the source of truth;
+in short: (1) the driver is `nvidia-open` from the NVIDIA CUDA apt repo, **not**
+GoogleCloudPlatform/`install_gpu_driver.py` (its pinned 550 fails to build on Ubuntu
+24.04's kernel 6.17); (2) headless X is a **hand-written** `/etc/X11/xorg.conf` (BusID from
+`lspci`, single 1920×1080), because `nvidia-xconfig` is not shipped with the open driver;
+(3) the preview-binary dependency now also covers the Linux streamlink-venv (≥ 8.2.0) and
+obs-pipewire-audio installs (#395), not only the apt-update fixes; (4) EU home region is
+`europe-west4` (L4, `g2-standard-8`) — a stopped GPU VM re-competes for capacity on start.
