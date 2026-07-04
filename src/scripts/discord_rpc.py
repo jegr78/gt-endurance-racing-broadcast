@@ -187,16 +187,17 @@ def _default_connect(endpoint):
         return _PipeConn(endpoint)              # \\?\pipe\discord-ipc-N
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.connect(endpoint)
+    sock.settimeout(10)   # a hung (not closed) Discord must not block forever
     return sock
 
 
 def _default_post_form(url, form):
     import urllib.parse
     body = urllib.parse.urlencode(form).encode("utf-8")
-    raw = http_util.open_url(
-        url, data=body, method="POST",
-        headers={"Content-Type": "application/x-www-form-urlencoded"}).read()
-    return json.loads(raw.decode("utf-8"))
+    with http_util.open_url(
+            url, data=body, method="POST",
+            headers={"Content-Type": "application/x-www-form-urlencoded"}) as r:
+        return json.loads(r.read().decode("utf-8"))
 
 
 class DiscordVoiceClient:
@@ -234,12 +235,18 @@ class DiscordVoiceClient:
     def _read_frame(self, conn):
         head = b""
         while len(head) < 8:
-            head += conn.recv(8 - len(head))
-        op, length = frame_header(head)
+            chunk = conn.recv(8 - len(head))
+            if not chunk:
+                raise OSError("Discord closed the connection")
+            head += chunk
+        _op, length = frame_header(head)
         body = b""
         while len(body) < length:
-            body += conn.recv(length - len(body))
-        return op, (json.loads(body) if body else {})
+            chunk = conn.recv(length - len(body))
+            if not chunk:
+                raise OSError("Discord closed the connection")
+            body += chunk
+        return frame_header(head)[0], (json.loads(body) if body else {})
 
     def _send(self, conn, msg):
         conn.sendall(encode_frame(*msg))
@@ -269,10 +276,11 @@ class DiscordVoiceClient:
         return resp["access_token"]
 
     def _run(self, action_msg, ok_note):
-        conn, endpoint = self._open()
-        if conn is None:
-            return False, "Discord desktop app is not running (no IPC socket)"
+        conn = None
         try:
+            conn, endpoint = self._open()
+            if conn is None:
+                return False, "Discord desktop app is not running (no IPC socket)"
             self._send(conn, msg_handshake(self.cid))
             _op, ready = self._read_frame(conn)
             if ready.get("evt") != "READY":

@@ -155,6 +155,21 @@ def t_client_refreshes_expired_token():
     assert m.load_cache(path)["access_token"] == "new"     # cache updated
 
 
+def t_client_join_returns_false_on_closed_socket():
+    class Closed:
+        def sendall(self, data): pass
+        def recv(self, n): return b""          # peer closed immediately
+        def close(self): pass
+    import tempfile
+    path = os.path.join(tempfile.mkdtemp(), "tok.json")
+    m.save_cache(path, {"access_token": "a", "expires_at": 10_000, "refresh_token": "r"})
+    cli = m.DiscordVoiceClient("cid", "sec", path,
+                               connect=lambda ep: Closed(), endpoints=["ep"],
+                               http_post_form=lambda u, f: {}, now=lambda: 5000)
+    ok, note = cli.join("11", "22")
+    assert ok is False and isinstance(note, str)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
