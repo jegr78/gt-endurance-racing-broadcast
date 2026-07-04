@@ -1219,27 +1219,35 @@ def _discord_voice_target():
                .format(sid, quote(discord_rpc.CONFIG_TAB)))
         try:
             sheet_val = discord_rpc.discord_voice_from_csv(
-                http_util.get_bytes(url, timeout=15).decode("utf-8"))
+                http_util.get_bytes(url, timeout=8).decode("utf-8"))
         except Exception:  # noqa: BLE001 — Sheet unreachable -> fall back to env
             sheet_val = ""
     return discord_rpc.resolve_voice_target(
         sheet_val, os.environ.get("RACECAST_DISCORD_VOICE_URL", ""))
 
 
+DISCORD_VERBS = ("join", "leave", "status")
+
+
 def discord_cmd(rest):
     """`racecast discord join|leave|status` — drive the desktop client's voice channel."""
     verb = rest[0] if rest else "status"
-    if verb not in ("join", "leave", "status"):
-        sys.exit("usage: racecast discord {join|leave|status}")
+    if verb not in DISCORD_VERBS:
+        sys.exit("usage: racecast discord {%s}" % "|".join(DISCORD_VERBS))
+    if verb == "status":
+        # Read-only: never build the client (so it works without CLIENT_ID/SECRET).
+        target = _discord_voice_target()
+        print("discord voice target: " + ("#".join(target) if target else "none configured"))
+        if not (os.environ.get("RACECAST_DISCORD_CLIENT_ID") and
+                os.environ.get("RACECAST_DISCORD_CLIENT_SECRET")):
+            print("discord app: no DISCORD_CLIENT_ID/SECRET in this league's profile.env")
+        return 0
     client = _discord_voice_client()
     if verb == "leave":
         ok, note = client.leave()
         print("discord: " + note)
         return 0 if ok else 1
     target = _discord_voice_target()
-    if verb == "status":
-        print("discord voice target: " + ("#".join(target) if target else "none configured"))
-        return 0
     if not target:
         sys.exit("racecast: no voice channel configured (Sheet `Discord Voice` or DISCORD_VOICE_URL)")
     ok, note = client.join(*target)
@@ -1264,10 +1272,11 @@ def _discord_autojoin():
         if not target:
             return
         client = _discord_voice_client()
-        ok, note = client.join(*target)
+        # allow_consent=False: auto-join uses only a cached/refreshable token and
+        # never opens the interactive consent popup, so an unattended box can't hang.
+        ok, note = client.join(*target, allow_consent=False)
         print("discord: " + note if ok
-              else "discord: voice auto-join skipped — " + note
-              + " (run `racecast discord join` once to consent)")
+              else "discord: voice auto-join skipped — " + note)
     except SystemExit:
         raise
     except Exception as exc:  # noqa: BLE001 — auto-join must never break event start
