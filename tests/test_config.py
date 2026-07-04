@@ -315,6 +315,26 @@ def t_resolve_config_discord_oauth_keys_blank_when_absent():
         assert rc.discord_client_secret == ""
 
 
+def t_resolve_config_discord_voice_url_from_field():
+    """DISCORD_VOICE_URL is read from profile.env (the env fallback that
+    resolve_voice_target uses when the Sheet's `Discord Voice` cell is empty)."""
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo",
+                   "NAME=Demo\nSHEET_ID=abc\n"
+                   "DISCORD_VOICE_URL=https://discord.com/channels/1/2\n")
+        rc = m.resolve_config(root, override="demo", environ={})
+        assert rc.discord_voice_url == "https://discord.com/channels/1/2"
+
+
+def t_resolve_config_discord_voice_url_blank_when_absent():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo", "NAME=Demo\nSHEET_ID=abc\n")
+        rc = m.resolve_config(root, environ={})
+        assert rc.discord_voice_url == ""
+
+
 def t_resolve_config_obs_collection_explicit_wins_over_prefix():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)

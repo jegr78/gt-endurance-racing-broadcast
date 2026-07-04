@@ -105,6 +105,7 @@ def build_target(launcher, workdir, version_file, sep, entry, name, windowed):
            "--hidden-import", "producer",
            "--hidden-import", "broadcast_chat", "--hidden-import", "stream_target",
            "--hidden-import", "logsetup",
+           "--hidden-import", "discord_rpc",
            "--add-data", f"{version_file}{sep}src"]
     cmd += _icon_arg()      # the racecast "rc" app icon (.icns/.ico), #58
     if windowed:

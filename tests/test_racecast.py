@@ -1989,6 +1989,157 @@ def t_chat_routing():
     assert m.route(["chat"]) == {"kind": "chat", "rest": []}
 
 
+def t_discord_routing():
+    # verb is passed through in rest; route() does not validate it (discord_cmd does)
+    assert m.route(["discord", "join"]) == {"kind": "discord", "rest": ["join"]}
+    assert m.route(["discord", "leave"]) == {"kind": "discord", "rest": ["leave"]}
+    assert m.route(["discord", "status"]) == {"kind": "discord", "rest": ["status"]}
+    # bare "discord" (no verb) routes correctly; discord_cmd defaults to "status"
+    assert m.route(["discord"]) == {"kind": "discord", "rest": []}
+
+
+def t_discord_cmd_join_uses_resolved_target():
+    import io, contextlib
+    orig_client, orig_target = m._discord_voice_client, m._discord_voice_target
+    calls = {}
+
+    class _FakeClient:
+        def join(self, guild, channel):
+            calls["join"] = (guild, channel)
+            return True, "joined #general"
+
+    m._discord_voice_client = _FakeClient
+    m._discord_voice_target = lambda: ("111", "222")
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = m.discord_cmd(["join"])
+        assert calls["join"] == ("111", "222")
+        assert rc == 0
+        assert "joined #general" in buf.getvalue()
+    finally:
+        m._discord_voice_client, m._discord_voice_target = orig_client, orig_target
+
+
+def t_discord_cmd_join_without_target_exits():
+    orig_client, orig_target = m._discord_voice_client, m._discord_voice_target
+    m._discord_voice_client = object   # never reaches .join()
+    m._discord_voice_target = lambda: None
+    try:
+        try:
+            m.discord_cmd(["join"])
+            raise AssertionError("expected SystemExit")
+        except SystemExit as e:
+            assert "no voice channel configured" in str(e.code)
+    finally:
+        m._discord_voice_client, m._discord_voice_target = orig_client, orig_target
+
+
+def t_discord_cmd_leave_does_not_resolve_target():
+    import io, contextlib
+    orig_client, orig_target = m._discord_voice_client, m._discord_voice_target
+    calls = {}
+
+    class _FakeClient:
+        def leave(self):
+            calls["left"] = True
+            return True, "left the voice channel"
+
+    m._discord_voice_client = _FakeClient
+    def _boom():
+        raise AssertionError("leave must not resolve a voice target")
+    m._discord_voice_target = _boom
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = m.discord_cmd(["leave"])
+        assert calls.get("left") is True
+        assert rc == 0
+        assert "left the voice channel" in buf.getvalue()
+    finally:
+        m._discord_voice_client, m._discord_voice_target = orig_client, orig_target
+
+
+def t_discord_cmd_leave_failure_returns_nonzero():
+    orig_client = m._discord_voice_client
+
+    class _FakeClient:
+        def leave(self):
+            return False, "Discord not running"
+
+    m._discord_voice_client = _FakeClient
+    try:
+        import io, contextlib
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = m.discord_cmd(["leave"])
+        assert rc == 1
+    finally:
+        m._discord_voice_client = orig_client
+
+
+def t_discord_cmd_status_reports_configured_target():
+    import io, contextlib
+    orig_client, orig_target = m._discord_voice_client, m._discord_voice_target
+    m._discord_voice_client = object
+    m._discord_voice_target = lambda: ("111", "222")
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = m.discord_cmd(["status"])
+        assert rc == 0
+        assert "111#222" in buf.getvalue()
+    finally:
+        m._discord_voice_client, m._discord_voice_target = orig_client, orig_target
+
+
+def t_discord_cmd_status_reports_none_configured():
+    import io, contextlib
+    orig_client, orig_target = m._discord_voice_client, m._discord_voice_target
+    m._discord_voice_client = object
+    m._discord_voice_target = lambda: None
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = m.discord_cmd(["status"])
+        assert rc == 0
+        assert "none configured" in buf.getvalue()
+    finally:
+        m._discord_voice_client, m._discord_voice_target = orig_client, orig_target
+
+
+def t_discord_cmd_unknown_verb_prints_usage():
+    try:
+        m.discord_cmd(["bogus"])
+        raise AssertionError("expected SystemExit")
+    except SystemExit as e:
+        assert str(e.code) == "usage: racecast discord {join|leave|status}"
+
+
+def t_discord_cmd_requires_client_credentials():
+    restore = _with_env(RACECAST_DISCORD_CLIENT_ID=None, RACECAST_DISCORD_CLIENT_SECRET=None)
+    try:
+        try:
+            m.discord_cmd(["status"])
+            raise AssertionError("expected SystemExit")
+        except SystemExit as e:
+            assert "DISCORD_CLIENT_ID/SECRET" in str(e.code)
+    finally:
+        restore()
+
+
+def t_main_dispatches_discord_join_leave_status():
+    orig = m.discord_cmd
+    captured = {}
+    m.discord_cmd = lambda rest: captured.setdefault("rest", rest)
+    try:
+        for verb in ("join", "leave", "status"):
+            captured.clear()
+            m.main(["discord", verb])
+            assert captured["rest"] == [verb]
+    finally:
+        m.discord_cmd = orig
+
+
 def t_set_env_key_preserves_other_keys():
     """_set_env_key must NOT drop other keys/comments (regression: cockpit
     enable/disable wiped SHEET_ID etc. by passing a single pair to the
