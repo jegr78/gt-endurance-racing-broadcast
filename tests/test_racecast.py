@@ -1998,6 +1998,26 @@ def t_discord_routing():
     assert m.route(["discord"]) == {"kind": "discord", "rest": []}
 
 
+def t_discord_voice_target_sheet_failure_falls_back_to_env():
+    # Any Sheet-fetch failure (network, 4xx, bad CSV, ...) must be swallowed and
+    # never propagate -- the env RACECAST_DISCORD_VOICE_URL is the fallback target.
+    import http_util as _hu
+    saved = dict(os.environ)
+    orig_get_bytes = _hu.get_bytes
+
+    def boom(*a, **k):
+        raise OSError("no net")
+
+    try:
+        os.environ["RACECAST_SHEET_ID"] = "SOME_SHEET_ID"
+        os.environ["RACECAST_DISCORD_VOICE_URL"] = "https://discord.com/channels/9/8"
+        _hu.get_bytes = boom
+        assert m._discord_voice_target() == ("9", "8")
+    finally:
+        _hu.get_bytes = orig_get_bytes
+        os.environ.clear(); os.environ.update(saved)
+
+
 def t_discord_cmd_join_uses_resolved_target():
     import io, contextlib
     orig_client, orig_target = m._discord_voice_client, m._discord_voice_target
