@@ -23,6 +23,8 @@ OPS = {
     "obs-stop": ["app", "quit", "obs"],
     "discord-start": ["app", "launch", "discord"],
     "discord-stop": ["app", "quit", "discord"],
+    "discord-voice-join": ["discord", "join"],
+    "discord-voice-leave": ["discord", "leave"],
     "obs-refresh": ["obs", "refresh"],
     "obs-collection-set": ["obs", "collection", "set"],
     "event-start": ["event", "start"],

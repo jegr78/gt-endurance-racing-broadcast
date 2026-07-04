@@ -141,7 +141,8 @@ def t_ops_registry_routes_in_rc():
     # oneshot, export, or command group) — route() raises ValueError on anything unknown
     for name, argv in ui_ops.OPS.items():
         action = rc.route(list(argv))
-        assert action["kind"] in ("service", "oneshot", "export", "chat", "freeport", "health"), name
+        assert action["kind"] in ("service", "oneshot", "export", "chat", "discord",
+                                  "freeport", "health"), name
 
 
 def t_build_argv_plain_and_unknown():
@@ -996,6 +997,11 @@ def t_obs_collection_data_failure_is_not_ok():
 def t_brands_op_argv():
     assert ui_ops.OPS["brands"] == ["brands"]
     assert ui_ops.build_argv("brands", {}) == ["brands"]
+
+
+def t_discord_voice_ops():
+    assert ui_ops.OPS["discord-voice-join"] == ["discord", "join"]
+    assert ui_ops.OPS["discord-voice-leave"] == ["discord", "leave"]
 
 
 def t_cookies_twitch_op():
