@@ -46,21 +46,61 @@ RAM_SLACK_GB = 1.5
 
 
 def classify_ram(gb):
-    if gb < 16 - RAM_SLACK_GB:
-        return Result(FAIL, "RAM", f"{gb:.1f} GB — below the 16 GB minimum")
-    if gb < 32 - RAM_SLACK_GB:
+    # The measured production footprint (OBS + up to three relay feeds + Discord +
+    # the control browser + a cloud desktop) is ~6-9 GB, so 12 GB is comfortable
+    # headroom and 8 GB the practical floor. A GPU cloud box with 16 GB is green.
+    if gb < 8 - RAM_SLACK_GB:
+        return Result(FAIL, "RAM", f"{gb:.1f} GB — below the 8 GB minimum")
+    if gb < 12 - RAM_SLACK_GB:
         return Result(WARN, "RAM",
-                      f"{gb:.1f} GB — works; 32 GB recommended "
+                      f"{gb:.1f} GB — works; 12 GB recommended "
                       f"(OBS + the relay feeds are memory-heavy)")
     return Result(PASS, "RAM", f"{gb:.1f} GB")
 
 
-def classify_cpu(n):
-    if n < 6:
-        return Result(FAIL, "CPU cores", f"{n} logical cores — below the 6-core minimum")
-    if n < 8:
-        return Result(WARN, "CPU cores", f"{n} logical cores — works; 8+ recommended")
+def classify_cpu(n, has_gpu=False):
+    # The core hog is OBS's software (x264) encode. When an NVENC GPU is present
+    # the encode is offloaded to the GPU, so the CPU floor drops by 2: a
+    # g2-standard-4 (4 cores + L4) validated a real broadcast (spike #395).
+    fail_floor, pass_floor = (2, 4) if has_gpu else (4, 6)
+    reason = ("hardware NVENC offloads the encode"
+              if has_gpu else "software x264 encode + multiple feeds")
+    if n < fail_floor:
+        return Result(FAIL, "CPU cores",
+                      f"{n} logical cores — below the {fail_floor}-core minimum")
+    if n < pass_floor:
+        return Result(WARN, "CPU cores",
+                      f"{n} logical cores — works; {pass_floor}+ recommended ({reason})")
     return Result(PASS, "CPU cores", f"{n} logical cores")
+
+
+def detect_nvidia_gpu(run=subprocess.run, which=shutil.which, os_name=None):
+    """Best-effort: is an NVIDIA GPU (NVENC hardware encoder) present? A GPU
+    offloads OBS's H.264/HEVC encode off the CPU, so classify_cpu relaxes the
+    core floor when this is True. Returns False on any error — an undetected
+    encoder simply falls back to the stricter software-encode thresholds, and
+    non-NVIDIA hardware encoders (Apple VideoToolbox, Intel QSV) are not probed
+    here. `run`/`which`/`os_name` are injectable seams for the unit test."""
+    os_name = os.name if os_name is None else os_name
+    # nvidia-smi (driver + GPU) works on both Linux and Windows once the driver
+    # is installed — the production signal on the provisioned cloud box.
+    if which("nvidia-smi"):
+        try:
+            r = run(["nvidia-smi", "-L"], capture_output=True, timeout=5,
+                    **no_window_kwargs(os_name))
+            if r.returncode == 0 and b"GPU" in (r.stdout or b""):
+                return True
+        except Exception:  # noqa: BLE001 — detection is best-effort, never fatal
+            pass
+    # Linux fallback: the card is on the PCI bus even before the driver loads.
+    if os_name == "posix" and which("lspci"):
+        try:
+            r = run(["lspci"], capture_output=True, timeout=5)
+            if r.returncode == 0 and b"nvidia" in (r.stdout or b"").lower():
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+    return False
 
 
 def classify_disk(gb):
@@ -532,7 +572,7 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
     """Run every check and return a list of (section_title, [Result])."""
     hardware = [
         classify_ram(read_ram_bytes() / 1024 ** 3),
-        classify_cpu(os.cpu_count() or 0),
+        classify_cpu(os.cpu_count() or 0, detect_nvidia_gpu()),
         classify_disk(disk_free_bytes(os.getcwd()) / 1024 ** 3),
         classify_swap(read_swap_used_bytes() / 1024 ** 3),
     ]

@@ -257,9 +257,13 @@ default for the EU box. A create/start retry loop must capture gcloud's real exi
 (don't mask it behind a pipe). Guaranteed capacity = a Reservation, which bills continuously
 — out of scope for the stop-between-events model.
 
-**vCPU floor.** `g2-standard-4` / `n1-standard-4` give **4 logical cores**, which preflight
-FLAGs (`< 6`-core minimum). It ran fine for a single-feed validation, but for a real event
-size the VM at **≥ 6 vCPU** (e.g. `g2-standard-8`) so preflight is green.
+**vCPU floor — re-evaluated.** `g2-standard-4` / `n1-standard-4` give **4 logical cores**. The
+original preflight FAILed below 6 cores — a floor tuned for a software-x264 producer, wrong for
+a GPU box where NVENC offloads the encode. Preflight is now **GPU-aware** (`detect_nvidia_gpu`):
+with an NVIDIA GPU the CPU floor relaxes to FAIL `<2` / WARN `<4` / PASS `≥4`, so
+`g2-standard-4` passes **green** (it validated a real broadcast here). RAM was likewise retuned
+(PASS from 12 GB, so the box's 16 GB is green). Size up to `g2-standard-8` only for extra core
+headroom on a busy multi-feed event.
 
 **NVIDIA driver — `nvidia-open`, not the deprecated installer.** GCP's
 `install_gpu_driver.py` pins driver 550.54.15, whose proprietary modules **fail to build**
@@ -314,8 +318,8 @@ running (distinct from Reservations / Committed-Use, which do cost and are not n
 `--maintenance-policy=TERMINATE` is required. **L4 (`g2-standard-4`) in `europe-west4-c`**
 is the validated EU default (T4 was capacity-exhausted across all tried zones — see
 findings). The L4 is bundled into the `g2` machine type, so there is **no `--accelerator`
-flag**. Size to **≥ 6 vCPU** (`g2-standard-8`) for a real event; `-4` (4 vCPU) FLAGs
-preflight's core floor.
+flag**. `g2-standard-4` (4 vCPU) passes preflight green — the GPU relaxes the CPU floor (see
+findings); size up to `g2-standard-8` only for extra core headroom on a busy multi-feed event.
 ```bash
 gcloud compute instances create spike-gpu \
   --zone=europe-west4-c \
