@@ -98,6 +98,7 @@ import console_auth   # commentator-cockpit token auth (#191); pure, src/scripts
 import console_admin  # commentator-cockpit revocation version store (#191)
 import app_version   # shared build-version helper (single source of truth)
 import discord_oauth  # Discord OAuth2 helpers for /console/login
+import stream_target   # noqa: E402 — pure stream-target resolver (ref/platform/key response)
 
 # Running build version, resolved like racecast.py: the VERSION file is stamped
 # into the source-tree root by tools/build-binary.py (frozen: <_MEIPASS>/src),
@@ -1348,6 +1349,38 @@ def check_webhook_response(body, expected_action=None):
     return True, None
 
 
+def apply_stream_service_for_ref(ref, channel_csv_url, push_url, set_service,
+                                 fetch=None, post=None):
+    """Resolve the event platform (Channel tab) + the real stream key
+    (get_stream_key webhook) for a stream-key `ref`, and apply it to OBS via
+    set_service(platform, key). Returns (ok, note); `note` NEVER contains the
+    key. Relay-side twin of racecast.py::_apply_stream_target. Seams: `fetch`
+    (CSV text) and `post` (webhook) for tests."""
+    fetch = fetch or TimerStore._fetch
+    post = post or post_webhook
+    if not push_url:
+        return False, "no SHEET_PUSH_URL — the stream-key webhook is required"
+    try:
+        chan_rows = broadcast_chat.parse_channel_tab(fetch(channel_csv_url))
+    except Exception as exc:                            # noqa: BLE001 — tolerant fetch
+        return False, "channel fetch failed: {}".format(type(exc).__name__)
+    platform = stream_target.event_platform(chan_rows)
+    if not platform:
+        return False, "no channel/platform configured (Channel tab)"
+    try:
+        body = post(push_url, {"action": "get_stream_key", "ref": ref})
+    except Exception as exc:                            # noqa: BLE001 — tolerant webhook
+        return False, "stream-key webhook failed: {}".format(type(exc).__name__)
+    key, err = stream_target.parse_stream_key_response(body)
+    if err:
+        return False, err
+    ok, note = set_service(platform, key)
+    del key   # drop our last named reference to the key before returning
+    if not ok:
+        return False, note
+    return True, "stream target set on {}".format(platform)
+
+
 EVENT_TITLE_MAX = 120
 
 
@@ -1361,6 +1394,68 @@ def sanitize_event_title(raw):
         return ""
     cleaned = "".join(ch for ch in raw if ord(ch) >= 32)
     return cleaned.strip()[:EVENT_TITLE_MAX].strip()
+
+
+def default_part_state():
+    return {"index": 1, "live": False}
+
+
+class PartStore:
+    """Persisted broadcast-Part pointer at runtime/<profile>/part.json.
+
+    State {"index": N (1-based into the Producer order), "live": bool}. Reset to
+    Part 1 by `racecast event start`; End advances `index`; Start marks it live.
+    `live` is a written record only — the panel derives the authoritative live
+    state from OBS. Same best-effort, lock-guarded, type-checked-load contract as
+    TimerStore/EventTitleStore (a hand-edited file must never crash later)."""
+
+    def __init__(self, path):
+        self.path = path
+        self.lock = threading.Lock()
+        self.state = default_part_state()
+        try:
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        except OSError:
+            pass  # fresh layout; _save_file degrades per-write if the dir is missing
+        self._load_file()
+
+    def _load_file(self):
+        try:
+            with open(self.path, encoding="utf-8") as fh:
+                saved = json.load(fh)
+        except (OSError, ValueError):
+            return  # no/corrupt file -> defaults
+        st = default_part_state()
+        if isinstance(saved, dict):
+            idx = saved.get("index")
+            if isinstance(idx, int) and not isinstance(idx, bool) and idx >= 1:
+                st["index"] = idx
+            if isinstance(saved.get("live"), bool):
+                st["live"] = saved["live"]
+        self.state = st
+
+    def _save_file(self):
+        try:
+            with open(self.path, "w", encoding="utf-8") as fh:
+                json.dump(self.state, fh)
+        except OSError:
+            pass  # best-effort, same contract as the timer/event caches
+
+    def get(self):
+        with self.lock:
+            return dict(self.state)
+
+    def mark_live(self, index):
+        with self.lock:
+            self.state = {"index": int(index), "live": True}
+            self._save_file()
+            return dict(self.state)
+
+    def end(self):
+        with self.lock:
+            self.state = {"index": int(self.state["index"]) + 1, "live": False}
+            self._save_file()
+            return dict(self.state)
 
 
 class EventTitleStore:

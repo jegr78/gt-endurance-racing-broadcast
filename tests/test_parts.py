@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for broadcast Part control (src/scripts/parts.py + relay
 PartStore/ProducerSource/apply). Run: python3 tests/test_parts.py"""
-import importlib.util, os, sys
+import importlib.util, json, os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -97,6 +97,63 @@ def t_validate_end_ok():
 def t_validate_end_bad_phrase():
     ok, res = m.validate_end({"intent": "nope"}, {"index": 2, "live": True})
     assert not ok and res[1] == 403
+
+
+def t_partstore_default_and_transitions():
+    d = tempfile.mkdtemp()
+    ps = R.PartStore(os.path.join(d, "part.json"))
+    assert ps.get() == {"index": 1, "live": False}
+    assert ps.mark_live(1) == {"index": 1, "live": True}
+    assert ps.end() == {"index": 2, "live": False}
+    # persisted -> a fresh store reloads the advanced pointer
+    ps2 = R.PartStore(os.path.join(d, "part.json"))
+    assert ps2.get() == {"index": 2, "live": False}
+
+
+def t_partstore_ignores_corrupt_file():
+    d = tempfile.mkdtemp(); p = os.path.join(d, "part.json")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("{not json")
+    assert R.PartStore(p).get() == {"index": 1, "live": False}
+
+
+def t_partstore_type_checks_load():
+    d = tempfile.mkdtemp(); p = os.path.join(d, "part.json")
+    with open(p, "w", encoding="utf-8") as fh:
+        json.dump({"index": "x", "live": "yes"}, fh)
+    assert R.PartStore(p).get() == {"index": 1, "live": False}
+
+
+def t_apply_stream_service_for_ref_happy():
+    calls, seen = {}, {}
+    def fetch(u):
+        return "Platform,Channel\nyoutube,@x\n"
+    def post(u, o):
+        calls["ref"] = o["ref"]
+        return b'{"ok":true,"action":"get_stream_key","key":"SECRET"}'
+    def set_service(platform, key):
+        seen["p"] = platform; seen["k"] = key; return True, "ok"
+    ok, note = R.apply_stream_service_for_ref("key2", "http://chan", "http://push",
+                                              set_service, fetch=fetch, post=post)
+    assert ok and calls["ref"] == "key2" and seen["p"] == "youtube" and seen["k"] == "SECRET"
+    assert "SECRET" not in note   # key never leaks into the note
+
+
+def t_apply_stream_service_for_ref_webhook_error():
+    def fetch(u):
+        return "Platform,Channel\nyoutube,@x\n"
+    def post(u, o):
+        return b'{"ok":false,"error":"bad ref"}'
+    ok, note = R.apply_stream_service_for_ref("keyX", "c", "p",
+                                              lambda a, b: (True, ""),
+                                              fetch=fetch, post=post)
+    assert not ok and note == "bad ref"
+
+
+def t_apply_stream_service_for_ref_no_push_url():
+    ok, note = R.apply_stream_service_for_ref("k", "c", "",
+                                              lambda a, b: (True, ""))
+    assert not ok and "SHEET_PUSH_URL" in note
 
 
 if __name__ == "__main__":
