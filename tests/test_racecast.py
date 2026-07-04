@@ -3399,6 +3399,113 @@ def t_discord_autojoin_gate():
     assert m._discord_autojoin_enabled({"RACECAST_DISCORD_AUTOJOIN": "1"}) is True
 
 
+def t_collection_switch_enabled_default_on_and_optout():
+    orig = m._machine_env_value
+    try:
+        m._machine_env_value = lambda name: ""                 # unset -> default on
+        assert m._collection_switch_enabled() is True
+        for off in ("0", "false", "no", "off", " OFF ", "False"):
+            m._machine_env_value = lambda name, v=off: v
+            assert m._collection_switch_enabled() is False, off
+        for on in ("1", "true", "yes", "on", "anything"):
+            m._machine_env_value = lambda name, v=on: v
+            assert m._collection_switch_enabled() is True, on
+    finally:
+        m._machine_env_value = orig
+
+
+def _obsws_module():
+    import sys as _sys
+    SCRIPTS = os.path.join(ROOT, "src", "scripts")
+    if SCRIPTS not in _sys.path:
+        _sys.path.insert(0, SCRIPTS)
+    import obs_ws
+    return obs_ws
+
+
+def t_check_scene_collection_switches_on_mismatch_when_enabled():
+    import io, contextlib
+    obs_ws = _obsws_module()
+    expected = "GT Endurance Racing — demo"
+    st = obs_ws.scene_collection_status(
+        "Old League", ["Old League", expected], expected=expected)   # mismatch, present
+    calls = {}
+    saved = (obs_ws.get_scene_collection, obs_ws.set_scene_collection,
+             m._active_obs_collection, m._collection_switch_enabled)
+    try:
+        obs_ws.get_scene_collection = lambda **kw: (st, "")
+        def _fake_set(name, **kw):
+            calls["name"] = name
+            return (True, "")
+        obs_ws.set_scene_collection = _fake_set
+        m._active_obs_collection = lambda: expected
+        m._collection_switch_enabled = lambda: True
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            m._check_scene_collection()
+        assert calls.get("name") == expected, calls
+        assert "switched to" in buf.getvalue(), buf.getvalue()
+    finally:
+        (obs_ws.get_scene_collection, obs_ws.set_scene_collection,
+         m._active_obs_collection, m._collection_switch_enabled) = saved
+
+
+def t_check_scene_collection_warns_not_switches_when_disabled():
+    import io, contextlib
+    obs_ws = _obsws_module()
+    expected = "GT Endurance Racing — demo"
+    st = obs_ws.scene_collection_status(
+        "Old League", ["Old League", expected], expected=expected)
+    calls = {}
+    saved = (obs_ws.get_scene_collection, obs_ws.set_scene_collection,
+             m._active_obs_collection, m._collection_switch_enabled)
+    try:
+        obs_ws.get_scene_collection = lambda **kw: (st, "")
+        def _fake_set(name, **kw):
+            calls["name"] = name
+            return (True, "")
+        obs_ws.set_scene_collection = _fake_set
+        m._active_obs_collection = lambda: expected
+        m._collection_switch_enabled = lambda: False              # kill-switch
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            m._check_scene_collection()
+        assert "name" not in calls, "must not switch when disabled"
+        out = buf.getvalue()
+        assert "WARNING" in out and expected in out, out
+    finally:
+        (obs_ws.get_scene_collection, obs_ws.set_scene_collection,
+         m._active_obs_collection, m._collection_switch_enabled) = saved
+
+
+def t_check_scene_collection_warns_when_switch_fails():
+    import io, contextlib
+    obs_ws = _obsws_module()
+    expected = "GT Endurance Racing — demo"
+    st = obs_ws.scene_collection_status(
+        "Old League", ["Old League", expected], expected=expected)   # mismatch, present
+    calls = {}
+    saved = (obs_ws.get_scene_collection, obs_ws.set_scene_collection,
+             m._active_obs_collection, m._collection_switch_enabled)
+    try:
+        obs_ws.get_scene_collection = lambda **kw: (st, "")
+        def _fake_set(name, **kw):
+            calls["name"] = name
+            return (False, "output active")
+        obs_ws.set_scene_collection = _fake_set
+        m._active_obs_collection = lambda: expected
+        m._collection_switch_enabled = lambda: True
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            m._check_scene_collection()
+        assert calls.get("name") == expected, calls
+        out = buf.getvalue()
+        assert "could not switch" in out and "output active" in out, out
+    finally:
+        (obs_ws.get_scene_collection, obs_ws.set_scene_collection,
+         m._active_obs_collection, m._collection_switch_enabled) = saved
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

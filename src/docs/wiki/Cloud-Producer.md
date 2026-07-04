@@ -177,6 +177,12 @@ racecast setup                    # writes runtime/<profile>/GT_Endurance.import
 # in the OBS GUI over RustDesk: Scene Collection → Import → that file
 ```
 
+On a multi-league box you only import each league's collection once; from then on
+`racecast event start` auto-switches OBS to the active profile's collection at
+bring-up, so a previous event's collection can't linger.
+(`RACECAST_OBS_COLLECTION_SWITCH=0` disables it; `racecast obs collection set`
+switches manually.)
+
 ## Discord voice audio (auto-join)
 
 The producer box captures interview/commentary audio by having its **Discord desktop
