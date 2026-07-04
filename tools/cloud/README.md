@@ -16,8 +16,10 @@ reproducibility mechanism instead (any league can stand up its own box the same 
 Requires GPU quota (free; request first — see the runbook Appendix A, Step 0) and a
 `gcloud` authed to your project. **L4 in `europe-west4-c`** is the validated EU default
 (T4 was capacity-exhausted across the zones tried; RTT ~20 ms vs ~110 ms to us-central1).
-The L4 is bundled into the `g2` machine type — **no `--accelerator` flag**. Size ≥ 6 vCPU
-(`g2-standard-8`) so preflight's core floor is green:
+The L4 is bundled into the `g2` machine type — **no `--accelerator` flag**. `g2-standard-4`
+(4 vCPU) already passes preflight green: the L4's NVENC offloads OBS's encode, so preflight
+detects the GPU and relaxes the CPU-core floor. `g2-standard-8` below is the roomier default —
+extra core headroom for a busy multi-feed event, not a preflight requirement:
 
 ```bash
 gcloud compute instances create spike-gpu \

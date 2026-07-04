@@ -14,23 +14,63 @@ m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
 
 def t_classify_ram_boundaries():
-    # Nominal 16/32 GB modules report ~0.1-1.5 GB lower (firmware/iGPU
-    # reservations) — the boundaries carry RAM_SLACK_GB so real machines
-    # land in the intended bucket.
-    assert m.classify_ram(14.4).level == "FAIL"
-    assert m.classify_ram(14.5).level == "WARN"
-    assert m.classify_ram(15.9).level == "WARN"   # physical 16 GB machine
-    assert m.classify_ram(30.4).level == "WARN"
-    assert m.classify_ram(30.5).level == "PASS"
-    assert m.classify_ram(31.9).level == "PASS"   # physical 32 GB machine
-    assert "browser sources" not in m.classify_ram(20).detail  # stale HUD hint
+    # FAIL below 8 GB, WARN below 12 GB, PASS from 12 GB up. Nominal modules
+    # report ~0.1-1.5 GB lower (firmware/iGPU reservations), so the boundaries
+    # carry RAM_SLACK_GB and real machines land in the intended bucket.
+    assert m.classify_ram(6.4).level == "FAIL"
+    assert m.classify_ram(6.5).level == "WARN"
+    assert m.classify_ram(8).level == "WARN"       # 8 GB machine
+    assert m.classify_ram(10.4).level == "WARN"
+    assert m.classify_ram(10.5).level == "PASS"
+    assert m.classify_ram(11.9).level == "PASS"    # physical 12 GB machine
+    assert m.classify_ram(15.9).level == "PASS"    # physical 16 GB machine -> green
+    assert m.classify_ram(31.9).level == "PASS"    # physical 32 GB machine
+    assert "12 GB recommended" in m.classify_ram(9).detail
 
 
 def t_classify_cpu_boundaries():
-    assert m.classify_cpu(5).level == "FAIL"
-    assert m.classify_cpu(6).level == "WARN"
-    assert m.classify_cpu(7).level == "WARN"
+    # No GPU (software x264 encode is the core hog): FAIL <4, WARN <6, PASS >=6.
+    assert m.classify_cpu(3).level == "FAIL"
+    assert m.classify_cpu(4).level == "WARN"
+    assert m.classify_cpu(5).level == "WARN"
+    assert m.classify_cpu(6).level == "PASS"
     assert m.classify_cpu(8).level == "PASS"
+
+
+def t_classify_cpu_with_gpu_relaxes_floor():
+    # An NVENC GPU offloads the encode off the CPU, so the floor drops by 2:
+    # FAIL <2, WARN <4, PASS >=4 -> a g2-standard-4 (4 cores + L4) is green.
+    assert m.classify_cpu(1, has_gpu=True).level == "FAIL"
+    assert m.classify_cpu(2, has_gpu=True).level == "WARN"
+    assert m.classify_cpu(3, has_gpu=True).level == "WARN"
+    assert m.classify_cpu(4, has_gpu=True).level == "PASS"
+    assert m.classify_cpu(6, has_gpu=True).level == "PASS"
+
+
+def t_detect_nvidia_gpu():
+    from types import SimpleNamespace
+    ok = lambda cmd, **kw: SimpleNamespace(
+        returncode=0, stdout=b"GPU 0: NVIDIA L4 (UUID: GPU-xxx)", stderr=b"")
+    nogpu = lambda cmd, **kw: SimpleNamespace(returncode=1, stdout=b"", stderr=b"")
+    which_smi = lambda n: "/usr/bin/nvidia-smi" if n == "nvidia-smi" else None
+    which_lspci = lambda n: "/usr/bin/lspci" if n == "lspci" else None
+    which_none = lambda n: None
+    # nvidia-smi lists a GPU -> True
+    assert m.detect_nvidia_gpu(run=ok, which=which_smi) is True
+    # nvidia-smi present but no GPU, nothing else -> False
+    assert m.detect_nvidia_gpu(run=nogpu, which=which_smi) is False
+    # nothing on PATH -> False
+    assert m.detect_nvidia_gpu(run=nogpu, which=which_none) is False
+    # Linux lspci fallback names an NVIDIA device -> True
+    lspci = lambda cmd, **kw: SimpleNamespace(
+        returncode=0, stdout=b"01:00.0 3D controller: NVIDIA Corporation AD104 [L4]", stderr=b"")
+    assert m.detect_nvidia_gpu(run=lspci, which=which_lspci, os_name="posix") is True
+    # lspci fallback is Linux-only: same probe under "nt" -> no fallback -> False
+    assert m.detect_nvidia_gpu(run=lspci, which=which_lspci, os_name="nt") is False
+    # any error is swallowed (best-effort) -> False
+    def boom(cmd, **kw):
+        raise OSError("boom")
+    assert m.detect_nvidia_gpu(run=boom, which=which_smi) is False
 
 
 def t_classify_disk_boundaries():
