@@ -397,6 +397,26 @@ single stream → it lands on Feed A (B idles). Switch at launch (`--qualifying`
 (mode toggle + a one-row editor writing the Qualifying tab via the `schedule`
 webhook action with `tab:"Qualifying"`). On switch the HUD Streamer/Stint follow
 the qualifying row (the issue #112 path).
+**Qualifying in the event lifecycle.** Qualifying is also a first-class *broadcast
+Part*: a `Q` row in the `Producer` tab (its own Stream Key) is the qualifying
+broadcast, and the Director-Panel Parts control is **mode-gated** —
+`producer.active_producer_rows(rows, mode)` selects the numeric parts in race mode and
+the single `Q` part in qualifying mode (a part is qualifying iff its label, uppercased,
+starts with `Q`). Because `Q` is the only (= last) part, ending it fires the existing
+last-part auto-stop → report → teardown, so `racecast event start --qualifying` (or the
+Control Center **Qualifying** toggle at Start Event, `ui_ops` `_qualifying_flag`) runs a
+clean, separate qualifying session with its own OBS stream key. `set_mode` resets the
+part pointer to Part 1 on a live mode switch (unless a part is on air). The post-event
+**report title** gains a `— Qualifying` marker (`_relay_mode`/`_qualifying_title` in
+`racecast.py`, read from the live relay `/status`). The **Director Panel** shows the
+schedule editor matching the mode (race editor `#urlsBox` vs the qualifying row
+`#qualRow`; the mode toggle, submissions and Parts control stay visible in both). The
+cockpit tally/plan, the race-control desk, `/schedule/data` and submission *target*
+resolution are already mode-aware (they read the mode-aware `relay.source`); cockpit
+stream-link **submissions record their `mode`** so the director's approve writes the
+qualifying row via `qualifying_set` (the confirm phrase for the Q part reads
+`START PART Q`). Spec/plan:
+`docs/superpowers/{specs,plans}/2026-07-05-qualifying-event-lifecycle*.md`.
 
 Pull pipeline per feed: **YouTube** — `yt-dlp -g` resolves the live HLS URL (passing
 YouTube's bot-check via `yt-cookies.txt` + deno JS challenge) → `streamlink
