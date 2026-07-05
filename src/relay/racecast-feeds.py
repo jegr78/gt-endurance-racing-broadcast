@@ -416,6 +416,42 @@ def stream_transition(prev, cur):
     if prev is True and cur is False:
         return "stopped"
     return None
+
+
+def _fmt_uptime(seconds):
+    """Compact H/M/S duration for the stream-uptime log line. None/negative -> ''."""
+    if seconds is None or seconds < 0:
+        return ""
+    total = int(seconds)
+    h, rem = divmod(total, 3600)
+    mins, secs = divmod(rem, 60)
+    if h:
+        return f"{h}h {mins:02d}m {secs:02d}s"
+    if mins:
+        return f"{mins}m {secs:02d}s"
+    return f"{secs}s"
+
+
+def stream_event_log_line(started, kbps=None, uptime_s=None):
+    """The relay-log line for an OBS stream start/stop transition. Pure so it is
+    unit-tested; the caller emits it via LOG.info so the event is greppable in
+    `racecast relay logs` alongside the feed events (it complements the Discord
+    push + Health-Monitor marker). On start it appends the upstream kbps when
+    known — the first sample is a partial-window estimate, so it is an approximate
+    'bytes are flowing' signal (hence the '~'), not an exact bitrate. On stop it
+    appends the stream uptime when known. Note: OBS-WebSocket only sees bytes going
+    to the ingest — it cannot know whether a YouTube/Twitch broadcast is bound, so
+    a healthy kbps confirms egress, never that a watchable broadcast exists."""
+    if started:
+        head = "OBS stream output started"
+        if kbps is not None:
+            head += f" — upstream ~{kbps:.0f} kbps"
+        return head
+    head = "OBS stream output stopped"
+    dur = _fmt_uptime(uptime_s)
+    if dur:
+        head += f" after {dur}"
+    return head
 # Sheet ID is NOT hardcoded — it comes from RACECAST_SHEET_ID (injected by the CLI
 # from the active profile). Override per-run with --sheet-id.
 DEFAULT_SHEET_TAB = "Schedule"
@@ -4985,6 +5021,7 @@ class Relay:
         self.stream_expected = False      # latched True once OBS is seen streaming
                                           # (off-air alarm only fires after this)
         self._stream_active_prev = None   # last bool stream_active, for start/stop events (#317)
+        self._stream_started_ts = None    # when OBS last went live, for the stop-line uptime
         # POV is a THIRD, independent feed — not part of the A/B index. Starts
         # paused (off) until the Director calls /pov/reload.
         self.pov_source = pov_source
@@ -5467,17 +5504,29 @@ class Relay:
                 if active:                             # latch once OBS goes live
                     self.stream_expected = True
                 transition = stream_transition(prev, active)
-            # Off-thread I/O OUTSIDE the lock: a Discord push + Health-Monitor marker.
+            # Off-thread I/O OUTSIDE the lock: a relay-log line + Discord push +
+            # Health-Monitor marker.
             if transition:
-                self._on_stream_transition(transition, now)
+                self._on_stream_transition(transition, now, kbps=kbps)
         except Exception:                                # noqa: BLE001 — best-effort
             with self._obs_lock:
                 self._obs_probe_running = False
 
-    def _on_stream_transition(self, transition, now):
-        """Emit an OBS stream start/stop event (#317): a best-effort Discord push
-        plus a persisted Health-Monitor marker. Both name this producer."""
+    def _on_stream_transition(self, transition, now, kbps=None):
+        """Emit an OBS stream start/stop event (#317): a relay-log line, a
+        best-effort Discord push, and a persisted Health-Monitor marker. The log
+        line makes the transition greppable in `racecast relay logs` alongside the
+        feed events; it carries the upstream kbps on start and the stream uptime on
+        stop. Discord + health markers name this producer."""
         started = transition == "started"
+        if started:
+            self._stream_started_ts = now
+            uptime = None
+        else:
+            uptime = (now - self._stream_started_ts
+                      if self._stream_started_ts is not None else None)
+            self._stream_started_ts = None
+        LOG.info(stream_event_log_line(started, kbps=kbps, uptime_s=uptime))
         self._discord_post(
             notify.obs_stream_discord_payload(started, self.producer_name,
                                               self._event_title()),
