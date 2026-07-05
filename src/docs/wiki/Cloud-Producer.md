@@ -201,8 +201,8 @@ same session OBS runs in — so the remote desktop, OBS and the install tree are
   instead use the box's **`100.x` IP** (direct IP, no public relay) once **Settings →
   Security → "Enable direct IP access"** is on — a one-click if the scripted toggle didn't
   take on your RustDesk build.
-- If the desktop is black / `nvidia-smi` wasn't ready, reboot the box once so the autologin X
-  session (which RustDesk shows) starts.
+- Provisioning **auto-reboots** at the end (default on; `PROVISION_REBOOT=0` opts out) to
+  start the autologin X session RustDesk shows. If the desktop is black, reboot once more.
 
 Then, per league, import the localized scene collection into OBS once:
 
