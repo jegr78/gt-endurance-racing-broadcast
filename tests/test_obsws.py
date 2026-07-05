@@ -728,6 +728,43 @@ def t_set_scene_collection_unreachable_is_quiet():
 
 
 # --------------------------------------------------------------------------
+# switch_to_scene_if_idle — park OBS on Standby at `event start` (never cut live)
+# --------------------------------------------------------------------------
+def t_switch_to_scene_if_idle_switches_when_offline():
+    state = {"stream_active": False, "program_scene": "Stint"}
+    port, srv = _start_fake_obs(state)
+    action, note = m.switch_to_scene_if_idle("Standby", port=port,
+                                             password="supersecret", timeout=5)
+    assert action == "switched", (action, note)
+    assert note == "", note
+    assert state["set_scene"] == "Standby"       # SetCurrentProgramScene was sent
+    srv.close()
+
+
+def t_switch_to_scene_if_idle_skips_when_live():
+    state = {"stream_active": True, "program_scene": "Stint"}
+    port, srv = _start_fake_obs(state)
+    action, note = m.switch_to_scene_if_idle("Standby", port=port,
+                                             password="supersecret", timeout=5)
+    assert action == "live", (action, note)
+    assert note                                  # explains why it was skipped
+    assert "set_scene" not in state              # SAFETY: no scene switch sent while live
+    assert state["program_scene"] == "Stint"     # program untouched
+    srv.close()
+
+
+def t_switch_to_scene_if_idle_unreachable_is_note_not_crash():
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    free_port = sock.getsockname()[1]
+    sock.close()
+    action, note = m.switch_to_scene_if_idle("Standby", port=free_port,
+                                             password="x", timeout=0.5)
+    assert action == "error", (action, note)
+    assert note                                  # human-readable reason, did not raise
+
+
+# --------------------------------------------------------------------------
 # get_source_screenshot / get_program_screenshot — best-effort fetchers
 # --------------------------------------------------------------------------
 def t_get_source_screenshot_returns_bytes():
