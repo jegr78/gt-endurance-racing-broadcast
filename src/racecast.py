@@ -37,7 +37,7 @@
   racecast update [--check] [--yes] [--tag TAG]   # self-update the binary (--tag installs an exact release)
   racecast --version
 """
-import glob, hashlib, json, os, re, shutil, sys, tempfile, time, webbrowser
+import glob, hashlib, io, json, os, re, shutil, sys, tempfile, time, webbrowser, zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Adapters (added in later tasks) import sibling modules from scripts/ at module
@@ -1344,7 +1344,8 @@ def _build_report_file(frm=None, to=None, gap=None, out=None):
     path = out or os.path.join(_reports_dir(), rbuild.report_filename(title, date_str))
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(html)
-    return {"path": path, "html": html, "summary": rbuild.render_summary_text(report)}
+    return {"path": path, "html": html, "summary": rbuild.render_summary_text(report),
+            "report": report}
 
 
 def _latest_report():
@@ -1356,8 +1357,9 @@ def _latest_report():
     return max(files, key=os.path.getmtime) if files else None
 
 
-def _send_report_core(path):
-    """Attach the report .html to the league Discord. Raises on any failure."""
+def _send_report_core(path, report=None):
+    """Post the report to the league Discord as a GT-Racecast embed with the HTML
+    zipped as a download-only attachment. Raises on any failure."""
     if not path:
         raise ValueError("no report found — run `racecast report` first")
     with open(path, "rb") as fh:
@@ -1366,8 +1368,14 @@ def _send_report_core(path):
     if not webhook:
         raise ValueError("No DISCORD_WEBHOOK_URL configured for this league")
     title = _report_event_title() or league or "Event"
-    fields = {"payload_json": json.dumps({"content": f"\U0001F4CA Post-event report — {title}"})}
-    files = [("files[0]", os.path.basename(path), content, "text/html")]
+    fields_kv = rbuild.report_discord_fields(report) if report else []
+    payload = notify.report_discord_payload(title, fields_kv)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(os.path.basename(path), content)
+    zip_name = os.path.splitext(os.path.basename(path))[0] + ".zip"
+    fields = {"payload_json": json.dumps(payload)}
+    files = [("files[0]", zip_name, buf.getvalue(), "application/zip")]
     http_util.post_multipart(webhook, fields=fields, files=files, timeout=15)
 
 

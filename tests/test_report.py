@@ -123,7 +123,47 @@ def t_send_posts_multipart():
             rc.http_util.post_multipart = orig_post
         assert sent["url"] == "https://discord.invalid/webhook"
         assert "payload_json" in sent["fields"]
-        assert sent["files"][0][1] == "2026-07-01-x.html"
+        assert sent["files"][0][1] == "2026-07-01-x.zip"
+        assert sent["files"][0][3] == "application/zip"
+
+
+def t_send_report_embed_zip():
+    import io
+    import json
+    import zipfile
+
+    with tempfile.TemporaryDirectory() as d:
+        reports = os.path.join(d, "reports")
+        os.makedirs(reports)
+        p = os.path.join(reports, "2026-07-01-x.html")
+        with open(p, "w") as fh:
+            fh.write("<!doctype html><html>hi</html>")
+        captured = {}
+
+        def _fake_post(url, fields=None, files=None, **kw):
+            captured["fields"] = fields
+            captured["files"] = files
+            return b"ok"
+
+        orig_hook = rc._active_discord_webhook
+        orig_post = rc.http_util.post_multipart
+        rc._active_discord_webhook = lambda: ("https://discord.invalid/webhook", "My League")
+        rc.http_util.post_multipart = _fake_post
+        try:
+            rc._send_report_core(p, report={"header": {"uptime_pct": 99.0, "on_air_s": 60,
+                "duration_s": 60, "start": 0, "end": 60}, "incidents": []})
+        finally:
+            rc._active_discord_webhook = orig_hook
+            rc.http_util.post_multipart = orig_post
+
+        payload = json.loads(captured["fields"]["payload_json"])
+        assert payload["username"] == "GT Racecast"
+        assert payload["embeds"][0]["fields"][0]["name"] == "Uptime"
+        fname, content, ctype = (captured["files"][0][1], captured["files"][0][2],
+                                  captured["files"][0][3])
+        assert fname.endswith(".zip") and ctype == "application/zip"
+        names = zipfile.ZipFile(io.BytesIO(content)).namelist()
+        assert any(n.endswith(".html") for n in names)
 
 
 def run():
