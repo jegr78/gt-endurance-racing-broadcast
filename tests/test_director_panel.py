@@ -139,6 +139,20 @@ def t_final_part_confirmation_present():
     assert "res.final" in h
 
 
+def t_mode_drives_section_visibility():
+    h = _html()
+    # relayPoll toggles the race schedule editor and the qualifying editor row by mode
+    assert '$("#urlsBox").hidden = qualifying' in h
+    assert '$("#qualRow").hidden = !qualifying' in h
+
+
+def t_qualifying_submission_tag_present():
+    h = _html()
+    # subRow renders a QUALI tag when the pending entry is a qualifying submission
+    assert 'QUALI' in h
+    assert 'e.mode === "qualifying"' in h
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
