@@ -266,7 +266,13 @@ def _client(secret=SECRET, rows=None, live_idx=0,
 
     class _Setup:
         def schedule_set(self, row, url=None, name=None, stint=None):
-            calls.append({"row": row, "url": url, "name": name, "stint": stint})
+            calls.append({"tab": "race", "row": row, "url": url, "name": name,
+                         "stint": stint})
+            return {"ok": True, "row": row}
+
+        def qualifying_set(self, row, url=None, name=None, stint=None):
+            calls.append({"tab": "qualifying", "row": row, "url": url, "name": name,
+                         "stint": stint})
             return {"ok": True, "row": row}
 
     store = m.SubmissionStore(submission_path, audit_path) if submission_path else None
@@ -435,6 +441,43 @@ def t_approve_writes_schedule_and_clears():
             assert calls[0]["row"] == 4 and calls[0]["url"] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
             assert calls[0]["stint"] == "S3" and calls[0]["name"] == "Alpha Racing"
             assert cs.list_pending(p) == []          # cleared after approve
+        finally:
+            srv.shutdown()
+
+
+def t_approve_routes_by_entry_mode_qualifying_vs_race():
+    # The director's approve action must branch on the ENTRY's own recorded
+    # mode (not the relay's current mode): a qualifying submission writes to
+    # the Qualifying tab (setup_ctl.qualifying_set), a race submission writes
+    # to the Schedule tab (setup_ctl.schedule_set) — see the relay's
+    # /submissions/approve handler (racecast-feeds.py, "Branch on the ENTRY's
+    # recorded mode").
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "p.json")
+        srv, _get, post, calls = _client(submission_path=p)
+        try:
+            e_qual = cs.add_pending(p, streamer_key="alpha-racing",
+                                    streamer_name="Alpha Racing", target_line=4,
+                                    target_stint="S3", proposed_url="u-qual",
+                                    prev_url="", now=100.0, mode="qualifying")
+            e_race = cs.add_pending(p, streamer_key="beta", streamer_name="Beta",
+                                    target_line=3, target_stint="S2",
+                                    proposed_url="u-race", prev_url="", now=101.0,
+                                    mode="race")
+
+            code, _h, body = post("/submissions/approve", {"id": e_qual["id"]})
+            assert code == 200, (code, body)
+            code, _h, body = post("/submissions/approve", {"id": e_race["id"]})
+            assert code == 200, (code, body)
+
+            assert len(calls) == 2
+            assert calls[0]["tab"] == "qualifying"
+            assert calls[0]["row"] == 4 and calls[0]["url"] == "u-qual"
+            assert calls[0]["name"] == "Alpha Racing" and calls[0]["stint"] == "S3"
+            assert calls[1]["tab"] == "race"
+            assert calls[1]["row"] == 3 and calls[1]["url"] == "u-race"
+            assert calls[1]["name"] == "Beta" and calls[1]["stint"] == "S2"
+            assert cs.list_pending(p) == []          # both cleared after approve
         finally:
             srv.shutdown()
 

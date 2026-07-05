@@ -7478,9 +7478,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     part_store.mark_live(idx)
                     if health_store is not None:
                         try:
+                            plabel = (rows[idx - 1].get("part")
+                                      if 1 <= idx <= len(rows) else "") or f"Part {idx}"
                             health_store.record_event(
                                 time.time(), "part_start",
-                                label=f"Part {idx} started",
+                                label=f"{plabel} started",
                                 producer=relay.producer_name,
                                 metadata={"index": idx})
                         except Exception:   # noqa: BLE001 — best-effort
@@ -7504,9 +7506,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     part_store.end()
                     if health_store is not None:
                         try:
+                            plabel = (rows[res - 1].get("part")
+                                      if 1 <= res <= len(rows) else "") or f"Part {res}"
                             health_store.record_event(
                                 time.time(), "part_end",
-                                label=f"Part {res} ended",
+                                label=f"{plabel} ended",
                                 producer=relay.producer_name,
                                 metadata={"index": res})
                         except Exception:   # noqa: BLE001 — best-effort

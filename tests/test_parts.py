@@ -23,6 +23,7 @@ def t_parts_intent_phrase():
     assert m.parts_intent_phrase("start", "1") == "START PART 1"
     assert m.parts_intent_phrase("end", "3") == "END PART 3"
     assert m.parts_intent_phrase("start", "Q") == "START PART Q"
+    assert m.parts_intent_phrase("start", 1) == "START PART 1"  # int back-compat
 
 
 def t_normalize_intent():
@@ -246,6 +247,7 @@ def t_part_kind_classifies_q_vs_numeric():
     assert pm.part_kind("1") == "race"
     assert pm.part_kind("") == "race"
     assert pm.part_kind(None) == "race"
+    assert pm.part_kind("Part Q1") == "race"  # contains but doesn't START with Q
 
 
 def t_active_producer_rows_filters_by_mode():
