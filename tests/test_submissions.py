@@ -110,6 +110,28 @@ def t_store_validate_rejects_bad_shapes():
             pass
 
 
+def t_add_pending_records_mode():
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "pending.json")
+    e = cs.add_pending(path, streamer_key="alice", streamer_name="Alice",
+                       target_line=5, target_stint="Q", proposed_url="https://youtu.be/x",
+                       prev_url="", now=1.0, mode="qualifying")
+    assert e["mode"] == "qualifying"
+    # default when omitted
+    e2 = cs.add_pending(path, streamer_key="bob", streamer_name="Bob",
+                        target_line=6, target_stint="2", proposed_url="https://youtu.be/y",
+                        prev_url="", now=2.0)
+    assert e2["mode"] == "race"
+
+
+def t_validate_entry_defaults_missing_mode_to_race():
+    legacy = {"id": 1, "streamer_key": "alice", "streamer_name": "Alice",
+              "target_line": 5, "target_stint": "Q", "proposed_url": "https://youtu.be/x",
+              "prev_url": "", "ts": 1.0}          # no mode field (pre-upgrade entry)
+    seq, entries = cs.validate_pending({"seq": 1, "pending": [legacy]})
+    assert entries[0]["mode"] == "race"
+
+
 def t_audit_appends_jsonl():
     with tempfile.TemporaryDirectory() as d:
         p = os.path.join(d, "cockpit-submissions.log")

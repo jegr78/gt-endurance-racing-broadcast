@@ -7252,7 +7252,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             target_line=res["target_line"],
                             target_stint=res["target_stint"],
                             proposed_url=url, prev_url=res["prev_url"],
-                            now=time.time())
+                            now=time.time(), mode=relay.mode)
                         # Director notification: panel badge polls /submissions;
                         # also fire a Discord @here ping (no-op without a webhook).
                         self._notify_submission(entry,
@@ -7354,7 +7354,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         # streamer + stint so the optimistic local inject keeps
                         # them (both are Configuration vocab, from the sheet). Only
                         # clear the pending entry once the write actually succeeds.
-                        res = setup_ctl.schedule_set(
+                        # Branch on the ENTRY's recorded mode (not the relay's
+                        # current mode) so a director can approve a qualifying
+                        # submission into the Qualifying tab regardless of what
+                        # mode the relay happens to be in right now.
+                        writer = (setup_ctl.qualifying_set
+                                  if entry.get("mode") == "qualifying"
+                                  else setup_ctl.schedule_set)
+                        res = writer(
                             entry["target_line"], url=entry["proposed_url"],
                             name=entry["streamer_name"], stint=entry["target_stint"])
                         if res.get("error"):
