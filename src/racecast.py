@@ -3229,11 +3229,12 @@ def event_start(rest, _autojoin=True):
             print("funnel: skipped — " + msg.splitlines()[0])
     # OBS may not have been running when relay_start's refresh hook fired
     # (event start launches OBS AFTER the relay) — retry now that both sides
-    # are up. Hash-gated: a no-op when the first hook already delivered.
-    # Align OBS to the active profile's scene collection BEFORE refreshing pages — a
-    # switch rebuilds every source, so a refresh must come after it (not be overwritten).
+    # are up. Forced (not hash-gated): a re-run / takeover where the served
+    # page bytes are unchanged must still clear OBS's cached browser sources,
+    # otherwise stale HUD/overlay pages survive the bring-up. Also guarantees
+    # _sync_pov_transform runs (it is nested inside the refresh).
     _check_scene_collection()
-    _refresh_obs_pages()
+    _refresh_obs_pages(force=True)
     print()
     for line in ev.director_urls(_tailscale_ip(), _companion_tablet_port(),
                                  relay_port=RELAY_PORT):

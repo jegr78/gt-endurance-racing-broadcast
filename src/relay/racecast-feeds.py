@@ -7325,6 +7325,21 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if state is None:
                         return self._send({"ok": False, "error": note}, 503)
                     return self._send({"ok": True, **state})
+                if p == ["obs", "refresh"]:
+                    # Reload the relay-served OBS browser sources (HUD / overlay /
+                    # timer) — the programmatic right-click -> Refresh. Unconditional
+                    # force (no hash gate; the CLI owns obs-pages.hash): the director
+                    # presses this precisely to clear stale caches. Best-effort like
+                    # the other /obs/* branches. Auto director-gated by console_policy
+                    # (p[0] == "obs"); reachable over Funnel only under /console.
+                    if _obs_ws is None:
+                        return self._send({"error": "obs unavailable"}, 503)
+                    port = self.server.server_address[1]
+                    names, note = _obs_ws.refresh_browser_inputs(
+                        needle=f"127.0.0.1:{port}")
+                    return self._send({"ok": True, "count": len(names),
+                                       "note": note or
+                                       f"Refreshed {len(names)} browser source(s)"})
                 if p == ["parts", "start"]:
                     if part_store is None or producer_source is None or _obs_ws is None:
                         return self._send({"ok": False, "error": "parts unavailable"}, 503)
