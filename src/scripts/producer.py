@@ -79,3 +79,20 @@ def parse_producer_rows(text):
         out.append({"part": part, "producer": prod, "magicdns": magic,
                     "stream_key": skey})
     return out
+
+
+def part_kind(label):
+    """Classify a Producer part by its label: 'qualifying' when the trimmed,
+    uppercased label starts with 'Q' (Q, Q1, Qualifying, …), else 'race'
+    (numeric / 'Part N'). The qualifying broadcast is modelled as a 'Q' row in
+    the same Producer tab, so the Parts control can show the race parts in race
+    mode and the single Q part in qualifying mode."""
+    return "qualifying" if str(label or "").strip().upper().startswith("Q") else "race"
+
+
+def active_producer_rows(rows, mode):
+    """The subset of parsed Producer rows whose part_kind matches the relay mode:
+    'qualifying' -> the Q rows, anything else -> the race/numeric rows. Order is
+    preserved. Empty/None rows -> []."""
+    want = "qualifying" if mode == "qualifying" else "race"
+    return [r for r in (rows or []) if part_kind(r.get("part")) == want]

@@ -1327,6 +1327,26 @@ def _report_event_title():
         return ""
 
 
+def _relay_mode():
+    """The live relay's schedule mode ('race'/'qualifying') from /status, or None
+    when the relay is unreachable. Best-effort — the report title marker degrades
+    gracefully. Reuses the loopback JSON helper (no bare urllib)."""
+    try:
+        data = _relay_fetch_json(f"http://127.0.0.1:{RELAY_PORT}/status")
+        mode = data.get("mode")
+        return mode if mode in ("race", "qualifying") else None
+    except Exception:  # noqa: BLE001 — best-effort
+        return None
+
+
+def _qualifying_title(base):
+    """Append ' — Qualifying' to a report/event title when the live relay is in
+    qualifying mode; an empty base becomes just 'Qualifying'. Unchanged otherwise."""
+    if _relay_mode() == "qualifying":
+        return f"{base} — Qualifying" if base else "Qualifying"
+    return base
+
+
 def _report_name_map():
     """{stint_index (1-based): commentator name} from the LOCAL relay's /schedule/data
     (which runs the canonical schedule parser). Only the `name` field is used — the
@@ -1362,7 +1382,7 @@ def _build_report_file(frm=None, to=None, gap=None, out=None):
     if not samples:
         raise ValueError("no health data for that window")
     bucketed = rbuild.bucket_samples(samples)
-    title = _report_event_title()
+    title = _qualifying_title(_report_event_title())
     report = rbuild.build_report(bucketed, events, _report_name_map(), title,
                                  (frm, to), time.time())
     html = rbuild.render_html(report)
@@ -1394,7 +1414,7 @@ def _send_report_core(path, report=None):
     webhook, league = _active_discord_webhook()
     if not webhook:
         raise ValueError("No DISCORD_WEBHOOK_URL configured for this league")
-    title = _report_event_title() or league or "Event"
+    title = _qualifying_title(_report_event_title() or league or "Event")
     fields_kv = rbuild.report_discord_fields(report) if report else []
     payload = notify.report_discord_payload(title, fields_kv)
     buf = io.BytesIO()

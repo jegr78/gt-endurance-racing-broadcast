@@ -7,6 +7,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
 import parts as m  # pure module
+import producer as pm  # pure Producer-tab classifier (same sys.path as parts)
 
 # relay module (hyphenated filename -> load by path); used from Task 2 on.
 _rspec = importlib.util.spec_from_file_location(
@@ -19,14 +20,33 @@ ROWS3 = [{"part": "Part 1", "producer": "A", "magicdns": "a", "stream_key": "key
 
 
 def t_parts_intent_phrase():
-    assert m.parts_intent_phrase("start", 1) == "START PART 1"
-    assert m.parts_intent_phrase("end", 3) == "END PART 3"
+    assert m.parts_intent_phrase("start", "1") == "START PART 1"
+    assert m.parts_intent_phrase("end", "3") == "END PART 3"
+    assert m.parts_intent_phrase("start", "Q") == "START PART Q"
+    assert m.parts_intent_phrase("start", 1) == "START PART 1"  # int back-compat
 
 
 def t_normalize_intent():
     assert m.normalize_intent("  end   part 2 ") == "END PART 2"
     assert m.normalize_intent("Start Part 1") == "START PART 1"
     assert m.normalize_intent(None) == ""
+
+
+def t_part_confirm_token():
+    assert m.part_confirm_token("Part 1") == "1"
+    assert m.part_confirm_token("part 2") == "2"
+    assert m.part_confirm_token("Q") == "Q"
+    assert m.part_confirm_token("Part Q") == "Q"
+    assert m.part_confirm_token("  Part   3 ") == "3"
+
+
+def t_view_model_qualifying_confirm_phrase():
+    # A single Q row, ready to start -> confirm phrase reads START PART Q.
+    q = [{"part": "Q", "producer": "A"}]
+    vm = m.parts_view_model(q, {"index": 1, "live": False}, stream_active=False)
+    assert vm["action"] == "start" and vm["confirm_phrase"] == "START PART Q"
+    vm2 = m.parts_view_model(q, {"index": 1, "live": False}, stream_active=True)
+    assert vm2["action"] == "end" and vm2["confirm_phrase"] == "END PART Q"
 
 
 def t_stream_active_param():
@@ -79,36 +99,52 @@ def t_view_model_falls_back_to_file_live():
 
 def t_validate_start_ok():
     ok, res = m.validate_start({"index": 1, "intent": "START PART 1"},
-                               {"index": 1, "live": False}, 3)
+                               ROWS3, {"index": 1, "live": False})
     assert ok and res == 1
 
 
 def t_validate_start_bad_phrase():
     ok, res = m.validate_start({"index": 1, "intent": "go"},
-                               {"index": 1, "live": False}, 3)
+                               ROWS3, {"index": 1, "live": False})
     assert not ok and res[1] == 403
 
 
 def t_validate_start_wrong_index():
     ok, res = m.validate_start({"index": 2, "intent": "START PART 2"},
-                               {"index": 1, "live": False}, 3)
+                               ROWS3, {"index": 1, "live": False})
     assert not ok and res[1] == 409
 
 
 def t_validate_start_bad_index_type():
     ok, res = m.validate_start({"index": "x", "intent": "START PART x"},
-                               {"index": 1, "live": False}, 3)
+                               ROWS3, {"index": 1, "live": False})
     assert not ok and res[1] == 400
 
 
+def t_validate_start_qualifying_token():
+    q = [{"part": "Q"}]
+    ok, res = m.validate_start({"index": 1, "intent": "START PART Q"},
+                               q, {"index": 1, "live": False})
+    assert ok and res == 1
+    bad, r2 = m.validate_start({"index": 1, "intent": "START PART 1"},
+                               q, {"index": 1, "live": False})
+    assert not bad and r2[1] == 403          # numeric phrase rejected for a Q part
+
+
 def t_validate_end_ok():
-    ok, res = m.validate_end({"intent": "END PART 2"}, {"index": 2, "live": True})
+    ok, res = m.validate_end({"intent": "END PART 2"}, ROWS3, {"index": 2, "live": True})
     assert ok and res == 2
 
 
 def t_validate_end_bad_phrase():
-    ok, res = m.validate_end({"intent": "nope"}, {"index": 2, "live": True})
+    ok, res = m.validate_end({"intent": "nope"}, ROWS3, {"index": 2, "live": True})
     assert not ok and res[1] == 403
+
+
+def t_validate_end_qualifying_token():
+    q = [{"part": "Q"}]
+    ok, res = m.validate_end({"intent": "END PART Q"}, q, {"index": 1, "live": True})
+    assert ok and res == 1
 
 
 def t_partstore_default_and_transitions():
@@ -134,6 +170,16 @@ def t_partstore_type_checks_load():
     with open(p, "w", encoding="utf-8") as fh:
         json.dump({"index": "x", "live": "yes"}, fh)
     assert R.PartStore(p).get() == {"index": 1, "live": False}
+
+
+def t_partstore_reset():
+    d = tempfile.mkdtemp()
+    ps = R.PartStore(os.path.join(d, "part.json"))
+    ps.mark_live(3)
+    assert ps.get() == {"index": 3, "live": True}
+    assert ps.reset() == {"index": 1, "live": False}
+    # persisted -> a fresh store reloads the reset pointer
+    assert R.PartStore(os.path.join(d, "part.json")).get() == {"index": 1, "live": False}
 
 
 def t_apply_stream_service_for_ref_happy():
@@ -190,6 +236,30 @@ def t_last_part_condition():
     assert vm["live"] and vm["index"] == vm["count"]      # last part is live
     vm1 = m.parts_view_model(rows, {"index": 1, "live": True}, stream_active=True)
     assert not (vm1["index"] == vm1["count"])             # not the last part
+
+
+def t_part_kind_classifies_q_vs_numeric():
+    assert pm.part_kind("Q") == "qualifying"
+    assert pm.part_kind("q") == "qualifying"
+    assert pm.part_kind(" Qualifying ") == "qualifying"
+    assert pm.part_kind("Q1") == "qualifying"
+    assert pm.part_kind("Part 1") == "race"
+    assert pm.part_kind("1") == "race"
+    assert pm.part_kind("") == "race"
+    assert pm.part_kind(None) == "race"
+    assert pm.part_kind("Part Q1") == "race"  # contains but doesn't START with Q
+
+
+def t_active_producer_rows_filters_by_mode():
+    rows = [{"part": "Part 1"}, {"part": "Q"}, {"part": "Part 2"}]
+    race = pm.active_producer_rows(rows, "race")
+    assert [r["part"] for r in race] == ["Part 1", "Part 2"]
+    qual = pm.active_producer_rows(rows, "qualifying")
+    assert [r["part"] for r in qual] == ["Q"]
+    # unknown mode -> race subset; empty/None -> []
+    assert [r["part"] for r in pm.active_producer_rows(rows, "x")] == ["Part 1", "Part 2"]
+    assert pm.active_producer_rows([], "race") == []
+    assert pm.active_producer_rows(None, "qualifying") == []
 
 
 if __name__ == "__main__":

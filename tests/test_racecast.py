@@ -3620,6 +3620,20 @@ def t_event_stop_calls_discord_autoleave():
          m._discord_autoleave) = saved
 
 
+def t_qualifying_title_marks_when_qualifying():
+    orig = m._relay_mode
+    try:
+        m._relay_mode = lambda: "qualifying"
+        assert m._qualifying_title("Le Mans 24h") == "Le Mans 24h — Qualifying"
+        assert m._qualifying_title("") == "Qualifying"
+        m._relay_mode = lambda: "race"
+        assert m._qualifying_title("Le Mans 24h") == "Le Mans 24h"
+        m._relay_mode = lambda: None
+        assert m._qualifying_title("Le Mans 24h") == "Le Mans 24h"
+    finally:
+        m._relay_mode = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

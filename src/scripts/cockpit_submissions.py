@@ -11,7 +11,7 @@ pop, so an Approve/Reject can never act on the wrong entry after the list shifts
 
 Each entry:
     {"id", "streamer_key", "streamer_name", "target_line", "target_stint",
-     "proposed_url", "prev_url", "ts"}
+     "proposed_url", "prev_url", "ts", "mode"}
 
 An append-only audit log (cockpit-submissions.log, one JSON object per line)
 records every submit/approve/reject for the after-the-fact "who/what/when"
@@ -44,10 +44,13 @@ def _validate_entry(e):
             raise ValueError(f"bad {field}: {e.get(field)!r}")
     if isinstance(e.get("ts"), bool) or not isinstance(e.get("ts"), (int, float)):
         raise ValueError(f"bad ts: {e.get('ts')!r}")
+    mode = e.get("mode", "race")
+    if mode not in ("race", "qualifying"):
+        raise ValueError(f"bad mode: {mode!r}")
     return {"id": e["id"], "streamer_key": key, "streamer_name": e["streamer_name"],
             "target_line": line, "target_stint": e["target_stint"],
             "proposed_url": e["proposed_url"], "prev_url": e["prev_url"],
-            "ts": e["ts"]}
+            "ts": e["ts"], "mode": mode}
 
 
 def validate_pending(payload):
@@ -100,14 +103,16 @@ def list_pending(path):
 
 
 def add_pending(path, *, streamer_key, streamer_name, target_line, target_stint,
-                proposed_url, prev_url, now, max_pending=MAX_PENDING):
+                proposed_url, prev_url, now, mode="race", max_pending=MAX_PENDING):
     """Append a new pending entry with a fresh monotonic id, cap the list to
-    *max_pending* (dropping the oldest), persist, and return the stored entry."""
+    *max_pending* (dropping the oldest), persist, and return the stored entry.
+    `mode` ('race'/'qualifying') records which schedule tab the entry targets so
+    approve writes back to the correct tab."""
     seq, entries = _load(path)
     seq += 1
     entry = {"id": seq, "streamer_key": streamer_key, "streamer_name": streamer_name,
              "target_line": int(target_line), "target_stint": target_stint,
-             "proposed_url": proposed_url, "prev_url": prev_url, "ts": now}
+             "proposed_url": proposed_url, "prev_url": prev_url, "ts": now, "mode": mode}
     entries.append(_validate_entry(entry))
     if len(entries) > max_pending:
         entries = entries[-max_pending:]

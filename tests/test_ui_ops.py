@@ -176,6 +176,15 @@ def t_build_argv_event_stint():
             pass
 
 
+def t_event_start_qualifying_flag():
+    assert ui_ops.build_argv("event-start", {"qualifying": True}) == ["event", "start", "--qualifying"]
+    # composes with stint; falsy/absent omits the flag
+    argv = ui_ops.build_argv("event-start", {"stint": "3", "qualifying": True})
+    assert "--stint" in argv and "3" in argv and "--qualifying" in argv
+    assert ui_ops.build_argv("event-start", {"qualifying": False}) == ["event", "start"]
+    assert ui_ops.build_argv("event-start", {}) == ["event", "start"]
+
+
 def t_build_argv_event_takeover():
     assert ui_ops.build_argv("event-takeover", {"ip": "100.64.1.2"}) == \
         ["event", "takeover", "100.64.1.2"]

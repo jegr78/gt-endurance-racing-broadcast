@@ -149,7 +149,17 @@ Part  | Producer          | MagicDNS                        | Stream Key
 1     | Sample Producer A | producer-a.tailnet-demo.ts.net  | key1
 2     | Sample Producer B | producer-b.tailnet-demo.ts.net  | key2
 3     | Sample Producer A | producer-a.tailnet-demo.ts.net  | key1
+Q     | Sample Producer A | producer-a.tailnet-demo.ts.net  | keyQ
 ```
+
+A Part whose label starts with **`Q`** (e.g. `Q`) is the **qualifying** broadcast —
+its own Stream Key reference points at a separate YouTube/Twitch broadcast for the
+qualifying session. The Director-Panel Parts control shows the numeric parts in race
+mode and the single `Q` part in qualifying mode (`racecast event start --qualifying`,
+or the Control Center **Qualifying** toggle). Qualifying is a single part, so ending it
+stops the OBS stream and auto-generates the post-event report — a clean, separate
+session from the race. Give `keyQ` its own Script Property (below) with the qualifying
+broadcast's real key.
 
 ### Store the real keys in Script Properties
 
@@ -160,6 +170,7 @@ property per reference:
 |---|---|
 | `key1` | the real OBS stream key for Producer A |
 | `key2` | the real OBS stream key for Producer B |
+| `keyQ` | the real OBS stream key for the **qualifying** broadcast |
 
 Script Properties are visible only to Sheet **editors** (the league owner) — viewers
 cannot see them, and they never appear in any CSV export or gviz fetch. The relay

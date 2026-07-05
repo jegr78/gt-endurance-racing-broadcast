@@ -1413,6 +1413,11 @@ async function relayPoll(){
     if (d.pov && d.pov.state !== "stopped") lines.push(healthLine("POV", d.pov));
     if (d.mode === "qualifying")
       lines.unshift('<span class="warnline">QUALIFYING MODE — Feed A serves the Qualifying tab (race schedule paused)</span>');
+    const qualifying = d.mode === "qualifying";
+    // Show the schedule editor matching the active mode. The mode toggle,
+    // submissions, and Parts control stay visible in both modes.
+    if ($("#urlsBox")) $("#urlsBox").hidden = qualifying;
+    if ($("#qualRow")) $("#qualRow").hidden = !qualifying;
     $("#feedHealth").innerHTML = lines.filter(Boolean).join("<br>");
     // Feed-down alarm: a feed that was live and dropped unexpectedly (not a
     // handover). Distinct red banner so the director acts (RELOAD or cut away).
@@ -2092,8 +2097,11 @@ let subsBusy = null;     // id currently being approved/rejected (guards double-
 function subRow(e){
   const tr = document.createElement("tr"); tr.dataset.id = e.id;
   const prev = e.prev_url ? escapeHtml(e.prev_url) : "— empty —";
+  const qtag = e.mode === "qualifying"
+    ? '<span style="background:var(--blue);color:var(--bg);border-radius:3px;padding:0 4px;font-size:10px;font-weight:600;margin-right:4px">QUALI</span>'
+    : '';
   tr.innerHTML = `<td class="rn">${escapeHtml(e.target_stint||"?")}</td>
-    <td><b>${escapeHtml(e.streamer_name||e.streamer_key||"?")}</b><br>
+    <td>${qtag}<b>${escapeHtml(e.streamer_name||e.streamer_key||"?")}</b><br>
         <span class="hint" style="word-break:break-all">${prev} → <b>${escapeHtml(e.proposed_url||"")}</b></span></td>
     <td class="act"><button class="clear prev">PREVIEW</button><button class="save app">APPROVE</button><button class="clear rej">REJECT</button></td>`;
   tr.querySelector(".prev").addEventListener("click", ()=>{
