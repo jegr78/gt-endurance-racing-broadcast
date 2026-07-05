@@ -11,7 +11,11 @@
 #
 # Optional environment:
 #   TS_AUTHKEY        Tailscale reusable/ephemeral pre-auth key for unattended join.
-#                     NEVER commit this. When unset, the browser-auth command is printed.
+#                     NEVER commit this. The tailnet join is REQUIRED (step 10): with a key
+#                     it is unattended; run interactively without a key and step 10 performs
+#                     the browser-auth join (prints a login URL to approve in your laptop
+#                     browser, and WAITS); only a non-interactive run without a key defers it
+#                     to a one-line command the operator must run once.
 #   RACECAST_TAG      racecast release tag to install (default: latest = latest STABLE
 #                     release). Set to `preview-main` to install the current main
 #                     preview build — needed until the Linux install-tools/install-apps
@@ -351,57 +355,103 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-log "10/10  Tailscale join"
+log "10/10  Tailscale join (REQUIRED — the tailnet is the box's trust boundary)"
+# Joining the tailnet is NOT optional: it is the only way your laptop reaches the Control
+# Center / relay / RustDesk privately (the relay's control port is never exposed publicly).
+# We DO the join here rather than just suggesting it:
+#   - TS_AUTHKEY set        -> unattended join (CI / startup-script).
+#   - interactive terminal  -> run `tailscale up` NOW; it prints a login URL you open in
+#                              your LAPTOP browser to approve the box. Provisioning WAITS
+#                              here until you finish (browser auth — no key committed to git).
+#   - non-interactive, no key (detached / startup-script) -> can't prompt for browser auth;
+#                              print the one command to run once and let the verification
+#                              block flag the box as not-yet-joined. This is the ONLY branch
+#                              that leaves the REQUIRED join for the operator to finish.
 if tailscale status >/dev/null 2>&1; then
   ok "already joined the tailnet ($(tailscale ip -4 2>/dev/null | head -1))"
 elif [ -n "${TS_AUTHKEY:-}" ]; then
   tailscale up --ssh --authkey "$TS_AUTHKEY" --hostname racecast-box
-  ok "joined the tailnet unattended"
+  ok "joined the tailnet unattended ($(tailscale ip -4 2>/dev/null | head -1))"
+elif [ -t 0 ]; then
+  log "   ACTION REQUIRED — approve this box into your tailnet."
+  log "   'tailscale up' prints a https://login.tailscale.com/… URL below; open it in your"
+  log "   LAPTOP browser and approve. Provisioning WAITS here until you finish."
+  if tailscale up --ssh --hostname racecast-box; then
+    ok "joined the tailnet ($(tailscale ip -4 2>/dev/null | head -1))"
+  else
+    warn "tailscale up did not complete — re-run: sudo tailscale up --ssh --hostname racecast-box"
+  fi
 else
-  warn "no TS_AUTHKEY set — run this once to join:"
+  warn "REQUIRED join not done: no TS_AUTHKEY and no interactive terminal (detached run)."
+  warn "The box is NOT reachable over the tailnet yet. Run this once and approve the URL"
+  warn "in your LAPTOP browser:"
   echo "      sudo tailscale up --ssh --hostname racecast-box"
 fi
 
 # ---------------------------------------------------------------------------
-log "verification"
+log "verification — every REQUIRED component below must be PRESENT. There are no optional"
+log "steps: a red PRESENCE line means the box is NOT fully equipped. provision is idempotent"
+log "— fix the cause and re-run; nothing is skipped on a real (GPU) event box."
 rc=0
-if nvidia-smi >/dev/null 2>&1; then ok "nvidia-smi: GPU present"; else warn "nvidia-smi: FAIL (reboot + re-run)"; rc=1; fi
-if have ffmpeg && ffmpeg -hide_banner -encoders 2>/dev/null | grep nvenc >/dev/null; then ok "ffmpeg: NVENC encoders present"; else warn "ffmpeg NVENC: FAIL"; rc=1; fi
-if ldconfig -p | grep nvidia-encode >/dev/null; then ok "libnvidia-encode present"; else warn "libnvidia-encode: not found (NVENC needs it)"; fi
+pw_home="$(getent passwd "$USER_NAME" | cut -d: -f6)"
+mbin="$pw_home/runtime/bin"          # racecast-managed tool bin (yt-dlp / streamlink / deno)
+
+# --- feed toolchain (install-tools): yt-dlp/streamlink/deno are managed binaries in
+#     ~racecast/runtime/bin (not on root's PATH); ffmpeg comes from apt on PATH ---
+if [ -x "$mbin/yt-dlp" ];     then ok "yt-dlp: $("$mbin/yt-dlp" --version 2>/dev/null | head -1) (managed)"; else warn "yt-dlp: MISSING — re-run install-tools"; rc=1; fi
+if [ -x "$mbin/streamlink" ]; then ok "streamlink: $("$mbin/streamlink" --version 2>/dev/null | head -1) (managed venv)"; else warn "streamlink: MISSING — re-run install-tools"; rc=1; fi
+if [ -x "$mbin/deno" ];       then ok "deno: $("$mbin/deno" --version 2>/dev/null | head -1) (managed)"; else warn "deno: MISSING — re-run install-tools"; rc=1; fi
+if have ffmpeg;               then ok "ffmpeg: present"; else warn "ffmpeg: MISSING — re-run install-tools"; rc=1; fi
+
+# --- racecast + desktop + remote-access layer ---
+if have racecast;             then ok "racecast: $(racecast --version 2>/dev/null | head -1)"; else warn "racecast: MISSING"; rc=1; fi
 ff2="$(command -v firefox || true)"
-if [ -n "$ff2" ] && ! readlink -f "$ff2" | grep '/snap/' >/dev/null; then ok "firefox: deb build"; else warn "firefox: missing or snap"; rc=1; fi
-if have racecast; then ok "racecast: $(racecast --version 2>/dev/null | head -1)"; else warn "racecast: FAIL"; rc=1; fi
-if have obs; then ok "obs: installed"; else warn "obs: not on PATH (check install-apps output)"; fi
-if [ -n "$USER_NAME" ]; then
-  pw_home="$(getent passwd "$USER_NAME" | cut -d: -f6)"
-  if [ -f "$pw_home/.config/obs-studio/plugins/linux-pipewire-audio/bin/64bit/linux-pipewire-audio.so" ]; then
-    ok "OBS PipeWire audio plugin: installed (Discord audio source)"
-  else
-    warn "OBS PipeWire audio plugin: not found — Discord interview audio can't capture (re-run install-apps)"
-  fi
-fi
-if [ -n "$USER_NAME" ]; then
-  # streamlink is the user-managed venv (~racecast/runtime/bin, next to the binary in
-  # HOME), not on root's PATH — resolve it there. `racecast preflight` owns the
-  # authoritative >=8.2.0 floor.
-  sl="$pw_home/runtime/bin/streamlink"
-  if [ -x "$sl" ]; then ok "streamlink: $("$sl" --version 2>/dev/null | head -1) (managed venv)";
-  else warn "streamlink: managed venv missing — run install-tools; then `racecast preflight`"; fi
-fi
-if tailscale status >/dev/null 2>&1; then ok "tailscale: up"; else warn "tailscale: not joined (run tailscale up)"; fi
-if pgrep -x Xorg >/dev/null 2>&1; then ok "X server: running"; else warn "X server: not running yet (reboot to start the autologin session; RustDesk needs it)"; fi
+if [ -n "$ff2" ] && ! readlink -f "$ff2" | grep -q '/snap/'; then ok "firefox: deb build"; else warn "firefox: MISSING or snap (cookie export needs the deb build)"; rc=1; fi
+if have rustdesk;             then ok "rustdesk: present"; else warn "rustdesk: MISSING — re-run step 5"; rc=1; fi
+if dpkg -s lightdm >/dev/null 2>&1; then ok "lightdm/xfce desktop: installed"; else warn "lightdm: MISSING — re-run step 3"; rc=1; fi
+
+# --- broadcast apps (install-apps): OBS + BOTH plugins, Companion, Discord, Tailscale ---
+if have obs;                  then ok "obs: installed"; else warn "obs: MISSING — re-run install-apps"; rc=1; fi
+obsbrowser=""
+for p in /usr/lib/x86_64-linux-gnu/obs-plugins/obs-browser.so /usr/lib/obs-plugins/obs-browser.so "$pw_home"/.config/obs-studio/plugins/obs-browser/bin/64bit/obs-browser.so; do
+  [ -f "$p" ] && obsbrowser="$p" && break
+done
+if [ -n "$obsbrowser" ];      then ok "OBS Browser Source plugin: present (HUD/timer overlays)"; else warn "OBS Browser Source plugin: MISSING — the relay HUD/timer overlays need it"; rc=1; fi
+if [ -f "$pw_home/.config/obs-studio/plugins/linux-pipewire-audio/bin/64bit/linux-pipewire-audio.so" ]; then ok "OBS PipeWire audio plugin: present (Discord audio source)"; else warn "OBS PipeWire audio plugin: MISSING — re-run install-apps"; rc=1; fi
+if [ -e /opt/companion ] || [ -e /etc/systemd/system/companion.service ]; then ok "companion: installed (companion-pi service)"; else warn "companion: MISSING — re-run install-apps"; rc=1; fi
+if [ -e /usr/bin/discord ] || [ -e /usr/share/discord ]; then ok "discord: installed"; else warn "discord: MISSING — re-run install-apps"; rc=1; fi
+if have tailscale;            then ok "tailscale: installed"; else warn "tailscale: MISSING — re-run install-apps"; rc=1; fi
+
+# --- GPU stack: REQUIRED on a real event box; only the CPU dry-run (has_nvidia_gpu=false)
+#     legitimately has no GPU. On a GPU box a missing driver/NVENC IS a hard failure. ---
 if has_nvidia_gpu; then
-  if DISPLAY=:0 glxinfo 2>/dev/null | grep -i nvidia >/dev/null; then ok "OpenGL renderer: NVIDIA (X is on the GPU)"; else warn "OpenGL renderer not NVIDIA yet — reboot so the X session starts, then re-check: DISPLAY=:0 glxinfo -B"; fi
+  if nvidia-smi >/dev/null 2>&1; then ok "nvidia driver: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)"; else warn "nvidia driver: MISSING — nvidia-smi fails (reboot + re-run, or check the DKMS build)"; rc=1; fi
+  if ldconfig -p | grep -q nvidia-encode; then ok "libnvidia-encode: present (NVENC)"; else warn "libnvidia-encode: MISSING — NVENC needs it"; rc=1; fi
+  if have ffmpeg && ffmpeg -hide_banner -encoders 2>/dev/null | grep -q nvenc; then ok "ffmpeg NVENC encoders: present"; else warn "ffmpeg NVENC encoders: MISSING"; rc=1; fi
+else
+  warn "no NVIDIA GPU on this host — GPU stack (driver/NVENC/X-on-GPU) NOT verified. This is"
+  warn "the CPU dry-run only; a real event box MUST run on a GPU box (has_nvidia_gpu=true)."
+fi
+
+# --- post-reboot / post-join STATE (an operational step still to do — NOT a missing
+#     component, so these advise but do not fail the equipped-ness gate) ---
+if tailscale status >/dev/null 2>&1; then ok "tailnet: joined ($(tailscale ip -4 2>/dev/null | head -1))"; else warn "tailnet: not joined yet — complete the REQUIRED browser-auth join (step 10)"; fi
+if pgrep -x Xorg >/dev/null 2>&1; then ok "X server: running"; else warn "X server: not running yet — reboot to start the racecast autologin session (RustDesk needs it)"; fi
+if has_nvidia_gpu && pgrep -x Xorg >/dev/null 2>&1; then
+  if DISPLAY=:0 glxinfo 2>/dev/null | grep -qi nvidia; then ok "OpenGL renderer: NVIDIA (X is on the GPU)"; else warn "OpenGL renderer not NVIDIA yet — re-check after reboot: DISPLAY=:0 glxinfo -B"; fi
 fi
 
 echo
 if [ "$rc" -eq 0 ]; then
-  log "provision.sh complete — machine layer ready."
+  log "provision.sh complete — box FULLY EQUIPPED (every required component present)."
   echo "      Event stack is owned by '$USER_NAME' (its home: $(getent passwd "$USER_NAME" | cut -d: -f6))."
   echo "      Log in as that user directly — 'gcloud compute ssh $USER_NAME@racecast-box' —"
   echo "      then run racecast plainly: 'racecast preflight', 'racecast event start', …"
-  echo "      Next: per-league onboarding (profile + cookies + racecast setup + OBS import)."
+  echo "      Remaining operational steps (if warned above): finish the tailnet join + reboot"
+  echo "      for the GPU X session. Then: per-league onboarding (profile + cookies + setup + OBS import)."
 else
-  warn "provision.sh finished with issues above — fix and re-run (idempotent)."
+  warn "provision.sh finished with MISSING components (red PRESENCE lines above) — the box is"
+  warn "NOT fully equipped. Fix the cause and re-run provision; it is idempotent and will"
+  warn "install only what is still missing. Do NOT proceed to an event with a red line."
 fi
 exit "$rc"

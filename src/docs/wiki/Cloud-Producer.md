@@ -141,14 +141,18 @@ gcloud compute instances stop racecast-box --zone=europe-west4-c   # then stop t
 
 ## 5. Join the tailnet
 
-The box must be on your Tailscale network so your laptop reaches the
-[Control Center](Control-Center) and `/console/panel` privately (the tailnet is the trust
-boundary — the relay's control port is never exposed publicly).
+Joining the tailnet is **required, not optional**: it is the trust boundary that lets your
+laptop reach the [Control Center](Control-Center) and `/console/panel` privately (the relay's
+control port is never exposed publicly). Provisioning does this at **step 10** — the box is
+not usable remotely until it is done.
 
-- **Unattended:** provisioning with a `TS_AUTHKEY` (a reusable/ephemeral **tagged**
-  pre-auth key) joins the box automatically at build time.
-- **Interactive (single persistent box):** on the box, run `sudo tailscale up` — it prints a
-  login URL; open it in your **laptop** browser and approve the box into your tailnet.
+- **Interactive provisioning (the single persistent box):** step 10 runs `tailscale up` for
+  you — it prints a `https://login.tailscale.com/…` login URL and **waits**; open it in your
+  **laptop** browser and approve the box. (If you ever need to redo it: `sudo tailscale up
+  --ssh --hostname racecast-box`.)
+- **Unattended:** provisioning with a `TS_AUTHKEY` (a reusable/ephemeral **tagged** pre-auth
+  key) joins the box automatically, no browser step. A **detached/startup-script** run without
+  a key can't prompt — it prints that one command for you to run once.
 
 Verify and use it:
 

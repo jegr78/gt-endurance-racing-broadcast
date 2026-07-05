@@ -74,8 +74,9 @@ gcloud compute instances get-serial-port-output racecast-box --zone=europe-west4
 Optional env (never commit these):
 
 - `TS_AUTHKEY` — a reusable/ephemeral **tagged** Tailscale pre-auth key for unattended
-  join. When unset, the script prints the one-time `tailscale up` command for you to run
-  once (fine for the single persistent box).
+  join. The tailnet join is **required** (see below), not optional — this key only makes it
+  unattended. Leave it unset for the single persistent box and complete the join in the
+  browser.
 - `RACECAST_TAG` — racecast release to install (default `latest` = latest **stable**).
   Set `RACECAST_TAG=preview-main` to install the current `main` preview build. Needed
   until the Linux `install-tools`/`install-apps` fixes reach a stable release —
@@ -87,6 +88,16 @@ Optional env (never commit these):
 - `RUSTDESK_VERSION` — pin a RustDesk release (default in the script; bump if outdated).
 
 The script ends with a green/red verification block. A red line names the step to re-run.
+
+**Tailscale join — required, not optional.** The tailnet is the box's trust boundary (the
+relay's control port is never public), so step 10 **joins the box**: with `TS_AUTHKEY` it is
+unattended; **run provision interactively** and step 10 executes `tailscale up` right there —
+it prints a `https://login.tailscale.com/…` URL you open in your **laptop browser** to
+approve the box, and provisioning **waits** until you do. Only a **detached/startup-script**
+run (no terminal, no key) can't prompt: it prints the one command for you to run once —
+`sudo tailscale up --ssh --hostname racecast-box` — and the verification block flags the box
+as not-yet-joined until you complete it. Either way the box is not usable remotely until the
+join is done.
 
 ## 3. Finish (once, in the GUI over RustDesk)
 
