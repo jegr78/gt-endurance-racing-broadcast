@@ -170,6 +170,45 @@ def t_stream_transition_only_genuine_bool_changes():
         assert m.stream_transition(prev, cur) is None, (prev, cur)
 
 
+def t_stream_event_log_line_formats():
+    # Start: kbps appended when known (the first sample is a partial-window
+    # estimate → an approximate 'bytes are flowing' signal, hence the '~').
+    assert m.stream_event_log_line(True) == "OBS stream output started"
+    assert (m.stream_event_log_line(True, kbps=4520.4)
+            == "OBS stream output started — upstream ~4520 kbps")
+    # Stop: uptime appended when known; H/M/S rollover + sub-minute forms.
+    assert m.stream_event_log_line(False) == "OBS stream output stopped"
+    assert (m.stream_event_log_line(False, uptime_s=1000.0)
+            == "OBS stream output stopped after 16m 40s")
+    assert (m.stream_event_log_line(False, uptime_s=3672.0)
+            == "OBS stream output stopped after 1h 01m 12s")
+    assert (m.stream_event_log_line(False, uptime_s=42.0)
+            == "OBS stream output stopped after 42s")
+    # Defensive: negative/None uptime is dropped, not rendered.
+    assert m.stream_event_log_line(False, uptime_s=-3.0) == "OBS stream output stopped"
+
+
+def t_on_stream_transition_logs_relay_line_with_uptime():
+    # The transition is greppable in the relay log: a start line (upstream kbps)
+    # and a stop line (uptime start->stop), alongside the feed events.
+    with tempfile.TemporaryDirectory() as td:
+        r = _mk_relay(td, ["a", "b"])
+        recs = []
+        handler = logging.Handler()
+        handler.emit = lambda rec: recs.append(rec.getMessage())
+        prev_level = m.LOG.level
+        m.LOG.setLevel(logging.INFO)
+        m.LOG.addHandler(handler)
+        try:
+            r._on_stream_transition("started", now=1000.0, kbps=4520.0)
+            r._on_stream_transition("stopped", now=2000.0)
+        finally:
+            m.LOG.removeHandler(handler)
+            m.LOG.setLevel(prev_level)
+        assert recs == ["OBS stream output started — upstream ~4520 kbps",
+                        "OBS stream output stopped after 16m 40s"], recs
+
+
 def t_discord_health_payload_producer_in_footer():
     p = m.discord_health_payload("red", ["Feed A down"], prev_level="green",
                                  event_title="GTEC R4", producer="Bob")
