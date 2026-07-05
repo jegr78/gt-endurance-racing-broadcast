@@ -1328,15 +1328,31 @@ def t_set_scene_no_transition_is_plain_switch():
 # stream_service_payload — Sheet-driven OBS stream target (per Producer Part)
 # --------------------------------------------------------------------------
 def t_stream_service_payload_youtube():
+    # YouTube's "YouTube - RTMPS" service has NO "auto" server in OBS's
+    # services.json, so "auto" resolves to an empty URL and OBS rejects
+    # StartStream with "Invalid Path or Connection URL" (OBS_OUTPUT_BAD_PATH).
+    # The payload must carry YouTube's concrete primary ingest URL.
     d = m.stream_service_payload("youtube", "live_abc")
     assert d == {"streamServiceType": "rtmp_common",
-                 "streamServiceSettings": {"service": "YouTube - RTMPS",
-                                           "server": "auto", "key": "live_abc"}}
+                 "streamServiceSettings": {
+                     "service": "YouTube - RTMPS",
+                     "server": "rtmps://a.rtmps.youtube.com:443/live2",
+                     "key": "live_abc"}}
+
+
+def t_stream_service_payload_youtube_server_is_never_auto():
+    # Regression guard for the "Invalid Path or Connection URL" bug: YouTube must
+    # never be sent "auto" (OBS cannot resolve it → empty stream URL → StartStream
+    # fails). Twitch's plugin DOES resolve "auto", so only YouTube is guarded here.
+    assert m.stream_service_payload("youtube", "k")[
+        "streamServiceSettings"]["server"] != "auto"
 
 
 def t_stream_service_payload_twitch_case_insensitive():
     d = m.stream_service_payload("  Twitch ", "sk_1")
     assert d["streamServiceSettings"]["service"] == "Twitch"
+    # Twitch's rtmp-common plugin resolves "auto" to the nearest ingest.
+    assert d["streamServiceSettings"]["server"] == "auto"
     assert d["streamServiceSettings"]["key"] == "sk_1"
 
 

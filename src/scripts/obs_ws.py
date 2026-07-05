@@ -501,9 +501,21 @@ def parse_stream_status(payload):
     }
 
 
-# Single-channel event -> OBS rtmp_common service name. Platform values come from
-# the Sheet `Channel` tab (broadcast_chat.parse_channel_tab), lowercased.
-OBS_STREAM_SERVICE_NAMES = {"youtube": "YouTube - RTMPS", "twitch": "Twitch"}
+# Single-channel event -> OBS rtmp_common service + server. Platform values come
+# from the Sheet `Channel` tab (broadcast_chat.parse_channel_tab), lowercased.
+#
+# The `server` matters. YouTube's "YouTube - RTMPS" service has NO "auto" server
+# in OBS's services.json (only concrete ingest URLs), and YouTube — unlike Twitch —
+# has no ingest-auto-select plugin path. So sending "auto" for YouTube makes OBS
+# resolve an EMPTY stream URL and reject StartStream with "Invalid Path or
+# Connection URL" (OBS_OUTPUT_BAD_PATH). YouTube therefore needs its concrete
+# primary ingest URL. Twitch's rtmp-common plugin DOES resolve "auto" to the
+# nearest ingest, so "auto" is correct (and region-agnostic) there.
+OBS_STREAM_SERVICES = {
+    "youtube": {"service": "YouTube - RTMPS",
+                "server": "rtmps://a.rtmps.youtube.com:443/live2"},
+    "twitch": {"service": "Twitch", "server": "auto"},
+}
 
 
 def stream_service_payload(platform, key):
@@ -511,11 +523,12 @@ def stream_service_payload(platform, key):
     `platform` is the Channel-tab value ('youtube'/'twitch', case-insensitive);
     unknown -> ValueError (the caller turns it into a producer-facing note, never
     a crash). The key is passed through verbatim and never logged."""
-    name = OBS_STREAM_SERVICE_NAMES.get((platform or "").strip().lower())
-    if not name:
+    svc = OBS_STREAM_SERVICES.get((platform or "").strip().lower())
+    if not svc:
         raise ValueError(f"unknown stream platform: {platform!r}")
     return {"streamServiceType": "rtmp_common",
-            "streamServiceSettings": {"service": name, "server": "auto", "key": key}}
+            "streamServiceSettings": {"service": svc["service"],
+                                      "server": svc["server"], "key": key}}
 
 
 def get_health_stats(host="127.0.0.1", port=None, password=None, timeout=2.0):
