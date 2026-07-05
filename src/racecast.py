@@ -1284,6 +1284,33 @@ def _discord_autojoin():
         print("discord: voice auto-join skipped ({})".format(type(exc).__name__))
 
 
+def _discord_autoleave_enabled(env):
+    """Auto-leave is default-on; RACECAST_DISCORD_AUTOLEAVE=0 disables it."""
+    return env.get("RACECAST_DISCORD_AUTOLEAVE", "1") != "0"
+
+
+def _discord_autoleave():
+    """Best-effort voice leave during event stop — the counterpart to the event-start
+    auto-join. Never fatal. Unlike join it needs no channel target (leave just sends
+    SELECT_VOICE_CHANNEL with a null channel)."""
+    if not _discord_autoleave_enabled(os.environ):
+        return
+    if not (os.environ.get("RACECAST_DISCORD_CLIENT_ID") and
+            os.environ.get("RACECAST_DISCORD_CLIENT_SECRET")):
+        return
+    try:
+        client = _discord_voice_client()
+        # allow_consent=False: leave uses only a cached/refreshable token and never
+        # opens the interactive consent popup, so an unattended stop can't hang.
+        ok, note = client.leave(allow_consent=False)
+        print("discord: " + note if ok
+              else "discord: voice auto-leave skipped — " + note)
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 — auto-leave must never break event stop
+        print("discord: voice auto-leave skipped ({})".format(type(exc).__name__))
+
+
 REPORT_VERBS = ("generate", "send")
 
 
@@ -3295,6 +3322,9 @@ def event_stop(rest):
                 print(f"report: Discord send failed ({exc}).")
         except Exception as exc:  # noqa: BLE001 — no health data etc.; still tear down
             print(f"report: skipped ({exc}).")
+    # Leave the Discord voice channel we auto-joined at event start (default on,
+    # RACECAST_DISCORD_AUTOLEAVE=0 kills it) — best-effort, never blocks teardown.
+    _discord_autoleave()
     # Tear down companion + streams BEFORE the relay. On Windows the panel-spawned
     # `event stop` is a child of the relay process, and relay_stop runs
     # `taskkill /F /T` which walks the parent-PID tree — that would kill this very

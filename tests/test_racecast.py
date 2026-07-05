@@ -3571,6 +3571,55 @@ def t_event_stop_report_failure_still_tears_down():
          m.streams_stop, m._streams_static_dir) = saved
 
 
+def t_discord_autoleave_gate():
+    assert m._discord_autoleave_enabled({}) is True                         # default on
+    assert m._discord_autoleave_enabled({"RACECAST_DISCORD_AUTOLEAVE": "0"}) is False
+    assert m._discord_autoleave_enabled({"RACECAST_DISCORD_AUTOLEAVE": "1"}) is True
+
+
+def t_discord_autoleave_noop_without_creds():
+    # flag on (default) but no CLIENT_ID/SECRET -> never builds a client, never raises.
+    saved_env = {k: os.environ.get(k) for k in
+                 ("RACECAST_DISCORD_AUTOLEAVE", "RACECAST_DISCORD_CLIENT_ID",
+                  "RACECAST_DISCORD_CLIENT_SECRET")}
+    saved_client = m._discord_voice_client
+    try:
+        os.environ.pop("RACECAST_DISCORD_AUTOLEAVE", None)                  # default on
+        os.environ.pop("RACECAST_DISCORD_CLIENT_ID", None)
+        os.environ.pop("RACECAST_DISCORD_CLIENT_SECRET", None)
+
+        def _boom():
+            raise AssertionError("must not build a voice client without creds")
+        m._discord_voice_client = _boom
+        m._discord_autoleave()                                     # must be a silent no-op
+    finally:
+        m._discord_voice_client = saved_client
+        for k, v in saved_env.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+
+def t_event_stop_calls_discord_autoleave():
+    calls = []
+    saved = (m._build_report_file, m._send_report_core, m.relay_stop,
+             m.companion_stop, m.streams_stop, m._streams_static_dir,
+             m._discord_autoleave)
+    try:
+        m._build_report_file = lambda: {"path": "/tmp/r.html", "summary": "s",
+                                        "report": {}}
+        m._send_report_core = lambda p, report=None: None
+        m.relay_stop = lambda a: None
+        m.companion_stop = lambda a: None
+        m.streams_stop = lambda a: None
+        m._streams_static_dir = lambda: "/nonexistent-streams-dir"
+        m._discord_autoleave = lambda: calls.append("autoleave")
+        m.event_stop([])
+        assert "autoleave" in calls
+    finally:
+        (m._build_report_file, m._send_report_core, m.relay_stop,
+         m.companion_stop, m.streams_stop, m._streams_static_dir,
+         m._discord_autoleave) = saved
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
