@@ -132,17 +132,83 @@ def _on_air(samples, name_for_stint):
             "resolved": resolved}
 
 
+def _pair_windows(events, start_type, end_type, session_end):
+    wins, open_s = [], None
+    for e in sorted(events, key=lambda x: x.get("ts") or 0):
+        t, ts = e.get("type"), e.get("ts")
+        if ts is None:
+            continue
+        if t == start_type and open_s is None:
+            open_s = ts
+        elif t == end_type and open_s is not None:
+            wins.append((open_s, ts))
+            open_s = None
+    if open_s is not None and session_end is not None:
+        wins.append((open_s, session_end))
+    return wins
+
+
+def on_air_windows(events, session_end):
+    """Intended on-air windows: part_start->part_end pairs (preferred), else
+    obs_stream_start->obs_stream_stop pairs, else None (legacy whole-session)."""
+    for start_t, end_t in (("part_start", "part_end"),
+                           ("obs_stream_start", "obs_stream_stop")):
+        wins = _pair_windows(events, start_t, end_t, session_end)
+        if wins:
+            return wins
+    return None
+
+
+def windows_total_s(windows):
+    return sum(max(0.0, e - s) for s, e in windows)
+
+
+def _in_windows(ts, windows):
+    return any(s <= ts <= e for s, e in windows)
+
+
+def _clip_samples(samples, windows):
+    return [s for s in samples
+            if s.get("ts") is not None and _in_windows(s["ts"], windows)]
+
+
+def broadcast_timeline(events):
+    """Chronological part (preferred) or OBS-stream start/stop rows for the report's
+    Broadcast-timeline section — the reference points for the OBS-downtime figures."""
+    have_parts = any(e.get("type") in ("part_start", "part_end") for e in events)
+    starts = ("part_start", "part_end") if have_parts else ("obs_stream_start", "obs_stream_stop")
+    rows = []
+    for e in sorted(events, key=lambda x: x.get("ts") or 0):
+        t = e.get("type")
+        if t not in starts:
+            continue
+        idx = (e.get("metadata") or {}).get("index")
+        if have_parts and idx is not None:
+            label = f"Part {idx} {'started' if t == 'part_start' else 'ended'}"
+        else:
+            label = "OBS stream started" if t.endswith("start") else "OBS stream stopped"
+        rows.append({"ts": e.get("ts"), "label": label})
+    return rows
+
+
 def build_report(samples, events, name_for_stint, event_title, window, now):
     """Aggregate ONE session (already bucket-deduplicated) into the report dict.
     `window` = (from_ts, to_ts). `samples` is assumed non-empty (the caller guards)."""
     frm, to = window
     duration_s = max(0.0, (to or 0) - (frm or 0))
+    windows = on_air_windows(events, to)
+    metric_samples = _clip_samples(samples, windows) if windows else samples
+    on_air_s = windows_total_s(windows) if windows else duration_s
+    # Full-session health bands drive the SVG strip (off-air visible as context);
+    # the metric bands (on-air only) drive Uptime.
     health_bands = _fill_gaps(hs.collapse_bands(
         [(s["ts"], s.get("health_level")) for s in samples]))
-    on_air = _on_air(samples, name_for_stint)
+    metric_bands = _fill_gaps(hs.collapse_bands(
+        [(s["ts"], s.get("health_level")) for s in metric_samples]))
+    on_air = _on_air(metric_samples, name_for_stint)
     on_air["resolved_at"] = now
-    feeds = [{"feed": "A", **_feed_stats(samples, "feed_a_down")},
-             {"feed": "B", **_feed_stats(samples, "feed_b_down")}]
+    feeds = [{"feed": "A", **_feed_stats(metric_samples, "feed_a_down")},
+             {"feed": "B", **_feed_stats(metric_samples, "feed_b_down")}]
     handovers = []
     substitutions = []
     for e in events:
@@ -159,14 +225,16 @@ def build_report(samples, events, name_for_stint, event_title, window, now):
     return {
         "header": {"event_title": event_title or "", "start": frm, "end": to,
                    "duration_s": round(duration_s, 1),
-                   "uptime_pct": _uptime_pct(health_bands, duration_s)},
+                   "on_air_s": round(on_air_s, 1),
+                   "uptime_pct": _uptime_pct(metric_bands, on_air_s)},
         "on_air": on_air,
         "feeds": feeds,
-        "incidents": hs.derive_incidents(samples),
-        "quality": _quality(samples),
+        "incidents": hs.derive_incidents(metric_samples),
+        "quality": _quality(metric_samples),
         "producer_handovers": handovers,
         "substitutions": substitutions,
         "overlap_approximate": bool(handovers),
+        "broadcast_timeline": broadcast_timeline(events),
         "health_bands": health_bands,
     }
 
@@ -264,6 +332,8 @@ def render_html(report):
     parts.append("<div class='kpis'>"
                  f"<div class='kpi'><div class='n'>{hd['uptime_pct']}%</div>"
                  "<div class='l'>Uptime</div></div>"
+                 f"<div class='kpi'><div class='n'>{_esc(_fmt_dur(hd['on_air_s']))}</div>"
+                 "<div class='l'>On air</div></div>"
                  f"<div class='kpi'><div class='n'>{_esc(_fmt_dur(hd['duration_s']))}</div>"
                  "<div class='l'>Session length</div></div>"
                  f"<div class='kpi'><div class='n'>{len(report['incidents'])}</div>"
@@ -311,6 +381,16 @@ def render_html(report):
     parts.append(_table(["Feed", "Drops", "Downtime", "Longest outage"], frows))
     parts.append("<p class='note'>POV (optional picture-in-picture) is not tracked for "
                  "reliability — it has no drop signal and is paused by design.</p>")
+
+    # Broadcast timeline (part / OBS-stream start & stop — context for downtime)
+    tl = report.get("broadcast_timeline") or []
+    if tl:
+        parts.append("<h2>Broadcast timeline</h2>")
+        parts.append(_table(["Time", "Event"],
+                            [(_fmt_clock(r["ts"]), r["label"]) for r in tl]))
+        parts.append("<p class='note'>Uptime and the incident log below cover on-air "
+                     "time only; intentional off-air (before start, between parts, "
+                     "after the final stop) is excluded.</p>")
 
     # Incident log
     parts.append("<h2>Incident log</h2>")
