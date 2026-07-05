@@ -444,3 +444,13 @@ def report_filename(event_title, date_str):
     slug = "".join(c if c.isalnum() else "-" for c in (event_title or "").lower())
     slug = "-".join(p for p in slug.split("-") if p)
     return f"{date_str}-{slug or 'report'}.html"
+
+
+def report_discord_fields(report):
+    """Pre-formatted KPI (name, value) pairs for the Discord report embed."""
+    hd = report["header"]
+    return [("Uptime", f"{hd['uptime_pct']}%"),
+            ("On air", _fmt_dur(hd.get("on_air_s", hd["duration_s"]))),
+            ("Incidents", str(len(report["incidents"]))),
+            ("Session length", _fmt_dur(hd["duration_s"])),
+            ("Window", f"{_fmt_clock(hd['start'])}–{_fmt_clock(hd['end'])}")]

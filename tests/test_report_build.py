@@ -243,6 +243,17 @@ def t_build_report_legacy_no_windows():
     assert len(rep["incidents"]) == 1               # off-air still counted
 
 
+def t_report_discord_fields():
+    rep = {"header": {"uptime_pct": 98.0, "on_air_s": 3600, "duration_s": 7200,
+                      "start": 0, "end": 7200}, "incidents": [1, 2]}
+    f = dict(rb.report_discord_fields(rep))
+    assert f["Uptime"] == "98.0%"
+    assert f["On air"] == "1h 0m 0s"
+    assert f["Incidents"] == "2"
+    assert f["Session length"] == "2h 0m 0s"
+    assert "Window" in f
+
+
 def run():
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

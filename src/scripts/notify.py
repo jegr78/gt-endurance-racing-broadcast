@@ -77,3 +77,16 @@ def substitution_discord_payload(feed, stint, producer, event_title=""):
             f"(stint {stint}).")
     return _payload("🔁 Stream substituted", desc, COLOR_SUBSTITUTION, ping=False,
                     event_title=event_title, producer=producer)
+
+
+COLOR_REPORT = 0x3B82F6        # blue — a post-event report
+
+
+def report_discord_payload(title, fields):
+    """Post-event report embed: headline KPI fields as the useful inline content.
+    `fields` is a list of (name, value) strings. Pure — the caller attaches the
+    zipped HTML separately. Posts as GT Racecast; no @here (not time-critical)."""
+    embed = {"title": f"📊 Post-event report — {title or 'Event'}",
+             "color": COLOR_REPORT,
+             "fields": [{"name": n, "value": v, "inline": True} for n, v in fields]}
+    return {"username": USERNAME, "embeds": [embed]}

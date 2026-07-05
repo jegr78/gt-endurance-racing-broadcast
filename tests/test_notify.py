@@ -72,6 +72,15 @@ def t_substitution_payload():
     assert e["footer"]["text"] == "6h Spa · JeGr"   # event_title · producer
 
 
+def t_report_payload():
+    p = n.report_discord_payload("Test Event", [("Uptime", "98.0%"), ("Incidents", "2")])
+    assert p["username"] == "GT Racecast"
+    assert p["embeds"][0]["title"].endswith("Test Event")
+    names = [f["name"] for f in p["embeds"][0]["fields"]]
+    assert names == ["Uptime", "Incidents"]
+    assert all(f["inline"] for f in p["embeds"][0]["fields"])
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
