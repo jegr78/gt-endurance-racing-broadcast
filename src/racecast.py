@@ -1327,6 +1327,82 @@ def _report_event_title():
         return ""
 
 
+def _report_host():
+    """This producer machine's hostname, surfaced in the report so it is clear which
+    box produced it. Best-effort — '' when the OS can't answer."""
+    import socket
+    try:
+        return (socket.gethostname() or "").strip()
+    except OSError:
+        return ""
+
+
+def _session_start_path():
+    """The active profile's event-session-start marker (CLI-owned, gitignored)."""
+    return os.path.join(_runtime_dir(), "session.json")
+
+
+def _write_session_start(now=None):
+    """Record when THIS event began, so the post-event report window starts at this
+    event. Without it, a quick event restart within report_build.SESSION_GAP_S merges
+    the previous event's health samples into this report's window (the window START
+    never resets). Overwritten on every `event start`. Best-effort — a write failure
+    just falls back to the sample-contiguity heuristic."""
+    try:
+        os.makedirs(_runtime_dir(), exist_ok=True)
+        with open(_session_start_path(), "w", encoding="utf-8") as fh:
+            json.dump({"start": time.time() if now is None else now}, fh)
+    except OSError as exc:
+        print("note: could not write session.json ({}) — continuing.".format(exc))
+
+
+def _is_continuation_start(rest):
+    """True when this `event start` continues an in-progress broadcast rather than
+    beginning a fresh one: any --stint/--part flag marks a mid-event bring-up (a local
+    recovery restart or a stint-corrected takeover). A continuation must NOT reset the
+    report session window — only a fresh `event start` (and never a takeover) does."""
+    for tok in rest:
+        if tok in ("--stint", "--part") or tok.startswith(("--stint=", "--part=")):
+            return True
+    return False
+
+
+def _read_session_start():
+    """The current event's start ts (float) from session.json, or None."""
+    try:
+        with open(_session_start_path(), encoding="utf-8") as fh:
+            v = json.load(fh).get("start")
+        return float(v) if v is not None else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _report_log_files():
+    """Current (non-archive) log files to bundle with the report, as (source, path)
+    pairs across ALL Control Center log sources (relay, streams, obs, companion,
+    tailscale, app) — the same live set the Control Center's "All (live)" view shows.
+    Best-effort: [] when the registry can't be built, and a single source that raises
+    is skipped rather than aborting the rest. The source name lets the caller lay the
+    files out under logs/<source>/ so relay and streams (both feed_*.log) don't
+    collide. Archives (rotated older files) are left out — only the live session's."""
+    try:
+        reg = _log_sources()
+    except Exception:  # noqa: BLE001 — bundling logs must never break the report send
+        return []
+    pairs = []
+    for source in ("relay", "streams", "obs", "companion", "tailscale", "app"):
+        entry = reg.get(source)
+        if not entry:
+            continue
+        try:
+            for fp in entry["files"]():
+                if fp and os.path.isfile(fp):
+                    pairs.append((source, fp))
+        except Exception:  # noqa: BLE001 — one flaky source must not drop the others
+            continue
+    return pairs
+
+
 def _relay_mode():
     """The live relay's schedule mode ('race'/'qualifying') from /status, or None
     when the relay is unreachable. Best-effort — the report title marker degrades
@@ -1370,7 +1446,9 @@ def _build_report_file(frm=None, to=None, gap=None, out=None):
         if frm is None or to is None:
             all_ts = [r["ts"] for r in
                       conn.execute("SELECT ts FROM samples ORDER BY ts ASC").fetchall()]
-            s, e = rbuild.select_session(all_ts, gap)
+            # Floor the window at THIS event's start so a quick restart within
+            # SESSION_GAP_S no longer merges the previous event's samples.
+            s, e = rbuild.select_session(all_ts, gap, floor=_read_session_start())
             frm = s if frm is None else frm
             to = e if to is None else to
         if frm is None or to is None:
@@ -1384,7 +1462,7 @@ def _build_report_file(frm=None, to=None, gap=None, out=None):
     bucketed = rbuild.bucket_samples(samples)
     title = _qualifying_title(_report_event_title())
     report = rbuild.build_report(bucketed, events, _report_name_map(), title,
-                                 (frm, to), time.time())
+                                 (frm, to), time.time(), host=_report_host())
     html = rbuild.render_html(report)
     os.makedirs(_reports_dir(), exist_ok=True)
     date_str = time.strftime("%Y-%m-%d", time.localtime(frm))
@@ -1392,7 +1470,7 @@ def _build_report_file(frm=None, to=None, gap=None, out=None):
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(html)
     return {"path": path, "html": html, "summary": rbuild.render_summary_text(report),
-            "report": report}
+            "report": report, "window": (frm, to)}
 
 
 def _latest_report():
@@ -1404,9 +1482,10 @@ def _latest_report():
     return max(files, key=os.path.getmtime) if files else None
 
 
-def _send_report_core(path, report=None):
-    """Post the report to the league Discord as a GT-Racecast embed with the HTML
-    zipped as a download-only attachment. Raises on any failure."""
+def _send_report_core(path, report=None, window=None):
+    """Post the report to the league Discord as a GT-Racecast embed with the HTML —
+    plus the session's relay logs, clipped to the report window — zipped as a
+    download-only attachment. Raises on any failure."""
     if not path:
         raise ValueError("no report found — run `racecast report` first")
     with open(path, "rb") as fh:
@@ -1416,10 +1495,21 @@ def _send_report_core(path, report=None):
         raise ValueError("No DISCORD_WEBHOOK_URL configured for this league")
     title = _qualifying_title(_report_event_title() or league or "Event")
     fields_kv = rbuild.report_discord_fields(report) if report else []
-    payload = notify.report_discord_payload(title, fields_kv)
+    host = (report.get("header", {}) if report else {}).get("host") or _report_host()
+    payload = notify.report_discord_payload(title, fields_kv, host=host)
+    frm, to = window if window else (None, None)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(os.path.basename(path), content)
+        for source, fp in _report_log_files():
+            try:
+                with open(fp, "r", encoding="utf-8", errors="replace") as lf:
+                    # logs/<source>/<basename>: relay and streams both use feed_*.log,
+                    # so the source subdir keeps them from colliding in the archive.
+                    zf.writestr(f"logs/{source}/{os.path.basename(fp)}",
+                                rbuild.slice_log_by_window(lf.read(), frm, to))
+            except OSError:
+                pass  # a log that vanished/rotated mid-send is not fatal
     zip_name = os.path.splitext(os.path.basename(path))[0] + ".zip"
     fields = {"payload_json": json.dumps(payload)}
     files = [("files[0]", zip_name, buf.getvalue(), "application/zip")]
@@ -3227,7 +3317,7 @@ def _switch_to_standby():
               f"Switch to Standby manually before going live.")
 
 
-def event_start(rest, _autojoin=True):
+def event_start(rest, _autojoin=True, _new_session=True):
     """Bring the event stack up. Order matters: Tailscale first (the Companion
     bind needs its IP), relay before OBS (the HUD browser source then connects
     against a live relay on OBS's first load). Every step is best effort.
@@ -3235,7 +3325,13 @@ def event_start(rest, _autojoin=True):
     `_autojoin` gates the Discord voice auto-join (best-effort) at the end of
     the success path: True for the top-level `event start` verb, False when
     `event_takeover` reuses this function internally (auto-join there would
-    fire twice across a handover and is not part of the takeover contract)."""
+    fire twice across a handover and is not part of the takeover contract).
+
+    `_new_session` gates the report session-window reset: True marks a fresh
+    broadcast (record a new session start), False keeps the existing window.
+    `event_takeover` passes False so a handover continues A's report window on B
+    rather than resetting it; a mid-event recovery restart (--stint/--part) keeps
+    it too (see `_is_continuation_start`)."""
     ev, pf = _event_modules()
     # 0. Pre-flight gate — refuse to bring the stack up when a static
     # precondition is broken (missing SHEET_ID, missing graphics): those never
@@ -3267,6 +3363,13 @@ def event_start(rest, _autojoin=True):
     # restart) BEFORE the relay starts, so its PartStore comes up on the right
     # Part.
     _write_part_reset(_part_index(rest))
+    # Mark THIS event's start so the post-event report window begins here — a quick
+    # event restart within report_build.SESSION_GAP_S must not merge the previous
+    # event's health samples into this report (the window START used to never reset).
+    # A fresh broadcast ONLY: a takeover (_new_session=False) or a mid-event recovery
+    # restart (--stint/--part) keeps the existing window so the report stays continuous.
+    if _new_session and not _is_continuation_start(rest):
+        _write_session_start()
     relay_start(_stint_args(rest) + _qualifying_args(rest) + _title_args(rest))
     # 4. OBS
     if ev.app_running("obs"):
@@ -3336,7 +3439,8 @@ def event_stop(rest):
             r = _build_report_file()
             print(r["summary"])
             try:
-                _send_report_core(r["path"], report=r.get("report"))
+                _send_report_core(r["path"], report=r.get("report"),
+                                  window=r.get("window"))
                 print("Report sent to Discord.")
             except Exception as exc:  # noqa: BLE001 — best-effort; still tear down
                 print(f"report: Discord send failed ({exc}).")
@@ -3527,7 +3631,9 @@ def event_takeover(rest):
     es_args = ["--stint", str(plan["stint"])]
     if plan["qualifying"]:
         es_args.append("--qualifying")
-    event_start(es_args, _autojoin=False)   # pre-flight gate + bring-up; exits with readiness code
+    # _new_session=False: a takeover continues A's broadcast — keep the report window
+    # (B's local health DB starts fresh, so its contiguity heuristic covers B's part).
+    event_start(es_args, _autojoin=False, _new_session=False)   # bring-up; exits with readiness code
 
 
 def _relay_is_alive():

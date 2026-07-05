@@ -1823,13 +1823,26 @@ def t_event_takeover_success_calls_event_start():
         "league": {"sheet_id": "S"}, "live": {"feed": "B", "stint": 7, "mode": "race"}}
     m.chat_cmd = lambda rest: None
     captured = {}
-    m.event_start = lambda a, **kw: captured.__setitem__("args", a)
+    m.event_start = lambda a, **kw: captured.update(args=a, kw=kw)
     try:
         m.event_takeover(["100.64.1.2"])
         assert captured["args"] == ["--stint", "7"]
+        # a takeover must NOT reset the report session window (continuity on B)
+        assert captured["kw"].get("_new_session") is False, captured["kw"]
     finally:
         m._relay_fetch_json, m.event_start, m.chat_cmd = orig_fetch, orig_es, orig_chat
         restore()
+
+
+def t_is_continuation_start():
+    # a fresh event start (no flags) begins a new report session
+    assert m._is_continuation_start([]) is False
+    assert m._is_continuation_start(["--force", "--title", "GP"]) is False
+    # a mid-event bring-up (--stint / --part, both spellings) continues it
+    assert m._is_continuation_start(["--stint", "7"]) is True
+    assert m._is_continuation_start(["--stint=7"]) is True
+    assert m._is_continuation_start(["--part", "2"]) is True
+    assert m._is_continuation_start(["--part=2"]) is True
 
 
 def t_event_takeover_qualifying_and_override_forwarded():
@@ -3529,7 +3542,7 @@ def t_event_stop_reports_then_tears_down():
         m._build_report_file = lambda: (calls.append("build"),
                                          {"path": "/tmp/r.html", "summary": "s",
                                           "report": {"x": 1}})[1]
-        m._send_report_core = lambda p, report=None: calls.append("send")
+        m._send_report_core = lambda p, report=None, window=None: calls.append("send")
         m.relay_stop = lambda a: calls.append("relay_stop")
         m.companion_stop = lambda a: calls.append("companion_stop")
         m.streams_stop = lambda a: calls.append("streams_stop")
@@ -3606,7 +3619,7 @@ def t_event_stop_calls_discord_autoleave():
     try:
         m._build_report_file = lambda: {"path": "/tmp/r.html", "summary": "s",
                                         "report": {}}
-        m._send_report_core = lambda p, report=None: None
+        m._send_report_core = lambda p, report=None, window=None: None
         m.relay_stop = lambda a: None
         m.companion_stop = lambda a: None
         m.streams_stop = lambda a: None
