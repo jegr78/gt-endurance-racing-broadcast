@@ -149,17 +149,18 @@ Part  | Producer          | MagicDNS                        | Stream Key
 1     | Sample Producer A | producer-a.tailnet-demo.ts.net  | key1
 2     | Sample Producer B | producer-b.tailnet-demo.ts.net  | key2
 3     | Sample Producer A | producer-a.tailnet-demo.ts.net  | key1
-Q     | Sample Producer A | producer-a.tailnet-demo.ts.net  | keyQ
+Q     | Sample Producer A | producer-a.tailnet-demo.ts.net  | key1
 ```
 
-A Part whose label starts with **`Q`** (e.g. `Q`) is the **qualifying** broadcast —
-its own Stream Key reference points at a separate YouTube/Twitch broadcast for the
-qualifying session. The Director-Panel Parts control shows the numeric parts in race
-mode and the single `Q` part in qualifying mode (`racecast event start --qualifying`,
-or the Control Center **Qualifying** toggle). Qualifying is a single part, so ending it
-stops the OBS stream and auto-generates the post-event report — a clean, separate
-session from the race. Give `keyQ` its own Script Property (below) with the qualifying
-broadcast's real key.
+A Part whose label starts with **`Q`** (e.g. `Q`) is the **qualifying** broadcast. Its
+`Stream Key` cell may reference **any existing key** — commonly the **same** ref as race
+Part 1 (`key1` above), since qualifying runs on a separate day and can reuse the same
+ingest target; no new Script Property is needed in that case. Reference a distinct ref
+(and add a matching property below) only if qualifying streams to a different broadcast.
+The Director-Panel Parts control shows the numeric parts in race mode and the single `Q`
+part in qualifying mode (`racecast event start --qualifying`, or the Control Center
+**Qualifying** toggle). Qualifying is a single part, so ending it stops the OBS stream and
+auto-generates the post-event report — a clean, separate session from the race.
 
 ### Store the real keys in Script Properties
 
@@ -170,7 +171,9 @@ property per reference:
 |---|---|
 | `key1` | the real OBS stream key for Producer A |
 | `key2` | the real OBS stream key for Producer B |
-| `keyQ` | the real OBS stream key for the **qualifying** broadcast |
+
+Add one more property (e.g. `keyQ`) **only** if the qualifying `Q` row references a
+distinct key; when the `Q` row reuses `key1` (the common case) there is nothing extra to add.
 
 Script Properties are visible only to Sheet **editors** (the league owner) — viewers
 cannot see them, and they never appear in any CSV export or gviz fetch. The relay
