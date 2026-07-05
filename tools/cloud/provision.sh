@@ -527,13 +527,26 @@ if [ "$rc" -eq 0 ]; then
   echo "      Event stack is owned by '$USER_NAME' (its home: $(getent passwd "$USER_NAME" | cut -d: -f6))."
   echo "      Log in as that user directly — 'gcloud compute ssh $USER_NAME@racecast-box' —"
   echo "      then run racecast plainly: 'racecast preflight', 'racecast event start', …"
-  echo "      Remaining operational steps (if warned above): finish the tailnet join + reboot"
-  echo "      for the GPU X session (the reboot also auto-configures RustDesk)."
-  echo "      After the reboot: 'cat ~$USER_NAME/rustdesk-access.txt' for the RustDesk ID + password."
-  echo "      Then: per-league onboarding (profile + cookies + setup + OBS import)."
+  echo "      If warned above, finish the tailnet join. The reboot below brings up the desktop"
+  echo "      + auto-configures RustDesk — afterwards 'cat ~$USER_NAME/rustdesk-access.txt' for the"
+  echo "      ID + password. Then: per-league onboarding (profile + cookies + setup + OBS import)."
 else
   warn "provision.sh finished with MISSING components (red PRESENCE lines above) — the box is"
   warn "NOT fully equipped. Fix the cause and re-run provision; it is idempotent and will"
   warn "install only what is still missing. Do NOT proceed to an event with a red line."
+fi
+
+# Reboot to bring up the racecast autologin desktop (X on :0 → RustDesk mirrors it, OBS +
+# Discord autostart) and run the first-boot RustDesk config. DEFAULT ON — set
+# PROVISION_REBOOT=0 to opt out. A reboot is harmless when a component is still missing (the
+# re-run is idempotent) and it also loads a driver module that built but had not yet loaded.
+if [ "${PROVISION_REBOOT:-1}" != "0" ]; then
+  log "Rebooting in 10s to bring up the desktop session + finish RustDesk setup."
+  log "  Opt out with PROVISION_REBOOT=0. Press Ctrl-C now to cancel."
+  sleep 10
+  reboot
+else
+  log "PROVISION_REBOOT=0 — skipping the reboot. Reboot manually to bring up the desktop"
+  log "session (RustDesk/OBS need X on :0) and run the first-boot RustDesk config."
 fi
 exit "$rc"
