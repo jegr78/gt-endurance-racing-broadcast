@@ -1506,6 +1506,15 @@ class PartStore:
             self._save_file()
             return dict(self.state)
 
+    def reset(self):
+        """Reset the pointer to the first part, not-live — used by `event start`
+        (via the file) and on a live `/mode` switch so the mode-gated Parts
+        control never carries a stale index into the other mode's subset."""
+        with self.lock:
+            self.state = default_part_state()
+            self._save_file()
+            return dict(self.state)
+
 
 class EventTitleStore:
     """Free-text event title (#207), persisted to runtime/<profile>/event.json so it
@@ -6878,7 +6887,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if part_store is None or producer_source is None:
                         return self._send({"enabled": False})   # feature off -> panel fallback
                     if p == ["parts", "data"]:
-                        rows = producer_source.get()
+                        rows = producer_mod.active_producer_rows(
+                            producer_source.get(), relay.mode)
                         # The panel forwards the OBS stream state it already polls
                         # (via /obs/state) so we skip a redundant obs-websocket read;
                         # a bare call (no param) still self-reconciles against OBS.
@@ -7123,10 +7133,19 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                        "source": qs.health()})
                 if len(p) == 2 and p[0] == "mode":
                     res = relay.set_mode(p[1].lower())
-                    # On a successful switch the new schedule's stint is on air ->
-                    # auto-fill the HUD Streamer/Stint from it (issue #112 path).
-                    if setup_ctl and "error" not in res:
-                        _push_live_schedule(relay, setup_ctl)
+                    if "error" not in res:
+                        # On a successful switch the new schedule's stint is on
+                        # air -> auto-fill the HUD Streamer/Stint from it
+                        # (issue #112 path).
+                        if setup_ctl:
+                            _push_live_schedule(relay, setup_ctl)
+                        # Re-point the broadcast-part pointer to the new mode's
+                        # first part, unless a part is currently live (never
+                        # disturb an on-air broadcast). Keeps the mode-gated
+                        # Parts control coherent across a live
+                        # race<->qualifying switch.
+                        if part_store is not None and not part_store.get().get("live"):
+                            part_store.reset()
                     return self._send(res)
                 if p == ["next"]:
                     result = relay.next_auto()
@@ -7426,8 +7445,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["parts", "start"]:
                     if part_store is None or producer_source is None or _obs_ws is None:
                         return self._send({"ok": False, "error": "parts unavailable"}, 503)
-                    rows = producer_source.get()
-                    ok, res = parts_mod.validate_start(body, part_store.get(), len(rows))
+                    rows = producer_mod.active_producer_rows(
+                        producer_source.get(), relay.mode)
+                    ok, res = parts_mod.validate_start(body, rows, part_store.get())
                     if not ok:
                         return self._send({"ok": False, "error": res[0]}, res[1])
                     idx = res
@@ -7462,13 +7482,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["parts", "end"]:
                     if part_store is None or _obs_ws is None:
                         return self._send({"ok": False, "error": "parts unavailable"}, 503)
-                    ok, res = parts_mod.validate_end(body, part_store.get())
+                    rows = (producer_mod.active_producer_rows(producer_source.get(), relay.mode)
+                            if producer_source is not None else [])
+                    ok, res = parts_mod.validate_end(body, rows, part_store.get())
                     if not ok:
                         return self._send({"ok": False, "error": res[0]}, res[1])
                     ok2, note = _obs_ws.set_stream(False)
                     if not ok2:
                         return self._send({"ok": False, "error": note}, 503)
-                    rows = producer_source.get() if producer_source is not None else []
                     pre_vm = parts_mod.parts_view_model(rows, part_store.get(),
                                                         stream_active=True)
                     is_last = bool(pre_vm.get("live") and pre_vm.get("count")

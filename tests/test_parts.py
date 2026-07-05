@@ -171,6 +171,16 @@ def t_partstore_type_checks_load():
     assert R.PartStore(p).get() == {"index": 1, "live": False}
 
 
+def t_partstore_reset():
+    d = tempfile.mkdtemp()
+    ps = R.PartStore(os.path.join(d, "part.json"))
+    ps.mark_live(3)
+    assert ps.get() == {"index": 3, "live": True}
+    assert ps.reset() == {"index": 1, "live": False}
+    # persisted -> a fresh store reloads the reset pointer
+    assert R.PartStore(os.path.join(d, "part.json")).get() == {"index": 1, "live": False}
+
+
 def t_apply_stream_service_for_ref_happy():
     calls, seen = {}, {}
     def fetch(u):
