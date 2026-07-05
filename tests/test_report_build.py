@@ -49,6 +49,60 @@ def t_select_session_empty():
     assert rb.select_session([], gap_s=1800) == (None, None)
 
 
+def t_select_session_floor_discards_earlier_event():
+    # a previous event (100-130) then this one (400-430) — a 270s gap < 1800s would
+    # normally merge them into one window. A floor at this event's start clamps it.
+    ts = [100.0, 130.0, 400.0, 430.0]
+    assert rb.select_session(ts, gap_s=1800, floor=400.0) == (400.0, 430.0)
+    # floor between samples keeps only those at/after it
+    assert rb.select_session(ts, gap_s=1800, floor=350.0) == (400.0, 430.0)
+
+
+def t_select_session_floor_none_is_unchanged():
+    ts = [100.0, 130.0, 400.0, 430.0]
+    assert rb.select_session(ts, gap_s=1800, floor=None) == (100.0, 430.0)
+
+
+def t_select_session_floor_after_all_samples_empty():
+    ts = [100.0, 130.0]
+    assert rb.select_session(ts, gap_s=1800, floor=999.0) == (None, None)
+
+
+def t_build_report_includes_host():
+    samples = [_sample(0.0), _sample(30.0)]
+    rep = rb.build_report(samples, [], {}, "E", (0.0, 30.0), now=1.0, host="STREAM-BOX")
+    assert rep["header"]["host"] == "STREAM-BOX", rep["header"]
+    assert "STREAM-BOX" in rb.render_html(rep)
+    # absent host degrades to empty and never appears
+    rep2 = rb.build_report(samples, [], {}, "E", (0.0, 30.0), now=1.0)
+    assert rep2["header"]["host"] == ""
+
+
+def t_slice_log_by_window_keeps_in_window_and_continuations():
+    import time as _t
+    def clk(s):
+        return _t.mktime(_t.strptime(s, "%Y-%m-%d %H:%M:%S"))
+    text = ("2026-07-05 21:20:00 INFO before the window\n"
+            "2026-07-05 21:24:40 INFO in window\n"
+            "  Traceback continuation with no timestamp\n"
+            "2026-07-05 21:40:00 INFO after the window\n")
+    out = rb.slice_log_by_window(text, clk("2026-07-05 21:24:32"),
+                                 clk("2026-07-05 21:30:11"), margin_s=0.0)
+    assert "in window" in out
+    assert "Traceback continuation" in out          # kept: follows an in-window line
+    assert "before the window" not in out
+    assert "after the window" not in out
+    # no window -> unchanged
+    assert rb.slice_log_by_window(text, None, None) == text
+
+
+def t_slice_log_by_window_foreign_format_kept_whole():
+    # a log with no parseable 'YYYY-MM-DD HH:MM:SS' prefix (e.g. OBS time-only) is
+    # returned whole rather than emptied
+    obs = "21:24:32.456: Loaded scene\n21:40:00.000: Something later\n"
+    assert rb.slice_log_by_window(obs, 1.0, 2.0) == obs
+
+
 def t_bucket_samples_collapses_concurrent():
     # two machines sampling ~same 30s window -> one row per 30s bucket (last wins)
     samples = [_sample(0.0, health_level="green"), _sample(10.0, health_level="yellow"),

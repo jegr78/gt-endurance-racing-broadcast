@@ -8,6 +8,7 @@ references, so it opens identically anywhere, offline). Redaction by constructio
 no stream URLs ever enter the report (name resolution passes in a stint->name map).
 """
 import html as _html
+import re
 import time
 
 import health_store as hs
@@ -18,10 +19,16 @@ import health_store as hs
 SESSION_GAP_S = 1800
 
 
-def select_session(sample_ts, gap_s=SESSION_GAP_S):
+def select_session(sample_ts, gap_s=SESSION_GAP_S, floor=None):
     """The last contiguous run of ascending sample timestamps. A gap larger than
-    gap_s ends a session. Returns (start, end) or (None, None) for no data."""
-    ts = sorted(t for t in sample_ts if t is not None)
+    gap_s ends a session. Returns (start, end) or (None, None) for no data.
+
+    `floor` (the current event's start time, when known) discards any samples before
+    it FIRST, so a quick event restart within gap_s no longer merges the previous
+    event's samples into this one's window. Without a floor (older data, or a relay
+    started outside the event lifecycle) the gap heuristic alone applies."""
+    ts = sorted(t for t in sample_ts
+                if t is not None and (floor is None or t >= floor))
     if not ts:
         return (None, None)
     start = ts[-1]
@@ -191,9 +198,12 @@ def broadcast_timeline(events):
     return rows
 
 
-def build_report(samples, events, name_for_stint, event_title, window, now):
+def build_report(samples, events, name_for_stint, event_title, window, now,
+                 host=None):
     """Aggregate ONE session (already bucket-deduplicated) into the report dict.
-    `window` = (from_ts, to_ts). `samples` is assumed non-empty (the caller guards)."""
+    `window` = (from_ts, to_ts). `samples` is assumed non-empty (the caller guards).
+    `host` is the producer machine's name, surfaced in the report so it is clear
+    which box produced it."""
     frm, to = window
     duration_s = max(0.0, (to or 0) - (frm or 0))
     windows = on_air_windows(events, to)
@@ -226,6 +236,7 @@ def build_report(samples, events, name_for_stint, event_title, window, now):
         "header": {"event_title": event_title or "", "start": frm, "end": to,
                    "duration_s": round(duration_s, 1),
                    "on_air_s": round(on_air_s, 1),
+                   "host": host or "",
                    "uptime_pct": _uptime_pct(metric_bands, on_air_s)},
         "on_air": on_air,
         "feeds": feeds,
@@ -326,9 +337,10 @@ def render_html(report):
              f"<title>Post-event report — {_esc(hd['event_title'] or 'Event')}</title>",
              f"<style>{_STYLE}</style></head><body><div class='wrap'>"]
     parts.append(f"<h1>{_esc(hd['event_title'] or 'Post-event report')}</h1>")
+    host_sub = f" · {_esc(hd['host'])}" if hd.get("host") else ""
     parts.append(f"<p class='sub'>{_esc(_fmt_date(hd['start']))} · "
                  f"{_esc(_fmt_clock(hd['start']))}–{_esc(_fmt_clock(hd['end']))} · "
-                 f"{_esc(_fmt_dur(hd['duration_s']))}</p>")
+                 f"{_esc(_fmt_dur(hd['duration_s']))}{host_sub}</p>")
     parts.append("<div class='kpis'>"
                  f"<div class='kpi'><div class='n'>{hd['uptime_pct']}%</div>"
                  "<div class='l'>Uptime</div></div>"
@@ -454,3 +466,43 @@ def report_discord_fields(report):
             ("Incidents", str(len(report["incidents"]))),
             ("Session length", _fmt_dur(hd["duration_s"])),
             ("Window", f"{_fmt_clock(hd['start'])}–{_fmt_clock(hd['end'])}")]
+
+
+_LOG_TS_RE = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)")
+
+
+def _parse_log_ts(line):
+    """Epoch seconds from a leading 'YYYY-MM-DD HH:MM:SS' log prefix, else None.
+    Interpreted in local time — the log formatter (logsetup) writes local time."""
+    m = _LOG_TS_RE.match(line)
+    if not m:
+        return None
+    try:
+        return time.mktime(time.strptime(m.group(1), "%Y-%m-%d %H:%M:%S"))
+    except (ValueError, OverflowError):
+        return None
+
+
+def slice_log_by_window(text, frm, to, margin_s=120.0):
+    """Keep log lines whose leading 'YYYY-MM-DD HH:MM:SS' timestamp falls within
+    [frm-margin, to+margin]. Lines without a parseable leading timestamp
+    (continuations, tracebacks) are kept when the most recent timestamped line was
+    in-window, so multi-line records survive intact. `frm`/`to` are epoch seconds;
+    when either is None the text is returned unchanged (no window to clip to).
+
+    A log whose format this parser doesn't recognise at all (no line carried a
+    parseable timestamp — e.g. OBS's time-only 'HH:MM:SS.mmm' prefix) is returned
+    WHOLE rather than emptied: better to over-include a foreign-format log than to
+    silently drop it. Such files are usually per-session already (OBS writes a fresh
+    log per launch), so the whole file is roughly the event window anyway."""
+    if frm is None or to is None:
+        return text
+    lo, hi = frm - margin_s, to + margin_s
+    out, keep, saw_ts = [], False, False
+    for line in text.splitlines(keepends=True):
+        ts = _parse_log_ts(line)
+        if ts is not None:
+            saw_ts, keep = True, lo <= ts <= hi
+        if keep:
+            out.append(line)
+    return "".join(out) if saw_ts else text
