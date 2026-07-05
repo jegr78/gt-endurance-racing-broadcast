@@ -13,11 +13,24 @@ def normalize_intent(text):
     return " ".join((text or "").split()).upper()
 
 
-def parts_intent_phrase(action, index):
-    """The exact confirmation phrase for an action on a 1-based Part index —
-    ('start', 2) -> 'START PART 2'. The panel shows it and the relay
-    re-validates the typed value against it."""
-    return "{} PART {}".format(str(action).upper(), int(index))
+def part_confirm_token(label):
+    """The token shown in a Part's confirmation phrase. A leading 'Part'
+    (case-insensitive) plus whitespace is stripped, so a numeric race label
+    'Part 1' -> '1' (today's 'START PART 1' is unchanged) and a qualifying label
+    'Q' -> 'Q' (or 'Part Q' -> 'Q'). Falls back to the trimmed label."""
+    s = " ".join(str(label or "").split())
+    if s.upper().startswith("PART"):
+        rest = s[4:].strip()
+        return rest or s
+    return s
+
+
+def parts_intent_phrase(action, token):
+    """The exact confirmation phrase for an action on a Part, keyed by the Part's
+    confirm token (see part_confirm_token): ('start', '2') -> 'START PART 2',
+    ('end', 'Q') -> 'END PART Q'. The panel shows it and the relay re-validates
+    the typed value against it."""
+    return "{} PART {}".format(str(action).upper(), token)
 
 
 def stream_active_param(raw):
@@ -66,36 +79,47 @@ def parts_view_model(producer_rows, state, stream_active=None):
         vm["current_label"] = parts[li - 1]["label"]
         vm["producer"] = parts[li - 1]["producer"]
         vm["action"] = "end"
-        vm["confirm_phrase"] = parts_intent_phrase("end", li)
+        vm["confirm_phrase"] = parts_intent_phrase(
+            "end", part_confirm_token(parts[li - 1]["label"]))
     elif index > count:
         vm["complete"] = True
     else:
         vm["current_label"] = parts[index - 1]["label"]
         vm["producer"] = parts[index - 1]["producer"]
         vm["action"] = "start"
-        vm["confirm_phrase"] = parts_intent_phrase("start", index)
+        vm["confirm_phrase"] = parts_intent_phrase(
+            "start", part_confirm_token(parts[index - 1]["label"]))
         vm["next_index"] = index + 1 if index + 1 <= count else None
     return vm
 
 
-def validate_start(body, state, count):
-    """Validate a /parts/start request. Pure. Returns (True, index) or
-    (False, (error, http_status)). The intent phrase is the anti-accident gate;
-    the index must equal the expected next Part (stale-tablet guard)."""
+def _row_token(rows, idx):
+    """Confirm token for the 1-based Part idx from its row label, or the numeric
+    fallback 'idx' when idx is out of range (preserves the pre-label behavior)."""
+    count = len(rows)
+    label = rows[idx - 1].get("part") if 1 <= idx <= count else None
+    return part_confirm_token(label or "Part {}".format(idx))
+
+
+def validate_start(body, rows, state):
+    """Validate a /parts/start request against the mode-gated Producer rows. Pure.
+    Returns (True, index) or (False, (error, http_status)). The typed intent phrase
+    is the anti-accident gate; the index must equal the expected next Part."""
+    count = len(rows)
     try:
         idx = int(body.get("index"))
     except (TypeError, ValueError):
         return False, ("index must be a number", 400)
-    if normalize_intent(body.get("intent")) != parts_intent_phrase("start", idx):
+    if normalize_intent(body.get("intent")) != parts_intent_phrase("start", _row_token(rows, idx)):
         return False, ("confirmation phrase mismatch", 403)
     if idx != int(state.get("index", 1)) or not (1 <= idx <= count):
         return False, ("Part {} is not the next Part to start".format(idx), 409)
     return True, idx
 
 
-def validate_end(body, state):
+def validate_end(body, rows, state):
     """Validate a /parts/end request against the currently-focused Part. Pure."""
     idx = int(state.get("index", 1))
-    if normalize_intent(body.get("intent")) != parts_intent_phrase("end", idx):
+    if normalize_intent(body.get("intent")) != parts_intent_phrase("end", _row_token(rows, idx)):
         return False, ("confirmation phrase mismatch", 403)
     return True, idx

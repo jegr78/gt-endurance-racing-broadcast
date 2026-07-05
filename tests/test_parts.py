@@ -20,14 +20,32 @@ ROWS3 = [{"part": "Part 1", "producer": "A", "magicdns": "a", "stream_key": "key
 
 
 def t_parts_intent_phrase():
-    assert m.parts_intent_phrase("start", 1) == "START PART 1"
-    assert m.parts_intent_phrase("end", 3) == "END PART 3"
+    assert m.parts_intent_phrase("start", "1") == "START PART 1"
+    assert m.parts_intent_phrase("end", "3") == "END PART 3"
+    assert m.parts_intent_phrase("start", "Q") == "START PART Q"
 
 
 def t_normalize_intent():
     assert m.normalize_intent("  end   part 2 ") == "END PART 2"
     assert m.normalize_intent("Start Part 1") == "START PART 1"
     assert m.normalize_intent(None) == ""
+
+
+def t_part_confirm_token():
+    assert m.part_confirm_token("Part 1") == "1"
+    assert m.part_confirm_token("part 2") == "2"
+    assert m.part_confirm_token("Q") == "Q"
+    assert m.part_confirm_token("Part Q") == "Q"
+    assert m.part_confirm_token("  Part   3 ") == "3"
+
+
+def t_view_model_qualifying_confirm_phrase():
+    # A single Q row, ready to start -> confirm phrase reads START PART Q.
+    q = [{"part": "Q", "producer": "A"}]
+    vm = m.parts_view_model(q, {"index": 1, "live": False}, stream_active=False)
+    assert vm["action"] == "start" and vm["confirm_phrase"] == "START PART Q"
+    vm2 = m.parts_view_model(q, {"index": 1, "live": False}, stream_active=True)
+    assert vm2["action"] == "end" and vm2["confirm_phrase"] == "END PART Q"
 
 
 def t_stream_active_param():
@@ -80,36 +98,52 @@ def t_view_model_falls_back_to_file_live():
 
 def t_validate_start_ok():
     ok, res = m.validate_start({"index": 1, "intent": "START PART 1"},
-                               {"index": 1, "live": False}, 3)
+                               ROWS3, {"index": 1, "live": False})
     assert ok and res == 1
 
 
 def t_validate_start_bad_phrase():
     ok, res = m.validate_start({"index": 1, "intent": "go"},
-                               {"index": 1, "live": False}, 3)
+                               ROWS3, {"index": 1, "live": False})
     assert not ok and res[1] == 403
 
 
 def t_validate_start_wrong_index():
     ok, res = m.validate_start({"index": 2, "intent": "START PART 2"},
-                               {"index": 1, "live": False}, 3)
+                               ROWS3, {"index": 1, "live": False})
     assert not ok and res[1] == 409
 
 
 def t_validate_start_bad_index_type():
     ok, res = m.validate_start({"index": "x", "intent": "START PART x"},
-                               {"index": 1, "live": False}, 3)
+                               ROWS3, {"index": 1, "live": False})
     assert not ok and res[1] == 400
 
 
+def t_validate_start_qualifying_token():
+    q = [{"part": "Q"}]
+    ok, res = m.validate_start({"index": 1, "intent": "START PART Q"},
+                               q, {"index": 1, "live": False})
+    assert ok and res == 1
+    bad, r2 = m.validate_start({"index": 1, "intent": "START PART 1"},
+                               q, {"index": 1, "live": False})
+    assert not bad and r2[1] == 403          # numeric phrase rejected for a Q part
+
+
 def t_validate_end_ok():
-    ok, res = m.validate_end({"intent": "END PART 2"}, {"index": 2, "live": True})
+    ok, res = m.validate_end({"intent": "END PART 2"}, ROWS3, {"index": 2, "live": True})
     assert ok and res == 2
 
 
 def t_validate_end_bad_phrase():
-    ok, res = m.validate_end({"intent": "nope"}, {"index": 2, "live": True})
+    ok, res = m.validate_end({"intent": "nope"}, ROWS3, {"index": 2, "live": True})
     assert not ok and res[1] == 403
+
+
+def t_validate_end_qualifying_token():
+    q = [{"part": "Q"}]
+    ok, res = m.validate_end({"intent": "END PART Q"}, q, {"index": 1, "live": True})
+    assert ok and res == 1
 
 
 def t_partstore_default_and_transitions():
