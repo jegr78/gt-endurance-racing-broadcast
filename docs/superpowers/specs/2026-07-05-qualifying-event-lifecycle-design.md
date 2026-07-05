@@ -50,13 +50,24 @@ separation between the qualifying broadcast and the race broadcast.
 - **Control Center gains a qualifying toggle** next to Start Event, so an operator
   can start the event in qualifying mode from the UI (parity with the CLI
   `--qualifying`).
+- **The Director Panel shows the schedule editor matching the current mode** — the
+  race Schedule editor in race mode, the one-row Qualifying editor in qualifying
+  mode. The mode toggle, the Submissions section, and the Parts control stay visible
+  in both modes.
+- **Cockpit stream-link submissions work in both modes.** A qualifying commentator
+  submits from their cockpit; the director approves it into the **Qualifying** tab.
+  (The submit path is already mode-aware; only the approve write is race-hardcoded.)
 
 ## Architecture
 
-Six surfaces change. The lifecycle logic (stream-key resolution, start/end
-confirmation, last-part auto-stop → report → teardown) is **reused unchanged** — the
-only new logic is "which subset of Producer rows is active in this mode" plus the
-two presentation touches (confirm phrase, report-title marker) and the UI toggle.
+Seven surfaces change. The lifecycle logic (stream-key resolution, start/end
+confirmation, last-part auto-stop → report → teardown) is **reused unchanged**, and
+the schedule-derived read surfaces (cockpit tally/plan, race-control desk,
+`/schedule/data`, submission target resolution) are **already mode-aware** — they read
+the mode-aware `relay.source` property. The only new logic is "which subset of
+Producer rows is active in this mode", the two presentation touches (confirm phrase,
+report-title marker), the UI toggle, the mode-aware panel display, and the one
+backend gap: the submission **approve** write.
 
 ### A. Data model — the `Q` part (Sheet-side, no migration)
 
@@ -153,6 +164,49 @@ render raw — non-blocking).
 - **UI surface changed → refresh the Control Center screenshot** (`cc-*.png` for the
   view that hosts Start Event) in the same change, per the CLAUDE.md hard rule.
 
+### G. Mode-aware schedule surfaces (Director Panel + submissions)
+
+**Already mode-aware — no change (verify at implementation):** the Commentator
+Cockpit (`/cockpit/data`: tally, stint plan, `my_stints`), the Race Control desk
+(`/console/race-control/data`), `/schedule/data`, and the cockpit submission **target
+resolution** (`POST /cockpit/submit`) all read `relay.source.get_rows()` (the
+mode-aware `active_source()` property). In qualifying mode they follow the Qualifying
+schedule for free. The plan verifies this rather than changing it.
+
+**G1. Director Panel mode-aware display (`src/director/director-panel.html`).**
+`relayPoll()` already GETs `/status` every 2 s and reads `d.mode === "qualifying"`
+(line ~1414). Extend that always-on hook to drive section visibility (mirroring the
+existing `.hidden` idiom used by `setTab`/the Parts control):
+- Race mode → show the race Schedule editor `#urlsBox`; hide the qualifying editor row
+  `#qualRow`.
+- Qualifying mode → hide `#urlsBox`; show `#qualRow`.
+- **Always visible in both modes:** the mode toggle (`#qualOn`/`#qualOff` + badge) so
+  live switching stays possible, the Submissions section `#subsBox`, and the Parts
+  control `#partControl` (server-gated, not mode-hidden).
+- Optional: a small `QUALI` tag on qualifying rows in the submissions list (available
+  from the new `mode` field, see G2).
+
+**G2. Submission approve → correct tab (`src/scripts/cockpit_submissions.py` +
+`src/relay/racecast-feeds.py`).** This is the only backend gap. A submission is
+*created* against the mode-aware active schedule but *approved* into the race Schedule
+tab unconditionally, and the stored entry records no tab.
+- `cockpit_submissions.py`: add a `mode` field (`"race"` | `"qualifying"`) to the
+  entry schema — `add_pending` accepts it (default `"race"`) and `_validate_entry`
+  tolerates its absence (old pending files → `"race"`).
+- `POST /cockpit/submit` (relay): pass `relay.mode` into `submission_store.add(...)`
+  so the entry records the tab it targets. `target_line` is already the row number in
+  the active tab, so the pair (`mode`, `target_line`) fully identifies the write.
+- `POST /submissions/approve` (relay): branch on the entry's `mode` — call
+  `setup_ctl.qualifying_set(target_line, …)` (tab=`Qualifying`, already exists) for a
+  qualifying entry, else `schedule_set(...)` (today's path). The approve decision uses
+  the entry's recorded mode, **not** the relay's current mode, so a director can
+  approve a qualifying submission regardless of the relay's live mode.
+
+Screenshot: the Director Panel's default (race-mode) view changes (the qualifying
+editor row is no longer shown alongside the race editor), so
+`src/docs/wiki/images/director-panel.png` is refreshed in the same change (CLAUDE.md
+hard rule). The Cockpit and Race Control images do not change (no code change there).
+
 ## Data flow (qualifying end)
 
 ```
@@ -182,6 +236,14 @@ Director Panel Parts control  (mode-gated -> Q subset, index 1)
   unreachable relay → no marker; filename slug + Discord embed title reflect it.
 - `tests/test_racecast.py` — `event start --qualifying` dispatch unchanged (regression
   guard: still resets the part pointer + forwards the flag).
+- `tests/test_submissions.py` — the entry `mode` field round-trips (default `"race"`
+  when absent); approve of a `qualifying` entry selects `qualifying_set`, a `race`
+  entry selects `schedule_set` (inject fake writers, assert which was called + the
+  target row); `own_submission_target` against qualifying rows yields a Qualifying-tab
+  line (mode-aware submit).
+- `tests/test_director_panel.py` — mode-driven section visibility: race mode shows the
+  race schedule editor / hides the qualifying row, qualifying mode reverses; the mode
+  toggle, submissions, and parts control stay visible in both.
 
 ## Out of scope / non-goals
 
@@ -190,8 +252,14 @@ Director Panel Parts control  (mode-gated -> Q subset, index 1)
   force `--qualifying` if ever needed — not wired here.)
 - **Multi-part qualifying (Q1/Q2).** The classifier tolerates it; we build and test
   the single-part case.
+- **Cross-mode pre-submission.** A commentator submits from the cockpit against
+  whatever schedule the relay is *currently* in (mode-aware). Submitting a qualifying
+  stream requires the relay to be in qualifying mode (the natural flow: qualifying is
+  its own `event start --qualifying` session). Pre-submitting a qualifying stream while
+  the relay is in race mode is out of scope.
 - No new HTTP surface, no takeover/Funnel endpoint. `event stop` stays CLI-only; the
-  relay spawns it locally (unchanged).
+  relay spawns it locally (unchanged). The submission approve `/submissions/*` stays
+  tailnet-only (unchanged); only its write target becomes mode-correct.
 
 ## Backward compatibility
 
@@ -203,3 +271,8 @@ Director Panel Parts control  (mode-gated -> Q subset, index 1)
   generates. `report_build.py` behavior is byte-identical for a non-qualifying title.
 - Control Center: the toggle defaults off → `event start` with no `--qualifying`,
   today's behavior.
+- Submission entries created before this change have no `mode` field → treated as
+  `"race"` → approved via `schedule_set` exactly as today. No pending-file migration.
+- Director Panel: with the relay in race mode (the default), the panel shows the race
+  schedule editor as before; the qualifying editor simply hides instead of sitting
+  permanently alongside it.
