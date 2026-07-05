@@ -925,6 +925,17 @@ def t_auto_failover_noop_without_obs_module():
         m._obs_ws = orig
 
 
+def t_event_stop_argv():
+    # frozen: re-invoke the binary itself
+    assert m.event_stop_argv(True, "/opt/racecast", "/ignored") == \
+        ["/opt/racecast", "event", "stop"]
+    # source: python runs ../racecast.py relative to the relay script dir
+    argv = m.event_stop_argv(False, "/usr/bin/python3", "/repo/src/relay")
+    assert argv[0] == "/usr/bin/python3" and argv[1].endswith("racecast.py")
+    assert argv[-2:] == ["event", "stop"]
+    assert "src/relay/../racecast.py".split("/")[-1] in argv[1]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

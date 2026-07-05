@@ -37,7 +37,7 @@
   racecast update [--check] [--yes] [--tag TAG]   # self-update the binary (--tag installs an exact release)
   racecast --version
 """
-import glob, hashlib, json, os, re, shutil, sys, tempfile, time, webbrowser
+import glob, hashlib, io, json, os, re, shutil, sys, tempfile, time, webbrowser, zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Adapters (added in later tasks) import sibling modules from scripts/ at module
@@ -1344,7 +1344,8 @@ def _build_report_file(frm=None, to=None, gap=None, out=None):
     path = out or os.path.join(_reports_dir(), rbuild.report_filename(title, date_str))
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(html)
-    return {"path": path, "html": html, "summary": rbuild.render_summary_text(report)}
+    return {"path": path, "html": html, "summary": rbuild.render_summary_text(report),
+            "report": report}
 
 
 def _latest_report():
@@ -1356,8 +1357,9 @@ def _latest_report():
     return max(files, key=os.path.getmtime) if files else None
 
 
-def _send_report_core(path):
-    """Attach the report .html to the league Discord. Raises on any failure."""
+def _send_report_core(path, report=None):
+    """Post the report to the league Discord as a GT-Racecast embed with the HTML
+    zipped as a download-only attachment. Raises on any failure."""
     if not path:
         raise ValueError("no report found — run `racecast report` first")
     with open(path, "rb") as fh:
@@ -1366,8 +1368,14 @@ def _send_report_core(path):
     if not webhook:
         raise ValueError("No DISCORD_WEBHOOK_URL configured for this league")
     title = _report_event_title() or league or "Event"
-    fields = {"payload_json": json.dumps({"content": f"\U0001F4CA Post-event report — {title}"})}
-    files = [("files[0]", os.path.basename(path), content, "text/html")]
+    fields_kv = rbuild.report_discord_fields(report) if report else []
+    payload = notify.report_discord_payload(title, fields_kv)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(os.path.basename(path), content)
+    zip_name = os.path.splitext(os.path.basename(path))[0] + ".zip"
+    fields = {"payload_json": json.dumps(payload)}
+    files = [("files[0]", zip_name, buf.getvalue(), "application/zip")]
     http_util.post_multipart(webhook, fields=fields, files=files, timeout=15)
 
 
@@ -3273,8 +3281,25 @@ def event_start(rest, _autojoin=True):
 
 def event_stop(rest):
     """Stop racecast-managed services only — never the GUI apps (a mistyped command
-    must not be able to kill a live broadcast)."""
-    relay_stop([])
+    must not be able to kill a live broadcast). Generates + sends the post-event
+    report BEFORE the teardown (default-on; --no-report skips) — while the relay is
+    still up, so commentator names resolve. Report failure is non-fatal."""
+    if "--no-report" not in rest:
+        try:
+            r = _build_report_file()
+            print(r["summary"])
+            try:
+                _send_report_core(r["path"], report=r.get("report"))
+                print("Report sent to Discord.")
+            except Exception as exc:  # noqa: BLE001 — best-effort; still tear down
+                print(f"report: Discord send failed ({exc}).")
+        except Exception as exc:  # noqa: BLE001 — no health data etc.; still tear down
+            print(f"report: skipped ({exc}).")
+    # Tear down companion + streams BEFORE the relay. On Windows the panel-spawned
+    # `event stop` is a child of the relay process, and relay_stop runs
+    # `taskkill /F /T` which walks the parent-PID tree — that would kill this very
+    # process mid-teardown. Stopping the relay LAST means companion/streams cleanup
+    # has already run; report generation above still saw the relay up (for names).
     try:
         companion_stop([])
     except SystemExit as exc:
@@ -3282,6 +3307,7 @@ def event_stop(rest):
               else f"companion: stop failed (exit {exc.code}).")
     if glob.glob(os.path.join(_streams_static_dir(), "feed_*.pid")):
         streams_stop([])
+    relay_stop([])
     print("OBS/Discord/Tailscale keep running — quit them manually if needed.")
 
 

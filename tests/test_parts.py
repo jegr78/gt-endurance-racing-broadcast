@@ -182,6 +182,16 @@ def t_producer_source_parses_on_refresh():
         {"part": "Part 2", "producer": "B", "magicdns": "b", "stream_key": "key2"}]
 
 
+def t_last_part_condition():
+    # The relay's /parts/end branch detects "this was the last part" with
+    # live and index == count — used to decide whether to spawn `event stop`.
+    rows = [{"part": "P1"}, {"part": "P2"}]
+    vm = m.parts_view_model(rows, {"index": 2, "live": True}, stream_active=True)
+    assert vm["live"] and vm["index"] == vm["count"]      # last part is live
+    vm1 = m.parts_view_model(rows, {"index": 1, "live": True}, stream_active=True)
+    assert not (vm1["index"] == vm1["count"])             # not the last part
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

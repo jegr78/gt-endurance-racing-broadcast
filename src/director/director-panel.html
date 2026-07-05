@@ -1112,11 +1112,16 @@ function renderPartControl(d){
 function openPartModal(d){
   partModalData = d;   // freeze the acted-on Part; submitPart uses this snapshot
   const isEnd = d.action === "end";
+  const isFinal = isEnd && d.index === d.count;
   $("#partModalTitle").textContent =
-    (isEnd ? "⚠ END " : "GO LIVE — START ") + `PART ${d.index} of ${d.count}`;
-  $("#partModalBody").textContent = isEnd
-    ? `This STOPS the live broadcast (Part ${d.index}). Viewers see the stream end.`
-    : `This GOES LIVE (Part ${d.index}${d.current_label ? " — " + d.current_label : ""}).`;
+    (isEnd ? (isFinal ? "⚠ END EVENT — " : "⚠ END ") : "GO LIVE — START ")
+    + `PART ${d.index} of ${d.count}`;
+  $("#partModalBody").textContent = isFinal
+    ? `This ends the broadcast — OBS stream stops, the post-event report is `
+      + `generated and sent to Discord, and all racecast services stop.`
+    : isEnd
+      ? `This STOPS the live broadcast (Part ${d.index}). Viewers see the stream end.`
+      : `This GOES LIVE (Part ${d.index}${d.current_label ? " — " + d.current_label : ""}).`;
   $("#partModalPhrase").textContent = d.confirm_phrase;
   const inp = $("#partModalInput"), ok = $("#partModalConfirm");
   inp.value = ""; ok.disabled = true;
@@ -1137,7 +1142,15 @@ async function submitPart(){
     res = await r.json().catch(() => ({ok:false, error:"bad response"}));
   } catch(e){ res = {ok:false, error:String(e)}; }
   $("#partModal").close();
-  if (!res.ok) log("Part: " + (res.error || "failed"), "err");
+  if (!res.ok){ log("Part: " + (res.error || "failed"), "err"); }
+  else if (res.final){
+    log("Event ending — report generated & sent to Discord; services stopping.", "ok");
+    const status = $("#partStatus");
+    status.textContent = "Event ending — report sent, services stopping…";
+    status.className = "partstatus done";
+    $("#partActionBtn").hidden = true;
+    return;   // the relay is tearing down; further polling will fail (expected)
+  }
   // After a transition, drop the cached OBS state so the next /parts/data
   // self-reads the fresh stream truth instead of the pre-action value (N2).
   lastStreamActive = null;

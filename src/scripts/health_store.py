@@ -248,15 +248,23 @@ def _incident_label(level, reasons):
 
 
 def derive_incidents(samples, gap_s=GAP_S):
-    """Every non-green aggregate-health band becomes an incident with the reasons
-    recorded at the band's start as its label."""
+    """Every non-green aggregate-health band becomes an incident. Its duration runs
+    until recovery: the next band's start (the recovering sample) when that gap is
+    <= gap_s, else the band is extended by one SAMPLE_INTERVAL_S. This never bridges
+    a relay-down hole (> gap_s) and never reports a zero-width single-sample blip."""
     reasons_at = {s["ts"]: s.get("health_reasons") or [] for s in samples}
+    bands = collapse_bands([(s["ts"], s.get("health_level")) for s in samples], gap_s)
     out = []
-    for b in collapse_bands([(s["ts"], s.get("health_level")) for s in samples], gap_s):
+    for i, b in enumerate(bands):
         if b["state"] == "green" or b["state"] is None:
             continue
-        out.append({"ts": b["from"], "end": b["to"],
-                    "duration_s": b["to"] - b["from"], "severity": b["state"],
+        nxt = bands[i + 1]["from"] if i + 1 < len(bands) else None
+        if nxt is not None and (nxt - b["to"]) <= gap_s:
+            end = nxt
+        else:
+            end = b["to"] + SAMPLE_INTERVAL_S
+        out.append({"ts": b["from"], "end": end, "duration_s": end - b["from"],
+                    "severity": b["state"],
                     "label": _incident_label(b["state"], reasons_at.get(b["from"]))})
     return out
 

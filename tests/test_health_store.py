@@ -133,7 +133,7 @@ def t_derive_incidents_from_non_green_health_bands():
     inc = hs.derive_incidents(samples)
     assert len(inc) == 2
     assert inc[0]["severity"] == "yellow"
-    assert inc[0]["ts"] == 30.0 and inc[0]["end"] == 60.0 and inc[0]["duration_s"] == 30.0
+    assert inc[0]["ts"] == 30.0 and inc[0]["end"] == 90.0 and inc[0]["duration_s"] == 60.0
     assert inc[0]["label"] == "cookies stale"
     assert inc[1]["severity"] == "red"
     assert inc[1]["label"].startswith("Feed B down")
@@ -522,6 +522,24 @@ def t_healthstore_wrapper_annotate_latest_event():
             assert evs[0]["metadata"] == {"feed": "A"}          # earlier event untouched
         finally:
             store.close()
+
+
+def t_incident_recovery_duration():
+    def s(ts, lvl):
+        return {"ts": ts, "health_level": lvl, "health_reasons": ["off air"] if lvl == "red" else []}
+    # single-sample red between greens -> lasts until recovery (30s), not 0s
+    inc = hs.derive_incidents([s(1000, "green"), s(1030, "red"), s(1060, "green")])
+    assert len(inc) == 1
+    assert inc[0]["ts"] == 1030 and inc[0]["end"] == 1060 and inc[0]["duration_s"] == 30
+    # multi-sample red -> extends to the recovering sample
+    inc = hs.derive_incidents([s(1000, "green"), s(1030, "red"), s(1060, "red"), s(1090, "green")])
+    assert inc[0]["duration_s"] == 60 and inc[0]["end"] == 1090
+    # trailing red with no recovery -> extend by one interval (not 0)
+    inc = hs.derive_incidents([s(1000, "green"), s(1030, "red")])
+    assert inc[0]["duration_s"] == hs.SAMPLE_INTERVAL_S and inc[0]["end"] == 1030 + hs.SAMPLE_INTERVAL_S
+    # never bridge a relay-down hole (> GAP_S) to the next band
+    inc = hs.derive_incidents([s(1000, "red"), s(1000 + hs.GAP_S + 100, "green")])
+    assert inc[0]["duration_s"] == hs.SAMPLE_INTERVAL_S
 
 
 if __name__ == "__main__":

@@ -3521,6 +3521,56 @@ def t_check_scene_collection_warns_when_switch_fails():
          m._active_obs_collection, m._collection_switch_enabled) = saved
 
 
+def t_event_stop_reports_then_tears_down():
+    calls = []
+    saved = (m._build_report_file, m._send_report_core, m.relay_stop,
+              m.companion_stop, m.streams_stop, m._streams_static_dir)
+    try:
+        m._build_report_file = lambda: (calls.append("build"),
+                                         {"path": "/tmp/r.html", "summary": "s",
+                                          "report": {"x": 1}})[1]
+        m._send_report_core = lambda p, report=None: calls.append("send")
+        m.relay_stop = lambda a: calls.append("relay_stop")
+        m.companion_stop = lambda a: calls.append("companion_stop")
+        m.streams_stop = lambda a: calls.append("streams_stop")
+        m._streams_static_dir = lambda: "/nonexistent-streams-dir"   # no feed pids
+
+        m.event_stop([])
+        assert calls.index("send") < calls.index("relay_stop")   # report BEFORE teardown
+        assert "build" in calls and "relay_stop" in calls
+        # relay is stopped LAST: on Windows the spawned `event stop` is a child of
+        # the relay and relay_stop's `taskkill /T` would kill it mid-teardown, so
+        # companion/streams cleanup must finish first (#Windows PPID-tree).
+        assert calls.index("companion_stop") < calls.index("relay_stop")
+
+        calls.clear()
+        m.event_stop(["--no-report"])
+        assert "build" not in calls and "send" not in calls
+        assert "relay_stop" in calls
+    finally:
+        (m._build_report_file, m._send_report_core, m.relay_stop,
+         m.companion_stop, m.streams_stop, m._streams_static_dir) = saved
+
+
+def t_event_stop_report_failure_still_tears_down():
+    calls = []
+    saved = (m._build_report_file, m.relay_stop, m.companion_stop,
+              m.streams_stop, m._streams_static_dir)
+    try:
+        def boom():
+            raise RuntimeError("no health data")
+        m._build_report_file = boom
+        m.relay_stop = lambda a: calls.append("relay_stop")
+        m.companion_stop = lambda a: calls.append("companion_stop")
+        m.streams_stop = lambda a: None
+        m._streams_static_dir = lambda: "/nonexistent-streams-dir"
+        m.event_stop([])                       # must not raise
+        assert "relay_stop" in calls
+    finally:
+        (m._build_report_file, m.relay_stop, m.companion_stop,
+         m.streams_stop, m._streams_static_dir) = saved
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

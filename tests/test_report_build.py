@@ -187,6 +187,73 @@ def t_build_report_no_mutation_on_repeated_call():
     assert rep1["health_bands"] == snapshot, "first call's health_bands were mutated by second call"
 
 
+def t_fmt_seconds():
+    import time as _t
+    # _fmt_dur keeps seconds even at hour scale
+    assert rb._fmt_dur(3725) == "1h 2m 5s"
+    assert rb._fmt_dur(125) == "2m 5s"
+    assert rb._fmt_dur(5) == "5s"
+    # _fmt_clock shows HH:MM:SS
+    ts = _t.mktime((2026, 7, 5, 15, 17, 9, 0, 0, -1))
+    assert rb._fmt_clock(ts) == "15:17:09"
+    assert rb._fmt_clock(None) == "—"
+
+
+def t_on_air_windows_and_exclusion():
+    # part events define the on-air window; obs_stream is the fallback
+    ev = [{"ts": 100, "type": "part_start", "metadata": {"index": 1}},
+          {"ts": 400, "type": "part_end", "metadata": {"index": 1}}]
+    assert rb.on_air_windows(ev, 500) == [(100, 400)]
+    assert rb.windows_total_s([(100, 400)]) == 300
+    ev2 = [{"ts": 100, "type": "obs_stream_start"}, {"ts": 300, "type": "obs_stream_stop"}]
+    assert rb.on_air_windows(ev2, 500) == [(100, 300)]
+    assert rb.on_air_windows([], 500) is None
+    # unclosed part_start closes at session_end
+    assert rb.on_air_windows([{"ts": 100, "type": "part_start"}], 500) == [(100, 500)]
+
+
+def t_build_report_excludes_off_air():
+    def s(ts, lvl):
+        return {"ts": ts, "health_level": lvl, "health_reasons": [],
+                "live_stint": 1, "feed_a_down": 0, "feed_b_down": 0}
+    # off-air red BEFORE the part window must not count; in-window green = 100% uptime
+    samples = [s(50, "red"), s(100, "green"), s(130, "green"), s(160, "green")]
+    events = [{"ts": 100, "type": "part_start", "metadata": {"index": 1}},
+              {"ts": 160, "type": "part_end", "metadata": {"index": 1}}]
+    rep = rb.build_report(samples, events, {}, "T", (50, 160), 200)
+    assert rep["header"]["uptime_pct"] == 100.0
+    assert rep["header"]["on_air_s"] == 60
+    assert rep["incidents"] == []          # the pre-window red is excluded
+    # timeline lists the part boundaries
+    tl = rep["broadcast_timeline"]
+    assert [(r["ts"], r["label"]) for r in tl] == [(100, "Part 1 started"), (160, "Part 1 ended")]
+    html = rb.render_html(rep)
+    assert "Broadcast timeline" in html and "Part 1 started" in html
+    assert ">On air<" in html
+
+
+def t_build_report_legacy_no_windows():
+    # no part/obs_stream events -> whole-session behaviour (off-air counts)
+    def s(ts, lvl):
+        return {"ts": ts, "health_level": lvl, "health_reasons": ["off air"],
+                "live_stint": 1, "feed_a_down": 0, "feed_b_down": 0}
+    samples = [s(0, "green"), s(30, "red"), s(60, "green")]
+    rep = rb.build_report(samples, [], {}, "T", (0, 60), 100)
+    assert rep["header"]["on_air_s"] == 60          # falls back to full duration
+    assert len(rep["incidents"]) == 1               # off-air still counted
+
+
+def t_report_discord_fields():
+    rep = {"header": {"uptime_pct": 98.0, "on_air_s": 3600, "duration_s": 7200,
+                      "start": 0, "end": 7200}, "incidents": [1, 2]}
+    f = dict(rb.report_discord_fields(rep))
+    assert f["Uptime"] == "98.0%"
+    assert f["On air"] == "1h 0m 0s"
+    assert f["Incidents"] == "2"
+    assert f["Session length"] == "2h 0m 0s"
+    assert "Window" in f
+
+
 def run():
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

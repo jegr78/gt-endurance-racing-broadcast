@@ -130,6 +130,15 @@ def t_setup_badge_wired():
     assert 'getElementById("subSec")' in h
 
 
+def t_final_part_confirmation_present():
+    h = _html()
+    # last-part detection in the modal + the final-confirm copy
+    assert "d.index === d.count" in h or "d.index == d.count" in h
+    assert "ends the broadcast" in h.lower()
+    # the panel reacts to the relay's {final:true} response
+    assert "res.final" in h
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
