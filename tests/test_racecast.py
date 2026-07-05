@@ -3538,6 +3538,10 @@ def t_event_stop_reports_then_tears_down():
         m.event_stop([])
         assert calls.index("send") < calls.index("relay_stop")   # report BEFORE teardown
         assert "build" in calls and "relay_stop" in calls
+        # relay is stopped LAST: on Windows the spawned `event stop` is a child of
+        # the relay and relay_stop's `taskkill /T` would kill it mid-teardown, so
+        # companion/streams cleanup must finish first (#Windows PPID-tree).
+        assert calls.index("companion_stop") < calls.index("relay_stop")
 
         calls.clear()
         m.event_stop(["--no-report"])

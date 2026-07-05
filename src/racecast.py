@@ -3295,7 +3295,11 @@ def event_stop(rest):
                 print(f"report: Discord send failed ({exc}).")
         except Exception as exc:  # noqa: BLE001 — no health data etc.; still tear down
             print(f"report: skipped ({exc}).")
-    relay_stop([])
+    # Tear down companion + streams BEFORE the relay. On Windows the panel-spawned
+    # `event stop` is a child of the relay process, and relay_stop runs
+    # `taskkill /F /T` which walks the parent-PID tree — that would kill this very
+    # process mid-teardown. Stopping the relay LAST means companion/streams cleanup
+    # has already run; report generation above still saw the relay up (for names).
     try:
         companion_stop([])
     except SystemExit as exc:
@@ -3303,6 +3307,7 @@ def event_stop(rest):
               else f"companion: stop failed (exit {exc.code}).")
     if glob.glob(os.path.join(_streams_static_dir(), "feed_*.pid")):
         streams_stop([])
+    relay_stop([])
     print("OBS/Discord/Tailscale keep running — quit them manually if needed.")
 
 
