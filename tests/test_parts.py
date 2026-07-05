@@ -7,6 +7,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "src", "scripts"))
 import parts as m  # pure module
+import producer as pm  # pure Producer-tab classifier (same sys.path as parts)
 
 # relay module (hyphenated filename -> load by path); used from Task 2 on.
 _rspec = importlib.util.spec_from_file_location(
@@ -190,6 +191,29 @@ def t_last_part_condition():
     assert vm["live"] and vm["index"] == vm["count"]      # last part is live
     vm1 = m.parts_view_model(rows, {"index": 1, "live": True}, stream_active=True)
     assert not (vm1["index"] == vm1["count"])             # not the last part
+
+
+def t_part_kind_classifies_q_vs_numeric():
+    assert pm.part_kind("Q") == "qualifying"
+    assert pm.part_kind("q") == "qualifying"
+    assert pm.part_kind(" Qualifying ") == "qualifying"
+    assert pm.part_kind("Q1") == "qualifying"
+    assert pm.part_kind("Part 1") == "race"
+    assert pm.part_kind("1") == "race"
+    assert pm.part_kind("") == "race"
+    assert pm.part_kind(None) == "race"
+
+
+def t_active_producer_rows_filters_by_mode():
+    rows = [{"part": "Part 1"}, {"part": "Q"}, {"part": "Part 2"}]
+    race = pm.active_producer_rows(rows, "race")
+    assert [r["part"] for r in race] == ["Part 1", "Part 2"]
+    qual = pm.active_producer_rows(rows, "qualifying")
+    assert [r["part"] for r in qual] == ["Q"]
+    # unknown mode -> race subset; empty/None -> []
+    assert [r["part"] for r in pm.active_producer_rows(rows, "x")] == ["Part 1", "Part 2"]
+    assert pm.active_producer_rows([], "race") == []
+    assert pm.active_producer_rows(None, "qualifying") == []
 
 
 if __name__ == "__main__":
