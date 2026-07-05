@@ -568,6 +568,8 @@
           <span class="spacer"></span>
           <a id="upd-banner" class="updbanner" target="_blank" rel="noopener" hidden></a>
           <input id="stint" type="number" min="1" placeholder="stint" aria-label="Stint number for mid-event takeover / start">
+          <label class="chk" title="Start the event in qualifying mode (Feed A serves the Qualifying tab)">
+            <input id="event-qualifying" type="checkbox"> Qualifying</label>
           <button onclick="opEventStart()">
             <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>Start event</button>
           <button class="danger" onclick="op('event-stop', true)">
@@ -1849,7 +1851,10 @@ async function op(name, confirmFirst, params) {
 
 function opEventStart() {
   const v = $('stint').value.trim();
-  op('event-start', true, v ? {stint: v} : {});
+  const params = {};
+  if (v) params.stint = v;
+  if ($('event-qualifying').checked) params.qualifying = true;
+  op('event-start', true, params);
 }
 
 // Funnel takeover: B is not on A's tailnet, so the peer dropdown is useless —

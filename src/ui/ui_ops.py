@@ -82,6 +82,12 @@ def _update_flag(value):
     return ["--update"] if value else []
 
 
+def _qualifying_flag(value):
+    """`--qualifying` starts the event in qualifying mode (Feed A serves the
+    Qualifying tab; the Parts control operates on the Q broadcast part)."""
+    return ["--qualifying"] if value else []
+
+
 def _funnel_flag(value):
     """`--funnel` switches `event takeover` to pull A's handover state over the
     public Tailscale Funnel (host is A's MagicDNS name) instead of the tailnet IP.
@@ -123,7 +129,7 @@ def _file_arg(value):
 PARAMS = {
     "cookies": {"browser": _browser_arg},
     "cookies-twitch": {"browser": _browser_arg},
-    "event-start": {"stint": _stint_arg},
+    "event-start": {"stint": _stint_arg, "qualifying": _qualifying_flag},
     # order: ip (positional) then --funnel then --stint
     "event-takeover": {"ip": _ip_arg, "funnel": _funnel_flag, "stint": _stint_arg},
     "install-tools": {"update": _update_flag},
