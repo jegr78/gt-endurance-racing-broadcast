@@ -220,6 +220,13 @@ else
     apt-get update
   fi
   apt-get install -y nvidia-open || warn "nvidia-open apt install returned non-zero (see output)"
+  # Register the freshly-installed driver/NVENC userspace libs in the loader cache NOW.
+  # The nvidia package's ldconfig dpkg-trigger can be DEFERRED, which left libnvidia-encode
+  # out of the cache right after install → the verification block's `libnvidia-encode` and
+  # `ffmpeg -encoders | grep nvenc` checks false-negatived on the live L4 box even though
+  # NVENC was fully present (Ubuntu ffmpeg hides HW encoders when the lib isn't loadable).
+  # A reboot also fixes it, but an explicit ldconfig makes the same-run verification honest.
+  ldconfig
   # Distinguish a genuine DKMS build failure from a mere reboot-pending state — they
   # need different fixes, and reporting one as the other wastes an operator's time.
   if nvidia-smi >/dev/null 2>&1; then
@@ -464,6 +471,8 @@ log "verification — every REQUIRED component below must be PRESENT. There are 
 log "steps: a red PRESENCE line means the box is NOT fully equipped. provision is idempotent"
 log "— fix the cause and re-run; nothing is skipped on a real (GPU) event box."
 rc=0
+ldconfig 2>/dev/null || true   # settle the loader cache so the GPU/NVENC presence checks
+                               # below are honest even if a dpkg ldconfig-trigger was deferred
 pw_home="$(getent passwd "$USER_NAME" | cut -d: -f6)"
 mbin="$pw_home/runtime/bin"          # racecast-managed tool bin (yt-dlp / streamlink / deno)
 
