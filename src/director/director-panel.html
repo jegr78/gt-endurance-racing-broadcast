@@ -630,6 +630,14 @@
     </div>
   </section>
 
+  <section class="bus" id="obsBus"
+           title="Reload the relay-served OBS browser sources (HUD / overlay / timer) — clears OBS's cached pages">
+    <div class="cap">OBS</div>
+    <div class="keys">
+      <button class="k" id="obsRefreshBtn">↻ REFRESH</button>
+    </div>
+  </section>
+
   <details class="bus urls" id="urlsBox">
     <summary>URLs · Schedule + POV</summary>
     <div class="body">
@@ -1050,6 +1058,12 @@ const obsSource = (scene,source,on) => obsPost("source", {scene, source, on});
 const obsVol    = (input,db)        => obsPost("audio",  {input, db});
 const obsMute   = (input,muted)     => obsPost("audio",  {input, mute:muted});
 const obsStream = (on)              => obsPost("stream", {on});
+
+{ const b = $("#obsRefreshBtn"); if (b) b.addEventListener("click", async () => {
+    const d = await obsPost("refresh", {});
+    if (d && d.ok) log("OBS refresh — " + (d.note || (d.count + " source(s)")));
+    else log("OBS refresh failed" + (d && d.error ? ": " + d.error : ""), "warn");
+  }); }
 
 /* Broadcast Part control (#395). When a Producer tab exists (/parts/data.enabled),
    the Part-aware button supersedes the generic GO-LIVE button; otherwise the panel
