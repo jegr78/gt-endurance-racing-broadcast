@@ -846,6 +846,7 @@ def _relay_runtime_args():
             + _overlay_relay_args(_active_overlay_dir()))
 
 RELAY_PORT = 8088
+STANDBY_SCENE = "Standby"   # canonical scene name in src/obs/GT_Endurance.json
 
 # The relay-served pages OBS renders as browser sources (panel is tablet-only).
 # The override.css is hashed too, so a per-profile CSS edit advances the
@@ -3149,6 +3150,28 @@ def _check_scene_collection():
               f"before going live.")
 
 
+def _switch_to_standby():
+    """After bring-up, park OBS on the Standby scene (Director Guide: start on
+    Standby, then Start Streaming). Default-on; RACECAST_OBS_STANDBY_ON_START=0
+    disables. Best-effort: never blocks bring-up, and NEVER cuts a live program
+    (switch_to_scene_if_idle skips when OBS output is active)."""
+    if not _standby_on_start_enabled():
+        return
+    try:
+        import obs_ws
+    except Exception as exc:                          # noqa: BLE001 — best effort
+        print(f"obs: standby switch skipped ({exc}).")
+        return
+    action, note = obs_ws.switch_to_scene_if_idle(STANDBY_SCENE)
+    if action == "switched":
+        print(f"obs: switched to the '{STANDBY_SCENE}' scene — ready to Start Streaming.")
+    elif action == "live":
+        print(f"obs: '{STANDBY_SCENE}' switch skipped — {note}.")
+    else:  # error
+        print(f"obs: '{STANDBY_SCENE}' switch skipped — {note}. "
+              f"Switch to Standby manually before going live.")
+
+
 def event_start(rest, _autojoin=True):
     """Bring the event stack up. Order matters: Tailscale first (the Companion
     bind needs its IP), relay before OBS (the HUD browser source then connects
@@ -3235,6 +3258,7 @@ def event_start(rest, _autojoin=True):
     # _sync_pov_transform runs (it is nested inside the refresh).
     _check_scene_collection()
     _refresh_obs_pages(force=True)
+    _switch_to_standby()          # park OBS on Standby, ready to Start Streaming
     print()
     for line in ev.director_urls(_tailscale_ip(), _companion_tablet_port(),
                                  relay_port=RELAY_PORT):
@@ -4254,6 +4278,14 @@ def _collection_switch_enabled():
     falsey value (0/false/no/off) restores the old warn-only behaviour; absent/empty
     means enabled. Mirrors the RACECAST_FEED_FANOUT parse convention."""
     return _machine_env_value("RACECAST_OBS_COLLECTION_SWITCH").strip().lower() \
+        not in {"0", "false", "no", "off"}
+
+
+def _standby_on_start_enabled():
+    """Opt-OUT: `event start` parks OBS on the Standby scene by default. Setting the
+    machine flag RACECAST_OBS_STANDBY_ON_START to a falsey value (0/false/no/off)
+    disables it; absent/empty means enabled. Mirrors _collection_switch_enabled."""
+    return _machine_env_value("RACECAST_OBS_STANDBY_ON_START").strip().lower() \
         not in {"0", "false", "no", "off"}
 
 

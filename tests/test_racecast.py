@@ -3414,6 +3414,21 @@ def t_collection_switch_enabled_default_on_and_optout():
         m._machine_env_value = orig
 
 
+def t_standby_on_start_enabled_default_on_and_optout():
+    orig = m._machine_env_value
+    try:
+        m._machine_env_value = lambda name: ""                 # unset -> default on
+        assert m._standby_on_start_enabled() is True
+        for off in ("0", "false", "no", "off", " OFF ", "False"):
+            m._machine_env_value = lambda name, v=off: v
+            assert m._standby_on_start_enabled() is False, off
+        for on in ("1", "true", "yes", "on", "anything"):
+            m._machine_env_value = lambda name, v=on: v
+            assert m._standby_on_start_enabled() is True, on
+    finally:
+        m._machine_env_value = orig
+
+
 def _obsws_module():
     import sys as _sys
     SCRIPTS = os.path.join(ROOT, "src", "scripts")

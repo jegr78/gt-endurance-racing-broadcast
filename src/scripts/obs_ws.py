@@ -754,6 +754,30 @@ def set_current_program_scene(scene, host="127.0.0.1", port=None,
         session.close()
 
 
+def switch_to_scene_if_idle(scene, host="127.0.0.1", port=None,
+                            password=None, timeout=2.0):
+    """Switch OBS to `scene` ONLY when no stream output is active — never cut a
+    live program. Reads GetStreamStatus first; if the stream is live, leaves the
+    program scene untouched. Best effort — never raises (same contract as
+    get_program_screenshot). Returns (action, note) where action is one of:
+      "switched" — OBS was idle; SetCurrentProgramScene sent
+      "live"     — OBS is streaming; NO switch sent (note explains)
+      "error"    — could not reach OBS / a request failed (note has the reason)."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return "error", note
+    try:
+        status = parse_stream_status(session.request("GetStreamStatus", {}))
+        if status.get("stream_active"):
+            return "live", "OBS is streaming — left the program scene untouched"
+        session.request("SetCurrentProgramScene", {"sceneName": scene})
+        return "switched", ""
+    except Exception as exc:                          # noqa: BLE001 — best-effort contract
+        return "error", str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
 def set_input_volume(input_name, volume_db, host="127.0.0.1", port=None,
                      password=None, timeout=2.0):
     """Set an OBS audio input volume in dB (best effort). (ok, note)."""
