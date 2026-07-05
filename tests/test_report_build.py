@@ -187,6 +187,18 @@ def t_build_report_no_mutation_on_repeated_call():
     assert rep1["health_bands"] == snapshot, "first call's health_bands were mutated by second call"
 
 
+def t_fmt_seconds():
+    import time as _t
+    # _fmt_dur keeps seconds even at hour scale
+    assert rb._fmt_dur(3725) == "1h 2m 5s"
+    assert rb._fmt_dur(125) == "2m 5s"
+    assert rb._fmt_dur(5) == "5s"
+    # _fmt_clock shows HH:MM:SS
+    ts = _t.mktime((2026, 7, 5, 15, 17, 9, 0, 0, -1))
+    assert rb._fmt_clock(ts) == "15:17:09"
+    assert rb._fmt_clock(None) == "—"
+
+
 def run():
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

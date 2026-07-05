@@ -181,7 +181,7 @@ def _fmt_dur(seconds):
     h, rem = divmod(seconds, 3600)
     m, s = divmod(rem, 60)
     if h:
-        return f"{h}h {m}m"
+        return f"{h}h {m}m {s}s"
     if m:
         return f"{m}m {s}s"
     return f"{s}s"
@@ -190,7 +190,7 @@ def _fmt_dur(seconds):
 def _fmt_clock(ts):
     if ts is None:
         return "—"
-    return time.strftime("%H:%M", time.localtime(ts))
+    return time.strftime("%H:%M:%S", time.localtime(ts))
 
 
 def _fmt_date(ts):
