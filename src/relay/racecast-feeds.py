@@ -452,6 +452,17 @@ def stream_event_log_line(started, kbps=None, uptime_s=None):
     if dur:
         head += f" after {dur}"
     return head
+
+
+def event_stop_argv(frozen, exe, rel_here):
+    """Argv to spawn a detached `racecast event stop`. Frozen: re-invoke the binary
+    itself (like the relay/streams daemons). Source: python runs ../racecast.py
+    relative to the relay script dir. Pure — I/O is in Relay._spawn_event_stop."""
+    if frozen:
+        return [exe, "event", "stop"]
+    return [exe, os.path.join(rel_here, os.pardir, "racecast.py"), "event", "stop"]
+
+
 # Sheet ID is NOT hardcoded — it comes from RACECAST_SHEET_ID (injected by the CLI
 # from the active profile). Override per-run with --sheet-id.
 DEFAULT_SHEET_TAB = "Schedule"
@@ -5540,6 +5551,29 @@ class Relay:
             except Exception:    # noqa: BLE001 — best-effort
                 pass
 
+    def _spawn_event_stop(self):
+        """Detached `racecast event stop` — it generates+sends the report (we are
+        still up, so names resolve) then tears racecast down (kills us by PID).
+        Detach into a new session so our own teardown cannot cascade-kill the child.
+        Best-effort — a spawn failure is logged, never raised."""
+        try:
+            frozen = bool(getattr(sys, "frozen", False))
+            argv = event_stop_argv(frozen, sys.executable, _REL_HERE)
+            env = os.environ.copy()
+            if frozen:
+                env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+            kwargs = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
+                      "stderr": subprocess.DEVNULL, "env": env}
+            if os.name == "nt":
+                kwargs["creationflags"] = (subprocess.DETACHED_PROCESS
+                                           | subprocess.CREATE_NEW_PROCESS_GROUP)
+            else:
+                kwargs["start_new_session"] = True
+            subprocess.Popen(argv, **kwargs)
+            LOG.info("Last part ended — spawned `event stop` (report + teardown).")
+        except Exception:      # noqa: BLE001 — best-effort
+            LOG.exception("failed to spawn event stop")
+
     def _sample_connectivity(self):
         """Sample Funnel/Tailscale/Companion reachability into self.conn_state and
         latch funnel_expected. Best-effort: each probe defaults to None on failure."""
@@ -7415,6 +7449,15 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if not ok3:
                         return self._send({"ok": False, "error": note3}, 503)
                     part_store.mark_live(idx)
+                    if health_store is not None:
+                        try:
+                            health_store.record_event(
+                                time.time(), "part_start",
+                                label=f"Part {idx} started",
+                                producer=relay.producer_name,
+                                metadata={"index": idx})
+                        except Exception:   # noqa: BLE001 — best-effort
+                            pass
                     return self._send({"ok": True, "index": idx})
                 if p == ["parts", "end"]:
                     if part_store is None or _obs_ws is None:
@@ -7425,7 +7468,25 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     ok2, note = _obs_ws.set_stream(False)
                     if not ok2:
                         return self._send({"ok": False, "error": note}, 503)
+                    rows = producer_source.get() if producer_source is not None else []
+                    pre_vm = parts_mod.parts_view_model(rows, part_store.get(),
+                                                        stream_active=True)
+                    is_last = bool(pre_vm.get("live") and pre_vm.get("count")
+                                   and pre_vm.get("index") == pre_vm.get("count"))
                     part_store.end()
+                    if health_store is not None:
+                        try:
+                            health_store.record_event(
+                                time.time(), "part_end",
+                                label=f"Part {res} ended",
+                                producer=relay.producer_name,
+                                metadata={"index": res})
+                        except Exception:   # noqa: BLE001 — best-effort
+                            pass
+                    if is_last:
+                        self._send({"ok": True, "index": res, "final": True})
+                        relay._spawn_event_stop()
+                        return
                     return self._send({"ok": True, "index": res})
                 if not setup_ctl:
                     return self._send({"error": "setup control disabled"}, 404)
