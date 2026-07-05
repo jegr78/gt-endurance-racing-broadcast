@@ -3281,7 +3281,20 @@ def event_start(rest, _autojoin=True):
 
 def event_stop(rest):
     """Stop racecast-managed services only — never the GUI apps (a mistyped command
-    must not be able to kill a live broadcast)."""
+    must not be able to kill a live broadcast). Generates + sends the post-event
+    report BEFORE the teardown (default-on; --no-report skips) — while the relay is
+    still up, so commentator names resolve. Report failure is non-fatal."""
+    if "--no-report" not in rest:
+        try:
+            r = _build_report_file()
+            print(r["summary"])
+            try:
+                _send_report_core(r["path"], report=r.get("report"))
+                print("Report sent to Discord.")
+            except Exception as exc:  # noqa: BLE001 — best-effort; still tear down
+                print(f"report: Discord send failed ({exc}).")
+        except Exception as exc:  # noqa: BLE001 — no health data etc.; still tear down
+            print(f"report: skipped ({exc}).")
     relay_stop([])
     try:
         companion_stop([])
