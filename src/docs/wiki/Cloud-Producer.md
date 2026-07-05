@@ -193,10 +193,14 @@ RustDesk mirrors the display on `:0`, which is the **`racecast` autologin sessio
 same session OBS runs in — so the remote desktop, OBS and the install tree are all the one
 `racecast` user (no user mismatch to trip over).
 
-- One-time (during provisioning): set a **permanent password** and enable
-  **RustDesk → Settings → Security → "Enable direct IP access"**.
-- Connect from your laptop's RustDesk to the box's **`100.x` Tailscale IP** (direct IP over
-  the tailnet — no public relay).
+- **RustDesk is auto-configured** — provision sets the password and prints the credentials.
+  After the first boot, read them over SSH: `cat ~/rustdesk-access.txt` (**ID + password**,
+  written by the `racecast-rustdesk-setup` first-boot oneshot; override the password with
+  `RUSTDESK_PASSWORD` at provision time). No GUI password step.
+- Connect from your laptop's RustDesk with that **ID + password**. Over the tailnet you can
+  instead use the box's **`100.x` IP** (direct IP, no public relay) once **Settings →
+  Security → "Enable direct IP access"** is on — a one-click if the scripted toggle didn't
+  take on your RustDesk build.
 - If the desktop is black / `nvidia-smi` wasn't ready, reboot the box once so the autologin X
   session (which RustDesk shows) starts.
 

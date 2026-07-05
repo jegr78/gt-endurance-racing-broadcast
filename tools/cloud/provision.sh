@@ -119,6 +119,49 @@ EOF
     "$user_home/.config/autostart/racecast-discord.desktop"
 }
 
+# Write the first-boot RustDesk setup helper. RustDesk's password / ID / direct-IP toggle
+# need the user's GRAPHICAL session (rustdesk spawns --server inside it), which only comes
+# up after the first reboot (autologin). So provision cannot set them inline; instead this
+# root helper runs once from a systemd oneshot After=graphical.target: it sets the password
+# (from /etc/racecast/rustdesk-password), best-effort enables direct IP access, and writes
+# the ID + password to ~USER/rustdesk-access.txt for the operator. No GUI, no manual step.
+write_rustdesk_setup_helper() {
+  local user_name="$1"
+  cat > /usr/local/sbin/racecast-rustdesk-setup <<'HELPER'
+#!/usr/bin/env bash
+# Managed by racecast provision.sh — configures RustDesk once the desktop session is up.
+set -u
+USER_NAME="__USER__"
+uid="$(id -u "$USER_NAME" 2>/dev/null)" || exit 0
+run_as_user() { sudo -u "$USER_NAME" DISPLAY=:0 XDG_RUNTIME_DIR="/run/user/$uid" "$@"; }
+# Wait for the rustdesk server (spawned in the user session) to answer with an ID.
+rid=""
+for _ in $(seq 1 30); do
+  rid="$(run_as_user rustdesk --get-id 2>/dev/null | tr -dc '0-9')"
+  [ -n "$rid" ] && break
+  sleep 2
+done
+pw="$(cat /etc/racecast/rustdesk-password 2>/dev/null)"
+[ -n "$pw" ] && rustdesk --password "$pw" >/dev/null 2>&1
+# Best-effort: enable direct IP access over the tailnet (a no-op on builds that gate it).
+run_as_user rustdesk --option direct-server Y >/dev/null 2>&1 || true
+ip="$(tailscale ip -4 2>/dev/null | head -1)"
+out="/home/$USER_NAME/rustdesk-access.txt"
+{
+  echo "RustDesk access for this box (user: $USER_NAME) — generated on first boot."
+  echo "  ID:        ${rid:-<run: rustdesk --get-id>}"
+  echo "  Password:  ${pw:-<unset — set /etc/racecast/rustdesk-password + re-run>}"
+  echo "  Tailnet:   ${ip:-<tailscale ip -4>}"
+  echo "Connect from your laptop's RustDesk with the ID + password."
+} > "$out"
+chown "$USER_NAME:$(id -gn "$USER_NAME")" "$out" 2>/dev/null || true
+chmod 0600 "$out" 2>/dev/null || true
+install -d /var/lib/racecast; : > /var/lib/racecast/rustdesk-configured
+HELPER
+  sed -i "s/__USER__/$user_name/" /usr/local/sbin/racecast-rustdesk-setup
+  chmod 0755 /usr/local/sbin/racecast-rustdesk-setup
+}
+
 if [ "$(id -u)" -ne 0 ]; then
   echo "provision.sh must run as root (use: sudo ./provision.sh)" >&2
   exit 1
@@ -248,15 +291,43 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-log "5/10  RustDesk (remote desktop over the tailnet)"
+log "5/10  RustDesk (remote desktop over the tailnet) — install + auto-configure"
 if have rustdesk; then
   ok "RustDesk already present"
 else
   deb="/tmp/rustdesk-${RUSTDESK_VERSION}.deb"
   curl -fsSL "https://github.com/rustdesk/rustdesk/releases/download/${RUSTDESK_VERSION}/rustdesk-${RUSTDESK_VERSION}-x86_64.deb" -o "$deb"
   apt-get install -y "$deb"
-  ok "RustDesk ${RUSTDESK_VERSION} installed (set the password + 'direct IP access' in the GUI)"
+  ok "RustDesk ${RUSTDESK_VERSION} installed"
 fi
+systemctl enable --now rustdesk >/dev/null 2>&1 || true
+# Password/ID/direct-IP need the graphical session (post first-boot), so we generate the
+# password now (root-only) and install a first-boot oneshot that finishes the config and
+# writes the connection info. RUSTDESK_PASSWORD overrides the generated one. No GUI step.
+install -d -m 0700 /etc/racecast
+if [ ! -s /etc/racecast/rustdesk-password ]; then
+  printf '%s' "${RUSTDESK_PASSWORD:-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)}" \
+    > /etc/racecast/rustdesk-password
+  chmod 0600 /etc/racecast/rustdesk-password
+fi
+write_rustdesk_setup_helper "$USER_NAME"
+cat > /etc/systemd/system/racecast-rustdesk-setup.service <<EOF
+[Unit]
+Description=racecast: configure RustDesk (password + direct IP) once the desktop is up
+After=graphical.target
+Wants=graphical.target
+ConditionPathExists=!/var/lib/racecast/rustdesk-configured
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/racecast-rustdesk-setup
+RemainAfterExit=yes
+
+[Install]
+WantedBy=graphical.target
+EOF
+systemctl enable racecast-rustdesk-setup.service >/dev/null 2>&1 || true
+ok "RustDesk auto-config armed — on first boot the ID + password land in ~$USER_NAME/rustdesk-access.txt"
 
 # ---------------------------------------------------------------------------
 log "6/10  passwordless sudo"
@@ -448,7 +519,9 @@ if [ "$rc" -eq 0 ]; then
   echo "      Log in as that user directly — 'gcloud compute ssh $USER_NAME@racecast-box' —"
   echo "      then run racecast plainly: 'racecast preflight', 'racecast event start', …"
   echo "      Remaining operational steps (if warned above): finish the tailnet join + reboot"
-  echo "      for the GPU X session. Then: per-league onboarding (profile + cookies + setup + OBS import)."
+  echo "      for the GPU X session (the reboot also auto-configures RustDesk)."
+  echo "      After the reboot: 'cat ~$USER_NAME/rustdesk-access.txt' for the RustDesk ID + password."
+  echo "      Then: per-league onboarding (profile + cookies + setup + OBS import)."
 else
   warn "provision.sh finished with MISSING components (red PRESENCE lines above) — the box is"
   warn "NOT fully equipped. Fix the cause and re-run provision; it is idempotent and will"
