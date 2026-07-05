@@ -11,7 +11,11 @@
 #
 # Optional environment:
 #   TS_AUTHKEY        Tailscale reusable/ephemeral pre-auth key for unattended join.
-#                     NEVER commit this. When unset, the browser-auth command is printed.
+#                     NEVER commit this. The tailnet join is REQUIRED (step 10): with a key
+#                     it is unattended; run interactively without a key and step 10 performs
+#                     the browser-auth join (prints a login URL to approve in your laptop
+#                     browser, and WAITS); only a non-interactive run without a key defers it
+#                     to a one-line command the operator must run once.
 #   RACECAST_TAG      racecast release tag to install (default: latest = latest STABLE
 #                     release). Set to `preview-main` to install the current main
 #                     preview build — needed until the Linux install-tools/install-apps
@@ -351,14 +355,36 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-log "10/10  Tailscale join"
+log "10/10  Tailscale join (REQUIRED — the tailnet is the box's trust boundary)"
+# Joining the tailnet is NOT optional: it is the only way your laptop reaches the Control
+# Center / relay / RustDesk privately (the relay's control port is never exposed publicly).
+# We DO the join here rather than just suggesting it:
+#   - TS_AUTHKEY set        -> unattended join (CI / startup-script).
+#   - interactive terminal  -> run `tailscale up` NOW; it prints a login URL you open in
+#                              your LAPTOP browser to approve the box. Provisioning WAITS
+#                              here until you finish (browser auth — no key committed to git).
+#   - non-interactive, no key (detached / startup-script) -> can't prompt for browser auth;
+#                              print the one command to run once and let the verification
+#                              block flag the box as not-yet-joined. This is the ONLY branch
+#                              that leaves the REQUIRED join for the operator to finish.
 if tailscale status >/dev/null 2>&1; then
   ok "already joined the tailnet ($(tailscale ip -4 2>/dev/null | head -1))"
 elif [ -n "${TS_AUTHKEY:-}" ]; then
   tailscale up --ssh --authkey "$TS_AUTHKEY" --hostname racecast-box
-  ok "joined the tailnet unattended"
+  ok "joined the tailnet unattended ($(tailscale ip -4 2>/dev/null | head -1))"
+elif [ -t 0 ]; then
+  log "   ACTION REQUIRED — approve this box into your tailnet."
+  log "   'tailscale up' prints a https://login.tailscale.com/… URL below; open it in your"
+  log "   LAPTOP browser and approve. Provisioning WAITS here until you finish."
+  if tailscale up --ssh --hostname racecast-box; then
+    ok "joined the tailnet ($(tailscale ip -4 2>/dev/null | head -1))"
+  else
+    warn "tailscale up did not complete — re-run: sudo tailscale up --ssh --hostname racecast-box"
+  fi
 else
-  warn "no TS_AUTHKEY set — run this once to join:"
+  warn "REQUIRED join not done: no TS_AUTHKEY and no interactive terminal (detached run)."
+  warn "The box is NOT reachable over the tailnet yet. Run this once and approve the URL"
+  warn "in your LAPTOP browser:"
   echo "      sudo tailscale up --ssh --hostname racecast-box"
 fi
 
