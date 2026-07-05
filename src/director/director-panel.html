@@ -2098,7 +2098,7 @@ function subRow(e){
   const tr = document.createElement("tr"); tr.dataset.id = e.id;
   const prev = e.prev_url ? escapeHtml(e.prev_url) : "— empty —";
   const qtag = e.mode === "qualifying"
-    ? '<span class="tag" style="background:#7c3aed;color:#fff;border-radius:3px;padding:0 4px;font-size:10px;margin-right:4px">QUALI</span>'
+    ? '<span style="background:var(--blue);color:var(--bg);border-radius:3px;padding:0 4px;font-size:10px;font-weight:600;margin-right:4px">QUALI</span>'
     : '';
   tr.innerHTML = `<td class="rn">${escapeHtml(e.target_stint||"?")}</td>
     <td>${qtag}<b>${escapeHtml(e.streamer_name||e.streamer_key||"?")}</b><br>
