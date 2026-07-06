@@ -90,6 +90,42 @@ resolve_root() {
   PROFILES="$ROOT/profiles"
 }
 
+# shellcheck disable=SC2034
+PREFLIGHT_RC=0
+
+run_prep_sequence() {
+  log "activating profile '$LEAGUE'"
+  racecast profile use "$LEAGUE" || die "racecast profile use '$LEAGUE' failed"
+
+  log "refreshing YouTube cookies"
+  racecast cookies firefox || warn "YouTube cookie refresh failed — check the box's Firefox is signed in to YouTube"
+  if [ "$NO_TWITCH" = 1 ]; then
+    log "Twitch cookies: skipped (--no-twitch)"
+  else
+    log "refreshing Twitch cookies"
+    racecast cookies twitch firefox || warn "Twitch cookie refresh failed — sign in to Twitch in the box's Firefox, or pass --no-twitch"
+  fi
+
+  log "refreshing broadcast graphics"; racecast graphics || warn "graphics refresh failed (OBS shows black for missing files)"
+  log "refreshing intro/outro media"; racecast media || warn "media refresh failed"
+  log "refreshing brand logos";       racecast brands || warn "brands refresh failed"
+
+  if [ "$NO_SPEEDTEST" = 1 ]; then
+    log "speedtest: skipped (--no-speedtest)"
+  else
+    log "running bandwidth speedtest"; racecast speedtest || warn "speedtest failed (network); preflight bandwidth check may be stale"
+  fi
+
+  log "forcing a clean relay state (stop + free feed ports)"
+  racecast relay stop >/dev/null 2>&1 || true
+  racecast freeport --force >/dev/null 2>&1 || true
+
+  log "running preflight"
+  racecast preflight
+  # shellcheck disable=SC2034
+  PREFLIGHT_RC=$?
+}
+
 sanity_guard() {
   [ "$(id -un)" = "$RACECAST_USER" ] || die "run as the '$RACECAST_USER' user (current: '$(id -un)'). Try: sudo -iu $RACECAST_USER ./prepare-event.sh $*"
   command -v racecast >/dev/null 2>&1 || die "racecast not on PATH"
@@ -103,7 +139,8 @@ main() {
   sanity_guard "$@"
   log "profile '$LEAGUE' found; install root $ROOT"
   do_update
-  # (further steps added in later tasks)
+  run_prep_sequence
+  # readiness report added in Task 4
 }
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
