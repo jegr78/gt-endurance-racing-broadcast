@@ -37,7 +37,7 @@ practical differences:
 The page is organized as horizontal busses; the Stream Deck pages and the panel share
 one muscle memory:
 
-![The director panel — the whole show on one page: the PGM, FEEDS, HUD, SCN·VIS, GFX, TIMER, AUDIO and CUES busses, a status strip, and the collapsible URLs / Qualifying / Chat sections](images/director-panel.png)
+![The director panel — the whole show on one page: the PGM, FEEDS, HUD, SCN·VIS, GFX, TIMER, AUDIO and CUES busses, a status strip, and the collapsible Schedule and Chat sections](images/director-panel.png)
 
 | Bus | What's on it |
 |---|---|
@@ -168,14 +168,21 @@ The panel HUD row needs the sheet-write webhook (the profile's `SHEET_PUSH_URL`)
 without it the panel dropdowns are read-only. (The sheet's own dropdowns work
 either way — they never need the webhook.) See [Sheet-Webhook](Sheet-Webhook).
 
-## Director panel — URLs section
+## Director panel — Schedule section
 
-Below the main rows the panel has a collapsible **URLs** section. It shows the
-Schedule tab entries (one per stint: **Streamer** + **Stint** label dropdowns +
-stream URL; rows currently assigned to a live feed are marked A or B) and the
-POV URL field. The Streamer and Stint dropdowns draw from the **same**
+Below the main rows the panel has one collapsible, **mode-aware Schedule**
+section. Its header carries a mode chip (**RACE** / **QUALIFYING**) and a single
+switch button (**switch → QUALIFYING** / **switch → RACE**) — see
+[Qualifying](#director-panel--qualifying). The body follows the mode: in **race**
+mode it shows the Schedule tab entries (one per stint: **Streamer** + **Stint**
+label dropdowns + stream URL; rows currently assigned to a live feed are marked A
+or B); in **qualifying** mode it shows the single Qualifying row instead. The
+**POV** URL field sits below and is shown in **both** modes (POV is a separate,
+mode-independent feed). The Streamer and Stint dropdowns draw from the **same**
 Configuration vocabulary as the HUD row dropdowns, so a row's values can never
 drift out of vocab.
+
+![The panel's mode-aware Schedule section in race mode: a SCHEDULE header with a RACE mode chip and a "switch → QUALIFYING" button, the per-stint Streamer/Stint/URL rows (live rows marked A/B), + ADD ROW, and the shared POV row below](images/director-panel-schedule.png)
 
 Saving a change writes it to the sheet — **no feed reconnects
 automatically**. A new stream URL takes effect at the next **RELOAD A/B** /
@@ -195,29 +202,33 @@ URL in the sheet (after a confirmation). The row itself stays and can be
 refilled later — rows are never deleted, because removing a row would shift the
 stint numbering of everything after it.
 
-The URLs section also needs the profile's `SHEET_PUSH_URL` — without it the fields are
+The Schedule section also needs the profile's `SHEET_PUSH_URL` — without it the fields are
 read-only.
 
 ## Director panel — Qualifying
 
-Qualifying usually runs on its own day and is a **single stream**. The panel has
-a separate collapsible **Qualifying** section, kept apart from the race Schedule:
+Qualifying usually runs on its own day and is a **single stream**. It is handled
+by the same [Schedule section](#director-panel--schedule-section) — one mode-aware
+block, not a separate one:
 
-- **QUALIFYING MODE / RACE MODE** buttons switch the relay's *active schedule*.
-  In qualifying mode the relay serves the **Qualifying** sheet tab on **Feed A**
-  (Feed B idles — there is only one stream), so OBS needs no scene change. The
-  switch re-points the feeds (it interrupts a running pull, so it is a
-  between-session action, like the FEEDS → STINT takeover) and, on switch, the
-  HUD's Streamer + Stint label follow the qualifying row — same mechanism as a
-  race handover.
-- A single editor row (**Streamer** + **Stint** dropdowns from the Configuration
-  vocab + stream **URL**) writes the **Qualifying** tab. CLEAR empties the row.
+- The Schedule header's single **switch → QUALIFYING** / **switch → RACE** button
+  switches the relay's *active schedule*. In qualifying mode the relay serves the
+  **Qualifying** sheet tab on **Feed A** (Feed B idles — there is only one
+  stream), so OBS needs no scene change, and the mode chip turns **QUALIFYING**.
+  The switch re-points the feeds (it interrupts a running pull, so it is a
+  between-session action, like the FEEDS → STINT takeover, and asks for
+  confirmation) and, on switch, the HUD's Streamer + Stint label follow the
+  qualifying row — same mechanism as a race handover.
+- In qualifying mode the body shows a single editor row (**Streamer** + **Stint**
+  dropdowns from the Configuration vocab + stream **URL**) that writes the
+  **Qualifying** tab, in place of the race rows. CLEAR empties the row. The POV
+  row stays available in both modes.
 
 The relay can also be brought up directly in qualifying mode with
 `racecast event start --qualifying` (or `racecast relay start --qualifying`).
-The Qualifying section needs the profile's `SHEET_PUSH_URL` for editing; serving
-and mode-switching work read-only. If the sheet has no **Qualifying** tab the
-section reports it and the controls are disabled. See
+Qualifying editing needs the profile's `SHEET_PUSH_URL`; serving and
+mode-switching work read-only. If the sheet has no **Qualifying** tab the switch
+is hidden and the qualifying controls are disabled. See
 [Sheet-Webhook](Sheet-Webhook) for the one-time Apps Script redeploy that enables
 qualifying write-back.
 

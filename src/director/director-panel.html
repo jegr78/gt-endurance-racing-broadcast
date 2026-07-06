@@ -218,12 +218,21 @@
 
   /* ---------- URLs section ---------- */
   details.urls{display:block}
+  /* honor the hidden attribute despite the display:block above (author rule
+     beats the UA [hidden] rule) — else #urlsBox stays shown in qualifying mode */
+  details.urls[hidden]{display:none}
   details.urls summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;
     font-family:var(--head);font-weight:700;letter-spacing:.12em;font-size:14px;text-transform:uppercase}
   details.urls summary::before{content:"";width:6px;height:16px;background:var(--amber);
     border-radius:2px;box-shadow:0 0 10px var(--amber-glow)}
   details.urls summary::after{content:"▸";color:var(--muted);margin-left:4px}
   details.urls[open] summary::after{content:"▾"}
+  .urls .modechip{margin-left:6px;padding:2px 8px;border-radius:6px;font-size:10px;
+    font-weight:700;letter-spacing:.14em;color:var(--amber);border:1px solid var(--amber)}
+  .urls .modechip.qual{color:var(--blue);border-color:var(--blue)}
+  .urls .modeswitch{padding:7px 12px;font-size:11px;letter-spacing:.12em;border-radius:8px;
+    border:1px solid var(--edge);background:#141921;color:var(--muted);cursor:pointer}
+  .urls .modeswitch:hover{border-color:var(--blue);color:var(--ink)}
   .urls table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
   .urls td{padding:4px 6px;vertical-align:middle}
   .urls td.rn{width:54px;color:var(--muted);white-space:nowrap}
@@ -639,49 +648,53 @@
   </section>
 
   <details class="bus urls" id="urlsBox">
-    <summary>URLs · Schedule + POV</summary>
+    <summary>Schedule <span class="modechip" id="modeChip">RACE</span></summary>
     <div class="body">
-      <table><tbody id="schedBody"></tbody></table>
-      <button class="add" id="schedAdd">+ ADD ROW</button>
+      <div style="margin-bottom:10px">
+        <button class="modeswitch" id="modeSwitch" hidden>switch → QUALIFYING</button>
+      </div>
+
+      <!-- Race schedule (shown in race mode) -->
+      <div id="raceSched">
+        <table><tbody id="schedBody"></tbody></table>
+        <button class="add" id="schedAdd">+ ADD ROW</button>
+        <div class="hint">YouTube or Twitch — enter a full watch URL
+          (<code>youtube.com/watch?v=…</code> or <code>twitch.tv/&lt;channel&gt;</code>).
+          Saves write the Google Sheet only — a feed picks the new URL up
+          on RELOAD A/B / NEXT (rows marked <b>A</b>/<b>B</b> are live now). Each row's
+          <b>Streamer</b> and <b>Stint</b> label (Configuration vocab) become the HUD's
+          STREAMER/STINT when that row goes on air. <b>CLEAR URL</b> removes only the
+          stream link and keeps the Streamer + Stint slot. Streamer/Stint/URL can still
+          be edited in the Sheet directly.</div>
+      </div>
+
+      <!-- Qualifying schedule (shown in qualifying mode) -->
+      <div id="qualSched" hidden>
+        <table><tbody>
+          <tr id="qualRow">
+            <td class="rn">Q<span class="livebadge" id="qualLive"></span></td>
+            <td style="width:22%"><select class="nm" id="qualNm" title="Streamer (Configuration vocab)"></select></td>
+            <td style="width:18%"><select class="st" id="qualSt" title="Stint label (Configuration vocab)"></select></td>
+            <td><input class="u" id="qualUrl" placeholder="youtube.com/watch?v=… · twitch.tv/<channel> · UC…"></td>
+            <td class="act"><button class="save" id="qualSave">SAVE</button><button class="clear" id="qualClear">CLEAR</button></td>
+          </tr>
+        </tbody></table>
+        <div class="hint" id="qualInfo">Qualifying: one stream, served on <b>Feed A</b>.
+          Edits write the <b>Qualifying</b> tab in the Sheet — the feed picks it up on
+          RELOAD A / NEXT (or on the mode switch). On switch the HUD STREAMER/STINT follow
+          this row.</div>
+      </div>
+
+      <!-- POV (shown in BOTH modes — POV is a separate, mode-independent feed) -->
       <table><tbody>
         <tr><td class="rn">POV</td>
             <td><input id="povName" maxlength="20" placeholder="name (max 20)"></td>
             <td><input id="povUrl" placeholder="youtube.com/watch?v=… · twitch.tv/<channel> · UC…"></td>
             <td class="act"><button class="save" id="povSave">SAVE</button></td></tr>
       </tbody></table>
-      <div class="hint">YouTube or Twitch — enter a full watch URL
-        (<code>youtube.com/watch?v=…</code> or <code>twitch.tv/&lt;channel&gt;</code>).
-        Saves write the Google Sheet only — a feed picks the new URL up
-        on RELOAD A/B / NEXT (rows marked <b>A</b>/<b>B</b> are live now); the POV URL
-        applies on POV RELOAD. Each row's <b>Streamer</b> and <b>Stint</b> label
-        (Configuration vocab) become the HUD's STREAMER/STINT when that row goes
-        on air. <b>CLEAR URL</b> removes only the stream link and keeps the
-        Streamer + Stint slot. Streamer/Stint/URL can still be edited in the
-        Sheet directly.</div>
-    </div>
-  </details>
-
-  <details class="bus urls qualifying" id="qualBox">
-    <summary>Qualifying <span class="livebadge" id="qualModeBadge"></span></summary>
-    <div class="body">
-      <div style="display:flex;gap:8px;margin-bottom:8px">
-        <button class="k" id="qualOn">QUALIFYING MODE</button>
-        <button class="k" id="qualOff">RACE MODE</button>
-      </div>
-      <table><tbody>
-        <tr id="qualRow">
-          <td class="rn">Q<span class="livebadge" id="qualLive"></span></td>
-          <td style="width:22%"><select class="nm" id="qualNm" title="Streamer (Configuration vocab)"></select></td>
-          <td style="width:18%"><select class="st" id="qualSt" title="Stint label (Configuration vocab)"></select></td>
-          <td><input class="u" id="qualUrl" placeholder="youtube.com/watch?v=… · twitch.tv/<channel> · UC…"></td>
-          <td class="act"><button class="save" id="qualSave">SAVE</button><button class="clear" id="qualClear">CLEAR</button></td>
-        </tr>
-      </tbody></table>
-      <div class="hint" id="qualInfo">Qualifying: one stream, served on <b>Feed A</b>.
-        <b>QUALIFYING MODE</b> switches the relay's active schedule to the
-        Qualifying tab (interrupts a running pull — use between sessions);
-        <b>RACE MODE</b> switches back. On switch the HUD STREAMER/STINT follow
-        this row. Edits write the <b>Qualifying</b> tab in the Sheet.</div>
+      <div class="hint">POV — a full watch URL (<code>youtube.com/watch?v=…</code> or
+        <code>twitch.tv/&lt;channel&gt;</code>). The POV URL applies on <b>POV RELOAD</b>.
+        Available in both race and qualifying.</div>
     </div>
   </details>
 
@@ -1413,11 +1426,9 @@ async function relayPoll(){
     if (d.pov && d.pov.state !== "stopped") lines.push(healthLine("POV", d.pov));
     if (d.mode === "qualifying")
       lines.unshift('<span class="warnline">QUALIFYING MODE — Feed A serves the Qualifying tab (race schedule paused)</span>');
-    const qualifying = d.mode === "qualifying";
-    // Show the schedule editor matching the active mode. The mode toggle,
-    // submissions, and Parts control stay visible in both modes.
-    if ($("#urlsBox")) $("#urlsBox").hidden = qualifying;
-    if ($("#qualRow")) $("#qualRow").hidden = !qualifying;
+    // One mode-aware schedule block: applyMode toggles the race/qualifying
+    // regions + the mode chip + the switch label. POV stays visible in both.
+    applyMode(d.mode === "qualifying");
     $("#feedHealth").innerHTML = lines.filter(Boolean).join("<br>");
     // Feed-down alarm: a feed that was live and dropped unexpectedly (not a
     // handover). Distinct red banner so the director acts (RELOAD or cut away).
@@ -2014,10 +2025,23 @@ async function schedPoll(){
       ninp.value = d.pov.name || "";
   }catch(e){}
 }
-$("#urlsBox").addEventListener("toggle", ()=>schedPoll());
+$("#urlsBox").addEventListener("toggle", ()=>{ schedPoll(); qualPoll(); });
 
 /* ---------- Qualifying (issue #124): separate tab, one stream on Feed A ---- */
+/* ---------- Mode (race / qualifying): one block, one switch ---------------
+   relay.mode has one value with two setters (event start --qualifying, or the
+   live switch here). applyMode() renders that single value; the switch calls
+   /mode/*. POV is a separate feed and stays visible in both modes. */
 let qualAvailable = false;
+let relayMode = "race";
+function applyMode(qualifying){
+  relayMode = qualifying ? "qualifying" : "race";
+  $("#raceSched").hidden = qualifying;
+  $("#qualSched").hidden = !qualifying;
+  $("#modeChip").textContent = qualifying ? "QUALIFYING" : "RACE";
+  $("#modeChip").classList.toggle("qual", qualifying);
+  $("#modeSwitch").textContent = qualifying ? "switch → RACE" : "switch → QUALIFYING";
+}
 function qualRowBusy(){
   const tr = $("#qualRow");
   return tr.dataset.dirty || tr.contains(document.activeElement) ||
@@ -2053,25 +2077,24 @@ $("#qualRow").querySelectorAll("input,select").forEach(el=>{
   el.addEventListener("input", ()=>$("#qualRow").dataset.dirty = 1);
   el.addEventListener("change", ()=>$("#qualRow").dataset.dirty = 1);
 });
-$("#qualOn").addEventListener("click", async ()=>{
-  if (!confirm("Switch the relay to QUALIFYING MODE? Feed A serves the Qualifying tab — this interrupts a running race pull (use between sessions).")) return;
-  await relayCall("mode/qualifying"); qualPoll();
-});
-$("#qualOff").addEventListener("click", async ()=>{
-  if (!confirm("Switch the relay back to RACE MODE? Feeds re-point to the race schedule (interrupts a running pull).")) return;
-  await relayCall("mode/race"); qualPoll();
+$("#modeSwitch").addEventListener("click", async ()=>{
+  if (relayMode === "qualifying"){
+    if (!confirm("Switch the relay back to RACE MODE? Feeds re-point to the race schedule (interrupts a running pull).")) return;
+    await relayCall("mode/race");
+  } else {
+    if (!confirm("Switch the relay to QUALIFYING MODE? Feed A serves the Qualifying tab — this interrupts a running race pull (use between sessions).")) return;
+    await relayCall("mode/qualifying");
+  }
+  qualPoll();
 });
 async function qualPoll(){
-  if (!$("#qualBox").open) return;   // closed section -> no traffic
+  if (!$("#urlsBox").open) return;   // closed section -> no traffic
   try{
     const r = await fetch("/qualifying/data", {cache:"no-store"});
     const d = await r.json();
     if (d.error) return;
     qualAvailable = !!d.available;
-    const qualifying = d.mode === "qualifying";
-    $("#qualModeBadge").textContent = qualifying ? "ON AIR" : "";
-    $("#qualOn").disabled = !qualAvailable || qualifying;
-    $("#qualOff").disabled = !qualAvailable || !qualifying;
+    $("#modeSwitch").hidden = !qualAvailable;   // race-only install: no switch
     ["qualNm","qualSt","qualUrl","qualSave","qualClear"].forEach(id=>$("#"+id).disabled = !qualAvailable);
     if (!qualAvailable){
       $("#qualInfo").textContent = "Qualifying tab not available (no 'Qualifying' tab in the sheet, or --no-qualifying / custom CSV URL).";
@@ -2086,7 +2109,6 @@ async function qualPoll(){
     if (!busy && row) $("#qualUrl").value = row.url || "";
   }catch(e){}
 }
-$("#qualBox").addEventListener("toggle", ()=>qualPoll());
 
 /* ---------- Pending stream submissions (#193) --------------------------------
    Commentators submit their own stream link from the cockpit; each lands here

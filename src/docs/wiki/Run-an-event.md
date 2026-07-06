@@ -126,8 +126,7 @@ so the Stream Deck and the panel share one muscle memory:
 | **GFX** | graphics toggles (HUD, Standings, Schedule, results, weather, covers) |
 | **TIMER** | the race timer (see [Race Timer](Race-Timer)) |
 | **AUDIO** | per-input dB sliders, 0 dB reset and mutes |
-| **URLs** | collapsible editor for the Schedule rows (per-stint Streamer + Stint label dropdowns + URL, rows live on a feed are marked A/B) and the POV URL — saves write the sheet; feeds pick changes up on RELOAD/NEXT. On handover the on-air row's Streamer + Stint label auto-fill the HUD |
-| **Qualifying** | collapsible section for the single qualifying stream (different day): **QUALIFYING / RACE MODE** switches the relay's active schedule (Qualifying tab served on Feed A), plus a one-row Streamer/Stint/URL editor writing the Qualifying tab. Or bring the stack up in that mode with `racecast event start --qualifying` ([Director guide](Director#director-panel--qualifying)) |
+| **Schedule** | one collapsible, mode-aware editor. Its header shows the mode (**RACE** / **QUALIFYING**) and a single **switch → QUALIFYING / RACE** button. Race mode: per-stint Streamer + Stint label dropdowns + URL (rows live on a feed marked A/B); qualifying mode: the single Qualifying-tab row served on Feed A (different day). The **POV** URL row shows in both modes. Saves write the sheet; feeds pick changes up on RELOAD/NEXT; on handover the on-air row's Streamer + Stint label auto-fill the HUD. Bring the stack up already in qualifying with `racecast event start --qualifying` ([Director guide](Director#director-panel--qualifying)) |
 
 The status strip at the top shows what is on air, which stint each feed
 carries, the POV state and the race timer. **Every control works relay-only** —
