@@ -7697,6 +7697,13 @@ def main():
     ap.add_argument("--no-timer", action="store_true",
                     help="Do not run the race timer (the HUD clock stays blank; "
                          "/timer/data and the /timer controls are disabled).")
+    ap.add_argument("--solo", action="store_true",
+                    default=(os.environ.get("RACECAST_KIND", "").strip().lower() == "solo"),
+                    help="Solo mode: no Schedule/Qualifying tab and no A/B feeds "
+                         "(the main program is a local capture card + webcam). The "
+                         "Sheet, HUD, POV, timer, chat and console stay on. Defaults "
+                         "on when RACECAST_KIND=solo (injected by the CLI for a "
+                         "kind=solo profile).")
     ap.add_argument("--ports", default="53001,53002")
     ap.add_argument("--stint", type=int, default=1,
                     help="1-based stint that is ON AIR right now (producer takeover): "
