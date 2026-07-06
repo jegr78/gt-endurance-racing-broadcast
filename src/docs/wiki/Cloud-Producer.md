@@ -122,7 +122,9 @@ it runs `racecast update` (with a **preview guard** — a deliberate `preview-ma
 is kept unless you confirm the downgrade to stable), `profile use`, YouTube **and** Twitch
 cookie refresh (pass `--no-twitch` to skip Twitch), graphics/media/brands refresh,
 `speedtest` (pass `--no-speedtest` to skip), a fresh relay (stop + free feed ports), and
-`preflight`. It stops at **ready** — it does NOT go live.
+`preflight`. It stops at **ready** — it does NOT go live. A closing readiness report exits
+non-zero if a go-live prerequisite is missing — the tailnet join, the OBS scene-collection
+import, or a failing preflight.
 
 The asset refreshes pull the current look from the league's Google Sheet into
 `runtime/<profile>/{graphics,media,brands}/` on the box, so a graphic, clip or brand-logo

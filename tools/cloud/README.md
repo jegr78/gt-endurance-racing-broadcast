@@ -178,8 +178,8 @@ YouTube **and** Twitch cookie refresh, `graphics` / `media` / `brands`, `speedte
 forced-clean relay (`relay stop` + `freeport --force`), and `preflight`. It stops at
 **ready** — it never goes live. A closing readiness report lists any one-time manual
 setup still missing (tailnet join, OBS scene-collection import, cookies, Discord token)
-with the exact fix, and exits non-zero if a go-live prerequisite (tailnet / OBS
-collection) is absent.
+with the exact fix, and exits non-zero if a go-live prerequisite is missing — the tailnet
+join, the OBS scene-collection import, or a failing preflight.
 
 Go live afterwards from the browser Director Panel or `racecast event start`.
 
