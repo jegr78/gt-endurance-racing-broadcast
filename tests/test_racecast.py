@@ -3653,9 +3653,21 @@ def t_profile_env_vars_includes_kind():
         discord_webhook_url = ""; obs_collection = ""; console_secret = ""
         discord_client_id = ""; discord_client_secret = ""; discord_voice_url = ""
         event_title = ""; name = "Solo League"; logo_path = ""; kind = "solo"
+        template = ""
     env = m._profile_env_vars(_RC())
     assert env["RACECAST_KIND"] == "solo"
     assert env["RACECAST_SHEET_ID"] == "abc"
+
+
+def t_profile_env_vars_includes_template():
+    # solo + a chosen starter template -> RACECAST_TEMPLATE flows to the child env
+    # (setup-assets.py reads it to pick GT_Solo_Commentary/GT_Solo_POV, #303).
+    rc = m.pcfg.ResolvedConfig(profile="demo", name="Demo", sheet_id="abc",
+                               kind="solo", template="pov")
+    assert m._profile_env_vars(rc)["RACECAST_TEMPLATE"] == "pov"
+    # endurance profiles leave template empty -> filtered out (byte-identical env)
+    rc2 = m.pcfg.ResolvedConfig(profile="demo", name="Demo", sheet_id="abc")
+    assert "RACECAST_TEMPLATE" not in m._profile_env_vars(rc2)
 
 
 if __name__ == "__main__":

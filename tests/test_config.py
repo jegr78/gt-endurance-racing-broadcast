@@ -369,6 +369,25 @@ def t_resolve_config_obs_collection_explicit_wins_over_prefix():
         assert cfg.obs_collection == "Custom Name"
 
 
+def t_solo_kind_defaults_solo_collection_name():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "myleague",
+                   "NAME=My League\nSHEET_ID=abc\nKIND=solo\nTEMPLATE=commentary\n")
+        rc = m.resolve_config(root, environ={})
+        assert rc.kind == "solo"
+        assert rc.obs_collection == "GT Racing Solo — My League"
+
+
+def t_endurance_collection_name_unchanged():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "endur", "NAME=Endur\nSHEET_ID=abc\n")
+        rc = m.resolve_config(root, environ={})
+        assert rc.kind == "endurance"
+        assert rc.obs_collection == "GT Endurance Racing — Endur"
+
+
 def t_sheet_edit_url_builds_edit_link():
     assert m.sheet_edit_url("ABC123") == \
         "https://docs.google.com/spreadsheets/d/ABC123/edit"

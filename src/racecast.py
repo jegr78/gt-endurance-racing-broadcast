@@ -222,7 +222,8 @@ def _profile_env_vars(rc):
              ("RACECAST_EVENT_TITLE", rc.event_title),
              ("RACECAST_PROFILE_NAME", rc.name),
              ("RACECAST_LOGO", rc.logo_path),
-             ("RACECAST_KIND", rc.kind))   # endurance|solo — relay's --solo default
+             ("RACECAST_KIND", rc.kind),   # endurance|solo — relay's --solo default
+             ("RACECAST_TEMPLATE", rc.template))  # solo starter template (commentary|pov)
     return {k: v for k, v in pairs if v}
 
 def _apply_active_profile_env():

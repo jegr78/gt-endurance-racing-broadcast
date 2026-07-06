@@ -23,6 +23,18 @@ SHEET_TOKEN = "__RACECAST_SHEET__"
 MEDIA_TOKEN = "__RACECAST_MEDIA__"
 GRAPHICS_TOKEN = "__RACECAST_GRAPHICS__"
 
+SOLO_TEMPLATE_FILES = {"commentary": "GT_Solo_Commentary", "pov": "GT_Solo_POV"}
+
+
+def resolve_template_base(kind, template):
+    """Filename stem (no extension) of the OBS template for this profile kind.
+    endurance -> GT_Endurance; solo -> GT_Solo_Commentary / GT_Solo_POV
+    (unknown/blank solo template defaults to commentary). Pure."""
+    if (kind or "").strip().lower() == "solo":
+        return SOLO_TEMPLATE_FILES.get((template or "").strip().lower(),
+                                       "GT_Solo_Commentary")
+    return "GT_Endurance"
+
 
 def media_dir(base):
     """Default clip dir. setup-assets.py sits at src/ (repo) or <pkg>/ (package):
@@ -94,6 +106,63 @@ def localize_discord_audio(collection, platform, web=False, browser="Firefox"):
             s["settings"] = dict(settings)
             return src_id
     return None
+
+
+# ---- Local capture/webcam devices (#303): one logical source per role, per-platform
+# realization — same model as the Discord audio source above. The committed templates
+# carry the macOS form; at localize time the OS is known, so the source id + settings
+# are rebuilt for this platform and the device id is injected from .env. An unset
+# device is a WARNING (OBS shows black), never a failure — same contract as a missing
+# graphic. #304 automates device discovery (OBS-WS) into .env.
+# NB: these names target the LEAF device sources, distinct from the wrapping scenes
+# of the same role ("Solo Capture" / "Solo Webcam") — mirroring the Discord precedent
+# (scene "Discord" wraps leaf "Discord Audio Capture"). A by-name lookup can therefore
+# never collide a device leaf with its wrapping scene.
+DEVICE_SOURCES = (
+    {"name": "Solo Capture Device", "env": "RACECAST_CAPTURE"},
+    {"name": "Solo Webcam Device",  "env": "RACECAST_WEBCAM"},
+)
+DEVICE_VARIANTS = {
+    "darwin": ("av_capture_input", "device"),        # AVFoundation device UID
+    "win":    ("dshow_input",      "video_device_id"),  # "Name:\\?\\usb#..."
+    "linux":  ("v4l2_input",       "device_id"),     # /dev/videoN
+}
+
+
+def device_variant(platform):
+    """(source id, device-id settings key) for this platform, or None if unknown."""
+    if platform.startswith("win"):
+        return DEVICE_VARIANTS["win"]
+    if platform == "darwin":
+        return DEVICE_VARIANTS["darwin"]
+    if platform.startswith("linux"):
+        return DEVICE_VARIANTS["linux"]
+    return None
+
+
+def localize_device_sources(collection, platform, env):
+    """Rebuild each DEVICE_SOURCES source's id/versioned_id/settings for `platform`,
+    injecting env[<entry.env>] (default '') into the per-OS device-id key. Returns the
+    names with an EMPTY device value (caller warns). Absent source -> skipped. Unknown
+    platform -> sources left as-is, all treated as unset. Never raises (best-effort,
+    same contract as localize_discord_audio)."""
+    env = env or {}
+    variant = device_variant(platform)
+    by_name = {s.get("name"): s for s in collection.get("sources", [])}
+    unset = []
+    for entry in DEVICE_SOURCES:
+        s = by_name.get(entry["name"])
+        if s is None:
+            continue
+        value = (env.get(entry["env"]) or "").strip()
+        if variant is None or not value:
+            unset.append(entry["name"])
+        if variant is not None:
+            src_id, key = variant
+            s["id"] = src_id
+            s["versioned_id"] = src_id
+            s["settings"] = {key: value}
+    return unset
 
 
 def apply_collection_name(collection, name):
@@ -204,11 +273,19 @@ def main():
     ap.add_argument("--overlay-css", default=None,
                     help="Profile overlay hud.css whose #pov box position/size is "
                          "synced onto the OBS 'Feed POV' scene item. Default: none.")
+    ap.add_argument("--kind", default=os.environ.get("RACECAST_KIND", "endurance"),
+                    help="Profile kind (endurance|solo); selects the OBS template "
+                         "when --template is not an explicit file. Default: env "
+                         "RACECAST_KIND.")
+    ap.add_argument("--template-name",
+                    default=os.environ.get("RACECAST_TEMPLATE", ""),
+                    help="Solo template (commentary|pov). Default: env RACECAST_TEMPLATE.")
     a = ap.parse_args()
 
     tpl = a.template
     if tpl is None:
-        for cand in ("GT_Endurance.template.json", "GT_Endurance.json"):
+        stem = resolve_template_base(a.kind, a.template_name)
+        for cand in (f"{stem}.template.json", f"{stem}.json"):
             p = os.path.join(base, "obs", cand)
             if os.path.exists(p):
                 tpl = p
@@ -260,6 +337,7 @@ def main():
     browser = discord_web.resolve_browser(
         os.environ, discord_web.detect_running_browser() if web else None)
     swapped = localize_discord_audio(localized, sys.platform, web=web, browser=browser)
+    device_unset = localize_device_sources(localized, sys.platform, os.environ)
     apply_collection_name(localized, a.collection)
     pov = {}
     if a.overlay_css and os.path.isfile(a.overlay_css):
@@ -294,6 +372,10 @@ def main():
         print(f"  NOTE: no Discord audio variant for {sys.platform} — macOS form kept.")
     else:
         print("  WARNING: Discord audio source not found in the collection.")
+    if device_unset:
+        print("  WARNING: no device chosen for " + ", ".join(device_unset) +
+              " — set RACECAST_CAPTURE / RACECAST_WEBCAM in .env (OBS shows black "
+              "until a device is selected; racecast device-scan (#304) will fill these).")
     print(f"OBS: Scene Collection -> Import -> {a.out}")
     print("IMPORTANT: do NOT move this folder afterwards (OBS stores absolute paths).")
 

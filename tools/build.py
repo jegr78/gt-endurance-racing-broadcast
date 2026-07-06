@@ -130,6 +130,12 @@ def main():
     os.makedirs(os.path.join(PKG, "obs"))
     shutil.copy2(os.path.join(SRC, "obs", "GT_Endurance.json"),
                  os.path.join(PKG, "obs", "GT_Endurance.template.json"))
+    # solo-mode collections (single-race/POV, #303): ship the same way, when present.
+    for solo in ("GT_Solo_Commentary.json", "GT_Solo_POV.json"):
+        solo_src = os.path.join(SRC, "obs", solo)
+        if os.path.exists(solo_src):
+            shutil.copy2(solo_src, os.path.join(
+                PKG, "obs", solo.replace(".json", ".template.json")))
     # obs-browser source-build wrapper CMakeLists (used by `racecast obs-browser`
     # on Linux to compile the Browser Source plugin against the distro libobs).
     cp("obs/obs-browser-build", "obs/obs-browser-build")
@@ -243,6 +249,16 @@ def main():
         "slides cheat-sheet shipped": os.path.isfile(
             os.path.join(PKG, "docs", "slides", "cheat_sheets.html")),
     }
+    # solo-mode collections (single-race/POV, #303): same tokenized/secret-free
+    # verification as the endurance template above, when shipped.
+    for solo in ("GT_Solo_Commentary.template.json", "GT_Solo_POV.template.json"):
+        sp = os.path.join(PKG, "obs", solo)
+        if os.path.exists(sp):
+            with open(sp, encoding="utf-8") as fh:
+                stpl = fh.read()
+            checks[f"{solo} device tokenized"] = (
+                "__RACECAST_CAPTURE__" in stpl and "__RACECAST_WEBCAM__" in stpl)
+            checks[f"{solo} no secret"] = not has_appscript_secret(stpl)
     bad = [k for k, v in checks.items() if not v]
     print(f"Built {PKG}")
     print(f"ZIP   {zip_path}  ({os.path.getsize(zip_path)//1024} KB)")
