@@ -77,6 +77,20 @@ def t_device_localize_absent_sources_is_noop():
     assert sa.localize_device_sources(c, "win32", {}) == []   # endurance: untouched
 
 
+def t_device_localize_unknown_platform_all_unset_even_with_values():
+    c = _device_coll()
+    unset = sa.localize_device_sources(c, "sunos5",
+                                       {"RACECAST_CAPTURE": "X", "RACECAST_WEBCAM": "Y"})
+    assert sorted(unset) == ["Solo Capture", "Solo Webcam"]
+    # unknown platform: source left untouched (still the macOS template form + token)
+    assert _byname(c, "Solo Capture")["settings"] == {"device": "__RACECAST_CAPTURE__"}
+
+
+def t_device_localize_env_none_is_safe():
+    c = _device_coll()
+    assert sorted(sa.localize_device_sources(c, "darwin", None)) == ["Solo Capture", "Solo Webcam"]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

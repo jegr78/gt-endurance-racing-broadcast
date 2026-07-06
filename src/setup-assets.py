@@ -142,6 +142,7 @@ def localize_device_sources(collection, platform, env):
     names with an EMPTY device value (caller warns). Absent source -> skipped. Unknown
     platform -> sources left as-is, all treated as unset. Never raises (best-effort,
     same contract as localize_discord_audio)."""
+    env = env or {}
     variant = device_variant(platform)
     by_name = {s.get("name"): s for s in collection.get("sources", [])}
     unset = []
@@ -150,7 +151,7 @@ def localize_device_sources(collection, platform, env):
         if s is None:
             continue
         value = (env.get(entry["env"]) or "").strip()
-        if not value:
+        if variant is None or not value:
             unset.append(entry["name"])
         if variant is not None:
             src_id, key = variant
