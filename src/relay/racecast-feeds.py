@@ -7795,10 +7795,14 @@ def main():
     if args.stint < 1:
         sys.exit("ERROR: --stint must be >= 1 (1-based stint number, as in the sheet).")
 
-    for _tool in ("yt-dlp", "streamlink"):
-        if not shutil.which(_tool):
-            sys.exit(f"ERROR: '{_tool}' not found on PATH "
-                     f"(brew install {_tool} / pip install -U {_tool}).")
+    if not args.solo:
+        # Solo has no A/B feeds; the tools are needed only by the optional POV feed,
+        # which logs + idles if they are absent (best-effort). So solo starts without
+        # yt-dlp/streamlink on PATH.
+        for _tool in ("yt-dlp", "streamlink"):
+            if not shutil.which(_tool):
+                sys.exit(f"ERROR: '{_tool}' not found on PATH "
+                         f"(brew install {_tool} / pip install -U {_tool}).")
 
     here = os.path.dirname(os.path.abspath(__file__))
     runtime = os.path.abspath(args.runtime_dir) if args.runtime_dir else default_runtime_dir(here)
@@ -7852,7 +7856,7 @@ def main():
     # schedule. Like POV it is derivable only from sheet-id/tab (a custom
     # --sheet-csv-url disables it). Single stream -> served on Feed A.
     qual_source = None
-    if not args.no_qualifying and not args.sheet_csv_url:
+    if not args.no_qualifying and not args.sheet_csv_url and not args.solo:
         qual_csv_url = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
                         f"/gviz/tq?tqx=out:csv&sheet={quote(args.qualifying_tab)}")
         qual_cache = os.path.join(runtime, "qualifying.cache.txt")
@@ -8058,13 +8062,21 @@ def main():
                                   default=os.environ.get("RACECAST_EVENT_TITLE", ""))
     if args.event_title is not None:
         event_store.set(args.event_title)
-    source = ScheduleSource(csv_url, cache, local)
-    source.load_initial(SCHEDULE_TEMPLATE)
+    # Solo: no Schedule/Qualifying source and no A/B ping-pong feeds. Every other
+    # sheet-driven source (HUD/Channel/Crew/Producer/Timer/EventNotes/POV) is built
+    # above exactly as endurance.
+    source = None
+    if not args.solo:
+        source = ScheduleSource(csv_url, cache, local)
+        source.load_initial(SCHEDULE_TEMPLATE)
+    # SetupControl already defaults schedule_source=None and only dereferences it on
+    # the /schedule editor write path (unused in solo), so source=None is safe; the
+    # Setup HUD-field writes solo uses do not touch it.
     setup_ctl = (SetupControl(push_url, hud_source, schedule_source=source,
                               qual_source=qual_source, pov_source=pov_source,
                               crew_source=crew_source)
                  if hud_source else None)
-    if len(source.get()) < 2:
+    if source is not None and len(source.get()) < 2:
         LOG.info("schedule has fewer than 2 stints — Feed B idles on the empty next "
                  "slot (black) until that stint's link is added; Feed A keeps serving stint 1.")
 
@@ -8078,11 +8090,13 @@ def main():
                   sheet_id=args.sheet_id,
                   event_title_store=event_store,
                   league_name=args.league_name,
-                  producer_name=os.environ.get("RACECAST_PRODUCER_NAME", ""))
+                  producer_name=os.environ.get("RACECAST_PRODUCER_NAME", ""),
+                  solo=args.solo)
     relay.health_store = _health_store_obj
     relay.timer_store = timer_store
     relay.start()
-    relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
+    if not args.solo:
+        relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
     # Launching straight into qualifying mode: seed the HUD Streamer/Stint from
     # the qualifying row now (the /mode switch does this live; the launch path
     # should match so the HUD isn't stale until the first action). Best-effort.
@@ -8090,7 +8104,8 @@ def main():
         _push_live_schedule(relay, setup_ctl)
 
     stop_evt = threading.Event()
-    threading.Thread(target=poller, args=(source, args.poll, stop_evt), daemon=True).start()
+    if source is not None:
+        threading.Thread(target=poller, args=(source, args.poll, stop_evt), daemon=True).start()
     if qual_source:
         threading.Thread(target=poller, args=(qual_source, args.poll, stop_evt),
                          daemon=True).start()
@@ -8212,7 +8227,7 @@ def main():
         LOG.info("  Qualifying tab '%s' available — mode: %s  "
                  "(switch: /mode/qualifying | /mode/race)", args.qualifying_tab, _qmode)
     LOG.info("  Feed A -> http://127.0.0.1:%s   Feed B -> http://127.0.0.1:%s", ports[0], ports[1])
-    if args.stint != 1:
+    if args.stint != 1 and not args.solo:
         if relay.A.idx != args.stint - 1:
             LOG.warning("  --stint %s clamped to stint %s (schedule has %s stints).",
                         args.stint, relay.A.idx + 1, len(source.get()))
