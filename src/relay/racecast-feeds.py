@@ -5003,7 +5003,7 @@ class Relay:
                  pov_port=None, start_stint=1, cookie_dir=None,
                  qual_source=None, mode="race", discord_webhook_url=None,
                  sheet_id=None, event_title_store=None, league_name="",
-                 producer_name=""):
+                 producer_name="", solo=False):
         self.race_source = source
         self.qual_source = qual_source
         self.sheet_id = sheet_id          # league identity, surfaced in /status for takeover
@@ -5017,16 +5017,25 @@ class Relay:
         self.mode = "qualifying" if (mode == "qualifying" and qual_source) else "race"
         self.cookies = cookies
         self.cookie_dir = cookie_dir
-        a_idx, b_idx = slot_start_indices(start_stint, self.active_source().get_rows())
         # 0-based DISPLAY row currently on air (drives the HUD stint label + the
         # ON-AIR marker). Equals the on-air feed's pull index in normal operation;
         # diverges one row ahead only during a same-URL back-to-back continuation.
-        self.on_air_row = a_idx
-        # Feeds read the ACTIVE source via active_items, so a /mode switch re-points
-        # both feeds without rebuilding them (the OBS Feed A/B sources never change).
-        self.A = Feed("A", ports[0], a_idx, self.active_items, logdir, cookies, cookie_dir=cookie_dir)
-        self.B = Feed("B", ports[1], b_idx, self.active_items, logdir, cookies, cookie_dir=cookie_dir)
-        self.feeds = {"A": self.A, "B": self.B}
+        self.solo = solo
+        if solo:
+            # Solo: no Schedule/Qualifying and no A/B ping-pong feeds. POV (below)
+            # is the only optional feed; every sheet-driven source is built by main()
+            # exactly as endurance. The feed-touching methods guard on self.solo.
+            self.on_air_row = 0
+            self.A = self.B = None
+            self.feeds = {}
+        else:
+            a_idx, b_idx = slot_start_indices(start_stint, self.active_source().get_rows())
+            self.on_air_row = a_idx
+            # Feeds read the ACTIVE source via active_items, so a /mode switch re-points
+            # both feeds without rebuilding them (the OBS Feed A/B sources never change).
+            self.A = Feed("A", ports[0], a_idx, self.active_items, logdir, cookies, cookie_dir=cookie_dir)
+            self.B = Feed("B", ports[1], b_idx, self.active_items, logdir, cookies, cookie_dir=cookie_dir)
+            self.feeds = {"A": self.A, "B": self.B}
         self.obs_note = None          # last OBS note (None/"" = ok); read by status()
         self.obs_reachable = None     # last LIVE reachability probe; None until first /status
         self._obs_probe_ts = 0.0      # time.time() of the last reachability probe
@@ -5170,10 +5179,15 @@ class Relay:
         def feed_fields(f):
             return ("stopped" if f.paused else f.phase,
                     1 if (f.dropped and not f.paused) else 0, f.idx + 1)
-        a_state, a_down, a_stint = feed_fields(self.feeds["A"])
-        b_state, b_down, b_stint = feed_fields(self.feeds["B"])
+        if self.solo:
+            a_state = a_down = a_stint = None
+            b_state = b_down = b_stint = None
+            live = None
+        else:
+            a_state, a_down, a_stint = feed_fields(self.feeds["A"])
+            b_state, b_down, b_stint = feed_fields(self.feeds["B"])
+            live = self.live_feed()
         ch = cookie_health(self.cookies, now=now)
-        live = self.live_feed()
         tmode, tpush = None, None
         ts = getattr(self, "timer_store", None)
         if ts is not None:
@@ -5204,14 +5218,14 @@ class Relay:
                               ("stopped" if self.pov.paused else self.pov.phase)),
                 "obs_reachable": (None if self.obs_reachable is None
                                   else (1 if self.obs_reachable else 0)),
-                "source_last_ok_age_s": self.source.health().get("last_ok_age_s"),
-                "source_count": self.source.health().get("count"),
+                "source_last_ok_age_s": (None if self.solo else self.source.health().get("last_ok_age_s")),
+                "source_count": (None if self.solo else self.source.health().get("count")),
                 "cookies_present": 1 if self.cookies else 0,
                 "cookies_age_h": ch.get("age_h"),
                 "cookies_stale": 1 if ch.get("stale") else 0,
                 "timer_mode": tmode, "timer_push": tpush,
                 "mode": self.mode,
-                "live_feed": live, "live_stint": self.feeds[live].idx + 1,
+                "live_feed": live, "live_stint": (None if self.solo else self.feeds[live].idx + 1),
                 # v3 OBS stats (already redacted: obs_stats never carries output_bytes)
                 "stream_active": _b(st.get("stream_active")),
                 "stream_reconnecting": _b(st.get("stream_reconnecting")),
@@ -5230,8 +5244,8 @@ class Relay:
                 "sheet_push_ok": (None if tpush in (None, "never", "disabled")
                                   else (1 if tpush == "ok" else 0)),
                 # v3 feed quality
-                "feed_a_quality": _q(self.feeds["A"]),
-                "feed_b_quality": _q(self.feeds["B"]),
+                "feed_a_quality": (None if self.solo else _q(self.feeds["A"])),
+                "feed_b_quality": (None if self.solo else _q(self.feeds["B"])),
                 "pov_quality": _q(self.pov) if self.pov else None,
                 **sys_res}
 
@@ -5295,7 +5309,7 @@ class Relay:
         (RACECAST_AUTO_FAILOVER); only fires while OBS is still on the on-air feed
         scene; fires once + notifies loudly; a manual return to the feed scene
         re-arms it. Return to the feed is always the producer's call."""
-        if not self.auto_failover or _obs_ws is None:
+        if self.solo or not self.auto_failover or _obs_ws is None:
             return
         live = self.live_feed()
         f = self.feeds[live]
@@ -5336,6 +5350,8 @@ class Relay:
     def status(self):
         now = time.time()
         self._maybe_probe_obs(now)
+        if self.solo:
+            return self._solo_status(now)
         sched = self.source.get()
         out = {"schedule_len": len(sched), "cookies": bool(self.cookies),
                "cookies_health": cookie_health(self.cookies, now=now),
@@ -5377,8 +5393,33 @@ class Relay:
                          "since_s": round(now - self.health_since, 1)}
         return out
 
+    def _solo_status(self, now):
+        """Status payload for solo mode: no A/B schedule/feeds. POV + OBS + health +
+        league identity (the console/panel read these); mirrors the tail of status()."""
+        out = {"mode": "solo", "solo": True, "feeds": {},
+               "cookies": bool(self.cookies),
+               "cookies_health": cookie_health(self.cookies, now=now)}
+        if self.pov:
+            raw = (self.pov_source.get()[:1] or [None])[0] if self.pov_source else None
+            out["pov"] = {"port": self.pov.port, "url": raw,
+                          "name": self.pov_name(), "shown": self.pov_shown,
+                          "state": "stopped" if self.pov.paused else self.pov.phase,
+                          "state_age_s": round(now - self.pov.phase_since, 1),
+                          "down": self.pov.dropped and not self.pov.paused,
+                          "source": self.pov_source.health() if self.pov_source else None}
+        out["obs"] = {"reachable": self.obs_reachable, "note": self.obs_note}
+        out["live"] = {"feed": None, "stint": None, "mode": "solo"}
+        out["league"] = {"sheet_id": self.sheet_id, "name": self.league_name}
+        out["producer"] = self.producer_name
+        self._refresh_health(now)
+        out["health"] = {"level": self.health_level, "reasons": self.health_reasons,
+                         "since_s": round(now - self.health_since, 1)}
+        return out
+
     def live_feed(self):
         """The on-air feed = the one on the lower (earlier) stint index."""
+        if self.solo:
+            return None
         return "A" if self.A.idx <= self.B.idx else "B"
 
     def on_air_row_idx(self):
@@ -5387,6 +5428,8 @@ class Relay:
         Equals the on-air feed's pull index in normal operation; during a same-URL
         back-to-back continuation it sits one row ahead of the still-parked pull.
         Clamped to the active schedule."""
+        if self.solo:
+            return 0
         n = len(self.source.get())
         if not n:
             return 0
@@ -5398,6 +5441,8 @@ class Relay:
         physical pull index. Equals {f.idx: key} in normal operation; during a
         continuation the on-air marker follows the displayed stint. The on-air
         entry is written last so it wins any (degenerate) index collision."""
+        if self.solo:
+            return {}
         live = self.live_feed()
         off = "B" if live == "A" else "A"
         row_map = {self.feeds[off].idx: off}
@@ -5458,6 +5503,8 @@ class Relay:
         """{"streamer", "stint"} for the stint currently ON SCREEN, or None when it
         idles past the schedule end. Drives the handover HUD auto-write (issue
         #112) and follows a same-URL continuation label."""
+        if self.solo:
+            return None
         return live_schedule_row(self.source.get_rows(), self.on_air_row_idx())
 
     def _reflect(self, live, cut):
@@ -5616,6 +5663,8 @@ class Relay:
                            "companion_ok": comp}
 
     def next_auto(self):
+        if self.solo:
+            return {"error": "not available in solo mode", "solo": True}
         self.source.refresh(timeout=6)               # fresh sheet data at handover (bounded wait)
         rows = self.source.get_rows()
         slots = pull_slots(rows)
@@ -5687,6 +5736,8 @@ class Relay:
         second row still pulls the single stream once), Feed B preloads the next
         slot. The DISPLAY row is set to <stint>. Tears a running feed off its stream
         (like /set) — use BEFORE going live, not mid-program."""
+        if self.solo:
+            return {"error": "not available in solo mode", "solo": True}
         self.source.refresh(timeout=6)      # clamp against fresh sheet data
         rows = self.source.get_rows()
         a_idx, b_idx = slot_start_indices(stint, rows)
@@ -5705,6 +5756,8 @@ class Relay:
         audio (cut=False; the director picks the scene). Tears a running pull off
         its stream like set_stint: an explicit between-session action, not for
         mid-program use. No-op-with-error when qualifying is unavailable."""
+        if self.solo:
+            return {"error": "not available in solo mode", "solo": True}
         if mode not in ("race", "qualifying"):
             return {"error": f"unknown mode: {mode!r} (one of race, qualifying)"}
         if mode == "qualifying" and not self.qual_source:
@@ -5721,6 +5774,8 @@ class Relay:
         return self.status()
 
     def reload(self, which=None):
+        if self.solo:
+            return {"error": "not available in solo mode", "solo": True}
         # Detect an ad-hoc on-air stream substitution: the operator edited the
         # on-air feed's URL then pressed Reload, so the on-air feed's URL changes
         # at the SAME stint across the schedule refresh. Captured before feeds
@@ -7697,6 +7752,13 @@ def main():
     ap.add_argument("--no-timer", action="store_true",
                     help="Do not run the race timer (the HUD clock stays blank; "
                          "/timer/data and the /timer controls are disabled).")
+    ap.add_argument("--solo", action="store_true",
+                    default=(os.environ.get("RACECAST_KIND", "").strip().lower() == "solo"),
+                    help="Solo mode: no Schedule/Qualifying tab and no A/B feeds "
+                         "(the main program is a local capture card + webcam). The "
+                         "Sheet, HUD, POV, timer, chat and console stay on. Defaults "
+                         "on when RACECAST_KIND=solo (injected by the CLI for a "
+                         "kind=solo profile).")
     ap.add_argument("--ports", default="53001,53002")
     ap.add_argument("--stint", type=int, default=1,
                     help="1-based stint that is ON AIR right now (producer takeover): "
@@ -7733,10 +7795,14 @@ def main():
     if args.stint < 1:
         sys.exit("ERROR: --stint must be >= 1 (1-based stint number, as in the sheet).")
 
-    for _tool in ("yt-dlp", "streamlink"):
-        if not shutil.which(_tool):
-            sys.exit(f"ERROR: '{_tool}' not found on PATH "
-                     f"(brew install {_tool} / pip install -U {_tool}).")
+    if not args.solo:
+        # Solo has no A/B feeds; the tools are needed only by the optional POV feed,
+        # which logs + idles if they are absent (best-effort). So solo starts without
+        # yt-dlp/streamlink on PATH.
+        for _tool in ("yt-dlp", "streamlink"):
+            if not shutil.which(_tool):
+                sys.exit(f"ERROR: '{_tool}' not found on PATH "
+                         f"(brew install {_tool} / pip install -U {_tool}).")
 
     here = os.path.dirname(os.path.abspath(__file__))
     runtime = os.path.abspath(args.runtime_dir) if args.runtime_dir else default_runtime_dir(here)
@@ -7790,7 +7856,7 @@ def main():
     # schedule. Like POV it is derivable only from sheet-id/tab (a custom
     # --sheet-csv-url disables it). Single stream -> served on Feed A.
     qual_source = None
-    if not args.no_qualifying and not args.sheet_csv_url:
+    if not args.no_qualifying and not args.sheet_csv_url and not args.solo:
         qual_csv_url = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
                         f"/gviz/tq?tqx=out:csv&sheet={quote(args.qualifying_tab)}")
         qual_cache = os.path.join(runtime, "qualifying.cache.txt")
@@ -7996,13 +8062,21 @@ def main():
                                   default=os.environ.get("RACECAST_EVENT_TITLE", ""))
     if args.event_title is not None:
         event_store.set(args.event_title)
-    source = ScheduleSource(csv_url, cache, local)
-    source.load_initial(SCHEDULE_TEMPLATE)
+    # Solo: no Schedule/Qualifying source and no A/B ping-pong feeds. Every other
+    # sheet-driven source (HUD/Channel/Crew/Producer/Timer/EventNotes/POV) is built
+    # above exactly as endurance.
+    source = None
+    if not args.solo:
+        source = ScheduleSource(csv_url, cache, local)
+        source.load_initial(SCHEDULE_TEMPLATE)
+    # SetupControl already defaults schedule_source=None and only dereferences it on
+    # the /schedule editor write path (unused in solo), so source=None is safe; the
+    # Setup HUD-field writes solo uses do not touch it.
     setup_ctl = (SetupControl(push_url, hud_source, schedule_source=source,
                               qual_source=qual_source, pov_source=pov_source,
                               crew_source=crew_source)
                  if hud_source else None)
-    if len(source.get()) < 2:
+    if source is not None and len(source.get()) < 2:
         LOG.info("schedule has fewer than 2 stints — Feed B idles on the empty next "
                  "slot (black) until that stint's link is added; Feed A keeps serving stint 1.")
 
@@ -8016,11 +8090,13 @@ def main():
                   sheet_id=args.sheet_id,
                   event_title_store=event_store,
                   league_name=args.league_name,
-                  producer_name=os.environ.get("RACECAST_PRODUCER_NAME", ""))
+                  producer_name=os.environ.get("RACECAST_PRODUCER_NAME", ""),
+                  solo=args.solo)
     relay.health_store = _health_store_obj
     relay.timer_store = timer_store
     relay.start()
-    relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
+    if not args.solo:
+        relay._reflect(relay.live_feed(), cut=False)     # pre-set Stint visibility/audio for the live feed
     # Launching straight into qualifying mode: seed the HUD Streamer/Stint from
     # the qualifying row now (the /mode switch does this live; the launch path
     # should match so the HUD isn't stale until the first action). Best-effort.
@@ -8028,7 +8104,8 @@ def main():
         _push_live_schedule(relay, setup_ctl)
 
     stop_evt = threading.Event()
-    threading.Thread(target=poller, args=(source, args.poll, stop_evt), daemon=True).start()
+    if source is not None:
+        threading.Thread(target=poller, args=(source, args.poll, stop_evt), daemon=True).start()
     if qual_source:
         threading.Thread(target=poller, args=(qual_source, args.poll, stop_evt),
                          daemon=True).start()
@@ -8150,7 +8227,7 @@ def main():
         LOG.info("  Qualifying tab '%s' available — mode: %s  "
                  "(switch: /mode/qualifying | /mode/race)", args.qualifying_tab, _qmode)
     LOG.info("  Feed A -> http://127.0.0.1:%s   Feed B -> http://127.0.0.1:%s", ports[0], ports[1])
-    if args.stint != 1:
+    if args.stint != 1 and not args.solo:
         if relay.A.idx != args.stint - 1:
             LOG.warning("  --stint %s clamped to stint %s (schedule has %s stints).",
                         args.stint, relay.A.idx + 1, len(source.get()))

@@ -155,7 +155,7 @@ def t_create_profile_from_other_profile():
         assert m.cfg.parse_profile(root, "erf")["SHEET_ID"] == "abc"
 
 
-def t_create_solo_profile_is_sheetless_and_carries_template():
+def t_create_solo_profile_has_sheet_and_carries_template():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot_with_example(td)
         target = m.create_profile(root, "Demo Solo", kind="solo", template="pov")
@@ -165,8 +165,9 @@ def t_create_solo_profile_is_sheetless_and_carries_template():
         assert prof["NAME"] == "Demo Solo"
         assert prof["KIND"] == "solo"
         assert prof["TEMPLATE"] == "pov"
-        # solo is sheet-less by design: no SHEET_ID / SHEET_PUSH_URL keys
-        assert "SHEET_ID" not in prof and "SHEET_PUSH_URL" not in prof
+        # sheet-always: a solo profile carries SHEET_ID (blank, to be filled)
+        assert "SHEET_ID" in prof and prof["SHEET_ID"] == ""
+        assert "SHEET_PUSH_URL" in prof
         # and it resolves as a solo profile
         rcfg = m.cfg.resolve_config(root, override="demo-solo",
                                     runtime_root=os.path.join(td, "runtime"))

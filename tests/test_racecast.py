@@ -895,7 +895,7 @@ def t_profile_env_vars_filters_empty():
         sheet_push_url="", intro_url="https://i", outro_url="")
     assert m._profile_env_vars(rc) == {
         "RACECAST_SHEET_ID": "abc", "RACECAST_INTRO_URL": "https://i",
-        "RACECAST_PROFILE_NAME": "Demo"}
+        "RACECAST_PROFILE_NAME": "Demo", "RACECAST_KIND": "endurance"}
 
 
 def t_profile_env_vars_includes_obs_collection():
@@ -3645,6 +3645,17 @@ def t_qualifying_title_marks_when_qualifying():
         assert m._qualifying_title("Le Mans 24h") == "Le Mans 24h"
     finally:
         m._relay_mode = orig
+
+
+def t_profile_env_vars_includes_kind():
+    class _RC:  # minimal ResolvedConfig stand-in
+        sheet_id = "abc"; sheet_push_url = ""; intro_url = ""; outro_url = ""
+        discord_webhook_url = ""; obs_collection = ""; console_secret = ""
+        discord_client_id = ""; discord_client_secret = ""; discord_voice_url = ""
+        event_title = ""; name = "Solo League"; logo_path = ""; kind = "solo"
+    env = m._profile_env_vars(_RC())
+    assert env["RACECAST_KIND"] == "solo"
+    assert env["RACECAST_SHEET_ID"] == "abc"
 
 
 if __name__ == "__main__":
