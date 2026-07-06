@@ -111,25 +111,28 @@ From your laptop, once the box is up and you are SSHed in **as `racecast`**
 (`gcloud compute ssh racecast@racecast-box`):
 
 ```bash
-racecast profile use <league>     # pick the league for this event
-racecast cookies firefox          # refresh feed cookies on the box (see §6)
-racecast graphics                 # refresh broadcast graphics from the Sheet's Assets tab
-racecast media                    # refresh Intro/Outro clips (only if their URLs changed)
-racecast brands                   # refresh per-league brand logos from the Sheet's Brands tab
-racecast preflight                # hardware + tool check — fix anything red
-racecast event start              # brings up relay + OBS + Discord in the box's desktop
-#   racecast event start --part 2 # mid-event recovery: resume at a later broadcast Part
+racecast profile use <league>     # (or let prepare-event.sh do the whole prep — below)
+./prepare-event.sh <league>       # update (preview-guarded) · cookies (YouTube+Twitch) ·
+                                  # graphics · media · brands · speedtest · fresh relay · preflight
+racecast event start              # go live (relay + OBS + Discord)  — prepare-event.sh does NOT
 ```
 
-The three asset refreshes pull the current look from the league's Google Sheet into
+`./prepare-event.sh <league>` orchestrates all the per-event prep steps before go-live:
+it runs `racecast update` (with a **preview guard** — a deliberate `preview-main` build
+is kept unless you confirm the downgrade to stable), `profile use`, YouTube **and** Twitch
+cookie refresh (pass `--no-twitch` to skip Twitch), graphics/media/brands refresh,
+`speedtest` (pass `--no-speedtest` to skip), a fresh relay (stop + free feed ports), and
+`preflight`. It stops at **ready** — it does NOT go live.
+
+The asset refreshes pull the current look from the league's Google Sheet into
 `runtime/<profile>/{graphics,media,brands}/` on the box, so a graphic, clip or brand-logo
 edit made since the last event is picked up. They are safe to re-run and cost nothing when
 nothing changed. This mirrors the same-day prep in [Run an event](Run-an-event#before-you-go-live).
 
-`event start` (re)launches OBS and Discord **into the running desktop session** over SSH
-(it sets `DISPLAY=:0`; override with `RACECAST_DISPLAY`). From there you drive everything from
-the browser **[Director Panel](Run-an-event#the-director-panel-remote-control)** — including
-starting and stopping each **[broadcast Part](Run-an-event#broadcast-parts-director-panel)**.
+`racecast event start` then (re)launches OBS and Discord **into the running desktop session**
+over SSH (it sets `DISPLAY=:0`; override with `RACECAST_DISPLAY`). From there you drive
+everything from the browser **[Director Panel](Run-an-event#the-director-panel-remote-control)**
+— including starting and stopping each **[broadcast Part](Run-an-event#broadcast-parts-director-panel)**.
 No RustDesk needed.
 
 When the event is over:
