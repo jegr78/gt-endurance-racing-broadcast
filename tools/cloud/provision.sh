@@ -467,6 +467,22 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+log "copying prepare-event.sh into ~$USER_NAME (per-event prep helper)"
+# Best-effort, idempotent (overwrite): prepare-event.sh ships beside provision.sh in the
+# same tools/cloud/ checkout/tarball. A startup-script run (instance metadata, no sibling
+# file on disk) must NOT abort provisioning over this — `warn`, never `die`.
+prep_src="$(dirname "$0")/prepare-event.sh"
+if [ -f "$prep_src" ]; then
+  if install -m 0755 -o "$USER_NAME" -g "$(id -gn "$USER_NAME")" "$prep_src" "/home/$USER_NAME/prepare-event.sh"; then
+    ok "prepare-event.sh -> /home/$USER_NAME/prepare-event.sh"
+  else
+    warn "could not copy prepare-event.sh (continuing)"
+  fi
+else
+  warn "prepare-event.sh not beside provision.sh (startup-script mode?) — scp it up manually later"
+fi
+
+# ---------------------------------------------------------------------------
 log "verification — every REQUIRED component below must be PRESENT. There are no optional"
 log "steps: a red PRESENCE line means the box is NOT fully equipped. provision is idempotent"
 log "— fix the cause and re-run; nothing is skipped on a real (GPU) event box."

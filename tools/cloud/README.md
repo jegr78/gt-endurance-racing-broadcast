@@ -62,6 +62,8 @@ gcloud compute ssh racecast@racecast-box --zone=europe-west4-c
   $ sudo ./provision.sh        # idempotent — re-run after any red line
 ```
 
+The script also copies `prepare-event.sh` into `~racecast/` for per-event prep (§4b); in startup-script mode where the file is absent, you can `scp` it up manually.
+
 **Reproduction one-liner — unattended startup-script (any league, from scratch):**
 
 ```bash
@@ -159,6 +161,27 @@ datacenter IP (no session-origin mismatch). The operator-facing walkthrough is t
 **Remote producer (cloud GPU box)** wiki page.
 
 Switch between already-onboarded leagues with `racecast profile use <name>`.
+
+## 4b. Prepare for an event (`prepare-event.sh`)
+
+`provision.sh` drops `prepare-event.sh` into `~racecast/`. Before each event, SSH in as
+`racecast` and run it with the league profile:
+
+```bash
+gcloud compute ssh racecast@racecast-box --zone=europe-west4-c
+  $ ./prepare-event.sh <league>            # + --no-twitch / --no-speedtest / --no-update
+```
+
+It runs, in order: `racecast update` (with a **preview guard** — a deliberate
+`preview-main` build is kept unless you confirm the downgrade to stable), `profile use`,
+YouTube **and** Twitch cookie refresh, `graphics` / `media` / `brands`, `speedtest`, a
+forced-clean relay (`relay stop` + `freeport --force`), and `preflight`. It stops at
+**ready** — it never goes live. A closing readiness report lists any one-time manual
+setup still missing (tailnet join, OBS scene-collection import, cookies, Discord token)
+with the exact fix, and exits non-zero if a go-live prerequisite is missing — the tailnet
+join, the OBS scene-collection import, or a failing preflight.
+
+Go live afterwards from the browser Director Panel or `racecast event start`.
 
 ## 5. Cost control — stop between events
 
