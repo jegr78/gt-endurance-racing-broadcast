@@ -24,6 +24,10 @@ PROJECT_MARKERS = (".git", ".env.example")
 # leagues' collections group together in OBS. An explicit OBS_COLLECTION wins.
 PRODUCT_COLLECTION_PREFIX = "GT Endurance Racing"
 
+# Solo (#303): solo profiles group under their own collection prefix so several
+# solo leagues stay separate in OBS. #308 later unifies both under "GT Racing [MODE]".
+SOLO_COLLECTION_PREFIX = "GT Racing Solo"
+
 # Profile kind (#301): endurance = the classic feed-/sheet-driven league; solo =
 # a single-event commentary/POV broadcast (no external feeds, no Google Sheet).
 # A missing/unknown KIND resolves to endurance so every existing profile is
@@ -221,17 +225,21 @@ def resolve_config(root, *, override=None, runtime_root=None, environ=None):
     if logo_path and not os.path.isfile(logo_path):
         logo_path = ""
     resolved_name = prof.get("NAME", name)
+    kind = normalize_kind(prof.get("KIND", ""))
     return ResolvedConfig(
         profile=name,
         name=resolved_name,
         sheet_id=prof.get("SHEET_ID", ""),
-        kind=normalize_kind(prof.get("KIND", "")),
+        kind=kind,
         template=prof.get("TEMPLATE", ""),
         sheet_push_url=prof.get("SHEET_PUSH_URL", ""),
         intro_url=prof.get("INTRO_URL", ""),
         outro_url=prof.get("OUTRO_URL", ""),
         discord_webhook_url=prof.get("DISCORD_WEBHOOK_URL", ""),
-        obs_collection=prof.get("OBS_COLLECTION") or f"{PRODUCT_COLLECTION_PREFIX} — {resolved_name}",
+        obs_collection=prof.get("OBS_COLLECTION") or (
+            f"{SOLO_COLLECTION_PREFIX} — {resolved_name}"
+            if kind == "solo"
+            else f"{PRODUCT_COLLECTION_PREFIX} — {resolved_name}"),
         console_secret=prof.get("CONSOLE_SECRET", ""),
         discord_client_id=prof.get("DISCORD_CLIENT_ID", ""),
         discord_client_secret=prof.get("DISCORD_CLIENT_SECRET", ""),
