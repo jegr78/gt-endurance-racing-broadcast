@@ -471,8 +471,9 @@ log "copying prepare-event.sh into ~$USER_NAME (per-event prep helper)"
 # Best-effort, idempotent (overwrite): prepare-event.sh ships beside provision.sh in the
 # same tools/cloud/ checkout/tarball. A startup-script run (instance metadata, no sibling
 # file on disk) must NOT abort provisioning over this — `warn`, never `die`.
-if [ -f "$(dirname "$0")/prepare-event.sh" ]; then
-  if install -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$(dirname "$0")/prepare-event.sh" "/home/$USER_NAME/prepare-event.sh"; then
+prep_src="$(dirname "$0")/prepare-event.sh"
+if [ -f "$prep_src" ]; then
+  if install -m 0755 -o "$USER_NAME" -g "$(id -gn "$USER_NAME")" "$prep_src" "/home/$USER_NAME/prepare-event.sh"; then
     ok "prepare-event.sh -> /home/$USER_NAME/prepare-event.sh"
   else
     warn "could not copy prepare-event.sh (continuing)"
