@@ -54,12 +54,12 @@ def t_program_tab_order():
 
 
 def t_setup_tab_order():
-    # Scn.Vis -> Gfx -> Flag Gfx -> Timer -> Audio -> Transition -> URLs
-    # -> Qualifying -> Pending -> Substitution, all after the SETUP panel opening.
+    # Scn.Vis -> Gfx -> Flag Gfx -> Timer -> Audio -> Transition -> Schedule
+    # (merged: urlsBox) -> Pending -> Substitution, all after the SETUP panel.
     h = _html()
     _order(h, 'id="tabSetup"',
            'id="scnBus"', 'id="gfxBus"', 'id="flagGfxBus"', 'id="timerBus"',
-           'id="audio"', 'id="txBar"', 'id="urlsBox"', 'id="qualBox"',
+           'id="audio"', 'id="txBar"', 'id="urlsBox"',
            'id="subsBox"', 'id="subSec"')
 
 
@@ -140,10 +140,54 @@ def t_final_part_confirmation_present():
 
 
 def t_mode_drives_section_visibility():
+    # relayPoll delegates to applyMode(); applyMode toggles the two mode regions
+    # and flips the single switch label. The two mode regions are mutually exclusive.
     h = _html()
-    # relayPoll toggles the race schedule editor and the qualifying editor row by mode
-    assert '$("#urlsBox").hidden = qualifying' in h
-    assert '$("#qualRow").hidden = !qualifying' in h
+    assert "applyMode(" in h, "relayPoll must delegate mode handling to applyMode"
+    assert '$("#raceSched").hidden = qualifying' in h
+    assert '$("#qualSched").hidden = !qualifying' in h
+    assert "switch → QUALIFYING" in h   # race-mode target
+    assert "switch → RACE" in h          # qualifying-mode target
+
+
+def t_single_merged_schedule_section():
+    # The old standalone Qualifying <details> is gone — one merged block.
+    h = _html()
+    assert 'id="qualBox"' not in h, "qualBox must be merged into the single #urlsBox block"
+    assert h.count('id="urlsBox"') == 1
+
+
+def t_mode_regions_and_switch_present():
+    h = _html()
+    assert 'id="raceSched"' in h    # race-only region
+    assert 'id="qualSched"' in h    # qualifying-only region
+    assert 'id="modeSwitch"' in h   # the single mode switch
+    assert 'id="modeChip"' in h     # always-visible mode indicator
+
+
+def t_pov_editor_shared_across_modes():
+    # POV must work in BOTH modes → its editor sits AFTER both mode regions
+    # (shared), never nested inside the race-only or qualifying-only region.
+    h = _html()
+    assert h.index('id="povUrl"') > h.index('id="schedBody"')   # after race region content
+    assert h.index('id="povUrl"') > h.index('id="qualRow"')     # after qualifying region content
+
+
+def t_old_mode_buttons_removed():
+    h = _html()
+    assert 'id="qualOn"' not in h
+    assert 'id="qualOff"' not in h
+    assert 'id="qualModeBadge"' not in h
+
+
+def t_urls_section_honors_hidden_rule():
+    # `details.urls{display:block}` is an author rule that overrides the UA
+    # `[hidden]{display:none}`, so setting `#urlsBox`.hidden in qualifying mode
+    # would NOT hide the race schedule editor without an explicit override —
+    # leaving the qualifying feed shown twice. A [hidden] guard must exist.
+    h = _html()
+    assert "details.urls[hidden]" in h, \
+        "details.urls must honor the hidden attribute (else urlsBox stays shown in qualifying mode)"
 
 
 def t_qualifying_submission_tag_present():

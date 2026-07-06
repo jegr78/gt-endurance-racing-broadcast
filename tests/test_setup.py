@@ -1187,16 +1187,20 @@ def _panel_details_classes(html, box_id):
 
 
 def t_panel_qualifying_section_is_styled():
-    """#134: the Qualifying section has the same summary+body+table structure as the
-    Schedule section, so it must carry the same 'urls' styling hook — without it the
-    table/inputs/selects/buttons fall back to unstyled browser defaults. Guards the
-    fix against regressing back to a bare `bus qualifying`."""
+    """#134 (superseded by the race/qualifying schedule-mode merge): the Qualifying
+    region is no longer a standalone <details id="qualBox"> — it is the `#qualSched`
+    div nested inside the single merged `#urlsBox` (class="bus urls"), so it inherits
+    the schedule section's table/input/select/button styling automatically. Guards
+    against a regression back to an unstyled standalone qualifying block."""
     with open(os.path.join(ROOT, "src", "director", "director-panel.html"),
               encoding="utf-8") as fh:
         html = fh.read()
     assert "urls" in _panel_details_classes(html, "urlsBox")        # schedule (reference)
-    assert "urls" in _panel_details_classes(html, "qualBox"), \
-        "Qualifying <details> is missing the 'urls' styling hook -> renders unstyled (#134)"
+    urls_start = html.index('id="urlsBox"')
+    urls_end = html.index("</details>", urls_start)
+    qual_pos = html.index('id="qualSched"')
+    assert urls_start < qual_pos < urls_end, \
+        "qualifying region must be nested inside the merged, styled #urlsBox"
 
 
 def t_panel_schedule_qualifying_selects_are_styled():
