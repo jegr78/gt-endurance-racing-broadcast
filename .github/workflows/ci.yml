@@ -11,9 +11,9 @@ name: CI
 # change a combo, update Protect main's required checks to match or PRs deadlock.
 on:
   push:
-    branches: [main]
+    branches: [main, "epic/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "epic/**"]   # gate sub-PRs targeting a long-lived epic branch
 
 permissions:
   contents: read
