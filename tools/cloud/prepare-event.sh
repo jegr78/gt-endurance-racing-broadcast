@@ -55,6 +55,32 @@ is_league_imported() {  # $1 = profile name
   racecast profile list 2>/dev/null | awk '{print $NF}' | grep -qxF "$1"
 }
 
+is_preview_version() {  # $1 = version string
+  case "$1" in *preview*) return 0 ;; *) return 1 ;; esac
+}
+
+have_tty() { [ -t 0 ]; }
+
+do_update() {
+  if [ "$NO_UPDATE" = 1 ]; then log "update: skipped (--no-update)"; return 0; fi
+  local cur; cur="$(racecast --version 2>/dev/null)"
+  if is_preview_version "$cur"; then
+    if have_tty; then
+      printf '\033[1;33m[prepare]\033[0m Preview build '\''%s'\'' installed (kept for the Linux fixes).\n' "$cur"
+      read -r -p "         Update to latest STABLE (loses the preview fixes)? [y/N] " ans
+      case "$ans" in
+        [yY]|[yY][eE][sS]) racecast update || die "racecast update failed" ;;
+        *) log "update: keeping preview build '$cur'" ;;
+      esac
+    else
+      log "update: preview build '$cur' kept (no TTY to confirm). Run interactively, or 'racecast update' to move to stable."
+    fi
+  else
+    log "update: stable build '$cur' — checking for a newer stable"
+    racecast update || die "racecast update failed"
+  fi
+}
+
 resolve_root() {
   local bin; bin="$(command -v racecast)" || die "racecast not on PATH — is this the racecast user on a provisioned box?"
   ROOT="$(dirname "$(readlink -f "$bin")")"
@@ -76,6 +102,7 @@ main() {
   resolve_root
   sanity_guard "$@"
   log "profile '$LEAGUE' found; install root $ROOT"
+  do_update
   # (further steps added in later tasks)
 }
 
