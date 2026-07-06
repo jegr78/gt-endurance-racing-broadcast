@@ -5179,10 +5179,15 @@ class Relay:
         def feed_fields(f):
             return ("stopped" if f.paused else f.phase,
                     1 if (f.dropped and not f.paused) else 0, f.idx + 1)
-        a_state, a_down, a_stint = feed_fields(self.feeds["A"])
-        b_state, b_down, b_stint = feed_fields(self.feeds["B"])
+        if self.solo:
+            a_state = a_down = a_stint = None
+            b_state = b_down = b_stint = None
+            live = None
+        else:
+            a_state, a_down, a_stint = feed_fields(self.feeds["A"])
+            b_state, b_down, b_stint = feed_fields(self.feeds["B"])
+            live = self.live_feed()
         ch = cookie_health(self.cookies, now=now)
-        live = self.live_feed()
         tmode, tpush = None, None
         ts = getattr(self, "timer_store", None)
         if ts is not None:
@@ -5213,14 +5218,14 @@ class Relay:
                               ("stopped" if self.pov.paused else self.pov.phase)),
                 "obs_reachable": (None if self.obs_reachable is None
                                   else (1 if self.obs_reachable else 0)),
-                "source_last_ok_age_s": self.source.health().get("last_ok_age_s"),
-                "source_count": self.source.health().get("count"),
+                "source_last_ok_age_s": (None if self.solo else self.source.health().get("last_ok_age_s")),
+                "source_count": (None if self.solo else self.source.health().get("count")),
                 "cookies_present": 1 if self.cookies else 0,
                 "cookies_age_h": ch.get("age_h"),
                 "cookies_stale": 1 if ch.get("stale") else 0,
                 "timer_mode": tmode, "timer_push": tpush,
                 "mode": self.mode,
-                "live_feed": live, "live_stint": self.feeds[live].idx + 1,
+                "live_feed": live, "live_stint": (None if self.solo else self.feeds[live].idx + 1),
                 # v3 OBS stats (already redacted: obs_stats never carries output_bytes)
                 "stream_active": _b(st.get("stream_active")),
                 "stream_reconnecting": _b(st.get("stream_reconnecting")),
@@ -5239,8 +5244,8 @@ class Relay:
                 "sheet_push_ok": (None if tpush in (None, "never", "disabled")
                                   else (1 if tpush == "ok" else 0)),
                 # v3 feed quality
-                "feed_a_quality": _q(self.feeds["A"]),
-                "feed_b_quality": _q(self.feeds["B"]),
+                "feed_a_quality": (None if self.solo else _q(self.feeds["A"])),
+                "feed_b_quality": (None if self.solo else _q(self.feeds["B"])),
                 "pov_quality": _q(self.pov) if self.pov else None,
                 **sys_res}
 
@@ -5304,7 +5309,7 @@ class Relay:
         (RACECAST_AUTO_FAILOVER); only fires while OBS is still on the on-air feed
         scene; fires once + notifies loudly; a manual return to the feed scene
         re-arms it. Return to the feed is always the producer's call."""
-        if not self.auto_failover or _obs_ws is None:
+        if self.solo or not self.auto_failover or _obs_ws is None:
             return
         live = self.live_feed()
         f = self.feeds[live]
@@ -5345,6 +5350,8 @@ class Relay:
     def status(self):
         now = time.time()
         self._maybe_probe_obs(now)
+        if self.solo:
+            return self._solo_status(now)
         sched = self.source.get()
         out = {"schedule_len": len(sched), "cookies": bool(self.cookies),
                "cookies_health": cookie_health(self.cookies, now=now),
@@ -5386,8 +5393,33 @@ class Relay:
                          "since_s": round(now - self.health_since, 1)}
         return out
 
+    def _solo_status(self, now):
+        """Status payload for solo mode: no A/B schedule/feeds. POV + OBS + health +
+        league identity (the console/panel read these); mirrors the tail of status()."""
+        out = {"mode": "solo", "solo": True, "feeds": {},
+               "cookies": bool(self.cookies),
+               "cookies_health": cookie_health(self.cookies, now=now)}
+        if self.pov:
+            raw = (self.pov_source.get()[:1] or [None])[0] if self.pov_source else None
+            out["pov"] = {"port": self.pov.port, "url": raw,
+                          "name": self.pov_name(), "shown": self.pov_shown,
+                          "state": "stopped" if self.pov.paused else self.pov.phase,
+                          "state_age_s": round(now - self.pov.phase_since, 1),
+                          "down": self.pov.dropped and not self.pov.paused,
+                          "source": self.pov_source.health() if self.pov_source else None}
+        out["obs"] = {"reachable": self.obs_reachable, "note": self.obs_note}
+        out["live"] = {"feed": None, "stint": None, "mode": "solo"}
+        out["league"] = {"sheet_id": self.sheet_id, "name": self.league_name}
+        out["producer"] = self.producer_name
+        self._refresh_health(now)
+        out["health"] = {"level": self.health_level, "reasons": self.health_reasons,
+                         "since_s": round(now - self.health_since, 1)}
+        return out
+
     def live_feed(self):
         """The on-air feed = the one on the lower (earlier) stint index."""
+        if self.solo:
+            return None
         return "A" if self.A.idx <= self.B.idx else "B"
 
     def on_air_row_idx(self):
@@ -5396,6 +5428,8 @@ class Relay:
         Equals the on-air feed's pull index in normal operation; during a same-URL
         back-to-back continuation it sits one row ahead of the still-parked pull.
         Clamped to the active schedule."""
+        if self.solo:
+            return 0
         n = len(self.source.get())
         if not n:
             return 0
@@ -5407,6 +5441,8 @@ class Relay:
         physical pull index. Equals {f.idx: key} in normal operation; during a
         continuation the on-air marker follows the displayed stint. The on-air
         entry is written last so it wins any (degenerate) index collision."""
+        if self.solo:
+            return {}
         live = self.live_feed()
         off = "B" if live == "A" else "A"
         row_map = {self.feeds[off].idx: off}
@@ -5467,6 +5503,8 @@ class Relay:
         """{"streamer", "stint"} for the stint currently ON SCREEN, or None when it
         idles past the schedule end. Drives the handover HUD auto-write (issue
         #112) and follows a same-URL continuation label."""
+        if self.solo:
+            return None
         return live_schedule_row(self.source.get_rows(), self.on_air_row_idx())
 
     def _reflect(self, live, cut):
@@ -5625,6 +5663,8 @@ class Relay:
                            "companion_ok": comp}
 
     def next_auto(self):
+        if self.solo:
+            return {"error": "not available in solo mode", "solo": True}
         self.source.refresh(timeout=6)               # fresh sheet data at handover (bounded wait)
         rows = self.source.get_rows()
         slots = pull_slots(rows)
@@ -5696,6 +5736,8 @@ class Relay:
         second row still pulls the single stream once), Feed B preloads the next
         slot. The DISPLAY row is set to <stint>. Tears a running feed off its stream
         (like /set) — use BEFORE going live, not mid-program."""
+        if self.solo:
+            return {"error": "not available in solo mode", "solo": True}
         self.source.refresh(timeout=6)      # clamp against fresh sheet data
         rows = self.source.get_rows()
         a_idx, b_idx = slot_start_indices(stint, rows)
@@ -5714,6 +5756,8 @@ class Relay:
         audio (cut=False; the director picks the scene). Tears a running pull off
         its stream like set_stint: an explicit between-session action, not for
         mid-program use. No-op-with-error when qualifying is unavailable."""
+        if self.solo:
+            return {"error": "not available in solo mode", "solo": True}
         if mode not in ("race", "qualifying"):
             return {"error": f"unknown mode: {mode!r} (one of race, qualifying)"}
         if mode == "qualifying" and not self.qual_source:
@@ -5730,6 +5774,8 @@ class Relay:
         return self.status()
 
     def reload(self, which=None):
+        if self.solo:
+            return {"error": "not available in solo mode", "solo": True}
         # Detect an ad-hoc on-air stream substitution: the operator edited the
         # on-air feed's URL then pressed Reload, so the on-air feed's URL changes
         # at the SAME stint across the schedule refresh. Captured before feeds

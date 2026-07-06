@@ -33,6 +33,42 @@ def t_endurance_relay_still_has_ab_and_solo_false():
     assert set(r.feeds) == {"A", "B"}
 
 
+def t_solo_status_is_feedless_and_shaped():
+    r = _solo_relay()
+    s = r.status()
+    assert s["mode"] == "solo" and s["solo"] is True
+    assert s["feeds"] == {}
+    assert s["live"] == {"feed": None, "stint": None, "mode": "solo"}
+    assert s["league"]["sheet_id"] == "abc"
+    assert "health" in s and "obs" in s
+
+
+def t_solo_feed_controls_are_guarded_not_crashing():
+    r = _solo_relay()
+    assert r.live_feed() is None
+    assert r.on_air_row_idx() == 0
+    assert r.live_row_map() == {}
+    assert r.live_schedule_row() is None
+    for call in (r.next_auto, r.reload, lambda: r.set_stint(2),
+                 lambda: r.set_mode("qualifying")):
+        out = call()
+        assert out.get("solo") is True and "error" in out
+
+
+def t_solo_heartbeat_paths_never_crash():
+    import time as _t
+    r = _solo_relay()
+    now = _t.time()
+    # the heartbeat body constituents must not raise in solo (no A/B feeds)
+    r._sample_connectivity()
+    r._refresh_health(now)
+    snap = r._health_snapshot(now)          # feed fields NULL, POV/system fields present
+    assert snap["feed_a_state"] is None and snap["feed_b_state"] is None
+    assert snap["live_feed"] is None
+    r.auto_failover = True                   # even opted-in, solo must early-return
+    r._maybe_auto_failover(now)              # must not KeyError on feeds[None]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
