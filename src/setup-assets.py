@@ -23,6 +23,18 @@ SHEET_TOKEN = "__RACECAST_SHEET__"
 MEDIA_TOKEN = "__RACECAST_MEDIA__"
 GRAPHICS_TOKEN = "__RACECAST_GRAPHICS__"
 
+SOLO_TEMPLATE_FILES = {"commentary": "GT_Solo_Commentary", "pov": "GT_Solo_POV"}
+
+
+def resolve_template_base(kind, template):
+    """Filename stem (no extension) of the OBS template for this profile kind.
+    endurance -> GT_Endurance; solo -> GT_Solo_Commentary / GT_Solo_POV
+    (unknown/blank solo template defaults to commentary). Pure."""
+    if (kind or "").strip().lower() == "solo":
+        return SOLO_TEMPLATE_FILES.get((template or "").strip().lower(),
+                                       "GT_Solo_Commentary")
+    return "GT_Endurance"
+
 
 def media_dir(base):
     """Default clip dir. setup-assets.py sits at src/ (repo) or <pkg>/ (package):
@@ -204,11 +216,19 @@ def main():
     ap.add_argument("--overlay-css", default=None,
                     help="Profile overlay hud.css whose #pov box position/size is "
                          "synced onto the OBS 'Feed POV' scene item. Default: none.")
+    ap.add_argument("--kind", default=os.environ.get("RACECAST_KIND", "endurance"),
+                    help="Profile kind (endurance|solo); selects the OBS template "
+                         "when --template is not an explicit file. Default: env "
+                         "RACECAST_KIND.")
+    ap.add_argument("--template-name",
+                    default=os.environ.get("RACECAST_TEMPLATE", ""),
+                    help="Solo template (commentary|pov). Default: env RACECAST_TEMPLATE.")
     a = ap.parse_args()
 
     tpl = a.template
     if tpl is None:
-        for cand in ("GT_Endurance.template.json", "GT_Endurance.json"):
+        stem = resolve_template_base(a.kind, a.template_name)
+        for cand in (f"{stem}.template.json", f"{stem}.json"):
             p = os.path.join(base, "obs", cand)
             if os.path.exists(p):
                 tpl = p
