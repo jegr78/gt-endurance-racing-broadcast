@@ -195,6 +195,14 @@ def t_all_scene_and_group_items_locked():
     assert not unlocked, f"scene/group items not edit-locked: {unlocked}"
 
 
+def t_solo_templates_secret_free_and_tokenized():
+    for fn in ("GT_Solo_Commentary.json", "GT_Solo_POV.json"):
+        with open(os.path.join(ROOT, "src", "obs", fn), encoding="utf-8") as fh:
+            raw = fh.read()
+        assert not b.has_appscript_secret(raw), fn
+        assert "__RACECAST_CAPTURE__" in raw and "__RACECAST_WEBCAM__" in raw, fn
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
