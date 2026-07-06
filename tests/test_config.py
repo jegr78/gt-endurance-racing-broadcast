@@ -214,6 +214,31 @@ def t_resolve_config_logo_path_blank_when_file_missing():
         assert cfg.logo_path == ""
 
 
+def t_normalize_kind_folds_to_known():
+    assert m.normalize_kind("solo") == "solo"
+    assert m.normalize_kind("endurance") == "endurance"
+    assert m.normalize_kind(" SOLO ") == "solo"          # trimmed + lowercased
+    assert m.normalize_kind("") == m.DEFAULT_KIND         # blank -> default
+    assert m.normalize_kind(None) == m.DEFAULT_KIND
+    assert m.normalize_kind("bogus") == m.DEFAULT_KIND    # unknown -> default
+
+
+def t_resolve_config_kind_defaults_to_endurance():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo", "SHEET_ID=a\n")          # no KIND -> backwards-compat
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.kind == "endurance" and cfg.template == ""
+
+
+def t_resolve_config_kind_solo_with_template():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "s1", "NAME=Solo One\nKIND=solo\nTEMPLATE=pov\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.kind == "solo" and cfg.template == "pov"
+
+
 def t_resolve_config_discord_webhook_from_field():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
