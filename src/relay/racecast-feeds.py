@@ -5003,7 +5003,7 @@ class Relay:
                  pov_port=None, start_stint=1, cookie_dir=None,
                  qual_source=None, mode="race", discord_webhook_url=None,
                  sheet_id=None, event_title_store=None, league_name="",
-                 producer_name=""):
+                 producer_name="", solo=False):
         self.race_source = source
         self.qual_source = qual_source
         self.sheet_id = sheet_id          # league identity, surfaced in /status for takeover
@@ -5017,16 +5017,25 @@ class Relay:
         self.mode = "qualifying" if (mode == "qualifying" and qual_source) else "race"
         self.cookies = cookies
         self.cookie_dir = cookie_dir
-        a_idx, b_idx = slot_start_indices(start_stint, self.active_source().get_rows())
         # 0-based DISPLAY row currently on air (drives the HUD stint label + the
         # ON-AIR marker). Equals the on-air feed's pull index in normal operation;
         # diverges one row ahead only during a same-URL back-to-back continuation.
-        self.on_air_row = a_idx
-        # Feeds read the ACTIVE source via active_items, so a /mode switch re-points
-        # both feeds without rebuilding them (the OBS Feed A/B sources never change).
-        self.A = Feed("A", ports[0], a_idx, self.active_items, logdir, cookies, cookie_dir=cookie_dir)
-        self.B = Feed("B", ports[1], b_idx, self.active_items, logdir, cookies, cookie_dir=cookie_dir)
-        self.feeds = {"A": self.A, "B": self.B}
+        self.solo = solo
+        if solo:
+            # Solo: no Schedule/Qualifying and no A/B ping-pong feeds. POV (below)
+            # is the only optional feed; every sheet-driven source is built by main()
+            # exactly as endurance. The feed-touching methods guard on self.solo.
+            self.on_air_row = 0
+            self.A = self.B = None
+            self.feeds = {}
+        else:
+            a_idx, b_idx = slot_start_indices(start_stint, self.active_source().get_rows())
+            self.on_air_row = a_idx
+            # Feeds read the ACTIVE source via active_items, so a /mode switch re-points
+            # both feeds without rebuilding them (the OBS Feed A/B sources never change).
+            self.A = Feed("A", ports[0], a_idx, self.active_items, logdir, cookies, cookie_dir=cookie_dir)
+            self.B = Feed("B", ports[1], b_idx, self.active_items, logdir, cookies, cookie_dir=cookie_dir)
+            self.feeds = {"A": self.A, "B": self.B}
         self.obs_note = None          # last OBS note (None/"" = ok); read by status()
         self.obs_reachable = None     # last LIVE reachability probe; None until first /status
         self._obs_probe_ts = 0.0      # time.time() of the last reachability probe
