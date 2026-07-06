@@ -10,11 +10,13 @@ hand-author scaffold dicts (a missing key makes OBS refuse the import).
 
 Result per file: the A/B ping-pong is gone (Feed A/B and the Stint/Splitscreen scenes
 dropped). A "Program" scene keeps Feed POV + the HUD/graphics overlays and adds two new
-device inputs — "Solo Capture" (full-frame background) and "Solo Webcam" (bottom-left
-PiP) — each wrapped in its own scene (the Discord "scene wraps one source" model). The
-device leaf sources carry the tokens __RACECAST_CAPTURE__ / __RACECAST_WEBCAM__; the
-committed form is the macOS av_capture_input source, and setup-assets.py localizes the
-source type + device settings per OS at import time.
+device inputs — "Solo Capture Device" (full-frame background) and "Solo Webcam Device"
+(bottom-left PiP) — each wrapped in its own scene ("Solo Capture" / "Solo Webcam", the
+Discord "scene wraps one source" model — mirroring how the Discord scene wraps the
+distinctly-named "Discord Audio Capture" leaf). The device leaf sources carry the
+tokens __RACECAST_CAPTURE__ / __RACECAST_WEBCAM__; the committed form is the macOS
+av_capture_input source, and setup-assets.py localizes the source type + device
+settings per OS at import time.
 """
 import copy
 import json
@@ -136,24 +138,19 @@ def derive():
     program["settings"]["id_counter"] = max(
         int(program["settings"].get("id_counter", 0)), 31)
 
-    # Device leaf sources + wrapping scenes.
-    cap_src = _device_leaf(pov_leaf, U["cap_src"], "Solo Capture", CAPTURE_TOKEN)
-    cam_src = _device_leaf(pov_leaf, U["cam_src"], "Solo Webcam", WEBCAM_TOKEN)
+    # Device leaf sources + wrapping scenes. The leaf is named distinctly from its
+    # wrapping scene ("Solo Capture Device" vs the "Solo Capture" scene) — mirroring
+    # the Discord precedent (scene "Discord" wraps leaf "Discord Audio Capture") — so
+    # setup-assets' by-name lookup in localize_device_sources can never collide a
+    # device leaf with its wrapping scene.
+    cap_src = _device_leaf(pov_leaf, U["cap_src"], "Solo Capture Device", CAPTURE_TOKEN)
+    cam_src = _device_leaf(pov_leaf, U["cam_src"], "Solo Webcam Device", WEBCAM_TOKEN)
     cap_scene = _device_scene(discord_scene, U["cap_scene"], "Solo Capture",
-                              U["cap_src"], "Solo Capture")
+                              U["cap_src"], "Solo Capture Device")
     cam_scene = _device_scene(discord_scene, U["cam_scene"], "Solo Webcam",
-                              U["cam_src"], "Solo Webcam")
+                              U["cam_src"], "Solo Webcam Device")
 
     # Remove the endurance-only scenes/sources, then append the solo additions.
-    #
-    # ORDERING CONTRACT: the device LEAF sources ("Solo Capture" / "Solo Webcam")
-    # must appear AFTER the wrapping scenes of the same name. setup-assets'
-    # localize_device_sources builds a {name: source} dict (last-wins) and mutates the
-    # matched node's id/settings into the per-OS device source. The wrapping scenes and
-    # their device leaves deliberately share a display name (the Discord scene-wraps-a-
-    # source model, spec section B), so the leaf must win that lookup — otherwise
-    # localize would overwrite the SCENE, destroying its items. The device leaf therefore
-    # comes last. tests/test_solo_obs.py::t_localize_preserves_solo_scenes locks this.
     kept = [s for s in col["sources"]
             if s.get("name") not in (DROP_SCENES | DROP_SOURCES)]
     kept.extend([cap_scene, cam_scene, cap_src, cam_src, program])

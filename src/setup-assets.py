@@ -114,9 +114,13 @@ def localize_discord_audio(collection, platform, web=False, browser="Firefox"):
 # are rebuilt for this platform and the device id is injected from .env. An unset
 # device is a WARNING (OBS shows black), never a failure — same contract as a missing
 # graphic. #304 automates device discovery (OBS-WS) into .env.
+# NB: these names target the LEAF device sources, distinct from the wrapping scenes
+# of the same role ("Solo Capture" / "Solo Webcam") — mirroring the Discord precedent
+# (scene "Discord" wraps leaf "Discord Audio Capture"). A by-name lookup can therefore
+# never collide a device leaf with its wrapping scene.
 DEVICE_SOURCES = (
-    {"name": "Solo Capture", "env": "RACECAST_CAPTURE"},
-    {"name": "Solo Webcam",  "env": "RACECAST_WEBCAM"},
+    {"name": "Solo Capture Device", "env": "RACECAST_CAPTURE"},
+    {"name": "Solo Webcam Device",  "env": "RACECAST_WEBCAM"},
 )
 DEVICE_VARIANTS = {
     "darwin": ("av_capture_input", "device"),        # AVFoundation device UID

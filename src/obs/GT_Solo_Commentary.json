@@ -1713,7 +1713,7 @@
                 "id_counter": 1,
                 "items": [
                     {
-                        "name": "Solo Capture",
+                        "name": "Solo Capture Device",
                         "source_uuid": "aaaaaaa4-0000-4000-8000-000000000004",
                         "visible": true,
                         "locked": true,
@@ -1786,7 +1786,7 @@
                 "id_counter": 1,
                 "items": [
                     {
-                        "name": "Solo Webcam",
+                        "name": "Solo Webcam Device",
                         "source_uuid": "aaaaaaa5-0000-4000-8000-000000000005",
                         "visible": true,
                         "locked": true,
@@ -1850,7 +1850,7 @@
         },
         {
             "prev_ver": 536936450,
-            "name": "Solo Capture",
+            "name": "Solo Capture Device",
             "uuid": "aaaaaaa4-0000-4000-8000-000000000004",
             "id": "av_capture_input",
             "versioned_id": "av_capture_input",
@@ -1885,7 +1885,7 @@
         },
         {
             "prev_ver": 536936450,
-            "name": "Solo Webcam",
+            "name": "Solo Webcam Device",
             "uuid": "aaaaaaa5-0000-4000-8000-000000000005",
             "id": "av_capture_input",
             "versioned_id": "av_capture_input",

@@ -28,9 +28,9 @@ def t_resolve_template_base():
 
 def _device_coll():
     return {"sources": [
-        {"name": "Solo Capture", "uuid": "cap-uuid", "id": "av_capture_input",
+        {"name": "Solo Capture Device", "uuid": "cap-uuid", "id": "av_capture_input",
          "versioned_id": "av_capture_input", "settings": {"device": "__RACECAST_CAPTURE__"}},
-        {"name": "Solo Webcam", "uuid": "cam-uuid", "id": "av_capture_input",
+        {"name": "Solo Webcam Device", "uuid": "cam-uuid", "id": "av_capture_input",
          "versioned_id": "av_capture_input", "settings": {"device": "__RACECAST_WEBCAM__"}},
         {"name": "Overlay", "uuid": "ov", "id": "image_source", "settings": {}},
     ]}
@@ -44,10 +44,10 @@ def t_device_localize_windows():
     c = _device_coll()
     unset = sa.localize_device_sources(
         c, "win32", {"RACECAST_CAPTURE": "Cam:\\\\?\\usb#abc", "RACECAST_WEBCAM": "Logi:\\\\?\\usb#xyz"})
-    cap = _byname(c, "Solo Capture")
+    cap = _byname(c, "Solo Capture Device")
     assert cap["id"] == cap["versioned_id"] == "dshow_input"
     assert cap["settings"] == {"video_device_id": "Cam:\\\\?\\usb#abc"}
-    assert _byname(c, "Solo Webcam")["settings"] == {"video_device_id": "Logi:\\\\?\\usb#xyz"}
+    assert _byname(c, "Solo Webcam Device")["settings"] == {"video_device_id": "Logi:\\\\?\\usb#xyz"}
     assert unset == []
 
 
@@ -55,21 +55,21 @@ def t_device_localize_linux_and_darwin_keys():
     c = _device_coll()
     sa.localize_device_sources(c, "linux", {"RACECAST_CAPTURE": "/dev/video0",
                                             "RACECAST_WEBCAM": "/dev/video1"})
-    assert _byname(c, "Solo Capture")["id"] == "v4l2_input"
-    assert _byname(c, "Solo Capture")["settings"] == {"device_id": "/dev/video0"}
+    assert _byname(c, "Solo Capture Device")["id"] == "v4l2_input"
+    assert _byname(c, "Solo Capture Device")["settings"] == {"device_id": "/dev/video0"}
     c = _device_coll()
     sa.localize_device_sources(c, "darwin", {"RACECAST_CAPTURE": "AAAA", "RACECAST_WEBCAM": "BBBB"})
-    assert _byname(c, "Solo Capture")["id"] == "av_capture_input"
-    assert _byname(c, "Solo Capture")["settings"] == {"device": "AAAA"}
+    assert _byname(c, "Solo Capture Device")["id"] == "av_capture_input"
+    assert _byname(c, "Solo Capture Device")["settings"] == {"device": "AAAA"}
 
 
 def t_device_localize_empty_env_warns_not_raises():
     c = _device_coll()
     unset = sa.localize_device_sources(c, "darwin", {})   # no device values
-    assert sorted(unset) == ["Solo Capture", "Solo Webcam"]
+    assert sorted(unset) == ["Solo Capture Device", "Solo Webcam Device"]
     # source type still localized; device key present but empty (OBS shows black)
-    assert _byname(c, "Solo Capture")["id"] == "av_capture_input"
-    assert _byname(c, "Solo Capture")["settings"] == {"device": ""}
+    assert _byname(c, "Solo Capture Device")["id"] == "av_capture_input"
+    assert _byname(c, "Solo Capture Device")["settings"] == {"device": ""}
 
 
 def t_device_localize_absent_sources_is_noop():
@@ -81,14 +81,14 @@ def t_device_localize_unknown_platform_all_unset_even_with_values():
     c = _device_coll()
     unset = sa.localize_device_sources(c, "sunos5",
                                        {"RACECAST_CAPTURE": "X", "RACECAST_WEBCAM": "Y"})
-    assert sorted(unset) == ["Solo Capture", "Solo Webcam"]
+    assert sorted(unset) == ["Solo Capture Device", "Solo Webcam Device"]
     # unknown platform: source left untouched (still the macOS template form + token)
-    assert _byname(c, "Solo Capture")["settings"] == {"device": "__RACECAST_CAPTURE__"}
+    assert _byname(c, "Solo Capture Device")["settings"] == {"device": "__RACECAST_CAPTURE__"}
 
 
 def t_device_localize_env_none_is_safe():
     c = _device_coll()
-    assert sorted(sa.localize_device_sources(c, "darwin", None)) == ["Solo Capture", "Solo Webcam"]
+    assert sorted(sa.localize_device_sources(c, "darwin", None)) == ["Solo Capture Device", "Solo Webcam Device"]
 
 
 # --- Structural checks on the two committed solo templates (#303) ---
@@ -158,9 +158,11 @@ def t_solo_templates_scene_and_source_references_resolve():
 
 def t_localize_preserves_solo_scenes():
     """setup-assets.localize_device_sources must localize the two device LEAF sources
-    (id/settings -> per-OS device) while leaving the same-named wrapping SCENES intact
-    (still id=='scene' with their items). Locks the ordering contract in
-    tools/derive-solo-templates.py (leaf after scene so the by_name lookup wins)."""
+    (id/settings -> per-OS device) while leaving the distinctly-named wrapping SCENES
+    intact (still id=='scene' with their items). Scene and leaf are named distinctly
+    ("Solo Capture" scene vs "Solo Capture Device" leaf, mirroring the Discord
+    precedent), so the by-name lookup in localize_device_sources can never collide
+    them — no ordering contract required."""
     d = _load_solo("GT_Solo_Commentary.json")
     unset = sa.localize_device_sources(
         d, "darwin", {"RACECAST_CAPTURE": "CAPDEV", "RACECAST_WEBCAM": "CAMDEV"})
@@ -176,6 +178,34 @@ def t_localize_preserves_solo_scenes():
     assert {s["settings"]["device"] for s in devs.values()} == {"CAPDEV", "CAMDEV"}
     for s in devs.values():
         assert "__RACECAST_" not in s["settings"]["device"]
+
+
+def t_solo_templates_device_leaves_are_distinctly_named():
+    """The device LEAF sources are named distinctly from their wrapping scenes
+    ("Solo Capture Device" / "Solo Webcam Device"), carry id=='av_capture_input'
+    (the committed macOS form) and their respective tokens."""
+    for fn in SOLO_FILES:
+        d = _load_solo(fn)
+        cap = _byname(d, "Solo Capture Device")
+        cam = _byname(d, "Solo Webcam Device")
+        assert cap["id"] == "av_capture_input", fn
+        assert cam["id"] == "av_capture_input", fn
+        assert cap["settings"]["device"] == "__RACECAST_CAPTURE__", fn
+        assert cam["settings"]["device"] == "__RACECAST_WEBCAM__", fn
+
+
+def t_solo_templates_no_scene_source_name_collision():
+    """Collision guard: no source `name` is shared between a scene and a non-scene
+    source. "Solo Capture"/"Solo Webcam" must each resolve to exactly one scene, and
+    the device leaves ("Solo Capture Device"/"Solo Webcam Device") must not collide
+    with any scene name — the bug this fix removes."""
+    for fn in SOLO_FILES:
+        d = _load_solo(fn)
+        scene_names = [s.get("name") for s in d["sources"] if s.get("id") == "scene"]
+        non_scene_names = [s.get("name") for s in d["sources"] if s.get("id") != "scene"]
+        assert scene_names.count("Solo Capture") == 1, fn
+        assert scene_names.count("Solo Webcam") == 1, fn
+        assert set(scene_names) & set(non_scene_names) == set(), (fn, scene_names, non_scene_names)
 
 
 if __name__ == "__main__":
