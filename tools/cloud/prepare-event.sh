@@ -3,14 +3,16 @@
 # Runs the recurring event-prep sequence to "ready" (no go-live) and reports which
 # one-time manual setup is still missing. Companion to tools/cloud/provision.sh.
 # Run as the `racecast` user on the box:  ./prepare-event.sh <league> [flags]
-# shellcheck disable=SC2034  # globals for later tasks
 set -uo pipefail
 
 RACECAST_USER="${RACECAST_USER:-racecast}"
 
 LEAGUE=""
+# shellcheck disable=SC2034  # set here; read by a later task
 NO_TWITCH=0
+# shellcheck disable=SC2034  # set here; read by a later task
 NO_SPEEDTEST=0
+# shellcheck disable=SC2034  # set here; read by a later task
 NO_UPDATE=0
 
 usage() {
@@ -35,9 +37,12 @@ SOFT_WARNINGS=0
 parse_args() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --no-twitch)    NO_TWITCH=1 ;;
-      --no-speedtest) NO_SPEEDTEST=1 ;;
-      --no-update)    NO_UPDATE=1 ;;
+      --no-twitch)    # shellcheck disable=SC2034  # set here; read by a later task
+                      NO_TWITCH=1 ;;
+      --no-speedtest) # shellcheck disable=SC2034  # set here; read by a later task
+                      NO_SPEEDTEST=1 ;;
+      --no-update)    # shellcheck disable=SC2034  # set here; read by a later task
+                      NO_UPDATE=1 ;;
       -h|--help)      usage; exit 0 ;;
       -*)             usage; die "unknown flag: $1" ;;
       *)              if [ -z "$LEAGUE" ]; then LEAGUE="$1"; else die "unexpected argument: $1"; fi ;;
@@ -53,7 +58,9 @@ is_league_imported() {  # $1 = profile name
 resolve_root() {
   local bin; bin="$(command -v racecast)" || die "racecast not on PATH — is this the racecast user on a provisioned box?"
   ROOT="$(dirname "$(readlink -f "$bin")")"
+  # shellcheck disable=SC2034  # set here; read by a later task
   RUNTIME="$ROOT/runtime"
+  # shellcheck disable=SC2034  # set here; read by a later task
   PROFILES="$ROOT/profiles"
 }
 
