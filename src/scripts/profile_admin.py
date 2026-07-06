@@ -195,14 +195,16 @@ def split_profile_flag(argv):
 
 
 def _solo_profile_env_text(display, template):
-    """The generated profile.env for a solo profile (#301): sheet-less by design
-    (no SHEET_ID / SHEET_PUSH_URL — solo has no Google Sheet and no external
-    feeds), carrying the chosen starter TEMPLATE. The matching OBS scene-collection
-    source is materialized later by `racecast setup` (see #303)."""
+    """The generated profile.env for a solo profile (#301): a single-event
+    commentary/POV broadcast whose main program is a local capture card + webcam
+    (no A/B stint feeds), carrying the chosen starter TEMPLATE. Sheet-always
+    (#302 design): a solo profile still uses a Google Sheet — the same tabs as
+    endurance MINUS the Schedule/Qualifying tabs — so it carries SHEET_ID. The
+    matching OBS scene-collection source is materialized by `racecast setup` (#303)."""
     return (
         "# Solo profile (kind=solo) — a single-event commentary/POV broadcast.\n"
-        "# No Google Sheet and no external feeds: the HUD is driven from the\n"
-        "# Director Panel, not a sheet. Created by `racecast profile new`.\n"
+        "# The main program is a local capture card + webcam in OBS (no A/B stint\n"
+        "# feeds). It still uses a Google Sheet (below). Created by `racecast profile new`.\n"
         "\n"
         "# Display name shown in the CLI / Control Center / docs.\n"
         f"NAME={display}\n"
@@ -213,6 +215,15 @@ def _solo_profile_env_text(display, template):
         "# Starter template chosen at creation: commentary | pov. The matching OBS\n"
         "# scene-collection source is materialized by `racecast setup` (#303).\n"
         f"TEMPLATE={template}\n"
+        "\n"
+        "# Google Sheet that drives the HUD, timer, crew/console roles, broadcast\n"
+        "# chat and assets (the long ID from the sheet URL). A solo Sheet uses the\n"
+        "# same tabs as endurance MINUS the Schedule/Qualifying tabs.\n"
+        "SHEET_ID=\n"
+        "\n"
+        "# OPTIONAL: sheet-write webhook (Apps Script /exec URL incl. its ?key=...)\n"
+        "# enabling the Director Panel's Setup/POV write-back + the race timer.\n"
+        "SHEET_PUSH_URL=\n"
         "\n"
         "# OPTIONAL: the OBS scene-collection name this profile uses. Blank = the\n"
         "# product default per kind.\n"
