@@ -1045,14 +1045,20 @@ def profile_cmd(rest):
         return None
     if verb == "new":
         try:
-            target = pa.create_profile(root, opts["name"], opts["source"])
+            target = pa.create_profile(root, opts["name"], opts["source"],
+                                       kind=opts["kind"], template=opts["template"])
         except ValueError as e:
             sys.exit(f"racecast: {e}")
         slug = os.path.basename(target)        # typed name -> directory slug
         env_path = os.path.join(target, pcfg.PROFILE_ENV_NAME)
-        print(f"created profile '{slug}' at {target}")
-        print(f"  edit {env_path} (fill in SHEET_ID), then: "
-              f"racecast profile use {slug}")
+        if opts["kind"] == "solo":
+            print(f"created solo profile '{slug}' "
+                  f"(template: {opts['template']}) at {target}")
+            print(f"  edit {env_path}, then: racecast profile use {slug}")
+        else:
+            print(f"created profile '{slug}' at {target}")
+            print(f"  edit {env_path} (fill in SHEET_ID), then: "
+                  f"racecast profile use {slug}")
         return None
     if verb == "export":
         res = profile_export_data(opts["name"],

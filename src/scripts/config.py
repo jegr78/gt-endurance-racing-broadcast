@@ -24,6 +24,21 @@ PROJECT_MARKERS = (".git", ".env.example")
 # leagues' collections group together in OBS. An explicit OBS_COLLECTION wins.
 PRODUCT_COLLECTION_PREFIX = "GT Endurance Racing"
 
+# Profile kind (#301): endurance = the classic feed-/sheet-driven league; solo =
+# a single-event commentary/POV broadcast (no external feeds, no Google Sheet).
+# A missing/unknown KIND resolves to endurance so every existing profile is
+# backwards-compatible. Solo profiles carry a starter TEMPLATE chosen at creation.
+DEFAULT_KIND = "endurance"
+KNOWN_KINDS = ("endurance", "solo")
+SOLO_TEMPLATES = ("commentary", "pov")
+
+
+def normalize_kind(raw):
+    """Fold a raw KIND value to a known kind: lowercased+trimmed, and anything
+    not in KNOWN_KINDS (including blank/None) falls back to DEFAULT_KIND. Pure."""
+    k = (raw or "").strip().lower()
+    return k if k in KNOWN_KINDS else DEFAULT_KIND
+
 
 def find_project_root(start, markers=PROJECT_MARKERS, max_levels=4):
     """Walk up from `start`, checking `start` itself and up to `max_levels-1`
@@ -151,6 +166,8 @@ class ResolvedConfig:
     profile: str
     name: str
     sheet_id: str
+    kind: str = DEFAULT_KIND     # endurance (default) | solo (#301)
+    template: str = ""           # solo starter template (commentary|pov); "" for endurance
     sheet_push_url: str = ""
     intro_url: str = ""
     outro_url: str = ""
@@ -208,6 +225,8 @@ def resolve_config(root, *, override=None, runtime_root=None, environ=None):
         profile=name,
         name=resolved_name,
         sheet_id=prof.get("SHEET_ID", ""),
+        kind=normalize_kind(prof.get("KIND", "")),
+        template=prof.get("TEMPLATE", ""),
         sheet_push_url=prof.get("SHEET_PUSH_URL", ""),
         intro_url=prof.get("INTRO_URL", ""),
         outro_url=prof.get("OUTRO_URL", ""),
