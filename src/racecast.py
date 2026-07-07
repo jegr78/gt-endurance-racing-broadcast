@@ -30,6 +30,7 @@
   racecast backup    {create|list|restore|delete} <label>   # named look snapshots (overlay+graphics+media)
   racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
   racecast freeport [PORT...] [--force]       # free a stuck feed port (default 53001-53003); kills orphaned holders, refuses a running relay/streams
+  racecast device-scan [--webcam VAL] [--capture VAL]  # enumerate OBS video-capture devices and save the pick(s) to .env (interactive when no flags given)
   racecast preflight | speedtest [--json] | cookies [twitch] [browser] | graphics | media | brands | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   racecast obs-browser [--yes]               # Linux/ARM64: build & install OBS's Browser Source plugin from source (needed for the relay HUD)
   racecast export companion [--out PATH]     # write the Companion button config
@@ -982,6 +983,8 @@ def route(argv):
         return {"kind": "ui", "rest": rest}
     if cmd == "freeport":
         return {"kind": "freeport", "rest": rest}
+    if cmd == "device-scan":
+        return {"kind": "device-scan", "rest": rest}
     if cmd == "init":
         return {"kind": "init", "rest": rest}
     if cmd == "profile":
@@ -2513,6 +2516,101 @@ def obs_stream_target_cmd(rest):
     if not ok:
         sys.exit(f"obs: stream target not set — {note}")
     print(f"obs: {note} ✓")
+
+
+def resolve_device_selection(devices, token):
+    """Map a user token to a device value. token: "" -> (None,None) (skip/leave);
+    a 1-based index; a case-insensitive name substring; or an exact value. Returns
+    (value, None) or (None, error)."""
+    token = (token or "").strip()
+    if not token:
+        return None, None
+    if token.isdigit():
+        i = int(token)
+        if 1 <= i <= len(devices):
+            return devices[i - 1]["value"], None
+        return None, f"index {i} out of range (1..{len(devices)})"
+    for d in devices:                                   # exact value first
+        if d["value"] == token:
+            return d["value"], None
+    matches = [d for d in devices if token.lower() in d.get("name", "").lower()]
+    if len(matches) == 1:
+        return matches[0]["value"], None
+    if not matches:
+        return None, f"no device matches {token!r}"
+    return None, f"{token!r} is ambiguous ({len(matches)} matches)"
+
+
+DEVICE_SCAN_INPUT_NAME = "Solo Capture Device"
+
+
+def _parse_device_scan_args(rest):
+    """(webcam_token_or_None, capture_token_or_None). Only --webcam/--capture are
+    recognized; anything else is a usage error."""
+    webcam = None
+    capture = None
+    i = 0
+    while i < len(rest):
+        arg = rest[i]
+        if arg == "--webcam" and i + 1 < len(rest):
+            webcam = rest[i + 1]
+            i += 2
+        elif arg == "--capture" and i + 1 < len(rest):
+            capture = rest[i + 1]
+            i += 2
+        else:
+            raise ValueError("usage: racecast device-scan [--webcam VAL] [--capture VAL]")
+    return webcam, capture
+
+
+def device_scan_cmd(rest):
+    """`racecast device-scan [--webcam VAL] [--capture VAL]` — enumerate the OBS
+    video-capture devices available to the "Solo Capture Device" input and write
+    the operator's picks to the machine .env as RACECAST_WEBCAM/RACECAST_CAPTURE
+    (#304). VAL is a 1-based list index, a case-insensitive name substring, or an
+    exact device value; blank/omitted leaves that slot untouched. Without flags
+    and on a TTY it prompts interactively; headless it just lists the devices and
+    hints at the flags (never blocks on input())."""
+    import obs_ws
+    try:
+        webcam_tok, capture_tok = _parse_device_scan_args(rest)
+    except ValueError as exc:
+        sys.exit(str(exc))
+    devices, note = obs_ws.enumerate_device_options(
+        DEVICE_SCAN_INPUT_NAME, obs_ws.device_property_name(sys.platform))
+    if not devices:
+        sys.exit(f"device-scan: {note or 'no devices found'} — "
+                 "import the solo collection first (racecast setup), then start OBS.")
+    print("Available video devices:")
+    for i, d in enumerate(devices, start=1):
+        print(f"  {i}. {d['name']}")
+    if webcam_tok is None and capture_tok is None:
+        if not sys.stdin.isatty():
+            print("racecast: pass --webcam VAL and/or --capture VAL to select one "
+                 "(non-interactive session).")
+            return None
+        webcam_tok = input("Webcam [index/name, blank=skip]: ")
+        capture_tok = input("Capture [index/name, blank=skip]: ")
+    webcam_val, err = resolve_device_selection(devices, webcam_tok or "")
+    if err:
+        sys.exit(f"device-scan: webcam — {err}")
+    capture_val, err = resolve_device_selection(devices, capture_tok or "")
+    if err:
+        sys.exit(f"device-scan: capture — {err}")
+    updates = {}
+    if webcam_val is not None:
+        updates["RACECAST_WEBCAM"] = webcam_val
+    if capture_val is not None:
+        updates["RACECAST_CAPTURE"] = capture_val
+    if not updates:
+        print("device-scan: nothing to write (no selection made).")
+        return None
+    res = env_upsert_data(updates)
+    if not res.get("ok"):
+        sys.exit(f"device-scan: {res.get('error')}")
+    print(f"device-scan: wrote {', '.join(sorted(updates))} to .env.")
+    print("Re-run `racecast setup` to bake these into the OBS collection.")
+    return None
 
 
 def _active_sheet_url():
@@ -6284,6 +6382,8 @@ def main(argv=None):
         return ui_cmd(action["rest"])
     if action["kind"] == "freeport":
         return freeport_cmd(action["rest"])
+    if action["kind"] == "device-scan":
+        return device_scan_cmd(action["rest"])
     if action["kind"] == "init":
         return init_cmd(action["rest"])
     if action["kind"] == "profile":

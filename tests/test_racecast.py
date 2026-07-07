@@ -3704,6 +3704,28 @@ def t_env_upsert_updates_existing_key_in_place():
     assert "RACECAST_UI_PORT=8089" in text
 
 
+def t_resolve_device_selection_by_index_and_id():
+    devs = [{"name": "FaceTime", "value": "0x14000000"},
+            {"name": "Elgato HD60", "value": "0x14200000"}]
+    assert m.resolve_device_selection(devs, "1") == ("0x14000000", None)   # 1-based index
+    assert m.resolve_device_selection(devs, "2") == ("0x14200000", None)
+    assert m.resolve_device_selection(devs, "Elgato") == ("0x14200000", None)  # name substring
+    assert m.resolve_device_selection(devs, "0x14000000") == ("0x14000000", None)  # exact value
+    val, err = m.resolve_device_selection(devs, "9")
+    assert val is None and "out of range" in err
+    val, err = m.resolve_device_selection(devs, "nosuch")
+    assert val is None and err
+    assert m.resolve_device_selection(devs, "") == (None, None)   # blank = skip/leave
+
+
+def t_route_device_scan():
+    # device-scan is a single-word command (like freeport/links) that forwards
+    # any flags (--webcam/--capture) straight through to device_scan_cmd (#304).
+    assert m.route(["device-scan"]) == {"kind": "device-scan", "rest": []}
+    assert m.route(["device-scan", "--webcam", "1", "--capture", "2"]) == \
+        {"kind": "device-scan", "rest": ["--webcam", "1", "--capture", "2"]}
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
