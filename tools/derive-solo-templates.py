@@ -106,6 +106,11 @@ def _nested_scene_item(template_item, name, src_uuid, item_id):
     it["name"] = name
     it["source_uuid"] = src_uuid
     it["id"] = item_id
+    # Audio-only reference (no visual footprint) — carry no show/hide transition
+    # rather than inheriting the template item's 300 ms (cosmetic; the timing is
+    # meaningless for an item that never renders).
+    it["show_transition"] = {"duration": 0}
+    it["hide_transition"] = {"duration": 0}
     return it
 
 
@@ -193,6 +198,10 @@ def derive():
     # scene (cloned from Discord, the audio-scene precedent).
     mic_src = _device_leaf(pov_leaf, U["mic_src"], "Commentary Mic Device", MIC_TOKEN,
                            source_id="coreaudio_input_capture", settings_key="device_id")
+    # The commentary mic is the PRIMARY audio of a solo commentary broadcast, so it
+    # ships HOT (unmuted) — unlike the muted-by-default capture/webcam leaves. The
+    # operator can still mute it from the panel Audio bus.
+    mic_src["muted"] = False
     mic_scene = _device_scene(discord_scene, U["mic_scene"], "Commentary Mic",
                               U["mic_src"], "Commentary Mic Device")
 

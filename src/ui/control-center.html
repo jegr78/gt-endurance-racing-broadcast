@@ -4707,6 +4707,7 @@ setInterval(renderTimer, 1000);          // tick the Home race-timer clock local
 checkUpdate();                           // one-shot GitHub release check (cached server-side)
 // Populate the active-league sidebar badge regardless of which view opens first.
 profilesLoaded = true; loadProfiles();
+onKindChange();                          // derive the new-profile dialog's Template/Copy-from visibility from the Kind select (not just static hidden attrs)
 initPreviewOptin();                      // restore preview opt-in state from localStorage
 // Populate the Home tiles on startup: preflight auto-runs (a few seconds), and
 // the cheap asset listing fills the Assets tile + gallery.

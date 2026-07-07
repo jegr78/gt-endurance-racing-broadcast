@@ -1329,7 +1329,7 @@ async function relayCall(path){
     const d = await r.json();
     if (d.error) { log("Relay /" + path + ": " + d.error, "err"); toast("Relay /" + path + ": " + d.error); return; }
     let extra = "";
-    if (d.feeds) extra = ` — A: stint ${d.feeds.A.stint}, B: stint ${d.feeds.B.stint}`;
+    if (d.feeds && d.feeds.A) extra = ` — A: stint ${d.feeds.A.stint}, B: stint ${d.feeds.B.stint}`;
     log("Relay /" + path + " ok" + extra);
     relayPoll();
   }catch(e){ log("Relay /" + path + " failed (relay reachable?): " + e, "err"); toast("Relay /" + path + " failed — relay unreachable"); }
@@ -2111,6 +2111,7 @@ $("#povUrl").addEventListener("input", ()=>$("#povUrl").dataset.dirty = 1);
 $("#povName").addEventListener("input", ()=>$("#povName").dataset.dirty = 1);
 
 async function schedPoll(){
+  if (document.body.classList.contains("solo")) return;   // no schedule in solo (box is force-open for POV)
   if (!$("#urlsBox").open) return;   // closed section -> no traffic
   try{
     const r = await fetch("/schedule/data", {cache:"no-store"});
@@ -2224,6 +2225,7 @@ $("#modeSwitch").addEventListener("click", async ()=>{
   qualPoll();
 });
 async function qualPoll(){
+  if (document.body.classList.contains("solo")) return;   // no qualifying in solo (box is force-open for POV)
   if (!$("#urlsBox").open) return;   // closed section -> no traffic
   try{
     const r = await fetch("/qualifying/data", {cache:"no-store"});
