@@ -1483,6 +1483,17 @@ def t_device_property_name_matches_setup_assets_variants():
         assert m.device_property_name(plat) == prop_key, os_key
 
 
+def t_input_not_found():
+    # The real OBS error for a missing input is a RequestStatus code 600
+    # (ResourceNotFound), NOT a "not found" phrase — see enumerate_device_options's
+    # except-clause classification (#304 review).
+    assert m.input_not_found(
+        "GetInputPropertiesListPropertyItems failed: {'code': 600, "
+        "'comment': 'No source was found by the name of `Solo Capture Device`'}")
+    assert m.input_not_found("input 'Solo Capture Device' not found")
+    assert not m.input_not_found("connection reset")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

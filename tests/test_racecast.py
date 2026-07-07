@@ -3770,6 +3770,25 @@ def t_env_upsert_updates_existing_key_in_place():
     assert "RACECAST_UI_PORT=8089" in text
 
 
+def t_env_upsert_rejects_foreign_key_clearly():
+    # A machine .env that already holds a non-RACECAST_ key (should never happen,
+    # but the editor/device-scan must not blow up with the raw env_write_data
+    # wording) gets a clear, device-context error and writes nothing (#304 review).
+    import tempfile, os as _os
+    d = tempfile.mkdtemp(prefix="racecast-envupsert-foreign-")
+    p = _os.path.join(d, ".env")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("FOO=bar\nRACECAST_UI_PORT=8089\n")
+    with open(p, encoding="utf-8") as fh:
+        before = fh.read()
+    res = m.env_upsert_data({"RACECAST_WEBCAM": "x"}, path=p)
+    assert not res["ok"]
+    assert "could not be saved" in res["error"]
+    with open(p, encoding="utf-8") as fh:
+        after = fh.read()
+    assert after == before                            # nothing written
+
+
 def t_resolve_device_selection_by_index_and_id():
     devs = [{"name": "FaceTime", "value": "0x14000000"},
             {"name": "Elgato HD60", "value": "0x14200000"}]

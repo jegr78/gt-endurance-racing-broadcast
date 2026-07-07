@@ -2553,7 +2553,7 @@ async function saveDevices() {
   const orig = b.innerHTML;
   b.textContent = 'Saved ✓';
   setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
-  loadSettings();                          // reflect the .env change (masked)
+  // selection persisted; keep it shown (do not reload → would reset the dropdowns)
 }
 
 // ----- Machine-wide overlay font library (General Settings) -----

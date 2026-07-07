@@ -2605,12 +2605,15 @@ def device_scan_cmd(rest):
             return None
         webcam_tok = input("Webcam [index/name, blank=skip]: ")
         capture_tok = input("Capture [index/name, blank=skip]: ")
-    webcam_val, err = resolve_device_selection(devices, webcam_tok or "")
-    if err:
-        sys.exit(f"device-scan: webcam — {err}")
-    capture_val, err = resolve_device_selection(devices, capture_tok or "")
-    if err:
-        sys.exit(f"device-scan: capture — {err}")
+    errors = []
+    webcam_val, werr = resolve_device_selection(devices, webcam_tok or "")
+    if werr:
+        errors.append(f"webcam — {werr}")
+    capture_val, cerr = resolve_device_selection(devices, capture_tok or "")
+    if cerr:
+        errors.append(f"capture — {cerr}")
+    if errors:
+        sys.exit("device-scan: " + "; ".join(errors))
     updates = {}
     if webcam_val is not None:
         updates["RACECAST_WEBCAM"] = webcam_val
@@ -4536,7 +4539,13 @@ def env_upsert_data(updates, path=None):
     merged = {e["key"]: e["value"] for e in read["entries"]}
     merged.update({k: str(v) for k, v in updates.items()})
     entries = [{"key": k, "value": v} for k, v in merged.items()]
-    return env_write_data(entries, path=target)
+    res = env_write_data(entries, path=target)
+    if not res.get("ok") and "must start with" in (res.get("error") or ""):
+        return {"ok": False, "error": (
+            "the machine .env contains a non-RACECAST_ key, so the device selection "
+            "could not be saved (nothing was written); the machine .env must hold only "
+            f"RACECAST_* keys — fix it in the .env editor, then retry. [{res['error']}]")}
+    return res
 
 
 def devices_enumerate_data():

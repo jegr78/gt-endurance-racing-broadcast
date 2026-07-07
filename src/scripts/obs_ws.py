@@ -597,6 +597,15 @@ def parse_property_items(payload):
     return out
 
 
+def input_not_found(exc_text):
+    """True if an OBS request error means the input/source does not exist
+    (RequestStatus code 600 = ResourceNotFound, or a not-found phrasing)."""
+    low = exc_text.lower()
+    return ("'code': 600" in exc_text or "code=600" in low
+            or "not found" in low or "no source was found" in low
+            or "invalidresource" in low)
+
+
 def enumerate_device_options(input_name, property_name, host="127.0.0.1", port=None,
                              password=None, timeout=2.0):
     """(items, note) — the device dropdown OBS offers for `input_name`'s
@@ -612,9 +621,9 @@ def enumerate_device_options(input_name, property_name, host="127.0.0.1", port=N
                                   {"inputName": input_name, "propertyName": property_name})
         return parse_property_items(payload), ""
     except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        text = str(exc)
         return [], (f"input {input_name!r} not found — import the solo collection first"
-                    if "not found" in str(exc).lower() or "InvalidResource" in str(exc)
-                    else (str(exc) or exc.__class__.__name__))
+                    if input_not_found(text) else (text or exc.__class__.__name__))
     finally:
         session.close()
 
