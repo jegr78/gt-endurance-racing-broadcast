@@ -78,11 +78,11 @@ git commit -m "refactor(brand): rename endurance collection constant to GT Racin
 - Rename: `src/obs/GT_Solo_POV.json` → `src/obs/GT_Racing_Solo_POV.json`
 - Modify: `tools/derive-solo-templates.py` (lines 3, 5 docstring; 59 `OUTPUTS`; 143 input path)
 - Modify: `tools/build.py` (lines 131-138, 167, 254)
-- Modify: `tools/tokenize-obs.py` (line 27 comment)
+- Modify: `tools/tokenize-obs.py` (line 27 comment; the `CANONICAL_COLLECTION_NAME = "GT Endurance Racing"` constant at line 30)
 - Modify: `src/setup-assets.py` (lines 26, 31, 35, 36, 283)
 - Modify: `src/scripts/placeholders.py` (line 21)
 - Modify: `src/racecast.py` (`_setup_import_name` lines 549-552; the STANDBY_SCENE comment line 866; any other `GT_Endurance` reference)
-- Test: `tests/test_build.py`, `tests/test_solo_obs.py`, `tests/test_placeholders.py`, `tests/test_discord_audio.py`, `tests/test_intermission_scene.py`, `tests/test_overlay.py`, `tests/test_racecast.py`
+- Test: `tests/test_build.py`, `tests/test_solo_obs.py`, `tests/test_placeholders.py`, `tests/test_discord_audio.py`, `tests/test_intermission_scene.py`, `tests/test_overlay.py`, `tests/test_racecast.py`, `tests/test_event.py`, `tests/test_ui_server.py`, `tests/test_ui_ops.py`
 
 **Interfaces:**
 - Consumes: nothing from Task 1 directly.
@@ -132,7 +132,11 @@ Expected: no diff (the deterministic derivation reproduces the git-moved files b
 
 - [ ] **Step 6: Update `tools/tokenize-obs.py`**
 
-Line 27 comment: `src/obs/GT_Endurance.json` → `src/obs/GT_Racing_Endurance.json`.
+- Line 27 comment: `src/obs/GT_Endurance.json` → `src/obs/GT_Racing_Endurance.json`.
+- Line 30: `CANONICAL_COLLECTION_NAME = "GT Racing Endurance"` (this is the collection `name`
+  that `tokenize-obs` stamps when folding an exported OBS collection back into the source
+  template — it MUST match the new top-level `name` set in Step 2, or a re-tokenize would
+  silently revert the rename).
 
 - [ ] **Step 7: Update `src/setup-assets.py`**
 
@@ -156,10 +160,13 @@ Line 21: `_OBS_TEMPLATE_NAMES = ("GT_Racing_Endurance.template.json", "GT_Racing
 - `tests/test_build.py`: line 14 `GT_Endurance.json` → `GT_Racing_Endurance.json`; line 199 loop → `("GT_Racing_Solo_Commentary.json", "GT_Racing_Solo_POV.json")`.
 - `tests/test_solo_obs.py`: lines 21-26 `resolve_template_base` expectations → `GT_Racing_Endurance` / `GT_Racing_Solo_Commentary` / `GT_Racing_Solo_POV`; line 96 `SOLO_FILES` → `("GT_Racing_Solo_Commentary.json", "GT_Racing_Solo_POV.json")`; line 167 `_load_solo("GT_Racing_Solo_Commentary.json")`.
 - `tests/test_placeholders.py`: lines 53-56 → `GT_Racing_Endurance.json` / `GT_Racing_Endurance.template.json`.
-- `tests/test_discord_audio.py`: line 117 path → `GT_Racing_Endurance.json`; line 147 comment.
+- `tests/test_discord_audio.py`: line 117 path → `GT_Racing_Endurance.json`; line 147 comment; the collection-`name` fixtures + assertions on lines 125/131/133/135 (`"GT Endurance Racing"` → `"GT Racing Endurance"`) and line 142 (`tk.CANONICAL_COLLECTION_NAME == "GT Racing Endurance"`).
 - `tests/test_intermission_scene.py`: line 20 path → `GT_Racing_Endurance.json`; line 50 message text.
 - `tests/test_overlay.py`: lines 535/547/587 path → `GT_Racing_Endurance.json`.
 - `tests/test_racecast.py`: lines 446/450/461/467/875/890/902 `GT_Endurance.import.json` → `GT_Racing_Endurance.import.json`; lines 894/907 `GT_Solo.import.json` → `GT_Racing_Solo.import.json`; lines 924-941 `_setup_import_name`/`_init_import_json` expectations → the new names; line 3787 comment.
+- `tests/test_event.py`: the scene-collection fixtures on lines 289-330 — replace every `"GT Endurance Racing"` with `"GT Racing Endurance"` and every `"GT Endurance Racing 2"` with `"GT Racing Endurance 2"` (these are the classifier `current`/`expected`/`available`/`renamed_variant` fixture values).
+- `tests/test_ui_server.py`: lines 110 and 380 — `"GT Endurance Racing"` → `"GT Racing Endurance"`.
+- `tests/test_ui_ops.py`: lines 992-993 — `"GT Endurance Racing"` → `"GT Racing Endurance"`.
 
 - [ ] **Step 11: Run the affected tests**
 
@@ -167,7 +174,8 @@ Run:
 ```bash
 python3 tests/test_solo_obs.py && python3 tests/test_placeholders.py && \
 python3 tests/test_discord_audio.py && python3 tests/test_intermission_scene.py && \
-python3 tests/test_overlay.py && python3 tests/test_racecast.py && python3 tests/test_build.py
+python3 tests/test_overlay.py && python3 tests/test_racecast.py && python3 tests/test_build.py && \
+python3 tests/test_event.py && python3 tests/test_ui_server.py && python3 tests/test_ui_ops.py
 ```
 Expected: PASS (all).
 

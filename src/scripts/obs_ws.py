@@ -43,7 +43,7 @@ POV_SOURCE = "Feed POV"                      # the Stint-scene driver-POV PiP sc
 FEED_SOURCES = {"A": "Feed A", "B": "Feed B"}   # scene-item name == audio input name
 
 # The scene collection the broadcast assumes. Mirrors the "name" field of
-# src/obs/GT_Endurance.json (the name OBS shows after importing the localized
+# src/obs/GT_Racing_Endurance.json (the name OBS shows after importing the localized
 # collection). Keep the two in sync. Not a secret, so the no-hardcoding rule
 # does not apply; not parsed at runtime because the file is renamed + tokenized
 # in the shipped package and bundled differently when frozen.
