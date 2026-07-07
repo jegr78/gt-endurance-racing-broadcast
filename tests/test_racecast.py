@@ -880,6 +880,43 @@ def t_oneshot_extra_paths():
     assert m._oneshot_extra("graphics", ["--out", "X"], rd, base) == []  # user override respected
 
 
+def t_oneshot_extra_setup_out_is_kind_aware():
+    # #304: the `setup` default --out filename depends on the active profile kind.
+    # endurance (explicit or the default when unset) keeps the byte-identical name;
+    # solo gets its own template basename. An explicit --out always wins regardless.
+    rd = os.path.join("R", "demo")
+    base = "R"
+    assert m._oneshot_extra("setup", [], rd, base, kind="endurance") == [
+        "--out", os.path.join(rd, "GT_Endurance.import.json"),
+        "--media", os.path.join(rd, "media"),
+        "--graphics", os.path.join(rd, "graphics")]
+    assert m._oneshot_extra("setup", [], rd, base, kind="solo") == [
+        "--out", os.path.join(rd, "GT_Solo.import.json"),
+        "--media", os.path.join(rd, "media"),
+        "--graphics", os.path.join(rd, "graphics")]
+    # no kind passed -> falls back to RACECAST_KIND from the environment (endurance
+    # when unset/blank/unknown -- matches setup-assets' own default).
+    saved = os.environ.pop("RACECAST_KIND", None)
+    try:
+        assert m._oneshot_extra("setup", [], rd, base) == [
+            "--out", os.path.join(rd, "GT_Endurance.import.json"),
+            "--media", os.path.join(rd, "media"),
+            "--graphics", os.path.join(rd, "graphics")]
+        os.environ["RACECAST_KIND"] = "solo"
+        assert m._oneshot_extra("setup", [], rd, base) == [
+            "--out", os.path.join(rd, "GT_Solo.import.json"),
+            "--media", os.path.join(rd, "media"),
+            "--graphics", os.path.join(rd, "graphics")]
+    finally:
+        if saved is None:
+            os.environ.pop("RACECAST_KIND", None)
+        else:
+            os.environ["RACECAST_KIND"] = saved
+    # explicit --out still wins over the kind-aware default.
+    assert m._oneshot_extra("setup", ["--out", "z", "--media", "m", "--graphics", "g"],
+                            rd, base, kind="solo") == []
+
+
 def t_brands_oneshot_mapping_and_out():
     assert m.ONESHOT_MAP["brands"] == "relay/get-brands.py"
     assert "brands" in m.ONESHOTS

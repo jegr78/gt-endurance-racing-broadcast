@@ -194,6 +194,22 @@ def t_solo_templates_device_leaves_are_distinctly_named():
         assert cam["settings"]["device"] == "__RACECAST_WEBCAM__", fn
 
 
+def t_solo_templates_have_own_name_and_no_splitscreen_leftovers():
+    """#304: the derived collections carry their own display name (not the inherited
+    endurance one -- setup-assets overrides it at localize time, but the committed
+    artifact should already be self-consistent) and no orphaned Splitscreen-only
+    leftovers (the Splitscreen scene itself was already dropped in #303, but the
+    derive script only pruned `sources`, leaving the `Split HUD` group and the
+    `Splitscreen Labels` leaf source behind)."""
+    for fn in SOLO_FILES:
+        d = _load_solo(fn)
+        assert d["name"] == "GT Racing Solo", fn
+        src_names = {s.get("name") for s in d["sources"]}
+        assert "Splitscreen Labels" not in src_names, fn
+        group_names = {g.get("name") for g in d.get("groups", [])}
+        assert "Split HUD" not in group_names, fn
+
+
 def t_solo_templates_no_scene_source_name_collision():
     """Collision guard: no source `name` is shared between a scene and a non-scene
     source. "Solo Capture"/"Solo Webcam" must each resolve to exactly one scene, and

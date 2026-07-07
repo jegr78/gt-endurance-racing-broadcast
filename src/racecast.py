@@ -544,7 +544,7 @@ def _relay_daemon_argv(rest, frozen):
         return [sys.executable, "relay", "run"] + list(rest)
     return [sys.executable, _relay_script()] + _relay_runtime_args() + list(rest)
 
-def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None):
+def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None, kind=None):
     """Extra argv for a one-shot. The asset writers (graphics/media/setup) get a
     profile-scoped --out (+ setup's --media/--graphics) so their output lands
     under runtime/<profile>/ in every run mode -- those are baked into the OBS
@@ -552,15 +552,22 @@ def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None):
     --runtime-dir (preflight, cookies) get the un-scoped BASE runtime, so the
     shared cookie jar stays at runtime/yt-cookies.txt. The user's own --out wins.
     overlay_css: when given and the file exists, injected as --overlay-css for
-    setup (so the OBS collection bakes the active POV-box geometry)."""
+    setup (so the OBS collection bakes the active POV-box geometry). kind: the
+    active profile kind (endurance|solo) picks setup's default --out basename --
+    defaults to RACECAST_KIND from the environment (the CLI applies the active
+    profile's env, incl. RACECAST_KIND, before dispatching a one-shot -- the same
+    source setup-assets itself reads), so callers rarely need to pass it explicitly."""
+    if kind is None:
+        kind = pcfg.normalize_kind(os.environ.get("RACECAST_KIND", ""))
     extra = []
     if command in RUNTIME_DIR_ONESHOTS:
         extra += ["--runtime-dir", base_dir]
     if "--out" not in rest:
+        setup_name = "GT_Solo.import.json" if kind == "solo" else "GT_Endurance.import.json"
         out = {"graphics": os.path.join(runtime_dir, "graphics"),
                "media": os.path.join(runtime_dir, "media"),
                "brands": os.path.join(runtime_dir, "brands"),
-               "setup": os.path.join(runtime_dir, "GT_Endurance.import.json")}.get(command)
+               "setup": os.path.join(runtime_dir, setup_name)}.get(command)
         if out:
             extra += ["--out", out]
     if command == "setup":

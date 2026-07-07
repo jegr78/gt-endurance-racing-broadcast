@@ -160,7 +160,18 @@ def derive():
     # current_scene / current_program_scene are plain strings in this collection.
     col["current_scene"] = START_SCENE
     col["current_program_scene"] = START_SCENE
-    # col["name"] left unchanged — setup-assets sets the per-league display name.
+    # Own display name (setup-assets still overrides it with the per-league name at
+    # localize time, but the committed artifact should be self-consistent rather than
+    # carrying the inherited endurance name).
+    col["name"] = "GT Racing Solo"
+
+    # Prune Splitscreen-only leftovers (#304): the Splitscreen scene itself was already
+    # dropped above, but its "Split HUD" group (top-level col["groups"]) and its
+    # "Splitscreen Labels" leaf source (col["sources"]) were left orphaned -- neither is
+    # referenced by any scene item in the solo collections.
+    col["sources"] = [s for s in col["sources"] if s.get("name") != "Splitscreen Labels"]
+    if col.get("groups"):
+        col["groups"] = [g for g in col["groups"] if g.get("name") != "Split HUD"]
     return col
 
 
