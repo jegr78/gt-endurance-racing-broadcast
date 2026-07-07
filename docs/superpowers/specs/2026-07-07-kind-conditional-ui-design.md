@@ -194,3 +194,129 @@ change:
   endurance profile active, everything is exactly as today.
 - `director-panel.png` + affected `cc-*.png` refreshed and committed; full suite
   green, no test disabled; endurance path unaffected.
+
+---
+
+## Increment 2 — full solo-capable Director Panel (OBS control) + commentary mic
+
+Increment 1 (above) hides the endurance *feed/schedule* affordances and reveals
+POV. During visual verification a gap surfaced: the panel's **OBS control** —
+Scn·Vis scene switches, source-visibility toggles, Gfx toggles, the scene macros,
+and the Audio faders — is built from a **hardcoded endurance `CONFIG`**
+(`director-panel.html:801`) that references scenes/sources/inputs
+(`Stint`, `Splitscreen`, `Feed A`, `Feed B`) that **do not exist** in the #303
+solo OBS collection (`GT Racing Solo`: `Program`, `Solo Capture`, `Solo Webcam`,
+…). So a solo operator's OBS buttons target missing scenes. The header
+`ON AIR STINT · A` pill (`#stAir`) and the feed actions (`NEXT`/`RELOAD A/B`) are
+likewise endurance-only.
+
+A second gap: the solo collection has **no commentary microphone** — only game
+capture, webcam, Discord, POV, and intermission music. A solo commentary/POV
+broadcast needs the commentator's **own mic**, captured on the producer machine.
+
+Decisions (agreed with the user): make the panel OBS control **kind-aware** and
+**add the commentary mic across the stack**, all within #307.
+
+### A. Solo OBS control — `CONFIG_SOLO` + rebuild-on-solo (`director-panel.html`)
+
+The panel builds its Scn·Vis/Gfx/Audio buttons **once at page load** from the
+top-level `CONFIG`, before the first `/status`. To adapt, the button-building
+becomes a function `buildControls(cfg)`; the panel builds the endurance set by
+default and, when the **first** `/status` reports `solo`, clears and **rebuilds**
+the Scn·Vis (`#scnBus`), Gfx (`#gfxBus`), and Audio (`#audio`) buses from
+`CONFIG_SOLO` (once — guarded by a `builtSolo` latch). Endurance is byte-identical
+(the default build path is unchanged; the rebuild only runs under `solo`).
+
+`CONFIG_SOLO` (derived 1:1 from the `GT Racing Solo` collection):
+- **macros:** none (solo has no feed-swap workflow; the operator uses the Audio
+  faders — this avoids inventing on-air mute conventions).
+- **scenes** (plain scene switches): `Program`, `Interview`, `Standby`,
+  `Intermission`, `Intro`, `Outro`, `Discord`.
+- **vis** (PiP visibility toggles, all in `Program`): `WEBCAM` → `Solo Webcam`;
+  `POV` → `Feed POV` (via the existing `/pov/toggle`, `relay:"pov"`).
+- **graphics** (all in `Program`, except POST-RACE in `Interview`): `HUD`
+  (`Stint HUD`), `STANDINGS`, `SCHEDULE`, `RACE RESULTS`, `QUALI RESULTS`,
+  `RACE WX 1`, `RACE WX 2`, `QUALI WX`, `STBY COVER`, `POST-RACE`.
+- **audio faders:** `Game` (`Solo Capture Device`), `Webcam`
+  (`Solo Webcam Device`), `Mic` (`Commentary Mic Device` — added in B),
+  `POV` (`Feed POV`), `Discord` (`Discord Audio Capture`), `Intermission`
+  (`Intermission Music`).
+
+Other kind-conditional bits:
+- **Feed actions:** in solo, keep only `POV RELOAD` / `POV STOP`; hide `NEXT`,
+  `RELOAD ALL/A/B`, and the `FEEDS → STINT…` correction (add these to the
+  `body.solo` hide set / gate their build under `!solo`).
+- **Header `#stAir`:** hide in solo (no stints) — add to the `body.solo` CSS
+  hide set.
+
+### B. Commentary mic (collection + device localization + enumeration + panel)
+
+A new **`Commentary Mic Device`** audio input, wrapped in a nested
+**`Commentary Mic`** scene (mirroring the Discord audio-scene precedent —
+`_device_scene` clones the `Discord` scene), tokenized **`__RACECAST_MIC__`**.
+Routing: the `Commentary Mic` scene is included as an item in the on-air scenes
+**`Program`, `Interview`, `Standby`, `Intermission`, `Discord`** — audible in all
+of them, **muted during `Intro`/`Outro`** (the rendered clips have their own
+audio). One leaf + one wrapper scene + five references (same model as `Discord`).
+
+- **Collection (`tools/derive-solo-templates.py` + both `src/obs/GT_Solo_*.json`):**
+  add fixed synthetic UUIDs for the mic leaf + scene; build the
+  `Commentary Mic Device` leaf (committed default kind `coreaudio_input_capture`,
+  settings `{"device_id": "__RACECAST_MIC__"}`); clone the Discord scene into a
+  `Commentary Mic` scene wrapping the leaf; add that scene as an item to the five
+  target scenes; prepend/append `Commentary Mic` in `SCENE_ORDER`. Regenerate both
+  `GT_Solo_Commentary.json` and `GT_Solo_POV.json` deterministically (the #303
+  regeneration cross-check still holds).
+- **Localization (`src/setup-assets.py`):** tag each `DEVICE_SOURCES` entry with a
+  `kind` (`"video"`/`"audio"`); add `AUDIO_VARIANTS`
+  = `{darwin: ("coreaudio_input_capture","device_id"), win:
+  ("wasapi_input_capture","device_id"), linux:
+  ("pulse_input_capture","device_id")}`; `localize_device_sources` picks the audio
+  vs video variant per entry and injects `RACECAST_MIC` for the mic. Same
+  best-effort contract (empty value ⇒ WARNING; unknown platform ⇒ unset).
+- **Device scan (`src/scripts/obs_ws.py` + `src/racecast.py` + CC):** audio inputs
+  enumerate via the **`device_id`** property on all OSes
+  (`device_property_name` returns `"device_id"` for the audio case — cross-checked
+  against `AUDIO_VARIANTS` like the video map is against `DEVICE_VARIANTS`).
+  `racecast device-scan` gains a **mic** enumeration/selection (flag `--mic`) →
+  writes `RACECAST_MIC` (via the existing `env_upsert_data`). The Control Center
+  **Solo devices** section gains a third **Mic** dropdown (`/api/devices` returns a
+  mic list; `/api/devices/select` accepts a `mic` key). `.env.example` documents
+  `RACECAST_MIC`.
+- **Panel:** the `Mic` fader in `CONFIG_SOLO.audio` (input `Commentary Mic Device`)
+  — done in A.
+
+### Testing (additive)
+
+- `tests/test_setup.py` (or the device-localization test): the mic uses the audio
+  variant per OS (coreaudio/wasapi/pulse `_input_capture`, `device_id`); a
+  cross-check that `AUDIO_VARIANTS` agrees with `obs_ws`'s audio property name.
+- `tests/test_obsws.py`: audio `device_property_name` = `device_id`.
+- `tests/test_racecast.py`: `device-scan` `--mic` writes `RACECAST_MIC`;
+  `env_upsert_data` preserves the other device keys.
+- `tests/test_ui_server.py`: `/api/devices` carries a mic list; the select route
+  accepts `mic`.
+- A regeneration check that both `GT_Solo_*.json` are byte-identical to a fresh
+  `derive-solo-templates.py` run (deterministic), and contain the `Commentary Mic`
+  scene in the five target scenes and NOT in Intro/Outro.
+- Panel OBS control is verified by the controller against a live solo relay
+  (Playwright): the Scn·Vis/Gfx/Audio buses show the solo button set (Program /
+  Webcam / POV / Game / Webcam / Mic …), not endurance scenes; `#stAir` hidden.
+
+### Visual verification + screenshots
+
+- The **solo** Director Panel (final, with the solo OBS control) gets a committed
+  companion image `src/docs/wiki/images/director-panel-solo.png`; the endurance
+  `director-panel.png` stays byte-identical (unchanged). Re-verify + re-record the
+  visual marker for `director-panel.html`.
+- The Control Center **Solo devices** section now shows three dropdowns
+  (Webcam / Capture / Mic) — refresh the relevant `cc-*.png` if the mic dropdown
+  is in frame (it sits below the fold in `cc-settings.png`; refresh only if the
+  visible framing changes).
+
+### Increment-2 boundaries
+
+- The mic model is scene-bound (in the five scenes), not an OBS *global* audio
+  device — per the user's routing choice.
+- No change to the endurance `CONFIG` or endurance collection — endurance stays
+  byte-identical; `CONFIG_SOLO` and the mic live only in the solo paths/collection.
