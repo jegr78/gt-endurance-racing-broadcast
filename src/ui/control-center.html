@@ -1872,7 +1872,7 @@ const CONFIRM_TEXT = {
   'relay-stop': 'Stop the relay?',
   'streams-stop': 'Stop all static streams?',
   'event-stop': 'Stop the event? (stops the racecast services; OBS/Discord/Tailscale keep running)',
-  'obs-collection-set': 'Switch OBS to the GT Endurance Racing scene collection? This rebuilds all sources (incl. the relay feeds).',
+  'obs-collection-set': 'Switch OBS to the GT Racing Endurance scene collection? This rebuilds all sources (incl. the relay feeds).',
   'chat-clear': 'Clear all crew-chat messages? This cannot be undone.',
   'free-ports': 'Free the feed ports (53001–53003)? Kills any orphaned process holding them. A running relay or static stream is left untouched.',
   'kill-relay': 'Kill a stale relay? Frees the relay control port 8088 by killing the process holding it — use this when the relay is orphaned (unknown PID) and the Stop button can\'t reach it. A healthy, running relay is left untouched (use Stop Relay instead).'
@@ -2217,7 +2217,7 @@ function setCountBadge(key, n, noun) {
 
 // OBS scene-collection check (on-demand, live obs-websocket connect) for the
 // Apps view. Shows ✓ correct / ⚠ wrong, with a Switch button only when the
-// GT Endurance Racing collection is present to switch to.
+// GT Racing Endurance collection is present to switch to.
 async function fetchObsCollection() {
   const el = $('obscoll');
   if (!el) return;
