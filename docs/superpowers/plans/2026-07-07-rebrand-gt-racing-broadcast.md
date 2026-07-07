@@ -200,6 +200,7 @@ git commit -m "refactor(brand): rename OBS template files to GT_Racing_* (#308)"
 - Modify: `README.md`, `CONTRIBUTING.md`, `CLAUDE.md` (descriptive product-name text only)
 - Modify: `src/docs/README_SETUP.md`, `src/docs/Broadcast_Setup_Guide.md`
 - Modify: `src/docs/wiki/*.md` (the pages found: `Home.md`, `_Sidebar.md`, `Configuration.md`, `Set-up-the-broadcast-PC.md`, `HUD-Overlays.md`, `OBS-Setup.md`, `Profiles.md`, `Build-and-maintenance.md`, `Cloud-Producer.md`)
+- Modify (code brand-text — docstrings/help/argparse descriptions, no tests assert these): `src/racecast.py`, `src/relay/racecast-feeds.py`, `src/scripts/preflight.py`, `src/scripts/speedtest.py`
 - Test: `tests/test_wiki.py`
 
 **Interfaces:**
@@ -217,6 +218,17 @@ This is NOT a blind find/replace — read each occurrence and pick:
 - CLAUDE.md line 7 `**GT Endurance Racing Broadcast**` → `**GT Racing Broadcast**`. Do NOT alter CLAUDE.md hard-rule *mechanics* — only the product-name phrase.
 
 Do not touch `docs/superpowers/**` or `CHANGELOG.md`.
+
+- [ ] **Step 1b: Sweep the code brand-text (exact edits — these are `.py` docstrings/help/argparse strings; no test asserts them)**
+
+- `src/racecast.py:18` (CLI help): `# report the active OBS scene collection (set = switch to GT Racing Endurance)`.
+- `src/racecast.py:2437` (docstring): `switch OBS to the GT Racing Endurance collection. …`.
+- `src/relay/racecast-feeds.py:3` (module docstring): `racecast-feeds.py — Relay mode for the GT Racing Broadcast (2-feed ping-pong)`.
+- `src/relay/racecast-feeds.py:7674` (argparse `description=`): `"GT Racing 2-feed relay with Google-Sheet schedule"`.
+- `src/scripts/preflight.py:2` and `:694`: `Pre-flight readiness check for the GT Racing broadcast setup.` (both the module docstring and the argparse `description=`).
+- `src/scripts/speedtest.py:2` (module docstring): `Opt-in Ookla bandwidth speed test for the GT Racing broadcast setup.`
+
+After: `python3 tools/lint.py` clean (these are the only Python files this task edits).
 
 - [ ] **Step 2: Add the one-time migration note to the OBS-Setup wiki page**
 
@@ -239,15 +251,17 @@ Expected: PASS. If a renamed heading broke an inbound anchor, fix the link (or r
 
 Run:
 ```bash
-grep -rn "GT Endurance Racing" README.md CONTRIBUTING.md CLAUDE.md src/docs/*.md src/docs/wiki/*.md
+grep -rn "GT Endurance Racing" README.md CONTRIBUTING.md CLAUDE.md src/docs/*.md src/docs/wiki/*.md \
+  src/racecast.py src/relay/racecast-feeds.py src/scripts/preflight.py src/scripts/speedtest.py
 ```
 Expected: the ONLY remaining hits are the intentional old-name mention inside the migration note (Step 2). Everything else must be gone.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add README.md CONTRIBUTING.md CLAUDE.md src/docs/README_SETUP.md src/docs/Broadcast_Setup_Guide.md src/docs/wiki
-git commit -m "docs(brand): rebrand docs + wiki to GT Racing Broadcast, add OBS-collection migration note (#308)"
+git add README.md CONTRIBUTING.md CLAUDE.md src/docs/README_SETUP.md src/docs/Broadcast_Setup_Guide.md src/docs/wiki \
+  src/racecast.py src/relay/racecast-feeds.py src/scripts/preflight.py src/scripts/speedtest.py
+git commit -m "docs(brand): rebrand docs, wiki + code brand-text to GT Racing Broadcast, add OBS-collection migration note (#308)"
 ```
 
 ---
@@ -259,6 +273,8 @@ git commit -m "docs(brand): rebrand docs + wiki to GT Racing Broadcast, add OBS-
 **Files:**
 - Modify: `src/ui/control-center.html` (line 1875 confirm string; line 2220 comment; sweep for any other brand strings)
 - Modify: `src/director/director-panel.html` (line 30 `<title>`; line 1471 dynamic-title ternary; lines 796/861 comments; sweep for any other brand strings)
+- Modify: `src/obs/hud.html` (line 5 `<title>GT Racing HUD</title>`) — a relay-served overlay page in the visual-verify gate list
+- Modify: `src/obs/hud-preview.html` (line 5 `<title>GT Racing HUD — Preview</title>`)
 
 **Interfaces:**
 - Consumes: the canonical strings.
@@ -277,22 +293,28 @@ git commit -m "docs(brand): rebrand docs + wiki to GT Racing Broadcast, add OBS-
 - Lines 796/861 comments: update the `src/obs/GT_Endurance.json` filename reference → `src/obs/GT_Racing_Endurance.json`; the `GT Racing Solo` mention on 861 is already correct.
 - Grep the file for any remaining `GT Endurance Racing` and replace per the same rules.
 
-- [ ] **Step 3: Run the UI/route tests (no functional change expected)**
+- [ ] **Step 3: Overlay pages**
+
+- `src/obs/hud.html:5`: `<title>GT Racing HUD</title>`.
+- `src/obs/hud-preview.html:5`: `<title>GT Racing HUD — Preview</title>`.
+- Grep both for any other `GT Endurance Racing` and replace (`GT Racing` for the short lockup).
+
+- [ ] **Step 4: Run the UI/route tests (no functional change expected)**
 
 Run: `python3 tests/test_ui_server.py && python3 tests/test_racecast.py`
 Expected: PASS (these don't assert the brand strings, but confirm nothing broke).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/ui/control-center.html src/director/director-panel.html
-git commit -m "refactor(brand): rebrand Control Center + Director Panel UI strings (#308)"
+git add src/ui/control-center.html src/director/director-panel.html src/obs/hud.html src/obs/hud-preview.html
+git commit -m "refactor(brand): rebrand Control Center, Director Panel + HUD overlay titles (#308)"
 ```
 
 **Controller checklist AFTER Task 4 (not the implementer):**
-- Render both surfaces from a local dev build per the `ui-visual-verification` skill (Control Center via `racecast ui` on a free port; Director Panel via the demo relay + obs-sim).
-- Eyeball: the changed strings appear correctly; no layout regressions. The changed strings (confirm dialog, browser-tab title, comments) are NOT in the standing `cc-*.png`/`director-panel.png` element screenshots — so a wiki-screenshot refresh is expected to be UNNECESSARY. Confirm by comparing; only regenerate a committed image if its pixels actually changed.
-- Record the gate marker: `python3 .claude/hooks/record_ui_verified.py src/ui/control-center.html src/director/director-panel.html`.
+- Render the surfaces from a local dev build per the `ui-visual-verification` skill (Control Center via `racecast ui` on a free port; Director Panel + `/hud` via the demo relay + obs-sim).
+- Eyeball: the changed strings appear correctly; no layout regressions. The changed strings (confirm dialog, browser-tab `<title>`s, comments) are NOT in the standing `cc-*.png`/`director-panel.png`/HUD element screenshots — so a wiki-screenshot refresh is expected to be UNNECESSARY. Confirm by comparing; only regenerate a committed image if its pixels actually changed.
+- Record the gate marker: `python3 .claude/hooks/record_ui_verified.py src/ui/control-center.html src/director/director-panel.html src/obs/hud.html src/obs/hud-preview.html`.
 
 ---
 
@@ -301,6 +323,8 @@ git commit -m "refactor(brand): rebrand Control Center + Director Panel UI strin
 **Files:**
 - Modify: `src/docs/slides/*.html` (`index.html`, `director.html`, `league-admin-setup.html`, `race-control.html`, `commentator.html`, `overlay-designer.html`, `producer.html`, `walkthrough-thumb.html`, `producer-setup.html`, `walkthrough-intro.html`, `cheat_sheets.html`)
 - Modify: `src/docs/slides/favicon.svg` (any brand-text label)
+- Modify: `tools/intermission-demo.html` (line 6 `<title>GT Racing — Intermission</title>`)
+- Modify: `tools/build-walkthrough-videos.py` (line 74 `INTRO_TEXT = "GT Racing Broadcast. Onboarding."` — narration text; the rendered MP4s stay stale)
 
 **Interfaces:**
 - Consumes: the canonical strings.
@@ -312,20 +336,25 @@ git commit -m "refactor(brand): rebrand Control Center + Director Panel UI strin
 - `GT Endurance Racing` used as the product brand → `GT Racing Broadcast` (or `GT Racing` for a short title/logo lockup where it reads better).
 - Any `GT_Endurance.json` / `GT_Solo_*.json` filename references → the `GT_Racing_*` names.
 
-- [ ] **Step 2: Verify no leaks + decks still render**
+- [ ] **Step 2: Sweep the maintainer demo/walkthrough files (exact edits)**
+
+- `tools/intermission-demo.html:6`: `<title>GT Racing — Intermission</title>`.
+- `tools/build-walkthrough-videos.py:74`: `INTRO_TEXT = "GT Racing Broadcast. Onboarding."`.
+
+- [ ] **Step 3: Verify no leaks + decks still render**
 
 Run:
 ```bash
-grep -rn "GT Endurance Racing" src/docs/slides/
+grep -rn "GT Endurance Racing" src/docs/slides/ tools/intermission-demo.html tools/build-walkthrough-videos.py
 python3 tools/check-slides.py
 ```
 Expected: grep returns nothing; `check-slides.py` reports no overflow/render errors.
 
-- [ ] **Step 3: Commit (note the stale walkthrough videos)**
+- [ ] **Step 4: Commit (note the stale walkthrough videos)**
 
 ```bash
-git add src/docs/slides
-git commit -m "docs(brand): rebrand slide decks to GT Racing Broadcast (#308)
+git add src/docs/slides tools/intermission-demo.html tools/build-walkthrough-videos.py
+git commit -m "docs(brand): rebrand slide decks + maintainer demos to GT Racing Broadcast (#308)
 
 Walkthrough MP4s rendered from these decks are now stale; re-rendering
 via the TTS pipeline is a deferred follow-up, out of scope for #308."
@@ -347,6 +376,8 @@ grep -rn "GT_Endurance\|GT_Solo_" --include="*.py" --include="*.json" --include=
   | grep -v "docs/superpowers/" | grep -v "/dist/" | grep -v "/runtime/"
 ```
 Expected: the ONLY remaining `GT Endurance Racing` hit is the intentional old-name mention in the OBS-Setup migration note (Task 3 Step 2). No `GT_Endurance`/`GT_Solo_` filename references remain. If anything else appears, fix it and re-run.
+
+Note: `.claude/skills/*` (release, wiki-screenshots, companion-screenshots) reference the product/collection name but are **local agent/dev tooling, not the shipped product**. They are swept by the controller as housekeeping (to keep the screenshot/release recipes accurate) outside these six tasks; they are not part of the product-brand scope and their sweep is verified here.
 
 - [ ] **Step 2: Full suite + lint + build**
 
