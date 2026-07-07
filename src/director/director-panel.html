@@ -35,7 +35,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   /* =========================================================
-     GT ENDURANCE RACING DIRECTOR CONSOLE — vision-mixer busses
+     GT RACING DIRECTOR CONSOLE — vision-mixer busses
      Horizontal action rows mirroring the Companion pages.
      Dark, high-contrast, glanceable. Built for tablet + desktop.
      ========================================================= */
@@ -493,7 +493,7 @@
            stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
       Console
     </a>
-    <div class="brand">Director Console<small id="brandSub"><span id="brandSubText">GT ENDURANCE RACING BROADCAST</span><button id="brandSubEdit" class="brand-edit" title="Edit the event title">✎</button><input id="brandSubInput" maxlength="120" placeholder="Event title (e.g. GTEC - 2026 - Round 4 - Nürburgring 24h)" hidden></small></div>
+    <div class="brand">Director Console<small id="brandSub"><span id="brandSubText">GT RACING BROADCAST</span><button id="brandSubEdit" class="brand-edit" title="Edit the event title">✎</button><input id="brandSubInput" maxlength="120" placeholder="Event title (e.g. GTEC - 2026 - Round 4 - Nürburgring 24h)" hidden></small></div>
     <div class="strip">
       <span class="st" id="stHealth" title="">HEALTH <b>—</b></span>
       <span class="st air" id="stAir">ON AIR <b>—</b></span>
@@ -1463,7 +1463,7 @@ function statePill(el, label, stint, n, state, down){
   el.innerHTML = label + " <b>" + stint + "</b>" + (n ? "/" + n : "") + (txt ? " · " + txt : "");
 }
 /* ---------- event title (#207) — header display + inline editor ---------- */
-const BRAND_SUB_STATIC = "GT ENDURANCE RACING BROADCAST";
+const BRAND_SUB_STATIC = "GT RACING BROADCAST";
 let eventTitle = "", editingTitle = false;
 function renderEventTitle(title){
   eventTitle = (title || "").trim();
