@@ -707,7 +707,9 @@ def make_handler(ctx):
                     return self._json({"ok": False, "error": "malformed JSON body"},
                                       code=400)
                 try:
-                    result = ctx["profile_new"](body.get("name"), body.get("from"))
+                    result = ctx["profile_new"](
+                        body.get("name"), body.get("from"),
+                        kind=body.get("kind"), template=body.get("template"))
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"could not create profile: {exc}"},

@@ -1068,6 +1068,32 @@ def t_profiles_data_lists_active_and_available():
         assert names["erf"]["sheet_set"] is False
 
 
+def t_profiles_data_reports_kind():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        prof = os.path.join(td, "profiles")
+        os.makedirs(os.path.join(prof, "demo"))
+        os.makedirs(os.path.join(prof, "solo1"))
+        open(os.path.join(td, ".env.example"), "w").close()
+        with open(os.path.join(prof, "demo", "profile.env"), "w") as fh:
+            fh.write("NAME=Demo League\nSHEET_ID=abc\n")
+        with open(os.path.join(prof, "solo1", "profile.env"), "w") as fh:
+            fh.write("NAME=Solo One\nKIND=solo\nTEMPLATE=commentary\n")
+        os.makedirs(os.path.join(td, "runtime"))
+        with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
+            fh.write("demo\n")
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            d = m.profiles_data()
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        by = {p["name"]: p for p in d["profiles"]}
+        assert by["demo"]["kind"] == "endurance", by["demo"]
+        assert by["solo1"]["kind"] == "solo", by["solo1"]
+
+
 def t_profile_use_data_switches_pointer():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
@@ -1153,6 +1179,37 @@ def t_profile_new_data_bad_name_is_error():
         finally:
             m._env_base = orig_b
         assert d["ok"] is False and d["error"]
+
+
+def t_profile_new_data_forwards_kind_template():
+    seen = {}
+    def fake_create(root, name, source, kind=None, template=None):
+        seen.update(root=root, name=name, source=source, kind=kind,
+                    template=template)
+        return os.path.join(root, "profiles", "solo1")
+    orig = m._env_base
+    m._env_base = lambda *a, **k: "/tmp/x"
+    try:
+        r = m.profile_new_data("Solo One", None, create=fake_create,
+                               kind="solo", template="pov")
+    finally:
+        m._env_base = orig
+    assert r["ok"] is True, r
+    assert seen["kind"] == "solo" and seen["template"] == "pov", seen
+
+
+def t_profile_new_data_defaults_endurance():
+    seen = {}
+    def fake_create(root, name, source, kind=None, template=None):
+        seen.update(kind=kind, template=template)
+        return os.path.join(root, "profiles", "gt3")
+    orig = m._env_base
+    m._env_base = lambda *a, **k: "/tmp/x"
+    try:
+        m.profile_new_data("GT3", "demo", create=fake_create)
+    finally:
+        m._env_base = orig
+    assert seen["kind"] == m.pcfg.DEFAULT_KIND and seen["template"] is None, seen
 
 
 def t_profile_env_entries_data_reads_active():

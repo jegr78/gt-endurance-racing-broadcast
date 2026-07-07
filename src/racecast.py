@@ -4178,8 +4178,8 @@ def profile_logo():
 def profiles_data():
     """Control Center profile switcher data: the effective active profile plus
     every available profile with its display NAME and whether SHEET_ID is set.
-    {ok, active, logo, profiles:[{name, display, sheet_set}]} or {ok:false, error}.
-    Never raises."""
+    {ok, active, logo, profiles:[{name, display, sheet_set, kind}]} or
+    {ok:false, error}. Never raises."""
     try:
         root = _env_base(IS_FROZEN, _real_executable(), HERE)
         runtime_root = _runtime_base_dir()
@@ -4190,11 +4190,13 @@ def profiles_data():
             try:
                 rc = pcfg.resolve_config(root, override=n, runtime_root=runtime_root)
                 out.append({"name": n, "display": rc.name,
-                            "sheet_set": bool(rc.sheet_id)})
+                            "sheet_set": bool(rc.sheet_id),
+                            "kind": rc.kind})
                 if n == active:
                     logo = bool(servable_logo_path(rc.logo_path))
             except pcfg.ProfileError:
-                out.append({"name": n, "display": n, "sheet_set": False})
+                out.append({"name": n, "display": n, "sheet_set": False,
+                            "kind": pcfg.DEFAULT_KIND})
         return {"ok": True, "active": active, "logo": logo, "profiles": out}
     except Exception as exc:
         return {"ok": False, "error": f"could not read profiles: {exc}"}
@@ -4214,12 +4216,16 @@ def profile_use_data(name, set_active=None):
         return {"ok": False, "error": f"could not switch profile: {exc}"}
 
 
-def profile_new_data(name, source="example", create=None):
-    """Create a new profile by copying `source` (default the example template).
-    Does NOT switch to it. {ok, name, path} or {ok:false, error}. `create` seam."""
+def profile_new_data(name, source="example", create=None, kind=None,
+                     template=None):
+    """Create a new profile by copying `source` (endurance) or generating a
+    solo profile.env (kind="solo"). Does NOT switch to it.
+    {ok, name, path} or {ok:false, error}. `create` seam."""
     try:
         root = _env_base(IS_FROZEN, _real_executable(), HERE)
-        target = (create or pa.create_profile)(root, name, source or "example")
+        target = (create or pa.create_profile)(
+            root, name, source or "example",
+            kind=kind or pcfg.DEFAULT_KIND, template=template)
         # return the directory slug (what `profile use` / the active pointer need),
         # which may differ from a typed display name like "Demo League" -> "demo-league".
         return {"ok": True, "name": os.path.basename(target), "path": target}

@@ -151,8 +151,9 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None,
             "profiles": lambda: {"ok": True, "active": "demo",
                                  "profiles": [{"name": "demo"}, {"name": "erf"}]},
             "profile_use": lambda name: {"ok": True, "active": name},
-            "profile_new": lambda name, source=None: {"ok": True, "name": name,
-                                                      "from": source},
+            "profile_new": lambda name, source=None, kind=None, template=None: {
+                "ok": True, "name": name, "from": source,
+                "kind": kind, "template": template},
             "profile_env_read": lambda: {"ok": True, "path": "/x/profile.env",
                                          "entries": [{"key": "K", "value": "v"}]},
             "profile_env_write": lambda entries: {"ok": True,
@@ -1238,7 +1239,7 @@ def t_profile_use_post_passes_name():
 def t_profile_new_post_passes_name_and_source():
     seen = []
     ctx = _ctx()
-    ctx["profile_new"] = lambda name, source=None: (
+    ctx["profile_new"] = lambda name, source=None, kind=None, template=None: (
         seen.append((name, source)) or {"ok": True, "name": name, "from": source})
     httpd, port = _serve(ctx)
     try:
@@ -1248,6 +1249,24 @@ def t_profile_new_post_passes_name_and_source():
         assert code == 200 and data["ok"] is True
         assert data["name"] == "gt3" and data["from"] == "demo"
         assert seen == [("gt3", "demo")]
+    finally:
+        httpd.shutdown()
+
+
+def t_profile_new_route_forwards_kind_template():
+    seen = []
+    ctx = _ctx()
+    ctx["profile_new"] = lambda name, source=None, kind=None, template=None: (
+        seen.append((name, source, kind, template))
+        or {"ok": True, "name": name, "from": source})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/profile/new",
+                                {"name": "solo1", "from": None,
+                                 "kind": "solo", "template": "pov"})
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True, (code, body)
+        assert seen == [("solo1", None, "solo", "pov")], seen
     finally:
         httpd.shutdown()
 
