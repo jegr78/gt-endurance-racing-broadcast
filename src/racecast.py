@@ -546,10 +546,11 @@ def _relay_daemon_argv(rest, frozen):
 
 def _setup_import_name(kind=None):
     """Filename of the localized OBS import for `kind` (default: RACECAST_KIND env).
-    Solo profiles get GT_Solo.import.json; endurance/unknown get GT_Endurance.import.json."""
+    Solo profiles get GT_Racing_Solo.import.json; endurance/unknown get
+    GT_Racing_Endurance.import.json."""
     if kind is None:
         kind = pcfg.normalize_kind(os.environ.get("RACECAST_KIND", ""))
-    return "GT_Solo.import.json" if kind == "solo" else "GT_Endurance.import.json"
+    return "GT_Racing_Solo.import.json" if kind == "solo" else "GT_Racing_Endurance.import.json"
 
 def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None, kind=None):
     """Extra argv for a one-shot. The asset writers (graphics/media/setup) get a
@@ -863,7 +864,7 @@ def _relay_runtime_args():
             + _overlay_relay_args(_active_overlay_dir()))
 
 RELAY_PORT = 8088
-STANDBY_SCENE = "Standby"   # canonical scene name in src/obs/GT_Endurance.json
+STANDBY_SCENE = "Standby"   # canonical scene name in src/obs/GT_Racing_Endurance.json
 
 # The relay-served pages OBS renders as browser sources (panel is tablet-only).
 # The override.css is hashed too, so a per-profile CSS edit advances the
@@ -6122,7 +6123,7 @@ def _init_steps(opts):
         "setup": {"done": lambda: ins.setup_done(
                       _mtime(_init_import_json()),
                       [_mtime(_active_profile_env_path())] if IS_FROZEN else
-                      [_mtime(resource_path("obs/GT_Endurance.json")),
+                      [_mtime(resource_path("obs/GT_Racing_Endurance.json")),
                        _mtime(_active_profile_env_path())]),
                   "run": lambda: _oneshot_code("setup",
                                                ["--out", _init_import_json()])},

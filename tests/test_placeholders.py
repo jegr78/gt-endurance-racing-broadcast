@@ -50,10 +50,10 @@ def t_expected_graphics_empty_when_no_refs():
 def t_find_obs_template_prefers_template_then_json():
     with tempfile.TemporaryDirectory() as tmp:
         assert ph.find_obs_template(tmp) is None
-        open(os.path.join(tmp, "GT_Endurance.json"), "w").close()
-        assert ph.find_obs_template(tmp).endswith("GT_Endurance.json")
-        open(os.path.join(tmp, "GT_Endurance.template.json"), "w").close()
-        assert ph.find_obs_template(tmp).endswith("GT_Endurance.template.json")
+        open(os.path.join(tmp, "GT_Racing_Endurance.json"), "w").close()
+        assert ph.find_obs_template(tmp).endswith("GT_Racing_Endurance.json")
+        open(os.path.join(tmp, "GT_Racing_Endurance.template.json"), "w").close()
+        assert ph.find_obs_template(tmp).endswith("GT_Racing_Endurance.template.json")
 
 
 def t_placeholder_paths_resolve_to_bundled_files():

@@ -128,10 +128,10 @@ def main():
 
     # obs: ship the tokenized collection as .template.json (setup-assets localizes it)
     os.makedirs(os.path.join(PKG, "obs"))
-    shutil.copy2(os.path.join(SRC, "obs", "GT_Endurance.json"),
-                 os.path.join(PKG, "obs", "GT_Endurance.template.json"))
+    shutil.copy2(os.path.join(SRC, "obs", "GT_Racing_Endurance.json"),
+                 os.path.join(PKG, "obs", "GT_Racing_Endurance.template.json"))
     # solo-mode collections (single-race/POV, #303): ship the same way, when present.
-    for solo in ("GT_Solo_Commentary.json", "GT_Solo_POV.json"):
+    for solo in ("GT_Racing_Solo_Commentary.json", "GT_Racing_Solo_POV.json"):
         solo_src = os.path.join(SRC, "obs", solo)
         if os.path.exists(solo_src):
             shutil.copy2(solo_src, os.path.join(
@@ -164,7 +164,7 @@ def main():
             return any(has_pw(x) for x in o)
         return False
 
-    with open(os.path.join(PKG, "obs", "GT_Endurance.template.json"), encoding="utf-8") as fh:
+    with open(os.path.join(PKG, "obs", "GT_Racing_Endurance.template.json"), encoding="utf-8") as fh:
         tpl = fh.read()
     # Seed neutral placeholders for any clip/graphic not fetched above, so the
     # shipped artifact is never broken even before a producer downloads real
@@ -251,7 +251,7 @@ def main():
     }
     # solo-mode collections (single-race/POV, #303): same tokenized/secret-free
     # verification as the endurance template above, when shipped.
-    for solo in ("GT_Solo_Commentary.template.json", "GT_Solo_POV.template.json"):
+    for solo in ("GT_Racing_Solo_Commentary.template.json", "GT_Racing_Solo_POV.template.json"):
         sp = os.path.join(PKG, "obs", solo)
         if os.path.exists(sp):
             with open(sp, encoding="utf-8") as fh:

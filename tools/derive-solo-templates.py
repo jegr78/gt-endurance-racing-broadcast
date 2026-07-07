@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Maintainer tool (not shipped): derive the two solo OBS scene collections from the
-proven src/obs/GT_Endurance.json so they stay OBS-valid and regenerable.
+proven src/obs/GT_Racing_Endurance.json so they stay OBS-valid and regenerable.
 
-Run: python3 tools/derive-solo-templates.py   (rewrites src/obs/GT_Solo_*.json)
+Run: python3 tools/derive-solo-templates.py   (rewrites src/obs/GT_Racing_Solo_*.json)
 
 Strategy: deep-copy real nodes from the endurance collection and mutate minimally, so
 every OBS-required field shape is inherited from a proven-importable file. We never
@@ -56,7 +56,7 @@ SCENE_ORDER = ["Program", "Standby", "Intro", "Outro", "Interview", "Discord",
 
 START_SCENE = "Standby"
 
-OUTPUTS = ("GT_Solo_Commentary.json", "GT_Solo_POV.json")
+OUTPUTS = ("GT_Racing_Solo_Commentary.json", "GT_Racing_Solo_POV.json")
 
 
 def _by_name(sources):
@@ -140,7 +140,7 @@ def _program_item(template_item, name, src_uuid, pos, bounds, item_id):
 
 
 def derive():
-    with open(os.path.join(OBS, "GT_Endurance.json"), encoding="utf-8") as fh:
+    with open(os.path.join(OBS, "GT_Racing_Endurance.json"), encoding="utf-8") as fh:
         col = json.load(fh)
 
     by = _by_name(col["sources"])

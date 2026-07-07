@@ -107,7 +107,7 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None,
             "tailscale_peers": lambda: [
                 {"hostname": "producer-b", "ip": "100.64.0.5", "online": True, "os": "macOS"}],
             "obs_collection": lambda: {"ok": True, "current": "Other",
-                                       "expected": "GT Endurance Racing", "match": False,
+                                       "expected": "GT Racing Endurance", "match": False,
                                        "expected_present": True,
                                        "renamed_variant": None},
             "update_check": lambda force=False: {"ok": True, "current": "v1.0.0",
@@ -377,7 +377,7 @@ def t_obs_collection_route_wraps_provider():
         code, body = _get(port, "/api/obs-collection")
         data = json.loads(body)
         assert code == 200 and data["ok"] is True
-        assert data["expected"] == "GT Endurance Racing" and data["match"] is False
+        assert data["expected"] == "GT Racing Endurance" and data["match"] is False
     finally:
         httpd.shutdown()
 

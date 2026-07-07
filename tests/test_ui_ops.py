@@ -989,8 +989,8 @@ def t_obs_collection_set_op_rejects_params():
 
 
 def t_obs_collection_data_ok_passes_status_through():
-    status = {"current": "Other", "expected": "GT Endurance Racing",
-              "available": ["GT Endurance Racing", "Other"], "match": False,
+    status = {"current": "Other", "expected": "GT Racing Endurance",
+              "available": ["GT Racing Endurance", "Other"], "match": False,
               "expected_present": True, "renamed_variant": None}
     d = rc.obs_collection_data(get=lambda: (status, ""))
     assert d["ok"] is True

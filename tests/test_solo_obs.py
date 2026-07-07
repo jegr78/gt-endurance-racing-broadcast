@@ -18,12 +18,12 @@ sa = _load("setup_assets", "src", "setup-assets.py")
 
 
 def t_resolve_template_base():
-    assert sa.resolve_template_base("endurance", "") == "GT_Endurance"
-    assert sa.resolve_template_base("solo", "commentary") == "GT_Solo_Commentary"
-    assert sa.resolve_template_base("solo", "pov") == "GT_Solo_POV"
-    assert sa.resolve_template_base("solo", "") == "GT_Solo_Commentary"      # default
-    assert sa.resolve_template_base("solo", "nonsense") == "GT_Solo_Commentary"
-    assert sa.resolve_template_base("", "") == "GT_Endurance"                 # default kind
+    assert sa.resolve_template_base("endurance", "") == "GT_Racing_Endurance"
+    assert sa.resolve_template_base("solo", "commentary") == "GT_Racing_Solo_Commentary"
+    assert sa.resolve_template_base("solo", "pov") == "GT_Racing_Solo_POV"
+    assert sa.resolve_template_base("solo", "") == "GT_Racing_Solo_Commentary"      # default
+    assert sa.resolve_template_base("solo", "nonsense") == "GT_Racing_Solo_Commentary"
+    assert sa.resolve_template_base("", "") == "GT_Racing_Endurance"                 # default kind
 
 
 def _device_coll():
@@ -93,7 +93,7 @@ def t_device_localize_env_none_is_safe():
 
 # --- Structural checks on the two committed solo templates (#303) ---
 
-SOLO_FILES = ("GT_Solo_Commentary.json", "GT_Solo_POV.json")
+SOLO_FILES = ("GT_Racing_Solo_Commentary.json", "GT_Racing_Solo_POV.json")
 
 
 def _load_solo(fn):
@@ -164,7 +164,7 @@ def t_localize_preserves_solo_scenes():
     precedent), so the by-name lookup in localize_device_sources can never collide
     them — no ordering contract required. Covers the video (capture/webcam) AND
     audio (commentary mic, #307) device leaves."""
-    d = _load_solo("GT_Solo_Commentary.json")
+    d = _load_solo("GT_Racing_Solo_Commentary.json")
     unset = sa.localize_device_sources(
         d, "darwin", {"RACECAST_CAPTURE": "CAPDEV", "RACECAST_WEBCAM": "CAMDEV",
                      "RACECAST_MIC": "MICDEV"})

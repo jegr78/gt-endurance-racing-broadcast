@@ -11,7 +11,7 @@ ROOT = os.path.dirname(HERE)
 # Issue #291: the POV feed + all toggled still-graphics in the Stint scene carry
 # a baked-in 300 ms Fade show/hide transition, so on-air elements ease in/out
 # instead of cutting hard on every obs-websocket visibility toggle.
-OBS_COLLECTION = os.path.join(ROOT, "src", "obs", "GT_Endurance.json")
+OBS_COLLECTION = os.path.join(ROOT, "src", "obs", "GT_Racing_Endurance.json")
 FADE_ITEMS = [
     "Feed POV", "Standby Cover", "Standings", "Schedule", "Race Results",
     "Quali Results", "Race Weather 1", "Race Weather 2", "Quali Weather",
@@ -196,7 +196,7 @@ def t_all_scene_and_group_items_locked():
 
 
 def t_solo_templates_secret_free_and_tokenized():
-    for fn in ("GT_Solo_Commentary.json", "GT_Solo_POV.json"):
+    for fn in ("GT_Racing_Solo_Commentary.json", "GT_Racing_Solo_POV.json"):
         with open(os.path.join(ROOT, "src", "obs", fn), encoding="utf-8") as fh:
             raw = fh.read()
         assert not b.has_appscript_secret(raw), fn
