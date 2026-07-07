@@ -3670,6 +3670,40 @@ def t_profile_env_vars_includes_template():
     assert "RACECAST_TEMPLATE" not in m._profile_env_vars(rc2)
 
 
+def t_env_upsert_preserves_other_keys():
+    # env_upsert_data must overlay ONLY the given keys — env_write_data (the
+    # underlying writer) treats its entries as the complete set and drops any
+    # unlisted real key, which would silently delete e.g. RACECAST_OBS_WS_PASSWORD
+    # if a naive two-key write were used to persist device selection (#304).
+    import tempfile, os as _os
+    d = tempfile.mkdtemp(prefix="racecast-envupsert-")
+    p = _os.path.join(d, ".env")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("# machine knobs\nRACECAST_OBS_WS_PASSWORD=secret\nRACECAST_UI_PORT=8089\n")
+    res = m.env_upsert_data({"RACECAST_WEBCAM": "cam0", "RACECAST_CAPTURE": "cap1"}, path=p)
+    assert res["ok"], res
+    with open(p, encoding="utf-8") as fh:
+        text = fh.read()
+    assert "RACECAST_OBS_WS_PASSWORD=secret" in text   # unrelated key preserved
+    assert "RACECAST_UI_PORT=8089" in text
+    assert "RACECAST_WEBCAM=cam0" in text
+    assert "RACECAST_CAPTURE=cap1" in text
+    assert "# machine knobs" in text                   # comment preserved
+
+
+def t_env_upsert_updates_existing_key_in_place():
+    import tempfile, os as _os
+    d = tempfile.mkdtemp(prefix="racecast-envupsert2-")
+    p = _os.path.join(d, ".env")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("RACECAST_WEBCAM=old\nRACECAST_UI_PORT=8089\n")
+    m.env_upsert_data({"RACECAST_WEBCAM": "new"}, path=p)
+    with open(p, encoding="utf-8") as fh:
+        text = fh.read()
+    assert "RACECAST_WEBCAM=new" in text and "RACECAST_WEBCAM=old" not in text
+    assert "RACECAST_UI_PORT=8089" in text
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

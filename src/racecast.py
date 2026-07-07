@@ -4412,6 +4412,21 @@ def env_write_data(entries, path=None):
     return _write_env_file(path or _env_file(), entries)
 
 
+def env_upsert_data(updates, path=None):
+    """Set each key in `updates` (dict) in the machine .env WITHOUT dropping any other
+    key. env_write_data treats its entries as the COMPLETE set (unlisted real keys are
+    removed), so read the current entries, overlay `updates`, and write the union.
+    {ok,path} or {ok:false,error}. Never raises beyond the underlying helpers' contract."""
+    target = path or _env_file()
+    read = env_entries_data(path=target)          # {ok, path, entries:[{key,value}]}
+    if not read.get("ok"):
+        return read
+    merged = {e["key"]: e["value"] for e in read["entries"]}
+    merged.update({k: str(v) for k, v in updates.items()})
+    entries = [{"key": k, "value": v} for k, v in merged.items()]
+    return env_write_data(entries, path=target)
+
+
 def _active_profile_env_strict():
     """(active_name, profile.env path) for the active profile, or (None, None)
     when no profile resolves. Distinct from _active_profile_env_path(), which
