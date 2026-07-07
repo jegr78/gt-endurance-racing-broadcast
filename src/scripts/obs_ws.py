@@ -47,15 +47,15 @@ FEED_SOURCES = {"A": "Feed A", "B": "Feed B"}   # scene-item name == audio input
 # collection). Keep the two in sync. Not a secret, so the no-hardcoding rule
 # does not apply; not parsed at runtime because the file is renamed + tokenized
 # in the shipped package and bundled differently when frozen.
-EXPECTED_SCENE_COLLECTION = "GT Endurance Racing"
+EXPECTED_SCENE_COLLECTION = "GT Racing Endurance"
 
 
 def scene_collection_status(current, available, expected=EXPECTED_SCENE_COLLECTION):
     """Pure: classify the active OBS scene collection. `current` is OBS's
     currentSceneCollectionName; `available` is the full list it reported.
     Returns a dict (see keys below). The only "correct" state is match=True;
-    renamed_variant flags a non-exact "GT Endurance Racing*" (e.g. an import-renamed
-    'GT Endurance Racing 2'), which we never switch to automatically."""
+    renamed_variant flags a non-exact "GT Racing Endurance*" (e.g. an import-renamed
+    'GT Racing Endurance 2'), which we never switch to automatically."""
     available = list(available)
     # A correct collection wins: never flag a renamed variant when we already match.
     renamed = None if current == expected else next(

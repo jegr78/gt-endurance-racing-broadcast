@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Profile-aware configuration resolver for the GT Endurance Racing Broadcast
+"""Profile-aware configuration resolver for the GT Racing Broadcast
 toolkit (binary: racecast).
 
 Single source of truth for resolving which league ("profile") is active and
@@ -22,10 +22,11 @@ PROJECT_MARKERS = (".git", ".env.example")
 
 # Default OBS scene-collection name = product prefix + the league NAME, so several
 # leagues' collections group together in OBS. An explicit OBS_COLLECTION wins.
-PRODUCT_COLLECTION_PREFIX = "GT Endurance Racing"
+# Endurance (#308): endurance profiles group under "GT Racing Endurance".
+PRODUCT_COLLECTION_PREFIX = "GT Racing Endurance"
 
-# Solo (#303): solo profiles group under their own collection prefix so several
-# solo leagues stay separate in OBS. #308 later unifies both under "GT Racing [MODE]".
+# Solo (#303, #308): solo profiles group under "GT Racing Solo" so both endurance
+# and solo profiles are unified under the "GT Racing" product line.
 SOLO_COLLECTION_PREFIX = "GT Racing Solo"
 
 # Profile kind (#301): endurance = the classic feed-/sheet-driven league; solo =

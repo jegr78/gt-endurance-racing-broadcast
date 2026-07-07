@@ -3577,7 +3577,7 @@ def _obsws_module():
 def t_check_scene_collection_switches_on_mismatch_when_enabled():
     import io, contextlib
     obs_ws = _obsws_module()
-    expected = "GT Endurance Racing — demo"
+    expected = "GT Racing Endurance — demo"
     st = obs_ws.scene_collection_status(
         "Old League", ["Old League", expected], expected=expected)   # mismatch, present
     calls = {}
@@ -3604,7 +3604,7 @@ def t_check_scene_collection_switches_on_mismatch_when_enabled():
 def t_check_scene_collection_warns_not_switches_when_disabled():
     import io, contextlib
     obs_ws = _obsws_module()
-    expected = "GT Endurance Racing — demo"
+    expected = "GT Racing Endurance — demo"
     st = obs_ws.scene_collection_status(
         "Old League", ["Old League", expected], expected=expected)
     calls = {}
@@ -3632,7 +3632,7 @@ def t_check_scene_collection_warns_not_switches_when_disabled():
 def t_check_scene_collection_warns_when_switch_fails():
     import io, contextlib
     obs_ws = _obsws_module()
-    expected = "GT Endurance Racing — demo"
+    expected = "GT Racing Endurance — demo"
     st = obs_ws.scene_collection_status(
         "Old League", ["Old League", expected], expected=expected)   # mismatch, present
     calls = {}

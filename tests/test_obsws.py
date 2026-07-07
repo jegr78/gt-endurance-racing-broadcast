@@ -646,20 +646,20 @@ def _start_fake_obs(state, password="supersecret"):
 
 
 def t_get_scene_collection_reads_current_and_list():
-    state = {"released": [], "current_collection": "GT Endurance Racing",
-             "collections": ["GT Endurance Racing", "Other"]}
+    state = {"released": [], "current_collection": "GT Racing Endurance",
+             "collections": ["GT Racing Endurance", "Other"]}
     port, srv = _start_fake_obs(state)
     status, note = m.get_scene_collection(port=port, password="supersecret", timeout=5)
     assert note == "", note
-    assert status["current"] == "GT Endurance Racing"
+    assert status["current"] == "GT Racing Endurance"
     assert status["match"] is True
-    assert status["available"] == ["GT Endurance Racing", "Other"]
+    assert status["available"] == ["GT Racing Endurance", "Other"]
     srv.close()
 
 
 def t_get_scene_collection_honors_custom_expected():
     state = {"released": [], "current_collection": "ERF Endurance",
-             "collections": ["ERF Endurance", "GT Endurance Racing"]}
+             "collections": ["ERF Endurance", "GT Racing Endurance"]}
     port, srv = _start_fake_obs(state)
     status, note = m.get_scene_collection(port=port, password="supersecret",
                                           timeout=5, expected="ERF Endurance")
@@ -679,17 +679,17 @@ def t_get_scene_collection_unreachable_is_quiet():
 
 def t_set_scene_collection_switches_when_present_and_different():
     state = {"released": [], "current_collection": "Other",
-             "collections": ["GT Endurance Racing", "Other"]}
+             "collections": ["GT Racing Endurance", "Other"]}
     port, srv = _start_fake_obs(state)
     ok, note = m.set_scene_collection(port=port, password="supersecret", timeout=5)
     assert ok is True, note
-    assert state["set_collection"] == "GT Endurance Racing"
+    assert state["set_collection"] == "GT Racing Endurance"
     srv.close()
 
 
 def t_set_scene_collection_noop_when_already_correct():
-    state = {"released": [], "current_collection": "GT Endurance Racing",
-             "collections": ["GT Endurance Racing"]}
+    state = {"released": [], "current_collection": "GT Racing Endurance",
+             "collections": ["GT Racing Endurance"]}
     port, srv = _start_fake_obs(state)
     ok, note = m.set_scene_collection(port=port, password="supersecret", timeout=5)
     assert ok is True
@@ -711,7 +711,7 @@ def t_set_scene_collection_refuses_when_absent():
 
 def t_set_scene_collection_output_active_is_note_not_crash():
     state = {"released": [], "current_collection": "Other",
-             "collections": ["GT Endurance Racing", "Other"], "output_active": True}
+             "collections": ["GT Racing Endurance", "Other"], "output_active": True}
     port, srv = _start_fake_obs(state)
     ok, note = m.set_scene_collection(port=port, password="supersecret", timeout=5)
     assert ok is False
@@ -832,14 +832,14 @@ def t_set_current_program_scene_switches_to_intermission():
 # Pure scene-collection classifier — scene_collection_status
 # --------------------------------------------------------------------------
 def t_scene_collection_status_match():
-    s = m.scene_collection_status("GT Endurance Racing", ["GT Endurance Racing", "Other"])
-    assert s == {"current": "GT Endurance Racing", "expected": "GT Endurance Racing",
-                 "available": ["GT Endurance Racing", "Other"], "match": True,
+    s = m.scene_collection_status("GT Racing Endurance", ["GT Racing Endurance", "Other"])
+    assert s == {"current": "GT Racing Endurance", "expected": "GT Racing Endurance",
+                 "available": ["GT Racing Endurance", "Other"], "match": True,
                  "expected_present": True, "renamed_variant": None}
 
 
 def t_scene_collection_status_wrong_but_present():
-    s = m.scene_collection_status("Other", ["GT Endurance Racing", "Other"])
+    s = m.scene_collection_status("Other", ["GT Racing Endurance", "Other"])
     assert s["match"] is False
     assert s["expected_present"] is True
     assert s["renamed_variant"] is None
@@ -847,18 +847,18 @@ def t_scene_collection_status_wrong_but_present():
 
 
 def t_scene_collection_status_renamed_variant():
-    s = m.scene_collection_status("GT Endurance Racing 2", ["GT Endurance Racing 2", "Scene"])
+    s = m.scene_collection_status("GT Racing Endurance 2", ["GT Racing Endurance 2", "Scene"])
     assert s["match"] is False
     assert s["expected_present"] is False
-    assert s["renamed_variant"] == "GT Endurance Racing 2"
-    assert s["current"] == "GT Endurance Racing 2"
+    assert s["renamed_variant"] == "GT Racing Endurance 2"
+    assert s["current"] == "GT Racing Endurance 2"
 
 
 def t_scene_collection_status_match_suppresses_renamed_variant():
     # A correct collection plus an old import-renamed duplicate must NOT report
     # a renamed_variant — match wins, no false "looks renamed" warning.
-    s = m.scene_collection_status("GT Endurance Racing",
-                                  ["GT Endurance Racing", "GT Endurance Racing 2"])
+    s = m.scene_collection_status("GT Racing Endurance",
+                                  ["GT Racing Endurance", "GT Racing Endurance 2"])
     assert s["match"] is True
     assert s["renamed_variant"] is None
 
@@ -866,11 +866,11 @@ def t_scene_collection_status_match_suppresses_renamed_variant():
 def t_scene_collection_status_overlap_present_and_renamed():
     # A renamed duplicate is active while the real collection ALSO exists:
     # both flags are truthy — consumers must prefer the switchable case.
-    s = m.scene_collection_status("GT Endurance Racing 2",
-                                  ["GT Endurance Racing", "GT Endurance Racing 2"])
+    s = m.scene_collection_status("GT Racing Endurance 2",
+                                  ["GT Racing Endurance", "GT Racing Endurance 2"])
     assert s["match"] is False
     assert s["expected_present"] is True
-    assert s["renamed_variant"] == "GT Endurance Racing 2"
+    assert s["renamed_variant"] == "GT Racing Endurance 2"
 
 
 def t_scene_collection_status_expected_absent():
@@ -896,17 +896,17 @@ def t_scene_collection_action_skip_when_no_status():
 
 
 def t_scene_collection_action_ok_when_match():
-    s = m.scene_collection_status("GT Endurance Racing", ["GT Endurance Racing"])
-    assert m.scene_collection_action(s, "", True) == ("ok", "GT Endurance Racing")
+    s = m.scene_collection_status("GT Racing Endurance", ["GT Racing Endurance"])
+    assert m.scene_collection_action(s, "", True) == ("ok", "GT Racing Endurance")
 
 
 def t_scene_collection_action_switch_when_mismatch_present_enabled():
-    s = m.scene_collection_status("Other", ["GT Endurance Racing", "Other"])
-    assert m.scene_collection_action(s, "", True) == ("switch", "GT Endurance Racing")
+    s = m.scene_collection_status("Other", ["GT Racing Endurance", "Other"])
+    assert m.scene_collection_action(s, "", True) == ("switch", "GT Racing Endurance")
 
 
 def t_scene_collection_action_warn_present_when_switch_disabled():
-    s = m.scene_collection_status("Other", ["GT Endurance Racing", "Other"])
+    s = m.scene_collection_status("Other", ["GT Racing Endurance", "Other"])
     action, detail = m.scene_collection_action(s, "", False)
     assert action == "warn_present" and detail is s        # dict passed through
 
@@ -918,10 +918,10 @@ def t_scene_collection_action_warn_absent_when_not_imported():
 
 
 def t_scene_collection_action_never_switches_to_renamed_variant():
-    # expected exact name absent, only a "GT Endurance Racing 2" variant present
-    s = m.scene_collection_status("GT Endurance Racing 2", ["GT Endurance Racing 2"])
+    # expected exact name absent, only a "GT Racing Endurance 2" variant present
+    s = m.scene_collection_status("GT Racing Endurance 2", ["GT Racing Endurance 2"])
     assert m.scene_collection_action(s, "", True)[0] == "warn_absent"
-    assert s["renamed_variant"] == "GT Endurance Racing 2"
+    assert s["renamed_variant"] == "GT Racing Endurance 2"
 
 
 class _FakeSock:
