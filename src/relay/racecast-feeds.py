@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-racecast-feeds.py — Relay mode for the GT Endurance Racing broadcast (2-feed ping-pong)
+racecast-feeds.py — Relay mode for the GT Racing Broadcast (2-feed ping-pong)
 with a remotely-maintainable stint schedule from a Google Sheet.
 
 Concept: exactly one commentator stream per stint. Two fixed OBS feeds
@@ -7671,7 +7671,7 @@ def export_cookies(browser, out):
 
 def main():
     load_dotenv(os.path.dirname(os.path.abspath(__file__)))  # before defaults are read
-    ap = argparse.ArgumentParser(description="GT Endurance Racing 2-feed relay with Google-Sheet schedule")
+    ap = argparse.ArgumentParser(description="GT Racing 2-feed relay with Google-Sheet schedule")
     ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
                     help="Google Sheet ID for the schedule/POV tabs. Default: env "
                          "RACECAST_SHEET_ID (injected by the CLI from the active profile).")

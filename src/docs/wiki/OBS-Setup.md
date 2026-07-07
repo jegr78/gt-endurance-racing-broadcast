@@ -9,9 +9,9 @@ collection.
 ## 1. Import the scene collection
 
 1. OBS → **Scene Collection → Import** → select the active profile's
-   `runtime/<profile>/GT_Endurance.import.json` (in the package: `obs/GT_Endurance.import.json`).
+   `runtime/<profile>/GT_Racing_Endurance.import.json` (in the package: `obs/GT_Racing_Endurance.import.json`).
 2. Switch to the league's collection (named after the profile's `OBS_COLLECTION`, the
-   convention is **GT Endurance Racing — <league>**). Once imported, you can switch the
+   convention is **GT Racing Endurance — <league>**). Once imported, you can switch the
    active league's collection from the CLI with `racecast obs collection set` — it
    rebuilds every source, so it is always an explicit producer action, never automatic.
 3. **Images there?** Overlay / Standings / … should be visible. If not, `setup-assets.py`
@@ -19,6 +19,12 @@ collection.
 
 > Import the `.import.json`, **not** the `.template.json`. Never move the folder after
 > import — OBS stores absolute image paths.
+
+> **Renamed in the rebrand (#308):** the endurance scene collection is now
+> **"GT Racing Endurance — <league>"** (was "GT Endurance Racing — <league>").
+> Existing installs: run `racecast setup` once to regenerate the import file,
+> import it into OBS, then delete the old "GT Endurance Racing — <league>"
+> collection. There is no automatic rename.
 
 ## 2. The scenes
 
@@ -29,7 +35,7 @@ collection.
   on top. The director toggles it with the Companion **Standby Toggle** button (a
   *Set Source Visibility* toggle on `Stint / Standby Cover`, with a *Source Visible*
   feedback so it lights while active). Re-add the source after a rebuild with
-  `python3 tools/add_standby_cover.py src/obs/GT_Endurance.json`.
+  `python3 tools/add_standby_cover.py src/obs/GT_Racing_Endurance.json`.
 - **Splitscreen** — two feeds side by side, for the ~10-minute handover. Its `Split HUD`
   group adds **CURRENT/NEXT** labels above the on-air and waiting feed (the on-air feed reads
   CURRENT); these are relay-driven (`/splitscreen`).

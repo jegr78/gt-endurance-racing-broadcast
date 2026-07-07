@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A self-contained broadcast-production toolkit (**GT Endurance Racing Broadcast**) for
+A self-contained broadcast-production toolkit (**GT Racing Broadcast**) for
 sim-racing endurance leagues, run on a producer's machine (Windows, macOS, or Linux).
 The core is a **relay** that pulls one commentator YouTube or Twitch stream per race stint
 and serves it to OBS; around it sit an OBS scene collection, a Stream Deck (Companion)
@@ -184,7 +184,7 @@ python3 src/racecast.py cookies twitch firefox   # refresh Twitch cookies (only 
 python3 src/racecast.py graphics          # download broadcast graphics -> runtime/<profile>/graphics/
 python3 src/racecast.py media             # download Intro/Outro clips -> runtime/<profile>/media/
 python3 src/racecast.py brands            # download per-league brand-logo overrides (Sheet "Brands" tab) -> runtime/<profile>/brands/
-python3 src/racecast.py setup --out runtime/<profile>/GT_Endurance.import.json   # localize OBS collection
+python3 src/racecast.py setup --out runtime/<profile>/GT_Racing_Endurance.import.json   # localize OBS collection
 python3 src/racecast.py install-tools     # install yt-dlp/streamlink/ffmpeg/deno (winget/brew/apt — Linux apt runs via sudo; deno has no apt pkg so it's a pinned, SHA-256-verified GitHub-release download into runtime/bin, which racecast adds to PATH; bootstraps brew on macOS); --update also upgrades installed ones (pre-event)
 python3 src/racecast.py install-apps      # install OBS/Companion/Tailscale/Discord (winget/brew/apt+official installers); --update upgrades installed ones (Linux: prints per-app guide)
 python3 src/racecast.py obs-browser       # Linux only: build & install OBS's Browser Source plugin (obs-browser + CEF) from source — the distro/PPA ships none on aarch64, and the relay HUD/timer need a Browser Source. Pins CEF per OBS version (see obs_browser_linux.py); --yes skips the prompt. On no-GPU/VM hosts also disable OBS Browser Source Hardware Acceleration.
@@ -229,7 +229,7 @@ scripts).
 `src/` is the only source of truth. `tools/build.py` copies it into
 `dist/GT_Racecast_Package/` (the artifact handed to other producers), stripping
 the Companion password and renaming the tokenized OBS collection to
-`GT_Endurance.template.json`. `runtime/` holds machine-local state (cookies, logs,
+`GT_Racing_Endurance.template.json`. `runtime/` holds machine-local state (cookies, logs,
 caches, the localized OBS import) and is gitignored. Helpers detect whether they run
 from the repo (`src/...`) or the distributed package and pick paths accordingly —
 see `default_runtime_dir()` (relay/get-cookies) and `state_dir()` (scripts).
@@ -283,7 +283,7 @@ touch one.
 
 ### Profile-scoped runtime
 Per-league machine state lives under **`runtime/<profile>/`**: the localized OBS
-import (`GT_Endurance.import.json`), downloaded `graphics/` and `media/`, etc. Shared
+import (`GT_Racing_Endurance.import.json`), downloaded `graphics/` and `media/`, etc. Shared
 machine state (cookies jar, the active-profile pointer) stays at `runtime/` top level.
 So `racecast graphics` / `media` / `setup` always write into the active profile's
 runtime dir; switching profiles points the CLI at a different one.
@@ -300,7 +300,7 @@ per-profile relay PID used to let a `profile use` while the relay ran orphan it 
 freeport 8088`).
 
 ### Two token round-trips (keep paths/secrets out of git)
-- **OBS.** `src/obs/GT_Endurance.json` stores tokens: `__RACECAST_GRAPHICS__` (broadcast
+- **OBS.** `src/obs/GT_Racing_Endurance.json` stores tokens: `__RACECAST_GRAPHICS__` (broadcast
   still-graphics dir) and `__RACECAST_MEDIA__` (Intro/Outro clip dir). The HUD and the
   race timer are relay-served on the fixed loopback (`127.0.0.1:8088`, no token) — the
   Sheet URL is no longer embedded in the collection (the relay reads `SHEET_ID` from the
@@ -319,12 +319,12 @@ freeport 8088`).
   manual right-click → Refresh remains the fallback when obs-websocket is unreachable.
   Anything that must survive a reload therefore lives server-side (`runtime/timer.json`,
   the Sheet), never in page JS. When you edit scenes inside OBS, re-export and fold it
-  back with `tools/tokenize-obs.py exported.json src/obs/GT_Endurance.json`
+  back with `tools/tokenize-obs.py exported.json src/obs/GT_Racing_Endurance.json`
   (regex-tokenizes the graphics image-source basenames + any Google-Sheet URLs).
   `src/setup-assets.py`
   does the reverse, injecting real values (the active profile's runtime dirs) into an
-  importable collection at `runtime/<profile>/GT_Endurance.import.json`, naming it the
-  league's `OBS_COLLECTION` (default `GT Endurance Racing — <league>`). OBS stores
+  importable collection at `runtime/<profile>/GT_Racing_Endurance.import.json`, naming it the
+  league's `OBS_COLLECTION` (default `GT Racing Endurance — <league>`). OBS stores
   **absolute** paths, so the localized collection must not be moved after import.
   `src/relay/get-media.py` downloads the Intro/Outro clips (sheet-driven via the Assets
   tab `Intro Video`/`Outro Video` labels, or `RACECAST_INTRO_URL`/`RACECAST_OUTRO_URL`
@@ -693,7 +693,7 @@ environment before dispatching to:
   rebuild against a live relay would just reconnect). Password auto-discovered from
   OBS's obs-websocket config.json (`RACECAST_OBS_WS_PASSWORD` in `.env` overrides). Fully
   best-effort: any failure prints one notice and the stop continues.
-  It also exposes a scene-collection check/switch (`GetSceneCollectionList` / `SetCurrentSceneCollection`): `racecast obs collection [set]`, a warning during `racecast event start`, a line in `racecast event status`, and the Control Center's OBS row. `racecast event start` auto-switches OBS to the active profile's collection by default (`RACECAST_OBS_COLLECTION_SWITCH=0` restores the old warn-only behaviour) — safe because OBS refuses a switch while an output is active and none is active during bring-up; `event takeover` inherits it. The switch runs before the page-refresh hook (it rebuilds every source). The manual `racecast obs collection set` and the Control Center OBS-row button remain the explicit fallback. `racecast event start` also parks OBS on the **Standby** scene after the collection check and the forced page-refresh (Director Guide: start on Standby, then Start Streaming), default-on (`RACECAST_OBS_STANDBY_ON_START=0` opts out); it is best-effort and **never cuts a live program** — the switch is skipped when OBS output is already active (`obs_ws.switch_to_scene_if_idle`), which also makes a mid-event `event takeover` onto a streaming OBS a no-op. The canonical product name is `EXPECTED_SCENE_COLLECTION` (`GT Endurance Racing`), which mirrors the `name` field of `src/obs/GT_Endurance.json`; a localized per-league collection defaults to `GT Endurance Racing — <league>` (`PRODUCT_COLLECTION_PREFIX` + the profile name, unless the profile sets `OBS_COLLECTION`), so several leagues keep separate collections in one OBS. `racecast obs collection set` switches to the active profile's expected name.
+  It also exposes a scene-collection check/switch (`GetSceneCollectionList` / `SetCurrentSceneCollection`): `racecast obs collection [set]`, a warning during `racecast event start`, a line in `racecast event status`, and the Control Center's OBS row. `racecast event start` auto-switches OBS to the active profile's collection by default (`RACECAST_OBS_COLLECTION_SWITCH=0` restores the old warn-only behaviour) — safe because OBS refuses a switch while an output is active and none is active during bring-up; `event takeover` inherits it. The switch runs before the page-refresh hook (it rebuilds every source). The manual `racecast obs collection set` and the Control Center OBS-row button remain the explicit fallback. `racecast event start` also parks OBS on the **Standby** scene after the collection check and the forced page-refresh (Director Guide: start on Standby, then Start Streaming), default-on (`RACECAST_OBS_STANDBY_ON_START=0` opts out); it is best-effort and **never cuts a live program** — the switch is skipped when OBS output is already active (`obs_ws.switch_to_scene_if_idle`), which also makes a mid-event `event takeover` onto a streaming OBS a no-op. The canonical product name is `EXPECTED_SCENE_COLLECTION` (`GT Racing Endurance`), which mirrors the `name` field of `src/obs/GT_Racing_Endurance.json`; a localized per-league collection defaults to `GT Racing Endurance — <league>` (`PRODUCT_COLLECTION_PREFIX` + the profile name, unless the profile sets `OBS_COLLECTION`), so several leagues keep separate collections in one OBS. `racecast obs collection set` switches to the active profile's expected name.
 
 ### Control Center (`src/racecast_ui.py` + `src/ui/`)
 `racecast ui` serves a local web app (`src/ui/ui_server.py`, port 8089 /

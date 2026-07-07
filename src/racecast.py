@@ -15,7 +15,7 @@
   racecast event takeover <A-ip> [--funnel] [--stint N]  # take over from another producer: read A's on-air stint+league, pull chat, bring up at that stint; --funnel <magicdns-host> pulls state over the public Funnel using the league CONSOLE_SECRET
   racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
   racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD incl. timer)
-  racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
+  racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Racing Endurance)
   racecast obs stream-target <part>          # set OBS stream service+key for a Producer Part (OBS must be stopped)
   racecast obs logs | tailscale logs         # tail OBS's log dir / the Tailscale status-snapshot log (same -f/--list/--archive flags)
   racecast sheet     url | open              # print / open the active league's Google Sheet (built from its SHEET_ID)
@@ -546,10 +546,11 @@ def _relay_daemon_argv(rest, frozen):
 
 def _setup_import_name(kind=None):
     """Filename of the localized OBS import for `kind` (default: RACECAST_KIND env).
-    Solo profiles get GT_Solo.import.json; endurance/unknown get GT_Endurance.import.json."""
+    Solo profiles get GT_Racing_Solo.import.json; endurance/unknown get
+    GT_Racing_Endurance.import.json."""
     if kind is None:
         kind = pcfg.normalize_kind(os.environ.get("RACECAST_KIND", ""))
-    return "GT_Solo.import.json" if kind == "solo" else "GT_Endurance.import.json"
+    return "GT_Racing_Solo.import.json" if kind == "solo" else "GT_Racing_Endurance.import.json"
 
 def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None, kind=None):
     """Extra argv for a one-shot. The asset writers (graphics/media/setup) get a
@@ -863,7 +864,7 @@ def _relay_runtime_args():
             + _overlay_relay_args(_active_overlay_dir()))
 
 RELAY_PORT = 8088
-STANDBY_SCENE = "Standby"   # canonical scene name in src/obs/GT_Endurance.json
+STANDBY_SCENE = "Standby"   # canonical scene name in src/obs/GT_Racing_Endurance.json
 
 # The relay-served pages OBS renders as browser sources (panel is tablet-only).
 # The override.css is hashed too, so a per-profile CSS edit advances the
@@ -2433,7 +2434,7 @@ def obs_refresh_cmd(_rest):
 
 def obs_collection_cmd(rest):
     """`racecast obs collection` reports the active OBS scene collection; add `set` to
-    switch OBS to the GT Endurance Racing collection. Best effort — OBS must be running
+    switch OBS to the GT Racing Endurance collection. Best effort — OBS must be running
     with obs-websocket reachable. A mismatch exits non-zero so scripts/CI notice;
     `set` exits non-zero on failure so the Control Center job shows red."""
     import obs_ws
@@ -6122,7 +6123,7 @@ def _init_steps(opts):
         "setup": {"done": lambda: ins.setup_done(
                       _mtime(_init_import_json()),
                       [_mtime(_active_profile_env_path())] if IS_FROZEN else
-                      [_mtime(resource_path("obs/GT_Endurance.json")),
+                      [_mtime(resource_path("obs/GT_Racing_Endurance.json")),
                        _mtime(_active_profile_env_path())]),
                   "run": lambda: _oneshot_code("setup",
                                                ["--out", _init_import_json()])},

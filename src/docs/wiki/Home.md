@@ -1,6 +1,6 @@
-# GT Endurance Racing Broadcast
+# GT Racing Broadcast
 
-This wiki is for everyone who runs the **GT Endurance Racing** sim-racing broadcast — whether
+This wiki is for everyone who runs the **GT Racing** sim-racing broadcast — whether
 you set up the machine, run the show, or direct it remotely.
 
 **In one picture:** each stint has a commentator streaming the race on their own YouTube

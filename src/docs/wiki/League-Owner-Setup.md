@@ -22,7 +22,7 @@ Funnel boundary.
 
 1. Go to [discord.com/developers/applications](https://discord.com/developers/applications)
    and click **New Application**.
-2. Give it a name (e.g. `GT Endurance Racecast`) — this is what crew members see on the
+2. Give it a name (e.g. `GT Racing Broadcast`) — this is what crew members see on the
    OAuth consent screen.
 3. In the left sidebar, open **OAuth2**.
 4. Copy the **Client ID** and **Client Secret** (reset it if you can't see the value).

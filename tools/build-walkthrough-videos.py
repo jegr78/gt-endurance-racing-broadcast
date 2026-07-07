@@ -71,7 +71,7 @@ DEFAULT_GCLOUD_VOICE = "en-US-Studio-Q"
 # Shared intro/outro title cards — built ONCE per run and reused for every deck.
 INTRO_HTML = "walkthrough-intro.html"
 OUTRO_HTML = "walkthrough-outro.html"
-INTRO_TEXT = "GT Endurance Racing Broadcast. Onboarding."
+INTRO_TEXT = "GT Racing Broadcast. Onboarding."
 OUTRO_TEXT = ("Thanks for watching. You'll find the full setup and reference "
               "documentation in the project wiki.")
 DEFAULT_BUMPER_SECONDS = 6.0

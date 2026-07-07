@@ -443,11 +443,11 @@ def t_oneshot_extra():
     assert m._oneshot_extra("media", [], R, B) == ["--out", os.path.join(R, "media")]
     # setup INJECTS media/graphics dirs into the collection -- always profile-scoped.
     assert m._oneshot_extra("setup", [], R, B) == \
-        ["--out", os.path.join(R, "GT_Endurance.import.json"),
+        ["--out", os.path.join(R, "GT_Racing_Endurance.import.json"),
          "--media", os.path.join(R, "media"),
          "--graphics", os.path.join(R, "graphics")]
     assert m._oneshot_extra("setup", ["--media", "m"], R, B) == \
-        ["--out", os.path.join(R, "GT_Endurance.import.json"),
+        ["--out", os.path.join(R, "GT_Racing_Endurance.import.json"),
          "--graphics", os.path.join(R, "graphics")]
     assert m._oneshot_extra(
         "setup", ["--out", "z", "--media", "m", "--graphics", "g"], R, B) == []
@@ -458,13 +458,13 @@ def t_oneshot_extra():
     with tempfile.TemporaryDirectory() as d:
         css = os.path.join(d, "hud.css")
         assert m._oneshot_extra("setup", [], R, B, overlay_css=css) == \
-            ["--out", os.path.join(R, "GT_Endurance.import.json"),
+            ["--out", os.path.join(R, "GT_Racing_Endurance.import.json"),
              "--media", os.path.join(R, "media"),
              "--graphics", os.path.join(R, "graphics")]            # file absent -> skipped
         with open(css, "w") as fh:
             fh.write("#pov { left: 1516px; }")
         assert m._oneshot_extra("setup", [], R, B, overlay_css=css) == \
-            ["--out", os.path.join(R, "GT_Endurance.import.json"),
+            ["--out", os.path.join(R, "GT_Racing_Endurance.import.json"),
              "--media", os.path.join(R, "media"),
              "--graphics", os.path.join(R, "graphics"),
              "--overlay-css", css]                                 # file present -> added
@@ -872,7 +872,7 @@ def t_oneshot_extra_paths():
     assert m._oneshot_extra("media", [], rd, base) == [
         "--out", os.path.join(rd, "media")]
     assert m._oneshot_extra("setup", [], rd, base) == [
-        "--out", os.path.join(rd, "GT_Endurance.import.json"),
+        "--out", os.path.join(rd, "GT_Racing_Endurance.import.json"),
         "--media", os.path.join(rd, "media"),
         "--graphics", os.path.join(rd, "graphics")]
     assert m._oneshot_extra("cookies", [], rd, base) == ["--runtime-dir", base]
@@ -887,11 +887,11 @@ def t_oneshot_extra_setup_out_is_kind_aware():
     rd = os.path.join("R", "demo")
     base = "R"
     assert m._oneshot_extra("setup", [], rd, base, kind="endurance") == [
-        "--out", os.path.join(rd, "GT_Endurance.import.json"),
+        "--out", os.path.join(rd, "GT_Racing_Endurance.import.json"),
         "--media", os.path.join(rd, "media"),
         "--graphics", os.path.join(rd, "graphics")]
     assert m._oneshot_extra("setup", [], rd, base, kind="solo") == [
-        "--out", os.path.join(rd, "GT_Solo.import.json"),
+        "--out", os.path.join(rd, "GT_Racing_Solo.import.json"),
         "--media", os.path.join(rd, "media"),
         "--graphics", os.path.join(rd, "graphics")]
     # no kind passed -> falls back to RACECAST_KIND from the environment (endurance
@@ -899,12 +899,12 @@ def t_oneshot_extra_setup_out_is_kind_aware():
     saved = os.environ.pop("RACECAST_KIND", None)
     try:
         assert m._oneshot_extra("setup", [], rd, base) == [
-            "--out", os.path.join(rd, "GT_Endurance.import.json"),
+            "--out", os.path.join(rd, "GT_Racing_Endurance.import.json"),
             "--media", os.path.join(rd, "media"),
             "--graphics", os.path.join(rd, "graphics")]
         os.environ["RACECAST_KIND"] = "solo"
         assert m._oneshot_extra("setup", [], rd, base) == [
-            "--out", os.path.join(rd, "GT_Solo.import.json"),
+            "--out", os.path.join(rd, "GT_Racing_Solo.import.json"),
             "--media", os.path.join(rd, "media"),
             "--graphics", os.path.join(rd, "graphics")]
     finally:
@@ -921,24 +921,24 @@ def t_setup_import_name_by_kind():
     # #304 follow-up: the kind-aware setup import filename is shared logic --
     # both _oneshot_extra and the init wizard's "is setup already done?" probe
     # (_init_import_json) must resolve to the SAME basename for a given kind.
-    assert m._setup_import_name("solo") == "GT_Solo.import.json"
-    assert m._setup_import_name("endurance") == "GT_Endurance.import.json"
-    assert m._setup_import_name("") == "GT_Endurance.import.json"
+    assert m._setup_import_name("solo") == "GT_Racing_Solo.import.json"
+    assert m._setup_import_name("endurance") == "GT_Racing_Endurance.import.json"
+    assert m._setup_import_name("") == "GT_Racing_Endurance.import.json"
 
 
 def t_init_import_json_is_kind_aware():
-    # #304: _init_import_json used to hardcode GT_Endurance.import.json, so for
-    # a solo profile (whose setup writes GT_Solo.import.json) the init wizard
+    # #304: _init_import_json used to hardcode GT_Racing_Endurance.import.json, so for
+    # a solo profile (whose setup writes GT_Racing_Solo.import.json) the init wizard
     # never detected setup as done and kept re-running it. It must follow
     # RACECAST_KIND the same way _oneshot_extra's setup default does.
     saved = os.environ.pop("RACECAST_KIND", None)
     try:
         os.environ["RACECAST_KIND"] = "solo"
-        assert m._init_import_json().endswith("GT_Solo.import.json")
+        assert m._init_import_json().endswith("GT_Racing_Solo.import.json")
         os.environ["RACECAST_KIND"] = "endurance"
-        assert m._init_import_json().endswith("GT_Endurance.import.json")
+        assert m._init_import_json().endswith("GT_Racing_Endurance.import.json")
         os.environ.pop("RACECAST_KIND", None)
-        assert m._init_import_json().endswith("GT_Endurance.import.json")
+        assert m._init_import_json().endswith("GT_Racing_Endurance.import.json")
     finally:
         if saved is None:
             os.environ.pop("RACECAST_KIND", None)
@@ -3577,7 +3577,7 @@ def _obsws_module():
 def t_check_scene_collection_switches_on_mismatch_when_enabled():
     import io, contextlib
     obs_ws = _obsws_module()
-    expected = "GT Endurance Racing — demo"
+    expected = "GT Racing Endurance — demo"
     st = obs_ws.scene_collection_status(
         "Old League", ["Old League", expected], expected=expected)   # mismatch, present
     calls = {}
@@ -3604,7 +3604,7 @@ def t_check_scene_collection_switches_on_mismatch_when_enabled():
 def t_check_scene_collection_warns_not_switches_when_disabled():
     import io, contextlib
     obs_ws = _obsws_module()
-    expected = "GT Endurance Racing — demo"
+    expected = "GT Racing Endurance — demo"
     st = obs_ws.scene_collection_status(
         "Old League", ["Old League", expected], expected=expected)
     calls = {}
@@ -3632,7 +3632,7 @@ def t_check_scene_collection_warns_not_switches_when_disabled():
 def t_check_scene_collection_warns_when_switch_fails():
     import io, contextlib
     obs_ws = _obsws_module()
-    expected = "GT Endurance Racing — demo"
+    expected = "GT Racing Endurance — demo"
     st = obs_ws.scene_collection_status(
         "Old League", ["Old League", expected], expected=expected)   # mismatch, present
     calls = {}
@@ -3784,7 +3784,7 @@ def t_profile_env_vars_includes_kind():
 
 def t_profile_env_vars_includes_template():
     # solo + a chosen starter template -> RACECAST_TEMPLATE flows to the child env
-    # (setup-assets.py reads it to pick GT_Solo_Commentary/GT_Solo_POV, #303).
+    # (setup-assets.py reads it to pick GT_Racing_Solo_Commentary/GT_Racing_Solo_POV, #303).
     rc = m.pcfg.ResolvedConfig(profile="demo", name="Demo", sheet_id="abc",
                                kind="solo", template="pov")
     assert m._profile_env_vars(rc)["RACECAST_TEMPLATE"] == "pov"

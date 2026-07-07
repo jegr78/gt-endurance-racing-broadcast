@@ -53,7 +53,7 @@ CI builds all OSes on `v*` tags. Releases: merge the standing release-please Rel
 Re-export from OBS, then fold the change back into the tokenized source:
 
 ```bash
-python3 tools/tokenize-obs.py /path/to/exported.json src/obs/GT_Endurance.json
+python3 tools/tokenize-obs.py /path/to/exported.json src/obs/GT_Racing_Endurance.json
 ```
 
 ## Publishing the docs

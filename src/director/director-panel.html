@@ -27,7 +27,7 @@
 </script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>GT Endurance Racing · Director Console</title>
+<title>GT Racing · Director Console</title>
 <!-- Inline "D" favicon (drawn as a path, so it renders without a font); dark tile + live-green letter to match the console theme. -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0c0f'/%3E%3Cpath fill-rule='evenodd' d='M8 6h9a10 10 0 0 1 0 20H8zM13 11h4a5 5 0 0 1 0 10h-4z' fill='%232bd66a'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -35,7 +35,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   /* =========================================================
-     GT ENDURANCE RACING DIRECTOR CONSOLE — vision-mixer busses
+     GT RACING DIRECTOR CONSOLE — vision-mixer busses
      Horizontal action rows mirroring the Companion pages.
      Dark, high-contrast, glanceable. Built for tablet + desktop.
      ========================================================= */
@@ -493,7 +493,7 @@
            stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
       Console
     </a>
-    <div class="brand">Director Console<small id="brandSub"><span id="brandSubText">GT ENDURANCE RACING BROADCAST</span><button id="brandSubEdit" class="brand-edit" title="Edit the event title">✎</button><input id="brandSubInput" maxlength="120" placeholder="Event title (e.g. GTEC - 2026 - Round 4 - Nürburgring 24h)" hidden></small></div>
+    <div class="brand">Director Console<small id="brandSub"><span id="brandSubText">GT RACING BROADCAST</span><button id="brandSubEdit" class="brand-edit" title="Edit the event title">✎</button><input id="brandSubInput" maxlength="120" placeholder="Event title (e.g. GTEC - 2026 - Round 4 - Nürburgring 24h)" hidden></small></div>
     <div class="strip">
       <span class="st" id="stHealth" title="">HEALTH <b>—</b></span>
       <span class="st air" id="stAir">ON AIR <b>—</b></span>
@@ -793,7 +793,7 @@
 <script>
 /* =======================================================================
    CONFIG — mirrors the Companion button config (src/companion/) and the
-   OBS collection (src/obs/GT_Endurance.json). Edit here if scenes/sources
+   OBS collection (src/obs/GT_Racing_Endurance.json). Edit here if scenes/sources
    are renamed in OBS; keep Companion and this file in sync.
    - macros:   PGM bus, exact Companion page-1 row-0 semantics
    - scenes:   raw scene switches
@@ -1463,12 +1463,12 @@ function statePill(el, label, stint, n, state, down){
   el.innerHTML = label + " <b>" + stint + "</b>" + (n ? "/" + n : "") + (txt ? " · " + txt : "");
 }
 /* ---------- event title (#207) — header display + inline editor ---------- */
-const BRAND_SUB_STATIC = "GT ENDURANCE RACING BROADCAST";
+const BRAND_SUB_STATIC = "GT RACING BROADCAST";
 let eventTitle = "", editingTitle = false;
 function renderEventTitle(title){
   eventTitle = (title || "").trim();
   document.title = eventTitle ? (eventTitle + " · Director Console")
-                              : "GT Endurance Racing · Director Console";
+                              : "GT Racing · Director Console";
   if (editingTitle) return;                 // don't yank an open editor (mirrors setupPoll)
   $("#brandSubText").textContent = eventTitle || BRAND_SUB_STATIC;   // textContent: XSS-safe
 }

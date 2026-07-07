@@ -299,7 +299,7 @@ def t_resolve_config_obs_collection_falls_back_to_name():
         _mkprofile(root, "erf", "NAME=ERF Endurance\nSHEET_ID=abc\n")
         cfg = m.resolve_config(root, environ={})
         # default = product prefix + the league NAME (em-dash separator)
-        assert cfg.obs_collection == "GT Endurance Racing — ERF Endurance"
+        assert cfg.obs_collection == "GT Racing Endurance — ERF Endurance"
 
 
 def t_resolve_config_obs_collection_falls_back_to_profile_dir_when_no_name():
@@ -308,7 +308,7 @@ def t_resolve_config_obs_collection_falls_back_to_profile_dir_when_no_name():
         _mkprofile(root, "erf", "SHEET_ID=abc\n")   # no NAME, no OBS_COLLECTION
         cfg = m.resolve_config(root, environ={})
         # falls back to cfg.name (= profile dir name), still prefixed
-        assert cfg.obs_collection == "GT Endurance Racing — erf"
+        assert cfg.obs_collection == "GT Racing Endurance — erf"
 
 
 def t_resolve_config_obs_collection_default_is_prefixed():
@@ -316,7 +316,7 @@ def t_resolve_config_obs_collection_default_is_prefixed():
         root = _mkroot(td)
         _mkprofile(root, "demo", "NAME=Demo League\nSHEET_ID=x\n")  # no OBS_COLLECTION
         cfg = m.resolve_config(root, environ={})
-        assert cfg.obs_collection == "GT Endurance Racing — Demo League"
+        assert cfg.obs_collection == "GT Racing Endurance — Demo League"
 
 
 def t_resolve_config_discord_oauth_keys():
@@ -385,7 +385,7 @@ def t_endurance_collection_name_unchanged():
         _mkprofile(root, "endur", "NAME=Endur\nSHEET_ID=abc\n")
         rc = m.resolve_config(root, environ={})
         assert rc.kind == "endurance"
-        assert rc.obs_collection == "GT Endurance Racing — Endur"
+        assert rc.obs_collection == "GT Racing Endurance — Endur"
 
 
 def t_sheet_edit_url_builds_edit_link():

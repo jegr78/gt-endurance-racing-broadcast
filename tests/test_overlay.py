@@ -532,7 +532,7 @@ def t_ob_sample_has_clock_in_hud_only():
 import json as _json
 
 def t_obs_collection_has_no_timer_source():
-    with open(os.path.join(ROOT, "src", "obs", "GT_Endurance.json"), encoding="utf-8") as f:
+    with open(os.path.join(ROOT, "src", "obs", "GT_Racing_Endurance.json"), encoding="utf-8") as f:
         col = _json.load(f)
     blob = _json.dumps(col)
     assert "HUD Race Timer" not in blob, "the separate timer source must be removed"
@@ -544,7 +544,7 @@ def t_obs_hud_overlay_renders_in_front():
     # where HUD Overlay (text) sits AFTER the Overlay PNG frame so the text draws
     # on top of it). The HUD Overlay source must therefore render in FRONT of both
     # the Overlay frame AND Feed POV, so its #pov border frames the POV video.
-    with open(os.path.join(ROOT, "src", "obs", "GT_Endurance.json"), encoding="utf-8") as f:
+    with open(os.path.join(ROOT, "src", "obs", "GT_Racing_Endurance.json"), encoding="utf-8") as f:
         col = _json.load(f)
     def items_of(src):
         return (src.get("settings") or {}).get("items") or []
@@ -584,7 +584,7 @@ def t_ob_sample_has_flag_and_brand_images():
 
 def t_splitscreen_labels_source_in_collection_splitscreen_scene_only():
     import os, json
-    with open(os.path.join(ROOT, "src", "obs", "GT_Endurance.json"),
+    with open(os.path.join(ROOT, "src", "obs", "GT_Racing_Endurance.json"),
               encoding="utf-8") as fh:
         d = json.load(fh)
     srcs = [s for s in d.get("sources", []) if s.get("name") == "Splitscreen Labels"]

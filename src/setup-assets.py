@@ -23,17 +23,17 @@ SHEET_TOKEN = "__RACECAST_SHEET__"
 MEDIA_TOKEN = "__RACECAST_MEDIA__"
 GRAPHICS_TOKEN = "__RACECAST_GRAPHICS__"
 
-SOLO_TEMPLATE_FILES = {"commentary": "GT_Solo_Commentary", "pov": "GT_Solo_POV"}
+SOLO_TEMPLATE_FILES = {"commentary": "GT_Racing_Solo_Commentary", "pov": "GT_Racing_Solo_POV"}
 
 
 def resolve_template_base(kind, template):
     """Filename stem (no extension) of the OBS template for this profile kind.
-    endurance -> GT_Endurance; solo -> GT_Solo_Commentary / GT_Solo_POV
+    endurance -> GT_Racing_Endurance; solo -> GT_Racing_Solo_Commentary / GT_Racing_Solo_POV
     (unknown/blank solo template defaults to commentary). Pure."""
     if (kind or "").strip().lower() == "solo":
         return SOLO_TEMPLATE_FILES.get((template or "").strip().lower(),
-                                       "GT_Solo_Commentary")
-    return "GT_Endurance"
+                                       "GT_Racing_Solo_Commentary")
+    return "GT_Racing_Endurance"
 
 
 def media_dir(base):
@@ -280,7 +280,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--assets", default=os.path.join(base, "assets"))
     ap.add_argument("--template", default=None)
-    ap.add_argument("--out", default=os.path.join(base, "obs", "GT_Endurance.import.json"))
+    ap.add_argument("--out", default=os.path.join(base, "obs", "GT_Racing_Endurance.import.json"))
     ap.add_argument("--media", default=media_dir(base),
                     help="Folder with intro.mp4/outro.mp4 for the Intro/Outro "
                          "scenes (replaces __RACECAST_MEDIA__). Default: media_dir().")
