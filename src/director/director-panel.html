@@ -994,7 +994,10 @@ redFlagBtn._item = redFlagItem;
    again, once, with CONFIG_SOLO the first time /status reports a solo relay
    (see applySolo()'s builtSolo latch). Endurance never triggers the second
    call, so its build stays byte-identical. */
+let activeConfig = CONFIG;   // the cfg buildControls last ran with; obsStatePoll
+                             // reads it (not CONFIG) so the solo mixer/macros sync.
 function buildControls(cfg){
+  activeConfig = cfg;
   $("#pgmBus").replaceChildren();
   $("#scnBus").replaceChildren();
   $("#gfxBus").replaceChildren();
@@ -1344,11 +1347,11 @@ async function obsStatePoll(){
         sourcesSpec.push({scene: b._item.scene, source: b._item.source});
     }
     // Also include macro show-targets so the PGM bus highlights correctly.
-    for (const m of CONFIG.macros){
+    for (const m of activeConfig.macros){
       for (const [sc, src] of m.show)
         sourcesSpec.push({scene: sc, source: src});
     }
-    const inputsSpec = CONFIG.audio.map(a => a.input);
+    const inputsSpec = activeConfig.audio.map(a => a.input);
 
     const d = await obsPost("state", {sources: sourcesSpec, inputs: inputsSpec});
     if (!d.ok){ obsLed("err"); renderStreamBtn(null); lastStreamActive = null; return; }
