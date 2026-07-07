@@ -343,12 +343,12 @@ git commit -m "refactor(brand): rebrand Control Center, Director Panel + HUD ove
 
 - [ ] **Step 3: Verify no leaks + decks still render**
 
-Run:
+Run (CASE-INSENSITIVE — the decks use all-caps and mixed-case brand lockups that a case-sensitive grep misses):
 ```bash
-grep -rn "GT Endurance Racing" src/docs/slides/ tools/intermission-demo.html tools/build-walkthrough-videos.py
+grep -rin "endurance racing" src/docs/slides/ tools/intermission-demo.html tools/build-walkthrough-videos.py
 python3 tools/check-slides.py
 ```
-Expected: grep returns nothing; `check-slides.py` reports no overflow/render errors.
+Expected: grep returns nothing; `check-slides.py` reports no overflow/render errors. (If a hit is the generic activity phrase "endurance racing" in prose — not a brand lockup — leave it; but the decks' brand strings are all "GT Endurance Racing[ Broadcast]".)
 
 - [ ] **Step 4: Commit (note the stale walkthrough videos)**
 
@@ -368,14 +368,14 @@ via the TTS pipeline is a deferred follow-up, out of scope for #308."
 
 - [ ] **Step 1: Repo-wide residual brand check**
 
-Run:
+Run (CASE-INSENSITIVE `-i` — the sweep must catch all-caps/CSS-uppercase brand strings that a case-sensitive grep silently misses; this is how the Director Panel subtitle leak was found):
 ```bash
-grep -rn "GT Endurance Racing" --include="*.py" --include="*.html" --include="*.md" --include="*.json" --include="*.svg" . \
-  | grep -v "docs/superpowers/" | grep -v "CHANGELOG.md" | grep -v "/dist/" | grep -v "/runtime/"
+grep -rin "endurance racing" --include="*.py" --include="*.html" --include="*.md" --include="*.json" --include="*.svg" . \
+  | grep -v "docs/superpowers/" | grep -v "CHANGELOG.md" | grep -v "CHANGELOG-archive.md" | grep -v "/dist/" | grep -v "/runtime/"
 grep -rn "GT_Endurance\|GT_Solo_" --include="*.py" --include="*.json" --include="*.html" --include="*.md" . \
   | grep -v "docs/superpowers/" | grep -v "/dist/" | grep -v "/runtime/"
 ```
-Expected: the ONLY remaining `GT Endurance Racing` hit is the intentional old-name mention in the OBS-Setup migration note (Task 3 Step 2). No `GT_Endurance`/`GT_Solo_` filename references remain. If anything else appears, fix it and re-run.
+Expected: the ONLY remaining `endurance racing` hits are (a) the intentional old-name mention in the OBS-Setup migration note (Task 3 Step 2), and (b) the generic *activity* phrase "endurance racing" in prose (e.g. `src/docs/wiki/Relay-Mode.md`: "the recommended flow for endurance racing") — NOT brand lockups, correctly left. No `GT_Endurance`/`GT_Solo_` filename references remain. `docs/CHANGELOG-archive.md` is a historical record of a PAST rebrand (excluded). If any brand-lockup leak appears, fix it and re-run.
 
 Note: `.claude/skills/*` (release, wiki-screenshots, companion-screenshots) reference the product/collection name but are **local agent/dev tooling, not the shipped product**. They are swept by the controller as housekeeping (to keep the screenshot/release recipes accurate) outside these six tasks; they are not part of the product-brand scope and their sweep is verified here.
 
