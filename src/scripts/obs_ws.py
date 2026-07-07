@@ -561,6 +561,73 @@ def probe(host="127.0.0.1", port=None, password=None, timeout=2.0):
     return True, ""
 
 
+DEVICE_PROPERTY_NAMES = {"darwin": "device", "win": "video_device_id", "linux": "device_id"}
+
+
+def device_property_name(platform):
+    """OBS input-settings property key holding the video device id for `platform`,
+    or None if unknown. MUST match setup-assets.DEVICE_VARIANTS (cross-checked by a
+    test) — enumeration writes into the same field localization later reads."""
+    if platform.startswith("win"):
+        return DEVICE_PROPERTY_NAMES["win"]
+    if platform == "darwin":
+        return DEVICE_PROPERTY_NAMES["darwin"]
+    if platform.startswith("linux"):
+        return DEVICE_PROPERTY_NAMES["linux"]
+    return None
+
+
+def parse_property_items(payload):
+    """[{name,value,enabled}] from a GetInputPropertiesListPropertyItems response,
+    dropping items with an empty/None itemValue. Tolerant: bad shape -> []."""
+    if not isinstance(payload, dict):
+        return []
+    items = payload.get("propertyItems")
+    if not isinstance(items, list):
+        return []
+    out = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        val = it.get("itemValue")
+        if val is None or val == "":
+            continue
+        out.append({"name": it.get("itemName", ""), "value": val,
+                    "enabled": bool(it.get("itemEnabled", True))})
+    return out
+
+
+def input_not_found(exc_text):
+    """True if an OBS request error means the input/source does not exist
+    (RequestStatus code 600 = ResourceNotFound, or a not-found phrasing)."""
+    low = exc_text.lower()
+    return ("'code': 600" in exc_text or "code=600" in low
+            or "not found" in low or "no source was found" in low
+            or "invalidresource" in low)
+
+
+def enumerate_device_options(input_name, property_name, host="127.0.0.1", port=None,
+                             password=None, timeout=2.0):
+    """(items, note) — the device dropdown OBS offers for `input_name`'s
+    `property_name`. Best-effort like release_feed_inputs: OBS unreachable / input
+    absent / protocol surprise -> ([], reason), never raises. Callers surface `note`."""
+    if not property_name:
+        return [], "no device property for this platform"
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return [], note
+    try:
+        payload = session.request("GetInputPropertiesListPropertyItems",
+                                  {"inputName": input_name, "propertyName": property_name})
+        return parse_property_items(payload), ""
+    except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        text = str(exc)
+        return [], (f"input {input_name!r} not found — import the solo collection first"
+                    if input_not_found(text) else (text or exc.__class__.__name__))
+    finally:
+        session.close()
+
+
 def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
                         password=None, timeout=2.0):
     """Make OBS drop its connections to the (just killed) relay feed ports by

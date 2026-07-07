@@ -30,6 +30,7 @@
   racecast backup    {create|list|restore|delete} <label>   # named look snapshots (overlay+graphics+media)
   racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
   racecast freeport [PORT...] [--force]       # free a stuck feed port (default 53001-53003); kills orphaned holders, refuses a running relay/streams
+  racecast device-scan [--webcam VAL] [--capture VAL]  # enumerate OBS video-capture devices and save the pick(s) to .env (interactive when no flags given)
   racecast preflight | speedtest [--json] | cookies [twitch] [browser] | graphics | media | brands | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   racecast obs-browser [--yes]               # Linux/ARM64: build & install OBS's Browser Source plugin from source (needed for the relay HUD)
   racecast export companion [--out PATH]     # write the Companion button config
@@ -543,7 +544,14 @@ def _relay_daemon_argv(rest, frozen):
         return [sys.executable, "relay", "run"] + list(rest)
     return [sys.executable, _relay_script()] + _relay_runtime_args() + list(rest)
 
-def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None):
+def _setup_import_name(kind=None):
+    """Filename of the localized OBS import for `kind` (default: RACECAST_KIND env).
+    Solo profiles get GT_Solo.import.json; endurance/unknown get GT_Endurance.import.json."""
+    if kind is None:
+        kind = pcfg.normalize_kind(os.environ.get("RACECAST_KIND", ""))
+    return "GT_Solo.import.json" if kind == "solo" else "GT_Endurance.import.json"
+
+def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None, kind=None):
     """Extra argv for a one-shot. The asset writers (graphics/media/setup) get a
     profile-scoped --out (+ setup's --media/--graphics) so their output lands
     under runtime/<profile>/ in every run mode -- those are baked into the OBS
@@ -551,15 +559,22 @@ def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None):
     --runtime-dir (preflight, cookies) get the un-scoped BASE runtime, so the
     shared cookie jar stays at runtime/yt-cookies.txt. The user's own --out wins.
     overlay_css: when given and the file exists, injected as --overlay-css for
-    setup (so the OBS collection bakes the active POV-box geometry)."""
+    setup (so the OBS collection bakes the active POV-box geometry). kind: the
+    active profile kind (endurance|solo) picks setup's default --out basename --
+    defaults to RACECAST_KIND from the environment (the CLI applies the active
+    profile's env, incl. RACECAST_KIND, before dispatching a one-shot -- the same
+    source setup-assets itself reads), so callers rarely need to pass it explicitly."""
+    if kind is None:
+        kind = pcfg.normalize_kind(os.environ.get("RACECAST_KIND", ""))
     extra = []
     if command in RUNTIME_DIR_ONESHOTS:
         extra += ["--runtime-dir", base_dir]
     if "--out" not in rest:
+        setup_name = _setup_import_name(kind)
         out = {"graphics": os.path.join(runtime_dir, "graphics"),
                "media": os.path.join(runtime_dir, "media"),
                "brands": os.path.join(runtime_dir, "brands"),
-               "setup": os.path.join(runtime_dir, "GT_Endurance.import.json")}.get(command)
+               "setup": os.path.join(runtime_dir, setup_name)}.get(command)
         if out:
             extra += ["--out", out]
     if command == "setup":
@@ -982,6 +997,8 @@ def route(argv):
         return {"kind": "ui", "rest": rest}
     if cmd == "freeport":
         return {"kind": "freeport", "rest": rest}
+    if cmd == "device-scan":
+        return {"kind": "device-scan", "rest": rest}
     if cmd == "init":
         return {"kind": "init", "rest": rest}
     if cmd == "profile":
@@ -2513,6 +2530,104 @@ def obs_stream_target_cmd(rest):
     if not ok:
         sys.exit(f"obs: stream target not set — {note}")
     print(f"obs: {note} ✓")
+
+
+def resolve_device_selection(devices, token):
+    """Map a user token to a device value. token: "" -> (None,None) (skip/leave);
+    a 1-based index; a case-insensitive name substring; or an exact value. Returns
+    (value, None) or (None, error)."""
+    token = (token or "").strip()
+    if not token:
+        return None, None
+    if token.isdigit():
+        i = int(token)
+        if 1 <= i <= len(devices):
+            return devices[i - 1]["value"], None
+        return None, f"index {i} out of range (1..{len(devices)})"
+    for d in devices:                                   # exact value first
+        if d["value"] == token:
+            return d["value"], None
+    matches = [d for d in devices if token.lower() in d.get("name", "").lower()]
+    if len(matches) == 1:
+        return matches[0]["value"], None
+    if not matches:
+        return None, f"no device matches {token!r}"
+    return None, f"{token!r} is ambiguous ({len(matches)} matches)"
+
+
+DEVICE_SCAN_INPUT_NAME = "Solo Capture Device"
+
+
+def _parse_device_scan_args(rest):
+    """(webcam_token_or_None, capture_token_or_None). Only --webcam/--capture are
+    recognized; anything else is a usage error."""
+    webcam = None
+    capture = None
+    i = 0
+    while i < len(rest):
+        arg = rest[i]
+        if arg == "--webcam" and i + 1 < len(rest):
+            webcam = rest[i + 1]
+            i += 2
+        elif arg == "--capture" and i + 1 < len(rest):
+            capture = rest[i + 1]
+            i += 2
+        else:
+            raise ValueError("usage: racecast device-scan [--webcam VAL] [--capture VAL]")
+    return webcam, capture
+
+
+def device_scan_cmd(rest):
+    """`racecast device-scan [--webcam VAL] [--capture VAL]` — enumerate the OBS
+    video-capture devices available to the "Solo Capture Device" input and write
+    the operator's picks to the machine .env as RACECAST_WEBCAM/RACECAST_CAPTURE
+    (#304). VAL is a 1-based list index, a case-insensitive name substring, or an
+    exact device value; blank/omitted leaves that slot untouched. Without flags
+    and on a TTY it prompts interactively; headless it just lists the devices and
+    hints at the flags (never blocks on input())."""
+    import obs_ws
+    try:
+        webcam_tok, capture_tok = _parse_device_scan_args(rest)
+    except ValueError as exc:
+        sys.exit(str(exc))
+    devices, note = obs_ws.enumerate_device_options(
+        DEVICE_SCAN_INPUT_NAME, obs_ws.device_property_name(sys.platform))
+    if not devices:
+        sys.exit(f"device-scan: {note or 'no devices found'} — "
+                 "import the solo collection first (racecast setup), then start OBS.")
+    print("Available video devices:")
+    for i, d in enumerate(devices, start=1):
+        print(f"  {i}. {d['name']}")
+    if webcam_tok is None and capture_tok is None:
+        if not sys.stdin.isatty():
+            print("racecast: pass --webcam VAL and/or --capture VAL to select one "
+                 "(non-interactive session).")
+            return None
+        webcam_tok = input("Webcam [index/name, blank=skip]: ")
+        capture_tok = input("Capture [index/name, blank=skip]: ")
+    errors = []
+    webcam_val, werr = resolve_device_selection(devices, webcam_tok or "")
+    if werr:
+        errors.append(f"webcam — {werr}")
+    capture_val, cerr = resolve_device_selection(devices, capture_tok or "")
+    if cerr:
+        errors.append(f"capture — {cerr}")
+    if errors:
+        sys.exit("device-scan: " + "; ".join(errors))
+    updates = {}
+    if webcam_val is not None:
+        updates["RACECAST_WEBCAM"] = webcam_val
+    if capture_val is not None:
+        updates["RACECAST_CAPTURE"] = capture_val
+    if not updates:
+        print("device-scan: nothing to write (no selection made).")
+        return None
+    res = env_upsert_data(updates)
+    if not res.get("ok"):
+        sys.exit(f"device-scan: {res.get('error')}")
+    print(f"device-scan: wrote {', '.join(sorted(updates))} to .env.")
+    print("Re-run `racecast setup` to bake these into the OBS collection.")
+    return None
 
 
 def _active_sheet_url():
@@ -4412,6 +4527,56 @@ def env_write_data(entries, path=None):
     return _write_env_file(path or _env_file(), entries)
 
 
+def env_upsert_data(updates, path=None):
+    """Set each key in `updates` (dict) in the machine .env WITHOUT dropping any other
+    key. env_write_data treats its entries as the COMPLETE set (unlisted real keys are
+    removed), so read the current entries, overlay `updates`, and write the union.
+    {ok,path} or {ok:false,error}. Never raises beyond the underlying helpers' contract."""
+    target = path or _env_file()
+    read = env_entries_data(path=target)          # {ok, path, entries:[{key,value}]}
+    if not read.get("ok"):
+        return read
+    merged = {e["key"]: e["value"] for e in read["entries"]}
+    merged.update({k: str(v) for k, v in updates.items()})
+    entries = [{"key": k, "value": v} for k, v in merged.items()]
+    res = env_write_data(entries, path=target)
+    if not res.get("ok") and "must start with" in (res.get("error") or ""):
+        return {"ok": False, "error": (
+            "the machine .env contains a non-RACECAST_ key, so the device selection "
+            "could not be saved (nothing was written); the machine .env must hold only "
+            f"RACECAST_* keys — fix it in the .env editor, then retry. [{res['error']}]")}
+    return res
+
+
+def devices_enumerate_data():
+    """Control Center General-Settings data: the OBS video devices offered to
+    the "Solo Capture Device" input (webcam/capture share one device list).
+    {ok, devices:[{name,value}], note}. ok is False when OBS is unreachable or
+    the solo input is absent (note explains); the front-end disables the
+    dropdowns and shows note. Never raises (obs_ws.enumerate_device_options is
+    best-effort)."""
+    import obs_ws
+    items, note = obs_ws.enumerate_device_options(
+        DEVICE_SCAN_INPUT_NAME, obs_ws.device_property_name(sys.platform))
+    return {"ok": not note,
+            "devices": [{"name": d["name"], "value": d["value"]} for d in items],
+            "note": note}
+
+
+def devices_write_data(webcam, capture):
+    """Upsert the chosen webcam/capture device ids into the machine .env
+    (RACECAST_WEBCAM/RACECAST_CAPTURE). A blank/None value leaves that key
+    unchanged; both blank -> {ok:false, error} (nothing to save)."""
+    updates = {}
+    if (webcam or "").strip():
+        updates["RACECAST_WEBCAM"] = webcam.strip()
+    if (capture or "").strip():
+        updates["RACECAST_CAPTURE"] = capture.strip()
+    if not updates:
+        return {"ok": False, "error": "no device selected"}
+    return env_upsert_data(updates)
+
+
 def _active_profile_env_strict():
     """(active_name, profile.env path) for the active profile, or (None, None)
     when no profile resolves. Distinct from _active_profile_env_path(), which
@@ -5874,7 +6039,7 @@ def _mtime(path):
         return None
 
 def _init_import_json():
-    return os.path.join(_runtime_dir(), "GT_Endurance.import.json")
+    return os.path.join(_runtime_dir(), _setup_import_name())
 
 def _init_companion_cfg():
     return os.path.join(_runtime_dir(), "racecast-buttons.companionconfig")
@@ -6130,6 +6295,8 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "speedtest": speedtest_data,
         "env_read": env_entries_data,
         "env_write": env_write_data,
+        "devices_enumerate": devices_enumerate_data,
+        "devices_write": devices_write_data,
         "profiles": profiles_data,
         "profile_logo": profile_logo,
         "profile_use": profile_use_data,
@@ -6269,6 +6436,8 @@ def main(argv=None):
         return ui_cmd(action["rest"])
     if action["kind"] == "freeport":
         return freeport_cmd(action["rest"])
+    if action["kind"] == "device-scan":
+        return device_scan_cmd(action["rest"])
     if action["kind"] == "init":
         return init_cmd(action["rest"])
     if action["kind"] == "profile":

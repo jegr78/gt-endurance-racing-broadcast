@@ -880,6 +880,72 @@ def t_oneshot_extra_paths():
     assert m._oneshot_extra("graphics", ["--out", "X"], rd, base) == []  # user override respected
 
 
+def t_oneshot_extra_setup_out_is_kind_aware():
+    # #304: the `setup` default --out filename depends on the active profile kind.
+    # endurance (explicit or the default when unset) keeps the byte-identical name;
+    # solo gets its own template basename. An explicit --out always wins regardless.
+    rd = os.path.join("R", "demo")
+    base = "R"
+    assert m._oneshot_extra("setup", [], rd, base, kind="endurance") == [
+        "--out", os.path.join(rd, "GT_Endurance.import.json"),
+        "--media", os.path.join(rd, "media"),
+        "--graphics", os.path.join(rd, "graphics")]
+    assert m._oneshot_extra("setup", [], rd, base, kind="solo") == [
+        "--out", os.path.join(rd, "GT_Solo.import.json"),
+        "--media", os.path.join(rd, "media"),
+        "--graphics", os.path.join(rd, "graphics")]
+    # no kind passed -> falls back to RACECAST_KIND from the environment (endurance
+    # when unset/blank/unknown -- matches setup-assets' own default).
+    saved = os.environ.pop("RACECAST_KIND", None)
+    try:
+        assert m._oneshot_extra("setup", [], rd, base) == [
+            "--out", os.path.join(rd, "GT_Endurance.import.json"),
+            "--media", os.path.join(rd, "media"),
+            "--graphics", os.path.join(rd, "graphics")]
+        os.environ["RACECAST_KIND"] = "solo"
+        assert m._oneshot_extra("setup", [], rd, base) == [
+            "--out", os.path.join(rd, "GT_Solo.import.json"),
+            "--media", os.path.join(rd, "media"),
+            "--graphics", os.path.join(rd, "graphics")]
+    finally:
+        if saved is None:
+            os.environ.pop("RACECAST_KIND", None)
+        else:
+            os.environ["RACECAST_KIND"] = saved
+    # explicit --out still wins over the kind-aware default.
+    assert m._oneshot_extra("setup", ["--out", "z", "--media", "m", "--graphics", "g"],
+                            rd, base, kind="solo") == []
+
+
+def t_setup_import_name_by_kind():
+    # #304 follow-up: the kind-aware setup import filename is shared logic --
+    # both _oneshot_extra and the init wizard's "is setup already done?" probe
+    # (_init_import_json) must resolve to the SAME basename for a given kind.
+    assert m._setup_import_name("solo") == "GT_Solo.import.json"
+    assert m._setup_import_name("endurance") == "GT_Endurance.import.json"
+    assert m._setup_import_name("") == "GT_Endurance.import.json"
+
+
+def t_init_import_json_is_kind_aware():
+    # #304: _init_import_json used to hardcode GT_Endurance.import.json, so for
+    # a solo profile (whose setup writes GT_Solo.import.json) the init wizard
+    # never detected setup as done and kept re-running it. It must follow
+    # RACECAST_KIND the same way _oneshot_extra's setup default does.
+    saved = os.environ.pop("RACECAST_KIND", None)
+    try:
+        os.environ["RACECAST_KIND"] = "solo"
+        assert m._init_import_json().endswith("GT_Solo.import.json")
+        os.environ["RACECAST_KIND"] = "endurance"
+        assert m._init_import_json().endswith("GT_Endurance.import.json")
+        os.environ.pop("RACECAST_KIND", None)
+        assert m._init_import_json().endswith("GT_Endurance.import.json")
+    finally:
+        if saved is None:
+            os.environ.pop("RACECAST_KIND", None)
+        else:
+            os.environ["RACECAST_KIND"] = saved
+
+
 def t_brands_oneshot_mapping_and_out():
     assert m.ONESHOT_MAP["brands"] == "relay/get-brands.py"
     assert "brands" in m.ONESHOTS
@@ -3668,6 +3734,81 @@ def t_profile_env_vars_includes_template():
     # endurance profiles leave template empty -> filtered out (byte-identical env)
     rc2 = m.pcfg.ResolvedConfig(profile="demo", name="Demo", sheet_id="abc")
     assert "RACECAST_TEMPLATE" not in m._profile_env_vars(rc2)
+
+
+def t_env_upsert_preserves_other_keys():
+    # env_upsert_data must overlay ONLY the given keys — env_write_data (the
+    # underlying writer) treats its entries as the complete set and drops any
+    # unlisted real key, which would silently delete e.g. RACECAST_OBS_WS_PASSWORD
+    # if a naive two-key write were used to persist device selection (#304).
+    import tempfile, os as _os
+    d = tempfile.mkdtemp(prefix="racecast-envupsert-")
+    p = _os.path.join(d, ".env")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("# machine knobs\nRACECAST_OBS_WS_PASSWORD=secret\nRACECAST_UI_PORT=8089\n")
+    res = m.env_upsert_data({"RACECAST_WEBCAM": "cam0", "RACECAST_CAPTURE": "cap1"}, path=p)
+    assert res["ok"], res
+    with open(p, encoding="utf-8") as fh:
+        text = fh.read()
+    assert "RACECAST_OBS_WS_PASSWORD=secret" in text   # unrelated key preserved
+    assert "RACECAST_UI_PORT=8089" in text
+    assert "RACECAST_WEBCAM=cam0" in text
+    assert "RACECAST_CAPTURE=cap1" in text
+    assert "# machine knobs" in text                   # comment preserved
+
+
+def t_env_upsert_updates_existing_key_in_place():
+    import tempfile, os as _os
+    d = tempfile.mkdtemp(prefix="racecast-envupsert2-")
+    p = _os.path.join(d, ".env")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("RACECAST_WEBCAM=old\nRACECAST_UI_PORT=8089\n")
+    m.env_upsert_data({"RACECAST_WEBCAM": "new"}, path=p)
+    with open(p, encoding="utf-8") as fh:
+        text = fh.read()
+    assert "RACECAST_WEBCAM=new" in text and "RACECAST_WEBCAM=old" not in text
+    assert "RACECAST_UI_PORT=8089" in text
+
+
+def t_env_upsert_rejects_foreign_key_clearly():
+    # A machine .env that already holds a non-RACECAST_ key (should never happen,
+    # but the editor/device-scan must not blow up with the raw env_write_data
+    # wording) gets a clear, device-context error and writes nothing (#304 review).
+    import tempfile, os as _os
+    d = tempfile.mkdtemp(prefix="racecast-envupsert-foreign-")
+    p = _os.path.join(d, ".env")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("FOO=bar\nRACECAST_UI_PORT=8089\n")
+    with open(p, encoding="utf-8") as fh:
+        before = fh.read()
+    res = m.env_upsert_data({"RACECAST_WEBCAM": "x"}, path=p)
+    assert not res["ok"]
+    assert "could not be saved" in res["error"]
+    with open(p, encoding="utf-8") as fh:
+        after = fh.read()
+    assert after == before                            # nothing written
+
+
+def t_resolve_device_selection_by_index_and_id():
+    devs = [{"name": "FaceTime", "value": "0x14000000"},
+            {"name": "Elgato HD60", "value": "0x14200000"}]
+    assert m.resolve_device_selection(devs, "1") == ("0x14000000", None)   # 1-based index
+    assert m.resolve_device_selection(devs, "2") == ("0x14200000", None)
+    assert m.resolve_device_selection(devs, "Elgato") == ("0x14200000", None)  # name substring
+    assert m.resolve_device_selection(devs, "0x14000000") == ("0x14000000", None)  # exact value
+    val, err = m.resolve_device_selection(devs, "9")
+    assert val is None and "out of range" in err
+    val, err = m.resolve_device_selection(devs, "nosuch")
+    assert val is None and err
+    assert m.resolve_device_selection(devs, "") == (None, None)   # blank = skip/leave
+
+
+def t_route_device_scan():
+    # device-scan is a single-word command (like freeport/links) that forwards
+    # any flags (--webcam/--capture) straight through to device_scan_cmd (#304).
+    assert m.route(["device-scan"]) == {"kind": "device-scan", "rest": []}
+    assert m.route(["device-scan", "--webcam", "1", "--capture", "2"]) == \
+        {"kind": "device-scan", "rest": ["--webcam", "1", "--capture", "2"]}
 
 
 if __name__ == "__main__":

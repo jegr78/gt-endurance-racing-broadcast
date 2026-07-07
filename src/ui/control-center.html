@@ -987,6 +987,24 @@
             <b>runtime/fonts/</b>. When a league's design uses a font, it is copied into that league's
             <b>overlay/fonts/</b> on save, so the overlay works offline and <b>profile export</b> stays self-contained.</p>
         </section>
+        <div class="viewhead"><h3>Solo devices</h3><span class="sub">webcam &amp; capture-card selection for solo mode</span>
+          <span class="spacer"></span>
+          <button onclick="loadDevices()">
+            <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button>
+          <button id="dev-save" onclick="saveDevices()">
+            <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button></div>
+        <section>
+          <div class="enverr" id="dev-err" hidden></div>
+          <div class="row"><span class="name">Webcam</span>
+            <select id="dev-webcam" style="flex:1" aria-label="Webcam device" disabled>
+              <option value="">—</option>
+            </select></div>
+          <div class="row"><span class="name">Capture</span>
+            <select id="dev-capture" style="flex:1" aria-label="Capture device" disabled>
+              <option value="">—</option>
+            </select></div>
+          <p class="envhint" id="dev-hint">Loading devices…</p>
+        </section>
         <div class="enverr" id="env-err" hidden></div>
         <div class="envpath" id="env-path"></div>
         <section>
@@ -2467,6 +2485,7 @@ async function loadSettings(force) {
   if (force && !(await confirmModal('Reload from disk and discard any unsaved edits?'))) return;
   $('env-err').hidden = true;
   loadFontLibrary();                       // machine-wide overlay font library
+  loadDevices();                           // solo-mode webcam/capture pickers
   let d;
   try { d = await (await fetch('/api/env', {cache: 'no-store'})).json(); }
   catch (e) { showEnvErr('Control Center not reachable.'); return; }
@@ -2475,6 +2494,66 @@ async function loadSettings(force) {
   const c = $('envrows');
   c.textContent = '';
   d.entries.forEach(e => c.appendChild(settingsRow(e.key, e.value)));
+}
+
+// ----- Solo devices (General Settings): webcam + capture-card pickers -----
+// Both selects share the same OBS device list (the "Solo Capture Device" input
+// enumerates whatever this platform's video-capture API sees); a blank
+// selection on Save leaves that .env key untouched.
+function deviceOption(name, value) {
+  const o = document.createElement('option');
+  o.value = value; o.textContent = name;
+  return o;
+}
+
+async function loadDevices() {
+  $('dev-err').hidden = true;
+  const wSel = $('dev-webcam'), cSel = $('dev-capture');
+  let d;
+  try { d = await (await fetch('/api/devices', {cache: 'no-store'})).json(); }
+  catch (e) {
+    wSel.disabled = cSel.disabled = true;
+    $('dev-hint').textContent = 'Control Center not reachable.';
+    return;
+  }
+  const devices = (d && d.devices) || [];
+  wSel.textContent = ''; cSel.textContent = '';
+  wSel.appendChild(deviceOption('—', ''));
+  cSel.appendChild(deviceOption('—', ''));
+  devices.forEach(dev => {
+    wSel.appendChild(deviceOption(dev.name, dev.value));
+    cSel.appendChild(deviceOption(dev.name, dev.value));
+  });
+  const ok = !!(d && d.ok) && devices.length > 0;
+  wSel.disabled = cSel.disabled = !ok;
+  $('dev-hint').textContent = ok
+    ? 'Pick the webcam and/or the capture-card device, then Save. Shared machine-wide (not per-league).'
+    : ((d && d.note) || 'Start OBS with the solo collection imported to list devices, or set '
+       + 'RACECAST_CAPTURE/RACECAST_WEBCAM in the .env editor below.');
+}
+
+async function saveDevices() {
+  $('dev-err').hidden = true;
+  const b = $('dev-save');
+  b.disabled = true;
+  let d;
+  try {
+    d = await (await fetch('/api/devices/select', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({webcam: $('dev-webcam').value,
+                              capture: $('dev-capture').value})})).json();
+  } catch (e) {
+    $('dev-err').textContent = 'Control Center not reachable.'; $('dev-err').hidden = false;
+    b.disabled = false; return;
+  }
+  if (!d.ok) {
+    $('dev-err').textContent = d.error || 'could not save device selection';
+    $('dev-err').hidden = false; b.disabled = false; return;
+  }
+  const orig = b.innerHTML;
+  b.textContent = 'Saved ✓';
+  setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
+  // selection persisted; keep it shown (do not reload → would reset the dropdowns)
 }
 
 // ----- Machine-wide overlay font library (General Settings) -----

@@ -1443,6 +1443,57 @@ def t_set_stream_service_unreachable_is_note_not_crash():
     assert ok is False and note
 
 
+# --------------------------------------------------------------------------
+# Device enumeration (#304) — pure parser + per-OS property-name map
+# --------------------------------------------------------------------------
+def t_parse_property_items_basic():
+    payload = {"propertyItems": [
+        {"itemName": "FaceTime HD", "itemEnabled": True, "itemValue": "0x14000000"},
+        {"itemName": "Elgato", "itemEnabled": True, "itemValue": "0x14200000"},
+        {"itemName": "Disabled Dummy", "itemEnabled": False, "itemValue": ""},
+    ]}
+    items = m.parse_property_items(payload)
+    assert items == [
+        {"name": "FaceTime HD", "value": "0x14000000", "enabled": True},
+        {"name": "Elgato", "value": "0x14200000", "enabled": True},
+    ]  # empty-value item dropped
+
+
+def t_parse_property_items_malformed():
+    assert m.parse_property_items({}) == []
+    assert m.parse_property_items({"propertyItems": None}) == []
+    assert m.parse_property_items("garbage") == []
+
+
+def t_device_property_name_per_platform():
+    assert m.device_property_name("darwin") == "device"
+    assert m.device_property_name("win32") == "video_device_id"
+    assert m.device_property_name("linux") == "device_id"
+    assert m.device_property_name("sunos5") is None
+
+
+def t_device_property_name_matches_setup_assets_variants():
+    # cross-check: obs_ws (enumeration) and setup-assets (localization) must agree on
+    # the per-OS device-id settings key, or a scanned value lands in the wrong field.
+    spec_sa = importlib.util.spec_from_file_location(
+        "setup_assets_x", os.path.join(ROOT, "src", "setup-assets.py"))
+    sa = importlib.util.module_from_spec(spec_sa); spec_sa.loader.exec_module(sa)
+    for os_key, plat in (("darwin", "darwin"), ("win", "win32"), ("linux", "linux")):
+        _src_id, prop_key = sa.DEVICE_VARIANTS[os_key]
+        assert m.device_property_name(plat) == prop_key, os_key
+
+
+def t_input_not_found():
+    # The real OBS error for a missing input is a RequestStatus code 600
+    # (ResourceNotFound), NOT a "not found" phrase — see enumerate_device_options's
+    # except-clause classification (#304 review).
+    assert m.input_not_found(
+        "GetInputPropertiesListPropertyItems failed: {'code': 600, "
+        "'comment': 'No source was found by the name of `Solo Capture Device`'}")
+    assert m.input_not_found("input 'Solo Capture Device' not found")
+    assert not m.input_not_found("connection reset")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
