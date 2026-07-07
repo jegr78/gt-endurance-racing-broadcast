@@ -1,6 +1,6 @@
-# GT Endurance Racing Broadcast — Setup Package
+# GT Racing Broadcast — Setup Package
 
-This package sets up a complete producer station for the GT Endurance Racing
+This package sets up a complete producer station for the GT Racing
 broadcast: OBS scenes + HUD, the Companion button board, the director panel,
 and the relay that pulls each commentator's stream into OBS.
 

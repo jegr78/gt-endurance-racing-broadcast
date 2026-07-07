@@ -15,7 +15,7 @@
   racecast event takeover <A-ip> [--funnel] [--stint N]  # take over from another producer: read A's on-air stint+league, pull chat, bring up at that stint; --funnel <magicdns-host> pulls state over the public Funnel using the league CONSOLE_SECRET
   racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
   racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD incl. timer)
-  racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
+  racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Racing Endurance)
   racecast obs stream-target <part>          # set OBS stream service+key for a Producer Part (OBS must be stopped)
   racecast obs logs | tailscale logs         # tail OBS's log dir / the Tailscale status-snapshot log (same -f/--list/--archive flags)
   racecast sheet     url | open              # print / open the active league's Google Sheet (built from its SHEET_ID)
@@ -2434,7 +2434,7 @@ def obs_refresh_cmd(_rest):
 
 def obs_collection_cmd(rest):
     """`racecast obs collection` reports the active OBS scene collection; add `set` to
-    switch OBS to the GT Endurance Racing collection. Best effort — OBS must be running
+    switch OBS to the GT Racing Endurance collection. Best effort — OBS must be running
     with obs-websocket reachable. A mismatch exits non-zero so scripts/CI notice;
     `set` exits non-zero on failure so the Control Center job shows red."""
     import obs_ws

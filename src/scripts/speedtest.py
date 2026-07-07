@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in Ookla bandwidth speed test for the GT Endurance Racing broadcast setup.
+"""Opt-in Ookla bandwidth speed test for the GT Racing broadcast setup.
 
 Wraps the Ookla `speedtest` CLI: runs it, parses its --format=json output into a
 small record, appends that record to a machine-level JSONL history (trimmed to the

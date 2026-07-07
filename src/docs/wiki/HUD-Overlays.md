@@ -129,7 +129,7 @@ html, body { font-family: "League", "Arial Narrow", sans-serif; }
 ## OBS collection naming
 
 Per-league overlay styling pairs naturally with a per-league OBS scene collection. The
-naming convention is **`GT Endurance Racing — <league>`** (set via the profile's
+naming convention is **`GT Racing Endurance — <league>`** (set via the profile's
 `OBS_COLLECTION`); switch OBS to it with `racecast obs collection set`. See
 [League profiles](Profiles) and [OBS & scenes](OBS-Setup).
 

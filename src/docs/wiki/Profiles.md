@@ -41,7 +41,7 @@ DISCORD_WEBHOOK_URL=
 | **`SHEET_PUSH_URL`** *(optional)* | The Apps Script write webhook (the `/exec` URL **including** its `?key=…` secret) shared by the race timer and the director panel's sheet controls. Unset = those write-backs are read-only. See [Sheet-Webhook](Sheet-Webhook). |
 | **`INTRO_URL` / `OUTRO_URL`** *(optional)* | Override the Intro/Outro clip URLs that normally come from the Sheet's Assets tab (used by `racecast media`). |
 | **`LOGO`** *(optional)* | A logo image (path relative to the profile dir) for the Control Center. |
-| **`OBS_COLLECTION`** *(optional)* | The OBS scene-collection name this league uses, so several leagues keep separate collections in OBS on one machine. Blank = the per-league convention `GT Endurance Racing — <league>`. |
+| **`OBS_COLLECTION`** *(optional)* | The OBS scene-collection name this league uses, so several leagues keep separate collections in OBS on one machine. Blank = the per-league convention `GT Racing Endurance — <league>`. |
 | **`CONSOLE_SECRET`** *(auto-managed)* | The per-league secret signing the `/console` crew tokens; **auto-generated on first relay start** and shared across a league's producers via export/import — never set it by hand. See [Configuration](Configuration) and [Remote access](Remote-access). |
 | **`DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`** *(optional)* | Per-league Discord **OAuth app** credentials. Both set → crew can sign in to the [Console](Console) with Discord (matched to the Crew tab's `Discord` column); absent → signed `racecast links` are the only entry path. Setup: [Console & cockpit setup](Console-Setup). |
 | **`DISCORD_WEBHOOK_URL`** *(optional)* | A Discord **channel webhook** (not the OAuth app). Set → the relay posts stream-link submissions and health alerts there; absent → those pings are no-ops. Setup: [Console & cockpit setup](Console-Setup). |
@@ -114,9 +114,9 @@ Then run the per-league setup steps for it — `racecast graphics`, `racecast me
 ## Per-league OBS collection
 
 Each profile gets its own localized OBS import file at
-`runtime/<name>/GT_Endurance.import.json`, named after the profile's `OBS_COLLECTION`
+`runtime/<name>/GT_Racing_Endurance.import.json`, named after the profile's `OBS_COLLECTION`
 (blank = the league's `NAME`). The per-league naming convention is
-**`GT Endurance Racing — <league>`**, so OBS can hold a separate scene collection per
+**`GT Racing Endurance — <league>`**, so OBS can hold a separate scene collection per
 league on one machine. After importing, switch OBS to a league's collection with:
 
 ```bash

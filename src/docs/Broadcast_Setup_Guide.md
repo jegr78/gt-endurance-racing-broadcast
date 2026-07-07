@@ -1,4 +1,4 @@
-# GT Endurance Racing Broadcast — Setup Guide
+# GT Racing Broadcast — Setup Guide
 
 This guide has moved to the project wiki, which is always current:
 
