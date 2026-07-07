@@ -544,6 +544,13 @@ def _relay_daemon_argv(rest, frozen):
         return [sys.executable, "relay", "run"] + list(rest)
     return [sys.executable, _relay_script()] + _relay_runtime_args() + list(rest)
 
+def _setup_import_name(kind=None):
+    """Filename of the localized OBS import for `kind` (default: RACECAST_KIND env).
+    Solo profiles get GT_Solo.import.json; endurance/unknown get GT_Endurance.import.json."""
+    if kind is None:
+        kind = pcfg.normalize_kind(os.environ.get("RACECAST_KIND", ""))
+    return "GT_Solo.import.json" if kind == "solo" else "GT_Endurance.import.json"
+
 def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None, kind=None):
     """Extra argv for a one-shot. The asset writers (graphics/media/setup) get a
     profile-scoped --out (+ setup's --media/--graphics) so their output lands
@@ -563,7 +570,7 @@ def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None, kind=
     if command in RUNTIME_DIR_ONESHOTS:
         extra += ["--runtime-dir", base_dir]
     if "--out" not in rest:
-        setup_name = "GT_Solo.import.json" if kind == "solo" else "GT_Endurance.import.json"
+        setup_name = _setup_import_name(kind)
         out = {"graphics": os.path.join(runtime_dir, "graphics"),
                "media": os.path.join(runtime_dir, "media"),
                "brands": os.path.join(runtime_dir, "brands"),
@@ -6023,7 +6030,7 @@ def _mtime(path):
         return None
 
 def _init_import_json():
-    return os.path.join(_runtime_dir(), "GT_Endurance.import.json")
+    return os.path.join(_runtime_dir(), _setup_import_name())
 
 def _init_companion_cfg():
     return os.path.join(_runtime_dir(), "racecast-buttons.companionconfig")

@@ -917,6 +917,35 @@ def t_oneshot_extra_setup_out_is_kind_aware():
                             rd, base, kind="solo") == []
 
 
+def t_setup_import_name_by_kind():
+    # #304 follow-up: the kind-aware setup import filename is shared logic --
+    # both _oneshot_extra and the init wizard's "is setup already done?" probe
+    # (_init_import_json) must resolve to the SAME basename for a given kind.
+    assert m._setup_import_name("solo") == "GT_Solo.import.json"
+    assert m._setup_import_name("endurance") == "GT_Endurance.import.json"
+    assert m._setup_import_name("") == "GT_Endurance.import.json"
+
+
+def t_init_import_json_is_kind_aware():
+    # #304: _init_import_json used to hardcode GT_Endurance.import.json, so for
+    # a solo profile (whose setup writes GT_Solo.import.json) the init wizard
+    # never detected setup as done and kept re-running it. It must follow
+    # RACECAST_KIND the same way _oneshot_extra's setup default does.
+    saved = os.environ.pop("RACECAST_KIND", None)
+    try:
+        os.environ["RACECAST_KIND"] = "solo"
+        assert m._init_import_json().endswith("GT_Solo.import.json")
+        os.environ["RACECAST_KIND"] = "endurance"
+        assert m._init_import_json().endswith("GT_Endurance.import.json")
+        os.environ.pop("RACECAST_KIND", None)
+        assert m._init_import_json().endswith("GT_Endurance.import.json")
+    finally:
+        if saved is None:
+            os.environ.pop("RACECAST_KIND", None)
+        else:
+            os.environ["RACECAST_KIND"] = saved
+
+
 def t_brands_oneshot_mapping_and_out():
     assert m.ONESHOT_MAP["brands"] == "relay/get-brands.py"
     assert "brands" in m.ONESHOTS
