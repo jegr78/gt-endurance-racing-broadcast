@@ -467,6 +467,20 @@
   .partinput { width: 100%; padding: 8px; font: 700 15px monospace; letter-spacing: .5px;
     background: #0d0f14; color: #e8eaed; border: 1px solid #3a3f4a; border-radius: 6px; }
   #partModalConfirm:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* Kind-conditional cut (#307): hide A/B feed + schedule + submission surfaces
+     in solo; reveal the POV editor (which lives inside #urlsBox) as its own card.
+     Endurance = no `.solo` class → byte-identical. */
+  body.solo #feedsSec,
+  body.solo #stA,
+  body.solo #stB,
+  body.solo .pvtile[data-feed="A"],
+  body.solo .pvtile[data-feed="B"],
+  body.solo #urlsBox > summary,
+  body.solo #raceSched,
+  body.solo #qualSched,
+  body.solo #modeSwitch,
+  body.solo #subsBox { display: none !important; }
 </style>
 </head>
 <body>
@@ -593,7 +607,7 @@
     </div>
   </section>
 
-  <section class="bus"><div class="cap">Feeds</div>
+  <section class="bus" id="feedsSec"><div class="cap">Feeds</div>
     <div class="body">
       <div class="keys" id="feedsBus"></div>
       <div class="hint" id="feedHealth"></div>
@@ -1400,9 +1414,12 @@ async function relayPoll(){
     const r = await fetch("/status", {cache:"no-store"});
     const d = await r.json();
     relayLed(true); clearBanner("relay");
+    const solo = d.solo === true;         // feed-less solo relay (#302)
+    applySolo(solo);
     renderEventTitle(d.event_title);          // header subtitle + tab title (#207)
     // On-air feed = the lower stint index (mirrors the relay's live_feed()).
-    pvMarkOnAir(d.feeds ? (d.feeds.A.index <= d.feeds.B.index ? "A" : "B") : null);
+    pvMarkOnAir(!solo && d.feeds && d.feeds.A
+      ? (d.feeds.A.index <= d.feeds.B.index ? "A" : "B") : null);
     // Aggregate health pill (relay heartbeat). Version-skew safe: an older relay
     // without d.health shows '—'.
     const HP = {green:["OK","ok"], yellow:["DEGRADED","warn"], red:["CRITICAL","air"]};
@@ -1412,8 +1429,10 @@ async function relayPoll(){
     $("#stHealth").title = (d.health && d.health.reasons && d.health.reasons.length)
       ? d.health.reasons.join(" · ") : "all systems green";
     const n = d.schedule_len;
-    statePill($("#stA"), "A", "S" + d.feeds.A.stint, n, d.feeds.A.state, d.feeds.A.down);
-    statePill($("#stB"), "B", "S" + d.feeds.B.stint, n, d.feeds.B.state, d.feeds.B.down);
+    if (!solo){
+      statePill($("#stA"), "A", "S" + d.feeds.A.stint, n, d.feeds.A.state, d.feeds.A.down);
+      statePill($("#stB"), "B", "S" + d.feeds.B.stint, n, d.feeds.B.state, d.feeds.B.down);
+    }
     if (d.pov){
       const ps = d.pov.state || "";                       // guard: version-skewed relay
       let [txt, cls] = FEED_STATE[ps] || [ps.toUpperCase(), ""];
@@ -1422,19 +1441,25 @@ async function relayPoll(){
       $("#stPov").innerHTML = "POV <b>" + (txt || "—") + "</b>";
     } else { $("#stPov").className = "st"; $("#stPov").innerHTML = "POV <b>—</b>"; }
     if (povVisBtn) povVisBtn.classList.toggle("on", !!(d.pov && d.pov.shown));
-    const lines = [healthLine("A", d.feeds.A), healthLine("B", d.feeds.B)];
-    if (d.pov && d.pov.state !== "stopped") lines.push(healthLine("POV", d.pov));
-    if (d.mode === "qualifying")
-      lines.unshift('<span class="warnline">QUALIFYING MODE — Feed A serves the Qualifying tab (race schedule paused)</span>');
-    // One mode-aware schedule block: applyMode toggles the race/qualifying
-    // regions + the mode chip + the switch label. POV stays visible in both.
-    applyMode(d.mode === "qualifying");
-    $("#feedHealth").innerHTML = lines.filter(Boolean).join("<br>");
+    if (!solo){
+      const lines = [healthLine("A", d.feeds.A), healthLine("B", d.feeds.B)];
+      if (d.pov && d.pov.state !== "stopped") lines.push(healthLine("POV", d.pov));
+      if (d.mode === "qualifying")
+        lines.unshift('<span class="warnline">QUALIFYING MODE — Feed A serves the Qualifying tab (race schedule paused)</span>');
+      // One mode-aware schedule block: applyMode toggles the race/qualifying
+      // regions + the mode chip + the switch label. POV stays visible in both.
+      applyMode(d.mode === "qualifying");
+      $("#feedHealth").innerHTML = lines.filter(Boolean).join("<br>");
+    } else {
+      $("#feedHealth").innerHTML = "";
+    }
     // Feed-down alarm: a feed that was live and dropped unexpectedly (not a
     // handover). Distinct red banner so the director acts (RELOAD or cut away).
     const downNames = [];
-    if (d.feeds.A.down) downNames.push("A");
-    if (d.feeds.B.down) downNames.push("B");
+    if (!solo){
+      if (d.feeds.A.down) downNames.push("A");
+      if (d.feeds.B.down) downNames.push("B");
+    }
     if (d.pov && d.pov.down) downNames.push("POV");
     if (downNames.length)
       setBanner("feeddown", "red",
@@ -1449,8 +1474,8 @@ async function relayPoll(){
     else clearBanner("cookies");
     if (d.obs && d.obs.reachable === false)
       setBanner("obs", "amber",
-        "OBS NOT REACHABLE — NEXT can't auto-cut · use the manual FEED/scene buttons; " +
-        "Feed " + (d.feeds.A.state === "serving" ? "A" : "B") + " state shown above");
+        "OBS NOT REACHABLE — NEXT can't auto-cut · use the manual FEED/scene buttons" +
+        (solo ? "" : "; Feed " + (d.feeds.A.state === "serving" ? "A" : "B") + " state shown above"));
     else clearBanner("obs");
   }catch(e){
     relayLed(false);
@@ -2041,6 +2066,15 @@ function applyMode(qualifying){
   $("#modeChip").textContent = qualifying ? "QUALIFYING" : "RACE";
   $("#modeChip").classList.toggle("qual", qualifying);
   $("#modeSwitch").textContent = qualifying ? "switch → RACE" : "switch → QUALIFYING";
+}
+// Kind-conditional cut (#307): a feed-less solo relay reports {solo:true}. Hide
+// the A/B feed + schedule + submission affordances and reveal the POV editor as
+// its own card. Endurance (solo=false) is byte-identical — no class is set.
+function applySolo(isSolo){
+  document.body.classList.toggle("solo", !!isSolo);
+  const box = $("#urlsBox");
+  if (box && isSolo) box.open = true;   // POV lives in the schedule <details>;
+                                        // force it open so the POV card shows.
 }
 function qualRowBusy(){
   const tr = $("#qualRow");
