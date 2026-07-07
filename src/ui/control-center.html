@@ -451,6 +451,14 @@
   .badge.lvl-green .dot { background: #2e7d32; }
   .badge.lvl-yellow .dot { background: #f9a825; }
   .badge.lvl-red .dot { background: #c62828; }
+  /* Kind-conditional UI (#307): a solo profile hides the feed/schedule surfaces
+     and reveals the solo-only device pickers. Endurance = no `.solo` class. */
+  body.solo [data-nav="streams"],
+  body.solo [data-view="streams"],
+  body.solo #home-feeds-row { display: none !important; }
+  #dev-head, #dev-section { display: none; }  /* solo-only; hidden for endurance */
+  body.solo #dev-head { display: flex; }
+  body.solo #dev-section { display: block; }
 </style>
 </head>
 <body>
@@ -627,7 +635,7 @@
           <div class="row"><span class="name">Race timer</span>
             <span class="badge" id="h-timer"><span class="dot"></span><span>…</span></span>
             <span class="dim grow" id="hd-timer"></span></div>
-          <div class="row"><span class="name">Feeds</span>
+          <div class="row" id="home-feeds-row"><span class="name">Feeds</span>
             <span class="dim grow" id="hd-feeds">start the relay for live stats</span></div>
         </section>
         <section class="tiles">
@@ -692,8 +700,19 @@
           <div class="viewhead"><h3>New profile</h3></div>
           <div class="row"><span class="name">Name</span>
             <input id="newprofile-name" placeholder="e.g. erf" aria-label="New profile name">
-            <span class="name">Copy from</span>
+            <span class="name">Kind</span>
+            <select id="newprofile-kind" aria-label="Profile kind"
+                    onchange="onKindChange()">
+              <option value="endurance">Endurance (feeds + Sheet)</option>
+              <option value="solo">Solo (local capture + webcam)</option>
+            </select>
+            <span class="name" id="newprofile-from-label">Copy from</span>
             <select id="newprofile-from" aria-label="Template to copy from"></select>
+            <span class="name" id="newprofile-template-label" hidden>Template</span>
+            <select id="newprofile-template" aria-label="Solo starter template" hidden>
+              <option value="commentary">Commentary</option>
+              <option value="pov">POV (driver)</option>
+            </select>
             <button onclick="newProfile()">
               <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Create</button></div>
           <div class="enverr" id="newprofile-err" hidden></div>
@@ -987,13 +1006,13 @@
             <b>runtime/fonts/</b>. When a league's design uses a font, it is copied into that league's
             <b>overlay/fonts/</b> on save, so the overlay works offline and <b>profile export</b> stays self-contained.</p>
         </section>
-        <div class="viewhead"><h3>Solo devices</h3><span class="sub">webcam &amp; capture-card selection for solo mode</span>
+        <div class="viewhead" id="dev-head"><h3>Solo devices</h3><span class="sub">webcam &amp; capture-card selection for solo mode</span>
           <span class="spacer"></span>
           <button onclick="loadDevices()">
             <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button>
           <button id="dev-save" onclick="saveDevices()">
             <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button></div>
-        <section>
+        <section id="dev-section">
           <div class="enverr" id="dev-err" hidden></div>
           <div class="row"><span class="name">Webcam</span>
             <select id="dev-webcam" style="flex:1" aria-label="Webcam device" disabled>
@@ -2852,6 +2871,18 @@ async function loadProfiles(force) {
   loadCrew();                             // Crew editor for the active profile
   loadBackups();                          // Looks card for the active profile
   fetchAssetFiles();                      // graphics/media gallery for the active profile
+  applyKindGating(d);
+}
+
+function applyKindGating(data) {
+  // Reflect the ACTIVE profile's kind onto <body> so kind-specific CSS can
+  // hide feed surfaces / reveal solo controls. Endurance = no class.
+  let kind = 'endurance';
+  if (data && data.ok && Array.isArray(data.profiles)) {
+    const a = data.profiles.find(p => p.name === data.active);
+    if (a && a.kind) kind = a.kind;
+  }
+  document.body.classList.toggle('solo', kind === 'solo');
 }
 
 async function useProfile(name) {
@@ -2879,15 +2910,28 @@ async function useProfile(name) {
   offerRestart();                         // running services still serve the old league
 }
 
+function onKindChange() {
+  const solo = $('newprofile-kind').value === 'solo';
+  // Solo generates a fresh sheet-less profile — Copy-from is not applicable
+  // (the CLI forbids --from with --kind solo).
+  $('newprofile-template').hidden = !solo;
+  $('newprofile-template-label').hidden = !solo;
+  $('newprofile-from').hidden = solo;
+  $('newprofile-from-label').hidden = solo;
+}
+
 async function newProfile() {
   const name = $('newprofile-name').value.trim();
-  const from = $('newprofile-from').value;
+  const kind = $('newprofile-kind').value;
+  const solo = kind === 'solo';
+  const from = solo ? null : $('newprofile-from').value;
+  const template = solo ? $('newprofile-template').value : null;
   if (!name) { showProfileErr('newprofile-err', 'Enter a profile name.'); return; }
   let d;
   try {
     d = await (await fetch('/api/profile/new', {method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name, from})})).json();
+        body: JSON.stringify({name, from, kind, template})})).json();
   } catch (e) { showProfileErr('newprofile-err', 'Control Center not reachable.'); return; }
   if (!d.ok) { showProfileErr('newprofile-err', d.error || 'could not create profile'); return; }
   $('newprofile-err').hidden = true;
