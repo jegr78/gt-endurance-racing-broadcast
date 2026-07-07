@@ -30,7 +30,7 @@
   racecast backup    {create|list|restore|delete} <label>   # named look snapshots (overlay+graphics+media)
   racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
   racecast freeport [PORT...] [--force]       # free a stuck feed port (default 53001-53003); kills orphaned holders, refuses a running relay/streams
-  racecast device-scan [--webcam VAL] [--capture VAL]  # enumerate OBS video-capture devices and save the pick(s) to .env (interactive when no flags given)
+  racecast device-scan [--webcam VAL] [--capture VAL] [--mic VAL]  # enumerate OBS video-capture devices + microphones and save the pick(s) to .env (interactive when no flags given)
   racecast preflight | speedtest [--json] | cookies [twitch] [browser] | graphics | media | brands | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   racecast obs-browser [--yes]               # Linux/ARM64: build & install OBS's Browser Source plugin from source (needed for the relay HUD)
   racecast export companion [--out PATH]     # write the Companion button config
@@ -2556,13 +2556,15 @@ def resolve_device_selection(devices, token):
 
 
 DEVICE_SCAN_INPUT_NAME = "Solo Capture Device"
+DEVICE_SCAN_MIC_INPUT_NAME = "Commentary Mic Device"
 
 
 def _parse_device_scan_args(rest):
-    """(webcam_token_or_None, capture_token_or_None). Only --webcam/--capture are
-    recognized; anything else is a usage error."""
+    """(webcam_token_or_None, capture_token_or_None, mic_token_or_None). Only
+    --webcam/--capture/--mic are recognized; anything else is a usage error."""
     webcam = None
     capture = None
+    mic = None
     i = 0
     while i < len(rest):
         arg = rest[i]
@@ -2572,39 +2574,54 @@ def _parse_device_scan_args(rest):
         elif arg == "--capture" and i + 1 < len(rest):
             capture = rest[i + 1]
             i += 2
+        elif arg == "--mic" and i + 1 < len(rest):
+            mic = rest[i + 1]
+            i += 2
         else:
-            raise ValueError("usage: racecast device-scan [--webcam VAL] [--capture VAL]")
-    return webcam, capture
+            raise ValueError(
+                "usage: racecast device-scan [--webcam VAL] [--capture VAL] [--mic VAL]")
+    return webcam, capture, mic
 
 
 def device_scan_cmd(rest):
-    """`racecast device-scan [--webcam VAL] [--capture VAL]` — enumerate the OBS
-    video-capture devices available to the "Solo Capture Device" input and write
-    the operator's picks to the machine .env as RACECAST_WEBCAM/RACECAST_CAPTURE
-    (#304). VAL is a 1-based list index, a case-insensitive name substring, or an
-    exact device value; blank/omitted leaves that slot untouched. Without flags
-    and on a TTY it prompts interactively; headless it just lists the devices and
-    hints at the flags (never blocks on input())."""
+    """`racecast device-scan [--webcam VAL] [--capture VAL] [--mic VAL]` — enumerate
+    the OBS video-capture devices available to the "Solo Capture Device" input and
+    the microphones available to the "Commentary Mic Device" input, then write the
+    operator's picks to the machine .env as RACECAST_WEBCAM/RACECAST_CAPTURE/
+    RACECAST_MIC (#304, mic added in #307). VAL is a 1-based list index (into its
+    own list — video indices for --webcam/--capture, mic indices for --mic), a
+    case-insensitive name substring, or an exact device value; blank/omitted leaves
+    that slot untouched. Without flags and on a TTY it prompts interactively;
+    headless it just lists the devices and hints at the flags (never blocks on
+    input())."""
     import obs_ws
     try:
-        webcam_tok, capture_tok = _parse_device_scan_args(rest)
+        webcam_tok, capture_tok, mic_tok = _parse_device_scan_args(rest)
     except ValueError as exc:
         sys.exit(str(exc))
     devices, note = obs_ws.enumerate_device_options(
         DEVICE_SCAN_INPUT_NAME, obs_ws.device_property_name(sys.platform))
-    if not devices:
-        sys.exit(f"device-scan: {note or 'no devices found'} — "
+    mics, mic_note = obs_ws.enumerate_device_options(
+        DEVICE_SCAN_MIC_INPUT_NAME, obs_ws.device_property_name(sys.platform, kind="audio"))
+    if not devices and not mics:
+        sys.exit(f"device-scan: {note or mic_note or 'no devices found'} — "
                  "import the solo collection first (racecast setup), then start OBS.")
-    print("Available video devices:")
-    for i, d in enumerate(devices, start=1):
-        print(f"  {i}. {d['name']}")
-    if webcam_tok is None and capture_tok is None:
+    if devices:
+        print("Available video devices:")
+        for i, d in enumerate(devices, start=1):
+            print(f"  {i}. {d['name']}")
+    if mics:
+        print("Available microphones:")
+        for i, d in enumerate(mics, start=1):
+            print(f"  {i}. {d['name']}")
+    if webcam_tok is None and capture_tok is None and mic_tok is None:
         if not sys.stdin.isatty():
-            print("racecast: pass --webcam VAL and/or --capture VAL to select one "
-                 "(non-interactive session).")
+            print("racecast: pass --webcam VAL, --capture VAL, and/or --mic VAL to "
+                 "select one (non-interactive session).")
             return None
         webcam_tok = input("Webcam [index/name, blank=skip]: ")
         capture_tok = input("Capture [index/name, blank=skip]: ")
+        mic_tok = input("Mic [index/name, blank=skip]: ")
     errors = []
     webcam_val, werr = resolve_device_selection(devices, webcam_tok or "")
     if werr:
@@ -2612,6 +2629,9 @@ def device_scan_cmd(rest):
     capture_val, cerr = resolve_device_selection(devices, capture_tok or "")
     if cerr:
         errors.append(f"capture — {cerr}")
+    mic_val, mierr = resolve_device_selection(mics, mic_tok or "")
+    if mierr:
+        errors.append(f"mic — {mierr}")
     if errors:
         sys.exit("device-scan: " + "; ".join(errors))
     updates = {}
@@ -2619,6 +2639,8 @@ def device_scan_cmd(rest):
         updates["RACECAST_WEBCAM"] = webcam_val
     if capture_val is not None:
         updates["RACECAST_CAPTURE"] = capture_val
+    if mic_val is not None:
+        updates["RACECAST_MIC"] = mic_val
     if not updates:
         print("device-scan: nothing to write (no selection made).")
         return None
@@ -4556,31 +4578,41 @@ def env_upsert_data(updates, path=None):
 
 def devices_enumerate_data():
     """Control Center General-Settings data: the OBS video devices offered to
-    the "Solo Capture Device" input (webcam/capture share one device list).
-    {ok, devices:[{name,value}], note}. ok is False when OBS is unreachable or
-    the solo input is absent (note explains); the front-end disables the
-    dropdowns and shows note. Never raises (obs_ws.enumerate_device_options is
+    the "Solo Capture Device" input (webcam/capture share one device list), plus
+    the microphones offered to the "Commentary Mic Device" input (#307).
+    {ok, devices:[{name,value}], note, mic:[{name,value}], mic_note}. ok reflects
+    the video enumeration only (webcam/capture, unchanged contract); mic_note
+    explains a failed/empty mic list independently — the front-end disables each
+    dropdown on its own signal. Never raises (obs_ws.enumerate_device_options is
     best-effort)."""
     import obs_ws
     items, note = obs_ws.enumerate_device_options(
         DEVICE_SCAN_INPUT_NAME, obs_ws.device_property_name(sys.platform))
+    mic_items, mic_note = obs_ws.enumerate_device_options(
+        DEVICE_SCAN_MIC_INPUT_NAME, obs_ws.device_property_name(sys.platform, kind="audio"))
     return {"ok": not note,
             "devices": [{"name": d["name"], "value": d["value"]} for d in items],
-            "note": note}
+            "note": note,
+            "mic": [{"name": d["name"], "value": d["value"]} for d in mic_items],
+            "mic_note": mic_note}
 
 
-def devices_write_data(webcam, capture):
-    """Upsert the chosen webcam/capture device ids into the machine .env
-    (RACECAST_WEBCAM/RACECAST_CAPTURE). A blank/None value leaves that key
-    unchanged; both blank -> {ok:false, error} (nothing to save)."""
+def devices_write_data(webcam, capture, mic=None, path=None):
+    """Upsert the chosen webcam/capture/mic device ids into the machine .env
+    (RACECAST_WEBCAM/RACECAST_CAPTURE/RACECAST_MIC, mic added #307). A blank/None
+    value leaves that key unchanged; all blank -> {ok:false, error} (nothing to
+    save). `path` is a test seam (mirrors env_upsert_data's), unused in production
+    (resolves the real machine .env)."""
     updates = {}
     if (webcam or "").strip():
         updates["RACECAST_WEBCAM"] = webcam.strip()
     if (capture or "").strip():
         updates["RACECAST_CAPTURE"] = capture.strip()
+    if (mic or "").strip():
+        updates["RACECAST_MIC"] = mic.strip()
     if not updates:
         return {"ok": False, "error": "no device selected"}
-    return env_upsert_data(updates)
+    return env_upsert_data(updates, path=path)
 
 
 def _active_profile_env_strict():

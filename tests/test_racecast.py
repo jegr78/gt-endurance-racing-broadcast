@@ -3860,6 +3860,36 @@ def t_resolve_device_selection_by_index_and_id():
     assert m.resolve_device_selection(devs, "") == (None, None)   # blank = skip/leave
 
 
+def t_parse_device_scan_args_mic():
+    # #307: --mic is a third recognized flag alongside --webcam/--capture, mapping
+    # to writing RACECAST_MIC via env_upsert_data (preserves other keys).
+    assert m._parse_device_scan_args([]) == (None, None, None)
+    assert m._parse_device_scan_args(["--mic", "2"]) == (None, None, "2")
+    assert m._parse_device_scan_args(
+        ["--webcam", "1", "--capture", "2", "--mic", "3"]) == ("1", "2", "3")
+    try:
+        m._parse_device_scan_args(["--bogus", "x"])
+        raise AssertionError("expected ValueError for an unrecognized flag")
+    except ValueError:
+        pass  # expected: unrecognized flag
+
+
+def t_devices_write_data_accepts_mic():
+    # devices_write_data (the /api/devices/select backing) accepts a mic value and
+    # upserts RACECAST_MIC without disturbing unrelated .env keys (#307).
+    import tempfile, os as _os
+    d = tempfile.mkdtemp(prefix="racecast-devwrite-mic-")
+    p = _os.path.join(d, ".env")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("RACECAST_OBS_WS_PASSWORD=secret\n")
+    res = m.devices_write_data(None, None, "MIC-ID", path=p)
+    assert res["ok"], res
+    with open(p, encoding="utf-8") as fh:
+        text = fh.read()
+    assert "RACECAST_MIC=MIC-ID" in text
+    assert "RACECAST_OBS_WS_PASSWORD=secret" in text
+
+
 def t_route_device_scan():
     # device-scan is a single-word command (like freeport/links) that forwards
     # any flags (--webcam/--capture) straight through to device_scan_cmd (#304).

@@ -34,6 +34,8 @@ U = {
     "cap_scene": "bbbbbbb4-0000-4000-8000-000000000004",
     "cam_scene": "bbbbbbb5-0000-4000-8000-000000000005",
     "program": "ccccccc0-0000-4000-8000-000000000000",
+    "mic_src": "aaaaaaa6-0000-4000-8000-000000000006",
+    "mic_scene": "bbbbbbb6-0000-4000-8000-000000000006",
 }
 
 DROP_SCENES = {"Stint", "Splitscreen"}
@@ -42,10 +44,15 @@ DROP_SOURCES = {"Feed A", "Feed B"}
 # Committed device tokens (localized per OS by setup-assets.localize_device_sources).
 CAPTURE_TOKEN = "__RACECAST_CAPTURE__"
 WEBCAM_TOKEN = "__RACECAST_WEBCAM__"
+MIC_TOKEN = "__RACECAST_MIC__"
+
+# Scenes the "Commentary Mic" nested scene is wired into as an item — audible
+# everywhere except the rendered Intro/Outro clips (which carry their own audio).
+MIC_TARGET_SCENES = ("Program", "Interview", "Standby", "Intermission", "Discord")
 
 # scene_order after derivation (drops Stint/Splitscreen, adds the device scenes).
 SCENE_ORDER = ["Program", "Standby", "Intro", "Outro", "Interview", "Discord",
-               "Intermission", "Solo Capture", "Solo Webcam"]
+               "Intermission", "Solo Capture", "Solo Webcam", "Commentary Mic"]
 
 START_SCENE = "Standby"
 
@@ -56,16 +63,19 @@ def _by_name(sources):
     return {s.get("name"): s for s in sources}
 
 
-def _device_leaf(template_leaf, uuid, name, token):
-    """Clone a proven video-input leaf source and retarget it as a macOS AV capture
-    source carrying the given token. Only name/uuid/id/settings are overridden — every
-    other OBS-required field is inherited from the template."""
+def _device_leaf(template_leaf, uuid, name, token, source_id="av_capture_input",
+                  settings_key="device"):
+    """Clone a proven leaf source and retarget it as a device source carrying the
+    given token. Only name/uuid/id/versioned_id/settings are overridden — every
+    other OBS-required field is inherited from the template. Defaults match the
+    committed macOS video-capture form (av_capture_input/device); the audio mic
+    leaf overrides source_id/settings_key to the macOS coreaudio form."""
     leaf = copy.deepcopy(template_leaf)
     leaf["name"] = name
     leaf["uuid"] = uuid
-    leaf["id"] = "av_capture_input"
-    leaf["versioned_id"] = "av_capture_input"
-    leaf["settings"] = {"device": token}
+    leaf["id"] = source_id
+    leaf["versioned_id"] = source_id
+    leaf["settings"] = {settings_key: token}
     return leaf
 
 
@@ -84,6 +94,29 @@ def _device_scene(discord_scene, uuid, name, src_uuid, src_name):
     item["pos"] = {"x": 0.0, "y": 0.0}
     item["bounds"] = {"x": 1920.0, "y": 1080.0}
     scene["settings"]["items"] = [item]
+    return scene
+
+
+def _nested_scene_item(template_item, name, src_uuid, item_id):
+    """Clone a proven audio-style scene item (bounds_type 0 — no visual footprint,
+    the shape already used to reference the "Discord" scene from other scenes) and
+    retarget it to point at a different nested scene. Used to wire the "Commentary
+    Mic" scene into the five target scenes."""
+    it = copy.deepcopy(template_item)
+    it["name"] = name
+    it["source_uuid"] = src_uuid
+    it["id"] = item_id
+    return it
+
+
+def _add_mic_reference(scene, mic_ref_template, mic_scene_uuid):
+    """Deep-copy `scene` and append a "Commentary Mic" nested-scene item — the
+    same pattern other scenes already use to reference "Discord"."""
+    scene = copy.deepcopy(scene)
+    next_id = int(scene["settings"].get("id_counter", 0)) + 1
+    item = _nested_scene_item(mic_ref_template, "Commentary Mic", mic_scene_uuid, next_id)
+    scene["settings"]["items"].append(item)
+    scene["settings"]["id_counter"] = next_id
     return scene
 
 
@@ -121,6 +154,9 @@ def derive():
 
     # The Feed POV item is the cleanest transform template for the two new PiP items.
     pov_item = next(it for it in items if it.get("name") == "Feed POV")
+    # The existing "Discord" nested-scene reference is the template for wiring in
+    # the new "Commentary Mic" nested-scene reference (same bounds_type-0 shape).
+    discord_ref_item = next(it for it in items if it.get("name") == "Discord")
 
     # Solo Capture: full-frame background at the BOTTOM of the z-order (rendered first).
     cap_item = _program_item(pov_item, "Solo Capture", U["cap_scene"],
@@ -134,9 +170,13 @@ def derive():
         new_items.append(it)
         if it.get("name") == "Feed POV":
             new_items.append(cam_item)
+    # Commentary Mic: audible in Program (nested-scene reference, no visual footprint).
+    mic_item_program = _nested_scene_item(discord_ref_item, "Commentary Mic",
+                                          U["mic_scene"], item_id=32)
+    new_items.append(mic_item_program)
     program["settings"]["items"] = new_items
     program["settings"]["id_counter"] = max(
-        int(program["settings"].get("id_counter", 0)), 31)
+        int(program["settings"].get("id_counter", 0)), 32)
 
     # Device leaf sources + wrapping scenes. The leaf is named distinctly from its
     # wrapping scene ("Solo Capture Device" vs the "Solo Capture" scene) — mirroring
@@ -149,11 +189,28 @@ def derive():
                               U["cap_src"], "Solo Capture Device")
     cam_scene = _device_scene(discord_scene, U["cam_scene"], "Solo Webcam",
                               U["cam_src"], "Solo Webcam Device")
+    # Commentary Mic device leaf (macOS coreaudio_input_capture form) + its wrapping
+    # scene (cloned from Discord, the audio-scene precedent).
+    mic_src = _device_leaf(pov_leaf, U["mic_src"], "Commentary Mic Device", MIC_TOKEN,
+                           source_id="coreaudio_input_capture", settings_key="device_id")
+    mic_scene = _device_scene(discord_scene, U["mic_scene"], "Commentary Mic",
+                              U["mic_src"], "Commentary Mic Device")
 
-    # Remove the endurance-only scenes/sources, then append the solo additions.
-    kept = [s for s in col["sources"]
-            if s.get("name") not in (DROP_SCENES | DROP_SOURCES)]
-    kept.extend([cap_scene, cam_scene, cap_src, cam_src, program])
+    # Wire the "Commentary Mic" scene into the remaining four target scenes (Program
+    # already got its reference above, built inline with the rest of its items).
+    other_targets = [n for n in MIC_TARGET_SCENES if n != "Program"]
+    mic_targets = {name: _add_mic_reference(by[name], discord_ref_item, U["mic_scene"])
+                   for name in other_targets}
+
+    # Remove the endurance-only scenes/sources, substitute the mic-wired scenes, then
+    # append the solo additions.
+    kept = []
+    for s in col["sources"]:
+        name = s.get("name")
+        if name in (DROP_SCENES | DROP_SOURCES):
+            continue
+        kept.append(mic_targets[name] if name in mic_targets else s)
+    kept.extend([cap_scene, cam_scene, mic_scene, cap_src, cam_src, mic_src, program])
     col["sources"] = kept
 
     col["scene_order"] = [{"name": n} for n in SCENE_ORDER]

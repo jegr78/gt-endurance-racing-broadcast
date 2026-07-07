@@ -119,13 +119,22 @@ def localize_discord_audio(collection, platform, web=False, browser="Firefox"):
 # (scene "Discord" wraps leaf "Discord Audio Capture"). A by-name lookup can therefore
 # never collide a device leaf with its wrapping scene.
 DEVICE_SOURCES = (
-    {"name": "Solo Capture Device", "env": "RACECAST_CAPTURE"},
-    {"name": "Solo Webcam Device",  "env": "RACECAST_WEBCAM"},
+    {"name": "Solo Capture Device", "env": "RACECAST_CAPTURE", "kind": "video"},
+    {"name": "Solo Webcam Device",  "env": "RACECAST_WEBCAM",  "kind": "video"},
+    {"name": "Commentary Mic Device", "env": "RACECAST_MIC",   "kind": "audio"},
 )
 DEVICE_VARIANTS = {
     "darwin": ("av_capture_input", "device"),        # AVFoundation device UID
     "win":    ("dshow_input",      "video_device_id"),  # "Name:\\?\\usb#..."
     "linux":  ("v4l2_input",       "device_id"),     # /dev/videoN
+}
+# Audio (mic) variant — same model as DEVICE_VARIANTS, one native input-capture kind
+# per OS, all keyed on "device_id" (cross-checked against obs_ws's audio device
+# property name by a test).
+AUDIO_VARIANTS = {
+    "darwin": ("coreaudio_input_capture", "device_id"),
+    "win":    ("wasapi_input_capture",    "device_id"),
+    "linux":  ("pulse_input_capture",     "device_id"),
 }
 
 
@@ -140,20 +149,34 @@ def device_variant(platform):
     return None
 
 
+def audio_variant(platform):
+    """(source id, device-id settings key) for this platform's mic input, or None
+    if unknown. Mirrors device_variant() but for AUDIO_VARIANTS."""
+    if platform.startswith("win"):
+        return AUDIO_VARIANTS["win"]
+    if platform == "darwin":
+        return AUDIO_VARIANTS["darwin"]
+    if platform.startswith("linux"):
+        return AUDIO_VARIANTS["linux"]
+    return None
+
+
 def localize_device_sources(collection, platform, env):
     """Rebuild each DEVICE_SOURCES source's id/versioned_id/settings for `platform`,
-    injecting env[<entry.env>] (default '') into the per-OS device-id key. Returns the
-    names with an EMPTY device value (caller warns). Absent source -> skipped. Unknown
-    platform -> sources left as-is, all treated as unset. Never raises (best-effort,
-    same contract as localize_discord_audio)."""
+    injecting env[<entry.env>] (default '') into the per-OS device-id key. Video
+    entries use device_variant(); audio entries (the commentary mic) use
+    audio_variant(). Returns the names with an EMPTY device value (caller warns).
+    Absent source -> skipped. Unknown platform -> sources left as-is, all treated as
+    unset. Never raises (best-effort, same contract as localize_discord_audio)."""
     env = env or {}
-    variant = device_variant(platform)
+    variant_fn = {"video": device_variant, "audio": audio_variant}
     by_name = {s.get("name"): s for s in collection.get("sources", [])}
     unset = []
     for entry in DEVICE_SOURCES:
         s = by_name.get(entry["name"])
         if s is None:
             continue
+        variant = variant_fn[entry.get("kind", "video")](platform)
         value = (env.get(entry["env"]) or "").strip()
         if variant is None or not value:
             unset.append(entry["name"])
