@@ -4525,6 +4525,35 @@ def env_upsert_data(updates, path=None):
     return env_write_data(entries, path=target)
 
 
+def devices_enumerate_data():
+    """Control Center General-Settings data: the OBS video devices offered to
+    the "Solo Capture Device" input (webcam/capture share one device list).
+    {ok, devices:[{name,value}], note}. ok is False when OBS is unreachable or
+    the solo input is absent (note explains); the front-end disables the
+    dropdowns and shows note. Never raises (obs_ws.enumerate_device_options is
+    best-effort)."""
+    import obs_ws
+    items, note = obs_ws.enumerate_device_options(
+        DEVICE_SCAN_INPUT_NAME, obs_ws.device_property_name(sys.platform))
+    return {"ok": not note,
+            "devices": [{"name": d["name"], "value": d["value"]} for d in items],
+            "note": note}
+
+
+def devices_write_data(webcam, capture):
+    """Upsert the chosen webcam/capture device ids into the machine .env
+    (RACECAST_WEBCAM/RACECAST_CAPTURE). A blank/None value leaves that key
+    unchanged; both blank -> {ok:false, error} (nothing to save)."""
+    updates = {}
+    if (webcam or "").strip():
+        updates["RACECAST_WEBCAM"] = webcam.strip()
+    if (capture or "").strip():
+        updates["RACECAST_CAPTURE"] = capture.strip()
+    if not updates:
+        return {"ok": False, "error": "no device selected"}
+    return env_upsert_data(updates)
+
+
 def _active_profile_env_strict():
     """(active_name, profile.env path) for the active profile, or (None, None)
     when no profile resolves. Distinct from _active_profile_env_path(), which
@@ -6243,6 +6272,8 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "speedtest": speedtest_data,
         "env_read": env_entries_data,
         "env_write": env_write_data,
+        "devices_enumerate": devices_enumerate_data,
+        "devices_write": devices_write_data,
         "profiles": profiles_data,
         "profile_logo": profile_logo,
         "profile_use": profile_use_data,

@@ -112,6 +112,8 @@ def make_handler(ctx):
     asset_files() -> dict, asset_roots() -> {kind: dir} (resolved live per call),
     tools() -> dict, apps() -> dict, preflight() -> dict, speedtest() -> dict,
     env_read() -> dict, env_write(entries) -> dict,
+    devices_enumerate() -> dict (OBS video-device list for the solo capture
+    input), devices_write(webcam, capture) -> dict (upsert into the .env),
     init_plan(browser) -> dict (wizard plan: per-step done/kind/op/instruction),
     init_step(key) -> dict (run one non-job wizard step, {ok, done} | {ok: False, error}),
     profile_export(name, assets) -> dict, profile_import(path, force) -> dict,
@@ -444,6 +446,13 @@ def make_handler(ctx):
                     return self._json({"ok": False,
                                        "error": f"could not read .env: {exc}"},
                                       code=500)
+            if path == "/api/devices":
+                try:
+                    return self._json(ctx["devices_enumerate"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not enumerate devices: {exc}"},
+                                      code=500)
             if path == "/api/profiles":
                 try:
                     return self._json(ctx["profiles"]())
@@ -613,6 +622,18 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"could not write .env: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/devices/select":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["devices_write"](body.get("webcam"), body.get("capture"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not save device selection: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
             if path == "/api/event-title":

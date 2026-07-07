@@ -69,7 +69,8 @@ def _slides_serve(rel):
     return p, "text/html; charset=utf-8"
 
 
-def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
+def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None,
+         devices_enumerate=None, devices_write=None):
     page = os.path.join(ROOT, "src", "ui", "control-center.html")
     return {"version": "test",
             "page_path": page,
@@ -137,6 +138,10 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "env_read": lambda: {"ok": True, "path": "/x/.env",
                                  "entries": [{"key": "RACECAST_SHEET_ID", "value": "abc"}]},
             "env_write": lambda entries: {"ok": True, "path": "/x/.env", "_got": entries},
+            "devices_enumerate": devices_enumerate or (lambda: {
+                "ok": True, "devices": [], "note": ""}),
+            "devices_write": devices_write or (lambda webcam, capture: {
+                "ok": True, "path": "/x/.env"}),
             "init_plan": init_plan or (lambda browser="firefox": {
                 "ok": True, "steps": [], "next_steps": []}),
             "init_step": init_step or (lambda key: {"ok": True, "key": key,
@@ -1062,6 +1067,74 @@ def t_env_post_malformed_body_is_400():
     try:
         req = urllib.request.Request(
             f"http://127.0.0.1:{port}/api/env", method="POST",
+            data=b"{not json", headers={"Content-Type": "application/json"})
+        try:
+            with _urlopen(req, timeout=5) as r:
+                code = r.status
+        except urllib.error.HTTPError as e:
+            code = e.code
+        assert code == 400
+    finally:
+        httpd.shutdown()
+
+
+def t_get_devices_returns_enumerated_list():
+    ctx = _ctx(devices_enumerate=lambda: {
+        "ok": True, "devices": [{"name": "Cam", "value": "v0"}], "note": ""})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/devices")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["devices"] == [{"name": "Cam", "value": "v0"}]
+    finally:
+        httpd.shutdown()
+
+
+def t_get_devices_route_error_is_500():
+    ctx = _ctx()
+    def boom():
+        raise RuntimeError("obs gone")
+    ctx["devices_enumerate"] = boom
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/devices")
+        assert code == 500 and "obs gone" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_post_devices_select_writes():
+    seen = {}
+    ctx = _ctx(devices_write=lambda w, c: seen.update(webcam=w, capture=c) or {
+        "ok": True, "_got": [w, c]})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/devices/select",
+                                {"webcam": "v0", "capture": "v1"})
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["_got"] == ["v0", "v1"]
+        assert seen == {"webcam": "v0", "capture": "v1"}
+    finally:
+        httpd.shutdown()
+
+
+def t_post_devices_select_validation_error_is_400():
+    ctx = _ctx(devices_write=lambda w, c: {"ok": False, "error": "no device selected"})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/devices/select", {"webcam": "", "capture": ""})
+        assert code == 400 and "no device selected" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_post_devices_select_malformed_body_is_400():
+    httpd, port = _serve(_ctx())
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/devices/select", method="POST",
             data=b"{not json", headers={"Content-Type": "application/json"})
         try:
             with _urlopen(req, timeout=5) as r:
