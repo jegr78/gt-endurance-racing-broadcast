@@ -590,3 +590,78 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 **Type consistency:** `kind` is a plain str throughout; `profile_new_data(..., kind=None, template=None)` matches the route call in Task 1 Step 11 and the `_ctx` fake signature in Step 9; `applySolo`/`applyKindGating` names are used consistently; the gated ids (`#home-feeds-row`, `#dev-section`, `#urlsBox`, `#feedsBus`, `.pvtile[data-feed]`) match the markup steps.
 
 **One deviation from the spec, by design:** the POV mechanism (see Spec coverage above) — reveal-in-place instead of DOM-move, to keep endurance byte-identical. No other divergence.
+
+---
+
+## Increment 2 (Tasks 4–5): full solo-capable panel OBS control + commentary mic
+
+See the spec's **Increment 2** section for the design. Global constraints above still bind (endurance byte-identical; English; no test disabled; no machine paths/real IPs; lint + full suite green). Both solo templates share ONE collection (`GT Racing Solo`).
+
+### Task 4: Commentary mic — collection + localization + device scan + CC dropdown
+
+**Files:**
+- Modify: `tools/derive-solo-templates.py` (add the mic leaf + scene + the 5 scene references + SCENE_ORDER)
+- Regenerate: `src/obs/GT_Solo_Commentary.json`, `src/obs/GT_Solo_POV.json` (via the derive script — never hand-edit)
+- Modify: `src/setup-assets.py` (audio variant + `RACECAST_MIC` localization)
+- Modify: `src/scripts/obs_ws.py` (audio device property name)
+- Modify: `src/racecast.py` (`device-scan --mic`; `/api/devices` mic list; select accepts `mic`)
+- Modify: `src/ui/ui_server.py` (`/api/devices` + `/api/devices/select` already exist — carry `mic` through)
+- Modify: `src/ui/control-center.html` (a third **Mic** dropdown in the Solo-devices section)
+- Modify: `.env.example` (document `RACECAST_MIC`)
+- Test: `tests/test_setup.py`, `tests/test_obsws.py`, `tests/test_racecast.py`, `tests/test_ui_server.py`, and the solo-template regeneration check (wherever `GT_Solo_*` is asserted — see `tests/` for the #303 test)
+
+**Interfaces / decisions (exact):**
+- Mic leaf source name: **`Commentary Mic Device`**; wrapper scene name: **`Commentary Mic`**; token: **`__RACECAST_MIC__`**; `.env` key: **`RACECAST_MIC`**.
+- Committed default source kind (macOS): `coreaudio_input_capture`, settings `{"device_id": "__RACECAST_MIC__"}`.
+- `AUDIO_VARIANTS = {"darwin": ("coreaudio_input_capture","device_id"), "win": ("wasapi_input_capture","device_id"), "linux": ("pulse_input_capture","device_id")}`.
+- Mic routing: the `Commentary Mic` scene is an item in **`Program`, `Interview`, `Standby`, `Intermission`, `Discord`** — NOT `Intro`/`Outro`.
+- Audio device enumeration property = **`device_id`** on every OS.
+
+- [ ] **Step 1 (derive script): add the mic to `tools/derive-solo-templates.py`.** Add fixed synthetic UUIDs for `mic_src` and `mic_scene` to the `U` dict (follow the existing style, no `uuid4()`). Build the mic leaf with `_device_leaf` — but note the leaf template is the video `pov_leaf`; for the audio mic set `id`/`versioned_id` to `coreaudio_input_capture` and `settings` to `{"device_id": MIC_TOKEN}` (define `MIC_TOKEN = "__RACECAST_MIC__"`). Clone the **Discord** scene (the audio-scene precedent already used by `_device_scene`) into a `Commentary Mic` scene wrapping the mic leaf. Add the `Commentary Mic` scene as a scene-item to the five target scenes (`Program`, `Interview`, `Standby`, `Intermission`, `Discord`) — reuse the item-building the script already uses for adding a nested scene (mirror how `Discord` is referenced). Add `"Commentary Mic"` to `SCENE_ORDER` (after `Solo Webcam`). Keep the derivation deterministic.
+
+- [ ] **Step 2: regenerate both JSONs + verify determinism.**
+Run: `python3 tools/derive-solo-templates.py` (writes both `src/obs/GT_Solo_*.json`).
+Then re-run it and confirm `git diff` is empty on the second run (deterministic). Confirm (a quick `python3` check) that both JSONs contain a `Commentary Mic` scene wrapping `Commentary Mic Device`, that scene is an item of exactly `Program/Interview/Standby/Intermission/Discord`, and NOT of `Intro`/`Outro`.
+
+- [ ] **Step 3 (localization) — failing test first (`tests/test_setup.py`).** Add a test: after `localize_device_sources(collection, "win", {"RACECAST_MIC": "MIC-ID"})`, the `Commentary Mic Device` source has id `wasapi_input_capture` and settings `{"device_id": "MIC-ID"}`; on `"darwin"` → `coreaudio_input_capture`; and a cross-check test that `AUDIO_VARIANTS` property keys equal `obs_ws`'s audio device property (`device_id`). Run it → FAIL.
+
+- [ ] **Step 4 (localization) — implement in `src/setup-assets.py`.** Tag `DEVICE_SOURCES` entries with a kind: make each entry `{"name":..., "env":..., "kind":"video"|"audio"}` (webcam/capture → `video`; add `{"name":"Commentary Mic Device","env":"RACECAST_MIC","kind":"audio"}`). Add `AUDIO_VARIANTS` (values above) + an `audio_variant(platform)` mirroring `device_variant`. In `localize_device_sources`, pick `audio_variant` vs `device_variant` per entry's `kind`. Keep the exact best-effort contract (empty value ⇒ unset/WARNING; unknown platform ⇒ unset). Run Step 3's test → PASS.
+
+- [ ] **Step 5 (obs_ws audio property) — TDD.** In `tests/test_obsws.py` add: an audio device property name helper returns `device_id` for darwin/win/linux, cross-checked against `setup-assets.AUDIO_VARIANTS`. Implement in `src/scripts/obs_ws.py` (e.g. extend `device_property_name(platform, kind="video")` with a `kind="audio"` branch returning `"device_id"`, OR a small `audio_device_property_name()` — match the existing `DEVICE_PROPERTY_NAMES` style and keep `obs_ws` importable without `setup-assets`). Run → PASS.
+
+- [ ] **Step 6 (device-scan `--mic`) — TDD in `tests/test_racecast.py`.** Extend `parse_device_scan_args`/`device_scan_cmd` (near `src/racecast.py:2558`) to accept `--mic VAL` and enumerate the mic input (`"Commentary Mic Device"`, property `device_id`) → write `RACECAST_MIC` via the existing `env_upsert_data` (which preserves other keys). A pure-resolution test asserts `--mic` maps to writing `RACECAST_MIC`; the interactive path stays behind `sys.stdin.isatty()`. Update the `device-scan` help/usage string to include `--mic`. Run → PASS.
+
+- [ ] **Step 7 (CC Mic dropdown) — `/api/devices` + select + markup.** Extend `devices_enumerate_data` (racecast.py) to also enumerate the mic input and return a `mic` list alongside webcam/capture; `devices_write_data` (and `/api/devices/select`) accept a `mic` key → `env_upsert_data({"RACECAST_MIC": ...})`. Add a **Mic** `<select id="dev-mic">` row to the Solo-devices section in `src/ui/control-center.html` (mirror the Webcam/Capture rows) and extend `loadDevices()`/`saveDevices()` to populate/save it. Add a `tests/test_ui_server.py` assertion that `/api/devices` shape carries `mic` and the select route accepts `mic`.
+
+- [ ] **Step 8: `.env.example` — document `RACECAST_MIC`** next to `RACECAST_WEBCAM`/`RACECAST_CAPTURE` (a comment + `RACECAST_MIC=`), English, no machine path.
+
+- [ ] **Step 9: gates + commit.**
+Run: `python3 tools/lint.py` (clean), `python3 tools/run-tests.py` (all green), `python3 tools/build.py` (exit 0 — its verify covers the tokenized collections). Commit code + regenerated JSONs + `.env.example` with a conventional message. (CC markup changed → the visual-verify marker for `control-center.html` is the controller's Task-4 wrap step, like Increment 1.)
+
+### Task 5: Panel kind-aware OBS control (`CONFIG_SOLO` + rebuild-on-solo)
+
+**Files:**
+- Modify: `src/director/director-panel.html` (extract `buildControls(cfg)`, add `CONFIG_SOLO`, rebuild-on-solo, hide `#stAir` + solo feed-actions)
+- Wiki: `src/docs/wiki/images/director-panel-solo.png` (new solo companion image — controller)
+
+**Interfaces:**
+- Consumes: the solo `/status` (`d.solo===true`) already handled by `applySolo` (Increment 1). The solo OBS collection scene/source/input names from Task 4 + #303 (`Program`, `Solo Webcam`, `Feed POV`, `Stint HUD`, `Solo Capture Device`, `Solo Webcam Device`, `Commentary Mic Device`, `Discord Audio Capture`, `Intermission Music`, `Post Race Interviews`).
+
+- [ ] **Step 1: extract `buildControls(cfg)`.** The block at `director-panel.html:964-980` (and the audio build) constructs `#scnBus`/`#gfxBus`/`#audio` from the top-level `CONFIG`. Wrap that construction in `function buildControls(cfg){ … }` that (a) clears `#scnBus`/`#gfxBus`/`#audio` (`.replaceChildren()`), (b) rebuilds from `cfg.scenes/vis/graphics/audio` (and `cfg.macros` if the panel renders macros — keep the existing macro rendering, empty for solo), resetting the module arrays it populates (`sceneKeys`, `toggleKeys`, `povVisBtn`, etc.) so a rebuild does not duplicate. Call `buildControls(CONFIG)` once at load (same effect as today for endurance). Verify endurance is byte-identical (same buttons in same order).
+
+- [ ] **Step 2: add `CONFIG_SOLO`** next to `CONFIG` (director-panel.html:801), exactly per the spec's Increment-2 §A list: `macros:[]`; `scenes:["Program","Interview","Standby","Intermission","Intro","Outro","Discord"]`; `vis:[{label:"WEBCAM",scene:"Program",source:"Solo Webcam"},{label:"POV",scene:"Program",source:"Feed POV",relay:"pov"}]`; `graphics:[{label:"HUD",scene:"Program",source:"Stint HUD"},{label:"STANDINGS",scene:"Program",source:"Standings"},{label:"SCHEDULE",scene:"Program",source:"Schedule"},{label:"RACE RESULTS",scene:"Program",source:"Race Results"},{label:"QUALI RESULTS",scene:"Program",source:"Quali Results"},{label:"RACE WX 1",scene:"Program",source:"Race Weather 1"},{label:"RACE WX 2",scene:"Program",source:"Race Weather 2"},{label:"QUALI WX",scene:"Program",source:"Quali Weather"},{label:"STBY COVER",scene:"Program",source:"Standby Cover"},{label:"POST-RACE",scene:"Interview",source:"Post Race Interviews"}]`; `audio:[{label:"Game",input:"Solo Capture Device"},{label:"Webcam",input:"Solo Webcam Device"},{label:"Mic",input:"Commentary Mic Device"},{label:"POV",input:"Feed POV"},{label:"Discord",input:"Discord Audio Capture"},{label:"Intermission",input:"Intermission Music"}]`.
+
+- [ ] **Step 3: rebuild on first solo status.** In `applySolo(isSolo)` (added in Increment 1), add a one-time latch: `if (isSolo && !window.__builtSolo){ window.__builtSolo = true; buildControls(CONFIG_SOLO); }`. (Endurance never sets it, so the default endurance build stands — byte-identical.) Ensure any audio/scene state refresh that runs after build still works (the next `/status`/`/obs/state` poll repopulates active-highlighting).
+
+- [ ] **Step 4: hide solo-irrelevant chrome + keep POV actions reachable (fixes the Task-3 review's Important gap).** Add `#stAir` (the ON-AIR-stint pill) to the `body.solo` CSS hide-set. **Critical detail:** the Feeds section `#feedsSec` (hidden wholesale in solo by Increment 1) contains `#feedsBus`, into which `FEED_ACTIONS` (`director-panel.html:856` — `NEXT`/`RELOAD ALL`/`RELOAD A`/`RELOAD B`/**`POV RELOAD`/`POV STOP`**) are rendered — so hiding `#feedsSec` also hides the POV reload/stop the solo POV workflow needs. Fix: make the feed-action build **kind-aware** so POV actions stay reachable in solo. Concretely — split `FEED_ACTIONS` into the A/B feed actions (`NEXT`/`RELOAD ALL/A/B` + the `FEEDS → STINT…` correction at ~956) and the POV actions (`POV RELOAD`/`POV STOP`). Render the POV actions into a container that is **visible in solo** — e.g. append a small POV-actions row to the POV editor card (inside `#urlsBox`, which is revealed in solo) — while in **endurance** everything renders exactly as today (byte-identical: keep the A/B + POV actions in `#feedsBus` as-is; the solo POV-actions row is only built/shown under `solo`). The A/B feed actions + correction button stay inside the hidden `#feedsSec` (correctly gone in solo). Net: solo shows `POV RELOAD`/`POV STOP` next to the POV editor; endurance is unchanged.
+
+- [ ] **Step 5: controller visual verification + solo screenshot.** (Controller step — see Increment 1's pattern.) Against the live solo relay (`solo-uat-307`), reload `/panel`: confirm Scn·Vis shows PROGRAM/INTERVIEW/STANDBY/… + WEBCAM/POV toggles (no Stint/Feed A/B/Splitscreen); Audio faders show Game/Webcam/Mic/POV/Discord/Intermission; `#stAir` hidden; feed actions show only POV RELOAD/STOP; no console error. Capture `src/docs/wiki/images/director-panel-solo.png`. Re-record the visual marker for `director-panel.html`. Endurance (demo relay) unchanged.
+
+- [ ] **Step 6: gates + commit.** `python3 tools/lint.py`; `python3 tools/run-tests.py`; commit `director-panel.html` + `director-panel-solo.png`.
+
+## Increment-2 self-review
+
+- Spec Increment-2 §A (CONFIG_SOLO + rebuild + #stAir + feed actions) → Task 5. §B (mic collection + localization + enumeration + panel fader) → Task 4 (+ the Mic fader in Task 5's `CONFIG_SOLO.audio`). ✓
+- Endurance byte-identical: `CONFIG`/`buildControls(CONFIG)` default path unchanged; the mic + `CONFIG_SOLO` live only in solo paths/collection; endurance `GT_Endurance.json` untouched. ✓
+- Determinism: both `GT_Solo_*.json` regenerated by the derive script (fixed UUIDs) and diff-checked. ✓
+- No machine paths / real device ids in git (device ids only in the gitignored `.env`; the collection carries the `__RACECAST_MIC__` token). ✓
