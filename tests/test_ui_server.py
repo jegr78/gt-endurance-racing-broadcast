@@ -139,8 +139,8 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None,
                                  "entries": [{"key": "RACECAST_SHEET_ID", "value": "abc"}]},
             "env_write": lambda entries: {"ok": True, "path": "/x/.env", "_got": entries},
             "devices_enumerate": devices_enumerate or (lambda: {
-                "ok": True, "devices": [], "note": ""}),
-            "devices_write": devices_write or (lambda webcam, capture: {
+                "ok": True, "devices": [], "note": "", "mic": [], "mic_note": ""}),
+            "devices_write": devices_write or (lambda webcam, capture, mic=None: {
                 "ok": True, "path": "/x/.env"}),
             "init_plan": init_plan or (lambda browser="firefox": {
                 "ok": True, "steps": [], "next_steps": []}),
@@ -151,8 +151,9 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None,
             "profiles": lambda: {"ok": True, "active": "demo",
                                  "profiles": [{"name": "demo"}, {"name": "erf"}]},
             "profile_use": lambda name: {"ok": True, "active": name},
-            "profile_new": lambda name, source=None: {"ok": True, "name": name,
-                                                      "from": source},
+            "profile_new": lambda name, source=None, kind=None, template=None: {
+                "ok": True, "name": name, "from": source,
+                "kind": kind, "template": template},
             "profile_env_read": lambda: {"ok": True, "path": "/x/profile.env",
                                          "entries": [{"key": "K", "value": "v"}]},
             "profile_env_write": lambda entries: {"ok": True,
@@ -1080,13 +1081,17 @@ def t_env_post_malformed_body_is_400():
 
 def t_get_devices_returns_enumerated_list():
     ctx = _ctx(devices_enumerate=lambda: {
-        "ok": True, "devices": [{"name": "Cam", "value": "v0"}], "note": ""})
+        "ok": True, "devices": [{"name": "Cam", "value": "v0"}], "note": "",
+        "mic": [{"name": "Mic", "value": "m0"}], "mic_note": ""})
     httpd, port = _serve(ctx)
     try:
         code, body = _get(port, "/api/devices")
         data = json.loads(body)
         assert code == 200 and data["ok"] is True
         assert data["devices"] == [{"name": "Cam", "value": "v0"}]
+        # #307: the shape also carries a separate mic list (audio devices differ
+        # from the video capture/webcam list).
+        assert data["mic"] == [{"name": "Mic", "value": "m0"}]
     finally:
         httpd.shutdown()
 
@@ -1106,22 +1111,23 @@ def t_get_devices_route_error_is_500():
 
 def t_post_devices_select_writes():
     seen = {}
-    ctx = _ctx(devices_write=lambda w, c: seen.update(webcam=w, capture=c) or {
-        "ok": True, "_got": [w, c]})
+    ctx = _ctx(devices_write=lambda w, c, mic=None: seen.update(
+        webcam=w, capture=c, mic=mic) or {"ok": True, "_got": [w, c, mic]})
     httpd, port = _serve(ctx)
     try:
         code, body = _post_json(port, "/api/devices/select",
-                                {"webcam": "v0", "capture": "v1"})
+                                {"webcam": "v0", "capture": "v1", "mic": "m0"})
         data = json.loads(body)
         assert code == 200 and data["ok"] is True
-        assert data["_got"] == ["v0", "v1"]
-        assert seen == {"webcam": "v0", "capture": "v1"}
+        assert data["_got"] == ["v0", "v1", "m0"]
+        assert seen == {"webcam": "v0", "capture": "v1", "mic": "m0"}
     finally:
         httpd.shutdown()
 
 
 def t_post_devices_select_validation_error_is_400():
-    ctx = _ctx(devices_write=lambda w, c: {"ok": False, "error": "no device selected"})
+    ctx = _ctx(devices_write=lambda w, c, mic=None: {
+        "ok": False, "error": "no device selected"})
     httpd, port = _serve(ctx)
     try:
         code, body = _post_json(port, "/api/devices/select", {"webcam": "", "capture": ""})
@@ -1238,7 +1244,7 @@ def t_profile_use_post_passes_name():
 def t_profile_new_post_passes_name_and_source():
     seen = []
     ctx = _ctx()
-    ctx["profile_new"] = lambda name, source=None: (
+    ctx["profile_new"] = lambda name, source=None, kind=None, template=None: (
         seen.append((name, source)) or {"ok": True, "name": name, "from": source})
     httpd, port = _serve(ctx)
     try:
@@ -1248,6 +1254,24 @@ def t_profile_new_post_passes_name_and_source():
         assert code == 200 and data["ok"] is True
         assert data["name"] == "gt3" and data["from"] == "demo"
         assert seen == [("gt3", "demo")]
+    finally:
+        httpd.shutdown()
+
+
+def t_profile_new_route_forwards_kind_template():
+    seen = []
+    ctx = _ctx()
+    ctx["profile_new"] = lambda name, source=None, kind=None, template=None: (
+        seen.append((name, source, kind, template))
+        or {"ok": True, "name": name, "from": source})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/profile/new",
+                                {"name": "solo1", "from": None,
+                                 "kind": "solo", "template": "pov"})
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True, (code, body)
+        assert seen == [("solo1", None, "solo", "pov")], seen
     finally:
         httpd.shutdown()
 

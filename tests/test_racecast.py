@@ -1068,6 +1068,32 @@ def t_profiles_data_lists_active_and_available():
         assert names["erf"]["sheet_set"] is False
 
 
+def t_profiles_data_reports_kind():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        prof = os.path.join(td, "profiles")
+        os.makedirs(os.path.join(prof, "demo"))
+        os.makedirs(os.path.join(prof, "solo1"))
+        open(os.path.join(td, ".env.example"), "w").close()
+        with open(os.path.join(prof, "demo", "profile.env"), "w") as fh:
+            fh.write("NAME=Demo League\nSHEET_ID=abc\n")
+        with open(os.path.join(prof, "solo1", "profile.env"), "w") as fh:
+            fh.write("NAME=Solo One\nKIND=solo\nTEMPLATE=commentary\n")
+        os.makedirs(os.path.join(td, "runtime"))
+        with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
+            fh.write("demo\n")
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            d = m.profiles_data()
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        by = {p["name"]: p for p in d["profiles"]}
+        assert by["demo"]["kind"] == "endurance", by["demo"]
+        assert by["solo1"]["kind"] == "solo", by["solo1"]
+
+
 def t_profile_use_data_switches_pointer():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
@@ -1153,6 +1179,37 @@ def t_profile_new_data_bad_name_is_error():
         finally:
             m._env_base = orig_b
         assert d["ok"] is False and d["error"]
+
+
+def t_profile_new_data_forwards_kind_template():
+    seen = {}
+    def fake_create(root, name, source, kind=None, template=None):
+        seen.update(root=root, name=name, source=source, kind=kind,
+                    template=template)
+        return os.path.join(root, "profiles", "solo1")
+    orig = m._env_base
+    m._env_base = lambda *a, **k: "/tmp/x"
+    try:
+        r = m.profile_new_data("Solo One", None, create=fake_create,
+                               kind="solo", template="pov")
+    finally:
+        m._env_base = orig
+    assert r["ok"] is True, r
+    assert seen["kind"] == "solo" and seen["template"] == "pov", seen
+
+
+def t_profile_new_data_defaults_endurance():
+    seen = {}
+    def fake_create(root, name, source, kind=None, template=None):
+        seen.update(kind=kind, template=template)
+        return os.path.join(root, "profiles", "gt3")
+    orig = m._env_base
+    m._env_base = lambda *a, **k: "/tmp/x"
+    try:
+        m.profile_new_data("GT3", "demo", create=fake_create)
+    finally:
+        m._env_base = orig
+    assert seen["kind"] == m.pcfg.DEFAULT_KIND and seen["template"] is None, seen
 
 
 def t_profile_env_entries_data_reads_active():
@@ -3801,6 +3858,36 @@ def t_resolve_device_selection_by_index_and_id():
     val, err = m.resolve_device_selection(devs, "nosuch")
     assert val is None and err
     assert m.resolve_device_selection(devs, "") == (None, None)   # blank = skip/leave
+
+
+def t_parse_device_scan_args_mic():
+    # #307: --mic is a third recognized flag alongside --webcam/--capture, mapping
+    # to writing RACECAST_MIC via env_upsert_data (preserves other keys).
+    assert m._parse_device_scan_args([]) == (None, None, None)
+    assert m._parse_device_scan_args(["--mic", "2"]) == (None, None, "2")
+    assert m._parse_device_scan_args(
+        ["--webcam", "1", "--capture", "2", "--mic", "3"]) == ("1", "2", "3")
+    try:
+        m._parse_device_scan_args(["--bogus", "x"])
+        raise AssertionError("expected ValueError for an unrecognized flag")
+    except ValueError:
+        pass  # expected: unrecognized flag
+
+
+def t_devices_write_data_accepts_mic():
+    # devices_write_data (the /api/devices/select backing) accepts a mic value and
+    # upserts RACECAST_MIC without disturbing unrelated .env keys (#307).
+    import tempfile, os as _os
+    d = tempfile.mkdtemp(prefix="racecast-devwrite-mic-")
+    p = _os.path.join(d, ".env")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("RACECAST_OBS_WS_PASSWORD=secret\n")
+    res = m.devices_write_data(None, None, "MIC-ID", path=p)
+    assert res["ok"], res
+    with open(p, encoding="utf-8") as fh:
+        text = fh.read()
+    assert "RACECAST_MIC=MIC-ID" in text
+    assert "RACECAST_OBS_WS_PASSWORD=secret" in text
 
 
 def t_route_device_scan():

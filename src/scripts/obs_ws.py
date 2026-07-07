@@ -562,18 +562,24 @@ def probe(host="127.0.0.1", port=None, password=None, timeout=2.0):
 
 
 DEVICE_PROPERTY_NAMES = {"darwin": "device", "win": "video_device_id", "linux": "device_id"}
+# Audio (mic) device property — "device_id" on every OS. MUST match
+# setup-assets.AUDIO_VARIANTS (cross-checked by a test) — enumeration writes into
+# the same field localization later reads.
+AUDIO_DEVICE_PROPERTY_NAMES = {"darwin": "device_id", "win": "device_id", "linux": "device_id"}
 
 
-def device_property_name(platform):
-    """OBS input-settings property key holding the video device id for `platform`,
-    or None if unknown. MUST match setup-assets.DEVICE_VARIANTS (cross-checked by a
+def device_property_name(platform, kind="video"):
+    """OBS input-settings property key holding the device id for `platform`, or
+    None if unknown. kind="video" (default) MUST match setup-assets.DEVICE_VARIANTS;
+    kind="audio" MUST match setup-assets.AUDIO_VARIANTS (both cross-checked by a
     test) — enumeration writes into the same field localization later reads."""
+    names = AUDIO_DEVICE_PROPERTY_NAMES if kind == "audio" else DEVICE_PROPERTY_NAMES
     if platform.startswith("win"):
-        return DEVICE_PROPERTY_NAMES["win"]
+        return names["win"]
     if platform == "darwin":
-        return DEVICE_PROPERTY_NAMES["darwin"]
+        return names["darwin"]
     if platform.startswith("linux"):
-        return DEVICE_PROPERTY_NAMES["linux"]
+        return names["linux"]
     return None
 
 

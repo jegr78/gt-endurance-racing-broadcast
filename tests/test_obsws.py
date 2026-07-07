@@ -1483,6 +1483,24 @@ def t_device_property_name_matches_setup_assets_variants():
         assert m.device_property_name(plat) == prop_key, os_key
 
 
+def t_device_property_name_audio_kind_per_platform():
+    assert m.device_property_name("darwin", kind="audio") == "device_id"
+    assert m.device_property_name("win32", kind="audio") == "device_id"
+    assert m.device_property_name("linux", kind="audio") == "device_id"
+    assert m.device_property_name("sunos5", kind="audio") is None
+
+
+def t_device_property_name_audio_matches_setup_assets_audio_variants():
+    # cross-check: obs_ws (enumeration) and setup-assets (localization) must agree on
+    # the mic settings key, or a scanned value lands in the wrong field (#307).
+    spec_sa = importlib.util.spec_from_file_location(
+        "setup_assets_y", os.path.join(ROOT, "src", "setup-assets.py"))
+    sa = importlib.util.module_from_spec(spec_sa); spec_sa.loader.exec_module(sa)
+    for os_key, plat in (("darwin", "darwin"), ("win", "win32"), ("linux", "linux")):
+        _src_id, prop_key = sa.AUDIO_VARIANTS[os_key]
+        assert m.device_property_name(plat, kind="audio") == prop_key == "device_id", os_key
+
+
 def t_input_not_found():
     # The real OBS error for a missing input is a RequestStatus code 600
     # (ResourceNotFound), NOT a "not found" phrase — see enumerate_device_options's

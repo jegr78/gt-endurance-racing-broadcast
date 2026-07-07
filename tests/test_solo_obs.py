@@ -157,27 +157,33 @@ def t_solo_templates_scene_and_source_references_resolve():
 
 
 def t_localize_preserves_solo_scenes():
-    """setup-assets.localize_device_sources must localize the two device LEAF sources
+    """setup-assets.localize_device_sources must localize the device LEAF sources
     (id/settings -> per-OS device) while leaving the distinctly-named wrapping SCENES
     intact (still id=='scene' with their items). Scene and leaf are named distinctly
     ("Solo Capture" scene vs "Solo Capture Device" leaf, mirroring the Discord
     precedent), so the by-name lookup in localize_device_sources can never collide
-    them — no ordering contract required."""
+    them — no ordering contract required. Covers the video (capture/webcam) AND
+    audio (commentary mic, #307) device leaves."""
     d = _load_solo("GT_Solo_Commentary.json")
     unset = sa.localize_device_sources(
-        d, "darwin", {"RACECAST_CAPTURE": "CAPDEV", "RACECAST_WEBCAM": "CAMDEV"})
+        d, "darwin", {"RACECAST_CAPTURE": "CAPDEV", "RACECAST_WEBCAM": "CAMDEV",
+                     "RACECAST_MIC": "MICDEV"})
     assert unset == []
     # The wrapping scenes survive as scenes with their single wrapped item.
-    for scene_name in ("Solo Capture", "Solo Webcam"):
+    for scene_name in ("Solo Capture", "Solo Webcam", "Commentary Mic"):
         sc = next(s for s in d["sources"]
                   if s.get("name") == scene_name and s.get("id") == "scene")
         assert len(sc["settings"]["items"]) == 1, scene_name
-    # The device leaves are localized to the real device values (tokens gone).
+    # The video device leaves are localized to the real device values (tokens gone).
     devs = {s["uuid"]: s for s in d["sources"]
             if s.get("id") == "av_capture_input"}
     assert {s["settings"]["device"] for s in devs.values()} == {"CAPDEV", "CAMDEV"}
     for s in devs.values():
         assert "__RACECAST_" not in s["settings"]["device"]
+    # The mic (audio) device leaf is localized to its per-OS coreaudio form.
+    mic = _byname(d, "Commentary Mic Device")
+    assert mic["id"] == mic["versioned_id"] == "coreaudio_input_capture"
+    assert mic["settings"] == {"device_id": "MICDEV"}
 
 
 def t_solo_templates_device_leaves_are_distinctly_named():
@@ -222,6 +228,101 @@ def t_solo_templates_no_scene_source_name_collision():
         assert scene_names.count("Solo Capture") == 1, fn
         assert scene_names.count("Solo Webcam") == 1, fn
         assert set(scene_names) & set(non_scene_names) == set(), (fn, scene_names, non_scene_names)
+
+
+def t_solo_templates_have_commentary_mic_scene():
+    """#307: both solo templates carry a "Commentary Mic" scene wrapping the
+    distinctly-named "Commentary Mic Device" leaf (macOS coreaudio_input_capture
+    form, tokenized __RACECAST_MIC__), included as a nested-scene item in exactly
+    Program/Interview/Standby/Intermission/Discord — never Intro/Outro."""
+    for fn in SOLO_FILES:
+        d = _load_solo(fn)
+        by = _byname_map(d)
+        mic_scene = by.get("Commentary Mic")
+        assert mic_scene is not None and mic_scene.get("id") == "scene", fn
+        mic_items = mic_scene["settings"]["items"]
+        assert len(mic_items) == 1 and mic_items[0]["name"] == "Commentary Mic Device", fn
+        mic_dev = by.get("Commentary Mic Device")
+        assert mic_dev is not None, fn
+        assert mic_dev["id"] == mic_dev["versioned_id"] == "coreaudio_input_capture", fn
+        assert mic_dev["settings"] == {"device_id": "__RACECAST_MIC__"}, fn
+
+        referencing = set()
+        for s in d["sources"]:
+            if s.get("id") != "scene":
+                continue
+            for it in s["settings"]["items"]:
+                if it.get("name") == "Commentary Mic":
+                    referencing.add(s["name"])
+        assert referencing == {"Program", "Interview", "Standby", "Intermission", "Discord"}, \
+            (fn, referencing)
+        assert "Commentary Mic" in [e["name"] for e in d["scene_order"]], fn
+
+
+def t_solo_templates_regeneration_is_deterministic():
+    """Running the derive script twice must yield byte-identical output — the
+    #303/#307 no-uuid4()/no-timestamp determinism contract."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "derive_solo_templates", os.path.join(ROOT, "tools", "derive-solo-templates.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    first = json.dumps(mod.derive(), sort_keys=True)
+    second = json.dumps(mod.derive(), sort_keys=True)
+    assert first == second
+
+
+def _byname_map(d):
+    return {s.get("name"): s for s in d["sources"]}
+
+
+# --- #307: audio (mic) device localization ---
+
+def _mic_coll():
+    return {"sources": [
+        {"name": "Commentary Mic Device", "uuid": "mic-uuid", "id": "coreaudio_input_capture",
+         "versioned_id": "coreaudio_input_capture", "settings": {"device_id": "__RACECAST_MIC__"}},
+        {"name": "Overlay", "uuid": "ov", "id": "image_source", "settings": {}},
+    ]}
+
+
+def t_mic_localize_windows():
+    c = _mic_coll()
+    unset = sa.localize_device_sources(c, "win32", {"RACECAST_MIC": "MIC-ID"})
+    mic = _byname(c, "Commentary Mic Device")
+    assert mic["id"] == mic["versioned_id"] == "wasapi_input_capture"
+    assert mic["settings"] == {"device_id": "MIC-ID"}
+    assert unset == []
+
+
+def t_mic_localize_darwin_and_linux():
+    c = _mic_coll()
+    sa.localize_device_sources(c, "darwin", {"RACECAST_MIC": "MICDEV"})
+    mic = _byname(c, "Commentary Mic Device")
+    assert mic["id"] == mic["versioned_id"] == "coreaudio_input_capture"
+    assert mic["settings"] == {"device_id": "MICDEV"}
+
+    c = _mic_coll()
+    sa.localize_device_sources(c, "linux", {"RACECAST_MIC": "/dev/whatever"})
+    mic = _byname(c, "Commentary Mic Device")
+    assert mic["id"] == mic["versioned_id"] == "pulse_input_capture"
+    assert mic["settings"] == {"device_id": "/dev/whatever"}
+
+
+def t_mic_localize_empty_env_warns_not_raises():
+    c = _mic_coll()
+    unset = sa.localize_device_sources(c, "darwin", {})
+    assert unset == ["Commentary Mic Device"]
+    assert _byname(c, "Commentary Mic Device")["settings"] == {"device_id": ""}
+
+
+def t_audio_variants_cross_check_obs_ws_audio_property():
+    """AUDIO_VARIANTS' settings-key must agree with obs_ws's audio device property
+    name on every platform — enumeration writes into the same field localization
+    later reads (mirrors the existing video DEVICE_VARIANTS cross-check)."""
+    obs_ws = _load("obs_ws", "src", "scripts", "obs_ws.py")
+    for platform, (_src_id, key) in sa.AUDIO_VARIANTS.items():
+        assert key == obs_ws.device_property_name(platform, kind="audio") == "device_id", platform
 
 
 if __name__ == "__main__":

@@ -77,8 +77,11 @@ Everything that belongs to a **league**, gathered in one view (the model behind 
 [League profiles](Profiles)):
 
 - **Active profile** — a switcher to change the active league (every other view then
-  acts on it), and a **New profile** dialog that copies an existing profile (e.g.
-  `example`) into a new one.
+  acts on it), and a **New profile** dialog. Pick the **Kind**: an *Endurance* profile
+  copies an existing one (e.g. `example`) into a new league; a *Solo* profile (single-race
+  commentary or driver POV — local capture + webcam, no feeds) generates a fresh profile
+  from a **Template** (Commentary or POV) instead of copying. Selecting *Solo* swaps the
+  *Copy from* control for the *Template* picker.
 - **`profile.env` editor** — the active league's config (Sheet ID, push URL,
   intro/outro, logo, and the OBS scene-collection name `OBS_COLLECTION`). Secret values
   are **masked** — click the eye to reveal one. **Open Sheet ↗** opens this league's Google
