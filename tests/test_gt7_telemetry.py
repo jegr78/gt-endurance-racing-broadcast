@@ -53,6 +53,63 @@ def t_parse_flags():
     assert p.on_track is False and p.paused is True and p.loading is True
 
 
+def _feed_lap(eng, t0, lap, *, duration=10.0, dt=0.1, speed=50.0,
+              flags=None, fuel_start=None):
+    """Drive one synthetic lap of constant speed; returns the end timestamp.
+    Emits packets across [t0, t0+duration) with the given lap number, then one
+    packet at the end carrying lap+1 (the lap-change edge)."""
+    flags = tm.FLAG_ON_TRACK if flags is None else flags
+    t = t0
+    n = int(duration / dt)
+    for _ in range(n):
+        kw = dict(speed_mps=speed, lap=lap, flags=flags)
+        if fuel_start is not None:
+            kw["fuel_level"] = fuel_start
+        eng.update(tm.parse_packet(_packet(**kw)), t)
+        t += dt
+    # lap-change edge:
+    eng.update(tm.parse_packet(_packet(speed_mps=speed, lap=lap + 1, flags=flags)), t)
+    return t
+
+
+def t_engine_no_reference_before_first_lap():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(speed_mps=40.0, lap=1)), 100.0)
+    s = eng.snapshot()
+    assert s["has_reference"] is False
+    assert s["delta_s"] is None and s["predicted_s"] is None
+    assert abs(s["speed_mps"] - 40.0) < 1e-3
+
+
+def t_engine_reference_after_clean_lap():
+    eng = tm.TelemetryEngine()
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)   # ~500 m in ~10 s
+    s = eng.snapshot()
+    assert s["has_reference"] is True
+    assert s["best_s"] is not None and 9.0 < s["best_s"] < 11.0
+
+
+def t_engine_delta_negative_when_faster():
+    eng = tm.TelemetryEngine()
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)         # reference ~10 s / 500 m
+    # Lap 2, faster (higher speed -> same distance reached earlier -> negative delta):
+    t = 120.0
+    for _ in range(30):                                          # 3 s in, well ahead on distance
+        eng.update(tm.parse_packet(_packet(speed_mps=100.0, lap=2)), t)
+        t += 0.1
+    s = eng.snapshot()
+    assert s["delta_s"] is not None and s["delta_s"] < 0
+    assert s["predicted_s"] is not None
+
+
+def t_engine_replay_makes_no_phantom_lap():
+    eng = tm.TelemetryEngine()
+    # A "lap change" while paused/loading (menu/replay) must NOT set a reference.
+    eng.update(tm.parse_packet(_packet(lap=1, flags=tm.FLAG_PAUSED)), 100.0)
+    eng.update(tm.parse_packet(_packet(lap=2, flags=tm.FLAG_PAUSED)), 101.0)
+    assert eng.snapshot()["has_reference"] is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
