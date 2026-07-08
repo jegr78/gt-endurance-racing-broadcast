@@ -1494,6 +1494,227 @@ git commit -m "feat(solo): GT7 telemetry probe tool + wiki HUD shot + docs (#324
 
 ---
 
+### Task 11: Engine + format — session top speed + tyre 30 s average
+
+**Files:**
+- Modify: `src/scripts/gt7_telemetry.py` (extend `TelemetryEngine` + `format_snapshot`)
+- Test: `tests/test_gt7_telemetry.py`
+
+**Interfaces:**
+- Produces: `snapshot()` gains `"top_speed_mps": float` and `"tyre_temp_avg": (fl,fr,rl,rr)`. `format_snapshot` output gains `"top_speed"` (display unit, rounded int) and each `tyres[i]` gains `"avg"` (display unit, rounded int). The colour band stays driven by the current °C.
+
+- [ ] **Step 1: Add the failing tests**
+
+```python
+def t_engine_top_speed_tracks_onair_max():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(speed_mps=40.0, lap=1)), 100.0)
+    eng.update(tm.parse_packet(_packet(speed_mps=80.0, lap=1)), 100.1)
+    eng.update(tm.parse_packet(_packet(speed_mps=55.0, lap=1)), 100.2)
+    # a higher speed while paused/off-track must NOT count (menu/replay artefact):
+    eng.update(tm.parse_packet(_packet(speed_mps=200.0, lap=1, flags=tm.FLAG_PAUSED)), 100.3)
+    assert abs(eng.snapshot()["top_speed_mps"] - 80.0) < 1e-6
+
+
+def t_engine_tyre_avg_windowed():
+    eng = tm.TelemetryEngine()
+    t = 100.0
+    # 40 s of FL=60, then 10 s of FL=100 -> the 30 s average should be pulled
+    # toward 100 (the >30 s-old 60s samples fall out of the window).
+    for _ in range(400):
+        eng.update(tm.parse_packet(_packet(tyre_temp=(60.0, 60.0, 60.0, 60.0), lap=1)), t); t += 0.1
+    for _ in range(100):
+        eng.update(tm.parse_packet(_packet(tyre_temp=(100.0, 100.0, 100.0, 100.0), lap=1)), t); t += 0.1
+    avg_fl = eng.snapshot()["tyre_temp_avg"][0]
+    assert avg_fl > 80.0, avg_fl          # window no longer contains the old 60s block fully
+
+
+def t_format_includes_top_speed_and_tyre_avg():
+    snap = {"speed_mps": 50.0, "tyre_temp": (70.0, 70.0, 70.0, 70.0),
+            "tyre_temp_avg": (68.0, 69.0, 71.0, 72.0), "top_speed_mps": 90.0,
+            "lap": 1, "current_lap_s": 0.0, "best_s": None, "delta_s": None,
+            "predicted_s": None, "has_reference": False,
+            "fuel": {"level": 10.0, "per_lap": None, "laps_remaining": None,
+                     "time_remaining_s": None}}
+    out = tm.format_snapshot(snap, "metric", (70, 85, 95))
+    assert out["top_speed"] == 324             # 90 m/s -> 324 km/h
+    assert out["tyres"][0]["avg"] == 68 and out["tyres"][0]["value"] == 70
+    imp = tm.format_snapshot(snap, "imperial", (70, 85, 95))
+    assert imp["top_speed"] == 201             # 90 m/s -> 201 mph
+    assert imp["tyres"][0]["avg"] == 154       # 68 C -> 154 F
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `python3 tests/test_gt7_telemetry.py`
+Expected: FAIL — `KeyError: 'top_speed_mps'` / `'tyre_temp_avg'`.
+
+- [ ] **Step 3: Implement**
+
+Add a constant near `TRACE_WINDOW_S`:
+
+```python
+TYRE_AVG_WINDOW_S = 30.0
+```
+
+In `TelemetryEngine.__init__` add:
+
+```python
+        self._tyre_hist = deque()     # (t, (fl,fr,rl,rr)) over TYRE_AVG_WINDOW_S
+        self._top_speed = 0.0
+```
+
+At the **end** of `TelemetryEngine.update` (after the trace-append block):
+
+```python
+        if pkt.on_track and not pkt.paused and pkt.speed_mps > self._top_speed:
+            self._top_speed = pkt.speed_mps
+        self._tyre_hist.append((now, pkt.tyre_temp))
+        tcut = now - TYRE_AVG_WINDOW_S
+        while self._tyre_hist and self._tyre_hist[0][0] < tcut:
+            self._tyre_hist.popleft()
+```
+
+Add a helper:
+
+```python
+    def _tyre_avg(self):
+        if not self._tyre_hist:
+            return self._last.tyre_temp if self._last else (0.0, 0.0, 0.0, 0.0)
+        sums = [0.0, 0.0, 0.0, 0.0]
+        for _, temps in self._tyre_hist:
+            for i in range(4):
+                sums[i] += temps[i]
+        n = len(self._tyre_hist)
+        return tuple(s / n for s in sums)
+```
+
+In `snapshot()`'s returned dict add:
+
+```python
+            "tyre_temp_avg": self._tyre_avg(),
+            "top_speed_mps": self._top_speed,
+```
+
+In `format_snapshot`, replace the tyre loop so each entry carries `avg`, and add `top_speed`:
+
+```python
+    avgs = snap["tyre_temp_avg"]
+    tyres = []
+    for i, c in enumerate(snap["tyre_temp"]):
+        val = c * 9 / 5 + 32 if imperial else c
+        a = avgs[i] * 9 / 5 + 32 if imperial else avgs[i]
+        tyres.append({"value": round(val), "avg": round(a), "band": _band(c, thresholds)})
+```
+
+and in the returned dict add:
+
+```python
+        "top_speed": round(snap["top_speed_mps"] * (2.2369363 if imperial else 3.6)),
+```
+
+- [ ] **Step 4: Run to verify pass**
+
+Run: `python3 tests/test_gt7_telemetry.py`
+Expected: `ALL PASS` (incl. the 3 new tests + all prior).
+
+- [ ] **Step 5: Lint + commit**
+
+```bash
+python3 tools/lint.py
+git add src/scripts/gt7_telemetry.py tests/test_gt7_telemetry.py
+git commit -m "feat(solo): session top speed + tyre 30s average (#324)"
+```
+
+---
+
+### Task 12: HUD — top-speed element + tyre average display
+
+**Files:**
+- Modify: `src/obs/hud.html` (top-speed slot + tyre avg render)
+- Modify: `src/scripts/overlay_build.py` (SAMPLE preview for the new `tele-top` text slot, if the guard test requires it)
+- Test: `tests/test_overlay.py`
+- Controller: ui-visual-verification pass after.
+
+**Interfaces:**
+- Consumes: `/telemetry/data` now returns `top_speed` + `tyres[i].avg`.
+- Produces: a `#tele-top` element (builder slot) showing top speed; each tyre shows current (band colour) with a small dimmed `ø<avg>`.
+
+- [ ] **Step 1: Add the failing slot test** (to `tests/test_overlay.py`)
+
+```python
+def t_ob_hud_has_top_speed_slot():
+    with open(os.path.join(ROOT, "src", "obs", "hud.html")) as f:
+        ids = {s["id"] for s in ob.extract_slots(f.read())}
+    assert "tele-top" in ids
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `python3 tests/test_overlay.py`
+Expected: FAIL — `tele-top` missing.
+
+- [ ] **Step 3: Markup** — add a top-speed element inside `#tele` (after `#tele-fuel`), and give each tyre span an avg child:
+
+```html
+    <div id="tele-top" class="el white" data-edit="Top speed" data-edit-kind="text">--</div>
+```
+
+Change each tyre span to carry a small avg child, e.g.:
+
+```html
+      <span class="tw" data-w="fl">--<small class="ta" data-a="fl"></small></span>
+```
+(do this for fl/fr/rl/rr).
+
+- [ ] **Step 4: CSS** — add near the other `#tele-*` rules:
+
+```css
+  #tele-top{left:1400px;top:460px}
+  .ta{font-size:.6em;opacity:.75;margin-left:.15em}
+```
+
+- [ ] **Step 5: JS** — in the `pollData` tyre loop, set the current value and the avg child; and set the top-speed element. Replace the tyre-render lines with:
+
+```javascript
+          d.tyres.forEach((t, i) => {
+            const el = tele.querySelector('[data-w="' + wheels[i] + '"]');
+            el.setAttribute("data-band", t.band);
+            const av = el.querySelector('[data-a="' + wheels[i] + '"]');
+            el.childNodes[0].nodeValue = t.value + d.units.temp;
+            if (av) av.textContent = (t.avg != null ? " ø" + t.avg : "");
+          });
+          document.getElementById("tele-top").textContent =
+            "TOP " + d.top_speed + " " + d.units.speed;
+```
+
+(`el.childNodes[0]` is the leading text node before the `<small>` child — set its value so the avg `<small>` is preserved.)
+
+- [ ] **Step 6: Overlay-build sample** — if `python3 tests/test_overlay.py` fails on `t_ob_sample_covers_every_text_slot`, add a preview string for `tele-top` to `SAMPLE["hud"]` in `src/scripts/overlay_build.py` (e.g. `"tele-top": "TOP 291 km/h"`), pure data like the Task 9 entries.
+
+- [ ] **Step 7: Run tests + lint**
+
+Run:
+```bash
+python3 tests/test_overlay.py
+python3 tools/lint.py
+python3 tools/run-tests.py
+```
+Expected: ALL PASS; full suite green.
+
+- [ ] **Step 8: Controller visual verification (REQUIRED)**
+
+The controller re-runs the fake-telemetry render (`scratchpad/tele_shot.py` — extend the feeder so top speed and a spread of tyre history populate), confirms the top-speed line and the `ø<avg>` render legibly over a dark backdrop, re-records the marker for `src/obs/hud.html`, and commits.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/obs/hud.html src/scripts/overlay_build.py tests/test_overlay.py
+git commit -m "feat(solo): HUD top-speed + tyre 30s average display (#324)"
+```
+
+---
+
 ## Final verification (before opening the PR)
 
 - [ ] `python3 tools/run-tests.py` — full suite green, **no test disabled**.

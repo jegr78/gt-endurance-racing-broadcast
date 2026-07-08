@@ -243,6 +243,28 @@ skill.
 9. HUD layout for the five elements → §F.
 10. Config (`PS_IP`, discovery, tyre thresholds, units) → §G.
 
+## Addendum (2026-07-08): EZIO-Dash-informed additions
+
+After reviewing the established GT7 driver dashboard **EZIO Dash**
+(`granturismosport.se/eziodash`), two low-cost, broadcast-relevant values are
+added to the HUD *before* merge (the packet already carries them). Speed / gear /
+RPM / last-lap were deliberately **excluded** — GT7's own in-game HUD already
+shows those to the driver, and a POV broadcast overlay should not duplicate them.
+
+- **Session top speed** — the maximum `speed` seen while genuinely on track
+  (`on_track and not paused`), held for the session. `snapshot()` →
+  `top_speed_mps`; `data()` → `top_speed` (display unit). A `#tele-top` HUD element.
+- **Tyre 30 s rolling average** per wheel, shown *alongside* the current temp
+  (EZIO's "Both" default). Engine keeps a 30 s ring of tyre temps
+  (`TYRE_AVG_WINDOW_S = 30.0`); `snapshot()` → `tyre_temp_avg`; each
+  `data().tyres[i]` gains an `avg` (display unit). The colour **band stays driven
+  by the current °C**, not the average. Rendered as a small dimmed `ø<avg>` next
+  to the current value inside each existing tyre slot (no new tyre slot).
+
+Both are additive to the payload (existing keys unchanged) and stay POV/solo-only.
+Our differentiators over EZIO remain: delta-to-best + predicted lap (EZIO has
+neither) and full Visual-Overlay-Builder positionability (EZIO is non-customisable).
+
 ## Success criteria
 
 `racecast --profile <solo-pov> relay run` with `RACECAST_GT7_PS_IP` set: the
