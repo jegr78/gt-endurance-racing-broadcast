@@ -141,9 +141,9 @@ def t_engine_long_gap_midlap_marks_unclean():
 def t_engine_fuel_after_two_laps():
     eng = tm.TelemetryEngine()
     # Lap 1: start 60 L. Lap 2: start 57 L (3 L/lap). Lap 3: start 54 L.
-    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0, fuel_start=60.0)
-    _feed_lap(eng, 200.0, 2, duration=10.0, speed=50.0, fuel_start=57.0)
-    _feed_lap(eng, 300.0, 3, duration=10.0, speed=50.0, fuel_start=54.0)
+    t = _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0, fuel_start=60.0)
+    t = _feed_lap(eng, t, 2, duration=10.0, speed=50.0, fuel_start=57.0)
+    _feed_lap(eng, t, 3, duration=10.0, speed=50.0, fuel_start=54.0)
     f = eng.snapshot()["fuel"]
     assert f["per_lap"] is not None and abs(f["per_lap"] - 3.0) < 0.5
     # 54 L left / 3 L per lap ~ 18 laps; each lap ~10 s -> ~180 s.
@@ -156,6 +156,34 @@ def t_engine_fuel_none_before_two_laps():
     eng.update(tm.parse_packet(_packet(fuel_level=60.0, lap=1)), 100.0)
     f = eng.snapshot()["fuel"]
     assert f["per_lap"] is None and f["laps_remaining"] is None
+
+
+def t_engine_stall_at_lap_start_marks_unclean():
+    # A >2s stall right at the start of a lap (before any elapsed accumulates) must
+    # still invalidate the lap — it must NOT silently become the reference.
+    eng = tm.TelemetryEngine()
+    t = 100.0
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), t)   # opens the accumulator
+    t += 3.0                                                          # stall, elapsed still 0
+    for _ in range(80):
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), t); t += 0.1
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2)), t)   # finalise lap 1
+    assert eng.snapshot()["has_reference"] is False
+
+
+def t_engine_fuel_continuous_decay():
+    # Realistic: fuel drains continuously within each lap (~2 L/lap), not stepwise.
+    eng = tm.TelemetryEngine()
+    t = 100.0
+    fuel = 50.0
+    for lap in (1, 2, 3):
+        for _ in range(100):
+            eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=lap, fuel_level=fuel)), t)
+            fuel -= 2.0 / 100
+            t += 0.1
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=4, fuel_level=fuel)), t)
+    f = eng.snapshot()["fuel"]
+    assert f["per_lap"] is not None and abs(f["per_lap"] - 2.0) < 0.3
 
 
 if __name__ == "__main__":

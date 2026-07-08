@@ -83,8 +83,7 @@ class _LapAccumulator:
         if dt <= 0:
             return
         if dt > 2.0:                  # a long gap (stall/menu) makes the lap time unreliable
-            if self.elapsed > 0:       # ...unless nothing was recorded yet (fresh lap boundary)
-                self.clean = False
+            self.clean = False
             return
         if pkt.paused or pkt.loading or not pkt.on_track:
             self.clean = False
