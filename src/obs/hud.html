@@ -40,8 +40,13 @@
   /* Team podium row: each car is THREE independently positionable slots —
      brand logo, number badge, auto-fit name (issue #136). The overlay builder
      can place/restyle each on its own; --team-name-max/min bound the auto-fit. */
-  .team-logo { height: 50px; width: 54px; }
-  .team-logo img { width: 100%; height: 100%; object-fit: contain; }
+  .team-logo { height: 50px; width: 54px; justify-content: center; }
+  /* The logo keeps its aspect ratio (never forced to fill the box), so the box's
+     justify-content/align-items actually position it — the overlay builder exposes
+     align/valign on these slots. Centered by default (see .team-logo above) to
+     preserve the pre-existing look; object-fit: contain guarantees it is never
+     clipped. */
+  .team-logo img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
   .team-num { width: 54px; height: 48px; background: #12161c; color: #fff;
     font-size: 20px; padding: 4px; border-radius: 3px; justify-content: center; }
   .team-name { height: 56px; --team-name-max: 30px; --team-name-min: 16px;
@@ -157,15 +162,15 @@
   <div id="round-top" class="el white" data-edit="Round title" data-edit-kind="text"></div>
   <div id="round-flag" class="el" data-edit="Round flag" data-edit-kind="box"><img alt=""></div>
   <div id="round-country" class="el white" data-edit="Round country" data-edit-kind="text"></div>
-  <div id="team1-logo" class="el team-logo" data-edit="Team 1 logo" data-edit-kind="box"><img alt=""></div>
+  <div id="team1-logo" class="el team-logo" data-edit="Team 1 logo" data-edit-kind="box" data-edit-props="align,valign"><img alt=""></div>
   <div id="team1-num" class="el team-num white" data-edit="Team 1 number" data-edit-kind="text"></div>
   <div id="team1-name" class="el team-name white" data-edit="Team 1 name" data-edit-kind="text" data-edit-props="teamNameMax,teamNameMin"></div>
   <div id="team1-brand" class="el team-brand white" data-edit="Team 1 brand name" data-edit-kind="text"></div>
-  <div id="team2-logo" class="el team-logo" data-edit="Team 2 logo" data-edit-kind="box"><img alt=""></div>
+  <div id="team2-logo" class="el team-logo" data-edit="Team 2 logo" data-edit-kind="box" data-edit-props="align,valign"><img alt=""></div>
   <div id="team2-num" class="el team-num white" data-edit="Team 2 number" data-edit-kind="text"></div>
   <div id="team2-name" class="el team-name white" data-edit="Team 2 name" data-edit-kind="text" data-edit-props="teamNameMax,teamNameMin"></div>
   <div id="team2-brand" class="el team-brand white" data-edit="Team 2 brand name" data-edit-kind="text"></div>
-  <div id="team3-logo" class="el team-logo" data-edit="Team 3 logo" data-edit-kind="box"><img alt=""></div>
+  <div id="team3-logo" class="el team-logo" data-edit="Team 3 logo" data-edit-kind="box" data-edit-props="align,valign"><img alt=""></div>
   <div id="team3-num" class="el team-num white" data-edit="Team 3 number" data-edit-kind="text"></div>
   <div id="team3-name" class="el team-name white" data-edit="Team 3 name" data-edit-kind="text" data-edit-props="teamNameMax,teamNameMin"></div>
   <div id="team3-brand" class="el team-brand white" data-edit="Team 3 brand name" data-edit-kind="text"></div>

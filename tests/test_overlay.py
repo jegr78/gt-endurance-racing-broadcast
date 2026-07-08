@@ -240,8 +240,11 @@ def t_ob_extract_slots_from_real_hud():
         "teamNameMax", "teamNameMin"]
     # team number slot: the full text kind (standard props for all slots)
     assert by_id["team1-num"]["props"] == list(ob.KIND_TEXT)
-    # image slots (logo, flag) are the box kind: no text properties
-    assert by_id["team1-logo"]["props"] == list(ob.KIND_BOX)
+    # team logo slots are the box kind PLUS align/valign so the operator can
+    # left/right/top/bottom-position the brand mark inside its box (the img keeps
+    # its aspect ratio and is placed by the box's flex alignment).
+    assert by_id["team1-logo"]["props"] == list(ob.KIND_BOX) + ["align", "valign"]
+    # the round flag stays the plain box kind (already left-aligned by natural width)
     assert by_id["round-flag"]["props"] == list(ob.KIND_BOX)
     # POV box: the box kind (still carries background/border via the kind)
     assert by_id["pov"]["props"] == list(ob.KIND_BOX)
@@ -250,6 +253,35 @@ def t_ob_extract_slots_from_real_hud():
     assert by_id["pov"]["label"] == "POV box"
     # POV name label is a text slot (its old hand-curated set is now the kind)
     assert by_id["pov-name"]["props"] == list(ob.KIND_TEXT)
+
+
+def t_ob_team_logo_alignment_compiles():
+    # A team logo with align=left/valign=top compiles to the flex placement props;
+    # this is what lets an operator push a wide brand mark to the left of its box
+    # instead of the centered default.
+    with open(os.path.join(ROOT, "src", "obs", "hud.html"), encoding="utf-8") as f:
+        slots = ob.extract_slots(f.read())
+    layout = ob.empty_layout("hud")
+    layout["slots"]["team2-logo"] = {"align": "left", "valign": "top"}
+    css = ob.compile_overlay_css(layout, slots)
+    rule = re.search(r"#team2-logo\s*\{[^}]*\}", css).group(0)
+    assert "justify-content: flex-start" in rule
+    assert "align-items: flex-start" in rule
+
+
+def t_ob_team_logo_img_keeps_aspect_for_alignment():
+    # The logo <img> must NOT be forced to width:100% — otherwise object-fit
+    # centers it and the box's justify-content can never move it. It keeps its
+    # natural aspect (width:auto, capped at the box) and the box centers by default
+    # so the pre-existing look is preserved until an operator overrides align.
+    with open(os.path.join(ROOT, "src", "obs", "hud.html"), encoding="utf-8") as f:
+        style = ob.base_style(f.read())
+    img_rule = re.search(r"\.team-logo img\s*\{[^}]*\}", style).group(0)
+    assert "width: auto" in img_rule
+    assert re.search(r"(?<!-)\bwidth:\s*100%", img_rule) is None  # not `width:100%` (max-width ok)
+    assert "max-width: 100%" in img_rule
+    box_rule = re.search(r"\.team-logo\s*\{[^}]*\}", style).group(0)
+    assert "justify-content: center" in box_rule   # centered default preserved
 
 
 def t_ob_hud_has_clock_slot():
