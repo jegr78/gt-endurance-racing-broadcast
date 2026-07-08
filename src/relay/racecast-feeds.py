@@ -1021,7 +1021,12 @@ def schedule_keys(rows):
     resolve_roles unions with the Crew tab (#216)."""
     return {asset_key(n) for (_u, n, _s, _l) in rows if (n or "").strip()}
 
-TEAM_NUMBER_RE = re.compile(r"^(.*?)\s*#(\d+)\s*$")
+# No `\s*` adjacent to `(.*?)`: the two would both match a space, so a long space
+# run with no trailing '#<digits>' backtracks quadratically (CodeQL py/polynomial-
+# redos #170). The surrounding whitespace is already handled — the input is
+# `.strip()`-ed below and group(1) is `.strip()`-ed on return — so dropping the
+# `\s*` neighbours is behaviour-preserving and makes the match linear.
+TEAM_NUMBER_RE = re.compile(r"^(.*?)#(\d+)$")
 
 def split_team_label(s):
     """Split a team label into (name, number): a TRAILING '#<digits>' token is

@@ -320,6 +320,20 @@ def t_split_team_label_mid_string_hash_kept():
     assert m.split_team_label("Team #1 Racing") == ("Team #1 Racing", "")
     assert m.split_team_label("  Spaced #42  ") == ("Spaced", "42")
 
+def t_split_team_label_no_redos_on_long_spaces():
+    # CodeQL py/polynomial-redos (#170): the old `^(.*?)\s*#(\d+)\s*$` had `(.*?)`
+    # adjacent to `\s*`, both matching a space, so a long run of spaces with no
+    # trailing '#<digits>' backtracked quadratically. A huge label must resolve in
+    # linear time — this returns effectively instantly with the fixed pattern and
+    # would stall for seconds on the old one.
+    import time
+    label = "Team" + " " * 60000 + "Racing"       # internal spaces, no trailing #num
+    t0 = time.monotonic()
+    assert m.split_team_label(label) == (label, "")
+    assert time.monotonic() - t0 < 1.0
+    # trailing number still peeled even behind a long space run
+    assert m.split_team_label("Team" + " " * 60000 + "#7") == ("Team", "7")
+
 
 ROSTER_CSV_WITH_NUMBER = (
     "Teams,Number,Brand Name\n"
