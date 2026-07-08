@@ -138,6 +138,26 @@ def t_engine_long_gap_midlap_marks_unclean():
     assert eng.snapshot()["has_reference"] is False
 
 
+def t_engine_fuel_after_two_laps():
+    eng = tm.TelemetryEngine()
+    # Lap 1: start 60 L. Lap 2: start 57 L (3 L/lap). Lap 3: start 54 L.
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0, fuel_start=60.0)
+    _feed_lap(eng, 200.0, 2, duration=10.0, speed=50.0, fuel_start=57.0)
+    _feed_lap(eng, 300.0, 3, duration=10.0, speed=50.0, fuel_start=54.0)
+    f = eng.snapshot()["fuel"]
+    assert f["per_lap"] is not None and abs(f["per_lap"] - 3.0) < 0.5
+    # 54 L left / 3 L per lap ~ 18 laps; each lap ~10 s -> ~180 s.
+    assert 15 < f["laps_remaining"] < 21
+    assert 150 < f["time_remaining_s"] < 210
+
+
+def t_engine_fuel_none_before_two_laps():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(fuel_level=60.0, lap=1)), 100.0)
+    f = eng.snapshot()["fuel"]
+    assert f["per_lap"] is None and f["laps_remaining"] is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

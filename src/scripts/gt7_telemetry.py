@@ -64,7 +64,8 @@ def parse_packet(plain):
 
 class _LapAccumulator:
     """Accumulates time + distance samples within one lap."""
-    __slots__ = ("t0", "elapsed", "distance", "samples", "clean", "last_t")
+    __slots__ = ("t0", "elapsed", "distance", "samples", "clean", "last_t",
+                 "fuel_start", "fuel_end")
 
     def __init__(self, now):
         self.t0 = now
@@ -73,6 +74,8 @@ class _LapAccumulator:
         self.samples = [(0.0, 0.0)]   # (distance, time) pairs, monotonic in distance
         self.clean = True
         self.last_t = now
+        self.fuel_start = None
+        self.fuel_end = None
 
     def add(self, pkt, now):
         dt = now - self.last_t
@@ -80,7 +83,8 @@ class _LapAccumulator:
         if dt <= 0:
             return
         if dt > 2.0:                  # a long gap (stall/menu) makes the lap time unreliable
-            self.clean = False
+            if self.elapsed > 0:       # ...unless nothing was recorded yet (fresh lap boundary)
+                self.clean = False
             return
         if pkt.paused or pkt.loading or not pkt.on_track:
             self.clean = False
@@ -89,6 +93,9 @@ class _LapAccumulator:
         self.distance += max(0.0, pkt.speed_mps) * dt
         if self.distance > self.samples[-1][0]:
             self.samples.append((self.distance, self.elapsed))
+        if self.fuel_start is None:
+            self.fuel_start = pkt.fuel_level
+        self.fuel_end = pkt.fuel_level
 
 
 class TelemetryEngine:
@@ -104,6 +111,8 @@ class TelemetryEngine:
         self._lap_num = None
         self._acc = None                  # current _LapAccumulator
         self._ref = None                  # reference (best) lap: {"time": s, "samples": [...]}
+        self._lap_times = []      # last completed clean lap durations (s)
+        self._lap_fuel = []       # last completed clean lap fuel burns (L)
 
     def update(self, pkt, now):
         if self._lap_num is None:         # first packet: open a lap
@@ -113,6 +122,8 @@ class TelemetryEngine:
             self._finalise_lap()
             self._lap_num = pkt.lap
             self._acc = _LapAccumulator(now)
+            if self._last is not None:    # seed the new lap's start-of-lap fuel reading
+                self._acc.fuel_start = self._last.fuel_level
         if self._acc is not None:
             self._acc.add(pkt, now)
         self._last = pkt
@@ -123,6 +134,13 @@ class TelemetryEngine:
             return
         if self._ref is None or acc.elapsed < self._ref["time"]:
             self._ref = {"time": acc.elapsed, "samples": acc.samples}
+        self._lap_times.append(acc.elapsed)
+        self._lap_times = self._lap_times[-3:]
+        if acc.fuel_start is not None and acc.fuel_end is not None:
+            burn = acc.fuel_start - acc.fuel_end
+            if burn > 0:
+                self._lap_fuel.append(burn)
+                self._lap_fuel = self._lap_fuel[-3:]
 
     def _ref_time_at(self, distance):
         """Interpolate the reference lap's elapsed time at a given distance."""
@@ -143,6 +161,20 @@ class TelemetryEngine:
             return t0
         return t0 + (t1 - t0) * (distance - d0) / (d1 - d0)
 
+    def _fuel(self):
+        pkt = self._last
+        level = pkt.fuel_level if pkt else 0.0
+        per_lap = laps = time_rem = None
+        if self._lap_fuel:
+            per_lap = sum(self._lap_fuel) / len(self._lap_fuel)
+            if per_lap > 0:
+                laps = level / per_lap
+                if self._lap_times:
+                    avg = sum(self._lap_times) / len(self._lap_times)
+                    time_rem = laps * avg
+        return {"level": level, "per_lap": per_lap,
+                "laps_remaining": laps, "time_remaining_s": time_rem}
+
     def snapshot(self):
         pkt = self._last
         acc = self._acc
@@ -162,4 +194,5 @@ class TelemetryEngine:
             "delta_s": delta,
             "predicted_s": predicted,
             "has_reference": has_ref,
+            "fuel": self._fuel(),
         }
