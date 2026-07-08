@@ -215,6 +215,7 @@ def t_engine_trace_batch_limit():
 
 def t_format_metric_and_bands():
     snap = {"speed_mps": 50.0, "tyre_temp": (65.0, 78.0, 90.0, 99.0),
+            "tyre_temp_avg": (65.0, 78.0, 90.0, 99.0), "top_speed_mps": 55.0,
             "lap": 4, "current_lap_s": 12.3, "best_s": 95.4,
             "delta_s": -0.42, "predicted_s": 94.98, "has_reference": True,
             "fuel": {"level": 40.0, "per_lap": 2.5, "laps_remaining": 16.0,
@@ -230,6 +231,7 @@ def t_format_metric_and_bands():
 
 def t_format_imperial_converts_tyres():
     snap = {"speed_mps": 50.0, "tyre_temp": (70.0, 70.0, 70.0, 70.0),
+            "tyre_temp_avg": (70.0, 70.0, 70.0, 70.0), "top_speed_mps": 50.0,
             "lap": 1, "current_lap_s": 0.0, "best_s": None,
             "delta_s": None, "predicted_s": None, "has_reference": False,
             "fuel": {"level": 10.0, "per_lap": None,
@@ -239,6 +241,48 @@ def t_format_imperial_converts_tyres():
     assert out["tyres"][0]["value"] == 158     # 70°C -> 158°F
     assert out["tyres"][0]["band"] == "optimal"  # band still computed in °C
     assert out["speed"] == 112                 # 50 m/s -> 111.8 mph -> 112
+
+
+def t_engine_top_speed_tracks_onair_max():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(speed_mps=40.0, lap=1)), 100.0)
+    eng.update(tm.parse_packet(_packet(speed_mps=80.0, lap=1)), 100.1)
+    eng.update(tm.parse_packet(_packet(speed_mps=55.0, lap=1)), 100.2)
+    # a higher speed while paused/off-track must NOT count (menu/replay artefact):
+    eng.update(tm.parse_packet(_packet(speed_mps=200.0, lap=1, flags=tm.FLAG_PAUSED)), 100.3)
+    assert abs(eng.snapshot()["top_speed_mps"] - 80.0) < 1e-6
+
+
+def t_engine_tyre_avg_windowed():
+    eng = tm.TelemetryEngine()
+    t = 100.0
+    # 40 s of FL=60, then 10 s of FL=100 -> the 30 s average should be pulled
+    # toward 100 (the >30 s-old 60s samples fall out of the window).
+    for _ in range(400):
+        eng.update(tm.parse_packet(_packet(tyre_temp=(60.0, 60.0, 60.0, 60.0), lap=1)), t); t += 0.1
+    for _ in range(100):
+        eng.update(tm.parse_packet(_packet(tyre_temp=(100.0, 100.0, 100.0, 100.0), lap=1)), t); t += 0.1
+    avg_fl = eng.snapshot()["tyre_temp_avg"][0]
+    # With a 30s window, only the trailing 20s of the 60C block + the 10s of 100C
+    # block remain (~73.3C) -- above the naive full-history average (68.0C), proving
+    # the window pulls the average toward the recent block rather than diluting it
+    # over the whole 50s history.
+    assert avg_fl > 70.0, avg_fl          # window no longer contains the old 60s block fully
+
+
+def t_format_includes_top_speed_and_tyre_avg():
+    snap = {"speed_mps": 50.0, "tyre_temp": (70.0, 70.0, 70.0, 70.0),
+            "tyre_temp_avg": (68.0, 69.0, 71.0, 72.0), "top_speed_mps": 90.0,
+            "lap": 1, "current_lap_s": 0.0, "best_s": None, "delta_s": None,
+            "predicted_s": None, "has_reference": False,
+            "fuel": {"level": 10.0, "per_lap": None, "laps_remaining": None,
+                     "time_remaining_s": None}}
+    out = tm.format_snapshot(snap, "metric", (70, 85, 95))
+    assert out["top_speed"] == 324             # 90 m/s -> 324 km/h
+    assert out["tyres"][0]["avg"] == 68 and out["tyres"][0]["value"] == 70
+    imp = tm.format_snapshot(snap, "imperial", (70, 85, 95))
+    assert imp["top_speed"] == 201             # 90 m/s -> 201 mph
+    assert imp["tyres"][0]["avg"] == 154       # 68 C -> 154 F
 
 
 def _feed_lap_store(st, t0, lap, *, duration, speed, dt=0.1):

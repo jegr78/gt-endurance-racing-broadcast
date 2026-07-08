@@ -37,6 +37,9 @@ FLAG_LOADING = 1 << 2   # loading / processing (menu / replay transitions)
 TRACE_WINDOW_S = 15.0
 TRACE_MIN_DT = 1.0 / 30      # decimate 60 Hz -> ~30 Hz
 
+# --- Tyre rolling-average window ---
+TYRE_AVG_WINDOW_S = 30.0
+
 GT7Packet = namedtuple("GT7Packet", [
     "speed_mps", "fuel_level", "fuel_capacity", "tyre_temp",
     "throttle", "brake", "lap", "best_ms", "last_ms",
@@ -121,6 +124,8 @@ class TelemetryEngine:
         self._lap_fuel = []       # last completed clean lap fuel burns (L)
         self._trace = deque()     # (t, throttle01, brake01), decimated + windowed
         self._trace_last_t = None
+        self._tyre_hist = deque()     # (t, (fl,fr,rl,rr)) over TYRE_AVG_WINDOW_S
+        self._top_speed = 0.0
 
     def update(self, pkt, now):
         if self._lap_num is None:         # first packet: open a lap
@@ -141,6 +146,12 @@ class TelemetryEngine:
             cutoff = now - TRACE_WINDOW_S
             while self._trace and self._trace[0][0] < cutoff:
                 self._trace.popleft()
+        if pkt.on_track and not pkt.paused and pkt.speed_mps > self._top_speed:
+            self._top_speed = pkt.speed_mps
+        self._tyre_hist.append((now, pkt.tyre_temp))
+        tcut = now - TYRE_AVG_WINDOW_S
+        while self._tyre_hist and self._tyre_hist[0][0] < tcut:
+            self._tyre_hist.popleft()
 
     def _finalise_lap(self):
         acc = self._acc
@@ -189,6 +200,16 @@ class TelemetryEngine:
         return {"level": level, "per_lap": per_lap,
                 "laps_remaining": laps, "time_remaining_s": time_rem}
 
+    def _tyre_avg(self):
+        if not self._tyre_hist:
+            return self._last.tyre_temp if self._last else (0.0, 0.0, 0.0, 0.0)
+        sums = [0.0, 0.0, 0.0, 0.0]
+        for _, temps in self._tyre_hist:
+            for i in range(4):
+                sums[i] += temps[i]
+        n = len(self._tyre_hist)
+        return tuple(s / n for s in sums)
+
     def snapshot(self):
         pkt = self._last
         acc = self._acc
@@ -209,6 +230,8 @@ class TelemetryEngine:
             "predicted_s": predicted,
             "has_reference": has_ref,
             "fuel": self._fuel(),
+            "tyre_temp_avg": self._tyre_avg(),
+            "top_speed_mps": self._top_speed,
         }
 
     def trace_batch(self, limit=150):
@@ -238,14 +261,17 @@ def _band(temp_c, thresholds):
 def format_snapshot(snap, units, thresholds):
     imperial = units == "imperial"
     spd = snap["speed_mps"] * (2.2369363 if imperial else 3.6)
+    avgs = snap["tyre_temp_avg"]
     tyres = []
-    for c in snap["tyre_temp"]:
+    for i, c in enumerate(snap["tyre_temp"]):
         val = c * 9 / 5 + 32 if imperial else c
-        tyres.append({"value": round(val), "band": _band(c, thresholds)})
+        a = avgs[i] * 9 / 5 + 32 if imperial else avgs[i]
+        tyres.append({"value": round(val), "avg": round(a), "band": _band(c, thresholds)})
     fuel = snap["fuel"]
     lvl = fuel["level"] * (0.2641720 if imperial else 1.0)   # L -> gal
     return {
         "speed": round(spd),
+        "top_speed": round(snap["top_speed_mps"] * (2.2369363 if imperial else 3.6)),
         "tyres": tyres,
         "lap": snap["lap"],
         "current_lap": _fmt_time(snap["current_lap_s"]),
