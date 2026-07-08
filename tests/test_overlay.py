@@ -229,7 +229,11 @@ def t_ob_extract_slots_from_real_hud():
                    "team1-logo", "team1-num", "team1-name", "team1-brand",
                    "team2-logo", "team2-num", "team2-name", "team2-brand",
                    "team3-logo", "team3-num", "team3-name", "team3-brand",
-                   "race-control", "flag-status", "pov", "pov-name", "clock"]
+                   "race-control", "flag-status", "pov", "pov-name",
+                   # Solo-mode telemetry block (issue #324): self-gating,
+                   # hidden in endurance (no /telemetry/data there).
+                   "tele-tyres", "tele-trace", "tele-delta", "tele-pred",
+                   "tele-fuel", "clock"]
     by_id = {s["id"]: s for s in slots}
     assert by_id["stint"]["label"] == "Stint banner"
     # default props (no data-edit-props) include the text set, not the team-only keys
@@ -250,6 +254,12 @@ def t_ob_extract_slots_from_real_hud():
     assert by_id["pov"]["label"] == "POV box"
     # POV name label is a text slot (its old hand-curated set is now the kind)
     assert by_id["pov-name"]["props"] == list(ob.KIND_TEXT)
+
+
+def t_ob_hud_has_telemetry_slots():
+    with open(os.path.join(ROOT, "src", "obs", "hud.html")) as f:
+        ids = {s["id"] for s in ob.extract_slots(f.read())}
+    assert {"tele-tyres", "tele-trace", "tele-delta", "tele-pred", "tele-fuel"} <= ids
 
 
 def t_ob_hud_has_clock_slot():

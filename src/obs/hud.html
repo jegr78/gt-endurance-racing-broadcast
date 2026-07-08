@@ -77,6 +77,21 @@
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     font-weight: 600; font-size: 22px; letter-spacing: .04em; }
 
+  /* Solo-mode telemetry block (issue #324): tyre-temp bands, an input trace
+     (throttle/brake), delta/predicted (hidden until a reference lap exists),
+     and fuel. Positions here are sane defaults for a POV-profile layout;
+     the builder repositions them like any other slot. */
+  #tele-tyres{left:1400px;top:120px;width:360px;display:flex;gap:8px}
+  #tele-trace{left:1400px;top:200px}
+  #tele-delta{left:1400px;top:280px}
+  #tele-pred{left:1400px;top:340px}
+  #tele-fuel{left:1400px;top:400px}
+  .tw{display:inline-block;min-width:2.6em;text-align:center}
+  .tw[data-band="cold"]{color:#4ea3ff}
+  .tw[data-band="optimal"]{color:#37d67a}
+  .tw[data-band="hot"]{color:#f5a623}
+  .tw[data-band="critical"]{color:#ff4d4f}
+
   /* Race-timer clock, merged in from the old separate timer source. Sits at the
      top band at the clock's true on-air size/position (was OBS crop y[217..895]
      + scale 0.0854 + pos 880,98). Tune live via the builder. */
@@ -173,6 +188,18 @@
   <div id="flag-status" class="el" data-edit="Flag status" data-edit-kind="text"></div>
   <div id="pov" class="el" data-edit="POV box" data-edit-kind="box"></div>
   <div id="pov-name" class="el" data-edit="POV name" data-edit-kind="text"></div>
+  <!-- Solo-mode telemetry block (issue #324): self-gating on /telemetry/data 200
+       vs 404, so it stays invisible in endurance (no such endpoint there). -->
+  <div id="tele" style="display:none">
+    <div id="tele-tyres" class="el" data-edit="Tyre temps" data-edit-kind="box">
+      <span class="tw" data-w="fl">--</span><span class="tw" data-w="fr">--</span>
+      <span class="tw" data-w="rl">--</span><span class="tw" data-w="rr">--</span>
+    </div>
+    <canvas id="tele-trace" class="el" data-edit="Input trace" data-edit-kind="box" width="240" height="60"></canvas>
+    <div id="tele-delta" class="el" data-edit="Delta to best" data-edit-kind="text" style="display:none">--</div>
+    <div id="tele-pred" class="el" data-edit="Predicted lap" data-edit-kind="text" style="display:none">--</div>
+    <div id="tele-fuel" class="el" data-edit="Fuel" data-edit-kind="text">--</div>
+  </div>
   <div id="clock" class="el white" data-edit="Clock" data-edit-kind="text"></div>
 
 <script>
@@ -264,6 +291,68 @@
     else { img.removeAttribute("src"); logoEl.classList.add("empty"); }
     fitName(nameEl);
   }
+
+  // Solo-mode telemetry (issue #324): self-gating on /telemetry/data 200 vs
+  // 404, so it stays hidden in endurance where the endpoint does not exist.
+  (function () {
+    const tele = document.getElementById("tele");
+    const ctx = document.getElementById("tele-trace").getContext("2d");
+    let alive = false;
+    async function pollData() {
+      try {
+        const r = await fetch("/telemetry/data", { cache: "no-store" });
+        if (r.status === 404) { tele.style.display = "none"; alive = false; return; }
+        if (!r.ok) return;
+        const d = await r.json();
+        alive = true; tele.style.display = "";
+        const wheels = ["fl", "fr", "rl", "rr"];
+        d.tyres.forEach((t, i) => {
+          const el = tele.querySelector('[data-w="' + wheels[i] + '"]');
+          el.textContent = t.value + d.units.temp;
+          el.setAttribute("data-band", t.band);
+        });
+        const delta = document.getElementById("tele-delta");
+        const pred = document.getElementById("tele-pred");
+        if (d.has_reference && d.delta !== null) {
+          delta.style.display = ""; pred.style.display = "";
+          delta.textContent = (d.delta >= 0 ? "+" : "") + d.delta.toFixed(2) + "s";
+          pred.textContent = d.predicted || "--";
+        } else {
+          delta.style.display = "none"; pred.style.display = "none";
+        }
+        const f = d.fuel;
+        document.getElementById("tele-fuel").textContent =
+          f.level + d.units.fuel +
+          (f.laps_remaining !== null ? " · " + f.laps_remaining + " laps" : "") +
+          (f.time_remaining ? " · " + f.time_remaining : "");
+      } catch (e) { /* transient; keep polling */ }
+    }
+    async function pollTrace() {
+      if (!alive) return;
+      try {
+        const r = await fetch("/telemetry/trace", { cache: "no-store" });
+        if (!r.ok) return;
+        const { samples } = await r.json();
+        const w = ctx.canvas.width, h = ctx.canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        if (!samples.length) return;
+        const t0 = samples[0].t, span = (samples[samples.length - 1].t - t0) || 1;
+        const draw = (key, color) => {
+          ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 2;
+          samples.forEach((s, i) => {
+            const x = ((s.t - t0) / span) * w;
+            const y = h - s[key] * h;
+            i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+          });
+          ctx.stroke();
+        };
+        draw("throttle", "#37d67a"); draw("brake", "#ff4d4f");
+      } catch (e) { /* transient */ }
+    }
+    setInterval(pollData, 100);
+    setInterval(pollTrace, 100);
+    pollData();
+  })();
 
   async function tick() {
     try {
