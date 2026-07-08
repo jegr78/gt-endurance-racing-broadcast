@@ -6893,6 +6893,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send_file(intermission_path, "text/html; charset=utf-8")
                 if p == ["intermission", "override.css"]:
                     return self._send_css(read_overlay_css(overlay_dir, "intermission"))
+                if p == ["telemetry", "data"]:
+                    if telemetry_store is None:
+                        return self._send({"error": "telemetry disabled"}, 404)
+                    return self._send(telemetry_store.data())
+                if p == ["telemetry", "trace"]:
+                    if telemetry_store is None:
+                        return self._send({"error": "telemetry disabled"}, 404)
+                    return self._send({"samples": telemetry_store.trace(150)})
                 if len(p) == 3 and p[:2] == ["overlay", "fonts"]:
                     return self._send_font(overlay_dir, p[2])
                 if p[:1] == ["timer"]:
