@@ -110,6 +110,34 @@ def t_engine_replay_makes_no_phantom_lap():
     assert eng.snapshot()["has_reference"] is False
 
 
+def t_engine_pause_midlap_marks_unclean():
+    # A mid-lap pause (nonzero dt, paused flag) must prevent the lap becoming a reference.
+    eng = tm.TelemetryEngine()
+    t = 100.0
+    for _ in range(50):
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), t); t += 0.1
+    t += 0.5
+    eng.update(tm.parse_packet(_packet(speed_mps=0.0, lap=1, flags=tm.FLAG_PAUSED)), t)
+    t += 0.1
+    for _ in range(50):
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), t); t += 0.1
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2)), t)
+    assert eng.snapshot()["has_reference"] is False
+
+
+def t_engine_long_gap_midlap_marks_unclean():
+    # A >2s stall WITHOUT a pause flag (network hiccup) also invalidates the lap.
+    eng = tm.TelemetryEngine()
+    t = 100.0
+    for _ in range(50):
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), t); t += 0.1
+    t += 5.0
+    for _ in range(50):
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), t); t += 0.1
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2)), t)
+    assert eng.snapshot()["has_reference"] is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

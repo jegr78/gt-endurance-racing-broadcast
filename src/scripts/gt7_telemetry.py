@@ -77,7 +77,10 @@ class _LapAccumulator:
     def add(self, pkt, now):
         dt = now - self.last_t
         self.last_t = now
-        if dt <= 0 or dt > 2.0:       # ignore backwards / long gaps (pause/menu)
+        if dt <= 0:
+            return
+        if dt > 2.0:                  # a long gap (stall/menu) makes the lap time unreliable
+            self.clean = False
             return
         if pkt.paused or pkt.loading or not pkt.on_track:
             self.clean = False
