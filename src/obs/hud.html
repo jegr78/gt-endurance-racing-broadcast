@@ -79,19 +79,59 @@
 
   /* Solo-mode telemetry block (issue #324): tyre-temp bands, an input trace
      (throttle/brake), delta/predicted (hidden until a reference lap exists),
-     and fuel. Positions here are sane defaults for a POV-profile layout;
-     the builder repositions them like any other slot. */
-  #tele-tyres{left:1400px;top:120px;width:360px;display:flex;gap:8px}
-  #tele-trace{left:1400px;top:200px}
-  #tele-delta{left:1400px;top:280px}
-  #tele-pred{left:1400px;top:340px}
-  #tele-fuel{left:1400px;top:400px}
-  #tele-top{left:1400px;top:460px}
-  .tw{display:inline-block;min-width:2.6em;text-align:center;text-shadow:0 2px 4px rgba(0,0,0,.55)}
-  .tw[data-band="cold"]{color:#4ea3ff}
-  .tw[data-band="optimal"]{color:#37d67a}
-  .tw[data-band="hot"]{color:#f5a623}
-  .tw[data-band="critical"]{color:#ff4d4f}
+     and fuel. Approved POV layout (visual review loop, #324): a GT3-dash
+     style panel bottom-right, the delta centred between the in-game timers,
+     and a webcam frame bottom-left. */
+
+  /* Delta: centred BETWEEN the two in-game timers; green negative / red
+     positive is set in JS from the numeric sign. */
+  #tele-delta{left:840px;top:206px;width:240px;height:32px;
+    justify-content:center;font-size:30px;font-family:"SF Mono","Consolas",monospace;
+    text-shadow:0 2px 6px rgba(0,0,0,.85)}
+
+  /* GT3-dash telemetry panel, bottom-right: labels sit above the values via
+     ::before (amber, small-caps letter-spaced) so the value itself stays big. */
+  #tele-pred,#tele-fuel,#tele-top{flex-direction:column;align-items:flex-start;
+    height:auto;line-height:1.05;font-family:"SF Mono","Consolas",monospace;color:#eef2f6}
+  #tele-pred::before,#tele-fuel::before,#tele-top::before{font:700 11px "SF Mono",monospace;
+    letter-spacing:.16em;color:#e0b24a;margin-bottom:3px;text-shadow:none}
+  #tele-pred::before{content:"PRED. LAP"}
+  #tele-fuel::before{content:"FUEL"}
+  #tele-top::before{content:"TOP SPEED"}
+  #tele-pred{left:1522px;top:720px;font-size:30px;font-weight:700}
+  #tele-top{left:1712px;top:720px;font-size:30px;font-weight:700}
+  #tele-fuel{left:1522px;top:792px;font-size:23px}
+
+  /* Tyre blocks: colour-filled 2x2 grid, band gradients per GT3-dash look. */
+  #tele-tyres{left:1522px;top:856px;width:356px;height:94px;
+    display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px}
+  .tw{min-width:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+    border-radius:9px;font-size:30px;font-weight:800;text-shadow:none;box-shadow:0 2px 6px rgba(0,0,0,.45)}
+  .tw .ta{display:none}
+  .tw[data-band="cold"]{background:linear-gradient(180deg,#7ab8ff,#4f8ad6);color:#08172b}
+  .tw[data-band="optimal"]{background:linear-gradient(180deg,#69e097,#37b96a);color:#06281a}
+  .tw[data-band="hot"]{background:linear-gradient(180deg,#e6c352,#c99a2e);color:#2a2205}
+  .tw[data-band="critical"]{background:linear-gradient(180deg,#ff7a7c,#e23d40);color:#2b0708}
+
+  /* Trace: iRacing-style panel look (faint grid + dark gradient). */
+  #tele-trace{left:1522px;top:960px;width:356px;height:92px;
+    border-radius:9px;border:1px solid rgba(130,150,170,.35);
+    background:repeating-linear-gradient(90deg,rgba(255,255,255,.05) 0 1px,transparent 1px 44px),
+               repeating-linear-gradient(0deg,rgba(255,255,255,.05) 0 1px,transparent 1px 23px),
+               linear-gradient(180deg,#0c1622,#0a0f18)}
+
+  /* Wide telemetry panel background, behind the values above (it is the
+     first child of #tele in the markup; these z-indexes keep the values on
+     top of it regardless of paint order). */
+  #tele-panel{position:absolute;left:1500px;top:702px;width:398px;height:362px;
+    background:rgba(9,12,17,.7);border:1px solid rgba(120,132,146,.42);border-radius:14px;z-index:0}
+  #tele-tyres,#tele-trace,#tele-delta,#tele-pred,#tele-fuel,#tele-top{z-index:1}
+
+  /* Webcam frame, bottom-left: 16:9, bottom-aligned at y=884. Transparent
+     interior — the OBS webcam source sits inside; no label text. */
+  #webcam{position:absolute;left:14px;top:695px;width:336px;height:189px;
+    border:3px solid #cfd6df;border-radius:10px;box-shadow:0 6px 22px rgba(0,0,0,.55);z-index:2}
+
   .ta{font-size:.6em;opacity:.75;margin-left:.15em}
 
   /* Race-timer clock, merged in from the old separate timer source. Sits at the
@@ -193,11 +233,15 @@
   <!-- Solo-mode telemetry block (issue #324): self-gating on /telemetry/data 200
        vs 404, so it stays invisible in endurance (no such endpoint there). -->
   <div id="tele" style="display:none">
+    <!-- Panel background + webcam frame: NOT overlay-builder slots (no
+         data-edit) — plain decorative elements that show/hide with #tele. -->
+    <div id="tele-panel"></div>
+    <div id="webcam"></div>
     <div id="tele-tyres" class="el" data-edit="Tyre temps" data-edit-kind="box">
       <span class="tw" data-w="fl">--<small class="ta" data-a="fl"></small></span><span class="tw" data-w="fr">--<small class="ta" data-a="fr"></small></span>
       <span class="tw" data-w="rl">--<small class="ta" data-a="rl"></small></span><span class="tw" data-w="rr">--<small class="ta" data-a="rr"></small></span>
     </div>
-    <canvas id="tele-trace" class="el" data-edit="Input trace" data-edit-kind="box" width="240" height="60"></canvas>
+    <canvas id="tele-trace" class="el" data-edit="Input trace" data-edit-kind="box" width="356" height="92"></canvas>
     <div id="tele-delta" class="el white" data-edit="Delta to best" data-edit-kind="text" style="display:none">--</div>
     <div id="tele-pred" class="el white" data-edit="Predicted lap" data-edit-kind="text" style="display:none">--</div>
     <div id="tele-fuel" class="el white" data-edit="Fuel" data-edit-kind="text">--</div>
@@ -321,6 +365,7 @@
         if (d.has_reference && d.delta !== null) {
           delta.style.display = ""; pred.style.display = "";
           delta.textContent = (d.delta >= 0 ? "+" : "") + d.delta.toFixed(2) + "s";
+          delta.style.color = d.delta < 0 ? "#3ce07f" : "#ff5d5d";
           pred.textContent = d.predicted || "--";
         } else {
           delta.style.display = "none"; pred.style.display = "none";
@@ -331,7 +376,7 @@
           (f.laps_remaining !== null ? " · " + f.laps_remaining + " laps" : "") +
           (f.time_remaining ? " · " + f.time_remaining : "");
         document.getElementById("tele-top").textContent =
-          "TOP " + d.top_speed + " " + d.units.speed;
+          d.top_speed + " " + d.units.speed;
       } catch (e) { /* transient; keep polling */ }
     }
     async function pollTrace() {
