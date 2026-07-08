@@ -7,7 +7,7 @@ without a console. Offsets: community packet-'A' layout, validated live via
 tools/gt7-telemetry-probe.py. See the design spec.
 """
 import struct
-from collections import namedtuple
+from collections import deque, namedtuple
 
 # --- Packet 'A' field offsets (little-endian) ---
 OFF_MAGIC = 0x00
@@ -29,6 +29,10 @@ OFF_BRAKE = 0x92        # 0-255 (uint8)
 FLAG_ON_TRACK = 1 << 0
 FLAG_PAUSED = 1 << 1
 FLAG_LOADING = 1 << 2   # loading / processing (menu / replay transitions)
+
+# --- Trace buffer (throttle/brake) ---
+TRACE_WINDOW_S = 15.0
+TRACE_MIN_DT = 1.0 / 30      # decimate 60 Hz -> ~30 Hz
 
 GT7Packet = namedtuple("GT7Packet", [
     "speed_mps", "fuel_level", "fuel_capacity", "tyre_temp",
@@ -112,6 +116,8 @@ class TelemetryEngine:
         self._ref = None                  # reference (best) lap: {"time": s, "samples": [...]}
         self._lap_times = []      # last completed clean lap durations (s)
         self._lap_fuel = []       # last completed clean lap fuel burns (L)
+        self._trace = deque()     # (t, throttle01, brake01), decimated + windowed
+        self._trace_last_t = None
 
     def update(self, pkt, now):
         if self._lap_num is None:         # first packet: open a lap
@@ -126,6 +132,12 @@ class TelemetryEngine:
         if self._acc is not None:
             self._acc.add(pkt, now)
         self._last = pkt
+        if self._trace_last_t is None or (now - self._trace_last_t) >= TRACE_MIN_DT:
+            self._trace_last_t = now
+            self._trace.append((now, pkt.throttle / 255.0, pkt.brake / 255.0))
+            cutoff = now - TRACE_WINDOW_S
+            while self._trace and self._trace[0][0] < cutoff:
+                self._trace.popleft()
 
     def _finalise_lap(self):
         acc = self._acc
@@ -195,3 +207,7 @@ class TelemetryEngine:
             "has_reference": has_ref,
             "fuel": self._fuel(),
         }
+
+    def trace_batch(self, limit=150):
+        items = list(self._trace)[-limit:]
+        return [{"t": t, "throttle": thr, "brake": brk} for (t, thr, brk) in items]

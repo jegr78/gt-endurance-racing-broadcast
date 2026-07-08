@@ -186,6 +186,33 @@ def t_engine_fuel_continuous_decay():
     assert f["per_lap"] is not None and abs(f["per_lap"] - 2.0) < 0.3
 
 
+def t_engine_trace_decimates_and_windows():
+    eng = tm.TelemetryEngine()
+    t = 100.0
+    # 60 Hz for 20 s: raw 1200 samples, decimated to ~30 Hz, windowed to 15 s.
+    for i in range(1200):
+        thr = 255 if i % 2 == 0 else 0
+        eng.update(tm.parse_packet(_packet(throttle=thr, brake=0, lap=1)), t)
+        t += 1.0 / 60
+    tr = eng.trace_batch(limit=10_000)
+    assert tr, "trace should not be empty"
+    # decimated to ~30 Hz over 15 s window -> ~450 samples, well under raw 1200:
+    assert len(tr) < 700
+    # window bound: oldest sample within ~15 s of the newest:
+    assert tr[-1]["t"] - tr[0]["t"] <= tm.TRACE_WINDOW_S + 0.5
+    # normalised 0-1:
+    assert all(0.0 <= s["throttle"] <= 1.0 for s in tr)
+
+
+def t_engine_trace_batch_limit():
+    eng = tm.TelemetryEngine()
+    t = 100.0
+    for _ in range(300):
+        eng.update(tm.parse_packet(_packet(throttle=128, lap=1)), t)
+        t += 1.0 / 30
+    assert len(eng.trace_batch(limit=50)) == 50
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
