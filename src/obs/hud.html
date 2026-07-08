@@ -86,11 +86,13 @@
   #tele-delta{left:1400px;top:280px}
   #tele-pred{left:1400px;top:340px}
   #tele-fuel{left:1400px;top:400px}
+  #tele-top{left:1400px;top:460px}
   .tw{display:inline-block;min-width:2.6em;text-align:center;text-shadow:0 2px 4px rgba(0,0,0,.55)}
   .tw[data-band="cold"]{color:#4ea3ff}
   .tw[data-band="optimal"]{color:#37d67a}
   .tw[data-band="hot"]{color:#f5a623}
   .tw[data-band="critical"]{color:#ff4d4f}
+  .ta{font-size:.6em;opacity:.75;margin-left:.15em}
 
   /* Race-timer clock, merged in from the old separate timer source. Sits at the
      top band at the clock's true on-air size/position (was OBS crop y[217..895]
@@ -192,13 +194,14 @@
        vs 404, so it stays invisible in endurance (no such endpoint there). -->
   <div id="tele" style="display:none">
     <div id="tele-tyres" class="el" data-edit="Tyre temps" data-edit-kind="box">
-      <span class="tw" data-w="fl">--</span><span class="tw" data-w="fr">--</span>
-      <span class="tw" data-w="rl">--</span><span class="tw" data-w="rr">--</span>
+      <span class="tw" data-w="fl">--<small class="ta" data-a="fl"></small></span><span class="tw" data-w="fr">--<small class="ta" data-a="fr"></small></span>
+      <span class="tw" data-w="rl">--<small class="ta" data-a="rl"></small></span><span class="tw" data-w="rr">--<small class="ta" data-a="rr"></small></span>
     </div>
     <canvas id="tele-trace" class="el" data-edit="Input trace" data-edit-kind="box" width="240" height="60"></canvas>
     <div id="tele-delta" class="el white" data-edit="Delta to best" data-edit-kind="text" style="display:none">--</div>
     <div id="tele-pred" class="el white" data-edit="Predicted lap" data-edit-kind="text" style="display:none">--</div>
     <div id="tele-fuel" class="el white" data-edit="Fuel" data-edit-kind="text">--</div>
+    <div id="tele-top" class="el white" data-edit="Top speed" data-edit-kind="text">--</div>
   </div>
   <div id="clock" class="el white" data-edit="Clock" data-edit-kind="text"></div>
 
@@ -308,8 +311,10 @@
         const wheels = ["fl", "fr", "rl", "rr"];
         d.tyres.forEach((t, i) => {
           const el = tele.querySelector('[data-w="' + wheels[i] + '"]');
-          el.textContent = t.value + d.units.temp;
           el.setAttribute("data-band", t.band);
+          const av = el.querySelector('[data-a="' + wheels[i] + '"]');
+          el.childNodes[0].nodeValue = t.value + d.units.temp;
+          if (av) av.textContent = (t.avg != null ? " ø" + t.avg : "");
         });
         const delta = document.getElementById("tele-delta");
         const pred = document.getElementById("tele-pred");
@@ -325,6 +330,8 @@
           f.level + d.units.fuel +
           (f.laps_remaining !== null ? " · " + f.laps_remaining + " laps" : "") +
           (f.time_remaining ? " · " + f.time_remaining : "");
+        document.getElementById("tele-top").textContent =
+          "TOP " + d.top_speed + " " + d.units.speed;
       } catch (e) { /* transient; keep polling */ }
     }
     async function pollTrace() {

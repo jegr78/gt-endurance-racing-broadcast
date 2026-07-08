@@ -90,6 +90,7 @@ SAMPLE = {
         "tele-delta": "-0.42s",
         "tele-pred": "1:35.812",
         "tele-fuel": "42% · 12 laps",
+        "tele-top": "TOP 291 km/h",
         "round-flag": {"flag": "belgium"},
         "team1-logo": {"brand": "bmw"},
         "team2-logo": {"brand": "porsche"},
