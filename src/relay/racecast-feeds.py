@@ -118,6 +118,8 @@ import companion_common   # companion config.json path for bind-address resoluti
 import tailscale          # detect_tailscale_ip fallback for bind-address resolution (#236)
 import logsetup  # rotating per-feed/console loggers + streamlink pump (src/scripts on sys.path)
 import placeholders  # transparent-graphic placeholder path -> hide pure-placeholder assets from the browser
+import gt7_crypto      # GT7 UDP telemetry: Salsa20 decrypt (solo/POV only, #324)
+import gt7_telemetry   # GT7 UDP telemetry: packet parser + TelemetryStore (solo/POV only, #324)
 from services import external_tool_env  # de-PyInstaller the env for spawned external tools
 
 # Module-level relay logger. main() attaches the file/console handlers via
@@ -236,6 +238,17 @@ def program_audio_enabled(environ):
     unit-testable. Audio being default-muted is a front-end/gesture property, not
     this flag."""
     return str(environ.get("RACECAST_PROGRAM_AUDIO", "")).strip().lower() not in _PROGRAM_AUDIO_FALSEY
+
+
+# ---------- GT7 UDP telemetry (solo/POV only, #324) -------------------------
+_TELEMETRY_FALSEY = {"0", "false", "no", "off"}
+
+
+def telemetry_enabled(environ):
+    """True unless RACECAST_GT7_TELEMETRY is an explicit falsey token. Default ON
+    in solo; the listener idles harmlessly if no console answers. Pure so the
+    switch is unit-testable."""
+    return str(environ.get("RACECAST_GT7_TELEMETRY", "")).strip().lower() not in _TELEMETRY_FALSEY
 
 
 def should_failover(enabled, on_air_down, program_scene,
@@ -5939,7 +5952,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                  preview_manager=None, program_audio_service=None, brands_dir=None,
                  flag_graphic_store=None, app_version="dev",
                  channel_source=None, producer_source=None, part_store=None,
-                 channel_csv_url=None, push_url=None):
+                 channel_csv_url=None, push_url=None, telemetry_store=None):
     # Shared across all H instances (one limiter per relay). The CHAT limiter is
     # keyed on the authenticated streamer (per-commentator). The AUTH-FAILURE
     # limiter is keyed on the source IP, which behind Tailscale Funnel collapses to
@@ -7614,6 +7627,60 @@ def poller(source, interval, stop_evt):
         source.refresh()
 
 
+# ---------- GT7 UDP telemetry listener (solo/POV only, #324) ----------------
+GT7_RECV_PORT = 33740
+GT7_SEND_PORT = 33739
+GT7_HEARTBEAT_S = 10.0
+
+
+def _telemetry_loop(store, ps_ip, stop_evt):
+    """Bind 33740, send a heartbeat every ~10 s, decrypt+parse+feed each packet.
+    Best-effort: any error logs and the loop keeps running; no console -> idle."""
+    tlog = logging.getLogger("racecast.relay.telemetry")
+    sock = None
+    last_hb = 0.0
+    dest = ps_ip
+    while not stop_evt.is_set():
+        try:
+            if sock is None:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                sock.bind(("0.0.0.0", GT7_RECV_PORT))
+                sock.settimeout(1.0)
+            now = time.monotonic()
+            if now - last_hb >= GT7_HEARTBEAT_S:
+                target = dest or "255.255.255.255"
+                try:
+                    sock.sendto(b"A", (target, GT7_SEND_PORT))
+                except OSError as e:
+                    tlog.warning("heartbeat send failed: %s", e)
+                last_hb = now
+            try:
+                data, addr = sock.recvfrom(4096)
+            except socket.timeout:
+                continue
+            if dest is None:                 # discovery: latch the responder
+                dest = addr[0]
+                tlog.info("GT7 console discovered at %s", dest)
+            plain = gt7_crypto.decrypt_packet(data)
+            if plain is None:
+                continue
+            store.update(gt7_telemetry.parse_packet(plain), time.time())
+        except OSError as e:
+            tlog.warning("telemetry socket error: %s — reopening", e)
+            try:
+                if sock:
+                    sock.close()
+            except OSError:
+                pass  # already closed/gone -- reopening on the next loop iteration
+            sock = None
+            stop_evt.wait(1.0)
+        except Exception as e:                 # never let the thread die silently
+            tlog.error("telemetry loop error: %s", e)
+            stop_evt.wait(1.0)
+
+
 def cookie_health(path, now=None, max_age_hours=COOKIE_MAX_AGE_H):
     """Cookie staleness for /status, computed on demand from the file mtime —
     during a 24 h event the cookies age while the relay runs, so this must be
@@ -7759,6 +7826,9 @@ def main():
                          "Sheet, HUD, POV, timer, chat and console stay on. Defaults "
                          "on when RACECAST_KIND=solo (injected by the CLI for a "
                          "kind=solo profile).")
+    ap.add_argument("--gt7-ps-ip", default=os.environ.get("RACECAST_GT7_PS_IP"),
+                    help="PS4/PS5 IP for GT7 UDP telemetry (solo/POV). Empty -> "
+                         "subnet-broadcast discovery.")
     ap.add_argument("--ports", default="53001,53002")
     ap.add_argument("--stint", type=int, default=1,
                     help="1-based stint that is ON AIR right now (producer takeover): "
@@ -8125,6 +8195,24 @@ def main():
     if timer_store and timer_store.csv_url:
         threading.Thread(target=poller, args=(timer_store, args.hud_poll, stop_evt),
                          daemon=True).start()
+
+    # GT7 UDP telemetry (solo/POV only, #324): a best-effort listener thread that
+    # idles harmlessly when no console answers. telemetry_store stays None outside
+    # solo or when explicitly disabled, so make_handler's /telemetry/* (Task 8)
+    # 404s cleanly.
+    telemetry_store = None
+    if args.solo and telemetry_enabled(os.environ):
+        _tunits = os.environ.get("RACECAST_TELEMETRY_UNITS", "metric")
+        _tthr = (float(os.environ.get("RACECAST_TELEMETRY_TYRE_COLD", 70)),
+                 float(os.environ.get("RACECAST_TELEMETRY_TYRE_OPTIMAL_HI", 85)),
+                 float(os.environ.get("RACECAST_TELEMETRY_TYRE_HOT_HI", 95)))
+        telemetry_store = gt7_telemetry.TelemetryStore(
+            os.path.join(runtime, "telemetry.json"), units=_tunits, thresholds=_tthr)
+        threading.Thread(target=_telemetry_loop,
+                         args=(telemetry_store, args.gt7_ps_ip, stop_evt), daemon=True).start()
+        LOG.info("GT7 telemetry listener started (bind 0.0.0.0:33740, ps_ip=%s)",
+                args.gt7_ps_ip or "<discovery>")
+
     # Broadcast-chat reader (#294): resolve the channel's live videoId set and
     # poll each stream's chat. Its own ~30 s resolve cadence (not args.poll —
     # yt-dlp resolution is heavier than a CSV fetch). Best-effort daemon.
@@ -8186,7 +8274,8 @@ def main():
                            producer_source=producer_source,
                            part_store=part_store,
                            channel_csv_url=channel_csv_url,
-                           push_url=push_url)
+                           push_url=push_url,
+                           telemetry_store=telemetry_store)
     bind_addrs = resolve_bind_addresses(
         args.bind, detect_tailscale_ip() if args.bind == "auto" else None)
     servers, bound_addrs = [], []
