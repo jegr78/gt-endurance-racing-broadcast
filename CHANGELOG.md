@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.1](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.5.0...v1.5.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* **overlay:** let team logos align left/right in the builder (no more forced center) ([#451](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/451)) ([a865ee0](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/a865ee05026d6115c9f8ce4eca38f0312615a886))
+* **relay:** harden TEAM_NUMBER_RE against polynomial ReDoS (CodeQL [#170](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/170)) ([#453](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/453)) ([83ddb50](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/83ddb5069435d943ed339ebb119cbcae17e1648e))
+
 ## [1.5.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.4.0...v1.5.0) (2026-07-06)
 
 
