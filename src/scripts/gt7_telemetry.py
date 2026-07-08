@@ -6,7 +6,10 @@ functions are deterministic (timestamps are injected) so the engine is unit-test
 without a console. Offsets: community packet-'A' layout, validated live via
 tools/gt7-telemetry-probe.py. See the design spec.
 """
+import json
+import os
 import struct
+import threading
 from collections import deque, namedtuple
 
 # --- Packet 'A' field offsets (little-endian) ---
@@ -211,3 +214,109 @@ class TelemetryEngine:
     def trace_batch(self, limit=150):
         items = list(self._trace)[-limit:]
         return [{"t": t, "throttle": thr, "brake": brk} for (t, thr, brk) in items]
+
+
+def _fmt_time(seconds):
+    if seconds is None:
+        return None
+    m = int(seconds // 60)
+    s = seconds - m * 60
+    return f"{m}:{s:06.3f}" if m else f"{s:.3f}"
+
+
+def _band(temp_c, thresholds):
+    cold, opt_hi, crit = thresholds
+    if temp_c < cold:
+        return "cold"
+    if temp_c <= opt_hi:
+        return "optimal"
+    if temp_c < crit:
+        return "hot"
+    return "critical"
+
+
+def format_snapshot(snap, units, thresholds):
+    imperial = units == "imperial"
+    spd = snap["speed_mps"] * (2.2369363 if imperial else 3.6)
+    tyres = []
+    for c in snap["tyre_temp"]:
+        val = c * 9 / 5 + 32 if imperial else c
+        tyres.append({"value": round(val), "band": _band(c, thresholds)})
+    fuel = snap["fuel"]
+    lvl = fuel["level"] * (0.2641720 if imperial else 1.0)   # L -> gal
+    return {
+        "speed": round(spd),
+        "tyres": tyres,
+        "lap": snap["lap"],
+        "current_lap": _fmt_time(snap["current_lap_s"]),
+        "best_lap": _fmt_time(snap["best_s"]),
+        "delta": None if snap["delta_s"] is None else round(snap["delta_s"], 2),
+        "predicted": _fmt_time(snap["predicted_s"]),
+        "has_reference": snap["has_reference"],
+        "fuel": {
+            "level": round(lvl, 1),
+            "laps_remaining": (None if fuel["laps_remaining"] is None
+                               else round(fuel["laps_remaining"], 1)),
+            "time_remaining": _fmt_time(fuel["time_remaining_s"]),
+        },
+        "units": {
+            "speed": "mph" if imperial else "km/h",
+            "temp": "°F" if imperial else "°C",
+            "fuel": "gal" if imperial else "L",
+        },
+    }
+
+
+class TelemetryStore:
+    """Thread-safe wrapper around TelemetryEngine. Persists ONLY the reference lap
+    to `path` (survives an OBS Browser Source reload; resets on relay restart).
+    """
+
+    def __init__(self, path=None, units="metric", thresholds=(70, 85, 95)):
+        self._eng = TelemetryEngine()
+        self._lock = threading.Lock()
+        self._path = path
+        self._units = units
+        self._thresholds = thresholds
+        self._dirty_ref = None
+        self._load()
+
+    def update(self, pkt, now):
+        with self._lock:
+            had = self._eng._ref
+            self._eng.update(pkt, now)
+            if self._eng._ref is not had:      # a new reference lap was set
+                self._save()
+
+    def data(self):
+        with self._lock:
+            snap = self._eng.snapshot()
+        return format_snapshot(snap, self._units, self._thresholds)
+
+    def trace(self, limit=150):
+        with self._lock:
+            return self._eng.trace_batch(limit)
+
+    def _save(self):
+        if not self._path or self._eng._ref is None:
+            return
+        try:
+            tmp = self._path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(self._eng._ref, fh)
+            os.replace(tmp, self._path)
+        except OSError:
+            pass                               # best-effort, never crash the relay
+
+    def _load(self):
+        if not self._path:
+            return
+        try:
+            with open(self._path, encoding="utf-8") as fh:
+                ref = json.load(fh)
+            if (isinstance(ref, dict) and isinstance(ref.get("time"), (int, float))
+                    and isinstance(ref.get("samples"), list) and len(ref["samples"]) >= 2):
+                ref["samples"] = [(float(d), float(t)) for d, t in ref["samples"]]
+                self._eng._ref = ref
+        except (OSError, ValueError, TypeError):
+            pass  # no/invalid reference file yet -- start without one
