@@ -443,6 +443,12 @@ def _fake_obs_server(server_sock, password, state):
             state.setdefault("created_inputs", []).append(
                 (rdata["sceneName"], rdata["inputName"], rdata["inputKind"],
                  rdata.get("sceneItemEnabled")))
+            if state.get("create_raises"):      # OBS created it, but the response fails
+                _srv_send_json(conn, {"op": 7, "d": {
+                    "requestType": rtype, "requestId": rid,
+                    "requestStatus": {"result": False, "code": 604},
+                    "responseData": {}}})
+                continue
             resp = {}
         elif rtype == "RemoveInput":
             state.setdefault("removed_inputs", []).append(rdata["inputName"])
@@ -1592,6 +1598,23 @@ def t_probe_device_options_cleans_up_even_when_read_raises():
     # Both the pre-clear RemoveScene and the finally block's RemoveScene fired.
     assert state.get("removed_scenes", []).count(m.PROBE_SCENE_NAME) == 2
     created = [n for (_s, n, _k, _e) in state.get("created_inputs", [])]
+    assert sorted(created) == sorted(state.get("removed_inputs", []))
+
+
+def t_probe_device_options_removes_input_even_if_create_response_fails():
+    # OBS creates the input but the CreateInput response fails mid-exchange. Because the
+    # probe tracks the input for cleanup BEFORE calling CreateInput, the finally still
+    # removes every input OBS actually created — no leak on a lost create response.
+    state = {"create_raises": True,
+             "prop_items": {"device": _VIDEO_ITEMS, "device_id": _MIC_ITEMS}}
+    port, srv = _start_fake_obs(state)
+    try:
+        out = m.probe_device_options(port=port, password="supersecret", timeout=5)
+    finally:
+        srv.close()
+    assert out["devices"] == [] and out["note"]      # degraded (create failed)
+    created = [n for (_s, n, _k, _e) in state.get("created_inputs", [])]
+    assert created, "OBS should have recorded the create attempt"
     assert sorted(created) == sorted(state.get("removed_inputs", []))
 
 

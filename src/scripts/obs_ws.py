@@ -646,7 +646,15 @@ def probe_device_options(host="127.0.0.1", port=None, password=None, timeout=2.0
     Best-effort like release_feed_inputs: OBS unreachable / no capture kind /
     protocol surprise -> empty list(s) + a human-readable note, NEVER raises. The
     throwaway scene + inputs are ALWAYS removed (finally), including mid-probe, and
-    the current program scene is never switched (the temp input is created disabled)."""
+    the current program scene is never switched (the temp input is created disabled).
+
+    Concurrency: the probe uses FIXED scene/input names, so two probes running at
+    once (e.g. a Control Center /api/devices poll and a CLI device-scan) contend on
+    the same throwaway objects — the loser degrades to an empty list + note. That is
+    the deliberate trade-off of fixed names: the blast radius is confined to the
+    throwaway scene (never the real collection, never the program), nothing is left
+    permanently leaked (the next probe's pre-clear RemoveScene reclaims any straggler),
+    and it still never raises."""
     session, note = _connect(host, port, password, timeout)
     if session is None:
         return {"devices": [], "note": note, "mic": [], "mic_note": note}
@@ -655,11 +663,14 @@ def probe_device_options(host="127.0.0.1", port=None, password=None, timeout=2.0
     scene_made = False
 
     def read_options(input_name, kind, prop):
+        # Track for cleanup BEFORE CreateInput: if OBS creates the input but the
+        # response is lost mid-exchange, the finally still attempts RemoveInput
+        # (a RemoveInput for a never-created input is harmless — it is guarded).
+        created.append(input_name)
         try:
             session.request("CreateInput", {"sceneName": PROBE_SCENE_NAME,
                                             "inputName": input_name, "inputKind": kind,
                                             "sceneItemEnabled": False})
-            created.append(input_name)
             payload = session.request("GetInputPropertiesListPropertyItems",
                                       {"inputName": input_name, "propertyName": prop})
             return parse_property_items(payload), ""
@@ -676,6 +687,10 @@ def probe_device_options(host="127.0.0.1", port=None, password=None, timeout=2.0
             pass
         session.request("CreateScene", {"sceneName": PROBE_SCENE_NAME})
         scene_made = True
+        # device_property_name(...) can be None on an unknown platform, but read_options
+        # is only reached when vid_kind/aud_kind is truthy — and the kind matchers also
+        # return None on an unknown platform, so a None property never reaches OBS. Keep
+        # that invariant if you ever add a matcher for an exotic platform.
         if vid_kind:
             out["devices"], out["note"] = read_options(
                 PROBE_VIDEO_INPUT, vid_kind, device_property_name(sys.platform))

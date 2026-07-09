@@ -45,7 +45,7 @@ The current program scene is never switched; the temp input is created disabled.
 
 ### A. OBS-WS enumeration (`src/scripts/obs_ws.py`)
 
-**Retained (unchanged):** `parse_property_items`, `input_not_found`, and
+**Retained (unchanged):** `parse_property_items` and
 `device_property_name(platform, kind="video")` — which **already** returns the video
 property per OS (macOS `"device"`, Windows `"video_device_id"`, Linux `"device_id"`,
 cross-checked against `setup-assets.DEVICE_VARIANTS`) **and** the audio property for
