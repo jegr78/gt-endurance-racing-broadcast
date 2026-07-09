@@ -518,6 +518,70 @@ git commit -m "fix(solo): game/Discord/media audio monitorAndOutput via the gene
 
 ---
 
+## Task 6: Wire RACECAST_TYRES_CAPTURE into device-scan + .env.example
+
+The tyres device role (`RACECAST_TYRES_CAPTURE`) exists in `DEVICE_SOURCES` (Task 3) but a
+producer has no discoverable way to select the device: `racecast device-scan` is hardcoded
+to webcam/capture/mic, and `.env.example` omits it. The tyres device is a VIDEO device, so
+it resolves against the SAME enumerated video list `device_scan_cmd` already builds.
+
+**Files:**
+- Modify: `src/racecast.py` (`_parse_device_scan_args` ~2569, `device_scan_cmd` ~2593)
+- Modify: `.env.example` (add `RACECAST_TYRES_CAPTURE=` next to `RACECAST_CAPTURE`/`RACECAST_WEBCAM`)
+- Test: `tests/test_init.py` or wherever `_parse_device_scan_args` is unit-tested (grep: `_parse_device_scan_args`)
+
+- [ ] **Step 1: Write the failing arg-parse test**
+
+Find the existing `_parse_device_scan_args` test and add a `--tyres` case:
+
+```python
+def t_parse_device_scan_args_tyres():
+    assert m._parse_device_scan_args(["--tyres", "2"]) == (None, None, None, "2")
+    assert m._parse_device_scan_args(["--webcam", "1", "--tyres", "3"]) == ("1", None, None, "3")
+```
+
+(Adjust the tuple arity in the existing tests to the new 4-tuple.)
+
+- [ ] **Step 2: Run it, verify failure**
+
+Run: `python3 tests/test_init.py` (or the file that tests it)
+Expected: FAIL (returns a 3-tuple / rejects `--tyres`).
+
+- [ ] **Step 3: Add `--tyres` to `_parse_device_scan_args`**
+
+Return a 4-tuple `(webcam, capture, mic, tyres)`; recognize `--tyres VAL` exactly like
+`--capture`; update the usage string to include `[--tyres VAL]`.
+
+- [ ] **Step 4: Wire it through `device_scan_cmd`**
+
+Unpack the 4-tuple; prompt for `Tyres capture [index/name, blank=skip]:` in the interactive
+branch; `tyres_val, terr = resolve_device_selection(devices, tyres_tok or "")` (the SAME
+`devices` video list — tyres is a video device); on success add
+`updates["RACECAST_TYRES_CAPTURE"] = tyres_val`. Update the docstring to mention the new flag
++ env var.
+
+- [ ] **Step 5: Add to `.env.example`**
+
+Next to `RACECAST_CAPTURE=` / `RACECAST_WEBCAM=`, add (with a short comment):
+```
+# Second capture card cropped to GT7's tyre/fuel widget (solo Commentary only).
+RACECAST_TYRES_CAPTURE=
+```
+
+- [ ] **Step 6: Run tests + lint**
+
+Run: `python3 tests/test_init.py && python3 tools/run-tests.py && python3 tools/lint.py`
+Expected: PASS / ALL TEST FILES PASS / All checks passed.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/racecast.py .env.example tests/test_init.py
+git commit -m "feat(solo): device-scan --tyres + RACECAST_TYRES_CAPTURE in .env.example (epic #300)"
+```
+
+---
+
 ## Post-plan: visual dialog
 
 After all five tasks land, the exact default boxes for `#league-logo`, `#chat`, and
