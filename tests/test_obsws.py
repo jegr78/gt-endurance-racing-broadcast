@@ -1512,6 +1512,27 @@ def t_input_not_found():
     assert not m.input_not_found("connection reset")
 
 
+def t_pick_input_kind_finds_macos_v2_via_substring():
+    # macOS reports av_capture_input_v2; the matcher is the av_capture_input substring.
+    kinds = ["image_source", "av_capture_input_v2", "coreaudio_input_capture"]
+    assert m.pick_input_kind(kinds, m.VIDEO_INPUT_KIND_MATCHERS) == "av_capture_input_v2"
+    assert m.pick_input_kind(kinds, m.AUDIO_INPUT_KIND_MATCHERS) == "coreaudio_input_capture"
+
+
+def t_pick_input_kind_honors_matcher_priority_over_list_order():
+    # dshow appears BEFORE v4l2 in the list, but the matcher order is
+    # (av_capture, dshow, v4l2); dshow's matcher outranks v4l2's regardless of
+    # list position — assert the preferred matcher wins.
+    kinds = ["v4l2_input", "dshow_input"]
+    assert m.pick_input_kind(kinds, m.VIDEO_INPUT_KIND_MATCHERS) == "dshow_input"
+
+
+def t_pick_input_kind_none_when_no_match_or_bad_input():
+    assert m.pick_input_kind(["image_source", "color_source"], m.VIDEO_INPUT_KIND_MATCHERS) is None
+    assert m.pick_input_kind([], m.VIDEO_INPUT_KIND_MATCHERS) is None
+    assert m.pick_input_kind(None, m.VIDEO_INPUT_KIND_MATCHERS) is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

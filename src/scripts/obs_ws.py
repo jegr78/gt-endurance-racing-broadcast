@@ -583,6 +583,38 @@ def device_property_name(platform, kind="video"):
     return None
 
 
+# Platform capture-input kinds, as OBS reports them in GetInputKindList. Matched by
+# substring (macOS reports av_capture_input_v2, so an exact-string match would miss it)
+# and tried in this order — a preferred matcher wins over a later one regardless of the
+# order OBS lists the kinds in. macOS is live-validated; Windows/Linux go through the
+# same mechanism (documented cross-platform assumption, see the design spec).
+VIDEO_INPUT_KIND_MATCHERS = ("av_capture_input", "dshow_input", "v4l2_input")
+AUDIO_INPUT_KIND_MATCHERS = ("coreaudio_input_capture", "wasapi_input_capture",
+                             "pulse_input_capture")
+
+# Throwaway names for the device-enumeration probe (temp scene + disabled temp inputs;
+# never appear in program output; always removed after the probe).
+PROBE_SCENE_NAME = "__racecast_device_probe__"
+PROBE_VIDEO_INPUT = "__racecast_probe_video__"
+PROBE_MIC_INPUT = "__racecast_probe_mic__"
+
+
+def pick_input_kind(kind_list, matchers):
+    """First kind in `kind_list` whose lowercased value contains a `matchers`
+    substring. Honors matcher order first (a preferred matcher wins even if a
+    less-preferred kind appears earlier in `kind_list`), then list order. Returns
+    None if nothing matches or `kind_list` is not a list/tuple. Case-insensitive."""
+    if not isinstance(kind_list, (list, tuple)):
+        return None
+    lowered = [(k, str(k).lower()) for k in kind_list]
+    for sub in matchers:
+        needle = sub.lower()
+        for original, low in lowered:
+            if needle in low:
+                return original
+    return None
+
+
 def parse_property_items(payload):
     """[{name,value,enabled}] from a GetInputPropertiesListPropertyItems response,
     dropping items with an empty/None itemValue. Tolerant: bad shape -> []."""
