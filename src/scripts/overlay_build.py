@@ -318,6 +318,8 @@ def base_body(html):
 OVERLAY_SLOT_OBS_SOURCES = {
     "pov":    {"scene": "Stint",   "source": "Feed POV"},
     "webcam": {"scene": "Program", "source": "Solo Webcam", "export_scene": "Program"},
+    "tyres-capture": {"scene": "Program", "source": "Solo Tyres/Fuel Capture",
+                       "export_scene": "Program"},
 }
 
 # The px props we map onto an OBS scene-item transform.

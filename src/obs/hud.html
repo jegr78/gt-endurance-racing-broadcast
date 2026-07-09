@@ -153,6 +153,14 @@
   #webcam{position:absolute;left:14px;top:695px;width:336px;height:189px;
     border:3px solid #cfd6df;border-radius:10px;box-shadow:0 6px 22px rgba(0,0,0,.55);z-index:2}
 
+  /* Tyres/fuel capture box: an INVISIBLE positioning box, same pattern as the
+     POV placeholder above — no border/background/shadow of its own. The
+     cropped "Solo Tyres/Fuel Capture" OBS source shows through from beneath
+     this HUD overlay; this box only drives that source's transform (see
+     OVERLAY_SLOT_OBS_SOURCES, Task 4, epic #300). Provisional bottom-left
+     placement, tuned later. */
+  #tyres-capture{left:7px;top:926px;width:245px;height:84px}
+
   .ta{font-size:.6em;opacity:.75;margin-left:.15em}
 
   /* Race-timer clock, merged in from the old separate timer source. Sits at the
@@ -264,6 +272,10 @@
          on export + live, mirroring #pov -> "Feed POV" (issue #324). -->
     <div id="tele-panel" class="el" data-edit="Telemetry panel" data-edit-kind="box"></div>
     <div id="webcam" class="el" data-edit="Webcam" data-edit-kind="box"></div>
+    <!-- Tyres/fuel capture: another builder box slot (position/size only, no
+         visible chrome) driving the real OBS "Solo Tyres/Fuel Capture" device
+         transform on export + live, mirroring #webcam (Task 4, epic #300). -->
+    <div id="tyres-capture" class="el" data-edit="Tyres/Fuel capture" data-edit-kind="box"></div>
     <div id="tele-tyres" class="el" data-edit="Tyre temps" data-edit-kind="box">
       <span class="tw" data-w="fl">--<small class="ta" data-a="fl"></small></span><span class="tw" data-w="fr">--<small class="ta" data-a="fr"></small></span>
       <span class="tw" data-w="rl">--<small class="ta" data-a="rl"></small></span><span class="tw" data-w="rr">--<small class="ta" data-a="rr"></small></span>

@@ -239,8 +239,9 @@ def t_ob_extract_slots_from_real_hud():
                    # background and webcam frame are builder box slots too
                    # (position/size only — the webcam box also drives the real
                    # OBS "Solo Webcam" device transform, see
-                   # OVERLAY_SLOT_OBS_SOURCES).
-                   "tele-panel", "webcam",
+                   # OVERLAY_SLOT_OBS_SOURCES). "tyres-capture" mirrors that for
+                   # the "Solo Tyres/Fuel Capture" device (Task 4, epic #300).
+                   "tele-panel", "webcam", "tyres-capture",
                    "tele-tyres", "tele-trace", "tele-delta",
                    "tele-pred-lbl", "tele-pred",
                    "tele-fuel-lbl", "tele-fuel",
@@ -840,16 +841,31 @@ def t_overlay_slot_obs_sources_constant():
         "pov":    {"scene": "Stint",   "source": "Feed POV"},
         "webcam": {"scene": "Program", "source": "Solo Webcam",
                    "export_scene": "Program"},
+        "tyres-capture": {"scene": "Program", "source": "Solo Tyres/Fuel Capture",
+                           "export_scene": "Program"},
     }
-    # POV bakes whole-tree (no export_scene); the webcam bake is scene-scoped.
+    # POV bakes whole-tree (no export_scene); the webcam/tyres bakes are scene-scoped.
     assert "export_scene" not in ob.OVERLAY_SLOT_OBS_SOURCES["pov"]
     assert ob.OVERLAY_SLOT_OBS_SOURCES["webcam"]["export_scene"] == "Program"
+    assert ob.OVERLAY_SLOT_OBS_SOURCES["tyres-capture"]["export_scene"] == "Program"
+
+
+def t_overlay_slot_obs_sources_has_tyres_capture():
+    assert ob.OVERLAY_SLOT_OBS_SOURCES["tyres-capture"] == {
+        "scene": "Program", "source": "Solo Tyres/Fuel Capture",
+        "export_scene": "Program"}
 
 
 def t_box_from_css_webcam_slot():
     css = "#webcam{left:14px;top:695px;width:336px;height:189px}"
     assert ob.box_from_css(css, "webcam") == {"left": 14, "top": 695,
                                               "width": 336, "height": 189}
+
+
+def t_box_from_css_tyres_capture_slot():
+    css = "#tyres-capture{left:7px;top:926px;width:245px;height:84px}"
+    assert ob.box_from_css(css, "tyres-capture") == {"left": 7, "top": 926,
+                                                       "width": 245, "height": 84}
 
 
 def t_box_from_css_default_slot_is_pov():

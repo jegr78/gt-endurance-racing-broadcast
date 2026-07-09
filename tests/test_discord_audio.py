@@ -251,6 +251,34 @@ def t_apply_box_transform_webcam_scene_scoped_program_only():
     assert own["bounds"] == {"x": 1920.0, "y": 1080.0}
 
 
+def t_apply_box_transform_tyres_capture_scene_scoped_program_only():
+    # Mirrors t_apply_box_transform_webcam_scene_scoped_program_only: the tyres/fuel
+    # capture bake must reposition the 'Solo Tyres/Fuel Capture' item ONLY where it
+    # is embedded in 'Program' — a same-named decoy item in another scene must stay
+    # untouched even though it shares the name.
+    coll = {"sources": [
+        {"name": "Other Scene", "id": "scene", "settings": {"items": [
+            {"name": "Solo Tyres/Fuel Capture",           # decoy in another scene
+             "pos": {"x": 0.0, "y": 0.0},
+             "bounds": {"x": 1920.0, "y": 1080.0}},
+        ]}},
+        {"name": "Program", "id": "scene", "settings": {"items": [
+            {"name": "Solo Tyres/Fuel Capture",           # the embedded instance
+             "pos": {"x": 7.0, "y": 926.0},
+             "bounds": {"x": 245.0, "y": 84.0}},
+        ]}},
+    ]}
+    sa.apply_box_transform(coll, "Solo Tyres/Fuel Capture",
+                            {"left": 20, "top": 900, "width": 260, "height": 90},
+                            scene="Program")
+    decoy = coll["sources"][0]["settings"]["items"][0]
+    prog = coll["sources"][1]["settings"]["items"][0]
+    assert prog["pos"] == {"x": 20, "y": 900}              # Program: repositioned
+    assert prog["bounds"] == {"x": 260, "y": 90}
+    assert decoy["pos"] == {"x": 0.0, "y": 0.0}            # other scene: untouched
+    assert decoy["bounds"] == {"x": 1920.0, "y": 1080.0}
+
+
 def t_localize_tyres_capture_windows():
     coll = {"sources": [
         {"name": "Solo Tyres Capture Device", "id": "av_capture_input",
