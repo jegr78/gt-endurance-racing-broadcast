@@ -89,18 +89,19 @@
     justify-content:center;font-size:30px;font-family:"SF Mono","Consolas",monospace;
     text-shadow:0 2px 6px rgba(0,0,0,.85)}
 
-  /* GT3-dash telemetry panel, bottom-right: labels sit above the values via
-     ::before (amber, small-caps letter-spaced) so the value itself stays big. */
-  #tele-pred,#tele-fuel,#tele-top{flex-direction:column;align-items:flex-start;
-    height:auto;line-height:1.05;font-family:"SF Mono","Consolas",monospace;color:#eef2f6}
-  #tele-pred::before,#tele-fuel::before,#tele-top::before{font:700 11px "SF Mono",monospace;
-    letter-spacing:.16em;color:#e0b24a;margin-bottom:3px;text-shadow:none}
-  #tele-pred::before{content:"PRED. LAP"}
-  #tele-fuel::before{content:"FUEL"}
-  #tele-top::before{content:"TOP SPEED"}
-  #tele-pred{left:1522px;top:720px;font-size:30px;font-weight:700}
-  #tele-top{left:1712px;top:720px;font-size:30px;font-weight:700}
-  #tele-fuel{left:1522px;top:792px;font-size:23px}
+  /* GT3-dash telemetry panel, bottom-right: labels sit above the values as
+     separate slots (amber, small-caps letter-spaced) so the value itself
+     stays big and each label is independently editable. */
+  #tele-pred,#tele-fuel,#tele-top{line-height:1.05;
+    font-family:"SF Mono","Consolas",monospace;color:#eef2f6}
+  #tele-pred-lbl,#tele-fuel-lbl,#tele-top-lbl{font:700 11px "SF Mono","Consolas",monospace;
+    letter-spacing:.16em;color:#e0b24a;text-shadow:none}
+  #tele-pred-lbl{left:1522px;top:720px}
+  #tele-top-lbl{left:1712px;top:720px}
+  #tele-fuel-lbl{left:1522px;top:792px}
+  #tele-pred{left:1522px;top:737px;font-size:30px;font-weight:700}
+  #tele-top{left:1712px;top:737px;font-size:30px;font-weight:700}
+  #tele-fuel{left:1522px;top:809px;font-size:23px}
 
   /* Tyre blocks: colour-filled 2x2 grid, band gradients per GT3-dash look. */
   #tele-tyres{left:1522px;top:856px;width:356px;height:94px;
@@ -125,7 +126,8 @@
      top of it regardless of paint order). */
   #tele-panel{position:absolute;left:1500px;top:702px;width:398px;height:362px;
     background:rgba(9,12,17,.7);border:1px solid rgba(120,132,146,.42);border-radius:14px;z-index:0}
-  #tele-tyres,#tele-trace,#tele-delta,#tele-pred,#tele-fuel,#tele-top{z-index:1}
+  #tele-tyres,#tele-trace,#tele-delta,#tele-pred,#tele-fuel,#tele-top,
+  #tele-pred-lbl,#tele-fuel-lbl,#tele-top-lbl{z-index:1}
 
   /* Webcam frame, bottom-left: 16:9, bottom-aligned at y=884. Transparent
      interior — the OBS webcam source sits inside; no label text. */
@@ -245,8 +247,11 @@
     </div>
     <canvas id="tele-trace" class="el" data-edit="Input trace" data-edit-kind="box" width="356" height="92"></canvas>
     <div id="tele-delta" class="el white" data-edit="Delta to best" data-edit-kind="text" style="display:none">--</div>
+    <div id="tele-pred-lbl" class="el" data-edit="Pred. lap label" data-edit-kind="text">PRED. LAP</div>
     <div id="tele-pred" class="el white" data-edit="Predicted lap" data-edit-kind="text" style="display:none">--</div>
+    <div id="tele-fuel-lbl" class="el" data-edit="Fuel label" data-edit-kind="text">FUEL</div>
     <div id="tele-fuel" class="el white" data-edit="Fuel" data-edit-kind="text">--</div>
+    <div id="tele-top-lbl" class="el" data-edit="Top speed label" data-edit-kind="text">TOP SPEED</div>
     <div id="tele-top" class="el white" data-edit="Top speed" data-edit-kind="text">--</div>
   </div>
   <div id="clock" class="el white" data-edit="Clock" data-edit-kind="text"></div>

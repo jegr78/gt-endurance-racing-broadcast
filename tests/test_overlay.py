@@ -237,8 +237,10 @@ def t_ob_extract_slots_from_real_hud():
                    # OBS "Solo Webcam" device transform, see
                    # OVERLAY_SLOT_OBS_SOURCES).
                    "tele-panel", "webcam",
-                   "tele-tyres", "tele-trace", "tele-delta", "tele-pred",
-                   "tele-fuel", "tele-top", "clock"]
+                   "tele-tyres", "tele-trace", "tele-delta",
+                   "tele-pred-lbl", "tele-pred",
+                   "tele-fuel-lbl", "tele-fuel",
+                   "tele-top-lbl", "tele-top", "clock"]
     by_id = {s["id"]: s for s in slots}
     assert by_id["stint"]["label"] == "Stint banner"
     # default props (no data-edit-props) include the text set, not the team-only keys
