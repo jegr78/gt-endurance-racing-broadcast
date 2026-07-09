@@ -251,6 +251,19 @@ def telemetry_enabled(environ):
     return str(environ.get("RACECAST_GT7_TELEMETRY", "")).strip().lower() not in _TELEMETRY_FALSEY
 
 
+def telemetry_active(solo, environ):
+    """GT7 telemetry (the UDP listener + the /telemetry/* endpoints + the HUD
+    telemetry block) is POV-only. It runs only in a solo POV broadcast: the driver
+    streams their own console, which is the sole source of telemetry. A solo
+    COMMENTARY broadcast spectates someone else's stream and has no telemetry, so
+    it must NOT start the listener or serve the endpoints (otherwise the HUD's
+    telemetry block would show up empty). Gate = solo AND template 'pov' AND not
+    explicitly disabled. Pure so it is unit-testable."""
+    return (bool(solo)
+            and telemetry_enabled(environ)
+            and str(environ.get("RACECAST_TEMPLATE", "")).strip().lower() == "pov")
+
+
 def should_failover(enabled, on_air_down, program_scene,
                     on_air_scene="Stint", already_failed_over=False):
     """Whether to auto-switch OBS to the Intermission scene right now. Pure →
@@ -8217,12 +8230,12 @@ def main():
         threading.Thread(target=poller, args=(timer_store, args.hud_poll, stop_evt),
                          daemon=True).start()
 
-    # GT7 UDP telemetry (solo/POV only, #324): a best-effort listener thread that
+    # GT7 UDP telemetry (solo POV only, #324): a best-effort listener thread that
     # idles harmlessly when no console answers. telemetry_store stays None outside
-    # solo or when explicitly disabled, so make_handler's /telemetry/* (Task 8)
-    # 404s cleanly.
+    # a solo POV broadcast (endurance, solo COMMENTARY, or explicitly disabled), so
+    # make_handler's /telemetry/* (Task 8) 404s cleanly and the HUD block self-hides.
     telemetry_store = None
-    if args.solo and telemetry_enabled(os.environ):
+    if telemetry_active(args.solo, os.environ):
         _tunits = os.environ.get("RACECAST_TELEMETRY_UNITS", "metric")
         _tthr = (float(os.environ.get("RACECAST_TELEMETRY_TYRE_COLD", 70)),
                  float(os.environ.get("RACECAST_TELEMETRY_TYRE_OPTIMAL_HI", 85)),
