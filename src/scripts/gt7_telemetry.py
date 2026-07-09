@@ -150,10 +150,34 @@ class TelemetryEngine:
         self._tyre_hist = deque()     # (t, (fl,fr,rl,rr)) over TYRE_AVG_WINDOW_S
         self._top_speed = 0.0
 
+    def _is_session_boundary(self, pkt):
+        """A new session (practice->quali->race, or a restart) is signalled by the
+        lap counter going backwards or the best lap clearing to -1. GT7 sends no
+        explicit session-change event, so we derive it from these two signals."""
+        if self._lap_num is None:
+            return False
+        if pkt.lap < self._lap_num:                       # lap counter went backwards
+            return True
+        if self._last is not None and self._last.best_ms > 0 and pkt.best_ms == -1:
+            return True                                    # best lap was wiped
+        return False
+
+    def _reset_session(self, now, pkt):
+        """Drop everything derived from the previous session (possibly a different
+        track/car) and re-open a fresh lap at the boundary."""
+        self._ref = None
+        self._lap_times = []
+        self._lap_fuel = []
+        self._top_speed = 0.0
+        self._lap_num = pkt.lap
+        self._acc = _LapAccumulator(now, started_at_boundary=True)
+
     def update(self, pkt, now):
         if self._lap_num is None:         # first packet: open a lap MID-lap (not a boundary)
             self._lap_num = pkt.lap
             self._acc = _LapAccumulator(now)                       # started_at_boundary=False
+        elif self._is_session_boundary(pkt):   # session change: wipe stale derived state
+            self._reset_session(now, pkt)
         elif pkt.lap != self._lap_num:    # lap-change edge: this new lap starts at the line
             self._finalise_lap()
             self._lap_num = pkt.lap
@@ -349,8 +373,11 @@ class TelemetryStore:
         with self._lock:
             had = self._eng._ref
             self._eng.update(pkt, now)
-            if self._eng._ref is not had:      # a new reference lap was set
-                self._save()
+            if self._eng._ref is not had:
+                if self._eng._ref is None:     # session reset dropped the reference
+                    self._remove_file()
+                else:                          # a new reference lap was set
+                    self._save()
 
     def data(self):
         with self._lock:
@@ -369,6 +396,14 @@ class TelemetryStore:
             with open(tmp, "w", encoding="utf-8") as fh:
                 json.dump(self._eng._ref, fh)
             os.replace(tmp, self._path)
+        except OSError:
+            pass                               # best-effort, never crash the relay
+
+    def _remove_file(self):
+        if not self._path:
+            return
+        try:
+            os.remove(self._path)
         except OSError:
             pass                               # best-effort, never crash the relay
 

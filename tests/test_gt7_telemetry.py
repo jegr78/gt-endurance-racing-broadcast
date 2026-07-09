@@ -362,6 +362,57 @@ def t_band_critical_strictly_above_threshold():
     assert tm._band(85.0, (70, 85, 95)) == "optimal"
 
 
+def t_engine_session_reset_on_lap_backwards():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)         # mid-connect partial
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)       # sets a reference; now on lap 2
+    assert eng.snapshot()["has_reference"] is True
+    assert eng.snapshot()["top_speed_mps"] > 0.0
+    # a packet whose lap counter dropped => session boundary => full reset
+    eng.update(tm.parse_packet(_packet(lap=0, speed_mps=0.0)), 130.0)
+    s = eng.snapshot()
+    assert s["has_reference"] is False
+    assert s["top_speed_mps"] == 0.0
+    # a fresh clean lap re-establishes a reference
+    _feed_lap(eng, 131.0, 1, duration=10.0, speed=40.0)
+    assert eng.snapshot()["has_reference"] is True
+
+
+def t_engine_session_reset_on_best_cleared():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)
+    assert eng.snapshot()["has_reference"] is True
+    # best carries a real value, then clears to -1 (GT7 wipes it on a session change)
+    eng.update(tm.parse_packet(_packet(lap=2, best_ms=95000)), 130.0)
+    eng.update(tm.parse_packet(_packet(lap=2, best_ms=-1)), 130.1)
+    assert eng.snapshot()["has_reference"] is False
+
+
+def t_engine_no_reset_on_normal_lap_increment():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)       # ref from lap 1, now on lap 2
+    assert eng.snapshot()["has_reference"] is True
+    _feed_lap(eng, 120.0, 2, duration=10.0, speed=50.0)       # forward 2 -> 3: NO reset
+    assert eng.snapshot()["has_reference"] is True
+
+
+def t_store_removes_file_on_session_reset():
+    import tempfile
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "telemetry.json")
+    st = tm.TelemetryStore(path, units="metric", reset=True)
+    st.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    t = 100.0
+    for _ in range(100):
+        st.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), t); t += 0.1
+    st.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2)), t)   # lap edge -> ref saved
+    assert os.path.exists(path)
+    st.update(tm.parse_packet(_packet(lap=0, speed_mps=0.0)), t + 1)  # session boundary
+    assert not os.path.exists(path)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
