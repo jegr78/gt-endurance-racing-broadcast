@@ -666,6 +666,77 @@ def enumerate_device_options(input_name, property_name, host="127.0.0.1", port=N
         session.close()
 
 
+def probe_device_options(host="127.0.0.1", port=None, password=None, timeout=2.0):
+    """Enumerate the local video-capture and microphone devices OBS offers, WITHOUT
+    any solo collection imported — exactly what OBS shows when you add a capture
+    source by hand. Opens one session, creates a throwaway scene plus a disabled
+    temp input of the platform capture kind, reads its device dropdown, then removes
+    both. Returns {"devices": [...], "note": str, "mic": [...], "mic_note": str}
+    (each list is [{name, value, enabled}] from parse_property_items).
+
+    Best-effort like release_feed_inputs: OBS unreachable / no capture kind /
+    protocol surprise -> empty list(s) + a human-readable note, NEVER raises. The
+    throwaway scene + inputs are ALWAYS removed (finally), including mid-probe, and
+    the current program scene is never switched (the temp input is created disabled)."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return {"devices": [], "note": note, "mic": [], "mic_note": note}
+    out = {"devices": [], "note": "", "mic": [], "mic_note": ""}
+    created = []
+    scene_made = False
+
+    def read_options(input_name, kind, prop):
+        try:
+            session.request("CreateInput", {"sceneName": PROBE_SCENE_NAME,
+                                            "inputName": input_name, "inputKind": kind,
+                                            "sceneItemEnabled": False})
+            created.append(input_name)
+            payload = session.request("GetInputPropertiesListPropertyItems",
+                                      {"inputName": input_name, "propertyName": prop})
+            return parse_property_items(payload), ""
+        except Exception as exc:                     # noqa: BLE001 — best-effort contract
+            return [], (str(exc) or exc.__class__.__name__)
+
+    try:
+        kinds = session.request("GetInputKindList", {}).get("inputKinds", [])
+        vid_kind = pick_input_kind(kinds, VIDEO_INPUT_KIND_MATCHERS)
+        aud_kind = pick_input_kind(kinds, AUDIO_INPUT_KIND_MATCHERS)
+        try:                                         # clear a stale scene from a crash
+            session.request("RemoveScene", {"sceneName": PROBE_SCENE_NAME})
+        except Exception:                            # noqa: BLE001 — best-effort contract
+            pass
+        session.request("CreateScene", {"sceneName": PROBE_SCENE_NAME})
+        scene_made = True
+        if vid_kind:
+            out["devices"], out["note"] = read_options(
+                PROBE_VIDEO_INPUT, vid_kind, device_property_name(sys.platform))
+        else:
+            out["note"] = "no video capture input kind in this OBS"
+        if aud_kind:
+            out["mic"], out["mic_note"] = read_options(
+                PROBE_MIC_INPUT, aud_kind,
+                device_property_name(sys.platform, kind="audio"))
+        else:
+            out["mic_note"] = "no audio capture input kind in this OBS"
+    except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        reason = str(exc) or exc.__class__.__name__
+        out["note"] = out["note"] or reason
+        out["mic_note"] = out["mic_note"] or reason
+    finally:
+        for name in created:
+            try:
+                session.request("RemoveInput", {"inputName": name})
+            except Exception:                        # noqa: BLE001 — best-effort contract
+                pass
+        if scene_made:
+            try:
+                session.request("RemoveScene", {"sceneName": PROBE_SCENE_NAME})
+            except Exception:                        # noqa: BLE001 — best-effort contract
+                pass
+        session.close()
+    return out
+
+
 def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
                         password=None, timeout=2.0):
     """Make OBS drop its connections to the (just killed) relay feed ports by
