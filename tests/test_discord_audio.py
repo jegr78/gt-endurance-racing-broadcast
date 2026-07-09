@@ -288,6 +288,8 @@ def t_commentary_has_tyres_capture_structure():
     it = tyres[0]
     assert (it["crop_left"], it["crop_top"], it["crop_right"], it["crop_bottom"]) == (258, 950, 1336, 18)
     assert it["bounds_type"] == 2
+    # The tyres item takes a genuinely-free scene-item id (not a colliding one).
+    assert [i.get("id") for i in prog].count(it["id"]) == 1, "tyres item id collides"
     # POV collection must NOT gain the tyres source (Commentary-only)
     with open(os.path.join(root, "src/obs/GT_Racing_Solo_POV.json"), encoding="utf-8") as fh:
         pov = json.load(fh)

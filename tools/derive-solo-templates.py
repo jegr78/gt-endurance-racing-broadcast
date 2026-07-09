@@ -184,8 +184,11 @@ def derive(with_tyres=False):
     # bottom-left. Same PiP transform template as the webcam, plus the fixed crop.
     tyres_item = None
     if with_tyres:
+        # id 36 = the next genuinely-unused item id (the base Program items run up to
+        # 35). The sibling cap/cam/mic items (29/30/32) collide with base flag items —
+        # OBS tolerates duplicate item ids — but a new item should still take a free one.
         tyres_item = _program_item(pov_item, "Solo Tyres/Fuel Capture", U["tyres_scene"],
-                                   (7, 926), (245, 84), item_id=33)
+                                   (7, 926), (245, 84), item_id=36)
         tyres_item.update(TYRES_CROP)
 
     new_items = [cap_item]
@@ -201,7 +204,7 @@ def derive(with_tyres=False):
     new_items.append(mic_item_program)
     program["settings"]["items"] = new_items
     program["settings"]["id_counter"] = max(
-        int(program["settings"].get("id_counter", 0)), 33 if with_tyres else 32)
+        int(program["settings"].get("id_counter", 0)), 36 if with_tyres else 32)
 
     # Device leaf sources + wrapping scenes. The leaf is named distinctly from its
     # wrapping scene ("Solo Capture Device" vs the "Solo Capture" scene) — mirroring

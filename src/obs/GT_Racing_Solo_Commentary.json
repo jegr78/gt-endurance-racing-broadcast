@@ -2108,7 +2108,7 @@
             "versioned_id": "scene",
             "settings": {
                 "custom_size": false,
-                "id_counter": 33,
+                "id_counter": 36,
                 "items": [
                     {
                         "name": "Solo Capture",
@@ -2304,7 +2304,7 @@
                         "crop_top": 950,
                         "crop_right": 1336,
                         "crop_bottom": 18,
-                        "id": 33,
+                        "id": 36,
                         "group_item_backup": false,
                         "pos": {
                             "x": 7.0,
