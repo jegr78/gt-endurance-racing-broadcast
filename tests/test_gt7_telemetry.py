@@ -398,6 +398,42 @@ def t_engine_no_reset_on_normal_lap_increment():
     assert eng.snapshot()["has_reference"] is True
 
 
+def t_engine_pit_lap_via_standstill_excluded():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    t = 100.0
+    for _ in range(80):                                   # ~8 s driving
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), t); t += 0.1
+    for _ in range(30):                                   # ~3 s stationary (pit box)
+        eng.update(tm.parse_packet(_packet(speed_mps=0.0, lap=1)), t); t += 0.1
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2)), t)   # lap edge
+    assert eng.snapshot()["has_reference"] is False       # pit lap never became reference
+
+
+def t_engine_pit_lap_via_fuel_rise_excluded():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0, fuel_level=20.0)), 99.0)
+    t = 100.0
+    for i in range(100):                                  # fuel jumps up mid-lap = refuel
+        fuel = 20.0 + (10.0 if i > 50 else 0.0)
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1, fuel_level=fuel)), t); t += 0.1
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2, fuel_level=30.0)), t)
+    assert eng.snapshot()["has_reference"] is False
+
+
+def t_engine_brief_slowdown_not_pit():
+    """False-positive guard: a short (<PIT_STOP_MIN_S) slow section is not a pit lap."""
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    t = 100.0
+    for _ in range(80):
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), t); t += 0.1
+    for _ in range(10):                                   # ~1 s slow (hairpin), below threshold
+        eng.update(tm.parse_packet(_packet(speed_mps=0.0, lap=1)), t); t += 0.1
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2)), t)
+    assert eng.snapshot()["has_reference"] is True        # brief stop still a valid lap
+
+
 def t_store_removes_file_on_session_reset():
     import tempfile
     d = tempfile.mkdtemp()

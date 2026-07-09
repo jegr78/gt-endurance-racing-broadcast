@@ -55,6 +55,16 @@ MIN_LAP_DIST = 100.0      # metres; started_at_boundary is the primary guard, th
 SAMPLE_MIN_DIST = 4.0     # metres between retained samples
 MAX_SAMPLES = 4000        # ~16 km at 4 m spacing — far past any real lap
 
+# --- Pit-lap guards ---
+# A pit (in/out) lap is not representative: its time is inflated by the pit-lane
+# transit and the stationary service, and a refuel makes its fuel delta negative.
+# GT7 sends no pit flag, so we derive one: a sustained standstill (the car must
+# stop in the box for ANY service, incl. tyre-only) OR fuel rising during the lap
+# (a refuel). Such a lap is excluded from the reference and the time/fuel averages.
+STOPPED_SPEED_MPS = 0.5   # at/below this the car counts as stationary
+PIT_STOP_MIN_S = 2.0      # cumulative standstill (s) that marks a pit lap
+FUEL_RISE_L = 0.05        # litres; fuel_end above fuel_start by this = a refuel
+
 GT7Packet = namedtuple("GT7Packet", [
     "speed_mps", "fuel_level", "fuel_capacity", "tyre_temp",
     "throttle", "brake", "lap", "best_ms", "last_ms",
@@ -94,7 +104,7 @@ class _LapAccumulator:
     the relay connects), True for accumulators opened at a real lap-change edge —
     only the latter may become a completed/reference lap (see _finalise_lap)."""
     __slots__ = ("t0", "elapsed", "distance", "samples", "clean", "last_t",
-                 "fuel_start", "fuel_end", "started_at_boundary")
+                 "fuel_start", "fuel_end", "started_at_boundary", "pit", "stopped_s")
 
     def __init__(self, now, started_at_boundary=False):
         self.t0 = now
@@ -106,6 +116,8 @@ class _LapAccumulator:
         self.fuel_start = None
         self.fuel_end = None
         self.started_at_boundary = started_at_boundary
+        self.pit = False
+        self.stopped_s = 0.0
 
     def add(self, pkt, now):
         dt = now - self.last_t
@@ -120,6 +132,10 @@ class _LapAccumulator:
             return
         self.elapsed += dt
         self.distance += max(0.0, pkt.speed_mps) * dt
+        if pkt.speed_mps < STOPPED_SPEED_MPS:             # standstill in the pit box
+            self.stopped_s += dt
+            if self.stopped_s >= PIT_STOP_MIN_S:
+                self.pit = True
         if self.distance >= self.samples[-1][0] + SAMPLE_MIN_DIST:
             if len(self.samples) >= MAX_SAMPLES:
                 self.clean = False        # bogus/flooded lap: cap memory, drop the lap
@@ -128,6 +144,8 @@ class _LapAccumulator:
         if self.fuel_start is None:
             self.fuel_start = pkt.fuel_level
         self.fuel_end = pkt.fuel_level
+        if self.fuel_end > self.fuel_start + FUEL_RISE_L:  # refuel = pit lap
+            self.pit = True
 
 
 class TelemetryEngine:
@@ -204,6 +222,8 @@ class TelemetryEngine:
         acc = self._acc
         if acc is None or not acc.clean or len(acc.samples) < 2:
             return
+        if acc.pit:                       # in/out lap (standstill or refuel): never a
+            return                        # reference, and out of the time/fuel averages
         # Only a lap that opened at a real lap-change edge and ran a plausible
         # minimum length counts — rejects the mid-lap-connect partial and menu/
         # out-lap blips that would otherwise poison the reference + fuel/time avgs.
