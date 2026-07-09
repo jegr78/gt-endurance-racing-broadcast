@@ -487,7 +487,11 @@
       setText("round-top", d.round && d.round.top);
       setText("round-country", d.round && d.round.country);
       setImg("round-flag", d.round && d.round.flagKey, "flags");
-      (d.teams || []).forEach((t, i) => { if (i < 3) setTeam(i, t); });
+      // Always process all three team slots (not just the present ones): an
+      // absent team must get setTeam's `.empty` class so its lower-third box
+      // hides. Iterating only d.teams left empty slots visible when a race has
+      // < 3 cars, or in solo POV/Commentary where there is no team lower-third.
+      { const _teams = d.teams || []; for (let i = 0; i < 3; i++) setTeam(i, _teams[i]); }
       setText("race-control", d.raceControl);
       setFlag("flag-status", d.flag);
       const povOn = !!d.povActive;
