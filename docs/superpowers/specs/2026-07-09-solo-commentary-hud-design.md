@@ -131,6 +131,41 @@ in POV and Commentary (positioned per profile) and harmlessly hidden elsewhere.
 
 **Default position/size/background:** TBD in the visual dialog.
 
+## 4. Audio monitoring config (both solo collections)
+
+Validated against Jens's real `D-GT7-M` Windows export. Two findings:
+
+**Structure + device identifiers — confirmed correct.** Our per-role device model
+(leaf device source + wrapping scene, per-OS localization at `racecast setup`, id from an
+`.env` token) matches the real export's shape. The Windows identifiers our
+`DEVICE_VARIANTS`/`AUDIO_VARIANTS` produce are exactly right:
+- video (Capture, Webcam, **Tyres**): `dshow_input` + `video_device_id`
+  (`"Name:\\?\usb#vid_…&pid_…"` — matches `Elgato Facecam` / `Elgato HD60 X`);
+- mic (audio): `wasapi_input_capture` + `device_id` (`{0.0.1.…}.{GUID}` — matches
+  `K66 Microphone`).
+The new tyres capture reuses the video variant. (No template change needed here — this is
+a validation result.)
+
+**Monitoring — a real gap to fix.** Today BOTH solo collections ship every AV source at
+`monitoring_type=0`, and `Solo Capture Device` is `muted=True` → the game/race audio is
+completely silent (not heard, not streamed). Confirmed target config (bake into BOTH
+`GT_Racing_Solo_POV.json` and `GT_Racing_Solo_Commentary.json`):
+
+| Source | Set to | Rationale |
+|---|---|---|
+| `Solo Capture Device` (game) | `muted=False`, `monitoring_type=2` (monitorAndOutput) | Commentator/driver hears the race + it's in the stream mix (Jens confirmed for BOTH modes) |
+| `Discord Audio Capture` | `monitoring_type=2` | Hear Discord guests + in the mix |
+| `Commentary Mic Device` | unchanged (`muted=False`, `mon=0`) | Output on, no self-monitor (avoids echo) |
+| `Solo Webcam Device` | unchanged (`muted=True`) | No relevant audio |
+| `Solo Tyres Capture Device` (new, Commentary) | `muted=True` | Video-only; game audio already comes from Solo Capture → no double |
+
+Optional (matches the real export, not yet confirmed — decide at spec review): set the
+media sources `Intro Video` / `Outro Video` / `Intermission Music` to
+`monitoring_type=2` so the producer hears clips during transitions.
+
+NB: OBS monitoring only produces sound when a **Monitoring Device** is set in OBS
+Advanced Audio — that stays an operator setup step, documented not automated.
+
 ## Data flow summary
 
 | Element | Source of data/asset | OBS coupling | Builder-editable |
@@ -152,9 +187,14 @@ in POV and Commentary (positioned per profile) and harmlessly hidden elsewhere.
   serves the logo / 404s appropriately (relay handler test).
 - Relay handler: `/hud/logo` route unit (served bytes + content-type + 404 gate);
   `#chat` rendering is client-side (covered by the visual dialog, not a unit test).
+- Audio-monitoring config: a template assertion (both solo collections) that
+  `Solo Capture Device` is `muted=False` + `monitoring_type=2`, `Discord Audio Capture` is
+  `monitoring_type=2`, the mic stays `mon=0`/output, and (Commentary) the new
+  `Solo Tyres Capture Device` is `muted=True`.
 - Endurance byte-identical: the three slots self-hide (logo `onerror`, chat 404-gate) and
   the tyres map entry is a no-op where the source is absent — assert the endurance HUD is
-  unchanged.
+  unchanged. (The audio-monitoring change touches the solo collections only, not the
+  endurance collection.)
 - Full suite + `tools/lint.py` green; refresh any affected wiki screenshot per the CLAUDE.md
   rule if the Control Center overlay-builder view changes.
 
