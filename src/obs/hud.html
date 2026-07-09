@@ -79,7 +79,7 @@
 
   /* League logo box (Solo Commentary HUD, epic #300): a plain builder box slot,
      top-right, provisional position — fed by the relay's /hud/logo route. */
-  #league-logo { left: 1672px; top: 20px; width: 208px; height: 120px; }
+  #league-logo { left: 1748px; top: 18px; width: 150px; height: 150px; }
   #league-logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
   /* Stream-chat box (Solo Commentary HUD, epic #300): renders the read-only
@@ -88,7 +88,7 @@
      endurance and any event with no Channel tab stay byte-identical.
      Provisional box, left side — tuned later; --chat-* vars mirror the
      intermission page's --ichat-* so a league can restyle via override CSS. */
-  #chat{left:24px;top:512px;width:360px;height:420px;flex-direction:column;align-items:stretch;
+  #chat{left:24px;top:660px;width:340px;height:258px;flex-direction:column;align-items:stretch;
     overflow:hidden;border-radius:12px;background:rgba(12,16,22,.55);color:#eef2f6;
     font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;padding:10px 12px}
   #chat-log{overflow:hidden;white-space:normal}   /* reset .el's nowrap so messages wrap */
@@ -272,12 +272,6 @@
          on export + live, mirroring #pov -> "Feed POV" (issue #324). -->
     <div id="tele-panel" class="el" data-edit="Telemetry panel" data-edit-kind="box"></div>
     <div id="webcam" class="el" data-edit="Webcam" data-edit-kind="box"></div>
-    <!-- Tyres/fuel capture: another builder box slot (position/size only, no
-         visible chrome) driving the real OBS "Solo Tyres/Fuel Capture" device
-         transform on export + live, mirroring the webcam slot (Task 4, epic #300).
-         NB: never write a bare "#<slotid>" token in a hud.html comment — the
-         slot-box regex scans style text and would latch onto it. -->
-    <div id="tyres-capture" class="el" data-edit="Tyres/Fuel capture" data-edit-kind="box"></div>
     <div id="tele-tyres" class="el" data-edit="Tyre temps" data-edit-kind="box">
       <span class="tw" data-w="fl">--<small class="ta" data-a="fl"></small></span><span class="tw" data-w="fr">--<small class="ta" data-a="fr"></small></span>
       <span class="tw" data-w="rl">--<small class="ta" data-a="rl"></small></span><span class="tw" data-w="rr">--<small class="ta" data-a="rr"></small></span>
@@ -291,6 +285,13 @@
     <div id="tele-top-lbl" class="el" data-edit="Top speed label" data-edit-kind="text">TOP SPEED</div>
     <div id="tele-top" class="el white" data-edit="Top speed" data-edit-kind="text">--</div>
   </div>
+  <!-- Tyres/fuel capture: a top-level builder box slot (position/size only, no visible
+       chrome) driving the real OBS "Solo Tyres/Fuel Capture" device transform on export +
+       live, like the webcam slot. Kept OUTSIDE the telemetry block so it stays
+       builder-editable in a Commentary profile (which has no telemetry -> #tele hidden).
+       Commentary-only in effect: the OBS source exists only in the Commentary collection,
+       so the box->OBS map entry is a no-op elsewhere (Task 4/epic #300). -->
+  <div id="tyres-capture" class="el" data-edit="Tyres/Fuel capture" data-edit-kind="box"></div>
   <div id="clock" class="el white" data-edit="Clock" data-edit-kind="text"></div>
 
 <script>

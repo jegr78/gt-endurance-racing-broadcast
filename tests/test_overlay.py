@@ -239,13 +239,17 @@ def t_ob_extract_slots_from_real_hud():
                    # background and webcam frame are builder box slots too
                    # (position/size only — the webcam box also drives the real
                    # OBS "Solo Webcam" device transform, see
-                   # OVERLAY_SLOT_OBS_SOURCES). "tyres-capture" mirrors that for
-                   # the "Solo Tyres/Fuel Capture" device (Task 4, epic #300).
-                   "tele-panel", "webcam", "tyres-capture",
+                   # OVERLAY_SLOT_OBS_SOURCES).
+                   "tele-panel", "webcam",
                    "tele-tyres", "tele-trace", "tele-delta",
                    "tele-pred-lbl", "tele-pred",
                    "tele-fuel-lbl", "tele-fuel",
-                   "tele-top-lbl", "tele-top", "clock"]
+                   "tele-top-lbl", "tele-top",
+                   # "tyres-capture" is a TOP-LEVEL slot (outside #tele) so it stays
+                   # builder-editable in a Commentary profile that has no telemetry;
+                   # it drives the "Solo Tyres/Fuel Capture" OBS device transform
+                   # (Task 4, epic #300).
+                   "tyres-capture", "clock"]
     by_id = {s["id"]: s for s in slots}
     assert by_id["stint"]["label"] == "Stint banner"
     # default props (no data-edit-props) include the text set, not the team-only keys
