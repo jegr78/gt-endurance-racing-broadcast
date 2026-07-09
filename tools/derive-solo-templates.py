@@ -277,6 +277,20 @@ def derive(with_tyres=False):
     col["sources"] = [s for s in col["sources"] if s.get("name") != "Splitscreen Labels"]
     if col.get("groups"):
         col["groups"] = [g for g in col["groups"] if g.get("name") != "Split HUD"]
+
+    # Audio monitoring: the game/race + Discord + media must be audible AND streamed
+    # (monitoring_type 2 = MONITOR_AND_OUTPUT). The game capture ships hot (unmuted), so
+    # the commentator/driver hears the race in-headset and it lands in the stream mix.
+    # The mic stays output-only (monitoring_type 0 — no self-monitor, no echo); the webcam
+    # and the tyres second-capture stay muted (video-only — game audio already comes from
+    # Solo Capture). Applies to BOTH solo outputs (POV + Commentary).
+    cap_src["muted"] = False
+    cap_src["monitoring_type"] = 2
+    by_final = _by_name(col["sources"])
+    for nm in ("Discord Audio Capture", "Intro Video", "Outro Video", "Intermission Music"):
+        s = by_final.get(nm)
+        if s is not None:
+            s["monitoring_type"] = 2
     return col
 
 
