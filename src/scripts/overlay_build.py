@@ -93,7 +93,7 @@ SAMPLE = {
         "tele-fuel-lbl": "FUEL",
         "tele-fuel": "42% · 12 laps",
         "tele-top-lbl": "TOP SPEED",
-        "tele-top": "TOP 291 km/h",
+        "tele-top": "291 km/h",
         "round-flag": {"flag": "belgium"},
         "team1-logo": {"brand": "bmw"},
         "team2-logo": {"brand": "porsche"},
