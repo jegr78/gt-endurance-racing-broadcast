@@ -25,6 +25,21 @@ def t_telemetry_enabled_truthy_token():
     assert m.telemetry_enabled({"RACECAST_GT7_TELEMETRY": "1"}) is True
 
 
+def t_telemetry_active_pov_only():
+    # POV solo (template=pov) -> telemetry runs.
+    assert m.telemetry_active(True, {"RACECAST_TEMPLATE": "pov"}) is True
+    assert m.telemetry_active(True, {"RACECAST_TEMPLATE": "POV"}) is True
+    # Commentary solo -> NO telemetry (no console; the block must not show empty).
+    assert m.telemetry_active(True, {"RACECAST_TEMPLATE": "commentary"}) is False
+    # Solo but template unset -> off (POV must be explicit).
+    assert m.telemetry_active(True, {}) is False
+    # Not solo (endurance) -> off regardless of template.
+    assert m.telemetry_active(False, {"RACECAST_TEMPLATE": "pov"}) is False
+    # POV solo but explicitly disabled -> off.
+    assert m.telemetry_active(True, {"RACECAST_TEMPLATE": "pov",
+                                     "RACECAST_GT7_TELEMETRY": "0"}) is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

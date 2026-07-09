@@ -30,6 +30,7 @@ def _packet(**kw):
     struct.pack_into("<h", b, tm.OFF_LAP, kw.get("lap", 1))
     struct.pack_into("<i", b, tm.OFF_BEST_MS, kw.get("best_ms", -1))
     struct.pack_into("<i", b, tm.OFF_LAST_MS, kw.get("last_ms", -1))
+    struct.pack_into("<i", b, tm.OFF_DAY_PROGRESSION, kw.get("day_ms", 0))
     struct.pack_into("<H", b, tm.OFF_FLAGS, kw.get("flags", tm.FLAG_ON_TRACK))
     b[tm.OFF_THROTTLE] = kw.get("throttle", 0)
     b[tm.OFF_BRAKE] = kw.get("brake", 0)
@@ -238,6 +239,7 @@ def t_format_metric_and_bands():
             "tyre_temp_avg": (65.0, 78.0, 90.0, 99.0), "top_speed_mps": 55.0,
             "lap": 4, "current_lap_s": 12.3, "best_s": 95.4,
             "delta_s": -0.42, "predicted_s": 94.98, "has_reference": True,
+            "time_of_day_ms": 45000000,
             "fuel": {"level": 40.0, "per_lap": 2.5, "laps_remaining": 16.0,
                      "time_remaining_s": 1600.0}}
     out = tm.format_snapshot(snap, "metric", (70, 85, 95))
@@ -254,6 +256,7 @@ def t_format_imperial_converts_tyres():
             "tyre_temp_avg": (70.0, 70.0, 70.0, 70.0), "top_speed_mps": 50.0,
             "lap": 1, "current_lap_s": 0.0, "best_s": None,
             "delta_s": None, "predicted_s": None, "has_reference": False,
+            "time_of_day_ms": None,
             "fuel": {"level": 10.0, "per_lap": None,
                      "laps_remaining": None, "time_remaining_s": None}}
     out = tm.format_snapshot(snap, "imperial", (70, 85, 95))
@@ -295,6 +298,7 @@ def t_format_includes_top_speed_and_tyre_avg():
             "tyre_temp_avg": (68.0, 69.0, 71.0, 72.0), "top_speed_mps": 90.0,
             "lap": 1, "current_lap_s": 0.0, "best_s": None, "delta_s": None,
             "predicted_s": None, "has_reference": False,
+            "time_of_day_ms": None,
             "fuel": {"level": 10.0, "per_lap": None, "laps_remaining": None,
                      "time_remaining_s": None}}
     out = tm.format_snapshot(snap, "metric", (70, 85, 95))
@@ -360,6 +364,133 @@ def t_band_critical_strictly_above_threshold():
     assert tm._band(95.0, (70, 85, 95)) == "hot"
     assert tm._band(95.01, (70, 85, 95)) == "critical"
     assert tm._band(85.0, (70, 85, 95)) == "optimal"
+
+
+def t_engine_session_reset_on_lap_backwards():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)         # mid-connect partial
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)       # sets a reference; now on lap 2
+    assert eng.snapshot()["has_reference"] is True
+    assert eng.snapshot()["top_speed_mps"] > 0.0
+    # a packet whose lap counter dropped => session boundary => full reset
+    eng.update(tm.parse_packet(_packet(lap=0, speed_mps=0.0)), 130.0)
+    s = eng.snapshot()
+    assert s["has_reference"] is False
+    assert s["top_speed_mps"] == 0.0
+    # a fresh clean lap re-establishes a reference
+    _feed_lap(eng, 131.0, 1, duration=10.0, speed=40.0)
+    assert eng.snapshot()["has_reference"] is True
+
+
+def t_engine_session_reset_on_best_cleared():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)
+    assert eng.snapshot()["has_reference"] is True
+    # best carries a real value, then clears to -1 (GT7 wipes it on a session change)
+    eng.update(tm.parse_packet(_packet(lap=2, best_ms=95000)), 130.0)
+    eng.update(tm.parse_packet(_packet(lap=2, best_ms=-1)), 130.1)
+    assert eng.snapshot()["has_reference"] is False
+
+
+def t_engine_no_reset_on_normal_lap_increment():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)       # ref from lap 1, now on lap 2
+    assert eng.snapshot()["has_reference"] is True
+    _feed_lap(eng, 120.0, 2, duration=10.0, speed=50.0)       # forward 2 -> 3: NO reset
+    assert eng.snapshot()["has_reference"] is True
+
+
+def t_engine_time_of_day_survives_session_reset():
+    """The on-track clock keeps ticking through a session reset (it reads _last,
+    which the reset deliberately does not clear) even though the reference drops."""
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)       # ref set, now on lap 2
+    assert eng.snapshot()["has_reference"] is True
+    # a session-boundary packet (lap backwards) carrying a real time-of-day
+    eng.update(tm.parse_packet(_packet(lap=0, speed_mps=0.0, day_ms=45000000)), 130.0)
+    s = eng.snapshot()
+    assert s["has_reference"] is False                        # reset happened
+    assert s["time_of_day_ms"] == 45000000                    # clock kept, not blanked
+
+
+def t_engine_pit_lap_via_standstill_excluded():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    t = 100.0
+    for _ in range(80):                                   # ~8 s driving
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), t); t += 0.1
+    for _ in range(30):                                   # ~3 s stationary (pit box)
+        eng.update(tm.parse_packet(_packet(speed_mps=0.0, lap=1)), t); t += 0.1
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2)), t)   # lap edge
+    assert eng.snapshot()["has_reference"] is False       # pit lap never became reference
+    assert eng._lap_times == [] and eng._lap_fuel == []   # and out of the time/fuel averages
+
+
+def t_engine_pit_lap_via_fuel_rise_excluded():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0, fuel_level=20.0)), 99.0)
+    t = 100.0
+    for i in range(100):                                  # fuel jumps up mid-lap = refuel
+        fuel = 20.0 + (10.0 if i > 50 else 0.0)
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1, fuel_level=fuel)), t); t += 0.1
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2, fuel_level=30.0)), t)
+    assert eng.snapshot()["has_reference"] is False
+
+
+def t_engine_brief_slowdown_not_pit():
+    """False-positive guard: a short (<PIT_STOP_MIN_S) slow section is not a pit lap."""
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    t = 100.0
+    for _ in range(80):
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), t); t += 0.1
+    for _ in range(10):                                   # ~1 s slow (hairpin), below threshold
+        eng.update(tm.parse_packet(_packet(speed_mps=0.0, lap=1)), t); t += 0.1
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2)), t)
+    assert eng.snapshot()["has_reference"] is True        # brief stop still a valid lap
+
+
+def t_store_removes_file_on_session_reset():
+    import tempfile
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "telemetry.json")
+    st = tm.TelemetryStore(path, units="metric", reset=True)
+    st.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    t = 100.0
+    for _ in range(100):
+        st.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), t); t += 0.1
+    st.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2)), t)   # lap edge -> ref saved
+    assert os.path.exists(path)
+    st.update(tm.parse_packet(_packet(lap=0, speed_mps=0.0)), t + 1)  # session boundary
+    assert not os.path.exists(path)
+
+
+def t_parse_day_ms():
+    p = tm.parse_packet(_packet(day_ms=65438716))
+    assert p.day_ms == 65438716
+
+
+def t_fmt_clock():
+    assert tm._fmt_clock(None) is None
+    assert tm._fmt_clock(0) == "00:00:00"
+    assert tm._fmt_clock(65438716) == "18:10:38"                  # 65438.716 s
+    assert tm._fmt_clock(90061000) == "01:01:01"                  # wraps past 24 h
+
+
+def t_format_snapshot_time_of_day():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(day_ms=45000000, speed_mps=10.0, lap=1)), 100.0)
+    out = tm.format_snapshot(eng.snapshot(), "metric", (70, 85, 95))
+    assert out["time_of_day"] == "12:30:00"                       # 45000 s
+
+
+def t_format_snapshot_time_of_day_none_before_packet():
+    eng = tm.TelemetryEngine()
+    out = tm.format_snapshot(eng.snapshot(), "metric", (70, 85, 95))
+    assert out["time_of_day"] is None
 
 
 if __name__ == "__main__":

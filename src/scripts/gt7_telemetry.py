@@ -24,6 +24,7 @@ OFF_TYRE_RR = 0x6C
 OFF_LAP = 0x74          # current lap (int16)
 OFF_BEST_MS = 0x78      # best lap time, ms (int32; -1 = none)
 OFF_LAST_MS = 0x7C      # last lap time, ms (int32; -1 = none)
+OFF_DAY_PROGRESSION = 0x80  # time of day on track, ms since midnight (int32)
 OFF_FLAGS = 0x8E        # simulator flags (uint16 bitfield)
 OFF_THROTTLE = 0x91     # 0-255 (uint8)
 OFF_BRAKE = 0x92        # 0-255 (uint8)
@@ -55,9 +56,19 @@ MIN_LAP_DIST = 100.0      # metres; started_at_boundary is the primary guard, th
 SAMPLE_MIN_DIST = 4.0     # metres between retained samples
 MAX_SAMPLES = 4000        # ~16 km at 4 m spacing — far past any real lap
 
+# --- Pit-lap guards ---
+# A pit (in/out) lap is not representative: its time is inflated by the pit-lane
+# transit and the stationary service, and a refuel makes its fuel delta negative.
+# GT7 sends no pit flag, so we derive one: a sustained standstill (the car must
+# stop in the box for ANY service, incl. tyre-only) OR fuel rising during the lap
+# (a refuel). Such a lap is excluded from the reference and the time/fuel averages.
+STOPPED_SPEED_MPS = 0.5   # at/below this the car counts as stationary
+PIT_STOP_MIN_S = 2.0      # cumulative standstill (s) that marks a pit lap
+FUEL_RISE_L = 0.05        # litres; fuel_end above fuel_start by this = a refuel
+
 GT7Packet = namedtuple("GT7Packet", [
     "speed_mps", "fuel_level", "fuel_capacity", "tyre_temp",
-    "throttle", "brake", "lap", "best_ms", "last_ms",
+    "throttle", "brake", "lap", "best_ms", "last_ms", "day_ms",
     "flags", "on_track", "paused", "loading",
 ])
 
@@ -80,6 +91,7 @@ def parse_packet(plain):
         lap=struct.unpack_from("<h", plain, OFF_LAP)[0],
         best_ms=struct.unpack_from("<i", plain, OFF_BEST_MS)[0],
         last_ms=struct.unpack_from("<i", plain, OFF_LAST_MS)[0],
+        day_ms=struct.unpack_from("<i", plain, OFF_DAY_PROGRESSION)[0],
         flags=flags,
         on_track=bool(flags & FLAG_ON_TRACK),
         paused=bool(flags & FLAG_PAUSED),
@@ -94,7 +106,7 @@ class _LapAccumulator:
     the relay connects), True for accumulators opened at a real lap-change edge —
     only the latter may become a completed/reference lap (see _finalise_lap)."""
     __slots__ = ("t0", "elapsed", "distance", "samples", "clean", "last_t",
-                 "fuel_start", "fuel_end", "started_at_boundary")
+                 "fuel_start", "fuel_end", "started_at_boundary", "pit", "stopped_s")
 
     def __init__(self, now, started_at_boundary=False):
         self.t0 = now
@@ -106,6 +118,8 @@ class _LapAccumulator:
         self.fuel_start = None
         self.fuel_end = None
         self.started_at_boundary = started_at_boundary
+        self.pit = False
+        self.stopped_s = 0.0
 
     def add(self, pkt, now):
         dt = now - self.last_t
@@ -120,6 +134,10 @@ class _LapAccumulator:
             return
         self.elapsed += dt
         self.distance += max(0.0, pkt.speed_mps) * dt
+        if pkt.speed_mps < STOPPED_SPEED_MPS:             # standstill in the pit box
+            self.stopped_s += dt
+            if self.stopped_s >= PIT_STOP_MIN_S:
+                self.pit = True
         if self.distance >= self.samples[-1][0] + SAMPLE_MIN_DIST:
             if len(self.samples) >= MAX_SAMPLES:
                 self.clean = False        # bogus/flooded lap: cap memory, drop the lap
@@ -128,6 +146,8 @@ class _LapAccumulator:
         if self.fuel_start is None:
             self.fuel_start = pkt.fuel_level
         self.fuel_end = pkt.fuel_level
+        if self.fuel_end > self.fuel_start + FUEL_RISE_L:  # refuel = pit lap
+            self.pit = True
 
 
 class TelemetryEngine:
@@ -150,10 +170,34 @@ class TelemetryEngine:
         self._tyre_hist = deque()     # (t, (fl,fr,rl,rr)) over TYRE_AVG_WINDOW_S
         self._top_speed = 0.0
 
+    def _is_session_boundary(self, pkt):
+        """A new session (practice->quali->race, or a restart) is signalled by the
+        lap counter going backwards or the best lap clearing to -1. GT7 sends no
+        explicit session-change event, so we derive it from these two signals."""
+        if self._lap_num is None:
+            return False
+        if pkt.lap < self._lap_num:                       # lap counter went backwards
+            return True
+        if self._last is not None and self._last.best_ms > 0 and pkt.best_ms == -1:
+            return True                                    # best lap was wiped
+        return False
+
+    def _reset_session(self, now, pkt):
+        """Drop everything derived from the previous session (possibly a different
+        track/car) and re-open a fresh lap at the boundary."""
+        self._ref = None
+        self._lap_times = []
+        self._lap_fuel = []
+        self._top_speed = 0.0
+        self._lap_num = pkt.lap
+        self._acc = _LapAccumulator(now, started_at_boundary=True)
+
     def update(self, pkt, now):
         if self._lap_num is None:         # first packet: open a lap MID-lap (not a boundary)
             self._lap_num = pkt.lap
             self._acc = _LapAccumulator(now)                       # started_at_boundary=False
+        elif self._is_session_boundary(pkt):   # session change: wipe stale derived state
+            self._reset_session(now, pkt)
         elif pkt.lap != self._lap_num:    # lap-change edge: this new lap starts at the line
             self._finalise_lap()
             self._lap_num = pkt.lap
@@ -180,6 +224,8 @@ class TelemetryEngine:
         acc = self._acc
         if acc is None or not acc.clean or len(acc.samples) < 2:
             return
+        if acc.pit:                       # in/out lap (standstill or refuel): never a
+            return                        # reference, and out of the time/fuel averages
         # Only a lap that opened at a real lap-change edge and ran a plausible
         # minimum length counts — rejects the mid-lap-connect partial and menu/
         # out-lap blips that would otherwise poison the reference + fuel/time avgs.
@@ -260,6 +306,7 @@ class TelemetryEngine:
             "fuel": self._fuel(),
             "tyre_temp_avg": self._tyre_avg(),
             "top_speed_mps": self._top_speed,
+            "time_of_day_ms": pkt.day_ms if pkt else None,
         }
 
     def trace_batch(self, limit=150):
@@ -273,6 +320,14 @@ def _fmt_time(seconds):
     m = int(seconds // 60)
     s = seconds - m * 60
     return f"{m}:{s:06.3f}" if m else f"{s:.3f}"
+
+
+def _fmt_clock(ms):
+    """Format ms-since-midnight as HH:MM:SS (wrapped to 24 h). None -> None."""
+    if ms is None:
+        return None
+    total = (int(ms) // 1000) % 86400
+    return f"{total // 3600:02d}:{total % 3600 // 60:02d}:{total % 60:02d}"
 
 
 def _band(temp_c, thresholds):
@@ -307,6 +362,7 @@ def format_snapshot(snap, units, thresholds):
         "delta": None if snap["delta_s"] is None else round(snap["delta_s"], 2),
         "predicted": _fmt_time(snap["predicted_s"]),
         "has_reference": snap["has_reference"],
+        "time_of_day": _fmt_clock(snap["time_of_day_ms"]),
         "fuel": {
             "level": round(lvl, 1),
             "laps_remaining": (None if fuel["laps_remaining"] is None
@@ -349,8 +405,11 @@ class TelemetryStore:
         with self._lock:
             had = self._eng._ref
             self._eng.update(pkt, now)
-            if self._eng._ref is not had:      # a new reference lap was set
-                self._save()
+            if self._eng._ref is not had:
+                if self._eng._ref is None:     # session reset dropped the reference
+                    self._remove_file()
+                else:                          # a new reference lap was set
+                    self._save()
 
     def data(self):
         with self._lock:
@@ -369,6 +428,14 @@ class TelemetryStore:
             with open(tmp, "w", encoding="utf-8") as fh:
                 json.dump(self._eng._ref, fh)
             os.replace(tmp, self._path)
+        except OSError:
+            pass                               # best-effort, never crash the relay
+
+    def _remove_file(self):
+        if not self._path:
+            return
+        try:
+            os.remove(self._path)
         except OSError:
             pass                               # best-effort, never crash the relay
 
