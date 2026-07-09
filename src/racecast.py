@@ -2567,11 +2567,13 @@ DEVICE_SCAN_MIC_INPUT_NAME = "Commentary Mic Device"
 
 
 def _parse_device_scan_args(rest):
-    """(webcam_token_or_None, capture_token_or_None, mic_token_or_None). Only
-    --webcam/--capture/--mic are recognized; anything else is a usage error."""
+    """(webcam_token_or_None, capture_token_or_None, mic_token_or_None,
+    tyres_token_or_None). Only --webcam/--capture/--mic/--tyres are recognized;
+    anything else is a usage error."""
     webcam = None
     capture = None
     mic = None
+    tyres = None
     i = 0
     while i < len(rest):
         arg = rest[i]
@@ -2584,26 +2586,32 @@ def _parse_device_scan_args(rest):
         elif arg == "--mic" and i + 1 < len(rest):
             mic = rest[i + 1]
             i += 2
+        elif arg == "--tyres" and i + 1 < len(rest):
+            tyres = rest[i + 1]
+            i += 2
         else:
             raise ValueError(
-                "usage: racecast device-scan [--webcam VAL] [--capture VAL] [--mic VAL]")
-    return webcam, capture, mic
+                "usage: racecast device-scan [--webcam VAL] [--capture VAL] "
+                "[--mic VAL] [--tyres VAL]")
+    return webcam, capture, mic, tyres
 
 
 def device_scan_cmd(rest):
-    """`racecast device-scan [--webcam VAL] [--capture VAL] [--mic VAL]` — enumerate
-    the OBS video-capture devices available to the "Solo Capture Device" input and
-    the microphones available to the "Commentary Mic Device" input, then write the
-    operator's picks to the machine .env as RACECAST_WEBCAM/RACECAST_CAPTURE/
-    RACECAST_MIC (#304, mic added in #307). VAL is a 1-based list index (into its
-    own list — video indices for --webcam/--capture, mic indices for --mic), a
-    case-insensitive name substring, or an exact device value; blank/omitted leaves
-    that slot untouched. Without flags and on a TTY it prompts interactively;
-    headless it just lists the devices and hints at the flags (never blocks on
-    input())."""
+    """`racecast device-scan [--webcam VAL] [--capture VAL] [--mic VAL] [--tyres VAL]`
+    — enumerate the OBS video-capture devices available to the "Solo Capture Device"
+    input and the microphones available to the "Commentary Mic Device" input, then
+    write the operator's picks to the machine .env as RACECAST_WEBCAM/RACECAST_CAPTURE/
+    RACECAST_MIC/RACECAST_TYRES_CAPTURE (#304, mic added in #307, tyres added in the
+    solo Commentary HUD plan). VAL is a 1-based list index (into its own list — video
+    indices for --webcam/--capture/--tyres, mic indices for --mic), a case-insensitive
+    name substring, or an exact device value; blank/omitted leaves that slot untouched.
+    --tyres resolves against the SAME enumerated video device list as --webcam/--capture
+    (it is a second video-capture card, not a distinct enumerated input). Without flags
+    and on a TTY it prompts interactively; headless it just lists the devices and hints
+    at the flags (never blocks on input())."""
     import obs_ws
     try:
-        webcam_tok, capture_tok, mic_tok = _parse_device_scan_args(rest)
+        webcam_tok, capture_tok, mic_tok, tyres_tok = _parse_device_scan_args(rest)
     except ValueError as exc:
         sys.exit(str(exc))
     devices, note = obs_ws.enumerate_device_options(
@@ -2621,14 +2629,15 @@ def device_scan_cmd(rest):
         print("Available microphones:")
         for i, d in enumerate(mics, start=1):
             print(f"  {i}. {d['name']}")
-    if webcam_tok is None and capture_tok is None and mic_tok is None:
+    if webcam_tok is None and capture_tok is None and mic_tok is None and tyres_tok is None:
         if not sys.stdin.isatty():
-            print("racecast: pass --webcam VAL, --capture VAL, and/or --mic VAL to "
-                 "select one (non-interactive session).")
+            print("racecast: pass --webcam VAL, --capture VAL, --mic VAL, and/or "
+                 "--tyres VAL to select one (non-interactive session).")
             return None
         webcam_tok = input("Webcam [index/name, blank=skip]: ")
         capture_tok = input("Capture [index/name, blank=skip]: ")
         mic_tok = input("Mic [index/name, blank=skip]: ")
+        tyres_tok = input("Tyres capture [index/name, blank=skip]: ")
     errors = []
     webcam_val, werr = resolve_device_selection(devices, webcam_tok or "")
     if werr:
@@ -2639,6 +2648,9 @@ def device_scan_cmd(rest):
     mic_val, mierr = resolve_device_selection(mics, mic_tok or "")
     if mierr:
         errors.append(f"mic — {mierr}")
+    tyres_val, terr = resolve_device_selection(devices, tyres_tok or "")
+    if terr:
+        errors.append(f"tyres — {terr}")
     if errors:
         sys.exit("device-scan: " + "; ".join(errors))
     updates = {}
@@ -2648,6 +2660,8 @@ def device_scan_cmd(rest):
         updates["RACECAST_CAPTURE"] = capture_val
     if mic_val is not None:
         updates["RACECAST_MIC"] = mic_val
+    if tyres_val is not None:
+        updates["RACECAST_TYRES_CAPTURE"] = tyres_val
     if not updates:
         print("device-scan: nothing to write (no selection made).")
         return None

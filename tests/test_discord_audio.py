@@ -251,6 +251,46 @@ def t_apply_box_transform_webcam_scene_scoped_program_only():
     assert own["bounds"] == {"x": 1920.0, "y": 1080.0}
 
 
+def t_apply_box_transform_tyres_capture_scene_scoped_program_only():
+    # Mirrors t_apply_box_transform_webcam_scene_scoped_program_only: the tyres/fuel
+    # capture bake must reposition the 'Solo Tyres/Fuel Capture' item ONLY where it
+    # is embedded in 'Program' — a same-named decoy item in another scene must stay
+    # untouched even though it shares the name.
+    coll = {"sources": [
+        {"name": "Other Scene", "id": "scene", "settings": {"items": [
+            {"name": "Solo Tyres/Fuel Capture",           # decoy in another scene
+             "pos": {"x": 0.0, "y": 0.0},
+             "bounds": {"x": 1920.0, "y": 1080.0}},
+        ]}},
+        {"name": "Program", "id": "scene", "settings": {"items": [
+            {"name": "Solo Tyres/Fuel Capture",           # the embedded instance
+             "pos": {"x": 7.0, "y": 926.0},
+             "bounds": {"x": 245.0, "y": 84.0}},
+        ]}},
+    ]}
+    sa.apply_box_transform(coll, "Solo Tyres/Fuel Capture",
+                            {"left": 20, "top": 900, "width": 260, "height": 90},
+                            scene="Program")
+    decoy = coll["sources"][0]["settings"]["items"][0]
+    prog = coll["sources"][1]["settings"]["items"][0]
+    assert prog["pos"] == {"x": 20, "y": 900}              # Program: repositioned
+    assert prog["bounds"] == {"x": 260, "y": 90}
+    assert decoy["pos"] == {"x": 0.0, "y": 0.0}            # other scene: untouched
+    assert decoy["bounds"] == {"x": 1920.0, "y": 1080.0}
+
+
+def t_localize_tyres_capture_windows():
+    coll = {"sources": [
+        {"name": "Solo Tyres Capture Device", "id": "av_capture_input",
+         "settings": {"device": "__RACECAST_TYRES_CAPTURE__"}},
+    ]}
+    unset = sa.localize_device_sources(coll, "win32", {"RACECAST_TYRES_CAPTURE": "Elgato HD60 X:\\\\?\\usb#x"})
+    src = coll["sources"][0]
+    assert src["id"] == "dshow_input"
+    assert src["settings"] == {"video_device_id": "Elgato HD60 X:\\\\?\\usb#x"}
+    assert "Solo Tyres Capture Device" not in unset
+
+
 def t_apply_box_transform_pov_still_works_via_generic():
     # #pov -> "Feed POV" must keep working identically through the generalized
     # apply_box_transform (apply_pov_transform is now a thin wrapper over it).
@@ -260,6 +300,28 @@ def t_apply_box_transform_pov_still_works_via_generic():
     it = _pov_item(coll)
     assert it["pos"] == {"x": 1516, "y": 600}
     assert it["bounds"] == {"x": 384, "y": 216}
+
+
+def t_commentary_has_tyres_capture_structure():
+    import json, os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, "src/obs/GT_Racing_Solo_Commentary.json"), encoding="utf-8") as fh:
+        d = json.load(fh)
+    by_name = {s.get("name"): s for s in d["sources"]}
+    assert by_name["Solo Tyres Capture Device"]["settings"]["device"] == "__RACECAST_TYRES_CAPTURE__"
+    assert by_name["Solo Tyres Capture Device"].get("muted") is True
+    prog = by_name["Program"]["settings"]["items"]
+    tyres = [it for it in prog if it.get("name") == "Solo Tyres/Fuel Capture"]
+    assert len(tyres) == 1
+    it = tyres[0]
+    assert (it["crop_left"], it["crop_top"], it["crop_right"], it["crop_bottom"]) == (258, 950, 1336, 18)
+    assert it["bounds_type"] == 2
+    # The tyres item takes a genuinely-free scene-item id (not a colliding one).
+    assert [i.get("id") for i in prog].count(it["id"]) == 1, "tyres item id collides"
+    # POV collection must NOT gain the tyres source (Commentary-only)
+    with open(os.path.join(root, "src/obs/GT_Racing_Solo_POV.json"), encoding="utf-8") as fh:
+        pov = json.load(fh)
+    assert "Solo Tyres Capture Device" not in {s.get("name") for s in pov["sources"]}
 
 
 if __name__ == "__main__":

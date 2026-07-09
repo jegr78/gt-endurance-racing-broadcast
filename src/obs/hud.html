@@ -77,6 +77,25 @@
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     font-weight: 600; font-size: 22px; letter-spacing: .04em; }
 
+  /* League logo box (Solo Commentary HUD, epic #300): a plain builder box slot,
+     top-right, provisional position — fed by the relay's /hud/logo route. */
+  #league-logo { left: 1792px; top: 12px; width: 112px; height: 112px; }
+  #league-logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+  /* Stream-chat box (Solo Commentary HUD, epic #300): renders the read-only
+     broadcast chat (issue #294) onto the program overlay. Self-hides when
+     /broadcast-chat/data is 404 (reader disabled) or has no messages, so
+     endurance and any event with no Channel tab stay byte-identical.
+     Provisional box, left side — tuned later; --chat-* vars mirror the
+     intermission page's --ichat-* so a league can restyle via override CSS. */
+  #chat{left:6px;top:690px;width:290px;height:220px;flex-direction:column;align-items:stretch;
+    overflow:hidden;border-radius:12px;background:rgba(12,16,22,.55);color:#eef2f6;
+    font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;padding:10px 12px}
+  #chat-log{overflow:hidden;white-space:normal}   /* reset .el's nowrap so messages wrap */
+  #chat-log .msg{margin-top:6px;line-height:1.32;font-size:19px;overflow-wrap:anywhere}
+  #chat-log .u{font-weight:700;color:#f0a868;margin-right:6px}
+  #chat-log .ts{color:#9aa3ad;font-size:12px;margin-right:6px}
+
   /* Solo-mode telemetry block (issue #324): tyre-temp bands, an input trace
      (throttle/brake), delta/predicted (hidden until a reference lap exists),
      and fuel. Approved POV layout (visual review loop, #324): a GT3-dash
@@ -133,6 +152,14 @@
      interior — the OBS webcam source sits inside; no label text. */
   #webcam{position:absolute;left:14px;top:695px;width:336px;height:189px;
     border:3px solid #cfd6df;border-radius:10px;box-shadow:0 6px 22px rgba(0,0,0,.55);z-index:2}
+
+  /* Tyres/fuel capture box: an INVISIBLE positioning box, same pattern as the
+     POV placeholder above — no border/background/shadow of its own. The
+     cropped "Solo Tyres/Fuel Capture" OBS source shows through from beneath
+     this HUD overlay; this box only drives that source's transform (see
+     OVERLAY_SLOT_OBS_SOURCES, Task 4, epic #300). Provisional bottom-left
+     placement, tuned later. */
+  #tyres-capture{left:7px;top:926px;width:245px;height:84px}
 
   .ta{font-size:.6em;opacity:.75;margin-left:.15em}
 
@@ -232,6 +259,10 @@
   <div id="flag-status" class="el" data-edit="Flag status" data-edit-kind="text"></div>
   <div id="pov" class="el" data-edit="POV box" data-edit-kind="box"></div>
   <div id="pov-name" class="el" data-edit="POV name" data-edit-kind="text"></div>
+  <div id="league-logo" class="el" data-edit="League logo" data-edit-kind="box"><img alt="" src="/hud/logo" onerror="this.parentElement.style.display='none'"></div>
+  <div id="chat" class="el" data-edit="Stream chat" data-edit-kind="box" style="display:none">
+    <div id="chat-log"></div>
+  </div>
   <!-- Solo-mode telemetry block (issue #324): self-gating on /telemetry/data 200
        vs 404, so it stays invisible in endurance (no such endpoint there). -->
   <div id="tele" style="display:none">
@@ -254,6 +285,13 @@
     <div id="tele-top-lbl" class="el" data-edit="Top speed label" data-edit-kind="text">TOP SPEED</div>
     <div id="tele-top" class="el white" data-edit="Top speed" data-edit-kind="text">--</div>
   </div>
+  <!-- Tyres/fuel capture: a top-level builder box slot (position/size only, no visible
+       chrome) driving the real OBS "Solo Tyres/Fuel Capture" device transform on export +
+       live, like the webcam slot. Kept OUTSIDE the telemetry block so it stays
+       builder-editable in a Commentary profile (which has no telemetry -> #tele hidden).
+       Commentary-only in effect: the OBS source exists only in the Commentary collection,
+       so the box->OBS map entry is a no-op elsewhere (Task 4/epic #300). -->
+  <div id="tyres-capture" class="el" data-edit="Tyres/Fuel capture" data-edit-kind="box"></div>
   <div id="clock" class="el white" data-edit="Clock" data-edit-kind="text"></div>
 
 <script>
@@ -413,6 +451,32 @@
     pollData();
   })();
 
+  // Stream-chat box (Solo Commentary HUD, epic #300): renders the read-only
+  // broadcast chat (issue #294). Self-gates on 404/empty, mirroring the
+  // telemetry block's self-hide contract above.
+  (function chatPoll() {
+    const box = document.getElementById("chat"), log = document.getElementById("chat-log");
+    async function tick() {
+      try {
+        const r = await fetch("/broadcast-chat/data", { cache: "no-store" });
+        if (!r.ok) { box.style.display = "none"; return; }
+        const d = await r.json();
+        const msgs = (d && d.messages) || [];
+        if (!msgs.length) { box.style.display = "none"; return; }
+        box.style.display = "";                      // .el default is flex
+        log.textContent = "";
+        for (const m of msgs.slice(-40)) {            // last 40, older clip out
+          const row = document.createElement("div"); row.className = "msg";
+          const u = document.createElement("span"); u.className = "u"; u.textContent = (m.user || "") + ":";
+          const t = document.createElement("span"); t.textContent = " " + (m.text || "");
+          row.appendChild(u); row.appendChild(t); log.appendChild(row);
+        }
+        log.scrollTop = log.scrollHeight;
+      } catch (e) { /* transient; keep polling */ }
+    }
+    tick(); setInterval(tick, 3000);
+  })();
+
   async function tick() {
     try {
       const r = await fetch("/hud/data", { cache: "no-store" });
@@ -423,7 +487,11 @@
       setText("round-top", d.round && d.round.top);
       setText("round-country", d.round && d.round.country);
       setImg("round-flag", d.round && d.round.flagKey, "flags");
-      (d.teams || []).forEach((t, i) => { if (i < 3) setTeam(i, t); });
+      // Always process all three team slots (not just the present ones): an
+      // absent team must get setTeam's `.empty` class so its lower-third box
+      // hides. Iterating only d.teams left empty slots visible when a race has
+      // < 3 cars, or in solo POV/Commentary where there is no team lower-third.
+      { const _teams = d.teams || []; for (let i = 0; i < 3; i++) setTeam(i, _teams[i]); }
       setText("race-control", d.raceControl);
       setFlag("flag-status", d.flag);
       const povOn = !!d.povActive;

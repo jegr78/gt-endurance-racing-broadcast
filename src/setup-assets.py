@@ -122,6 +122,7 @@ DEVICE_SOURCES = (
     {"name": "Solo Capture Device", "env": "RACECAST_CAPTURE", "kind": "video"},
     {"name": "Solo Webcam Device",  "env": "RACECAST_WEBCAM",  "kind": "video"},
     {"name": "Commentary Mic Device", "env": "RACECAST_MIC",   "kind": "audio"},
+    {"name": "Solo Tyres Capture Device", "env": "RACECAST_TYRES_CAPTURE", "kind": "video"},
 )
 DEVICE_VARIANTS = {
     "darwin": ("av_capture_input", "device"),        # AVFoundation device UID

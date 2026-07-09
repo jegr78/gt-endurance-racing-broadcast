@@ -6839,6 +6839,15 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send_asset(assets_dir, p[2], p[3])
                 if p == ["hud", "override.css"]:
                     return self._send_css(read_overlay_css(overlay_dir, "hud"))
+                if p == ["hud", "logo"]:
+                    # League logo for the HUD overlay slot (#league-logo). Loopback —
+                    # OBS reads it on 127.0.0.1; served from the active profile's LOGO
+                    # (logo_path). 404 when unset/non-image so the slot self-hides.
+                    path = servable_logo_path(logo_path)
+                    if not path:
+                        return self._send({"error": "no logo"}, 404)
+                    ext = os.path.splitext(path)[1].lower()
+                    return self._send_file(path, _LOGO_CTYPES.get(ext, "image/png"))
                 if p == ["preview", "program"]:
                     if _obs_ws is None:
                         return self._send({"error": "obs unavailable"}, 503)

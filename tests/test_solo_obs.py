@@ -167,17 +167,17 @@ def t_localize_preserves_solo_scenes():
     d = _load_solo("GT_Racing_Solo_Commentary.json")
     unset = sa.localize_device_sources(
         d, "darwin", {"RACECAST_CAPTURE": "CAPDEV", "RACECAST_WEBCAM": "CAMDEV",
-                     "RACECAST_MIC": "MICDEV"})
+                     "RACECAST_MIC": "MICDEV", "RACECAST_TYRES_CAPTURE": "TYREDEV"})
     assert unset == []
     # The wrapping scenes survive as scenes with their single wrapped item.
-    for scene_name in ("Solo Capture", "Solo Webcam", "Commentary Mic"):
+    for scene_name in ("Solo Capture", "Solo Webcam", "Commentary Mic", "Solo Tyres/Fuel Capture"):
         sc = next(s for s in d["sources"]
                   if s.get("name") == scene_name and s.get("id") == "scene")
         assert len(sc["settings"]["items"]) == 1, scene_name
     # The video device leaves are localized to the real device values (tokens gone).
     devs = {s["uuid"]: s for s in d["sources"]
             if s.get("id") == "av_capture_input"}
-    assert {s["settings"]["device"] for s in devs.values()} == {"CAPDEV", "CAMDEV"}
+    assert {s["settings"]["device"] for s in devs.values()} == {"CAPDEV", "CAMDEV", "TYREDEV"}
     for s in devs.values():
         assert "__RACECAST_" not in s["settings"]["device"]
     # The mic (audio) device leaf is localized to its per-OS coreaudio form.
@@ -270,6 +270,25 @@ def t_solo_templates_regeneration_is_deterministic():
     first = json.dumps(mod.derive(), sort_keys=True)
     second = json.dumps(mod.derive(), sort_keys=True)
     assert first == second
+
+
+def t_committed_solo_json_matches_derive_output():
+    """The committed solo collections MUST equal a fresh derive() — they are
+    generated, never hand-edited (a hand-edit would be silently dropped by the
+    next `derive-solo-templates.py` run). Commentary carries the tyres/fuel
+    second capture; POV does not. Guards the regen-safety of every solo-template
+    change (#307 / commentary HUD)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "derive_solo_templates", os.path.join(ROOT, "tools", "derive-solo-templates.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    expected = {"GT_Racing_Solo_Commentary.json": mod.derive(with_tyres=True),
+                "GT_Racing_Solo_POV.json": mod.derive(with_tyres=False)}
+    for fn, want in expected.items():
+        with open(os.path.join(ROOT, "src", "obs", fn), encoding="utf-8") as fh:
+            got = json.load(fh)
+        assert got == want, f"{fn} diverged from derive() — regenerate with tools/derive-solo-templates.py"
 
 
 def _byname_map(d):
