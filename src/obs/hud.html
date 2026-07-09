@@ -112,7 +112,7 @@
      stays big and each label is independently editable. */
   #tele-pred,#tele-fuel,#tele-top,#tele-clock{line-height:1.05;
     font-family:"SF Mono","Consolas",monospace;color:#eef2f6}
-  #tele-pred-lbl,#tele-fuel-lbl,#tele-top-lbl,#tele-clock-lbl{font:700 11px "SF Mono","Consolas",monospace;
+  #tele-pred-lbl,#tele-fuel-lbl,#tele-top-lbl{font:700 11px "SF Mono","Consolas",monospace;
     letter-spacing:.16em;color:#e0b24a;text-shadow:none}
   #tele-pred-lbl{left:1522px;top:720px}
   #tele-top-lbl{left:1712px;top:720px}
@@ -120,10 +120,12 @@
   #tele-pred{left:1522px;top:737px;font-size:30px;font-weight:700}
   #tele-top{left:1712px;top:737px;font-size:30px;font-weight:700}
   #tele-fuel{left:1522px;top:809px;font-size:23px}
-  /* Time of day (on-track clock): right column, FUEL-row level. Provisional
-     default — final placement set in the Visual Overlay Builder. */
-  #tele-clock-lbl{left:1712px;top:792px}
-  #tele-clock{left:1712px;top:809px;font-size:23px}
+  /* Time of day (on-track clock): top-left, centred in the gap between GT7's
+     lap-count header and its standings tower, on a dark translucent bar that
+     echoes the tower's name rows; left-aligned to the driver-name column.
+     No label (reads as a clock in context). */
+  #tele-clock{left:80px;top:120px;font-size:26px;padding:2px 11px;border-radius:3px;
+    background:rgba(24,26,29,.66);text-shadow:0 1px 3px rgba(0,0,0,.55)}
 
   /* Tyre blocks: colour-filled 2x2 grid, band gradients per GT3-dash look. */
   #tele-tyres{left:1522px;top:856px;width:356px;height:94px;
@@ -149,7 +151,7 @@
   #tele-panel{position:absolute;left:1500px;top:702px;width:398px;height:362px;
     background:rgba(9,12,17,.7);border:1px solid rgba(120,132,146,.42);border-radius:14px;z-index:0}
   #tele-tyres,#tele-trace,#tele-delta,#tele-pred,#tele-fuel,#tele-top,#tele-clock,
-  #tele-pred-lbl,#tele-fuel-lbl,#tele-top-lbl,#tele-clock-lbl{z-index:1}
+  #tele-pred-lbl,#tele-fuel-lbl,#tele-top-lbl{z-index:1}
 
   /* Webcam frame, bottom-left: 16:9, bottom-aligned at y=884. Transparent
      interior — the OBS webcam source sits inside; no label text. */
@@ -287,7 +289,6 @@
     <div id="tele-fuel" class="el white" data-edit="Fuel" data-edit-kind="text">--</div>
     <div id="tele-top-lbl" class="el" data-edit="Top speed label" data-edit-kind="text">TOP SPEED</div>
     <div id="tele-top" class="el white" data-edit="Top speed" data-edit-kind="text">--</div>
-    <div id="tele-clock-lbl" class="el" data-edit="Time of day label" data-edit-kind="text" style="display:none">TIME</div>
     <div id="tele-clock" class="el white" data-edit="Time of day" data-edit-kind="text" style="display:none">--</div>
   </div>
   <!-- Tyres/fuel capture: a top-level builder box slot (position/size only, no visible
@@ -428,12 +429,10 @@
         document.getElementById("tele-top").textContent =
           d.top_speed + " " + d.units.speed;
         const clock = document.getElementById("tele-clock");
-        const clockLbl = document.getElementById("tele-clock-lbl");
         if (d.time_of_day) {
-          clock.style.display = ""; clockLbl.style.display = "";
-          clock.textContent = d.time_of_day;
+          clock.style.display = ""; clock.textContent = d.time_of_day;
         } else {
-          clock.style.display = "none"; clockLbl.style.display = "none";
+          clock.style.display = "none";
         }
       } catch (e) { /* transient; keep polling */ }
     }
