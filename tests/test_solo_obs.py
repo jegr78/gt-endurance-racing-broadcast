@@ -272,6 +272,25 @@ def t_solo_templates_regeneration_is_deterministic():
     assert first == second
 
 
+def t_committed_solo_json_matches_derive_output():
+    """The committed solo collections MUST equal a fresh derive() — they are
+    generated, never hand-edited (a hand-edit would be silently dropped by the
+    next `derive-solo-templates.py` run). Commentary carries the tyres/fuel
+    second capture; POV does not. Guards the regen-safety of every solo-template
+    change (#307 / commentary HUD)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "derive_solo_templates", os.path.join(ROOT, "tools", "derive-solo-templates.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    expected = {"GT_Racing_Solo_Commentary.json": mod.derive(with_tyres=True),
+                "GT_Racing_Solo_POV.json": mod.derive(with_tyres=False)}
+    for fn, want in expected.items():
+        with open(os.path.join(ROOT, "src", "obs", fn), encoding="utf-8") as fh:
+            got = json.load(fh)
+        assert got == want, f"{fn} diverged from derive() — regenerate with tools/derive-solo-templates.py"
+
+
 def _byname_map(d):
     return {s.get("name"): s for s in d["sources"]}
 

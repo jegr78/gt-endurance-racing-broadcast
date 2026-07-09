@@ -36,6 +36,8 @@ U = {
     "program": "ccccccc0-0000-4000-8000-000000000000",
     "mic_src": "aaaaaaa6-0000-4000-8000-000000000006",
     "mic_scene": "bbbbbbb6-0000-4000-8000-000000000006",
+    "tyres_src": "aaaaaaa7-0000-4000-8000-000000000007",
+    "tyres_scene": "bbbbbbb7-0000-4000-8000-000000000007",
 }
 
 DROP_SCENES = {"Stint", "Splitscreen"}
@@ -45,6 +47,12 @@ DROP_SOURCES = {"Feed A", "Feed B"}
 CAPTURE_TOKEN = "__RACECAST_CAPTURE__"
 WEBCAM_TOKEN = "__RACECAST_WEBCAM__"
 MIC_TOKEN = "__RACECAST_MIC__"
+TYRES_TOKEN = "__RACECAST_TYRES_CAPTURE__"
+
+# The tyres/fuel second-capture crop (Commentary only): isolates GT7's bottom-left
+# tyre/fuel/sprint widget from a full-frame 1920x1080 capture. Values from a real
+# D-GT7-M export (kept fixed; the operator fine-tunes in OBS if their capture differs).
+TYRES_CROP = {"crop_left": 258, "crop_top": 950, "crop_right": 1336, "crop_bottom": 18}
 
 # Scenes the "Commentary Mic" nested scene is wired into as an item — audible
 # everywhere except the rendered Intro/Outro clips (which carry their own audio).
@@ -139,7 +147,10 @@ def _program_item(template_item, name, src_uuid, pos, bounds, item_id):
     return it
 
 
-def derive():
+def derive(with_tyres=False):
+    """Build the solo collection. `with_tyres=True` (Commentary only) adds the
+    second-capture 'Solo Tyres/Fuel Capture' source cropped to GT7's tyre/fuel
+    widget, bottom-left; POV omits it (the driver's own feed already shows it)."""
     with open(os.path.join(OBS, "GT_Racing_Endurance.json"), encoding="utf-8") as fh:
         col = json.load(fh)
 
@@ -169,19 +180,28 @@ def derive():
     # Solo Webcam: bottom-left PiP, inserted right after Feed POV.
     cam_item = _program_item(pov_item, "Solo Webcam", U["cam_scene"],
                              (24, 776), (384, 280), item_id=30)
+    # Solo Tyres/Fuel Capture (Commentary only): the cropped tyre/fuel widget,
+    # bottom-left. Same PiP transform template as the webcam, plus the fixed crop.
+    tyres_item = None
+    if with_tyres:
+        tyres_item = _program_item(pov_item, "Solo Tyres/Fuel Capture", U["tyres_scene"],
+                                   (7, 926), (245, 84), item_id=33)
+        tyres_item.update(TYRES_CROP)
 
     new_items = [cap_item]
     for it in items:
         new_items.append(it)
         if it.get("name") == "Feed POV":
             new_items.append(cam_item)
+            if tyres_item is not None:
+                new_items.append(tyres_item)
     # Commentary Mic: audible in Program (nested-scene reference, no visual footprint).
     mic_item_program = _nested_scene_item(discord_ref_item, "Commentary Mic",
                                           U["mic_scene"], item_id=32)
     new_items.append(mic_item_program)
     program["settings"]["items"] = new_items
     program["settings"]["id_counter"] = max(
-        int(program["settings"].get("id_counter", 0)), 32)
+        int(program["settings"].get("id_counter", 0)), 33 if with_tyres else 32)
 
     # Device leaf sources + wrapping scenes. The leaf is named distinctly from its
     # wrapping scene ("Solo Capture Device" vs the "Solo Capture" scene) — mirroring
@@ -194,6 +214,15 @@ def derive():
                               U["cap_src"], "Solo Capture Device")
     cam_scene = _device_scene(discord_scene, U["cam_scene"], "Solo Webcam",
                               U["cam_src"], "Solo Webcam Device")
+    # Tyres/fuel second-capture leaf + wrapping scene (Commentary only). The leaf
+    # inherits muted=True from the Feed POV template (video-only — the game audio
+    # already comes from Solo Capture, so this must not double it).
+    tyres_src = tyres_scene = None
+    if with_tyres:
+        tyres_src = _device_leaf(pov_leaf, U["tyres_src"], "Solo Tyres Capture Device",
+                                 TYRES_TOKEN)
+        tyres_scene = _device_scene(discord_scene, U["tyres_scene"], "Solo Tyres/Fuel Capture",
+                                    U["tyres_src"], "Solo Tyres Capture Device")
     # Commentary Mic device leaf (macOS coreaudio_input_capture form) + its wrapping
     # scene (cloned from Discord, the audio-scene precedent).
     mic_src = _device_leaf(pov_leaf, U["mic_src"], "Commentary Mic Device", MIC_TOKEN,
@@ -219,10 +248,17 @@ def derive():
         if name in (DROP_SCENES | DROP_SOURCES):
             continue
         kept.append(mic_targets[name] if name in mic_targets else s)
-    kept.extend([cap_scene, cam_scene, mic_scene, cap_src, cam_src, mic_src, program])
+    additions = [cap_scene, cam_scene, mic_scene, cap_src, cam_src, mic_src]
+    if with_tyres:
+        additions += [tyres_scene, tyres_src]
+    additions.append(program)
+    kept.extend(additions)
     col["sources"] = kept
 
-    col["scene_order"] = [{"name": n} for n in SCENE_ORDER]
+    scene_order = list(SCENE_ORDER)
+    if with_tyres:
+        scene_order.append("Solo Tyres/Fuel Capture")
+    col["scene_order"] = [{"name": n} for n in scene_order]
     # current_scene / current_program_scene are plain strings in this collection.
     col["current_scene"] = START_SCENE
     col["current_program_scene"] = START_SCENE
@@ -242,11 +278,13 @@ def derive():
 
 
 def main():
-    col = derive()
+    # Commentary gets the tyres/fuel second-capture; POV omits it.
+    per_file = {"GT_Racing_Solo_Commentary.json": derive(with_tyres=True),
+                "GT_Racing_Solo_POV.json": derive(with_tyres=False)}
     for fn in OUTPUTS:
         path = os.path.join(OBS, fn)
         with open(path, "w", encoding="utf-8") as fh:
-            json.dump(col, fh, ensure_ascii=False, indent=4)
+            json.dump(per_file[fn], fh, ensure_ascii=False, indent=4)
             fh.write("\n")
         print("wrote", path)
 
