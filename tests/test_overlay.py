@@ -223,13 +223,13 @@ def t_ob_extract_slots_from_real_hud():
     ids = [s["id"] for s in slots]
     # Each team is three independent slots (logo / number / name; issue #136),
     # plus the POV placeholder box (issue #141), the POV name label (issue #130),
-    # and the merged clock slot.
+    # the league-logo box (Solo Commentary HUD, epic #300), and the merged clock slot.
     assert ids == ["stint", "session", "streamer", "round-top", "round-flag",
                    "round-country",
                    "team1-logo", "team1-num", "team1-name", "team1-brand",
                    "team2-logo", "team2-num", "team2-name", "team2-brand",
                    "team3-logo", "team3-num", "team3-name", "team3-brand",
-                   "race-control", "flag-status", "pov", "pov-name",
+                   "race-control", "flag-status", "pov", "pov-name", "league-logo",
                    # Solo-mode telemetry block (issue #324): self-gating,
                    # hidden in endurance (no /telemetry/data there). The panel
                    # background and webcam frame are builder box slots too

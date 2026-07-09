@@ -516,6 +516,53 @@ def t_brand_override_wins_over_base():
     assert hit2[0].endswith("audi.png") and hit2[0].startswith(_os.path.realpath(ad)), hit2
 
 
+def _get_route(logo_path="", path="/hud"):
+    """make_handler over a real ThreadingHTTPServer, wired only with logo_path;
+    GET one path and return a (status, ctype, body) result. Mirrors the
+    make_handler-over-ThreadingHTTPServer pattern in tests/test_event_notes.py."""
+    import threading as _t
+    import urllib.error
+    from urllib.request import urlopen
+    from collections import namedtuple
+
+    class _StubFeed:
+        def __init__(self, idx):
+            self.idx = idx
+
+    class _StubRelay:
+        def __init__(self):
+            self.feeds = {"A": _StubFeed(0), "B": _StubFeed(1)}
+
+    handler = m.make_handler(_StubRelay(), logo_path=logo_path)
+    srv = m.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    _t.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    Result = namedtuple("Result", "status ctype body")
+    try:
+        with urlopen(base + path, timeout=5) as r:
+            return Result(r.status, r.headers.get("Content-Type", ""), r.read())
+    except urllib.error.HTTPError as e:
+        return Result(e.code, e.headers.get("Content-Type", ""), e.read())
+    finally:
+        srv.shutdown()
+
+
+def t_hud_logo_route_serves_image_and_404s():
+    import tempfile, os
+    # A relay handler built with a real logo file serves it at /hud/logo;
+    # built with no logo, /hud/logo is 404.
+    with tempfile.TemporaryDirectory() as d:
+        png = os.path.join(d, "logo.png")
+        with open(png, "wb") as fh:
+            fh.write(b"\x89PNG\r\n\x1a\n")            # minimal PNG signature
+        got = _get_route(logo_path=png, path="/hud/logo")     # helper in this file
+        assert got.status == 200
+        assert got.ctype.startswith("image/")
+        assert got.body.startswith(b"\x89PNG")
+        none = _get_route(logo_path="", path="/hud/logo")
+        assert none.status == 404
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

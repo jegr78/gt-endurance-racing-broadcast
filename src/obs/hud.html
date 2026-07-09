@@ -77,6 +77,11 @@
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     font-weight: 600; font-size: 22px; letter-spacing: .04em; }
 
+  /* League logo box (Solo Commentary HUD, epic #300): a plain builder box slot,
+     top-right, provisional position — fed by the relay's /hud/logo route. */
+  #league-logo { left: 1672px; top: 20px; width: 208px; height: 120px; }
+  #league-logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
   /* Solo-mode telemetry block (issue #324): tyre-temp bands, an input trace
      (throttle/brake), delta/predicted (hidden until a reference lap exists),
      and fuel. Approved POV layout (visual review loop, #324): a GT3-dash
@@ -232,6 +237,7 @@
   <div id="flag-status" class="el" data-edit="Flag status" data-edit-kind="text"></div>
   <div id="pov" class="el" data-edit="POV box" data-edit-kind="box"></div>
   <div id="pov-name" class="el" data-edit="POV name" data-edit-kind="text"></div>
+  <div id="league-logo" class="el" data-edit="League logo" data-edit-kind="box"><img alt="" src="/hud/logo" onerror="this.parentElement.style.display='none'"></div>
   <!-- Solo-mode telemetry block (issue #324): self-gating on /telemetry/data 200
        vs 404, so it stays invisible in endurance (no such endpoint there). -->
   <div id="tele" style="display:none">
