@@ -82,6 +82,20 @@
   #league-logo { left: 1672px; top: 20px; width: 208px; height: 120px; }
   #league-logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
+  /* Stream-chat box (Solo Commentary HUD, epic #300): renders the read-only
+     broadcast chat (issue #294) onto the program overlay. Self-hides when
+     /broadcast-chat/data is 404 (reader disabled) or has no messages, so
+     endurance and any event with no Channel tab stay byte-identical.
+     Provisional box, left side — tuned later; --chat-* vars mirror the
+     intermission page's --ichat-* so a league can restyle via override CSS. */
+  #chat{left:24px;top:512px;width:360px;height:420px;flex-direction:column;align-items:stretch;
+    overflow:hidden;border-radius:12px;background:rgba(12,16,22,.55);color:#eef2f6;
+    font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;padding:10px 12px}
+  #chat-log{overflow:hidden}
+  #chat-log .msg{margin-top:6px;line-height:1.32;font-size:19px;overflow-wrap:anywhere}
+  #chat-log .u{font-weight:700;color:#f0a868;margin-right:6px}
+  #chat-log .ts{color:#9aa3ad;font-size:12px;margin-right:6px}
+
   /* Solo-mode telemetry block (issue #324): tyre-temp bands, an input trace
      (throttle/brake), delta/predicted (hidden until a reference lap exists),
      and fuel. Approved POV layout (visual review loop, #324): a GT3-dash
@@ -238,6 +252,9 @@
   <div id="pov" class="el" data-edit="POV box" data-edit-kind="box"></div>
   <div id="pov-name" class="el" data-edit="POV name" data-edit-kind="text"></div>
   <div id="league-logo" class="el" data-edit="League logo" data-edit-kind="box"><img alt="" src="/hud/logo" onerror="this.parentElement.style.display='none'"></div>
+  <div id="chat" class="el" data-edit="Stream chat" data-edit-kind="box" style="display:none">
+    <div id="chat-log"></div>
+  </div>
   <!-- Solo-mode telemetry block (issue #324): self-gating on /telemetry/data 200
        vs 404, so it stays invisible in endurance (no such endpoint there). -->
   <div id="tele" style="display:none">
@@ -417,6 +434,32 @@
     setInterval(pollData, 100);
     setInterval(pollTrace, 100);
     pollData();
+  })();
+
+  // Stream-chat box (Solo Commentary HUD, epic #300): renders the read-only
+  // broadcast chat (issue #294). Self-gates on 404/empty, mirroring the
+  // telemetry block's self-hide contract above.
+  (function chatPoll() {
+    const box = document.getElementById("chat"), log = document.getElementById("chat-log");
+    async function tick() {
+      try {
+        const r = await fetch("/broadcast-chat/data", { cache: "no-store" });
+        if (!r.ok) { box.style.display = "none"; return; }
+        const d = await r.json();
+        const msgs = (d && d.messages) || [];
+        if (!msgs.length) { box.style.display = "none"; return; }
+        box.style.display = "";                      // .el default is flex
+        log.textContent = "";
+        for (const m of msgs.slice(-40)) {            // last 40, older clip out
+          const row = document.createElement("div"); row.className = "msg";
+          const u = document.createElement("span"); u.className = "u"; u.textContent = (m.user || "") + ":";
+          const t = document.createElement("span"); t.textContent = " " + (m.text || "");
+          row.appendChild(u); row.appendChild(t); log.appendChild(row);
+        }
+        log.scrollTop = log.scrollHeight;
+      } catch (e) { /* transient; keep polling */ }
+    }
+    tick(); setInterval(tick, 3000);
   })();
 
   async function tick() {

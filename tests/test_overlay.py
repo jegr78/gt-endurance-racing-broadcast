@@ -230,6 +230,10 @@ def t_ob_extract_slots_from_real_hud():
                    "team2-logo", "team2-num", "team2-name", "team2-brand",
                    "team3-logo", "team3-num", "team3-name", "team3-brand",
                    "race-control", "flag-status", "pov", "pov-name", "league-logo",
+                   # Stream-chat slot (Solo Commentary HUD, epic #300): self-gating
+                   # box rendering the read-only broadcast chat (issue #294),
+                   # hidden when /broadcast-chat/data is 404/empty.
+                   "chat",
                    # Solo-mode telemetry block (issue #324): self-gating,
                    # hidden in endurance (no /telemetry/data there). The panel
                    # background and webcam frame are builder box slots too
