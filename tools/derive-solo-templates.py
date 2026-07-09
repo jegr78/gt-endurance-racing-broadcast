@@ -174,19 +174,20 @@ def derive(with_tyres=False):
     # the new "Commentary Mic" nested-scene reference (same bounds_type-0 shape).
     discord_ref_item = next(it for it in items if it.get("name") == "Discord")
 
+    # Every new Program item takes a genuinely-unused scene-item id: the base
+    # Program items (inherited from the Stint scene) run up to 35, so the solo
+    # additions use 37..40 (36 is the tyres item below). OBS tolerates duplicate
+    # ids and resolves scene items by name, but unique ids keep the file clean.
     # Solo Capture: full-frame background at the BOTTOM of the z-order (rendered first).
     cap_item = _program_item(pov_item, "Solo Capture", U["cap_scene"],
-                             (0, 0), (1920, 1080), item_id=29)
+                             (0, 0), (1920, 1080), item_id=37)
     # Solo Webcam: bottom-left PiP, inserted right after Feed POV.
     cam_item = _program_item(pov_item, "Solo Webcam", U["cam_scene"],
-                             (24, 776), (384, 280), item_id=30)
+                             (24, 776), (384, 280), item_id=38)
     # Solo Tyres/Fuel Capture (Commentary only): the cropped tyre/fuel widget,
     # bottom-left. Same PiP transform template as the webcam, plus the fixed crop.
     tyres_item = None
     if with_tyres:
-        # id 36 = the next genuinely-unused item id (the base Program items run up to
-        # 35). The sibling cap/cam/mic items (29/30/32) collide with base flag items —
-        # OBS tolerates duplicate item ids — but a new item should still take a free one.
         tyres_item = _program_item(pov_item, "Solo Tyres/Fuel Capture", U["tyres_scene"],
                                    (7, 926), (245, 84), item_id=36)
         tyres_item.update(TYRES_CROP)
@@ -200,7 +201,7 @@ def derive(with_tyres=False):
                 new_items.append(tyres_item)
     # Commentary Mic: audible in Program (nested-scene reference, no visual footprint).
     mic_item_program = _nested_scene_item(discord_ref_item, "Commentary Mic",
-                                          U["mic_scene"], item_id=32)
+                                          U["mic_scene"], item_id=39)
     new_items.append(mic_item_program)
     program["settings"]["items"] = new_items
     program["settings"]["id_counter"] = max(

@@ -1006,7 +1006,7 @@
             <b>runtime/fonts/</b>. When a league's design uses a font, it is copied into that league's
             <b>overlay/fonts/</b> on save, so the overlay works offline and <b>profile export</b> stays self-contained.</p>
         </section>
-        <div class="viewhead" id="dev-head"><h3>Solo devices</h3><span class="sub">webcam, capture-card &amp; commentary mic selection for solo mode</span>
+        <div class="viewhead" id="dev-head"><h3>Solo devices</h3><span class="sub">webcam, capture-card, commentary mic &amp; tyres/fuel capture selection for solo mode</span>
           <span class="spacer"></span>
           <button onclick="loadDevices()">
             <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button>
@@ -1024,6 +1024,10 @@
             </select></div>
           <div class="row"><span class="name">Mic</span>
             <select id="dev-mic" style="flex:1" aria-label="Commentary mic device" disabled>
+              <option value="">—</option>
+            </select></div>
+          <div class="row"><span class="name">Tyres/Fuel</span>
+            <select id="dev-tyres" style="flex:1" aria-label="Tyres/fuel capture device" disabled>
               <option value="">—</option>
             </select></div>
           <p class="envhint" id="dev-hint">Loading devices…</p>
@@ -2532,33 +2536,35 @@ function deviceOption(name, value) {
 
 async function loadDevices() {
   $('dev-err').hidden = true;
-  const wSel = $('dev-webcam'), cSel = $('dev-capture'), mSel = $('dev-mic');
+  const wSel = $('dev-webcam'), cSel = $('dev-capture'), mSel = $('dev-mic'), tSel = $('dev-tyres');
   let d;
   try { d = await (await fetch('/api/devices', {cache: 'no-store'})).json(); }
   catch (e) {
-    wSel.disabled = cSel.disabled = mSel.disabled = true;
+    wSel.disabled = cSel.disabled = mSel.disabled = tSel.disabled = true;
     $('dev-hint').textContent = 'Control Center not reachable.';
     return;
   }
   const devices = (d && d.devices) || [];
   const mics = (d && d.mic) || [];
-  wSel.textContent = ''; cSel.textContent = ''; mSel.textContent = '';
+  wSel.textContent = ''; cSel.textContent = ''; mSel.textContent = ''; tSel.textContent = '';
   wSel.appendChild(deviceOption('—', ''));
   cSel.appendChild(deviceOption('—', ''));
   mSel.appendChild(deviceOption('—', ''));
+  tSel.appendChild(deviceOption('—', ''));
   devices.forEach(dev => {
     wSel.appendChild(deviceOption(dev.name, dev.value));
     cSel.appendChild(deviceOption(dev.name, dev.value));
+    tSel.appendChild(deviceOption(dev.name, dev.value));   // tyres/fuel = a 2nd video capture
   });
   mics.forEach(dev => mSel.appendChild(deviceOption(dev.name, dev.value)));
   const ok = !!(d && d.ok) && devices.length > 0;
   const micOk = mics.length > 0;
-  wSel.disabled = cSel.disabled = !ok;
+  wSel.disabled = cSel.disabled = tSel.disabled = !ok;
   mSel.disabled = !micOk;
   $('dev-hint').textContent = ok
-    ? 'Pick the webcam, capture-card and/or mic device, then Save. Shared machine-wide (not per-league).'
+    ? 'Pick the webcam, capture-card, mic and/or tyres/fuel device, then Save. Shared machine-wide (not per-league).'
     : ((d && d.note) || 'Start OBS with the solo collection imported to list devices, or set '
-       + 'RACECAST_CAPTURE/RACECAST_WEBCAM/RACECAST_MIC in the .env editor below.');
+       + 'RACECAST_CAPTURE/RACECAST_WEBCAM/RACECAST_MIC/RACECAST_TYRES_CAPTURE in the .env editor below.');
 }
 
 async function saveDevices() {
@@ -2571,7 +2577,8 @@ async function saveDevices() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({webcam: $('dev-webcam').value,
                               capture: $('dev-capture').value,
-                              mic: $('dev-mic').value})})).json();
+                              mic: $('dev-mic').value,
+                              tyres: $('dev-tyres').value})})).json();
   } catch (e) {
     $('dev-err').textContent = 'Control Center not reachable.'; $('dev-err').hidden = false;
     b.disabled = false; return;

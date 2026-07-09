@@ -83,15 +83,35 @@ def t_engine_no_reference_before_first_lap():
 
 def t_engine_reference_after_clean_lap():
     eng = tm.TelemetryEngine()
-    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)   # ~500 m in ~10 s
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)     # mid-connect partial (discarded)
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)   # lap 1 opens at a boundary -> ~500 m/10 s
     s = eng.snapshot()
     assert s["has_reference"] is True
     assert s["best_s"] is not None and 9.0 < s["best_s"] < 11.0
 
 
+def t_engine_midlap_connect_partial_not_reference():
+    """#324 review Critical: the FIRST lap after the relay connects is a mid-lap
+    partial (not opened at the start/finish line) and must NEVER become the
+    reference — otherwise a 3-second partial locks best/delta/predicted for the
+    whole broadcast. The first FULL lap opened at a boundary becomes the reference."""
+    eng = tm.TelemetryEngine()
+    # Connect ~3 s before the line, then cross it: a short partial lap.
+    t = 100.0
+    for _ in range(30):
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=7)), t); t += 0.1
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=8)), t)   # line crossing
+    assert eng.snapshot()["has_reference"] is False   # partial rejected, not a reference
+    # Now a full clean boundary lap (lap 8 -> 9) sets the reference:
+    _feed_lap(eng, t + 0.1, 8, duration=10.0, speed=50.0)
+    s = eng.snapshot()
+    assert s["has_reference"] is True and 9.0 < s["best_s"] < 11.0
+
+
 def t_engine_delta_negative_when_faster():
     eng = tm.TelemetryEngine()
-    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)         # reference ~10 s / 500 m
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)          # mid-connect partial (discarded)
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)         # reference ~10 s / 500 m (boundary)
     # Lap 2, faster (higher speed -> same distance reached earlier -> negative delta):
     t = 120.0
     for _ in range(30):                                          # 3 s in, well ahead on distance
@@ -298,11 +318,48 @@ def t_store_roundtrips_reference(tmp_path=None):
     d = tempfile.mkdtemp()
     path = os.path.join(d, "telemetry.json")
     st = tm.TelemetryStore(path, units="metric")
-    _feed_lap_store(st, 100.0, 1, duration=10.0, speed=50.0)
+    st.update(tm.parse_packet(_packet(lap=0)), 99.0)      # mid-connect partial (discarded)
+    _feed_lap_store(st, 100.0, 1, duration=10.0, speed=50.0)   # boundary lap -> reference
     assert st.data()["has_reference"] is True
-    # A new store on the same path recovers the reference lap:
+    # A new store on the same path recovers the reference lap (default reset=False):
     st2 = tm.TelemetryStore(path, units="metric")
     assert st2.data()["has_reference"] is True
+
+
+def t_store_reset_drops_persisted_reference():
+    """#324 review: the relay constructs the store with reset=True — a fresh
+    session must NOT load a stale reference from a previous (possibly different
+    track) run, and the stale file is removed."""
+    import tempfile, json as _json
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "telemetry.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        _json.dump({"time": 42.0, "samples": [[0.0, 0.0], [100.0, 42.0]]}, fh)
+    st = tm.TelemetryStore(path, units="metric", reset=True)
+    assert st.data()["has_reference"] is False        # stale reference not loaded
+    assert not os.path.exists(path)                    # and the stale file was cleared
+
+
+def t_engine_samples_capped_under_flood():
+    """#324 review: a same-lap packet flood (lap held constant, distance forced
+    up) must not grow _LapAccumulator.samples without bound — the cap marks the
+    lap unclean so it can't become a reference and memory stays bounded."""
+    eng = tm.TelemetryEngine()
+    t = 100.0
+    eng.update(tm.parse_packet(_packet(speed_mps=90.0, lap=1)), t); t += 0.1
+    for _ in range(tm.MAX_SAMPLES + 500):     # flood, lap never changes
+        eng.update(tm.parse_packet(_packet(speed_mps=90.0, lap=1)), t); t += 0.1
+    assert len(eng._acc.samples) <= tm.MAX_SAMPLES     # bounded
+    assert eng._acc.clean is False                     # flooded lap invalidated
+    eng.update(tm.parse_packet(_packet(speed_mps=90.0, lap=2)), t)  # lap edge
+    assert eng.snapshot()["has_reference"] is False    # the bogus lap never became a reference
+
+
+def t_band_critical_strictly_above_threshold():
+    """#324 review: critical is >crit, so exactly at the threshold reads 'hot'."""
+    assert tm._band(95.0, (70, 85, 95)) == "hot"
+    assert tm._band(95.01, (70, 85, 95)) == "critical"
+    assert tm._band(85.0, (70, 85, 95)) == "optimal"
 
 
 if __name__ == "__main__":

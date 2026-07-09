@@ -40,6 +40,21 @@ TRACE_MIN_DT = 1.0 / 30      # decimate 60 Hz -> ~30 Hz
 # --- Tyre rolling-average window ---
 TYRE_AVG_WINDOW_S = 30.0
 
+# --- Lap validity guards ---
+# A lap only becomes a completed/reference lap if it was opened AT a lap-change
+# edge (not the first accumulator, which starts mid-lap when the relay connects
+# while the driver is already on track) AND ran a plausible minimum length. This
+# stops a partial "connect mid-lap" lap or a menu/out-lap blip (lapCount → 0/-1)
+# from being installed as the reference and permanently corrupting delta/predicted.
+MIN_LAP_S = 5.0           # seconds; a loose floor below any real circuit lap — the
+MIN_LAP_DIST = 100.0      # metres; started_at_boundary is the primary guard, this
+                          # just drops the shortest menu/blip laps that slip through clean
+# Cap the per-lap distance/time sample list so a same-lap packet flood (lap held
+# constant, distance forced up) cannot grow it without bound. Normal laps decimate
+# to a few hundred samples; a lap that exceeds the cap is bogus → marked unclean.
+SAMPLE_MIN_DIST = 4.0     # metres between retained samples
+MAX_SAMPLES = 4000        # ~16 km at 4 m spacing — far past any real lap
+
 GT7Packet = namedtuple("GT7Packet", [
     "speed_mps", "fuel_level", "fuel_capacity", "tyre_temp",
     "throttle", "brake", "lap", "best_ms", "last_ms",
@@ -73,11 +88,15 @@ def parse_packet(plain):
 
 
 class _LapAccumulator:
-    """Accumulates time + distance samples within one lap."""
-    __slots__ = ("t0", "elapsed", "distance", "samples", "clean", "last_t",
-                 "fuel_start", "fuel_end")
+    """Accumulates time + distance samples within one lap.
 
-    def __init__(self, now):
+    started_at_boundary is False for the first accumulator (opened mid-lap when
+    the relay connects), True for accumulators opened at a real lap-change edge —
+    only the latter may become a completed/reference lap (see _finalise_lap)."""
+    __slots__ = ("t0", "elapsed", "distance", "samples", "clean", "last_t",
+                 "fuel_start", "fuel_end", "started_at_boundary")
+
+    def __init__(self, now, started_at_boundary=False):
         self.t0 = now
         self.elapsed = 0.0
         self.distance = 0.0
@@ -86,6 +105,7 @@ class _LapAccumulator:
         self.last_t = now
         self.fuel_start = None
         self.fuel_end = None
+        self.started_at_boundary = started_at_boundary
 
     def add(self, pkt, now):
         dt = now - self.last_t
@@ -100,7 +120,10 @@ class _LapAccumulator:
             return
         self.elapsed += dt
         self.distance += max(0.0, pkt.speed_mps) * dt
-        if self.distance > self.samples[-1][0]:
+        if self.distance >= self.samples[-1][0] + SAMPLE_MIN_DIST:
+            if len(self.samples) >= MAX_SAMPLES:
+                self.clean = False        # bogus/flooded lap: cap memory, drop the lap
+                return
             self.samples.append((self.distance, self.elapsed))
         if self.fuel_start is None:
             self.fuel_start = pkt.fuel_level
@@ -128,13 +151,13 @@ class TelemetryEngine:
         self._top_speed = 0.0
 
     def update(self, pkt, now):
-        if self._lap_num is None:         # first packet: open a lap
+        if self._lap_num is None:         # first packet: open a lap MID-lap (not a boundary)
             self._lap_num = pkt.lap
-            self._acc = _LapAccumulator(now)
-        elif pkt.lap != self._lap_num:    # lap-change edge
+            self._acc = _LapAccumulator(now)                       # started_at_boundary=False
+        elif pkt.lap != self._lap_num:    # lap-change edge: this new lap starts at the line
             self._finalise_lap()
             self._lap_num = pkt.lap
-            self._acc = _LapAccumulator(now)
+            self._acc = _LapAccumulator(now, started_at_boundary=True)
             if self._last is not None:    # seed the new lap's start-of-lap fuel reading
                 self._acc.fuel_start = self._last.fuel_level
         if self._acc is not None:
@@ -155,7 +178,12 @@ class TelemetryEngine:
 
     def _finalise_lap(self):
         acc = self._acc
-        if acc is None or not acc.clean or acc.elapsed <= 0 or len(acc.samples) < 2:
+        if acc is None or not acc.clean or len(acc.samples) < 2:
+            return
+        # Only a lap that opened at a real lap-change edge and ran a plausible
+        # minimum length counts — rejects the mid-lap-connect partial and menu/
+        # out-lap blips that would otherwise poison the reference + fuel/time avgs.
+        if not acc.started_at_boundary or acc.elapsed < MIN_LAP_S or acc.distance < MIN_LAP_DIST:
             return
         if self._ref is None or acc.elapsed < self._ref["time"]:
             self._ref = {"time": acc.elapsed, "samples": acc.samples}
@@ -253,7 +281,7 @@ def _band(temp_c, thresholds):
         return "cold"
     if temp_c <= opt_hi:
         return "optimal"
-    if temp_c < crit:
+    if temp_c <= crit:            # critical is strictly ABOVE the threshold (spec: >crit)
         return "hot"
     return "critical"
 
@@ -298,14 +326,24 @@ class TelemetryStore:
     to `path` (survives an OBS Browser Source reload; resets on relay restart).
     """
 
-    def __init__(self, path=None, units="metric", thresholds=(70, 85, 95)):
+    def __init__(self, path=None, units="metric", thresholds=(70, 85, 95), reset=False):
         self._eng = TelemetryEngine()
         self._lock = threading.Lock()
         self._path = path
         self._units = units
         self._thresholds = thresholds
         self._dirty_ref = None
-        self._load()
+        if reset:
+            # Fresh session: the relay resets the reference on every start (spec §D)
+            # so a stale lap from another track/car/session is never loaded. Drop
+            # any persisted file so it can't resurface; _save recreates it live.
+            if path:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass  # no stale file to clear
+        else:
+            self._load()
 
     def update(self, pkt, now):
         with self._lock:

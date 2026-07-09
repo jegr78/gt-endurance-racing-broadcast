@@ -4634,9 +4634,10 @@ def devices_enumerate_data():
             "mic_note": mic_note}
 
 
-def devices_write_data(webcam, capture, mic=None, path=None):
-    """Upsert the chosen webcam/capture/mic device ids into the machine .env
-    (RACECAST_WEBCAM/RACECAST_CAPTURE/RACECAST_MIC, mic added #307). A blank/None
+def devices_write_data(webcam, capture, mic=None, tyres=None, path=None):
+    """Upsert the chosen webcam/capture/mic/tyres device ids into the machine .env
+    (RACECAST_WEBCAM/RACECAST_CAPTURE/RACECAST_MIC/RACECAST_TYRES_CAPTURE; mic added
+    #307, tyres/fuel second-capture added in the commentary-HUD work). A blank/None
     value leaves that key unchanged; all blank -> {ok:false, error} (nothing to
     save). `path` is a test seam (mirrors env_upsert_data's), unused in production
     (resolves the real machine .env)."""
@@ -4647,6 +4648,8 @@ def devices_write_data(webcam, capture, mic=None, path=None):
         updates["RACECAST_CAPTURE"] = capture.strip()
     if (mic or "").strip():
         updates["RACECAST_MIC"] = mic.strip()
+    if (tyres or "").strip():
+        updates["RACECAST_TYRES_CAPTURE"] = tyres.strip()
     if not updates:
         return {"ok": False, "error": "no device selected"}
     return env_upsert_data(updates, path=path)

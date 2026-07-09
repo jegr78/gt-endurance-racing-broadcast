@@ -47,6 +47,18 @@ def t_expected_graphics_empty_when_no_refs():
     assert ph.expected_graphics_from_template('{"x":"y"}') == []
 
 
+def t_expected_graphics_rejects_path_traversal_refs():
+    """#324 review: a ref name must be a bare basename — a '/'-bearing (traversing)
+    ref is NOT captured, so no consumer can join it into a path that escapes the
+    graphics dir (fill_missing writes, seed_committed_graphics reads+copies)."""
+    text = ('{"a":"__RACECAST_GRAPHICS__/../../etc/evil.png",'
+            '"b":"__RACECAST_GRAPHICS__/sub/dir/x.png",'
+            '"c":"__RACECAST_GRAPHICS__/Overlay.png"}')
+    assert ph.expected_graphics_from_template(text) == ["Overlay.png"]
+    media = '{"m":"__RACECAST_MEDIA__/../evil.mp4","n":"__RACECAST_MEDIA__/intro.mp4"}'
+    assert ph.expected_media_from_template(media) == ["intro.mp4"]
+
+
 def t_find_obs_template_prefers_template_then_json():
     with tempfile.TemporaryDirectory() as tmp:
         assert ph.find_obs_template(tmp) is None
