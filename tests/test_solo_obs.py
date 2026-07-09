@@ -167,17 +167,17 @@ def t_localize_preserves_solo_scenes():
     d = _load_solo("GT_Racing_Solo_Commentary.json")
     unset = sa.localize_device_sources(
         d, "darwin", {"RACECAST_CAPTURE": "CAPDEV", "RACECAST_WEBCAM": "CAMDEV",
-                     "RACECAST_MIC": "MICDEV"})
+                     "RACECAST_MIC": "MICDEV", "RACECAST_TYRES_CAPTURE": "TYREDEV"})
     assert unset == []
     # The wrapping scenes survive as scenes with their single wrapped item.
-    for scene_name in ("Solo Capture", "Solo Webcam", "Commentary Mic"):
+    for scene_name in ("Solo Capture", "Solo Webcam", "Commentary Mic", "Solo Tyres/Fuel Capture"):
         sc = next(s for s in d["sources"]
                   if s.get("name") == scene_name and s.get("id") == "scene")
         assert len(sc["settings"]["items"]) == 1, scene_name
     # The video device leaves are localized to the real device values (tokens gone).
     devs = {s["uuid"]: s for s in d["sources"]
             if s.get("id") == "av_capture_input"}
-    assert {s["settings"]["device"] for s in devs.values()} == {"CAPDEV", "CAMDEV"}
+    assert {s["settings"]["device"] for s in devs.values()} == {"CAPDEV", "CAMDEV", "TYREDEV"}
     for s in devs.values():
         assert "__RACECAST_" not in s["settings"]["device"]
     # The mic (audio) device leaf is localized to its per-OS coreaudio form.
