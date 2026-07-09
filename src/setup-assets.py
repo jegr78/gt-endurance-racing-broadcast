@@ -63,11 +63,13 @@ def seed_committed_graphics(refs, graphics_dir, profile_graphics_dir):
     if not profile_graphics_dir or not os.path.isdir(profile_graphics_dir):
         return seeded
     for name in refs:
+        if name != os.path.basename(name):
+            continue                   # defense-in-depth: reject any traversing/absolute name
         if os.path.exists(os.path.join(graphics_dir, name)):
             continue
         src = os.path.join(profile_graphics_dir, name)
-        if not os.path.isfile(src):
-            continue
+        if not os.path.isfile(src) or os.path.islink(src):
+            continue                   # skip a symlinked source (could point outside the profile)
         try:
             os.makedirs(graphics_dir, exist_ok=True)
             shutil.copyfile(src, os.path.join(graphics_dir, name))

@@ -66,10 +66,19 @@ def salsa20_xor(key, nonce8, data):
     return bytes(out)
 
 
+# Minimum accepted packet length. The nonce is derived from offset 0x40, but the
+# parser (gt7_telemetry.parse_packet) reads fixed fields up to offset 0x92 (brake).
+# Requiring the full field span here means a short-but-valid-magic datagram — which
+# a LAN host can trivially forge, since the key is the fixed public string — is
+# dropped as None (→ relay `continue`, probe skip) instead of over-reading and
+# raising struct.error/IndexError deep in the parser.
+MIN_PACKET_LEN = 0x94
+
+
 def decrypt_packet(data):
     """Decrypt a received GT7 packet. Returns the plaintext, or None if the packet
     is too short or the magic does not match (foreign/corrupt datagram)."""
-    if len(data) < 0x44:
+    if len(data) < MIN_PACKET_LEN:
         return None
     iv1 = struct.unpack_from("<I", data, 0x40)[0]
     nonce = struct.pack("<II", iv1 ^ IV_XOR_A, iv1)

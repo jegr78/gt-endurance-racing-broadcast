@@ -140,7 +140,7 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None,
             "env_write": lambda entries: {"ok": True, "path": "/x/.env", "_got": entries},
             "devices_enumerate": devices_enumerate or (lambda: {
                 "ok": True, "devices": [], "note": "", "mic": [], "mic_note": ""}),
-            "devices_write": devices_write or (lambda webcam, capture, mic=None: {
+            "devices_write": devices_write or (lambda webcam, capture, mic=None, tyres=None: {
                 "ok": True, "path": "/x/.env"}),
             "init_plan": init_plan or (lambda browser="firefox": {
                 "ok": True, "steps": [], "next_steps": []}),
@@ -1111,22 +1111,22 @@ def t_get_devices_route_error_is_500():
 
 def t_post_devices_select_writes():
     seen = {}
-    ctx = _ctx(devices_write=lambda w, c, mic=None: seen.update(
-        webcam=w, capture=c, mic=mic) or {"ok": True, "_got": [w, c, mic]})
+    ctx = _ctx(devices_write=lambda w, c, mic=None, tyres=None: seen.update(
+        webcam=w, capture=c, mic=mic, tyres=tyres) or {"ok": True, "_got": [w, c, mic, tyres]})
     httpd, port = _serve(ctx)
     try:
         code, body = _post_json(port, "/api/devices/select",
-                                {"webcam": "v0", "capture": "v1", "mic": "m0"})
+                                {"webcam": "v0", "capture": "v1", "mic": "m0", "tyres": "t0"})
         data = json.loads(body)
         assert code == 200 and data["ok"] is True
-        assert data["_got"] == ["v0", "v1", "m0"]
-        assert seen == {"webcam": "v0", "capture": "v1", "mic": "m0"}
+        assert data["_got"] == ["v0", "v1", "m0", "t0"]
+        assert seen == {"webcam": "v0", "capture": "v1", "mic": "m0", "tyres": "t0"}
     finally:
         httpd.shutdown()
 
 
 def t_post_devices_select_validation_error_is_400():
-    ctx = _ctx(devices_write=lambda w, c, mic=None: {
+    ctx = _ctx(devices_write=lambda w, c, mic=None, tyres=None: {
         "ok": False, "error": "no device selected"})
     httpd, port = _serve(ctx)
     try:

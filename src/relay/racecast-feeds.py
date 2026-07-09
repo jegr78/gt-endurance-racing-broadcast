@@ -7680,6 +7680,10 @@ def _telemetry_loop(store, ps_ip, stop_evt):
             if dest is None:                 # discovery: latch the responder
                 dest = addr[0]
                 tlog.info("GT7 console discovered at %s", dest)
+            elif addr[0] != dest:
+                continue                      # ignore packets from any other host once the
+                                             # console is latched/pinned — a rogue LAN host can
+                                             # forge valid telemetry (the key is fixed+public)
             plain = gt7_crypto.decrypt_packet(data)
             if plain is None:
                 continue
@@ -8224,7 +8228,8 @@ def main():
                  float(os.environ.get("RACECAST_TELEMETRY_TYRE_OPTIMAL_HI", 85)),
                  float(os.environ.get("RACECAST_TELEMETRY_TYRE_HOT_HI", 95)))
         telemetry_store = gt7_telemetry.TelemetryStore(
-            os.path.join(runtime, "telemetry.json"), units=_tunits, thresholds=_tthr)
+            os.path.join(runtime, "telemetry.json"), units=_tunits, thresholds=_tthr,
+            reset=True)          # fresh reference each relay start (spec §D) — no stale cross-track lap
         threading.Thread(target=_telemetry_loop,
                          args=(telemetry_store, args.gt7_ps_ip, stop_evt), daemon=True).start()
         LOG.info("GT7 telemetry listener started (bind 0.0.0.0:33740, ps_ip=%s)",

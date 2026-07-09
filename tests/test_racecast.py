@@ -3930,6 +3930,22 @@ def t_devices_write_data_accepts_mic():
     with open(p, encoding="utf-8") as fh:
         text = fh.read()
     assert "RACECAST_MIC=MIC-ID" in text
+
+
+def t_devices_write_data_accepts_tyres():
+    # devices_write_data accepts a tyres/fuel capture value and upserts
+    # RACECAST_TYRES_CAPTURE (Control Center parity with device-scan --tyres).
+    import tempfile, os as _os
+    d = tempfile.mkdtemp(prefix="racecast-devwrite-tyres-")
+    p = _os.path.join(d, ".env")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("RACECAST_OBS_WS_PASSWORD=secret\n")
+    res = m.devices_write_data(None, None, None, "TYRE-ID", path=p)
+    assert res["ok"], res
+    with open(p, encoding="utf-8") as fh:
+        text = fh.read()
+    assert "RACECAST_TYRES_CAPTURE=TYRE-ID" in text
+    assert "RACECAST_OBS_WS_PASSWORD=secret" in text        # unrelated key preserved
     assert "RACECAST_OBS_WS_PASSWORD=secret" in text
 
 

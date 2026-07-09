@@ -357,6 +357,53 @@ def t_seed_committed_graphics_fills_only_missing():
         assert not os.path.exists(os.path.join(rt, "Absent.png"))  # not in committed -> untouched
 
 
+def t_solo_program_scene_item_ids_unique():
+    """#324 review: each solo-ADDED Program item (Solo Capture/Webcam/Mic/Tyres)
+    takes a genuinely-free scene-item id — unique among itself and NOT colliding
+    with any other Program item. (The base Program items inherited from the Stint
+    scene carry their own pre-existing duplicates from the shipping endurance
+    collection; those are out of scope — we only guard the solo additions.)"""
+    solo_names = {"Solo Capture", "Solo Webcam", "Commentary Mic", "Solo Tyres/Fuel Capture"}
+    for fn in ("GT_Racing_Solo_Commentary.json", "GT_Racing_Solo_POV.json"):
+        with open(os.path.join(ROOT, "src", "obs", fn), encoding="utf-8") as fh:
+            coll = json.load(fh)
+        prog = next(s for s in coll["sources"] if s.get("name") == "Program")
+        items = prog["settings"]["items"]
+        all_ids = [it["id"] for it in items]
+        for it in items:
+            if it.get("name") in solo_names:
+                assert all_ids.count(it["id"]) == 1, \
+                    f"{fn}: solo item {it['name']} id {it['id']} collides ({all_ids})"
+
+
+def t_seed_committed_graphics_rejects_traversal():
+    """#324 review: a traversing/absolute ref name must never copy outside the
+    graphics dir (defense-in-depth behind the tightened graphics-ref regex)."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        rt = os.path.join(td, "runtime"); prof = os.path.join(td, "profile")
+        outside = os.path.join(td, "outside"); os.makedirs(rt); os.makedirs(prof); os.makedirs(outside)
+        # a decoy 'source' the traversal would try to read, and a target it would clobber
+        with open(os.path.join(prof, "evil.png"), "wb") as f: f.write(b"x")
+        with open(os.path.join(outside, "victim.png"), "wb") as f: f.write(b"orig")
+        seeded = sa.seed_committed_graphics(["../outside/victim.png", "..\\evil.png"], rt, prof)
+        assert seeded == []                                    # nothing seeded
+        with open(os.path.join(outside, "victim.png"), "rb") as f:
+            assert f.read() == b"orig"                         # victim untouched
+
+
+def t_seed_committed_graphics_skips_symlink_source():
+    """A symlinked source (could point outside the profile) is not copied."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        rt = os.path.join(td, "runtime"); prof = os.path.join(td, "profile"); os.makedirs(rt); os.makedirs(prof)
+        secret = os.path.join(td, "secret.png")
+        with open(secret, "wb") as f: f.write(b"secret")
+        os.symlink(secret, os.path.join(prof, "Overlay.png"))
+        assert sa.seed_committed_graphics(["Overlay.png"], rt, prof) == []
+        assert not os.path.exists(os.path.join(rt, "Overlay.png"))
+
+
 def t_seed_committed_graphics_no_profile_dir_is_noop():
     """No committed graphics dir (None or absent) -> empty list, no writes."""
     import tempfile
