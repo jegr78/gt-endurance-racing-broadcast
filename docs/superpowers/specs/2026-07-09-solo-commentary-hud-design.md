@@ -158,10 +158,7 @@ completely silent (not heard, not streamed). Confirmed target config (bake into 
 | `Commentary Mic Device` | unchanged (`muted=False`, `mon=0`) | Output on, no self-monitor (avoids echo) |
 | `Solo Webcam Device` | unchanged (`muted=True`) | No relevant audio |
 | `Solo Tyres Capture Device` (new, Commentary) | `muted=True` | Video-only; game audio already comes from Solo Capture → no double |
-
-Optional (matches the real export, not yet confirmed — decide at spec review): set the
-media sources `Intro Video` / `Outro Video` / `Intermission Music` to
-`monitoring_type=2` so the producer hears clips during transitions.
+| `Intro Video` / `Outro Video` / `Intermission Music` | `monitoring_type=2` (monitorAndOutput) | Producer hears clips during transitions (matches the real export; confirmed) |
 
 NB: OBS monitoring only produces sound when a **Monitoring Device** is set in OBS
 Advanced Audio — that stays an operator setup step, documented not automated.
@@ -189,7 +186,8 @@ Advanced Audio — that stays an operator setup step, documented not automated.
   `#chat` rendering is client-side (covered by the visual dialog, not a unit test).
 - Audio-monitoring config: a template assertion (both solo collections) that
   `Solo Capture Device` is `muted=False` + `monitoring_type=2`, `Discord Audio Capture` is
-  `monitoring_type=2`, the mic stays `mon=0`/output, and (Commentary) the new
+  `monitoring_type=2`, the media sources (`Intro Video`/`Outro Video`/`Intermission
+  Music`) are `monitoring_type=2`, the mic stays `mon=0`/output, and (Commentary) the new
   `Solo Tyres Capture Device` is `muted=True`.
 - Endurance byte-identical: the three slots self-hide (logo `onerror`, chat 404-gate) and
   the tyres map entry is a no-op where the source is absent — assert the endurance HUD is
