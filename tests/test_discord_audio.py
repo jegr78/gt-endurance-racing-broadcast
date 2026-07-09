@@ -192,6 +192,76 @@ def t_apply_pov_transform_no_pov_item_is_noop():
     assert coll["sources"][0]["name"] == "Feed A"
 
 
+def _coll_with_webcam(pos=(14.0, 695.0), bounds=(336.0, 189.0)):
+    # Mirrors _coll_with_pov, but for the solo-mode "Solo Webcam" device item
+    # (scene "Program") — see GT_Racing_Solo_POV.json / GT_Racing_Solo_Commentary.json.
+    return {"sources": [
+        {"name": "Program", "id": "scene", "settings": {"items": [
+            {"name": "Solo Webcam",
+             "pos": {"x": pos[0], "y": pos[1]},
+             "bounds": {"x": bounds[0], "y": bounds[1]}},
+        ]}},
+    ]}
+
+
+def _webcam_item(coll):
+    return coll["sources"][0]["settings"]["items"][0]
+
+
+def t_apply_box_transform_webcam_full():
+    coll = _coll_with_webcam()
+    sa.apply_box_transform(coll, "Solo Webcam",
+                            {"left": 20, "top": 700, "width": 400, "height": 225})
+    it = _webcam_item(coll)
+    assert it["pos"] == {"x": 20, "y": 700}
+    assert it["bounds"] == {"x": 400, "y": 225}
+
+
+def t_apply_box_transform_webcam_empty_is_noop():
+    coll = _coll_with_webcam()
+    sa.apply_box_transform(coll, "Solo Webcam", {})
+    assert _webcam_item(coll)["pos"] == {"x": 14.0, "y": 695.0}
+
+
+def t_apply_box_transform_webcam_scene_scoped_program_only():
+    # Jens's requirement: the webcam bake must reposition the 'Solo Webcam' item
+    # ONLY where it is embedded in 'Program' — never a same-named item in the
+    # standalone fullscreen 'Solo Webcam' scene. A decoy same-name item in the
+    # 'Solo Webcam' scene must stay untouched even though it shares the name.
+    coll = {"sources": [
+        {"name": "Solo Webcam", "id": "scene", "settings": {"items": [
+            {"name": "Solo Webcam",                       # decoy in its own scene
+             "pos": {"x": 0.0, "y": 0.0},
+             "bounds": {"x": 1920.0, "y": 1080.0}},
+        ]}},
+        {"name": "Program", "id": "scene", "settings": {"items": [
+            {"name": "Solo Webcam",                       # the embedded instance
+             "pos": {"x": 24.0, "y": 776.0},
+             "bounds": {"x": 384.0, "y": 280.0}},
+        ]}},
+    ]}
+    sa.apply_box_transform(coll, "Solo Webcam",
+                            {"left": 20, "top": 700, "width": 400, "height": 225},
+                            scene="Program")
+    own = coll["sources"][0]["settings"]["items"][0]
+    prog = coll["sources"][1]["settings"]["items"][0]
+    assert prog["pos"] == {"x": 20, "y": 700}             # Program: repositioned
+    assert prog["bounds"] == {"x": 400, "y": 225}
+    assert own["pos"] == {"x": 0.0, "y": 0.0}             # own scene: untouched
+    assert own["bounds"] == {"x": 1920.0, "y": 1080.0}
+
+
+def t_apply_box_transform_pov_still_works_via_generic():
+    # #pov -> "Feed POV" must keep working identically through the generalized
+    # apply_box_transform (apply_pov_transform is now a thin wrapper over it).
+    coll = _coll_with_pov()
+    sa.apply_box_transform(coll, sa.POV_SOURCE_NAME,
+                            {"left": 1516, "top": 600, "width": 384, "height": 216})
+    it = _pov_item(coll)
+    assert it["pos"] == {"x": 1516, "y": 600}
+    assert it["bounds"] == {"x": 384, "y": 216}
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

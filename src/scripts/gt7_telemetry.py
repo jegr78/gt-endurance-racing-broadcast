@@ -1,0 +1,348 @@
+#!/usr/bin/env python3
+"""GT7 telemetry: pure packet parsing + the derived-metrics engine.
+
+No sockets — the relay owns the UDP thread and feeds decrypted packets here. All
+functions are deterministic (timestamps are injected) so the engine is unit-tested
+without a console. Offsets: community packet-'A' layout, validated live via
+tools/gt7-telemetry-probe.py. See the design spec.
+"""
+import json
+import os
+import struct
+import threading
+from collections import deque, namedtuple
+
+# --- Packet 'A' field offsets (little-endian) ---
+OFF_MAGIC = 0x00
+OFF_SPEED = 0x4C        # metres/second (float)
+OFF_FUEL_LEVEL = 0x44   # litres in tank (float)
+OFF_FUEL_CAP = 0x48     # tank capacity (float)
+OFF_TYRE_FL = 0x60      # tyre surface temp, °C (float x4)
+OFF_TYRE_FR = 0x64
+OFF_TYRE_RL = 0x68
+OFF_TYRE_RR = 0x6C
+OFF_LAP = 0x74          # current lap (int16)
+OFF_BEST_MS = 0x78      # best lap time, ms (int32; -1 = none)
+OFF_LAST_MS = 0x7C      # last lap time, ms (int32; -1 = none)
+OFF_FLAGS = 0x8E        # simulator flags (uint16 bitfield)
+OFF_THROTTLE = 0x91     # 0-255 (uint8)
+OFF_BRAKE = 0x92        # 0-255 (uint8)
+
+# --- Simulator flag bits (subset we use) ---
+FLAG_ON_TRACK = 1 << 0
+FLAG_PAUSED = 1 << 1
+FLAG_LOADING = 1 << 2   # loading / processing (menu / replay transitions)
+
+# --- Trace buffer (throttle/brake) ---
+TRACE_WINDOW_S = 15.0
+TRACE_MIN_DT = 1.0 / 30      # decimate 60 Hz -> ~30 Hz
+
+# --- Tyre rolling-average window ---
+TYRE_AVG_WINDOW_S = 30.0
+
+GT7Packet = namedtuple("GT7Packet", [
+    "speed_mps", "fuel_level", "fuel_capacity", "tyre_temp",
+    "throttle", "brake", "lap", "best_ms", "last_ms",
+    "flags", "on_track", "paused", "loading",
+])
+
+
+def parse_packet(plain):
+    """Parse a decrypted packet-'A' buffer into a GT7Packet."""
+    flags = struct.unpack_from("<H", plain, OFF_FLAGS)[0]
+    return GT7Packet(
+        speed_mps=struct.unpack_from("<f", plain, OFF_SPEED)[0],
+        fuel_level=struct.unpack_from("<f", plain, OFF_FUEL_LEVEL)[0],
+        fuel_capacity=struct.unpack_from("<f", plain, OFF_FUEL_CAP)[0],
+        tyre_temp=(
+            struct.unpack_from("<f", plain, OFF_TYRE_FL)[0],
+            struct.unpack_from("<f", plain, OFF_TYRE_FR)[0],
+            struct.unpack_from("<f", plain, OFF_TYRE_RL)[0],
+            struct.unpack_from("<f", plain, OFF_TYRE_RR)[0],
+        ),
+        throttle=plain[OFF_THROTTLE],
+        brake=plain[OFF_BRAKE],
+        lap=struct.unpack_from("<h", plain, OFF_LAP)[0],
+        best_ms=struct.unpack_from("<i", plain, OFF_BEST_MS)[0],
+        last_ms=struct.unpack_from("<i", plain, OFF_LAST_MS)[0],
+        flags=flags,
+        on_track=bool(flags & FLAG_ON_TRACK),
+        paused=bool(flags & FLAG_PAUSED),
+        loading=bool(flags & FLAG_LOADING),
+    )
+
+
+class _LapAccumulator:
+    """Accumulates time + distance samples within one lap."""
+    __slots__ = ("t0", "elapsed", "distance", "samples", "clean", "last_t",
+                 "fuel_start", "fuel_end")
+
+    def __init__(self, now):
+        self.t0 = now
+        self.elapsed = 0.0
+        self.distance = 0.0
+        self.samples = [(0.0, 0.0)]   # (distance, time) pairs, monotonic in distance
+        self.clean = True
+        self.last_t = now
+        self.fuel_start = None
+        self.fuel_end = None
+
+    def add(self, pkt, now):
+        dt = now - self.last_t
+        self.last_t = now
+        if dt <= 0:
+            return
+        if dt > 2.0:                  # a long gap (stall/menu) makes the lap time unreliable
+            self.clean = False
+            return
+        if pkt.paused or pkt.loading or not pkt.on_track:
+            self.clean = False
+            return
+        self.elapsed += dt
+        self.distance += max(0.0, pkt.speed_mps) * dt
+        if self.distance > self.samples[-1][0]:
+            self.samples.append((self.distance, self.elapsed))
+        if self.fuel_start is None:
+            self.fuel_start = pkt.fuel_level
+        self.fuel_end = pkt.fuel_level
+
+
+class TelemetryEngine:
+    """Consumes GT7Packets (timestamp injected) and derives lap/delta/predicted.
+
+    Fuel + input trace are added in Task 4/6. Lap detection uses the packet lap
+    counter; menu/replay/paused activity never finalises a lap. The reference is
+    the fastest clean completed lap, stored as time-vs-distance samples.
+    """
+
+    def __init__(self):
+        self._last = None                 # last GT7Packet
+        self._lap_num = None
+        self._acc = None                  # current _LapAccumulator
+        self._ref = None                  # reference (best) lap: {"time": s, "samples": [...]}
+        self._lap_times = []      # last completed clean lap durations (s)
+        self._lap_fuel = []       # last completed clean lap fuel burns (L)
+        self._trace = deque()     # (t, throttle01, brake01), decimated + windowed
+        self._trace_last_t = None
+        self._tyre_hist = deque()     # (t, (fl,fr,rl,rr)) over TYRE_AVG_WINDOW_S
+        self._top_speed = 0.0
+
+    def update(self, pkt, now):
+        if self._lap_num is None:         # first packet: open a lap
+            self._lap_num = pkt.lap
+            self._acc = _LapAccumulator(now)
+        elif pkt.lap != self._lap_num:    # lap-change edge
+            self._finalise_lap()
+            self._lap_num = pkt.lap
+            self._acc = _LapAccumulator(now)
+            if self._last is not None:    # seed the new lap's start-of-lap fuel reading
+                self._acc.fuel_start = self._last.fuel_level
+        if self._acc is not None:
+            self._acc.add(pkt, now)
+        self._last = pkt
+        if self._trace_last_t is None or (now - self._trace_last_t) >= TRACE_MIN_DT:
+            self._trace_last_t = now
+            self._trace.append((now, pkt.throttle / 255.0, pkt.brake / 255.0))
+            cutoff = now - TRACE_WINDOW_S
+            while self._trace and self._trace[0][0] < cutoff:
+                self._trace.popleft()
+        if pkt.on_track and not pkt.paused and pkt.speed_mps > self._top_speed:
+            self._top_speed = pkt.speed_mps
+        self._tyre_hist.append((now, pkt.tyre_temp))
+        tcut = now - TYRE_AVG_WINDOW_S
+        while self._tyre_hist and self._tyre_hist[0][0] < tcut:
+            self._tyre_hist.popleft()
+
+    def _finalise_lap(self):
+        acc = self._acc
+        if acc is None or not acc.clean or acc.elapsed <= 0 or len(acc.samples) < 2:
+            return
+        if self._ref is None or acc.elapsed < self._ref["time"]:
+            self._ref = {"time": acc.elapsed, "samples": acc.samples}
+        self._lap_times.append(acc.elapsed)
+        self._lap_times = self._lap_times[-3:]
+        if acc.fuel_start is not None and acc.fuel_end is not None:
+            burn = acc.fuel_start - acc.fuel_end
+            if burn > 0:
+                self._lap_fuel.append(burn)
+                self._lap_fuel = self._lap_fuel[-3:]
+
+    def _ref_time_at(self, distance):
+        """Interpolate the reference lap's elapsed time at a given distance."""
+        s = self._ref["samples"]
+        if distance <= s[0][0]:
+            return s[0][1]
+        if distance >= s[-1][0]:
+            return s[-1][1]
+        lo, hi = 0, len(s) - 1
+        while lo + 1 < hi:                # binary search on distance
+            mid = (lo + hi) // 2
+            if s[mid][0] <= distance:
+                lo = mid
+            else:
+                hi = mid
+        (d0, t0), (d1, t1) = s[lo], s[hi]
+        if d1 == d0:
+            return t0
+        return t0 + (t1 - t0) * (distance - d0) / (d1 - d0)
+
+    def _fuel(self):
+        pkt = self._last
+        level = pkt.fuel_level if pkt else 0.0
+        per_lap = laps = time_rem = None
+        if self._lap_fuel:
+            per_lap = sum(self._lap_fuel) / len(self._lap_fuel)
+            if per_lap > 0:
+                laps = level / per_lap
+                if self._lap_times:
+                    avg = sum(self._lap_times) / len(self._lap_times)
+                    time_rem = laps * avg
+        return {"level": level, "per_lap": per_lap,
+                "laps_remaining": laps, "time_remaining_s": time_rem}
+
+    def _tyre_avg(self):
+        if not self._tyre_hist:
+            return self._last.tyre_temp if self._last else (0.0, 0.0, 0.0, 0.0)
+        sums = [0.0, 0.0, 0.0, 0.0]
+        for _, temps in self._tyre_hist:
+            for i in range(4):
+                sums[i] += temps[i]
+        n = len(self._tyre_hist)
+        return tuple(s / n for s in sums)
+
+    def snapshot(self):
+        pkt = self._last
+        acc = self._acc
+        has_ref = self._ref is not None
+        delta = predicted = best = None
+        if has_ref:
+            best = self._ref["time"]
+            if acc is not None and acc.elapsed > 0:
+                delta = acc.elapsed - self._ref_time_at(acc.distance)
+                predicted = best + delta
+        return {
+            "speed_mps": pkt.speed_mps if pkt else 0.0,
+            "tyre_temp": pkt.tyre_temp if pkt else (0.0, 0.0, 0.0, 0.0),
+            "lap": pkt.lap if pkt else 0,
+            "current_lap_s": acc.elapsed if acc else 0.0,
+            "best_s": best,
+            "delta_s": delta,
+            "predicted_s": predicted,
+            "has_reference": has_ref,
+            "fuel": self._fuel(),
+            "tyre_temp_avg": self._tyre_avg(),
+            "top_speed_mps": self._top_speed,
+        }
+
+    def trace_batch(self, limit=150):
+        items = list(self._trace)[-limit:]
+        return [{"t": t, "throttle": thr, "brake": brk} for (t, thr, brk) in items]
+
+
+def _fmt_time(seconds):
+    if seconds is None:
+        return None
+    m = int(seconds // 60)
+    s = seconds - m * 60
+    return f"{m}:{s:06.3f}" if m else f"{s:.3f}"
+
+
+def _band(temp_c, thresholds):
+    cold, opt_hi, crit = thresholds
+    if temp_c < cold:
+        return "cold"
+    if temp_c <= opt_hi:
+        return "optimal"
+    if temp_c < crit:
+        return "hot"
+    return "critical"
+
+
+def format_snapshot(snap, units, thresholds):
+    imperial = units == "imperial"
+    spd = snap["speed_mps"] * (2.2369363 if imperial else 3.6)
+    avgs = snap["tyre_temp_avg"]
+    tyres = []
+    for i, c in enumerate(snap["tyre_temp"]):
+        val = c * 9 / 5 + 32 if imperial else c
+        a = avgs[i] * 9 / 5 + 32 if imperial else avgs[i]
+        tyres.append({"value": round(val), "avg": round(a), "band": _band(c, thresholds)})
+    fuel = snap["fuel"]
+    lvl = fuel["level"] * (0.2641720 if imperial else 1.0)   # L -> gal
+    return {
+        "speed": round(spd),
+        "top_speed": round(snap["top_speed_mps"] * (2.2369363 if imperial else 3.6)),
+        "tyres": tyres,
+        "lap": snap["lap"],
+        "current_lap": _fmt_time(snap["current_lap_s"]),
+        "best_lap": _fmt_time(snap["best_s"]),
+        "delta": None if snap["delta_s"] is None else round(snap["delta_s"], 2),
+        "predicted": _fmt_time(snap["predicted_s"]),
+        "has_reference": snap["has_reference"],
+        "fuel": {
+            "level": round(lvl, 1),
+            "laps_remaining": (None if fuel["laps_remaining"] is None
+                               else round(fuel["laps_remaining"], 1)),
+            "time_remaining": _fmt_time(fuel["time_remaining_s"]),
+        },
+        "units": {
+            "speed": "mph" if imperial else "km/h",
+            "temp": "°F" if imperial else "°C",
+            "fuel": "gal" if imperial else "L",
+        },
+    }
+
+
+class TelemetryStore:
+    """Thread-safe wrapper around TelemetryEngine. Persists ONLY the reference lap
+    to `path` (survives an OBS Browser Source reload; resets on relay restart).
+    """
+
+    def __init__(self, path=None, units="metric", thresholds=(70, 85, 95)):
+        self._eng = TelemetryEngine()
+        self._lock = threading.Lock()
+        self._path = path
+        self._units = units
+        self._thresholds = thresholds
+        self._dirty_ref = None
+        self._load()
+
+    def update(self, pkt, now):
+        with self._lock:
+            had = self._eng._ref
+            self._eng.update(pkt, now)
+            if self._eng._ref is not had:      # a new reference lap was set
+                self._save()
+
+    def data(self):
+        with self._lock:
+            snap = self._eng.snapshot()
+        return format_snapshot(snap, self._units, self._thresholds)
+
+    def trace(self, limit=150):
+        with self._lock:
+            return self._eng.trace_batch(limit)
+
+    def _save(self):
+        if not self._path or self._eng._ref is None:
+            return
+        try:
+            tmp = self._path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(self._eng._ref, fh)
+            os.replace(tmp, self._path)
+        except OSError:
+            pass                               # best-effort, never crash the relay
+
+    def _load(self):
+        if not self._path:
+            return
+        try:
+            with open(self._path, encoding="utf-8") as fh:
+                ref = json.load(fh)
+            if (isinstance(ref, dict) and isinstance(ref.get("time"), (int, float))
+                    and isinstance(ref.get("samples"), list) and len(ref["samples"]) >= 2):
+                ref["samples"] = [(float(d), float(t)) for d, t in ref["samples"]]
+                self._eng._ref = ref
+        except (OSError, ValueError, TypeError):
+            pass  # no/invalid reference file yet -- start without one

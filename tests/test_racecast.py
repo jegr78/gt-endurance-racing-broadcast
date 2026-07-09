@@ -474,18 +474,19 @@ def t_oneshot_extra():
 
 
 def t_sync_pov_transform_calls_setter_with_merged_box():
+    # Both mapped slots ("pov" -> Stint/"Feed POV", "webcam" -> Program/"Solo
+    # Webcam") must be synced from one call — capture every set_transform call.
     import tempfile
-    captured = {}
+    calls = []
 
     def fake_set(scene, source, transform):
-        captured["scene"] = scene
-        captured["source"] = source
-        captured["transform"] = transform
+        calls.append({"scene": scene, "source": source, "transform": transform})
         return True, ""
 
     with tempfile.TemporaryDirectory() as d:
         with open(os.path.join(d, "hud.css"), "w") as fh:
-            # override only left/top; width/height fall back to the hud.html base.
+            # override only #pov's left/top; width/height fall back to the
+            # hud.html base. #webcam gets no override -> base box only.
             fh.write("#pov { left: 1516px; top: 600px; }")
         orig = m._active_overlay_dir
         m._active_overlay_dir = lambda: d
@@ -494,12 +495,22 @@ def t_sync_pov_transform_calls_setter_with_merged_box():
         finally:
             m._active_overlay_dir = orig
 
-    assert captured["scene"] == "Stint"
-    assert captured["source"] == "Feed POV"
-    tf = captured["transform"]
+    by_source = {c["source"]: c for c in calls}
+    assert set(by_source) == {"Feed POV", "Solo Webcam"}
+
+    pov = by_source["Feed POV"]
+    assert pov["scene"] == "Stint"
+    tf = pov["transform"]
     assert tf["positionX"] == 1516 and tf["positionY"] == 600   # from the override
     assert tf["boundsWidth"] == 384 and tf["boundsHeight"] == 216  # from the base
     assert tf["boundsType"] == 2 and tf["alignment"] == 5
+
+    webcam = by_source["Solo Webcam"]
+    assert webcam["scene"] == "Program"
+    wtf = webcam["transform"]
+    # no override for #webcam -> the hud.html base box (16:9 default).
+    assert wtf["positionX"] == 14 and wtf["positionY"] == 695
+    assert wtf["boundsWidth"] == 336 and wtf["boundsHeight"] == 189
 
 
 def t_run_module_exit_codes():

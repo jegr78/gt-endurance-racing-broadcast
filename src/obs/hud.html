@@ -77,6 +77,65 @@
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     font-weight: 600; font-size: 22px; letter-spacing: .04em; }
 
+  /* Solo-mode telemetry block (issue #324): tyre-temp bands, an input trace
+     (throttle/brake), delta/predicted (hidden until a reference lap exists),
+     and fuel. Approved POV layout (visual review loop, #324): a GT3-dash
+     style panel bottom-right, the delta centred between the in-game timers,
+     and a webcam frame bottom-left. */
+
+  /* Delta: centred BETWEEN the two in-game timers; green negative / red
+     positive is set in JS from the numeric sign. */
+  #tele-delta{left:840px;top:206px;width:240px;height:32px;
+    justify-content:center;font-size:30px;font-family:"SF Mono","Consolas",monospace;
+    text-shadow:0 2px 6px rgba(0,0,0,.85)}
+
+  /* GT3-dash telemetry panel, bottom-right: labels sit above the values as
+     separate slots (amber, small-caps letter-spaced) so the value itself
+     stays big and each label is independently editable. */
+  #tele-pred,#tele-fuel,#tele-top{line-height:1.05;
+    font-family:"SF Mono","Consolas",monospace;color:#eef2f6}
+  #tele-pred-lbl,#tele-fuel-lbl,#tele-top-lbl{font:700 11px "SF Mono","Consolas",monospace;
+    letter-spacing:.16em;color:#e0b24a;text-shadow:none}
+  #tele-pred-lbl{left:1522px;top:720px}
+  #tele-top-lbl{left:1712px;top:720px}
+  #tele-fuel-lbl{left:1522px;top:792px}
+  #tele-pred{left:1522px;top:737px;font-size:30px;font-weight:700}
+  #tele-top{left:1712px;top:737px;font-size:30px;font-weight:700}
+  #tele-fuel{left:1522px;top:809px;font-size:23px}
+
+  /* Tyre blocks: colour-filled 2x2 grid, band gradients per GT3-dash look. */
+  #tele-tyres{left:1522px;top:856px;width:356px;height:94px;
+    display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px}
+  .tw{min-width:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+    border-radius:9px;font-size:30px;font-weight:800;text-shadow:none;box-shadow:0 2px 6px rgba(0,0,0,.45)}
+  .tw .ta{display:none}
+  .tw[data-band="cold"]{background:linear-gradient(180deg,#7ab8ff,#4f8ad6);color:#08172b}
+  .tw[data-band="optimal"]{background:linear-gradient(180deg,#69e097,#37b96a);color:#06281a}
+  .tw[data-band="hot"]{background:linear-gradient(180deg,#e6c352,#c99a2e);color:#2a2205}
+  .tw[data-band="critical"]{background:linear-gradient(180deg,#ff7a7c,#e23d40);color:#2b0708}
+
+  /* Trace: iRacing-style panel look (faint grid + dark gradient). */
+  #tele-trace{left:1522px;top:960px;width:356px;height:92px;
+    border-radius:9px;border:1px solid rgba(130,150,170,.35);
+    background:repeating-linear-gradient(90deg,rgba(255,255,255,.05) 0 1px,transparent 1px 44px),
+               repeating-linear-gradient(0deg,rgba(255,255,255,.05) 0 1px,transparent 1px 23px),
+               linear-gradient(180deg,#0c1622,#0a0f18)}
+
+  /* Wide telemetry panel background, behind the values above (it is the
+     first child of #tele in the markup; these z-indexes keep the values on
+     top of it regardless of paint order). */
+  #tele-panel{position:absolute;left:1500px;top:702px;width:398px;height:362px;
+    background:rgba(9,12,17,.7);border:1px solid rgba(120,132,146,.42);border-radius:14px;z-index:0}
+  #tele-tyres,#tele-trace,#tele-delta,#tele-pred,#tele-fuel,#tele-top,
+  #tele-pred-lbl,#tele-fuel-lbl,#tele-top-lbl{z-index:1}
+
+  /* Webcam frame, bottom-left: 16:9, bottom-aligned at y=884. Transparent
+     interior — the OBS webcam source sits inside; no label text. */
+  #webcam{position:absolute;left:14px;top:695px;width:336px;height:189px;
+    border:3px solid #cfd6df;border-radius:10px;box-shadow:0 6px 22px rgba(0,0,0,.55);z-index:2}
+
+  .ta{font-size:.6em;opacity:.75;margin-left:.15em}
+
   /* Race-timer clock, merged in from the old separate timer source. Sits at the
      top band at the clock's true on-air size/position (was OBS crop y[217..895]
      + scale 0.0854 + pos 880,98). Tune live via the builder. */
@@ -173,6 +232,28 @@
   <div id="flag-status" class="el" data-edit="Flag status" data-edit-kind="text"></div>
   <div id="pov" class="el" data-edit="POV box" data-edit-kind="box"></div>
   <div id="pov-name" class="el" data-edit="POV name" data-edit-kind="text"></div>
+  <!-- Solo-mode telemetry block (issue #324): self-gating on /telemetry/data 200
+       vs 404, so it stays invisible in endurance (no such endpoint there). -->
+  <div id="tele" style="display:none">
+    <!-- Panel background + webcam frame: builder box slots (position/size only —
+         the border/background/shadow/radius/z-index look stays in the CSS rules
+         above). "webcam" also drives the real OBS "Solo Webcam" device transform
+         on export + live, mirroring #pov -> "Feed POV" (issue #324). -->
+    <div id="tele-panel" class="el" data-edit="Telemetry panel" data-edit-kind="box"></div>
+    <div id="webcam" class="el" data-edit="Webcam" data-edit-kind="box"></div>
+    <div id="tele-tyres" class="el" data-edit="Tyre temps" data-edit-kind="box">
+      <span class="tw" data-w="fl">--<small class="ta" data-a="fl"></small></span><span class="tw" data-w="fr">--<small class="ta" data-a="fr"></small></span>
+      <span class="tw" data-w="rl">--<small class="ta" data-a="rl"></small></span><span class="tw" data-w="rr">--<small class="ta" data-a="rr"></small></span>
+    </div>
+    <canvas id="tele-trace" class="el" data-edit="Input trace" data-edit-kind="box" width="356" height="92"></canvas>
+    <div id="tele-delta" class="el white" data-edit="Delta to best" data-edit-kind="text" style="display:none">--</div>
+    <div id="tele-pred-lbl" class="el" data-edit="Pred. lap label" data-edit-kind="text">PRED. LAP</div>
+    <div id="tele-pred" class="el white" data-edit="Predicted lap" data-edit-kind="text" style="display:none">--</div>
+    <div id="tele-fuel-lbl" class="el" data-edit="Fuel label" data-edit-kind="text">FUEL</div>
+    <div id="tele-fuel" class="el white" data-edit="Fuel" data-edit-kind="text">--</div>
+    <div id="tele-top-lbl" class="el" data-edit="Top speed label" data-edit-kind="text">TOP SPEED</div>
+    <div id="tele-top" class="el white" data-edit="Top speed" data-edit-kind="text">--</div>
+  </div>
   <div id="clock" class="el white" data-edit="Clock" data-edit-kind="text"></div>
 
 <script>
@@ -264,6 +345,73 @@
     else { img.removeAttribute("src"); logoEl.classList.add("empty"); }
     fitName(nameEl);
   }
+
+  // Solo-mode telemetry (issue #324): self-gating on /telemetry/data 200 vs
+  // 404, so it stays hidden in endurance where the endpoint does not exist.
+  (function () {
+    const tele = document.getElementById("tele");
+    const ctx = document.getElementById("tele-trace").getContext("2d");
+    let alive = false;
+    async function pollData() {
+      try {
+        const r = await fetch("/telemetry/data", { cache: "no-store" });
+        if (r.status === 404) { tele.style.display = "none"; alive = false; return; }
+        if (!r.ok) return;
+        const d = await r.json();
+        alive = true; tele.style.display = "";
+        const wheels = ["fl", "fr", "rl", "rr"];
+        d.tyres.forEach((t, i) => {
+          const el = tele.querySelector('[data-w="' + wheels[i] + '"]');
+          el.setAttribute("data-band", t.band);
+          const av = el.querySelector('[data-a="' + wheels[i] + '"]');
+          el.childNodes[0].nodeValue = t.value + d.units.temp;
+          if (av) av.textContent = (t.avg != null ? " ø" + t.avg : "");
+        });
+        const delta = document.getElementById("tele-delta");
+        const pred = document.getElementById("tele-pred");
+        if (d.has_reference && d.delta !== null) {
+          delta.style.display = ""; pred.style.display = "";
+          delta.textContent = (d.delta >= 0 ? "+" : "") + d.delta.toFixed(2) + "s";
+          delta.style.color = d.delta < 0 ? "#3ce07f" : "#ff5d5d";
+          pred.textContent = d.predicted || "--";
+        } else {
+          delta.style.display = "none"; pred.style.display = "none";
+        }
+        const f = d.fuel;
+        document.getElementById("tele-fuel").textContent =
+          f.level + d.units.fuel +
+          (f.laps_remaining !== null ? " · " + f.laps_remaining + " laps" : "") +
+          (f.time_remaining ? " · " + f.time_remaining : "");
+        document.getElementById("tele-top").textContent =
+          d.top_speed + " " + d.units.speed;
+      } catch (e) { /* transient; keep polling */ }
+    }
+    async function pollTrace() {
+      if (!alive) return;
+      try {
+        const r = await fetch("/telemetry/trace", { cache: "no-store" });
+        if (!r.ok) return;
+        const { samples } = await r.json();
+        const w = ctx.canvas.width, h = ctx.canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        if (!samples.length) return;
+        const t0 = samples[0].t, span = (samples[samples.length - 1].t - t0) || 1;
+        const draw = (key, color) => {
+          ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 2;
+          samples.forEach((s, i) => {
+            const x = ((s.t - t0) / span) * w;
+            const y = h - s[key] * h;
+            i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+          });
+          ctx.stroke();
+        };
+        draw("throttle", "#37d67a"); draw("brake", "#ff4d4f");
+      } catch (e) { /* transient */ }
+    }
+    setInterval(pollData, 100);
+    setInterval(pollTrace, 100);
+    pollData();
+  })();
 
   async function tick() {
     try {

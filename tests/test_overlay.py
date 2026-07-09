@@ -229,7 +229,18 @@ def t_ob_extract_slots_from_real_hud():
                    "team1-logo", "team1-num", "team1-name", "team1-brand",
                    "team2-logo", "team2-num", "team2-name", "team2-brand",
                    "team3-logo", "team3-num", "team3-name", "team3-brand",
-                   "race-control", "flag-status", "pov", "pov-name", "clock"]
+                   "race-control", "flag-status", "pov", "pov-name",
+                   # Solo-mode telemetry block (issue #324): self-gating,
+                   # hidden in endurance (no /telemetry/data there). The panel
+                   # background and webcam frame are builder box slots too
+                   # (position/size only — the webcam box also drives the real
+                   # OBS "Solo Webcam" device transform, see
+                   # OVERLAY_SLOT_OBS_SOURCES).
+                   "tele-panel", "webcam",
+                   "tele-tyres", "tele-trace", "tele-delta",
+                   "tele-pred-lbl", "tele-pred",
+                   "tele-fuel-lbl", "tele-fuel",
+                   "tele-top-lbl", "tele-top", "clock"]
     by_id = {s["id"]: s for s in slots}
     assert by_id["stint"]["label"] == "Stint banner"
     # default props (no data-edit-props) include the text set, not the team-only keys
@@ -250,6 +261,18 @@ def t_ob_extract_slots_from_real_hud():
     assert by_id["pov"]["label"] == "POV box"
     # POV name label is a text slot (its old hand-curated set is now the kind)
     assert by_id["pov-name"]["props"] == list(ob.KIND_TEXT)
+
+
+def t_ob_hud_has_telemetry_slots():
+    with open(os.path.join(ROOT, "src", "obs", "hud.html")) as f:
+        ids = {s["id"] for s in ob.extract_slots(f.read())}
+    assert {"tele-tyres", "tele-trace", "tele-delta", "tele-pred", "tele-fuel"} <= ids
+
+
+def t_ob_hud_has_top_speed_slot():
+    with open(os.path.join(ROOT, "src", "obs", "hud.html")) as f:
+        ids = {s["id"] for s in ob.extract_slots(f.read())}
+    assert "tele-top" in ids
 
 
 def t_ob_hud_has_clock_slot():
@@ -809,7 +832,34 @@ def t_pov_box_from_css_float_value():
 
 
 def t_overlay_slot_obs_sources_constant():
-    assert ob.OVERLAY_SLOT_OBS_SOURCES == {"pov": "Feed POV"}
+    assert ob.OVERLAY_SLOT_OBS_SOURCES == {
+        "pov":    {"scene": "Stint",   "source": "Feed POV"},
+        "webcam": {"scene": "Program", "source": "Solo Webcam",
+                   "export_scene": "Program"},
+    }
+    # POV bakes whole-tree (no export_scene); the webcam bake is scene-scoped.
+    assert "export_scene" not in ob.OVERLAY_SLOT_OBS_SOURCES["pov"]
+    assert ob.OVERLAY_SLOT_OBS_SOURCES["webcam"]["export_scene"] == "Program"
+
+
+def t_box_from_css_webcam_slot():
+    css = "#webcam{left:14px;top:695px;width:336px;height:189px}"
+    assert ob.box_from_css(css, "webcam") == {"left": 14, "top": 695,
+                                              "width": 336, "height": 189}
+
+
+def t_box_from_css_default_slot_is_pov():
+    # box_from_css defaults to slot_id="pov" — same result as pov_box_from_css.
+    css = "#pov { left: 1516px; top: 600px; width: 384px; height: 216px; }"
+    assert ob.box_from_css(css) == ob.pov_box_from_css(css)
+
+
+def t_pov_box_from_css_is_back_compat_wrapper():
+    # pov_box_from_css must keep working byte-identically post-generalization —
+    # released-product callers still import this exact name (#324).
+    css = "#pov { left: 1516px; top: 600px; }"
+    assert ob.pov_box_from_css(css) == ob.box_from_css(css, "pov") == \
+        {"left": 1516, "top": 600}
 
 
 def t_ob_compile_shear_skewx():

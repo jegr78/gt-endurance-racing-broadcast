@@ -214,6 +214,9 @@ python3 tools/fetch-flags.py            # adds missing -> src/assets/flags/ (kee
 python3 tools/broadcast-chat-probe.py https://www.youtube.com/@SomeChannel  # --resolve-only / --cookies
 python3 tools/broadcast-chat-probe.py https://www.twitch.tv/SomeChannel     # or: --twitch SomeChannel
 
+# Probe GT7 UDP telemetry (#324) against a LIVE PS4/PS5 — standalone, no relay/Sheet.
+python3 tools/gt7-telemetry-probe.py --ps-ip 192.168.1.42   # heartbeat + decrypt + field dump
+
 # Publish the GitHub wiki from src/docs/wiki/ (maintainer; --dry-run to preview)
 python3 tools/sync-wiki.py
 ```
