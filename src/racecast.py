@@ -552,7 +552,8 @@ def _setup_import_name(kind=None):
         kind = pcfg.normalize_kind(os.environ.get("RACECAST_KIND", ""))
     return "GT_Racing_Solo.import.json" if kind == "solo" else "GT_Racing_Endurance.import.json"
 
-def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None, kind=None):
+def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None, kind=None,
+                   profile_graphics=None):
     """Extra argv for a one-shot. The asset writers (graphics/media/setup) get a
     profile-scoped --out (+ setup's --media/--graphics) so their output lands
     under runtime/<profile>/ in every run mode -- those are baked into the OBS
@@ -585,6 +586,9 @@ def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None, kind=
     if (command == "setup" and overlay_css and "--overlay-css" not in rest
             and os.path.isfile(overlay_css)):
         extra += ["--overlay-css", overlay_css]
+    if (command == "setup" and profile_graphics and "--profile-graphics" not in rest
+            and os.path.isdir(profile_graphics)):
+        extra += ["--profile-graphics", profile_graphics]
     return extra
 
 def _relay_script():
@@ -848,6 +852,17 @@ def _active_overlay_dir():
         return None
     root = _env_base(IS_FROZEN, _real_executable(), HERE)
     return os.path.join(pcfg.profiles_dir(root), active, "overlay")
+
+def _active_profile_graphics_dir():
+    """profiles/<active>/graphics for the active profile, or None when no profile
+    resolves. Committed per-profile graphics (e.g. a demo Overlay.png) that
+    setup-assets seeds into the runtime graphics dir as a fallback. (Does not
+    check existence — callers decide.)"""
+    active = _active_profile_name()
+    if not active:
+        return None
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    return os.path.join(pcfg.profiles_dir(root), active, "graphics")
 
 def _overlay_relay_args(overlay_dir):
     """['--overlay-dir', DIR] when DIR exists, else [] (pure for tests)."""
@@ -3947,7 +3962,8 @@ def _oneshot_code(command, rest):
         rest = _cookies_oneshot_args(rest)
     _od = _active_overlay_dir()
     extra = _oneshot_extra(command, rest, _runtime_dir(), _runtime_base_dir(),
-                           overlay_css=os.path.join(_od, "hud.css") if _od else None)
+                           overlay_css=os.path.join(_od, "hud.css") if _od else None,
+                           profile_graphics=_active_profile_graphics_dir())
     if command == "update" and "--current" not in rest:
         extra += ["--current", version()]
     return _run_script(ONESHOT_MAP[command], list(rest) + extra)

@@ -335,6 +335,38 @@ def t_mic_localize_empty_env_warns_not_raises():
     assert _byname(c, "Commentary Mic Device")["settings"] == {"device_id": ""}
 
 
+def t_seed_committed_graphics_fills_only_missing():
+    """seed_committed_graphics copies a committed profile graphic into the runtime
+    graphics dir ONLY when that ref is missing there (runtime/downloaded wins);
+    returns the seeded basenames."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        rt = os.path.join(td, "runtime"); prof = os.path.join(td, "profile")
+        os.makedirs(rt); os.makedirs(prof)
+        # committed profile has Overlay.png + Standings.png
+        with open(os.path.join(prof, "Overlay.png"), "wb") as f: f.write(b"committed-overlay")
+        with open(os.path.join(prof, "Standings.png"), "wb") as f: f.write(b"committed-standings")
+        # runtime already has a (downloaded) Standings.png -> must NOT be overwritten
+        with open(os.path.join(rt, "Standings.png"), "wb") as f: f.write(b"downloaded-standings")
+        seeded = sa.seed_committed_graphics(["Overlay.png", "Standings.png", "Absent.png"], rt, prof)
+        assert seeded == ["Overlay.png"], seeded
+        with open(os.path.join(rt, "Overlay.png"), "rb") as f:
+            assert f.read() == b"committed-overlay"          # seeded from committed
+        with open(os.path.join(rt, "Standings.png"), "rb") as f:
+            assert f.read() == b"downloaded-standings"        # runtime preserved
+        assert not os.path.exists(os.path.join(rt, "Absent.png"))  # not in committed -> untouched
+
+
+def t_seed_committed_graphics_no_profile_dir_is_noop():
+    """No committed graphics dir (None or absent) -> empty list, no writes."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        rt = os.path.join(td, "runtime"); os.makedirs(rt)
+        assert sa.seed_committed_graphics(["Overlay.png"], rt, None) == []
+        assert sa.seed_committed_graphics(["Overlay.png"], rt, os.path.join(td, "nope")) == []
+        assert os.listdir(rt) == []
+
+
 def t_audio_variants_cross_check_obs_ws_audio_property():
     """AUDIO_VARIANTS' settings-key must agree with obs_ws's audio device property
     name on every platform — enumeration writes into the same field localization

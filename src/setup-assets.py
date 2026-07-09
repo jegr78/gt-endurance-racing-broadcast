@@ -6,7 +6,7 @@ Works from the repo (src/) or the distributed package — same ./obs ./assets la
 
 Usage: python3 setup-assets.py [--out PATH] [--assets DIR] [--template FILE]
 """
-import argparse, json, os, sys
+import argparse, json, os, shutil, sys
 
 # Load the sibling decision helper (scripts/ sits next to this script in both
 # the repo and the package). setup-assets stays config.py-free, but discord_web
@@ -50,6 +50,31 @@ def graphics_dir(base):
     if os.path.basename(base) == "src":
         return os.path.join(os.path.dirname(base), "runtime", "graphics")
     return os.path.join(base, "graphics")
+
+
+def seed_committed_graphics(refs, graphics_dir, profile_graphics_dir):
+    """Seed committed per-profile graphics into the runtime graphics dir as a
+    fallback. For each expected ref MISSING from graphics_dir, copy it from
+    profile_graphics_dir when present there. Runtime (Sheet-downloaded) graphics
+    therefore win; a committed profile graphic (e.g. a demo Overlay.png) is used
+    only when nothing was downloaded. Returns the seeded basenames. Best-effort:
+    a copy error skips that file (same non-failing contract as fill_missing)."""
+    seeded = []
+    if not profile_graphics_dir or not os.path.isdir(profile_graphics_dir):
+        return seeded
+    for name in refs:
+        if os.path.exists(os.path.join(graphics_dir, name)):
+            continue
+        src = os.path.join(profile_graphics_dir, name)
+        if not os.path.isfile(src):
+            continue
+        try:
+            os.makedirs(graphics_dir, exist_ok=True)
+            shutil.copyfile(src, os.path.join(graphics_dir, name))
+            seeded.append(name)
+        except OSError:
+            pass  # best-effort seed; a missing dir/perm just falls through to fill_missing
+    return seeded
 
 
 # ---- Discord interview audio: one logical source, per-platform realization.
@@ -311,6 +336,11 @@ def main():
     ap.add_argument("--graphics", default=graphics_dir(base),
                     help="Folder with the broadcast graphics (<Label>.png) for the "
                          "image sources (replaces __RACECAST_GRAPHICS__). Default: graphics_dir().")
+    ap.add_argument("--profile-graphics", default=None,
+                    help="Committed per-profile graphics dir (profiles/<name>/graphics). Any "
+                         "expected graphic missing from --graphics is seeded from here as a "
+                         "fallback (runtime/downloaded graphics win). Used by demo profiles that "
+                         "ship a committed Overlay.png.")
     ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
                     help="Google Sheet ID injected into the HUD browser source. "
                          "Default: env RACECAST_SHEET_ID (from the active profile).")
@@ -369,6 +399,10 @@ def main():
     if GRAPHICS_TOKEN in raw:
         mapping[GRAPHICS_TOKEN] = a.graphics
         refs = placeholders.expected_graphics_from_template(raw)
+        seeded = seed_committed_graphics(refs, a.graphics, a.profile_graphics)
+        if seeded:
+            print(f"  NOTE: seeded committed profile graphic(s) into {a.graphics}: "
+                  f"{', '.join(seeded)}")
         filled = placeholders.fill_missing(
             refs, a.graphics, placeholders.graphic_placeholder_path())
         if filled:
