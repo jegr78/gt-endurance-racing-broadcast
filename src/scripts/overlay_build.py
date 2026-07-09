@@ -300,34 +300,57 @@ def base_body(html):
     return m.group(1).strip() if m else ""
 
 
-# Overlay slot id -> OBS scene-item name. The single overlay element that maps to
-# a positioned OBS video source: the POV picture-in-picture. (Feed A/B are
-# full-screen; clock/race-control/flags are pure overlay.) One entry today, named
-# so a future overlay-with-OBS-source is a one-line addition.
-OVERLAY_SLOT_OBS_SOURCES = {"pov": "Feed POV"}
+# Overlay slot id -> OBS scene item that slot's box drives (scene + source name).
+# The overlay elements that map to a positioned OBS video source: the POV
+# picture-in-picture (endurance, scene "Stint") and the solo-mode webcam frame
+# (solo, scene "Program"). (Feed A/B are full-screen; clock/race-control/flags/
+# the telemetry panel are pure overlay, no OBS source behind them.)
+OVERLAY_SLOT_OBS_SOURCES = {
+    "pov":    {"scene": "Stint",   "source": "Feed POV"},
+    "webcam": {"scene": "Program", "source": "Solo Webcam"},
+}
 
-# `#pov` rule body, NOT `#pov-name`/`#povfoo` (negative lookahead bars a longer
-# ident or a hyphen after "pov"). `[^{}]*` lets `#pov`, `#pov.empty`, `#pov:hover`
-# through to the brace. The px props we map onto the OBS Feed POV transform.
-_POV_RULE_RE = re.compile(r"#pov(?![\w-])[^{}]*\{([^{}]*)\}")
+# The px props we map onto an OBS scene-item transform.
 _POV_PX_RE = re.compile(r"\b(left|top|width|height)\s*:\s*(-?\d+(?:\.\d+)?)px")
 
+# Compiled per-slot `#<slot_id>{...}` rule regexes, built on first use and cached
+# (the slot set is tiny and fixed, so this never grows unbounded).
+_SLOT_RULE_RE_CACHE = {}
 
-def pov_box_from_css(css_text):
-    """Effective #pov box overrides from override CSS: a dict with any subset of
-    {'left','top','width','height'} (px, int or float). Every #pov rule is read in
-    document order, later properties overriding earlier ones (CSS cascade — so a
-    customCss override appended after a generated rule wins). Empty dict when the
-    input is not a string, has no #pov rule, or the rule carries no px box props —
-    the caller then applies no transform (today's behavior)."""
+
+def _slot_rule_re(slot_id):
+    """Regex matching `#<slot_id>{...}` rule bodies, NOT `#<slot_id>-name`/
+    `#<slot_id>foo` (negative lookahead bars a longer ident or a hyphen after the
+    id). `[^{}]*` lets `#<slot_id>`, `#<slot_id>.empty`, `#<slot_id>:hover`
+    through to the brace."""
+    rx = _SLOT_RULE_RE_CACHE.get(slot_id)
+    if rx is None:
+        rx = re.compile(r"#" + re.escape(slot_id) + r"(?![\w-])[^{}]*\{([^{}]*)\}")
+        _SLOT_RULE_RE_CACHE[slot_id] = rx
+    return rx
+
+
+def box_from_css(css_text, slot_id="pov"):
+    """Effective #<slot_id> box overrides from override CSS: a dict with any
+    subset of {'left','top','width','height'} (px, int or float). Every
+    #<slot_id> rule is read in document order, later properties overriding
+    earlier ones (CSS cascade — so a customCss override appended after a
+    generated rule wins). Empty dict when the input is not a string, has no
+    #<slot_id> rule, or the rule carries no px box props — the caller then
+    applies no transform (today's behavior)."""
     if not isinstance(css_text, str):
         return {}
     out = {}
-    for body in _POV_RULE_RE.findall(css_text):       # document order
+    for body in _slot_rule_re(slot_id).findall(css_text):     # document order
         for key, val in _POV_PX_RE.findall(body):
             f = float(val)
             out[key] = int(f) if f.is_integer() else f
     return out
+
+
+def pov_box_from_css(css_text):
+    """Back-compat wrapper: the #pov box overrides. See box_from_css()."""
+    return box_from_css(css_text, "pov")
 
 
 def _safe_value(value):

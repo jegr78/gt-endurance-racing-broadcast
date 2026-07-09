@@ -16,7 +16,7 @@ import discord_web  # noqa: E402
 import overlay_build  # noqa: E402  (pure stdlib helper — no heavy resolver pulled in)
 import placeholders  # noqa: E402  (pure stdlib helper — fills missing assets)
 
-POV_SOURCE_NAME = overlay_build.OVERLAY_SLOT_OBS_SOURCES["pov"]
+POV_SOURCE_NAME = overlay_build.OVERLAY_SLOT_OBS_SOURCES["pov"]["source"]
 
 ASSETS_TOKEN = "__RACECAST_ASSETS__"
 SHEET_TOKEN = "__RACECAST_SHEET__"
@@ -197,19 +197,19 @@ def apply_collection_name(collection, name):
     return collection
 
 
-def apply_pov_transform(collection, overrides):
-    """Set pos/bounds of EVERY scene item named POV_SOURCE_NAME ('Feed POV'),
-    anywhere in the collection tree, from `overrides` (a pov_box_from_css dict:
-    any subset of left/top/width/height). Unset keys keep the item's existing
-    value, so a partial override leaves the rest at the template base. No-op on
-    falsy `overrides`. Mutates and returns `collection` (same contract as
+def apply_box_transform(collection, source_name, overrides):
+    """Set pos/bounds of EVERY scene item named `source_name`, anywhere in the
+    collection tree, from `overrides` (a box_from_css dict: any subset of
+    left/top/width/height). Unset keys keep the item's existing value, so a
+    partial override leaves the rest at the template base. No-op on falsy
+    `overrides`. Mutates and returns `collection` (same contract as
     apply_collection_name / localize_discord_audio)."""
     if not overrides:
         return collection
 
     def visit(node):
         if isinstance(node, dict):
-            if (node.get("name") == POV_SOURCE_NAME
+            if (node.get("name") == source_name
                     and isinstance(node.get("pos"), dict)
                     and isinstance(node.get("bounds"), dict)):
                 if "left" in overrides:
@@ -228,6 +228,11 @@ def apply_pov_transform(collection, overrides):
 
     visit(collection)
     return collection
+
+
+def apply_pov_transform(collection, overrides):
+    """Back-compat wrapper: apply_box_transform for POV_SOURCE_NAME ('Feed POV')."""
+    return apply_box_transform(collection, POV_SOURCE_NAME, overrides)
 
 
 def load_dotenv(start):
@@ -362,14 +367,18 @@ def main():
     swapped = localize_discord_audio(localized, sys.platform, web=web, browser=browser)
     device_unset = localize_device_sources(localized, sys.platform, os.environ)
     apply_collection_name(localized, a.collection)
-    pov = {}
     if a.overlay_css and os.path.isfile(a.overlay_css):
+        css_text = ""
         try:
             with open(a.overlay_css, encoding="utf-8") as fh:
-                pov = overlay_build.pov_box_from_css(fh.read())
+                css_text = fh.read()
         except OSError as e:
             print(f"  NOTE: could not read overlay CSS {a.overlay_css}: {e}")
-        apply_pov_transform(localized, pov)
+        for slot_id, tgt in overlay_build.OVERLAY_SLOT_OBS_SOURCES.items():
+            box = overlay_build.box_from_css(css_text, slot_id)   # css_text read once
+            apply_box_transform(localized, tgt["source"], box)
+            if box:
+                print(f"  {slot_id} box synced to OBS '{tgt['source']}': {box}")
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as fh:
         json.dump(localized, fh, ensure_ascii=False, indent=4)
@@ -384,8 +393,6 @@ def main():
         print(f"  Graphics dir: {a.graphics}")
     if a.collection:
         print(f"  OBS collection name: {a.collection}")
-    if pov:
-        print(f"  POV box synced to OBS '{POV_SOURCE_NAME}': {pov}")
     if swapped:
         print(f"  Discord audio source: {swapped}")
         if web:

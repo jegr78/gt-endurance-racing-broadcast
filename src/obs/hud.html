@@ -233,10 +233,12 @@
   <!-- Solo-mode telemetry block (issue #324): self-gating on /telemetry/data 200
        vs 404, so it stays invisible in endurance (no such endpoint there). -->
   <div id="tele" style="display:none">
-    <!-- Panel background + webcam frame: NOT overlay-builder slots (no
-         data-edit) — plain decorative elements that show/hide with #tele. -->
-    <div id="tele-panel"></div>
-    <div id="webcam"></div>
+    <!-- Panel background + webcam frame: builder box slots (position/size only —
+         the border/background/shadow/radius/z-index look stays in the CSS rules
+         above). "webcam" also drives the real OBS "Solo Webcam" device transform
+         on export + live, mirroring #pov -> "Feed POV" (issue #324). -->
+    <div id="tele-panel" class="el" data-edit="Telemetry panel" data-edit-kind="box"></div>
+    <div id="webcam" class="el" data-edit="Webcam" data-edit-kind="box"></div>
     <div id="tele-tyres" class="el" data-edit="Tyre temps" data-edit-kind="box">
       <span class="tw" data-w="fl">--<small class="ta" data-a="fl"></small></span><span class="tw" data-w="fr">--<small class="ta" data-a="fr"></small></span>
       <span class="tw" data-w="rl">--<small class="ta" data-a="rl"></small></span><span class="tw" data-w="rr">--<small class="ta" data-a="rr"></small></span>

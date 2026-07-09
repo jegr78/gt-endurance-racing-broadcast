@@ -2290,42 +2290,48 @@ def _obs_pages_hash_path():
 
 
 def _sync_pov_transform(set_transform=None):
-    """Best-effort live sibling of the setup-time POV bake: push the active
-    profile's POV-box position/size onto the OBS 'Feed POV' scene item. Reads the
-    profile override CSS, merges over the hud.html base (so an override of only
-    some props keeps the rest at the base), and calls SetSceneItemTransform.
-    Silent on any miss — OBS unreachable, no overlay, item absent. `set_transform`
-    is a test seam (defaults to obs_ws.set_scene_item_transform)."""
+    """Best-effort live sibling of the setup-time POV/webcam bake: push every
+    mapped overlay slot's box position/size onto its OBS scene item (see
+    overlay_build.OVERLAY_SLOT_OBS_SOURCES — 'pov' -> Stint/'Feed POV', 'webcam'
+    -> Program/'Solo Webcam'). Reads the hud.html base and the profile override
+    CSS ONCE, then loops the slots, merging override over base per slot (so an
+    override of only some props keeps the rest at the base) and calling
+    SetSceneItemTransform. Silent per-slot on any miss — OBS unreachable, no
+    overlay, no base rule for that slot, missing scene/source (e.g. no 'Solo
+    Webcam' in an endurance collection). `set_transform` is a test seam
+    (defaults to obs_ws.set_scene_item_transform)."""
     import overlay_build
     try:
         with open(os.path.join(HERE, "obs", "hud.html"), encoding="utf-8") as fh:
-            base = overlay_build.pov_box_from_css(overlay_build.base_style(fh.read()))
+            base_style = overlay_build.base_style(fh.read())
     except OSError:
         return
-    if not base:                       # base page lost its #pov rule -> nothing to anchor
-        return
-    overrides = {}
+    override_css = ""
     od = _active_overlay_dir()
     css = os.path.join(od, "hud.css") if od else None
     if css and os.path.isfile(css):
         try:
             with open(css, encoding="utf-8") as fh:
-                overrides = overlay_build.pov_box_from_css(fh.read())
+                override_css = fh.read()
         except OSError:
-            overrides = {}
+            override_css = ""
     try:
         import obs_ws
-        box = {**base, **overrides}
-        source = overlay_build.OVERLAY_SLOT_OBS_SOURCES["pov"]
         if set_transform is None:
             set_transform = obs_ws.set_scene_item_transform
-        transform = obs_ws.pov_scene_item_transform(box)
-        ok, note = set_transform(obs_ws.STINT_SCENE, source, transform)
-        if ok:
-            print(f"obs: POV box synced to '{source}' "
-                  f"({box['left']},{box['top']} {box['width']}x{box['height']}).")
+        for slot_id, tgt in overlay_build.OVERLAY_SLOT_OBS_SOURCES.items():
+            base = overlay_build.box_from_css(base_style, slot_id)
+            if not base:                # base page lost this slot's rule -> nothing to anchor
+                continue
+            overrides = overlay_build.box_from_css(override_css, slot_id)
+            box = {**base, **overrides}
+            transform = obs_ws.pov_scene_item_transform(box)
+            ok, note = set_transform(tgt["scene"], tgt["source"], transform)
+            if ok:
+                print(f"obs: {slot_id} box synced to '{tgt['source']}' "
+                      f"({box['left']},{box['top']} {box['width']}x{box['height']}).")
     except Exception as exc:  # noqa: BLE001 — best-effort contract
-        print(f"obs: POV box sync skipped ({exc}).")
+        print(f"obs: box sync skipped ({exc}).")
         return
 
 
