@@ -472,6 +472,20 @@ def t_oneshot_extra():
         assert m._oneshot_extra("setup", ["--overlay-css", "x"], R, B,
                                 overlay_css=css).count("--overlay-css") == 0
 
+    # --profile-graphics is injected for `setup` only when the committed dir exists.
+    with tempfile.TemporaryDirectory() as d:
+        pg = os.path.join(d, "graphics")
+        assert m._oneshot_extra("setup", [], R, B, profile_graphics=pg).count(
+            "--profile-graphics") == 0                                 # dir absent -> skipped
+        os.makedirs(pg)
+        assert m._oneshot_extra("setup", [], R, B, profile_graphics=pg)[-2:] == \
+            ["--profile-graphics", pg]                                 # dir present -> added
+        # not injected for non-setup commands, and an explicit one in rest wins.
+        assert m._oneshot_extra("graphics", [], R, B, profile_graphics=pg).count(
+            "--profile-graphics") == 0
+        assert m._oneshot_extra("setup", ["--profile-graphics", "x"], R, B,
+                                profile_graphics=pg).count("--profile-graphics") == 0
+
 
 def t_sync_pov_transform_calls_setter_with_merged_box():
     # All three mapped slots ("pov" -> Stint/"Feed POV", "webcam" -> Program/"Solo
