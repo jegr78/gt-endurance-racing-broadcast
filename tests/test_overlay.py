@@ -245,6 +245,7 @@ def t_ob_extract_slots_from_real_hud():
                    "tele-pred-lbl", "tele-pred",
                    "tele-fuel-lbl", "tele-fuel",
                    "tele-top-lbl", "tele-top",
+                   "tele-clock-lbl", "tele-clock",
                    # "tyres-capture" is a TOP-LEVEL slot (outside #tele) so it stays
                    # builder-editable in a Commentary profile that has no telemetry;
                    # it drives the "Solo Tyres/Fuel Capture" OBS device transform
