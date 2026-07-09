@@ -3883,15 +3883,24 @@ def t_resolve_device_selection_by_index_and_id():
 def t_parse_device_scan_args_mic():
     # #307: --mic is a third recognized flag alongside --webcam/--capture, mapping
     # to writing RACECAST_MIC via env_upsert_data (preserves other keys).
-    assert m._parse_device_scan_args([]) == (None, None, None)
-    assert m._parse_device_scan_args(["--mic", "2"]) == (None, None, "2")
+    assert m._parse_device_scan_args([]) == (None, None, None, None)
+    assert m._parse_device_scan_args(["--mic", "2"]) == (None, None, "2", None)
     assert m._parse_device_scan_args(
-        ["--webcam", "1", "--capture", "2", "--mic", "3"]) == ("1", "2", "3")
+        ["--webcam", "1", "--capture", "2", "--mic", "3"]) == ("1", "2", "3", None)
     try:
         m._parse_device_scan_args(["--bogus", "x"])
         raise AssertionError("expected ValueError for an unrecognized flag")
     except ValueError:
         pass  # expected: unrecognized flag
+
+
+def t_parse_device_scan_args_tyres():
+    # Task 6: --tyres is a fourth recognized flag (VIDEO device, resolves against
+    # the same enumerated video list as --webcam/--capture), mapping to writing
+    # RACECAST_TYRES_CAPTURE.
+    assert m._parse_device_scan_args(["--tyres", "2"]) == (None, None, None, "2")
+    assert m._parse_device_scan_args(
+        ["--webcam", "1", "--tyres", "3"]) == ("1", None, None, "3")
 
 
 def t_devices_write_data_accepts_mic():
