@@ -24,6 +24,7 @@ OFF_TYRE_RR = 0x6C
 OFF_LAP = 0x74          # current lap (int16)
 OFF_BEST_MS = 0x78      # best lap time, ms (int32; -1 = none)
 OFF_LAST_MS = 0x7C      # last lap time, ms (int32; -1 = none)
+OFF_DAY_PROGRESSION = 0x80  # time of day on track, ms since midnight (int32)
 OFF_FLAGS = 0x8E        # simulator flags (uint16 bitfield)
 OFF_THROTTLE = 0x91     # 0-255 (uint8)
 OFF_BRAKE = 0x92        # 0-255 (uint8)
@@ -67,7 +68,7 @@ FUEL_RISE_L = 0.05        # litres; fuel_end above fuel_start by this = a refuel
 
 GT7Packet = namedtuple("GT7Packet", [
     "speed_mps", "fuel_level", "fuel_capacity", "tyre_temp",
-    "throttle", "brake", "lap", "best_ms", "last_ms",
+    "throttle", "brake", "lap", "best_ms", "last_ms", "day_ms",
     "flags", "on_track", "paused", "loading",
 ])
 
@@ -90,6 +91,7 @@ def parse_packet(plain):
         lap=struct.unpack_from("<h", plain, OFF_LAP)[0],
         best_ms=struct.unpack_from("<i", plain, OFF_BEST_MS)[0],
         last_ms=struct.unpack_from("<i", plain, OFF_LAST_MS)[0],
+        day_ms=struct.unpack_from("<i", plain, OFF_DAY_PROGRESSION)[0],
         flags=flags,
         on_track=bool(flags & FLAG_ON_TRACK),
         paused=bool(flags & FLAG_PAUSED),
@@ -304,6 +306,7 @@ class TelemetryEngine:
             "fuel": self._fuel(),
             "tyre_temp_avg": self._tyre_avg(),
             "top_speed_mps": self._top_speed,
+            "time_of_day_ms": pkt.day_ms if pkt else None,
         }
 
     def trace_batch(self, limit=150):
@@ -317,6 +320,14 @@ def _fmt_time(seconds):
     m = int(seconds // 60)
     s = seconds - m * 60
     return f"{m}:{s:06.3f}" if m else f"{s:.3f}"
+
+
+def _fmt_clock(ms):
+    """Format ms-since-midnight as HH:MM:SS (wrapped to 24 h). None -> None."""
+    if ms is None:
+        return None
+    total = (int(ms) // 1000) % 86400
+    return f"{total // 3600:02d}:{total % 3600 // 60:02d}:{total % 60:02d}"
 
 
 def _band(temp_c, thresholds):
@@ -351,6 +362,7 @@ def format_snapshot(snap, units, thresholds):
         "delta": None if snap["delta_s"] is None else round(snap["delta_s"], 2),
         "predicted": _fmt_time(snap["predicted_s"]),
         "has_reference": snap["has_reference"],
+        "time_of_day": _fmt_clock(snap["time_of_day_ms"]),
         "fuel": {
             "level": round(lvl, 1),
             "laps_remaining": (None if fuel["laps_remaining"] is None

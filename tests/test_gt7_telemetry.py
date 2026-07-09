@@ -30,6 +30,7 @@ def _packet(**kw):
     struct.pack_into("<h", b, tm.OFF_LAP, kw.get("lap", 1))
     struct.pack_into("<i", b, tm.OFF_BEST_MS, kw.get("best_ms", -1))
     struct.pack_into("<i", b, tm.OFF_LAST_MS, kw.get("last_ms", -1))
+    struct.pack_into("<i", b, tm.OFF_DAY_PROGRESSION, kw.get("day_ms", 0))
     struct.pack_into("<H", b, tm.OFF_FLAGS, kw.get("flags", tm.FLAG_ON_TRACK))
     b[tm.OFF_THROTTLE] = kw.get("throttle", 0)
     b[tm.OFF_BRAKE] = kw.get("brake", 0)
@@ -238,6 +239,7 @@ def t_format_metric_and_bands():
             "tyre_temp_avg": (65.0, 78.0, 90.0, 99.0), "top_speed_mps": 55.0,
             "lap": 4, "current_lap_s": 12.3, "best_s": 95.4,
             "delta_s": -0.42, "predicted_s": 94.98, "has_reference": True,
+            "time_of_day_ms": 45000000,
             "fuel": {"level": 40.0, "per_lap": 2.5, "laps_remaining": 16.0,
                      "time_remaining_s": 1600.0}}
     out = tm.format_snapshot(snap, "metric", (70, 85, 95))
@@ -254,6 +256,7 @@ def t_format_imperial_converts_tyres():
             "tyre_temp_avg": (70.0, 70.0, 70.0, 70.0), "top_speed_mps": 50.0,
             "lap": 1, "current_lap_s": 0.0, "best_s": None,
             "delta_s": None, "predicted_s": None, "has_reference": False,
+            "time_of_day_ms": None,
             "fuel": {"level": 10.0, "per_lap": None,
                      "laps_remaining": None, "time_remaining_s": None}}
     out = tm.format_snapshot(snap, "imperial", (70, 85, 95))
@@ -295,6 +298,7 @@ def t_format_includes_top_speed_and_tyre_avg():
             "tyre_temp_avg": (68.0, 69.0, 71.0, 72.0), "top_speed_mps": 90.0,
             "lap": 1, "current_lap_s": 0.0, "best_s": None, "delta_s": None,
             "predicted_s": None, "has_reference": False,
+            "time_of_day_ms": None,
             "fuel": {"level": 10.0, "per_lap": None, "laps_remaining": None,
                      "time_remaining_s": None}}
     out = tm.format_snapshot(snap, "metric", (70, 85, 95))
@@ -447,6 +451,31 @@ def t_store_removes_file_on_session_reset():
     assert os.path.exists(path)
     st.update(tm.parse_packet(_packet(lap=0, speed_mps=0.0)), t + 1)  # session boundary
     assert not os.path.exists(path)
+
+
+def t_parse_day_ms():
+    p = tm.parse_packet(_packet(day_ms=65438716))
+    assert p.day_ms == 65438716
+
+
+def t_fmt_clock():
+    assert tm._fmt_clock(None) is None
+    assert tm._fmt_clock(0) == "00:00:00"
+    assert tm._fmt_clock(65438716) == "18:10:38"                  # 65438.716 s
+    assert tm._fmt_clock(90061000) == "01:01:01"                  # wraps past 24 h
+
+
+def t_format_snapshot_time_of_day():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(day_ms=45000000, speed_mps=10.0, lap=1)), 100.0)
+    out = tm.format_snapshot(eng.snapshot(), "metric", (70, 85, 95))
+    assert out["time_of_day"] == "12:30:00"                       # 45000 s
+
+
+def t_format_snapshot_time_of_day_none_before_packet():
+    eng = tm.TelemetryEngine()
+    out = tm.format_snapshot(eng.snapshot(), "metric", (70, 85, 95))
+    assert out["time_of_day"] is None
 
 
 if __name__ == "__main__":
