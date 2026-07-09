@@ -834,8 +834,12 @@ def t_pov_box_from_css_float_value():
 def t_overlay_slot_obs_sources_constant():
     assert ob.OVERLAY_SLOT_OBS_SOURCES == {
         "pov":    {"scene": "Stint",   "source": "Feed POV"},
-        "webcam": {"scene": "Program", "source": "Solo Webcam"},
+        "webcam": {"scene": "Program", "source": "Solo Webcam",
+                   "export_scene": "Program"},
     }
+    # POV bakes whole-tree (no export_scene); the webcam bake is scene-scoped.
+    assert "export_scene" not in ob.OVERLAY_SLOT_OBS_SOURCES["pov"]
+    assert ob.OVERLAY_SLOT_OBS_SOURCES["webcam"]["export_scene"] == "Program"
 
 
 def t_box_from_css_webcam_slot():

@@ -197,13 +197,20 @@ def apply_collection_name(collection, name):
     return collection
 
 
-def apply_box_transform(collection, source_name, overrides):
-    """Set pos/bounds of EVERY scene item named `source_name`, anywhere in the
-    collection tree, from `overrides` (a box_from_css dict: any subset of
-    left/top/width/height). Unset keys keep the item's existing value, so a
-    partial override leaves the rest at the template base. No-op on falsy
-    `overrides`. Mutates and returns `collection` (same contract as
-    apply_collection_name / localize_discord_audio)."""
+def apply_box_transform(collection, source_name, overrides, scene=None):
+    """Set pos/bounds of scene items named `source_name` from `overrides` (a
+    box_from_css dict: any subset of left/top/width/height). Unset keys keep the
+    item's existing value, so a partial override leaves the rest at the template
+    base. No-op on falsy `overrides`. Mutates and returns `collection` (same
+    contract as apply_collection_name / localize_discord_audio).
+
+    `scene` scopes WHERE the item is matched:
+    - None (default): EVERY matching item anywhere in the tree — the POV
+      contract (Feed POV may appear in several scenes and all should track).
+    - a scene name: ONLY matching items inside that scene. The webcam uses this
+      so the transform hits the 'Solo Webcam' scene reference embedded in
+      'Program' (the item resized in OBS) and NEVER a same-named item that might
+      live in the standalone fullscreen 'Solo Webcam' scene."""
     if not overrides:
         return collection
 
@@ -226,7 +233,18 @@ def apply_box_transform(collection, source_name, overrides):
             for v in node:
                 visit(v)
 
-    visit(collection)
+    if scene is None:
+        visit(collection)                     # whole tree (POV contract)
+    else:
+        # Only the named scene's own items — never other scene definitions, so a
+        # same-named item in a different scene (e.g. the standalone 'Solo Webcam'
+        # scene) is left untouched. A scene reference embedded in `scene` carries
+        # its pos/bounds on the item itself (not the referenced scene's body), so
+        # walking this scene's item list reaches exactly the resized instance.
+        for src in collection.get("sources", []):
+            if (isinstance(src, dict) and src.get("id") == "scene"
+                    and src.get("name") == scene):
+                visit(src.get("settings", {}).get("items"))
     return collection
 
 
@@ -376,9 +394,11 @@ def main():
             print(f"  NOTE: could not read overlay CSS {a.overlay_css}: {e}")
         for slot_id, tgt in overlay_build.OVERLAY_SLOT_OBS_SOURCES.items():
             box = overlay_build.box_from_css(css_text, slot_id)   # css_text read once
-            apply_box_transform(localized, tgt["source"], box)
+            apply_box_transform(localized, tgt["source"], box,
+                                scene=tgt.get("export_scene"))
             if box:
-                print(f"  {slot_id} box synced to OBS '{tgt['source']}': {box}")
+                where = f" (scene '{tgt['export_scene']}')" if tgt.get("export_scene") else ""
+                print(f"  {slot_id} box synced to OBS '{tgt['source']}'{where}: {box}")
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as fh:
         json.dump(localized, fh, ensure_ascii=False, indent=4)

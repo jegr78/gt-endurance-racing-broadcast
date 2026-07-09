@@ -308,9 +308,16 @@ def base_body(html):
 # picture-in-picture (endurance, scene "Stint") and the solo-mode webcam frame
 # (solo, scene "Program"). (Feed A/B are full-screen; clock/race-control/flags/
 # the telemetry panel are pure overlay, no OBS source behind them.)
+#
+# `scene` = where the LIVE sync (SetSceneItemTransform via GetSceneItemId) targets
+# the item. `export_scene` (optional) scopes the setup-time bake's tree-walk to a
+# single scene: the webcam's 'Solo Webcam' item is repositioned ONLY where it is
+# embedded in 'Program' — never the standalone fullscreen 'Solo Webcam' scene or
+# its device. POV omits it (whole-tree bake — 'Feed POV' may live in different
+# scenes across collections, and every instance should track the box).
 OVERLAY_SLOT_OBS_SOURCES = {
     "pov":    {"scene": "Stint",   "source": "Feed POV"},
-    "webcam": {"scene": "Program", "source": "Solo Webcam"},
+    "webcam": {"scene": "Program", "source": "Solo Webcam", "export_scene": "Program"},
 }
 
 # The px props we map onto an OBS scene-item transform.
