@@ -274,7 +274,9 @@
     <div id="webcam" class="el" data-edit="Webcam" data-edit-kind="box"></div>
     <!-- Tyres/fuel capture: another builder box slot (position/size only, no
          visible chrome) driving the real OBS "Solo Tyres/Fuel Capture" device
-         transform on export + live, mirroring #webcam (Task 4, epic #300). -->
+         transform on export + live, mirroring the webcam slot (Task 4, epic #300).
+         NB: never write a bare "#<slotid>" token in a hud.html comment — the
+         slot-box regex scans style text and would latch onto it. -->
     <div id="tyres-capture" class="el" data-edit="Tyres/Fuel capture" data-edit-kind="box"></div>
     <div id="tele-tyres" class="el" data-edit="Tyre temps" data-edit-kind="box">
       <span class="tw" data-w="fl">--<small class="ta" data-a="fl"></small></span><span class="tw" data-w="fr">--<small class="ta" data-a="fr"></small></span>
