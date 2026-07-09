@@ -396,15 +396,26 @@ git commit -m "feat(solo): tyres/fuel capture builder box drives OBS transform, 
 
 ---
 
-## Task 5: Audio-monitoring config (both solo collections)
+## Task 5: Audio-monitoring config (via the generator, both solo collections)
+
+**IMPORTANT — the solo OBS collections are GENERATED.** `tools/derive-solo-templates.py`
+derives both `src/obs/GT_Racing_Solo_*.json` from `GT_Racing_Endurance.json`, and
+`tests/test_solo_obs.py::t_committed_solo_json_matches_derive_output` asserts the committed
+files equal a fresh `derive()`. So the monitoring config MUST be set inside `derive()` and
+the files regenerated — a hand-edit to the JSON would fail the drift guard. (Task 3 already
+routes the tyres source through `derive(with_tyres=True)`.)
 
 **Files:**
-- Modify: `src/obs/GT_Racing_Solo_POV.json`, `src/obs/GT_Racing_Solo_Commentary.json`
+- Modify: `tools/derive-solo-templates.py` (set monitoring/muted in `derive()`)
+- Regenerate: `src/obs/GT_Racing_Solo_POV.json`, `src/obs/GT_Racing_Solo_Commentary.json`
+  (via `python3 tools/derive-solo-templates.py`)
 - Test: `tests/test_solo_audio.py` (new)
 
 **Interfaces:**
-- Consumes: nothing (pure JSON property edits).
-- Produces: the monitoring config asserted by the new test.
+- Consumes: `derive()`'s existing locals — `cap_src` (the `Solo Capture Device` leaf), and
+  the endurance-copied sources in `col["sources"]` (`Discord Audio Capture`, `Intro Video`,
+  `Outro Video`, `Intermission Music`).
+- Produces: the monitoring config asserted by the new test + still equal to `derive()`.
 
 - [ ] **Step 1: Write the failing monitoring test**
 
@@ -458,19 +469,40 @@ if __name__ == "__main__":
 Run: `python3 tests/test_solo_audio.py`
 Expected: FAIL (`Solo Capture Device` is `muted:true`, `monitoring_type:0`).
 
-- [ ] **Step 3: Apply the monitoring edits in both collections**
+- [ ] **Step 3: Set the monitoring config in `derive()` + regenerate**
 
-In BOTH `src/obs/GT_Racing_Solo_POV.json` and `src/obs/GT_Racing_Solo_Commentary.json`, set on the named sources:
-- `Solo Capture Device`: `"muted": false`, `"monitoring_type": 2`
-- `Discord Audio Capture`: `"monitoring_type": 2`
-- `Intro Video`, `Outro Video`, `Intermission Music`: `"monitoring_type": 2`
+In `tools/derive-solo-templates.py`, inside `derive()`, apply the monitoring config before
+`return col`. The `Solo Capture Device` leaf is the local `cap_src`; the others are
+endurance-copied sources reachable via a name map over `col["sources"]`. Add:
 
-(`Solo Tyres Capture Device` `muted:true` was already set in Task 3. Leave the mic and webcam as they are.)
+```python
+    # Audio: the game/race + Discord + media must be audible AND streamed (monitorAndOutput);
+    # the game capture ships hot (unmuted) — commentator/driver hears the race in-headset and
+    # it lands in the stream mix. The mic stays output-only (no self-monitor → no echo); the
+    # webcam and the tyres second-capture stay muted (video-only). Both solo outputs get this.
+    cap_src["muted"] = False
+    cap_src["monitoring_type"] = 2
+    _by_name(col["sources"])  # (re-map after all source mutations)
+    for nm in ("Discord Audio Capture", "Intro Video", "Outro Video", "Intermission Music"):
+        s = _by_name(col["sources"]).get(nm)
+        if s is not None:
+            s["monitoring_type"] = 2
+```
 
-- [ ] **Step 4: Run the test, verify it passes**
+(Place it after `col["sources"] = kept` so every source — including the endurance-copied
+media/Discord — is present in `col["sources"]`. `cap_src` is the same object referenced in
+`col["sources"]`, so mutating it in place is enough. Do NOT set monitoring on the mic or
+webcam.) Then regenerate:
 
-Run: `python3 tests/test_solo_audio.py`
-Expected: `ALL PASS`.
+```bash
+python3 tools/derive-solo-templates.py
+```
+
+- [ ] **Step 4: Run the test + the drift guard, verify they pass**
+
+Run: `python3 tests/test_solo_audio.py && python3 tests/test_solo_obs.py`
+Expected: `ALL PASS` for both (the drift guard confirms the committed JSONs still equal
+`derive()` — proving the config came from the generator, not a hand-edit).
 
 - [ ] **Step 5: Full suite + lint**
 
@@ -480,8 +512,8 @@ Expected: `ALL TEST FILES PASS` / All checks passed.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/obs/GT_Racing_Solo_POV.json src/obs/GT_Racing_Solo_Commentary.json tests/test_solo_audio.py
-git commit -m "fix(solo): game/Discord/media audio monitorAndOutput in both solo collections (epic #300)"
+git add tools/derive-solo-templates.py src/obs/GT_Racing_Solo_POV.json src/obs/GT_Racing_Solo_Commentary.json tests/test_solo_audio.py
+git commit -m "fix(solo): game/Discord/media audio monitorAndOutput via the generator (epic #300)"
 ```
 
 ---
