@@ -1529,17 +1529,6 @@ def t_device_property_name_audio_matches_setup_assets_audio_variants():
         assert m.device_property_name(plat, kind="audio") == prop_key == "device_id", os_key
 
 
-def t_input_not_found():
-    # The real OBS error for a missing input is a RequestStatus code 600
-    # (ResourceNotFound), NOT a "not found" phrase — see enumerate_device_options's
-    # except-clause classification (#304 review).
-    assert m.input_not_found(
-        "GetInputPropertiesListPropertyItems failed: {'code': 600, "
-        "'comment': 'No source was found by the name of `Solo Capture Device`'}")
-    assert m.input_not_found("input 'Solo Capture Device' not found")
-    assert not m.input_not_found("connection reset")
-
-
 def t_pick_input_kind_finds_macos_v2_via_substring():
     # macOS reports av_capture_input_v2; the matcher is the av_capture_input substring.
     kinds = ["image_source", "av_capture_input_v2", "coreaudio_input_capture"]
@@ -1577,9 +1566,11 @@ def t_probe_device_options_lists_video_and_mic_and_cleans_up():
     # NOTE: value-carrying assertions rely on the probe running on macOS (device props).
     # The lifecycle assertions below are platform-independent.
     assert isinstance(out["devices"], list) and isinstance(out["mic"], list)
-    # A throwaway scene was created and then removed (cleanup guarantee).
+    # A throwaway scene was created and then removed (cleanup guarantee). The
+    # defensive pre-clear RemoveScene (before CreateScene) AND the finally
+    # block's own RemoveScene must both fire -> exactly 2 removals.
     assert m.PROBE_SCENE_NAME in state.get("created_scenes", [])
-    assert m.PROBE_SCENE_NAME in state.get("removed_scenes", [])
+    assert state.get("removed_scenes", []).count(m.PROBE_SCENE_NAME) == 2
     # Every temp input created was also removed.
     created = [n for (_s, n, _k, _e) in state.get("created_inputs", [])]
     assert created, "expected at least one temp input"
@@ -1598,7 +1589,8 @@ def t_probe_device_options_cleans_up_even_when_read_raises():
     finally:
         srv.close()
     assert out["devices"] == [] and out["note"]      # degraded, note explains
-    assert m.PROBE_SCENE_NAME in state.get("removed_scenes", [])
+    # Both the pre-clear RemoveScene and the finally block's RemoveScene fired.
+    assert state.get("removed_scenes", []).count(m.PROBE_SCENE_NAME) == 2
     created = [n for (_s, n, _k, _e) in state.get("created_inputs", [])]
     assert sorted(created) == sorted(state.get("removed_inputs", []))
 
@@ -1615,7 +1607,7 @@ def t_probe_device_options_no_capture_kind_is_note_not_crash():
     assert out["devices"] == [] and out["note"]
     assert out["mic"] == [] and out["mic_note"]
     assert state.get("created_inputs", []) == []     # nothing to create
-    assert m.PROBE_SCENE_NAME in state.get("removed_scenes", [])
+    assert state.get("removed_scenes", []).count(m.PROBE_SCENE_NAME) == 2
 
 
 def t_probe_device_options_unreachable_is_quiet():

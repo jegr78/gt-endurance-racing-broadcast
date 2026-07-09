@@ -3949,6 +3949,38 @@ def t_devices_write_data_accepts_tyres():
     assert "RACECAST_OBS_WS_PASSWORD=secret" in text
 
 
+def t_devices_enumerate_data_maps_probe_result():
+    import obs_ws
+    saved = obs_ws.probe_device_options
+    obs_ws.probe_device_options = lambda *a, **k: {
+        "devices": [{"name": "Cam", "value": "0x1", "enabled": True}],
+        "note": "",
+        "mic": [{"name": "Mic", "value": "uid", "enabled": True}],
+        "mic_note": "audio note"}
+    try:
+        out = m.devices_enumerate_data()
+    finally:
+        obs_ws.probe_device_options = saved
+    assert out["ok"] is True                       # ok reflects the video note only
+    assert out["devices"] == [{"name": "Cam", "value": "0x1"}]
+    assert out["note"] == ""
+    assert out["mic"] == [{"name": "Mic", "value": "uid"}]
+    assert out["mic_note"] == "audio note"
+
+
+def t_devices_enumerate_data_note_sets_ok_false():
+    import obs_ws
+    saved = obs_ws.probe_device_options
+    obs_ws.probe_device_options = lambda *a, **k: {
+        "devices": [], "note": "OBS unreachable", "mic": [], "mic_note": "OBS unreachable"}
+    try:
+        out = m.devices_enumerate_data()
+    finally:
+        obs_ws.probe_device_options = saved
+    assert out["ok"] is False
+    assert out["note"] == "OBS unreachable"
+
+
 def t_route_device_scan():
     # device-scan is a single-word command (like freeport/links) that forwards
     # any flags (--webcam/--capture) straight through to device_scan_cmd (#304).

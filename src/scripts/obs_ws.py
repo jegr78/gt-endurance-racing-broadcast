@@ -635,37 +635,6 @@ def parse_property_items(payload):
     return out
 
 
-def input_not_found(exc_text):
-    """True if an OBS request error means the input/source does not exist
-    (RequestStatus code 600 = ResourceNotFound, or a not-found phrasing)."""
-    low = exc_text.lower()
-    return ("'code': 600" in exc_text or "code=600" in low
-            or "not found" in low or "no source was found" in low
-            or "invalidresource" in low)
-
-
-def enumerate_device_options(input_name, property_name, host="127.0.0.1", port=None,
-                             password=None, timeout=2.0):
-    """(items, note) — the device dropdown OBS offers for `input_name`'s
-    `property_name`. Best-effort like release_feed_inputs: OBS unreachable / input
-    absent / protocol surprise -> ([], reason), never raises. Callers surface `note`."""
-    if not property_name:
-        return [], "no device property for this platform"
-    session, note = _connect(host, port, password, timeout)
-    if session is None:
-        return [], note
-    try:
-        payload = session.request("GetInputPropertiesListPropertyItems",
-                                  {"inputName": input_name, "propertyName": property_name})
-        return parse_property_items(payload), ""
-    except Exception as exc:                         # noqa: BLE001 — best-effort contract
-        text = str(exc)
-        return [], (f"input {input_name!r} not found — import the solo collection first"
-                    if input_not_found(text) else (text or exc.__class__.__name__))
-    finally:
-        session.close()
-
-
 def probe_device_options(host="127.0.0.1", port=None, password=None, timeout=2.0):
     """Enumerate the local video-capture and microphone devices OBS offers, WITHOUT
     any solo collection imported — exactly what OBS shows when you add a capture
