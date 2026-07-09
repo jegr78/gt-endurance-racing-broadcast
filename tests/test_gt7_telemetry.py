@@ -402,6 +402,20 @@ def t_engine_no_reset_on_normal_lap_increment():
     assert eng.snapshot()["has_reference"] is True
 
 
+def t_engine_time_of_day_survives_session_reset():
+    """The on-track clock keeps ticking through a session reset (it reads _last,
+    which the reset deliberately does not clear) even though the reference drops."""
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)       # ref set, now on lap 2
+    assert eng.snapshot()["has_reference"] is True
+    # a session-boundary packet (lap backwards) carrying a real time-of-day
+    eng.update(tm.parse_packet(_packet(lap=0, speed_mps=0.0, day_ms=45000000)), 130.0)
+    s = eng.snapshot()
+    assert s["has_reference"] is False                        # reset happened
+    assert s["time_of_day_ms"] == 45000000                    # clock kept, not blanked
+
+
 def t_engine_pit_lap_via_standstill_excluded():
     eng = tm.TelemetryEngine()
     eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
@@ -412,6 +426,7 @@ def t_engine_pit_lap_via_standstill_excluded():
         eng.update(tm.parse_packet(_packet(speed_mps=0.0, lap=1)), t); t += 0.1
     eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2)), t)   # lap edge
     assert eng.snapshot()["has_reference"] is False       # pit lap never became reference
+    assert eng._lap_times == [] and eng._lap_fuel == []   # and out of the time/fuel averages
 
 
 def t_engine_pit_lap_via_fuel_rise_excluded():
