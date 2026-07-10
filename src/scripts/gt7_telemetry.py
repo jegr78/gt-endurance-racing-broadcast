@@ -385,6 +385,7 @@ class TelemetryStore:
     def __init__(self, path=None, units="metric", thresholds=(70, 85, 95), reset=False):
         self._eng = TelemetryEngine()
         self._lock = threading.Lock()
+        self._source = None            # latched console IP (discovery/UX), or None
         self._path = path
         self._units = units
         self._thresholds = thresholds
@@ -411,10 +412,19 @@ class TelemetryStore:
                 else:                          # a new reference lap was set
                     self._save()
 
+    def set_source(self, ip):
+        """Record the console IP the listener latched (surfaced on /telemetry/data
+        so `racecast gt7-discover` can read it without a second 33740 bind)."""
+        with self._lock:
+            self._source = ip
+
     def data(self):
         with self._lock:
             snap = self._eng.snapshot()
-        return format_snapshot(snap, self._units, self._thresholds)
+            source = self._source
+        out = format_snapshot(snap, self._units, self._thresholds)
+        out["source"] = source
+        return out
 
     def trace(self, limit=150):
         with self._lock:

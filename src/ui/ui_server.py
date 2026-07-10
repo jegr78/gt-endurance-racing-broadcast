@@ -114,6 +114,8 @@ def make_handler(ctx):
     env_read() -> dict, env_write(entries) -> dict,
     devices_enumerate() -> dict (OBS video-device list for the solo capture
     input), devices_write(webcam, capture) -> dict (upsert into the .env),
+    ps_discover() -> dict (GT7 console LAN discovery), ps_write(ip) -> dict
+    (upsert the PS4/PS5 IP into the .env),
     init_plan(browser) -> dict (wizard plan: per-step done/kind/op/instruction),
     init_step(key) -> dict (run one non-job wizard step, {ok, done} | {ok: False, error}),
     profile_export(name, assets) -> dict, profile_import(path, force) -> dict,
@@ -635,6 +637,25 @@ def make_handler(ctx):
                 except Exception as exc:
                     return self._json({"ok": False,
                                        "error": f"could not save device selection: {exc}"},
+                                      code=500)
+                return self._json(result, code=200 if result.get("ok") else 400)
+            if path == "/api/ps/discover":
+                try:
+                    return self._json(ctx["ps_discover"]())
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not discover PlayStation: {exc}"},
+                                      code=500)
+            if path == "/api/ps/save":
+                body = self._body_json()
+                if body is None:
+                    return self._json({"ok": False, "error": "malformed JSON body"},
+                                      code=400)
+                try:
+                    result = ctx["ps_write"](body.get("ip"))
+                except Exception as exc:
+                    return self._json({"ok": False,
+                                       "error": f"could not save PS IP: {exc}"},
                                       code=500)
                 return self._json(result, code=200 if result.get("ok") else 400)
             if path == "/api/event-title":

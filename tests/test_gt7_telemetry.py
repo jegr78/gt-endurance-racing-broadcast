@@ -493,6 +493,15 @@ def t_format_snapshot_time_of_day_none_before_packet():
     assert out["time_of_day"] is None
 
 
+def t_store_source_roundtrip():
+    store = tm.TelemetryStore()
+    assert store.data()["source"] is None      # unset by default
+    store.set_source("192.168.1.42")
+    assert store.data()["source"] == "192.168.1.42"
+    store.set_source(None)                       # clearable (e.g. relaunch)
+    assert store.data()["source"] is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
