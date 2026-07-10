@@ -689,6 +689,78 @@ def t_relay_start_warns_when_running_and_stint_ignored():
         m._active_profile_name = old_active
 
 
+def _relay_spawn_stubs(http_ok_seq):
+    """Patch relay_start's whole effectful surface for a plain (port-free) start so
+    only the spawn/verify/retry orchestration is exercised. http_ok_seq: the booleans
+    _relay_http_ok returns on successive VERIFY calls. Returns (restore_fn, calls) where
+    calls['spawn'] counts start_detached invocations. wait_for is reduced to a single
+    probe() so a down verify doesn't burn the real 15 s window."""
+    seq = iter(http_ok_seq)
+    calls = {"spawn": 0}
+    saves = [
+        ("pt", "pids_on_port", lambda port: []),                 # port free -> plain start
+        ("sv", "read_pid", lambda path: None),
+        ("sv", "pid_alive", lambda pid: False),
+        ("sv", "start_detached", lambda *a, **k: (
+            calls.__setitem__("spawn", calls["spawn"] + 1), 4242)[1]),
+        (None, "_relay_http_ok", lambda: next(seq)),
+        (None, "_running_relay_profile", lambda: ""),
+        (None, "_active_profile_name", lambda: "testing"),
+        (None, "_ensure_active_console_secret", lambda: None),
+        (None, "_resolve_producer_name", lambda: "P"),
+        (None, "_write_relay_profile_stamp", lambda: None),
+        (None, "_append_tailscale_snapshot", lambda: None),
+        (None, "_refresh_obs_pages", lambda *a, **k: None),
+        (None, "wait_for", lambda probe, wait, **k: probe()),
+    ]
+    originals = []
+    for obj_name, attr, val in saves:
+        obj = getattr(m, obj_name) if obj_name else m
+        originals.append((obj, attr, getattr(obj, attr)))
+        setattr(obj, attr, val)
+    def restore():
+        for obj, attr, old in originals:
+            setattr(obj, attr, old)
+    return restore, calls
+
+
+def t_relay_start_retries_when_first_spawn_not_up():
+    # The event-start race: the freshly spawned relay aborts on a still-clearing port,
+    # so start_detached returns a PID for a child that died. relay_start must NOT claim
+    # success on the first (failed) verify — it respawns once, and the port has cleared
+    # by then. Regression guard for the 2026-07-10 qualifying "relay not running".
+    import io, contextlib
+    restore, calls = _relay_spawn_stubs([False, True])   # down, then up on retry
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            m.relay_start([])
+        out = buf.getvalue()
+        assert calls["spawn"] == 2, f"expected one retry, got {calls['spawn']} spawns"
+        assert "relay started" in out
+        assert "retrying" in out
+    finally:
+        restore()
+
+
+def t_relay_start_reports_failure_when_relay_never_comes_up():
+    # If the relay never binds the control port, relay_start must report an HONEST
+    # failure — never print "relay started" for a dead child (which made event-start
+    # look green while the relay was down and the producer had to start it by hand).
+    import io, contextlib
+    restore, calls = _relay_spawn_stubs([False, False])   # down on both attempts
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            m.relay_start([])
+        out = buf.getvalue()
+        assert calls["spawn"] == 2
+        assert "ERROR" in out
+        assert "relay started" not in out
+    finally:
+        restore()
+
+
 def t_relay_stop_releases_obs_feeds_after_kill():
     # AFTER the kill: a source rebuild against a live relay would reconnect.
     # Against the dead relay it just drops the half-dead connection, freeing
@@ -2794,7 +2866,8 @@ def t_relay_start_spawns_to_boot_log_not_console():
     # two writers corrupt midnight rotation (the inherited fd keeps writing to the
     # renamed inode). Guards against reintroducing the #-final-review bug.
     import inspect
-    src = inspect.getsource(m.relay_start)
+    # The spawn (with retry) moved into _spawn_relay_verified — the guard follows it.
+    src = inspect.getsource(m._spawn_relay_verified)
     assert "_relay_boot_log_path()" in src
     assert "_relay_log_path()" not in src   # never hand the console log to start_detached
     assert m._relay_boot_log_path() != m._relay_log_path()
