@@ -7692,6 +7692,7 @@ def _telemetry_loop(store, ps_ip, stop_evt):
                 continue
             if dest is None:                 # discovery: latch the responder
                 dest = addr[0]
+                store.set_source(dest)
                 tlog.info("GT7 console discovered at %s", dest)
             elif addr[0] != dest:
                 continue                      # ignore packets from any other host once the
