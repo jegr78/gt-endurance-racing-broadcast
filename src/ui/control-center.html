@@ -2638,7 +2638,7 @@ async function savePsIp(){
     hint.textContent = d.ok
       ? 'Saved RACECAST_GT7_PS_IP — restart the relay to apply.'
       : ('Could not save: ' + (d.error || 'unknown error'));
-    if(d.ok && typeof loadSettings === 'function'){ loadSettings(true); }  // refresh the .env editor
+    if(d.ok && typeof loadSettings === 'function'){ loadSettings(); }  // refresh the .env editor (no force = no discard-edits confirm)
   }catch(e){ hint.textContent = 'Save failed: ' + e; }
 }
 
