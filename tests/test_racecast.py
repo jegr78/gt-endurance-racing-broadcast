@@ -3989,6 +3989,30 @@ def t_route_device_scan():
         {"kind": "device-scan", "rest": ["--webcam", "1", "--capture", "2"]}
 
 
+def t_resolve_console_prefers_relay():
+    # A running relay that already latched a console short-circuits the scan.
+    out = m.resolve_console(
+        relay_get=lambda: {"source": "192.168.1.42"},
+        discover=lambda **k: (_ for _ in ()).throw(AssertionError("must not scan")))
+    assert out == {"consoles": ["192.168.1.42"], "note": "", "from_relay": True}
+
+
+def t_resolve_console_scans_when_no_relay():
+    # No relay (relay_get returns None) -> fall through to the scanner.
+    out = m.resolve_console(
+        relay_get=lambda: None,
+        discover=lambda **k: {"consoles": ["192.168.1.50"], "note": ""})
+    assert out == {"consoles": ["192.168.1.50"], "note": "", "from_relay": False}
+
+
+def t_resolve_console_scans_when_relay_unlatched():
+    # Relay up but telemetry not yet latched (source None) -> scan.
+    out = m.resolve_console(
+        relay_get=lambda: {"source": None},
+        discover=lambda **k: {"consoles": [], "note": "nope"})
+    assert out == {"consoles": [], "note": "nope", "from_relay": False}
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

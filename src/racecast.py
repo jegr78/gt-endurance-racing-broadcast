@@ -2101,6 +2101,39 @@ def _relay_fetch_json(url, timeout=3):
     return http_util.get_json(url, timeout=timeout)
 
 
+def _relay_telemetry_source():
+    """The console IP a running relay already latched, via GET /telemetry/data.
+    None on any failure (no relay, telemetry disabled -> 404, timeout)."""
+    try:
+        data = http_util.get_json(
+            f"http://127.0.0.1:{RELAY_PORT}/telemetry/data", timeout=2)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def _discover_consoles(**kwargs):
+    import gt7_discovery
+    return gt7_discovery.discover_consoles(**kwargs)
+
+
+def resolve_console(timeout=4.0, *, discover=None, relay_get=None):
+    """Resolve GT7 console IP(s) two ways: prefer a running relay's already-latched
+    console (no second 33740 bind, instant); else broadcast-scan the LAN. Returns
+    {consoles, note, from_relay}. Never raises."""
+    relay_get = relay_get or _relay_telemetry_source
+    relayed = relay_get()
+    src = relayed.get("source") if isinstance(relayed, dict) else None
+    if src:
+        return {"consoles": [src], "note": "", "from_relay": True}
+    discover = discover or _discover_consoles
+    res = discover(timeout=timeout)
+    return {"consoles": res.get("consoles", []), "note": res.get("note", ""),
+            "from_relay": False}
+
+
 def _active_console_secret():
     """The active league's CONSOLE_SECRET from the resolved profile env ('' if unset).
     Same league = same secret (it travels with `profile export`), so producer B already
