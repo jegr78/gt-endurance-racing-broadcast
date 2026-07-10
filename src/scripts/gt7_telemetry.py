@@ -226,8 +226,8 @@ class TelemetryEngine:
         tcut = now - TYRE_AVG_WINDOW_S
         while self._tyre_hist and self._tyre_hist[0][0] < tcut:
             self._tyre_hist.popleft()
-        if self._ref is not None and self._acc is not None and self._acc.elapsed > 0:
-            d = self._acc.elapsed - self._ref_time_at(self._acc.distance)
+        d = self._current_delta()
+        if d is not None:
             self._delta_hist.append((now, d))
             dcut = now - DELTA_TREND_WINDOW_S
             while self._delta_hist and self._delta_hist[0][0] < dcut:
@@ -273,6 +273,15 @@ class TelemetryEngine:
             return t0
         return t0 + (t1 - t0) * (distance - d0) / (d1 - d0)
 
+    def _current_delta(self):
+        """Instantaneous delta vs the reference at the current distance (seconds),
+        positive = behind the reference. None when there is no reference/accumulator
+        or the lap has not accumulated any time yet."""
+        acc = self._acc
+        if self._ref is None or acc is None or acc.elapsed <= 0:
+            return None
+        return acc.elapsed - self._ref_time_at(acc.distance)
+
     def _fuel(self):
         pkt = self._last
         level = pkt.fuel_level if pkt else 0.0
@@ -304,8 +313,8 @@ class TelemetryEngine:
         delta = predicted = best = None
         if has_ref:
             best = self._ref["time"]
-            if acc is not None and acc.elapsed > 0:
-                delta = acc.elapsed - self._ref_time_at(acc.distance)
+            delta = self._current_delta()
+            if delta is not None:
                 predicted = best + delta
         delta_dir = None
         if has_ref and len(self._delta_hist) >= 2:

@@ -165,6 +165,23 @@ def t_engine_delta_dir_cleared_on_lap_edge():
     assert eng.snapshot()["delta_dir"] is None
 
 
+def t_engine_delta_dir_deadband_boundary():
+    """Classification uses strict > / < DEADBAND: exactly at the boundary reads 'flat'."""
+    eng = tm.TelemetryEngine()
+    eng._ref = {"time": 10.0, "samples": [(0.0, 0.0), (100.0, 10.0)]}   # makes has_reference true
+
+    def dir_for(diff):
+        eng._delta_hist.clear()
+        eng._delta_hist.append((0.0, 0.0))
+        eng._delta_hist.append((1.0, diff))
+        return eng.snapshot()["delta_dir"]
+
+    assert dir_for(tm.DELTA_TREND_DEADBAND) == "flat"            # exactly at +boundary (not > )
+    assert dir_for(tm.DELTA_TREND_DEADBAND + 0.001) == "up"      # just above -> losing
+    assert dir_for(-tm.DELTA_TREND_DEADBAND) == "flat"          # exactly at -boundary (not < )
+    assert dir_for(-tm.DELTA_TREND_DEADBAND - 0.001) == "down"   # just below -> gaining
+
+
 def t_engine_replay_makes_no_phantom_lap():
     eng = tm.TelemetryEngine()
     # A "lap change" while paused/loading (menu/replay) must NOT set a reference.
