@@ -430,6 +430,40 @@ def _fake_obs_server(server_sock, password, state):
         elif rtype == "SetStreamServiceSettings":
             state.setdefault("service_settings", []).append(rdata)
             resp = {}
+        elif rtype == "GetInputKindList":
+            resp = {"inputKinds": state.get("input_kinds",
+                    ["image_source", "av_capture_input_v2", "coreaudio_input_capture"])}
+        elif rtype == "CreateScene":
+            state.setdefault("created_scenes", []).append(rdata["sceneName"])
+            resp = {}
+        elif rtype == "RemoveScene":
+            state.setdefault("removed_scenes", []).append(rdata["sceneName"])
+            resp = {}
+        elif rtype == "CreateInput":
+            state.setdefault("created_inputs", []).append(
+                (rdata["sceneName"], rdata["inputName"], rdata["inputKind"],
+                 rdata.get("sceneItemEnabled")))
+            if state.get("create_raises"):      # OBS created it, but the response fails
+                _srv_send_json(conn, {"op": 7, "d": {
+                    "requestType": rtype, "requestId": rid,
+                    "requestStatus": {"result": False, "code": 604},
+                    "responseData": {}}})
+                continue
+            resp = {}
+        elif rtype == "RemoveInput":
+            state.setdefault("removed_inputs", []).append(rdata["inputName"])
+            resp = {}
+        elif rtype == "GetInputPropertiesListPropertyItems":
+            state.setdefault("prop_reads", []).append(
+                (rdata["inputName"], rdata["propertyName"]))
+            if state.get("prop_raises"):
+                _srv_send_json(conn, {"op": 7, "d": {
+                    "requestType": rtype, "requestId": rid,
+                    "requestStatus": {"result": False, "code": 604},
+                    "responseData": {}}})
+                continue
+            table = state.get("prop_items", {})
+            resp = {"propertyItems": table.get(rdata["propertyName"], [])}
         else:
             resp = {}
         _srv_send_json(conn, {"op": 7, "d": {
@@ -1501,15 +1535,112 @@ def t_device_property_name_audio_matches_setup_assets_audio_variants():
         assert m.device_property_name(plat, kind="audio") == prop_key == "device_id", os_key
 
 
-def t_input_not_found():
-    # The real OBS error for a missing input is a RequestStatus code 600
-    # (ResourceNotFound), NOT a "not found" phrase — see enumerate_device_options's
-    # except-clause classification (#304 review).
-    assert m.input_not_found(
-        "GetInputPropertiesListPropertyItems failed: {'code': 600, "
-        "'comment': 'No source was found by the name of `Solo Capture Device`'}")
-    assert m.input_not_found("input 'Solo Capture Device' not found")
-    assert not m.input_not_found("connection reset")
+def t_pick_input_kind_finds_macos_v2_via_substring():
+    # macOS reports av_capture_input_v2; the matcher is the av_capture_input substring.
+    kinds = ["image_source", "av_capture_input_v2", "coreaudio_input_capture"]
+    assert m.pick_input_kind(kinds, m.VIDEO_INPUT_KIND_MATCHERS) == "av_capture_input_v2"
+    assert m.pick_input_kind(kinds, m.AUDIO_INPUT_KIND_MATCHERS) == "coreaudio_input_capture"
+
+
+def t_pick_input_kind_honors_matcher_priority_over_list_order():
+    # dshow appears BEFORE v4l2 in the list, but the matcher order is
+    # (av_capture, dshow, v4l2); dshow's matcher outranks v4l2's regardless of
+    # list position — assert the preferred matcher wins.
+    kinds = ["v4l2_input", "dshow_input"]
+    assert m.pick_input_kind(kinds, m.VIDEO_INPUT_KIND_MATCHERS) == "dshow_input"
+
+
+def t_pick_input_kind_none_when_no_match_or_bad_input():
+    assert m.pick_input_kind(["image_source", "color_source"], m.VIDEO_INPUT_KIND_MATCHERS) is None
+    assert m.pick_input_kind([], m.VIDEO_INPUT_KIND_MATCHERS) is None
+    assert m.pick_input_kind(None, m.VIDEO_INPUT_KIND_MATCHERS) is None
+
+
+_VIDEO_ITEMS = [{"itemName": "FaceTime HD Camera", "itemValue": "0x1", "itemEnabled": True},
+                {"itemName": "Elgato Cam Link", "itemValue": "0x2", "itemEnabled": True}]
+_MIC_ITEMS = [{"itemName": "MacBook Air Microphone", "itemValue": "mic-uid", "itemEnabled": True}]
+
+
+def t_probe_device_options_lists_video_and_mic_and_cleans_up():
+    # darwin properties: video "device", audio "device_id".
+    state = {"prop_items": {"device": _VIDEO_ITEMS, "device_id": _MIC_ITEMS}}
+    port, srv = _start_fake_obs(state)
+    try:
+        out = m.probe_device_options(port=port, password="supersecret", timeout=5)
+    finally:
+        srv.close()
+    # NOTE: value-carrying assertions rely on the probe running on macOS (device props).
+    # The lifecycle assertions below are platform-independent.
+    assert isinstance(out["devices"], list) and isinstance(out["mic"], list)
+    # A throwaway scene was created and then removed (cleanup guarantee). The
+    # defensive pre-clear RemoveScene (before CreateScene) AND the finally
+    # block's own RemoveScene must both fire -> exactly 2 removals.
+    assert m.PROBE_SCENE_NAME in state.get("created_scenes", [])
+    assert state.get("removed_scenes", []).count(m.PROBE_SCENE_NAME) == 2
+    # Every temp input created was also removed.
+    created = [n for (_s, n, _k, _e) in state.get("created_inputs", [])]
+    assert created, "expected at least one temp input"
+    assert sorted(created) == sorted(state.get("removed_inputs", []))
+    # Temp inputs were created DISABLED (never enter program output).
+    assert all(enabled is False for (_s, _n, _k, enabled) in state["created_inputs"])
+
+
+def t_probe_device_options_cleans_up_even_when_read_raises():
+    # The property read fails mid-probe; the temp scene + input must STILL be removed.
+    state = {"prop_raises": True,
+             "prop_items": {"device": _VIDEO_ITEMS, "device_id": _MIC_ITEMS}}
+    port, srv = _start_fake_obs(state)
+    try:
+        out = m.probe_device_options(port=port, password="supersecret", timeout=5)
+    finally:
+        srv.close()
+    assert out["devices"] == [] and out["note"]      # degraded, note explains
+    # Both the pre-clear RemoveScene and the finally block's RemoveScene fired.
+    assert state.get("removed_scenes", []).count(m.PROBE_SCENE_NAME) == 2
+    created = [n for (_s, n, _k, _e) in state.get("created_inputs", [])]
+    assert sorted(created) == sorted(state.get("removed_inputs", []))
+
+
+def t_probe_device_options_removes_input_even_if_create_response_fails():
+    # OBS creates the input but the CreateInput response fails mid-exchange. Because the
+    # probe tracks the input for cleanup BEFORE calling CreateInput, the finally still
+    # removes every input OBS actually created — no leak on a lost create response.
+    state = {"create_raises": True,
+             "prop_items": {"device": _VIDEO_ITEMS, "device_id": _MIC_ITEMS}}
+    port, srv = _start_fake_obs(state)
+    try:
+        out = m.probe_device_options(port=port, password="supersecret", timeout=5)
+    finally:
+        srv.close()
+    assert out["devices"] == [] and out["note"]      # degraded (create failed)
+    created = [n for (_s, n, _k, _e) in state.get("created_inputs", [])]
+    assert created, "OBS should have recorded the create attempt"
+    assert sorted(created) == sorted(state.get("removed_inputs", []))
+
+
+def t_probe_device_options_no_capture_kind_is_note_not_crash():
+    # OBS reports no capture kinds at all -> empty lists + explanatory notes, no crash,
+    # scene still created and removed.
+    state = {"input_kinds": ["image_source", "color_source"], "prop_items": {}}
+    port, srv = _start_fake_obs(state)
+    try:
+        out = m.probe_device_options(port=port, password="supersecret", timeout=5)
+    finally:
+        srv.close()
+    assert out["devices"] == [] and out["note"]
+    assert out["mic"] == [] and out["mic_note"]
+    assert state.get("created_inputs", []) == []     # nothing to create
+    assert state.get("removed_scenes", []).count(m.PROBE_SCENE_NAME) == 2
+
+
+def t_probe_device_options_unreachable_is_quiet():
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    free_port = sock.getsockname()[1]
+    sock.close()
+    out = m.probe_device_options(port=free_port, password="x", timeout=0.5)
+    assert out["devices"] == [] and out["mic"] == []
+    assert out["note"] and out["mic_note"]           # both carry the connect reason
 
 
 if __name__ == "__main__":

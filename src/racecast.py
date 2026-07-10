@@ -2577,10 +2577,6 @@ def resolve_device_selection(devices, token):
     return None, f"{token!r} is ambiguous ({len(matches)} matches)"
 
 
-DEVICE_SCAN_INPUT_NAME = "Solo Capture Device"
-DEVICE_SCAN_MIC_INPUT_NAME = "Commentary Mic Device"
-
-
 def _parse_device_scan_args(rest):
     """(webcam_token_or_None, capture_token_or_None, mic_token_or_None,
     tyres_token_or_None). Only --webcam/--capture/--mic/--tyres are recognized;
@@ -2613,8 +2609,8 @@ def _parse_device_scan_args(rest):
 
 def device_scan_cmd(rest):
     """`racecast device-scan [--webcam VAL] [--capture VAL] [--mic VAL] [--tyres VAL]`
-    — enumerate the OBS video-capture devices available to the "Solo Capture Device"
-    input and the microphones available to the "Commentary Mic Device" input, then
+    — enumerate the OBS video-capture devices and microphones available to this
+    machine (via a throwaway-scene OBS probe, no collection needs importing), then
     write the operator's picks to the machine .env as RACECAST_WEBCAM/RACECAST_CAPTURE/
     RACECAST_MIC/RACECAST_TYRES_CAPTURE (#304, mic added in #307, tyres added in the
     solo Commentary HUD plan). VAL is a 1-based list index (into its own list — video
@@ -2629,13 +2625,12 @@ def device_scan_cmd(rest):
         webcam_tok, capture_tok, mic_tok, tyres_tok = _parse_device_scan_args(rest)
     except ValueError as exc:
         sys.exit(str(exc))
-    devices, note = obs_ws.enumerate_device_options(
-        DEVICE_SCAN_INPUT_NAME, obs_ws.device_property_name(sys.platform))
-    mics, mic_note = obs_ws.enumerate_device_options(
-        DEVICE_SCAN_MIC_INPUT_NAME, obs_ws.device_property_name(sys.platform, kind="audio"))
+    res = obs_ws.probe_device_options()
+    devices, note = res["devices"], res["note"]
+    mics, mic_note = res["mic"], res["mic_note"]
     if not devices and not mics:
         sys.exit(f"device-scan: {note or mic_note or 'no devices found'} — "
-                 "import the solo collection first (racecast setup), then start OBS.")
+                 "start OBS with obs-websocket enabled, then retry.")
     if devices:
         print("Available video devices:")
         for i, d in enumerate(devices, start=1):
@@ -4614,24 +4609,21 @@ def env_upsert_data(updates, path=None):
 
 
 def devices_enumerate_data():
-    """Control Center General-Settings data: the OBS video devices offered to
-    the "Solo Capture Device" input (webcam/capture share one device list), plus
-    the microphones offered to the "Commentary Mic Device" input (#307).
+    """Control Center General-Settings data: the OBS video-capture devices
+    (webcam/capture share one device list) and microphones (#307), each
+    enumerated by a throwaway-scene OBS probe (no collection needs importing).
     {ok, devices:[{name,value}], note, mic:[{name,value}], mic_note}. ok reflects
     the video enumeration only (webcam/capture, unchanged contract); mic_note
     explains a failed/empty mic list independently — the front-end disables each
-    dropdown on its own signal. Never raises (obs_ws.enumerate_device_options is
+    dropdown on its own signal. Never raises (obs_ws.probe_device_options is
     best-effort)."""
     import obs_ws
-    items, note = obs_ws.enumerate_device_options(
-        DEVICE_SCAN_INPUT_NAME, obs_ws.device_property_name(sys.platform))
-    mic_items, mic_note = obs_ws.enumerate_device_options(
-        DEVICE_SCAN_MIC_INPUT_NAME, obs_ws.device_property_name(sys.platform, kind="audio"))
-    return {"ok": not note,
-            "devices": [{"name": d["name"], "value": d["value"]} for d in items],
-            "note": note,
-            "mic": [{"name": d["name"], "value": d["value"]} for d in mic_items],
-            "mic_note": mic_note}
+    res = obs_ws.probe_device_options()
+    return {"ok": not res["note"],
+            "devices": [{"name": d["name"], "value": d["value"]} for d in res["devices"]],
+            "note": res["note"],
+            "mic": [{"name": d["name"], "value": d["value"]} for d in res["mic"]],
+            "mic_note": res["mic_note"]}
 
 
 def devices_write_data(webcam, capture, mic=None, tyres=None, path=None):

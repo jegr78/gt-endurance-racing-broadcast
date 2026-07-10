@@ -2563,7 +2563,7 @@ async function loadDevices() {
   mSel.disabled = !micOk;
   $('dev-hint').textContent = ok
     ? 'Pick the webcam, capture-card, mic and/or tyres/fuel device, then Save. Shared machine-wide (not per-league).'
-    : ((d && d.note) || 'Start OBS with the solo collection imported to list devices, or set '
+    : ((d && d.note) || 'Start OBS with obs-websocket enabled to list devices, or set '
        + 'RACECAST_CAPTURE/RACECAST_WEBCAM/RACECAST_MIC/RACECAST_TYRES_CAPTURE in the .env editor below.');
 }
 
