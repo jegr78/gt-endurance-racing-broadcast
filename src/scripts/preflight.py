@@ -210,6 +210,25 @@ def port_reachable(host, port, timeout=0.5):
         sock.close()
 
 
+def companion_probe_hosts(bind_ip=None, tailscale_ip=None):
+    """Ordered, de-duplicated hosts to probe for a running Companion.
+
+    `racecast companion start` binds Companion to the Tailscale IP (tailnet-only, NOT
+    loopback), so a 127.0.0.1-only reachability probe false-negatives — Companion is up
+    but preflight reports "not reachable yet". Probe the config's `bind_ip` and the
+    Tailscale IP as well. An empty or 0.0.0.0 (wildcard) bind maps to loopback, and
+    127.0.0.1 is always kept as a fallback so behaviour is unchanged when neither is known.
+    """
+    hosts = []
+    for h in (bind_ip, tailscale_ip, "127.0.0.1"):
+        h = (h or "").strip()
+        if not h or h == "0.0.0.0":
+            h = "127.0.0.1"
+        if h not in hosts:
+            hosts.append(h)
+    return hosts
+
+
 def no_window_kwargs(os_name=None):
     """Popen/run kwargs that stop a console child from flashing its own terminal
     window on Windows. tool_version() is called IN-PROCESS by the Control Center's
@@ -632,10 +651,28 @@ def gather(preflight_file, runtime_dir=None, cookies_opt=None):
                                      "enable obs-websocket in OBS "
                                      "(Tools -> WebSocket Server Settings)"))
         else:
-            # Not reachable just means it hasn't been launched yet (event start does
-            # that) — INFO, not a warning the operator must chase down.
+            # Companion: probe where it ACTUALLY binds. racecast binds Companion to the
+            # Tailscale IP (tailnet-only), so a loopback-only probe false-negatives — up
+            # but reported "not reachable". Resolve the config bind_ip + the Tailscale IP;
+            # any import/read failure degrades to loopback (companion_probe_hosts always
+            # keeps 127.0.0.1). Not reachable on ANY host just means it hasn't launched yet
+            # (event start does that) — INFO, not a warning the operator must chase down.
+            bind_ip = None
+            try:
+                import json as _json, companion_common as _cc
+                with open(_cc.companion_config_path(sys.platform), encoding="utf-8") as fh:
+                    bind_ip = (_json.load(fh).get("bind_ip") or "").strip() or None
+            except Exception:
+                bind_ip = None
+            try:
+                import tailscale as _ts
+                ts_ip = _ts.detect_tailscale_ip()
+            except Exception:
+                ts_ip = None
+            reachable = any(port_reachable(h, port)
+                            for h in companion_probe_hosts(bind_ip, ts_ip))
             ports.append(Result(PASS, f"port {port}", f"{svc} reachable")
-                         if port_reachable("127.0.0.1", port)
+                         if reachable
                          else Result(INFO, f"port {port}",
                                      f"{svc} not reachable yet — it is launched at event start"))
     cookies = [cookies_status(resolve_cookies_path(preflight_file, runtime_dir, cookies_opt))]

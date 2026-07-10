@@ -432,6 +432,28 @@ def t_network_section_has_bandwidth_and_advisory():
     assert any("wired connection" in r.detail for r in net)
 
 
+def t_companion_probe_hosts_loopback_default():
+    # No bind_ip / no Tailscale IP known -> probe loopback only (current behaviour).
+    assert m.companion_probe_hosts(None, None) == ["127.0.0.1"]
+    assert m.companion_probe_hosts("", "") == ["127.0.0.1"]
+
+
+def t_companion_probe_hosts_includes_bind_and_tailscale():
+    # racecast binds Companion to the Tailscale IP (tailnet-only, NOT loopback), so a
+    # 127.0.0.1-only probe false-negatives; the bind_ip + Tailscale IP must be probed too.
+    # (100.64.0.0/10 are Tailscale CGNAT test constants — never a real address.)
+    hosts = m.companion_probe_hosts("100.64.0.5", "100.64.0.7")
+    assert hosts[0] == "100.64.0.5"
+    assert "100.64.0.7" in hosts
+    assert "127.0.0.1" in hosts       # always kept as a fallback
+
+
+def t_companion_probe_hosts_wildcard_and_dedup():
+    assert m.companion_probe_hosts("0.0.0.0", None) == ["127.0.0.1"]          # wildcard -> loopback
+    assert m.companion_probe_hosts("127.0.0.1", "127.0.0.1") == ["127.0.0.1"]  # de-duplicated
+    assert m.companion_probe_hosts("100.64.0.5", "100.64.0.5") == ["100.64.0.5", "127.0.0.1"]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
