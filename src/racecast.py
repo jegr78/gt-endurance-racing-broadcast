@@ -4756,6 +4756,14 @@ def devices_enumerate_data():
             "mic_note": res["mic_note"]}
 
 
+def ps_discover_data():
+    """Control Center General-Settings data: discover the PS4/PS5 running GT7 on the
+    LAN (a running relay's latched console, else a broadcast scan). Never raises."""
+    res = resolve_console()
+    return {"ok": bool(res["consoles"]), "consoles": res["consoles"],
+            "note": res["note"], "from_relay": res["from_relay"]}
+
+
 def devices_write_data(webcam, capture, mic=None, tyres=None, path=None):
     """Upsert the chosen webcam/capture/mic/tyres device ids into the machine .env
     (RACECAST_WEBCAM/RACECAST_CAPTURE/RACECAST_MIC/RACECAST_TYRES_CAPTURE; mic added
@@ -6497,6 +6505,8 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "env_write": env_write_data,
         "devices_enumerate": devices_enumerate_data,
         "devices_write": devices_write_data,
+        "ps_discover": ps_discover_data,
+        "ps_write": ps_ip_write_data,
         "profiles": profiles_data,
         "profile_logo": profile_logo,
         "profile_use": profile_use_data,

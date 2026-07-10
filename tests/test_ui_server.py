@@ -70,7 +70,8 @@ def _slides_serve(rel):
 
 
 def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None,
-         devices_enumerate=None, devices_write=None):
+         devices_enumerate=None, devices_write=None,
+         ps_discover=None, ps_write=None):
     page = os.path.join(ROOT, "src", "ui", "control-center.html")
     return {"version": "test",
             "page_path": page,
@@ -142,6 +143,9 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None,
                 "ok": True, "devices": [], "note": "", "mic": [], "mic_note": ""}),
             "devices_write": devices_write or (lambda webcam, capture, mic=None, tyres=None: {
                 "ok": True, "path": "/x/.env"}),
+            "ps_discover": ps_discover or (lambda: {
+                "ok": False, "consoles": [], "note": "", "from_relay": False}),
+            "ps_write": ps_write or (lambda ip: {"ok": True, "path": "/x/.env"}),
             "init_plan": init_plan or (lambda browser="firefox": {
                 "ok": True, "steps": [], "next_steps": []}),
             "init_step": init_step or (lambda key: {"ok": True, "key": key,
@@ -1899,6 +1903,47 @@ def t_api_resources_route():
         data = json.loads(body)
         assert code == 200 and data["available"] is True
         assert data["cpu_pct"] == 42.0 and data["disk_level"] == "green"
+    finally:
+        httpd.shutdown()
+
+
+def t_api_ps_discover_route():
+    ctx = _ctx(ps_discover=lambda: {"ok": True, "consoles": ["192.168.1.42"],
+                                    "note": "", "from_relay": False})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/ps/discover", {})
+        data = json.loads(body)
+        assert code == 200 and data["consoles"] == ["192.168.1.42"]
+    finally:
+        httpd.shutdown()
+
+
+def t_api_ps_save_route():
+    saved = {}
+    # NOTE: dict.setdefault(k, v) returns v (truthy here), so the brief's
+    # literal `saved.setdefault("ip", ip) or {"ok": True}` never falls through
+    # to the dict and returns the bare ip string instead -> the route's
+    # `result.get("ok")` then raises AttributeError uncaught, dropping the
+    # connection (RemoteDisconnected) instead of asserting. dict.update()
+    # returns None (falsy), so this recreates the intended record-then-{ok}
+    # behavior.
+    ctx = _ctx(ps_write=lambda ip: saved.update(ip=ip) or {"ok": True})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/ps/save", {"ip": "192.168.1.42"})
+        assert code == 200 and json.loads(body)["ok"] is True
+        assert saved["ip"] == "192.168.1.42"
+    finally:
+        httpd.shutdown()
+
+
+def t_api_ps_save_rejects_bad_ip():
+    ctx = _ctx(ps_write=lambda ip: {"ok": False, "error": f"invalid host/IP: {ip!r}"})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/ps/save", {"ip": "bad host!"})
+        assert code == 400 and json.loads(body)["ok"] is False
     finally:
         httpd.shutdown()
 
