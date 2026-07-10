@@ -160,6 +160,19 @@ firefox`). No scp from the laptop, and the cookies are created and used on the s
 datacenter IP (no session-origin mismatch). The operator-facing walkthrough is the
 **Remote producer (cloud GPU box)** wiki page.
 
+**Discord voice-join (per league, once — a Developer-Portal step the scripts can't do).**
+The box auto-joins the league's Discord voice channel so OBS captures the commentary
+(`racecast discord join`, and the event-start auto-join). This drives the box's desktop
+Discord over its RPC socket using the league's `DISCORD_CLIENT_ID`, and Discord grants the
+restricted **`rpc` scope only to the app's OWNER or its App Testers**. The box's desktop
+Discord is logged in as the shared **`gtracecast`** account, which does not own a league's
+app — so on the league's Discord application (Developer Portal → the app → **App Testers**)
+**add `gtracecast` as an App Tester** and accept the invite as `gtracecast`. Being only a
+Discord **Team** member is NOT sufficient for the `rpc` scope — it must be App Testers.
+Without it, `racecast discord join` fails with `discord: HTTP Error 400` (an `invalid_scope`
+RPC error underneath). The consent popup then appears once in the box's Discord; afterwards
+the token is cached (7-day refresh) and the auto-join is hands-free.
+
 Switch between already-onboarded leagues with `racecast profile use <name>`.
 
 ## 4b. Prepare for an event (`prepare-event.sh`)
