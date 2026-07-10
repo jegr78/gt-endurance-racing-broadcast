@@ -179,6 +179,7 @@ python3 src/racecast.py update            # self-update the binary from GitHub R
 python3 src/racecast.py freeport          # free a stuck feed port (default 53001-53003); kills an orphaned holder so a feed can bind. Refuses a running relay/streams (would cut a live feed) unless --force. Cross-platform port→PID (lsof/ss/fuser/netstat) in src/scripts/ports.py; per-process kill (not the session-group kill of #133's stop path). Also a Control Center action (free-ports op) + a `relay start` warning when a feed port is already bound.
 python3 src/racecast.py preflight         # hardware/tool check
 python3 src/racecast.py speedtest          # opt-in Ookla bandwidth test; logs locally, preflight warns vs 25/10 Mbps
+python3 src/racecast.py gt7-discover      # find the PS4/PS5 running GT7 on the LAN and (with --save / the Control Center's "Discover PlayStation" button) persist its IP to RACECAST_GT7_PS_IP; prefers a running relay's already-latched console (GET /telemetry/data), else a broadcast scan (GT7 must be in an active session)
 python3 src/racecast.py cookies firefox          # refresh YouTube cookies before an event (Firefox recommended; Windows Chrome/Edge exports are blocked by app-bound encryption)
 python3 src/racecast.py cookies twitch firefox   # refresh Twitch cookies (only needed for gated sub/follower-only Twitch feeds)
 python3 src/racecast.py graphics          # download broadcast graphics -> runtime/<profile>/graphics/
