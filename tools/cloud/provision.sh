@@ -97,26 +97,74 @@ EOF
 # GUI autostart so `racecast event start` over SSH finds OBS + Discord already
 # running in the autologin session (belt-and-suspenders with event start's
 # DISPLAY=:0 launch). Harmless if a binary is absent — the entry just no-ops.
+#
+# The two apps launch through small wrappers (not the bare binaries) so an UNATTENDED
+# autologin box survives a hard cloud stop/reboot with NO interactive prompts on the
+# next start — the three prompts that otherwise reappear every boot:
+#   - OBS  "did not shut down properly / Run in Safe Mode?"  (a hard kill leaves a crash
+#          sentinel; the wrapper clears it first. Safe Mode would also disable
+#          obs-websocket, which the relay drives — so it must never be auto-taken.)
+#   - Discord "Unlock Keyring"  (a passwordless-autologin account can't auto-unlock the
+#          GNOME keyring; --password-store=basic makes Discord skip the keyring entirely).
+# Plus the screen lockers are suppressed: on a passwordless account a locker that engages
+# on idle drops to the lightdm greeter with NO password to dismiss it — a permanent
+# lockout reachable only over SSH.
 write_gui_autostart() {
-  local user_home="$1" user_name="$2"
-  install -d -o "$user_name" -g "$user_name" "$user_home/.config/autostart"
-  cat > "$user_home/.config/autostart/racecast-obs.desktop" <<'EOF'
+  local user_home="$1" user_name="$2" grp
+  grp="$(id -gn "$user_name")"
+  install -d -o "$user_name" -g "$grp" "$user_home/.config/autostart" "$user_home/.local/bin"
+
+  # Launch wrappers.
+  cat > "$user_home/.local/bin/racecast-obs-launch" <<'EOF'
+#!/bin/sh
+# Managed by racecast provision.sh. Clear stale OBS crash sentinels so a hard-killed
+# session (cloud instance stop/reboot) never triggers OBS's "did not shut down properly /
+# Run in Safe Mode?" prompt on this unattended autologin box (Safe Mode also disables
+# obs-websocket, which the relay drives).
+rm -f "$HOME/.config/obs-studio/.sentinel/"run_* 2>/dev/null || true
+exec obs "$@"
+EOF
+  cat > "$user_home/.local/bin/racecast-discord-launch" <<'EOF'
+#!/bin/sh
+# Managed by racecast provision.sh. Start Discord with the plaintext password store
+# instead of the GNOME keyring: a passwordless-autologin account cannot auto-unlock the
+# keyring, so the keyring-backed store pops an "Unlock Keyring" dialog on every start.
+# --password-store=basic (a Chromium/Electron flag Discord honors) sidesteps it. The box
+# is single-user + tailnet-only, so plaintext app-token storage is an acceptable trade
+# for zero interactive prompts.
+exec discord --password-store=basic "$@"
+EOF
+  chmod 0755 "$user_home/.local/bin/racecast-obs-launch" "$user_home/.local/bin/racecast-discord-launch"
+
+  cat > "$user_home/.config/autostart/racecast-obs.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=OBS Studio (racecast)
-Exec=obs
+Exec=$user_home/.local/bin/racecast-obs-launch
 X-GNOME-Autostart-enabled=true
 EOF
-  cat > "$user_home/.config/autostart/racecast-discord.desktop" <<'EOF'
+  cat > "$user_home/.config/autostart/racecast-discord.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Discord (racecast)
-Exec=discord
+Exec=$user_home/.local/bin/racecast-discord-launch
 X-GNOME-Autostart-enabled=true
 EOF
-  chown "$user_name:$user_name" \
-    "$user_home/.config/autostart/racecast-obs.desktop" \
-    "$user_home/.config/autostart/racecast-discord.desktop"
+
+  # Suppress the screen lockers for this user (see the function header): never lock a
+  # passwordless-autologin desktop to the un-dismissable greeter.
+  for locker in light-locker xscreensaver; do
+    cat > "$user_home/.config/autostart/$locker.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=$locker (disabled by racecast: a passwordless-autologin box must never lock to the greeter)
+Exec=/bin/true
+Hidden=true
+X-GNOME-Autostart-enabled=false
+EOF
+  done
+
+  chown -R "$user_name:$grp" "$user_home/.config/autostart" "$user_home/.local/bin"
 }
 
 # Write the first-boot RustDesk setup helper. RustDesk's password / ID / direct-IP toggle
@@ -143,16 +191,47 @@ for _ in $(seq 1 30); do
 done
 pw="$(cat /etc/racecast/rustdesk-password 2>/dev/null)"
 [ -n "$pw" ] && rustdesk --password "$pw" >/dev/null 2>&1
-# Best-effort: enable direct IP access over the tailnet (a no-op on builds that gate it).
+# Enable direct IP access over the tailnet. The `--option` call is best-effort and did
+# NOT stick on some builds, so ALSO write direct-server into the config files directly,
+# with the service briefly stopped so rustdesk doesn't overwrite the edit on exit. This
+# makes the box reachable via its STABLE tailnet IP ("direct IP", port 21118) — no
+# dependence on RustDesk's public rendezvous, and immune to the RustDesk ID drifting
+# across a stop/start. (rustdesk may run its --server as the display-manager user, so edit
+# root's, the user's, AND lightdm's config — whichever exist.)
 run_as_user rustdesk --option direct-server Y >/dev/null 2>&1 || true
-ip="$(tailscale ip -4 2>/dev/null | head -1)"
+systemctl stop rustdesk >/dev/null 2>&1 || true
+for cfg in "/root/.config/rustdesk/RustDesk2.toml" \
+           "/home/$USER_NAME/.config/rustdesk/RustDesk2.toml" \
+           "/var/lib/lightdm/.config/rustdesk/RustDesk2.toml"; do
+  [ -f "$cfg" ] || continue
+  grep -q 'direct-server' "$cfg" && continue
+  # Insert `direct-server = 'Y'` directly under the [options] table (append the table if
+  # absent). awk (not sed's GNU-only `a`) so it is portable + the value's single quotes
+  # ride in a -v var instead of shell-escaping. Atomic rewrite via a temp file.
+  awk -v line="direct-server = 'Y'" '
+    /^\[options\]/ && !ins { print; print line; ins=1; next }
+    { print }
+    END { if (!ins) { print ""; print "[options]"; print line } }
+  ' "$cfg" > "$cfg.racecast-tmp" && mv "$cfg.racecast-tmp" "$cfg"
+done
+systemctl start rustdesk >/dev/null 2>&1 || true
+# Re-read the tailnet IP (it may only come up after the join); retry briefly.
+ip=""
+for _ in $(seq 1 10); do
+  ip="$(tailscale ip -4 2>/dev/null | head -1)"
+  [ -n "$ip" ] && break
+  sleep 2
+done
 out="/home/$USER_NAME/rustdesk-access.txt"
 {
   echo "RustDesk access for this box (user: $USER_NAME) — generated on first boot."
-  echo "  ID:        ${rid:-<run: rustdesk --get-id>}"
-  echo "  Password:  ${pw:-<unset — set /etc/racecast/rustdesk-password + re-run>}"
-  echo "  Tailnet:   ${ip:-<tailscale ip -4>}"
-  echo "Connect from your laptop's RustDesk with the ID + password."
+  echo "  ID:         ${rid:-<run: rustdesk --get-id>}"
+  echo "  Password:   ${pw:-<unset — set /etc/racecast/rustdesk-password + re-run>}"
+  echo "  Direct IP:  ${ip:-<tailscale ip -4>}   (tailnet — direct IP access enabled, port 21118)"
+  echo
+  echo "Connect from your laptop RustDesk either way:"
+  echo "  - Direct IP (recommended, tailnet-only): enter the Direct IP above + password"
+  echo "  - By ID: enter the ID above + password  (the ID can change across a stop/start; the Direct IP stays stable)"
 } > "$out"
 chown "$USER_NAME:$(id -gn "$USER_NAME")" "$out" 2>/dev/null || true
 chmod 0600 "$out" 2>/dev/null || true
@@ -466,6 +545,19 @@ else
   echo "      sudo tailscale up --ssh --hostname racecast-box"
 fi
 
+# Let the racecast user drive `tailscale serve`/`funnel` WITHOUT root, so `racecast funnel
+# on` (public /console via Tailscale Funnel) works as that user. Without this the serve
+# config write is denied for a non-root, non-operator user ("Access denied: serve config
+# denied") and Funnel never comes up — even when MagicDNS/HTTPS/the funnel nodeAttr are all
+# in place. provision runs as root, so setting the operator here is unattended.
+if have tailscale; then
+  if tailscale set --operator="$USER_NAME" >/dev/null 2>&1; then
+    ok "tailscale operator set to $USER_NAME ('racecast funnel on' works without sudo)"
+  else
+    warn "could not set tailscale operator — 'racecast funnel on' will need it: sudo tailscale set --operator=$USER_NAME"
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 log "copying prepare-event.sh into ~$USER_NAME (per-event prep helper)"
 # Best-effort, idempotent (overwrite): prepare-event.sh ships beside provision.sh in the
@@ -535,6 +627,16 @@ if tailscale status >/dev/null 2>&1; then ok "tailnet: joined ($(tailscale ip -4
 if pgrep -x Xorg >/dev/null 2>&1; then ok "X server: running"; else warn "X server: not running yet — reboot to start the racecast autologin session (RustDesk needs it)"; fi
 if has_nvidia_gpu && pgrep -x Xorg >/dev/null 2>&1; then
   if DISPLAY=:0 glxinfo 2>/dev/null | grep -qi nvidia; then ok "OpenGL renderer: NVIDIA (X is on the GPU)"; else warn "OpenGL renderer not NVIDIA yet — re-check after reboot: DISPLAY=:0 glxinfo -B"; fi
+fi
+
+# --- unattended-desktop hardening: no interactive prompts across a hard stop/reboot
+#     (OBS crash sentinel, Discord keyring, screen-locker greeter lockout). Advisory. ---
+uh_hd="$(getent passwd "$USER_NAME" | cut -d: -f6)"
+if [ -x "$uh_hd/.local/bin/racecast-obs-launch" ] && [ -x "$uh_hd/.local/bin/racecast-discord-launch" ] \
+   && [ -e "$uh_hd/.config/autostart/light-locker.desktop" ]; then
+  ok "unattended-desktop hardening: OBS/Discord launch wrappers + locker suppression in place"
+else
+  warn "unattended-desktop hardening incomplete — re-run provision (step 3 write_gui_autostart)"
 fi
 
 echo
