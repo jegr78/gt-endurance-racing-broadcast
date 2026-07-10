@@ -4013,6 +4013,59 @@ def t_resolve_console_scans_when_relay_unlatched():
     assert out == {"consoles": [], "note": "nope", "from_relay": False}
 
 
+def t_route_gt7_discover():
+    assert m.route(["gt7-discover"]) == {"kind": "gt7-discover", "rest": []}
+    assert m.route(["gt7-discover", "--save", "--timeout", "6"]) == \
+        {"kind": "gt7-discover", "rest": ["--save", "--timeout", "6"]}
+
+
+def t_parse_gt7_discover_args():
+    assert m._parse_gt7_discover_args([]) == (False, False, 4.0, None)
+    assert m._parse_gt7_discover_args(["--save"]) == (True, False, 4.0, None)
+    assert m._parse_gt7_discover_args(["--print"]) == (False, True, 4.0, None)
+    assert m._parse_gt7_discover_args(["--timeout", "6"]) == (False, False, 6.0, None)
+    assert m._parse_gt7_discover_args(["--pick", "2"]) == (False, False, 4.0, "2")
+    try:
+        m._parse_gt7_discover_args(["--nope"])
+    except ValueError as e:
+        assert "usage:" in str(e)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def t_ps_ip_write_validates_and_upserts(tmp_path=None):
+    import tempfile, os as _os
+    fd, path = tempfile.mkstemp(suffix=".env"); _os.close(fd)
+    try:
+        bad = m.ps_ip_write_data("not a host!", path=path)
+        assert bad["ok"] is False and "invalid" in bad["error"].lower()
+        good = m.ps_ip_write_data("192.168.1.42", path=path)
+        assert good["ok"] is True
+        with open(path, encoding="utf-8") as f:
+            assert "RACECAST_GT7_PS_IP=192.168.1.42" in f.read()
+    finally:
+        _os.remove(path)
+
+
+def t_gt7_discover_cmd_single_save(capsys=None):
+    # One console found + --save -> writes RACECAST_GT7_PS_IP via env_upsert_data.
+    import tempfile, os as _os
+    fd, path = tempfile.mkstemp(suffix=".env"); _os.close(fd)
+    saved_resolve = m.resolve_console
+    saved_write = m.ps_ip_write_data
+    writes = {}
+    m.resolve_console = lambda **k: {"consoles": ["192.168.1.42"], "note": "",
+                                     "from_relay": True}
+    m.ps_ip_write_data = lambda ip, path=None: writes.update(ip=ip) or {"ok": True}
+    try:
+        m.gt7_discover_cmd(["--save"])
+    finally:
+        m.resolve_console = saved_resolve
+        m.ps_ip_write_data = saved_write
+        _os.remove(path)
+    assert writes["ip"] == "192.168.1.42"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

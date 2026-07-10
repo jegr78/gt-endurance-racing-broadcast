@@ -31,6 +31,7 @@
   racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
   racecast freeport [PORT...] [--force]       # free a stuck feed port (default 53001-53003); kills orphaned holders, refuses a running relay/streams
   racecast device-scan [--webcam VAL] [--capture VAL] [--mic VAL]  # enumerate OBS video-capture devices + microphones and save the pick(s) to .env (interactive when no flags given)
+  racecast gt7-discover [--save] [--print] [--timeout N] [--pick I]  # find the PS4/PS5 running GT7 and save its IP
   racecast preflight | speedtest [--json] | cookies [twitch] [browser] | graphics | media | brands | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   racecast obs-browser [--yes]               # Linux/ARM64: build & install OBS's Browser Source plugin from source (needed for the relay HUD)
   racecast export companion [--out PATH]     # write the Companion button config
@@ -1015,6 +1016,8 @@ def route(argv):
         return {"kind": "freeport", "rest": rest}
     if cmd == "device-scan":
         return {"kind": "device-scan", "rest": rest}
+    if cmd == "gt7-discover":
+        return {"kind": "gt7-discover", "rest": rest}
     if cmd == "init":
         return {"kind": "init", "rest": rest}
     if cmd == "profile":
@@ -2713,6 +2716,100 @@ def device_scan_cmd(rest):
         sys.exit(f"device-scan: {res.get('error')}")
     print(f"device-scan: wrote {', '.join(sorted(updates))} to .env.")
     print("Re-run `racecast setup` to bake these into the OBS collection.")
+    return None
+
+
+_PS_HOST_RE = re.compile(r"^[A-Za-z0-9.\-]{1,253}\Z")   # mirrors ui_ops._HOST_RE
+
+
+def ps_ip_write_data(ip, path=None):
+    """Validate + upsert the PS4/PS5 IP into the machine .env as
+    RACECAST_GT7_PS_IP. `path` is a test seam (mirrors env_upsert_data's)."""
+    ip = (ip or "").strip()
+    if not _PS_HOST_RE.match(ip):
+        return {"ok": False, "error": f"invalid host/IP: {ip!r}"}
+    return env_upsert_data({"RACECAST_GT7_PS_IP": ip}, path=path)
+
+
+def _parse_gt7_discover_args(rest):
+    """Return (save, print_only, timeout, pick). Raises ValueError on bad input."""
+    usage = ("usage: racecast gt7-discover [--save] [--print] "
+             "[--timeout N] [--pick INDEX]")
+    save = print_only = False
+    timeout = 4.0
+    pick = None
+    it = iter(rest)
+    for tok in it:
+        if tok == "--save":
+            save = True
+        elif tok == "--print":
+            print_only = True
+        elif tok == "--timeout":
+            try:
+                timeout = float(next(it))
+            except (StopIteration, ValueError):
+                raise ValueError(f"--timeout needs a number. {usage}") from None
+        elif tok == "--pick":
+            try:
+                pick = next(it)
+            except StopIteration:
+                raise ValueError(f"--pick needs an index. {usage}") from None
+        else:
+            raise ValueError(f"unknown flag {tok!r}. {usage}")
+    return save, print_only, timeout, pick
+
+
+def gt7_discover_cmd(rest):
+    """`racecast gt7-discover [--save] [--print] [--timeout N] [--pick I]` — find the
+    PS4/PS5 running GT7 on the LAN (reuses a running relay's latched console when up,
+    else a broadcast scan) and write its IP to RACECAST_GT7_PS_IP. --save skips the
+    prompt (for non-TTY); --print never writes; --pick selects when several are found."""
+    try:
+        save, print_only, timeout, pick = _parse_gt7_discover_args(rest)
+    except ValueError as exc:
+        sys.exit(str(exc))
+    res = resolve_console(timeout=timeout)
+    consoles, note = res["consoles"], res["note"]
+    if res["from_relay"]:
+        print(f"Using console latched by the running relay: {consoles[0]}")
+    if not consoles:
+        print(f"gt7-discover: {note}")
+        return None
+    if len(consoles) == 1:
+        chosen = consoles[0]
+        print(f"Found PlayStation: {chosen}")
+    else:
+        print("Found PlayStations:")
+        for i, ip in enumerate(consoles, start=1):
+            print(f"  {i}. {ip}")
+        if pick is None:
+            if not sys.stdin.isatty():
+                print("gt7-discover: pass --pick INDEX to choose one "
+                      "(non-interactive session).")
+                return None
+            pick = input(f"Pick [1-{len(consoles)}, blank=cancel]: ").strip()
+        if not pick:
+            print("gt7-discover: cancelled.")
+            return None
+        try:
+            chosen = consoles[int(pick) - 1]
+        except (ValueError, IndexError):
+            sys.exit(f"gt7-discover: invalid selection {pick!r}.")
+    if print_only:
+        return None
+    if not save and sys.stdin.isatty():
+        ans = input(f"Save {chosen} to RACECAST_GT7_PS_IP? [Y/n]: ").strip().lower()
+        if ans in ("n", "no"):
+            print("gt7-discover: not saved.")
+            return None
+    elif not save:
+        print(f"gt7-discover: found {chosen} (pass --save to write it to .env).")
+        return None
+    out = ps_ip_write_data(chosen)
+    if not out.get("ok"):
+        sys.exit(f"gt7-discover: {out.get('error')}")
+    print(f"gt7-discover: wrote RACECAST_GT7_PS_IP={chosen} to .env.")
+    print("Restart the relay (`racecast relay restart`) to apply.")
     return None
 
 
@@ -6541,6 +6638,8 @@ def main(argv=None):
         return freeport_cmd(action["rest"])
     if action["kind"] == "device-scan":
         return device_scan_cmd(action["rest"])
+    if action["kind"] == "gt7-discover":
+        return gt7_discover_cmd(action["rest"])
     if action["kind"] == "init":
         return init_cmd(action["rest"])
     if action["kind"] == "profile":
