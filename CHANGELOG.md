@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.2](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.5.1...v1.5.2) (2026-07-10)
+
+
+### Bug Fixes
+
+* **cloud:** harden cloud GPU box for unattended stop/start + preflight Companion probe ([#464](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/464)) ([3ae67ae](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/3ae67aee5c1efd0ade1a4530a20f7fe16a7ea612))
+
 ## [1.5.1](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.5.0...v1.5.1) (2026-07-08)
 
 
