@@ -123,6 +123,65 @@ def t_engine_delta_negative_when_faster():
     assert s["predicted_s"] is not None
 
 
+def _ref_then_partial(speed2, secs=3.0):
+    """Set a 50 m/s reference lap, then drive `secs` of lap 2 at speed2 m/s.
+    Returns (engine, next_free_timestamp)."""
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)          # mid-connect partial (discarded)
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)         # reference ~10 s / 500 m
+    t = 120.0
+    for _ in range(int(secs / 0.1)):
+        eng.update(tm.parse_packet(_packet(speed_mps=speed2, lap=2)), t); t += 0.1
+    return eng, t
+
+
+def t_engine_delta_dir_down_when_gaining():
+    eng, _ = _ref_then_partial(100.0)      # faster than the 50 m/s reference -> gap shrinking
+    assert eng.snapshot()["delta_dir"] == "down"
+
+
+def t_engine_delta_dir_up_when_losing():
+    eng, _ = _ref_then_partial(40.0)       # slower than reference -> gap growing
+    assert eng.snapshot()["delta_dir"] == "up"
+
+
+def t_engine_delta_dir_flat_when_matching():
+    eng, _ = _ref_then_partial(50.0)       # matching reference pace -> within deadband
+    assert eng.snapshot()["delta_dir"] == "flat"
+
+
+def t_engine_delta_dir_none_without_reference():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), 100.0)
+    assert eng.snapshot()["delta_dir"] is None
+
+
+def t_engine_delta_dir_cleared_on_lap_edge():
+    """The trend history must not carry across the start/finish line: right after a
+    lap-change edge there are <2 samples, so delta_dir is None (no phantom trend)."""
+    eng, t = _ref_then_partial(40.0)       # building an "up" trend on lap 2
+    assert eng.snapshot()["delta_dir"] == "up"
+    eng.update(tm.parse_packet(_packet(speed_mps=40.0, lap=3)), t)   # lap edge -> history cleared
+    assert eng.snapshot()["delta_dir"] is None
+
+
+def t_engine_delta_dir_deadband_boundary():
+    """Classification uses strict > / < DEADBAND: exactly at the boundary reads 'flat'."""
+    eng = tm.TelemetryEngine()
+    eng._ref = {"time": 10.0, "samples": [(0.0, 0.0), (100.0, 10.0)]}   # makes has_reference true
+
+    def dir_for(diff):
+        eng._delta_hist.clear()
+        eng._delta_hist.append((0.0, 0.0))
+        eng._delta_hist.append((1.0, diff))
+        return eng.snapshot()["delta_dir"]
+
+    assert dir_for(tm.DELTA_TREND_DEADBAND) == "flat"            # exactly at +boundary (not > )
+    assert dir_for(tm.DELTA_TREND_DEADBAND + 0.001) == "up"      # just above -> losing
+    assert dir_for(-tm.DELTA_TREND_DEADBAND) == "flat"          # exactly at -boundary (not < )
+    assert dir_for(-tm.DELTA_TREND_DEADBAND - 0.001) == "down"   # just below -> gaining
+
+
 def t_engine_replay_makes_no_phantom_lap():
     eng = tm.TelemetryEngine()
     # A "lap change" while paused/loading (menu/replay) must NOT set a reference.
@@ -491,6 +550,36 @@ def t_format_snapshot_time_of_day_none_before_packet():
     eng = tm.TelemetryEngine()
     out = tm.format_snapshot(eng.snapshot(), "metric", (70, 85, 95))
     assert out["time_of_day"] is None
+
+
+def t_format_surfaces_fuel_per_lap_and_delta_dir():
+    snap = {"speed_mps": 0.0, "tyre_temp": (70.0, 70.0, 70.0, 70.0),
+            "tyre_temp_avg": (70.0, 70.0, 70.0, 70.0), "top_speed_mps": 0.0,
+            "lap": 1, "current_lap_s": 0.0, "best_s": 90.0,
+            "delta_s": 0.5, "predicted_s": 90.5, "has_reference": True,
+            "time_of_day_ms": None, "delta_dir": "up",
+            "fuel": {"level": 40.0, "per_lap": 2.5, "laps_remaining": 16.0,
+                     "time_remaining_s": 1600.0}}
+    out = tm.format_snapshot(snap, "metric", (70, 85, 95))
+    assert out["fuel"]["per_lap"] == 2.5
+    assert out["delta_dir"] == "up"
+    imp = tm.format_snapshot(snap, "imperial", (70, 85, 95))
+    assert imp["fuel"]["per_lap"] == 0.7        # 2.5 L -> 0.66 gal -> 0.7
+    assert imp["delta_dir"] == "up"
+
+
+def t_format_delta_dir_and_per_lap_default_none():
+    """format_snapshot tolerates a snapshot with no delta_dir and null per_lap."""
+    snap = {"speed_mps": 0.0, "tyre_temp": (70.0, 70.0, 70.0, 70.0),
+            "tyre_temp_avg": (70.0, 70.0, 70.0, 70.0), "top_speed_mps": 0.0,
+            "lap": 1, "current_lap_s": 0.0, "best_s": None,
+            "delta_s": None, "predicted_s": None, "has_reference": False,
+            "time_of_day_ms": None,
+            "fuel": {"level": 10.0, "per_lap": None, "laps_remaining": None,
+                     "time_remaining_s": None}}
+    out = tm.format_snapshot(snap, "metric", (70, 85, 95))
+    assert out["delta_dir"] is None
+    assert out["fuel"]["per_lap"] is None
 
 
 def t_store_source_roundtrip():
