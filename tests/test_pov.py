@@ -1016,6 +1016,17 @@ def t_latest_and_annotate_substitution():
         r.health_store.close()
 
 
+def t_qualifying_downgrade_note_warns_only_on_silent_downgrade():
+    # --qualifying requested but no qualifying source -> LOUD warning (the relay would
+    # otherwise silently run race mode and push the wrong Producer stream key).
+    note = m.qualifying_downgrade_note(True, False, "Qualifying")
+    assert note is not None and "RACE mode" in note and "Qualifying" in note
+    # No warning when qualifying was not requested, or a qual source exists.
+    assert m.qualifying_downgrade_note(False, False, "Qualifying") is None
+    assert m.qualifying_downgrade_note(True, True, "Qualifying") is None
+    assert m.qualifying_downgrade_note(False, True, "Qualifying") is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

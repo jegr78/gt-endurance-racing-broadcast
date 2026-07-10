@@ -724,6 +724,17 @@ def _relay_spawn_stubs(http_ok_seq):
     return restore, calls
 
 
+def t_qualifying_mode_mismatch_note():
+    # event start --qualifying but the relay came up in race mode -> warn (missing
+    # Qualifying tab; the Parts control would push the wrong stream key).
+    note = m.qualifying_mode_mismatch_note(True, "race")
+    assert note is not None and "RACE mode" in note
+    # Consistent / not requested / relay unreachable -> no warning.
+    assert m.qualifying_mode_mismatch_note(True, "qualifying") is None
+    assert m.qualifying_mode_mismatch_note(False, "race") is None
+    assert m.qualifying_mode_mismatch_note(True, None) is None
+
+
 def t_relay_start_retries_when_first_spawn_not_up():
     # The event-start race: the freshly spawned relay aborts on a still-clearing port,
     # so start_detached returns a PID for a child that died. relay_start must NOT claim
