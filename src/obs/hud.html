@@ -119,7 +119,7 @@
   #tele-fuel-lbl{left:1522px;top:792px}
   #tele-pred{left:1522px;top:737px;font-size:30px;font-weight:700}
   #tele-top{left:1712px;top:737px;font-size:30px;font-weight:700}
-  #tele-fuel{left:1522px;top:809px;font-size:23px}
+  #tele-fuel{left:1522px;top:809px;font-size:18px}
   /* Time of day (on-track clock): top-left, centred in the gap between GT7's
      lap-count header and its standings tower, on a dark translucent bar that
      echoes the tower's name rows; left-aligned to the driver-name column.
@@ -282,7 +282,7 @@
       <span class="tw" data-w="rl">--<small class="ta" data-a="rl"></small></span><span class="tw" data-w="rr">--<small class="ta" data-a="rr"></small></span>
     </div>
     <canvas id="tele-trace" class="el" data-edit="Input trace" data-edit-kind="box" width="356" height="92"></canvas>
-    <div id="tele-delta" class="el white" data-edit="Delta to best" data-edit-kind="text" style="display:none">--</div>
+    <div id="tele-delta" class="el white" data-edit="Delta to best" data-edit-kind="text" style="display:none"><span id="tele-delta-arrow"></span><span id="tele-delta-val">--</span></div>
     <div id="tele-pred-lbl" class="el" data-edit="Pred. lap label" data-edit-kind="text">PRED. LAP</div>
     <div id="tele-pred" class="el white" data-edit="Predicted lap" data-edit-kind="text" style="display:none">--</div>
     <div id="tele-fuel-lbl" class="el" data-edit="Fuel label" data-edit-kind="text">FUEL</div>
@@ -412,11 +412,22 @@
           if (av) av.textContent = (t.avg != null ? " ø" + t.avg : "");
         });
         const delta = document.getElementById("tele-delta");
+        const dArrow = document.getElementById("tele-delta-arrow");
+        const dVal = document.getElementById("tele-delta-val");
         const pred = document.getElementById("tele-pred");
         if (d.has_reference && d.delta !== null) {
           delta.style.display = ""; pred.style.display = "";
-          delta.textContent = (d.delta >= 0 ? "+" : "") + d.delta.toFixed(2) + "s";
-          delta.style.color = d.delta < 0 ? "#3ce07f" : "#ff5d5d";
+          dVal.textContent = (d.delta >= 0 ? "+" : "") + d.delta.toFixed(2) + "s";
+          dVal.style.color = d.delta < 0 ? "#3ce07f" : "#ff5d5d";   // sign = ahead/behind
+          if (d.delta_dir === "up") {
+            dArrow.textContent = "▲ ";        // gap growing -> losing now
+            dArrow.style.color = "#ff5d5d";
+          } else if (d.delta_dir === "down") {
+            dArrow.textContent = "▼ ";        // gap shrinking -> gaining now
+            dArrow.style.color = "#3ce07f";
+          } else {
+            dArrow.textContent = "";               // flat / unknown: no arrow
+          }
           pred.textContent = d.predicted || "--";
         } else {
           delta.style.display = "none"; pred.style.display = "none";
@@ -424,6 +435,7 @@
         const f = d.fuel;
         document.getElementById("tele-fuel").textContent =
           f.level + d.units.fuel +
+          (f.per_lap !== null && f.per_lap !== undefined ? " · " + f.per_lap + "/lap" : "") +
           (f.laps_remaining !== null ? " · " + f.laps_remaining + " laps" : "") +
           (f.time_remaining ? " · " + f.time_remaining : "");
         document.getElementById("tele-top").textContent =
