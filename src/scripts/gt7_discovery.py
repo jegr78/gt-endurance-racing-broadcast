@@ -7,8 +7,9 @@ happens to sit on that port.
 
 Pure-ish + best-effort: socket / clock / decrypt are injectable seams (unit-tested with
 a fake socket) and the function NEVER raises. The relay (racecast-feeds.py) is
-deliberately import-free, so the port constants below are DUPLICATED there
-(GT7_RECV_PORT / GT7_SEND_PORT / GT7_HEARTBEAT_S) — keep the two copies in sync.
+deliberately import-free, so the port constants below (GT7_RECV_PORT / GT7_SEND_PORT)
+are DUPLICATED there (racecast-feeds.py also carries GT7_HEARTBEAT_S for its own loop) —
+keep the shared copies in sync.
 """
 import importlib.util
 import os

@@ -4048,9 +4048,8 @@ def t_ps_ip_write_validates_and_upserts(tmp_path=None):
 
 
 def t_gt7_discover_cmd_single_save(capsys=None):
-    # One console found + --save -> writes RACECAST_GT7_PS_IP via env_upsert_data.
-    import tempfile, os as _os
-    fd, path = tempfile.mkstemp(suffix=".env"); _os.close(fd)
+    # One console found + --save -> writes RACECAST_GT7_PS_IP via ps_ip_write_data
+    # (both resolve_console and ps_ip_write_data are mocked, so no real .env is touched).
     saved_resolve = m.resolve_console
     saved_write = m.ps_ip_write_data
     writes = {}
@@ -4062,7 +4061,6 @@ def t_gt7_discover_cmd_single_save(capsys=None):
     finally:
         m.resolve_console = saved_resolve
         m.ps_ip_write_data = saved_write
-        _os.remove(path)
     assert writes["ip"] == "192.168.1.42"
 
 

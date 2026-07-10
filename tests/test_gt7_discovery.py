@@ -89,6 +89,44 @@ def t_socket_error_never_raises():
     assert out["note"]  # a non-empty error note
 
 
+def t_decrypt_raise_and_recv_oserror_are_skipped_not_fatal():
+    # recvfrom yields, in order: a packet whose decrypt RAISES (skipped), a non-timeout
+    # OSError from recvfrom itself (skipped), then a good decodable packet (latched).
+    # The scan must never raise, must still find the good console, and must close.
+    class _Sock:
+        def __init__(self):
+            self._script = ["raise-decrypt", "oserror",
+                            (b"OKgood", ("192.168.1.42", 33740))]
+            self._i = 0
+            self.closed = False
+        def sendto(self, _data, _addr):
+            pass
+        def recvfrom(self, _n):
+            if self._i >= len(self._script):
+                raise socket.timeout()
+            item = self._script[self._i]; self._i += 1
+            if item == "oserror":
+                raise OSError("transient recv error")
+            if item == "raise-decrypt":
+                return (b"BOOM", ("192.168.1.99", 33740))
+            return item
+        def close(self):
+            self.closed = True
+
+    def _decrypt(data):
+        if data == b"BOOM":
+            raise ValueError("undecodable packet")
+        return data if data.startswith(b"OK") else None
+
+    sock = _Sock()
+    out = disc.discover_consoles(
+        timeout=2.0, sock_factory=lambda: sock, decrypt=_decrypt,
+        now=_now_seq([0, 0, 0, 0, 0, 100]))
+    assert out["consoles"] == ["192.168.1.42"], out
+    assert out["note"] == ""
+    assert sock.closed is True
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

@@ -143,6 +143,8 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None,
                 "ok": True, "devices": [], "note": "", "mic": [], "mic_note": ""}),
             "devices_write": devices_write or (lambda webcam, capture, mic=None, tyres=None: {
                 "ok": True, "path": "/x/.env"}),
+            # default = the "no console found" shape (ok:False for an empty list, the
+            # real ps_discover_data contract); every test that asserts otherwise overrides.
             "ps_discover": ps_discover or (lambda: {
                 "ok": False, "consoles": [], "note": "", "from_relay": False}),
             "ps_write": ps_write or (lambda ip: {"ok": True, "path": "/x/.env"}),

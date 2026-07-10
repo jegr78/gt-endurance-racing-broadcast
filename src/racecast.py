@@ -2105,8 +2105,9 @@ def _relay_fetch_json(url, timeout=3):
 
 
 def _relay_telemetry_source():
-    """The console IP a running relay already latched, via GET /telemetry/data.
-    None on any failure (no relay, telemetry disabled -> 404, timeout)."""
+    """The running relay's GET /telemetry/data payload (a dict) so the caller can read
+    its latched-console `source` field. None on any failure (no relay, telemetry
+    disabled -> 404, timeout, non-dict body)."""
     try:
         data = http_util.get_json(
             f"http://127.0.0.1:{RELAY_PORT}/telemetry/data", timeout=2)
@@ -2118,14 +2119,25 @@ def _relay_telemetry_source():
 
 
 def _discover_consoles(**kwargs):
-    import gt7_discovery
+    # Lazy peer import (see build-binary.py hidden-imports). Guard it so a broken/
+    # partial install degrades to an empty result instead of crashing resolve_console's
+    # never-raise contract (the CLI has no outer wrapper; the CC endpoint does).
+    try:
+        import gt7_discovery
+    except ImportError as exc:
+        return {"consoles": [], "note": f"discovery unavailable: {exc}"}
     return gt7_discovery.discover_consoles(**kwargs)
 
 
 def resolve_console(timeout=4.0, *, discover=None, relay_get=None):
     """Resolve GT7 console IP(s) two ways: prefer a running relay's already-latched
     console (no second 33740 bind, instant); else broadcast-scan the LAN. Returns
-    {consoles, note, from_relay}. Never raises."""
+    {consoles, note, from_relay}. Never raises.
+
+    Note: tier-1 (from_relay) returns whatever the relay latched, and the relay latches
+    the first responder BEFORE decrypting (racecast-feeds.py _telemetry_loop), so on a
+    noisy LAN it can be a non-GT7 host; the tier-2 scanner is decrypt-gated. Same LAN
+    trust boundary either way (spec non-goal)."""
     relay_get = relay_get or _relay_telemetry_source
     relayed = relay_get()
     src = relayed.get("source") if isinstance(relayed, dict) else None

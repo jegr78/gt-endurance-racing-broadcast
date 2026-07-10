@@ -2610,6 +2610,7 @@ async function discoverPs(){
     const r = await fetch('/api/ps/discover', {method:'POST'});
     const d = await r.json();
     const consoles = d.consoles || [];
+    list.replaceChildren();                 // clear any stale list from a prior scan
     if(!consoles.length){ list.hidden = true; hint.textContent = d.note || 'No PlayStation found.'; return; }
     if(consoles.length === 1){
       list.hidden = true;
@@ -2619,12 +2620,15 @@ async function discoverPs(){
         : 'Found one console. Click Save to write it to .env.';
     } else {
       list.hidden = false;
-      list.innerHTML = consoles.map(ip => `<option value="${ip}">${ip}</option>`).join('');
+      consoles.forEach(ip => {              // build options via the DOM (no innerHTML)
+        const o = document.createElement('option'); o.value = ip; o.textContent = ip;
+        list.appendChild(o);
+      });
       document.getElementById('ps-ip').value = consoles[0];
       list.onchange = () => { document.getElementById('ps-ip').value = list.value; };
       hint.textContent = 'Multiple consoles found — pick one, then Save.';
     }
-  }catch(e){ hint.textContent = 'Discovery failed: ' + e; }
+  }catch(e){ list.hidden = true; list.replaceChildren(); hint.textContent = 'Discovery failed: ' + e; }
   finally{ btn.disabled = false; }
 }
 async function savePsIp(){
