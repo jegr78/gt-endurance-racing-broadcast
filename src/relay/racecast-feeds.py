@@ -300,6 +300,20 @@ def drop_connecting_notifiable(dropped, dropped_since, now,
     return (now - dropped_since) >= settle_s
 
 
+def qualifying_downgrade_note(requested_qualifying, has_qual_source, qual_tab):
+    """A LOUD warning when --qualifying was requested but no qualifying schedule source
+    exists, so the relay is silently running in RACE mode. On 2026-07-10 this silent
+    downgrade meant the Director-Panel Parts control resolved the numeric race parts (not
+    the `Q` part), pushing the wrong Producer stream key → the stream went nowhere. Pure →
+    unit-tested. Returns the message, or None when there is nothing to warn about."""
+    if requested_qualifying and not has_qual_source:
+        return (f"--qualifying was requested but the Qualifying schedule source is "
+                f"UNAVAILABLE (tab '{qual_tab}') — the relay is running in RACE mode. The "
+                f"Parts control will select the wrong Producer part / stream key. Fix the "
+                f"Sheet's '{qual_tab}' tab, then restart.")
+    return None
+
+
 def aggregate_health(facts):
     """Roll up the relay's live facts into one level + human reasons. Pure →
     unit-tested. `facts` keys: feeds_down (list of feed names with a lost live
@@ -7489,10 +7503,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if not ok3:
                         return self._send({"ok": False, "error": note3}, 503)
                     part_store.mark_live(idx)
+                    plabel = (rows[idx - 1].get("part")
+                              if 1 <= idx <= len(rows) else "") or f"Part {idx}"
                     if health_store is not None:
                         try:
-                            plabel = (rows[idx - 1].get("part")
-                                      if 1 <= idx <= len(rows) else "") or f"Part {idx}"
                             health_store.record_event(
                                 time.time(), "part_start",
                                 label=f"{plabel} started",
@@ -7500,7 +7514,11 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                 metadata={"index": idx})
                         except Exception:   # noqa: BLE001 — best-effort
                             pass
-                    return self._send({"ok": True, "index": idx})
+                    # Echo the applied part label + active mode so the panel/operator can
+                    # confirm WHICH part (and mode) went live — a race-vs-qualifying
+                    # mismatch (wrong stream key) is then obvious at the moment of Start.
+                    return self._send({"ok": True, "index": idx,
+                                       "part": plabel, "mode": relay.mode})
                 if p == ["parts", "end"]:
                     if part_store is None or _obs_ws is None:
                         return self._send({"ok": False, "error": "parts unavailable"}, 503)
@@ -8162,6 +8180,11 @@ def main():
         _qmode = "QUALIFYING (live)" if relay.mode == "qualifying" else "race"
         LOG.info("  Qualifying tab '%s' available — mode: %s  "
                  "(switch: /mode/qualifying | /mode/race)", args.qualifying_tab, _qmode)
+    else:
+        _dg = qualifying_downgrade_note(args.qualifying, bool(relay.qual_source),
+                                        args.qualifying_tab)
+        if _dg:
+            LOG.error("  %s", _dg)
     LOG.info("  Feed A -> http://127.0.0.1:%s   Feed B -> http://127.0.0.1:%s", ports[0], ports[1])
     if args.stint != 1:
         if relay.A.idx != args.stint - 1:

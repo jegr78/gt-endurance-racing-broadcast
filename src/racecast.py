@@ -1415,6 +1415,20 @@ def _relay_mode():
         return None
 
 
+def qualifying_mode_mismatch_note(requested_qualifying, actual_mode):
+    """Warning when `event start --qualifying` was requested but the live relay came up in
+    a different mode (actual_mode read from /status) — usually a missing Qualifying tab.
+    On 2026-07-10 this silently left the relay in race mode, so the Parts control pushed
+    the wrong stream key and the stream went nowhere. Pure → unit-tested. None when the
+    mode is consistent, was not requested, or the relay is unreachable (actual_mode None)."""
+    if requested_qualifying and actual_mode is not None and actual_mode != "qualifying":
+        return (f"event start --qualifying was requested but the relay came up in "
+                f"{actual_mode.upper()} mode — the Qualifying tab may be missing/unreadable. "
+                f"The Parts control will select the wrong stream key. Fix the Sheet's "
+                f"Qualifying tab, then re-run event start --qualifying.")
+    return None
+
+
 def _qualifying_title(base):
     """Append ' — Qualifying' to a report/event title when the live relay is in
     qualifying mode; an empty base becomes just 'Qualifying'. Unchanged otherwise."""
@@ -3396,6 +3410,10 @@ def event_start(rest, _autojoin=True, _new_session=True):
     if _new_session and not _is_continuation_start(rest):
         _write_session_start()
     relay_start(_stint_args(rest) + _qualifying_args(rest) + _title_args(rest))
+    if _qualifying_args(rest):   # verify the relay actually came up in qualifying mode
+        _mm = qualifying_mode_mismatch_note(True, _relay_mode())
+        if _mm:
+            print("WARNING: " + _mm)
     # 4. OBS
     if ev.app_running("obs"):
         print("obs: already running.")
