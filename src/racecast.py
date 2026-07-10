@@ -2194,6 +2194,30 @@ def relay_start_plan(*, port_pids, feed_pids, pidfile_pid, pidfile_alive,
     return ("heal", kill, reason)
 
 
+RELAY_START_VERIFY_S = 15   # seconds to confirm the freshly spawned relay bound its control port
+
+
+def _spawn_relay_verified(argv, attempts=2, verify_s=RELAY_START_VERIFY_S):
+    """Spawn the relay daemon and CONFIRM it actually bound the control port, retrying
+    once. start_detached returns a PID the instant the child is forked — but the child
+    fail-fast aborts if a just-killed holder's port is still clearing (the 2026-07-10
+    event-start race), so a returned PID is NOT proof the relay is up. Poll /status; if
+    it never answers, respawn once — the port has had time to clear by then. Returns the
+    live PID, or None after giving up. Never lets the caller announce 'relay started' for
+    a dead child (which made the failed qualifying bring-up look green)."""
+    for attempt in range(1, attempts + 1):
+        pid = sv.start_detached(argv, _relay_boot_log_path(), _relay_pid_path(),
+                                env=_frozen_child_env())
+        if wait_for(_relay_http_ok, verify_s):
+            return pid
+        if attempt < attempts:
+            print(f"  relay not responding on port {RELAY_PORT} yet — the port may still "
+                  f"be clearing; retrying ({attempt + 1}/{attempts})…")
+    print(f"  ERROR: relay failed to come up on port {RELAY_PORT} after {attempts} "
+          f"attempt(s) — check: racecast relay logs")
+    return None
+
+
 def relay_start(rest):
     stint = _stint_args(rest)   # validate early: fail fast BEFORE spawning the daemon
     # Gather the signals for the pure plan. The PID file is the un-scoped singleton
@@ -2245,11 +2269,12 @@ def relay_start(rest):
     os.environ["RACECAST_PRODUCER_NAME"] = _resolve_producer_name()
     _write_relay_profile_stamp()      # record the running profile before spawn (#273)
     argv = _relay_daemon_argv(rest, IS_FROZEN)
-    newpid = sv.start_detached(argv, _relay_boot_log_path(), _relay_pid_path(),
-                               env=_frozen_child_env())
+    newpid = _spawn_relay_verified(argv)
+    if newpid is None:
+        return None                   # honest failure already reported — never claim success
     print(f"relay started (pid {newpid}). Watch it: racecast relay logs -f")
     _append_tailscale_snapshot()
-    _refresh_obs_pages(wait=10)   # waits for the control port, then refreshes OBS pages
+    _refresh_obs_pages(wait=0)    # relay already confirmed up -> refresh OBS pages now
     # Post-start verification: exactly one process should now hold 8088. More than
     # one means a residual dual-bind split-brain survived -> surface it, don't hide it.
     holders = sorted({p for p in pt.pids_on_port(RELAY_PORT)})

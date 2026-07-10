@@ -134,6 +134,31 @@ def t_control_port_available_true_when_free_false_when_taken():
     assert m.control_port_available("127.0.0.1", port) is True
 
 
+def t_control_port_probe_sets_reuseaddr_on_posix():
+    # POSIX: the probe MUST set SO_REUSEADDR so it agrees with the authoritative
+    # HTTPServer bind (which sets allow_reuse_address). Without it, a port merely in
+    # TIME_WAIT after a prior relay's control-port connections is falsely reported
+    # "in use", so the relay aborts a startup bind that would actually succeed — the
+    # event-start-after-heal race. Windows deliberately OMITS it (there SO_REUSEADDR
+    # would let a bind succeed against a LIVE listener and miss a running relay).
+    import socket, sys
+    if sys.platform.startswith("win"):
+        return
+    seen = []
+    real = socket.socket
+    class _Rec:
+        def __init__(self, *a, **k): self._s = real(*a, **k)
+        def setsockopt(self, *a): seen.append(a); return self._s.setsockopt(*a)
+        def bind(self, *a): return self._s.bind(*a)
+        def close(self): return self._s.close()
+    socket.socket = _Rec
+    try:
+        m.control_port_available("127.0.0.1", 0)   # ephemeral free port -> True
+    finally:
+        socket.socket = real
+    assert (socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) in seen
+
+
 def t_main_probes_control_port_before_refresh_and_logs_league():
     import inspect
     src = inspect.getsource(m.main)

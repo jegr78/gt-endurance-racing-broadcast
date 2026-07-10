@@ -590,13 +590,21 @@ def loopback_bind_failed(requested, bound):
 
 def control_port_available(host, port):
     """True if the mandatory loopback control port can be bound right now (no other
-    relay holds it). A throwaway detection probe — deliberately WITHOUT SO_REUSEADDR:
-    on Windows SO_REUSEADDR lets a bind SUCCEED against a port another socket already
-    holds (unlike POSIX), so the probe would miss a running relay (and the held-port
-    unit test fails on the Windows CI runner). A plain bind fails with EADDRINUSE when
-    the port is taken on every platform — exactly the signal we want. Returns False
-    only on a bind error; the socket is always closed."""
+    relay holds it). A throwaway detection probe.
+
+    On POSIX it sets SO_REUSEADDR so it agrees with the authoritative HTTPServer bind
+    (which inherits allow_reuse_address=1). Without it, a port merely in TIME_WAIT after
+    a prior relay's control-port connections is falsely reported "in use", so a fresh
+    start — e.g. `event start` right after clearing a stale holder — aborts a bind that
+    would actually succeed (the 2026-07-10 event-start race). A LIVE listener still fails
+    the bind with EADDRINUSE even with SO_REUSEADDR on POSIX, so a genuinely running relay
+    is still detected. On Windows SO_REUSEADDR is deliberately OMITTED: there it lets a
+    bind SUCCEED against a port another socket already holds, so the probe would miss a
+    running relay (and the held-port unit test fails on the Windows CI runner). Returns
+    False only on a bind error; the socket is always closed."""
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if not sys.platform.startswith("win"):
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         s.bind((host, port))
         return True
