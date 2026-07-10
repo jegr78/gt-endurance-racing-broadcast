@@ -73,10 +73,22 @@ def t_schedule_and_qualifying_data_are_director_reads():
 
 
 def t_producer_stepup_irreversible_ops():
-    for segs in (["set", "stint", "4"], ["mode", "race"], ["mode", "qualifying"],
+    for segs in (["set", "stint", "4"],
                  ["takeover", "status"], ["takeover", "chat"], ["takeover", "versions"],
                  ["cockpit", "versions"]):
         assert _cap(segs) == ("producer", True), segs
+
+
+def t_mode_switch_is_director_no_stepup():
+    # Switching race<->qualifying is a Director-Panel control (it runs auth-free on the
+    # tailnet), so over the Funnel it must be director-tier — NOT producer+step-up. As
+    # producer+step-up the panel's plain relayCall got "step-up required" 403 during the
+    # 2026-07-10 qualifying (it carries no X-Console-Secret). Decision: director tier.
+    assert _cap(["mode", "race"]) == ("director", False)
+    assert _cap(["mode", "qualifying"]) == ("director", False)
+    assert cp.decide({"director"}, ["mode", "qualifying"]) == cp.ALLOW
+    assert cp.decide({"director"}, ["mode", "race"], has_step_up=False) == cp.ALLOW
+    assert cp.decide({"commentator"}, ["mode", "race"]) == cp.FORBIDDEN
 
 
 def t_prod_page_is_producer_view_no_stepup():
@@ -131,8 +143,8 @@ def t_decide_producer_stepup_enforced():
 
 def t_decide_stepup_route_still_requires_the_role_first():
     # A director (not producer) hitting a producer op is FORBIDDEN regardless of step-up.
-    assert cp.decide({"director"}, ["mode", "race"]) == cp.FORBIDDEN
-    assert cp.decide({"director"}, ["mode", "race"], has_step_up=True) == cp.FORBIDDEN
+    assert cp.decide({"director"}, ["set", "stint", "4"]) == cp.FORBIDDEN
+    assert cp.decide({"director"}, ["set", "stint", "4"], has_step_up=True) == cp.FORBIDDEN
 
 
 def t_decide_prod_page_needs_producer_no_stepup():

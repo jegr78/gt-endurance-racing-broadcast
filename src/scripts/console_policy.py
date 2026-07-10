@@ -45,8 +45,6 @@ def min_capability(segments, method="GET"):
     # --- producer + step-up: irreversible broadcast-control ops (spec D) ---
     if len(p) == 3 and p[:2] == ["set", "stint"]:
         return Requirement(PRODUCER, True)
-    if len(p) == 2 and p[0] == "mode":
-        return Requirement(PRODUCER, True)
     # NOTE: takeover/* are the Phase 7 producer-takeover PULL endpoints
     # (/console/takeover/*, spec section H) -- console-only, not current relay
     # routes (the live takeover today is /set/stint/<n>, mapped below).
@@ -60,6 +58,12 @@ def min_capability(segments, method="GET"):
         return Requirement(PRODUCER, False)
 
     # --- director: feed / schedule / timer / setup / pov control ---
+    # Switching race<->qualifying is a Director-Panel control (auth-free on the tailnet),
+    # so over the Funnel it is director-tier, no step-up — as producer+step-up the panel's
+    # plain relayCall got a "step-up required" 403 (2026-07-10 qualifying). `["mode"]`
+    # alone (len 1) is not a route -> falls through to NOT_FOUND.
+    if len(p) == 2 and p[0] == "mode":
+        return Requirement(DIRECTOR, False)
     if p == ["next"]:
         return Requirement(DIRECTOR, False)
     if len(p) == 2 and p[0] == "next":
