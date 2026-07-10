@@ -123,6 +123,48 @@ def t_engine_delta_negative_when_faster():
     assert s["predicted_s"] is not None
 
 
+def _ref_then_partial(speed2, secs=3.0):
+    """Set a 50 m/s reference lap, then drive `secs` of lap 2 at speed2 m/s.
+    Returns (engine, next_free_timestamp)."""
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)          # mid-connect partial (discarded)
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)         # reference ~10 s / 500 m
+    t = 120.0
+    for _ in range(int(secs / 0.1)):
+        eng.update(tm.parse_packet(_packet(speed_mps=speed2, lap=2)), t); t += 0.1
+    return eng, t
+
+
+def t_engine_delta_dir_down_when_gaining():
+    eng, _ = _ref_then_partial(100.0)      # faster than the 50 m/s reference -> gap shrinking
+    assert eng.snapshot()["delta_dir"] == "down"
+
+
+def t_engine_delta_dir_up_when_losing():
+    eng, _ = _ref_then_partial(40.0)       # slower than reference -> gap growing
+    assert eng.snapshot()["delta_dir"] == "up"
+
+
+def t_engine_delta_dir_flat_when_matching():
+    eng, _ = _ref_then_partial(50.0)       # matching reference pace -> within deadband
+    assert eng.snapshot()["delta_dir"] == "flat"
+
+
+def t_engine_delta_dir_none_without_reference():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), 100.0)
+    assert eng.snapshot()["delta_dir"] is None
+
+
+def t_engine_delta_dir_cleared_on_lap_edge():
+    """The trend history must not carry across the start/finish line: right after a
+    lap-change edge there are <2 samples, so delta_dir is None (no phantom trend)."""
+    eng, t = _ref_then_partial(40.0)       # building an "up" trend on lap 2
+    assert eng.snapshot()["delta_dir"] == "up"
+    eng.update(tm.parse_packet(_packet(speed_mps=40.0, lap=3)), t)   # lap edge -> history cleared
+    assert eng.snapshot()["delta_dir"] is None
+
+
 def t_engine_replay_makes_no_phantom_lap():
     eng = tm.TelemetryEngine()
     # A "lap change" while paused/loading (menu/replay) must NOT set a reference.

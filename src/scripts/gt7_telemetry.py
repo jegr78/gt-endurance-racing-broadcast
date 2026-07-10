@@ -41,6 +41,10 @@ TRACE_MIN_DT = 1.0 / 30      # decimate 60 Hz -> ~30 Hz
 # --- Tyre rolling-average window ---
 TYRE_AVG_WINDOW_S = 30.0
 
+# --- Delta trend (which way the gap to best is moving) ---
+DELTA_TREND_WINDOW_S = 1.5    # compare current delta vs this-many-seconds-ago
+DELTA_TREND_DEADBAND = 0.02   # s; |change| below this reads as "flat" (anti-jitter)
+
 # --- Lap validity guards ---
 # A lap only becomes a completed/reference lap if it was opened AT a lap-change
 # edge (not the first accumulator, which starts mid-lap when the relay connects
@@ -169,6 +173,7 @@ class TelemetryEngine:
         self._trace_last_t = None
         self._tyre_hist = deque()     # (t, (fl,fr,rl,rr)) over TYRE_AVG_WINDOW_S
         self._top_speed = 0.0
+        self._delta_hist = deque()    # (t, delta) over DELTA_TREND_WINDOW_S; cleared per lap
 
     def _is_session_boundary(self, pkt):
         """A new session (practice->quali->race, or a restart) is signalled by the
@@ -189,6 +194,7 @@ class TelemetryEngine:
         self._lap_times = []
         self._lap_fuel = []
         self._top_speed = 0.0
+        self._delta_hist.clear()
         self._lap_num = pkt.lap
         self._acc = _LapAccumulator(now, started_at_boundary=True)
 
@@ -202,6 +208,7 @@ class TelemetryEngine:
             self._finalise_lap()
             self._lap_num = pkt.lap
             self._acc = _LapAccumulator(now, started_at_boundary=True)
+            self._delta_hist.clear()
             if self._last is not None:    # seed the new lap's start-of-lap fuel reading
                 self._acc.fuel_start = self._last.fuel_level
         if self._acc is not None:
@@ -219,6 +226,12 @@ class TelemetryEngine:
         tcut = now - TYRE_AVG_WINDOW_S
         while self._tyre_hist and self._tyre_hist[0][0] < tcut:
             self._tyre_hist.popleft()
+        if self._ref is not None and self._acc is not None and self._acc.elapsed > 0:
+            d = self._acc.elapsed - self._ref_time_at(self._acc.distance)
+            self._delta_hist.append((now, d))
+            dcut = now - DELTA_TREND_WINDOW_S
+            while self._delta_hist and self._delta_hist[0][0] < dcut:
+                self._delta_hist.popleft()
 
     def _finalise_lap(self):
         acc = self._acc
@@ -294,6 +307,15 @@ class TelemetryEngine:
             if acc is not None and acc.elapsed > 0:
                 delta = acc.elapsed - self._ref_time_at(acc.distance)
                 predicted = best + delta
+        delta_dir = None
+        if has_ref and len(self._delta_hist) >= 2:
+            diff = self._delta_hist[-1][1] - self._delta_hist[0][1]
+            if diff > DELTA_TREND_DEADBAND:
+                delta_dir = "up"        # gap growing -> losing time now
+            elif diff < -DELTA_TREND_DEADBAND:
+                delta_dir = "down"      # gap shrinking -> gaining now
+            else:
+                delta_dir = "flat"
         return {
             "speed_mps": pkt.speed_mps if pkt else 0.0,
             "tyre_temp": pkt.tyre_temp if pkt else (0.0, 0.0, 0.0, 0.0),
@@ -301,6 +323,7 @@ class TelemetryEngine:
             "current_lap_s": acc.elapsed if acc else 0.0,
             "best_s": best,
             "delta_s": delta,
+            "delta_dir": delta_dir,
             "predicted_s": predicted,
             "has_reference": has_ref,
             "fuel": self._fuel(),
