@@ -535,6 +535,36 @@ def t_format_snapshot_time_of_day_none_before_packet():
     assert out["time_of_day"] is None
 
 
+def t_format_surfaces_fuel_per_lap_and_delta_dir():
+    snap = {"speed_mps": 0.0, "tyre_temp": (70.0, 70.0, 70.0, 70.0),
+            "tyre_temp_avg": (70.0, 70.0, 70.0, 70.0), "top_speed_mps": 0.0,
+            "lap": 1, "current_lap_s": 0.0, "best_s": 90.0,
+            "delta_s": 0.5, "predicted_s": 90.5, "has_reference": True,
+            "time_of_day_ms": None, "delta_dir": "up",
+            "fuel": {"level": 40.0, "per_lap": 2.5, "laps_remaining": 16.0,
+                     "time_remaining_s": 1600.0}}
+    out = tm.format_snapshot(snap, "metric", (70, 85, 95))
+    assert out["fuel"]["per_lap"] == 2.5
+    assert out["delta_dir"] == "up"
+    imp = tm.format_snapshot(snap, "imperial", (70, 85, 95))
+    assert imp["fuel"]["per_lap"] == 0.7        # 2.5 L -> 0.66 gal -> 0.7
+    assert imp["delta_dir"] == "up"
+
+
+def t_format_delta_dir_and_per_lap_default_none():
+    """format_snapshot tolerates a snapshot with no delta_dir and null per_lap."""
+    snap = {"speed_mps": 0.0, "tyre_temp": (70.0, 70.0, 70.0, 70.0),
+            "tyre_temp_avg": (70.0, 70.0, 70.0, 70.0), "top_speed_mps": 0.0,
+            "lap": 1, "current_lap_s": 0.0, "best_s": None,
+            "delta_s": None, "predicted_s": None, "has_reference": False,
+            "time_of_day_ms": None,
+            "fuel": {"level": 10.0, "per_lap": None, "laps_remaining": None,
+                     "time_remaining_s": None}}
+    out = tm.format_snapshot(snap, "metric", (70, 85, 95))
+    assert out["delta_dir"] is None
+    assert out["fuel"]["per_lap"] is None
+
+
 def t_store_source_roundtrip():
     store = tm.TelemetryStore()
     assert store.data()["source"] is None      # unset by default

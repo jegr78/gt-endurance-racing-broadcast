@@ -388,10 +388,13 @@ def format_snapshot(snap, units, thresholds):
         "time_of_day": _fmt_clock(snap["time_of_day_ms"]),
         "fuel": {
             "level": round(lvl, 1),
+            "per_lap": (None if fuel["per_lap"] is None
+                        else round(fuel["per_lap"] * (0.2641720 if imperial else 1.0), 1)),
             "laps_remaining": (None if fuel["laps_remaining"] is None
                                else round(fuel["laps_remaining"], 1)),
             "time_remaining": _fmt_time(fuel["time_remaining_s"]),
         },
+        "delta_dir": snap.get("delta_dir"),
         "units": {
             "speed": "mph" if imperial else "km/h",
             "temp": "°F" if imperial else "°C",
