@@ -1031,6 +1031,13 @@
               <option value="">—</option>
             </select></div>
           <p class="envhint" id="dev-hint">Loading devices…</p>
+          <div class="row" style="margin-top:12px"><span class="name">PlayStation IP (GT7)</span>
+            <input id="ps-ip" type="text" style="flex:1" placeholder="e.g. 192.168.1.42"
+                   aria-label="PlayStation IP">
+            <button id="ps-discover" onclick="discoverPs()">Discover PlayStation</button>
+            <button id="ps-save" onclick="savePsIp()">Save</button></div>
+          <select id="ps-list" style="width:100%;margin-top:6px" aria-label="Found consoles" hidden></select>
+          <p class="envhint" id="ps-hint">Set the console IP by hand, or click Discover (GT7 must be in an active session).</p>
         </section>
         <div class="enverr" id="env-err" hidden></div>
         <div class="envpath" id="env-path"></div>
@@ -2591,6 +2598,48 @@ async function saveDevices() {
   b.textContent = 'Saved ✓';
   setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
   // selection persisted; keep it shown (do not reload → would reset the dropdowns)
+}
+
+// ----- PlayStation (GT7 console) discovery -----
+async function discoverPs(){
+  const hint = document.getElementById('ps-hint');
+  const list = document.getElementById('ps-list');
+  const btn = document.getElementById('ps-discover');
+  btn.disabled = true; hint.textContent = 'Scanning the LAN for GT7…';
+  try{
+    const r = await fetch('/api/ps/discover', {method:'POST'});
+    const d = await r.json();
+    const consoles = d.consoles || [];
+    if(!consoles.length){ list.hidden = true; hint.textContent = d.note || 'No PlayStation found.'; return; }
+    if(consoles.length === 1){
+      list.hidden = true;
+      document.getElementById('ps-ip').value = consoles[0];
+      hint.textContent = d.from_relay
+        ? 'Using the console the running relay already latched. Click Save to pin it.'
+        : 'Found one console. Click Save to write it to .env.';
+    } else {
+      list.hidden = false;
+      list.innerHTML = consoles.map(ip => `<option value="${ip}">${ip}</option>`).join('');
+      document.getElementById('ps-ip').value = consoles[0];
+      list.onchange = () => { document.getElementById('ps-ip').value = list.value; };
+      hint.textContent = 'Multiple consoles found — pick one, then Save.';
+    }
+  }catch(e){ hint.textContent = 'Discovery failed: ' + e; }
+  finally{ btn.disabled = false; }
+}
+async function savePsIp(){
+  const hint = document.getElementById('ps-hint');
+  const ip = document.getElementById('ps-ip').value.trim();
+  if(!ip){ hint.textContent = 'Enter or discover a PlayStation IP first.'; return; }
+  try{
+    const r = await fetch('/api/ps/save', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ip})});
+    const d = await r.json();
+    hint.textContent = d.ok
+      ? 'Saved RACECAST_GT7_PS_IP — restart the relay to apply.'
+      : ('Could not save: ' + (d.error || 'unknown error'));
+    if(d.ok && typeof loadSettings === 'function'){ loadSettings(true); }  // refresh the .env editor
+  }catch(e){ hint.textContent = 'Save failed: ' + e; }
 }
 
 // ----- Machine-wide overlay font library (General Settings) -----
