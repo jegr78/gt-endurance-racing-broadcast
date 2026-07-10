@@ -82,6 +82,6 @@ def discover_consoles(timeout=4.0, *, sock_factory=None, decrypt=None, now=None,
         try:
             sock.close()
         except OSError:
-            pass
+            pass  # already closed / never opened — best-effort cleanup
     consoles = sorted(found)
     return {"consoles": consoles, "note": "" if consoles else NO_CONSOLE_NOTE}
