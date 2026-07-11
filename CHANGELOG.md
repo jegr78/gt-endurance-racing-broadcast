@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.5](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.5.4...v1.5.5) (2026-07-11)
+
+
+### Bug Fixes
+
+* **producer:** pin gviz headers=1 so the Producer tab parses (Home card + Parts stream keys) ([#486](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/486)) ([bc77c2d](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/bc77c2d838f3f0259a731646cb0a3dd19f05f0b1))
+
 ## [1.5.4](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.5.3...v1.5.4) (2026-07-11)
 
 
