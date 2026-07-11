@@ -79,10 +79,14 @@ def _uptime_pct(filled_bands, duration_s):
     return round(green / duration_s * 100, 1)
 
 
-def _feed_stats(samples, down_field):
-    bands = _fill_gaps(hs.collapse_bands(
-        [(s["ts"], 1 if s.get(down_field) else 0) for s in samples]))
-    down = [b for b in bands if b["state"] == 1]
+def _feed_stats(sample_groups, down_field):
+    # Bands are built per on-air window so a "down" band can never bridge the
+    # off-air gap between two windows (a stop/restart) and over-count downtime.
+    down = []
+    for samples in sample_groups:
+        bands = _fill_gaps(hs.collapse_bands(
+            [(s["ts"], 1 if s.get(down_field) else 0) for s in samples]))
+        down += [b for b in bands if b["state"] == 1]
     downtime = sum(b["to"] - b["from"] for b in down)
     longest = max((b["to"] - b["from"] for b in down), default=0.0)
     return {"drops": len(down), "downtime_s": round(downtime, 1),
@@ -117,20 +121,25 @@ def _quality(samples):
             "obs_fps_avg": _avg(fps), "render_skipped_pct_peak": _peak(rskip)}
 
 
-def _on_air(samples, name_for_stint):
-    bands = _fill_gaps(hs.collapse_bands([(s["ts"], s.get("live_stint")) for s in samples]))
+def _on_air(sample_groups, name_for_stint):
+    # Per-window bands (never bridged across an off-air stop/restart gap), so a
+    # commentator's on-air seconds can never exceed the on-air window total.
     agg = {}          # name -> [seconds, set(stints)]
     resolved = bool(name_for_stint)
-    for b in bands:
-        st = b["state"]
-        if st is None:
-            continue
-        st = int(st)
-        name = name_for_stint.get(st) or f"Stint {st}"
-        entry = agg.setdefault(name, [0.0, set()])
-        entry[0] += b["to"] - b["from"]
-        entry[1].add(st)
-    non_null = [int(b["state"]) for b in bands if b["state"] is not None]
+    non_null = []
+    for samples in sample_groups:
+        bands = _fill_gaps(hs.collapse_bands(
+            [(s["ts"], s.get("live_stint")) for s in samples]))
+        for b in bands:
+            st = b["state"]
+            if st is None:
+                continue
+            st = int(st)
+            name = name_for_stint.get(st) or f"Stint {st}"
+            entry = agg.setdefault(name, [0.0, set()])
+            entry[0] += b["to"] - b["from"]
+            entry[1].add(st)
+        non_null += [int(b["state"]) for b in bands if b["state"] is not None]
     handovers = sum(1 for i in range(1, len(non_null)) if non_null[i] != non_null[i - 1])
     commentators = sorted(
         ({"name": n, "seconds": round(v[0], 1), "stints": len(v[1])} for n, v in agg.items()),
@@ -179,6 +188,18 @@ def _clip_samples(samples, windows):
             if s.get("ts") is not None and _in_windows(s["ts"], windows)]
 
 
+def _sample_groups(samples, windows):
+    """Partition samples into one list PER on-air window (off-air excluded). Band
+    aggregations run per group so collapse_bands/_fill_gaps can never bridge the
+    off-air gap between two windows (a stop/restart) and over-count on-air time.
+    With no windows (legacy whole-session), one group holds every sample."""
+    if not windows:
+        return [list(samples)]
+    return [[s for s in samples
+             if s.get("ts") is not None and lo <= s["ts"] <= hi]
+            for (lo, hi) in windows]
+
+
 def broadcast_timeline(events):
     """Chronological part (preferred) or OBS-stream start/stop rows for the report's
     Broadcast-timeline section — the reference points for the OBS-downtime figures."""
@@ -207,18 +228,21 @@ def build_report(samples, events, name_for_stint, event_title, window, now,
     frm, to = window
     duration_s = max(0.0, (to or 0) - (frm or 0))
     windows = on_air_windows(events, to)
-    metric_samples = _clip_samples(samples, windows) if windows else samples
+    groups = _sample_groups(samples, windows)
+    metric_samples = [s for g in groups for s in g]
     on_air_s = windows_total_s(windows) if windows else duration_s
     # Full-session health bands drive the SVG strip (off-air visible as context);
-    # the metric bands (on-air only) drive Uptime.
+    # the metric bands (on-air only, built PER WINDOW) drive Uptime — a band that
+    # spanned the off-air gap between two windows used to push uptime over 100%.
     health_bands = _fill_gaps(hs.collapse_bands(
         [(s["ts"], s.get("health_level")) for s in samples]))
-    metric_bands = _fill_gaps(hs.collapse_bands(
-        [(s["ts"], s.get("health_level")) for s in metric_samples]))
-    on_air = _on_air(metric_samples, name_for_stint)
+    metric_bands = [b for g in groups
+                    for b in _fill_gaps(hs.collapse_bands(
+                        [(s["ts"], s.get("health_level")) for s in g]))]
+    on_air = _on_air(groups, name_for_stint)
     on_air["resolved_at"] = now
-    feeds = [{"feed": "A", **_feed_stats(metric_samples, "feed_a_down")},
-             {"feed": "B", **_feed_stats(metric_samples, "feed_b_down")}]
+    feeds = [{"feed": "A", **_feed_stats(groups, "feed_a_down")},
+             {"feed": "B", **_feed_stats(groups, "feed_b_down")}]
     handovers = []
     substitutions = []
     recoveries = []
@@ -247,7 +271,7 @@ def build_report(samples, events, name_for_stint, event_title, window, now,
                    "uptime_pct": _uptime_pct(metric_bands, on_air_s)},
         "on_air": on_air,
         "feeds": feeds,
-        "incidents": hs.derive_incidents(metric_samples),
+        "incidents": [inc for g in groups for inc in hs.derive_incidents(g)],
         "quality": _quality(metric_samples),
         "producer_handovers": handovers,
         "substitutions": substitutions,
