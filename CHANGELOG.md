@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.5.3](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.5.2...v1.5.3) (2026-07-11)
+
+
+### Bug Fixes
+
+* **console:** allow race/qualifying mode switch over the Funnel as a director op ([#470](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/470)) ([30ba47b](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/30ba47bb58f570de0f2966ede3a3e8511ce46877))
+* **relay:** make a qualifying-mode downgrade loud instead of silent ([#473](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/473)) ([5aa98f7](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/5aa98f7244e6b14a928c492bd27f3715c8b49c95))
+* **relay:** record + report feed drop-recoveries, and [@here](https://github.com/here) on churn ([c382e45](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c382e4536e5282a888f1328d074973cc97d50947))
+* **relay:** recover the on-air feed cleanly after a fan-out stream restart ([#475](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/475)) ([c9245e2](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c9245e2efac22b2eda294fc532110c75d8aa33e1))
+* **relay:** reliably bring up the relay after clearing a stale port holder ([#468](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/468)) ([f005321](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/f005321f978a8928ce6ef812e56cad8c3becc7ea))
+
 ## [1.5.2](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.5.1...v1.5.2) (2026-07-10)
 
 
