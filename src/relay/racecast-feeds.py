@@ -8099,8 +8099,11 @@ def main():
     # part_store is always present (a missing file -> {index:1, live:False}).
     producer_source = None
     if channel_csv_url and not args.no_parts:
+        # headers=1: pin sheet row 1 as the header so gviz never merges it into
+        # row 1 (which happens when the Part column mixes text + numbers), which
+        # would empty the parse and break the Parts control's stream-key lookup.
         producer_csv_url = (f"https://docs.google.com/spreadsheets/d/{args.sheet_id}"
-                            f"/gviz/tq?tqx=out:csv&sheet={quote(args.producer_tab)}")
+                            f"/gviz/tq?tqx=out:csv&headers=1&sheet={quote(args.producer_tab)}")
         producer_source = ProducerSource(producer_csv_url,
                                          os.path.join(runtime, "producer.cache.txt"))
         producer_source.refresh()   # non-fatal: prime the Part list on startup

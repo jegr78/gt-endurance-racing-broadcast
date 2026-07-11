@@ -3319,6 +3319,24 @@ def t_producer_schedule_fetch_failure_is_empty():
     assert data["rows"] == [] and data["self_known"] is True
 
 
+def t_producer_schedule_pins_gviz_header_row():
+    # gviz auto-detection merges the header into row 1 when the Part column mixes
+    # text + numbers (an empty/"Q" qualifying label alongside numbered parts), so
+    # parse_producer_rows finds no header and returns [] -> the Home "Producer
+    # schedule" card AND the relay Parts control silently come up empty (the
+    # stream keys never resolve). The fetch MUST pin headers=1 so gviz always
+    # treats sheet row 1 as the header. Regression for the erf-nls case where 4
+    # real producer rows were invisible.
+    os.environ["RACECAST_SHEET_ID"] = "SHEET123"
+    seen = {}
+    def capture(url):
+        seen["url"] = url
+        return _PRODUCER_CSV
+    m.producer_schedule_data(
+        fetch=capture, self_name="x.ts.net", refresh_env=lambda: None)
+    assert "headers=1" in seen["url"], seen["url"]
+
+
 # --- producer identity for events (#317) --------------------------------------
 def t_takeover_producer_extracts_name():
     assert m._takeover_producer({"producer": "Alice"}) == "Alice"

@@ -4248,7 +4248,11 @@ def producer_schedule_data(fetch=None, self_name=None, refresh_env=None):
     sheet_id = os.environ.get("RACECAST_SHEET_ID") or ""
     if not sheet_id:
         return base
-    url = ("https://docs.google.com/spreadsheets/d/%s/gviz/tq?tqx=out:csv&sheet=%s"
+    # headers=1 pins sheet row 1 as the header. Without it gviz auto-detects and,
+    # when the Part column mixes text + numbers (an empty/"Q" qualifying label
+    # beside numbered parts), merges the header into row 1 -> parse_producer_rows
+    # finds no header and returns [] -> this card silently hides. (erf-nls: 4 rows.)
+    url = ("https://docs.google.com/spreadsheets/d/%s/gviz/tq?tqx=out:csv&headers=1&sheet=%s"
            % (sheet_id, quote(PRODUCER_TAB)))
     try:
         text = (fetch or _producer_fetch)(url)
