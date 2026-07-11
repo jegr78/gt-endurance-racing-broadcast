@@ -963,6 +963,40 @@ def t_oneshot_extra_paths():
     assert m._oneshot_extra("graphics", ["--out", "X"], rd, base) == []  # user override respected
 
 
+def t_oneshot_extra_media_injects_cookies_when_present():
+    # `racecast media` must hand get-media the REAL top-level cookie jar so the
+    # frozen binary stops 403-ing Intro/Outro (get-media's here-relative fallback
+    # resolves into the PyInstaller bundle). Injected only when the jar exists and
+    # the user didn't pass their own --cookies.
+    import tempfile
+    with tempfile.TemporaryDirectory() as base:
+        rd = os.path.join(base, "demo")
+        open(os.path.join(base, "yt-cookies.txt"), "w").close()
+        assert m._oneshot_extra("media", [], rd, base) == [
+            "--out", os.path.join(rd, "media"),
+            "--cookies", os.path.join(base, "yt-cookies.txt")]
+        # legacy jar name is honored too
+    with tempfile.TemporaryDirectory() as base:
+        rd = os.path.join(base, "demo")
+        open(os.path.join(base, "cookies.txt"), "w").close()
+        assert m._oneshot_extra("media", [], rd, base) == [
+            "--out", os.path.join(rd, "media"),
+            "--cookies", os.path.join(base, "cookies.txt")]
+
+
+def t_oneshot_extra_media_no_cookies_when_absent_or_user_supplied():
+    # No jar on disk -> no injection (existing behavior preserved).
+    assert m._oneshot_extra("media", [], os.path.join("/rt", "demo"), "/rt") == [
+        "--out", os.path.join("/rt", "demo", "media")]
+    # A user-supplied --cookies wins: nothing auto-injected.
+    import tempfile
+    with tempfile.TemporaryDirectory() as base:
+        rd = os.path.join(base, "demo")
+        open(os.path.join(base, "yt-cookies.txt"), "w").close()
+        assert m._oneshot_extra("media", ["--cookies", "/my/jar"], rd, base) == [
+            "--out", os.path.join(rd, "media")]
+
+
 def t_brands_oneshot_mapping_and_out():
     assert m.ONESHOT_MAP["brands"] == "relay/get-brands.py"
     assert "brands" in m.ONESHOTS

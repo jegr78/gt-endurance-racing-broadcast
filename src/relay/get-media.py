@@ -191,6 +191,24 @@ def build_music_cmd(url, out_path, cookies=None):
     return cmd
 
 
+def cookies_path(cli, here):
+    """Resolve the YouTube cookie jar for the yt-dlp download.
+
+    An explicit `cli` path (passed by the racecast CLI, which knows the real
+    runtime dir even inside a frozen PyInstaller binary) always wins. Otherwise
+    fall back to the jar next to the DEFAULT runtime media dir — correct for a
+    source run, but WRONG under PyInstaller where `here` is the ephemeral bundle
+    (`<_MEIPASS>/src/relay`), so the fallback would point at a cookies file that
+    never exists and Intro/Outro 403 on YouTube. That is exactly why the CLI now
+    passes `--cookies`. Legacy `cookies.txt` is the last resort on not-yet-migrated
+    installs."""
+    if cli:
+        return cli
+    rt = os.path.dirname(media_dir(here))
+    new = os.path.join(rt, "yt-cookies.txt")
+    return new if os.path.exists(new) else os.path.join(rt, "cookies.txt")
+
+
 def media_dir(here):
     """Where clips live when --out is not given. Mirrors default_runtime_dir():
     repo layout (src/relay/) -> <repo>/runtime/media ; package (relay/) -> <pkg>/media."""
@@ -349,6 +367,10 @@ def main():
     ap.add_argument("--music-url", default=None,
                     help="Intermission Music URL (Drive link or yt-dlp-compatible). "
                          "Default: env RACECAST_INTERMISSION_MUSIC_URL or Assets tab.")
+    ap.add_argument("--cookies", default=None,
+                    help="Path to the YouTube cookie jar (yt-cookies.txt). Default: "
+                         "resolved next to the runtime dir. The racecast CLI passes the "
+                         "real path so a frozen binary does not 403 on Intro/Outro.")
     a = ap.parse_args()
 
     # Determine video clip set and music flag.
@@ -383,11 +405,11 @@ def main():
 
     urls = resolve_urls(which, cli, os.environ, csv_text)
     os.makedirs(a.out, exist_ok=True)
-    # yt-cookies.txt lives in the runtime dir (next to the default media dir),
-    # independent of --out, matching get-cookies.py / racecast-feeds.py.
-    # Fall back to legacy cookies.txt on not-yet-migrated installs (read-only).
-    _ck = os.path.join(os.path.dirname(media_dir(here)), "yt-cookies.txt")
-    cookies = _ck if os.path.exists(_ck) else os.path.join(os.path.dirname(media_dir(here)), "cookies.txt")
+    # yt-cookies.txt lives in the runtime dir, independent of --out. An explicit
+    # --cookies (passed by the racecast CLI with the REAL runtime path) wins — a
+    # frozen binary's here-relative fallback points into the PyInstaller bundle
+    # and would 403 Intro/Outro. Legacy cookies.txt is the last resort.
+    cookies = cookies_path(a.cookies, here)
 
     failed = []
     unlinked = set()   # clips the Sheet has no link for -> reset to placeholder (#387)

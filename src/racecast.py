@@ -560,6 +560,17 @@ def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None):
                "setup": os.path.join(runtime_dir, "GT_Endurance.import.json")}.get(command)
         if out:
             extra += ["--out", out]
+    # `racecast media` downloads Intro/Outro from YouTube -> it needs the shared
+    # cookie jar (bot-check parity with the relay). get-media's own here-relative
+    # fallback points into the PyInstaller bundle on a frozen binary and 403s, so
+    # hand it the REAL top-level jar (same one the relay gets via _cookies_path).
+    # Injected only when a jar exists and the user didn't pass their own.
+    if command == "media" and "--cookies" not in rest:
+        for name in ("yt-cookies.txt", "cookies.txt"):
+            ck = os.path.join(base_dir, name)
+            if os.path.isfile(ck):
+                extra += ["--cookies", ck]
+                break
     if command == "setup":
         for flag, sub in (("--media", "media"), ("--graphics", "graphics")):
             if flag not in rest:
