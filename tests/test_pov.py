@@ -1016,6 +1016,80 @@ def t_latest_and_annotate_substitution():
         r.health_store.close()
 
 
+def t_should_obs_reconnect_only_on_fanout_drop():
+    # OBS reconnect fires ONLY in fan-out mode AND after a real drop — never on the
+    # first serve or a seamless handover (both have dropped=False).
+    assert m.should_obs_reconnect(True, True) is True       # fan-out + drop-recovery
+    assert m.should_obs_reconnect(True, False) is False     # fan-out, first serve / handover
+    assert m.should_obs_reconnect(False, True) is False     # direct-serve: OBS reconnects itself
+    assert m.should_obs_reconnect(False, False) is False
+
+
+def t_obs_reconnect_rebuilds_only_this_feeds_port():
+    # The recovery rebuild must be SCOPED to this feed's port (not all feeds), so a
+    # drop on Feed B never flickers the on-air Feed A.
+    f = m.Feed("A", 53001, 0, lambda: [], LOGDIR)
+    calls = []
+    class _FakeObs:
+        def release_feed_inputs(self, ports=None, **k):
+            calls.append(ports); return (["Feed A"], "")
+    old = m._obs_ws
+    m._obs_ws = _FakeObs()
+    try:
+        names = f._obs_reconnect_now()
+    finally:
+        m._obs_ws = old
+    assert calls == [[53001]], calls
+    assert names == ["Feed A"]
+
+
+def t_obs_reconnect_is_noop_without_obs():
+    f = m.Feed("A", 53001, 0, lambda: [], LOGDIR)
+    old = m._obs_ws
+    m._obs_ws = None
+    try:
+        assert f._obs_reconnect_now() == []      # no OBS -> silent no-op, never raises
+    finally:
+        m._obs_ws = old
+
+
+def t_queue_deadline_args_picks_flag_by_capability():
+    # C, version-safe: prefer the modern flag (streamlink 8.1.0+), fall back to the old
+    # one, and OMIT when neither exists — an unknown flag would abort streamlink and the
+    # feed would never serve (the concern that motivated this).
+    new_help = "  --stream-segmented-queue-deadline FACTOR\n  --hls-live-edge NUM\n"
+    old_help = "  --hls-segment-queue-threshold FACTOR\n  --hls-live-edge NUM\n"
+    assert m.queue_deadline_args(new_help) == ["--stream-segmented-queue-deadline", "5"]
+    assert m.queue_deadline_args(old_help) == ["--hls-segment-queue-threshold", "5"]
+    assert m.queue_deadline_args("  --hls-live-edge NUM\n") == []   # neither -> omit
+    assert m.queue_deadline_args("") == []                          # help probe failed -> omit
+    assert m.queue_deadline_args(new_help, factor="7") == ["--stream-segmented-queue-deadline", "7"]
+
+
+def t_feed_reset_target_validates_feed_key():
+    # D: /obs/feed-reset accepts only a real feed key (case/space-insensitive), else None
+    # -> 400. Never lets an arbitrary string through to release_feed_inputs.
+    feeds = {"A": object(), "B": object()}
+    assert m.feed_reset_target("A", feeds) == "A"
+    assert m.feed_reset_target(" b ", feeds) == "B"
+    assert m.feed_reset_target("POV", feeds) is None
+    assert m.feed_reset_target("", feeds) is None
+    assert m.feed_reset_target(None, feeds) is None
+
+
+def t_streamlink_serve_tolerates_brief_gaps():
+    # The give-up flag pushes streamlink's stop past the relay's 8 s watchdog. Hermetic:
+    # drive the capability probe with a fixed modern help text.
+    old = m._streamlink_help
+    m._streamlink_help = lambda: "  --stream-segmented-queue-deadline FACTOR\n"
+    try:
+        cmd = m.streamlink_fanout_cmd("https://youtu.be/x", "youtube")
+    finally:
+        m._streamlink_help = old
+    assert "--stream-segmented-queue-deadline" in cmd
+    assert int(cmd[cmd.index("--stream-segmented-queue-deadline") + 1]) >= 5
+
+
 def t_qualifying_downgrade_note_warns_only_on_silent_downgrade():
     # --qualifying requested but no qualifying source -> LOUD warning (the relay would
     # otherwise silently run race mode and push the wrong Producer stream key).

@@ -946,6 +946,16 @@ $("#feedsBus").appendChild(mkKey("FEEDS → STINT…", "correction", ()=>{
   if (!confirm(`Re-target BOTH feeds to stint ${v.trim()}? This interrupts a running pull — not for mid-program use.`)) return;
   relayCall("set/stint/" + v.trim());
 }, false));
+// Force OBS to reconnect ONE feed's source at a clean stream boundary — the targeted
+// fix if a feed freezes/stutters (a fan-out restart spliced onto OBS's open socket).
+// Non-destructive (re-applies the input's own settings); brief reconnect if on air.
+["A","B"].forEach(f=>{
+  $("#feedsBus").appendChild(mkKey("RESET "+f+"→OBS", "obs", async ()=>{
+    const d = await obsPost("feed-reset", {feed:f});
+    if (d && d.ok) log("OBS reconnected Feed "+f+" ("+(d.count||0)+" source)");
+    else toast("Feed "+f+" reset failed: "+((d&&d.error)||"OBS unreachable"));
+  }, false));
+});
 
 CONFIG.scenes.forEach(name=>{
   const b = mkKey(name.toUpperCase(), "scene",
