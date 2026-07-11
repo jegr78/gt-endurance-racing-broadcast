@@ -291,6 +291,51 @@ def should_failover(enabled, on_air_down, program_scene,
     return program_scene == on_air_scene
 
 
+# The program monitor is the SAME image for every viewer, yet each open console
+# view (Director Panel /preview/program, Cockpit + Race-Control /cockpit/program)
+# polls it every ~1.5s and each poll previously opened its own obs-websocket
+# connection to screenshot OBS. With several views open that churned OBS at several
+# connect/close cycles per second (23k+ in one N24 session, bloating the OBS log).
+# A short server-side TTL cache coalesces those polls: OBS is screenshotted at most
+# once per TTL regardless of how many views are watching.
+PROGRAM_SHOT_TTL_S = 1.0
+
+
+class ProgramShotCache:
+    """Thread-safe TTL cache for the program-monitor screenshot. `fetch(fetcher)`
+    returns a recent successful `(data, "")` without calling `fetcher` while the last
+    frame is younger than `ttl_s`; otherwise it calls `fetcher()` (an obs-websocket
+    screenshot), caches a successful frame, and returns it. A failed fetch is never
+    cached (the next caller retries) — same best-effort contract as the raw call.
+    The network fetch runs OUTSIDE the lock so pollers never serialize behind a slow
+    screenshot; a rare concurrent miss just does one extra fetch (harmless)."""
+
+    def __init__(self, ttl_s=PROGRAM_SHOT_TTL_S):
+        self.ttl_s = ttl_s
+        self._lock = threading.Lock()
+        self._at = None
+        self._data = None
+
+    def fetch(self, fetcher, now=None):
+        now = time.time() if now is None else now
+        with self._lock:
+            if self._data is not None and self._at is not None \
+                    and (now - self._at) < self.ttl_s:
+                return self._data, ""
+        data, note = fetcher()
+        if data is not None:
+            with self._lock:
+                # Keep the freshest of concurrent fetches.
+                if self._at is None or now >= self._at:
+                    self._at, self._data = now, data
+        return data, note
+
+
+# One shared cache instance — the program image is identical for every console view,
+# so the Director Panel and the Cockpit/Race-Control monitors all read through it.
+_program_shot_cache = ProgramShotCache()
+
+
 def feed_stalled(last_byte_ts, now, stall_s=FANOUT_STALL_S):
     """True iff a fan-out live reader has produced bytes before but none for
     `stall_s`. A None timestamp (never produced) is NOT a stall — that startup
@@ -6976,7 +7021,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["preview", "program"]:
                     if _obs_ws is None:
                         return self._send({"error": "obs unavailable"}, 503)
-                    data, note = _obs_ws.get_program_screenshot(width=640)
+                    data, note = _program_shot_cache.fetch(
+                        lambda: _obs_ws.get_program_screenshot(width=640))
                     if data is None:
                         return self._send({"error": "preview unavailable",
                                            "note": note}, 503)
@@ -7180,7 +7226,8 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             return None
                         if _obs_ws is None:
                             return self._send({"error": "obs unavailable"}, 503)
-                        data, note = _obs_ws.get_program_screenshot(width=640)
+                        data, note = _program_shot_cache.fetch(
+                            lambda: _obs_ws.get_program_screenshot(width=640))
                         if data is None:
                             return self._send({"error": "preview unavailable",
                                                "note": note}, 503)
