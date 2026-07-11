@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.4](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.5.3...v1.5.4) (2026-07-11)
+
+
+### Bug Fixes
+
+* **media:** pass the real cookie jar to get-media so frozen Intro/Outro stop 403ing ([#482](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/482)) ([7444e60](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/7444e606af2280e979a421a8ce02911f6f8336a4)), closes [#481](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/481)
+* **obs:** dedupe Stint scene-item ids so HUD and Race Weather 1 stop cross-firing ([#479](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/479)) ([7951047](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/7951047760af965e98ab28da8e7d114ffd07135a)), closes [#478](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/478)
+* **report:** compute health/on-air bands per on-air window so uptime can't exceed 100% ([#483](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/483)) ([c5fe0ef](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c5fe0ef486cb2f11105dad80aa97d42de49d0796))
+
+
+### Performance Improvements
+
+* **relay:** cache the program-monitor screenshot to stop the obs-websocket connection storm ([#484](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/484)) ([ba0310e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/ba0310e8508f262062c40773b175123b617c7a4d))
+
 ## [1.5.3](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.5.2...v1.5.3) (2026-07-11)
 
 
