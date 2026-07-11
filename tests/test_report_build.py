@@ -309,6 +309,32 @@ def t_build_report_excludes_off_air():
     assert ">On air<" in html
 
 
+def t_build_report_multi_window_uptime_not_over_100():
+    # A stop/restart splits the session into TWO on-air windows with an off-air gap
+    # (< GAP_S) between them (exactly the N24 false-start: OBS started, stopped 47s
+    # later, restarted). Health is green throughout on-air. The off-air gap must NOT
+    # be bridged/counted as green -> uptime stays <= 100% (regression for the 100.3%
+    # seen in the N24 report; the band that spanned the gap over-counted vs on_air_s).
+    def s(ts, **kw):
+        return {"ts": ts, "health_level": "green", "health_reasons": [],
+                "live_stint": 1, "feed_a_down": 0, "feed_b_down": 0, **kw}
+    samples = [s(100), s(130), s(160),               # window 1: 100..160 (on air)
+               s(180, health_level="red"),           # off-air gap (OBS stream stopped)
+               s(200), s(230), s(260)]               # window 2: 200..260 (on air)
+    events = [{"ts": 100, "type": "obs_stream_start"},
+              {"ts": 160, "type": "obs_stream_stop"},
+              {"ts": 200, "type": "obs_stream_start"},
+              {"ts": 260, "type": "obs_stream_stop"}]
+    rep = rb.build_report(samples, events, {1: "Alice"}, "N24", (100, 260), now=300.0)
+    assert rep["header"]["on_air_s"] == 120, rep["header"]
+    # the 40s off-air gap must not inflate green past the on-air total
+    assert rep["header"]["uptime_pct"] == 100.0, rep["header"]
+    assert rep["incidents"] == [], rep["incidents"]     # off-air red excluded
+    # commentator on-air likewise must not exceed the on-air total (was 160s > 120s)
+    alice = next(c for c in rep["on_air"]["commentators"] if c["name"] == "Alice")
+    assert alice["seconds"] <= 120, rep["on_air"]
+
+
 def t_build_report_legacy_no_windows():
     # no part/obs_stream events -> whole-session behaviour (off-air counts)
     def s(ts, lvl):
