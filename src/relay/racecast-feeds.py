@@ -133,6 +133,46 @@ LOG = logging.getLogger("racecast.relay")
 YTDLP_FORMAT = "b[height<=1080]/b"   # prefer <=1080p, auto-fall back to lower
 YTDLP_FORMAT_POV = "b[height<=720]/b"  # driver-POV is shown small (PiP) -> cap at 720p
 STREAMLINK_SERVE = ["--ringbuffer-size", "64M", "--hls-live-edge", "4"]
+# "Stop early on missing live segments" tolerance. Default 3 gave up at ~6 s
+# (targetduration ~2 s) — BELOW the relay's own 8 s byte-stall watchdog (FANOUT_STALL_S) —
+# so a brief upstream hiccup made streamlink quit prematurely and forced a full re-serve
+# (the 2026-07-10 cascade). QUEUE_DEADLINE_FACTOR=5 pushes streamlink's give-up past the
+# watchdog: a sub-8 s gap self-heals with NO restart, a genuine stall is still caught by
+# the watchdog. The CLI flag was RENAMED in streamlink 8.1.0
+# (--hls-segment-queue-threshold -> --stream-segmented-queue-deadline), so the exact flag
+# is chosen per installed streamlink at serve time (queue_deadline_args) — an unknown flag
+# would make streamlink exit and the feed never serve.
+QUEUE_DEADLINE_FACTOR = "5"
+
+
+def queue_deadline_args(help_text, factor=QUEUE_DEADLINE_FACTOR):
+    """Pick streamlink's 'stop early on missing live segments' flag by CAPABILITY, from
+    `streamlink --help` text — never by hardcoded version. Prefer the modern
+    --stream-segmented-queue-deadline (streamlink 8.1.0+), fall back to the older
+    --hls-segment-queue-threshold, and OMIT entirely when neither exists (an unknown flag
+    would abort streamlink → the feed never serves). Pure → unit-tested."""
+    if "--stream-segmented-queue-deadline" in help_text:
+        return ["--stream-segmented-queue-deadline", factor]
+    if "--hls-segment-queue-threshold" in help_text:
+        return ["--hls-segment-queue-threshold", factor]
+    return []
+
+
+_STREAMLINK_HELP = None
+
+
+def _streamlink_help():
+    """`streamlink --help` text, run once and cached. Best-effort: any failure yields ""
+    so queue_deadline_args degrades to omitting the flag (never a hard feed failure)."""
+    global _STREAMLINK_HELP
+    if _STREAMLINK_HELP is None:
+        try:
+            _STREAMLINK_HELP = subprocess.run(
+                ["streamlink", "--help"], capture_output=True, text=True,
+                timeout=10, env=external_tool_env()).stdout or ""
+        except Exception:                     # noqa: BLE001 — best-effort probe
+            _STREAMLINK_HELP = ""
+    return _STREAMLINK_HELP
 # yt-dlp resolves the YouTube manifest with a browser UA; streamlink then re-fetches
 # that URL in a SEPARATE process. YouTube 403s the bare re-fetch of a protected live
 # manifest unless it carries the same browser UA (and, for unlisted/members streams,
@@ -256,6 +296,22 @@ def feed_stalled(last_byte_ts, now, stall_s=FANOUT_STALL_S):
     `stall_s`. A None timestamp (never produced) is NOT a stall — that startup
     case is handled by the existing dead_serves path, not the watchdog."""
     return last_byte_ts is not None and (now - last_byte_ts) > stall_s
+
+
+def should_obs_reconnect(fanout, dropped):
+    """Whether a re-serve should force OBS to reconnect its feed input. Only in fan-out
+    mode (the relay is the persistent server, so OBS's socket survives a streamlink
+    restart) AND only after a real DROP (streamlink died unexpectedly). A normal handover
+    (advance) is seamless by design and must NOT trigger a reconnect flicker; the first
+    serve is already a fresh OBS connection. Pure → unit-tested."""
+    return bool(fanout and dropped)
+
+
+def feed_reset_target(feed_key, valid_keys):
+    """Normalize + validate a /obs/feed-reset feed key against the live feed set. Returns
+    the upper-cased key when it names a real feed, else None (a 400). Pure → unit-tested."""
+    key = str(feed_key or "").strip().upper()
+    return key if key in valid_keys else None
 
 
 def feed_health_state(dropped, dropped_since, served_ok, now,
@@ -2652,6 +2708,7 @@ def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None,
             base += ["--twitch-api-header", f"Authorization=OAuth {twitch_token}"]
     else:
         base += STREAMLINK_SERVE
+        base += queue_deadline_args(_streamlink_help())   # version-safe: renamed in streamlink 8.1.0
         if user_agent:
             base += ["--http-header", f"User-Agent={user_agent}"]
         if cookies:
@@ -2672,6 +2729,7 @@ def streamlink_fanout_cmd(target, platform="youtube", twitch_token=None,
             base += ["--twitch-api-header", f"Authorization=OAuth {twitch_token}"]
     else:
         base += STREAMLINK_SERVE
+        base += queue_deadline_args(_streamlink_help())   # version-safe: renamed in streamlink 8.1.0
         if user_agent:
             base += ["--http-header", f"User-Agent={user_agent}"]
         if cookies:
@@ -4850,13 +4908,44 @@ class Feed:
         self.advance.set(); self._kill_proc()
         return True
 
-    def _serve_fanout(self, target, serve_platform, token):
+    def _obs_reconnect_now(self):
+        """Force OBS to reconnect its media source for THIS feed's port (fan-out only).
+        In fan-out the RELAY is the persistent HTTP server, so a streamlink restart is
+        invisible to OBS: its socket stays open and the fresh stream is spliced into a
+        stale demuxer → the ~1 Hz freeze-frame stutter (2026-07-10). Rebuilding just this
+        feed's OBS input (SetInputSettings, the proven relay-stop primitive, scoped by
+        port) drops OBS's socket so it re-joins at the fresh stream with a clean demuxer —
+        exactly what a direct-serve streamlink restart does for free. Best-effort +
+        synchronous; returns the rebuilt input names (for the log + tests)."""
+        if _obs_ws is None:
+            return []
+        try:
+            names, note = _obs_ws.release_feed_inputs(ports=[self.port])
+            if names:
+                self.log.info("fan-out recovery on %s — rebuilt OBS input(s) %s so OBS "
+                              "reconnects cleanly", self.name, ", ".join(names))
+            elif note:
+                self.log.debug("fan-out recovery on %s — OBS reconnect skipped (%s)",
+                               self.name, note)
+            return names
+        except Exception as exc:              # noqa: BLE001 — best-effort, never crash the serve
+            self.log.debug("fan-out recovery on %s — OBS reconnect error (%s)", self.name, exc)
+            return []
+
+    def _obs_reconnect(self):
+        """Threaded wrapper so the reconnect (an obs-websocket round-trip) never blocks
+        the ring reader."""
+        threading.Thread(target=self._obs_reconnect_now, daemon=True).start()
+
+    def _serve_fanout(self, target, serve_platform, token, on_first_byte=None):
         """Fan-out serve: stream `streamlink --stdout` into self.ring, tracking
         last_byte_ts so the stall watchdog and EOF both surface. Returns
         (serve_elapsed, serve_rc) like the direct-serve proc.wait() so Feed.run's
         classification tail is shared. A separate watchdog kills streamlink on a
         byte-stall (the reader is parked in read1() and can't self-check); stop /
-        advance / EOF end the loop directly."""
+        advance / EOF end the loop directly. `on_first_byte` (if given) is called
+        once, right after the first byte reaches the ring — used to force OBS to
+        reconnect on a drop-recovery (see _obs_reconnect)."""
         cmd = streamlink_fanout_cmd(target, serve_platform, token, cookies=self.cookies)
         # stdout is the raw video byte stream (read into the ring); stderr is
         # streamlink's ONLY diagnostic channel here, so it must be PIPEd and pumped
@@ -4901,8 +4990,11 @@ class Feed:
                 chunk = stdout.read1(65536)
                 if not chunk:
                     break                    # EOF (ended / 403 / expired) or watchdog kill
+                first = self.last_byte_ts is None
                 self.ring.write(chunk)
                 self.last_byte_ts = time.monotonic()
+                if first and on_first_byte is not None:
+                    on_first_byte()          # e.g. force OBS to reconnect on a drop-recovery
         finally:
             watchdog_stop.set()
             self._kill_proc()
@@ -4936,8 +5028,14 @@ class Feed:
 
             self.log.info("serving stint %d (%s)", i + 1, serve_platform)
             if self.ring is not None:
+                # A drop-recovery re-serve: force OBS to reconnect once the fresh stream
+                # flows, so it re-joins with a clean demuxer instead of splicing onto the
+                # stale one (the 2026-07-10 fan-out freeze-frame stutter). Not on the first
+                # serve or a seamless handover (should_obs_reconnect gates on self.dropped).
+                _recover = self._obs_reconnect if should_obs_reconnect(True, self.dropped) else None
                 try:
-                    serve_elapsed, serve_rc = self._serve_fanout(target, serve_platform, token)
+                    serve_elapsed, serve_rc = self._serve_fanout(
+                        target, serve_platform, token, on_first_byte=_recover)
                 except FileNotFoundError:
                     self.log.warning("streamlink not found on PATH — retrying")
                     self.proc = None
@@ -7476,6 +7574,22 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"ok": True, "count": len(names),
                                        "note": note or
                                        f"Refreshed {len(names)} browser source(s)"})
+                if p == ["obs", "feed-reset"]:
+                    # Manual: force OBS to reconnect ONE feed's media source — the clean,
+                    # targeted version of a /reload for the fan-out freeze-frame stutter
+                    # (rebuild that feed's OBS input so OBS re-joins with a fresh demuxer).
+                    # Same primitive the automatic drop-recovery uses (_obs_reconnect_now);
+                    # this is the director's manual override. Director-gated (p[0]=="obs").
+                    if _obs_ws is None:
+                        return self._send({"error": "obs unavailable"}, 503)
+                    key = feed_reset_target(body.get("feed"), relay.feeds)
+                    if key is None:
+                        return self._send({"ok": False,
+                            "error": f"unknown feed {body.get('feed')!r}"}, 400)
+                    names, note = _obs_ws.release_feed_inputs(ports=[relay.feeds[key].port])
+                    return self._send({"ok": True, "feed": key, "count": len(names),
+                                       "rebuilt": names,
+                                       "note": note or f"Reconnected OBS to Feed {key}"})
                 if p == ["parts", "start"]:
                     if part_store is None or producer_source is None or _obs_ws is None:
                         return self._send({"ok": False, "error": "parts unavailable"}, 503)
