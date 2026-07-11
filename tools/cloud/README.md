@@ -18,11 +18,33 @@ ARE `racecast`, every event command is plain `racecast <cmd>` — no `sudo`, no 
 tailnet IP is stable across stop/start. No machine images/snapshots — this script is the
 reproducibility mechanism instead (any league can stand up its own box the same way).
 
+## Providers — AWS (current) and GCP
+
+There are two boxes; both are controlled the same way once up (SSH in as `racecast`,
+`racecast <cmd>`), and both are managed day-to-day by the control wrappers in §5
+(`aws-box.sh` / `gcp-box.sh` → `status` / `start` / `stop` / `ssh`).
+
+- **AWS** (current production box): `g4dn.xlarge` (Tesla T4) in `eu-central-1a`,
+  instance `i-04d70428c19a484ef`. You reach it **directly over SSH with a key pair**
+  — `ssh -i ~/.ssh/racecast-box.pem racecast@racecast-box-aws` (the tailnet MagicDNS
+  host) — not via `gcloud`. Everything below the create/login layer (provisioning
+  the machine, onboarding a league, per-event prep, going live) is identical.
+- **GCP**: `g2-standard-8` (L4) in `europe-west4-b`, instance `racecast-box`. Login is
+  `gcloud compute ssh racecast@racecast-box` (OS Login off → the guest agent creates
+  the `racecast` user from the metadata SSH key). The create + `provision.sh`
+  walkthrough in §1–§2 is written for this path.
+
+The create/login layer differs per provider (§1 covers GCP); the racecast layer
+(§3–§4b: onboarding, cookies, Discord, `prepare-event.sh`, `event start`) is
+provider-agnostic — it is all plain `racecast <cmd>` as the `racecast` user.
+
 ## 1. Create the instance (once)
 
 Requires GPU quota (free; request first — see the runbook Appendix A, Step 0) and a
-`gcloud` authed to your project. **L4 in `europe-west4-c`** is the validated EU default
-(T4 was capacity-exhausted across the zones tried; RTT ~20 ms vs ~110 ms to us-central1).
+`gcloud` authed to your project. **L4 in `europe-west4-b`** is the EU default (where the
+current box runs; T4 was capacity-exhausted across the zones tried, and L4 capacity moves
+between `-b`/`-c` — retry the sibling zone on `ZONE_RESOURCE_POOL_EXHAUSTED`; RTT ~20 ms
+vs ~110 ms to us-central1).
 The L4 is bundled into the `g2` machine type — **no `--accelerator` flag**. `g2-standard-4`
 (4 vCPU) already passes preflight green: the L4's NVENC offloads OBS's encode, so preflight
 detects the GPU and relaxes the CPU-core floor. `g2-standard-8` below is the roomier default —
@@ -30,7 +52,7 @@ extra core headroom for a busy multi-feed event, not a preflight requirement:
 
 ```bash
 gcloud compute instances create racecast-box \
-  --zone=europe-west4-c \
+  --zone=europe-west4-b \
   --machine-type=g2-standard-8 \
   --maintenance-policy=TERMINATE \
   --provisioning-model=STANDARD \
@@ -57,8 +79,8 @@ Connect **as `racecast`** (the `racecast@` prefix — first connect creates the 
 run the script. **Manual, with output on screen (recommended for the first setup):**
 
 ```bash
-gcloud compute scp tools/cloud/provision.sh racecast@racecast-box:~/ --zone=europe-west4-c
-gcloud compute ssh racecast@racecast-box --zone=europe-west4-c
+gcloud compute scp tools/cloud/provision.sh racecast@racecast-box:~/ --zone=europe-west4-b
+gcloud compute ssh racecast@racecast-box --zone=europe-west4-b
   $ sudo ./provision.sh        # idempotent — re-run after any red line
 ```
 
@@ -70,7 +92,7 @@ The script also copies `prepare-event.sh` into `~racecast/` for per-event prep (
 gcloud compute instances create racecast-box ... \
   --metadata-from-file startup-script=tools/cloud/provision.sh
 # watch the log:
-gcloud compute instances get-serial-port-output racecast-box --zone=europe-west4-c
+gcloud compute instances get-serial-port-output racecast-box --zone=europe-west4-b
 ```
 
 Optional env (never commit these):
@@ -145,7 +167,7 @@ because you SSH in as `racecast`, the whole flow is plain commands:
 ```bash
 # from your laptop, export the league to a portable bundle, copy it to the box:
 racecast profile export <league> --out /tmp/<league>.zip                       # (on your laptop)
-gcloud compute scp /tmp/<league>.zip racecast@racecast-box:~/ --zone=europe-west4-c
+gcloud compute scp /tmp/<league>.zip racecast@racecast-box:~/ --zone=europe-west4-b
 # on the box (logged in as racecast), import + activate + localize:
 racecast profile import ~/<league>.zip
 racecast profile use <league>
@@ -181,7 +203,7 @@ Switch between already-onboarded leagues with `racecast profile use <name>`.
 `racecast` and run it with the league profile:
 
 ```bash
-gcloud compute ssh racecast@racecast-box --zone=europe-west4-c
+gcloud compute ssh racecast@racecast-box --zone=europe-west4-b
   $ ./prepare-event.sh <league>            # + --no-twitch / --no-speedtest / --no-update
 ```
 
@@ -198,9 +220,34 @@ Go live afterwards from the browser Director Panel or `racecast event start`.
 
 ## 5. Cost control — stop between events
 
+STOP the box after every event: a running GPU instance bills by the hour, a
+stopped one only its boot disk. The tailnet IP is stable across stop/start, so
+the box keeps its `100.x` address after a restart.
+
+Use the **control wrappers** — `aws-box.sh` for the AWS box, `gcp-box.sh` for the
+GCP box. Each takes `status` (default), `start`, `stop`, `ip`, and `ssh`, so you
+never have to remember the instance id/zone:
+
 ```bash
-gcloud compute instances stop  racecast-box --zone=europe-west4-c   # idle ≈ boot disk only
-gcloud compute instances start racecast-box --zone=europe-west4-c   # tailnet IP stays stable
+tools/cloud/aws-box.sh status     # cloud state + type + public IP
+tools/cloud/aws-box.sh start      # start, wait until running, print the SSH line
+tools/cloud/aws-box.sh stop       # stop -> billing drops to the EBS boot disk
+tools/cloud/aws-box.sh ssh        # ssh in as racecast over the tailnet
+
+tools/cloud/gcp-box.sh status     # RUNNING | TERMINATED (= stopped) + type + external IP
+tools/cloud/gcp-box.sh start      # gcloud start is synchronous (waits for RUNNING)
+tools/cloud/gcp-box.sh stop
+tools/cloud/gcp-box.sh ssh        # gcloud compute ssh racecast@racecast-box
+```
+
+Defaults target the current boxes (AWS `i-04d70428c19a484ef` in `eu-central-1`;
+GCP `racecast-box` in `europe-west4-b`); override per box with the env vars
+documented in each script's header (`AWS_BOX_*` / `GCP_BOX_*`). The raw CLI
+equivalents remain:
+
+```bash
+aws  ec2 stop-instances  --instance-ids i-04d70428c19a484ef --region eu-central-1
+gcloud compute instances stop racecast-box --zone europe-west4-b
 ```
 
 ## Confidence-building before GPU hours
