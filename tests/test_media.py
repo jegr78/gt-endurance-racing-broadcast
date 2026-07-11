@@ -101,6 +101,35 @@ def t_resolve_missing_is_none():
 
 # ---------- download argv separator + scheme guard (sheet arg-injection #3) ----
 
+def t_cookies_path_cli_override_wins():
+    # The racecast CLI passes --cookies with the REAL runtime path. In a frozen
+    # binary `here` points into the ephemeral PyInstaller bundle, so the explicit
+    # override MUST win over the here-relative fallback (regression for the box's
+    # Intro/Outro 403: get-media resolved cookies into <_MEIPASS>/runtime).
+    assert m.cookies_path("/real/runtime/yt-cookies.txt", "/bundle/src/relay") \
+        == "/real/runtime/yt-cookies.txt"
+
+
+def t_cookies_path_falls_back_to_runtime_jar():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        here = os.path.join(d, "src", "relay")          # media_dir(here) -> d/runtime/media
+        rt = os.path.join(d, "runtime")
+        os.makedirs(rt)
+        open(os.path.join(rt, "yt-cookies.txt"), "w").close()
+        assert m.cookies_path(None, here) == os.path.join(rt, "yt-cookies.txt")
+
+
+def t_cookies_path_legacy_fallback():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        here = os.path.join(d, "src", "relay")
+        rt = os.path.join(d, "runtime")
+        os.makedirs(rt)
+        open(os.path.join(rt, "cookies.txt"), "w").close()   # only legacy present
+        assert m.cookies_path(None, here) == os.path.join(rt, "cookies.txt")
+
+
 def t_download_cmd_separates_url():
     cmd = m.build_download_cmd("https://youtu.be/AAA", "/tmp/intro.mp4")
     assert cmd[-2:] == ["--", "https://youtu.be/AAA"], cmd
