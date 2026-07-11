@@ -50,6 +50,26 @@ def t_no_duplicate_source_names():
     assert not dups, f"duplicate source names in GT_Endurance.json: {dups}"
 
 
+def t_no_duplicate_scene_item_ids():
+    # OBS requires per-scene-unique scene-item ids (the item `id` field == the
+    # runtime sceneItemId). A collision makes SetSceneItemEnabled(id) toggle
+    # whichever item OBS resolves, so two GFX/visibility toggles cross-fire.
+    # Regression for #478: the Stint scene shipped `Stint HUD` and `Race Weather 1`
+    # both on id 28 (and `Feed POV`/`Overlay` both on id 25) — pressing "HUD (Stint)"
+    # in the Director Panel fired "Race Weather 1" instead.
+    offenders = {}
+    for src in _collection()["sources"]:
+        if src.get("id") != "scene":
+            continue
+        by_id = {}
+        for it in src.get("settings", {}).get("items", []):
+            by_id.setdefault(it.get("id"), []).append(it.get("name"))
+        dups = {i: names for i, names in by_id.items() if len(names) > 1}
+        if dups:
+            offenders[src.get("name")] = dups
+    assert not offenders, f"duplicate sceneItemIds per scene in GT_Endurance.json: {offenders}"
+
+
 def t_tokens_and_url_are_correct():
     d = copy.deepcopy(_collection())
     d["sources"] = [s for s in d["sources"]
