@@ -228,6 +228,29 @@ def t_report_collects_and_renders_substitutions():
     assert "Stream substitutions" not in rb.render_html(rep0)
 
 
+def t_report_collects_and_renders_recoveries():
+    # A self-healed feed drop (auto-recovery) must show in its own report section — the
+    # 2026-07-10 gap where a ~10 s stutter left the report "all green".
+    samples = [_sample(100.0), _sample(160.0)]
+    events = [
+        {"ts": 130.0, "type": "feed_recovery",
+         "metadata": {"feed": "A", "stint": 2, "downtime_s": 11.0}},
+        {"ts": 150.0, "type": "feed_recovery", "metadata": {"feed": "A", "stint": 2}},
+    ]
+    names = {2: "Ann"}
+    rep = rb.build_report(samples, events, names, "6h Spa", (100.0, 160.0), now=200.0)
+    recs = rep["recoveries"]
+    assert [r["feed"] for r in recs] == ["A", "A"]
+    assert recs[0] == {"ts": 130.0, "feed": "A", "stint": 2, "streamer": "Ann", "downtime_s": 11.0}
+    assert recs[1]["downtime_s"] == 0        # missing -> 0
+    html = rb.render_html(rep)
+    assert "Feed auto-recoveries" in html and "Ann" in html
+    # empty case renders no section
+    rep0 = rb.build_report(samples, [], {}, "", (100.0, 160.0), now=200.0)
+    assert rep0["recoveries"] == []
+    assert "Feed auto-recoveries" not in rb.render_html(rep0)
+
+
 def t_build_report_no_mutation_on_repeated_call():
     # build_report must not mutate shared state: two calls on the same samples must
     # yield identical health_bands (no accumulating dict mutation).

@@ -221,6 +221,7 @@ def build_report(samples, events, name_for_stint, event_title, window, now,
              {"feed": "B", **_feed_stats(metric_samples, "feed_b_down")}]
     handovers = []
     substitutions = []
+    recoveries = []
     for e in events:
         if e.get("type") == "takeover":
             md = e.get("metadata") or {}
@@ -232,6 +233,12 @@ def build_report(samples, events, name_for_stint, event_title, window, now,
                                   "stint": md.get("stint"),
                                   "streamer": name_for_stint.get(md.get("stint")) or "",
                                   "reason": md.get("reason") or ""})
+        elif e.get("type") == "feed_recovery":
+            md = e.get("metadata") or {}
+            recoveries.append({"ts": e.get("ts"), "feed": md.get("feed") or "",
+                               "stint": md.get("stint"),
+                               "streamer": name_for_stint.get(md.get("stint")) or "",
+                               "downtime_s": md.get("downtime_s") or 0})
     return {
         "header": {"event_title": event_title or "", "start": frm, "end": to,
                    "duration_s": round(duration_s, 1),
@@ -244,6 +251,7 @@ def build_report(samples, events, name_for_stint, event_title, window, now,
         "quality": _quality(metric_samples),
         "producer_handovers": handovers,
         "substitutions": substitutions,
+        "recoveries": recoveries,
         "overlap_approximate": bool(handovers),
         "broadcast_timeline": broadcast_timeline(events),
         "health_bands": health_bands,
@@ -385,6 +393,21 @@ def render_html(report):
                   s["streamer"], s["reason"])
                  for s in report["substitutions"]]
         parts.append(_table(["Time", "Feed", "Stint", "Commentator", "Reason"], srows))
+
+    # Feed auto-recoveries: a feed dropped and self-healed BEFORE the 30 s outage
+    # threshold, so it is NOT counted in the Drops column below — but each was a brief
+    # on-air glitch (the class the 2026-07-10 report showed as "all green").
+    if report.get("recoveries"):
+        parts.append("<h2>Feed auto-recoveries</h2>")
+        parts.append("<p class='note'>Feeds that dropped and auto-recovered (stream restart / "
+                     "brief timeout) — self-healed, so not counted as Drops below, but each was "
+                     "a short on-air interruption. Repeated recoveries of one feed indicate an "
+                     "unstable source.</p>")
+        rrows = [(_fmt_clock(r["ts"]), r["feed"],
+                  r["stint"] if r["stint"] is not None else "—",
+                  r["streamer"], _fmt_dur(r["downtime_s"]))
+                 for r in report["recoveries"]]
+        parts.append(_table(["Time", "Feed", "Stint", "Commentator", "Degraded"], rrows))
 
     # Feed reliability
     parts.append("<h2>Feed reliability</h2>")

@@ -314,6 +314,24 @@ def feed_reset_target(feed_key, valid_keys):
     return key if key in valid_keys else None
 
 
+# A fan-out/direct drop-recovery is recorded as a discrete health event EVERY time (so a
+# self-healed on-air blip is no longer invisible in the post-event report / health monitor).
+# A single recovery never pings Discord; sustained CHURN does — ≥ FEED_CHURN_THRESHOLD
+# recoveries of the SAME feed within FEED_CHURN_WINDOW_S. FEED_CHURN_COOLDOWN_S then
+# suppresses re-paging on every further recovery while the feed keeps churning.
+FEED_CHURN_WINDOW_S = 300      # 5 min
+FEED_CHURN_THRESHOLD = 3
+FEED_CHURN_COOLDOWN_S = 300    # at most one churn @here per feed per 5 min
+
+
+def feed_recovery_churn(recovery_ts, now, window_s=FEED_CHURN_WINDOW_S,
+                        threshold=FEED_CHURN_THRESHOLD):
+    """True when at least `threshold` recovery timestamps fall within the last `window_s`
+    seconds — i.e. the feed is churning, not a one-off blip. Pure → unit-tested."""
+    recent = [t for t in recovery_ts if t is not None and 0 <= (now - t) <= window_s]
+    return len(recent) >= threshold
+
+
 def feed_health_state(dropped, dropped_since, served_ok, now,
                       grace_s=HEALTH_DROP_GRACE_S):
     """Classify one feed's live health as 'down' / 'connecting' / 'ok' from its
@@ -4845,6 +4863,7 @@ class Feed:
         self.quality = None               # last streamlink-selected quality (e.g. "720p")
         self.ring = None              # set by the relay when fan-out is enabled (#358); None → direct-serve
         self.last_byte_ts = None      # monotonic ts of the last byte pumped into the ring (fan-out health)
+        self.on_recovery = None       # relay-set callback(feed, stint, downtime_s) on a drop-recovery
 
     def current_channel(self):
         if self.paused:
@@ -5027,6 +5046,15 @@ class Feed:
                 token, target, serve_platform = None, hls, "youtube"
 
             self.log.info("serving stint %d (%s)", i + 1, serve_platform)
+            # This re-serve follows an unexpected DROP (not the first serve, not a handover):
+            # record it as a discrete recovery event (report/health/log + churn Discord),
+            # mode-agnostic (fan-out AND direct-serve). Best-effort — never break the loop.
+            if self.dropped and self.on_recovery is not None:
+                try:
+                    down = (time.time() - self.dropped_since) if self.dropped_since else 0.0
+                    self.on_recovery(self.name, i + 1, max(0.0, down))
+                except Exception:      # noqa: BLE001 — best-effort telemetry
+                    pass
             if self.ring is not None:
                 # A drop-recovery re-serve: force OBS to reconnect once the fresh stream
                 # flows, so it re-joins with a clean demuxer instead of splicing onto the
@@ -5151,6 +5179,10 @@ class Relay:
         # both feeds without rebuilding them (the OBS Feed A/B sources never change).
         self.A = Feed("A", ports[0], a_idx, self.active_items, logdir, cookies, cookie_dir=cookie_dir)
         self.B = Feed("B", ports[1], b_idx, self.active_items, logdir, cookies, cookie_dir=cookie_dir)
+        # Record every A/B drop-recovery (report/health/log + churn Discord). POV is paused
+        # by design → not tracked, no callback.
+        self.A.on_recovery = self._record_feed_recovery
+        self.B.on_recovery = self._record_feed_recovery
         self.feeds = {"A": self.A, "B": self.B}
         self.obs_note = None          # last OBS note (None/"" = ok); read by status()
         self.obs_reachable = None     # last LIVE reachability probe; None until first /status
@@ -5195,6 +5227,7 @@ class Relay:
         self._notified_level = None
         self._health_lock = threading.Lock()
         self._hb_stop = threading.Event()
+        self._recovery_churn_notified = {}   # feed -> ts of the last churn @here (cooldown)
         self.health_store = None  # assigned by bootstrap (Task 13); always exists
         self.timer_store = None  # assigned by bootstrap; sampled best-effort for timer_push
         self._last_prune = 0  # epoch of last health-history prune (daily, in heartbeat)
@@ -5886,6 +5919,50 @@ class Relay:
                                                  self._event_title()),
             "feed-substitution")
         LOG.info("stream substitution recorded: Feed %s stint %d", feed, stint)
+
+    def _record_feed_recovery(self, feed, stint, downtime_s):
+        """Feed.on_recovery callback: a feed dropped and is recovering. Record it as a
+        discrete `feed_recovery` health event ALWAYS (so a self-healed on-air blip shows in
+        the post-event report + health monitor + log — the 2026-07-10 'all green' gap), and
+        fire a Discord @here only on CHURN. Best-effort; never raises into the feed loop."""
+        now = time.time()
+        if self.health_store is not None:
+            try:
+                self.health_store.record_event(
+                    now, "feed_recovery", producer=self.producer_name,
+                    metadata={"feed": feed, "stint": stint,
+                              "downtime_s": round(max(0.0, downtime_s), 1)})
+            except Exception:                # noqa: BLE001 — best-effort
+                pass
+        LOG.info("feed recovery recorded: Feed %s stint %d (~%.0fs degraded)",
+                 feed, stint, max(0.0, downtime_s))
+        self._maybe_notify_recovery_churn(feed, now)
+
+    def _maybe_notify_recovery_churn(self, feed, now):
+        """Discord @here when Feed `feed` is CHURNING (≥ FEED_CHURN_THRESHOLD recoveries in
+        FEED_CHURN_WINDOW_S), throttled to one ping per feed per FEED_CHURN_COOLDOWN_S so a
+        persistently-flapping feed does not spam. Best-effort."""
+        if self.health_store is None:
+            return
+        last = self._recovery_churn_notified.get(feed)
+        if last is not None and (now - last) < FEED_CHURN_COOLDOWN_S:
+            return
+        try:
+            events = self.health_store.events(now - FEED_CHURN_WINDOW_S, now)
+        except Exception:                    # noqa: BLE001 — best-effort read
+            return
+        ts = [e.get("ts") for e in events
+              if e.get("type") == "feed_recovery"
+              and (e.get("metadata") or {}).get("feed") == feed]
+        if not feed_recovery_churn(ts, now):
+            return
+        self._recovery_churn_notified[feed] = now
+        self._discord_post(
+            notify.feed_recovery_churn_payload(feed, len(ts), FEED_CHURN_WINDOW_S // 60,
+                                               self.producer_name, self._event_title()),
+            "feed-recovery-churn")
+        LOG.warning("feed churn: Feed %s recovered %d× in %d min — @here posted",
+                    feed, len(ts), FEED_CHURN_WINDOW_S // 60)
 
     def latest_substitution(self):
         """The most recent feed_substitution event as
