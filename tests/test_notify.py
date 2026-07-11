@@ -72,6 +72,18 @@ def t_substitution_payload():
     assert e["footer"]["text"] == "6h Spa · JeGr"   # event_title · producer
 
 
+def t_feed_recovery_churn_payload():
+    # A CHURN alert DOES ping @here (a single self-healed drop is recorded silently and
+    # never posts — that's handled relay-side, not here).
+    p = n.feed_recovery_churn_payload("A", 4, 5, "JeGr", event_title="6h Spa")
+    assert p["username"] == n.USERNAME
+    assert p.get("content") == "@here"               # churn pings
+    e = p["embeds"][0]
+    assert e["color"] == n.COLOR_FEED_CHURN
+    assert "Feed A" in e["description"] and "4" in e["description"] and "5 min" in e["description"]
+    assert e["footer"]["text"] == "6h Spa · JeGr"
+
+
 def t_report_payload():
     p = n.report_discord_payload("Test Event", [("Uptime", "98.0%"), ("Incidents", "2")])
     assert p["username"] == "GT Racecast"

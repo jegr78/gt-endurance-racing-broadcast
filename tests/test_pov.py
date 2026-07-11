@@ -1066,6 +1066,47 @@ def t_queue_deadline_args_picks_flag_by_capability():
     assert m.queue_deadline_args(new_help, factor="7") == ["--stream-segmented-queue-deadline", "7"]
 
 
+def t_feed_recovery_churn():
+    now = 1000.0
+    # 3 recoveries within the 300 s window -> churn (would ping @here)
+    assert m.feed_recovery_churn([1000.0, 900.0, 800.0], now) is True
+    # only 2 within window (600 is 400 s ago) -> not churn
+    assert m.feed_recovery_churn([1000.0, 950.0, 600.0], now) is False
+    assert m.feed_recovery_churn([], now) is False
+    assert m.feed_recovery_churn([None, 1000.0], now) is False           # None ts ignored
+    # threshold override
+    assert m.feed_recovery_churn([1000.0, 990.0, 980.0, 970.0], now, threshold=5) is False
+    assert m.feed_recovery_churn([1000.0, 990.0, 980.0, 970.0], now, threshold=4) is True
+
+
+class _FakeHS:
+    def __init__(self): self.rows = []
+    def record_event(self, ts, etype, producer="", metadata=None):
+        self.rows.append({"ts": ts, "type": etype, "producer": producer,
+                          "metadata": metadata or {}})
+    def events(self, frm, to):
+        return [e for e in self.rows if frm <= e["ts"] <= to]
+
+
+def t_feed_recovery_records_always_and_pings_only_on_churn():
+    # ALWAYS record (report/health/log); Discord @here ONLY on churn (>=3 in the window),
+    # then de-duped by the cooldown so a flapping feed doesn't spam.
+    r = _relay(["a", "b"])
+    r.health_store = _FakeHS()
+    r._event_title = lambda: ""
+    posts = []
+    r._discord_post = lambda payload, what: posts.append(what)
+    r._record_feed_recovery("A", 1, 5.0)
+    r._record_feed_recovery("A", 1, 6.0)
+    assert len([e for e in r.health_store.rows if e["type"] == "feed_recovery"]) == 2
+    assert posts == []                              # below threshold -> silent
+    r._record_feed_recovery("A", 1, 7.0)            # 3rd within window -> churn
+    assert posts == ["feed-recovery-churn"]
+    r._record_feed_recovery("A", 1, 8.0)            # still recorded, but NOT re-pinged
+    assert len([e for e in r.health_store.rows if e["type"] == "feed_recovery"]) == 4
+    assert posts == ["feed-recovery-churn"]         # cooldown de-dupes
+
+
 def t_feed_reset_target_validates_feed_key():
     # D: /obs/feed-reset accepts only a real feed key (case/space-insensitive), else None
     # -> 400. Never lets an arbitrary string through to release_feed_inputs.

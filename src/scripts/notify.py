@@ -68,6 +68,20 @@ def obs_stream_discord_payload(started, producer, event_title=""):
 COLOR_SUBSTITUTION = 0xF59E0B  # amber — an ad-hoc on-air stream swap (recovery marker)
 
 
+COLOR_FEED_CHURN = 0xF97316    # orange — a feed is repeatedly dropping/recovering
+
+
+def feed_recovery_churn_payload(feed, count, window_min, producer, event_title=""):
+    """CHURN alert: Feed `feed` has auto-recovered `count` times within the last
+    `window_min` minutes — sustained instability the crew must see, so this DOES ping
+    `@here` (a single self-healed drop is recorded silently and never posts). Pure."""
+    desc = (f"Feed {feed} has dropped and auto-recovered {count} times in the last "
+            f"{window_min} min — the upstream stream or connection looks unstable. "
+            f"Consider switching to a backup feed or Standby.")
+    return _payload("⚠️ Feed unstable — repeated drops", desc, COLOR_FEED_CHURN, ping=True,
+                    event_title=event_title, producer=producer)
+
+
 def substitution_discord_payload(feed, stint, producer, event_title=""):
     """Announce an ad-hoc on-air stream substitution: the producer swapped the
     on-air commentator stream to an alternative mid-stint. `feed` is "A"/"B",
