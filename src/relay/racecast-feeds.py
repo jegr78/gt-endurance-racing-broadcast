@@ -6020,12 +6020,14 @@ class Relay:
 
     def resync_to_stint(self, stint):
         """Feed-agnostic desync recovery: reconcile 'stint <N> is on air NOW' onto
-        whichever feed is ACTUALLY serving it, preserving the live picture. Finds
-        the feed whose current URL == stint N's row URL and keeps it on air (A OR
-        B), sets on_air_row, and moves the OTHER feed to the next distinct slot
-        (#491-safe). Non-destructive: the anchor feed is never re-indexed, and
-        Feed.set_index no-ops (no kill) when a feed is already at its target. Falls
-        back to set_stint (a deliberate re-point + cut) only when NO feed serves N."""
+        whichever feed is ACTUALLY serving it, preserving the live picture. Finds the
+        feed whose current URL == stint N's row URL AND is delivering a stable
+        picture (_feed_serving), keeps it on air (A OR B), sets on_air_row, and moves
+        the OTHER feed to the next distinct slot after both the target row and the
+        anchor's own index (#491-safe; keeps the anchor the lower index so live_feed
+        names it). Non-destructive: the anchor feed is never re-indexed. When NO feed
+        serves N this is a takeover, not a resync -> returns an error and does nothing
+        (use /set/stint, which is producer+step-up gated)."""
         self.source.refresh(timeout=6)
         rows = self.source.get_rows()
         n = len(rows)
@@ -6035,17 +6037,22 @@ class Relay:
         if target_url:
             for k in ("A", "B"):
                 ch, _ = self.feeds[k].current_channel()
-                if (ch or "").strip() == target_url and not self.feeds[k].dropped:
+                if (ch or "").strip() == target_url and self._feed_serving(self.feeds[k]):
                     anchor = k
                     break
         if anchor is None:
-            LOG.info("resync_to_stint -> stint %d not served by any feed; "
-                     "falling back to set_stint (re-point)", target + 1)
-            return self.set_stint(stint)
+            LOG.info("resync_to_stint -> stint %d not served by any feed; no-op "
+                     "(use /set/stint for a takeover)", target + 1)
+            return {"error": f"no feed serves stint {target + 1} — "
+                             f"use /set/stint for a takeover"}
         other = "B" if anchor == "A" else "A"
         slots = pull_slots(rows)
+        # Place the other feed after BOTH the target row and the anchor's own pull
+        # index, so the anchor keeps the lower index and live_feed() names it even
+        # for a non-contiguous same-URL recurrence.
+        pivot = max(target, self.feeds[anchor].idx)
         off_idx, _redir = dedupe_pull_index(
-            next_slot_first_row(slots, target), self.feeds[anchor].idx, rows)
+            next_slot_first_row(slots, pivot), self.feeds[anchor].idx, rows)
         self.feeds[other].set_index(off_idx)   # no kill if already there
         self.on_air_row = target
         LOG.info("resync_to_stint -> stint %d anchored on serving feed %s (no cut); "

@@ -1282,18 +1282,19 @@ def t_resync_to_stint_keeps_serving_feed_no_cut():
     assert r.A.current_channel()[0] != "uC"         # A not duplicating B's stream
 
 
-def t_resync_to_stint_falls_back_when_no_feed_serves():
-    # No feed serves stint 4's URL -> deliberate re-point via set_stint.
+def t_resync_to_stint_no_op_when_no_feed_serves():
+    # No feed serves stint 4's URL -> a director-tier resync must NOT perform the
+    # producer-gated set_stint cut; it returns an error and mutates nothing.
     rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
             ("uC", "C", "S3", 3), ("uD", "D", "S4", 4)]
     r = m.Relay(_StubSource(["uA", "uB", "uC", "uD"], rows), (53001, 53002), LOGDIR)
     r._reflect = lambda live, cut: None
     r.A.set_index(0); r.B.set_index(1)
     for f in r.feeds.values(): f.phase = "idle"     # nothing serving uD
-    r.resync_to_stint(4)
-    # set_stint fallback: A on slot head of stint 4 (row3), display stint 4.
-    assert r.on_air_row_idx() == 3
-    assert r.A.idx == 3
+    a_before, b_before = r.A.idx, r.B.idx
+    res = r.resync_to_stint(4)
+    assert "error" in res                            # no takeover from a director-tier resync
+    assert (r.A.idx, r.B.idx) == (a_before, b_before)   # nothing moved (no set_stint cut)
 
 
 if __name__ == "__main__":
