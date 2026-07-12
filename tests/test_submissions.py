@@ -254,6 +254,7 @@ def _client(secret=SECRET, rows=None, live_idx=0,
             self.mode = "race"
             self.feeds = {"A": _Feed(live_idx), "B": _Feed(live_idx + 1)}
             self.discord_webhook_url = webhook
+            self._desync = {"active": False}   # mirrors Relay.__init__ (#494)
 
         def live_feed(self):
             return "A"
