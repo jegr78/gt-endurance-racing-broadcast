@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for the POV additions. Run: python3 tests/test_pov.py"""
-import importlib.util, json, os, tempfile
+import importlib.util, json, os, tempfile, time
 import threading, urllib.request, urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1217,6 +1217,47 @@ def t_advance_guards_same_url_double_pull():
     urls = {k: f.current_channel()[0] for k, f in r.feeds.items()}
     assert list(urls.values()).count("uB") == 1     # no duplicate uB
     assert r.A.current_channel()[0] == "uD"          # A bumped to next distinct slot
+
+
+def t_ping_pong_desynced_pure():
+    # On-air feed not delivering while the off-air feed is -> desynced.
+    assert m.ping_pong_desynced(live_serving=False, off_serving=True) is True
+    # On-air fine -> never desynced.
+    assert m.ping_pong_desynced(live_serving=True, off_serving=True) is False
+    assert m.ping_pong_desynced(live_serving=True, off_serving=False) is False
+    # On-air down but nothing better to show (off not serving) -> a plain drop,
+    # a health condition, NOT a desync.
+    assert m.ping_pong_desynced(live_serving=False, off_serving=False) is False
+
+
+def t_desync_settled_debounce():
+    # Not raw -> inactive, timer cleared.
+    assert m.desync_settled(False, 100.0, 200.0, 15) == (False, None)
+    # Raw first seen -> timer starts, not yet active (0 < settle).
+    assert m.desync_settled(True, None, 100.0, 15) == (False, 100.0)
+    # Raw, still within the settle window -> not active, timer preserved.
+    assert m.desync_settled(True, 100.0, 110.0, 15) == (False, 100.0)
+    # Raw, past the settle window -> active, timer preserved.
+    assert m.desync_settled(True, 100.0, 116.0, 15) == (True, 100.0)
+
+
+def t_relay_status_exposes_desync_block():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+            ("uC", "C", "S3", 3), ("uD", "D", "S4", 4)]
+    r = m.Relay(_StubSource(["uA", "uB", "uC", "uD"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    # Simulate: on-air feed A (idx0) dropped, off-air feed B (idx1) serving.
+    r.A.phase = "connecting"; r.A.dropped = True
+    r.B.phase = "serving"; r.B.dropped = False
+    # Force the settle to have already elapsed.
+    r._desync_since = time.time() - 20
+    d = r.status()["desync"]
+    assert d["active"] is True
+    assert d["serving_feed"] == "B"
+    assert d["suggested_stint"] == 2          # B is on row1 -> stint 2
+    # Healthy: both serving -> inactive block.
+    r.A.dropped = False; r.A.phase = "serving"
+    assert r.status()["desync"]["active"] is False
 
 
 if __name__ == "__main__":

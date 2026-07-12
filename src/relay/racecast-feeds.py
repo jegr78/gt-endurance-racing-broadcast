@@ -3819,6 +3819,28 @@ def cockpit_schedule(rows, live_idx, me_key):
             for i, (_u, n, st, _l) in enumerate(rows)]
 
 
+def ping_pong_desynced(live_serving, off_serving):
+    """True when the index-designated on-air feed is NOT delivering a stable
+    picture while the OFF-air feed IS — the feed on screen and the feed derived as
+    on-air disagree. Pure; the caller supplies each feed's 'serving a stable
+    picture' boolean and applies the settle debounce. False whenever the on-air
+    feed is fine, or the off-air feed is not itself delivering (a plain on-air
+    drop with nothing better to show is a health condition, not a desync)."""
+    return (not live_serving) and off_serving
+
+
+def desync_settled(raw, since_ts, now, settle_s):
+    """Debounce the raw desync condition: it becomes ACTIVE only after it has held
+    for *settle_s* seconds (so a quick reconnect blip never raises it). Returns
+    (active, since_ts): the running start-timestamp is preserved across ticks while
+    raw holds and cleared to None as soon as it ends. Pure."""
+    if not raw:
+        return False, None
+    if since_ts is None:
+        since_ts = now
+    return (now - since_ts) >= settle_s, since_ts
+
+
 def cockpit_display_name(rows, me_key):
     """The display streamer name whose asset_key == me_key (first match), so chat
     messages are attributed to a human-readable name. Falls back to me_key."""
@@ -5299,6 +5321,9 @@ class Relay:
         self.health_reasons = []
         self.health_since = time.time()
         self._notified_level = None
+        self._desync_since = None   # monotonic-ish start ts of the raw desync condition
+        self._desync = {"active": False}   # the /status desync block (recomputed each tick)
+        self._desync_active = False        # last active state, for the log-on-transition
         self._health_lock = threading.Lock()
         self._hb_stop = threading.Event()
         self._recovery_churn_notified = {}   # feed -> ts of the last churn @here (cooldown)
@@ -5394,6 +5419,7 @@ class Relay:
                 self.health_level = h["level"]
                 self.health_since = now
             self.health_reasons = h["reasons"]
+        self._compute_desync(now)
         return h
 
     def _health_snapshot(self, now):
@@ -5607,6 +5633,7 @@ class Relay:
         self._refresh_health(now)            # keep the displayed level fresh (2 s poll)
         out["health"] = {"level": self.health_level, "reasons": self.health_reasons,
                          "since_s": round(now - self.health_since, 1)}
+        out["desync"] = self._desync
         return out
 
     def live_feed(self):
@@ -5639,6 +5666,37 @@ class Relay:
     def live_after_next(self):
         """Which feed will be on air after the next /next: the one NOT advanced."""
         return "B" if self.live_feed() == "A" else "A"
+
+    def _feed_serving(self, f):
+        """A feed is 'delivering a stable picture' when its process is up and it is
+        neither dropped nor paused. Used only for desync detection."""
+        return f.phase == "serving" and not f.dropped and not f.paused
+
+    def _compute_desync(self, now):
+        """Recompute the panel-local desync flag (never mutates feeds/OBS). The
+        index-designated on-air feed (live_feed) not delivering while the other is
+        = a ping-pong desync; debounced by HEALTH_CONNECTING_SETTLE_S. Stores the
+        /status block in self._desync and logs on the active transition."""
+        live = self.live_feed()
+        off = "B" if live == "A" else "A"
+        raw = ping_pong_desynced(self._feed_serving(self.feeds[live]),
+                                 self._feed_serving(self.feeds[off]))
+        active, self._desync_since = desync_settled(
+            raw, self._desync_since, now, HEALTH_CONNECTING_SETTLE_S)
+        block = {"active": active}
+        if active:
+            block["since_s"] = round(now - self._desync_since, 1)
+            block["serving_feed"] = off
+            block["suggested_stint"] = self.feeds[off].idx + 1
+        if active and not self._desync_active:
+            LOG.warning("ping-pong desync: on-air feed %s not delivering while %s "
+                        "serves stint %d — resync suggested", live, off,
+                        self.feeds[off].idx + 1)
+        elif not active and self._desync_active:
+            LOG.info("ping-pong desync cleared")
+        self._desync_active = active
+        self._desync = block
+        return block
 
     def splitscreen_state(self):
         """State for the /splitscreen overlay. Feed A is always the Splitscreen
