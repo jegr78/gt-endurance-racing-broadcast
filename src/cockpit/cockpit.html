@@ -392,7 +392,10 @@ function renderTally(d) {
   document.title = title ? (title + ' · Commentator Cockpit') : 'Commentator Cockpit';
   $('who').textContent = d.me ? '· ' + d.me + (d.mode === 'qualifying' ? ' · QUALI' : '') : '';
   const el = $('tally');
-  if (d.on_air) {
+  if (d.syncing) {
+    el.className = 'tally idle';
+    el.textContent = 'syncing…';
+  } else if (d.on_air) {
     el.className = 'tally onair';
     el.innerHTML = '';
     el.appendChild(document.createTextNode('YOU ARE ON AIR'));

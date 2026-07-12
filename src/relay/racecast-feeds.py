@@ -3819,6 +3819,12 @@ def cockpit_schedule(rows, live_idx, me_key):
             for i, (_u, n, st, _l) in enumerate(rows)]
 
 
+def cockpit_syncing(desync):
+    """True when the relay's desync block is active — the cockpit should show
+    'syncing…' instead of the (index-derived, possibly wrong) ON-AIR tally. Pure."""
+    return bool(desync.get("active"))
+
+
 def ping_pong_desynced(live_serving, off_serving):
     """True when the index-designated on-air feed is NOT delivering a stable
     picture while the OFF-air feed IS — the feed on screen and the feed derived as
@@ -7391,6 +7397,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                       # read-only redacted stint plan for the
                                       # right-column card (no stream URLs).
                                       "schedule": cockpit_schedule(rows, live_idx, me),
+                                      "syncing": cockpit_syncing(relay._desync),
                                       "my_pending": my_pending})
                         return self._send(tally)
                     if p == ["cockpit", "program"]:
