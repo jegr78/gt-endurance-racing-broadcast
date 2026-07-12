@@ -945,6 +945,29 @@ def t_slot_start_indices():
     assert m.slot_start_indices(1, []) == (0, 1)
 
 
+def t_dedupe_pull_index():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+            ("uB", "B", "S3", 3), ("uD", "D", "S4", 4)]
+    # No collision: different URLs -> unchanged.
+    assert m.dedupe_pull_index(1, 0, rows) == (1, False)
+    # Collision (contiguous same-URL slot): target row2 uB vs other row1 uB
+    # -> next distinct slot (row3 uD).
+    assert m.dedupe_pull_index(2, 1, rows) == (3, True)
+    # Collision at the slot head: target row1 uB vs other row2 uB -> row3.
+    assert m.dedupe_pull_index(1, 2, rows) == (3, True)
+    # Idle/blank target (idx == len) never collides.
+    assert m.dedupe_pull_index(4, 0, rows) == (4, False)
+    # Other feed idle -> no collision.
+    assert m.dedupe_pull_index(1, 4, rows) == (1, False)
+    # Non-contiguous repeated URL: loop past it.
+    rows2 = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+             ("uC", "C", "S3", 3), ("uB", "B", "S4", 4)]
+    # target row3 uB vs other row1 uB -> no safe later slot -> idle sentinel (4).
+    assert m.dedupe_pull_index(3, 1, rows2) == (4, True)
+    # target row1 uB vs other row3 uB -> next distinct slot row2 (uC).
+    assert m.dedupe_pull_index(1, 3, rows2) == (2, True)
+
+
 def t_is_substitution():
     assert m.is_substitution("uA", 1, "uB", 1) is True      # same stint, new URL
     assert m.is_substitution("uA", 1, "uA", 1) is False     # same URL -> reconnect, not a swap
@@ -1140,6 +1163,60 @@ def t_qualifying_downgrade_note_warns_only_on_silent_downgrade():
     assert m.qualifying_downgrade_note(False, False, "Qualifying") is None
     assert m.qualifying_downgrade_note(True, True, "Qualifying") is None
     assert m.qualifying_downgrade_note(False, True, "Qualifying") is None
+
+
+def t_set_index_guards_same_url_double_pull():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+            ("uB", "B", "S3", 3), ("uD", "D", "S4", 4)]
+    r = m.Relay(_StubSource(["uA", "uB", "uB", "uD"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    for f in r.feeds.values():
+        f.phase = "serving"
+    r.next_auto()                                  # stint 2: B(uB) on air, A freed -> uD
+    assert r.live_feed() == "B" and r.B.current_channel()[0] == "uB"
+    # Operator directly activates stint 3 (row2, the SAME uB) on feed A.
+    out = r.set_index("A", 2)
+    assert out["redirected"] is True
+    urls = {k: f.current_channel()[0] for k, f in r.feeds.items()}
+    assert list(urls.values()).count("uB") == 1    # single uB pull, no duplicate
+    assert urls == {"A": "uD", "B": "uB"}          # A stayed on the next distinct slot
+    assert r.on_air_row_idx() == 2                  # display advanced to stint 3
+    assert r.live_feed() == "B"                     # B (lower idx) stays on air
+
+
+def t_reload_guards_same_url_double_pull():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+            ("uX", "X", "S3", 3), ("uD", "D", "S4", 4)]
+    src = _StubSource(["uA", "uB", "uX", "uD"], rows)
+    r = m.Relay(src, (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    for f in r.feeds.values():
+        f.phase = "serving"
+    # Start: A row0 uA on air, B preloaded row1 uB. The operator edits the sheet
+    # so row1's URL becomes uA (== the on-air feed's stream) and reloads.
+    src._items[1] = "uA"
+    src._rows[1] = ("uA", "A", "S2", 2)
+    r.reload()
+    urls = {k: f.current_channel()[0] for k, f in r.feeds.items()}
+    assert list(urls.values()).count("uA") == 1    # on-air uA not duplicated
+    assert r.live_feed() == "A"                     # on-air feed unchanged (no cut)
+    assert r.A.current_channel()[0] == "uA"
+    assert r.B.current_channel()[0] != "uA"         # off-air B re-pointed off the dup
+
+
+def t_advance_guards_same_url_double_pull():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+            ("uB", "B", "S3", 3), ("uD", "D", "S4", 4)]
+    r = m.Relay(_StubSource(["uA", "uB", "uB", "uD"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    for f in r.feeds.values():
+        f.phase = "serving"
+    # A row0 uA on air, B row1 uB. Nudge A by +2 -> row2 (uB) would duplicate B.
+    out = r.advance("A", +2)
+    assert out["redirected"] is True
+    urls = {k: f.current_channel()[0] for k, f in r.feeds.items()}
+    assert list(urls.values()).count("uB") == 1     # no duplicate uB
+    assert r.A.current_channel()[0] == "uD"          # A bumped to next distinct slot
 
 
 if __name__ == "__main__":

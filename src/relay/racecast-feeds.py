@@ -3713,6 +3713,35 @@ def is_continuation(slots, row):
     return 1 <= row < len(slots) and slots[row] == slots[row - 1]
 
 
+def dedupe_pull_index(target_idx, other_idx, rows):
+    """Collision-free pull index for a feed that wants to sit at 0-based
+    *target_idx* while the OTHER feed sits at *other_idx*. Enforces the
+    single-pull invariant (#491): a feed must never pull the identical non-empty
+    URL the other feed already holds.
+
+    - Empty/idle target (idx past the end or a blank URL), or a target URL that
+      differs from the other feed's URL -> (target_idx unchanged, False).
+    - Same non-empty URL -> advance to next_slot_first_row, the first row of the
+      next DISTINCT slot; loop-until-safe so a non-contiguous later slot repeating
+      the other feed's URL is skipped too, ending at the idle sentinel
+      (idx == len(rows)) when nothing collision-free remains. Returns
+      (idx, True). Pure."""
+    n = len(rows)
+    ti = max(0, min(int(target_idx), n))   # n == the idle sentinel (one past end)
+
+    def url(i):
+        return (rows[i][0] or "").strip() if 0 <= i < n else ""
+
+    other_url = url(other_idx)
+    if ti >= n or not url(ti) or url(ti) != other_url:
+        return ti, False
+    slots = pull_slots(rows)
+    idx = ti
+    while idx < n and url(idx) and url(idx) == other_url:
+        idx = next_slot_first_row(slots, idx)   # strictly increases -> terminates
+    return idx, True
+
+
 def slot_start_indices(stint, rows):
     """Slot-aware producer-takeover placement. 1-based *stint* is on air NOW: Feed
     A pulls the HEAD of that stint's slot (so a takeover onto the second row of a
@@ -5872,17 +5901,46 @@ class Relay:
 
     def advance(self, which, delta):
         f = self.feeds.get(which.upper())
-        if not f: return None
-        changed = f.set_index(f.idx + delta)
+        if not f:
+            return None
+        other_key = "B" if which.upper() == "A" else "A"
+        other = self.feeds.get(other_key)
+        target = f.idx + delta
+        redirected = False
+        if other is not None:
+            rows = self.source.get_rows()
+            target, redirected = dedupe_pull_index(target, other.idx, rows)
+            if redirected:
+                LOG.info("advance %s would duplicate feed %s's stream; "
+                         "auto-advanced to row %d (next distinct slot)",
+                         which.upper(), other_key, target + 1)
+        changed = f.set_index(target)
         # Spread **self.status() FIRST, explicit keys last, so a future status()
-        # field named "changed"/"feed" can never silently shadow these (matches
-        # next_auto's return-dict ordering).
-        return {**self.status(), "changed": changed, "feed": which.upper()}
+        # field can never silently shadow these (matches next_auto's ordering).
+        return {**self.status(), "changed": changed, "feed": which.upper(),
+                "redirected": redirected}
 
     def set_index(self, which, idx):
         f = self.feeds.get(which.upper())
-        if not f: return None
-        f.set_index(idx); return self.status()
+        if not f:
+            return None
+        other_key = "B" if which.upper() == "A" else "A"
+        other = self.feeds.get(other_key)
+        redirected = False
+        if other is not None:
+            rows = self.source.get_rows()
+            new_idx, redirected = dedupe_pull_index(idx, other.idx, rows)
+            if redirected:
+                # The other feed already pulls this URL -> the requested row is a
+                # same-URL continuation: advance the DISPLAY to it and send this
+                # feed to the next distinct slot, never a duplicate pull (#491).
+                self.on_air_row = max(0, min(idx, max(0, len(rows) - 1)))
+                LOG.info("set %s -> row %d would duplicate feed %s's stream; "
+                         "auto-advanced to row %d (next distinct slot)",
+                         which.upper(), idx + 1, other_key, new_idx + 1)
+                idx = new_idx
+        f.set_index(idx)
+        return {**self.status(), "redirected": redirected}
 
     def set_stint(self, stint):
         """Producer-takeover correction: 1-based stint <stint> is on air NOW ->
@@ -5940,6 +5998,19 @@ class Relay:
         if (which is None or which.upper() == live) and \
                 is_substitution(old_url, old_idx, new_url, new_idx):
             self._record_substitution(live, new_idx)
+        # Single-pull invariant (#491): a schedule edit may have made the off-air
+        # feed's parked row share the on-air feed's URL. Re-point the OFF-AIR feed
+        # to the next distinct slot before it reconnects, so two feeds never pull
+        # the identical stream. Moving a parked feed never cuts the live picture;
+        # done regardless of `which` (a reload("A") can still leave B on a dup).
+        off = "B" if live == "A" else "A"
+        ded_rows = self.source.get_rows()
+        ded_idx, ded_redir = dedupe_pull_index(
+            self.feeds[off].idx, self.feeds[live].idx, ded_rows)
+        if ded_redir:
+            LOG.info("reload: feed %s parked on feed %s's stream; auto-advanced "
+                     "to row %d (next distinct slot)", off, live, ded_idx + 1)
+            self.feeds[off].set_index(ded_idx)
         targets = [which.upper()] if which else list(self.feeds)
         for t in targets:
             if t in self.feeds: self.feeds[t].reload()
