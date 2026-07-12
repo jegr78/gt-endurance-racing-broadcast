@@ -1184,6 +1184,26 @@ def t_set_index_guards_same_url_double_pull():
     assert r.live_feed() == "B"                     # B (lower idx) stays on air
 
 
+def t_reload_guards_same_url_double_pull():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+            ("uX", "X", "S3", 3), ("uD", "D", "S4", 4)]
+    src = _StubSource(["uA", "uB", "uX", "uD"], rows)
+    r = m.Relay(src, (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    for f in r.feeds.values():
+        f.phase = "serving"
+    # Start: A row0 uA on air, B preloaded row1 uB. The operator edits the sheet
+    # so row1's URL becomes uA (== the on-air feed's stream) and reloads.
+    src._items[1] = "uA"
+    src._rows[1] = ("uA", "A", "S2", 2)
+    r.reload()
+    urls = {k: f.current_channel()[0] for k, f in r.feeds.items()}
+    assert list(urls.values()).count("uA") == 1    # on-air uA not duplicated
+    assert r.live_feed() == "A"                     # on-air feed unchanged (no cut)
+    assert r.A.current_channel()[0] == "uA"
+    assert r.B.current_channel()[0] != "uA"         # off-air B re-pointed off the dup
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

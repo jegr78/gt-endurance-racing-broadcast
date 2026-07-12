@@ -5986,6 +5986,19 @@ class Relay:
         if (which is None or which.upper() == live) and \
                 is_substitution(old_url, old_idx, new_url, new_idx):
             self._record_substitution(live, new_idx)
+        # Single-pull invariant (#491): a schedule edit may have made the off-air
+        # feed's parked row share the on-air feed's URL. Re-point the OFF-AIR feed
+        # to the next distinct slot before it reconnects, so two feeds never pull
+        # the identical stream. Moving a parked feed never cuts the live picture;
+        # done regardless of `which` (a reload("A") can still leave B on a dup).
+        off = "B" if live == "A" else "A"
+        ded_rows = self.source.get_rows()
+        ded_idx, ded_redir = dedupe_pull_index(
+            self.feeds[off].idx, self.feeds[live].idx, ded_rows)
+        if ded_redir:
+            LOG.info("reload: feed %s parked on feed %s's stream; auto-advanced "
+                     "to row %d (next distinct slot)", off, live, ded_idx + 1)
+            self.feeds[off].set_index(ded_idx)
         targets = [which.upper()] if which else list(self.feeds)
         for t in targets:
             if t in self.feeds: self.feeds[t].reload()
