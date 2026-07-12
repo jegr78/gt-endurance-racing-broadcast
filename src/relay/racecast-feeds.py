@@ -5681,21 +5681,22 @@ class Relay:
         off = "B" if live == "A" else "A"
         raw = ping_pong_desynced(self._feed_serving(self.feeds[live]),
                                  self._feed_serving(self.feeds[off]))
-        active, self._desync_since = desync_settled(
-            raw, self._desync_since, now, HEALTH_CONNECTING_SETTLE_S)
-        block = {"active": active}
-        if active:
-            block["since_s"] = round(now - self._desync_since, 1)
-            block["serving_feed"] = off
-            block["suggested_stint"] = self.feeds[off].idx + 1
-        if active and not self._desync_active:
-            LOG.warning("ping-pong desync: on-air feed %s not delivering while %s "
-                        "serves stint %d — resync suggested", live, off,
-                        self.feeds[off].idx + 1)
-        elif not active and self._desync_active:
-            LOG.info("ping-pong desync cleared")
-        self._desync_active = active
-        self._desync = block
+        with self._health_lock:
+            active, self._desync_since = desync_settled(
+                raw, self._desync_since, now, HEALTH_CONNECTING_SETTLE_S)
+            block = {"active": active}
+            if active:
+                block["since_s"] = round(now - self._desync_since, 1)
+                block["serving_feed"] = off
+                block["suggested_stint"] = self.feeds[off].idx + 1
+            if active and not self._desync_active:
+                LOG.warning("ping-pong desync: on-air feed %s not delivering while %s "
+                            "serves stint %d — resync suggested", live, off,
+                            self.feeds[off].idx + 1)
+            elif not active and self._desync_active:
+                LOG.info("ping-pong desync cleared")
+            self._desync_active = active
+            self._desync = block
         return block
 
     def splitscreen_state(self):
