@@ -1165,6 +1165,25 @@ def t_qualifying_downgrade_note_warns_only_on_silent_downgrade():
     assert m.qualifying_downgrade_note(False, True, "Qualifying") is None
 
 
+def t_set_index_guards_same_url_double_pull():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+            ("uB", "B", "S3", 3), ("uD", "D", "S4", 4)]
+    r = m.Relay(_StubSource(["uA", "uB", "uB", "uD"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    for f in r.feeds.values():
+        f.phase = "serving"
+    r.next_auto()                                  # stint 2: B(uB) on air, A freed -> uD
+    assert r.live_feed() == "B" and r.B.current_channel()[0] == "uB"
+    # Operator directly activates stint 3 (row2, the SAME uB) on feed A.
+    out = r.set_index("A", 2)
+    assert out["redirected"] is True
+    urls = {k: f.current_channel()[0] for k, f in r.feeds.items()}
+    assert list(urls.values()).count("uB") == 1    # single uB pull, no duplicate
+    assert urls == {"A": "uD", "B": "uB"}          # A stayed on the next distinct slot
+    assert r.on_air_row_idx() == 2                  # display advanced to stint 3
+    assert r.live_feed() == "B"                     # B (lower idx) stays on air
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

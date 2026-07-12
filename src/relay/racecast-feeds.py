@@ -5910,8 +5910,25 @@ class Relay:
 
     def set_index(self, which, idx):
         f = self.feeds.get(which.upper())
-        if not f: return None
-        f.set_index(idx); return self.status()
+        if not f:
+            return None
+        other_key = "B" if which.upper() == "A" else "A"
+        other = self.feeds.get(other_key)
+        redirected = False
+        if other is not None:
+            rows = self.source.get_rows()
+            new_idx, redirected = dedupe_pull_index(idx, other.idx, rows)
+            if redirected:
+                # The other feed already pulls this URL -> the requested row is a
+                # same-URL continuation: advance the DISPLAY to it and send this
+                # feed to the next distinct slot, never a duplicate pull (#491).
+                self.on_air_row = max(0, min(idx, max(0, len(rows) - 1)))
+                LOG.info("set %s -> row %d would duplicate feed %s's stream; "
+                         "auto-advanced to row %d (next distinct slot)",
+                         which.upper(), idx + 1, other_key, new_idx + 1)
+                idx = new_idx
+        f.set_index(idx)
+        return {**self.status(), "redirected": redirected}
 
     def set_stint(self, stint):
         """Producer-takeover correction: 1-based stint <stint> is on air NOW ->
