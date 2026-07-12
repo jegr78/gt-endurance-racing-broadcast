@@ -96,12 +96,15 @@ def resync_to_stint(self, stint):
     """Reconcile 'stint <N> is on air NOW' onto whichever feed is ACTUALLY serving
     it, preserving the live picture. Feed-agnostic (unlike set_stint):
       - find the feed whose current URL == stint N's row URL (the serving anchor)
-      - if found: keep it on air, set on_air_row = N-1, move the OTHER feed to the
-        next distinct slot after N (via the #491-safe dedupe placement), reflect OBS
-        visibility to the anchor. Non-destructive: Feed.set_index no-ops (no kill)
-        when a feed is already at its target index, so an already-correct feed is
-        not cut.
-      - if NO feed serves N: fall back to set_stint(N) (deliberate re-point + cut)."""
+      - if found (via _feed_serving: phase==serving, not dropped/paused): keep it on
+        air, set on_air_row = N-1, move the OTHER feed to the next distinct slot after
+        max(N-1, anchor.idx) (the #491-safe dedupe placement, keeping the anchor the
+        lower index so live_feed names it), reflect OBS visibility to the anchor.
+        Non-destructive: the anchor feed is never re-indexed; Feed.set_index no-ops
+        (no kill) when the other feed is already at its target.
+      - if NO feed serves N: this is a takeover, not a resync -> return an error and
+        mutate nothing. A director-tier /resync must NEVER perform the producer+step-up
+        gated cut; the operator uses /set/stint (producer+step-up) for a real takeover."""
 ```
 
 Non-destructiveness falls out of the existing `Feed.set_index` early-return: it kills the
