@@ -945,6 +945,29 @@ def t_slot_start_indices():
     assert m.slot_start_indices(1, []) == (0, 1)
 
 
+def t_dedupe_pull_index():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+            ("uB", "B", "S3", 3), ("uD", "D", "S4", 4)]
+    # No collision: different URLs -> unchanged.
+    assert m.dedupe_pull_index(1, 0, rows) == (1, False)
+    # Collision (contiguous same-URL slot): target row2 uB vs other row1 uB
+    # -> next distinct slot (row3 uD).
+    assert m.dedupe_pull_index(2, 1, rows) == (3, True)
+    # Collision at the slot head: target row1 uB vs other row2 uB -> row3.
+    assert m.dedupe_pull_index(1, 2, rows) == (3, True)
+    # Idle/blank target (idx == len) never collides.
+    assert m.dedupe_pull_index(4, 0, rows) == (4, False)
+    # Other feed idle -> no collision.
+    assert m.dedupe_pull_index(1, 4, rows) == (1, False)
+    # Non-contiguous repeated URL: loop past it.
+    rows2 = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+             ("uC", "C", "S3", 3), ("uB", "B", "S4", 4)]
+    # target row3 uB vs other row1 uB -> no safe later slot -> idle sentinel (4).
+    assert m.dedupe_pull_index(3, 1, rows2) == (4, True)
+    # target row1 uB vs other row3 uB -> next distinct slot row2 (uC).
+    assert m.dedupe_pull_index(1, 3, rows2) == (2, True)
+
+
 def t_is_substitution():
     assert m.is_substitution("uA", 1, "uB", 1) is True      # same stint, new URL
     assert m.is_substitution("uA", 1, "uA", 1) is False     # same URL -> reconnect, not a swap

@@ -3713,6 +3713,35 @@ def is_continuation(slots, row):
     return 1 <= row < len(slots) and slots[row] == slots[row - 1]
 
 
+def dedupe_pull_index(target_idx, other_idx, rows):
+    """Collision-free pull index for a feed that wants to sit at 0-based
+    *target_idx* while the OTHER feed sits at *other_idx*. Enforces the
+    single-pull invariant (#491): a feed must never pull the identical non-empty
+    URL the other feed already holds.
+
+    - Empty/idle target (idx past the end or a blank URL), or a target URL that
+      differs from the other feed's URL -> (target_idx unchanged, False).
+    - Same non-empty URL -> advance to next_slot_first_row, the first row of the
+      next DISTINCT slot; loop-until-safe so a non-contiguous later slot repeating
+      the other feed's URL is skipped too, ending at the idle sentinel
+      (idx == len(rows)) when nothing collision-free remains. Returns
+      (idx, True). Pure."""
+    n = len(rows)
+    ti = max(0, min(int(target_idx), n))   # n == the idle sentinel (one past end)
+
+    def url(i):
+        return (rows[i][0] or "").strip() if 0 <= i < n else ""
+
+    other_url = url(other_idx)
+    if ti >= n or not url(ti) or url(ti) != other_url:
+        return ti, False
+    slots = pull_slots(rows)
+    idx = ti
+    while idx < n and url(idx) and url(idx) == other_url:
+        idx = next_slot_first_row(slots, idx)   # strictly increases -> terminates
+    return idx, True
+
+
 def slot_start_indices(stint, rows):
     """Slot-aware producer-takeover placement. 1-based *stint* is on air NOW: Feed
     A pulls the HEAD of that stint's slot (so a takeover onto the second row of a
