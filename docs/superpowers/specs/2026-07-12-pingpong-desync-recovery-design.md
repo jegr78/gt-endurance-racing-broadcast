@@ -158,7 +158,13 @@ profile + `tools/obs-sim.py` recipe, via the `wiki-screenshots` skill) so the ba
 - [ ] The heartbeat detects an inconsistent ping-pong state (after the settle) and raises a
       clear operator signal (panel banner + log); it never silently serves wrong ON-AIR
       data and never mutates feeds/OBS on its own.
-- [ ] The cockpit degrades to "syncing…" instead of wrong data and recovers on reconcile;
-      `live_feed()` is unchanged.
-- [ ] Unit tests for the desync predicate and the feed-agnostic non-destructive resync.
-- [ ] `director-panel.png` + cockpit wiki screenshots refreshed in the same change.
+- [x] The cockpit degrades to "syncing…" instead of wrong data and recovers on reconcile;
+      `live_feed()` is unchanged. (Both the big tally AND the stint-plan card's ON-AIR marker
+      are gated on `d.syncing`.)
+- [x] Unit tests for the desync predicate and the feed-agnostic non-destructive resync.
+- [~] `director-panel.png` + cockpit wiki screenshots — **intentionally deferred.** The banner
+      and "syncing…" are transient, conditional error states; the panels' DEFAULT documented
+      appearance is unchanged, so the canonical shots are not stale. The changed components were
+      instead visually verified per-surface (headless render + eyeball, recorded in
+      `runtime/ui-visual-verified.json`). Regenerating the wiki images to force an error state
+      would make them less representative of normal operation.
