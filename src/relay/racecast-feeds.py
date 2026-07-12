@@ -5901,12 +5901,24 @@ class Relay:
 
     def advance(self, which, delta):
         f = self.feeds.get(which.upper())
-        if not f: return None
-        changed = f.set_index(f.idx + delta)
+        if not f:
+            return None
+        other_key = "B" if which.upper() == "A" else "A"
+        other = self.feeds.get(other_key)
+        target = f.idx + delta
+        redirected = False
+        if other is not None:
+            rows = self.source.get_rows()
+            target, redirected = dedupe_pull_index(target, other.idx, rows)
+            if redirected:
+                LOG.info("advance %s would duplicate feed %s's stream; "
+                         "auto-advanced to row %d (next distinct slot)",
+                         which.upper(), other_key, target + 1)
+        changed = f.set_index(target)
         # Spread **self.status() FIRST, explicit keys last, so a future status()
-        # field named "changed"/"feed" can never silently shadow these (matches
-        # next_auto's return-dict ordering).
-        return {**self.status(), "changed": changed, "feed": which.upper()}
+        # field can never silently shadow these (matches next_auto's ordering).
+        return {**self.status(), "changed": changed, "feed": which.upper(),
+                "redirected": redirected}
 
     def set_index(self, which, idx):
         f = self.feeds.get(which.upper())

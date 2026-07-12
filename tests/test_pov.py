@@ -1204,6 +1204,21 @@ def t_reload_guards_same_url_double_pull():
     assert r.B.current_channel()[0] != "uA"         # off-air B re-pointed off the dup
 
 
+def t_advance_guards_same_url_double_pull():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+            ("uB", "B", "S3", 3), ("uD", "D", "S4", 4)]
+    r = m.Relay(_StubSource(["uA", "uB", "uB", "uD"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    for f in r.feeds.values():
+        f.phase = "serving"
+    # A row0 uA on air, B row1 uB. Nudge A by +2 -> row2 (uB) would duplicate B.
+    out = r.advance("A", +2)
+    assert out["redirected"] is True
+    urls = {k: f.current_channel()[0] for k, f in r.feeds.items()}
+    assert list(urls.values()).count("uB") == 1     # no duplicate uB
+    assert r.A.current_channel()[0] == "uD"          # A bumped to next distinct slot
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
