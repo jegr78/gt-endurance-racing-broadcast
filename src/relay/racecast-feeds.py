@@ -6018,6 +6018,41 @@ class Relay:
         self._reflect(self.live_feed(), cut=False)   # set visibility/audio; director picks the scene
         return self.status()
 
+    def resync_to_stint(self, stint):
+        """Feed-agnostic desync recovery: reconcile 'stint <N> is on air NOW' onto
+        whichever feed is ACTUALLY serving it, preserving the live picture. Finds
+        the feed whose current URL == stint N's row URL and keeps it on air (A OR
+        B), sets on_air_row, and moves the OTHER feed to the next distinct slot
+        (#491-safe). Non-destructive: the anchor feed is never re-indexed, and
+        Feed.set_index no-ops (no kill) when a feed is already at its target. Falls
+        back to set_stint (a deliberate re-point + cut) only when NO feed serves N."""
+        self.source.refresh(timeout=6)
+        rows = self.source.get_rows()
+        n = len(rows)
+        target = min(max(1, int(stint)) - 1, max(0, n - 1)) if n else 0
+        target_url = (rows[target][0] or "").strip() if n else ""
+        anchor = None
+        if target_url:
+            for k in ("A", "B"):
+                ch, _ = self.feeds[k].current_channel()
+                if (ch or "").strip() == target_url and not self.feeds[k].dropped:
+                    anchor = k
+                    break
+        if anchor is None:
+            LOG.info("resync_to_stint -> stint %d not served by any feed; "
+                     "falling back to set_stint (re-point)", target + 1)
+            return self.set_stint(stint)
+        other = "B" if anchor == "A" else "A"
+        slots = pull_slots(rows)
+        off_idx, _redir = dedupe_pull_index(
+            next_slot_first_row(slots, target), self.feeds[anchor].idx, rows)
+        self.feeds[other].set_index(off_idx)   # no kill if already there
+        self.on_air_row = target
+        LOG.info("resync_to_stint -> stint %d anchored on serving feed %s (no cut); "
+                 "feed %s -> slot %d", target + 1, anchor, other, off_idx + 1)
+        self._reflect(anchor, cut=False)
+        return self.status()
+
     def set_mode(self, mode):
         """Switch the active schedule between 'race' and 'qualifying'. Re-points
         both feeds to the new schedule's stint 1 — for a single-stream qualifying
@@ -7550,6 +7585,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if len(p)==2 and p[0]=="next":          return self._ok(relay.advance(p[1], +2))
                 if len(p)==2 and p[0]=="prev":          return self._ok(relay.advance(p[1], -2))
                 if len(p)==2 and p[0]=="reload":        return self._ok(relay.reload(p[1]))
+                if len(p)==3 and p[:2]==["resync","stint"]:
+                    res = relay.resync_to_stint(int(p[2]))
+                    # Puts a stint on air -> same HUD auto-write as /set/stint.
+                    if setup_ctl:
+                        _push_live_schedule(relay, setup_ctl)
+                    return self._send(res)
                 if len(p)==3 and p[:2]==["set","stint"]:
                     res = relay.set_stint(int(p[2]))
                     # Producer takeover puts a fresh stint on air -> same HUD

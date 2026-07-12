@@ -74,6 +74,8 @@ def min_capability(segments, method="GET"):
         return Requirement(DIRECTOR, False)
     if len(p) == 3 and p[0] == "set":          # ["set", A|B, n]; stint handled above
         return Requirement(DIRECTOR, False)
+    if len(p) == 3 and p[:2] == ["resync", "stint"]:   # in-session director recovery
+        return Requirement(DIRECTOR, False)
     if p == ["panel"]:
         return Requirement(DIRECTOR, False)
     if p and p[0] == "pov":                     # all /pov/* are control

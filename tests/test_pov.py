@@ -1260,6 +1260,42 @@ def t_relay_status_exposes_desync_block():
     assert r.status()["desync"]["active"] is False
 
 
+def t_resync_to_stint_keeps_serving_feed_no_cut():
+    # Slot-parity desync: stint 3 legitimately runs on Feed B (idx2), Feed A is the
+    # dropped ex-on-air feed stuck at a low idx (idx0). set_stint(3) would be
+    # A-centric and cut B; resync must keep B on air and move A.
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+            ("uC", "C", "S3", 3), ("uD", "D", "S4", 4)]
+    r = m.Relay(_StubSource(["uA", "uB", "uC", "uD"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    r.A.set_index(0); r.B.set_index(2)             # A idx0 (dropped), B idx2 serving uC
+    for f in r.feeds.values(): f.phase = "serving"
+    r.A.dropped = True
+    b_idx_before = r.B.idx
+    b_proc_before = r.B.proc                        # anchor's process must be untouched
+    r.resync_to_stint(3)
+    assert r.B.idx == b_idx_before                  # anchor (B) NOT moved -> no cut
+    assert r.B.proc is b_proc_before
+    assert r.on_air_row_idx() == 2                  # display stint 3
+    assert r.live_feed() == "B"                     # B is now the lower-or-equal? -> serving anchor
+    assert r.A.idx > r.B.idx                        # A moved forward off the low idx
+    assert r.A.current_channel()[0] != "uC"         # A not duplicating B's stream
+
+
+def t_resync_to_stint_falls_back_when_no_feed_serves():
+    # No feed serves stint 4's URL -> deliberate re-point via set_stint.
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+            ("uC", "C", "S3", 3), ("uD", "D", "S4", 4)]
+    r = m.Relay(_StubSource(["uA", "uB", "uC", "uD"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    r.A.set_index(0); r.B.set_index(1)
+    for f in r.feeds.values(): f.phase = "idle"     # nothing serving uD
+    r.resync_to_stint(4)
+    # set_stint fallback: A on slot head of stint 4 (row3), display stint 4.
+    assert r.on_air_row_idx() == 3
+    assert r.A.idx == 3
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
