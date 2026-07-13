@@ -276,6 +276,20 @@ def t_consumer_health_aggregates_registry():
     assert srv.consumer_health(1000.0) == (10.0, 0)          # snaps cleared, cycle_ts kept
 
 
+def t_soak_stall_active_schedule():
+    import importlib.util as _il
+    p = os.path.join(ROOT, "tools", "fanout-soak.py")
+    s = _il.spec_from_file_location("fanout_soak", p)
+    soak = _il.module_from_spec(s); s.loader.exec_module(soak)
+    # last 3 s of every 30 s period are a stall
+    assert soak.soak_stall_active(0.0, period_s=30, duration_s=3) is False
+    assert soak.soak_stall_active(26.9, period_s=30, duration_s=3) is False
+    assert soak.soak_stall_active(27.1, period_s=30, duration_s=3) is True
+    assert soak.soak_stall_active(29.9, period_s=30, duration_s=3) is True
+    assert soak.soak_stall_active(57.1, period_s=30, duration_s=3) is True   # wraps
+    assert soak.soak_stall_active(5.0, period_s=0, duration_s=3) is False    # disabled
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
