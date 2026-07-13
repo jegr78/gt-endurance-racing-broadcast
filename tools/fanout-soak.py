@@ -78,13 +78,15 @@ def main():
     ap.add_argument("--no-autoresync", action="store_true", help="baseline: log only, never reset")
     ap.add_argument("--source", default="testsrc",
                     help="'testsrc' (default synthetic ffmpeg -re) or a stream URL pulled "
-                         "via `streamlink <url> best --stdout` (real VBR content = the box condition)")
+                         "via `streamlink <url> <quality> --stdout` (real VBR content = the box condition)")
+    ap.add_argument("--quality", default="best",
+                    help="streamlink quality for a URL --source (e.g. 720p60; default best)")
     args = ap.parse_args()
 
     if args.source == "testsrc":
         source_cmd = FFMPEG_CMD
     else:
-        source_cmd = ["streamlink", args.source, "best", "--stdout"]
+        source_cmd = ["streamlink", args.source, args.quality, "--stdout"]
 
     fe = _load("irofeeds", "src", "relay", "racecast-feeds.py")
     obs_ws = _load("obs_ws", "src", "scripts", "obs_ws.py")
