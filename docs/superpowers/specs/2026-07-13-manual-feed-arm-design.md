@@ -124,7 +124,12 @@ per-surface (headless render + eyeball, recorded in `runtime/ui-visual-verified.
 - [ ] Activate starts the pull; deactivate stops it promptly and frees the port (like
       `/pov/stop`).
 - [ ] A deactivated feed reports `stopped` (not `down`) and raises no health alarm.
-- [ ] Panel + Companion expose per-feed arm/disarm with clear state; endpoints
-      director-gated and Funnel-safe.
+- [ ] Panel exposes per-feed arm/disarm with clear state; endpoints director-gated and
+      Funnel-safe. **Companion buttons deferred** to a maintainer follow-up — the
+      `racecast-buttons.companionconfig` is a hand-maintained JSON exported from the
+      Companion UI (not a code artifact; `export companion` only copies it), so adding
+      buttons is a Companion-UI → re-export → strip workflow (like the wiki screenshots),
+      not part of this code PR. The Panel + endpoints deliver the full capability over
+      tailnet AND Funnel.
 - [ ] Behaviour is opt-in — existing auto-pull deployments are unchanged with the flag off.
 - [ ] Unit tests for activate/deactivate incl. the "URL present but paused → no pull" path.
