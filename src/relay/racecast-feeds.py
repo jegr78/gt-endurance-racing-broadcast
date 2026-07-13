@@ -264,6 +264,14 @@ def auto_failover_enabled(environ):
     return str(environ.get("RACECAST_AUTO_FAILOVER", "")).strip().lower() in _FAILOVER_TRUTHY
 
 
+def manual_feed_arm_enabled(environ):
+    """True only when RACECAST_MANUAL_FEED_ARM is an explicit truthy token. OFF by
+    default (opt-in): the default is today's auto-pull + auto-pre-warm. When on,
+    both A/B feeds start disarmed (paused) and the director arms/disarms each pull
+    explicitly (#492). Pure so the switch is unit-testable."""
+    return str(environ.get("RACECAST_MANUAL_FEED_ARM", "")).strip().lower() in _FAILOVER_TRUTHY
+
+
 # ---------- On-air program-audio monitor (#program-audio) ------------------
 _PROGRAM_AUDIO_FALSEY = {"0", "false", "no", "off"}
 
@@ -5286,6 +5294,13 @@ class Relay:
         self.A.on_recovery = self._record_feed_recovery
         self.B.on_recovery = self._record_feed_recovery
         self.feeds = {"A": self.A, "B": self.B}
+        # Two-stage feed scheduling (#492): when RACECAST_MANUAL_FEED_ARM is set,
+        # both A/B feeds start DISARMED (paused) — a URL at the index does not pull
+        # until the director arms the feed. Default off = auto-pull unchanged.
+        self.manual_feed_arm = manual_feed_arm_enabled(os.environ)
+        if self.manual_feed_arm:
+            self.A.paused = True
+            self.B.paused = True
         self.obs_note = None          # last OBS note (None/"" = ok); read by status()
         self.obs_reachable = None     # last LIVE reachability probe; None until first /status
         self._obs_probe_ts = 0.0      # time.time() of the last reachability probe
@@ -5613,6 +5628,7 @@ class Relay:
                                "channel": ch,
                                "platform": platform_of(channel_url(ch)) if ch else None,
                                "state": "stopped" if f.paused else f.phase,
+                               "armed": not f.paused,
                                "state_age_s": round(now - f.phase_since, 1),
                                "down": f.dropped and not f.paused,
                                "last_error": f.last_error}
@@ -5634,6 +5650,7 @@ class Relay:
         # resume/show that displayed stint, not the stale pull row.
         live = self.live_feed()
         out["live"] = {"feed": live, "stint": self.on_air_row_idx() + 1, "mode": self.mode}
+        out["manual_feed_arm"] = self.manual_feed_arm
         out["league"] = {"sheet_id": self.sheet_id, "name": self.league_name}
         out["producer"] = self.producer_name   # who runs this machine (#317 — for takeover)
         self._refresh_health(now)            # keep the displayed level fresh (2 s poll)

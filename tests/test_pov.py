@@ -1297,6 +1297,40 @@ def t_resync_to_stint_no_op_when_no_feed_serves():
     assert (r.A.idx, r.B.idx) == (a_before, b_before)   # nothing moved (no set_stint cut)
 
 
+def t_manual_feed_arm_enabled():
+    # OFF by default (opt-in) — absent or empty is off.
+    assert m.manual_feed_arm_enabled({}) is False
+    assert m.manual_feed_arm_enabled({"RACECAST_MANUAL_FEED_ARM": ""}) is False
+    # Explicit truthy tokens enable it.
+    for v in ("1", "true", "yes", "on", "ON", "True"):
+        assert m.manual_feed_arm_enabled({"RACECAST_MANUAL_FEED_ARM": v}) is True, v
+    # Anything else stays off.
+    for v in ("0", "false", "no", "off", "banana"):
+        assert m.manual_feed_arm_enabled({"RACECAST_MANUAL_FEED_ARM": v}) is False, v
+
+
+def t_relay_manual_arm_starts_feeds_disarmed():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2)]
+    # Default (flag absent): feeds armed (paused False), manual_feed_arm False.
+    r = m.Relay(_StubSource(["uA", "uB"], rows), (53001, 53002), LOGDIR)
+    assert r.manual_feed_arm is False
+    assert r.A.paused is False and r.B.paused is False
+    st = r.status()
+    assert st["manual_feed_arm"] is False
+    assert st["feeds"]["A"]["armed"] is True and st["feeds"]["B"]["armed"] is True
+    # Flag on: both feeds start disarmed (paused), armed=False in /status.
+    os.environ["RACECAST_MANUAL_FEED_ARM"] = "1"
+    try:
+        r2 = m.Relay(_StubSource(["uA", "uB"], rows), (53003, 53004), LOGDIR)
+    finally:
+        del os.environ["RACECAST_MANUAL_FEED_ARM"]
+    assert r2.manual_feed_arm is True
+    assert r2.A.paused is True and r2.B.paused is True
+    st2 = r2.status()
+    assert st2["manual_feed_arm"] is True
+    assert st2["feeds"]["A"]["armed"] is False and st2["feeds"]["B"]["armed"] is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
