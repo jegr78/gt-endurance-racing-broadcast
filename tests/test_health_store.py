@@ -583,6 +583,43 @@ def t_desync_active_round_trips():
         conn.close()
 
 
+def t_migrate_adds_render_skip_rate_v7_lossless_and_charted():
+    import tempfile, os, sqlite3
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "h.db")
+    c = sqlite3.connect(path)
+    try:
+        c.executescript("CREATE TABLE samples (ts REAL NOT NULL, kind TEXT NOT NULL, "
+                        "health_level TEXT, obs_render_skipped_pct REAL);")
+        c.execute("PRAGMA user_version=6")
+        c.execute("INSERT INTO samples (ts, kind, obs_render_skipped_pct) VALUES (?,?,?)",
+                  (1000.0, "tick", 0.3))
+        c.commit()
+    finally:
+        c.close()
+    conn = hs.open_db(path)
+    try:
+        hs.migrate(conn)
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == hs.SCHEMA_VERSION
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(samples)").fetchall()}
+        assert "obs_render_skip_rate_pct" in cols
+        row = conn.execute("SELECT obs_render_skipped_pct, obs_render_skip_rate_pct "
+                           "FROM samples").fetchone()
+        assert row[0] == 0.3 and row[1] is None      # lossless upgrade; new col NULL
+        assert "obs_render_skip_rate_pct" in hs.NUMERIC_FIELDS   # a charted #488 drift series
+    finally:
+        conn.close()
+    # round-trip on a FRESH (full-schema) migrated DB
+    conn2 = hs.open_db(os.path.join(d, "fresh.db"))
+    try:
+        hs.migrate(conn2)
+        hs.record(conn2, {"ts": 5.0, "obs_render_skip_rate_pct": 4.8}, "tick")
+        got = hs.query_range(conn2, 0, 10)[0]
+        assert got["obs_render_skip_rate_pct"] == 4.8
+    finally:
+        conn2.close()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

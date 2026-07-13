@@ -271,7 +271,8 @@ _HEALTH_LABEL = {"green": "OK", "yellow": "DEGRADED", "red": "CRITICAL"}
 
 # ---------- Feed fan-out stall detection (relay feed multiplexing, #358) --------
 FANOUT_STALL_S = 8.0   # seconds without a byte from streamlink before a fan-out reader is "stalled"
-FANOUT_RING_BYTES = 8 * 1024 * 1024   # per-feed ring window (bounded; ≈ a few seconds at typical feed bitrate)
+FANOUT_RING_BYTES = 16 * 1024 * 1024  # per-feed ring window (bounded; ≈12 s at 10 Mbps). #488: 8→16 MB headroom so the auto-resync fires an orderly rebuild below the hard cursor-snap.
+AUTORESYNC_DEBOUNCE_POLLS = 2  # #488: consecutive heartbeat polls over the skip-rate threshold before an auto-resync fires
 _FANOUT_FALSEY = {"0", "false", "no", "off"}
 
 
@@ -280,6 +281,44 @@ def fanout_enabled(environ):
     (#358, live-verified 2026-06-29); set RACECAST_FEED_FANOUT=0 to fall back to
     the proven direct-serve path. Pure so the switch is unit-testable."""
     return str(environ.get("RACECAST_FEED_FANOUT", "")).strip().lower() not in _FANOUT_FALSEY
+
+
+def feed_autoresync_enabled(environ):
+    """True unless RACECAST_FEED_AUTORESYNC is an explicit falsey token. Default ON
+    (#488): the relay auto-rebuilds a feed's OBS input when it detects OBS drifting
+    behind the live edge (the proven manual "OBS Feed Reset", automated). Set
+    RACECAST_FEED_AUTORESYNC=0 to disable. Pure so the switch is unit-testable."""
+    return str(environ.get("RACECAST_FEED_AUTORESYNC", "")).strip().lower() not in _FANOUT_FALSEY
+
+
+def _env_float(environ, key, default):
+    """Parse a positive float env override; fall back to `default` on absent/empty/
+    non-numeric/<=0. Pure."""
+    try:
+        v = float(str(environ.get(key, "")).strip())
+    except (TypeError, ValueError):
+        return default
+    return v if v > 0 else default
+
+
+def feed_autoresync_skip_rate(environ):
+    """OBS render-skip rate (fraction of frames skipped per poll interval) above which the
+    relay auto-rebuilds the on-air feed's OBS input (#488). The socket send-block signal was
+    disproven by the repro study (OBS reads greedily regardless of render state); OBS's own
+    renderSkippedFrames rate is the signal that tracks the drift. Soak-tuned; start 0.02 (2%)."""
+    return _env_float(environ, "RACECAST_FEED_AUTORESYNC_SKIP_RATE", 0.02)
+
+
+def feed_autoresync_cooldown_s(environ):
+    """Min seconds between auto-resyncs (anti-loop). #488."""
+    return _env_float(environ, "RACECAST_FEED_AUTORESYNC_COOLDOWN_S", 60.0)
+
+
+def feed_stall_s(environ):
+    """Byte-stall hard-kill grace (s) for the fan-out watchdog. #488: raised from the
+    hardcoded 8 s so streamlink's internal HLS retry can bridge a recoverable uplink
+    micro-stall before a full re-resolve. Soak-tuned."""
+    return _env_float(environ, "RACECAST_FEED_STALL_S", 20.0)
 
 
 # ---------- Auto-failover to the Intermission scene (#378) ------------------
@@ -378,6 +417,29 @@ def feed_stalled(last_byte_ts, now, stall_s=FANOUT_STALL_S):
     `stall_s`. A None timestamp (never produced) is NOT a stall — that startup
     case is handled by the existing dead_serves path, not the watchdog."""
     return last_byte_ts is not None and (now - last_byte_ts) > stall_s
+
+
+def snap_bytes(prev_cursor, new_cursor, data_len):
+    """Bytes a fan-out consumer lost to a ring cursor-snap. FeedRing.read returns
+    (data, new_cursor) with data == buf[cursor-base:], so the served bytes span
+    [new_cursor-data_len, new_cursor). If that start ran past prev_cursor the ring had
+    overflowed the consumer and read() snapped it forward, skipping the gap. Pure —
+    returns the skipped byte count (0 when the consumer kept up)."""
+    skipped = (new_cursor - data_len) - prev_cursor
+    return skipped if skipped > 0 else 0
+
+
+def render_drift_decision(skip_rate, since_last_reset_s, *, rate_threshold, cooldown_s):
+    """Whether to auto-rebuild the on-air feed's OBS input (#488). True when OBS's render-skip
+    rate for the last poll interval exceeds rate_threshold (OBS failing to render frames on
+    time = the visible drift) AND the cooldown since the last auto-reset has elapsed
+    (since_last_reset_s is None or >= cooldown_s). Pure — unit-tested. A None/<=0 skip_rate
+    never trips it. NB: the socket send-block ("stuck") signal was disproven by the repro
+    study (OBS reads the media socket greedily regardless of its render state); OBS's own
+    renderSkippedFrames rate (obs-ws GetStats) is what tracks the drift."""
+    if since_last_reset_s is not None and since_last_reset_s < cooldown_s:
+        return False
+    return skip_rate is not None and skip_rate > rate_threshold
 
 
 def should_obs_reconnect(fanout, dropped):
@@ -3356,6 +3418,8 @@ class FeedFanoutServer:
         self.log = log
         self._sock = None
         self._stop = False
+        self._consumers = {}            # id -> {"cycle_ts": float, "snaps": int}
+        self._consumers_lock = threading.Lock()
 
     def start(self):
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -3375,23 +3439,54 @@ class FeedFanoutServer:
             threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
 
     def _serve(self, conn):
+        cid = None
         try:
             conn.recv(65536)                    # consume the request line/headers
             conn.sendall(b"HTTP/1.0 200 OK\r\n"
                          b"Content-Type: video/mp2t\r\n"
                          b"Connection: close\r\n\r\n")
             cursor = self.ring.live_offset()    # join at the live edge
+            cid = id(threading.current_thread())
+            with self._consumers_lock:
+                self._consumers[cid] = {"cycle_ts": time.monotonic(), "snaps": 0}
             while not self._stop and not self.ring.closed:
+                prev = cursor
                 data, cursor = self.ring.read(cursor, timeout=1.0)
+                skipped = snap_bytes(prev, cursor, len(data))
+                with self._consumers_lock:
+                    st = self._consumers.get(cid)
+                    if st is not None:
+                        st["cycle_ts"] = time.monotonic()   # read cycle completed
+                        if skipped > 0:
+                            st["snaps"] += 1
                 if data:
-                    conn.sendall(data)
+                    conn.sendall(data)                       # may block if OBS is slow
+                    with self._consumers_lock:
+                        st = self._consumers.get(cid)
+                        if st is not None:
+                            st["cycle_ts"] = time.monotonic()  # send completed
         except OSError:
             pass                                # consumer went away / slow send aborted
         finally:
+            if cid is not None:
+                with self._consumers_lock:
+                    self._consumers.pop(cid, None)
             try:
                 conn.close()
             except OSError:
                 pass  # already closed
+
+    def consumer_health(self, now):
+        """Worst-case OBS-consumer health for the auto-resync sampler: the max send-block
+        age (now - cycle_ts) and the total cursor-snaps across active consumers. Returns
+        (max_stuck_s, total_snaps); (None, 0) when no consumer is attached. Thread-safe."""
+        with self._consumers_lock:
+            if not self._consumers:
+                return None, 0
+            max_stuck = max(now - st["cycle_ts"] for st in self._consumers.values())
+            total_snaps = sum(st["snaps"] for st in self._consumers.values())
+        return max_stuck, total_snaps
+
 
     def stop(self):
         self._stop = True
@@ -5195,6 +5290,7 @@ class Feed:
         self.last_byte_ts = None
         serve_started = time.monotonic()
         stdout = self.proc.stdout
+        stall_s = feed_stall_s(os.environ)
         watchdog_stop = threading.Event()
 
         def _watchdog():
@@ -5202,12 +5298,15 @@ class Feed:
             # (streamlink alive, zero bytes) can't be caught inline, so this
             # thread kills the proc when last_byte_ts goes stale, unblocking the
             # read with EOF. A never-produced byte (last_byte_ts None) is left to
-            # the existing dead_serves/EOF path, per the spec.
+            # the existing dead_serves/EOF path, per the spec. (The OBS-drift
+            # auto-resync is NOT here — it lives in the heartbeat via GetStats,
+            # since the socket send-block signal was disproven; see _check_render_drift.)
             while not watchdog_stop.wait(1.0):
                 if self.stop or self.advance.is_set():
                     return
-                if feed_stalled(self.last_byte_ts, time.monotonic()):
-                    self.log.warning("fan-out stall on %s — killing reader", self.name)
+                if feed_stalled(self.last_byte_ts, time.monotonic(), stall_s=stall_s):
+                    self.log.warning("fan-out stall on %s (>%.0fs) — killing reader",
+                                     self.name, stall_s)
                     self._kill_proc()
                     return
 
@@ -5434,6 +5533,13 @@ class Relay:
         # re-arms on a manual return to the on-air feed scene. Return is manual.
         self.auto_failover = auto_failover_enabled(os.environ)
         self._failed_over = False
+        # #488 render-drift auto-resync (heartbeat, obs-ws GetStats render-skip rate).
+        self.auto_resync = feed_autoresync_enabled(os.environ)
+        self._autoresync_skip_rate = feed_autoresync_skip_rate(os.environ)
+        self._autoresync_cooldown = feed_autoresync_cooldown_s(os.environ)
+        self._last_autoresync_ts = None
+        self._prev_render_counts = None   # (skipped, total) from the previous heartbeat poll
+        self._render_drift_streak = 0     # consecutive over-threshold polls (debounce)
         # Live health heartbeat: displayed level (refreshed on every /status and
         # every tick) + the notification baseline (advanced ONLY by the heartbeat
         # tick so a 2 s /status refresh never "consumes" a transition before the
@@ -5611,6 +5717,8 @@ class Relay:
                 "obs_mem_mb": st.get("obs_mem_mb"),
                 "obs_fps": st.get("obs_fps"),
                 "obs_render_skipped_pct": st.get("obs_render_skipped_pct"),
+                "obs_render_skip_rate_pct": (None if (_rsr := self._current_render_skip_rate())
+                                             is None else round(_rsr * 100, 3)),
                 "obs_disk_free_mb": st.get("obs_disk_free_mb"),
                 # v3 connectivity (sheet_push_ok derived from the timer push status)
                 "funnel_ok": _b(cs.get("funnel_ok")),
@@ -5676,7 +5784,59 @@ class Relay:
                 self._send_health_webhook(level, self.health_reasons, self._notified_level)
                 self._notified_level = level
             self._maybe_auto_failover(now)
+            self._check_render_drift(now)
             self._hb_stop.wait(HEARTBEAT_INTERVAL_S)
+
+    def _current_render_skip_rate(self):
+        """Per-interval OBS render-skip rate (0..1) from obs_stats vs the previous heartbeat's
+        raw counts, or None (no prev / no counts). Does NOT advance the prev counts — the
+        heartbeat's _check_render_drift advances them once per tick. The cumulative
+        obs_render_skipped_pct barely moves during a spike, so this delta rate is the signal
+        the drift shows up in (#488) — recorded into the health history + charted."""
+        st = self.obs_stats or {}
+        skipped = st.get("obs_render_skipped_frames")
+        total = st.get("obs_render_total_frames")
+        prev = self._prev_render_counts
+        if skipped is None or total is None or prev is None:
+            return None
+        d_total = total - prev[1]
+        if d_total <= 0:                       # OBS idle/paused this interval — not drifting
+            return 0.0
+        return (skipped - prev[0]) / d_total
+
+    def _check_render_drift(self, now):
+        """#488: derive OBS's per-interval render-skip rate (obs-ws GetStats, fetched into
+        self.obs_stats by _maybe_probe_obs) and auto-rebuild the ON-AIR feed's OBS input when
+        it stays above the threshold (debounced), cooldown-gated. The socket send-block signal
+        was disproven (OBS reads greedily regardless of render state); renderSkippedFrames is
+        the signal that tracks the visible drift. The rate is recorded every heartbeat (for the
+        health-history chart) even when the auto-resync ACTION is disabled. Best-effort."""
+        rate = self._current_render_skip_rate()
+        # Advance prev every heartbeat (also feeds the next _health_snapshot rate), regardless
+        # of the auto_resync action gate below.
+        st = self.obs_stats or {}
+        skipped, total = st.get("obs_render_skipped_frames"), st.get("obs_render_total_frames")
+        if skipped is not None and total is not None:
+            self._prev_render_counts = (skipped, total)
+        if not self.auto_resync or _obs_ws is None or rate is None:
+            self._render_drift_streak = 0
+            return
+        if rate <= self._autoresync_skip_rate:
+            self._render_drift_streak = 0
+            return
+        self._render_drift_streak += 1         # sustained over-threshold (debounce)
+        if self._render_drift_streak < AUTORESYNC_DEBOUNCE_POLLS:
+            return
+        since = None if self._last_autoresync_ts is None else now - self._last_autoresync_ts
+        if not render_drift_decision(rate, since, rate_threshold=self._autoresync_skip_rate,
+                                     cooldown_s=self._autoresync_cooldown):
+            return
+        live = self.live_feed()
+        LOG.warning("auto-resync %s — OBS render-skip %.1f%% over the last interval — "
+                    "rebuilding OBS input (#488)", live, rate * 100)
+        self.feeds[live]._obs_reconnect()      # threaded, best-effort
+        self._last_autoresync_ts = now
+        self._render_drift_streak = 0
 
     def _maybe_auto_failover(self, now):
         """Auto-switch OBS to the Intermission scene when the ON-AIR feed is

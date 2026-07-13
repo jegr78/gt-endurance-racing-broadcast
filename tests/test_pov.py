@@ -888,6 +888,71 @@ def t_health_snapshot_carries_desync_active():
     assert r._health_snapshot(123.0)["desync_active"] == 0
 
 
+def t_check_render_drift_fires_on_sustained_skip_then_cooldown():
+    # #488: the GetStats render-skip rate over successive polls, debounced + cooldown-gated,
+    # rebuilds the on-air feed's OBS input. Stateful relay path, deterministic here.
+    r = _make_min_relay()
+    r.auto_resync = True
+    r._autoresync_skip_rate = 0.02
+    r._autoresync_cooldown = 60.0
+    r._prev_render_counts = None; r._render_drift_streak = 0; r._last_autoresync_ts = None
+    calls = []
+    live = r.live_feed()
+    r.feeds[live]._obs_reconnect = lambda: calls.append(1)
+    # poll 1: baseline (no prev -> no rate yet)
+    r.obs_stats = {"obs_render_skipped_frames": 0, "obs_render_total_frames": 1000}
+    r._check_render_drift(100.0)
+    # poll 2: +50/+1000 = 5% > 2% -> streak 1 (< debounce 2) -> no fire
+    r.obs_stats = {"obs_render_skipped_frames": 50, "obs_render_total_frames": 2000}
+    r._check_render_drift(130.0)
+    assert calls == [], "one over-threshold poll must not fire (debounce)"
+    # poll 3: another 5% -> streak 2 == AUTORESYNC_DEBOUNCE_POLLS -> fires on the on-air feed
+    r.obs_stats = {"obs_render_skipped_frames": 100, "obs_render_total_frames": 3000}
+    r._check_render_drift(160.0)
+    assert calls == [1], "sustained over-threshold must rebuild the on-air OBS input"
+    # cooldown: two more over-threshold polls, but within 60 s -> suppressed
+    r.obs_stats = {"obs_render_skipped_frames": 200, "obs_render_total_frames": 4000}
+    r._check_render_drift(170.0)   # streak 1
+    r.obs_stats = {"obs_render_skipped_frames": 300, "obs_render_total_frames": 5000}
+    r._check_render_drift(180.0)   # streak 2 but since=20 s < 60 s cooldown -> no fire
+    assert calls == [1], "within cooldown -> no second resync"
+
+
+def t_check_render_drift_quiet_when_healthy_or_disabled():
+    r = _make_min_relay()
+    r._autoresync_skip_rate = 0.02
+    r._autoresync_cooldown = 60.0
+    calls = []
+    live = r.live_feed()
+    r.feeds[live]._obs_reconnect = lambda: calls.append(1)
+    # healthy: ~0.5 % skip rate per interval, well below 2 % -> never fires
+    r.auto_resync = True
+    r._prev_render_counts = None; r._render_drift_streak = 0; r._last_autoresync_ts = None
+    for i in range(1, 7):
+        r.obs_stats = {"obs_render_skipped_frames": 5 * i, "obs_render_total_frames": 1000 * i}
+        r._check_render_drift(100.0 + 30 * i)
+    assert calls == [], "healthy low skip-rate must never trigger a resync"
+    # kill-switch: even a huge sustained spike does nothing when auto_resync is off
+    r.auto_resync = False
+    r._prev_render_counts = None; r._render_drift_streak = 0
+    for skip, tot, t in [(0, 1000, 400.0), (900, 2000, 430.0), (1800, 3000, 460.0)]:
+        r.obs_stats = {"obs_render_skipped_frames": skip, "obs_render_total_frames": tot}
+        r._check_render_drift(t)
+    assert calls == [], "kill-switch (auto_resync=False) disables the auto-resync"
+
+
+def t_health_snapshot_carries_render_skip_rate():
+    # #488: the per-interval render-skip rate (delta, not the flat cumulative pct) is written
+    # into the health snapshot for the Health-Monitor chart + box-event validation.
+    r = _make_min_relay()
+    r._prev_render_counts = None
+    r.obs_stats = {"obs_render_skipped_frames": 10, "obs_render_total_frames": 1000}
+    assert r._health_snapshot(1.0)["obs_render_skip_rate_pct"] is None   # no prev yet
+    r._prev_render_counts = (10, 1000)
+    r.obs_stats = {"obs_render_skipped_frames": 60, "obs_render_total_frames": 2000}  # +50/+1000
+    assert r._health_snapshot(2.0)["obs_render_skip_rate_pct"] == 5.0    # 5% per interval
+
+
 def t_health_snapshot_carries_new_fields():
     relay = _make_min_relay()
     relay.obs_stats = {"obs_cpu_pct": 10.0, "obs_fps": 60.0, "stream_active": True,

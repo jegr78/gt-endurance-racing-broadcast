@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Local fan-out soak harness (#488) — maintainer, NOT shipped, NOT run in CI.
+
+Drives the REAL relay FeedRing + FeedFanoutServer from a source (synthetic ffmpeg -re, or
+a real stream via streamlink) into your LOCAL OBS, so a long real-OBS soak can be run and
+observed. It SERVES + LOGS only — the OBS-drift auto-resync lives in the RELAY now (via the
+obs-ws GetStats render-skip rate), NOT here; the socket send-block "stuck"/snap logged below
+proved BLIND to render drift (see the spec's DESIGN PIVOT) and is kept only to confirm the
+ring is fed. Measure the actual render-skip signal directly off OBS (obs-ws GetStats).
+
+No cloud box needed; a real stream needs streamlink but no cookies for a public live.
+
+Usage:
+    # 1. Run the harness (prints the URL to point OBS at):
+    python3 tools/fanout-soak.py --port 53001                         # synthetic testsrc
+    python3 tools/fanout-soak.py --port 53001 --source <URL> --quality 720p60   # real stream
+    # 2. In OBS add a Media Source, uncheck "Local File", URL http://127.0.0.1:53001.
+    # 3. Watch the log: t / stuck / snaps lines. Let it run for a long soak.
+
+    # Trigger-B check (inject a 3 s source stall every 30 s):
+    python3 tools/fanout-soak.py --port 53001 --stall-period 30 --stall-duration 3
+"""
+import argparse
+import importlib.util
+import os
+import subprocess
+import sys
+import threading
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+
+
+def _load(name, *rel):
+    spec = importlib.util.spec_from_file_location(name, os.path.join(ROOT, *rel))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def soak_stall_active(elapsed_s, *, period_s, duration_s):
+    """True during the injected-stall window (the last `duration_s` of every
+    `period_s`). period_s<=0 or duration_s<=0 disables. Pure — unit-tested."""
+    if period_s <= 0 or duration_s <= 0:
+        return False
+    return (elapsed_s % period_s) >= (period_s - duration_s)
+
+
+FFMPEG_CMD = [
+    "ffmpeg", "-hide_banner", "-loglevel", "error",
+    "-re", "-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=60",
+    "-f", "lavfi", "-i", "sine=frequency=1000",
+    "-c:v", "libx264", "-preset", "ultrafast", "-b:v", "8M", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-f", "mpegts", "-",
+]
+
+
+def main():
+    # Line-buffer our progress output so a `| tee runtime/soak.log` (or any redirect)
+    # captures each line immediately instead of block-buffering it — and so a Ctrl-C
+    # never loses the buffered tail. Without this, piped stdout is block-buffered and
+    # the log file looks empty for minutes.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, OSError):
+        pass  # non-standard stdout — best effort
+    ap = argparse.ArgumentParser(description="Fan-out soak harness (#488)")
+    ap.add_argument("--port", type=int, default=53001)
+    ap.add_argument("--stall-period", type=float, default=0.0, help="s between injected stalls (0=off)")
+    ap.add_argument("--stall-duration", type=float, default=3.0, help="s each injected stall lasts")
+    ap.add_argument("--log-interval", type=float, default=5.0)
+    ap.add_argument("--source", default="testsrc",
+                    help="'testsrc' (default synthetic ffmpeg -re) or a stream URL pulled "
+                         "via `streamlink <url> <quality> --stdout` (real VBR content = the box condition)")
+    ap.add_argument("--quality", default="best",
+                    help="streamlink quality for a URL --source (e.g. 720p60; default best)")
+    args = ap.parse_args()
+
+    if args.source == "testsrc":
+        source_cmd = FFMPEG_CMD
+    else:
+        source_cmd = ["streamlink", args.source, args.quality, "--stdout"]
+
+    fe = _load("irofeeds", "src", "relay", "racecast-feeds.py")
+
+    ring = fe.FeedRing(fe.FANOUT_RING_BYTES)
+    srv = fe.FeedFanoutServer("127.0.0.1", args.port, ring, fe.logging.getLogger("soak"))
+    srv.start()
+    print(f"[soak] serving on http://127.0.0.1:{srv.port}  — point OBS Media Source at it")
+    print(f"[soak] ring={fe.FANOUT_RING_BYTES}B  (the OBS-drift auto-resync lives in the RELAY "
+          f"via GetStats render-skip rate; this harness only serves + logs the socket side)")
+    print(f"[soak] source: {args.source} ({' '.join(source_cmd[:2])}...)")
+
+    proc = subprocess.Popen(source_cmd, stdout=subprocess.PIPE)
+    stop = threading.Event()
+    started = time.monotonic()
+
+    def _monitor():
+        # The socket send-block ("stuck") / cursor-snaps proved BLIND to OBS render drift
+        # (see the spec pivot) — logged here only to confirm the ring is fed. The render-skip
+        # signal is measured directly off OBS (obs-ws GetStats), not here.
+        while not stop.is_set():
+            time.sleep(args.log_interval)
+            now = time.monotonic()
+            stuck_s, snaps = srv.consumer_health(now)
+            print(f"[soak] t={now-started:7.1f}s stuck={('-' if stuck_s is None else f'{stuck_s:.1f}')}s "
+                  f"snaps={snaps}")
+
+    threading.Thread(target=_monitor, daemon=True).start()
+    try:
+        while True:
+            chunk = proc.stdout.read(65536)
+            if not chunk:
+                break
+            if not soak_stall_active(time.monotonic() - started,
+                                     period_s=args.stall_period, duration_s=args.stall_duration):
+                ring.write(chunk)          # withhold during an injected stall
+    except KeyboardInterrupt:
+        pass  # Ctrl-C → fall through to cleanup
+    finally:
+        stop.set()
+        try:
+            proc.terminate()
+        except OSError:
+            pass  # process already gone
+        srv.stop()
+        print("[soak] done")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

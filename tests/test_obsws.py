@@ -1128,9 +1128,12 @@ def t_parse_obs_stats():
     assert out["obs_disk_free_mb"] == 51200.0
     assert out["obs_fps"] == 60.0
     assert out["obs_render_skipped_pct"] == 0.3
+    # #488: raw cumulative counts carried through for the render-drift rate derivation.
+    assert out["obs_render_skipped_frames"] == 3 and out["obs_render_total_frames"] == 1000
     # Missing fields -> None, never KeyError; zero total -> None (no div by zero).
     out2 = m.parse_obs_stats({"renderSkippedFrames": 0, "renderTotalFrames": 0})
     assert out2["obs_cpu_pct"] is None and out2["obs_render_skipped_pct"] is None
+    assert out2["obs_render_skipped_frames"] == 0 and out2["obs_render_total_frames"] == 0
 
 
 def t_parse_stream_status():
