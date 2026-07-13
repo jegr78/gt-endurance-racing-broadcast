@@ -415,6 +415,14 @@ def feed_recovery_churn(recovery_ts, now, window_s=FEED_CHURN_WINDOW_S,
     return len(recent) >= threshold
 
 
+def churn_at_here_suppressed(source_state):
+    """True when a feed-recovery-churn @here should be SUPPRESSED because the feed's
+    source is a known not-(yet)-live state (#495): a source that is offline or has
+    ended and keeps flapping while the relay retries is expected churn, not a relay
+    fault. Genuine churn (source_state None) still pages. Pure → unit-tested."""
+    return source_state in ("not_live_yet", "ended")
+
+
 def feed_health_state(dropped, dropped_since, served_ok, now,
                       grace_s=HEALTH_DROP_GRACE_S):
     """Classify one feed's live health as 'down' / 'connecting' / 'ok' from its
@@ -5060,7 +5068,7 @@ class Feed:
         self.quality = None               # last streamlink-selected quality (e.g. "720p")
         self.ring = None              # set by the relay when fan-out is enabled (#358); None → direct-serve
         self.last_byte_ts = None      # monotonic ts of the last byte pumped into the ring (fan-out health)
-        self.on_recovery = None       # relay-set callback(feed, stint, downtime_s) on a drop-recovery
+        self.on_recovery = None       # relay-set callback(feed, stint, downtime_s, source_state) on a drop-recovery
         self.source_state = None      # #495: "not_live_yet"/"ended"/None (why the feed isn't serving)
 
     def current_channel(self):
@@ -5255,7 +5263,7 @@ class Feed:
             if self.dropped and self.on_recovery is not None:
                 try:
                     down = (time.time() - self.dropped_since) if self.dropped_since else 0.0
-                    self.on_recovery(self.name, i + 1, max(0.0, down))
+                    self.on_recovery(self.name, i + 1, max(0.0, down), self.source_state)
                 except Exception:      # noqa: BLE001 — best-effort telemetry
                     pass
             if self.ring is not None:
@@ -6266,7 +6274,7 @@ class Relay:
             "feed-substitution")
         LOG.info("stream substitution recorded: Feed %s stint %d", feed, stint)
 
-    def _record_feed_recovery(self, feed, stint, downtime_s):
+    def _record_feed_recovery(self, feed, stint, downtime_s, source_state=None):
         """Feed.on_recovery callback: a feed dropped and is recovering. Record it as a
         discrete `feed_recovery` health event ALWAYS (so a self-healed on-air blip shows in
         the post-event report + health monitor + log — the 2026-07-10 'all green' gap), and
@@ -6282,12 +6290,14 @@ class Relay:
                 pass
         LOG.info("feed recovery recorded: Feed %s stint %d (~%.0fs degraded)",
                  feed, stint, max(0.0, downtime_s))
-        self._maybe_notify_recovery_churn(feed, now)
+        self._maybe_notify_recovery_churn(feed, now, source_state)
 
-    def _maybe_notify_recovery_churn(self, feed, now):
+    def _maybe_notify_recovery_churn(self, feed, now, source_state=None):
         """Discord @here when Feed `feed` is CHURNING (≥ FEED_CHURN_THRESHOLD recoveries in
         FEED_CHURN_WINDOW_S), throttled to one ping per feed per FEED_CHURN_COOLDOWN_S so a
         persistently-flapping feed does not spam. Best-effort."""
+        if churn_at_here_suppressed(source_state):
+            return                    # #495: expected churn from a not-(yet)-live source
         if self.health_store is None:
             return
         last = self._recovery_churn_notified.get(feed)

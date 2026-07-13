@@ -975,6 +975,35 @@ def t_aggregate_health_reasons_unchanged_without_source_states():
                for r in m.aggregate_health(_facts(feeds_connecting_long=["B"]))["reasons"])
 
 
+def t_churn_at_here_suppressed_predicate():
+    assert m.churn_at_here_suppressed("not_live_yet") is True
+    assert m.churn_at_here_suppressed("ended") is True
+    assert m.churn_at_here_suppressed(None) is False       # genuine churn still notifies
+    assert m.churn_at_here_suppressed("serving") is False
+
+
+def t_churn_at_here_suppressed_for_not_live_source():
+    with tempfile.TemporaryDirectory() as td:
+        r = _mk_relay(td, ["a", "b"])
+        r.health_store = m.HealthStore(os.path.join(td, "h.db"))
+        posts = []
+        r._discord_post = lambda payload, what: posts.append(what)
+        now = 1000.0
+        try:
+            # Make Feed A churn: >= threshold feed_recovery events inside the window.
+            for k in range(m.FEED_CHURN_THRESHOLD):
+                r.health_store.record_event(now - 10 + k, "feed_recovery",
+                                            metadata={"feed": "A"})
+            # A not-live-yet source -> the @here is suppressed.
+            r._maybe_notify_recovery_churn("A", now, "not_live_yet")
+            assert posts == []
+            # Genuine churn (source_state None) -> the @here still fires.
+            r._maybe_notify_recovery_churn("A", now, None)
+            assert "feed-recovery-churn" in posts
+        finally:
+            r.health_store.close()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
