@@ -936,6 +936,22 @@ def t_event_stop_argv():
     assert "src/relay/../racecast.py".split("/")[-1] in argv[1]
 
 
+def t_classify_source_state():
+    # Twitch: channel offline / not live yet.
+    assert m.classify_source_state(
+        "error: No playable streams found on this URL: twitch.tv/kekko") == "not_live_yet"
+    # yt-dlp YouTube: channel not currently live.
+    assert m.classify_source_state("ERROR: [youtube] abc: The channel is not currently live") == "not_live_yet"
+    assert m.classify_source_state("not live?") == "not_live_yet"          # resolve fallback
+    # YouTube: broadcast over.
+    assert m.classify_source_state("ERROR: [youtube] sgoDA5E4aJ0: This live event has ended.") == "ended"
+    # Generic / transient -> None (unchanged behaviour).
+    assert m.classify_source_state("HTTP Error 429: Too Many Requests") is None
+    assert m.classify_source_state("HTTP Error 403: Forbidden") is None
+    assert m.classify_source_state("") is None
+    assert m.classify_source_state(None) is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

@@ -130,6 +130,16 @@ def t_status_surfaces_feed_last_error():
     assert r.status()["feeds"]["A"]["last_error"] == "feed exited immediately — port in use? see feed log"
 
 
+def t_status_exposes_feed_source_state():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2)]
+    r = m.Relay(_StubSource(["uA", "uB"], rows), (53001, 53002), LOGDIR)
+    assert r.A.source_state is None
+    st = r.status()
+    assert st["feeds"]["A"]["source_state"] is None
+    r.A.source_state = "not_live_yet"
+    assert r.status()["feeds"]["A"]["source_state"] == "not_live_yet"
+
+
 def t_serve_exit_is_drop():
     # A serving feed's process exited. It's an unexpected DROP (lost live picture)
     # only when the exit was NOT intentional — not a relay stop, not a handover/

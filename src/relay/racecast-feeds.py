@@ -229,6 +229,36 @@ def serve_exit_is_drop(stopped, advancing):
     return not stopped and not advancing
 
 
+# Source-not-live signatures (#495) — matched case-insensitively as substrings against
+# the yt-dlp/streamlink diagnostic text. ENDED is checked first (more specific).
+_SOURCE_ENDED = ("this live event has ended",)
+_SOURCE_NOT_LIVE_YET = (
+    "no playable streams found",     # Twitch: channel offline / not live yet
+    "not currently live",            # yt-dlp YouTube: channel not live
+    "will begin in",                 # YouTube: scheduled premiere not started
+    "not live?",                     # resolve_hls fallback line
+)
+
+
+def classify_source_state(text):
+    """Classify a feed's yt-dlp/streamlink diagnostic *text* into a source-not-live
+    state, or None for a generic drop/error (#495). Case-insensitive substring match.
+    Pure → unit-tested.
+      "not_live_yet" — source offline / not started (Twitch 'No playable streams
+                       found', yt-dlp 'not currently live', the 'not live?' fallback).
+      "ended"        — source's live broadcast is over (YouTube 'This live event has
+                       ended').
+      None           — anything else (429/403/network/generic) — unchanged behaviour."""
+    if not text:
+        return None
+    low = text.lower()
+    if any(s in low for s in _SOURCE_ENDED):
+        return "ended"
+    if any(s in low for s in _SOURCE_NOT_LIVE_YET):
+        return "not_live_yet"
+    return None
+
+
 # ---------- Live health heartbeat (aggregate status + Discord alerts) --------
 # Spec: docs/superpowers/specs/2026-06-16-live-heartbeat-design.md
 HEARTBEAT_INTERVAL_S = 30        # how often the relay re-evaluates health
@@ -5022,6 +5052,7 @@ class Feed:
         self.ring = None              # set by the relay when fan-out is enabled (#358); None → direct-serve
         self.last_byte_ts = None      # monotonic ts of the last byte pumped into the ring (fan-out health)
         self.on_recovery = None       # relay-set callback(feed, stint, downtime_s) on a drop-recovery
+        self.source_state = None      # #495: "not_live_yet"/"ended"/None (why the feed isn't serving)
 
     def current_channel(self):
         if self.paused:
@@ -5060,11 +5091,15 @@ class Feed:
         self.dropped = False
         self.dropped_since = None
         self.served_ok = False
+        self.source_state = None      # a fresh serve/reposition: the drop's cause no longer applies
 
     def _observe_streamlink_line(self, line):
         q = parse_stream_quality(line)
         if q:
             self.quality = q
+        st = classify_source_state(line)
+        if st is not None:
+            self.source_state = st
 
     def set_index(self, new_idx):
         sched = self.provider()
@@ -5199,6 +5234,7 @@ class Feed:
                     self.advance.clear(); continue
                 if not hls:
                     self.last_error = err
+                    self.source_state = classify_source_state(err)
                     time.sleep(RESOLVE_RETRY); continue
                 self.last_error = ssai_warning(hls, self.log)  # warn, never block
                 token, target, serve_platform = None, hls, "youtube"
@@ -5679,7 +5715,8 @@ class Relay:
                                "armed": not f.paused,
                                "state_age_s": round(now - f.phase_since, 1),
                                "down": f.dropped and not f.paused,
-                               "last_error": f.last_error}
+                               "last_error": f.last_error,
+                               "source_state": f.source_state}
         if self.pov:
             raw = (self.pov_source.get()[:1] or [None])[0] if self.pov_source else None
             out["pov"] = {"port": self.pov.port, "url": raw,
