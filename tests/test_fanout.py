@@ -233,6 +233,49 @@ def t_relay_fanout_flag_from_env(monkeypatch=None):
     assert m.FANOUT_RING_BYTES >= 1 << 20      # bounded, at least 1 MB
 
 
+def t_snap_bytes_zero_when_contiguous():
+    # data spans [new_cursor-len, new_cursor); start == prev_cursor -> no skip.
+    assert m.snap_bytes(100, 150, 50) == 0
+    assert m.snap_bytes(100, 100, 0) == 0
+
+
+def t_snap_bytes_counts_skipped_on_overflow():
+    # consumer at 100, but read snapped it forward: served [180,200) -> skipped 80.
+    assert m.snap_bytes(100, 200, 20) == 80
+
+
+def t_autoresync_decision_stuck_and_snap_and_cooldown():
+    kw = dict(stuck_threshold=5.0, snap_threshold=1, cooldown_s=60.0)
+    # neither -> False
+    assert m.autoresync_decision(1.0, 0, None, **kw) is False
+    # stuck over threshold -> True
+    assert m.autoresync_decision(6.0, 0, None, **kw) is True
+    # a snap -> True
+    assert m.autoresync_decision(0.0, 1, None, **kw) is True
+    # within cooldown -> False even if stuck
+    assert m.autoresync_decision(9.0, 3, 10.0, **kw) is False
+    # cooldown elapsed -> True
+    assert m.autoresync_decision(9.0, 0, 61.0, **kw) is True
+    # None stuck_s never trips on its own
+    assert m.autoresync_decision(None, 0, None, **kw) is False
+
+
+def t_consumer_health_aggregates_registry():
+    # consumer_health aggregates the per-connection registry deterministically
+    # (max send-block age + total snaps). White-box: the socket-timing path is the
+    # soak's job, not a flaky unit test — the honest boundary.
+    ring = m.FeedRing(1 << 20)
+    srv = m.FeedFanoutServer("127.0.0.1", 0, ring, m.logging.getLogger("t"))
+    assert srv.consumer_health(1000.0) == (None, 0)          # no consumer attached
+    with srv._consumers_lock:
+        srv._consumers[1] = {"cycle_ts": 990.0, "snaps": 2}
+        srv._consumers[2] = {"cycle_ts": 998.0, "snaps": 1}
+    stuck, snaps = srv.consumer_health(1000.0)
+    assert stuck == 10.0 and snaps == 3                       # max(10,2)=10 ; 2+1=3
+    srv.reset_snaps()
+    assert srv.consumer_health(1000.0) == (10.0, 0)          # snaps cleared, cycle_ts kept
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

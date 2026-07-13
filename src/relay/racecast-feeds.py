@@ -415,6 +415,30 @@ def feed_stalled(last_byte_ts, now, stall_s=FANOUT_STALL_S):
     return last_byte_ts is not None and (now - last_byte_ts) > stall_s
 
 
+def snap_bytes(prev_cursor, new_cursor, data_len):
+    """Bytes a fan-out consumer lost to a ring cursor-snap. FeedRing.read returns
+    (data, new_cursor) with data == buf[cursor-base:], so the served bytes span
+    [new_cursor-data_len, new_cursor). If that start ran past prev_cursor the ring had
+    overflowed the consumer and read() snapped it forward, skipping the gap. Pure —
+    returns the skipped byte count (0 when the consumer kept up)."""
+    skipped = (new_cursor - data_len) - prev_cursor
+    return skipped if skipped > 0 else 0
+
+
+def autoresync_decision(stuck_s, snaps, since_last_reset_s, *,
+                        stuck_threshold, snap_threshold, cooldown_s):
+    """Whether to auto-rebuild OBS's feed input (#488). True when OBS's handler is stuck
+    draining the socket (stuck_s > stuck_threshold) OR it has taken cursor-snaps
+    (snaps >= snap_threshold), AND the cooldown since the last auto-reset has elapsed
+    (since_last_reset_s is None or >= cooldown_s). Pure — unit-tested. A None stuck_s /
+    zero snaps never trips it on its own."""
+    if since_last_reset_s is not None and since_last_reset_s < cooldown_s:
+        return False
+    stuck = stuck_s is not None and stuck_s > stuck_threshold
+    snapped = snaps >= snap_threshold
+    return bool(stuck or snapped)
+
+
 def should_obs_reconnect(fanout, dropped):
     """Whether a re-serve should force OBS to reconnect its feed input. Only in fan-out
     mode (the relay is the persistent server, so OBS's socket survives a streamlink
@@ -3391,6 +3415,8 @@ class FeedFanoutServer:
         self.log = log
         self._sock = None
         self._stop = False
+        self._consumers = {}            # id -> {"cycle_ts": float, "snaps": int}
+        self._consumers_lock = threading.Lock()
 
     def start(self):
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -3410,23 +3436,59 @@ class FeedFanoutServer:
             threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
 
     def _serve(self, conn):
+        cid = None
         try:
             conn.recv(65536)                    # consume the request line/headers
             conn.sendall(b"HTTP/1.0 200 OK\r\n"
                          b"Content-Type: video/mp2t\r\n"
                          b"Connection: close\r\n\r\n")
             cursor = self.ring.live_offset()    # join at the live edge
+            cid = id(threading.current_thread())
+            with self._consumers_lock:
+                self._consumers[cid] = {"cycle_ts": time.monotonic(), "snaps": 0}
             while not self._stop and not self.ring.closed:
+                prev = cursor
                 data, cursor = self.ring.read(cursor, timeout=1.0)
+                skipped = snap_bytes(prev, cursor, len(data))
+                with self._consumers_lock:
+                    st = self._consumers.get(cid)
+                    if st is not None:
+                        st["cycle_ts"] = time.monotonic()   # read cycle completed
+                        if skipped > 0:
+                            st["snaps"] += 1
                 if data:
-                    conn.sendall(data)
+                    conn.sendall(data)                       # may block if OBS is slow
+                    with self._consumers_lock:
+                        st = self._consumers.get(cid)
+                        if st is not None:
+                            st["cycle_ts"] = time.monotonic()  # send completed
         except OSError:
             pass                                # consumer went away / slow send aborted
         finally:
+            if cid is not None:
+                with self._consumers_lock:
+                    self._consumers.pop(cid, None)
             try:
                 conn.close()
             except OSError:
                 pass  # already closed
+
+    def consumer_health(self, now):
+        """Worst-case OBS-consumer health for the auto-resync sampler: the max send-block
+        age (now - cycle_ts) and the total cursor-snaps across active consumers. Returns
+        (max_stuck_s, total_snaps); (None, 0) when no consumer is attached. Thread-safe."""
+        with self._consumers_lock:
+            if not self._consumers:
+                return None, 0
+            max_stuck = max(now - st["cycle_ts"] for st in self._consumers.values())
+            total_snaps = sum(st["snaps"] for st in self._consumers.values())
+        return max_stuck, total_snaps
+
+    def reset_snaps(self):
+        """Clear snap counters after an auto-resync (the rebuild fixes the cause)."""
+        with self._consumers_lock:
+            for st in self._consumers.values():
+                st["snaps"] = 0
 
     def stop(self):
         self._stop = True
