@@ -5166,6 +5166,8 @@ class Feed:
         self.last_byte_ts = None      # monotonic ts of the last byte pumped into the ring (fan-out health)
         self.on_recovery = None       # relay-set callback(feed, stint, downtime_s, source_state) on a drop-recovery
         self.source_state = None      # #495: "not_live_yet"/"ended"/None (why the feed isn't serving)
+        self.fanout_server = None     # #488: set by Relay.start when fan-out is on (auto-resync sampler)
+        self._last_autoresync_ts = None   # monotonic ts of the last auto-resync (cooldown)
 
     def current_channel(self):
         if self.paused:
@@ -5293,6 +5295,9 @@ class Feed:
         serve_started = time.monotonic()
         stdout = self.proc.stdout
         stall_s = feed_stall_s(os.environ)
+        autoresync_on = feed_autoresync_enabled(os.environ)
+        ar_stuck = feed_autoresync_stuck_s(os.environ)
+        ar_cooldown = feed_autoresync_cooldown_s(os.environ)
         watchdog_stop = threading.Event()
 
         def _watchdog():
@@ -5309,6 +5314,19 @@ class Feed:
                                      self.name, stall_s)
                     self._kill_proc()
                     return
+                if autoresync_on and self.fanout_server is not None:
+                    now = time.monotonic()
+                    stuck_s, snaps = self.fanout_server.consumer_health(now)
+                    since = (None if self._last_autoresync_ts is None
+                             else now - self._last_autoresync_ts)
+                    if autoresync_decision(stuck_s, snaps, since, stuck_threshold=ar_stuck,
+                                           snap_threshold=1, cooldown_s=ar_cooldown):
+                        self.log.warning("auto-resync %s — OBS drift (stuck=%.1fs snaps=%d) "
+                                         "— rebuilding OBS input", self.name,
+                                         stuck_s or 0.0, snaps)
+                        self._obs_reconnect()          # threaded, best-effort
+                        self._last_autoresync_ts = now
+                        self.fanout_server.reset_snaps()
 
         wd = threading.Thread(target=_watchdog, daemon=True)
         wd.start()
@@ -5577,6 +5595,7 @@ class Relay:
                                        logging.getLogger("racecast.fanout." + f.name))
                 srv.start()
                 self._fanout_servers.append(srv)
+                f.fanout_server = srv
         for f in self.feeds.values():
             threading.Thread(target=f.run, daemon=True).start()
         if self.pov:

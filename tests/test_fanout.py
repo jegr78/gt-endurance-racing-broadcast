@@ -298,6 +298,13 @@ def t_soak_stall_active_schedule():
     assert soak.soak_stall_active(5.0, period_s=0, duration_s=3) is False    # disabled
 
 
+def t_feed_has_autoresync_attrs():
+    import tempfile
+    f = m.Feed("A", 53001, 0, (lambda: []), tempfile.mkdtemp())
+    assert f.fanout_server is None
+    assert f._last_autoresync_ts is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
