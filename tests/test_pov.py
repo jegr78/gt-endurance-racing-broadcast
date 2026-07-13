@@ -415,6 +415,24 @@ def t_status_live_stint_reports_display_row_on_continuation():
     assert rc.status()["live"]["stint"] == rc.on_air_row_idx() + 1 == 3
 
 
+def t_health_snapshot_live_stint_is_display_row_on_continuation():
+    # Same-URL back-to-back: the DISPLAY stint (on_air_row_idx) is one ahead of the
+    # still-parked physical pull. _health_snapshot must sample the display stint so the
+    # report counts the continuation as a distinct stint (#500).
+    rows = [("uA", "A", "Stint 1", 1), ("uB", "B", "Stint 2", 2),
+            ("uB", "B", "Stint 3", 3), ("uD", "D", "Stint 4", 4)]
+    rc = m.Relay(_StubSource(["uA", "uB", "uB", "uD"], rows), (53001, 53002), LOGDIR)
+    rc._reflect = lambda live, cut: None
+    for f in rc.feeds.values():
+        f.phase = "serving"
+    rc.next_auto()                                   # stint 2, real handover
+    rc.next_auto()                                   # stint 3, continuation
+    assert rc.on_air_row_idx() == 2                   # display row = stint 3
+    assert rc.feeds[rc.live_feed()].idx != rc.on_air_row_idx()   # the divergence
+    snap = rc._health_snapshot(123.0)
+    assert snap["live_stint"] == rc.on_air_row_idx() + 1 == 3, snap["live_stint"]
+
+
 def t_should_push_live_schedule_fires_on_cut_or_continuation():
     # A real cut (obs_cut) always advances the HUD label; a same-URL continuation
     # advances the DISPLAY stint without a cut, so the HUD must advance too — only

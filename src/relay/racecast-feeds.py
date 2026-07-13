@@ -5595,7 +5595,11 @@ class Relay:
                 "cookies_stale": 1 if ch.get("stale") else 0,
                 "timer_mode": tmode, "timer_push": tpush,
                 "mode": self.mode,
-                "live_feed": live, "live_stint": self.feeds[live].idx + 1,
+                # live_stint = the DISPLAY stint (who is on screen), continuation-aware
+                # via on_air_row_idx() — NOT the physical pull index, so a same-URL
+                # back-to-back counts as two distinct stints in the report (#500). The
+                # pull index stays reconstructable from feed_a/b_stint + live_feed.
+                "live_feed": live, "live_stint": self.on_air_row_idx() + 1,
                 # v3 OBS stats (already redacted: obs_stats never carries output_bytes)
                 "stream_active": _b(st.get("stream_active")),
                 "stream_reconnecting": _b(st.get("stream_reconnecting")),

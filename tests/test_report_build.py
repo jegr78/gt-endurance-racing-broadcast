@@ -137,6 +137,19 @@ def t_build_report_on_air_names_and_fallback():
     assert rep2["on_air"]["resolved"] is False
 
 
+def t_on_air_back_to_back_same_url_counts_two_stints():
+    # Display-stint samples: stint 1 then stint 2, the SAME commentator across a
+    # same-URL back-to-back -> credited as TWO stints for that commentator, full
+    # duration preserved (#500 Problem 1).
+    samples = [_sample(0.0, live_stint=1), _sample(30.0, live_stint=1),
+               _sample(60.0, live_stint=2), _sample(90.0, live_stint=2)]
+    rep = rb.build_report(samples, [], {1: "Alice", 2: "Alice"},
+                          "E", (0.0, 90.0), now=1000.0)
+    alice = next(c for c in rep["on_air"]["commentators"] if c["name"] == "Alice")
+    assert alice["stints"] == 2, rep["on_air"]
+    assert alice["seconds"] == 90.0, rep["on_air"]
+
+
 def t_build_report_producer_handover_from_events():
     samples = [_sample(0.0), _sample(30.0)]
     events = [{"ts": 15.0, "type": "takeover", "producer": "B",
