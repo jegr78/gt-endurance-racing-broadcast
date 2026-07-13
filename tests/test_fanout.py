@@ -280,8 +280,6 @@ def t_consumer_health_aggregates_registry():
         srv._consumers[2] = {"cycle_ts": 998.0, "snaps": 1}
     stuck, snaps = srv.consumer_health(1000.0)
     assert stuck == 10.0 and snaps == 3                       # max(10,2)=10 ; 2+1=3
-    srv.reset_snaps()
-    assert srv.consumer_health(1000.0) == (10.0, 0)          # snaps cleared, cycle_ts kept
 
 
 def t_soak_stall_active_schedule():

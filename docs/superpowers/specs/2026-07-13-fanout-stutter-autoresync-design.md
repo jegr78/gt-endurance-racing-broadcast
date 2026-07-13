@@ -270,9 +270,10 @@ established:
   cooldown-gated, logged. `GetStats` is global, so a render-skip spike during a single
   on-air feed is attributed to that feed (documented simplification; the reset is cheap +
   cooldown-gated).
-- **obs-ws helper:** add `render_stats(...)` to `src/scripts/obs_ws.py` — best-effort
-  `(renderSkippedFrames, renderTotalFrames)` or `None` (never raises), same contract as the
-  other obs-ws helpers.
+- **obs-ws counts (as built):** rather than a second GetStats round-trip, the raw
+  `renderSkippedFrames` / `renderTotalFrames` are threaded through the EXISTING per-heartbeat
+  probe — `parse_obs_stats` carries them (redaction-safe) into `self.obs_stats`, and the relay
+  derives the delta rate from successive samples. One probe, no new obs-ws helper.
 
 ### What changes vs what stays
 
@@ -286,7 +287,11 @@ established:
 - **Config:** keep `RACECAST_FEED_AUTORESYNC` (kill-switch, default on) +
   `RACECAST_FEED_AUTORESYNC_COOLDOWN_S`; **replace** `RACECAST_FEED_AUTORESYNC_STUCK_S`
   with `RACECAST_FEED_AUTORESYNC_SKIP_RATE` (render-skip-rate threshold, start **0.02** =
-  2 %, soak-tuned) + a debounce count.
+  2 %, soak-tuned). The debounce is a code constant `AUTORESYNC_DEBOUNCE_POLLS = 2` (YAGNI —
+  not an env knob).
+- **Health-DB (added):** health_store **v7** column `obs_render_skip_rate_pct` (the per-interval
+  rate, written each heartbeat) + a Health-Monitor uPlot series — so the drift is finally
+  *visible* and the next real box event validates the 2 % threshold from recorded data.
 
 ### Tuning / validation — on the Mac (no VM, no box)
 

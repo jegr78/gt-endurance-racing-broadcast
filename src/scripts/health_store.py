@@ -137,7 +137,7 @@ def open_db(path):
 
 
 def migrate(conn):
-    """Create the schema, add any missing v3, v5 and v6 columns (lossless upgrade from v2/v3),
+    """Create the schema, add any missing v3, v5, v6 and v7 columns (lossless upgrade from v2/v3),
     and stamp user_version. Idempotent and version-agnostic."""
     conn.executescript(_CREATE)
     have = {r["name"] for r in conn.execute("PRAGMA table_info(samples)").fetchall()}

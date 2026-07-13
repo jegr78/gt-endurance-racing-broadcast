@@ -1,29 +1,24 @@
 #!/usr/bin/env python3
 """Local fan-out soak harness (#488) — maintainer, NOT shipped, NOT run in CI.
 
-Drives the REAL relay FeedRing + FeedFanoutServer from an ffmpeg -re real-time TS
-into your LOCAL OBS, so the OBS-consumption drift (which only appears with real OBS on
-a ~1x live-paced source) can be reproduced and CLASSIFIED (clock-bias vs jitter) — the
-evidence that resolves the backpressure question inside #488. It also runs the SAME
-detection (autoresync_decision) + action (obs_ws.release_feed_inputs) the relay will
-use, so it validates detect-and-clear end-to-end against real OBS.
+Drives the REAL relay FeedRing + FeedFanoutServer from a source (synthetic ffmpeg -re, or
+a real stream via streamlink) into your LOCAL OBS, so a long real-OBS soak can be run and
+observed. It SERVES + LOGS only — the OBS-drift auto-resync lives in the RELAY now (via the
+obs-ws GetStats render-skip rate), NOT here; the socket send-block "stuck"/snap logged below
+proved BLIND to render drift (see the spec's DESIGN PIVOT) and is kept only to confirm the
+ring is fed. Measure the actual render-skip signal directly off OBS (obs-ws GetStats).
 
-No cloud box, no real stream, no cookies.
+No cloud box needed; a real stream needs streamlink but no cookies for a public live.
 
 Usage:
     # 1. Run the harness (prints the URL to point OBS at):
-    python3 tools/fanout-soak.py --port 53001
-    # 2. In OBS add a Media Source, uncheck "Local File", URL http://127.0.0.1:53001,
-    #    and (to mirror the relay) enable obs-websocket so the reset can rebuild it.
-    # 3. Watch the log: stuck_s / snaps / RESET lines. Let it run for hours.
+    python3 tools/fanout-soak.py --port 53001                         # synthetic testsrc
+    python3 tools/fanout-soak.py --port 53001 --source <URL> --quality 720p60   # real stream
+    # 2. In OBS add a Media Source, uncheck "Local File", URL http://127.0.0.1:53001.
+    # 3. Watch the log: t / stuck / snaps lines. Let it run for a long soak.
 
-    # Baseline (no auto-reset — capture the RAW drift curve to classify):
-    python3 tools/fanout-soak.py --port 53001 --no-autoresync
     # Trigger-B check (inject a 3 s source stall every 30 s):
     python3 tools/fanout-soak.py --port 53001 --stall-period 30 --stall-duration 3
-
-The relay wiring (Tasks 4-5) uses the same pure functions; this harness is the
-faithful local proxy that tunes the thresholds and classifies the curve.
 """
 import argparse
 import importlib.util

@@ -3487,11 +3487,6 @@ class FeedFanoutServer:
             total_snaps = sum(st["snaps"] for st in self._consumers.values())
         return max_stuck, total_snaps
 
-    def reset_snaps(self):
-        """Clear snap counters after an auto-resync (the rebuild fixes the cause)."""
-        with self._consumers_lock:
-            for st in self._consumers.values():
-                st["snaps"] = 0
 
     def stop(self):
         self._stop = True
