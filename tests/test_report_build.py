@@ -377,7 +377,8 @@ def t_on_air_desync_seconds_from_desync_active_bands():
                _sample(30.0, live_stint=1, desync_active=1),
                _sample(60.0, live_stint=1, desync_active=0)]
     rep = rb.build_report(samples, [], {1: "Alice"}, "E", (0.0, 60.0), now=1000.0)
-    assert rep["on_air"]["desync_seconds"] > 0, rep["on_air"]
+    # gap-filled active band [0,60] -> exactly 60.0s (30->60 gap < GAP_S is bridged).
+    assert rep["on_air"]["desync_seconds"] == 60.0, rep["on_air"]
 
     clean = [_sample(0.0, live_stint=1), _sample(30.0, live_stint=1)]
     rep2 = rb.build_report(clean, [], {1: "Alice"}, "E", (0.0, 30.0), now=1000.0)
