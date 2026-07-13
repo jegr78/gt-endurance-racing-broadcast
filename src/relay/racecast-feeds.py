@@ -5703,9 +5703,10 @@ class Relay:
         if self.manual_feed_arm:
             # Manual mode intentionally disarms feeds; the index-derived desync
             # predicate would false-positive during arm-before-cut. Off here (#492).
-            self._desync_active = False
-            self._desync_since = None
-            self._desync = {"active": False}
+            with self._health_lock:
+                self._desync_active = False
+                self._desync_since = None
+                self._desync = {"active": False}
             return self._desync
         live = self.live_feed()
         off = "B" if live == "A" else "A"
@@ -6266,6 +6267,17 @@ class Relay:
         f = self.feeds.get(which.upper())
         if not f:
             return {"error": f"unknown feed {which!r}"}
+        # #491 single-pull invariant on the arm path: refuse to arm a feed onto a
+        # URL the OTHER feed is already armed on (would be a same-URL double-pull).
+        other_key = "B" if which.upper() == "A" else "A"
+        other = self.feeds.get(other_key)
+        sched = self.source.get()
+        this_url = (sched[f.idx] or "").strip() if 0 <= f.idx < len(sched) else ""
+        if this_url and other is not None and not other.paused:
+            other_url = (other.current_channel()[0] or "").strip()
+            if this_url == other_url:
+                return {"error": f"would duplicate feed {other_key}'s stream — "
+                                 f"disarm it or point this feed to a different stint"}
         f.paused = False
         f.reload()
         LOG.info("feed %s armed (manual)", which.upper())

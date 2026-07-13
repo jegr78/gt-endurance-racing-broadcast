@@ -1385,6 +1385,22 @@ def t_desync_suppressed_in_manual_mode():
     assert r.status()["desync"]["active"] is False
 
 
+def t_feed_activate_refuses_same_url_as_other_armed_feed():
+    # Both feed indices resolve to the SAME url; arming the second while the first
+    # is armed on that url must be refused (no #491 double-pull on the arm path).
+    rows = [("uX", "A", "S1", 1), ("uX", "B", "S2", 2)]
+    r = m.Relay(_StubSource(["uX", "uX"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    r.manual_feed_arm = True
+    r.A.paused = True; r.B.paused = True
+    r.A.set_index(0); r.B.set_index(1)          # both resolve to uX
+    r.feed_activate("A")                          # A armed on uX
+    assert r.A.paused is False
+    res = r.feed_activate("B")                    # would be a 2nd uX puller -> refuse
+    assert "error" in res
+    assert r.B.paused is True                     # B stayed disarmed
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
