@@ -311,6 +311,11 @@ def t_parts_requires_director():
     assert cp.min_capability(["parts", "end"]) == cp.Requirement(cp.DIRECTOR, False)
 
 
+def t_resync_stint_is_director_no_stepup():
+    req = cp.min_capability(["resync", "stint", "4"], "GET")
+    assert req == cp.Requirement(cp.DIRECTOR, False)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

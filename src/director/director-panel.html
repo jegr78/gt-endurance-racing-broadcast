@@ -269,6 +269,8 @@
     letter-spacing:.04em;display:flex;gap:10px;align-items:center}
   .banner.amber{background:#2e2305;border:1px solid var(--amber);color:#ffd361}
   .banner.red{background:#330f0f;border:1px solid var(--air);color:#ff9d9d}
+  .bannerbtn{margin-left:10px;padding:3px 10px;border-radius:6px;border:1px solid currentColor;
+             background:transparent;color:inherit;font-weight:700;cursor:pointer;font-size:12px}
   #toasts{position:fixed;top:14px;right:14px;z-index:100;display:flex;
     flex-direction:column;gap:8px;max-width:340px}
   .toast{background:#330f0f;border:1px solid var(--air);color:#ff9d9d;border-radius:10px;
@@ -873,18 +875,27 @@ function relayLed(ok){ $("#ledRelay").className = "dot" + (ok?" on":" err"); }
    Banners reflect ONGOING conditions; they appear while the condition holds
    and clear themselves when it resolves — not dismissible by design. Toasts
    announce one-off action failures (~6 s); the log keeps the history. */
-const banners = {};   // id -> {level: "red"|"amber", msg}
-function setBanner(id, level, msg){
-  if (banners[id] && banners[id].msg === msg && banners[id].level === level) return;
-  banners[id] = {level, msg}; renderBanners();
+const banners = {};   // id -> {level: "red"|"amber", msg, action?: {label, fn}}
+function setBanner(id, level, msg, action){
+  const prev = banners[id];
+  if (prev && prev.msg === msg && prev.level === level && !!prev.action === !!action) return;
+  banners[id] = {level, msg, action}; renderBanners();
 }
 function clearBanner(id){
   if (banners[id]){ delete banners[id]; renderBanners(); }
 }
+const _bannerActions = {};   // id -> fn, bound at render so onclick can find it
 function renderBanners(){
-  $("#banners").innerHTML = Object.values(banners)
-    .map(b=>`<div class="banner ${b.level}">⚠ ${escapeHtml(b.msg)}</div>`).join("");
+  const el = $("#banners");
+  el.innerHTML = Object.entries(banners).map(([id, b]) => {
+    const btn = b.action
+      ? ` <button class="bannerbtn" onclick="_runBannerAction('${id}')">${escapeHtml(b.action.label)}</button>`
+      : "";
+    return `<div class="banner ${b.level}">⚠ ${escapeHtml(b.msg)}${btn}</div>`;
+  }).join("");
+  for (const [id, b] of Object.entries(banners)) _bannerActions[id] = b.action ? b.action.fn : null;
 }
+function _runBannerAction(id){ const fn = _bannerActions[id]; if (fn) fn(); }
 function toast(msg){
   const t = document.createElement("div");
   t.className = "toast"; t.textContent = "✕ " + msg;
@@ -946,6 +957,11 @@ $("#feedsBus").appendChild(mkKey("FEEDS → STINT…", "correction", ()=>{
   if (!confirm(`Re-target BOTH feeds to stint ${v.trim()}? This interrupts a running pull — not for mid-program use.`)) return;
   relayCall("set/stint/" + v.trim());
 }, false));
+async function resyncTo(n){
+  if (!confirm("Resync: make stint " + n + " on air on the feed actually serving it? " +
+               "(No cut if that feed is already on air.)")) return;
+  await relayCall("resync/stint/" + n);
+}
 // Force OBS to reconnect ONE feed's source at a clean stream boundary — the targeted
 // fix if a feed freezes/stutters (a fan-out restart spliced onto OBS's open socket).
 // Non-destructive (re-applies the input's own settings); brief reconnect if on air.
@@ -1451,6 +1467,14 @@ async function relayPoll(){
         "FEED " + downNames.join(" + ") + " DOWN — lost the live stream · " +
         "RELOAD it or cut to the other feed/Standby");
     else clearBanner("feeddown");
+    if (d.desync && d.desync.active) {
+      const n = d.desync.suggested_stint;
+      setBanner("desync", "red",
+        "PING-PONG DESYNC — the on-air feed is not delivering while Feed " +
+        d.desync.serving_feed + " serves stint " + n + " · Resync to fix the panel/cockpit",
+        {label: "Resync to stint " + n, fn: () => resyncTo(n)});
+    }
+    else clearBanner("desync");
     const ck = d.cookies_health;
     if (ck && ck.stale)
       setBanner("cookies", "amber",

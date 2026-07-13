@@ -413,6 +413,7 @@ def _cockpit_client(secret="sek", rows=None, live_idx=0,
             self.mode = "race"
             self.feeds = {"A": _Feed(live_idx), "B": _Feed(live_idx + 1)}
             self.fanout = fanout
+            self._desync = {"active": False}
 
         def live_feed(self):
             return "A"
@@ -916,6 +917,12 @@ def t_program_audio_probe_authed_but_service_disabled_is_404():
         assert code == 404, code
     finally:
         srv.shutdown()
+
+
+def t_cockpit_syncing_pure():
+    assert m.cockpit_syncing({"active": True, "serving_feed": "B"}) is True
+    assert m.cockpit_syncing({"active": False}) is False
+    assert m.cockpit_syncing({}) is False       # missing key -> not syncing
 
 
 if __name__ == "__main__":

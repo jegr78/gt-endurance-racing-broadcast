@@ -3819,6 +3819,34 @@ def cockpit_schedule(rows, live_idx, me_key):
             for i, (_u, n, st, _l) in enumerate(rows)]
 
 
+def cockpit_syncing(desync):
+    """True when the relay's desync block is active — the cockpit should show
+    'syncing…' instead of the (index-derived, possibly wrong) ON-AIR tally. Pure."""
+    return bool(desync.get("active"))
+
+
+def ping_pong_desynced(live_serving, off_serving):
+    """True when the index-designated on-air feed is NOT delivering a stable
+    picture while the OFF-air feed IS — the feed on screen and the feed derived as
+    on-air disagree. Pure; the caller supplies each feed's 'serving a stable
+    picture' boolean and applies the settle debounce. False whenever the on-air
+    feed is fine, or the off-air feed is not itself delivering (a plain on-air
+    drop with nothing better to show is a health condition, not a desync)."""
+    return (not live_serving) and off_serving
+
+
+def desync_settled(raw, since_ts, now, settle_s):
+    """Debounce the raw desync condition: it becomes ACTIVE only after it has held
+    for *settle_s* seconds (so a quick reconnect blip never raises it). Returns
+    (active, since_ts): the running start-timestamp is preserved across ticks while
+    raw holds and cleared to None as soon as it ends. Pure."""
+    if not raw:
+        return False, None
+    if since_ts is None:
+        since_ts = now
+    return (now - since_ts) >= settle_s, since_ts
+
+
 def cockpit_display_name(rows, me_key):
     """The display streamer name whose asset_key == me_key (first match), so chat
     messages are attributed to a human-readable name. Falls back to me_key."""
@@ -5299,6 +5327,9 @@ class Relay:
         self.health_reasons = []
         self.health_since = time.time()
         self._notified_level = None
+        self._desync_since = None   # monotonic-ish start ts of the raw desync condition
+        self._desync = {"active": False}   # the /status desync block (recomputed each tick)
+        self._desync_active = False        # last active state, for the log-on-transition
         self._health_lock = threading.Lock()
         self._hb_stop = threading.Event()
         self._recovery_churn_notified = {}   # feed -> ts of the last churn @here (cooldown)
@@ -5394,6 +5425,7 @@ class Relay:
                 self.health_level = h["level"]
                 self.health_since = now
             self.health_reasons = h["reasons"]
+        self._compute_desync(now)
         return h
 
     def _health_snapshot(self, now):
@@ -5607,6 +5639,7 @@ class Relay:
         self._refresh_health(now)            # keep the displayed level fresh (2 s poll)
         out["health"] = {"level": self.health_level, "reasons": self.health_reasons,
                          "since_s": round(now - self.health_since, 1)}
+        out["desync"] = self._desync
         return out
 
     def live_feed(self):
@@ -5639,6 +5672,38 @@ class Relay:
     def live_after_next(self):
         """Which feed will be on air after the next /next: the one NOT advanced."""
         return "B" if self.live_feed() == "A" else "A"
+
+    def _feed_serving(self, f):
+        """A feed is 'delivering a stable picture' when its process is up and it is
+        neither dropped nor paused. Used only for desync detection."""
+        return f.phase == "serving" and not f.dropped and not f.paused
+
+    def _compute_desync(self, now):
+        """Recompute the panel-local desync flag (never mutates feeds/OBS). The
+        index-designated on-air feed (live_feed) not delivering while the other is
+        = a ping-pong desync; debounced by HEALTH_CONNECTING_SETTLE_S. Stores the
+        /status block in self._desync and logs on the active transition."""
+        live = self.live_feed()
+        off = "B" if live == "A" else "A"
+        raw = ping_pong_desynced(self._feed_serving(self.feeds[live]),
+                                 self._feed_serving(self.feeds[off]))
+        with self._health_lock:
+            active, self._desync_since = desync_settled(
+                raw, self._desync_since, now, HEALTH_CONNECTING_SETTLE_S)
+            block = {"active": active}
+            if active:
+                block["since_s"] = round(now - self._desync_since, 1)
+                block["serving_feed"] = off
+                block["suggested_stint"] = self.feeds[off].idx + 1
+            if active and not self._desync_active:
+                LOG.warning("ping-pong desync: on-air feed %s not delivering while %s "
+                            "serves stint %d — resync suggested", live, off,
+                            self.feeds[off].idx + 1)
+            elif not active and self._desync_active:
+                LOG.info("ping-pong desync cleared")
+            self._desync_active = active
+            self._desync = block
+        return block
 
     def splitscreen_state(self):
         """State for the /splitscreen overlay. Feed A is always the Splitscreen
@@ -5957,6 +6022,48 @@ class Relay:
         LOG.info("set_stint -> Feed A slot-head %d, Feed B %d, display stint %d",
                  a_idx + 1, b_idx + 1, self.on_air_row + 1)
         self._reflect(self.live_feed(), cut=False)   # set visibility/audio; director picks the scene
+        return self.status()
+
+    def resync_to_stint(self, stint):
+        """Feed-agnostic desync recovery: reconcile 'stint <N> is on air NOW' onto
+        whichever feed is ACTUALLY serving it, preserving the live picture. Finds the
+        feed whose current URL == stint N's row URL AND is delivering a stable
+        picture (_feed_serving), keeps it on air (A OR B), sets on_air_row, and moves
+        the OTHER feed to the next distinct slot after both the target row and the
+        anchor's own index (#491-safe; keeps the anchor the lower index so live_feed
+        names it). Non-destructive: the anchor feed is never re-indexed. When NO feed
+        serves N this is a takeover, not a resync -> returns an error and does nothing
+        (use /set/stint, which is producer+step-up gated)."""
+        self.source.refresh(timeout=6)
+        rows = self.source.get_rows()
+        n = len(rows)
+        target = min(max(1, int(stint)) - 1, max(0, n - 1)) if n else 0
+        target_url = (rows[target][0] or "").strip() if n else ""
+        anchor = None
+        if target_url:
+            for k in ("A", "B"):
+                ch, _ = self.feeds[k].current_channel()
+                if (ch or "").strip() == target_url and self._feed_serving(self.feeds[k]):
+                    anchor = k
+                    break
+        if anchor is None:
+            LOG.info("resync_to_stint -> stint %d not served by any feed; no-op "
+                     "(use /set/stint for a takeover)", target + 1)
+            return {"error": f"no feed serves stint {target + 1} — "
+                             f"use /set/stint for a takeover"}
+        other = "B" if anchor == "A" else "A"
+        slots = pull_slots(rows)
+        # Place the other feed after BOTH the target row and the anchor's own pull
+        # index, so the anchor keeps the lower index and live_feed() names it even
+        # for a non-contiguous same-URL recurrence.
+        pivot = max(target, self.feeds[anchor].idx)
+        off_idx, _redir = dedupe_pull_index(
+            next_slot_first_row(slots, pivot), self.feeds[anchor].idx, rows)
+        self.feeds[other].set_index(off_idx)   # no kill if already there
+        self.on_air_row = target
+        LOG.info("resync_to_stint -> stint %d anchored on serving feed %s (no cut); "
+                 "feed %s -> slot %d", target + 1, anchor, other, off_idx + 1)
+        self._reflect(anchor, cut=False)
         return self.status()
 
     def set_mode(self, mode):
@@ -7290,6 +7397,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                                       # read-only redacted stint plan for the
                                       # right-column card (no stream URLs).
                                       "schedule": cockpit_schedule(rows, live_idx, me),
+                                      "syncing": cockpit_syncing(relay._desync),
                                       "my_pending": my_pending})
                         return self._send(tally)
                     if p == ["cockpit", "program"]:
@@ -7491,6 +7599,12 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if len(p)==2 and p[0]=="next":          return self._ok(relay.advance(p[1], +2))
                 if len(p)==2 and p[0]=="prev":          return self._ok(relay.advance(p[1], -2))
                 if len(p)==2 and p[0]=="reload":        return self._ok(relay.reload(p[1]))
+                if len(p)==3 and p[:2]==["resync","stint"]:
+                    res = relay.resync_to_stint(int(p[2]))
+                    # Puts a stint on air -> same HUD auto-write as /set/stint.
+                    if setup_ctl:
+                        _push_live_schedule(relay, setup_ctl)
+                    return self._send(res)
                 if len(p)==3 and p[:2]==["set","stint"]:
                     res = relay.set_stint(int(p[2]))
                     # Producer takeover puts a fresh stint on air -> same HUD

@@ -135,6 +135,7 @@ def _client(event_default="", event_title=None, rows=None):
             self.source = _Source()
             self.mode = "race"
             self.feeds = {"A": _Feed(0), "B": _Feed(1)}
+            self._desync = {"active": False}   # mirrors Relay.__init__ (#494)
 
         def live_feed(self):
             return "A"

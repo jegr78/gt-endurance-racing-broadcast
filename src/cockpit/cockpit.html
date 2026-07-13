@@ -392,7 +392,10 @@ function renderTally(d) {
   document.title = title ? (title + ' · Commentator Cockpit') : 'Commentator Cockpit';
   $('who').textContent = d.me ? '· ' + d.me + (d.mode === 'qualifying' ? ' · QUALI' : '') : '';
   const el = $('tally');
-  if (d.on_air) {
+  if (d.syncing) {
+    el.className = 'tally idle';
+    el.textContent = 'syncing…';
+  } else if (d.on_air) {
     el.className = 'tally onair';
     el.innerHTML = '';
     el.appendChild(document.createTextNode('YOU ARE ON AIR'));
@@ -431,7 +434,12 @@ let lastStintPlanSig = null;   // signature of last rendered d.schedule; skip re
 function renderStintPlan(d) {
   const box = $('stintPlan');
   const rows = d.schedule || [];
-  const sig = JSON.stringify(rows);
+  // During a ping-pong desync the on-air row is index-derived and possibly wrong,
+  // so suppress the ON-AIR marker here too (the tally already shows "syncing…").
+  // Fold syncing into the signature so entering/leaving desync forces a re-render
+  // even when the schedule rows themselves are unchanged.
+  const syncing = !!d.syncing;
+  const sig = JSON.stringify([syncing, rows]);
   if (sig === lastStintPlanSig) return;   // unchanged — preserve scroll position + text selection
   lastStintPlanSig = sig;
   box.textContent = '';
@@ -442,14 +450,15 @@ function renderStintPlan(d) {
   }
   let onAirEl = null;
   for (const s of rows) {
+    const onAir = s.on_air && !syncing;
     const row = document.createElement('div');
-    row.className = 'row' + (s.on_air ? ' onair' : '') + (s.mine ? ' mine' : '');
+    row.className = 'row' + (onAir ? ' onair' : '') + (s.mine ? ' mine' : '');
     const st = document.createElement('span');
     st.className = 'st'; st.textContent = s.stint || '';      // XSS-safe
     const nm = document.createElement('span');
     nm.className = 'nm'; nm.textContent = s.streamer || '';   // XSS-safe
     row.appendChild(st); row.appendChild(nm);
-    if (s.on_air) {
+    if (onAir) {
       const tag = document.createElement('span');
       tag.className = 'live'; tag.textContent = 'ON AIR';
       row.appendChild(tag);
