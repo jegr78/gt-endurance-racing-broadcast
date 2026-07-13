@@ -1332,6 +1332,72 @@ def t_setup_fields_parity_relay_vs_apps_script():
         "array in src/docs/wiki/Sheet-Webhook.md and redeploy the script.")
 
 
+# ---------- webhook push retry + permanent-error predicate ----------
+
+def t_webhook_error_permanent_predicate():
+    assert m.webhook_error_permanent(m.WEBHOOK_OUTDATED_ERROR) is True
+    assert m.webhook_error_permanent("webhook did not confirm: 'oops'") is False
+    assert m.webhook_error_permanent(None) is False
+
+
+def t_push_retry_succeeds_after_transient():
+    # Two transient failures (a raise, then a 'did not confirm' body), then ok.
+    calls = []
+    ok_body = b'{"ok": true, "action": "setup"}'
+    seq = [Exception("timeout"), b'{"ok": false}', ok_body]
+    def fake_post(url, payload, timeout=10):
+        calls.append(timeout)
+        v = seq[len(calls) - 1]
+        if isinstance(v, Exception):
+            raise v
+        return v
+    ok, err, body = m.push_webhook_retrying(
+        "http://push", {"action": "setup"}, "setup",
+        post=fake_post, sleep=lambda d: None, rand=lambda: 0.0, now=lambda: 0.0)
+    assert ok is True and err is None and body == ok_body
+    assert len(calls) == 3
+    assert calls[0] == m.WEBHOOK_RETRY_TIMEOUT_S    # lower per-attempt timeout used
+
+
+def t_push_retry_exhausts_then_fails():
+    def fake_post(url, payload, timeout=10):
+        raise OSError("egress congested")
+    slept = []
+    ok, err, body = m.push_webhook_retrying(
+        "http://push", {"a": 1}, None,
+        post=fake_post, sleep=slept.append, rand=lambda: 0.0, now=lambda: 0.0)
+    assert ok is False and body is None
+    assert "OSError" in err and "push:" not in err   # UNPREFIXED
+    assert slept == [0.5, 1.0]                        # base*2^n, 2 sleeps for 3 attempts
+
+
+def t_push_retry_permanent_error_not_retried():
+    calls = []
+    def fake_post(url, payload, timeout=10):
+        calls.append(1)
+        return b'{"ok": true}'                        # ok:true but NO action echo
+    ok, err, _ = m.push_webhook_retrying(
+        "http://push", {"action": "setup"}, "setup",
+        post=fake_post, sleep=lambda d: None, rand=lambda: 0.0, now=lambda: 0.0)
+    assert ok is False
+    assert err == m.WEBHOOK_OUTDATED_ERROR
+    assert len(calls) == 1                            # permanent -> no retry
+
+
+def t_push_retry_budget_cap_stops_early():
+    calls = []
+    def fake_post(url, payload, timeout=10):
+        calls.append(1)
+        raise OSError("slow")
+    # now() jumps past the budget after the first attempt -> no 2nd attempt.
+    ticks = iter([0.0, 999.0, 999.0, 999.0])
+    ok, err, _ = m.push_webhook_retrying(
+        "http://push", {"a": 1}, None, attempts=3,
+        post=fake_post, sleep=lambda d: None, rand=lambda: 0.0, now=lambda: next(ticks))
+    assert ok is False
+    assert len(calls) == 1                            # budget cap stopped further attempts
+
+
 # ---------- setup-assets media fill: template-driven scan ----------
 
 def t_setup_media_fill_uses_template_scan():

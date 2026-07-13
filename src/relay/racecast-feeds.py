@@ -1534,6 +1534,10 @@ def post_webhook(url, payload, timeout=10):
         return resp.read()
 
 
+WEBHOOK_OUTDATED_ERROR = ("webhook script outdated (no action echo) — redeploy "
+                          "the v2 script (wiki: Sheet-Webhook)")
+
+
 def check_webhook_response(body, expected_action=None):
     """(ok, error) from an Apps-Script response body. Apps Script answers
     HTTP 200 even for errors, so only its own {"ok": true} counts. The v2
@@ -1547,9 +1551,65 @@ def check_webhook_response(body, expected_action=None):
         snippet = (body or b"")[:120].decode("utf-8", "replace")
         return False, f"webhook did not confirm: {snippet!r}"
     if expected_action and d.get("action") != expected_action:
-        return False, ("webhook script outdated (no action echo) — redeploy "
-                       "the v2 script (wiki: Sheet-Webhook)")
+        return False, WEBHOOK_OUTDATED_ERROR
     return True, None
+
+
+WEBHOOK_RETRY_ATTEMPTS = 3
+WEBHOOK_RETRY_BASE_S = 0.5
+WEBHOOK_RETRY_BUDGET_S = 10.0
+WEBHOOK_RETRY_TIMEOUT_S = 5   # per-attempt; lower than the direct 10 s so a hung try fails fast
+
+
+def webhook_error_permanent(err):
+    """True iff *err* is the permanent 'script outdated' config error (never retry).
+    Any other non-ok error (a transient 'did not confirm') is retryable. Pure."""
+    return err == WEBHOOK_OUTDATED_ERROR
+
+
+def push_webhook_retrying(url, payload, expected_action=None, *,
+                          post=None, sleep=None, rand=None, now=None,
+                          attempts=WEBHOOK_RETRY_ATTEMPTS,
+                          base_delay=WEBHOOK_RETRY_BASE_S,
+                          budget_s=WEBHOOK_RETRY_BUDGET_S,
+                          timeout=WEBHOOK_RETRY_TIMEOUT_S):
+    """POST with bounded backoff+jitter until the Apps Script confirms {"ok":true},
+    a PERMANENT error is hit, or attempts/budget are exhausted. Returns
+    (ok, err, body); *err* is UNPREFIXED (caller adds its own 'push:' prefix as
+    today). Retries a network exception and a transient 'did not confirm' body; a
+    permanent 'script outdated' error is returned immediately. `post`/`sleep`/`rand`/
+    `now` resolve at CALL time (default the module globals) so the existing
+    m.post_webhook monkeypatch seam keeps working; injectable for deterministic
+    tests."""
+    post = post or post_webhook
+    sleep = sleep or time.sleep
+    rand = rand or random.random
+    now = now or time.monotonic
+    start = now()
+    err = "not attempted"
+    body = None
+    for i in range(max(1, attempts)):
+        if i > 0 and (now() - start) >= budget_s:
+            break
+        try:
+            body = post(url, payload, timeout=timeout)
+        except Exception as e:            # noqa: BLE001 — network/timeout is retryable
+            err = f"{type(e).__name__}: {e}"
+            body = None
+        else:
+            ok, cerr = check_webhook_response(body, expected_action)
+            if ok:
+                return True, None, body
+            err = cerr
+            if webhook_error_permanent(cerr):
+                return False, err, body      # permanent config error -> no retry
+        if i + 1 >= attempts:
+            break
+        delay = base_delay * (2 ** i) + rand() * base_delay
+        if (now() - start) + delay >= budget_s:
+            break
+        sleep(delay)
+    return False, err, body
 
 
 def apply_stream_service_for_ref(ref, channel_csv_url, push_url, set_service,
