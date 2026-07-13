@@ -6250,6 +6250,33 @@ class Relay:
         self.pov.reload()               # advance.set() + kill the serving proc -> port closes
         return self.status()
 
+    def feed_activate(self, which):
+        """Arm Feed A/B: start pulling at its current index (two-stage scheduling,
+        #492). Mirrors pov_reload. Manual-mode only — an error otherwise so the auto
+        pre-warm/handover logic and manual arm never fight."""
+        if not self.manual_feed_arm:
+            return {"error": "manual feed arm disabled (set RACECAST_MANUAL_FEED_ARM=1)"}
+        f = self.feeds.get(which.upper())
+        if not f:
+            return {"error": f"unknown feed {which!r}"}
+        f.paused = False
+        f.reload()
+        LOG.info("feed %s armed (manual)", which.upper())
+        return self.status()
+
+    def feed_deactivate(self, which):
+        """Disarm Feed A/B: stop its pull, kill the process, close the port (frees
+        bandwidth) — mirrors pov_stop. Manual-mode only (#492)."""
+        if not self.manual_feed_arm:
+            return {"error": "manual feed arm disabled (set RACECAST_MANUAL_FEED_ARM=1)"}
+        f = self.feeds.get(which.upper())
+        if not f:
+            return {"error": f"unknown feed {which!r}"}
+        f.paused = True
+        f.reload()
+        LOG.info("feed %s disarmed (manual)", which.upper())
+        return self.status()
+
     def shutdown(self):
         for f in self.feeds.values(): f.shutdown()
         if self.pov: self.pov.shutdown()
@@ -7613,6 +7640,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["pov", "toggle"]:              return self._send(relay.pov_toggle())
                 if p == ["pov", "show"]:                return self._send(relay.set_pov_shown(True))
                 if p == ["pov", "hide"]:                return self._send(relay.set_pov_shown(False))
+                if len(p)==3 and p[0]=="feed" and p[2]=="activate":
+                    return self._send(relay.feed_activate(p[1]))
+                if len(p)==3 and p[0]=="feed" and p[2]=="deactivate":
+                    return self._send(relay.feed_deactivate(p[1]))
                 if len(p)==2 and p[0]=="next":          return self._ok(relay.advance(p[1], +2))
                 if len(p)==2 and p[0]=="prev":          return self._ok(relay.advance(p[1], -2))
                 if len(p)==2 and p[0]=="reload":        return self._ok(relay.reload(p[1]))

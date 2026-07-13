@@ -1331,6 +1331,44 @@ def t_relay_manual_arm_starts_feeds_disarmed():
     assert st2["feeds"]["A"]["armed"] is False and st2["feeds"]["B"]["armed"] is False
 
 
+def t_feed_activate_deactivate_manual_mode():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2)]
+    r = m.Relay(_StubSource(["uA", "uB"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    # Force manual mode + disarmed, as Relay.__init__ would with the flag on.
+    r.manual_feed_arm = True
+    r.A.paused = True; r.B.paused = True
+    # URL present at the index but paused -> NO pull (current_channel gates on paused).
+    assert r.A.current_channel() == (None, 0)
+    # Arm A: unpaused; the URL is now pullable.
+    r.feed_activate("A")
+    assert r.A.paused is False
+    assert r.A.current_channel() == ("uA", 0)
+    # A deactivated feed reports "stopped", never "down" (no health alarm).
+    r.feed_deactivate("A")
+    assert r.A.paused is True
+    fa = r.status()["feeds"]["A"]
+    assert fa["state"] == "stopped" and fa["down"] is False and fa["armed"] is False
+
+
+def t_feed_arm_disabled_in_auto_mode():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2)]
+    r = m.Relay(_StubSource(["uA", "uB"], rows), (53001, 53002), LOGDIR)
+    assert r.manual_feed_arm is False
+    before = r.A.paused
+    res = r.feed_activate("A")
+    assert "error" in res
+    assert r.A.paused == before          # mutated nothing
+    assert "error" in r.feed_deactivate("B")
+
+
+def t_feed_arm_unknown_feed():
+    rows = [("uA", "A", "S1", 1)]
+    r = m.Relay(_StubSource(["uA"], rows), (53001, 53002), LOGDIR)
+    r.manual_feed_arm = True
+    assert "error" in r.feed_activate("Z")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
