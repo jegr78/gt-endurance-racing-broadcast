@@ -216,6 +216,7 @@ def t_timerstore_push_payload_and_status():
     ts, _ = _store(push_url="http://push?key=k")
     sent = []
     orig = m.post_webhook
+    _base, m.WEBHOOK_RETRY_BASE_S = m.WEBHOOK_RETRY_BASE_S, 0.0
     try:
         def post_ok(url, payload, timeout=10):
             sent.append((url, payload)); return b'{"ok":true}'
@@ -237,6 +238,7 @@ def t_timerstore_push_payload_and_status():
         assert ts.push_status == "failed"
     finally:
         m.post_webhook = orig
+        m.WEBHOOK_RETRY_BASE_S = _base
 
 
 def t_timerstore_push_unconfirmed_is_failed():
@@ -244,6 +246,7 @@ def t_timerstore_push_unconfirmed_is_failed():
     ts, _ = _store(push_url="http://push?key=k")
     ts._spawn_push = ts._push
     orig = m.post_webhook
+    _base, m.WEBHOOK_RETRY_BASE_S = m.WEBHOOK_RETRY_BASE_S, 0.0
     try:
         for resp in (b'{"error":"bad key"}', b"<html>exception</html>", b"", None):
             m.post_webhook = lambda url, payload, timeout=10, r=resp: r
@@ -252,6 +255,7 @@ def t_timerstore_push_unconfirmed_is_failed():
             assert "did not confirm" in ts.last_error
     finally:
         m.post_webhook = orig
+        m.WEBHOOK_RETRY_BASE_S = _base
 
 
 def t_timerstore_push_disabled_without_url():

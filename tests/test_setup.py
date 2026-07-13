@@ -446,6 +446,7 @@ def t_schedule_set_rejects_bool_float_and_noop():
 def t_push_failure_keeps_override_until_ttl():
     pushes = []
     ctl, hs, orig = _ctl(pushes)
+    _base, m.WEBHOOK_RETRY_BASE_S = m.WEBHOOK_RETRY_BASE_S, 0.0
     try:
         def boom(url, payload, timeout=10):
             raise OSError("down")
@@ -457,6 +458,7 @@ def t_push_failure_keeps_override_until_ttl():
         assert hs.data(now=1000.0 + m.OVERRIDE_TTL + 1)["streamer"] == "JeGr"  # sheet truth after TTL
     finally:
         m.post_webhook = orig
+        m.WEBHOOK_RETRY_BASE_S = _base
 
 
 # ---------- endpoint routing (real server, ephemeral port) ----------

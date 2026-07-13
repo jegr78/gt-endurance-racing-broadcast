@@ -1859,16 +1859,10 @@ class TimerStore:
 
     # -- webhook push (Apps Script writes the Timer tab) --------------------
     def _push(self, payload):
-        """Success = the Apps Script's own {"ok": true} (see
-        check_webhook_response). Timer pushes carry no expected_action: a v1
-        script keeps working for the timer."""
-        try:
-            body = post_webhook(self.push_url, payload)
-        except Exception as e:
-            self.push_status = "failed"
-            self.last_error = f"push: {type(e).__name__}: {e}"
-            return
-        ok, err = check_webhook_response(body)
+        """Success = the Apps Script's own {"ok": true} (see check_webhook_response).
+        Retries a transient failure with bounded backoff (#490); timer pushes carry
+        no expected_action (a v1 script keeps working)."""
+        ok, err, _body = push_webhook_retrying(self.push_url, payload)
         if ok:
             self.push_status = "ok"  # diagnostics: single ref assignments, no lock needed
         else:
@@ -4675,13 +4669,7 @@ class SetupControl:
 
     # -- shared blocking push -> (ok, error); diagnostics like TimerStore ----
     def _push(self, payload, expected_action):
-        try:
-            body = post_webhook(self.push_url, payload)
-        except Exception as e:
-            self.push_status = "failed"
-            self.last_error = f"push: {type(e).__name__}: {e}"
-            return False, self.last_error
-        ok, err = check_webhook_response(body, expected_action)
+        ok, err, _body = push_webhook_retrying(self.push_url, payload, expected_action)
         # diagnostics: single ref assignments, no lock needed
         self.push_status = "ok" if ok else "failed"
         self.last_error = None if ok else err
