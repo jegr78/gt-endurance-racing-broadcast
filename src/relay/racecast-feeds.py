@@ -236,7 +236,6 @@ _SOURCE_NOT_LIVE_YET = (
     "no playable streams found",     # Twitch: channel offline / not live yet
     "not currently live",            # yt-dlp YouTube: channel not live
     "will begin in",                 # YouTube: scheduled premiere not started
-    "not live?",                     # resolve_hls fallback line
 )
 
 
@@ -245,7 +244,7 @@ def classify_source_state(text):
     state, or None for a generic drop/error (#495). Case-insensitive substring match.
     Pure → unit-tested.
       "not_live_yet" — source offline / not started (Twitch 'No playable streams
-                       found', yt-dlp 'not currently live', the 'not live?' fallback).
+                       found', yt-dlp 'not currently live').
       "ended"        — source's live broadcast is over (YouTube 'This live event has
                        ended').
       None           — anything else (429/403/network/generic) — unchanged behaviour."""
@@ -5115,7 +5114,7 @@ class Feed:
         if q:
             self.quality = q
         st = classify_source_state(line)
-        if st is not None:
+        if st is not None and not self.served_ok:
             self.source_state = st
 
     def set_index(self, new_idx):
@@ -5311,6 +5310,7 @@ class Feed:
             # (issue #278). A near-instant exit (demo/startup) leaves served_ok False.
             if serve_elapsed >= HEALTH_SERVED_OK_S:
                 self.served_ok = True
+                self.source_state = None   # confirmed live serve: the drop's cause no longer applies (#495)
                 self.dead_serves = 0               # stable live picture -> reset
             # A serving process just exited: flag an unexpected loss (DROP) so the
             # panel/Companion alarm fires — but not on an intentional stop or a

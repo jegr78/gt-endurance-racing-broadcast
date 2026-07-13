@@ -942,7 +942,7 @@ def t_classify_source_state():
         "error: No playable streams found on this URL: twitch.tv/kekko") == "not_live_yet"
     # yt-dlp YouTube: channel not currently live.
     assert m.classify_source_state("ERROR: [youtube] abc: The channel is not currently live") == "not_live_yet"
-    assert m.classify_source_state("not live?") == "not_live_yet"          # resolve fallback
+    assert m.classify_source_state("not live?") is None       # ambiguous fallback -> generic
     # YouTube: broadcast over.
     assert m.classify_source_state("ERROR: [youtube] sgoDA5E4aJ0: This live event has ended.") == "ended"
     # Generic / transient -> None (unchanged behaviour).
