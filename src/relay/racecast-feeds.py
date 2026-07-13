@@ -482,7 +482,8 @@ def aggregate_health(facts):
         off-air alarm latches on this so a pre-show relay start never pings),
     stream_reconnecting (bool — OBS upstream unstable),
     funnel_down (bool — Funnel was previously seen up but is now down),
-    sheet_push_failing (bool — Sheet webhook returning errors).
+    sheet_push_failing (bool — Sheet webhook returning errors),
+    feed_source_states (optional dict mapping feed name to source_state).
 
     red  = any feed down (a live picture was lost); or obs_reachable truthy and
            stream_active is False AND stream_expected (OBS connected and has
@@ -494,8 +495,13 @@ def aggregate_health(facts):
              sheet_push_failing. A red result still lists the yellow issues under it.
     green = none of the above."""
     reasons, red, yellow = [], [], []
+    sstates = facts.get("feed_source_states") or {}
     for name in facts.get("feeds_down") or []:
-        red.append(f"Feed {name} down — lost the live stream")
+        if sstates.get(name) == "ended":
+            red.append(f"Feed {name} — source's live stream ENDED "
+                       f"(no auto-recovery — switch source)")
+        else:
+            red.append(f"Feed {name} down — lost the live stream")
     # OBS reachable but not streaming = off air — but only AFTER OBS has streamed
     # at least once this session (stream_expected latch), so starting the relay
     # pre-show, before OBS ever goes live, never fires a CRITICAL ping.
@@ -515,7 +521,10 @@ def aggregate_health(facts):
     if not facts.get("tailscale_present", True):
         yellow.append("Tailscale not connected — directors cannot reach the panel")
     for name in facts.get("feeds_connecting_long") or []:
-        yellow.append(f"Feed {name} stuck connecting")
+        if sstates.get(name) == "not_live_yet":
+            yellow.append(f"Feed {name} — commentator source not live yet (connecting)")
+        else:
+            yellow.append(f"Feed {name} stuck connecting")
     reasons.extend(red)
     reasons.extend(yellow)
     level = "red" if red else ("yellow" if yellow else "green")
@@ -5472,6 +5481,7 @@ class Relay:
         status() exposes so the pill and the webhook agree. Best-effort: a flaky
         tailscale probe must never raise (default present -> no false alarm)."""
         feeds_down, connecting_long = [], []
+        feed_source_states = {}
         live = list(self.feeds.items()) + ([("POV", self.pov)] if self.pov else [])
         for name, f in live:
             if f.paused:
@@ -5491,6 +5501,8 @@ class Relay:
                     connecting_long.append(name)
             elif f.phase == "connecting" and (now - f.phase_since) > HEALTH_CONNECTING_S:
                 connecting_long.append(name)
+            if f.source_state is not None:
+                feed_source_states[name] = f.source_state
         try:
             ts_present = detect_tailscale_ip() is not None
         except Exception:                                # noqa: BLE001 — best effort
@@ -5512,7 +5524,8 @@ class Relay:
                 "stream_expected": bool(self.stream_expected),
                 "stream_reconnecting": st.get("stream_reconnecting"),
                 "funnel_down": funnel_down,
-                "sheet_push_failing": (tpush == "failed")}
+                "sheet_push_failing": (tpush == "failed"),
+                "feed_source_states": feed_source_states}
 
     def _refresh_health(self, now):
         """Recompute + store the DISPLAYED health (level/reasons/since). Does NOT

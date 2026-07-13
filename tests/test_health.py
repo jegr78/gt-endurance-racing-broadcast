@@ -952,6 +952,29 @@ def t_classify_source_state():
     assert m.classify_source_state(None) is None
 
 
+def t_aggregate_health_not_live_yet_distinct_reason():
+    h = m.aggregate_health(_facts(feeds_connecting_long=["A"],
+                                  feed_source_states={"A": "not_live_yet"}))
+    assert h["level"] == "yellow"                              # severity unchanged
+    assert any("source not live yet" in r for r in h["reasons"])
+    assert not any("stuck connecting" in r for r in h["reasons"])
+
+
+def t_aggregate_health_ended_distinct_reason():
+    h = m.aggregate_health(_facts(feeds_down=["A"], feed_source_states={"A": "ended"}))
+    assert h["level"] == "red"                                # ended is still a genuine loss
+    assert any("live stream ENDED" in r for r in h["reasons"])
+    assert not any("lost the live stream" in r for r in h["reasons"])
+
+
+def t_aggregate_health_reasons_unchanged_without_source_states():
+    # No feed_source_states -> the existing generic reasons (backward compat).
+    assert any("lost the live stream" in r
+               for r in m.aggregate_health(_facts(feeds_down=["A"]))["reasons"])
+    assert any("stuck connecting" in r
+               for r in m.aggregate_health(_facts(feeds_connecting_long=["B"]))["reasons"])
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
