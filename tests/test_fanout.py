@@ -35,6 +35,14 @@ def t_feed_stalled_none_is_not_stall():
     assert m.feed_stalled(None, 1_000_000.0) is False
 
 
+def t_feed_stalled_honours_configured_grace():
+    # The graduated grace: at 20 s default, an 8 s gap is NOT a stall (streamlink's
+    # retry gets time); a 21 s gap is.
+    g = m.feed_stall_s({})                       # 20.0
+    assert m.feed_stalled(100.0, 100.0 + 8.0, stall_s=g) is False
+    assert m.feed_stalled(100.0, 100.0 + g + 0.1, stall_s=g) is True
+
+
 def t_ring_basic_read_after_write():
     r = m.FeedRing(1024)
     r.write(b"abc")

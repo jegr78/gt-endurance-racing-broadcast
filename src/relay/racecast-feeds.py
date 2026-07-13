@@ -5292,6 +5292,7 @@ class Feed:
         self.last_byte_ts = None
         serve_started = time.monotonic()
         stdout = self.proc.stdout
+        stall_s = feed_stall_s(os.environ)
         watchdog_stop = threading.Event()
 
         def _watchdog():
@@ -5303,8 +5304,9 @@ class Feed:
             while not watchdog_stop.wait(1.0):
                 if self.stop or self.advance.is_set():
                     return
-                if feed_stalled(self.last_byte_ts, time.monotonic()):
-                    self.log.warning("fan-out stall on %s — killing reader", self.name)
+                if feed_stalled(self.last_byte_ts, time.monotonic(), stall_s=stall_s):
+                    self.log.warning("fan-out stall on %s (>%.0fs) — killing reader",
+                                     self.name, stall_s)
                     self._kill_proc()
                     return
 
