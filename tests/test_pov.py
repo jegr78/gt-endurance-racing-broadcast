@@ -1369,6 +1369,22 @@ def t_feed_arm_unknown_feed():
     assert "error" in r.feed_activate("Z")
 
 
+def t_desync_suppressed_in_manual_mode():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+            ("uC", "C", "S3", 3), ("uD", "D", "S4", 4)]
+    r = m.Relay(_StubSource(["uA", "uB", "uC", "uD"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    # Construct a would-be desync: on-air feed A dropped, off-air feed B serving,
+    # past the settle window — in AUTO mode this fires the desync flag.
+    r.A.phase = "connecting"; r.A.dropped = True
+    r.B.phase = "serving"; r.B.dropped = False
+    r._desync_since = time.time() - 20
+    assert r.status()["desync"]["active"] is True          # auto mode: fires
+    # Manual mode: the same feed state must NOT raise a desync (intentional disarm).
+    r.manual_feed_arm = True
+    assert r.status()["desync"]["active"] is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
