@@ -75,7 +75,6 @@ def main():
     ap.add_argument("--stall-period", type=float, default=0.0, help="s between injected stalls (0=off)")
     ap.add_argument("--stall-duration", type=float, default=3.0, help="s each injected stall lasts")
     ap.add_argument("--log-interval", type=float, default=5.0)
-    ap.add_argument("--no-autoresync", action="store_true", help="baseline: log only, never reset")
     ap.add_argument("--source", default="testsrc",
                     help="'testsrc' (default synthetic ffmpeg -re) or a stream URL pulled "
                          "via `streamlink <url> <quality> --stdout` (real VBR content = the box condition)")
@@ -89,41 +88,29 @@ def main():
         source_cmd = ["streamlink", args.source, args.quality, "--stdout"]
 
     fe = _load("irofeeds", "src", "relay", "racecast-feeds.py")
-    obs_ws = _load("obs_ws", "src", "scripts", "obs_ws.py")
 
     ring = fe.FeedRing(fe.FANOUT_RING_BYTES)
     srv = fe.FeedFanoutServer("127.0.0.1", args.port, ring, fe.logging.getLogger("soak"))
     srv.start()
-    stuck_thr = fe.feed_autoresync_stuck_s(os.environ)
-    cooldown = fe.feed_autoresync_cooldown_s(os.environ)
     print(f"[soak] serving on http://127.0.0.1:{srv.port}  — point OBS Media Source at it")
-    print(f"[soak] autoresync={'off' if args.no_autoresync else 'on'} "
-          f"stuck_thr={stuck_thr}s cooldown={cooldown}s ring={fe.FANOUT_RING_BYTES}B")
+    print(f"[soak] ring={fe.FANOUT_RING_BYTES}B  (the OBS-drift auto-resync lives in the RELAY "
+          f"via GetStats render-skip rate; this harness only serves + logs the socket side)")
     print(f"[soak] source: {args.source} ({' '.join(source_cmd[:2])}...)")
 
     proc = subprocess.Popen(source_cmd, stdout=subprocess.PIPE)
     stop = threading.Event()
     started = time.monotonic()
-    resets = [0]
-    last_reset = [None]
 
     def _monitor():
+        # The socket send-block ("stuck") / cursor-snaps proved BLIND to OBS render drift
+        # (see the spec pivot) — logged here only to confirm the ring is fed. The render-skip
+        # signal is measured directly off OBS (obs-ws GetStats), not here.
         while not stop.is_set():
             time.sleep(args.log_interval)
             now = time.monotonic()
             stuck_s, snaps = srv.consumer_health(now)
             print(f"[soak] t={now-started:7.1f}s stuck={('-' if stuck_s is None else f'{stuck_s:.1f}')}s "
-                  f"snaps={snaps} resets={resets[0]}")
-            if args.no_autoresync:
-                continue
-            since = None if last_reset[0] is None else now - last_reset[0]
-            if fe.autoresync_decision(stuck_s, snaps, since, stuck_threshold=stuck_thr,
-                                      snap_threshold=1, cooldown_s=cooldown):
-                names, note = obs_ws.release_feed_inputs(ports=[srv.port])
-                resets[0] += 1
-                last_reset[0] = now
-                srv.reset_snaps()
-                print(f"[soak] RESET #{resets[0]} at t={now-started:.1f}s -> {names or note}")
+                  f"snaps={snaps}")
 
     threading.Thread(target=_monitor, daemon=True).start()
     try:
@@ -143,7 +130,7 @@ def main():
         except OSError:
             pass  # process already gone
         srv.stop()
-        print(f"[soak] done — total resets: {resets[0]}")
+        print("[soak] done")
     return 0
 
 
