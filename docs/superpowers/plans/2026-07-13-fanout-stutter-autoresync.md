@@ -1,5 +1,16 @@
 # Fan-out stutter: auto-resync + graduated stall (#488) Implementation Plan
 
+> **⚠ SUPERSEDED IN PART (2026-07-13 design pivot).** Tasks 1–4 (config, ring headroom,
+> soak harness, graduated watchdog) were executed as written. The **detection signal
+> pivoted** after the reproduction study: the socket send-block/snap trigger below (Task 5)
+> was empirically disproven (OBS reads the media socket greedily regardless of render state)
+> and **replaced by an obs-ws GetStats render-skip-rate trigger** in the relay heartbeat, plus
+> the per-interval rate is now recorded + charted in the Health-Monitor. The backpressure
+> question (Task 6) was resolved as "not a ring-buffer problem — a render-path one." See the
+> authoritative **DESIGN PIVOT** section in the spec
+> (`docs/superpowers/specs/2026-07-13-fanout-stutter-autoresync-design.md`) for the current
+> design; this plan's Task 5/6 text is retained only as the execution history.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stop the long-session fan-out stutter by auto-rebuilding a drifting feed's OBS input on reliable detection (the proven manual reset, automated), stop the 8 s watchdog from amplifying flaky sources, and provide a local soak harness whose evidence resolves the backpressure question inside this issue.
