@@ -13,7 +13,7 @@ import math
 import sqlite3
 import time
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SAMPLE_INTERVAL_S = 30          # heartbeat tick = sample cadence
 LIVE_WINDOW_S = 900            # default range when no from/to given (15 min)
@@ -31,7 +31,7 @@ COLUMNS = (
     "source_last_ok_age_s", "source_count",
     "cookies_present", "cookies_age_h", "cookies_stale",
     "timer_mode", "timer_push",
-    "mode", "live_feed", "live_stint",
+    "mode", "live_feed", "live_stint", "desync_active",
     # v3: OBS stats + connectivity + feed quality (redaction-safe: no URLs)
     "stream_active", "stream_reconnecting", "funnel_ok", "sheet_push_ok",
     "tailscale_up", "companion_ok",
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS samples (
     source_last_ok_age_s REAL, source_count INTEGER,
     cookies_present INTEGER, cookies_age_h REAL, cookies_stale INTEGER,
     timer_mode TEXT, timer_push TEXT,
-    mode TEXT, live_feed TEXT, live_stint INTEGER,
+    mode TEXT, live_feed TEXT, live_stint INTEGER, desync_active INTEGER,
     stream_active INTEGER, stream_reconnecting INTEGER,
     funnel_ok INTEGER, sheet_push_ok INTEGER,
     tailscale_up INTEGER, companion_ok INTEGER,
@@ -115,6 +115,10 @@ _V5_COLUMNS = (
     ("sys_disk_free_mb", "REAL"),
 )
 
+_V6_COLUMNS = (
+    ("desync_active", "INTEGER"),
+)
+
 
 def open_db(path):
     """Open (creating the file/dirs as needed) with WAL + a busy timeout so the
@@ -131,7 +135,7 @@ def migrate(conn):
     and stamp user_version. Idempotent and version-agnostic."""
     conn.executescript(_CREATE)
     have = {r["name"] for r in conn.execute("PRAGMA table_info(samples)").fetchall()}
-    for name, decl in _V3_COLUMNS + _V5_COLUMNS:
+    for name, decl in _V3_COLUMNS + _V5_COLUMNS + _V6_COLUMNS:
         if name not in have:
             conn.execute(f"ALTER TABLE samples ADD COLUMN {name} {decl}")
     conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")

@@ -5600,6 +5600,7 @@ class Relay:
                 # back-to-back counts as two distinct stints in the report (#500). The
                 # pull index stays reconstructable from feed_a/b_stint + live_feed.
                 "live_feed": live, "live_stint": self.on_air_row_idx() + 1,
+                "desync_active": 1 if self._desync.get("active") else 0,
                 # v3 OBS stats (already redacted: obs_stats never carries output_bytes)
                 "stream_active": _b(st.get("stream_active")),
                 "stream_reconnecting": _b(st.get("stream_reconnecting")),

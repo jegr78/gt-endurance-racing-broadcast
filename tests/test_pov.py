@@ -880,6 +880,14 @@ def _make_min_relay():
     return m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
 
 
+def t_health_snapshot_carries_desync_active():
+    r = _make_min_relay()
+    r._desync = {"active": True, "since_s": 20.0}
+    assert r._health_snapshot(123.0)["desync_active"] == 1
+    r._desync = {"active": False}
+    assert r._health_snapshot(123.0)["desync_active"] == 0
+
+
 def t_health_snapshot_carries_new_fields():
     relay = _make_min_relay()
     relay.obs_stats = {"obs_cpu_pct": 10.0, "obs_fps": 60.0, "stream_active": True,
