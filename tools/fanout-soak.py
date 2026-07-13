@@ -62,6 +62,14 @@ FFMPEG_CMD = [
 
 
 def main():
+    # Line-buffer our progress output so a `| tee runtime/soak.log` (or any redirect)
+    # captures each line immediately instead of block-buffering it — and so a Ctrl-C
+    # never loses the buffered tail. Without this, piped stdout is block-buffered and
+    # the log file looks empty for minutes.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, OSError):
+        pass  # non-standard stdout — best effort
     ap = argparse.ArgumentParser(description="Fan-out soak harness (#488)")
     ap.add_argument("--port", type=int, default=53001)
     ap.add_argument("--stall-period", type=float, default=0.0, help="s between injected stalls (0=off)")
