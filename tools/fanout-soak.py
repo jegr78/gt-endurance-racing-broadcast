@@ -116,15 +116,16 @@ def main():
                                      period_s=args.stall_period, duration_s=args.stall_duration):
                 ring.write(chunk)          # withhold during an injected stall
     except KeyboardInterrupt:
-        pass
+        pass  # Ctrl-C → fall through to cleanup
     finally:
         stop.set()
         try:
             proc.terminate()
         except OSError:
-            pass
+            pass  # process already gone
         srv.stop()
         print(f"[soak] done — total resets: {resets[0]}")
+    return 0
 
 
 if __name__ == "__main__":
