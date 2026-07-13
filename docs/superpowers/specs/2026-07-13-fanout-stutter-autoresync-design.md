@@ -231,3 +231,73 @@ watchdog bridges an injected stall without a re-resolve. Fan-out on/off comparis
 - [ ] The backpressure question is **resolved inside #488** from the soak's `lag(t)`
       classification: clock-bias → auto-resync documented as sufficient; jitter → bounded
       buffer / read-ahead added in this same PR. Nothing carried to a deferred follow-up.
+
+---
+
+## DESIGN PIVOT (2026-07-13, after the reproduction study) — detection = obs-ws GetStats render-skip rate, NOT the socket signal
+
+The socket-based detection above (`stuck_s` / cursor-snap, Component 1) was **empirically
+disproven** as a trigger for the real drift. A multi-environment reproduction study
+(Mac hardware-decode; Mac forced 4K60 + CPU load; a real 1080p60 YouTube stream + software
+decode on the Mac; and a headless Ubuntu UTM VM rendering via software GL/llvmpipe)
+established:
+
+- **The relay socket signal is blind to OBS render/playout drift.** In the VM, OBS rendered
+  at **4.8 fps with 64% render-skip**, yet the relay's `stuck_s` stayed **~0** — OBS reads
+  the media socket greedily regardless of its render state, so the socket never backs up.
+  Confirmed across every environment (`stuck_s` never exceeded ~1 s, even under extreme
+  load; no cursor-snaps ever).
+- **The signal that DOES reflect the drift is OBS's own `renderSkippedFrames`** (obs-ws
+  `GetStats`): 0.2 % peak on the cloud box during the event stutter, 0.3 % on the idle Mac,
+  64 % under VM overload — it tracks the OBS render-struggle (= the visible stutter) at every
+  severity. `stuck`/snap does not.
+- The drift is **graphics-path dependent** (software vs hardware decode/render); it does not
+  reproduce on the powerful Mac's hardware path but appears with software decode + real VBR
+  content, and the VM is too weak to hit the *subtle* 60 fps regime (only total overload).
+
+### Revised detection (replaces Component 1's socket signal)
+
+- **Signal:** the relay polls obs-ws `GetStats` on its heartbeat and tracks
+  `renderSkippedFrames` + `renderTotalFrames` (global OBS render stats). The **render-skip
+  rate per interval** = `Δrenderskipped / Δrendertotal` (guard `Δtotal > 0`) — a
+  resolution/fps-independent fraction, ~0 when healthy.
+- **Pure decision** (`tests/test_fanout.py`):
+  `render_drift_decision(skip_rate, since_last_reset_s, *, rate_threshold, cooldown_s) -> bool`
+  — True when `skip_rate > rate_threshold` **for N consecutive polls (debounce)** AND the
+  cooldown has elapsed. Pure, unit-tested.
+- **Action (unchanged):** on True with a feed on-air, resync the **on-air feed**
+  (`live_feed()` → its port → the proven `_obs_reconnect()` / `release_feed_inputs`),
+  cooldown-gated, logged. `GetStats` is global, so a render-skip spike during a single
+  on-air feed is attributed to that feed (documented simplification; the reset is cheap +
+  cooldown-gated).
+- **obs-ws helper:** add `render_stats(...)` to `src/scripts/obs_ws.py` — best-effort
+  `(renderSkippedFrames, renderTotalFrames)` or `None` (never raises), same contract as the
+  other obs-ws helpers.
+
+### What changes vs what stays
+
+- **Replace:** the socket `stuck_s`/snap sampler in `_serve_fanout` is **removed** (proven
+  blind → dead complexity on the live-critical path). `autoresync_decision`'s cooldown logic
+  is reused/renamed for `render_drift_decision`. `snap_bytes` / `FeedFanoutServer.consumer_health`
+  stay only for the **soak harness** logging (not a relay trigger).
+- **Keep:** the graduated stall watchdog (Component 2, trigger B — real fix), the ring
+  headroom (16 MB), the config plumbing, and the soak harness (now with `--source` /
+  `--quality` for real-stream soaks).
+- **Config:** keep `RACECAST_FEED_AUTORESYNC` (kill-switch, default on) +
+  `RACECAST_FEED_AUTORESYNC_COOLDOWN_S`; **replace** `RACECAST_FEED_AUTORESYNC_STUCK_S`
+  with `RACECAST_FEED_AUTORESYNC_SKIP_RATE` (render-skip-rate threshold, start **0.02** =
+  2 %, soak-tuned) + a debounce count.
+
+### Tuning / validation — on the Mac (no VM, no box)
+
+The Mac can **induce render-skip misses** (the 4K60-canvas + CPU-load path already did:
+render-lag misses climbed there) while `GetStats` reports the rate. Tune
+`RACECAST_FEED_AUTORESYNC_SKIP_RATE` so a healthy stream stays below it (no false resync)
+and an induced render-skip spike crosses it (resync fires). The subtle box-exact threshold
+is confirmed at the next real event by the instrumentation; the mechanism is validated on
+the Mac. The socket `stuck`/snap findings and the box's 0.2 % render-skip peak are the
+priors.
+
+_(This pivot supersedes Component 1's socket detection and the backpressure question — the
+drift is a render-path phenomenon, not a ring-buffer/backpressure one, so no backpressure is
+built.)_
