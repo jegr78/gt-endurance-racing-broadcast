@@ -127,6 +127,7 @@ def _on_air(sample_groups, name_for_stint):
     agg = {}          # name -> [seconds, set(stints)]
     resolved = bool(name_for_stint)
     non_null = []
+    desync_seconds = 0.0
     for samples in sample_groups:
         bands = _fill_gaps(hs.collapse_bands(
             [(s["ts"], s.get("live_stint")) for s in samples]))
@@ -140,12 +141,18 @@ def _on_air(sample_groups, name_for_stint):
             entry[0] += b["to"] - b["from"]
             entry[1].add(st)
         non_null += [int(b["state"]) for b in bands if b["state"] is not None]
+        # #500: total time a ping-pong desync (#494) was active within this window —
+        # the report flags it as an "attribution may be unreliable" caveat. NULL/missing
+        # desync_active (old DBs) collapses to a non-active band -> contributes 0.
+        dbands = _fill_gaps(hs.collapse_bands(
+            [(s["ts"], 1 if s.get("desync_active") else 0) for s in samples]))
+        desync_seconds += sum(b["to"] - b["from"] for b in dbands if b["state"])
     handovers = sum(1 for i in range(1, len(non_null)) if non_null[i] != non_null[i - 1])
     commentators = sorted(
         ({"name": n, "seconds": round(v[0], 1), "stints": len(v[1])} for n, v in agg.items()),
         key=lambda c: -c["seconds"])
     return {"commentators": commentators, "stint_handovers": handovers,
-            "resolved": resolved}
+            "resolved": resolved, "desync_seconds": round(desync_seconds, 1)}
 
 
 def _pair_windows(events, start_type, end_type, session_end):
@@ -398,6 +405,11 @@ def render_html(report):
     else:
         parts.append("<p class='caveat'>Commentator names were unavailable (relay not "
                      "running at report time) — shown by stint index.</p>")
+    if oa.get("desync_seconds", 0) > 0:
+        parts.append(f"<p class='caveat'>&#9888; A ping-pong desync was active for "
+                     f"{_esc(_fmt_dur(oa['desync_seconds']))} of this event — "
+                     f"per-commentator attribution during those windows may be "
+                     f"unreliable.</p>")
 
     # Producer handovers
     if report["producer_handovers"]:

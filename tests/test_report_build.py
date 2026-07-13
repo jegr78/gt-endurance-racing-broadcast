@@ -370,6 +370,32 @@ def t_report_discord_fields():
     assert "Window" in f
 
 
+def t_on_air_desync_seconds_from_desync_active_bands():
+    # A desync_active band contributes its (gap-filled) duration; a clean event -> 0;
+    # old samples without the key -> 0 (NULL-tolerant).
+    samples = [_sample(0.0, live_stint=1, desync_active=1),
+               _sample(30.0, live_stint=1, desync_active=1),
+               _sample(60.0, live_stint=1, desync_active=0)]
+    rep = rb.build_report(samples, [], {1: "Alice"}, "E", (0.0, 60.0), now=1000.0)
+    assert rep["on_air"]["desync_seconds"] > 0, rep["on_air"]
+
+    clean = [_sample(0.0, live_stint=1), _sample(30.0, live_stint=1)]
+    rep2 = rb.build_report(clean, [], {1: "Alice"}, "E", (0.0, 30.0), now=1000.0)
+    assert rep2["on_air"]["desync_seconds"] == 0, rep2["on_air"]
+
+
+def t_render_html_shows_desync_caveat_when_present():
+    samples = [_sample(0.0, live_stint=1, desync_active=1),
+               _sample(30.0, live_stint=1, desync_active=1),
+               _sample(60.0, live_stint=1, desync_active=0)]
+    rep = rb.build_report(samples, [], {1: "Alice"}, "GP", (0.0, 60.0), now=1000.0)
+    assert "desync" in rb.render_html(rep).lower(), "desync caveat missing"
+    # Clean event -> no desync caveat.
+    clean = [_sample(0.0, live_stint=1), _sample(30.0, live_stint=1)]
+    rep2 = rb.build_report(clean, [], {1: "Alice"}, "GP", (0.0, 30.0), now=1000.0)
+    assert "desync" not in rb.render_html(rep2).lower()
+
+
 def run():
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
