@@ -51,41 +51,45 @@ Two distinct triggers, same fix family:
 
 ### Component 1 — Detection-driven auto-resync (Trigger A)
 
-**Signal — OBS's byte-lag behind the live edge.** For the OBS socket consumer,
-`lag_bytes = live_offset() − obs_cursor`. Because `FeedFanoutServer._serve` does a
-**blocking `sendall`**, `obs_cursor` only advances when OBS's TCP socket accepts bytes:
-- OBS keeping up → cursor tracks live, `lag` stays small/constant.
-- OBS drifting (ffmpeg plays slower than ingest → its demux buffer fills → it stops reading
-  the socket → `sendall` blocks) → `live_offset` races ahead, `obs_cursor` stalls → `lag`
-  grows monotonically. **This growing lag is the drift.**
-- Extreme → `lag` > ring capacity → cursor snapped forward → the glitch (definitive backstop).
+**Signal — how long OBS's handler is blocked draining the socket, plus cursor-snaps.**
+Reading the real `FeedRing.read` corrects the naive "lag = live − cursor" idea: `read()`
+returns **all** available bytes (`data = buf[cursor−base:]`) and advances the cursor to the
+live edge on **every** call — so the backlog when OBS is slow lives in the blocking `sendall`
+/ socket buffer, **not** in the ring cursor (which re-pins to live each read). The precise,
+bitrate-free signals are therefore **time- and snap-based**, published per connection by
+`FeedFanoutServer._serve`:
 
-**Two sub-signals from one measurement** (a light per-feed sampler folded into the existing
-watchdog thread, 1 Hz):
-1. **Drift** — `lag_s` exceeds `lag_threshold` for a sustained debounce window.
-2. **Stuck** — `obs_cursor` has not advanced for > `stall_threshold` while `live_offset` grew
-   (OBS hung in `sendall`).
+- **Stuck** — `stuck_s = now − cycle_ts`, where `cycle_ts` is stamped after each `read`
+  *and* after each completed `sendall`. When OBS keeps up (or the ring is empty) `cycle_ts`
+  refreshes ~1 Hz; when OBS's ffmpeg stops draining, `sendall` blocks and `cycle_ts` goes
+  stale → `stuck_s` grows. **This is the drift manifesting** (the send-block lengthens as
+  OBS falls behind).
+- **Snap** — the definitive data-loss glitch: when a consumer fell so far behind that the
+  ring overflowed past its cursor, `read` snaps it forward. The handler detects it with pure
+  arithmetic — `skipped = (new_cursor − len(data)) − prev_cursor; snapped = skipped > 0` —
+  **without changing `read`'s signature** (shared with the program-audio consumer).
 
-`lag_s = lag_bytes / rolling_B_per_s`. `FeedFanoutServer` publishes, per connection, a
-lock-protected `(cursor, last_advance_ts)`; the sampler reads the OBS consumer's state
-(the preview ring-tap reads the ring directly, not via the socket server, so it is never
-counted). Only samples while the feed is **serving with an OBS consumer attached** (off-air
-→ `close_when_inactive=True` → OBS disconnected → no consumer → no trigger, naturally gated).
+A light per-feed sampler (folded into the existing 1 Hz `_serve_fanout` watchdog) reads the
+OBS consumer's `(cycle_ts, snap_count)` from `FeedFanoutServer` (the preview ring-tap reads
+the ring directly, not via the socket server, so it is never counted). Only samples while the
+feed is **serving with an OBS consumer attached** (off-air → `close_when_inactive=True` → OBS
+disconnected → no consumer → no trigger, naturally gated). **No rolling-bitrate estimate is
+needed** — the signals are seconds and event counts.
 
 **Pure decision function** (`tests/test_fanout.py`):
 ```python
-def autoresync_decision(lag_s, stall_s, since_last_reset_s, *,
-                        lag_threshold, stall_threshold, cooldown_s):
-    """True when the OBS consumer has drifted (lag_s > lag_threshold) OR is stuck
-    (stall_s > stall_threshold), AND the cooldown since the last auto-reset has
-    elapsed (since_last_reset_s >= cooldown_s). Pure — unit-tested with synthetic
-    values. None/zero lag_s or stall_s never trips it."""
+def autoresync_decision(stuck_s, snaps, since_last_reset_s, *,
+                        stuck_threshold, snap_threshold, cooldown_s):
+    """True when OBS's handler is stuck draining the socket (stuck_s > stuck_threshold)
+    OR has taken cursor-snaps (snaps >= snap_threshold), AND the cooldown since the last
+    auto-reset has elapsed (since_last_reset_s >= cooldown_s). Pure — unit-tested with
+    synthetic values. None stuck_s / zero snaps never trips it."""
 ```
 
 **Action.** On a True decision the feed calls the existing `Feed._obs_reconnect()` (rebuild
 the feed's OBS input → OBS re-joins clean at the live edge), records the reset time (for the
-cooldown), and logs it. The cooldown prevents reset loops; a stuck/dead OBS socket is dropped
-by the rebuild and OBS reconnects on its own.
+cooldown), resets the snap counter, and logs it. The cooldown prevents reset loops; a
+stuck/dead OBS socket is dropped by the rebuild and OBS reconnects on its own.
 
 **Default ON with a kill-switch** (`RACECAST_FEED_AUTORESYNC`, default on;
 `=0` disables). It automates a proven-safe action and offloads the director; the brief
@@ -94,10 +98,10 @@ by the rebuild and OBS reconnects on its own.
 concern, so the flags live in machine `.env`, consistent with `RACECAST_FEED_FANOUT`.
 
 **Tuning knobs** (env overrides; the defaults are soak-tuned *starting points*, not final):
-- `RACECAST_FEED_AUTORESYNC_LAG_S` — drift threshold, start **8.0 s**.
+- `RACECAST_FEED_AUTORESYNC_STUCK_S` — OBS-handler send-block threshold, start **5.0 s**.
 - `RACECAST_FEED_AUTORESYNC_COOLDOWN_S` — min seconds between auto-resets, start **60.0 s**.
-- The stuck `stall_threshold` reuses `RACECAST_FEED_STALL_S` (Component 2).
-- Debounce = the lag must exceed the threshold across N consecutive 1 Hz samples (start N=3).
+- `snap_threshold` — a cursor-snap is already a real glitch (a full ring ≈ 12 s of video
+  lost), so the default is **1** (reset on the first snap in a window), cooldown-gated.
 
 **Ring headroom (now, low-risk).** Raise the per-feed ring from `FANOUT_RING_BYTES = 8 MB`
 to **16 MB**. This is relay-side headroom — *not* OBS buffering — so the `lag_threshold`
@@ -128,10 +132,10 @@ source-clock phenomenon). **Fully local — no cloud box, no real stream, no coo
   causes. The operator points **local OBS** at the feed port.
 - **Injectable stalls** (Trigger B): the harness can withhold bytes for a few seconds
   periodically to simulate the WiFi/console uplink stall.
-- **Instrumentation:** logs `lag_s`, snap count, and auto-reset firings over time so the
-  drift is *visible*, the auto-reset's detect-and-clear is verifiable, and the `lag(t)`
-  curve can be **classified as clock-bias vs jitter** — the evidence that resolves the
-  backpressure question (§below). Records the **fan-out on/off comparison** (the AC).
+- **Instrumentation:** logs the drift signal (`stuck_s`), snap count, and auto-reset firings
+  over time so the drift is *visible*, the auto-reset's detect-and-clear is verifiable, and
+  the drift-over-time curve can be **classified as clock-bias vs jitter** — the evidence that
+  resolves the backpressure question (§below). Records the **fan-out on/off comparison** (AC).
 - **Safe deterministic core** (in the unit suite, no OBS): the mechanism is validated by
   feeding the pure `autoresync_decision` and the sampler synthetic lag/stall values and
   asserting the reset fires and clears — this does **not** need the natural drift to occur.
@@ -179,7 +183,7 @@ to a separate follow-up. The manual "OBS Feed Reset" button is unchanged through
 | Flag | Default | Meaning |
 |---|---|---|
 | `RACECAST_FEED_AUTORESYNC` | **on** | Detection-driven auto-resync; `=0` disables. |
-| `RACECAST_FEED_AUTORESYNC_LAG_S` | 8.0 | Drift threshold (OBS lag behind live), soak-tuned. |
+| `RACECAST_FEED_AUTORESYNC_STUCK_S` | 5.0 | OBS send-block (stuck) threshold, soak-tuned. |
 | `RACECAST_FEED_AUTORESYNC_COOLDOWN_S` | 60.0 | Min seconds between auto-resets. |
 | `RACECAST_FEED_STALL_S` | 20.0 | Byte-stall hard-kill grace (was hardcoded 8 s). |
 
@@ -188,14 +192,15 @@ Plus a constant (not a flag): `FANOUT_RING_BYTES` **8 MB → 16 MB** (ring headr
 ## Testing & validation
 
 **Pure units (`tests/test_fanout.py`, stdlib runnable script, CI):**
-- `autoresync_decision`: drift-only, stuck-only, both, cooldown-blocked, None/zero inputs,
+- `autoresync_decision`: stuck-only, snap-only, both, cooldown-blocked, None/zero inputs,
   boundary values.
-- The sampler's lag/stuck computation from a `FeedRing` + a fake consumer registry
-  (synthetic offsets/timestamps — no real stream): a slow/blocked consumer produces growing
-  `lag_s`; a keeping-up consumer stays ~0; the cursor-snap still fires as the backstop.
-- Rolling B/s → `lag_s` conversion.
+- The snap arithmetic `snap_bytes(prev_cursor, new_cursor, data_len)` from a `FeedRing`
+  scenario (synthetic offsets — no real stream): a consumer kept behind past the ring
+  capacity reports a positive skip; a keeping-up consumer reports 0.
+- The consumer `cycle_ts`/`stuck_s` bookkeeping on `FeedFanoutServer` via a fake blocking
+  socket: a stuck sender grows `stuck_s`; a draining sender keeps it ~0.
 - `RACECAST_FEED_AUTORESYNC*` / `RACECAST_FEED_STALL_S` parsing (default-on token logic like
-  `feed_fanout_enabled`).
+  `fanout_enabled`; the `_env_float` positive-or-default guard).
 
 **Graduated watchdog:** `feed_stalled` with the configurable threshold (new input cases in
 `tests/test_pov.py`, where the fan-out health functions already live).
@@ -209,14 +214,15 @@ watchdog bridges an injected stall without a re-resolve. Fan-out on/off comparis
 ## Acceptance criteria
 
 - [ ] A single feed can run a multi-hour session; when OBS-consumption drift sets in, the
-      relay **detects** it (OBS lag behind live) and **auto-rebuilds** the feed's OBS input
-      (the proven reset), clearing the stutter without the director watching. Default on,
-      `RACECAST_FEED_AUTORESYNC=0` disables; manual Feed Reset unchanged.
+      relay **detects** it (OBS handler stuck draining the socket, or a cursor-snap) and
+      **auto-rebuilds** the feed's OBS input (the proven reset), clearing the stutter without
+      the director watching. Default on, `RACECAST_FEED_AUTORESYNC=0` disables; manual Feed
+      Reset unchanged.
 - [ ] A recoverable multi-second source micro-stall (WiFi/console) no longer forces an
       immediate full re-resolve — the graduated `RACECAST_FEED_STALL_S` grace lets
       streamlink's internal retry bridge it.
-- [ ] Pure unit coverage for `autoresync_decision`, the lag/stuck sampler, and the
-      configurable stall threshold.
+- [ ] Pure unit coverage for `autoresync_decision`, the `snap_bytes` arithmetic + `stuck_s`
+      bookkeeping, and the configurable stall threshold.
 - [ ] A local `tools/` soak harness (ffmpeg `-re` + the real ring/server + local OBS,
       injectable stalls, lag/snap/reset logging) exists and is documented; the fan-out
       on/off behaviour is recorded from it. No cloud box required.
