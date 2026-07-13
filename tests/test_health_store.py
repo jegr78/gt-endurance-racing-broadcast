@@ -542,6 +542,47 @@ def t_incident_recovery_duration():
     assert inc[0]["duration_s"] == hs.SAMPLE_INTERVAL_S
 
 
+def t_migrate_adds_desync_active_v6_lossless():
+    import tempfile, os, sqlite3
+    d = tempfile.mkdtemp()
+    path = os.path.join(d, "h.db")
+    # A v5 DB by hand: full column set MINUS desync_active, user_version=5, one row.
+    c = sqlite3.connect(path)
+    try:
+        c.executescript(
+            "CREATE TABLE samples (ts REAL NOT NULL, kind TEXT NOT NULL, "
+            "health_level TEXT, live_stint INTEGER);")   # minimal legacy subset
+        c.execute("PRAGMA user_version=5")
+        c.execute("INSERT INTO samples (ts, kind, health_level, live_stint) "
+                  "VALUES (?,?,?,?)", (1000.0, "tick", "green", 7))
+        c.commit()
+    finally:
+        c.close()
+    conn = hs.open_db(path)
+    try:
+        hs.migrate(conn)
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == hs.SCHEMA_VERSION
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(samples)").fetchall()}
+        assert "desync_active" in cols
+        row = conn.execute("SELECT live_stint, desync_active FROM samples").fetchone()
+        assert row[0] == 7 and row[1] is None      # legacy row lossless, new col NULL
+    finally:
+        conn.close()
+
+
+def t_desync_active_round_trips():
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    conn = hs.open_db(os.path.join(d, "h.db"))
+    try:
+        hs.migrate(conn)
+        hs.record(conn, {"ts": 5.0, "health_level": "green", "desync_active": 1}, "tick")
+        got = hs.query_range(conn, 0, 10)[0]
+        assert got["desync_active"] == 1, got
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
