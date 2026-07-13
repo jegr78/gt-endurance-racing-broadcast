@@ -99,6 +99,13 @@ concern, so the flags live in machine `.env`, consistent with `RACECAST_FEED_FAN
 - The stuck `stall_threshold` reuses `RACECAST_FEED_STALL_S` (Component 2).
 - Debounce = the lag must exceed the threshold across N consecutive 1 Hz samples (start N=3).
 
+**Ring headroom (now, low-risk).** Raise the per-feed ring from `FANOUT_RING_BYTES = 8 MB`
+to **16 MB**. This is relay-side headroom — *not* OBS buffering — so the `lag_threshold`
+sits comfortably **below** the hard cursor-snap point: the auto-resync always fires an
+**orderly** rebuild before the ring would overflow into a jarring mid-stream snap. It also
+absorbs brief jitter without any reset. Cheap and safe regardless of the backpressure
+decision below.
+
 ### Component 2 — Graduated stall handling (Trigger B)
 
 Make the byte-stall hard-kill grace **configurable and higher**: `RACECAST_FEED_STALL_S`
@@ -122,21 +129,50 @@ source-clock phenomenon). **Fully local — no cloud box, no real stream, no coo
 - **Injectable stalls** (Trigger B): the harness can withhold bytes for a few seconds
   periodically to simulate the WiFi/console uplink stall.
 - **Instrumentation:** logs `lag_s`, snap count, and auto-reset firings over time so the
-  drift is *visible* and the auto-reset's detect-and-clear is verifiable. Records the
-  **fan-out on/off comparison** (the AC).
+  drift is *visible*, the auto-reset's detect-and-clear is verifiable, and the `lag(t)`
+  curve can be **classified as clock-bias vs jitter** — the evidence that resolves the
+  backpressure question (§below). Records the **fan-out on/off comparison** (the AC).
 - **Safe deterministic core** (in the unit suite, no OBS): the mechanism is validated by
   feeding the pure `autoresync_decision` and the sampler synthetic lag/stall values and
   asserting the reset fires and clears — this does **not** need the natural drift to occur.
   The natural-drift reproduction is **best-effort** and can be accelerated with injected
   pacing perturbations.
 
-### Deferred (follow-up)
+### The backpressure question — resolved within #488 by the soak (NOT deferred)
 
-**True consumer-paced backpressure on the ring** — the speculative "durable root fix" for
-Trigger A. It is fundamentally in tension with live streaming (a live source cannot be
-throttled) and cannot be validated without a multi-hour real-OBS soak; the detection-driven
-auto-resync is the *proven* mitigation. Revisit only if the soak shows the auto-resync is
-insufficient. The manual "OBS Feed Reset" button is unchanged throughout.
+The issue frames "true consumer-paced backpressure on the ring" as the durable root fix.
+**That framing is likely mistaken, and we resolve it with data inside this issue — no
+deferred follow-up.**
+
+Why it is likely the wrong tool for Trigger A: backpressure means the reader stops reading
+streamlink when OBS is slow. But the source is a **live** stream — if the reader stops,
+streamlink's stdout pipe fills, streamlink stops fetching segments, and it **falls behind
+the live edge**. So backpressure on a live source buys either growing latency or data-loss
+on resync; you cannot be both "paced to OBS" and "at the live edge" when OBS averages below
+real-time. Two possible drift regimes decide whether backpressure helps at all:
+
+- **Jitter around 1×** → a bounded buffer absorbs it; backpressure/more buffer *would* help.
+- **Persistent clock bias** (OBS's clock vs the source encoder's clock differ by a tiny
+  constant) → **no finite buffer helps**; the offset accumulates monotonically and a
+  periodic resync is the only tractable fix — exactly what live players do. Here the
+  detection-driven auto-resync is the *correct architecture*, and backpressure would
+  actively hurt (relay falls behind live) for no benefit.
+
+The live evidence points to **clock bias**: the stutter takes a variable 10–90 min, a
+reset clears it *every time*, and it stays stable for a while after — the accumulate →
+reset → stable → re-accumulate signature of a slow monotone drift, not one-off jitter.
+
+**How #488 resolves it (in this PR, before the issue is closed):** the soak harness logs
+`lag(t)` and classifies the curve:
+- **Monotone/linear ramp → clock bias** → the auto-resync is confirmed *sufficient*; we
+  document that finding and close #488. No backpressure is built (it would be futile and
+  risks the live-critical "reader never blocks" invariant).
+- **Oscillating with occasional spikes → jitter** → we add bounded-buffer backpressure /
+  a larger read-ahead **in this same PR**, its exact shape driven by the measured curve,
+  before closing #488.
+
+Either branch is decided by the soak evidence and finished within #488 — nothing is carried
+to a separate follow-up. The manual "OBS Feed Reset" button is unchanged throughout.
 
 ## Config flags (machine `.env`)
 
@@ -146,6 +182,8 @@ insufficient. The manual "OBS Feed Reset" button is unchanged throughout.
 | `RACECAST_FEED_AUTORESYNC_LAG_S` | 8.0 | Drift threshold (OBS lag behind live), soak-tuned. |
 | `RACECAST_FEED_AUTORESYNC_COOLDOWN_S` | 60.0 | Min seconds between auto-resets. |
 | `RACECAST_FEED_STALL_S` | 20.0 | Byte-stall hard-kill grace (was hardcoded 8 s). |
+
+Plus a constant (not a flag): `FANOUT_RING_BYTES` **8 MB → 16 MB** (ring headroom, §Component 1).
 
 ## Testing & validation
 
@@ -182,3 +220,8 @@ watchdog bridges an injected stall without a re-resolve. Fan-out on/off comparis
 - [ ] A local `tools/` soak harness (ffmpeg `-re` + the real ring/server + local OBS,
       injectable stalls, lag/snap/reset logging) exists and is documented; the fan-out
       on/off behaviour is recorded from it. No cloud box required.
+- [ ] The ring headroom bump (`FANOUT_RING_BYTES` 8→16 MB) keeps the auto-resync firing an
+      orderly rebuild below the hard cursor-snap point.
+- [ ] The backpressure question is **resolved inside #488** from the soak's `lag(t)`
+      classification: clock-bias → auto-resync documented as sufficient; jitter → bounded
+      buffer / read-ahead added in this same PR. Nothing carried to a deferred follow-up.
