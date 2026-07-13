@@ -5722,6 +5722,8 @@ class Relay:
                 "obs_mem_mb": st.get("obs_mem_mb"),
                 "obs_fps": st.get("obs_fps"),
                 "obs_render_skipped_pct": st.get("obs_render_skipped_pct"),
+                "obs_render_skip_rate_pct": (None if (_rsr := self._current_render_skip_rate())
+                                             is None else round(_rsr * 100, 3)),
                 "obs_disk_free_mb": st.get("obs_disk_free_mb"),
                 # v3 connectivity (sheet_push_ok derived from the timer push status)
                 "funnel_ok": _b(cs.get("funnel_ok")),
@@ -5790,30 +5792,40 @@ class Relay:
             self._check_render_drift(now)
             self._hb_stop.wait(HEARTBEAT_INTERVAL_S)
 
-    def _check_render_drift(self, now):
-        """#488: poll OBS's render-skip rate (obs-ws GetStats, already fetched into
-        self.obs_stats by _maybe_probe_obs) and auto-rebuild the ON-AIR feed's OBS input when
-        the per-interval skip rate stays above the threshold (debounced), cooldown-gated. The
-        socket send-block signal was disproven (OBS reads greedily regardless of render state);
-        renderSkippedFrames is the signal that tracks the visible drift. Best-effort: obs-ws
-        unreachable / no counts -> no-op. GetStats is global, so a skip spike during a single
-        on-air feed is attributed to that feed (the reset is cheap + cooldown-gated)."""
-        if not self.auto_resync or _obs_ws is None:
-            return
+    def _current_render_skip_rate(self):
+        """Per-interval OBS render-skip rate (0..1) from obs_stats vs the previous heartbeat's
+        raw counts, or None (no prev / no counts). Does NOT advance the prev counts — the
+        heartbeat's _check_render_drift advances them once per tick. The cumulative
+        obs_render_skipped_pct barely moves during a spike, so this delta rate is the signal
+        the drift shows up in (#488) — recorded into the health history + charted."""
         st = self.obs_stats or {}
         skipped = st.get("obs_render_skipped_frames")
         total = st.get("obs_render_total_frames")
-        if skipped is None or total is None:
-            return
         prev = self._prev_render_counts
-        self._prev_render_counts = (skipped, total)
-        if prev is None:
-            return
-        d_skip, d_total = skipped - prev[0], total - prev[1]
+        if skipped is None or total is None or prev is None:
+            return None
+        d_total = total - prev[1]
         if d_total <= 0:                       # OBS idle/paused this interval — not drifting
+            return 0.0
+        return (skipped - prev[0]) / d_total
+
+    def _check_render_drift(self, now):
+        """#488: derive OBS's per-interval render-skip rate (obs-ws GetStats, fetched into
+        self.obs_stats by _maybe_probe_obs) and auto-rebuild the ON-AIR feed's OBS input when
+        it stays above the threshold (debounced), cooldown-gated. The socket send-block signal
+        was disproven (OBS reads greedily regardless of render state); renderSkippedFrames is
+        the signal that tracks the visible drift. The rate is recorded every heartbeat (for the
+        health-history chart) even when the auto-resync ACTION is disabled. Best-effort."""
+        rate = self._current_render_skip_rate()
+        # Advance prev every heartbeat (also feeds the next _health_snapshot rate), regardless
+        # of the auto_resync action gate below.
+        st = self.obs_stats or {}
+        skipped, total = st.get("obs_render_skipped_frames"), st.get("obs_render_total_frames")
+        if skipped is not None and total is not None:
+            self._prev_render_counts = (skipped, total)
+        if not self.auto_resync or _obs_ws is None or rate is None:
             self._render_drift_streak = 0
             return
-        rate = d_skip / d_total
         if rate <= self._autoresync_skip_rate:
             self._render_drift_streak = 0
             return

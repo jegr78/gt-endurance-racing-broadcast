@@ -941,6 +941,18 @@ def t_check_render_drift_quiet_when_healthy_or_disabled():
     assert calls == [], "kill-switch (auto_resync=False) disables the auto-resync"
 
 
+def t_health_snapshot_carries_render_skip_rate():
+    # #488: the per-interval render-skip rate (delta, not the flat cumulative pct) is written
+    # into the health snapshot for the Health-Monitor chart + box-event validation.
+    r = _make_min_relay()
+    r._prev_render_counts = None
+    r.obs_stats = {"obs_render_skipped_frames": 10, "obs_render_total_frames": 1000}
+    assert r._health_snapshot(1.0)["obs_render_skip_rate_pct"] is None   # no prev yet
+    r._prev_render_counts = (10, 1000)
+    r.obs_stats = {"obs_render_skipped_frames": 60, "obs_render_total_frames": 2000}  # +50/+1000
+    assert r._health_snapshot(2.0)["obs_render_skip_rate_pct"] == 5.0    # 5% per interval
+
+
 def t_health_snapshot_carries_new_fields():
     relay = _make_min_relay()
     relay.obs_stats = {"obs_cpu_pct": 10.0, "obs_fps": 60.0, "stream_active": True,
