@@ -196,6 +196,36 @@ def t_fanout_watchdog_kill_condition_is_feed_stalled():
     # (racecast-local-uat skill), not a unit test — that is the honest boundary.
 
 
+def t_feed_autoresync_default_on_and_falsey_disables():
+    assert m.feed_autoresync_enabled({}) is True
+    assert m.feed_autoresync_enabled({"RACECAST_FEED_AUTORESYNC": ""}) is True
+    for v in ("0", "false", "OFF", "no"):
+        assert m.feed_autoresync_enabled({"RACECAST_FEED_AUTORESYNC": v}) is False, v
+    for v in ("1", "true", "on"):
+        assert m.feed_autoresync_enabled({"RACECAST_FEED_AUTORESYNC": v}) is True, v
+
+
+def t_env_float_defaults_and_guards():
+    assert m._env_float({}, "K", 5.0) == 5.0
+    assert m._env_float({"K": ""}, "K", 5.0) == 5.0
+    assert m._env_float({"K": "abc"}, "K", 5.0) == 5.0
+    assert m._env_float({"K": "0"}, "K", 5.0) == 5.0        # <=0 -> default
+    assert m._env_float({"K": "-3"}, "K", 5.0) == 5.0
+    assert m._env_float({"K": "12.5"}, "K", 5.0) == 12.5
+
+
+def t_feed_tuning_getter_defaults():
+    assert m.feed_autoresync_stuck_s({}) == 5.0
+    assert m.feed_autoresync_cooldown_s({}) == 60.0
+    assert m.feed_stall_s({}) == 20.0
+    assert m.feed_autoresync_stuck_s({"RACECAST_FEED_AUTORESYNC_STUCK_S": "8"}) == 8.0
+    assert m.feed_stall_s({"RACECAST_FEED_STALL_S": "30"}) == 30.0
+
+
+def t_ring_headroom_is_16mb():
+    assert m.FANOUT_RING_BYTES == 16 * 1024 * 1024
+
+
 def t_relay_fanout_flag_from_env(monkeypatch=None):
     # fanout_enabled drives Relay.fanout; verified via the pure helper to avoid
     # constructing a full Relay (which needs sources). This guards the wiring contract.

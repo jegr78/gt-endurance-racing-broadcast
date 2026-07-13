@@ -271,7 +271,7 @@ _HEALTH_LABEL = {"green": "OK", "yellow": "DEGRADED", "red": "CRITICAL"}
 
 # ---------- Feed fan-out stall detection (relay feed multiplexing, #358) --------
 FANOUT_STALL_S = 8.0   # seconds without a byte from streamlink before a fan-out reader is "stalled"
-FANOUT_RING_BYTES = 8 * 1024 * 1024   # per-feed ring window (bounded; ≈ a few seconds at typical feed bitrate)
+FANOUT_RING_BYTES = 16 * 1024 * 1024  # per-feed ring window (bounded; ≈12 s at 10 Mbps). #488: 8→16 MB headroom so the auto-resync fires an orderly rebuild below the hard cursor-snap.
 _FANOUT_FALSEY = {"0", "false", "no", "off"}
 
 
@@ -280,6 +280,41 @@ def fanout_enabled(environ):
     (#358, live-verified 2026-06-29); set RACECAST_FEED_FANOUT=0 to fall back to
     the proven direct-serve path. Pure so the switch is unit-testable."""
     return str(environ.get("RACECAST_FEED_FANOUT", "")).strip().lower() not in _FANOUT_FALSEY
+
+
+def feed_autoresync_enabled(environ):
+    """True unless RACECAST_FEED_AUTORESYNC is an explicit falsey token. Default ON
+    (#488): the relay auto-rebuilds a feed's OBS input when it detects OBS drifting
+    behind the live edge (the proven manual "OBS Feed Reset", automated). Set
+    RACECAST_FEED_AUTORESYNC=0 to disable. Pure so the switch is unit-testable."""
+    return str(environ.get("RACECAST_FEED_AUTORESYNC", "")).strip().lower() not in _FANOUT_FALSEY
+
+
+def _env_float(environ, key, default):
+    """Parse a positive float env override; fall back to `default` on absent/empty/
+    non-numeric/<=0. Pure."""
+    try:
+        v = float(str(environ.get(key, "")).strip())
+    except (TypeError, ValueError):
+        return default
+    return v if v > 0 else default
+
+
+def feed_autoresync_stuck_s(environ):
+    """OBS-handler send-block threshold (s) before an auto-resync. #488, soak-tuned."""
+    return _env_float(environ, "RACECAST_FEED_AUTORESYNC_STUCK_S", 5.0)
+
+
+def feed_autoresync_cooldown_s(environ):
+    """Min seconds between auto-resyncs (anti-loop). #488."""
+    return _env_float(environ, "RACECAST_FEED_AUTORESYNC_COOLDOWN_S", 60.0)
+
+
+def feed_stall_s(environ):
+    """Byte-stall hard-kill grace (s) for the fan-out watchdog. #488: raised from the
+    hardcoded 8 s so streamlink's internal HLS retry can bridge a recoverable uplink
+    micro-stall before a full re-resolve. Soak-tuned."""
+    return _env_float(environ, "RACECAST_FEED_STALL_S", 20.0)
 
 
 # ---------- Auto-failover to the Intermission scene (#378) ------------------
