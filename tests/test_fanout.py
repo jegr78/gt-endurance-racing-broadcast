@@ -223,10 +223,10 @@ def t_env_float_defaults_and_guards():
 
 
 def t_feed_tuning_getter_defaults():
-    assert m.feed_autoresync_stuck_s({}) == 5.0
+    assert m.feed_autoresync_skip_rate({}) == 0.02
     assert m.feed_autoresync_cooldown_s({}) == 60.0
     assert m.feed_stall_s({}) == 20.0
-    assert m.feed_autoresync_stuck_s({"RACECAST_FEED_AUTORESYNC_STUCK_S": "8"}) == 8.0
+    assert m.feed_autoresync_skip_rate({"RACECAST_FEED_AUTORESYNC_SKIP_RATE": "0.05"}) == 0.05
     assert m.feed_stall_s({"RACECAST_FEED_STALL_S": "30"}) == 30.0
 
 
@@ -252,20 +252,20 @@ def t_snap_bytes_counts_skipped_on_overflow():
     assert m.snap_bytes(100, 200, 20) == 80
 
 
-def t_autoresync_decision_stuck_and_snap_and_cooldown():
-    kw = dict(stuck_threshold=5.0, snap_threshold=1, cooldown_s=60.0)
-    # neither -> False
-    assert m.autoresync_decision(1.0, 0, None, **kw) is False
-    # stuck over threshold -> True
-    assert m.autoresync_decision(6.0, 0, None, **kw) is True
-    # a snap -> True
-    assert m.autoresync_decision(0.0, 1, None, **kw) is True
-    # within cooldown -> False even if stuck
-    assert m.autoresync_decision(9.0, 3, 10.0, **kw) is False
+def t_render_drift_decision_rate_and_cooldown():
+    kw = dict(rate_threshold=0.02, cooldown_s=60.0)
+    # below threshold -> False
+    assert m.render_drift_decision(0.01, None, **kw) is False
+    # at threshold -> False (strict >)
+    assert m.render_drift_decision(0.02, None, **kw) is False
+    # above threshold -> True
+    assert m.render_drift_decision(0.05, None, **kw) is True
+    # within cooldown -> False even if over threshold
+    assert m.render_drift_decision(0.5, 10.0, **kw) is False
     # cooldown elapsed -> True
-    assert m.autoresync_decision(9.0, 0, 61.0, **kw) is True
-    # None stuck_s never trips on its own
-    assert m.autoresync_decision(None, 0, None, **kw) is False
+    assert m.render_drift_decision(0.05, 61.0, **kw) is True
+    # None rate never trips
+    assert m.render_drift_decision(None, None, **kw) is False
 
 
 def t_consumer_health_aggregates_registry():
@@ -296,13 +296,6 @@ def t_soak_stall_active_schedule():
     assert soak.soak_stall_active(29.9, period_s=30, duration_s=3) is True
     assert soak.soak_stall_active(57.1, period_s=30, duration_s=3) is True   # wraps
     assert soak.soak_stall_active(5.0, period_s=0, duration_s=3) is False    # disabled
-
-
-def t_feed_has_autoresync_attrs():
-    import tempfile
-    f = m.Feed("A", 53001, 0, (lambda: []), tempfile.mkdtemp())
-    assert f.fanout_server is None
-    assert f._last_autoresync_ts is None
 
 
 if __name__ == "__main__":
