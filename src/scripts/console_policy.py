@@ -80,6 +80,8 @@ def min_capability(segments, method="GET"):
         return Requirement(DIRECTOR, False)
     if p and p[0] == "pov":                     # all /pov/* are control
         return Requirement(DIRECTOR, False)
+    if len(p) == 3 and p[0] == "feed" and p[2] in ("activate", "deactivate"):
+        return Requirement(DIRECTOR, False)   # two-stage feed arm/disarm (#492)
     if p and p[0] == "obs":                     # all /obs/* are relay-mediated OBS control (scene/source/audio/stream/state/refresh)
         return Requirement(DIRECTOR, False)
     if p and p[0] == "parts":                   # relay-mediated broadcast Part control (#395)

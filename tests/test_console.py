@@ -316,6 +316,12 @@ def t_resync_stint_is_director_no_stepup():
     assert req == cp.Requirement(cp.DIRECTOR, False)
 
 
+def t_feed_arm_is_director_no_stepup():
+    for act in ("activate", "deactivate"):
+        assert cp.min_capability(["feed", "A", act]) == cp.Requirement(cp.DIRECTOR, False), act
+        assert cp.min_capability(["feed", "B", act]) == cp.Requirement(cp.DIRECTOR, False), act
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

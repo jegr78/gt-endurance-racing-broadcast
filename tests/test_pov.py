@@ -1297,6 +1297,110 @@ def t_resync_to_stint_no_op_when_no_feed_serves():
     assert (r.A.idx, r.B.idx) == (a_before, b_before)   # nothing moved (no set_stint cut)
 
 
+def t_manual_feed_arm_enabled():
+    # OFF by default (opt-in) — absent or empty is off.
+    assert m.manual_feed_arm_enabled({}) is False
+    assert m.manual_feed_arm_enabled({"RACECAST_MANUAL_FEED_ARM": ""}) is False
+    # Explicit truthy tokens enable it.
+    for v in ("1", "true", "yes", "on", "ON", "True"):
+        assert m.manual_feed_arm_enabled({"RACECAST_MANUAL_FEED_ARM": v}) is True, v
+    # Anything else stays off.
+    for v in ("0", "false", "no", "off", "banana"):
+        assert m.manual_feed_arm_enabled({"RACECAST_MANUAL_FEED_ARM": v}) is False, v
+
+
+def t_relay_manual_arm_starts_feeds_disarmed():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2)]
+    # Default (flag absent): feeds armed (paused False), manual_feed_arm False.
+    r = m.Relay(_StubSource(["uA", "uB"], rows), (53001, 53002), LOGDIR)
+    assert r.manual_feed_arm is False
+    assert r.A.paused is False and r.B.paused is False
+    st = r.status()
+    assert st["manual_feed_arm"] is False
+    assert st["feeds"]["A"]["armed"] is True and st["feeds"]["B"]["armed"] is True
+    # Flag on: both feeds start disarmed (paused), armed=False in /status.
+    os.environ["RACECAST_MANUAL_FEED_ARM"] = "1"
+    try:
+        r2 = m.Relay(_StubSource(["uA", "uB"], rows), (53003, 53004), LOGDIR)
+    finally:
+        del os.environ["RACECAST_MANUAL_FEED_ARM"]
+    assert r2.manual_feed_arm is True
+    assert r2.A.paused is True and r2.B.paused is True
+    st2 = r2.status()
+    assert st2["manual_feed_arm"] is True
+    assert st2["feeds"]["A"]["armed"] is False and st2["feeds"]["B"]["armed"] is False
+
+
+def t_feed_activate_deactivate_manual_mode():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2)]
+    r = m.Relay(_StubSource(["uA", "uB"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    # Force manual mode + disarmed, as Relay.__init__ would with the flag on.
+    r.manual_feed_arm = True
+    r.A.paused = True; r.B.paused = True
+    # URL present at the index but paused -> NO pull (current_channel gates on paused).
+    assert r.A.current_channel() == (None, 0)
+    # Arm A: unpaused; the URL is now pullable.
+    r.feed_activate("A")
+    assert r.A.paused is False
+    assert r.A.current_channel() == ("uA", 0)
+    # A deactivated feed reports "stopped", never "down" (no health alarm).
+    r.feed_deactivate("A")
+    assert r.A.paused is True
+    fa = r.status()["feeds"]["A"]
+    assert fa["state"] == "stopped" and fa["down"] is False and fa["armed"] is False
+
+
+def t_feed_arm_disabled_in_auto_mode():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2)]
+    r = m.Relay(_StubSource(["uA", "uB"], rows), (53001, 53002), LOGDIR)
+    assert r.manual_feed_arm is False
+    before = r.A.paused
+    res = r.feed_activate("A")
+    assert "error" in res
+    assert r.A.paused == before          # mutated nothing
+    assert "error" in r.feed_deactivate("B")
+
+
+def t_feed_arm_unknown_feed():
+    rows = [("uA", "A", "S1", 1)]
+    r = m.Relay(_StubSource(["uA"], rows), (53001, 53002), LOGDIR)
+    r.manual_feed_arm = True
+    assert "error" in r.feed_activate("Z")
+
+
+def t_desync_suppressed_in_manual_mode():
+    rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2),
+            ("uC", "C", "S3", 3), ("uD", "D", "S4", 4)]
+    r = m.Relay(_StubSource(["uA", "uB", "uC", "uD"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    # Construct a would-be desync: on-air feed A dropped, off-air feed B serving,
+    # past the settle window — in AUTO mode this fires the desync flag.
+    r.A.phase = "connecting"; r.A.dropped = True
+    r.B.phase = "serving"; r.B.dropped = False
+    r._desync_since = time.time() - 20
+    assert r.status()["desync"]["active"] is True          # auto mode: fires
+    # Manual mode: the same feed state must NOT raise a desync (intentional disarm).
+    r.manual_feed_arm = True
+    assert r.status()["desync"]["active"] is False
+
+
+def t_feed_activate_refuses_same_url_as_other_armed_feed():
+    # Both feed indices resolve to the SAME url; arming the second while the first
+    # is armed on that url must be refused (no #491 double-pull on the arm path).
+    rows = [("uX", "A", "S1", 1), ("uX", "B", "S2", 2)]
+    r = m.Relay(_StubSource(["uX", "uX"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    r.manual_feed_arm = True
+    r.A.paused = True; r.B.paused = True
+    r.A.set_index(0); r.B.set_index(1)          # both resolve to uX
+    r.feed_activate("A")                          # A armed on uX
+    assert r.A.paused is False
+    res = r.feed_activate("B")                    # would be a 2nd uX puller -> refuse
+    assert "error" in res
+    assert r.B.paused is True                     # B stayed disarmed
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

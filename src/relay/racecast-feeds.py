@@ -264,6 +264,14 @@ def auto_failover_enabled(environ):
     return str(environ.get("RACECAST_AUTO_FAILOVER", "")).strip().lower() in _FAILOVER_TRUTHY
 
 
+def manual_feed_arm_enabled(environ):
+    """True only when RACECAST_MANUAL_FEED_ARM is an explicit truthy token. OFF by
+    default (opt-in): the default is today's auto-pull + auto-pre-warm. When on,
+    both A/B feeds start disarmed (paused) and the director arms/disarms each pull
+    explicitly (#492). Pure so the switch is unit-testable."""
+    return str(environ.get("RACECAST_MANUAL_FEED_ARM", "")).strip().lower() in _FAILOVER_TRUTHY
+
+
 # ---------- On-air program-audio monitor (#program-audio) ------------------
 _PROGRAM_AUDIO_FALSEY = {"0", "false", "no", "off"}
 
@@ -5286,6 +5294,13 @@ class Relay:
         self.A.on_recovery = self._record_feed_recovery
         self.B.on_recovery = self._record_feed_recovery
         self.feeds = {"A": self.A, "B": self.B}
+        # Two-stage feed scheduling (#492): when RACECAST_MANUAL_FEED_ARM is set,
+        # both A/B feeds start DISARMED (paused) — a URL at the index does not pull
+        # until the director arms the feed. Default off = auto-pull unchanged.
+        self.manual_feed_arm = manual_feed_arm_enabled(os.environ)
+        if self.manual_feed_arm:
+            self.A.paused = True
+            self.B.paused = True
         self.obs_note = None          # last OBS note (None/"" = ok); read by status()
         self.obs_reachable = None     # last LIVE reachability probe; None until first /status
         self._obs_probe_ts = 0.0      # time.time() of the last reachability probe
@@ -5613,6 +5628,7 @@ class Relay:
                                "channel": ch,
                                "platform": platform_of(channel_url(ch)) if ch else None,
                                "state": "stopped" if f.paused else f.phase,
+                               "armed": not f.paused,
                                "state_age_s": round(now - f.phase_since, 1),
                                "down": f.dropped and not f.paused,
                                "last_error": f.last_error}
@@ -5634,6 +5650,7 @@ class Relay:
         # resume/show that displayed stint, not the stale pull row.
         live = self.live_feed()
         out["live"] = {"feed": live, "stint": self.on_air_row_idx() + 1, "mode": self.mode}
+        out["manual_feed_arm"] = self.manual_feed_arm
         out["league"] = {"sheet_id": self.sheet_id, "name": self.league_name}
         out["producer"] = self.producer_name   # who runs this machine (#317 — for takeover)
         self._refresh_health(now)            # keep the displayed level fresh (2 s poll)
@@ -5683,6 +5700,14 @@ class Relay:
         index-designated on-air feed (live_feed) not delivering while the other is
         = a ping-pong desync; debounced by HEALTH_CONNECTING_SETTLE_S. Stores the
         /status block in self._desync and logs on the active transition."""
+        if self.manual_feed_arm:
+            # Manual mode intentionally disarms feeds; the index-derived desync
+            # predicate would false-positive during arm-before-cut. Off here (#492).
+            with self._health_lock:
+                self._desync_active = False
+                self._desync_since = None
+                self._desync = {"active": False}
+            return self._desync
         live = self.live_feed()
         off = "B" if live == "A" else "A"
         raw = ping_pong_desynced(self._feed_serving(self.feeds[live]),
@@ -6231,6 +6256,44 @@ class Relay:
             return {"error": "pov disabled"}
         self.pov.paused = True
         self.pov.reload()               # advance.set() + kill the serving proc -> port closes
+        return self.status()
+
+    def feed_activate(self, which):
+        """Arm Feed A/B: start pulling at its current index (two-stage scheduling,
+        #492). Mirrors pov_reload. Manual-mode only — an error otherwise so the auto
+        pre-warm/handover logic and manual arm never fight."""
+        if not self.manual_feed_arm:
+            return {"error": "manual feed arm disabled (set RACECAST_MANUAL_FEED_ARM=1)"}
+        f = self.feeds.get(which.upper())
+        if not f:
+            return {"error": f"unknown feed {which!r}"}
+        # #491 single-pull invariant on the arm path: refuse to arm a feed onto a
+        # URL the OTHER feed is already armed on (would be a same-URL double-pull).
+        other_key = "B" if which.upper() == "A" else "A"
+        other = self.feeds.get(other_key)
+        sched = self.source.get()
+        this_url = (sched[f.idx] or "").strip() if 0 <= f.idx < len(sched) else ""
+        if this_url and other is not None and not other.paused:
+            other_url = (other.current_channel()[0] or "").strip()
+            if this_url == other_url:
+                return {"error": f"would duplicate feed {other_key}'s stream — "
+                                 f"disarm it or point this feed to a different stint"}
+        f.paused = False
+        f.reload()
+        LOG.info("feed %s armed (manual)", which.upper())
+        return self.status()
+
+    def feed_deactivate(self, which):
+        """Disarm Feed A/B: stop its pull, kill the process, close the port (frees
+        bandwidth) — mirrors pov_stop. Manual-mode only (#492)."""
+        if not self.manual_feed_arm:
+            return {"error": "manual feed arm disabled (set RACECAST_MANUAL_FEED_ARM=1)"}
+        f = self.feeds.get(which.upper())
+        if not f:
+            return {"error": f"unknown feed {which!r}"}
+        f.paused = True
+        f.reload()
+        LOG.info("feed %s disarmed (manual)", which.upper())
         return self.status()
 
     def shutdown(self):
@@ -7596,6 +7659,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["pov", "toggle"]:              return self._send(relay.pov_toggle())
                 if p == ["pov", "show"]:                return self._send(relay.set_pov_shown(True))
                 if p == ["pov", "hide"]:                return self._send(relay.set_pov_shown(False))
+                if len(p)==3 and p[0]=="feed" and p[2]=="activate":
+                    return self._send(relay.feed_activate(p[1]))
+                if len(p)==3 and p[0]=="feed" and p[2]=="deactivate":
+                    return self._send(relay.feed_deactivate(p[1]))
                 if len(p)==2 and p[0]=="next":          return self._ok(relay.advance(p[1], +2))
                 if len(p)==2 and p[0]=="prev":          return self._ok(relay.advance(p[1], -2))
                 if len(p)==2 and p[0]=="reload":        return self._ok(relay.reload(p[1]))
