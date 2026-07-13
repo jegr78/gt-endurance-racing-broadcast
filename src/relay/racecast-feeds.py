@@ -229,6 +229,35 @@ def serve_exit_is_drop(stopped, advancing):
     return not stopped and not advancing
 
 
+# Source-not-live signatures (#495) — matched case-insensitively as substrings against
+# the yt-dlp/streamlink diagnostic text. ENDED is checked first (more specific).
+_SOURCE_ENDED = ("this live event has ended",)
+_SOURCE_NOT_LIVE_YET = (
+    "no playable streams found",     # Twitch: channel offline / not live yet
+    "not currently live",            # yt-dlp YouTube: channel not live
+    "will begin in",                 # YouTube: scheduled premiere not started
+)
+
+
+def classify_source_state(text):
+    """Classify a feed's yt-dlp/streamlink diagnostic *text* into a source-not-live
+    state, or None for a generic drop/error (#495). Case-insensitive substring match.
+    Pure → unit-tested.
+      "not_live_yet" — source offline / not started (Twitch 'No playable streams
+                       found', yt-dlp 'not currently live').
+      "ended"        — source's live broadcast is over (YouTube 'This live event has
+                       ended').
+      None           — anything else (429/403/network/generic) — unchanged behaviour."""
+    if not text:
+        return None
+    low = text.lower()
+    if any(s in low for s in _SOURCE_ENDED):
+        return "ended"
+    if any(s in low for s in _SOURCE_NOT_LIVE_YET):
+        return "not_live_yet"
+    return None
+
+
 # ---------- Live health heartbeat (aggregate status + Discord alerts) --------
 # Spec: docs/superpowers/specs/2026-06-16-live-heartbeat-design.md
 HEARTBEAT_INTERVAL_S = 30        # how often the relay re-evaluates health
@@ -385,6 +414,14 @@ def feed_recovery_churn(recovery_ts, now, window_s=FEED_CHURN_WINDOW_S,
     return len(recent) >= threshold
 
 
+def churn_at_here_suppressed(source_state):
+    """True when a feed-recovery-churn @here should be SUPPRESSED because the feed's
+    source is a known not-(yet)-live state (#495): a source that is offline or has
+    ended and keeps flapping while the relay retries is expected churn, not a relay
+    fault. Genuine churn (source_state None) still pages. Pure → unit-tested."""
+    return source_state in ("not_live_yet", "ended")
+
+
 def feed_health_state(dropped, dropped_since, served_ok, now,
                       grace_s=HEALTH_DROP_GRACE_S):
     """Classify one feed's live health as 'down' / 'connecting' / 'ok' from its
@@ -452,7 +489,8 @@ def aggregate_health(facts):
         off-air alarm latches on this so a pre-show relay start never pings),
     stream_reconnecting (bool — OBS upstream unstable),
     funnel_down (bool — Funnel was previously seen up but is now down),
-    sheet_push_failing (bool — Sheet webhook returning errors).
+    sheet_push_failing (bool — Sheet webhook returning errors),
+    feed_source_states (optional dict mapping feed name to source_state).
 
     red  = any feed down (a live picture was lost); or obs_reachable truthy and
            stream_active is False AND stream_expected (OBS connected and has
@@ -464,8 +502,13 @@ def aggregate_health(facts):
              sheet_push_failing. A red result still lists the yellow issues under it.
     green = none of the above."""
     reasons, red, yellow = [], [], []
+    sstates = facts.get("feed_source_states") or {}
     for name in facts.get("feeds_down") or []:
-        red.append(f"Feed {name} down — lost the live stream")
+        if sstates.get(name) == "ended":
+            red.append(f"Feed {name} — source's live stream ENDED "
+                       f"(no auto-recovery — switch source)")
+        else:
+            red.append(f"Feed {name} down — lost the live stream")
     # OBS reachable but not streaming = off air — but only AFTER OBS has streamed
     # at least once this session (stream_expected latch), so starting the relay
     # pre-show, before OBS ever goes live, never fires a CRITICAL ping.
@@ -485,7 +528,10 @@ def aggregate_health(facts):
     if not facts.get("tailscale_present", True):
         yellow.append("Tailscale not connected — directors cannot reach the panel")
     for name in facts.get("feeds_connecting_long") or []:
-        yellow.append(f"Feed {name} stuck connecting")
+        if sstates.get(name) == "not_live_yet":
+            yellow.append(f"Feed {name} — commentator source not live yet (connecting)")
+        else:
+            yellow.append(f"Feed {name} stuck connecting")
     reasons.extend(red)
     reasons.extend(yellow)
     level = "red" if red else ("yellow" if yellow else "green")
@@ -5021,7 +5067,8 @@ class Feed:
         self.quality = None               # last streamlink-selected quality (e.g. "720p")
         self.ring = None              # set by the relay when fan-out is enabled (#358); None → direct-serve
         self.last_byte_ts = None      # monotonic ts of the last byte pumped into the ring (fan-out health)
-        self.on_recovery = None       # relay-set callback(feed, stint, downtime_s) on a drop-recovery
+        self.on_recovery = None       # relay-set callback(feed, stint, downtime_s, source_state) on a drop-recovery
+        self.source_state = None      # #495: "not_live_yet"/"ended"/None (why the feed isn't serving)
 
     def current_channel(self):
         if self.paused:
@@ -5060,11 +5107,15 @@ class Feed:
         self.dropped = False
         self.dropped_since = None
         self.served_ok = False
+        self.source_state = None      # a fresh serve/reposition: the drop's cause no longer applies
 
     def _observe_streamlink_line(self, line):
         q = parse_stream_quality(line)
         if q:
             self.quality = q
+        st = classify_source_state(line)
+        if st is not None and not self.served_ok:
+            self.source_state = st
 
     def set_index(self, new_idx):
         sched = self.provider()
@@ -5199,6 +5250,7 @@ class Feed:
                     self.advance.clear(); continue
                 if not hls:
                     self.last_error = err
+                    self.source_state = classify_source_state(err)
                     time.sleep(RESOLVE_RETRY); continue
                 self.last_error = ssai_warning(hls, self.log)  # warn, never block
                 token, target, serve_platform = None, hls, "youtube"
@@ -5210,7 +5262,7 @@ class Feed:
             if self.dropped and self.on_recovery is not None:
                 try:
                     down = (time.time() - self.dropped_since) if self.dropped_since else 0.0
-                    self.on_recovery(self.name, i + 1, max(0.0, down))
+                    self.on_recovery(self.name, i + 1, max(0.0, down), self.source_state)
                 except Exception:      # noqa: BLE001 — best-effort telemetry
                     pass
             if self.ring is not None:
@@ -5258,6 +5310,7 @@ class Feed:
             # (issue #278). A near-instant exit (demo/startup) leaves served_ok False.
             if serve_elapsed >= HEALTH_SERVED_OK_S:
                 self.served_ok = True
+                self.source_state = None   # confirmed live serve: the drop's cause no longer applies (#495)
                 self.dead_serves = 0               # stable live picture -> reset
             # A serving process just exited: flag an unexpected loss (DROP) so the
             # panel/Companion alarm fires — but not on an intentional stop or a
@@ -5436,6 +5489,7 @@ class Relay:
         status() exposes so the pill and the webhook agree. Best-effort: a flaky
         tailscale probe must never raise (default present -> no false alarm)."""
         feeds_down, connecting_long = [], []
+        feed_source_states = {}
         live = list(self.feeds.items()) + ([("POV", self.pov)] if self.pov else [])
         for name, f in live:
             if f.paused:
@@ -5455,6 +5509,8 @@ class Relay:
                     connecting_long.append(name)
             elif f.phase == "connecting" and (now - f.phase_since) > HEALTH_CONNECTING_S:
                 connecting_long.append(name)
+            if f.source_state is not None:
+                feed_source_states[name] = f.source_state
         try:
             ts_present = detect_tailscale_ip() is not None
         except Exception:                                # noqa: BLE001 — best effort
@@ -5476,7 +5532,8 @@ class Relay:
                 "stream_expected": bool(self.stream_expected),
                 "stream_reconnecting": st.get("stream_reconnecting"),
                 "funnel_down": funnel_down,
-                "sheet_push_failing": (tpush == "failed")}
+                "sheet_push_failing": (tpush == "failed"),
+                "feed_source_states": feed_source_states}
 
     def _refresh_health(self, now):
         """Recompute + store the DISPLAYED health (level/reasons/since). Does NOT
@@ -5679,7 +5736,8 @@ class Relay:
                                "armed": not f.paused,
                                "state_age_s": round(now - f.phase_since, 1),
                                "down": f.dropped and not f.paused,
-                               "last_error": f.last_error}
+                               "last_error": f.last_error,
+                               "source_state": f.source_state}
         if self.pov:
             raw = (self.pov_source.get()[:1] or [None])[0] if self.pov_source else None
             out["pov"] = {"port": self.pov.port, "url": raw,
@@ -6216,7 +6274,7 @@ class Relay:
             "feed-substitution")
         LOG.info("stream substitution recorded: Feed %s stint %d", feed, stint)
 
-    def _record_feed_recovery(self, feed, stint, downtime_s):
+    def _record_feed_recovery(self, feed, stint, downtime_s, source_state=None):
         """Feed.on_recovery callback: a feed dropped and is recovering. Record it as a
         discrete `feed_recovery` health event ALWAYS (so a self-healed on-air blip shows in
         the post-event report + health monitor + log — the 2026-07-10 'all green' gap), and
@@ -6232,12 +6290,14 @@ class Relay:
                 pass
         LOG.info("feed recovery recorded: Feed %s stint %d (~%.0fs degraded)",
                  feed, stint, max(0.0, downtime_s))
-        self._maybe_notify_recovery_churn(feed, now)
+        self._maybe_notify_recovery_churn(feed, now, source_state)
 
-    def _maybe_notify_recovery_churn(self, feed, now):
+    def _maybe_notify_recovery_churn(self, feed, now, source_state=None):
         """Discord @here when Feed `feed` is CHURNING (≥ FEED_CHURN_THRESHOLD recoveries in
         FEED_CHURN_WINDOW_S), throttled to one ping per feed per FEED_CHURN_COOLDOWN_S so a
         persistently-flapping feed does not spam. Best-effort."""
+        if churn_at_here_suppressed(source_state):
+            return                    # #495: expected churn from a not-(yet)-live source
         if self.health_store is None:
             return
         last = self._recovery_churn_notified.get(feed)

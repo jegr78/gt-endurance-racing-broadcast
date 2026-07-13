@@ -936,6 +936,74 @@ def t_event_stop_argv():
     assert "src/relay/../racecast.py".split("/")[-1] in argv[1]
 
 
+def t_classify_source_state():
+    # Twitch: channel offline / not live yet.
+    assert m.classify_source_state(
+        "error: No playable streams found on this URL: twitch.tv/kekko") == "not_live_yet"
+    # yt-dlp YouTube: channel not currently live.
+    assert m.classify_source_state("ERROR: [youtube] abc: The channel is not currently live") == "not_live_yet"
+    assert m.classify_source_state("not live?") is None       # ambiguous fallback -> generic
+    # YouTube: broadcast over.
+    assert m.classify_source_state("ERROR: [youtube] sgoDA5E4aJ0: This live event has ended.") == "ended"
+    # Generic / transient -> None (unchanged behaviour).
+    assert m.classify_source_state("HTTP Error 429: Too Many Requests") is None
+    assert m.classify_source_state("HTTP Error 403: Forbidden") is None
+    assert m.classify_source_state("") is None
+    assert m.classify_source_state(None) is None
+
+
+def t_aggregate_health_not_live_yet_distinct_reason():
+    h = m.aggregate_health(_facts(feeds_connecting_long=["A"],
+                                  feed_source_states={"A": "not_live_yet"}))
+    assert h["level"] == "yellow"                              # severity unchanged
+    assert any("source not live yet" in r for r in h["reasons"])
+    assert not any("stuck connecting" in r for r in h["reasons"])
+
+
+def t_aggregate_health_ended_distinct_reason():
+    h = m.aggregate_health(_facts(feeds_down=["A"], feed_source_states={"A": "ended"}))
+    assert h["level"] == "red"                                # ended is still a genuine loss
+    assert any("live stream ENDED" in r for r in h["reasons"])
+    assert not any("lost the live stream" in r for r in h["reasons"])
+
+
+def t_aggregate_health_reasons_unchanged_without_source_states():
+    # No feed_source_states -> the existing generic reasons (backward compat).
+    assert any("lost the live stream" in r
+               for r in m.aggregate_health(_facts(feeds_down=["A"]))["reasons"])
+    assert any("stuck connecting" in r
+               for r in m.aggregate_health(_facts(feeds_connecting_long=["B"]))["reasons"])
+
+
+def t_churn_at_here_suppressed_predicate():
+    assert m.churn_at_here_suppressed("not_live_yet") is True
+    assert m.churn_at_here_suppressed("ended") is True
+    assert m.churn_at_here_suppressed(None) is False       # genuine churn still notifies
+    assert m.churn_at_here_suppressed("serving") is False
+
+
+def t_churn_at_here_suppressed_for_not_live_source():
+    with tempfile.TemporaryDirectory() as td:
+        r = _mk_relay(td, ["a", "b"])
+        r.health_store = m.HealthStore(os.path.join(td, "h.db"))
+        posts = []
+        r._discord_post = lambda payload, what: posts.append(what)
+        now = 1000.0
+        try:
+            # Make Feed A churn: >= threshold feed_recovery events inside the window.
+            for k in range(m.FEED_CHURN_THRESHOLD):
+                r.health_store.record_event(now - 10 + k, "feed_recovery",
+                                            metadata={"feed": "A"})
+            # A not-live-yet source -> the @here is suppressed.
+            r._maybe_notify_recovery_churn("A", now, "not_live_yet")
+            assert posts == []
+            # Genuine churn (source_state None) -> the @here still fires.
+            r._maybe_notify_recovery_churn("A", now, None)
+            assert "feed-recovery-churn" in posts
+        finally:
+            r.health_store.close()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
