@@ -76,7 +76,15 @@ def main():
     ap.add_argument("--stall-duration", type=float, default=3.0, help="s each injected stall lasts")
     ap.add_argument("--log-interval", type=float, default=5.0)
     ap.add_argument("--no-autoresync", action="store_true", help="baseline: log only, never reset")
+    ap.add_argument("--source", default="testsrc",
+                    help="'testsrc' (default synthetic ffmpeg -re) or a stream URL pulled "
+                         "via `streamlink <url> best --stdout` (real VBR content = the box condition)")
     args = ap.parse_args()
+
+    if args.source == "testsrc":
+        source_cmd = FFMPEG_CMD
+    else:
+        source_cmd = ["streamlink", args.source, "best", "--stdout"]
 
     fe = _load("irofeeds", "src", "relay", "racecast-feeds.py")
     obs_ws = _load("obs_ws", "src", "scripts", "obs_ws.py")
@@ -89,8 +97,9 @@ def main():
     print(f"[soak] serving on http://127.0.0.1:{srv.port}  — point OBS Media Source at it")
     print(f"[soak] autoresync={'off' if args.no_autoresync else 'on'} "
           f"stuck_thr={stuck_thr}s cooldown={cooldown}s ring={fe.FANOUT_RING_BYTES}B")
+    print(f"[soak] source: {args.source} ({' '.join(source_cmd[:2])}...)")
 
-    proc = subprocess.Popen(FFMPEG_CMD, stdout=subprocess.PIPE)
+    proc = subprocess.Popen(source_cmd, stdout=subprocess.PIPE)
     stop = threading.Event()
     started = time.monotonic()
     resets = [0]
