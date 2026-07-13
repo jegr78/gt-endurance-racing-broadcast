@@ -271,6 +271,9 @@
   .banner.red{background:#330f0f;border:1px solid var(--air);color:#ff9d9d}
   .bannerbtn{margin-left:10px;padding:3px 10px;border-radius:6px;border:1px solid currentColor;
              background:transparent;color:inherit;font-weight:700;cursor:pointer;font-size:12px}
+  .armbtn{padding:4px 10px;border-radius:6px;border:1px solid var(--edge);
+          background:transparent;color:var(--ink);font-weight:700;cursor:pointer;font-size:12px}
+  .armbtn.armed{border-color:#3ce07f;color:#3ce07f}
   #toasts{position:fixed;top:14px;right:14px;z-index:100;display:flex;
     flex-direction:column;gap:8px;max-width:340px}
   .toast{background:#330f0f;border:1px solid var(--air);color:#ff9d9d;border-radius:10px;
@@ -488,6 +491,12 @@
       <span class="st" id="stB">B <b>—</b></span>
       <span class="st" id="stPov">POV <b>—</b></span>
       <span class="st" id="stTimer">TIMER <b>—</b></span>
+    </div>
+    <div id="feedArm" class="setrow" style="display:none">
+      <button class="armbtn" data-feed="A" data-on="1">ARM A</button>
+      <button class="armbtn" data-feed="A" data-on="0">STOP A</button>
+      <button class="armbtn" data-feed="B" data-on="1">ARM B</button>
+      <button class="armbtn" data-feed="B" data-on="0">STOP B</button>
     </div>
     <div class="led"><span class="dot" id="ledObs"></span>OBS</div>
     <div class="led"><span class="dot" id="ledRelay"></span>Relay</div>
@@ -1254,6 +1263,14 @@ async function relayCall(path){
   }catch(e){ log("Relay /" + path + " failed (relay reachable?): " + e, "err"); toast("Relay /" + path + " failed — relay unreachable"); }
 }
 
+// Manual feed-arm mode (#492): explicit ARM/STOP-PULL per feed, shown only
+// when the relay reports manual_feed_arm on /status.
+function feedArm(which, on){
+  relayCall("feed/" + which + "/" + (on ? "activate" : "deactivate"));
+}
+document.querySelectorAll("#feedArm .armbtn").forEach(b =>
+  b.addEventListener("click", () => feedArm(b.dataset.feed, b.dataset.on === "1")));
+
 /* ---------- OBS state poll (relay-mediated; replaces browser obs.call reads) -- */
 async function obsStatePoll(){
   if (refreshing) return;
@@ -1440,6 +1457,18 @@ async function relayPoll(){
     const n = d.schedule_len;
     statePill($("#stA"), "A", "S" + d.feeds.A.stint, n, d.feeds.A.state, d.feeds.A.down);
     statePill($("#stB"), "B", "S" + d.feeds.B.stint, n, d.feeds.B.state, d.feeds.B.down);
+    const arm = $("#feedArm");
+    if (d.manual_feed_arm) {
+      arm.style.display = "";
+      // Green-highlight the ARM button of a feed that is currently armed.
+      arm.querySelectorAll(".armbtn").forEach(b => {
+        const f = d.feeds[b.dataset.feed];
+        const isArmOn = b.dataset.on === "1";
+        b.classList.toggle("armed", !!(f && f.armed) && isArmOn);
+      });
+    } else {
+      arm.style.display = "none";
+    }
     if (d.pov){
       const ps = d.pov.state || "";                       // guard: version-skewed relay
       let [txt, cls] = FEED_STATE[ps] || [ps.toUpperCase(), ""];
