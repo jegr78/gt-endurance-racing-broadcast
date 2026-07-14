@@ -131,7 +131,6 @@ LOG = logging.getLogger("racecast.relay")
 # cookies + JS-challenge solving) -> streamlink serves that direct URL to OBS
 # (no YouTube plugin involved, so no bot-check on the serving side).
 YTDLP_FORMAT = "b[height<=1080]/b"   # prefer <=1080p, auto-fall back to lower
-YTDLP_FORMAT_POV = "b[height<=720]/b"  # driver-POV is shown small (PiP) -> cap at 720p
 STREAMLINK_SERVE = ["--ringbuffer-size", "64M", "--hls-live-edge", "4"]
 # "Stop early on missing live segments" tolerance. Default 3 gave up at ~6 s
 # (targetduration ~2 s) — BELOW the relay's own 8 s byte-stall watchdog (FANOUT_STALL_S) —
@@ -359,6 +358,12 @@ def feed_autoresync_enabled(environ):
     behind the live edge (the proven manual "OBS Feed Reset", automated). Set
     RACECAST_FEED_AUTORESYNC=0 to disable. Pure so the switch is unit-testable."""
     return str(environ.get("RACECAST_FEED_AUTORESYNC", "")).strip().lower() not in _FANOUT_FALSEY
+
+
+def feed_robust_auto_enabled(environ):
+    """#493 auto FULL->ROBUST step-down. Default ON; RACECAST_FEED_ROBUST_AUTO=0 disables
+    only the automatic step-down (manual switching always remains). Pure → unit-tested."""
+    return (environ.get("RACECAST_FEED_ROBUST_AUTO") or "").strip().lower() not in _FANOUT_FALSEY
 
 
 def _env_float(environ, key, default):
@@ -5197,7 +5202,8 @@ class Feed:
         self.idx = idx
         self.provider = provider          # callable -> current schedule list
         self.cookies = cookies            # path to yt-cookies.txt (bot-check protection) or None
-        self.fmt = fmt                    # yt-dlp format string (POV uses a lower cap)
+        self.fmt = fmt                    # legacy yt-dlp format default; run() now resolves via
+                                          # quality_ytdlp_fmt(self.quality_tier) instead (#493)
         self.cookie_dir = cookie_dir      # dir holding yt-/twitch-cookies.txt (for per-pull resolve)
         self.paused = False               # when True the feed idles (POV off / stopped)
         self.lock = threading.Lock()
@@ -5233,6 +5239,9 @@ class Feed:
         # operator advance, and in set_index()/reload(). NOT reset in
         # _clear_drop_health() (that runs every serve-start, which would zero it).
         self.dead_serves = 0
+        self.quality_tier = "full"        # #493: full|robust|emergency (POV: pinned robust)
+        self.quality_pinned = False       # True = operator pinned; suppresses auto-step-down
+        self.on_step_down = None          # relay-set callback(feed, stint, from_tier, to_tier)
         self.quality = None               # last streamlink-selected quality (e.g. "720p")
         self.ring = None              # set by the relay when fan-out is enabled (#358); None → direct-serve
         self.last_byte_ts = None      # monotonic ts of the last byte pumped into the ring (fan-out health)
@@ -5295,6 +5304,8 @@ class Feed:
             self.idx = new_idx
         self._clear_drop_health()         # director repositioned -> alarm acknowledged, new source not yet served
         self.dead_serves = 0              # new source -> fresh dead-serve count
+        self.quality_tier = "full"        # #493: a new source starts fresh at full quality
+        self.quality_pinned = False
         self.advance.set(); self._kill_proc()
         return True
 
@@ -5304,6 +5315,25 @@ class Feed:
         self.dead_serves = 0              # operator reload -> fresh dead-serve count
         self.advance.set(); self._kill_proc()
         return True
+
+    def set_quality(self, tier, pinned):
+        """Set the quality tier and pin state, then trigger a re-resolve so the change
+        takes effect immediately (brief reconnect — a deliberate director action)."""
+        self.quality_tier = tier
+        self.quality_pinned = pinned
+        self.advance.set(); self._kill_proc()
+
+    def maybe_step_down(self):
+        """If an auto FULL->ROBUST step-down is due (see quality_step_down_due), apply it
+        and return (from_tier, to_tier); else None. Leaves pinned False (still managed)."""
+        if not feed_robust_auto_enabled(os.environ):
+            return None
+        if quality_step_down_due(self.quality_tier, self.quality_pinned,
+                                 self.dead_serves, self.source_state):
+            frm = self.quality_tier
+            self.quality_tier = "robust"
+            return (frm, "robust")
+        return None
 
     def _obs_reconnect_now(self):
         """Force OBS to reconnect its media source for THIS feed's port (fan-out only).
@@ -5343,7 +5373,8 @@ class Feed:
         advance / EOF end the loop directly. `on_first_byte` (if given) is called
         once, right after the first byte reaches the ring — used to force OBS to
         reconnect on a drop-recovery (see _obs_reconnect)."""
-        cmd = streamlink_fanout_cmd(target, serve_platform, token, cookies=self.cookies)
+        cmd = streamlink_fanout_cmd(target, serve_platform, token, cookies=self.cookies,
+                                    tier=self.quality_tier)
         # stdout is the raw video byte stream (read into the ring); stderr is
         # streamlink's ONLY diagnostic channel here, so it must be PIPEd and pumped
         # — unlike direct-serve (which merges stderr into a text stdout), discarding
@@ -5417,7 +5448,8 @@ class Feed:
                     cookies_for("twitch", self.cookie_dir))      # None for public Twitch (no auth file)
                 target, serve_platform = url, "twitch"           # no yt-dlp hop
             else:
-                hls, err = resolve_hls(url, self.cookies, self.log, self.fmt)
+                hls, err = resolve_hls(url, self.cookies, self.log,
+                                       quality_ytdlp_fmt(self.quality_tier))
                 if self.stop: break
                 if self.advance.is_set():
                     self.advance.clear(); continue
@@ -5453,7 +5485,7 @@ class Feed:
                     time.sleep(RETRY_SLEEP); continue
             else:
                 cmd = streamlink_serve_cmd(target, self.port, serve_platform, token,
-                                           cookies=self.cookies)
+                                           cookies=self.cookies, tier=self.quality_tier)
                 try:
                     self.proc = subprocess.Popen(
                         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -5597,7 +5629,9 @@ class Relay:
         self.pov_shown = False          # relay-driven PiP visibility (drives the HUD box)
         if pov_source is not None and pov_port is not None:
             self.pov = Feed("POV", pov_port, 0, pov_source.get, logdir, cookies,
-                            fmt=YTDLP_FORMAT_POV, cookie_dir=cookie_dir)
+                            cookie_dir=cookie_dir)
+            self.pov.quality_tier = "robust"     # #493: PiP is always 720p + robust, never auto/exposed
+            self.pov.quality_pinned = True
             self.pov.paused = True
         self.fanout = fanout_enabled(os.environ)
         self.program_audio = program_audio_enabled(os.environ)

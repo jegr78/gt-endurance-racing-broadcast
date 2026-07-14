@@ -63,10 +63,6 @@ def t_parse_empty_is_none():
     assert m.ScheduleSource._parse_csv("url\n\n") is None
 
 
-def t_pov_format_constant():
-    assert m.YTDLP_FORMAT_POV == "b[height<=720]/b"
-
-
 def t_preview_source_onair_uses_obs():
     keys = {"A", "B"}
     assert m.preview_source("A", "A", False, keys) == ("obs", "Feed A")
@@ -1572,6 +1568,49 @@ def t_streamlink_serve_cmd_tier():
 def t_streamlink_fanout_cmd_tier():
     tw = m.streamlink_fanout_cmd("https://twitch.tv/x", "twitch", tier="emergency")
     assert "128M" in tw and tw[-1] == "480p,360p,worst"
+
+
+def _mk_feed():
+    return m.Feed("A", 53001, 0, provider=lambda: [], logdir=tempfile.mkdtemp())
+
+
+def t_feed_quality_defaults():
+    f = _mk_feed()
+    assert f.quality_tier == "full" and f.quality_pinned is False
+
+
+def t_feed_set_quality_pins():
+    f = _mk_feed()
+    f.set_quality("robust", True)
+    assert f.quality_tier == "robust" and f.quality_pinned is True
+
+
+def t_feed_maybe_step_down_fires_once():
+    f = _mk_feed()
+    f.dead_serves = 2
+    assert f.maybe_step_down() == ("full", "robust")
+    assert f.quality_tier == "robust" and f.quality_pinned is False
+    # already robust -> no further auto step
+    f.dead_serves = 9
+    assert f.maybe_step_down() is None
+
+
+def t_feed_maybe_step_down_respects_pin_and_state():
+    f = _mk_feed(); f.set_quality("full", True); f.dead_serves = 9
+    assert f.maybe_step_down() is None            # pinned
+    g = _mk_feed(); g.dead_serves = 9; g.source_state = "ended"
+    assert g.maybe_step_down() is None            # offline/ended
+
+
+def t_feed_new_source_resets_quality():
+    # _mk_feed's schedule is empty, so set_index clamps to the same idle idx (0->0)
+    # and short-circuits before the reset; use a real multi-stint schedule so the
+    # index actually moves and the managed-state reset fires.
+    f = m.Feed("A", 53001, 0, provider=lambda: ["a", "b", "c", "d", "e"],
+               logdir=tempfile.mkdtemp())
+    f.set_quality("emergency", True)
+    f.set_index(4)
+    assert f.quality_tier == "full" and f.quality_pinned is False
 
 
 if __name__ == "__main__":
