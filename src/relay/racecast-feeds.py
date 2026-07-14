@@ -131,7 +131,6 @@ LOG = logging.getLogger("racecast.relay")
 # cookies + JS-challenge solving) -> streamlink serves that direct URL to OBS
 # (no YouTube plugin involved, so no bot-check on the serving side).
 YTDLP_FORMAT = "b[height<=1080]/b"   # prefer <=1080p, auto-fall back to lower
-YTDLP_FORMAT_POV = "b[height<=720]/b"  # driver-POV is shown small (PiP) -> cap at 720p
 STREAMLINK_SERVE = ["--ringbuffer-size", "64M", "--hls-live-edge", "4"]
 # "Stop early on missing live segments" tolerance. Default 3 gave up at ~6 s
 # (targetduration ~2 s) — BELOW the relay's own 8 s byte-stall watchdog (FANOUT_STALL_S) —
@@ -184,6 +183,76 @@ STREAMLINK_YT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3
 # plugin options apply: low-latency prefetch + a tighter live edge. Ad filtering is
 # automatic in current Streamlink (the old --twitch-disable-ads is deprecated).
 STREAMLINK_TWITCH = ["--ringbuffer-size", "64M", "--hls-live-edge", "2", "--twitch-low-latency"]
+
+# --- Quality profiles (#493): each tier = a rendition cap + a streamlink profile ---
+# FULL = best available up to 1080p (never forces 1080p; bounded by the source's max).
+# ROBUST = 720p floor (the automatic step-down target). EMERGENCY = sub-720p, operator-only.
+QUALITY_TIERS = ("full", "robust", "emergency")
+ROBUST_STEP_DOWN_AFTER = 2       # consecutive dead (short) serves before an auto FULL->ROBUST
+
+# Robust streamlink profile: more buffered segments at the live edge -> rides out short
+# source jitter, trading latency for stability. Applied at ROBUST and EMERGENCY.
+STREAMLINK_SERVE_ROBUST = ["--ringbuffer-size", "128M", "--hls-live-edge", "6"]
+STREAMLINK_TWITCH_ROBUST = ["--ringbuffer-size", "128M", "--hls-live-edge", "2",
+                            "--twitch-low-latency"]
+
+_QUALITY_YTDLP = {"full": "b[height<=1080]/b",
+                  "robust": "b[height<=720]/b",
+                  "emergency": "b[height<=480]/w"}
+_QUALITY_TWITCH = {"full": "best",
+                   "robust": "720p60,720p",
+                   "emergency": "480p,360p,worst"}
+_QUALITY_HEIGHT_RE = re.compile(r"(\d{3,4})p")
+
+
+def quality_ytdlp_fmt(tier):
+    """yt-dlp -f string for a quality tier. Pure → unit-tested."""
+    return _QUALITY_YTDLP.get(tier, _QUALITY_YTDLP["full"])
+
+
+def quality_twitch_selector(tier):
+    """Streamlink quality positional for a quality tier (Twitch). Pure → unit-tested."""
+    return _QUALITY_TWITCH.get(tier, _QUALITY_TWITCH["full"])
+
+
+def streamlink_serve_flags(tier):
+    """YouTube streamlink buffer/live-edge flags for a tier (robust at <=ROBUST). Pure."""
+    return STREAMLINK_SERVE_ROBUST if tier in ("robust", "emergency") else STREAMLINK_SERVE
+
+
+def streamlink_twitch_flags(tier):
+    """Twitch streamlink buffer/live-edge flags for a tier. Pure."""
+    return STREAMLINK_TWITCH_ROBUST if tier in ("robust", "emergency") else STREAMLINK_TWITCH
+
+
+def parse_quality_tier(value):
+    """Normalise an operator-supplied tier to one of full|robust|emergency|auto, else
+    None (so the endpoint can 400). `auto` = release a manual pin. Pure → unit-tested."""
+    if not value:
+        return None
+    v = value.strip().lower()
+    return v if v in ("full", "robust", "emergency", "auto") else None
+
+
+def quality_height(token):
+    """Numeric vertical resolution of a streamlink quality token ('720p60' -> 720),
+    or None for non-heighted tokens ('best', 'audio_only', None). Pure → unit-tested."""
+    if not token:
+        return None
+    m = _QUALITY_HEIGHT_RE.search(token)
+    return int(m.group(1)) if m else None
+
+
+def quality_step_down_due(tier, pinned, dead_serves, source_state,
+                          *, threshold=ROBUST_STEP_DOWN_AFTER):
+    """True when a feed should auto-step-down FULL->ROBUST: only while not manually
+    pinned, only from FULL (720p is the hard floor), only for a live-but-degraded
+    source (source_state None — an offline/not-live/ended source has no picture at any
+    rendition, so a lower cap cannot help), once dead (short) serves reach `threshold`.
+    Pure → unit-tested."""
+    return (not pinned) and tier == "full" and source_state is None \
+        and dead_serves >= threshold
+
 RESOLVE_RETRY = 15  # seconds between yt-dlp resolve attempts while a stint isn't live
 COOKIE_MAX_AGE_H = 12   # keep in sync with preflight.py cookies_status(max_age_hours)
 RETRY_SLEEP = 10    # seconds after a stream ends / manifest expires before re-resolving
@@ -289,6 +358,12 @@ def feed_autoresync_enabled(environ):
     behind the live edge (the proven manual "OBS Feed Reset", automated). Set
     RACECAST_FEED_AUTORESYNC=0 to disable. Pure so the switch is unit-testable."""
     return str(environ.get("RACECAST_FEED_AUTORESYNC", "")).strip().lower() not in _FANOUT_FALSEY
+
+
+def feed_robust_auto_enabled(environ):
+    """#493 auto FULL->ROBUST step-down. Default ON; RACECAST_FEED_ROBUST_AUTO=0 disables
+    only the automatic step-down (manual switching always remains). Pure → unit-tested."""
+    return (environ.get("RACECAST_FEED_ROBUST_AUTO") or "").strip().lower() not in _FANOUT_FALSEY
 
 
 def _env_float(environ, key, default):
@@ -645,6 +720,25 @@ def discord_failover_payload(on_air_feed, scene, event_title="", producer=""):
             "Return is manual: re-take the feed once it recovers.")
     embed = {"title": "🛟 Auto-failover — switched to Intermission",
              "description": desc, "color": HEALTH_COLORS["red"]}
+    footer = notify._footer(event_title, producer)
+    if footer:
+        embed["footer"] = {"text": footer}
+    return {"username": "GT Racecast",
+            "content": "@here",
+            "allowed_mentions": {"parse": ["everyone"]},
+            "embeds": [embed]}
+
+
+def discord_step_down_payload(feed, stint, from_tier, to_tier, event_title="", producer=""):
+    """Discord webhook JSON for an auto quality step-down (#493). @here in top-level
+    content — actionable: the source is struggling and the director must decide the
+    manual step-up. Pure → unit-tested."""
+    desc = (f"Feed {feed} (stint {stint}) could not sustain **{from_tier}** — the relay "
+            f"automatically reduced it to **{to_tier}** (720p) to keep a continuous "
+            "picture. Step-up is manual: raise it again from the Director Panel once the "
+            "source recovers.")
+    embed = {"title": "📉 Quality step-down — source struggling",
+             "description": desc, "color": HEALTH_COLORS["yellow"]}
     footer = notify._footer(event_title, producer)
     if footer:
         embed["footer"] = {"text": footer}
@@ -2924,7 +3018,7 @@ def ytdlp_resolve_cmd(url, cookies, fmt=YTDLP_FORMAT):
 
 
 def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None,
-                         cookies=None, user_agent=STREAMLINK_YT_UA):
+                         cookies=None, user_agent=STREAMLINK_YT_UA, tier="full"):
     """Argv for serving a stream to one OBS client. YouTube gets a resolved HLS
     URL (generic plugin); Twitch gets the twitch.tv URL itself so the Twitch
     plugin handles resolution, automatic ad-filtering and low-latency. `--`
@@ -2936,38 +3030,42 @@ def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None,
     protected live manifest (#345). Twitch resolves in-process and gets neither."""
     base = ["streamlink", "--player-external-http", "--player-external-http-port", str(port)]
     if platform == "twitch":
-        base += STREAMLINK_TWITCH
+        base += streamlink_twitch_flags(tier)
         if twitch_token:
             base += ["--twitch-api-header", f"Authorization=OAuth {twitch_token}"]
+        selector = quality_twitch_selector(tier)
     else:
-        base += STREAMLINK_SERVE
+        base += streamlink_serve_flags(tier)
         base += queue_deadline_args(_streamlink_help())   # version-safe: renamed in streamlink 8.1.0
         if user_agent:
             base += ["--http-header", f"User-Agent={user_agent}"]
         if cookies:
             base += ["--http-cookies-file", cookies]
-    return base + ["--", target, "best"]
+        selector = "best"     # yt-dlp already resolved the capped rendition
+    return base + ["--", target, selector]
 
 
 def streamlink_fanout_cmd(target, platform="youtube", twitch_token=None,
-                          cookies=None, user_agent=STREAMLINK_YT_UA):
+                          cookies=None, user_agent=STREAMLINK_YT_UA, tier="full"):
     """Argv for the fan-out live reader: same resolution rules as
     streamlink_serve_cmd, but the sink is --stdout (the relay reads it and
     re-serves to many consumers) instead of --player-external-http. `--` guards
     the positional URL/stream."""
     base = ["streamlink", "--stdout"]
     if platform == "twitch":
-        base += STREAMLINK_TWITCH
+        base += streamlink_twitch_flags(tier)
         if twitch_token:
             base += ["--twitch-api-header", f"Authorization=OAuth {twitch_token}"]
+        selector = quality_twitch_selector(tier)
     else:
-        base += STREAMLINK_SERVE
+        base += streamlink_serve_flags(tier)
         base += queue_deadline_args(_streamlink_help())   # version-safe: renamed in streamlink 8.1.0
         if user_agent:
             base += ["--http-header", f"User-Agent={user_agent}"]
         if cookies:
             base += ["--http-cookies-file", cookies]
-    return base + ["--", target, "best"]
+        selector = "best"     # yt-dlp already resolved the capped rendition
+    return base + ["--", target, selector]
 
 
 # --- Director Panel off-air preview pull (decoupled from OBS / the loopback port) ---
@@ -4020,6 +4118,28 @@ def cockpit_schedule(rows, live_idx, me_key):
              "on_air": i == live_idx,
              "mine": asset_key(n) == me_key}
             for i, (_u, n, st, _l) in enumerate(rows)]
+
+
+def redact_console_status(full, roles):
+    """Redact the full /status for the Funnel-exposed /console mount, by role (#493).
+    Feed stream URLs (feeds[*].channel), the POV stream URL, and the Sheet id are
+    director/producer-only — the same boundary as /schedule/data, which already exposes
+    per-stint URLs to directors (the panel's Preview button + POV editor consume them
+    over Funnel). They are KEPT for director/producer and stripped for every other role.
+    The tailnet /status is unaffected (served verbatim). Pure → unit-tested."""
+    out = dict(full)
+    keep_urls = bool({"director", "producer"} & set(roles or ()))
+    out["feeds"] = {
+        k: {kk: vv for kk, vv in (fd or {}).items() if keep_urls or kk != "channel"}
+        for k, fd in (full.get("feeds") or {}).items()}
+    if not keep_urls:
+        pov = full.get("pov")
+        if isinstance(pov, dict):
+            out["pov"] = {k: v for k, v in pov.items() if k != "url"}
+        lg = full.get("league")
+        if isinstance(lg, dict):
+            out["league"] = {k: v for k, v in lg.items() if k != "sheet_id"}
+    return out
 
 
 def cockpit_syncing(desync):
@@ -5123,7 +5243,8 @@ class Feed:
         self.idx = idx
         self.provider = provider          # callable -> current schedule list
         self.cookies = cookies            # path to yt-cookies.txt (bot-check protection) or None
-        self.fmt = fmt                    # yt-dlp format string (POV uses a lower cap)
+        self.fmt = fmt                    # legacy yt-dlp format default; run() now resolves via
+                                          # quality_ytdlp_fmt(self.quality_tier) instead (#493)
         self.cookie_dir = cookie_dir      # dir holding yt-/twitch-cookies.txt (for per-pull resolve)
         self.paused = False               # when True the feed idles (POV off / stopped)
         self.lock = threading.Lock()
@@ -5159,6 +5280,9 @@ class Feed:
         # operator advance, and in set_index()/reload(). NOT reset in
         # _clear_drop_health() (that runs every serve-start, which would zero it).
         self.dead_serves = 0
+        self.quality_tier = "full"        # #493: full|robust|emergency (POV: pinned robust)
+        self.quality_pinned = False       # True = operator pinned; suppresses auto-step-down
+        self.on_step_down = None          # relay-set callback(feed, stint, from_tier, to_tier)
         self.quality = None               # last streamlink-selected quality (e.g. "720p")
         self.ring = None              # set by the relay when fan-out is enabled (#358); None → direct-serve
         self.last_byte_ts = None      # monotonic ts of the last byte pumped into the ring (fan-out health)
@@ -5221,6 +5345,8 @@ class Feed:
             self.idx = new_idx
         self._clear_drop_health()         # director repositioned -> alarm acknowledged, new source not yet served
         self.dead_serves = 0              # new source -> fresh dead-serve count
+        self.quality_tier = "full"        # #493: a new source starts fresh at full quality
+        self.quality_pinned = False
         self.advance.set(); self._kill_proc()
         return True
 
@@ -5230,6 +5356,25 @@ class Feed:
         self.dead_serves = 0              # operator reload -> fresh dead-serve count
         self.advance.set(); self._kill_proc()
         return True
+
+    def set_quality(self, tier, pinned):
+        """Set the quality tier and pin state, then trigger a re-resolve so the change
+        takes effect immediately (brief reconnect — a deliberate director action)."""
+        self.quality_tier = tier
+        self.quality_pinned = pinned
+        self.advance.set(); self._kill_proc()
+
+    def maybe_step_down(self):
+        """If an auto FULL->ROBUST step-down is due (see quality_step_down_due), apply it
+        and return (from_tier, to_tier); else None. Leaves pinned False (still managed)."""
+        if not feed_robust_auto_enabled(os.environ):
+            return None
+        if quality_step_down_due(self.quality_tier, self.quality_pinned,
+                                 self.dead_serves, self.source_state):
+            frm = self.quality_tier
+            self.quality_tier = "robust"
+            return (frm, "robust")
+        return None
 
     def _obs_reconnect_now(self):
         """Force OBS to reconnect its media source for THIS feed's port (fan-out only).
@@ -5269,7 +5414,8 @@ class Feed:
         advance / EOF end the loop directly. `on_first_byte` (if given) is called
         once, right after the first byte reaches the ring — used to force OBS to
         reconnect on a drop-recovery (see _obs_reconnect)."""
-        cmd = streamlink_fanout_cmd(target, serve_platform, token, cookies=self.cookies)
+        cmd = streamlink_fanout_cmd(target, serve_platform, token, cookies=self.cookies,
+                                    tier=self.quality_tier)
         # stdout is the raw video byte stream (read into the ring); stderr is
         # streamlink's ONLY diagnostic channel here, so it must be PIPEd and pumped
         # — unlike direct-serve (which merges stderr into a text stdout), discarding
@@ -5343,7 +5489,8 @@ class Feed:
                     cookies_for("twitch", self.cookie_dir))      # None for public Twitch (no auth file)
                 target, serve_platform = url, "twitch"           # no yt-dlp hop
             else:
-                hls, err = resolve_hls(url, self.cookies, self.log, self.fmt)
+                hls, err = resolve_hls(url, self.cookies, self.log,
+                                       quality_ytdlp_fmt(self.quality_tier))
                 if self.stop: break
                 if self.advance.is_set():
                     self.advance.clear(); continue
@@ -5379,7 +5526,7 @@ class Feed:
                     time.sleep(RETRY_SLEEP); continue
             else:
                 cmd = streamlink_serve_cmd(target, self.port, serve_platform, token,
-                                           cookies=self.cookies)
+                                           cookies=self.cookies, tier=self.quality_tier)
                 try:
                     self.proc = subprocess.Popen(
                         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -5433,6 +5580,14 @@ class Feed:
             if serve_elapsed < HEALTH_SERVED_OK_S:
                 # Resolved OK but the serve died fast (403/expired manifest / VOD).
                 self.dead_serves += 1
+                # #493: enough consecutive dead serves at the current tier -> auto step
+                # down to a lighter tier; the NEXT resolve() picks up the new tier.
+                stepped = self.maybe_step_down()
+                if stepped and self.on_step_down is not None:
+                    try:
+                        self.on_step_down(self.name, i + 1, stepped[0], stepped[1])
+                    except Exception:        # noqa: BLE001 — best-effort telemetry
+                        pass
                 if should_idle_dead_serves(self.dead_serves):
                     self._set_phase("idle")
                     self.last_error = ("stint source unavailable — paused after "
@@ -5493,6 +5648,10 @@ class Relay:
         # by design → not tracked, no callback.
         self.A.on_recovery = self._record_feed_recovery
         self.B.on_recovery = self._record_feed_recovery
+        # #493: auto quality step-down fires a health incident + Discord @here.
+        # POV stays pinned-robust: no on_step_down.
+        self.A.on_step_down = self._record_feed_step_down
+        self.B.on_step_down = self._record_feed_step_down
         self.feeds = {"A": self.A, "B": self.B}
         # Two-stage feed scheduling (#492): when RACECAST_MANUAL_FEED_ARM is set,
         # both A/B feeds start DISARMED (paused) — a URL at the index does not pull
@@ -5523,7 +5682,9 @@ class Relay:
         self.pov_shown = False          # relay-driven PiP visibility (drives the HUD box)
         if pov_source is not None and pov_port is not None:
             self.pov = Feed("POV", pov_port, 0, pov_source.get, logdir, cookies,
-                            fmt=YTDLP_FORMAT_POV, cookie_dir=cookie_dir)
+                            cookie_dir=cookie_dir)
+            self.pov.quality_tier = "robust"     # #493: PiP is always 720p + robust, never auto/exposed
+            self.pov.quality_pinned = True
             self.pov.paused = True
         self.fanout = fanout_enabled(os.environ)
         self.program_audio = program_audio_enabled(os.environ)
@@ -5902,7 +6063,10 @@ class Relay:
                                "state_age_s": round(now - f.phase_since, 1),
                                "down": f.dropped and not f.paused,
                                "last_error": f.last_error,
-                               "source_state": f.source_state}
+                               "source_state": f.source_state,
+                               "profile": f.quality_tier,
+                               "pinned": f.quality_pinned,
+                               "quality": getattr(f, "quality", None)}
         if self.pov:
             raw = (self.pov_source.get()[:1] or [None])[0] if self.pov_source else None
             out["pov"] = {"port": self.pov.port, "url": raw,
@@ -6457,6 +6621,32 @@ class Relay:
                  feed, stint, max(0.0, downtime_s))
         self._maybe_notify_recovery_churn(feed, now, source_state)
 
+    def _record_feed_step_down(self, feed, stint, from_tier, to_tier):
+        """Feed.on_step_down callback: an auto quality step-down happened. Record a
+        `feed_step_down` health incident (post-event report + health monitor) AND fire a
+        Discord @here — it is actionable. Best-effort; never raises into the feed loop."""
+        now = time.time()
+        if self.health_store is not None:
+            try:
+                self.health_store.record_event(
+                    now, "feed_step_down", producer=self.producer_name,
+                    metadata={"feed": feed, "stint": stint,
+                              "from": from_tier, "to": to_tier})
+            except Exception:                # noqa: BLE001 — best-effort
+                pass
+        # State the step-down fact only — do NOT claim the @here here: _discord_post is
+        # best-effort and no-ops without a webhook, so an unconditional "posted" would
+        # mislead incident triage (mirrors _record_feed_recovery, which makes no such claim).
+        LOG.warning("feed step-down: Feed %s stint %d %s->%s — source can't sustain %s",
+                    feed, stint, from_tier, to_tier, from_tier)
+        try:
+            self._discord_post(
+                discord_step_down_payload(feed, stint, from_tier, to_tier,
+                                          self._event_title(), self.producer_name),
+                "feed-step-down")
+        except Exception:                    # noqa: BLE001 — best-effort
+            pass
+
     def _maybe_notify_recovery_churn(self, feed, now, source_state=None):
         """Discord @here when Feed `feed` is CHURNING (≥ FEED_CHURN_THRESHOLD recoveries in
         FEED_CHURN_WINDOW_S), throttled to one ping per feed per FEED_CHURN_COOLDOWN_S so a
@@ -6568,6 +6758,23 @@ class Relay:
         f.reload()
         LOG.info("feed %s disarmed (manual)", which.upper())
         return self.status()
+
+    def set_feed_quality(self, which, tier):
+        """Director control: set a feed's quality profile. `tier` is full|robust|emergency
+        (a manual pin) or `auto` (release to managed FULL). Returns {feed, profile, pinned}
+        or {"error": ...}. Validates `tier` itself (via parse_quality_tier) so the method is
+        safe to call directly, even though the HTTP route pre-validates too (#493)."""
+        feed = self.feeds.get(which)
+        if feed is None:
+            return {"error": f"unknown feed {which}"}
+        norm = parse_quality_tier(tier)
+        if norm is None:
+            return {"error": f"unknown quality tier {tier!r}"}
+        if norm == "auto":
+            feed.set_quality("full", False)
+        else:
+            feed.set_quality(norm, True)
+        return {"feed": which, "profile": feed.quality_tier, "pinned": feed.quality_pinned}
 
     def shutdown(self):
         for f in self.feeds.values(): f.shutdown()
@@ -7303,8 +7510,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             outcome = console_policy.decide(roles, sub, method, has_step_up)
             if outcome == console_policy.ALLOW:
                 # /console/status is Funnel-exposed: serve a role-redacted payload
-                # (no feed stream URLs leave the tailnet) instead of full status.
-                # GET-only; a POST falls through to the root dispatch's 404.
+                # instead of full status — feed stream URLs (feeds[*].channel), pov.url
+                # and sheet_id are kept only for director/producer and stripped for every
+                # other role (see redact_console_status). GET-only; a POST falls through
+                # to the root dispatch's 404.
                 if sub == ["status"] and method == "GET":
                     self._send(self._console_status_payload(roles))
                     return None
@@ -7384,7 +7593,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 q = getattr(relay.feeds.get(k), "quality", None) if relay.feeds.get(k) else None
                 feeds[k] = {"state": v.get("state"), "down": v.get("down"),
                             "stint": v.get("stint"), "state_age_s": v.get("state_age_s"),
-                            "quality": q}
+                            "quality": q, "profile": v.get("profile"), "pinned": v.get("pinned")}
             pov = full.get("pov")
             pov_red = None if not pov else {"state": pov.get("state"),
                                             "down": pov.get("down"), "shown": pov.get("shown"),
@@ -7429,25 +7638,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             base["event_title"] = event_store.get() if event_store else ""
             return base
         def _console_status_payload(self, roles):
-            """Status for the Funnel-exposed /console mount. Feed stream URLs
-            never leave the tailnet, so feeds[*].channel is stripped for EVERY
-            role; the POV stream URL + Sheet id are kept only for
-            director/producer (the director panel pre-fills its POV editor from
-            pov.url and already writes it over Funnel). The plain tailnet
+            """Status for the Funnel-exposed /console mount. Feed stream URLs are
+            director/producer-only over the Funnel — the same boundary as
+            /schedule/data, which already exposes per-stint URLs to directors (the
+            panel's Preview button + POV editor consume them over Funnel). So
+            feeds[*].channel, the POV stream URL, and the Sheet id are KEPT for
+            director/producer and stripped for every other role. The plain tailnet
             /status is unaffected."""
-            full = self._status_payload()
-            out = dict(full)
-            out["feeds"] = {
-                k: {kk: vv for kk, vv in (fd or {}).items() if kk != "channel"}
-                for k, fd in (full.get("feeds") or {}).items()}
-            if not ({"director", "producer"} & set(roles)):
-                pov = full.get("pov")
-                if isinstance(pov, dict):
-                    out["pov"] = {k: v for k, v in pov.items() if k != "url"}
-                lg = full.get("league")
-                if isinstance(lg, dict):
-                    out["league"] = {k: v for k, v in lg.items() if k != "sheet_id"}
-            return out
+            return redact_console_status(self._status_payload(), roles)
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
             try:
@@ -7936,6 +8134,16 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send(relay.feed_activate(p[1]))
                 if len(p)==3 and p[0]=="feed" and p[2]=="deactivate":
                     return self._send(relay.feed_deactivate(p[1]))
+                if len(p)==4 and p[0]=="feed" and p[2]=="quality":
+                    # #493 GET form of the quality switch (path tier) — for Companion's
+                    # generic-http GET buttons, mirroring /reload/A & /set/A/n. Loopback/
+                    # tailnet only (NOT under the /console mount), so it never leaves the
+                    # tailnet; directors over the Funnel use the POST /console form instead.
+                    which = (p[1] or "").upper(); tier = parse_quality_tier(p[3])
+                    if which not in ("A", "B") or tier is None:
+                        return self._send({"error": "usage: GET /feed/<A|B>/quality/"
+                                           "<full|robust|emergency|auto>"}, 400)
+                    return self._send(relay.set_feed_quality(which, tier))
                 if len(p)==2 and p[0]=="next":          return self._ok(relay.advance(p[1], +2))
                 if len(p)==2 and p[0]=="prev":          return self._ok(relay.advance(p[1], -2))
                 if len(p)==2 and p[0]=="reload":        return self._ok(relay.reload(p[1]))
@@ -8239,6 +8447,18 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"ok": True, "feed": key, "count": len(names),
                                        "rebuilt": names,
                                        "note": note or f"Reconnected OBS to Feed {key}"})
+                if len(p) == 3 and p[0] == "feed" and p[2] == "quality":
+                    # Manual quality-profile control (#493): director pins a feed
+                    # to a lower-bandwidth streamlink profile, or releases it back
+                    # to auto-managed FULL. No URL in the request -> no SSRF surface.
+                    # Director-gated by console_policy (p[0]=="feed", like activate/
+                    # deactivate); reachable over Funnel only under /console.
+                    which = (p[1] or "").upper()
+                    tier = parse_quality_tier(body.get("tier"))
+                    if which not in ("A", "B") or tier is None:
+                        return self._send({"ok": False,
+                            "error": "usage: POST /feed/<A|B>/quality {\"tier\": full|robust|emergency|auto}"}, 400)
+                    return self._send({"ok": True, **relay.set_feed_quality(which, tier)})
                 if p == ["parts", "start"]:
                     if part_store is None or producer_source is None or _obs_ws is None:
                         return self._send({"ok": False, "error": "parts unavailable"}, 503)

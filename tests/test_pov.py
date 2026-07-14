@@ -63,10 +63,6 @@ def t_parse_empty_is_none():
     assert m.ScheduleSource._parse_csv("url\n\n") is None
 
 
-def t_pov_format_constant():
-    assert m.YTDLP_FORMAT_POV == "b[height<=720]/b"
-
-
 def t_preview_source_onair_uses_obs():
     keys = {"A", "B"}
     assert m.preview_source("A", "A", False, keys) == ("obs", "Feed A")
@@ -1500,6 +1496,184 @@ def t_feed_activate_refuses_same_url_as_other_armed_feed():
     res = r.feed_activate("B")                    # would be a 2nd uX puller -> refuse
     assert "error" in res
     assert r.B.paused is True                     # B stayed disarmed
+
+
+def t_quality_ytdlp_fmt():
+    assert m.quality_ytdlp_fmt("full") == "b[height<=1080]/b"
+    assert m.quality_ytdlp_fmt("robust") == "b[height<=720]/b"
+    assert m.quality_ytdlp_fmt("emergency") == "b[height<=480]/w"
+
+
+def t_quality_twitch_selector():
+    assert m.quality_twitch_selector("full") == "best"
+    assert m.quality_twitch_selector("robust") == "720p60,720p"
+    assert m.quality_twitch_selector("emergency") == "480p,360p,worst"
+
+
+def t_streamlink_flags_per_tier():
+    assert m.streamlink_serve_flags("full") == m.STREAMLINK_SERVE
+    assert m.streamlink_serve_flags("robust") == m.STREAMLINK_SERVE_ROBUST
+    assert m.streamlink_serve_flags("emergency") == m.STREAMLINK_SERVE_ROBUST
+    assert m.streamlink_twitch_flags("full") == m.STREAMLINK_TWITCH
+    assert m.streamlink_twitch_flags("robust") == m.STREAMLINK_TWITCH_ROBUST
+
+
+def t_parse_quality_tier():
+    for v in ("full", "robust", "emergency", "auto"):
+        assert m.parse_quality_tier(v) == v
+    assert m.parse_quality_tier("FULL") == "full"       # case-insensitive
+    assert m.parse_quality_tier("  robust ") == "robust"
+    assert m.parse_quality_tier("1080p") is None
+    assert m.parse_quality_tier("") is None
+    assert m.parse_quality_tier(None) is None
+
+
+def t_quality_height():
+    assert m.quality_height("720p60") == 720
+    assert m.quality_height("1080p") == 1080
+    assert m.quality_height("480p") == 480
+    assert m.quality_height("best") is None
+    assert m.quality_height("audio_only") is None
+    assert m.quality_height(None) is None
+
+
+def t_quality_step_down_due():
+    # fires: unpinned, FULL, live-but-degraded, enough dead serves
+    assert m.quality_step_down_due("full", False, 2, None) is True
+    assert m.quality_step_down_due("full", False, 5, None) is True
+    # not yet enough dead serves
+    assert m.quality_step_down_due("full", False, 1, None) is False
+    # pinned suppresses auto
+    assert m.quality_step_down_due("full", True, 9, None) is False
+    # already below full -> never auto-descend further
+    assert m.quality_step_down_due("robust", False, 9, None) is False
+    assert m.quality_step_down_due("emergency", False, 9, None) is False
+    # offline / ended source -> stepping quality cannot help
+    assert m.quality_step_down_due("full", False, 9, "not_live_yet") is False
+    assert m.quality_step_down_due("full", False, 9, "ended") is False
+
+
+def t_streamlink_serve_cmd_tier():
+    # YouTube robust: robust flags, positional stays "best" (yt-dlp already capped the rendition)
+    yt = m.streamlink_serve_cmd("http://h/x.m3u8", 53001, "youtube", tier="robust")
+    assert "128M" in yt and yt[-1] == "best"
+    # Twitch robust: robust flags + the capped quality positional
+    tw = m.streamlink_serve_cmd("https://twitch.tv/x", 53001, "twitch", tier="robust")
+    assert "128M" in tw and tw[-1] == "720p60,720p"
+    # Twitch full: unchanged default
+    tw_full = m.streamlink_serve_cmd("https://twitch.tv/x", 53001, "twitch")
+    assert tw_full[-1] == "best"
+
+
+def t_streamlink_fanout_cmd_tier():
+    tw = m.streamlink_fanout_cmd("https://twitch.tv/x", "twitch", tier="emergency")
+    assert "128M" in tw and tw[-1] == "480p,360p,worst"
+
+
+def _mk_feed():
+    return m.Feed("A", 53001, 0, provider=lambda: [], logdir=tempfile.mkdtemp())
+
+
+def t_feed_quality_defaults():
+    f = _mk_feed()
+    assert f.quality_tier == "full" and f.quality_pinned is False
+
+
+def t_feed_set_quality_pins():
+    f = _mk_feed()
+    f.set_quality("robust", True)
+    assert f.quality_tier == "robust" and f.quality_pinned is True
+
+
+def t_feed_maybe_step_down_fires_once():
+    f = _mk_feed()
+    f.dead_serves = 2
+    assert f.maybe_step_down() == ("full", "robust")
+    assert f.quality_tier == "robust" and f.quality_pinned is False
+    # already robust -> no further auto step
+    f.dead_serves = 9
+    assert f.maybe_step_down() is None
+
+
+def t_feed_maybe_step_down_respects_pin_and_state():
+    f = _mk_feed(); f.set_quality("full", True); f.dead_serves = 9
+    assert f.maybe_step_down() is None            # pinned
+    g = _mk_feed(); g.dead_serves = 9; g.source_state = "ended"
+    assert g.maybe_step_down() is None            # offline/ended
+
+
+def t_feed_new_source_resets_quality():
+    # _mk_feed's schedule is empty, so set_index clamps to the same idle idx (0->0)
+    # and short-circuits before the reset; use a real multi-stint schedule so the
+    # index actually moves and the managed-state reset fires.
+    f = m.Feed("A", 53001, 0, provider=lambda: ["a", "b", "c", "d", "e"],
+               logdir=tempfile.mkdtemp())
+    f.set_quality("emergency", True)
+    f.set_index(4)
+    assert f.quality_tier == "full" and f.quality_pinned is False
+
+
+def t_set_feed_quality_applies_and_releases():
+    r = _relay(["a", "b"])
+    res = r.set_feed_quality("A", "emergency")
+    assert r.A.quality_tier == "emergency" and r.A.quality_pinned is True
+    assert res == {"feed": "A", "profile": "emergency", "pinned": True}
+    res = r.set_feed_quality("A", "auto")               # release back to managed FULL
+    assert r.A.quality_tier == "full" and r.A.quality_pinned is False
+    assert res == {"feed": "A", "profile": "full", "pinned": False}
+    before_tier, before_pinned = r.A.quality_tier, r.A.quality_pinned
+    res = r.set_feed_quality("A", "bogus")
+    assert "error" in res
+    assert r.A.quality_tier == before_tier and r.A.quality_pinned == before_pinned
+    assert "error" in r.set_feed_quality("Z", "robust")  # unknown feed
+
+
+def t_discord_step_down_payload():
+    p = m.discord_step_down_payload("A", 3, "full", "robust",
+                                     event_title="N24", producer="Box")
+    assert p["content"] == "@here"                       # actionable
+    assert p["allowed_mentions"]["parse"] == ["everyone"]
+    body = json.dumps(p)
+    assert "robust" in body.lower() and "Feed A" in body
+
+
+def t_record_feed_step_down_records_event_and_pings():
+    # Auto step-down is ALWAYS actionable (unlike drop-recovery churn): every call
+    # records a feed_step_down health event AND fires a Discord @here.
+    r = _relay(["a", "b"])
+    r.health_store = _FakeHS()
+    r._event_title = lambda: ""
+    posts = []
+    r._discord_post = lambda payload, what: posts.append((what, payload))
+    r._record_feed_step_down("A", 3, "full", "robust")
+    rows = [e for e in r.health_store.rows if e["type"] == "feed_step_down"]
+    assert len(rows) == 1
+    assert rows[0]["metadata"] == {"feed": "A", "stint": 3, "from": "full", "to": "robust"}
+    assert len(posts) == 1 and posts[0][0] == "feed-step-down"
+    assert posts[0][1]["content"] == "@here"
+
+
+def t_redact_console_status_role_gates_feed_urls():
+    # #493: the Preview button needs feed URLs over the Funnel — director/producer keep
+    # feeds[*].channel (+ pov.url + sheet_id); every other role has them stripped.
+    full = {"feeds": {"A": {"channel": "https://youtube.com/live/x", "stint": 1,
+                            "profile": "full", "pinned": False},
+                      "B": {"channel": "https://twitch.tv/y", "stint": 2}},
+            "pov": {"url": "https://youtube.com/live/p", "shown": True},
+            "league": {"sheet_id": "SHEET123", "name": "Demo"}}
+    d = m.redact_console_status(full, ["director"])
+    assert d["feeds"]["A"]["channel"] == "https://youtube.com/live/x"
+    assert d["feeds"]["B"]["channel"] == "https://twitch.tv/y"
+    assert d["pov"]["url"] == "https://youtube.com/live/p"
+    assert d["league"]["sheet_id"] == "SHEET123"
+    assert m.redact_console_status(full, ["producer"])["feeds"]["A"]["channel"]
+    for roles in (["commentator"], ["race_control"], []):
+        c = m.redact_console_status(full, roles)
+        assert "channel" not in c["feeds"]["A"], roles
+        assert "channel" not in c["feeds"]["B"], roles
+        assert c["feeds"]["A"]["stint"] == 1 and c["feeds"]["A"]["profile"] == "full"  # non-URL kept
+        assert "url" not in c["pov"] and c["pov"]["shown"] is True
+        assert "sheet_id" not in c["league"] and c["league"]["name"] == "Demo"
 
 
 if __name__ == "__main__":

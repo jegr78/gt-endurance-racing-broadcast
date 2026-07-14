@@ -346,6 +346,15 @@ flips between them. Everything below is a single tap.
 
 ![Companion page 3 — race-condition flag: text row (Green / Yellow / Safety Car / FCY / Red / Clear) and graphic row (GFX Green / Yellow / SC / VSC / Red / Clear)](images/companion-page3-flags.png)
 
+> **Page 4 — Feed quality.** A per-feed **quality profile** control for a struggling
+> source: **ROBUST** drops the feed to a sustainable 720p; **AUTO** releases it back to
+> the managed default (full quality, with the relay's automatic step-down re-armed).
+> Feed A on the top row, Feed B below. The sub-720p **Emergency** profile and the per-feed
+> **Preview** stay Director-Panel-only — the deck keeps the two most-used switches. The
+> same control lives on the panel's **Feeds** card.
+
+![Companion page 4 — feed quality: per-feed ROBUST / AUTO for Feed A and Feed B](images/companion-page4-feed-quality.png)
+
 How the board is imported and built: [Companion](Companion).
 
 ## Through the broadcast (scene + HUD cues)

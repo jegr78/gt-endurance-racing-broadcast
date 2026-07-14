@@ -5136,6 +5136,262 @@
     "minRow": 0,
     "maxRow": 3
    }
+  },
+  "4": {
+   "id": "Bo8tcZ7XfR-LHt6tuGJow",
+   "name": "FEED QUALITY",
+   "controls": {
+    "0": {
+     "0": {
+      "type": "button",
+      "style": {
+       "text": "FEED A\nROBUST",
+       "textExpression": false,
+       "size": "14",
+       "png64": null,
+       "alignment": "center:center",
+       "pngalignment": "center:center",
+       "color": 16777215,
+       "bgcolor": 0,
+       "show_topbar": "default"
+      },
+      "options": {
+       "stepProgression": "auto",
+       "stepExpression": "",
+       "rotaryActions": false
+      },
+      "feedbacks": [],
+      "steps": {
+       "0": {
+        "action_sets": {
+         "down": [
+          {
+           "id": "1Q9LQVSr3Ambl50Qvsd06",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
+           "options": {
+            "url": {
+             "value": "http://127.0.0.1:8088/feed/A/quality/robust",
+             "isExpression": false
+            },
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
+             "isExpression": false
+            },
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
+            },
+            "statusCodeVariable": {
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 1,
+           "type": "action"
+          }
+         ],
+         "up": []
+        },
+        "options": {
+         "runWhileHeld": []
+        }
+       }
+      },
+      "localVariables": []
+     },
+     "1": {
+      "type": "button",
+      "style": {
+       "text": "FEED A\nAUTO",
+       "textExpression": false,
+       "size": "14",
+       "png64": null,
+       "alignment": "center:center",
+       "pngalignment": "center:center",
+       "color": 16777215,
+       "bgcolor": 0,
+       "show_topbar": "default"
+      },
+      "options": {
+       "stepProgression": "auto",
+       "stepExpression": "",
+       "rotaryActions": false
+      },
+      "feedbacks": [],
+      "steps": {
+       "0": {
+        "action_sets": {
+         "down": [
+          {
+           "id": "CLJlsh89qAupbp9exhKpg",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
+           "options": {
+            "url": {
+             "value": "http://127.0.0.1:8088/feed/A/quality/auto",
+             "isExpression": false
+            },
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
+             "isExpression": false
+            },
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
+            },
+            "statusCodeVariable": {
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 1,
+           "type": "action"
+          }
+         ],
+         "up": []
+        },
+        "options": {
+         "runWhileHeld": []
+        }
+       }
+      },
+      "localVariables": []
+     }
+    },
+    "1": {
+     "0": {
+      "type": "button",
+      "style": {
+       "text": "FEED B\nROBUST",
+       "textExpression": false,
+       "size": "14",
+       "png64": null,
+       "alignment": "center:center",
+       "pngalignment": "center:center",
+       "color": 16777215,
+       "bgcolor": 0,
+       "show_topbar": "default"
+      },
+      "options": {
+       "stepProgression": "auto",
+       "stepExpression": "",
+       "rotaryActions": false
+      },
+      "feedbacks": [],
+      "steps": {
+       "0": {
+        "action_sets": {
+         "down": [
+          {
+           "id": "rlYSwyobNBVPTc7MHL0IT",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
+           "options": {
+            "url": {
+             "value": "http://127.0.0.1:8088/feed/B/quality/robust",
+             "isExpression": false
+            },
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
+             "isExpression": false
+            },
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
+            },
+            "statusCodeVariable": {
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 1,
+           "type": "action"
+          }
+         ],
+         "up": []
+        },
+        "options": {
+         "runWhileHeld": []
+        }
+       }
+      },
+      "localVariables": []
+     },
+     "1": {
+      "type": "button",
+      "style": {
+       "text": "FEED B\nAUTO",
+       "textExpression": false,
+       "size": "14",
+       "png64": null,
+       "alignment": "center:center",
+       "pngalignment": "center:center",
+       "color": 16777215,
+       "bgcolor": 0,
+       "show_topbar": "default"
+      },
+      "options": {
+       "stepProgression": "auto",
+       "stepExpression": "",
+       "rotaryActions": false
+      },
+      "feedbacks": [],
+      "steps": {
+       "0": {
+        "action_sets": {
+         "down": [
+          {
+           "id": "6dMkLqWJIbLJ3r2Ea2FCz",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
+           "options": {
+            "url": {
+             "value": "http://127.0.0.1:8088/feed/B/quality/auto",
+             "isExpression": false
+            },
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
+             "isExpression": false
+            },
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
+            },
+            "statusCodeVariable": {
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 1,
+           "type": "action"
+          }
+         ],
+         "up": []
+        },
+        "options": {
+         "runWhileHeld": []
+        }
+       }
+      },
+      "localVariables": []
+     }
+    }
+   },
+   "gridSize": {
+    "minColumn": 0,
+    "maxColumn": 7,
+    "minRow": 0,
+    "maxRow": 3
+   }
   }
  },
  "triggers": {},
