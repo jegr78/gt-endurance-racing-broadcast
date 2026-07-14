@@ -8131,6 +8131,16 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send(relay.feed_activate(p[1]))
                 if len(p)==3 and p[0]=="feed" and p[2]=="deactivate":
                     return self._send(relay.feed_deactivate(p[1]))
+                if len(p)==4 and p[0]=="feed" and p[2]=="quality":
+                    # #493 GET form of the quality switch (path tier) — for Companion's
+                    # generic-http GET buttons, mirroring /reload/A & /set/A/n. Loopback/
+                    # tailnet only (NOT under the /console mount), so it never leaves the
+                    # tailnet; directors over the Funnel use the POST /console form instead.
+                    which = (p[1] or "").upper(); tier = parse_quality_tier(p[3])
+                    if which not in ("A", "B") or tier is None:
+                        return self._send({"error": "usage: GET /feed/<A|B>/quality/"
+                                           "<full|robust|emergency|auto>"}, 400)
+                    return self._send(relay.set_feed_quality(which, tier))
                 if len(p)==2 and p[0]=="next":          return self._ok(relay.advance(p[1], +2))
                 if len(p)==2 and p[0]=="prev":          return self._ok(relay.advance(p[1], -2))
                 if len(p)==2 and p[0]=="reload":        return self._ok(relay.reload(p[1]))

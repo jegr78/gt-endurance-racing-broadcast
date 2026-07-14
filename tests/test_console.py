@@ -329,6 +329,14 @@ def t_feed_quality_is_director_no_stepup():
     assert cp.min_capability(["feed", "B", "quality"], "POST") == cp.Requirement(cp.DIRECTOR, False)
 
 
+
+def t_feed_quality_get_form_not_funnelled():
+    # #493: the GET path form /feed/<A|B>/quality/<tier> is a Companion (loopback) route,
+    # deliberately NOT a /console route -> min_capability returns None so it is NOT reachable
+    # over the Funnel (feed control stays the director-gated POST form there).
+    assert cp.min_capability(["feed", "A", "quality", "robust"], "GET") is None
+    assert cp.min_capability(["feed", "B", "quality", "auto"], "GET") is None
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
