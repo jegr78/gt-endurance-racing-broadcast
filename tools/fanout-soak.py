@@ -59,33 +59,18 @@ FFMPEG_CMD = [
 ]
 
 
-def _build_source_cmd(source, quality, switch_to_tier, platform):
-    """Build a source command for the given source and (optional) quality tier.
-
-    If switch_to_tier is provided, use relay tier helpers to compute the quality.
-    Otherwise, use the explicit quality argument.
-
-    Infers platform from source URL if not already determined."""
+def _build_source_cmd(fe, source, quality, tier, platform):
+    """Build a source command. `testsrc` -> the synthetic ffmpeg -re pipe. A real
+    URL with a `tier` (a --switch-to rebuild) delegates ENTIRELY to the relay's own
+    `streamlink_fanout_cmd` builder (#493) — the exact per-tier buffer/live-edge
+    profile (`streamlink_serve_flags`/`streamlink_twitch_flags`) and quality
+    selector a real feed would run, not a hand-rolled partial argv that silently
+    dropped the tier. Without a tier, use the plain --quality pull."""
     if source == "testsrc":
         return FFMPEG_CMD
-
-    # Determine platform if not already set
-    if platform is None:
-        platform = "twitch" if "twitch.tv" in source.lower() else "youtube"
-
-    # Compute quality based on tier or explicit quality arg
-    if switch_to_tier:
-        fe = _load("irofeeds", "src", "relay", "racecast-feeds.py")
-        if platform == "twitch":
-            quality = fe.quality_twitch_selector(switch_to_tier)
-        else:  # youtube
-            # For YouTube, streamlink's quality is "best" or a filter; use the relay's
-            # pattern of falling back to direct-serve with the yt-dlp format.
-            # The soak uses streamlink for serving, which doesn't understand yt-dlp
-            # formats, so we use "best" (streamlink will apply its own logic).
-            quality = "best"
-
-    return ["streamlink", source, quality, "--stdout"]
+    if tier:
+        return fe.streamlink_fanout_cmd(source, platform, tier=tier)
+    return ["streamlink", "--stdout", "--", source, quality]
 
 
 def main():
@@ -104,7 +89,7 @@ def main():
     ap.add_argument("--log-interval", type=float, default=5.0)
     ap.add_argument("--source", default="testsrc",
                     help="'testsrc' (default synthetic ffmpeg -re) or a stream URL pulled "
-                         "via `streamlink <url> <quality> --stdout` (real VBR content = the box condition)")
+                         "via `streamlink --stdout -- <url> <quality>` (real VBR content = the box condition)")
     ap.add_argument("--quality", default="best",
                     help="streamlink quality for a URL --source (e.g. 720p60; default best)")
     ap.add_argument("--switch-to", choices=["full", "robust", "emergency"], default=None,
@@ -113,12 +98,11 @@ def main():
                     help="Seconds to wait before switching tiers (default 60)")
     args = ap.parse_args()
 
-    # Detect platform from source URL (for tier switching)
-    platform = None
-    if args.source != "testsrc":
-        platform = "twitch" if "twitch.tv" in args.source.lower() else "youtube"
-
     fe = _load("irofeeds", "src", "relay", "racecast-feeds.py")
+
+    # Detect platform the same way the relay does (twitch.tv host vs default
+    # YouTube; used only for a --switch-to tier rebuild).
+    platform = fe.platform_of(args.source) if args.source != "testsrc" else None
 
     ring = fe.FeedRing(fe.FANOUT_RING_BYTES)
     srv = fe.FeedFanoutServer("127.0.0.1", args.port, ring, fe.logging.getLogger("soak"))
@@ -128,7 +112,7 @@ def main():
           f"via GetStats render-skip rate; this harness only serves + logs the socket side)")
 
     # Build initial source command
-    source_cmd = _build_source_cmd(args.source, args.quality, None, platform)
+    source_cmd = _build_source_cmd(fe, args.source, args.quality, None, platform)
     print(f"[soak] source: {args.source} ({' '.join(source_cmd[:2])}...)")
     if args.switch_to:
         print(f"[soak] will switch to tier '{args.switch_to}' after {args.switch_after:.1f}s")
@@ -136,7 +120,25 @@ def main():
     proc = subprocess.Popen(source_cmd, stdout=subprocess.PIPE)
     stop = threading.Event()
     rebuild_event = threading.Event()  # signal to rebuild the proc at new tier
+    switched = threading.Event()       # latch: the tier switch fires AT MOST ONCE (#493)
     started = time.monotonic()
+
+    def _reap(old_proc, timeout=5.0):
+        """Wait for a terminated child to actually exit so it never lingers as a
+        zombie; escalate to kill() if terminate() didn't land in time. Best-effort."""
+        try:
+            old_proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                old_proc.kill()
+            except OSError:
+                pass  # process already gone
+            try:
+                old_proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                pass  # kill() didn't land in time either — give up, best-effort
+        except OSError:
+            pass  # process already reaped/gone
 
     def _monitor():
         # The socket send-block ("stuck") / cursor-snaps proved BLIND to OBS render drift
@@ -149,15 +151,24 @@ def main():
             print(f"[soak] t={now-started:7.1f}s stuck={('-' if stuck_s is None else f'{stuck_s:.1f}')}s "
                   f"snaps={snaps}")
 
-            # Check if it's time to trigger a tier switch
-            if (args.switch_to and not rebuild_event.is_set() and
+            # Check if it's time to trigger the (one-shot) tier switch. `switched`
+            # latches permanently once fired — unlike `rebuild_event` (which the main
+            # loop clears after consuming it), this guard is never cleared, so a
+            # threshold that stays true forever (every log-interval tick after
+            # switch_after) cannot re-fire the rebuild (#493 — was killing/respawning
+            # the source every log-interval and leaking a zombie each time).
+            if (args.switch_to and not switched.is_set() and
                 (now - started) >= args.switch_after):
                 print(f"[soak] triggering rebuild to tier '{args.switch_to}'")
+                switched.set()
                 rebuild_event.set()
+                old_proc = proc
                 try:
-                    proc.terminate()
+                    old_proc.terminate()
                 except OSError:
                     pass  # process already gone
+                else:
+                    _reap(old_proc)   # avoid leaving a zombie behind
 
     threading.Thread(target=_monitor, daemon=True).start()
     try:
@@ -167,7 +178,7 @@ def main():
                 # EOF: check if we should rebuild at a new tier
                 if rebuild_event.is_set():
                     rebuild_event.clear()
-                    new_cmd = _build_source_cmd(args.source, args.quality, args.switch_to, platform)
+                    new_cmd = _build_source_cmd(fe, args.source, args.quality, args.switch_to, platform)
                     print(f"[soak] rebuilding at tier '{args.switch_to}': {' '.join(new_cmd[:3])}...")
                     proc = subprocess.Popen(new_cmd, stdout=subprocess.PIPE)
                     continue
@@ -184,6 +195,8 @@ def main():
             proc.terminate()
         except OSError:
             pass  # process already gone
+        else:
+            _reap(proc)
         srv.stop()
         print("[soak] done")
     return 0
