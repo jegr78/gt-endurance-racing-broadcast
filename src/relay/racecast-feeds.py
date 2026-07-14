@@ -5744,6 +5744,12 @@ class Relay:
         # re-arms on a manual return to the on-air feed scene. Return is manual.
         self.auto_failover = auto_failover_enabled(os.environ)
         self._failed_over = False
+        # #495 auto-cover: raise the #378 Standby Cover over an offline on-air source
+        # (keeps the HUD). Default-on (RACECAST_OBS_AUTO_COVER); fires once per outage,
+        # re-arms on recovery; never fights the manual RED FLAG (owns only what it raised).
+        self.auto_cover = auto_cover_enabled(os.environ)
+        self._cover_fired = False       # already raised the cover for the current outage
+        self._cover_auto_owned = False  # auto raised the cover that is currently shown
         # #488 render-drift auto-resync (heartbeat, obs-ws GetStats render-skip rate).
         self.auto_resync = feed_autoresync_enabled(os.environ)
         self._autoresync_skip_rate = feed_autoresync_skip_rate(os.environ)
@@ -5800,6 +5806,7 @@ class Relay:
         if self.pov:
             threading.Thread(target=self.pov.run, daemon=True).start()
         threading.Thread(target=self._heartbeat_loop, daemon=True).start()
+        threading.Thread(target=self._auto_cover_loop, daemon=True).start()
 
     def _health_facts(self, now):
         """Gather the raw facts aggregate_health() rolls up. Mirrors what
@@ -6093,13 +6100,80 @@ class Relay:
                                      self.producer_name),
             "auto-failover")
 
+    def _auto_cover_loop(self):
+        """Fast tick (AUTO_COVER_POLL_S) that auto-raises/lowers the Standby Cover on an
+        offline on-air source (#495). Separate from the 30 s health heartbeat because
+        covering black is time-sensitive. Daemon; stops with the process."""
+        while not self._hb_stop.is_set():
+            try:
+                self._maybe_auto_cover(time.time())
+            except Exception:  # noqa: BLE001 — best-effort; never break the tick loop
+                pass
+            self._hb_stop.wait(AUTO_COVER_POLL_S)
+
+    def _maybe_auto_cover(self, now):
+        """Auto-raise the #378 Standby Cover over the ON-AIR picture when that feed's
+        classified source_state (#502) is offline/ended, and lower it on confirmed-live
+        recovery — keeping the HUD. Default-on; fires once per outage, re-arms on
+        recovery, never fights the manual RED FLAG. Best-effort: never raises."""
+        if _obs_ws is None:
+            return
+        f = self.feeds[self.live_feed()]
+        ss, off_since = f.source_state, f.offline_since
+        if ss is None:
+            self._cover_fired = False        # re-arm for the next outage (memory-only)
+        # Cheap gate: touch OBS only when a raise or a lower could actually be pending.
+        maybe_raise = (self.auto_cover and ss in ("not_live_yet", "ended")
+                       and off_since is not None and (now - off_since) >= AUTO_COVER_SETTLE_S
+                       and not self._cover_fired)
+        maybe_lower = (self._cover_auto_owned and ss is None)
+        if not maybe_raise and not maybe_lower:
+            return
+        on_air_scene = getattr(_obs_ws, "STINT_SCENE", "Stint")
+        state, note = _obs_ws.read_obs_state([(on_air_scene, STANDBY_COVER_SOURCE)], [])
+        if state is None:                    # OBS unreachable — one note, retry next tick
+            self.obs_note = note or self.obs_note
+            return
+        scene = state.get("scene")
+        src0 = (state.get("sources") or [{}])[0] or {}
+        cover_shown = bool(src0.get("enabled"))
+        action = auto_cover_action(self.auto_cover, ss, off_since, now, AUTO_COVER_SETTLE_S,
+                                   cover_shown, self._cover_auto_owned, self._cover_fired,
+                                   scene, on_air_scene=on_air_scene)
+        if action == "raise":
+            ok, note = _obs_ws.set_scene_item_enabled(on_air_scene, STANDBY_COVER_SOURCE, True)
+            if not ok:                       # not latched -> retry next tick
+                self.obs_note = note or self.obs_note
+                return
+            self._cover_fired = True
+            self._cover_auto_owned = True
+            LOG.warning("Auto-cover: on-air feed %s source %s -> raised Standby Cover (#495)",
+                        f.name, ss)
+        elif action == "lower":
+            ok, note = _obs_ws.set_scene_item_enabled(on_air_scene, STANDBY_COVER_SOURCE, False)
+            if not ok:
+                self.obs_note = note or self.obs_note
+                return
+            self._cover_auto_owned = False
+            LOG.info("Auto-cover: on-air source recovered -> lowered Standby Cover (#495)")
+        elif maybe_raise and cover_shown:
+            # A cover is already up (the director raised it) during this outage. Adopt the
+            # outage as handled so we neither double-raise nor re-poll OBS every tick — but
+            # do NOT take ownership (auto never lowers a manually-raised cover).
+            self._cover_fired = True
+        # Recovery reconciliation: once the source is live again we own no cover, even if
+        # it was already hidden manually (prevents a stale-owned OBS re-poll loop).
+        if ss is None:
+            self._cover_auto_owned = False
+
     def status(self):
         now = time.time()
         self._maybe_probe_obs(now)
         sched = self.source.get()
         out = {"schedule_len": len(sched), "cookies": bool(self.cookies),
                "cookies_health": cookie_health(self.cookies, now=now),
-               "mode": self.mode, "source": self.source.health(), "feeds": {}}
+               "mode": self.mode, "auto_cover_active": bool(self._cover_auto_owned),
+               "source": self.source.health(), "feeds": {}}
         if self.qual_source:
             out["qualifying"] = {"active": self.mode == "qualifying",
                                  "source": self.qual_source.health()}

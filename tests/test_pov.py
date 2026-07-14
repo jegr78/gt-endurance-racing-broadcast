@@ -1751,6 +1751,29 @@ def t_feed_offline_since_stamps_and_clears():
     assert f.offline_since is None and f.source_state is None
 
 
+def t_status_exposes_auto_cover_active():
+    r = _relay(["a", "b"])
+    assert r.status()["auto_cover_active"] is False
+    r._cover_auto_owned = True
+    assert r.status()["auto_cover_active"] is True
+
+
+def t_maybe_auto_cover_no_obs_is_noop():
+    # Best-effort: with no obs-ws bound the tick must return without raising and
+    # must not falsely latch the outage flags.
+    saved = m._obs_ws
+    m._obs_ws = None
+    try:
+        r = _relay(["a", "b"])
+        r.A._set_source_state("ended")
+        r.A.offline_since = 100.0
+        r._maybe_auto_cover(200.0)          # 100s offline, but no OBS -> no-op
+        assert r._cover_fired is False
+        assert r._cover_auto_owned is False
+    finally:
+        m._obs_ws = saved
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
