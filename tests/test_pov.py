@@ -1613,6 +1613,21 @@ def t_feed_new_source_resets_quality():
     assert f.quality_tier == "full" and f.quality_pinned is False
 
 
+def t_set_feed_quality_applies_and_releases():
+    r = _relay(["a", "b"])
+    res = r.set_feed_quality("A", "emergency")
+    assert r.A.quality_tier == "emergency" and r.A.quality_pinned is True
+    assert res == {"feed": "A", "profile": "emergency", "pinned": True}
+    res = r.set_feed_quality("A", "auto")               # release back to managed FULL
+    assert r.A.quality_tier == "full" and r.A.quality_pinned is False
+    assert res == {"feed": "A", "profile": "full", "pinned": False}
+    before_tier, before_pinned = r.A.quality_tier, r.A.quality_pinned
+    res = r.set_feed_quality("A", "bogus")
+    assert "error" in res
+    assert r.A.quality_tier == before_tier and r.A.quality_pinned == before_pinned
+    assert "error" in r.set_feed_quality("Z", "robust")  # unknown feed
+
+
 def t_discord_step_down_payload():
     p = m.discord_step_down_payload("A", 3, "full", "robust",
                                      event_title="N24", producer="Box")

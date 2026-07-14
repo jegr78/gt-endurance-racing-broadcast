@@ -322,6 +322,13 @@ def t_feed_arm_is_director_no_stepup():
         assert cp.min_capability(["feed", "B", act]) == cp.Requirement(cp.DIRECTOR, False), act
 
 
+def t_feed_quality_is_director_no_stepup():
+    # #493: manual quality-profile control mirrors feed arm/disarm — director
+    # tier, no step-up, so a plain director token can pin a feed's quality.
+    assert cp.min_capability(["feed", "A", "quality"], "POST") == cp.Requirement(cp.DIRECTOR, False)
+    assert cp.min_capability(["feed", "B", "quality"], "POST") == cp.Requirement(cp.DIRECTOR, False)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

@@ -6041,7 +6041,9 @@ class Relay:
                                "state_age_s": round(now - f.phase_since, 1),
                                "down": f.dropped and not f.paused,
                                "last_error": f.last_error,
-                               "source_state": f.source_state}
+                               "source_state": f.source_state,
+                               "profile": f.quality_tier,
+                               "pinned": f.quality_pinned}
         if self.pov:
             raw = (self.pov_source.get()[:1] or [None])[0] if self.pov_source else None
             out["pov"] = {"port": self.pov.port, "url": raw,
@@ -6730,6 +6732,23 @@ class Relay:
         f.reload()
         LOG.info("feed %s disarmed (manual)", which.upper())
         return self.status()
+
+    def set_feed_quality(self, which, tier):
+        """Director control: set a feed's quality profile. `tier` is full|robust|emergency
+        (a manual pin) or `auto` (release to managed FULL). Returns {feed, profile, pinned}
+        or {"error": ...}. Validates `tier` itself (via parse_quality_tier) so the method is
+        safe to call directly, even though the HTTP route pre-validates too (#493)."""
+        feed = self.feeds.get(which)
+        if feed is None:
+            return {"error": f"unknown feed {which}"}
+        norm = parse_quality_tier(tier)
+        if norm is None:
+            return {"error": f"unknown quality tier {tier!r}"}
+        if norm == "auto":
+            feed.set_quality("full", False)
+        else:
+            feed.set_quality(norm, True)
+        return {"feed": which, "profile": feed.quality_tier, "pinned": feed.quality_pinned}
 
     def shutdown(self):
         for f in self.feeds.values(): f.shutdown()
@@ -7546,7 +7565,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 q = getattr(relay.feeds.get(k), "quality", None) if relay.feeds.get(k) else None
                 feeds[k] = {"state": v.get("state"), "down": v.get("down"),
                             "stint": v.get("stint"), "state_age_s": v.get("state_age_s"),
-                            "quality": q}
+                            "quality": q, "profile": v.get("profile"), "pinned": v.get("pinned")}
             pov = full.get("pov")
             pov_red = None if not pov else {"state": pov.get("state"),
                                             "down": pov.get("down"), "shown": pov.get("shown"),
@@ -8401,6 +8420,18 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     return self._send({"ok": True, "feed": key, "count": len(names),
                                        "rebuilt": names,
                                        "note": note or f"Reconnected OBS to Feed {key}"})
+                if len(p) == 3 and p[0] == "feed" and p[2] == "quality":
+                    # Manual quality-profile control (#493): director pins a feed
+                    # to a lower-bandwidth streamlink profile, or releases it back
+                    # to auto-managed FULL. No URL in the request -> no SSRF surface.
+                    # Director-gated by console_policy (p[0]=="feed", like activate/
+                    # deactivate); reachable over Funnel only under /console.
+                    which = (p[1] or "").upper()
+                    tier = parse_quality_tier(body.get("tier"))
+                    if which not in ("A", "B") or tier is None:
+                        return self._send({"ok": False,
+                            "error": "usage: POST /feed/<A|B>/quality {\"tier\": full|robust|emergency|auto}"}, 400)
+                    return self._send({"ok": True, **relay.set_feed_quality(which, tier)})
                 if p == ["parts", "start"]:
                     if part_store is None or producer_source is None or _obs_ws is None:
                         return self._send({"ok": False, "error": "parts unavailable"}, 503)
