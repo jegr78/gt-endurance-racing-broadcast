@@ -1653,6 +1653,29 @@ def t_record_feed_step_down_records_event_and_pings():
     assert posts[0][1]["content"] == "@here"
 
 
+def t_redact_console_status_role_gates_feed_urls():
+    # #493: the Preview button needs feed URLs over the Funnel — director/producer keep
+    # feeds[*].channel (+ pov.url + sheet_id); every other role has them stripped.
+    full = {"feeds": {"A": {"channel": "https://youtube.com/live/x", "stint": 1,
+                            "profile": "full", "pinned": False},
+                      "B": {"channel": "https://twitch.tv/y", "stint": 2}},
+            "pov": {"url": "https://youtube.com/live/p", "shown": True},
+            "league": {"sheet_id": "SHEET123", "name": "Demo"}}
+    d = m.redact_console_status(full, ["director"])
+    assert d["feeds"]["A"]["channel"] == "https://youtube.com/live/x"
+    assert d["feeds"]["B"]["channel"] == "https://twitch.tv/y"
+    assert d["pov"]["url"] == "https://youtube.com/live/p"
+    assert d["league"]["sheet_id"] == "SHEET123"
+    assert m.redact_console_status(full, ["producer"])["feeds"]["A"]["channel"]
+    for roles in (["commentator"], ["race_control"], []):
+        c = m.redact_console_status(full, roles)
+        assert "channel" not in c["feeds"]["A"], roles
+        assert "channel" not in c["feeds"]["B"], roles
+        assert c["feeds"]["A"]["stint"] == 1 and c["feeds"]["A"]["profile"] == "full"  # non-URL kept
+        assert "url" not in c["pov"] and c["pov"]["shown"] is True
+        assert "sheet_id" not in c["league"] and c["league"]["name"] == "Demo"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

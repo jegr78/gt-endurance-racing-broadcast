@@ -4120,6 +4120,28 @@ def cockpit_schedule(rows, live_idx, me_key):
             for i, (_u, n, st, _l) in enumerate(rows)]
 
 
+def redact_console_status(full, roles):
+    """Redact the full /status for the Funnel-exposed /console mount, by role (#493).
+    Feed stream URLs (feeds[*].channel), the POV stream URL, and the Sheet id are
+    director/producer-only — the same boundary as /schedule/data, which already exposes
+    per-stint URLs to directors (the panel's Preview button + POV editor consume them
+    over Funnel). They are KEPT for director/producer and stripped for every other role.
+    The tailnet /status is unaffected (served verbatim). Pure → unit-tested."""
+    out = dict(full)
+    keep_urls = bool({"director", "producer"} & set(roles or ()))
+    out["feeds"] = {
+        k: {kk: vv for kk, vv in (fd or {}).items() if keep_urls or kk != "channel"}
+        for k, fd in (full.get("feeds") or {}).items()}
+    if not keep_urls:
+        pov = full.get("pov")
+        if isinstance(pov, dict):
+            out["pov"] = {k: v for k, v in pov.items() if k != "url"}
+        lg = full.get("league")
+        if isinstance(lg, dict):
+            out["league"] = {k: v for k, v in lg.items() if k != "sheet_id"}
+    return out
+
+
 def cockpit_syncing(desync):
     """True when the relay's desync block is active — the cockpit should show
     'syncing…' instead of the (index-derived, possibly wrong) ON-AIR tally. Pure."""
@@ -6043,7 +6065,8 @@ class Relay:
                                "last_error": f.last_error,
                                "source_state": f.source_state,
                                "profile": f.quality_tier,
-                               "pinned": f.quality_pinned}
+                               "pinned": f.quality_pinned,
+                               "quality": getattr(f, "quality", None)}
         if self.pov:
             raw = (self.pov_source.get()[:1] or [None])[0] if self.pov_source else None
             out["pov"] = {"port": self.pov.port, "url": raw,
@@ -7610,25 +7633,14 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             base["event_title"] = event_store.get() if event_store else ""
             return base
         def _console_status_payload(self, roles):
-            """Status for the Funnel-exposed /console mount. Feed stream URLs
-            never leave the tailnet, so feeds[*].channel is stripped for EVERY
-            role; the POV stream URL + Sheet id are kept only for
-            director/producer (the director panel pre-fills its POV editor from
-            pov.url and already writes it over Funnel). The plain tailnet
+            """Status for the Funnel-exposed /console mount. Feed stream URLs are
+            director/producer-only over the Funnel — the same boundary as
+            /schedule/data, which already exposes per-stint URLs to directors (the
+            panel's Preview button + POV editor consume them over Funnel). So
+            feeds[*].channel, the POV stream URL, and the Sheet id are KEPT for
+            director/producer and stripped for every other role. The plain tailnet
             /status is unaffected."""
-            full = self._status_payload()
-            out = dict(full)
-            out["feeds"] = {
-                k: {kk: vv for kk, vv in (fd or {}).items() if kk != "channel"}
-                for k, fd in (full.get("feeds") or {}).items()}
-            if not ({"director", "producer"} & set(roles)):
-                pov = full.get("pov")
-                if isinstance(pov, dict):
-                    out["pov"] = {k: v for k, v in pov.items() if k != "url"}
-                lg = full.get("league")
-                if isinstance(lg, dict):
-                    out["league"] = {k: v for k, v in lg.items() if k != "sheet_id"}
-            return out
+            return redact_console_status(self._status_payload(), roles)
         def do_GET(self):
             p = [x for x in urlparse(self.path).path.split("/") if x]
             try:

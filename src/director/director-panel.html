@@ -286,6 +286,10 @@
   /* EMERGENCY reads loud when active — a feed pinned below 720p must not be missed */
   .qbtn[data-tier="emergency"].active{border-color:var(--air);color:#ff9d9d;
         background:#330f0f}
+  /* preview: open the feed's current stream in a new tab (inline, right after AUTO) */
+  .qbtn.qprev{color:var(--muted)}
+  .qbtn.qprev:not(:disabled):hover{border-color:var(--blue);color:var(--blue)}
+  .qbtn.qprev:disabled{opacity:.4;cursor:default}
   #toasts{position:fixed;top:14px;right:14px;z-index:100;display:flex;
     flex-direction:column;gap:8px;max-width:340px}
   .toast{background:#330f0f;border:1px solid var(--air);color:#ff9d9d;border-radius:10px;
@@ -628,6 +632,8 @@
           <button class="qbtn" data-feed="A" data-tier="robust">ROBUST</button>
           <button class="qbtn" data-feed="A" data-tier="emergency">EMERG</button>
           <button class="qbtn" data-feed="A" data-tier="auto">AUTO</button>
+          <button class="qbtn qprev" data-feed="A" type="button" disabled
+                  title="Open Feed A's current stream in a new tab">▶ Preview</button>
         </div>
         <div class="qrow" data-qfeed="B">
           <span class="qlabel">Feed B</span>
@@ -635,6 +641,8 @@
           <button class="qbtn" data-feed="B" data-tier="robust">ROBUST</button>
           <button class="qbtn" data-feed="B" data-tier="emergency">EMERG</button>
           <button class="qbtn" data-feed="B" data-tier="auto">AUTO</button>
+          <button class="qbtn qprev" data-feed="B" type="button" disabled
+                  title="Open Feed B's current stream in a new tab">▶ Preview</button>
         </div>
       </div>
     </div>
@@ -1314,8 +1322,17 @@ async function feedQuality(which, tier){
   }catch(e){ log("Feed " + which + " quality failed: " + e, "err");
              toast("Quality switch failed — relay unreachable"); }
 }
-document.querySelectorAll("#feedQuality .qbtn").forEach(b =>
+document.querySelectorAll("#feedQuality .qbtn:not(.qprev)").forEach(b =>
   b.addEventListener("click", () => feedQuality(b.dataset.feed, b.dataset.tier)));
+
+// #493: Preview — open a feed's current source stream (YT/Twitch) in a new tab. The URL is
+// stashed on the button each poll (see relayPoll), so window.open runs synchronously in the
+// click handler (no popup-blocker) and the raw URL never rides in the DOM as a link.
+document.querySelectorAll("#feedQuality .qprev").forEach(b =>
+  b.addEventListener("click", () => {
+    const u = b.dataset.url || "";
+    if (previewUrlOk(u)) window.open(u, "_blank", "noopener");
+  }));
 
 /* ---------- OBS state poll (relay-mediated; replaces browser obs.call reads) -- */
 async function obsStatePoll(){
@@ -1425,6 +1442,16 @@ function qualityHeight(q){
   const m = /(\d{3,4})p/.exec(q || "");
   return m ? parseInt(m[1], 10) : null;
 }
+// #493: only open a real https youtube/twitch stream URL in a new tab (mirrors bchatUrlOk).
+function previewUrlOk(u){
+  try{
+    const url = new URL(u);
+    if (url.protocol !== "https:") return false;
+    const h = url.hostname.toLowerCase();
+    return h === "youtube.com" || h.endsWith(".youtube.com") ||
+           h === "youtu.be" || h === "twitch.tv" || h.endsWith(".twitch.tv");
+  }catch(e){ return false; }
+}
 function healthLine(name, f){
   const tag = f.platform ? ` [${f.platform === "twitch" ? "TW" : "YT"}]` : "";
   const what = f.stint ? "stint " + f.stint : "the POV stream";
@@ -1432,7 +1459,7 @@ function healthLine(name, f){
     return `<span class="downline">${name}${tag} · DOWN — lost ${what}; RELOAD it or cut to the other feed/Standby</span>`;
   if (f.state === "serving"){
     let s = `${name}${tag} · serving ${what} (since ${fmtDur(f.state_age_s)})`;
-    if (f.quality) s += ` · ${f.quality}`;            // #493: actually-served resolution
+    if (f.quality) s += ` · ${escapeHtml(f.quality)}`;   // #493: actually-served resolution (escaped like last_error)
     const h = qualityHeight(f.quality);               // FULL serving <1080 => the source caps here
     if (f.profile === "full" && h && h < 1080)
       s += ` · source max ${h}p — no 1080p`;
@@ -1543,11 +1570,19 @@ async function relayPoll(){
         lines.push(`<span class="warnline">⚠ Feed ${k} · auto-dropped to ROBUST (720p) — source struggling; raise it again when it recovers</span>`);
     });
     // #493: highlight the active quality profile per feed (the pinned tier, or AUTO when managed).
-    document.querySelectorAll("#feedQuality .qbtn").forEach(b => {
+    document.querySelectorAll("#feedQuality .qbtn:not(.qprev)").forEach(b => {
       const f = d.feeds[b.dataset.feed];
       if (!f) return;
       const active = f.pinned ? (b.dataset.tier === f.profile) : (b.dataset.tier === "auto");
       b.classList.toggle("active", active);
+    });
+    // #493: preview buttons — stash each feed's current stream URL + enable only for a real
+    // URL (absent when the feed is idle, or redacted for a non-director subject over Funnel).
+    document.querySelectorAll("#feedQuality .qprev").forEach(b => {
+      const f = d.feeds[b.dataset.feed];
+      const u = (f && f.channel) || "";
+      b.dataset.url = u;
+      b.disabled = !previewUrlOk(u);
     });
     if (d.mode === "qualifying")
       lines.unshift('<span class="warnline">QUALIFYING MODE — Feed A serves the Qualifying tab (race schedule paused)</span>');
