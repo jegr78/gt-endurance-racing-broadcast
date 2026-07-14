@@ -951,13 +951,17 @@ def t_console_status_strips_feed_urls_for_commentator():
         srv.shutdown()
 
 
-def t_console_status_keeps_sheet_id_for_director_but_strips_feed_urls():
+def t_console_status_keeps_sheet_id_and_feed_urls_for_director():
     srv = _serve(sheet_id="SHEET-XYZ"); port = srv.server_address[1]
     try:
         code, body = _get(port, "/console/status", _tok("bob"))     # director
         assert code == 200, (code, body)
         d = json.loads(body)
-        assert "channel" not in d["feeds"]["A"], d        # feed URL stripped for ALL roles
+        # #493: feed stream URLs are KEPT for director/producer over the Funnel — the same
+        # boundary as /schedule/data (which already gives directors per-stint URLs); they
+        # power the Director-Panel Preview button. Stripped for every other role (see the
+        # commentator test above). redact_console_status is unit-tested in test_pov.py.
+        assert d["feeds"]["A"]["channel"] == "https://www.youtube.com/watch?v=stint1", d
         assert d["league"]["sheet_id"] == "SHEET-XYZ", d  # director keeps sheet id
     finally:
         srv.shutdown()
