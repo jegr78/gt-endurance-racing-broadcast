@@ -442,6 +442,44 @@ def should_failover(enabled, on_air_down, program_scene,
     return program_scene == on_air_scene
 
 
+# ---------- Auto-cover: raise the Standby Cover on an offline on-air source (#495) ----
+AUTO_COVER_POLL_S = 5            # how often the auto-cover tick evaluates the on-air feed
+AUTO_COVER_SETTLE_S = 12        # source_state must persist this long before the cover raises
+STANDBY_COVER_SOURCE = "Standby Cover"   # the #378 cover source in the Stint scene
+_AUTO_COVER_FALSEY = {"0", "false", "no", "off"}
+
+
+def auto_cover_enabled(environ):
+    """True unless RACECAST_OBS_AUTO_COVER is an explicit falsey token. Default ON
+    (opt-out): the automatic raise/lower is on; setting the flag falsey disables ONLY
+    the automation (the manual RED FLAG / Companion toggle still works). Pure so the
+    switch is unit-testable."""
+    return str(environ.get("RACECAST_OBS_AUTO_COVER", "")).strip().lower() not in _AUTO_COVER_FALSEY
+
+
+def auto_cover_action(enabled, source_state, offline_since, now, settle_s,
+                      cover_shown, auto_owned, cover_fired,
+                      program_scene, on_air_scene="Stint"):
+    """Return "raise", "lower", or None for the auto-cover tick. Pure → unit-tested.
+    - "lower": auto lowers ONLY a cover it owns, and only once the source recovered
+      (source_state is None). Runs even when disabled so flipping the flag off
+      mid-outage never strands an auto-raised cover.
+    - "raise": once per outage, on-air source offline/ended past the settle, cover not
+      already shown, and OBS still on the on-air scene.
+    - None: everything else (manual covers are never auto-lowered; the manual button
+      always works)."""
+    if cover_shown and auto_owned and source_state is None:
+        return "lower"
+    if not enabled:
+        return None
+    if source_state in ("not_live_yet", "ended") and offline_since is not None \
+            and (now - offline_since) >= settle_s \
+            and not cover_shown and not cover_fired \
+            and program_scene == on_air_scene:
+        return "raise"
+    return None
+
+
 # The program monitor is the SAME image for every viewer, yet each open console
 # view (Director Panel /preview/program, Cockpit + Race-Control /cockpit/program)
 # polls it every ~1.5s and each poll previously opened its own obs-websocket

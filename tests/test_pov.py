@@ -1676,6 +1676,69 @@ def t_redact_console_status_role_gates_feed_urls():
         assert "sheet_id" not in c["league"] and c["league"]["name"] == "Demo"
 
 
+def t_auto_cover_enabled_default_on_optout():
+    assert m.auto_cover_enabled({}) is True
+    assert m.auto_cover_enabled({"RACECAST_OBS_AUTO_COVER": "1"}) is True
+    assert m.auto_cover_enabled({"RACECAST_OBS_AUTO_COVER": "0"}) is False
+    assert m.auto_cover_enabled({"RACECAST_OBS_AUTO_COVER": "off"}) is False
+
+
+def t_auto_cover_action_raises_on_offline_past_settle():
+    # ended source, offline 20s (> settle 12), cover hidden, not fired, on Stint -> raise
+    assert m.auto_cover_action(True, "ended", 100.0, 120.0, 12,
+                               False, False, False, "Stint") == "raise"
+    # not_live_yet raises identically
+    assert m.auto_cover_action(True, "not_live_yet", 100.0, 120.0, 12,
+                               False, False, False, "Stint") == "raise"
+
+
+def t_auto_cover_action_waits_for_settle():
+    # offline only 5s (< settle 12) -> no raise yet
+    assert m.auto_cover_action(True, "ended", 100.0, 105.0, 12,
+                               False, False, False, "Stint") is None
+
+
+def t_auto_cover_action_fires_once_per_outage():
+    # already fired this outage -> no re-raise (even though still offline & hidden)
+    assert m.auto_cover_action(True, "ended", 100.0, 200.0, 12,
+                               False, False, True, "Stint") is None
+
+
+def t_auto_cover_action_skips_when_cover_already_shown():
+    # a cover is already up (manual) -> pure fn does not raise
+    assert m.auto_cover_action(True, "ended", 100.0, 200.0, 12,
+                               True, False, False, "Stint") is None
+
+
+def t_auto_cover_action_scene_guard():
+    # OBS is on Intermission (not the on-air scene) -> never raise
+    assert m.auto_cover_action(True, "ended", 100.0, 200.0, 12,
+                               False, False, False, "Intermission") is None
+
+
+def t_auto_cover_action_disabled_never_raises():
+    assert m.auto_cover_action(False, "ended", 100.0, 200.0, 12,
+                               False, False, False, "Stint") is None
+
+
+def t_auto_cover_action_lowers_owned_cover_on_recovery():
+    # source recovered (None), cover shown, auto owns it -> lower
+    assert m.auto_cover_action(True, None, None, 300.0, 12,
+                               True, True, True, "Stint") == "lower"
+
+
+def t_auto_cover_action_lowers_even_when_disabled():
+    # cleanup: flag flipped off mid-outage must not strand an auto-owned cover
+    assert m.auto_cover_action(False, None, None, 300.0, 12,
+                               True, True, True, "Stint") == "lower"
+
+
+def t_auto_cover_action_never_lowers_manual_cover():
+    # cover shown but auto does NOT own it (director raised it) -> no lower
+    assert m.auto_cover_action(True, None, None, 300.0, 12,
+                               True, False, False, "Stint") is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
