@@ -274,6 +274,18 @@
   .armbtn{padding:4px 10px;border-radius:6px;border:1px solid var(--edge);
           background:transparent;color:var(--ink);font-weight:700;cursor:pointer;font-size:12px}
   .armbtn.armed{border-color:#3ce07f;color:#3ce07f}
+  /* per-feed quality profile control (#493) */
+  #feedQuality{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  .qrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .qrow .qlabel{font-family:var(--mono);font-size:11px;color:var(--muted);
+                flex:0 0 auto;min-width:56px}
+  .qbtn{padding:3px 9px;border-radius:6px;border:1px solid var(--edge);
+        background:transparent;color:var(--ink);font-weight:700;cursor:pointer;font-size:11px}
+  .qbtn:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  .qbtn.active{border-color:#3ce07f;color:#3ce07f}
+  /* EMERGENCY reads loud when active — a feed pinned below 720p must not be missed */
+  .qbtn[data-tier="emergency"].active{border-color:var(--air);color:#ff9d9d;
+        background:#330f0f}
   #toasts{position:fixed;top:14px;right:14px;z-index:100;display:flex;
     flex-direction:column;gap:8px;max-width:340px}
   .toast{background:#330f0f;border:1px solid var(--air);color:#ff9d9d;border-radius:10px;
@@ -608,6 +620,23 @@
     <div class="body">
       <div class="keys" id="feedsBus"></div>
       <div class="hint" id="feedHealth"></div>
+      <!-- per-feed quality profile (#493): FULL(<=1080p) / ROBUST(720p) / EMERGENCY(<=480p) / AUTO -->
+      <div id="feedQuality">
+        <div class="qrow" data-qfeed="A">
+          <span class="qlabel">Feed A</span>
+          <button class="qbtn" data-feed="A" data-tier="full">FULL</button>
+          <button class="qbtn" data-feed="A" data-tier="robust">ROBUST</button>
+          <button class="qbtn" data-feed="A" data-tier="emergency">EMERG</button>
+          <button class="qbtn" data-feed="A" data-tier="auto">AUTO</button>
+        </div>
+        <div class="qrow" data-qfeed="B">
+          <span class="qlabel">Feed B</span>
+          <button class="qbtn" data-feed="B" data-tier="full">FULL</button>
+          <button class="qbtn" data-feed="B" data-tier="robust">ROBUST</button>
+          <button class="qbtn" data-feed="B" data-tier="emergency">EMERG</button>
+          <button class="qbtn" data-feed="B" data-tier="auto">AUTO</button>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -1271,6 +1300,23 @@ function feedArm(which, on){
 document.querySelectorAll("#feedArm .armbtn").forEach(b =>
   b.addEventListener("click", () => feedArm(b.dataset.feed, b.dataset.on === "1")));
 
+// Per-feed quality profile (#493): FULL/ROBUST/EMERGENCY pin the tier; AUTO releases the
+// pin (managed, auto-step-down re-armed). POST /feed/<A|B>/quality — director-gated, no URL.
+async function feedQuality(which, tier){
+  try{
+    const r = await fetch(RC_API("/feed/" + which + "/quality"), {method:"POST", cache:"no-store",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({tier})});
+    const d = await r.json().catch(()=>({ok:false,error:"bad response"}));
+    if (d.ok){ log("Feed " + which + " quality → " + tier); }
+    else { log("Feed " + which + " quality failed: " + (d.error||""), "err");
+           toast("Quality switch failed" + (d.error ? " — " + d.error : "")); }
+    relayPoll();
+  }catch(e){ log("Feed " + which + " quality failed: " + e, "err");
+             toast("Quality switch failed — relay unreachable"); }
+}
+document.querySelectorAll("#feedQuality .qbtn").forEach(b =>
+  b.addEventListener("click", () => feedQuality(b.dataset.feed, b.dataset.tier)));
+
 /* ---------- OBS state poll (relay-mediated; replaces browser obs.call reads) -- */
 async function obsStatePoll(){
   if (refreshing) return;
@@ -1374,13 +1420,24 @@ function fmtDur(s){
   const h = Math.floor(s/3600), mi = Math.floor(s%3600/60), sec = s%60;
   return (h ? h + ":" + String(mi).padStart(2,"0") : String(mi)) + ":" + String(sec).padStart(2,"0");
 }
+// Vertical resolution of a streamlink quality token ("720p60" -> 720), else null (#493).
+function qualityHeight(q){
+  const m = /(\d{3,4})p/.exec(q || "");
+  return m ? parseInt(m[1], 10) : null;
+}
 function healthLine(name, f){
   const tag = f.platform ? ` [${f.platform === "twitch" ? "TW" : "YT"}]` : "";
   const what = f.stint ? "stint " + f.stint : "the POV stream";
   if (f.down)                       // lost a live serve — louder than 'connecting'
     return `<span class="downline">${name}${tag} · DOWN — lost ${what}; RELOAD it or cut to the other feed/Standby</span>`;
-  if (f.state === "serving")
-    return `${name}${tag} · serving ${what} (since ${fmtDur(f.state_age_s)})`;
+  if (f.state === "serving"){
+    let s = `${name}${tag} · serving ${what} (since ${fmtDur(f.state_age_s)})`;
+    if (f.quality) s += ` · ${f.quality}`;            // #493: actually-served resolution
+    const h = qualityHeight(f.quality);               // FULL serving <1080 => the source caps here
+    if (f.profile === "full" && h && h < 1080)
+      s += ` · source max ${h}p — no 1080p`;
+    return s;
+  }
   if (f.state === "connecting"){
     let s = `${name}${tag} · connecting to ${what} for ${fmtDur(f.state_age_s)}`;
     if (f.state_age_s > 30){
@@ -1479,6 +1536,19 @@ async function relayPoll(){
     if (povVisBtn) povVisBtn.classList.toggle("on", !!(d.pov && d.pov.shown));
     const lines = [healthLine("A", d.feeds.A), healthLine("B", d.feeds.B)];
     if (d.pov && d.pov.state !== "stopped") lines.push(healthLine("POV", d.pov));
+    // #493: auto-step-down alert — a managed feed (not pinned) that dropped to ROBUST.
+    ["A","B"].forEach(k => {
+      const f = d.feeds[k];
+      if (f && f.profile === "robust" && !f.pinned)
+        lines.push(`<span class="warnline">⚠ Feed ${k} · auto-dropped to ROBUST (720p) — source struggling; raise it again when it recovers</span>`);
+    });
+    // #493: highlight the active quality profile per feed (the pinned tier, or AUTO when managed).
+    document.querySelectorAll("#feedQuality .qbtn").forEach(b => {
+      const f = d.feeds[b.dataset.feed];
+      if (!f) return;
+      const active = f.pinned ? (b.dataset.tier === f.profile) : (b.dataset.tier === "auto");
+      b.classList.toggle("active", active);
+    });
     if (d.mode === "qualifying")
       lines.unshift('<span class="warnline">QUALIFYING MODE — Feed A serves the Qualifying tab (race schedule paused)</span>');
     // One mode-aware schedule block: applyMode toggles the race/qualifying
