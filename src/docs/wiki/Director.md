@@ -402,6 +402,15 @@ or clear it to show nothing. The whole run, in order:
   Control *Red Flag - Race Suspended*); pressing it again ends the phase (cover
   hidden, Race Control cleared). The Race Control write needs the sheet-write
   webhook ([Sheet-Webhook](Sheet-Webhook)) — without it only the cover toggles.
+- **Automatic cover on an offline source (#495).** The Standby Cover also raises **on its
+  own** when the **on-air** feed's source goes offline, is not live yet, or has ended
+  (after a ~12 s settle), so the broadcast shows the standby slate instead of black — the
+  HUD (Race Control banner + timer) stays on top. It lowers again automatically once the
+  source is live. A `⚠ On-air source offline — Standby Cover auto-raised` note appears in
+  the panel's feed-health area; press **RED FLAG** to override (auto never fights a cover
+  you raised or lowered by hand). This is the gentler rung below **auto-failover** (which
+  switches to Intermission and loses the HUD). Disable only the automation with
+  `RACECAST_OBS_AUTO_COVER=0`; the manual button is unaffected.
 
 **Final lap** — once you're in the last stint and the leader starts the final lap:
 - HUD: **Race Control → Final Lap**. **Clear it** as soon as the race finishes.

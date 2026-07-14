@@ -442,6 +442,44 @@ def should_failover(enabled, on_air_down, program_scene,
     return program_scene == on_air_scene
 
 
+# ---------- Auto-cover: raise the Standby Cover on an offline on-air source (#495) ----
+AUTO_COVER_POLL_S = 5                     # how often the auto-cover tick evaluates the on-air feed
+AUTO_COVER_SETTLE_S = 12                  # source_state must persist this long before the cover raises
+STANDBY_COVER_SOURCE = "Standby Cover"    # the #378 cover source in the Stint scene
+_AUTO_COVER_FALSEY = {"0", "false", "no", "off"}
+
+
+def auto_cover_enabled(environ):
+    """True unless RACECAST_OBS_AUTO_COVER is an explicit falsey token. Default ON
+    (opt-out): the automatic raise/lower is on; setting the flag falsey disables ONLY
+    the automation (the manual RED FLAG / Companion toggle still works). Pure so the
+    switch is unit-testable."""
+    return str(environ.get("RACECAST_OBS_AUTO_COVER", "")).strip().lower() not in _AUTO_COVER_FALSEY
+
+
+def auto_cover_action(enabled, source_state, offline_since, now, settle_s,
+                      cover_shown, auto_owned, cover_fired,
+                      program_scene, on_air_scene="Stint"):
+    """Return "raise", "lower", or None for the auto-cover tick. Pure → unit-tested.
+    - "lower": auto lowers ONLY a cover it owns, and only once the source recovered
+      (source_state is None). Runs even when disabled so flipping the flag off
+      mid-outage never strands an auto-raised cover.
+    - "raise": once per outage, on-air source offline/ended past the settle, cover not
+      already shown, and OBS still on the on-air scene.
+    - None: everything else (manual covers are never auto-lowered; the manual button
+      always works)."""
+    if cover_shown and auto_owned and source_state is None:
+        return "lower"
+    if not enabled:
+        return None
+    if source_state in ("not_live_yet", "ended") and offline_since is not None \
+            and (now - offline_since) >= settle_s \
+            and not cover_shown and not cover_fired \
+            and program_scene == on_air_scene:
+        return "raise"
+    return None
+
+
 # The program monitor is the SAME image for every viewer, yet each open console
 # view (Director Panel /preview/program, Cockpit + Race-Control /cockpit/program)
 # polls it every ~1.5s and each poll previously opened its own obs-websocket
@@ -5288,6 +5326,18 @@ class Feed:
         self.last_byte_ts = None      # monotonic ts of the last byte pumped into the ring (fan-out health)
         self.on_recovery = None       # relay-set callback(feed, stint, downtime_s, source_state) on a drop-recovery
         self.source_state = None      # #495: "not_live_yet"/"ended"/None (why the feed isn't serving)
+        self.offline_since = None     # #495: epoch the source first became classified-offline (else None)
+
+    def _set_source_state(self, st):
+        """Set source_state and maintain offline_since (#495): stamp the epoch on the
+        first None->classified transition of an outage (kept across not_live_yet->ended),
+        and clear it when the source is no longer classified-offline."""
+        if st:
+            if self.offline_since is None:
+                self.offline_since = time.time()
+        else:
+            self.offline_since = None
+        self.source_state = st
 
     def current_channel(self):
         if self.paused:
@@ -5326,7 +5376,7 @@ class Feed:
         self.dropped = False
         self.dropped_since = None
         self.served_ok = False
-        self.source_state = None      # a fresh serve/reposition: the drop's cause no longer applies
+        self._set_source_state(None)     # a fresh serve/reposition: the drop's cause no longer applies
 
     def _observe_streamlink_line(self, line):
         q = parse_stream_quality(line)
@@ -5334,7 +5384,7 @@ class Feed:
             self.quality = q
         st = classify_source_state(line)
         if st is not None and not self.served_ok:
-            self.source_state = st
+            self._set_source_state(st)
 
     def set_index(self, new_idx):
         sched = self.provider()
@@ -5496,7 +5546,7 @@ class Feed:
                     self.advance.clear(); continue
                 if not hls:
                     self.last_error = err
-                    self.source_state = classify_source_state(err)
+                    self._set_source_state(classify_source_state(err))
                     time.sleep(RESOLVE_RETRY); continue
                 self.last_error = ssai_warning(hls, self.log)  # warn, never block
                 token, target, serve_platform = None, hls, "youtube"
@@ -5556,7 +5606,7 @@ class Feed:
             # (issue #278). A near-instant exit (demo/startup) leaves served_ok False.
             if serve_elapsed >= HEALTH_SERVED_OK_S:
                 self.served_ok = True
-                self.source_state = None   # confirmed live serve: the drop's cause no longer applies (#495)
+                self._set_source_state(None)   # confirmed live serve: the drop's cause no longer applies (#495)
                 self.dead_serves = 0               # stable live picture -> reset
             # A serving process just exited: flag an unexpected loss (DROP) so the
             # panel/Companion alarm fires — but not on an intentional stop or a
@@ -5694,6 +5744,12 @@ class Relay:
         # re-arms on a manual return to the on-air feed scene. Return is manual.
         self.auto_failover = auto_failover_enabled(os.environ)
         self._failed_over = False
+        # #495 auto-cover: raise the #378 Standby Cover over an offline on-air source
+        # (keeps the HUD). Default-on (RACECAST_OBS_AUTO_COVER); fires once per outage,
+        # re-arms on recovery; never fights the manual RED FLAG (owns only what it raised).
+        self.auto_cover = auto_cover_enabled(os.environ)
+        self._cover_fired = False       # already raised the cover for the current outage
+        self._cover_auto_owned = False  # auto raised the cover that is currently shown
         # #488 render-drift auto-resync (heartbeat, obs-ws GetStats render-skip rate).
         self.auto_resync = feed_autoresync_enabled(os.environ)
         self._autoresync_skip_rate = feed_autoresync_skip_rate(os.environ)
@@ -5750,6 +5806,7 @@ class Relay:
         if self.pov:
             threading.Thread(target=self.pov.run, daemon=True).start()
         threading.Thread(target=self._heartbeat_loop, daemon=True).start()
+        threading.Thread(target=self._auto_cover_loop, daemon=True).start()
 
     def _health_facts(self, now):
         """Gather the raw facts aggregate_health() rolls up. Mirrors what
@@ -6043,13 +6100,80 @@ class Relay:
                                      self.producer_name),
             "auto-failover")
 
+    def _auto_cover_loop(self):
+        """Fast tick (AUTO_COVER_POLL_S) that auto-raises/lowers the Standby Cover on an
+        offline on-air source (#495). Separate from the 30 s health heartbeat because
+        covering black is time-sensitive. Daemon; stops with the process."""
+        while not self._hb_stop.is_set():
+            try:
+                self._maybe_auto_cover(time.time())
+            except Exception as exc:  # noqa: BLE001 — best-effort; never break the tick loop
+                LOG.debug("auto-cover tick error (ignored): %s", exc, exc_info=True)
+            self._hb_stop.wait(AUTO_COVER_POLL_S)
+
+    def _maybe_auto_cover(self, now):
+        """Auto-raise the #378 Standby Cover over the ON-AIR picture when that feed's
+        classified source_state (#502) is offline/ended, and lower it on confirmed-live
+        recovery — keeping the HUD. Default-on; fires once per outage, re-arms on
+        recovery, never fights the manual RED FLAG. Best-effort: never raises."""
+        if _obs_ws is None:
+            return
+        f = self.feeds[self.live_feed()]
+        ss, off_since = f.source_state, f.offline_since
+        if ss is None:
+            self._cover_fired = False        # re-arm for the next outage (memory-only)
+        # Cheap gate: touch OBS only when a raise or a lower could actually be pending.
+        maybe_raise = (self.auto_cover and ss in ("not_live_yet", "ended")
+                       and off_since is not None and (now - off_since) >= AUTO_COVER_SETTLE_S
+                       and not self._cover_fired)
+        maybe_lower = (self._cover_auto_owned and ss is None)
+        if not maybe_raise and not maybe_lower:
+            return
+        on_air_scene = getattr(_obs_ws, "STINT_SCENE", "Stint")
+        state, note = _obs_ws.read_obs_state([(on_air_scene, STANDBY_COVER_SOURCE)], [])
+        if state is None:                    # OBS unreachable — one note, retry next tick
+            self.obs_note = note or self.obs_note
+            return
+        scene = state.get("scene")
+        src0 = (state.get("sources") or [{}])[0] or {}
+        cover_shown = bool(src0.get("enabled"))
+        action = auto_cover_action(self.auto_cover, ss, off_since, now, AUTO_COVER_SETTLE_S,
+                                   cover_shown, self._cover_auto_owned, self._cover_fired,
+                                   scene, on_air_scene=on_air_scene)
+        if action == "raise":
+            ok, note = _obs_ws.set_scene_item_enabled(on_air_scene, STANDBY_COVER_SOURCE, True)
+            if not ok:                       # not latched -> retry next tick
+                self.obs_note = note or self.obs_note
+                return
+            self._cover_fired = True
+            self._cover_auto_owned = True
+            LOG.warning("Auto-cover: on-air feed %s source %s -> raised Standby Cover (#495)",
+                        f.name, ss)
+        elif action == "lower":
+            ok, note = _obs_ws.set_scene_item_enabled(on_air_scene, STANDBY_COVER_SOURCE, False)
+            if not ok:
+                self.obs_note = note or self.obs_note
+                return
+            self._cover_auto_owned = False
+            LOG.info("Auto-cover: on-air source recovered -> lowered Standby Cover (#495)")
+        elif maybe_raise and cover_shown:
+            # A cover is already up (the director raised it) during this outage. Adopt the
+            # outage as handled so we neither double-raise nor re-poll OBS every tick — but
+            # do NOT take ownership (auto never lowers a manually-raised cover).
+            self._cover_fired = True
+        # Recovery reconciliation: once the source is live again we own no cover, even if
+        # it was already hidden manually (prevents a stale-owned OBS re-poll loop).
+        if ss is None:
+            self._cover_auto_owned = False
+
     def status(self):
         now = time.time()
         self._maybe_probe_obs(now)
         sched = self.source.get()
         out = {"schedule_len": len(sched), "cookies": bool(self.cookies),
                "cookies_health": cookie_health(self.cookies, now=now),
-               "mode": self.mode, "source": self.source.health(), "feeds": {}}
+               "mode": self.mode, "auto_cover_active": bool(self._cover_auto_owned),
+               "source": self.source.health(), "feeds": {}}
         if self.qual_source:
             out["qualifying"] = {"active": self.mode == "qualifying",
                                  "source": self.qual_source.health()}

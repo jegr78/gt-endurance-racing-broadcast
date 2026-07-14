@@ -1676,6 +1676,186 @@ def t_redact_console_status_role_gates_feed_urls():
         assert "sheet_id" not in c["league"] and c["league"]["name"] == "Demo"
 
 
+def t_auto_cover_enabled_default_on_optout():
+    assert m.auto_cover_enabled({}) is True
+    assert m.auto_cover_enabled({"RACECAST_OBS_AUTO_COVER": "1"}) is True
+    assert m.auto_cover_enabled({"RACECAST_OBS_AUTO_COVER": "0"}) is False
+    assert m.auto_cover_enabled({"RACECAST_OBS_AUTO_COVER": "off"}) is False
+
+
+def t_auto_cover_action_raises_on_offline_past_settle():
+    # ended source, offline 20s (> settle 12), cover hidden, not fired, on Stint -> raise
+    assert m.auto_cover_action(True, "ended", 100.0, 120.0, 12,
+                               False, False, False, "Stint") == "raise"
+    # not_live_yet raises identically
+    assert m.auto_cover_action(True, "not_live_yet", 100.0, 120.0, 12,
+                               False, False, False, "Stint") == "raise"
+
+
+def t_auto_cover_action_waits_for_settle():
+    # offline only 5s (< settle 12) -> no raise yet
+    assert m.auto_cover_action(True, "ended", 100.0, 105.0, 12,
+                               False, False, False, "Stint") is None
+
+
+def t_auto_cover_action_fires_once_per_outage():
+    # already fired this outage -> no re-raise (even though still offline & hidden)
+    assert m.auto_cover_action(True, "ended", 100.0, 200.0, 12,
+                               False, False, True, "Stint") is None
+
+
+def t_auto_cover_action_skips_when_cover_already_shown():
+    # a cover is already up (manual) -> pure fn does not raise
+    assert m.auto_cover_action(True, "ended", 100.0, 200.0, 12,
+                               True, False, False, "Stint") is None
+
+
+def t_auto_cover_action_scene_guard():
+    # OBS is on Intermission (not the on-air scene) -> never raise
+    assert m.auto_cover_action(True, "ended", 100.0, 200.0, 12,
+                               False, False, False, "Intermission") is None
+
+
+def t_auto_cover_action_disabled_never_raises():
+    assert m.auto_cover_action(False, "ended", 100.0, 200.0, 12,
+                               False, False, False, "Stint") is None
+
+
+def t_auto_cover_action_lowers_owned_cover_on_recovery():
+    # source recovered (None), cover shown, auto owns it -> lower
+    assert m.auto_cover_action(True, None, None, 300.0, 12,
+                               True, True, True, "Stint") == "lower"
+
+
+def t_auto_cover_action_lowers_even_when_disabled():
+    # cleanup: flag flipped off mid-outage must not strand an auto-owned cover
+    assert m.auto_cover_action(False, None, None, 300.0, 12,
+                               True, True, True, "Stint") == "lower"
+
+
+def t_auto_cover_action_never_lowers_manual_cover():
+    # cover shown but auto does NOT own it (director raised it) -> no lower
+    assert m.auto_cover_action(True, None, None, 300.0, 12,
+                               True, False, False, "Stint") is None
+
+
+def t_feed_offline_since_stamps_and_clears():
+    f = m.Feed("A", 53001, 0, lambda: ["a"], LOGDIR)
+    assert f.offline_since is None
+    f._set_source_state("not_live_yet")
+    t0 = f.offline_since
+    assert t0 is not None and f.source_state == "not_live_yet"
+    f._set_source_state("ended")          # same outage -> keep the original stamp
+    assert f.offline_since == t0 and f.source_state == "ended"
+    f._set_source_state(None)             # recovered -> cleared
+    assert f.offline_since is None and f.source_state is None
+
+
+def t_status_exposes_auto_cover_active():
+    r = _relay(["a", "b"])
+    assert r.status()["auto_cover_active"] is False
+    r._cover_auto_owned = True
+    assert r.status()["auto_cover_active"] is True
+
+
+def t_maybe_auto_cover_no_obs_is_noop():
+    # Best-effort: with no obs-ws bound the tick must return without raising and
+    # must not falsely latch the outage flags.
+    saved = m._obs_ws
+    m._obs_ws = None
+    try:
+        r = _relay(["a", "b"])
+        r.A._set_source_state("ended")
+        r.A.offline_since = 100.0
+        r._maybe_auto_cover(200.0)          # 100s offline, but no OBS -> no-op
+        assert r._cover_fired is False
+        assert r._cover_auto_owned is False
+    finally:
+        m._obs_ws = saved
+
+
+class _FakeObsWs:
+    """Fake _obs_ws for auto-cover tests: tracks a single Standby-Cover visibility flag."""
+    STINT_SCENE = "Stint"
+
+    def __init__(self, cover=False, scene="Stint"):
+        self.cover = cover
+        self.scene = scene
+
+    def read_obs_state(self, sources, inputs):
+        state = {"scene": self.scene,
+                  "sources": [{"scene": s, "source": src, "enabled": self.cover}
+                              for (s, src) in sources]}
+        return state, ""
+
+    def set_scene_item_enabled(self, scene, source, enabled):
+        self.cover = enabled
+        return True, ""
+
+
+def t_maybe_auto_cover_raise_then_recovery_lowers():
+    saved = m._obs_ws
+    try:
+        fake = _FakeObsWs(cover=False)
+        m._obs_ws = fake
+        r = _relay(["a", "b"])
+        r.A._set_source_state("ended")
+        r.A.offline_since = 900.0
+        r._maybe_auto_cover(1000.0)
+        assert fake.cover is True
+        assert r._cover_fired is True
+        assert r._cover_auto_owned is True
+
+        r.A._set_source_state(None)             # source recovered (clears offline_since)
+        r._maybe_auto_cover(1005.0)
+        assert fake.cover is False
+        assert r._cover_auto_owned is False
+        assert r._cover_fired is False
+    finally:
+        m._obs_ws = saved
+
+
+def t_maybe_auto_cover_manual_lower_not_re_raised():
+    saved = m._obs_ws
+    try:
+        fake = _FakeObsWs(cover=False)
+        m._obs_ws = fake
+        r = _relay(["a", "b"])
+        r.A._set_source_state("ended")
+        r.A.offline_since = 900.0
+        r._maybe_auto_cover(1000.0)              # raise: cover up, owned
+        assert fake.cover is True
+        assert r._cover_fired is True
+        assert r._cover_auto_owned is True
+
+        fake.cover = False                       # director manually lowers mid-outage
+        r._maybe_auto_cover(1010.0)               # source still offline
+        assert fake.cover is False                # NOT re-raised
+        assert r._cover_fired is True
+
+        r.A._set_source_state(None)               # recovery
+        r._maybe_auto_cover(1015.0)
+        assert r._cover_auto_owned is False
+        assert r._cover_fired is False
+    finally:
+        m._obs_ws = saved
+
+
+def t_maybe_auto_cover_never_lowers_manual_cover():
+    saved = m._obs_ws
+    try:
+        fake = _FakeObsWs(cover=True)             # director raised it on a healthy source
+        m._obs_ws = fake
+        r = _relay(["a", "b"])
+        assert r.A.source_state is None
+        assert r._cover_auto_owned is False
+        r._maybe_auto_cover(1000.0)
+        assert fake.cover is True                 # auto did NOT lower a manually-raised cover
+        assert r._cover_auto_owned is False
+    finally:
+        m._obs_ws = saved
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
