@@ -1502,6 +1502,61 @@ def t_feed_activate_refuses_same_url_as_other_armed_feed():
     assert r.B.paused is True                     # B stayed disarmed
 
 
+def t_quality_ytdlp_fmt():
+    assert m.quality_ytdlp_fmt("full") == "b[height<=1080]/b"
+    assert m.quality_ytdlp_fmt("robust") == "b[height<=720]/b"
+    assert m.quality_ytdlp_fmt("emergency") == "b[height<=480]/w"
+
+
+def t_quality_twitch_selector():
+    assert m.quality_twitch_selector("full") == "best"
+    assert m.quality_twitch_selector("robust") == "720p60,720p"
+    assert m.quality_twitch_selector("emergency") == "480p,360p,worst"
+
+
+def t_streamlink_flags_per_tier():
+    assert m.streamlink_serve_flags("full") == m.STREAMLINK_SERVE
+    assert m.streamlink_serve_flags("robust") == m.STREAMLINK_SERVE_ROBUST
+    assert m.streamlink_serve_flags("emergency") == m.STREAMLINK_SERVE_ROBUST
+    assert m.streamlink_twitch_flags("full") == m.STREAMLINK_TWITCH
+    assert m.streamlink_twitch_flags("robust") == m.STREAMLINK_TWITCH_ROBUST
+
+
+def t_parse_quality_tier():
+    for v in ("full", "robust", "emergency", "auto"):
+        assert m.parse_quality_tier(v) == v
+    assert m.parse_quality_tier("FULL") == "full"       # case-insensitive
+    assert m.parse_quality_tier("  robust ") == "robust"
+    assert m.parse_quality_tier("1080p") is None
+    assert m.parse_quality_tier("") is None
+    assert m.parse_quality_tier(None) is None
+
+
+def t_quality_height():
+    assert m.quality_height("720p60") == 720
+    assert m.quality_height("1080p") == 1080
+    assert m.quality_height("480p") == 480
+    assert m.quality_height("best") is None
+    assert m.quality_height("audio_only") is None
+    assert m.quality_height(None) is None
+
+
+def t_quality_step_down_due():
+    # fires: unpinned, FULL, live-but-degraded, enough dead serves
+    assert m.quality_step_down_due("full", False, 2, None) is True
+    assert m.quality_step_down_due("full", False, 5, None) is True
+    # not yet enough dead serves
+    assert m.quality_step_down_due("full", False, 1, None) is False
+    # pinned suppresses auto
+    assert m.quality_step_down_due("full", True, 9, None) is False
+    # already below full -> never auto-descend further
+    assert m.quality_step_down_due("robust", False, 9, None) is False
+    assert m.quality_step_down_due("emergency", False, 9, None) is False
+    # offline / ended source -> stepping quality cannot help
+    assert m.quality_step_down_due("full", False, 9, "not_live_yet") is False
+    assert m.quality_step_down_due("full", False, 9, "ended") is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

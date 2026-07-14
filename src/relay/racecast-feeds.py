@@ -184,6 +184,76 @@ STREAMLINK_YT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3
 # plugin options apply: low-latency prefetch + a tighter live edge. Ad filtering is
 # automatic in current Streamlink (the old --twitch-disable-ads is deprecated).
 STREAMLINK_TWITCH = ["--ringbuffer-size", "64M", "--hls-live-edge", "2", "--twitch-low-latency"]
+
+# --- Quality profiles (#493): each tier = a rendition cap + a streamlink profile ---
+# FULL = best available up to 1080p (never forces 1080p; bounded by the source's max).
+# ROBUST = 720p floor (the automatic step-down target). EMERGENCY = sub-720p, operator-only.
+QUALITY_TIERS = ("full", "robust", "emergency")
+ROBUST_STEP_DOWN_AFTER = 2       # consecutive dead (short) serves before an auto FULL->ROBUST
+
+# Robust streamlink profile: more buffered segments at the live edge -> rides out short
+# source jitter, trading latency for stability. Applied at ROBUST and EMERGENCY.
+STREAMLINK_SERVE_ROBUST = ["--ringbuffer-size", "128M", "--hls-live-edge", "6"]
+STREAMLINK_TWITCH_ROBUST = ["--ringbuffer-size", "128M", "--hls-live-edge", "2",
+                            "--twitch-low-latency"]
+
+_QUALITY_YTDLP = {"full": "b[height<=1080]/b",
+                  "robust": "b[height<=720]/b",
+                  "emergency": "b[height<=480]/w"}
+_QUALITY_TWITCH = {"full": "best",
+                   "robust": "720p60,720p",
+                   "emergency": "480p,360p,worst"}
+_QUALITY_HEIGHT_RE = re.compile(r"(\d{3,4})p")
+
+
+def quality_ytdlp_fmt(tier):
+    """yt-dlp -f string for a quality tier. Pure → unit-tested."""
+    return _QUALITY_YTDLP.get(tier, _QUALITY_YTDLP["full"])
+
+
+def quality_twitch_selector(tier):
+    """Streamlink quality positional for a quality tier (Twitch). Pure → unit-tested."""
+    return _QUALITY_TWITCH.get(tier, _QUALITY_TWITCH["full"])
+
+
+def streamlink_serve_flags(tier):
+    """YouTube streamlink buffer/live-edge flags for a tier (robust at <=ROBUST). Pure."""
+    return STREAMLINK_SERVE_ROBUST if tier in ("robust", "emergency") else STREAMLINK_SERVE
+
+
+def streamlink_twitch_flags(tier):
+    """Twitch streamlink buffer/live-edge flags for a tier. Pure."""
+    return STREAMLINK_TWITCH_ROBUST if tier in ("robust", "emergency") else STREAMLINK_TWITCH
+
+
+def parse_quality_tier(value):
+    """Normalise an operator-supplied tier to one of full|robust|emergency|auto, else
+    None (so the endpoint can 400). `auto` = release a manual pin. Pure → unit-tested."""
+    if not value:
+        return None
+    v = value.strip().lower()
+    return v if v in ("full", "robust", "emergency", "auto") else None
+
+
+def quality_height(token):
+    """Numeric vertical resolution of a streamlink quality token ('720p60' -> 720),
+    or None for non-heighted tokens ('best', 'audio_only', None). Pure → unit-tested."""
+    if not token:
+        return None
+    m = _QUALITY_HEIGHT_RE.search(token)
+    return int(m.group(1)) if m else None
+
+
+def quality_step_down_due(tier, pinned, dead_serves, source_state,
+                          *, threshold=ROBUST_STEP_DOWN_AFTER):
+    """True when a feed should auto-step-down FULL->ROBUST: only while not manually
+    pinned, only from FULL (720p is the hard floor), only for a live-but-degraded
+    source (source_state None — an offline/not-live/ended source has no picture at any
+    rendition, so a lower cap cannot help), once dead (short) serves reach `threshold`.
+    Pure → unit-tested."""
+    return (not pinned) and tier == "full" and source_state is None \
+        and dead_serves >= threshold
+
 RESOLVE_RETRY = 15  # seconds between yt-dlp resolve attempts while a stint isn't live
 COOKIE_MAX_AGE_H = 12   # keep in sync with preflight.py cookies_status(max_age_hours)
 RETRY_SLEEP = 10    # seconds after a stream ends / manifest expires before re-resolving
