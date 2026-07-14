@@ -1613,6 +1613,31 @@ def t_feed_new_source_resets_quality():
     assert f.quality_tier == "full" and f.quality_pinned is False
 
 
+def t_discord_step_down_payload():
+    p = m.discord_step_down_payload("A", 3, "full", "robust",
+                                     event_title="N24", producer="Box")
+    assert p["content"] == "@here"                       # actionable
+    assert p["allowed_mentions"]["parse"] == ["everyone"]
+    body = json.dumps(p)
+    assert "robust" in body.lower() and "Feed A" in body
+
+
+def t_record_feed_step_down_records_event_and_pings():
+    # Auto step-down is ALWAYS actionable (unlike drop-recovery churn): every call
+    # records a feed_step_down health event AND fires a Discord @here.
+    r = _relay(["a", "b"])
+    r.health_store = _FakeHS()
+    r._event_title = lambda: ""
+    posts = []
+    r._discord_post = lambda payload, what: posts.append((what, payload))
+    r._record_feed_step_down("A", 3, "full", "robust")
+    rows = [e for e in r.health_store.rows if e["type"] == "feed_step_down"]
+    assert len(rows) == 1
+    assert rows[0]["metadata"] == {"feed": "A", "stint": 3, "from": "full", "to": "robust"}
+    assert len(posts) == 1 and posts[0][0] == "feed-step-down"
+    assert posts[0][1]["content"] == "@here"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

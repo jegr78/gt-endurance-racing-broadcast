@@ -729,6 +729,25 @@ def discord_failover_payload(on_air_feed, scene, event_title="", producer=""):
             "embeds": [embed]}
 
 
+def discord_step_down_payload(feed, stint, from_tier, to_tier, event_title="", producer=""):
+    """Discord webhook JSON for an auto quality step-down (#493). @here in top-level
+    content — actionable: the source is struggling and the director must decide the
+    manual step-up. Pure → unit-tested."""
+    desc = (f"Feed {feed} (stint {stint}) could not sustain **{from_tier}** — the relay "
+            f"automatically reduced it to **{to_tier}** (720p) to keep a continuous "
+            "picture. Step-up is manual: raise it again from the Director Panel once the "
+            "source recovers.")
+    embed = {"title": "📉 Quality step-down — source struggling",
+             "description": desc, "color": HEALTH_COLORS["yellow"]}
+    footer = notify._footer(event_title, producer)
+    if footer:
+        embed["footer"] = {"text": footer}
+    return {"username": "GT Racecast",
+            "content": "@here",
+            "allowed_mentions": {"parse": ["everyone"]},
+            "embeds": [embed]}
+
+
 def stream_transition(prev, cur):
     """The OBS stream start/stop event implied by a stream_active change, or None.
     Only genuine bool transitions count: False->True = 'started', True->False =
@@ -5539,6 +5558,14 @@ class Feed:
             if serve_elapsed < HEALTH_SERVED_OK_S:
                 # Resolved OK but the serve died fast (403/expired manifest / VOD).
                 self.dead_serves += 1
+                # #493: enough consecutive dead serves at the current tier -> auto step
+                # down to a lighter tier; the NEXT resolve() picks up the new tier.
+                stepped = self.maybe_step_down()
+                if stepped and self.on_step_down is not None:
+                    try:
+                        self.on_step_down(self.name, i + 1, stepped[0], stepped[1])
+                    except Exception:        # noqa: BLE001 — best-effort telemetry
+                        pass
                 if should_idle_dead_serves(self.dead_serves):
                     self._set_phase("idle")
                     self.last_error = ("stint source unavailable — paused after "
@@ -5599,6 +5626,10 @@ class Relay:
         # by design → not tracked, no callback.
         self.A.on_recovery = self._record_feed_recovery
         self.B.on_recovery = self._record_feed_recovery
+        # #493: auto quality step-down fires a health incident + Discord @here.
+        # POV stays pinned-robust: no on_step_down.
+        self.A.on_step_down = self._record_feed_step_down
+        self.B.on_step_down = self._record_feed_step_down
         self.feeds = {"A": self.A, "B": self.B}
         # Two-stage feed scheduling (#492): when RACECAST_MANUAL_FEED_ARM is set,
         # both A/B feeds start DISARMED (paused) — a URL at the index does not pull
@@ -6564,6 +6595,29 @@ class Relay:
         LOG.info("feed recovery recorded: Feed %s stint %d (~%.0fs degraded)",
                  feed, stint, max(0.0, downtime_s))
         self._maybe_notify_recovery_churn(feed, now, source_state)
+
+    def _record_feed_step_down(self, feed, stint, from_tier, to_tier):
+        """Feed.on_step_down callback: an auto quality step-down happened. Record a
+        `feed_step_down` health incident (post-event report + health monitor) AND fire a
+        Discord @here — it is actionable. Best-effort; never raises into the feed loop."""
+        now = time.time()
+        if self.health_store is not None:
+            try:
+                self.health_store.record_event(
+                    now, "feed_step_down", producer=self.producer_name,
+                    metadata={"feed": feed, "stint": stint,
+                              "from": from_tier, "to": to_tier})
+            except Exception:                # noqa: BLE001 — best-effort
+                pass
+        LOG.warning("feed step-down: Feed %s stint %d %s->%s — @here posted",
+                    feed, stint, from_tier, to_tier)
+        try:
+            self._discord_post(
+                discord_step_down_payload(feed, stint, from_tier, to_tier,
+                                          self._event_title(), self.producer_name),
+                "feed-step-down")
+        except Exception:                    # noqa: BLE001 — best-effort
+            pass
 
     def _maybe_notify_recovery_churn(self, feed, now, source_state=None):
         """Discord @here when Feed `feed` is CHURNING (≥ FEED_CHURN_THRESHOLD recoveries in
