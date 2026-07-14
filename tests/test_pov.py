@@ -1774,6 +1774,88 @@ def t_maybe_auto_cover_no_obs_is_noop():
         m._obs_ws = saved
 
 
+class _FakeObsWs:
+    """Fake _obs_ws for auto-cover tests: tracks a single Standby-Cover visibility flag."""
+    STINT_SCENE = "Stint"
+
+    def __init__(self, cover=False, scene="Stint"):
+        self.cover = cover
+        self.scene = scene
+
+    def read_obs_state(self, sources, inputs):
+        state = {"scene": self.scene,
+                  "sources": [{"scene": s, "source": src, "enabled": self.cover}
+                              for (s, src) in sources]}
+        return state, ""
+
+    def set_scene_item_enabled(self, scene, source, enabled):
+        self.cover = enabled
+        return True, ""
+
+
+def t_maybe_auto_cover_raise_then_recovery_lowers():
+    saved = m._obs_ws
+    try:
+        fake = _FakeObsWs(cover=False)
+        m._obs_ws = fake
+        r = _relay(["a", "b"])
+        r.A._set_source_state("ended")
+        r.A.offline_since = 900.0
+        r._maybe_auto_cover(1000.0)
+        assert fake.cover is True
+        assert r._cover_fired is True
+        assert r._cover_auto_owned is True
+
+        r.A._set_source_state(None)             # source recovered (clears offline_since)
+        r._maybe_auto_cover(1005.0)
+        assert fake.cover is False
+        assert r._cover_auto_owned is False
+        assert r._cover_fired is False
+    finally:
+        m._obs_ws = saved
+
+
+def t_maybe_auto_cover_manual_lower_not_re_raised():
+    saved = m._obs_ws
+    try:
+        fake = _FakeObsWs(cover=False)
+        m._obs_ws = fake
+        r = _relay(["a", "b"])
+        r.A._set_source_state("ended")
+        r.A.offline_since = 900.0
+        r._maybe_auto_cover(1000.0)              # raise: cover up, owned
+        assert fake.cover is True
+        assert r._cover_fired is True
+        assert r._cover_auto_owned is True
+
+        fake.cover = False                       # director manually lowers mid-outage
+        r._maybe_auto_cover(1010.0)               # source still offline
+        assert fake.cover is False                # NOT re-raised
+        assert r._cover_fired is True
+
+        r.A._set_source_state(None)               # recovery
+        r._maybe_auto_cover(1015.0)
+        assert r._cover_auto_owned is False
+        assert r._cover_fired is False
+    finally:
+        m._obs_ws = saved
+
+
+def t_maybe_auto_cover_never_lowers_manual_cover():
+    saved = m._obs_ws
+    try:
+        fake = _FakeObsWs(cover=True)             # director raised it on a healthy source
+        m._obs_ws = fake
+        r = _relay(["a", "b"])
+        assert r.A.source_state is None
+        assert r._cover_auto_owned is False
+        r._maybe_auto_cover(1000.0)
+        assert fake.cover is True                 # auto did NOT lower a manually-raised cover
+        assert r._cover_auto_owned is False
+    finally:
+        m._obs_ws = saved
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

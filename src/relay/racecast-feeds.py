@@ -443,9 +443,9 @@ def should_failover(enabled, on_air_down, program_scene,
 
 
 # ---------- Auto-cover: raise the Standby Cover on an offline on-air source (#495) ----
-AUTO_COVER_POLL_S = 5            # how often the auto-cover tick evaluates the on-air feed
-AUTO_COVER_SETTLE_S = 12        # source_state must persist this long before the cover raises
-STANDBY_COVER_SOURCE = "Standby Cover"   # the #378 cover source in the Stint scene
+AUTO_COVER_POLL_S = 5                     # how often the auto-cover tick evaluates the on-air feed
+AUTO_COVER_SETTLE_S = 12                  # source_state must persist this long before the cover raises
+STANDBY_COVER_SOURCE = "Standby Cover"    # the #378 cover source in the Stint scene
 _AUTO_COVER_FALSEY = {"0", "false", "no", "off"}
 
 
@@ -6107,8 +6107,8 @@ class Relay:
         while not self._hb_stop.is_set():
             try:
                 self._maybe_auto_cover(time.time())
-            except Exception:  # noqa: BLE001 — best-effort; never break the tick loop
-                pass
+            except Exception as exc:  # noqa: BLE001 — best-effort; never break the tick loop
+                LOG.debug("auto-cover tick error (ignored): %s", exc, exc_info=True)
             self._hb_stop.wait(AUTO_COVER_POLL_S)
 
     def _maybe_auto_cover(self, now):
