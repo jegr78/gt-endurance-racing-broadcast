@@ -1557,6 +1557,23 @@ def t_quality_step_down_due():
     assert m.quality_step_down_due("full", False, 9, "ended") is False
 
 
+def t_streamlink_serve_cmd_tier():
+    # YouTube robust: robust flags, positional stays "best" (yt-dlp already capped the rendition)
+    yt = m.streamlink_serve_cmd("http://h/x.m3u8", 53001, "youtube", tier="robust")
+    assert "128M" in yt and yt[-1] == "best"
+    # Twitch robust: robust flags + the capped quality positional
+    tw = m.streamlink_serve_cmd("https://twitch.tv/x", 53001, "twitch", tier="robust")
+    assert "128M" in tw and tw[-1] == "720p60,720p"
+    # Twitch full: unchanged default
+    tw_full = m.streamlink_serve_cmd("https://twitch.tv/x", 53001, "twitch")
+    assert tw_full[-1] == "best"
+
+
+def t_streamlink_fanout_cmd_tier():
+    tw = m.streamlink_fanout_cmd("https://twitch.tv/x", "twitch", tier="emergency")
+    assert "128M" in tw and tw[-1] == "480p,360p,worst"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

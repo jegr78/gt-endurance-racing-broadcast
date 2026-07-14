@@ -2994,7 +2994,7 @@ def ytdlp_resolve_cmd(url, cookies, fmt=YTDLP_FORMAT):
 
 
 def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None,
-                         cookies=None, user_agent=STREAMLINK_YT_UA):
+                         cookies=None, user_agent=STREAMLINK_YT_UA, tier="full"):
     """Argv for serving a stream to one OBS client. YouTube gets a resolved HLS
     URL (generic plugin); Twitch gets the twitch.tv URL itself so the Twitch
     plugin handles resolution, automatic ad-filtering and low-latency. `--`
@@ -3006,38 +3006,42 @@ def streamlink_serve_cmd(target, port, platform="youtube", twitch_token=None,
     protected live manifest (#345). Twitch resolves in-process and gets neither."""
     base = ["streamlink", "--player-external-http", "--player-external-http-port", str(port)]
     if platform == "twitch":
-        base += STREAMLINK_TWITCH
+        base += streamlink_twitch_flags(tier)
         if twitch_token:
             base += ["--twitch-api-header", f"Authorization=OAuth {twitch_token}"]
+        selector = quality_twitch_selector(tier)
     else:
-        base += STREAMLINK_SERVE
+        base += streamlink_serve_flags(tier)
         base += queue_deadline_args(_streamlink_help())   # version-safe: renamed in streamlink 8.1.0
         if user_agent:
             base += ["--http-header", f"User-Agent={user_agent}"]
         if cookies:
             base += ["--http-cookies-file", cookies]
-    return base + ["--", target, "best"]
+        selector = "best"     # yt-dlp already resolved the capped rendition
+    return base + ["--", target, selector]
 
 
 def streamlink_fanout_cmd(target, platform="youtube", twitch_token=None,
-                          cookies=None, user_agent=STREAMLINK_YT_UA):
+                          cookies=None, user_agent=STREAMLINK_YT_UA, tier="full"):
     """Argv for the fan-out live reader: same resolution rules as
     streamlink_serve_cmd, but the sink is --stdout (the relay reads it and
     re-serves to many consumers) instead of --player-external-http. `--` guards
     the positional URL/stream."""
     base = ["streamlink", "--stdout"]
     if platform == "twitch":
-        base += STREAMLINK_TWITCH
+        base += streamlink_twitch_flags(tier)
         if twitch_token:
             base += ["--twitch-api-header", f"Authorization=OAuth {twitch_token}"]
+        selector = quality_twitch_selector(tier)
     else:
-        base += STREAMLINK_SERVE
+        base += streamlink_serve_flags(tier)
         base += queue_deadline_args(_streamlink_help())   # version-safe: renamed in streamlink 8.1.0
         if user_agent:
             base += ["--http-header", f"User-Agent={user_agent}"]
         if cookies:
             base += ["--http-cookies-file", cookies]
-    return base + ["--", target, "best"]
+        selector = "best"     # yt-dlp already resolved the capped rendition
+    return base + ["--", target, selector]
 
 
 # --- Director Panel off-air preview pull (decoupled from OBS / the loopback port) ---
