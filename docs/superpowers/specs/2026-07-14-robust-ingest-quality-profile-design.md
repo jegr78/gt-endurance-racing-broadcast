@@ -91,6 +91,37 @@ Pure helpers (unit-tested, no I/O):
   `streamlink_fanout_cmd` take a `tier` (default `"full"`) and call these instead of the
   hardcoded constants + `"best"`.
 
+## FULL respects the source's current maximum
+
+FULL is **not** "force 1080p" — it is "**best available up to 1080p**". A source that only
+offers 720p (a common PS4/console direct-stream ceiling) resolves to 720p on FULL, with no
+error: `b[height<=1080]/b` lets yt-dlp pick the nearest available rendition, and Twitch
+`best` is by definition the source's top rendition. So **AUTO/FULL always means "max 1080p,
+bounded by the source's current maximum"** — exactly the desired behaviour.
+
+The gap is **visibility**: the director must be able to tell that a feed sits at 720p
+because the *source* caps there, not because someone pinned ROBUST — otherwise they will
+switch to FULL expecting 1080p and get 720p with no explanation.
+
+- The served resolution is already tracked (`self.quality`, e.g. `"720p60"`) and already
+  exposed per feed in `/status` (:5210/:7387). The Director Panel shows the **profile**
+  (FULL/ROBUST/EMERGENCY) **and** the **served resolution** side by side, so a FULL feed
+  serving 720p (source-limited) is visibly distinct from a ROBUST 720p (we-capped).
+- **Source-max hint (inference, no extra probe):** while a feed is at **FULL** and the
+  served height is **< 1080**, the source demonstrably offers no higher rendition (FULL
+  would have taken it) — so the panel shows a hint: *"source max 720p — no 1080p
+  available"*. This is the "the source doesn't support 1080p" signal the director needs; it
+  is continuously visible, so it also covers the "don't bother switching up" case.
+- At **ROBUST/EMERGENCY** the source's maximum *above the cap* is unknown (we capped below
+  it). Switching to FULL is always safe — FULL never yields *less* than a lower profile's
+  rendition — and it immediately reveals the true max, which the hint then reports. So
+  there is no "worse outcome" to warn against before a switch; FULL is the reveal.
+
+Pure helper: `quality_height(token) -> int | None` — `"720p60"` → 720, `"1080p"` → 1080,
+`"best"`/`"audio_only"`/`None` → None. The panel composes the hint from `profile == full`
+and `quality_height(served) < 1080`; the backend keeps emitting facts (profile + served
+quality), not a pre-baked sentence.
+
 ## Automatic step-down (FULL → ROBUST only)
 
 **Trigger.** Reuse the existing `dead_serves` signal, which already counts
@@ -190,7 +221,8 @@ degrades), distinct from rapid churn.
 
 - **Director Panel** (`src/director/*.html`) gains a per-feed profile control (FULL /
   ROBUST / EMERGENCY / AUTO) with the current profile as a badge and EMERGENCY styled as a
-  loud/notfall state; and it shows the auto-step-down alert. **Per the CLAUDE.md hard rule,
+  loud/notfall state; the **served resolution** next to the profile; the **source-max hint**
+  when FULL is serving < 1080p; and the auto-step-down alert. **Per the CLAUDE.md hard rule,
   the committed `src/docs/wiki/images/director-panel.png` MUST be regenerated and committed
   in the same change** (wiki-screenshots skill), and the change must pass the
   ui-visual-verification pre-flight look.
@@ -229,6 +261,8 @@ Pure helpers (stdlib test files, the repo convention):
   `dead_serves ≥ 2`; never when pinned; never from ROBUST/EMERGENCY; never when
   `source_state` is set (offline/ended).
 - `parse_quality_tier` — accepts the four enums, rejects junk.
+- `quality_height` — `"720p60"` → 720, `"1080p"` → 1080, `"best"`/`"audio_only"`/`None`
+  → None (drives the source-max hint).
 - new-source tier reset (the boundary predicate).
 - `discord_step_down_payload` — carries `@here` + the from/to tiers.
 - endpoint routing + `console_policy` director-gating for `/feed/<A|B>/quality`.
