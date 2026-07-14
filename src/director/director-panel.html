@@ -1442,7 +1442,9 @@ function qualityHeight(q){
   const m = /(\d{3,4})p/.exec(q || "");
   return m ? parseInt(m[1], 10) : null;
 }
-// #493: only open a real https youtube/twitch stream URL in a new tab (mirrors bchatUrlOk).
+// #493: only open a real https youtube/twitch stream URL in a new tab. Like bchatUrlOk, but
+// without a platform arg — the button doesn't know the feed's platform up front, so it accepts
+// either platform family (an intentional divergence, not an oversight).
 function previewUrlOk(u){
   try{
     const url = new URL(u);

@@ -7507,8 +7507,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
             outcome = console_policy.decide(roles, sub, method, has_step_up)
             if outcome == console_policy.ALLOW:
                 # /console/status is Funnel-exposed: serve a role-redacted payload
-                # (no feed stream URLs leave the tailnet) instead of full status.
-                # GET-only; a POST falls through to the root dispatch's 404.
+                # instead of full status — feed stream URLs (feeds[*].channel), pov.url
+                # and sheet_id are kept only for director/producer and stripped for every
+                # other role (see redact_console_status). GET-only; a POST falls through
+                # to the root dispatch's 404.
                 if sub == ["status"] and method == "GET":
                     self._send(self._console_status_payload(roles))
                     return None
