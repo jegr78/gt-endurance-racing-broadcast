@@ -5326,6 +5326,18 @@ class Feed:
         self.last_byte_ts = None      # monotonic ts of the last byte pumped into the ring (fan-out health)
         self.on_recovery = None       # relay-set callback(feed, stint, downtime_s, source_state) on a drop-recovery
         self.source_state = None      # #495: "not_live_yet"/"ended"/None (why the feed isn't serving)
+        self.offline_since = None     # #495: epoch the source first became classified-offline (else None)
+
+    def _set_source_state(self, st):
+        """Set source_state and maintain offline_since (#495): stamp the epoch on the
+        first None->classified transition of an outage (kept across not_live_yet->ended),
+        and clear it when the source is no longer classified-offline."""
+        if st:
+            if self.offline_since is None:
+                self.offline_since = time.time()
+        else:
+            self.offline_since = None
+        self.source_state = st
 
     def current_channel(self):
         if self.paused:
@@ -5364,7 +5376,7 @@ class Feed:
         self.dropped = False
         self.dropped_since = None
         self.served_ok = False
-        self.source_state = None      # a fresh serve/reposition: the drop's cause no longer applies
+        self._set_source_state(None)     # a fresh serve/reposition: the drop's cause no longer applies
 
     def _observe_streamlink_line(self, line):
         q = parse_stream_quality(line)
@@ -5372,7 +5384,7 @@ class Feed:
             self.quality = q
         st = classify_source_state(line)
         if st is not None and not self.served_ok:
-            self.source_state = st
+            self._set_source_state(st)
 
     def set_index(self, new_idx):
         sched = self.provider()
@@ -5534,7 +5546,7 @@ class Feed:
                     self.advance.clear(); continue
                 if not hls:
                     self.last_error = err
-                    self.source_state = classify_source_state(err)
+                    self._set_source_state(classify_source_state(err))
                     time.sleep(RESOLVE_RETRY); continue
                 self.last_error = ssai_warning(hls, self.log)  # warn, never block
                 token, target, serve_platform = None, hls, "youtube"
@@ -5594,7 +5606,7 @@ class Feed:
             # (issue #278). A near-instant exit (demo/startup) leaves served_ok False.
             if serve_elapsed >= HEALTH_SERVED_OK_S:
                 self.served_ok = True
-                self.source_state = None   # confirmed live serve: the drop's cause no longer applies (#495)
+                self._set_source_state(None)   # confirmed live serve: the drop's cause no longer applies (#495)
                 self.dead_serves = 0               # stable live picture -> reset
             # A serving process just exited: flag an unexpected loss (DROP) so the
             # panel/Companion alarm fires — but not on an intentional stop or a

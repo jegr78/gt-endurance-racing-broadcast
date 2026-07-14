@@ -1739,6 +1739,18 @@ def t_auto_cover_action_never_lowers_manual_cover():
                                True, False, False, "Stint") is None
 
 
+def t_feed_offline_since_stamps_and_clears():
+    f = m.Feed("A", 53001, 0, lambda: ["a"], LOGDIR)
+    assert f.offline_since is None
+    f._set_source_state("not_live_yet")
+    t0 = f.offline_since
+    assert t0 is not None and f.source_state == "not_live_yet"
+    f._set_source_state("ended")          # same outage -> keep the original stamp
+    assert f.offline_since == t0 and f.source_state == "ended"
+    f._set_source_state(None)             # recovered -> cleared
+    assert f.offline_since is None and f.source_state is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
