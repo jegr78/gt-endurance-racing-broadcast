@@ -6634,8 +6634,11 @@ class Relay:
                               "from": from_tier, "to": to_tier})
             except Exception:                # noqa: BLE001 — best-effort
                 pass
-        LOG.warning("feed step-down: Feed %s stint %d %s->%s — @here posted",
-                    feed, stint, from_tier, to_tier)
+        # State the step-down fact only — do NOT claim the @here here: _discord_post is
+        # best-effort and no-ops without a webhook, so an unconditional "posted" would
+        # mislead incident triage (mirrors _record_feed_recovery, which makes no such claim).
+        LOG.warning("feed step-down: Feed %s stint %d %s->%s — source can't sustain %s",
+                    feed, stint, from_tier, to_tier, from_tier)
         try:
             self._discord_post(
                 discord_step_down_payload(feed, stint, from_tier, to_tier,
