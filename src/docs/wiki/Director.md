@@ -42,7 +42,7 @@ one muscle memory:
 | Bus | What's on it |
 |---|---|
 | **PGM** | one-press program looks — `STINT A/B`, `SPLIT`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO`, `INTERMISSION`, `RED FLAG` (same behavior as the Companion combos below) |
-| **FEEDS** | `NEXT` (the handover), per-feed reloads, POV reload/stop, `FEEDS → STINT…` |
+| **FEEDS** | `NEXT` (the handover), **`ARM A/B` / `STOP A/B`** (arm a feed's pull before a swap / stop it), per-feed reloads, POV reload/stop, `FEEDS → STINT…` |
 | **HUD** | the Stint label, Streamer, Session and Race Control dropdowns — they update the HUD live and write back to the Setup tab |
 | **SCN·VIS** | raw scene switches and feed visibility toggles |
 | **TRANS** | transition selector for the next scene switch — **Cut**, **Fade** (default), or **Stinger** |
@@ -430,20 +430,41 @@ or clear it to show nothing. The whole run, in order:
 ## At a driver change
 
 Every ~2 hours the commentator changes. You do this from your browser with the
-buttons (Companion or panel).
+buttons (Companion or panel). Feeds are **armed on demand**: a link in the Schedule
+does **not** start pulling until you arm its feed, and **NEXT auto-stops the feed it
+cuts away from** — so only one commentator stream is ever pulled at a time (that is
+what keeps a cloud/datacenter producer under YouTube's per-IP limit — see *Why arm?*
+below).
 
-1. Cut to **Splitscreen** with the **SPLIT** combo (covers the handover window) — it also
-   sets **Race Control → Driver Swaps** for you, so viewers see it on the overlay.
-2. Press **NEXT** once. The relay hands the feed over, shows the new commentator
-   in the **Stint** scene, switches the audio, and cuts the program to **Stint** —
-   you do not pick Feed A or Feed B. The handover also sets the HUD **Stint** and
-   **Streamer** from the on-air Schedule row and the one-press cut clears Race
-   Control for you; correct either from the panel's **HUD** bus if needed.
+Per swap:
 
-You start a race with only the first stint's link in the **Schedule** tab and add
-each next link ~20–30 min before its swap — from the panel's **URLs** section (or
-the sheet directly as a fallback). Until a link is present the off-air feed shows a
-black tile in the split; it goes live on its own once the link is in.
+1. **Enter the next link early** — ~20–30 min ahead, from the panel's **URLs**
+   section (or the sheet's Schedule tab as a fallback). It just sits there; nothing
+   pulls yet.
+2. **Arm the incoming (off-air) feed** a few minutes before the swap: press **ARM A**
+   or **ARM B** (FEEDS bus). The relay resolves and pulls it — a cold start of
+   ~10–30 s, like POV Reload. Wait until the FEEDS health line shows that feed
+   **serving**: that is your "ready to cut" signal. (Arming onto a stream the other
+   feed already pulls is refused, so a same-URL back-to-back can never double-pull.)
+3. **Cut to Splitscreen** with the **SPLIT** combo (covers the handover window; also
+   sets **Race Control → Driver Swaps** for you).
+4. **Press NEXT once.** The relay hands over to the armed feed, shows the new
+   commentator in the **Stint** scene, switches the audio, cuts the program to
+   **Stint**, sets the HUD **Stint** / **Streamer** from the on-air Schedule row,
+   clears Race Control — and **stops the outgoing feed's pull**. You do not pick Feed
+   A or Feed B; correct the HUD from the panel's **HUD** bus if needed.
+
+Because you armed the incoming feed in step 2, the cut in step 4 is instant. If you
+press **NEXT** before that feed is **serving**, nothing is cut and nothing is stopped
+— the current program stays on air; arm the feed and press **NEXT** again.
+
+> **Why arm?** On a cloud/datacenter producer, two commentator streams pulled at once
+> trip a YouTube per-IP rate-limit within a minute or two (both feeds then stutter).
+> Arming just before the cut, plus the auto-stop on NEXT, keeps it to a single pull
+> between handovers. A **home producer** on a residential connection does not hit that
+> limit and can restore the old always-pre-warmed behaviour with
+> `RACECAST_MANUAL_FEED_ARM=0` in `.env` — then a scheduled link pulls immediately, no
+> arming needed and NEXT does not auto-stop.
 
 The relay also handles the audio (it mutes the off-air feed, unmutes the on-air one).
 **STINT A / STINT B**, **MUTE A / MUTE B** and **Feed A/B Toggle** are a
