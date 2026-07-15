@@ -280,6 +280,47 @@ def t_next_reflects_only_when_incoming_serving():
     assert calls == [("A", True)]
 
 
+def t_next_auto_stops_freed_feed_on_cut():
+    r = _relay(["s1", "s2", "s3", "s4"])
+    r.manual_feed_arm = True
+    r.feeds["A"].phase = "serving"      # outgoing serving
+    r.feeds["B"].phase = "serving"      # incoming armed + serving -> cut
+    r.A.paused = False; r.B.paused = False
+    out = r.next_auto()                 # live_after_next=B, freed=A
+    assert out["obs_cut"] is True
+    assert r.A.paused is True           # freed feed auto-stopped
+    assert r.B.paused is False          # incoming stays live/armed
+
+
+def t_next_auto_keeps_freed_when_no_cut():
+    r = _relay(["s1", "s2", "s3", "s4"])
+    r.manual_feed_arm = True
+    r.feeds["A"].phase = "serving"      # outgoing serving (still on air)
+    r.feeds["B"].phase = "idle"         # incoming NOT serving -> no cut
+    r.A.paused = False; r.B.paused = False
+    out = r.next_auto()
+    assert out["obs_cut"] is False
+    assert r.A.paused is False          # freed NOT stopped -> live picture preserved
+
+
+def t_next_auto_freed_disarmed_at_next_slot():
+    r = _relay(["s1", "s2", "s3", "s4"])
+    r.manual_feed_arm = True
+    r.feeds["A"].phase = "serving"; r.feeds["B"].phase = "serving"
+    r.A.paused = False; r.B.paused = False
+    r.next_auto()                       # cut to B; freed A re-indexed to stint3 (idx2) + stopped
+    assert r.A.idx == 2 and r.A.paused is True
+
+
+def t_next_auto_legacy_no_autostop():
+    r = _relay(["s1", "s2", "s3", "s4"])
+    r.manual_feed_arm = False           # legacy auto pre-roll opt-out
+    r.feeds["A"].phase = "serving"; r.feeds["B"].phase = "serving"
+    r.A.paused = False; r.B.paused = False
+    r.next_auto()
+    assert r.A.paused is False          # legacy: freed keeps pre-rolling, no auto-stop
+
+
 def t_set_stint_reflects_live_feed_without_cut():
     r = _relay(["s1", "s2", "s3", "s4"])
     calls = []
