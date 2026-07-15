@@ -15,6 +15,11 @@ spec = importlib.util.spec_from_file_location(
     "irofeeds", os.path.join(ROOT, "src", "relay", "racecast-feeds.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
+# Manual feed arm defaults ON (#492 follow-up): a bare Relay would start feeds
+# disarmed (paused). These checks exercise the legacy auto-pull path; pin the
+# opt-out so they stay focused (same guard as tests/test_pov.py).
+os.environ.setdefault("RACECAST_MANUAL_FEED_ARM", "0")
+
 
 def t_cookie_health_no_path():
     # Running cookie-less (public streams) is legitimate: never stale.

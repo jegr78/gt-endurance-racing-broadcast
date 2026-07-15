@@ -274,6 +274,8 @@
   .armbtn{padding:4px 10px;border-radius:6px;border:1px solid var(--edge);
           background:transparent;color:var(--ink);font-weight:700;cursor:pointer;font-size:12px}
   .armbtn.armed{border-color:#3ce07f;color:#3ce07f}
+  .armhint{flex-basis:100%;font-size:10px;letter-spacing:.04em;color:var(--muted);margin-top:1px}
+  .armhint code{font-family:var(--mono);color:var(--ink)}
   /* per-feed quality profile control (#493) */
   #feedQuality{display:flex;flex-direction:column;gap:6px;margin-top:8px}
   .qrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -513,6 +515,7 @@
       <button class="armbtn" data-feed="A" data-on="0">STOP A</button>
       <button class="armbtn" data-feed="B" data-on="1">ARM B</button>
       <button class="armbtn" data-feed="B" data-on="0">STOP B</button>
+      <span class="armhint">Arm the incoming feed before the handover — <code>/next</code> stops the outgoing feed automatically.</span>
     </div>
     <div class="led"><span class="dot" id="ledObs"></span>OBS</div>
     <div class="led"><span class="dot" id="ledRelay"></span>Relay</div>
