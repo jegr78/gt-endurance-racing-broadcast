@@ -3,6 +3,11 @@
 import importlib.util, json, os, tempfile, time
 import threading, urllib.request, urllib.error
 
+# Default flipped to manual-arm ON (#492 follow-up). These relay tests exercise the
+# legacy auto-pull machinery (index/dedup/qualifying); pin them to the opt-out path so
+# they stay focused. Tests that need manual mode set r.manual_feed_arm/paused explicitly.
+os.environ.setdefault("RACECAST_MANUAL_FEED_ARM", "0")
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 # Feed opens a per-feed log at construction (configure_logging). Point every
@@ -1395,37 +1400,44 @@ def t_resync_to_stint_no_op_when_no_feed_serves():
 
 
 def t_manual_feed_arm_enabled():
-    # OFF by default (opt-in) — absent or empty is off.
-    assert m.manual_feed_arm_enabled({}) is False
-    assert m.manual_feed_arm_enabled({"RACECAST_MANUAL_FEED_ARM": ""}) is False
-    # Explicit truthy tokens enable it.
-    for v in ("1", "true", "yes", "on", "ON", "True"):
+    # Default-ON now: absent/empty ⇒ manual arm on.
+    assert m.manual_feed_arm_enabled({}) is True
+    assert m.manual_feed_arm_enabled({"RACECAST_MANUAL_FEED_ARM": ""}) is True
+    for v in ("1", "true", "yes", "on", "TRUE", "On"):
         assert m.manual_feed_arm_enabled({"RACECAST_MANUAL_FEED_ARM": v}) is True, v
-    # Anything else stays off.
-    for v in ("0", "false", "no", "off", "banana"):
+    for v in ("0", "false", "no", "off", "OFF", "No"):
         assert m.manual_feed_arm_enabled({"RACECAST_MANUAL_FEED_ARM": v}) is False, v
 
 
 def t_relay_manual_arm_starts_feeds_disarmed():
     rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2)]
-    # Default (flag absent): feeds armed (paused False), manual_feed_arm False.
-    r = m.Relay(_StubSource(["uA", "uB"], rows), (53001, 53002), LOGDIR)
-    assert r.manual_feed_arm is False
-    assert r.A.paused is False and r.B.paused is False
-    st = r.status()
-    assert st["manual_feed_arm"] is False
-    assert st["feeds"]["A"]["armed"] is True and st["feeds"]["B"]["armed"] is True
-    # Flag on: both feeds start disarmed (paused), armed=False in /status.
+    # Opt-out (flag "0"): legacy auto-pull, feeds armed.
+    os.environ["RACECAST_MANUAL_FEED_ARM"] = "0"
+    try:
+        r0 = m.Relay(_StubSource(["uA", "uB"], rows), (53001, 53002), LOGDIR)
+    finally:
+        del os.environ["RACECAST_MANUAL_FEED_ARM"]
+    assert r0.manual_feed_arm is False
+    assert r0.A.paused is False and r0.B.paused is False
+    assert r0.status()["feeds"]["A"]["armed"] is True
+    # New DEFAULT (flag absent): manual arm on, feeds disarmed.
+    saved = os.environ.pop("RACECAST_MANUAL_FEED_ARM", None)
+    try:
+        rd = m.Relay(_StubSource(["uA", "uB"], rows), (53005, 53006), LOGDIR)
+    finally:
+        if saved is not None:
+            os.environ["RACECAST_MANUAL_FEED_ARM"] = saved
+    assert rd.manual_feed_arm is True
+    assert rd.A.paused is True and rd.B.paused is True
+    assert rd.status()["manual_feed_arm"] is True
+    assert rd.status()["feeds"]["A"]["armed"] is False
+    # Explicit "1": same as default (disarmed).
     os.environ["RACECAST_MANUAL_FEED_ARM"] = "1"
     try:
         r2 = m.Relay(_StubSource(["uA", "uB"], rows), (53003, 53004), LOGDIR)
     finally:
         del os.environ["RACECAST_MANUAL_FEED_ARM"]
-    assert r2.manual_feed_arm is True
-    assert r2.A.paused is True and r2.B.paused is True
-    st2 = r2.status()
-    assert st2["manual_feed_arm"] is True
-    assert st2["feeds"]["A"]["armed"] is False and st2["feeds"]["B"]["armed"] is False
+    assert r2.manual_feed_arm is True and r2.A.paused is True
 
 
 def t_feed_activate_deactivate_manual_mode():
@@ -1859,5 +1871,12 @@ def t_maybe_auto_cover_never_lowers_manual_cover():
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
+            # Re-pin the legacy-path guard before each test: a handful of tests
+            # (e.g. t_relay_manual_arm_starts_feeds_disarmed) intentionally pop
+            # RACECAST_MANUAL_FEED_ARM to exercise the absent/default case and
+            # leave it absent afterward. setdefault() only restores it when it's
+            # actually missing, so it never clobbers a test that left an explicit
+            # value set on purpose.
+            os.environ.setdefault("RACECAST_MANUAL_FEED_ARM", "0")
             fn(); print("ok", name)
     print("ALL PASS")

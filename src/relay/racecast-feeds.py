@@ -407,12 +407,17 @@ def auto_failover_enabled(environ):
     return str(environ.get("RACECAST_AUTO_FAILOVER", "")).strip().lower() in _FAILOVER_TRUTHY
 
 
+_MANUAL_FEED_ARM_FALSEY = {"0", "false", "no", "off"}
+
+
 def manual_feed_arm_enabled(environ):
-    """True only when RACECAST_MANUAL_FEED_ARM is an explicit truthy token. OFF by
-    default (opt-in): the default is today's auto-pull + auto-pre-warm. When on,
-    both A/B feeds start disarmed (paused) and the director arms/disarms each pull
-    explicitly (#492). Pure so the switch is unit-testable."""
-    return str(environ.get("RACECAST_MANUAL_FEED_ARM", "")).strip().lower() in _FAILOVER_TRUTHY
+    """True unless RACECAST_MANUAL_FEED_ARM is an explicit falsey token. Default ON:
+    feed URLs are entered into the schedule but do NOT pull until the director arms
+    the feed, and `/next` auto-stops the outgoing feed after a handover cut — the
+    durable single-puller workflow (#489/#505). Set RACECAST_MANUAL_FEED_ARM=0 to
+    restore the legacy auto-pull + seamless whole-stint pre-roll. Pure so the switch
+    is unit-testable."""
+    return str(environ.get("RACECAST_MANUAL_FEED_ARM", "")).strip().lower() not in _MANUAL_FEED_ARM_FALSEY
 
 
 # ---------- On-air program-audio monitor (#program-audio) ------------------
