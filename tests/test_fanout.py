@@ -345,6 +345,29 @@ def t_snap_early_trigger_on_increase():
     assert m.snap_early_trigger(5, None) is False
 
 
+def t_feed_freeze_detect_default_on_and_falsey_disables():
+    assert m.feed_freeze_detect_enabled({}) is True
+    assert m.feed_freeze_detect_enabled({"RACECAST_FEED_FREEZE_DETECT": ""}) is True
+    for v in ("1", "true", "on"):
+        assert m.feed_freeze_detect_enabled({"RACECAST_FEED_FREEZE_DETECT": v}) is True, v
+    for v in ("0", "false", "off", "no"):
+        assert m.feed_freeze_detect_enabled({"RACECAST_FEED_FREEZE_DETECT": v}) is False, v
+
+
+def t_feed_freeze_tuning_getter_defaults():
+    assert m.feed_freeze_stall_ratio({}) == 0.25
+    assert m.feed_freeze_frac_threshold({}) == 0.30
+    assert m.feed_freeze_window({}) == 10
+    assert m.feed_freeze_interval_s({}) == 3.0
+    assert m.feed_freeze_cooldown_s({}) == 60.0
+    # overrides
+    assert m.feed_freeze_stall_ratio({"RACECAST_FEED_FREEZE_STALL_RATIO": "0.4"}) == 0.4
+    assert m.feed_freeze_window({"RACECAST_FEED_FREEZE_WINDOW": "20"}) == 20
+    # invalid / <=0 falls back to the default
+    assert m.feed_freeze_window({"RACECAST_FEED_FREEZE_WINDOW": "0"}) == 10
+    assert m.feed_freeze_cooldown_s({"RACECAST_FEED_FREEZE_COOLDOWN_S": "x"}) == 60.0
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

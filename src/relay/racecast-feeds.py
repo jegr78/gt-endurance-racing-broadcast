@@ -389,6 +389,42 @@ def feed_autoresync_cooldown_s(environ):
     return _env_float(environ, "RACECAST_FEED_AUTORESYNC_COOLDOWN_S", 60.0)
 
 
+def feed_freeze_detect_enabled(environ):
+    """True unless RACECAST_FEED_FREEZE_DETECT is an explicit falsey token. Default ON: the
+    relay auto-reconnects a feed's OBS input when OBS's mediaCursor stops advancing — a
+    stale-demuxer freeze/stutter the renderSkip signal is blind to (#488, measured live
+    2026-07-15). Pure so the switch is unit-testable."""
+    return str(environ.get("RACECAST_FEED_FREEZE_DETECT", "")).strip().lower() not in _FANOUT_FALSEY
+
+
+def feed_freeze_stall_ratio(environ):
+    """Cursor-progress ratio (Δcursor/Δwall) below which a sample counts as a STALL tick.
+    Default 0.25 (made <25% of real-time progress that tick). #488. Pure."""
+    return _env_float(environ, "RACECAST_FEED_FREEZE_STALL_RATIO", 0.25)
+
+
+def feed_freeze_frac_threshold(environ):
+    """Fraction of stalled ticks in the window at/above which the detector reconnects OBS.
+    Default 0.30. #488. Pure."""
+    return _env_float(environ, "RACECAST_FEED_FREEZE_FRAC", 0.30)
+
+
+def feed_freeze_window(environ):
+    """How many recent cursor samples form the stall-fraction window. Default 10. #488. Pure."""
+    return int(_env_float(environ, "RACECAST_FEED_FREEZE_WINDOW", 10))
+
+
+def feed_freeze_interval_s(environ):
+    """Seconds between cursor samples — the freeze sampler cadence, finer than the 30 s
+    heartbeat since stutter stalls recur every few seconds. Default 3.0. #488. Pure."""
+    return _env_float(environ, "RACECAST_FEED_FREEZE_INTERVAL_S", 3.0)
+
+
+def feed_freeze_cooldown_s(environ):
+    """Min seconds between freeze auto-reconnects (anti-loop). Default 60.0. #488. Pure."""
+    return _env_float(environ, "RACECAST_FEED_FREEZE_COOLDOWN_S", 60.0)
+
+
 def feed_stall_s(environ):
     """Byte-stall hard-kill grace (s) for the fan-out watchdog. #488: raised from the
     hardcoded 8 s so streamlink's internal HLS retry can bridge a recoverable uplink
@@ -5374,6 +5410,7 @@ class Feed:
         self.on_step_down = None          # relay-set callback(feed, stint, from_tier, to_tier)
         self.quality = None               # last streamlink-selected quality (e.g. "720p")
         self.ring = None              # set by the relay when fan-out is enabled (#358); None → direct-serve
+        self.fanout_server = None     # its FeedFanoutServer (fan-out on); the freeze detector reads its snap count (#488)
         self.last_byte_ts = None      # monotonic ts of the last byte pumped into the ring (fan-out health)
         self.on_recovery = None       # relay-set callback(feed, stint, downtime_s, source_state) on a drop-recovery
         self.source_state = None      # #495: "not_live_yet"/"ended"/None (why the feed isn't serving)
@@ -5808,6 +5845,17 @@ class Relay:
         self._last_autoresync_ts = None
         self._prev_render_counts = None   # (skipped, total) from the previous heartbeat poll
         self._render_drift_streak = 0     # consecutive over-threshold polls (debounce)
+        # #488 cursor-progress freeze detector (its own faster sampler, since a stutter's
+        # stall ticks recur every few seconds — finer than the 30 s heartbeat). Replaces the
+        # ACTION of the (blind) render-skip auto-resync; the render-skip rate is still recorded.
+        self._freeze_detect = feed_freeze_detect_enabled(os.environ)
+        self._freeze_stall_ratio = feed_freeze_stall_ratio(os.environ)
+        self._freeze_frac = feed_freeze_frac_threshold(os.environ)
+        self._freeze_window = feed_freeze_window(os.environ)
+        self._freeze_interval_s = feed_freeze_interval_s(os.environ)
+        self._freeze_cooldown = feed_freeze_cooldown_s(os.environ)
+        self._last_freeze_ts = None
+        self._prev_snaps = {}             # feed_key -> last consumer cursor-snap count
         # Live health heartbeat: displayed level (refreshed on every /status and
         # every tick) + the notification baseline (advanced ONLY by the heartbeat
         # tick so a 2 s /status refresh never "consumes" a transition before the
@@ -5851,6 +5899,7 @@ class Relay:
                 srv = FeedFanoutServer("127.0.0.1", f.port, f.ring,
                                        logging.getLogger("racecast.fanout." + f.name))
                 srv.start()
+                f.fanout_server = srv          # #488: the freeze detector reads its consumer snap count
                 self._fanout_servers.append(srv)
         for f in self.feeds.values():
             threading.Thread(target=f.run, daemon=True).start()
@@ -5858,6 +5907,8 @@ class Relay:
             threading.Thread(target=self.pov.run, daemon=True).start()
         threading.Thread(target=self._heartbeat_loop, daemon=True).start()
         threading.Thread(target=self._auto_cover_loop, daemon=True).start()
+        if self.fanout:                   # #488 freeze detector only applies to the fan-out demuxer
+            threading.Thread(target=self._freeze_sampler_loop, daemon=True).start()
 
     def _health_facts(self, now):
         """Gather the raw facts aggregate_health() rolls up. Mirrors what
@@ -6087,6 +6138,12 @@ class Relay:
         skipped, total = st.get("obs_render_skipped_frames"), st.get("obs_render_total_frames")
         if skipped is not None and total is not None:
             self._prev_render_counts = (skipped, total)
+        if self._freeze_detect:
+            # The cursor-progress freeze detector (its own faster sampler) now owns
+            # auto-recovery; the render-skip rate stays recorded (above) for the health
+            # chart but no longer ACTS — it was blind to the source-demuxer freeze (#488).
+            self._render_drift_streak = 0
+            return
         if not self.auto_resync or _obs_ws is None or rate is None:
             self._render_drift_streak = 0
             return
@@ -6106,6 +6163,72 @@ class Relay:
         self.feeds[live]._obs_reconnect()      # threaded, best-effort
         self._last_autoresync_ts = now
         self._render_drift_streak = 0
+
+    def _feed_snaps(self, f):
+        """Total consumer cursor-snaps on a feed's fan-out server (the drift-class
+        discontinuity counter, #488), or None when unavailable. Best-effort."""
+        srv = getattr(f, "fanout_server", None)
+        if srv is None:
+            return None
+        try:
+            _stuck, snaps = srv.consumer_health(time.time())
+            return snaps
+        except Exception:                       # noqa: BLE001 — best-effort
+            return None
+
+    def _freeze_sampler_loop(self):
+        """#488 cursor-progress freeze detector: a faster-than-heartbeat sampler that watches
+        OBS's mediaCursor for the ON-AIR fan-out feed and auto-reconnects its OBS input when
+        the cursor stalls — a stale-demuxer freeze/stutter the render-skip signal is blind to
+        (measured live 2026-07-15). Best-effort daemon; any OBS/network error is swallowed so
+        the sampler never crashes the relay."""
+        prev_cursor = None
+        last_key = None
+        ratios = []
+        while not self._hb_stop.is_set():
+            self._hb_stop.wait(self._freeze_interval_s)
+            if self._hb_stop.is_set():
+                break
+            if not self._freeze_detect or _obs_ws is None:
+                continue
+            try:
+                live = self.live_feed()
+                f = self.feeds.get(live)
+                # Only judge a SERVING feed (bytes flowing). A stopped/connecting feed with a
+                # frozen cursor is expected, not a fault — reset the window and skip.
+                if f is None or f.paused or f.phase != "serving":
+                    prev_cursor = None; ratios = []; last_key = live
+                    continue
+                if live != last_key:            # handover -> fresh window for the new feed
+                    prev_cursor = None; ratios = []; last_key = live
+                cursors, _note = _obs_ws.feed_media_cursors(ports=[f.port])
+                cur = cursors.get(f.port)
+                ratio = cursor_progress_ratio(prev_cursor, cur, self._freeze_interval_s)
+                prev_cursor = cur
+                if ratio is not None:
+                    ratios.append(ratio)
+                    ratios = ratios[-self._freeze_window:]
+                snaps = self._feed_snaps(f)
+                early = snap_early_trigger(self._prev_snaps.get(live), snaps)
+                self._prev_snaps[live] = snaps
+                frac = stall_fraction(ratios, stall_ratio=self._freeze_stall_ratio)
+                since = (None if self._last_freeze_ts is None
+                         else time.time() - self._last_freeze_ts)
+                cooled = since is None or since >= self._freeze_cooldown
+                # Detector: a full window (debounce) whose stall fraction trips freeze_decision.
+                detector = (len(ratios) >= self._freeze_window
+                            and freeze_decision(frac, since, frac_threshold=self._freeze_frac,
+                                                cooldown_s=self._freeze_cooldown))
+                if detector or (early and cooled):
+                    why = "snap early-trigger" if (early and cooled and not detector) else \
+                          ("stall_fraction=%.2f" % frac if frac is not None else "stall")
+                    LOG.warning("freeze auto-reconnect %s — %s — rebuilding OBS input (#488)",
+                                live, why)
+                    f._obs_reconnect()          # the RESET primitive, threaded + best-effort
+                    self._last_freeze_ts = time.time()
+                    prev_cursor = None; ratios = []
+            except Exception as exc:            # noqa: BLE001 — best-effort, never crash the sampler
+                LOG.debug("freeze sampler error (%s)", exc)
 
     def _maybe_auto_failover(self, now):
         """Auto-switch OBS to the Intermission scene when the ON-AIR feed is

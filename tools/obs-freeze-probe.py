@@ -245,7 +245,7 @@ def main(argv=None):
 
             time.sleep(max(0.05, args.interval))
     except KeyboardInterrupt:
-        pass
+        pass  # Ctrl-C ends the run -> fall through to the summary
     finally:
         session.close()
 

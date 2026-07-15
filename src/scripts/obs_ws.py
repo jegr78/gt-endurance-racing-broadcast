@@ -601,6 +601,52 @@ def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
         session.close()
 
 
+def feed_media_cursors(ports=RELAY_PORTS, host="127.0.0.1", port=None,
+                       password=None, timeout=2.0):
+    """({feed_port: mediaCursor_ms or None}, note) for the relay feed media inputs OBS holds.
+    The #488 freeze detector uses whether the on-air feed's cursor ADVANCES to tell a live
+    demuxer from a stale/frozen one — a signal renderSkippedFrames is blind to. Best-effort:
+    OBS unreachable / protocol surprise -> ({}, reason), never an exception."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return {}, note
+    try:
+        inputs = session.request("GetInputList",
+                                 {"inputKind": "ffmpeg_source"}).get("inputs", [])
+        want = {}
+        for p in ports:
+            want[f"127.0.0.1:{p}"] = p
+            want[f"localhost:{p}"] = p
+        out = {}
+        for inp in inputs:
+            name = inp.get("inputName")
+            if not name:
+                continue
+            try:
+                settings = session.request(
+                    "GetInputSettings", {"inputName": name}).get("inputSettings", {})
+            except Exception:                        # noqa: BLE001 — one bad input mustn't stop the rest
+                continue
+            if settings.get("is_local_file"):
+                continue
+            url = settings.get("input")
+            if not isinstance(url, str):
+                continue
+            fp = want.get(urllib.parse.urlsplit(url.strip()).netloc)
+            if fp is None:
+                continue
+            try:
+                out[fp] = session.request(
+                    "GetMediaInputStatus", {"inputName": name}).get("mediaCursor")
+            except Exception:                        # noqa: BLE001 — a source with no media status
+                out[fp] = None
+        return out, ""
+    except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        return {}, str(exc) or exc.__class__.__name__
+    finally:
+        session.close()
+
+
 def refresh_browser_inputs(needle="127.0.0.1:8088", host="127.0.0.1", port=None,
                            password=None, timeout=2.0):
     """Press 'Refresh cache of current page' (refreshnocache) on every browser
