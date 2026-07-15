@@ -6543,15 +6543,20 @@ class Relay:
         cut = self.feeds[new_live].phase == "serving"
         if cut:
             self._reflect(new_live, cut=True)         # only flip onto a feed that is actually live
-        # Advance the freed feed to the slot AFTER the new on-air row.
-        self.feeds[freed].set_index(next_slot_first_row(slots, nxt))
         # #489/#505: on a real handover cut, stop the outgoing pull so only ONE feed
         # ever pulls googlevideo between handovers (the durable single-puller fix). Gated
         # on cut (never stop a feed we did not cut away from -> never blacks the program)
         # and on manual arm (the legacy opt-out keeps its whole-stint pre-warm).
-        if cut and self.manual_feed_arm:
+        stop_freed = cut and self.manual_feed_arm
+        # Pause BEFORE re-indexing: set_index's advance.set() wakes the freed feed's run
+        # loop, so paused must already be True — otherwise the loop could spawn one
+        # throwaway resolve on the new slot in the window before we stop it.
+        if stop_freed:
             self.feeds[freed].paused = True
-            self.feeds[freed].reload()          # wake + kill proc -> loopback port closes
+        # Advance the freed feed to the slot AFTER the new on-air row.
+        self.feeds[freed].set_index(next_slot_first_row(slots, nxt))
+        if stop_freed:
+            self.feeds[freed].reload()          # kill proc -> port closes (also covers a no-op set_index)
             LOG.info("handover -> freed feed %s auto-stopped after cut", freed)
         self.on_air_row = nxt
         nf = self.feeds[new_live]

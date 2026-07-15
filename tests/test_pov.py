@@ -1452,33 +1452,31 @@ def t_manual_feed_arm_enabled():
 
 def t_relay_manual_arm_starts_feeds_disarmed():
     rows = [("uA", "A", "S1", 1), ("uB", "B", "S2", 2)]
-    # Opt-out (flag "0"): legacy auto-pull, feeds armed.
-    os.environ["RACECAST_MANUAL_FEED_ARM"] = "0"
+    entry = os.environ.get("RACECAST_MANUAL_FEED_ARM")   # capture true entry state
     try:
+        # Opt-out (flag "0"): legacy auto-pull, feeds armed.
+        os.environ["RACECAST_MANUAL_FEED_ARM"] = "0"
         r0 = m.Relay(_StubSource(["uA", "uB"], rows), (53001, 53002), LOGDIR)
-    finally:
-        del os.environ["RACECAST_MANUAL_FEED_ARM"]
-    assert r0.manual_feed_arm is False
-    assert r0.A.paused is False and r0.B.paused is False
-    assert r0.status()["feeds"]["A"]["armed"] is True
-    # New DEFAULT (flag absent): manual arm on, feeds disarmed.
-    saved = os.environ.pop("RACECAST_MANUAL_FEED_ARM", None)
-    try:
+        assert r0.manual_feed_arm is False
+        assert r0.A.paused is False and r0.B.paused is False
+        assert r0.status()["feeds"]["A"]["armed"] is True
+        # New DEFAULT (flag absent): manual arm on, feeds disarmed.
+        os.environ.pop("RACECAST_MANUAL_FEED_ARM", None)
         rd = m.Relay(_StubSource(["uA", "uB"], rows), (53005, 53006), LOGDIR)
-    finally:
-        if saved is not None:
-            os.environ["RACECAST_MANUAL_FEED_ARM"] = saved
-    assert rd.manual_feed_arm is True
-    assert rd.A.paused is True and rd.B.paused is True
-    assert rd.status()["manual_feed_arm"] is True
-    assert rd.status()["feeds"]["A"]["armed"] is False
-    # Explicit "1": same as default (disarmed).
-    os.environ["RACECAST_MANUAL_FEED_ARM"] = "1"
-    try:
+        assert rd.manual_feed_arm is True
+        assert rd.A.paused is True and rd.B.paused is True
+        assert rd.status()["manual_feed_arm"] is True
+        assert rd.status()["feeds"]["A"]["armed"] is False
+        # Explicit "1": same as default (disarmed).
+        os.environ["RACECAST_MANUAL_FEED_ARM"] = "1"
         r2 = m.Relay(_StubSource(["uA", "uB"], rows), (53003, 53004), LOGDIR)
+        assert r2.manual_feed_arm is True and r2.A.paused is True
     finally:
-        del os.environ["RACECAST_MANUAL_FEED_ARM"]
-    assert r2.manual_feed_arm is True and r2.A.paused is True
+        # Restore the exact entry state (symmetric — not the post-del state).
+        if entry is None:
+            os.environ.pop("RACECAST_MANUAL_FEED_ARM", None)
+        else:
+            os.environ["RACECAST_MANUAL_FEED_ARM"] = entry
 
 
 def t_feed_activate_deactivate_manual_mode():
