@@ -2861,29 +2861,28 @@ async function importProfile(input, force) {
   loadProfiles();
 }
 
-// After a profile switch, the relay/Companion still serve the previous league
-// until restarted. Offer a one-click restart for whichever is running; nothing
-// restarts without the producer clicking. Best-effort against the cached status.
+// After a profile switch, the relay still serves the previous league until
+// restarted — it is the profile-scoped singleton. Offer a one-click restart when
+// it is running; nothing restarts without the producer clicking. Companion is
+// deliberately NOT offered here: its config is machine-global (one config.json,
+// only bind_ip; the buttons are shared across leagues), so a profile switch never
+// changes what it serves and restarting it is a no-op for the league. Best-effort
+// against the cached status.
 function offerRestart() {
   const note = $('profile-switch-note');
   const s = lastStatus;
   if (!s) {                               // status unknown — generic hint only
     note.hidden = false;
-    note.textContent = 'Switched. Restart any running services to apply the new league.';
+    note.textContent = 'Switched. If the relay is running, restart it to apply the new league.';
     return;
   }
   const relayUp = !!(s.relay && s.relay.alive);
-  const compUp = !!(s.companion && s.companion.running);
-  if (!relayUp && !compUp) { note.hidden = true; return; }
-  const which = [relayUp && 'Relay', compUp && 'Companion'].filter(Boolean).join(' / ');
+  if (!relayUp) { note.hidden = true; return; }
   note.hidden = false;
-  note.textContent = which + ' still serving the previous league — restart to apply. ';
+  note.textContent = 'Relay still serving the previous league — restart to apply. ';
   const btn = document.createElement('button');
   btn.textContent = 'Restart now';
-  btn.onclick = () => {
-    if (relayUp) op('relay-restart', true);
-    if (compUp) op('companion-restart', true);
-  };
+  btn.onclick = () => op('relay-restart', true);
   note.appendChild(btn);
 }
 
