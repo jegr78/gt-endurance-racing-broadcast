@@ -1910,12 +1910,12 @@ def t_maybe_auto_cover_never_lowers_manual_cover():
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
-            # Re-pin the legacy-path guard before each test: a handful of tests
-            # (e.g. t_relay_manual_arm_starts_feeds_disarmed) intentionally pop
-            # RACECAST_MANUAL_FEED_ARM to exercise the absent/default case and
-            # leave it absent afterward. setdefault() only restores it when it's
-            # actually missing, so it never clobbers a test that left an explicit
-            # value set on purpose.
+            # Re-pin the legacy-path guard before each test: some tests temporarily
+            # mutate RACECAST_MANUAL_FEED_ARM to exercise the absent/default and the
+            # explicit-value cases (they restore their own entry state in a finally).
+            # This setdefault is a defensive net — it only re-adds the guard when the
+            # var is actually missing, so it never clobbers a test that set an
+            # explicit value on purpose.
             os.environ.setdefault("RACECAST_MANUAL_FEED_ARM", "0")
             fn(); print("ok", name)
     print("ALL PASS")
