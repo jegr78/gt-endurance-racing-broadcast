@@ -461,10 +461,11 @@ press **NEXT** before that feed is **serving**, nothing is cut and nothing is st
 > **Why arm?** On a cloud/datacenter producer, two commentator streams pulled at once
 > trip a YouTube per-IP rate-limit within a minute or two (both feeds then stutter).
 > Arming just before the cut, plus the auto-stop on NEXT, keeps it to a single pull
-> between handovers. A **home producer** on a residential connection does not hit that
-> limit and can restore the old always-pre-warmed behaviour with
-> `RACECAST_MANUAL_FEED_ARM=0` in `.env` — then a scheduled link pulls immediately, no
-> arming needed and NEXT does not auto-stop.
+> between handovers. **The workflow is identical whether the producer runs in the cloud
+> or at home** — one muscle memory, and the director stays in control of the cut. (A
+> home/residential line does not hit the per-IP limit, so `RACECAST_MANUAL_FEED_ARM=0`
+> exists as a niche escape — a solo operator who wants the old always-pre-warmed
+> auto-pull — but it is **not** the recommended path; the standard everywhere is to arm.)
 
 The relay also handles the audio (it mutes the off-air feed, unmutes the on-air one).
 **STINT A / STINT B**, **MUTE A / MUTE B** and **Feed A/B Toggle** are a
