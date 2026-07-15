@@ -26,3 +26,6 @@ cookies.txt
 
 # Visual-companion brainstorm sessions (local mockups)
 .superpowers/
+
+# #505 multi-feed probe output (maintainer harness; never committed)
+probe-runs/
