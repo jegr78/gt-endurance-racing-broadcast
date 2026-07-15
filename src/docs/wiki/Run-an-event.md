@@ -192,9 +192,9 @@ the feed over, cuts the program back to **Stint** on the incoming feed for you (
 **STINT A/B** press needed), **clearing Race Control** with the cut, sets the HUD's
 **Stint** label and **Streamer** from the on-air **Schedule row** automatically (sourced
 from the Configuration vocab; a blank or off-vocab row leaves the field as-is), **and
-stops the outgoing feed's pull** — so only one commentator stream is pulled at a time
-(the datacenter-safe single-puller flow; a home producer can opt out with
-`RACECAST_MANUAL_FEED_ARM=0`).
+stops the outgoing feed's pull** — so only one commentator stream is pulled at a time.
+This is the **same workflow whether you produce in the cloud or at home**: the director
+arms then cuts, everywhere.
 The panel's **HUD row** provides the Stint / Streamer / Race Control dropdowns
 as a live correction (the next handover re-asserts the schedule's values); editing
 the sheet's Setup tab directly is the equivalent fallback.

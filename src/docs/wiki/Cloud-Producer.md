@@ -10,6 +10,35 @@ send the report, stop the box.
 > maintainer step — see `tools/cloud/README.md` and the spike runbook in the repo. This page
 > assumes the box already exists and was provisioned.
 
+## Home or cloud? (choosing per event)
+
+The **default** is to produce at home — the relay, OBS and the broadcast upload run on a
+producer's own machine ([Set up the broadcast PC](Set-up-the-broadcast-PC)). The cloud box is
+an **offload**: it moves the heavy producer station off a home line when that line can't carry
+it. **The director's job is identical either way** — arm the incoming feed, cut, the outgoing
+feed auto-stops ([Director](Director#at-a-driver-change)). Two things decide per event:
+
+**1. Platform.** YouTube feeds hit a **per-IP rate-limit on a datacenter IP** — two concurrent
+pulls throttle within ~2 minutes (measured, issue #505); a **home/residential IP does not**. So:
+
+- **YouTube-heavy** (a real two-feed splitscreen / POV on YouTube) → **produce at home**.
+- **Twitch-heavy or single-feed** → **the cloud box is fine** (Twitch has no such throttle).
+
+**2. Upload headroom** — the gating number when producing at home:
+
+| Load | Direction | ~Rate |
+|---|---|---|
+| Program broadcast out | **up** | 6–8 Mbps |
+| Your own commentary stream (only if you commentate) | **up** | ~5.5 Mbps |
+| Each commentator feed pulled | down | ~5.5 Mbps |
+
+Download is rarely the problem; **upload is.** Producing **and** self-commentating on one home
+line is ~12–14 Mbps up — more than most asymmetric home uplinks. Ways out, in order: let
+**someone else with a fat/symmetric line produce** (onboard them with [Profiles](Profiles)
+`export`/`import` + `racecast cookies`), **don't self-commentate** that event, or **cut feed
+count/bitrate**. `racecast speedtest` and the preflight bandwidth check give the raw numbers —
+do the arithmetic above against them.
+
 ## The model
 
 - **One long-lived instance**, reused for every event by switching
