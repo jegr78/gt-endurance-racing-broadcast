@@ -11,6 +11,11 @@ spec = importlib.util.spec_from_file_location(
     "irofeeds", os.path.join(ROOT, "src", "relay", "racecast-feeds.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
+# Manual feed arm defaults ON (#492 follow-up): a bare Relay would start feeds
+# disarmed (paused). These checks exercise the legacy auto-pull path; pin the
+# opt-out so they stay focused (same guard as tests/test_pov.py).
+os.environ.setdefault("RACECAST_MANUAL_FEED_ARM", "0")
+
 SECRET = "s3cret-league"
 _URLS8 = [f"https://www.youtube.com/watch?v=stint{i}" for i in range(1, 9)]
 
