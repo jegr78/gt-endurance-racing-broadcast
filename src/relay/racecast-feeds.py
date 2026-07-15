@@ -569,6 +569,52 @@ def should_obs_reconnect(fanout, dropped):
     return bool(fanout and dropped)
 
 
+def cursor_progress_ratio(prev_cursor_ms, cursor_ms, dt_s):
+    """OBS mediaCursor advance rate for one heartbeat: (Δcursor seconds)/(Δwall seconds).
+    1.0 = playing at real-time, 0.0 = frozen (no advance). None when it can't be measured: a
+    missing sample, dt<=0, or a BACKWARDS cursor (a RESET/demuxer-rebuild jump — recovery, not
+    a stall). #488 reliable freeze signal: renderSkippedFrames is a compositor render-timing
+    metric, blind to a source-side demuxer freeze (measured live 2026-07-15, renderSkip 0% /
+    fps 60 while the picture is frozen). Pure → unit-tested."""
+    if prev_cursor_ms is None or cursor_ms is None or dt_s is None or dt_s <= 0:
+        return None
+    delta_ms = cursor_ms - prev_cursor_ms
+    if delta_ms < 0:                       # cursor went backwards (RESET jump) — recovery, not a stall
+        return None
+    return (delta_ms / 1000.0) / dt_s
+
+
+def stall_fraction(ratios, *, stall_ratio):
+    """Fraction of MEASURED ticks whose cursor-progress ratio is below stall_ratio (a stalled
+    tick). Skips None (unmeasurable) entries; returns None when nothing is measurable. This —
+    not the window mean — is the stutter signal: a choppy feed averages ~1x but has many
+    zero-progress ticks, while a healthy feed has none. Pure → unit-tested."""
+    measured = [r for r in ratios if r is not None]
+    if not measured:
+        return None
+    stalled = sum(1 for r in measured if r < stall_ratio)
+    return stalled / len(measured)
+
+
+def freeze_decision(frac, since_last_reset_s, *, frac_threshold, cooldown_s):
+    """Whether to auto-reconnect the on-air feed's OBS input: True when the stall fraction
+    (stall_fraction) is at/above frac_threshold AND the cooldown since the last reconnect has
+    elapsed. A None frac (no data) never trips it. Mirrors render_drift_decision's shape (#488).
+    Pure → unit-tested."""
+    if since_last_reset_s is not None and since_last_reset_s < cooldown_s:
+        return False
+    return frac is not None and frac >= frac_threshold
+
+
+def snap_early_trigger(prev_snaps, snaps):
+    """True when the fan-out consumer's cumulative cursor-snap count increased since the last
+    check — a ring overflow dropped bytes under OBS (the drift-class discontinuity): a cheap
+    relay-side early signal that needs no OBS round-trip. Pure → unit-tested."""
+    if prev_snaps is None or snaps is None:
+        return False
+    return snaps > prev_snaps
+
+
 def feed_reset_target(feed_key, valid_keys):
     """Normalize + validate a /obs/feed-reset feed key against the live feed set. Returns
     the upper-cased key when it names a real feed, else None (a 400). Pure → unit-tested."""

@@ -296,6 +296,55 @@ def t_soak_stall_active_schedule():
     assert soak.soak_stall_active(5.0, period_s=0, duration_s=3) is False    # disabled
 
 
+# --- #488 cursor-progress freeze/stutter detector (pure decision core) ---
+# The OBS render-skip signal is blind to a source-demuxer freeze/stutter (measured live
+# 2026-07-15: renderSkip 0% / fps 60 while the picture is frozen). The reliable signal is
+# OBS's mediaCursor progress: healthy ~1.0x, frozen 0x, stutter = choppy with frequent
+# zero-progress ticks (its window AVERAGE is still ~1x, so we count STALL TICKS, not the mean).
+
+def t_cursor_progress_ratio_basic():
+    assert m.cursor_progress_ratio(1000, 2000, 1.0) == 1.0        # +1000ms/1s = 1.0x (healthy)
+    assert m.cursor_progress_ratio(2000, 2000, 1.0) == 0.0        # no advance = frozen tick
+    assert m.cursor_progress_ratio(0, 2000, 1.0) == 2.0           # 2x catch-up burst
+
+
+def t_cursor_progress_ratio_none_cases():
+    assert m.cursor_progress_ratio(None, 2000, 1.0) is None       # no previous sample
+    assert m.cursor_progress_ratio(1000, None, 1.0) is None       # cursor unavailable
+    assert m.cursor_progress_ratio(1000, 2000, 0.0) is None       # dt <= 0
+    assert m.cursor_progress_ratio(5000, 1000, 1.0) is None       # backwards (RESET jump), not a stall
+
+
+def t_stall_fraction_counts_low_progress_ticks():
+    assert m.stall_fraction([1.0, 1.0, 0.95, 1.05], stall_ratio=0.25) == 0.0   # healthy: no stalls
+    assert m.stall_fraction([0.0, 0.0, 0.0], stall_ratio=0.25) == 1.0          # frozen: all stalls
+    assert m.stall_fraction([0.0, 2.0, 0.0, 1.8], stall_ratio=0.25) == 0.5     # stutter: 2/4 stalled
+
+
+def t_stall_fraction_ignores_none_and_empty():
+    assert m.stall_fraction([None, 1.0, 0.0, None], stall_ratio=0.25) == 0.5   # skip unmeasurable ticks
+    assert m.stall_fraction([], stall_ratio=0.25) is None                      # nothing to decide on
+    assert m.stall_fraction([None, None], stall_ratio=0.25) is None
+
+
+def t_freeze_decision_threshold_and_cooldown():
+    kw = dict(frac_threshold=0.3, cooldown_s=60.0)
+    assert m.freeze_decision(0.0, None, **kw) is False       # healthy
+    assert m.freeze_decision(0.2, None, **kw) is False       # below threshold
+    assert m.freeze_decision(0.3, None, **kw) is True        # at threshold -> fire
+    assert m.freeze_decision(1.0, None, **kw) is True        # frozen
+    assert m.freeze_decision(1.0, 10.0, **kw) is False       # within cooldown
+    assert m.freeze_decision(1.0, 61.0, **kw) is True        # cooldown elapsed
+    assert m.freeze_decision(None, None, **kw) is False      # no data
+
+
+def t_snap_early_trigger_on_increase():
+    assert m.snap_early_trigger(3, 5) is True     # new cursor-snaps since last check = a discontinuity
+    assert m.snap_early_trigger(5, 5) is False    # no new snaps
+    assert m.snap_early_trigger(None, 5) is False # no baseline yet
+    assert m.snap_early_trigger(5, None) is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
