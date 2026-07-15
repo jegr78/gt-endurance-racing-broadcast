@@ -127,6 +127,12 @@ is no need to continue the previous producer's A/B order; `/next` works as
 usual from there. Full checklist:
 [Run an event → Producer handover](Run-an-event#producer-handover-12h24h-multi-part-events).
 
+> With manual feed-arm (**the default**), "preloads" means Feed B's index is *positioned*
+> on the next stint — it does **not** pull until you **arm** it before the swap, and
+> `/next` auto-stops the outgoing feed after it cuts (the single-puller flow — see
+> [At a driver change](Director#at-a-driver-change)). Set `RACECAST_MANUAL_FEED_ARM=0`
+> to restore immediate pre-warm pulling (home producers on a residential IP).
+
 ## 4. Control it (Companion → relay)
 
 Companion connection **"Generic HTTP Requests"**, action **GET**:

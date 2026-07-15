@@ -184,12 +184,17 @@ flowchart LR
   F2 -.->|"next change, roles swap"| F1
 ```
 
-At each change the director: cuts to **Splitscreen** (the combo sets **Race Control** to
-*Driver Swaps* with it), then presses **Feeds Next** — the relay hands the feed over and
-cuts the program back to **Stint** on the incoming feed for you (no **STINT A/B** press
-needed), **clearing Race Control** with the cut — and sets the HUD's **Stint**
-label and **Streamer** from the on-air **Schedule row** automatically (sourced
-from the Configuration vocab; a blank or off-vocab row leaves the field as-is).
+At each change the director: **arms the incoming feed** a few minutes ahead (its
+scheduled link only starts pulling once armed — **ARM A/B** on the panel; wait for
+*serving*), cuts to **Splitscreen** (the combo sets **Race Control** to *Driver Swaps*
+with it), then — with the incoming feed warm — presses **Feeds Next**. The relay hands
+the feed over, cuts the program back to **Stint** on the incoming feed for you (no
+**STINT A/B** press needed), **clearing Race Control** with the cut, sets the HUD's
+**Stint** label and **Streamer** from the on-air **Schedule row** automatically (sourced
+from the Configuration vocab; a blank or off-vocab row leaves the field as-is), **and
+stops the outgoing feed's pull** — so only one commentator stream is pulled at a time
+(the datacenter-safe single-puller flow; a home producer can opt out with
+`RACECAST_MANUAL_FEED_ARM=0`).
 The panel's **HUD row** provides the Stint / Streamer / Race Control dropdowns
 as a live correction (the next handover re-asserts the schedule's values); editing
 the sheet's Setup tab directly is the equivalent fallback.
