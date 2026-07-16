@@ -434,6 +434,122 @@ def t_back_to_back_no_dup_pull_no_cut():
     assert r.live_schedule_row() == {"streamer": "D", "stint": "Stint 4"}
 
 
+def t_back_to_back_manual_arm_full_sequence():
+    # The DEFAULT workflow (manual feed arm ON): director arms the incoming feed,
+    # then /next. Scenario: stint 1 = K1 (uA); stints 2 AND 3 = K2 on ONE stream
+    # (uB, back-to-back); stint 4 = K4 (uD). Walk the whole sequence asserting the
+    # ARM state (paused) of BOTH feeds at every step — the same-URL continuation
+    # must be a pure label advance that touches NO feed (no arm, no stop, no cut),
+    # so only ONE feed ever pulls uB (the #491/#505 single-puller invariant).
+    rows = [("uA", "K1", "Stint 1", 1), ("uB", "K2", "Stint 2", 2),
+            ("uB", "K2", "Stint 3", 3), ("uD", "K4", "Stint 4", 4)]
+    r = m.Relay(_StubSource(["uA", "uB", "uB", "uD"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    r.manual_feed_arm = True
+    r.A.paused = True; r.B.paused = True          # both start disarmed (as __init__ would)
+
+    # Slot map: uA | uB uB | uD -> slots [0,1,1,2]; index placement A=0, B=next slot=1.
+    assert (r.A.idx, r.B.idx) == (0, 1)
+    assert r.on_air_row_idx() == 0 and r.live_feed() == "A"
+    assert r.A.current_channel() == (None, 0)     # disarmed -> no pull, even with a URL present
+
+    # --- Stint 1 goes live: director ARMS Feed A --------------------------------
+    r.A.paused = False; r.A.phase = "serving"
+    assert r.A.current_channel() == ("uA", 0)
+    assert r.B.current_channel() == (None, 1)     # B still disarmed -> no second pull
+
+    # --- Handover stint 1 -> 2 (real, different URL): arm B, then /next ----------
+    r.B.paused = False; r.B.phase = "serving"     # pre-roll uB on the off-air feed
+    out1 = r.next_auto()
+    assert out1["continuation"] is False and out1["obs_cut"] is True
+    assert r.on_air_row_idx() == 1 and r.live_feed() == "B"
+    # freed A is AUTO-STOPPED (disarmed) and skips the uB continuation run to uD (idx3).
+    assert r.A.paused is True and r.A.idx == 3
+    assert r.B.paused is False and r.B.current_channel() == ("uB", 1)
+    assert r.A.current_channel() == (None, 3)     # disarmed -> no pull (single puller: only B on uB)
+
+    # --- Continuation stint 2 -> 3 (SAME URL): director just presses /next -------
+    # No arm, no stop, no cut — the LABEL advances and BOTH feeds are untouched.
+    out2 = r.next_auto()
+    assert out2["continuation"] is True and out2["obs_cut"] is False
+    assert r.on_air_row_idx() == 2 and r.live_feed() == "B"
+    assert r.B.paused is False and r.B.idx == 1 and r.B.current_channel() == ("uB", 1)
+    assert r.A.paused is True and r.A.idx == 3     # freed A stays disarmed & parked on uD
+    assert r.live_schedule_row() == {"streamer": "K2", "stint": "Stint 3"}
+
+    # --- Handover stint 3 -> 4 (real, different URL): arm A (already on uD), /next
+    r.A.paused = False; r.A.phase = "serving"      # arm A on its parked uD slot
+    out3 = r.next_auto()
+    assert out3["continuation"] is False and out3["obs_cut"] is True
+    assert r.on_air_row_idx() == 3 and r.live_feed() == "A"
+    assert r.A.paused is False and r.A.current_channel() == ("uD", 3)
+    # freed B is auto-stopped and parked on the idle sentinel (one past the last row).
+    assert r.B.paused is True and r.B.idx == len(rows)
+    assert r.live_schedule_row() == {"streamer": "K4", "stint": "Stint 4"}
+
+
+def t_back_to_back_leading_manual_arm_no_predecessor():
+    # LEADING back-to-back: stints 1 AND 2 share ONE stream (uA, same commentator)
+    # right at the start. The very first /next therefore has NO predecessor feed to
+    # stop — and because it is a same-URL continuation it never even reaches the
+    # handover/STOP branch. This asserts nothing breaks: the first /next is a pure
+    # label advance, and the off-air feed is slot-parked past the uA run from t=0.
+    rows = [("uA", "K1", "Stint 1", 1), ("uA", "K1", "Stint 2", 2),
+            ("uC", "K3", "Stint 3", 3), ("uD", "K4", "Stint 4", 4)]
+    r = m.Relay(_StubSource(["uA", "uA", "uC", "uD"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    r.manual_feed_arm = True
+    r.A.paused = True; r.B.paused = True
+
+    # Slot map: uA uA | uC | uD -> slots [0,0,1,2]. B preloads the NEXT slot (uC,
+    # row2) from the start, NOT the continuation row -> no leading double-pull.
+    assert (r.A.idx, r.B.idx) == (0, 2)
+    assert r.on_air_row_idx() == 0 and r.live_feed() == "A"
+
+    # Stint 1 live: arm A.
+    r.A.paused = False; r.A.phase = "serving"
+    assert r.A.current_channel() == ("uA", 0)
+    assert r.B.current_channel() == (None, 2)     # B disarmed, parked on uC
+
+    # --- First /next: stint 1 -> 2 is a CONTINUATION (same uA) ------------------
+    # No predecessor to stop, no cut, no feed touched: it returns before the branch
+    # that would ever call STOP. The "STOP finds nothing" case simply never runs.
+    out1 = r.next_auto()
+    assert out1["continuation"] is True and out1["obs_cut"] is False
+    assert r.on_air_row_idx() == 1 and r.live_feed() == "A"
+    assert r.A.paused is False and r.A.idx == 0 and r.A.current_channel() == ("uA", 0)
+    assert r.B.paused is True and r.B.idx == 2     # untouched, still parked on uC
+    assert r.live_schedule_row() == {"streamer": "K1", "stint": "Stint 2"}
+
+    # --- Second /next: stint 2 -> 3 (real handover, uA -> uC): NOW arm B + cut ---
+    r.B.paused = False; r.B.phase = "serving"
+    out2 = r.next_auto()
+    assert out2["continuation"] is False and out2["obs_cut"] is True
+    assert r.on_air_row_idx() == 2 and r.live_feed() == "B"
+    assert r.B.current_channel() == ("uC", 2)
+    # freed A is auto-stopped and advanced to the next distinct slot (uD, row3).
+    assert r.A.paused is True and r.A.idx == 3
+    assert r.live_schedule_row() == {"streamer": "K3", "stint": "Stint 3"}
+
+
+def t_next_auto_real_handover_stop_freed_never_armed_is_noop():
+    # Robustness for the general case: even a REAL handover where the freed feed was
+    # never armed/serving must not break — STOP just disarms it and reload()->
+    # _kill_proc() is a no-op when there is no process. (All-distinct URLs, no
+    # continuation involved.)
+    rows = [("s1", "A", "Stint 1", 1), ("s2", "B", "Stint 2", 2),
+            ("s3", "C", "Stint 3", 3), ("s4", "D", "Stint 4", 4)]
+    r = m.Relay(_StubSource(["s1", "s2", "s3", "s4"], rows), (53001, 53002), LOGDIR)
+    r._reflect = lambda live, cut: None
+    r.manual_feed_arm = True
+    r.A.paused = False; r.A.phase = "serving"      # on air
+    r.B.paused = False; r.B.phase = "serving"      # incoming armed -> cut fires
+    assert r.A.proc is None                        # freed feed has NO process to kill
+    out = r.next_auto()                            # live_after_next=B, freed=A
+    assert out["obs_cut"] is True                  # did not raise
+    assert r.A.paused is True                       # freed disarmed cleanly
+
+
 def t_status_live_stint_reports_display_row_on_continuation():
     # Normal (all-distinct) schedule: /status live.stint == the physical pull index.
     r = _relay(["s1", "s2", "s3", "s4"])
