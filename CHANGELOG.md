@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.6.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.5.5...v1.6.0) (2026-07-16)
+
+
+### Features
+
+* **panel:** Feeds block — ARM/STOP per feed + real served resolution ([#514](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/514)) ([18de150](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/18de150da49856092556d262782dfc111025c1a1))
+* **relay:** /next auto-stops the freed feed + manual-arm default ON ([#489](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/489), [#492](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/492)) ([#508](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/508)) ([309e1ec](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/309e1ecf4e5589b0b34e3c8b557b8fce93420ec3))
+* **relay:** classify source-not-live states + distinct reason + churn dampening ([#495](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/495) core) ([#502](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/502)) ([106b64a](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/106b64a6ed13e4158718695cf0fcb8e5e452dc7d))
+* **relay:** cursor-progress OBS freeze detector — instrument + auto-RESET ([#488](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/488)) ([#513](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/513)) ([6c46690](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/6c466904e3f96505a08c4ef7207fd85ebb7cee99))
+* **relay:** on-air auto-cover — raise the Standby Cover on an offline on-air source ([#495](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/495)) ([#507](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/507)) ([a1340e0](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/a1340e07d3c147d62ca1eabbd52c9c1be11844c0))
+* **relay:** opt-in two-stage feed scheduling — manual arm/disarm ([#492](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/492)) ([#499](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/499)) ([d56775d](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/d56775d1a7d031faf22c163f45d7a7875b842533))
+* **relay:** robust ingest — quality profiles + auto-step-down ([#493](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/493)) ([#506](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/506)) ([99453df](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/99453dff4d01adffc70d95dab2abb5394d3d4889))
+
+
+### Bug Fixes
+
+* **relay:** auto-resync a drifting OBS feed via GetStats render-skip rate + graduated stall ([#488](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/488)) ([#504](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/504)) ([626e382](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/626e382932d3dd4e6a9d493bb0afb4927941e252))
+* **relay:** detect + recover ping-pong/cockpit desync (Resync action + consistency guard) ([#494](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/494)) ([#498](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/498)) ([ac1861f](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/ac1861ff45d23b90d2ebc43356e202699e5e8db9))
+* **relay:** enforce single-pull invariant on all feed-activation paths ([#491](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/491)) ([#496](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/496)) ([89a37d9](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/89a37d9a90995f3dc583a9bc06a45c169db902c6))
+* **relay:** retry the sheet-webhook push with bounded backoff ([#490](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/490)) ([#501](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/501)) ([0f73089](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/0f73089846aea5d5eb64123e7cbce81098d78982))
+* **report:** attribute same-URL back-to-back stints distinctly + flag desync windows ([#500](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/500)) ([#503](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/503)) ([e09fe8b](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e09fe8b2bcc2da72c80053bd8e43bc01e037a427))
+* **ui:** profile-switch restart banner offers relay only, not Companion ([#512](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/512)) ([3744846](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/3744846ef25221fe953eb9b84c6abc6cd1cecb42))
+
 ## [1.5.5](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.5.4...v1.5.5) (2026-07-11)
 
 
