@@ -69,6 +69,33 @@ def t_panel_lists_new_graphics():
         assert f'source:"{label}"' in html, f"panel missing source: {label}"
 
 
+def t_companion_toggles_new_graphics():
+    with open(COMPANION, encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    toggled = set()
+    def walk(o):
+        if isinstance(o, dict):
+            if o.get("definitionId") == "toggle_scene_item":
+                opt = o.get("options", {})
+                scene = (opt.get("scene") or {}).get("value")
+                source = (opt.get("source") or {}).get("value")
+                if scene == "Stint" and source:
+                    toggled.add(source)
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(cfg)
+    for label in NEW_GRAPHICS:
+        assert label in toggled, f"companion missing toggle for: {label}"
+    # Page 1 was extended to a 4th row for the info toggles.
+    assert cfg["pages"]["1"]["gridSize"]["maxRow"] >= 4
+    # A dedicated GRID page exists.
+    names = [p.get("name") for p in cfg["pages"].values()]
+    assert "GRID" in names, f"no GRID page (pages: {names})"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
