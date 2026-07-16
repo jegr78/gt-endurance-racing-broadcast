@@ -305,8 +305,9 @@ flips between them. Everything below is a single tap.
 | **Scenes + relay** | `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Next` (the handover), `Feeds Reload`, `Feeds Status` |
 | **Feeds & reloads** | `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Feed A Reload` (reconnect only Feed A → `/reload/A`), `Feed B Reload` (→ `/reload/B`), `POV Reload`, `POV Stop` |
 | **Graphics & weather** | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle` (incident cover — see [The race](#through-the-broadcast-scene--hud-cues)), `Weather Race (1) Toggle`, `Weather Race (2) Toggle`, `Weather Quali Toggle` — the three weather buttons are full-screen Stint overlays, each an independent toggle like Standings/Results |
+| **Pre-race info** | `Weekend Info`, `Race Info`, `Next Event` — three more full-screen Stint graphics, each an independent toggle like Standings. The **starting-grid** graphics have their own page ([Page 5](#page-5--starting-grid)) |
 
-![Companion page 1 — show control: combos, scene switches, feeds & reloads, graphics & weather](images/companion-page1-show-control.png)
+![Companion page 1 — show control: combos, scene switches, feeds & reloads, graphics, weather, and the pre-race info toggles](images/companion-page1-show-control.png)
 
 ### Page 2 — race timer & audio
 
@@ -354,6 +355,14 @@ flips between them. Everything below is a single tap.
 > same control lives on the panel's **Feeds** card.
 
 ![Companion page 4 — feed quality: per-feed ROBUST / AUTO for Feed A and Feed B](images/companion-page4-feed-quality.png)
+
+### Page 5 — starting grid
+
+| Row | Buttons |
+|-----|---------|
+| **Grid** | `Starting Grid`, `Grid R1`…`Grid R8` — the starting-grid graphics for the Stint scene, each an independent toggle like Standings. Show `Starting Grid` for the full board, then reveal `Grid R1`…`Grid R8` as needed (each row's PNG paints only its own line, so they layer cleanly in any order) |
+
+![Companion page 5 — starting grid: Starting Grid plus Grid R1 through R8, independent Stint-graphic toggles](images/companion-page5-grid.png)
 
 How the board is imported and built: [Companion](Companion).
 

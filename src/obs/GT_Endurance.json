@@ -2955,6 +2955,570 @@
                             "duration": 300
                         },
                         "private_settings": {}
+                    },
+                    {
+                        "name": "Weekend Info",
+                        "source_uuid": "eeeeee01-0000-4000-8000-000000000001",
+                        "visible": false,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 38,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Weekend Info Show Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "hide_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Weekend Info Hide Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "private_settings": {}
+                    },
+                    {
+                        "name": "Race Info",
+                        "source_uuid": "eeeeee02-0000-4000-8000-000000000002",
+                        "visible": false,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 39,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Race Info Show Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "hide_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Race Info Hide Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "private_settings": {}
+                    },
+                    {
+                        "name": "Next Event",
+                        "source_uuid": "eeeeee03-0000-4000-8000-000000000003",
+                        "visible": false,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 40,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Next Event Show Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "hide_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Next Event Hide Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "private_settings": {}
+                    },
+                    {
+                        "name": "Starting Grid",
+                        "source_uuid": "eeeeee04-0000-4000-8000-000000000004",
+                        "visible": false,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 41,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Starting Grid Show Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "hide_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Starting Grid Hide Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "private_settings": {}
+                    },
+                    {
+                        "name": "Grid Row 1",
+                        "source_uuid": "eeeeee11-0000-4000-8000-000000000011",
+                        "visible": false,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 42,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 1 Show Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "hide_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 1 Hide Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "private_settings": {}
+                    },
+                    {
+                        "name": "Grid Row 2",
+                        "source_uuid": "eeeeee12-0000-4000-8000-000000000012",
+                        "visible": false,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 43,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 2 Show Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "hide_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 2 Hide Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "private_settings": {}
+                    },
+                    {
+                        "name": "Grid Row 3",
+                        "source_uuid": "eeeeee13-0000-4000-8000-000000000013",
+                        "visible": false,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 44,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 3 Show Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "hide_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 3 Hide Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "private_settings": {}
+                    },
+                    {
+                        "name": "Grid Row 4",
+                        "source_uuid": "eeeeee14-0000-4000-8000-000000000014",
+                        "visible": false,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 45,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 4 Show Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "hide_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 4 Hide Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "private_settings": {}
+                    },
+                    {
+                        "name": "Grid Row 5",
+                        "source_uuid": "eeeeee15-0000-4000-8000-000000000015",
+                        "visible": false,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 46,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 5 Show Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "hide_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 5 Hide Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "private_settings": {}
+                    },
+                    {
+                        "name": "Grid Row 6",
+                        "source_uuid": "eeeeee16-0000-4000-8000-000000000016",
+                        "visible": false,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 47,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 6 Show Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "hide_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 6 Hide Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "private_settings": {}
+                    },
+                    {
+                        "name": "Grid Row 7",
+                        "source_uuid": "eeeeee17-0000-4000-8000-000000000017",
+                        "visible": false,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 48,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 7 Show Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "hide_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 7 Hide Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "private_settings": {}
+                    },
+                    {
+                        "name": "Grid Row 8",
+                        "source_uuid": "eeeeee18-0000-4000-8000-000000000018",
+                        "visible": false,
+                        "locked": true,
+                        "rot": 0.0,
+                        "align": 5,
+                        "bounds_type": 2,
+                        "bounds_align": 0,
+                        "bounds_crop": false,
+                        "crop_left": 0,
+                        "crop_top": 0,
+                        "crop_right": 0,
+                        "crop_bottom": 0,
+                        "id": 49,
+                        "group_item_backup": false,
+                        "pos": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "scale": {
+                            "x": 1.0,
+                            "y": 1.0
+                        },
+                        "bounds": {
+                            "x": 1920.0,
+                            "y": 1080.0
+                        },
+                        "scale_filter": "disable",
+                        "blend_method": "default",
+                        "blend_type": "normal",
+                        "show_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 8 Show Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "hide_transition": {
+                            "id": "fade_transition",
+                            "versioned_id": "fade_transition",
+                            "name": "Grid Row 8 Hide Transition",
+                            "transition": {},
+                            "duration": 300
+                        },
+                        "private_settings": {}
                     }
                 ]
             },
@@ -3287,6 +3851,342 @@
             "deinterlace_field_order": 0,
             "monitoring_type": 0,
             "canvas_uuid": "6c69626f-6273-4c00-9d88-c5136d61696e",
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Weekend Info",
+            "uuid": "eeeeee01-0000-4000-8000-000000000001",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Weekend Info.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Race Info",
+            "uuid": "eeeeee02-0000-4000-8000-000000000002",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Race Info.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Next Event",
+            "uuid": "eeeeee03-0000-4000-8000-000000000003",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Next Event.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Starting Grid",
+            "uuid": "eeeeee04-0000-4000-8000-000000000004",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Starting Grid.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Grid Row 1",
+            "uuid": "eeeeee11-0000-4000-8000-000000000011",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Grid Row 1.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Grid Row 2",
+            "uuid": "eeeeee12-0000-4000-8000-000000000012",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Grid Row 2.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Grid Row 3",
+            "uuid": "eeeeee13-0000-4000-8000-000000000013",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Grid Row 3.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Grid Row 4",
+            "uuid": "eeeeee14-0000-4000-8000-000000000014",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Grid Row 4.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Grid Row 5",
+            "uuid": "eeeeee15-0000-4000-8000-000000000015",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Grid Row 5.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Grid Row 6",
+            "uuid": "eeeeee16-0000-4000-8000-000000000016",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Grid Row 6.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Grid Row 7",
+            "uuid": "eeeeee17-0000-4000-8000-000000000017",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Grid Row 7.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
+            "private_settings": {}
+        },
+        {
+            "prev_ver": 536936450,
+            "name": "Grid Row 8",
+            "uuid": "eeeeee18-0000-4000-8000-000000000018",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "__RACECAST_GRAPHICS__/Grid Row 8.png",
+                "unload": false,
+                "linear_alpha": true
+            },
+            "mixers": 0,
+            "sync": 0,
+            "flags": 0,
+            "volume": 1.0,
+            "balance": 0.5,
+            "enabled": true,
+            "muted": false,
+            "push-to-mute": false,
+            "push-to-mute-delay": 0,
+            "push-to-talk": false,
+            "push-to-talk-delay": 0,
+            "hotkeys": {},
+            "deinterlace_mode": 0,
+            "deinterlace_field_order": 0,
+            "monitoring_type": 0,
             "private_settings": {}
         }
     ]
