@@ -3135,7 +3135,10 @@ def ytdlp_resolve_cmd(url, cookies, fmt=YTDLP_FORMAT):
     """Argv for resolving a live URL to an HLS manifest. `--` precedes the URL so
     a value can never be parsed as a yt-dlp flag (defense in depth on top of the
     is_channel host allow-list — yt-dlp's --exec etc. would be code execution)."""
-    cmd = ["yt-dlp", "-g", "-f", fmt, "--no-warnings", "--no-playlist"]
+    # -g yields the HLS URL; the extra --print emits a "rcq <height> <fps>" line so the
+    # relay can show the ACTUALLY-served resolution (YouTube's streamlink only reports "live").
+    cmd = ["yt-dlp", "-g", "-f", fmt, "--no-warnings", "--no-playlist",
+           "--print", "rcq %(height)s %(fps)s"]
     if cookies:
         cmd += ["--cookies", cookies]
     cmd += ["--", url]
@@ -3372,7 +3375,7 @@ class _PreviewPullWorker:
         if plat == "twitch":
             target, quality = url, PREVIEW_QUALITY_TW
         else:
-            hls, err = resolve_hls(url, self.cookies, self.log, PREVIEW_FMT_YT)
+            hls, err, _q = resolve_hls(url, self.cookies, self.log, PREVIEW_FMT_YT)
             if not hls:
                 self.log.info("preview resolve failed for %s: %s", self.target, err)
                 return None, None, iter(())
@@ -4031,10 +4034,11 @@ class ProgramAudioService:
 
 
 def resolve_hls(url, cookies, logger, fmt=YTDLP_FORMAT):
-    """Resolve a YouTube live URL to a direct HLS manifest URL via yt-dlp
-    (handles cookies + the bot-check). Returns (url, None) on success or
-    (None, error_line) — the error line feeds /status so the panel can show
-    WHY a feed is stuck connecting (previously it only landed in feed_X.log)."""
+    """Resolve a YouTube live URL to a direct HLS manifest URL via yt-dlp (handles cookies +
+    the bot-check). Returns (url, None, quality) on success — `quality` is the served
+    resolution like '1080p60' (from yt-dlp's --print, None when unknown) — or
+    (None, error_line, None). The error line feeds /status so the panel can show WHY a feed is
+    stuck connecting (previously it only landed in feed_X.log)."""
     cmd = ytdlp_resolve_cmd(url, cookies, fmt)
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, errors="replace",
@@ -4042,16 +4046,16 @@ def resolve_hls(url, cookies, logger, fmt=YTDLP_FORMAT):
     except FileNotFoundError:
         # Startup checks for yt-dlp; reaching here means it vanished mid-run.
         logger.error("yt-dlp not found on PATH")
-        return None, "yt-dlp not found on PATH"
+        return None, "yt-dlp not found on PATH", None
     except subprocess.TimeoutExpired:
-        return None, "yt-dlp timed out (90 s)"
+        return None, "yt-dlp timed out (90 s)", None
     out = [l for l in (r.stdout or "").splitlines() if l.startswith("http")]
     if out:
-        return out[0], None
+        return out[0], None, parse_ytdlp_quality(r.stdout)
     err = (r.stderr or "").strip().splitlines()
     last = err[-1] if err else "not live?"
     logger.warning("yt-dlp could not resolve %s (%s)", url, last)
-    return None, last
+    return None, last, None
 
 
 def stint_start_indices(stint, schedule_len):
@@ -5360,6 +5364,36 @@ def parse_stream_quality(line):
     return m.group(1) if m else None
 
 
+_YTDLP_QUALITY_RE = re.compile(r"^rcq\s+(\d+)(?:\s+(\S+))?", re.M)
+
+
+def parse_ytdlp_quality(text):
+    """The '<height>p<fps>' token from a yt-dlp `--print "rcq %(height)s %(fps)s"` line
+    (e.g. 'rcq 1080 60.0' -> '1080p60'), else None when the height is unknown/absent. fps is
+    rounded and dropped when unavailable ('rcq 480 NA' -> '480p'). For YouTube the actually-
+    served resolution is captured HERE (yt-dlp selected the format); streamlink only reports
+    the useless single-variant HLS name 'live'. Pure → unit-tested."""
+    if not text:
+        return None
+    m = _YTDLP_QUALITY_RE.search(text)
+    if not m:
+        return None
+    height, fps_raw = m.group(1), m.group(2)
+    try:
+        fps = int(round(float(fps_raw)))
+    except (TypeError, ValueError):
+        fps = None
+    return f"{height}p{fps}" if fps else f"{height}p"
+
+
+def quality_token_is_useful(q):
+    """Whether a streamlink-reported quality token is worth keeping. YouTube serves a single-
+    variant HLS, so streamlink only ever reports 'live' (no resolution) — ignore it so the
+    yt-dlp-resolved resolution stays; real labels (Twitch '1080p60'/'source'/…) are kept.
+    Pure → unit-tested."""
+    return bool(q) and q != "live"
+
+
 class Feed:
     def __init__(self, name, port, idx, provider, logdir, cookies=None, fmt=YTDLP_FORMAT,
                  cookie_dir=None):
@@ -5468,8 +5502,8 @@ class Feed:
 
     def _observe_streamlink_line(self, line):
         q = parse_stream_quality(line)
-        if q:
-            self.quality = q
+        if quality_token_is_useful(q):
+            self.quality = q     # Twitch reports a real label; YouTube's "live" is ignored (yt-dlp set it)
         st = classify_source_state(line)
         if st is not None and not self.served_ok:
             self._set_source_state(st)
@@ -5627,8 +5661,8 @@ class Feed:
                     cookies_for("twitch", self.cookie_dir))      # None for public Twitch (no auth file)
                 target, serve_platform = url, "twitch"           # no yt-dlp hop
             else:
-                hls, err = resolve_hls(url, self.cookies, self.log,
-                                       quality_ytdlp_fmt(self.quality_tier))
+                hls, err, ytq = resolve_hls(url, self.cookies, self.log,
+                                            quality_ytdlp_fmt(self.quality_tier))
                 if self.stop: break
                 if self.advance.is_set():
                     self.advance.clear(); continue
@@ -5638,6 +5672,9 @@ class Feed:
                     time.sleep(RESOLVE_RETRY); continue
                 self.last_error = ssai_warning(hls, self.log)  # warn, never block
                 token, target, serve_platform = None, hls, "youtube"
+                # The actually-served resolution comes from yt-dlp (streamlink only reports the
+                # single-variant HLS name "live"); _observe_streamlink_line won't overwrite it.
+                self.quality = ytq
 
             self.log.info("serving stint %d (%s)", i + 1, serve_platform)
             # This re-serve follows an unexpected DROP (not the first serve, not a handover):
