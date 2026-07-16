@@ -672,6 +672,12 @@
 
   <section class="bus"><div class="cap">Gfx</div><div class="keys" id="gfxBus"></div></section>
 
+  <section class="bus"><div class="cap">Pre-Race</div><div class="keys" id="gfxPreRaceBus"></div></section>
+  <section class="bus"><div class="cap">Grid</div>
+    <div class="setrow"><div class="keys" id="gfxGridTopBus"></div></div>
+    <div class="setrow"><div class="keys" id="gfxGridBus"></div></div>
+  </section>
+
   <section class="bus"><div class="cap">Flag Gfx</div><div class="keys" id="flagGfxBus"></div></section>
 
   <section class="bus"><div class="cap">Timer</div>
@@ -884,6 +890,22 @@ const CONFIG = {
     {label:"STBY COVER",    scene:"Stint",       source:"Standby Cover"},
     {label:"POST-RACE",     scene:"Interview",   source:"Post Race Interviews"},
   ],
+  graphicsPreRace: [
+    {label:"WEEKEND",    scene:"Stint", source:"Weekend Info"},
+    {label:"RACE INFO",  scene:"Stint", source:"Race Info"},
+    {label:"NEXT EVENT", scene:"Stint", source:"Next Event"},
+  ],
+  graphicsGrid: [
+    {label:"STARTING GRID", scene:"Stint", source:"Starting Grid", top:true},
+    {label:"GRID R1", scene:"Stint", source:"Grid Row 1"},
+    {label:"GRID R2", scene:"Stint", source:"Grid Row 2"},
+    {label:"GRID R3", scene:"Stint", source:"Grid Row 3"},
+    {label:"GRID R4", scene:"Stint", source:"Grid Row 4"},
+    {label:"GRID R5", scene:"Stint", source:"Grid Row 5"},
+    {label:"GRID R6", scene:"Stint", source:"Grid Row 6"},
+    {label:"GRID R7", scene:"Stint", source:"Grid Row 7"},
+    {label:"GRID R8", scene:"Stint", source:"Grid Row 8"},
+  ],
   audio: [
     {label:"Feed A",  input:"Feed A"},
     {label:"Feed B",  input:"Feed B"},
@@ -1042,6 +1064,17 @@ CONFIG.vis.forEach(item=>{
 CONFIG.graphics.forEach(item=>{
   const b = mkKey(item.label, item.scene, ()=>toggleSource(item, b));
   b._item = item; toggleKeys.push(b); $("#gfxBus").appendChild(b);
+});
+
+CONFIG.graphicsPreRace.forEach(item=>{
+  const b = mkKey(item.label, item.scene, ()=>toggleSource(item, b));
+  b._item = item; toggleKeys.push(b); $("#gfxPreRaceBus").appendChild(b);
+});
+
+CONFIG.graphicsGrid.forEach(item=>{
+  const b = mkKey(item.label, item.scene, ()=>toggleSource(item, b));
+  b._item = item; toggleKeys.push(b);
+  $(item.top ? "#gfxGridTopBus" : "#gfxGridBus").appendChild(b);
 });
 
 /* ---------- Flag-status GRAPHIC bus (#flag-graphic) ----------

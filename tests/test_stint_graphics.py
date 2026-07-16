@@ -56,6 +56,19 @@ def t_obs_stint_scene_items_present():
         assert it["hide_transition"]["name"] == f"{label} Hide Transition", label
 
 
+def t_panel_lists_new_graphics():
+    with open(PANEL, encoding="utf-8") as fh:
+        html = fh.read()
+    # Two new config arrays + two new bus containers exist.
+    assert "graphicsPreRace" in html, "missing CONFIG.graphicsPreRace"
+    assert "graphicsGrid" in html, "missing CONFIG.graphicsGrid"
+    assert 'id="gfxPreRaceBus"' in html
+    assert 'id="gfxGridBus"' in html
+    # Every new source is wired with scene:"Stint" in a CONFIG entry.
+    for label in NEW_GRAPHICS:
+        assert f'source:"{label}"' in html, f"panel missing source: {label}"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
