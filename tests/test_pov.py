@@ -932,8 +932,10 @@ def t_health_snapshot_carries_desync_active():
 
 def t_check_render_drift_fires_on_sustained_skip_then_cooldown():
     # #488: the GetStats render-skip rate over successive polls, debounced + cooldown-gated,
-    # rebuilds the on-air feed's OBS input. Stateful relay path, deterministic here.
+    # rebuilds the on-air feed's OBS input. This is now the FALLBACK path (freeze detector
+    # off); the default cursor-progress detector supersedes it — see the suppression test.
     r = _make_min_relay()
+    r._freeze_detect = False            # exercise the renderSkip fallback (detector disabled)
     r.auto_resync = True
     r._autoresync_skip_rate = 0.02
     r._autoresync_cooldown = 60.0
@@ -962,6 +964,7 @@ def t_check_render_drift_fires_on_sustained_skip_then_cooldown():
 
 def t_check_render_drift_quiet_when_healthy_or_disabled():
     r = _make_min_relay()
+    r._freeze_detect = False            # fallback path under test (detector disabled)
     r._autoresync_skip_rate = 0.02
     r._autoresync_cooldown = 60.0
     calls = []
@@ -981,6 +984,26 @@ def t_check_render_drift_quiet_when_healthy_or_disabled():
         r.obs_stats = {"obs_render_skipped_frames": skip, "obs_render_total_frames": tot}
         r._check_render_drift(t)
     assert calls == [], "kill-switch (auto_resync=False) disables the auto-resync"
+
+
+def t_check_render_drift_action_suppressed_when_freeze_detect_on():
+    # #488 new default: the cursor-progress freeze detector owns auto-recovery, so the (blind)
+    # render-skip auto-resync must NOT fire — but the rate is still recorded for the chart.
+    r = _make_min_relay()
+    r._freeze_detect = True             # the default
+    r.auto_resync = True
+    r._autoresync_skip_rate = 0.02
+    r._prev_render_counts = None; r._render_drift_streak = 0; r._last_autoresync_ts = None
+    calls = []
+    live = r.live_feed()
+    r.feeds[live]._obs_reconnect = lambda: calls.append(1)
+    # a sustained, well-over-threshold render-skip spike that WOULD fire the fallback
+    for skip, tot, t in [(0, 1000, 100.0), (500, 2000, 130.0), (1000, 3000, 160.0)]:
+        r.obs_stats = {"obs_render_skipped_frames": skip, "obs_render_total_frames": tot}
+        r._check_render_drift(t)
+    assert calls == [], "freeze detector on -> render-skip action is suppressed"
+    # the rate is still recorded (prev advanced) so the health chart keeps working
+    assert r._prev_render_counts == (1000, 3000)
 
 
 def t_health_snapshot_carries_render_skip_rate():
