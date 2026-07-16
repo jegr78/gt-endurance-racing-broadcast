@@ -162,6 +162,105 @@ running feeds — use it before going live, never mid-program.
 
 ---
 
+## Same-URL back-to-back stints
+
+When one commentator keeps **a single stream across several consecutive stints**, those
+Schedule rows carry the **same URL**. The relay treats a run of consecutive same-URL rows
+as **one slot = one feed pull**: the stream is pulled once, and the on-screen **stint
+label** advances on each `/next` with **no re-pull and no program cut**. The off-air feed
+always skips a same-URL run and parks on the next *distinct* slot, so two feeds never pull
+the identical stream — the single-puller rule that keeps a cloud producer under YouTube's
+per-IP limit (see [Why arm?](Director#at-a-driver-change)).
+
+So `/next` decides per press:
+
+- **Continuation** — the next row repeats the on-air URL → **label only**: the displayed
+  stint advances; nothing is armed, stopped or cut.
+- **Real handover** — the next row is a new URL → the pre-armed off-air feed is cut in,
+  and the outgoing feed is auto-stopped and advanced past the run to the next distinct slot.
+
+In the tables below, `LIVE` = on air + pulling · `off`/`STOP` = disarmed (no pull) ·
+`idle` = parked past the schedule end · `idxN` = the feed's pull row (0-based).
+
+### Scenario A — back-to-back in the middle
+
+Stint 1 = commentator **K1** (`uA`) · **stints 2 + 3 = commentator K2 on one stream
+(`uB`)** · stint 4 = **K4** (`uD`) → slots `[0, 1, 1, 2]`.
+
+```mermaid
+sequenceDiagram
+    participant D as Director
+    participant R as Relay
+    participant O as OBS
+    Note over R,O: A LIVE uA (stint 1) · B off, parked on uB
+    D->>R: ARM B (pre-roll uB)
+    D->>R: /next
+    R->>O: CUT to Feed B — uB (stint 2)
+    R->>R: stop freed A, park on uD (next distinct slot)
+    D->>R: /next
+    Note over R: continuation (same uB) — label to stint 3, no cut
+    D->>R: ARM A (pre-roll uD)
+    D->>R: /next
+    R->>O: CUT to Feed A — uD (stint 4)
+    R->>R: stop freed B, go idle
+```
+
+| Step | Director | `/next` does | Feed A | Feed B | On screen | Cut |
+|---|---|---|---|---|---|---|
+| 0 | Start (both disarmed) | — | idx0 off | idx1 off | Stint 1 · A | — |
+| 1 | **ARM A** | Feed A pulls `uA` | idx0 **LIVE** | idx1 off | Stint 1 · A | — |
+| 2 | **ARM B**, then `/next` | real handover; freed A stopped, skips the `uB` run to `uD` | idx0→**3** STOP | idx1 **LIVE** | Stint 2 · B | yes |
+| 3 | `/next` | **continuation** — label only, both feeds untouched | idx3 STOP | idx1 **LIVE** | **Stint 3 · B** | no |
+| 4 | **ARM A**, then `/next` | real handover; freed B stopped, goes idle | idx3 **LIVE** | idx1→**4** idle | Stint 4 · A | yes |
+
+Only one feed ever pulls `uB` (Feed B) — the freed feed jumps straight past the run to
+`uD`, never onto a second `uB` pull.
+
+### Scenario B — back-to-back at the very start
+
+Stints 1 + 2 = commentator **K1 on one stream (`uA`)** · stint 3 = **K3** (`uC`) · stint 4
+= **K4** (`uD`) → slots `[0, 0, 1, 2]`.
+
+Here the **first `/next` has no predecessor feed to stop** — and because stint 1 → 2 is
+itself a continuation, the handover/stop path is **never even reached**: the first `/next`
+just advances the label. Feed B is parked on the next distinct slot (`uC`) from the start,
+not on the continuation row, so there is no leading double-pull either. Nothing special is
+needed: press **NEXT** once for the label change, then run the normal *arm → NEXT* swap
+from stint 2 onward.
+
+```mermaid
+sequenceDiagram
+    participant D as Director
+    participant R as Relay
+    participant O as OBS
+    Note over R,O: A LIVE uA (stint 1) · B off, parked on uC
+    D->>R: /next
+    Note over R: continuation (same uA) — label to stint 2, no cut, stop path not reached
+    D->>R: ARM B (pre-roll uC)
+    D->>R: /next
+    R->>O: CUT to Feed B — uC (stint 3)
+    R->>R: stop freed A, park on uD
+    D->>R: ARM A (pre-roll uD)
+    D->>R: /next
+    R->>O: CUT to Feed A — uD (stint 4)
+    R->>R: stop freed B, go idle
+```
+
+| Step | Director | `/next` does | Feed A | Feed B | On screen | Cut |
+|---|---|---|---|---|---|---|
+| 0 | Start (both disarmed) | — | idx0 off | idx2 off (`uC`) | Stint 1 · A | — |
+| 1 | **ARM A** | Feed A pulls `uA` | idx0 **LIVE** | idx2 off | Stint 1 · A | — |
+| 2 | `/next` | **continuation** — label only; no predecessor to stop | idx0 **LIVE** | idx2 off | **Stint 2 · A** | no |
+| 3 | **ARM B**, then `/next` | real handover; freed A stopped, advances to `uD` | idx0→**3** STOP | idx2 **LIVE** | Stint 3 · B | yes |
+| 4 | **ARM A**, then `/next` | real handover; freed B stopped, goes idle | idx3 **LIVE** | idx2→**4** idle | Stint 4 · A | yes |
+
+> **Trap to avoid.** During a continuation, do **not** try to activate the next stint
+> directly on the *other* feed (e.g. `/set/A/<n>`, or arming Feed A onto the on-air URL) —
+> that would put **both** feeds on the same stream and trip the per-IP rate limit at once.
+> The relay refuses such a duplicate pull, but the intended path is simply `/next`.
+
+---
+
 ## The HUD overlay (served by the relay)
 
 The relay also serves the lower-third HUD, so it must be running for the HUD to render.
