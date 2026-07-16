@@ -56,12 +56,13 @@ class _FakeRun:
 
 def t_resolve_hls_success_returns_url_and_no_error():
     orig = m.subprocess.run
-    m.subprocess.run = lambda *a, **k: _FakeRun(stdout="https://hls.example/x.m3u8\n")
+    m.subprocess.run = lambda *a, **k: _FakeRun(stdout="rcq 854 30.0\nhttps://hls.example/x.m3u8\n")
     try:
-        url, err = m.resolve_hls("https://yt.example/x", None, _LOG)
+        url, err, q = m.resolve_hls("https://yt.example/x", None, _LOG)
     finally:
         m.subprocess.run = orig
     assert url == "https://hls.example/x.m3u8" and err is None
+    assert q == "854p30"      # actually-served resolution parsed from yt-dlp's --print
 
 
 def t_resolve_hls_failure_returns_last_stderr_line():
@@ -69,7 +70,7 @@ def t_resolve_hls_failure_returns_last_stderr_line():
     m.subprocess.run = lambda *a, **k: _FakeRun(
         stderr="WARNING: noise\nERROR: This live event will begin in 2 hours\n")
     try:
-        url, err = m.resolve_hls("https://yt.example/x", None, _LOG)
+        url, err, _q = m.resolve_hls("https://yt.example/x", None, _LOG)
     finally:
         m.subprocess.run = orig
     assert url is None
@@ -80,7 +81,7 @@ def t_resolve_hls_failure_without_stderr_says_not_live():
     orig = m.subprocess.run
     m.subprocess.run = lambda *a, **k: _FakeRun()
     try:
-        url, err = m.resolve_hls("https://yt.example/x", None, _LOG)
+        url, err, _q = m.resolve_hls("https://yt.example/x", None, _LOG)
     finally:
         m.subprocess.run = orig
     assert url is None and err == "not live?"

@@ -882,6 +882,29 @@ def t_parse_stream_quality():
     assert m.parse_stream_quality("") is None
 
 
+def t_parse_ytdlp_quality():
+    # yt-dlp `--print "rcq %(height)s %(fps)s"` output (verified shape: rcq line, then the -g URL).
+    assert m.parse_ytdlp_quality("rcq 854 30.0\nhttps://manifest.googlevideo.com/x") == "854p30"
+    assert m.parse_ytdlp_quality("rcq 1080 60.0") == "1080p60"
+    assert m.parse_ytdlp_quality("rcq 720 60") == "720p60"
+    assert m.parse_ytdlp_quality("rcq 480 NA") == "480p"        # fps unknown -> height only
+    assert m.parse_ytdlp_quality("rcq 480 ") == "480p"
+    assert m.parse_ytdlp_quality("rcq NA 30") is None           # no height -> no useful quality
+    assert m.parse_ytdlp_quality("https://only.example/x") is None
+    assert m.parse_ytdlp_quality("") is None
+
+
+def t_quality_token_is_useful():
+    # YouTube's HLS variant name "live" carries no resolution -> ignore it so the yt-dlp
+    # resolution wins; real streamlink labels (Twitch) are kept.
+    assert m.quality_token_is_useful("720p60") is True
+    assert m.quality_token_is_useful("source") is True
+    assert m.quality_token_is_useful("1080p") is True
+    assert m.quality_token_is_useful("live") is False
+    assert m.quality_token_is_useful("") is False
+    assert m.quality_token_is_useful(None) is False
+
+
 def t_sample_connectivity_sets_state_and_expected():
     r = m.Relay(_FakeSource(_URLS8), [53001, 53002], LOGDIR)
     # Monkeypatch the module-level references that _sample_connectivity uses.
