@@ -2568,11 +2568,20 @@ let pvLevelTimer = null;
 function pvSetProgram(){
   const frame = $("#pvProgramFrame"), img = $("#pvProgram");
   const ph = frame.querySelector(".pvph"), txt = ph.querySelector(".pvphtxt");
-  // Keep the current frame visible while the next one loads (no flicker on poll).
-  img.onload = () => { ph.classList.remove("err"); frame.classList.add("loaded"); };
-  img.onerror = () => { img.removeAttribute("src");
-    frame.classList.remove("loaded"); ph.classList.add("err"); txt.textContent = "OBS unreachable"; };
-  img.src = RC_API("/preview/program") + "?ts=" + Date.now();
+  // Probe with a FRESH image each cycle and reschedule only AFTER it resolves —
+  // never re-assign the visible <img>'s src while a request is in flight. Doing so
+  // aborts the pending load, which fires NEITHER onload nor onerror, so the frame
+  // and the error state never land and the tile wedges on "Program loading …"
+  // forever with no recovery (the /preview/program screenshot can take up to the
+  // obs-ws 2 s timeout, longer than the old 1.5 s setInterval). Mirrors the
+  // cockpit/race-control pollProgram: it cannot overlap and auto-recovers once OBS
+  // delivers. (#520)
+  const next = new Image();
+  next.onload = () => { img.src = next.src; frame.classList.add("loaded");
+    ph.classList.remove("err"); pvTimer = setTimeout(pvSetProgram, 1500); };
+  next.onerror = () => { frame.classList.remove("loaded"); ph.classList.add("err");
+    txt.textContent = "OBS unreachable"; pvTimer = setTimeout(pvSetProgram, 3000); };
+  next.src = RC_API("/preview/program") + "?ts=" + Date.now();
 }
 function pgmAudioInit(endpoint) {
   var bar = document.getElementById('pgmAudioBar');
@@ -2606,13 +2615,13 @@ function pgmAudioInit(endpoint) {
 }
 function pvStart(){
   $("#pvBody").hidden = false; $("#pvToggle").textContent = "HIDE";
-  pvSetProgram(); pvTimer = setInterval(pvSetProgram, 1500);
+  pvSetProgram();   // self-reschedules via setTimeout after each onload/onerror
   document.querySelectorAll(".pvtile").forEach(pvStartFeed);
   pvLevelTimer = setInterval(pvPollLevels, PV_FEED_MS); pvPollLevels();
 }
 function pvStop(){
   $("#pvBody").hidden = true; $("#pvToggle").textContent = "SHOW";
-  if(pvTimer){ clearInterval(pvTimer); pvTimer = null; }
+  if(pvTimer){ clearTimeout(pvTimer); pvTimer = null; }
   document.querySelectorAll(".pvtile").forEach(pvStopFeed);
   if(pvLevelTimer){ clearInterval(pvLevelTimer); pvLevelTimer = null; }
 }

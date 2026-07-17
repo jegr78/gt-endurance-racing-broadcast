@@ -233,6 +233,38 @@ def t_qualifying_submission_tag_present():
     assert 'e.mode === "qualifying"' in h
 
 
+def _func_body(html, name):
+    """The source text of a top-level `function <name>(){ … }`, sliced from its
+    declaration to the next top-level `function ` (or EOF). Enough for presence
+    checks inside one function without a JS parser."""
+    start = html.find("function " + name + "(")
+    assert start != -1, "missing function " + name
+    nxt = html.find("\nfunction ", start + 1)
+    return html[start: nxt if nxt != -1 else len(html)]
+
+
+def t_program_preview_self_reschedules_no_wedge():
+    # Issue #520: the PROGRAM preview must use the robust self-rescheduling
+    # `new Image()` probe (like the cockpit/race-control `pollProgram`), NOT a
+    # `setInterval` re-assigning one reused `<img>`. With setInterval + a reused
+    # img, a poll that outruns the interval (a slow/failing OBS screenshot vs the
+    # 2 s obs-ws timeout) gets its pending request ABORTED by the next `img.src`
+    # assignment — the browser fires neither onload nor onerror, so the frame and
+    # the error state never land and the tile is stuck on "Program loading …"
+    # forever with no recovery. The fresh-probe + setTimeout-after-resolve pattern
+    # cannot overlap and auto-recovers once OBS delivers.
+    h = _html()
+    assert "setInterval(pvSetProgram" not in h, \
+        "program preview must not be driven by setInterval on a reused <img> (wedges on a slow poll)"
+    body = _func_body(h, "pvSetProgram")
+    assert "new Image()" in body, \
+        "pvSetProgram must probe with a fresh new Image() each cycle (never abort a pending reused-img load)"
+    assert "setTimeout(pvSetProgram" in body, \
+        "pvSetProgram must self-reschedule via setTimeout after onload/onerror (auto-recover)"
+    assert "clearTimeout" in _func_body(h, "pvStop"), \
+        "pvStop must clearTimeout the program-preview poll handle (no leaked poll after HIDE)"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
