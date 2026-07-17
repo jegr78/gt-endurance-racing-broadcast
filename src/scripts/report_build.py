@@ -217,9 +217,15 @@ def broadcast_timeline(events):
         t = e.get("type")
         if t not in starts:
             continue
-        idx = (e.get("metadata") or {}).get("index")
-        if have_parts and idx is not None:
-            label = f"Part {idx} {'started' if t == 'part_start' else 'ended'}"
+        if have_parts:
+            # The relay records the real part label (e.g. a qualifying part is
+            # "Q started"/"Q ended"); metadata.index is only the pointer position.
+            # Prefer the stored label so the timeline shows "Q", not "Part 1".
+            stored = (e.get("label") or "").strip()
+            idx = (e.get("metadata") or {}).get("index")
+            label = stored or (f"Part {idx} {'started' if t == 'part_start' else 'ended'}"
+                               if idx is not None
+                               else ("Part started" if t == "part_start" else "Part ended"))
         else:
             label = "OBS stream started" if t.endswith("start") else "OBS stream stopped"
         rows.append({"ts": e.get("ts"), "label": label})

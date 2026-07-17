@@ -397,6 +397,22 @@ def t_render_html_shows_desync_caveat_when_present():
     assert "desync" not in rb.render_html(rep2).lower()
 
 
+def t_timeline_prefers_event_label_over_part_index():
+    # #523: the relay stores the real part label — a qualifying part is
+    # label="Q started"/"Q ended" (metadata.index is just the pointer position, 1).
+    # broadcast_timeline must show the LABEL, not "Part 1", so qualifying reports
+    # don't mislabel the Q part.
+    events = [{"ts": 100, "type": "part_start", "label": "Q started",
+               "metadata": {"index": 1}},
+              {"ts": 160, "type": "part_end", "label": "Q ended",
+               "metadata": {"index": 1}}]
+    tl = rb.broadcast_timeline(events)
+    assert [(r["ts"], r["label"]) for r in tl] == [(100, "Q started"), (160, "Q ended")]
+    # A labelless part event still falls back to "Part {index}".
+    bare = [{"ts": 50, "type": "part_start", "metadata": {"index": 2}}]
+    assert rb.broadcast_timeline(bare) == [{"ts": 50, "label": "Part 2 started"}]
+
+
 def run():
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
