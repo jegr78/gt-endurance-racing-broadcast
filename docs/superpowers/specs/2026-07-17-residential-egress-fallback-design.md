@@ -65,7 +65,14 @@ node — at the cost of routing the league's YouTube cookies through a third par
 - `RACECAST_FEED_PROXY` — the residential proxy endpoint, e.g.
   `http://100.115.69.85:8888` (a home Tailnet node). **Empty ⇒ the fallback is disabled**
   (nothing pre-staged ⇒ nothing automatic). This is a machine/transport knob, never a league
-  setting.
+  setting. The endpoint may equally be a **paid residential/mobile proxy** or a **mobile/4G**
+  egress (a cheap SIM on a small always-on home device) — same knob, no code change. Because
+  the fallback is reactive/session-sticky, a metered paid proxy only accrues cost **during
+  actual flag incidents** (occasional), not every event — which makes a no-home-node paid
+  residential/mobile proxy a viable primary endpoint, not just a stopgap. Rejected egress
+  options (verified): a PO-token provider (tested on the flagged AWS box, no effect on the
+  live-HLS bot-flag) and consumer VPNs (Nord/CyberGhost exit via datacenter/known-VPN ranges
+  that YouTube flags harder than plain cloud).
 - `RACECAST_FEED_PROXY_AUTO` — default **on**; `=0` makes the fallback manual-only (for events
   where the home uplink cannot take it).
 - Quality cap is a fixed 720p tier while active (reuses `#493` tiers); a constant, not a knob,
@@ -81,6 +88,12 @@ the trust boundary — no public exposure. Documented in the cloud runbook and t
 - **Env injection:** when the fallback is active, add `HTTPS_PROXY`/`HTTP_PROXY` to the feed
   subprocess env only (via `external_tool_env()` / the feed-cmd env). Off ⇒ unchanged direct
   pulls. Pure builder for the env delta → unit-tested.
+- **Segment fetcher must be proxied too (live-HLS caveat):** for a LIVE stream the
+  bytes are fetched by **streamlink** (and ffmpeg), not just yt-dlp's manifest resolve — an
+  env-only `HTTPS_PROXY` may not reach it, so yt-dlp would resolve via the proxy while
+  streamlink pulls segments directly and stays flagged (yt-dlp #17165). Pass streamlink
+  `--http-proxy`/`--https-proxy` explicitly (and ffmpeg as needed) when active, not just the
+  env var. Both the resolve AND the segment fetch must egress residential.
 - **Quality cap:** while active, clamp each feed's quality tier to **720p** so the proxied
   bytes fit the home uplink. Reuses the existing tier machinery; removed when the fallback
   turns off (which, per Detection, is only at the next `event start`).
