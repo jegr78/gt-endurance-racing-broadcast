@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.7.1](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.7.0...v1.7.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* **event:** make event stop idempotent — a second stop is a no-op ([#524](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/524)) ([#526](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/526)) ([c7f8c6b](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c7f8c6b2e7c5e3b50be9c0e70ee42de11620ba84))
+* **panel:** program preview self-reschedules — no permanent wedge ([#520](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/520)) ([#521](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/521)) ([2d9d0aa](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/2d9d0aa038b43683069691fa8649e54a7743caa2))
+* **report:** gate the log bundle by session freshness ([#519](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/519)) ([#527](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/527)) ([504ac6e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/504ac6e8cae3fc1f2b137ebe3e1ec5d8745f7925))
+* **report:** timeline shows the part label + keeps teardown events ([#523](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/523)) ([#525](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/525)) ([09af9c7](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/09af9c7e6641e9abdb3f8a238b148d1a364331d4))
+
 ## [1.7.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.6.0...v1.7.0) (2026-07-17)
 
 
