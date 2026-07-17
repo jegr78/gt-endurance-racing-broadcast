@@ -3673,7 +3673,8 @@ def t_check_scene_collection_warns_when_switch_fails():
 def t_event_stop_reports_then_tears_down():
     calls = []
     saved = (m._build_report_file, m._send_report_core, m.relay_stop,
-              m.companion_stop, m.streams_stop, m._streams_static_dir)
+              m.companion_stop, m.streams_stop, m._streams_static_dir,
+              m._relay_is_alive)
     try:
         m._build_report_file = lambda: (calls.append("build"),
                                          {"path": "/tmp/r.html", "summary": "s",
@@ -3683,6 +3684,7 @@ def t_event_stop_reports_then_tears_down():
         m.companion_stop = lambda a: calls.append("companion_stop")
         m.streams_stop = lambda a: calls.append("streams_stop")
         m._streams_static_dir = lambda: "/nonexistent-streams-dir"   # no feed pids
+        m._relay_is_alive = lambda: True                 # a live event to stop
 
         m.event_stop([])
         assert calls.index("send") < calls.index("relay_stop")   # report BEFORE teardown
@@ -3698,13 +3700,14 @@ def t_event_stop_reports_then_tears_down():
         assert "relay_stop" in calls
     finally:
         (m._build_report_file, m._send_report_core, m.relay_stop,
-         m.companion_stop, m.streams_stop, m._streams_static_dir) = saved
+         m.companion_stop, m.streams_stop, m._streams_static_dir,
+         m._relay_is_alive) = saved
 
 
 def t_event_stop_report_failure_still_tears_down():
     calls = []
     saved = (m._build_report_file, m.relay_stop, m.companion_stop,
-              m.streams_stop, m._streams_static_dir)
+              m.streams_stop, m._streams_static_dir, m._relay_is_alive)
     try:
         def boom():
             raise RuntimeError("no health data")
@@ -3713,11 +3716,12 @@ def t_event_stop_report_failure_still_tears_down():
         m.companion_stop = lambda a: calls.append("companion_stop")
         m.streams_stop = lambda a: None
         m._streams_static_dir = lambda: "/nonexistent-streams-dir"
+        m._relay_is_alive = lambda: True
         m.event_stop([])                       # must not raise
         assert "relay_stop" in calls
     finally:
         (m._build_report_file, m.relay_stop, m.companion_stop,
-         m.streams_stop, m._streams_static_dir) = saved
+         m.streams_stop, m._streams_static_dir, m._relay_is_alive) = saved
 
 
 def t_discord_autoleave_gate():
@@ -3751,7 +3755,7 @@ def t_event_stop_calls_discord_autoleave():
     calls = []
     saved = (m._build_report_file, m._send_report_core, m.relay_stop,
              m.companion_stop, m.streams_stop, m._streams_static_dir,
-             m._discord_autoleave)
+             m._discord_autoleave, m._relay_is_alive)
     try:
         m._build_report_file = lambda: {"path": "/tmp/r.html", "summary": "s",
                                         "report": {}}
@@ -3761,12 +3765,38 @@ def t_event_stop_calls_discord_autoleave():
         m.streams_stop = lambda a: None
         m._streams_static_dir = lambda: "/nonexistent-streams-dir"
         m._discord_autoleave = lambda: calls.append("autoleave")
+        m._relay_is_alive = lambda: True
         m.event_stop([])
         assert "autoleave" in calls
     finally:
         (m._build_report_file, m._send_report_core, m.relay_stop,
          m.companion_stop, m.streams_stop, m._streams_static_dir,
-         m._discord_autoleave) = saved
+         m._discord_autoleave, m._relay_is_alive) = saved
+
+
+def t_event_stop_noop_when_already_stopped():
+    # #524: the last-part auto-stop (STOP PART Q) already fired `event stop` (report
+    # + teardown). A SECOND stop — e.g. clicking Control Center "Stop Event" after —
+    # runs with the relay already gone. It MUST NOT regenerate + re-send a report
+    # (relay down => no commentator names, no qualifying marker => a strictly worse
+    # report overwriting/duplicating the good one). With no live relay, event stop is
+    # a no-op: no report, no send, no teardown, no autoleave.
+    calls = []
+    saved = (m._relay_is_alive, m._build_report_file, m._send_report_core,
+             m.relay_stop, m.companion_stop, m.streams_stop, m._discord_autoleave)
+    try:
+        m._relay_is_alive = lambda: False            # event already stopped
+        m._build_report_file = lambda: calls.append("build") or {"path": "", "summary": ""}
+        m._send_report_core = lambda p, report=None, window=None: calls.append("send")
+        m.relay_stop = lambda a: calls.append("relay_stop")
+        m.companion_stop = lambda a: calls.append("companion_stop")
+        m.streams_stop = lambda a: calls.append("streams_stop")
+        m._discord_autoleave = lambda: calls.append("autoleave")
+        m.event_stop([])
+        assert calls == [], "already-stopped event stop must be a no-op, got: {}".format(calls)
+    finally:
+        (m._relay_is_alive, m._build_report_file, m._send_report_core,
+         m.relay_stop, m.companion_stop, m.streams_stop, m._discord_autoleave) = saved
 
 
 def t_qualifying_title_marks_when_qualifying():
