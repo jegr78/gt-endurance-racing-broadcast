@@ -3491,7 +3491,20 @@ def event_stop(rest):
     """Stop racecast-managed services only — never the GUI apps (a mistyped command
     must not be able to kill a live broadcast). Generates + sends the post-event
     report BEFORE the teardown (default-on; --no-report skips) — while the relay is
-    still up, so commentator names resolve. Report failure is non-fatal."""
+    still up, so commentator names resolve. Report failure is non-fatal.
+
+    Idempotent (#524): if the relay is already gone the event was already stopped —
+    e.g. the last-part auto-stop (STOP PART Q) already ran the report + teardown, and
+    the operator then clicks Control Center "Stop Event" too. Regenerating the report
+    now would resolve NO commentator names and drop the qualifying marker (both need
+    the live relay), overwriting/re-sending a strictly worse report. So a stop with no
+    live relay is a no-op — the good report stands."""
+    if not _relay_is_alive():
+        print("Event already stopped — nothing to do "
+              "(the last-part auto-stop already ran the report + teardown; the "
+              "existing report stands). Stop any lingering app with `racecast "
+              "companion stop` / `racecast relay stop`.")
+        return
     if "--no-report" not in rest:
         try:
             r = _build_report_file()
