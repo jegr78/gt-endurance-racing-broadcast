@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stdlib checks for the racecast dispatcher routing. Run: python3 tests/test_racecast.py"""
-import importlib.util, os
+import importlib.util, os, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -3811,6 +3811,44 @@ def t_qualifying_title_marks_when_qualifying():
         assert m._qualifying_title("Le Mans 24h") == "Le Mans 24h"
     finally:
         m._relay_mode = orig
+
+
+def t_report_log_is_fresh_window_gate():
+    # #519: the freshness gate keeps a file only if its mtime is within the report
+    # session (>= start - grace). since=None keeps everything (back-compat).
+    g = m.REPORT_LOG_FRESHNESS_GRACE_S
+    assert m._report_log_is_fresh(0.0, None) is True            # no window -> keep all
+    assert m._report_log_is_fresh(1000.0, 1000.0) is True       # exactly at start
+    assert m._report_log_is_fresh(1000.0 - g - 1, 1000.0) is False   # older than grace -> stale
+    assert m._report_log_is_fresh(1000.0 - g + 1, 1000.0) is True    # within grace
+    assert m._report_log_is_fresh(5000.0, 1000.0) is True       # written during the session
+
+
+def t_report_log_files_drops_stale_source():
+    # A leftover current file from a source that did NOT run this session (e.g. a
+    # weeks-old runtime/static/logs/feed_*.log from a one-off `racecast streams`
+    # test) must not ride along in an unrelated event's report bundle (#519).
+    with tempfile.TemporaryDirectory() as d:
+        fresh = os.path.join(d, "relay.log")
+        stale = os.path.join(d, "feed_53001.log")
+        for p in (fresh, stale):
+            with open(p, "w") as fh:
+                fh.write("x")
+        now = time.time()
+        os.utime(fresh, (now, now))
+        os.utime(stale, (now - 40 * 86400, now - 40 * 86400))   # 40 days old
+        saved = m._log_sources
+        try:
+            m._log_sources = lambda: {"relay": {"files": lambda: [fresh]},
+                                      "streams": {"files": lambda: [stale]}}
+            # windowed: the 40-day-old streams leftover is excluded
+            pairs = m._report_log_files(since=now - 3600)
+            assert (("relay", fresh) in pairs) and (("streams", stale) not in pairs), pairs
+            # no window -> back-compat, both included
+            all_pairs = m._report_log_files()
+            assert (("relay", fresh) in all_pairs) and (("streams", stale) in all_pairs)
+        finally:
+            m._log_sources = saved
 
 
 if __name__ == "__main__":

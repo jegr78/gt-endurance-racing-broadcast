@@ -1388,14 +1388,35 @@ def _read_session_start():
         return None
 
 
-def _report_log_files():
+# A source that logged during THIS session has an mtime >= the session start; the
+# grace absorbs a line written just before `event start` and small clock skew, while
+# still excluding a source that has not run in hours/days.
+REPORT_LOG_FRESHNESS_GRACE_S = 300
+
+
+def _report_log_is_fresh(mtime, since, grace_s=REPORT_LOG_FRESHNESS_GRACE_S):
+    """Whether a bundled log file (mtime) belongs to the report session: True when
+    `since` is None (no window -> keep everything, back-compat) or mtime is within
+    `since - grace`. Excludes a stale leftover from a source that did not run this
+    session — e.g. a weeks-old runtime/static/logs/feed_*.log from a one-off `racecast
+    streams` test, which otherwise rode along in every unrelated event's report bundle
+    (#519). Pure — unit-tested."""
+    if since is None:
+        return True
+    return mtime >= since - grace_s
+
+
+def _report_log_files(since=None):
     """Current (non-archive) log files to bundle with the report, as (source, path)
     pairs across ALL Control Center log sources (relay, streams, obs, companion,
     tailscale, app) — the same live set the Control Center's "All (live)" view shows.
-    Best-effort: [] when the registry can't be built, and a single source that raises
-    is skipped rather than aborting the rest. The source name lets the caller lay the
-    files out under logs/<source>/ so relay and streams (both feed_*.log) don't
-    collide. Archives (rotated older files) are left out — only the live session's."""
+    When `since` (the report window start) is given, a file whose mtime predates the
+    session (by more than the grace) is dropped, so a stale leftover from a source that
+    did not run this session can't ride along (#519). Best-effort: [] when the registry
+    can't be built, a single source that raises is skipped rather than aborting the
+    rest, and an unstattable file is kept (never silently dropped). The source name lets
+    the caller lay the files out under logs/<source>/ so relay and streams (both
+    feed_*.log) don't collide. Archives (rotated older files) are left out."""
     try:
         reg = _log_sources()
     except Exception:  # noqa: BLE001 — bundling logs must never break the report send
@@ -1407,8 +1428,15 @@ def _report_log_files():
             continue
         try:
             for fp in entry["files"]():
-                if fp and os.path.isfile(fp):
-                    pairs.append((source, fp))
+                if not (fp and os.path.isfile(fp)):
+                    continue
+                if since is not None:
+                    try:
+                        if not _report_log_is_fresh(os.path.getmtime(fp), since):
+                            continue
+                    except OSError:
+                        pass  # can't stat -> keep it (conservative, matches old behavior)
+                pairs.append((source, fp))
         except Exception:  # noqa: BLE001 — one flaky source must not drop the others
             continue
     return pairs
@@ -1530,7 +1558,7 @@ def _send_report_core(path, report=None, window=None):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(os.path.basename(path), content)
-        for source, fp in _report_log_files():
+        for source, fp in _report_log_files(since=frm):
             try:
                 with open(fp, "r", encoding="utf-8", errors="replace") as lf:
                     # logs/<source>/<basename>: relay and streams both use feed_*.log,
