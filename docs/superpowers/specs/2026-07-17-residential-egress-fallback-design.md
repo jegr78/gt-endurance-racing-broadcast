@@ -62,17 +62,20 @@ node — at the cost of routing the league's YouTube cookies through a third par
 ## Components
 
 ### Config (machine `.env`, alongside `RACECAST_FEED_FANOUT`)
-- `RACECAST_FEED_PROXY` — the residential proxy endpoint, e.g.
-  `http://100.115.69.85:8888` (a home Tailnet node). **Empty ⇒ the fallback is disabled**
-  (nothing pre-staged ⇒ nothing automatic). This is a machine/transport knob, never a league
-  setting. The endpoint may equally be a **paid residential/mobile proxy** or a **mobile/4G**
-  egress (a cheap SIM on a small always-on home device) — same knob, no code change. Because
-  the fallback is reactive/session-sticky, a metered paid proxy only accrues cost **during
-  actual flag incidents** (occasional), not every event — which makes a no-home-node paid
-  residential/mobile proxy a viable primary endpoint, not just a stopgap. Rejected egress
-  options (verified): a PO-token provider (tested on the flagged AWS box, no effect on the
-  live-HLS bot-flag) and consumer VPNs (Nord/CyberGhost exit via datacenter/known-VPN ranges
-  that YouTube flags harder than plain cloud).
+- `RACECAST_FEED_PROXY` — the residential proxy endpoint on a **home/local Tailnet node**,
+  e.g. `http://100.115.69.85:8888` (the home Streaming PC). **Empty ⇒ the fallback is
+  disabled** (nothing pre-staged ⇒ nothing automatic). This is a machine/transport knob,
+  never a league setting.
+- **Endpoint choice — home/local proxy only (decided).** A **paid residential/mobile proxy**
+  and a **mobile/4G** egress are **rejected**: metered per-GB proxies are billed by data, and
+  the AWS box is **flagged more often than not** right now, so the fallback would fire on most
+  events, not rarely — the cost is effectively continuous, not bounded to occasional incidents.
+  A self-hosted home/local residential proxy has no per-GB cost and is therefore the only
+  endpoint this design targets. (The knob stays a plain URL, so a paid endpoint remains
+  *technically* droppable-in, but it is not a supported path here.) Rejected egress options
+  (verified): a PO-token provider (tested on the flagged AWS box, no effect on the live-HLS
+  bot-flag) and consumer VPNs (Nord/CyberGhost exit via datacenter/known-VPN ranges that
+  YouTube flags harder than plain cloud).
 - `RACECAST_FEED_PROXY_AUTO` — default **on**; `=0` makes the fallback manual-only (for events
   where the home uplink cannot take it).
 - Quality cap is a fixed 720p tier while active (reuses `#493` tiers); a constant, not a knob,
