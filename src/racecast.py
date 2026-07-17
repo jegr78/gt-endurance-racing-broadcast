@@ -1479,7 +1479,11 @@ def _build_report_file(frm=None, to=None, gap=None, out=None):
         if frm is None or to is None:
             raise ValueError("no health data for that window")
         samples = hsmod.query_range(conn, frm, to)
-        events = hsmod.query_events(conn, frm, to)
+        # Events (part_end, obs_stream_stop) are recorded during teardown, a few
+        # seconds AFTER the last health sample that sets `to`. Query the event tail
+        # up to `to + gap` so they still land in the timeline — the next session is
+        # >= gap away by construction, so this can't pull in a later session's events.
+        events = hsmod.query_events(conn, frm, to + gap)
     finally:
         conn.close()
     if not samples:

@@ -231,6 +231,47 @@ def t_send_bundles_sliced_logs_and_host():
         assert "obs boot line" in zf.read("logs/obs/obs.log").decode()
 
 
+def t_report_includes_teardown_events_after_last_sample():
+    # #523: part_end / obs_stream_stop are recorded during teardown, a few seconds
+    # AFTER the last health sample. The report's event query must extend past the
+    # last sample (to + session gap) so they still land in the Broadcast timeline —
+    # otherwise "Part ended" (and the OBS stop) silently vanish, as in the 2026-07-17
+    # Suzuka qualifying report.
+    with tempfile.TemporaryDirectory() as d:
+        db = os.path.join(d, "health-history.db")
+        conn = hs.open_db(db)
+        hs.migrate(conn)
+        base = 1_700_000_000.0
+        for i in range(4):
+            hs.record(conn, {"ts": base + i * 30, "health_level": "green",
+                             "feed_a_down": 0, "feed_b_down": 0, "live_stint": 1,
+                             "health_reasons": []}, "periodic")
+        last_sample = base + 90
+        hs.record_event(conn, base, "part_start", label="Q started",
+                        metadata={"index": 1})
+        # 4 s after the last sample — the teardown tail the old window dropped.
+        hs.record_event(conn, last_sample + 4, "part_end", label="Q ended",
+                        metadata={"index": 1})
+        conn.close()
+        reports = os.path.join(d, "reports")
+        orig = (rc._health_db_path, rc._runtime_dir,
+                rc._report_name_map, rc._report_event_title)
+        rc._health_db_path = lambda: db
+        rc._runtime_dir = lambda: d
+        rc._report_name_map = lambda: {1: "Alice"}
+        rc._report_event_title = lambda: "Q Event"
+        try:
+            rc.report_cmd(["generate"])
+        finally:
+            (rc._health_db_path, rc._runtime_dir,
+             rc._report_name_map, rc._report_event_title) = orig
+        with open(os.path.join(reports, os.listdir(reports)[0]),
+                  encoding="utf-8") as fh:
+            html = fh.read()
+        assert "Q ended" in html, \
+            "part_end recorded after the last sample must still appear in the timeline"
+
+
 def run():
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
