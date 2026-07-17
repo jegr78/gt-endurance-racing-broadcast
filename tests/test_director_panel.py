@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Stdlib structural checks for the Director Panel tab layout.
+"""Stdlib structural checks for the Director Panel single-content layout.
 Run: python3 tests/test_director_panel.py
 
 No JS runtime here — these assert markup + presence-of-code anchors over the
 served HTML string (same pattern as tests/test_cockpit.py). Runtime behavior is
-verified via the ui-visual-verification render pass, not here."""
+verified via the ui-visual-verification render pass, not here.
+
+The panel used to be a two-tab layout (PROGRAM / SETUP); it is now ONE compact
+scrolling view: a full-width program deck, a full-width HUD, two 2-column control
+blocks, and the full-width Schedule/Submissions/Substitution at the bottom. These
+tests guard that structure and that NO control was dropped in the reflow."""
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -27,107 +32,138 @@ def _order(html, *needles):
         last = i
 
 
-def t_tabbar_present():
+def t_tabs_removed():
+    # The PROGRAM/SETUP tab shell is gone — one content area now.
     h = _html()
-    assert 'role="tablist"' in h
-    assert 'id="tabBtnProgram"' in h and 'data-tab="program"' in h
-    assert 'id="tabBtnSetup"' in h and 'data-tab="setup"' in h
-    assert '>PROGRAM<' in h and '>SETUP' in h
+    assert 'role="tablist"' not in h
+    assert 'id="tabProgram"' not in h and 'id="tabSetup"' not in h
+    assert 'id="tabBtnProgram"' not in h and 'id="tabBtnSetup"' not in h
+    assert "function setTab(" not in h, "tab-switch JS must be gone"
+    assert "TAB_PANELS" not in h and "TAB_BTNS" not in h
+    assert 'id="setupBadge"' not in h, "the SETUP tab badge is gone with the tabs"
 
 
-def t_two_tabpanels_present():
+def t_single_content_layout_classes():
+    # The new layout primitives are present: deck + two-column control blocks.
     h = _html()
-    assert 'id="tabProgram"' in h and 'id="tabSetup"' in h
-    assert 'role="tabpanel"' in h
-    # SETUP panel ships hidden by default (PROGRAM is the default tab).
-    seg = h[h.find('id="tabSetup"'):h.find('id="tabSetup"') + 120]
-    assert "hidden" in seg, "SETUP panel must be hidden by default"
+    assert 'class="deck"' in h, "program deck wrapper"
+    assert h.count('class="cols"') == 2, "two 2-column control blocks"
+    assert 'class="cues2"' in h, "Cues uses the full-width 2/1 body"
+    assert 'class="grp"' in h, "Graphics/Utilities use grouped sub-rows"
 
 
-def t_program_tab_order():
-    # Preview -> PGM -> Cues -> Feeds -> HUD, all inside the PROGRAM panel.
+def t_top_to_bottom_order():
+    # deck(preview -> PGM) -> HUD -> [Feeds | Scn.Vis -> Timer] -> Log -> Cues ->
+    # [Graphics(gfx/pre/grid/flag) | Audio -> Utilities(txBar)] -> Schedule ->
+    # Submissions -> Substitution. One straight DOM order, no tab wrappers.
     h = _html()
-    _order(h, 'id="tabProgram"',
-           'id="previewSec"', 'id="pgmBus"', 'id="cuesBus"',
-           'id="feedsBus"', 'id="setupRow"',
-           'id="tabSetup"')  # everything above precedes the SETUP panel opening
+    _order(h,
+           'class="deck"',
+           'id="previewSec"', 'id="pgmBus"', 'id="txArmed"',
+           'id="hudBus"', 'id="setupRow"', 'id="teamRow"', 'id="condRow"',
+           'id="feedsBus"', 'id="scnBus"', 'id="timerBus"',
+           'id="log"',
+           'id="cuesBus"',
+           'id="gfxBus"', 'id="gfxPreRaceBus"', 'id="gfxGridTopBus"',
+           'id="gfxGridBus"', 'id="flagGfxBus"',
+           'id="audio"', 'id="txBar"', 'id="obsRefreshBtn"',
+           'id="urlsBox"', 'id="subsBox"', 'id="subSec"')
 
 
-def t_setup_tab_order():
-    # Scn.Vis -> Gfx -> Flag Gfx -> Timer -> Audio -> Transition -> Schedule
-    # (merged: urlsBox) -> Pending -> Substitution, all after the SETUP panel.
+def t_log_sits_between_feeds_and_cues():
+    # The action log moved up: below the Feeds/Timer row, above Cues (near Feeds).
     h = _html()
-    _order(h, 'id="tabSetup"',
-           'id="scnBus"', 'id="gfxBus"', 'id="flagGfxBus"', 'id="timerBus"',
-           'id="audio"', 'id="txBar"', 'id="urlsBox"',
-           'id="subsBox"', 'id="subSec"')
+    _order(h, 'id="timerBus"', 'id="log"', 'id="cuesBus"')
+    assert 'id="log"' in h
 
 
-def t_log_outside_panels():
-    # The status log stays below both panels (visible on both tabs).
+def t_no_control_dropped():
+    # Every JS-populated container / static control that existed under the tabs
+    # must still be present after the reflow.
     h = _html()
-    _order(h, 'id="subSec"', 'id="log"')
+    for cid in ("previewSec", "pgmAudioBar", "pgmBus", "feedsBus", "feedQuality",
+                "scnBus", "gfxBus", "gfxPreRaceBus", "gfxGridTopBus", "gfxGridBus",
+                "flagGfxBus", "timerBus", "timerInfo", "audio", "txBar", "txDur",
+                "obsRefreshBtn", "setupRow", "teamRow", "condRow", "setupInfo",
+                "cuePresets", "cueTarget", "cueLevel", "cueText", "cueSend",
+                "cueRecent", "cueBackWrap", "urlsBox", "subsBox", "subSec", "log"):
+        assert f'id="{cid}"' in h, f"dropped control: #{cid}"
+    # per-feed PAUSE toggles + quality tiers survive
+    assert h.count('class="k pvtoggle"') == 3
+    # both feeds keep their quality tiers (>=2 buttons; "emergency" also appears in a CSS rule)
+    assert h.count('data-tier="robust"') >= 2 and h.count('data-tier="emergency"') >= 2
 
 
-def t_settab_and_default():
+def t_header_is_sticky():
+    # The real page header is sticky now (previously the PGM bus was).
     h = _html()
-    assert "function setTab(" in h
-    assert '"rc_panel_tab"' in h
-    # boot initializes from the stored tab, defaulting to program
-    assert 'localStorage.getItem(TAB_KEY) || "program"' in h
+    hdr = h.find("header{")
+    assert hdr != -1
+    seg = h[hdr:hdr + 200]
+    assert "position:sticky" in seg and "top:0" in seg
+    # the old PGM sticky rule is gone
+    assert ".pgm{position:sticky" not in h
+
+
+def t_cues_two_column_body():
+    # Cues compose + presets sit left, recent/cueback right, inside .cues2 (2/1).
+    h = _html()
+    cues = h.find('id="cuesBus"')
+    nxt = h.find('class="cols"', cues)          # the following control block
+    seg = h[cues:nxt]
+    assert 'class="cues2"' in seg
+    assert seg.count('class="cuescol"') == 2
+    _order(seg, 'id="cueTarget"', 'id="cuePresets"', 'id="cueRecent"')
+
+
+def t_graphics_grouped_into_one_card():
+    # Gfx + Pre-Race + Grid + Flag-Gfx are one card with labelled sub-rows now.
+    h = _html()
+    g = h.find('id="gfxBus"')
+    end = h.find('</section>', h.find('id="flagGfxBus"'))
+    seg = h[h.rfind('<section', 0, g):end]
+    assert seg.count('class="grp"') >= 4
+    for cid in ("gfxBus", "gfxPreRaceBus", "gfxGridTopBus", "gfxGridBus", "flagGfxBus"):
+        assert f'id="{cid}"' in seg, f"#{cid} must live inside the merged Graphics card"
+
+
+def t_utilities_merges_transition_and_obs():
+    # Transition (#txBar, id kept for CSS/JS) + OBS refresh live in one card.
+    h = _html()
+    tx = h.find('id="txBar"')
+    end = h.find('</section>', tx)
+    seg = h[tx:end]
+    assert 'id="obsRefreshBtn"' in seg, "OBS refresh folded into the Utilities card"
+    assert 'data-tx="cut"' in seg and 'id="txDur"' in seg
+
+
+def t_tx_chip_present_and_wired():
+    h = _html()
+    # chip lives in the deck's PGM section, before Cues
+    assert 'id="txArmed"' in h
+    pgm = h.find('class="bus pgm"')
+    assert pgm != -1 and h.find('id="txArmed"') > pgm
+    assert h.find('id="txArmed"') < h.find('id="cuesBus"'), "chip must be in the PGM/deck area"
+    # renderTxBar updates the chip text
+    assert 'chip.textContent = "TX: " + activeTransition.toUpperCase()' in h
+    # clicking the chip scrolls to the Utilities/Transition card (tabs are gone)
+    assert 'getElementById("txBar")' in h and "scrollIntoView" in h
+
+
+def t_setup_badge_is_safe_noop():
+    # updateSetupBadge is kept (callers unchanged) but its #setupBadge target is
+    # gone, so it returns early — a safe no-op. Callers still fire.
+    h = _html()
+    assert "function updateSetupBadge(" in h
+    assert h.count("updateSetupBadge()") >= 2
+    assert 'getElementById("subsCount")' in h
+    assert 'getElementById("subSec")' in h
 
 
 def t_preview_default_shown():
     # New/unset installs show the preview by default (respects an explicit "0").
     h = _html()
     assert 'localStorage.getItem(PV_KEY) || "1"' in h
-
-
-def t_setup_badge_hidden_rule():
-    # The badge carries `hidden` until Task 4 wires it; an unconditional
-    # display: on .tabbadge would override the UA [hidden] rule, so a
-    # [hidden] override must exist to keep it invisible.
-    h = _html()
-    assert ".tabbadge[hidden]" in h, "badge must honor the hidden attribute"
-
-
-def t_keyboard_shortcuts_present():
-    h = _html()
-    # global 1/2 switch tabs
-    assert 'e.key === "1"' in h and 'e.key === "2"' in h
-    # arrow-key nav on the tablist
-    assert '"ArrowLeft"' in h and '"ArrowRight"' in h
-
-
-def t_shortcut_guards_typing():
-    # 1/2 must NOT fire while typing in a field.
-    h = _html()
-    assert "/^(INPUT|TEXTAREA|SELECT)$/.test" in h
-    assert "isContentEditable" in h
-
-
-def t_tx_chip_present_and_wired():
-    h = _html()
-    # chip lives in the PGM section
-    assert 'id="txArmed"' in h
-    pgm = h.find('class="bus pgm"')
-    assert pgm != -1 and h.find('id="txArmed"') > pgm
-    assert h.find('id="txArmed"') < h.find('id="cuesBus"'), "chip must be inside PGM section"
-    # renderTxBar updates the chip text
-    assert 'chip.textContent = "TX: " + activeTransition.toUpperCase()' in h
-    # clicking the chip switches to the SETUP tab
-    assert 'chip.addEventListener("click", () => setTab("setup"))' in h
-
-
-def t_setup_badge_wired():
-    h = _html()
-    assert "function updateSetupBadge(" in h
-    assert 'id="setupBadge"' in h
-    # called from BOTH the submissions poll and the substitution poll
-    assert h.count("updateSetupBadge()") >= 3  # 1 def-site call chain + >=2 call sites
-    # reads the existing pending count and the substitution-visible state
-    assert 'getElementById("subsCount")' in h
-    assert 'getElementById("subSec")' in h
 
 
 def t_final_part_confirmation_present():
